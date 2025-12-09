@@ -4,7 +4,6 @@ import { refDebounced } from '@vueuse/core';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { useI18n } from 'vue-i18n';
 import { SortRequest } from '@core/schema/common/sortRequestSchema';
-import { getAdministrator } from '@/@webcore/localStorage/user';
 import { DataTableHeader } from 'vuetify';
 import { useContactStore } from '@/@webcore/stores/contact';
 import { EContactPermissions } from '@core/common/enums/EPermissions/contact';
@@ -49,7 +48,6 @@ const permissionsCreate = [
 const { t } = useI18n();
 const contactStore = useContactStore();
 useSnackbarCleanup(contactStore);
-const isAdministrator = getAdministrator();
 
 const itemsPerPage = ref([
   { value: 5, title: '5' },
@@ -339,7 +337,7 @@ watch(
           </div>
           <div class="d-flex align-center flex-wrap gap-4">
             <div class="invoice-list-filter">
-              <VLabel>{{ $t('search') }}:</VLabel>
+              <VLabel class="text-body-2 mb-1">{{ $t('search') }}:</VLabel>
               <AppTextField
                 :placeholder="$t('search') + '...'"
                 append-inner-icon="tabler-search"
@@ -442,7 +440,7 @@ watch(
               v-if="
                 $canPermission(permissionsEdit) &&
                 !item.is_valided &&
-                (item?.contact_id || isAdministrator)
+                item?.contact_id
               "
               ><VTooltip
                 location="top"
@@ -455,11 +453,7 @@ watch(
                 @click="openValidateDialog(item.contact_id)"
             /></IconBtn>
 
-            <IconBtn
-              v-if="
-                $canPermission(permissionsEdit) &&
-                (item?.contact_id || isAdministrator)
-              "
+            <IconBtn v-if="$canPermission(permissionsEdit) && item?.contact_id"
               ><VTooltip
                 location="top"
                 transition="scale-transition"
@@ -471,11 +465,7 @@ watch(
                 @click="openEditDialog(item.contact_id)"
             /></IconBtn>
 
-            <IconBtn
-              v-if="
-                $canPermission(permissionsDelete) &&
-                (item.contact_id || isAdministrator)
-              "
+            <IconBtn v-if="$canPermission(permissionsDelete) && item.contact_id"
               ><VTooltip
                 location="top"
                 transition="scale-transition"

@@ -22,6 +22,7 @@ const isOpen = computed({
 const labelTemplates = ref<
   Array<{ label_template_id: string; label: string; color: string }>
 >([]);
+
 const selectedLabelTemplateId = ref<string | null>(null);
 const isLoadingLabels = ref(false);
 const isSavingLabel = ref(false);
@@ -110,36 +111,30 @@ watch(
 
     <VCard :title="t('label')">
       <VCardText>
-        <VSelect
+        <AppSelectSearch
           v-model="selectedLabelTemplateId"
           :items="labelTemplates"
-          item-title="label"
-          item-value="label_template_id"
           :label="t('label')"
           :placeholder="t('select_label')"
-          clearable
+          :clearable="true"
+          item-value="label_template_id"
+          item-title="label"
           class="label-select"
         >
-          <template #item="{ props, item }">
-            <VListItem v-bind="props">
-              <template #prepend>
-                <div
-                  class="label-color-circle"
-                  :style="{ backgroundColor: item.raw.color }"
-                />
-              </template>
-            </VListItem>
+          <template #prepend-inner="{ item }">
+            <div
+              v-if="item"
+              class="label-color-circle me-2"
+              :style="{ backgroundColor: item.color }"
+            />
           </template>
-          <template #selection="{ item }">
-            <div v-if="item.raw" class="d-flex align-center">
-              <div
-                class="label-color-circle"
-                :style="{ backgroundColor: item.raw.color }"
-              />
-              <span class="ms-2">{{ item.raw.label }}</span>
-            </div>
+          <template #item-prepend="{ item }">
+            <div
+              class="label-color-circle"
+              :style="{ backgroundColor: item.color }"
+            />
           </template>
-        </VSelect>
+        </AppSelectSearch>
       </VCardText>
 
       <VCardText class="d-flex justify-space-between flex-wrap gap-3">

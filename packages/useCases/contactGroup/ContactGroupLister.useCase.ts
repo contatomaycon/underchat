@@ -1,5 +1,4 @@
 import { injectable } from 'tsyringe';
-import { TFunction } from 'i18next';
 import { setPaginationData } from '@core/common/functions/createPaginationData';
 import { ListContactGroupFinalResponse } from '@core/schema/contactGroup/listContactGroup/response.schema';
 import { ListContactGroupRequest } from '@core/schema/contactGroup/listContactGroup/request.schema';
@@ -10,9 +9,7 @@ export class ContactGroupListerUseCase {
   constructor(private readonly contactGroupService: ContactGroupService) {}
 
   async execute(
-    t: TFunction<'translation', undefined>,
     query: ListContactGroupRequest,
-    isAdministrator: boolean,
     accountId: string
   ): Promise<ListContactGroupFinalResponse> {
     const perPage = query.per_page ?? 10;
@@ -22,7 +19,6 @@ export class ContactGroupListerUseCase {
       perPage,
       currentPage,
       query,
-      isAdministrator,
       accountId
     );
 

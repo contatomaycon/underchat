@@ -71,12 +71,9 @@ export class WorkerCreatorUseCase {
   async execute(
     t: TFunction<'translation', undefined>,
     accountId: string,
-    isAdministrator: boolean,
     input: CreateWorkerRequest
   ): Promise<boolean> {
-    if (!isAdministrator) {
-      await this.validate(t, accountId);
-    }
+    await this.validate(t, accountId);
 
     const viewWorkerServer =
       await this.workerService.viewWorkerServer(accountId);
@@ -112,7 +109,6 @@ export class WorkerCreatorUseCase {
       server_id: viewWorkerServer.server_id,
       account_id: viewWorkerServer.account_id,
       name: input.name,
-      is_administrator: isAdministrator,
     };
 
     await this.centrifugoService.publishSub(

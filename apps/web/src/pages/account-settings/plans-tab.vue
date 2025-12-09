@@ -600,7 +600,7 @@ const cancelSubscription = async () => {
 
 const isPlanActive = computed(() => {
   if (!planInvoice.value) return false;
-  
+
   const hasCancellationDate = !!planInvoice.value.cancellation_date;
   if (hasCancellationDate) {
     const nextPaymentDateStr = planInvoice.value.next_payment_date;
@@ -611,13 +611,13 @@ const isPlanActive = computed(() => {
     }
     return false;
   }
-  
+
   return true;
 });
 
 const renewPlan = () => {
   if (!planInvoice.value) return;
-  
+
   if (isPlanActive.value) {
     const billingPeriod = planInvoice.value.billing_period || 'monthly';
     router.push({
@@ -1103,9 +1103,11 @@ onMounted(() => {
           <VForm>
             <VRow>
               <VCol cols="12">
+                <VLabel class="text-body-2 mb-1"
+                  >{{ $t('card_number') }}:</VLabel
+                >
                 <VTextField
                   v-model="newCard.number"
-                  :label="$t('card_number')"
                   placeholder="0000 0000 0000 0000"
                   @input="onCardNumberInput"
                   :maxlength="19"
@@ -1135,21 +1137,25 @@ onMounted(() => {
                 </VTextField>
               </VCol>
               <VCol cols="12">
+                <VLabel class="text-body-2 mb-1"
+                  >{{ $t('cardholder_name') }}:</VLabel
+                >
                 <VTextField
                   v-model="newCard.holderName"
-                  :label="$t('cardholder_name')"
                   placeholder="Nome como está no cartão"
                   :maxlength="100"
                 />
               </VCol>
               <VCol cols="6">
+                <VLabel class="text-body-2 mb-1"
+                  >{{ $t('expiry_date') }}:</VLabel
+                >
                 <VTextField
                   :model-value="
                     newCard.expiryMonth && newCard.expiryYear
                       ? `${newCard.expiryMonth}/${newCard.expiryYear}`
                       : ''
                   "
-                  :label="$t('expiry_date')"
                   placeholder="MM/AA"
                   @input="onExpiryInput"
                   :maxlength="5"
@@ -1158,9 +1164,9 @@ onMounted(() => {
                 />
               </VCol>
               <VCol cols="6">
+                <VLabel class="text-body-2 mb-1">{{ $t('cvv') }}:</VLabel>
                 <VTextField
                   v-model="newCard.cvv"
-                  :label="$t('cvv')"
                   placeholder="000"
                   :type="showCvv ? 'text' : 'password'"
                   :maxlength="4"

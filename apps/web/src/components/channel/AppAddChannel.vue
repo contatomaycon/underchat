@@ -77,19 +77,21 @@ onMounted(resetForm);
         <VCardText>
           <VRow>
             <VCol cols="12" sm="6" md="6">
-              <AppSelect
-                :items="itemsType"
+              <VLabel class="text-body-2 mb-1">{{ $t('type') }}:</VLabel>
+              <AppSelectSearch
                 v-model="type"
-                :label="$t('type') + ':'"
+                :items="itemsType"
                 :placeholder="$t('type')"
-                :rules="[requiredValidator(type, $t('type_required'))]"
+                :clearable="true"
+                item-value="value"
+                item-title="title"
               />
             </VCol>
 
             <VCol cols="12" sm="6" md="6">
+              <VLabel class="text-body-2 mb-1">{{ $t('name') }}:</VLabel>
               <AppTextField
                 v-model="name"
-                :label="$t('name') + ':'"
                 :placeholder="$t('name')"
                 :rules="[requiredValidator(name, $t('name_required'))]"
               />

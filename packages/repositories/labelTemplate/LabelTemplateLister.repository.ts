@@ -78,14 +78,10 @@ export class LabelTemplateListerRepository {
     perPage: number,
     currentPage: number,
     query: ListLabelTemplateRequest,
-    isAdministrator: boolean,
     accountId: string
   ): Promise<ListLabelTemplateResponse[]> => {
     const filters = this.setFilters(query);
     const orders = this.setOrders(query);
-    const accountCondition = isAdministrator
-      ? undefined
-      : eq(labelTemplate.account_id, accountId);
 
     const queryBuilder = this.db
       .select({
@@ -109,7 +105,11 @@ export class LabelTemplateListerRepository {
         eq(labelTemplate.label_status_id, labelStatus.label_status_id)
       )
       .where(
-        and(accountCondition, isNull(labelTemplate.deleted_at), ...filters)
+        and(
+          eq(labelTemplate.account_id, accountId),
+          isNull(labelTemplate.deleted_at),
+          ...filters
+        )
       );
 
     if (orders.length) {
@@ -145,13 +145,9 @@ export class LabelTemplateListerRepository {
 
   listLabelTemplateTotal = async (
     query: ListLabelTemplateRequest,
-    isAdministrator: boolean,
     accountId: string
   ): Promise<number> => {
     const filters = this.setFilters(query);
-    const accountCondition = isAdministrator
-      ? undefined
-      : eq(labelTemplate.account_id, accountId);
 
     const result = await this.db
       .select({
@@ -164,7 +160,11 @@ export class LabelTemplateListerRepository {
         eq(labelTemplate.label_status_id, labelStatus.label_status_id)
       )
       .where(
-        and(accountCondition, isNull(labelTemplate.deleted_at), ...filters)
+        and(
+          eq(labelTemplate.account_id, accountId),
+          isNull(labelTemplate.deleted_at),
+          ...filters
+        )
       )
       .execute();
 

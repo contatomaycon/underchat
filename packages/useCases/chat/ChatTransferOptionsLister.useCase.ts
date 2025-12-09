@@ -10,13 +10,10 @@ export class ChatTransferOptionsListerUseCase {
     private readonly workerService: WorkerService
   ) {}
 
-  async execute(
-    accountId: string,
-    isAdministrator: boolean
-  ): Promise<ListTransferOptionsResponse> {
+  async execute(accountId: string): Promise<ListTransferOptionsResponse> {
     const [sectors, workers] = await Promise.all([
-      this.sectorService.listAllSectors(accountId, isAdministrator),
-      this.workerService.listAllWorkers(accountId, isAdministrator),
+      this.sectorService.listAllSectors(accountId),
+      this.workerService.listAllWorkers(accountId),
     ]);
 
     return {

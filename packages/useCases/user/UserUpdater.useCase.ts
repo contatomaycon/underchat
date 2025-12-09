@@ -414,38 +414,45 @@ export class UserUpdaterUseCase {
     await this.validateCountry(t, body.country_id);
   }
 
-  private async updateUserData(
-    t: TFunction<'translation', undefined>,
+  private async resolveAccountIdForUpdate(
     userId: string,
-    body: UpdateUserRequest,
-    accountId: string
-  ): Promise<void> {
+    accountId: string,
+    canOperateOnOthers: boolean
+  ): Promise<string> {
     const currentAccountId =
       (await this.userService.getUserAccountId(userId)) ?? null;
-    const accountIdForUpdate = currentAccountId ?? accountId ?? null;
 
-    if (!accountIdForUpdate) {
-      throw new Error(t('account_not_found'));
+    if (!canOperateOnOthers) {
+      return currentAccountId ?? accountId;
     }
 
-    const updateUserInput = this.buildUpdateUserInput(t, body);
-    const accountIdValue = this.extractStringValue(body.account_id);
-    const hasAccountChange =
-      accountIdValue && currentAccountId && accountIdValue !== currentAccountId;
+    return currentAccountId ?? accountId ?? null;
+  }
 
-    if (hasAccountChange && accountIdValue) {
-      updateUserInput.account_id = accountIdValue;
+  private async handleAccountChange(
+    t: TFunction<'translation', undefined>,
+    userId: string,
+    updateUserInput: IUpdateUser,
+    accountIdValue: string,
+    currentAccountId: string
+  ): Promise<void> {
+    updateUserInput.account_id = accountIdValue;
 
-      await this.userService.updateUserByIdWithAccountChange(
-        t,
-        userId,
-        updateUserInput,
-        accountIdValue,
-        currentAccountId
-      );
-      return;
-    }
+    await this.userService.updateUserByIdWithAccountChange(
+      t,
+      userId,
+      updateUserInput,
+      accountIdValue,
+      currentAccountId
+    );
+  }
 
+  private async updateUserWithoutAccountChange(
+    t: TFunction<'translation', undefined>,
+    userId: string,
+    updateUserInput: IUpdateUser,
+    accountIdForUpdate: string
+  ): Promise<void> {
     const updateUser = await this.userService.updateUserById(
       userId,
       updateUserInput,
@@ -457,19 +464,81 @@ export class UserUpdaterUseCase {
     }
   }
 
+  private async updateUserData(
+    t: TFunction<'translation', undefined>,
+    userId: string,
+    body: UpdateUserRequest,
+    accountId: string,
+    canOperateOnOthers: boolean
+  ): Promise<void> {
+    const currentAccountId =
+      (await this.userService.getUserAccountId(userId)) ?? null;
+    const accountIdForUpdate = await this.resolveAccountIdForUpdate(
+      userId,
+      accountId,
+      canOperateOnOthers
+    );
+
+    if (!accountIdForUpdate) {
+      throw new Error(t('account_not_found'));
+    }
+
+    const updateUserInput = this.buildUpdateUserInput(t, body);
+    const accountIdValue = this.extractStringValue(body.account_id);
+    const hasAccountChange =
+      accountIdValue && currentAccountId && accountIdValue !== currentAccountId;
+
+    if (hasAccountChange && accountIdValue && currentAccountId) {
+      await this.handleAccountChange(
+        t,
+        userId,
+        updateUserInput,
+        accountIdValue,
+        currentAccountId
+      );
+      return;
+    }
+
+    await this.updateUserWithoutAccountChange(
+      t,
+      userId,
+      updateUserInput,
+      accountIdForUpdate
+    );
+  }
+
+  private async resolveAccountIdForUserInfo(
+    userId: string,
+    accountId: string,
+    canOperateOnOthers: boolean
+  ): Promise<string> {
+    if (!canOperateOnOthers) {
+      return accountId;
+    }
+
+    const userAccountId = await this.userService.getUserAccountId(userId);
+    return userAccountId ?? accountId;
+  }
+
   private async updateUserInfoData(
     t: TFunction<'translation', undefined>,
     userId: string,
     body: UpdateUserRequest,
-    accountId: string
+    accountId: string,
+    canOperateOnOthers: boolean
   ): Promise<void> {
+    const accountIdToUse = await this.resolveAccountIdForUserInfo(
+      userId,
+      accountId,
+      canOperateOnOthers
+    );
     const photoUrlValue = this.extractPhotoUrlValue(body.photo_url);
 
     if (photoUrlValue === null) {
       await this.deleteUserPhotoFromStorage(userId);
     }
 
-    const photoUrl = await this.processPhotoUpload(t, body, accountId);
+    const photoUrl = await this.processPhotoUpload(t, body, accountIdToUse);
 
     const userInfo = this.buildUpdateUserInfoInput(t, body, photoUrl);
     const updateUserInfo = await this.userService.updateUserInfoById(
@@ -555,28 +624,55 @@ export class UserUpdaterUseCase {
     return body.permission_role_id !== undefined;
   }
 
+  private async validatePermissionRoleExists(
+    t: TFunction<'translation', undefined>,
+    permissionRoleId: string,
+    accountId: string,
+    canOperateOnOthers: boolean
+  ): Promise<void> {
+    if (!canOperateOnOthers) {
+      const existsPermissionRole =
+        await this.permissionService.existsPermissionRoleById(
+          accountId,
+          permissionRoleId
+        );
+
+      if (!existsPermissionRole) {
+        throw new Error(t('permission_role_not_found'));
+      }
+      return;
+    }
+
+    const permissionRoleAccountId =
+      await this.permissionService.getPermissionRoleAccountId(permissionRoleId);
+
+    if (!permissionRoleAccountId) {
+      throw new Error(t('permission_role_not_found'));
+    }
+  }
+
   private async assignUserRoleToUser(
     t: TFunction<'translation', undefined>,
     userId: string,
     permissionRoleId: string,
     accountId: string,
-    isAdministrator: boolean
+    canOperateOnOthers: boolean
   ): Promise<void> {
     const userAccountId = await this.userService.getUserAccountId(userId);
     if (!userAccountId) {
       throw new Error(t('user_not_found'));
     }
 
-    const existsPermissionRole =
-      await this.permissionService.existsPermissionRoleById(
-        userAccountId,
-        permissionRoleId,
-        isAdministrator
-      );
+    const accountIdForValidation = canOperateOnOthers
+      ? userAccountId
+      : accountId;
 
-    if (!existsPermissionRole) {
-      throw new Error(t('permission_role_not_found'));
-    }
+    await this.validatePermissionRoleExists(
+      t,
+      permissionRoleId,
+      accountIdForValidation,
+      canOperateOnOthers
+    );
 
     const assigned = await this.userService.assignUserRole(
       userId,
@@ -610,7 +706,7 @@ export class UserUpdaterUseCase {
     userId: string,
     body: UpdateUserRequest,
     accountId: string,
-    isAdministrator: boolean
+    canOperateOnOthers: boolean
   ): Promise<void> {
     const permissionRoleIdValue = this.extractStringValue(
       body.permission_role_id
@@ -622,7 +718,7 @@ export class UserUpdaterUseCase {
         userId,
         permissionRoleIdValue,
         accountId,
-        isAdministrator
+        canOperateOnOthers
       );
       return;
     }
@@ -630,33 +726,50 @@ export class UserUpdaterUseCase {
     await this.removeUserRoleFromUser(t, userId);
   }
 
-  async execute(
+  private async validateUserExistsInAccount(
     t: TFunction<'translation', undefined>,
     userId: string,
-    body: UpdateUserRequest,
-    accountId: string,
-    isAdministrator: boolean
-  ): Promise<boolean> {
-    const userExists = await this.userService.existsUserById(
-      userId,
-      accountId,
-      isAdministrator
-    );
+    accountId: string
+  ): Promise<void> {
+    const userExists = await this.userService.existsUserById(userId, accountId);
 
     if (!userExists) {
       throw new Error(t('user_not_found'));
     }
+  }
 
+  private async validateUserExists(
+    t: TFunction<'translation', undefined>,
+    userId: string
+  ): Promise<void> {
+    const userAccountId = await this.userService.getUserAccountId(userId);
+
+    if (!userAccountId) {
+      throw new Error(t('user_not_found'));
+    }
+  }
+
+  private async buildUpdatePromises(
+    t: TFunction<'translation', undefined>,
+    userId: string,
+    body: UpdateUserRequest,
+    accountId: string,
+    canOperateOnOthers: boolean
+  ): Promise<Promise<void>[]> {
     const updatePromises: Promise<void>[] = [];
 
     if (this.hasUserFields(body)) {
       await this.validateUserFields(t, body, userId);
-      updatePromises.push(this.updateUserData(t, userId, body, accountId));
+      updatePromises.push(
+        this.updateUserData(t, userId, body, accountId, canOperateOnOthers)
+      );
     }
 
     if (this.hasUserInfoFields(body)) {
       await this.validateUserInfoFields(t, body, userId);
-      updatePromises.push(this.updateUserInfoData(t, userId, body, accountId));
+      updatePromises.push(
+        this.updateUserInfoData(t, userId, body, accountId, canOperateOnOthers)
+      );
     }
 
     if (this.hasUserDocumentFields(body)) {
@@ -671,9 +784,35 @@ export class UserUpdaterUseCase {
 
     if (this.hasPermissionRoleIdField(body)) {
       updatePromises.push(
-        this.updateUserRoleData(t, userId, body, accountId, isAdministrator)
+        this.updateUserRoleData(t, userId, body, accountId, canOperateOnOthers)
       );
     }
+
+    return updatePromises;
+  }
+
+  async execute(
+    t: TFunction<'translation', undefined>,
+    userId: string,
+    body: UpdateUserRequest,
+    accountId: string,
+    canOperateOnOthers: boolean
+  ): Promise<boolean> {
+    if (!canOperateOnOthers) {
+      await this.validateUserExistsInAccount(t, userId, accountId);
+    }
+
+    if (canOperateOnOthers) {
+      await this.validateUserExists(t, userId);
+    }
+
+    const updatePromises = await this.buildUpdatePromises(
+      t,
+      userId,
+      body,
+      accountId,
+      canOperateOnOthers
+    );
 
     await Promise.all(updatePromises);
 

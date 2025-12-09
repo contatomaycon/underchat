@@ -13,13 +13,8 @@ export class SectorViewerRepository {
 
   viewSectorById = async (
     sectorId: string,
-    accountId: string,
-    isAdministrator: boolean
+    accountId: string
   ): Promise<ViewSectorResponse | null> => {
-    const accountCondition = isAdministrator
-      ? undefined
-      : eq(sector.account_id, accountId);
-
     const result = await this.db
       .select({
         sector_id: sector.sector_id,
@@ -43,7 +38,7 @@ export class SectorViewerRepository {
       )
       .where(
         and(
-          accountCondition,
+          eq(sector.account_id, accountId),
           eq(sector.sector_id, sectorId),
           isNull(sector.deleted_at)
         )
@@ -60,8 +55,8 @@ export class SectorViewerRepository {
       sector_id: item.sector_id,
       name: item.name,
       color: item.color,
-      account: isAdministrator ? item.account : undefined,
-      sector_status: isAdministrator ? item.sector_status : undefined,
+      account: item.account,
+      sector_status: item.sector_status,
       created_at: item.created_at,
     };
   };

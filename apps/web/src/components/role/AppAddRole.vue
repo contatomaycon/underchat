@@ -4,7 +4,6 @@ import { CreateRoleRequest } from '@core/schema/role/createRole/request.schema';
 import { VForm } from 'vuetify/components/VForm';
 
 const roleStore = useRolesStore();
-const { t } = useI18n();
 
 const props = defineProps<{
   modelValue: boolean;
@@ -74,17 +73,17 @@ onMounted(resetForm);
         <VCardText>
           <VRow>
             <VCol cols="12" sm="12" md="12">
+              <VLabel class="text-body-2 mb-1">{{ $t('name') }}:</VLabel>
               <AppTextField
                 v-model="name"
-                :label="$t('name') + ':'"
                 :placeholder="$t('name')"
                 :rules="[requiredValidator(name, $t('name_required'))]"
               />
             </VCol>
             <VCol cols="12" sm="12" md="12">
+              <VLabel class="text-body-2 mb-1">{{ $t('description') }}:</VLabel>
               <AppTextarea
                 v-model="description"
-                :label="$t('description') + ':'"
                 :placeholder="$t('description')"
                 rows="3"
               />

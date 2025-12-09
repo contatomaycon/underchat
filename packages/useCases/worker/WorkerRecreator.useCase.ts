@@ -9,6 +9,7 @@ import { EWorkerAction } from '@core/common/enums/EWorkerAction';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { KafkaBalanceQueueService } from '@core/services/kafkaBalanceQueue.service';
 import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
+import { IUpdateWorker } from '@core/common/interfaces/IUpdateWorker';
 
 @injectable()
 export class WorkerRecreatorUseCase {
@@ -49,14 +50,12 @@ export class WorkerRecreatorUseCase {
   async execute(
     t: TFunction<'translation', undefined>,
     accountId: string,
-    isAdministrator: boolean,
     workerId: string
   ): Promise<boolean> {
     await this.validate(t, accountId);
 
     const viewWorkerBalancer = await this.workerService.viewWorkerBalancer(
       accountId,
-      isAdministrator,
       workerId
     );
 
@@ -69,7 +68,6 @@ export class WorkerRecreatorUseCase {
       worker_id: workerId,
       server_id: viewWorkerBalancer.server_id,
       account_id: viewWorkerBalancer.account_id,
-      is_administrator: isAdministrator,
       worker_status_id: EWorkerStatus.recreating,
     };
 
@@ -80,10 +78,11 @@ export class WorkerRecreatorUseCase {
 
     await this.onWorkerRecreated(t, inputRecreate);
 
-    return this.workerService.updateWorkerById(
-      isAdministrator,
-      accountId,
-      inputRecreate
-    );
+    const inputUpdate: IUpdateWorker = {
+      worker_id: workerId,
+      worker_status_id: EWorkerStatus.recreating,
+    };
+
+    return this.workerService.updateWorkerById(accountId, inputUpdate);
   }
 }

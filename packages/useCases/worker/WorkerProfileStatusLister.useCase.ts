@@ -14,11 +14,9 @@ export class WorkerProfileStatusListerUseCase {
   async execute(
     t: TFunction<'translation', undefined>,
     accountId: string,
-    isAdministrator: boolean,
     workerId: string
   ): Promise<ListProfileStatusResponse> {
     const existsWorkerById = await this.workerService.existsWorkerById(
-      isAdministrator,
       accountId,
       workerId
     );

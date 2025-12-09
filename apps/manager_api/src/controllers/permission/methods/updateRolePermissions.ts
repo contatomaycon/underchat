@@ -27,7 +27,6 @@ export const updateRolePermissions = async (
       request.params.permission_role_id,
       request.body.groups,
       tokenJwtData.account_id,
-      tokenJwtData.is_administrator,
       tokenJwtData.permission_role_id
     );
 

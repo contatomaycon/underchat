@@ -19,7 +19,6 @@ export const listRole = async (
       t,
       request.query,
       tokenJwtData.account_id,
-      tokenJwtData.is_administrator,
       tokenJwtData.permission_role_id
     );
 

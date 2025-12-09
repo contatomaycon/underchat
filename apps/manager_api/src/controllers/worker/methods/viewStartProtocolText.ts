@@ -20,7 +20,6 @@ export const viewStartProtocolText = async (
     const response = await viewStartProtocolTextUseCase.execute(
       t,
       tokenJwtData.account_id,
-      tokenJwtData.is_administrator,
       request.params.worker_id
     );
 

@@ -30,7 +30,6 @@ export class RoleService {
     currentPage: number,
     query: ListRoleRequest,
     accountId: string,
-    isAdministrator: boolean,
     currentUserPermissionRoleId: string
   ): Promise<[ListRoleResponse[], number]> => {
     const [result, total] = await Promise.all([
@@ -39,13 +38,11 @@ export class RoleService {
         currentPage,
         query,
         accountId,
-        isAdministrator,
         currentUserPermissionRoleId
       ),
       this.roleListerRepository.listRolesTotal(
         query,
         accountId,
-        isAdministrator,
         currentUserPermissionRoleId
       ),
     ]);
@@ -55,14 +52,9 @@ export class RoleService {
 
   existsRoleById = async (
     roleId: string,
-    accountId: string,
-    isAdministrator: boolean
+    accountId: string
   ): Promise<boolean> => {
-    return this.roleViewerExistsRepository.existsRoleById(
-      roleId,
-      accountId,
-      isAdministrator
-    );
+    return this.roleViewerExistsRepository.existsRoleById(roleId, accountId);
   };
 
   existsRoleByName = async (
@@ -77,26 +69,16 @@ export class RoleService {
 
   viewRoleById = async (
     roleId: string,
-    accountId: string,
-    isAdministrator: boolean
+    accountId: string
   ): Promise<ViewRoleResponse | null> => {
-    return this.roleViewerRepository.viewRoleById(
-      roleId,
-      accountId,
-      isAdministrator
-    );
+    return this.roleViewerRepository.viewRoleById(roleId, accountId);
   };
 
   deleteRoleById = async (
     roleId: string,
-    accountId: string,
-    isAdministrator: boolean
+    accountId: string
   ): Promise<boolean> => {
-    return this.roleDeleterRepository.deleteRoleById(
-      roleId,
-      accountId,
-      isAdministrator
-    );
+    return this.roleDeleterRepository.deleteRoleById(roleId, accountId);
   };
 
   updateRoleById = async (

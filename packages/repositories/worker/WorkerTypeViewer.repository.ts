@@ -13,13 +13,8 @@ export class WorkerTypeViewerRepository {
 
   viewWorkerType = async (
     accountId: string,
-    isAdministrator: boolean,
     workerId: string
   ): Promise<IViewWorkerType | null> => {
-    const accountCondition = isAdministrator
-      ? undefined
-      : eq(worker.account_id, accountId);
-
     const result = await this.db
       .select({
         worker_id: worker.worker_id,
@@ -28,7 +23,7 @@ export class WorkerTypeViewerRepository {
       .from(worker)
       .where(
         and(
-          accountCondition,
+          eq(worker.account_id, accountId),
           eq(worker.worker_id, workerId),
           isNull(worker.deleted_at)
         )

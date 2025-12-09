@@ -20,7 +20,6 @@ export const listProfileStatus = async (
     const response = await workerProfileStatusListerUseCase.execute(
       t,
       tokenJwtData.account_id,
-      tokenJwtData.is_administrator,
       worker_id
     );
 

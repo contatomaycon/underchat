@@ -19,13 +19,8 @@ export class WorkerViewerRepository {
 
   viewWorker = async (
     accountId: string,
-    isAdministrator: boolean,
     workerId: string
   ): Promise<ViewWorkerResponse | null> => {
-    const accountCondition = isAdministrator
-      ? undefined
-      : eq(account.account_id, accountId);
-
     const result = await this.db
       .select({
         id: worker.worker_id,
@@ -64,7 +59,7 @@ export class WorkerViewerRepository {
       .innerJoin(account, eq(account.account_id, worker.account_id))
       .where(
         and(
-          accountCondition,
+          eq(account.account_id, accountId),
           eq(worker.worker_id, workerId),
           isNull(worker.deleted_at)
         )
@@ -83,8 +78,8 @@ export class WorkerViewerRepository {
       number: item.number,
       status: item.status,
       type: item.type,
-      server: isAdministrator ? item.server : undefined,
-      account: isAdministrator ? item.account : undefined,
+      server: item.server,
+      account: item.account,
       connection_date: item.connection_date,
       created_at: item.created_at,
       updated_at: item.updated_at,

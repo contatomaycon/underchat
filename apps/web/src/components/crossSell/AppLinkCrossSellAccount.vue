@@ -282,12 +282,14 @@ onMounted(async () => {
           <VLabel class="mb-3">{{ $t('add_new_account') }}</VLabel>
           <VRow>
             <VCol cols="12">
-              <AppAutocomplete
+              <VLabel class="text-body-2 mb-1">{{ $t('account') }}:</VLabel>
+              <AppSelectSearch
                 v-model="account_id"
                 :items="accountsOptions"
-                :label="$t('account') + ':'"
                 :placeholder="$t('select_account')"
-                :rules="[requiredValidator(account_id, $t('account_required'))]"
+                :clearable="true"
+                item-value="value"
+                item-title="title"
               />
             </VCol>
           </VRow>

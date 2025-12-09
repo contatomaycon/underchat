@@ -16,14 +16,13 @@ export const editAccount = async (
   reply: FastifyReply
 ) => {
   const accountUpdaterUseCase = container.resolve(AccountUpdaterUseCase);
-  const { t, tokenJwtData } = request;
+  const { t } = request;
 
   try {
     const response = await accountUpdaterUseCase.execute(
       t,
       request.params.account_id,
-      request.body,
-      tokenJwtData.is_administrator
+      request.body
     );
 
     if (response) {

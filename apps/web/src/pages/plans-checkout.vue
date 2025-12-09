@@ -2499,6 +2499,10 @@ onMounted(async () => {
                         {{ $t('select_credit_card') }}
                       </h5>
 
+                      <VLabel class="text-body-2 mb-1"
+                        >{{ $t('select_credit_card') }}:</VLabel
+                      >
+
                       <VProgressCircular
                         v-if="loadingCards"
                         indeterminate
@@ -2511,7 +2515,6 @@ onMounted(async () => {
                         v-else-if="userCards.length > 0"
                         v-model="selectedCardId"
                         :items="cardSelectItems"
-                        :label="$t('select_credit_card')"
                         variant="outlined"
                         density="comfortable"
                         item-title="title"
@@ -2595,9 +2598,9 @@ onMounted(async () => {
 
                           <!-- Parcelamento (apenas para plano anual) -->
                           <div v-if="billingPeriod === 'annual'" class="mb-4">
-                            <VLabel class="mb-2">
-                              {{ $t('installments') }}
-                            </VLabel>
+                            <VLabel class="text-body-2 mb-1"
+                              >{{ $t('select_installments') }}:</VLabel
+                            >
                             <VSelect
                               v-model="installments"
                               :items="
@@ -2606,7 +2609,6 @@ onMounted(async () => {
                                   value: i + 1,
                                 }))
                               "
-                              :label="$t('select_installments')"
                               variant="outlined"
                               density="compact"
                               item-title="title"
@@ -2772,9 +2774,9 @@ onMounted(async () => {
 
                           <!-- Parcelamento (apenas para plano anual) -->
                           <div v-if="billingPeriod === 'annual'" class="mb-4">
-                            <VLabel class="mb-2">
-                              {{ $t('installments') }}
-                            </VLabel>
+                            <VLabel class="text-body-2 mb-1"
+                              >{{ $t('select_installments') }}:</VLabel
+                            >
                             <VSelect
                               v-model="installments"
                               :items="
@@ -2783,7 +2785,6 @@ onMounted(async () => {
                                   value: i + 1,
                                 }))
                               "
-                              :label="$t('select_installments')"
                               variant="outlined"
                               density="compact"
                               item-title="title"
@@ -2884,9 +2885,11 @@ onMounted(async () => {
                           <VForm>
                             <VRow>
                               <VCol cols="12">
+                                <VLabel class="text-body-2 mb-1"
+                                  >{{ $t('card_number') }}:</VLabel
+                                >
                                 <VTextField
                                   v-model="newCard.number"
-                                  :label="$t('card_number')"
                                   placeholder="0000 0000 0000 0000"
                                   @input="onCardNumberInput"
                                   :maxlength="19"
@@ -2911,21 +2914,25 @@ onMounted(async () => {
                                 </VTextField>
                               </VCol>
                               <VCol cols="12">
+                                <VLabel class="text-body-2 mb-1"
+                                  >{{ $t('cardholder_name') }}:</VLabel
+                                >
                                 <VTextField
                                   v-model="newCard.holderName"
-                                  :label="$t('cardholder_name')"
                                   placeholder="Nome como está no cartão"
                                   :maxlength="100"
                                 />
                               </VCol>
                               <VCol cols="6">
+                                <VLabel class="text-body-2 mb-1"
+                                  >{{ $t('expiry_date') }}:</VLabel
+                                >
                                 <VTextField
                                   :model-value="
                                     newCard.expiryMonth && newCard.expiryYear
                                       ? `${newCard.expiryMonth}/${newCard.expiryYear}`
                                       : ''
                                   "
-                                  :label="$t('expiry_date')"
                                   placeholder="MM/AA"
                                   @input="onExpiryInput"
                                   :maxlength="5"
@@ -2934,9 +2941,11 @@ onMounted(async () => {
                                 />
                               </VCol>
                               <VCol cols="6">
+                                <VLabel class="text-body-2 mb-1"
+                                  >{{ $t('cvv') }}:</VLabel
+                                >
                                 <VTextField
                                   v-model="newCard.cvv"
-                                  :label="$t('cvv')"
                                   placeholder="000"
                                   :type="showCvv ? 'text' : 'password'"
                                   :maxlength="4"

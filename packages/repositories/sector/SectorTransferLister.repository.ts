@@ -12,13 +12,8 @@ export class SectorTransferListerRepository {
   ) {}
 
   listSectorsForTransfer = async (
-    accountId: string,
-    isAdministrator: boolean
+    accountId: string
   ): Promise<TransferSectorResponse[]> => {
-    const accountCondition = isAdministrator
-      ? undefined
-      : eq(sector.account_id, accountId);
-
     const result = await this.db
       .select({
         sector_id: sector.sector_id,
@@ -26,7 +21,7 @@ export class SectorTransferListerRepository {
         color: sector.color,
       })
       .from(sector)
-      .where(and(accountCondition, isNull(sector.deleted_at)))
+      .where(and(eq(sector.account_id, accountId), isNull(sector.deleted_at)))
       .orderBy(asc(sector.name))
       .execute();
 

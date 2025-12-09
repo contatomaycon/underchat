@@ -14,12 +14,10 @@ export class UpdateTransferProtocolTextUseCase {
   async execute(
     t: TFunction<'translation', undefined>,
     accountId: string,
-    isAdministrator: boolean,
     workerId: string,
     body: UpdateTransferProtocolTextRequest
   ): Promise<{ generate_protocol_at_transfer: string | null }> {
     const existsWorkerById = await this.workerService.existsWorkerById(
-      isAdministrator,
       accountId,
       workerId
     );

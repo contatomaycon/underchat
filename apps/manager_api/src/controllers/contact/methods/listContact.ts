@@ -16,9 +16,7 @@ export const listContact = async (
 
   try {
     const response = await contactListerUseCase.execute(
-      t,
       request.query,
-      tokenJwtData.is_administrator,
       tokenJwtData.account_id
     );
 

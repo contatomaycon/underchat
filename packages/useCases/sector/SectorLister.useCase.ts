@@ -16,8 +16,7 @@ export class SectorListerUseCase {
   async execute(
     t: TFunction<'translation', undefined>,
     query: ListSectorRequest,
-    accountId: string,
-    isAdministrator: boolean
+    accountId: string
   ): Promise<ListSectorFinalResponse> {
     const perPage = query.per_page ?? 10;
     const currentPage = query.current_page ?? 1;
@@ -32,8 +31,7 @@ export class SectorListerUseCase {
       perPage,
       currentPage,
       query,
-      accountId,
-      isAdministrator
+      accountId
     );
 
     const pagings = setPaginationData(

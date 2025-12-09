@@ -13,9 +13,10 @@ import { ListUserResponse } from '@core/schema/user/listUser/response.schema';
 import { EUserStatus } from '@core/common/enums/EUserStatus';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import { resolveAvatarBadgeVariant } from '@webcore/utils/formatters';
-import { getAdministrator, getUser } from '@/@webcore/localStorage/user';
+import { getUser } from '@/@webcore/localStorage/user';
 import { can } from '@/@layouts/plugins/casl';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
+import { useAccountStore } from '@/@webcore/stores/account';
 
 definePage({
   meta: {
@@ -59,18 +60,17 @@ const permissionsAssignRole = [
 const { t } = useI18n();
 const { global } = useTheme();
 const userStore = useUsersStore();
+const accountStore = useAccountStore();
 useSnackbarCleanup(userStore);
 
-const isAdministrator = computed(() => getAdministrator());
 const currentUser = computed(() => getUser());
+const hasFullAccess = computed(() =>
+  can([EGeneralPermissions.full_access, EGeneralPermissions.full_access_group])
+);
 
 const canAssignRole = (userId: string) => {
   if (!can(permissionsAssignRole)) {
     return false;
-  }
-
-  if (!isAdministrator.value) {
-    return true;
   }
 
   return currentUser.value?.user_id !== userId;
@@ -91,6 +91,40 @@ const itemsStatus = ref([
   { id: EUserStatus.inactive, text: t('inactive') },
   { id: EUserStatus.blocked, text: t('blocked') },
 ]);
+
+const itemsAccount = ref<Array<{ id: string; text: string }>>([]);
+const accountsLoading = ref(false);
+
+const loadAccounts = async () => {
+  if (!hasFullAccess.value || itemsAccount.value.length > 0) return;
+
+  accountsLoading.value = true;
+  try {
+    const accounts = await accountStore.listAllAccounts();
+    itemsAccount.value = [
+      { id: '', text: t('all') },
+      ...accounts.map((acc) => ({
+        id: acc.account_id,
+        text: acc.name,
+      })),
+    ];
+  } catch (error) {
+    console.error('Erro ao carregar accounts:', error);
+  } finally {
+    accountsLoading.value = false;
+  }
+};
+
+const handleAccountIdChange = (value: string | number | boolean | null) => {
+  if (value === null || value === undefined) {
+    options.value.account_id = undefined;
+  } else if (value === '' || value === 0) {
+    options.value.account_id = 'all';
+  } else {
+    options.value.account_id = String(value);
+  }
+  options.value.page = 1;
+};
 
 const isDialogDeleterShow = ref(false);
 const userToDelete = ref<string | null>(null);
@@ -130,6 +164,7 @@ const options = ref({
   itemsPerPage: 10,
   sortBy: [] as SortRequest[],
   user_status: null as string | null,
+  account_id: undefined as string | null | undefined,
   search: null as string | null,
 });
 
@@ -138,13 +173,21 @@ const debouncedSearch = refDebounced(
   500
 );
 
-const query = computed(() => ({
-  page: options.value.page,
-  per_page: options.value.itemsPerPage,
-  sort_by: options.value.sortBy,
-  user_status: options.value.user_status,
-  search: debouncedSearch.value,
-}));
+const query = computed(() => {
+  const q: any = {
+    page: options.value.page,
+    per_page: options.value.itemsPerPage,
+    sort_by: options.value.sortBy,
+    user_status: options.value.user_status,
+    search: debouncedSearch.value,
+  };
+
+  if (hasFullAccess.value && options.value.account_id !== undefined) {
+    q.account_id = options.value.account_id;
+  }
+
+  return q;
+});
 
 const handleTableChange = (o: {
   page: number;
@@ -171,6 +214,18 @@ const handleDelete = async () => {
   }
 
   userToDelete.value = null;
+};
+
+const handleUserCreated = async () => {
+  await userStore.listUsers(query.value);
+};
+
+const handleUserUpdated = async () => {
+  await userStore.listUsers(query.value);
+};
+
+const handleRoleAssigned = async () => {
+  await userStore.listUsers(query.value);
 };
 
 const openEditDialog = (id: string) => {
@@ -222,6 +277,16 @@ const downloadPhoto = async (url: string, filename?: string | null) => {
 };
 
 watch(
+  hasFullAccess,
+  async (hasAccess) => {
+    if (hasAccess) {
+      await loadAccounts();
+    }
+  },
+  { immediate: true }
+);
+
+watch(
   query,
   async (q) => {
     await userStore.listUsers(q);
@@ -256,18 +321,35 @@ watch(
             </VBtn>
           </div>
           <div class="d-flex align-center flex-wrap gap-4">
-            <div class="status-filter">
-              <VLabel>{{ $t('status') }}:</VLabel>
-              <AppAutocomplete
-                item-title="text"
+            <div v-if="hasFullAccess" class="status-filter">
+              <VLabel class="text-body-2 mb-1">{{ $t('account') }}:</VLabel>
+              <AppSelectSearch
+                :model-value="
+                  options.account_id === 'all' ? '' : options.account_id || null
+                "
+                @update:modelValue="handleAccountIdChange"
+                :items="itemsAccount"
+                :placeholder="$t('select_account')"
+                :loading="accountsLoading"
+                :clearable="true"
                 item-value="id"
-                :items="itemsStatus"
+                item-title="text"
+              />
+            </div>
+            <div class="status-filter">
+              <VLabel class="text-body-2 mb-1">{{ $t('status') }}:</VLabel>
+              <AppSelectSearch
                 v-model="options.user_status"
+                :items="itemsStatus"
                 :placeholder="$t('select_state')"
+                :clearable="true"
+                item-value="id"
+                item-title="text"
+                @update:modelValue="options.page = 1"
               />
             </div>
             <div class="invoice-list-filter">
-              <VLabel>{{ $t('search') }}:</VLabel>
+              <VLabel class="text-body-2 mb-1">{{ $t('search') }}:</VLabel>
               <AppTextField
                 :placeholder="$t('search') + '...'"
                 append-inner-icon="tabler-search"
@@ -450,14 +532,20 @@ watch(
         v-if="isDialogEditUserShow"
         v-model="isDialogEditUserShow"
         :user-id="userToEdit"
+        @user-updated="handleUserUpdated"
       />
 
-      <AppAddUser v-if="isAddUserVisible" v-model="isAddUserVisible" />
+      <AppAddUser
+        v-if="isAddUserVisible"
+        v-model="isAddUserVisible"
+        @user-created="handleUserCreated"
+      />
 
       <AppAssignUserRole
         v-if="isAssignRoleDialogShow"
         v-model="isAssignRoleDialogShow"
         :user-id="userToAssignRole"
+        @role-assigned="handleRoleAssigned"
       />
     </VCard>
 

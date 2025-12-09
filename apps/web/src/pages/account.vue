@@ -5,7 +5,6 @@ import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { useI18n } from 'vue-i18n';
 import { formatDateTime } from '@core/common/functions/formatDateTime';
 import { SortRequest } from '@core/schema/common/sortRequestSchema';
-import { getAdministrator } from '@/@webcore/localStorage/user';
 import { DataTableHeader } from 'vuetify';
 import { EAccountPermissions } from '@core/common/enums/EPermissions/account';
 import { useAccountStore } from '@/@webcore/stores/account';
@@ -50,7 +49,6 @@ const permissionsCreate = [
 const { t } = useI18n();
 const accountStore = useAccountStore();
 useSnackbarCleanup(accountStore);
-const isAdministrator = getAdministrator();
 
 const itemsPerPage = ref([
   { value: 5, title: '5' },
@@ -226,17 +224,19 @@ watch(
           </div>
           <div class="d-flex align-center flex-wrap gap-4">
             <div class="status-filter">
-              <VLabel>{{ $t('status') }}:</VLabel>
-              <AppAutocomplete
-                item-title="text"
-                item-value="id"
-                :items="itemsStatus"
+              <VLabel class="text-body-2 mb-1">{{ $t('status') }}:</VLabel>
+              <AppSelectSearch
                 v-model="options.account_status"
+                :items="itemsStatus"
                 :placeholder="$t('select_state')"
+                :clearable="true"
+                item-value="id"
+                item-title="text"
+                @update:modelValue="options.page = 1"
               />
             </div>
             <div class="invoice-list-filter">
-              <VLabel>{{ $t('search') }}:</VLabel>
+              <VLabel class="text-body-2 mb-1">{{ $t('search') }}:</VLabel>
               <AppTextField
                 :placeholder="$t('search') + '...'"
                 append-inner-icon="tabler-search"
@@ -369,11 +369,7 @@ watch(
                 @click="openSubscriptionsDialog(item.account_id)"
             /></IconBtn>
 
-            <IconBtn
-              v-if="
-                $canPermission(permissionsEdit) &&
-                (item?.account_id || isAdministrator)
-              "
+            <IconBtn v-if="$canPermission(permissionsEdit) && item?.account_id"
               ><VTooltip
                 location="top"
                 transition="scale-transition"
@@ -385,11 +381,7 @@ watch(
                 @click="openEditDialog(item.account_id)"
             /></IconBtn>
 
-            <IconBtn
-              v-if="
-                $canPermission(permissionsDelete) &&
-                (item.account_id || isAdministrator)
-              "
+            <IconBtn v-if="$canPermission(permissionsDelete) && item.account_id"
               ><VTooltip
                 location="top"
                 transition="scale-transition"

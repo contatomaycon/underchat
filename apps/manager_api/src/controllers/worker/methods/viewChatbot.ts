@@ -18,7 +18,6 @@ export const viewChatbot = async (
     const response = await viewChatbotUseCase.execute(
       t,
       tokenJwtData.account_id,
-      tokenJwtData.is_administrator,
       request.params.worker_id
     );
 

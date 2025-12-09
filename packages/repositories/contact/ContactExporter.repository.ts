@@ -13,15 +13,10 @@ export class ContactExporterRepository {
   ) {}
 
   exportContacts = async (
-    accountId: string,
-    isAdministrator: boolean
+    accountId: string
   ): Promise<ExportContactResponse[]> => {
-    const accountCondition = isAdministrator
-      ? undefined
-      : eq(contact.account_id, accountId);
-
     const whereConditions = [
-      accountCondition,
+      eq(contact.account_id, accountId),
       isNull(contact.deleted_at),
     ].filter(isDefinedFilter);
 

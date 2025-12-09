@@ -11,12 +11,8 @@ export class ContactExporterUseCase {
 
   async execute(
     t: TFunction<'translation', undefined>,
-    accountId: string,
-    isAdministrator: boolean
+    accountId: string
   ): Promise<ExportContactResponse[]> {
-    return this.contactExporterRepository.exportContacts(
-      accountId,
-      isAdministrator
-    );
+    return this.contactExporterRepository.exportContacts(accountId);
   }
 }

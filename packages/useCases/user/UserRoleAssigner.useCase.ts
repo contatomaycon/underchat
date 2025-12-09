@@ -11,39 +11,84 @@ export class UserRoleAssignerUseCase {
     private readonly permissionService: PermissionService
   ) {}
 
-  async execute(
+  private async validateUserExistsInAccount(
     t: TFunction<'translation', undefined>,
     userId: string,
-    accountId: string,
-    isAdministrator: boolean,
-    input: AssignUserRoleRequest
-  ): Promise<boolean> {
+    accountId: string
+  ): Promise<void> {
+    const existsUser = await this.userService.existsUserById(userId, accountId);
+
+    if (!existsUser) {
+      throw new Error(t('user_not_found'));
+    }
+  }
+
+  private async validateUserExists(
+    t: TFunction<'translation', undefined>,
+    userId: string
+  ): Promise<string> {
     const userAccountId = await this.userService.getUserAccountId(userId);
 
     if (!userAccountId) {
       throw new Error(t('user_not_found'));
     }
 
-    const existsUser = await this.userService.existsUserById(
-      userId,
-      accountId,
-      isAdministrator
-    );
+    return userAccountId;
+  }
 
-    if (!existsUser) {
-      throw new Error(t('user_not_found'));
+  private async validatePermissionRoleExists(
+    t: TFunction<'translation', undefined>,
+    permissionRoleId: string,
+    accountId: string,
+    canOperateOnOthers: boolean
+  ): Promise<void> {
+    if (!canOperateOnOthers) {
+      const existsPermissionRole =
+        await this.permissionService.existsPermissionRoleById(
+          accountId,
+          permissionRoleId
+        );
+
+      if (!existsPermissionRole) {
+        throw new Error(t('permission_role_not_found'));
+      }
+      return;
     }
 
-    const existsPermissionRole =
-      await this.permissionService.existsPermissionRoleById(
-        userAccountId,
-        input.permission_role_id,
-        isAdministrator
-      );
+    const permissionRoleAccountId =
+      await this.permissionService.getPermissionRoleAccountId(permissionRoleId);
 
-    if (!existsPermissionRole) {
+    if (!permissionRoleAccountId) {
       throw new Error(t('permission_role_not_found'));
     }
+  }
+
+  async execute(
+    t: TFunction<'translation', undefined>,
+    userId: string,
+    accountId: string,
+    input: AssignUserRoleRequest,
+    canOperateOnOthers: boolean
+  ): Promise<boolean> {
+    if (!canOperateOnOthers) {
+      await this.validateUserExistsInAccount(t, userId, accountId);
+    }
+
+    let userAccountId: string | null = null;
+    if (canOperateOnOthers) {
+      userAccountId = await this.validateUserExists(t, userId);
+    }
+
+    const accountIdForValidation = canOperateOnOthers
+      ? (userAccountId ?? accountId)
+      : accountId;
+
+    await this.validatePermissionRoleExists(
+      t,
+      input.permission_role_id,
+      accountIdForValidation,
+      canOperateOnOthers
+    );
 
     const assigned = await this.userService.assignUserRole(
       userId,

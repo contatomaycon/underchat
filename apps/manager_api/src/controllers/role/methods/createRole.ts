@@ -19,8 +19,7 @@ export const createRole = async (
       t,
       request.body.name,
       tokenJwtData.account_id,
-      request.body.description,
-      tokenJwtData.is_administrator
+      request.body.description
     );
 
     if (response) {

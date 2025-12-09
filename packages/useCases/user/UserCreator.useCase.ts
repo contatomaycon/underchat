@@ -20,8 +20,7 @@ export class UserCreatorUseCase {
   async validate(
     t: TFunction<'translation', undefined>,
     input: CreateUserRequest,
-    accountId: string,
-    isAdministrator: boolean
+    accountId: string
   ): Promise<void> {
     const accountExists =
       await this.accountService.existsAccountById(accountId);
@@ -76,10 +75,6 @@ export class UserCreatorUseCase {
       throw new Error(errorMessages.join(', '));
     }
 
-    if (isAdministrator) {
-      return;
-    }
-
     const [viewAccountQuantityProduct, totalUserByAccountId] =
       await Promise.all([
         this.accountService.viewAccountQuantityProduct(
@@ -101,10 +96,9 @@ export class UserCreatorUseCase {
   async execute(
     t: TFunction<'translation', undefined>,
     input: CreateUserRequest,
-    accountId: string,
-    isAdministrator: boolean
+    accountId: string
   ): Promise<boolean> {
-    await this.validate(t, input, accountId, isAdministrator);
+    await this.validate(t, input, accountId);
 
     let photoUrl: string | null = null;
 

@@ -44,7 +44,6 @@ export class ContactService {
     perPage: number,
     currentPage: number,
     query: ListContactRequest,
-    isAdministrator: boolean,
     accountId: string
   ): Promise<[ListContactResponse[], number]> => {
     const searchHashes = query.search
@@ -56,13 +55,11 @@ export class ContactService {
         perPage,
         currentPage,
         query,
-        isAdministrator,
         accountId,
         searchHashes
       ),
       this.contactListerRepository.listContactTotal(
         query,
-        isAdministrator,
         accountId,
         searchHashes
       ),

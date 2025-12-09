@@ -18,8 +18,7 @@ export const deletePhoto = async (
     const response = await userPhotoDeleterUseCase.execute(
       t,
       request.params.user_id,
-      tokenJwtData.account_id,
-      tokenJwtData.is_administrator
+      tokenJwtData.account_id
     );
 
     return sendResponse(reply, {

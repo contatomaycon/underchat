@@ -67,6 +67,7 @@ export const useUsersStore = defineStore('users', {
               sort_by: input.sort_by,
               search: input.search,
               user_status: input.user_status,
+              account_id: input.account_id,
             }
           : undefined;
 

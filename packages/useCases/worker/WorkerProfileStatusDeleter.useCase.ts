@@ -15,8 +15,7 @@ export class WorkerProfileStatusDeleterUseCase {
   async execute(
     t: TFunction<'translation', undefined>,
     workerProfileStatusId: string,
-    accountId: string,
-    isAdministrator: boolean
+    accountId: string
   ): Promise<boolean> {
     const profileStatus =
       await this.workerProfileStatusViewerRepository.viewWorkerProfileStatusById(
@@ -28,7 +27,6 @@ export class WorkerProfileStatusDeleterUseCase {
     }
 
     const existsWorkerById = await this.workerService.existsWorkerById(
-      isAdministrator,
       accountId,
       profileStatus.worker_id
     );

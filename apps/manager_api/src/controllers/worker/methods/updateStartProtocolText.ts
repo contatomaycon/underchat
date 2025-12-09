@@ -24,7 +24,6 @@ export const updateStartProtocolText = async (
     const response = await updateStartProtocolTextUseCase.execute(
       t,
       tokenJwtData.account_id,
-      tokenJwtData.is_administrator,
       request.params.worker_id,
       request.body
     );

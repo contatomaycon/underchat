@@ -18,7 +18,6 @@ export const deleteWorker = async (
     const response = await workerDeleterUseCase.execute(
       t,
       tokenJwtData.account_id,
-      tokenJwtData.is_administrator,
       request.params.worker_id
     );
 

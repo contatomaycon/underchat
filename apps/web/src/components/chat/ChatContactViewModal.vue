@@ -161,35 +161,26 @@ watch(
         </VRow>
         <VRow>
           <VCol cols="12" md="6">
-            <AppTextField
-              :model-value="contact.name"
-              :label="$t('name') + ':'"
-              readonly
-            />
+            <VLabel class="text-body-2 mb-1">{{ $t('name') }}:</VLabel>
+            <AppTextField :model-value="contact.name" readonly />
           </VCol>
 
           <VCol cols="12" md="6">
-            <AppTextField
-              :model-value="contact.last_name || ''"
-              :label="$t('last_name') + ':'"
-              readonly
-            />
+            <VLabel class="text-body-2 mb-1">{{ $t('last_name') }}:</VLabel>
+            <AppTextField :model-value="contact.last_name || ''" readonly />
           </VCol>
         </VRow>
         <VRow>
           <VCol cols="12" md="6">
-            <AppTextField
-              :model-value="contact.nickname || ''"
-              :label="$t('nickname') + ':'"
-              readonly
-            />
+            <VLabel class="text-body-2 mb-1">{{ $t('nickname') }}:</VLabel>
+            <AppTextField :model-value="contact.nickname || ''" readonly />
           </VCol>
 
           <VCol cols="12" md="6">
+            <VLabel class="text-body-2 mb-1">{{ $t('email') }}:</VLabel>
             <AppTextField
               :model-value="viewContactEmailFormatted"
               type="email"
-              :label="$t('email') + ':'"
               readonly
             >
               <template #append-inner>
@@ -205,18 +196,15 @@ watch(
         </VRow>
         <VRow>
           <VCol cols="12" md="6">
-            <AppTextField
-              :model-value="contact.phone_ddi || ''"
-              :label="$t('phone_ddi') + ':'"
-              readonly
-            />
+            <VLabel class="text-body-2 mb-1">{{ $t('phone_ddi') }}:</VLabel>
+            <AppTextField :model-value="contact.phone_ddi || ''" readonly />
           </VCol>
 
           <VCol cols="12" md="6">
+            <VLabel class="text-body-2 mb-1">{{ $t('phone') }}:</VLabel>
             <AppTextField
               :model-value="viewContactPhoneFormatted"
               type="tel"
-              :label="$t('phone') + ':'"
               readonly
             >
               <template #append-inner>
@@ -232,6 +220,7 @@ watch(
         </VRow>
         <VRow>
           <VCol cols="12" md="6">
+            <VLabel class="text-body-2 mb-1">{{ $t('birthday') }}:</VLabel>
             <AppTextField
               :model-value="
                 contact.birthday
@@ -240,7 +229,6 @@ watch(
                     )
                   : ''
               "
-              :label="$t('birthday') + ':'"
               readonly
             />
           </VCol>

@@ -28,8 +28,6 @@ const {
   cities,
   filteredStates,
   filteredCities,
-  stateSearchQuery,
-  citySearchQuery,
   loadStates,
   loadCities,
   clearCities,
@@ -83,25 +81,6 @@ const documentPartial = ref<string | null>(null);
 const isDocumentDecrypted = ref(false);
 const isLoadingDocument = ref(false);
 const documentHasBeenEdited = ref(false);
-
-const countrySearchQuery = ref('');
-const isCountryMenuOpen = ref(false);
-
-const filteredCountryCodes = computed(() => {
-  if (!countrySearchQuery.value) {
-    return countryCodes.value;
-  }
-  const query = countrySearchQuery.value.toLowerCase();
-  return countryCodes.value.filter((country) =>
-    country.title.toLowerCase().includes(query)
-  );
-});
-
-watch(isCountryMenuOpen, (isOpen) => {
-  if (!isOpen) {
-    countrySearchQuery.value = '';
-  }
-});
 
 const formatPhone = (value: string | null | undefined): string => {
   if (!value) return '';
@@ -407,8 +386,6 @@ const city = ref<string | null>(null);
 const state = ref<string | null>(null);
 const state_id = ref<string | null>(null);
 const city_id = ref<string | null>(null);
-const isStateMenuOpen = ref(false);
-const isCityMenuOpen = ref(false);
 const district = ref<string | null>(null);
 
 const itemsCountry = ref([{ value: ECountry.Brasil, title: t('brazil') }]);
@@ -1216,61 +1193,21 @@ watch(zip_code, () => {
         <VForm class="mt-4" ref="refFormAdditionalInfo" @submit.prevent>
           <VRow class="mb-2">
             <VCol cols="12" md="6">
-              <div>
-                <VLabel class="mb-1 text-body-2">{{ $t('phone_ddi') }}:</VLabel>
-                <VMenu v-model="isCountryMenuOpen">
-                  <template #activator="{ props: menuProps }">
-                    <VTextField
-                      v-bind="menuProps"
-                      :model-value="
-                        countryCodes.find((c) => c.value === phone_ddi)
-                          ?.title || ''
-                      "
-                      :placeholder="$t('select_phone_ddi')"
-                      variant="outlined"
-                      readonly
-                      append-inner-icon="tabler-chevron-down"
-                    />
-                  </template>
-                  <VCard>
-                    <VCardText class="pa-2">
-                      <AppTextField
-                        v-model="countrySearchQuery"
-                        :placeholder="$t('search') + '...'"
-                        prepend-inner-icon="tabler-search"
-                        density="compact"
-                        hide-details
-                        autofocus
-                        @click.stop
-                      />
-                    </VCardText>
-                    <VDivider />
-                    <VList max-height="300" style="overflow-y: auto">
-                      <VListItem
-                        v-for="(item, index) in filteredCountryCodes"
-                        :key="index"
-                        :value="item.value"
-                        @click="
-                          () => {
-                            phone_ddi = item.value;
-                            isCountryMenuOpen = false;
-                          }
-                        "
-                        :active="phone_ddi === item.value"
-                      >
-                        <VListItemTitle>{{ item.title }}</VListItemTitle>
-                      </VListItem>
-                    </VList>
-                  </VCard>
-                </VMenu>
-              </div>
+              <VLabel class="text-body-2 mb-1">{{ $t('phone_ddi') }}:</VLabel>
+              <AppSelectSearch
+                v-model="phone_ddi"
+                :items="countryCodes"
+                :placeholder="$t('select_phone_ddi')"
+                item-value="value"
+                item-title="title"
+              />
             </VCol>
 
             <VCol cols="12" md="6">
+              <VLabel class="text-body-2 mb-1">{{ $t('phone') }}:</VLabel>
               <AppTextField
                 v-model="phoneFormatted"
                 type="tel"
-                :label="$t('phone') + ':'"
                 :placeholder="$t('phone')"
                 maxlength="15"
               >
@@ -1291,26 +1228,25 @@ watch(zip_code, () => {
             </VCol>
 
             <VCol cols="12" md="6">
-              <AppTextField
-                v-model="name"
-                :label="$t('name') + ':'"
-                :placeholder="$t('name')"
-              />
+              <VLabel class="text-body-2 mb-1">{{ $t('name') }}:</VLabel>
+              <AppTextField v-model="name" :placeholder="$t('name')" />
             </VCol>
 
             <VCol cols="12" md="6">
+              <VLabel class="text-body-2 mb-1">{{ $t('last_name') }}:</VLabel>
               <AppTextField
                 v-model="last_name"
-                :label="$t('last_name') + ':'"
                 :placeholder="$t('last_name')"
               />
             </VCol>
 
             <VCol cols="12" md="6">
+              <VLabel class="text-body-2 mb-1"
+                >{{ $t('document_type') }}:</VLabel
+              >
               <AppSelect
                 :model-value="user_document_type_id"
                 :items="itemsDocuments"
-                :label="$t('document_type') + ':'"
                 :placeholder="$t('document_type')"
                 @update:model-value="
                   user_document_type_id = $event;
@@ -1323,9 +1259,9 @@ watch(zip_code, () => {
             </VCol>
 
             <VCol v-if="isCPF || isCNPJ || documentPartial" cols="12" md="6">
+              <VLabel class="text-body-2 mb-1">{{ docLabel }}:</VLabel>
               <AppTextField
                 v-model="documentFormatted"
-                :label="docLabel + ':'"
                 :placeholder="docPlaceholder"
                 :inputmode="isCPF || isCNPJ ? 'numeric' : 'text'"
                 :rules="docRules"
@@ -1346,9 +1282,9 @@ watch(zip_code, () => {
             </VCol>
 
             <VCol cols="12" md="6">
+              <VLabel class="text-body-2 mb-1">{{ $t('birth_date') }}:</VLabel>
               <AppDateTimePicker
                 v-model="birth_date"
-                :label="$t('birth_date') + ':'"
                 :placeholder="$t('birth_date')"
               />
             </VCol>
@@ -1375,8 +1311,8 @@ watch(zip_code, () => {
         <VForm class="mt-4" ref="refFormAddress" @submit.prevent>
           <VRow class="mb-2">
             <VCol cols="12" md="6">
+              <VLabel class="text-body-2 mb-1">{{ $t('country') }}:</VLabel>
               <AppSelect
-                :label="$t('country') + ':'"
                 :placeholder="$t('country')"
                 :model-value="country_id"
                 :items="itemsCountry"
@@ -1384,10 +1320,10 @@ watch(zip_code, () => {
               />
             </VCol>
             <VCol cols="12" md="6">
+              <VLabel class="text-body-2 mb-1">{{ $t('zip_code') }}:</VLabel>
               <AppTextField
                 ref="zipInputRef"
                 v-model="zip_code"
-                :label="$t('zip_code') + ':'"
                 :placeholder="$t('zip_code')"
                 :disabled="!country_id"
                 @blur="viewZipcode"
@@ -1396,138 +1332,43 @@ watch(zip_code, () => {
               />
             </VCol>
             <VCol cols="12" md="6">
-              <div>
-                <VLabel class="mb-1 text-body-2">{{ $t('state') }}:</VLabel>
-                <VMenu v-model="isStateMenuOpen">
-                  <template #activator="{ props: menuProps }">
-                    <VTextField
-                      v-bind="menuProps"
-                      :model-value="
-                        filteredStates.find((s) => s.value === state_id)
-                          ?.title || ''
-                      "
-                      :placeholder="$t('state')"
-                      variant="outlined"
-                      readonly
-                      :disabled="!country_id"
-                      append-inner-icon="tabler-chevron-down"
-                    />
-                  </template>
-                  <VCard>
-                    <VCardText class="pa-2">
-                      <AppTextField
-                        v-model="stateSearchQuery"
-                        :placeholder="$t('search') + '...'"
-                        prepend-inner-icon="tabler-search"
-                        density="compact"
-                        hide-details
-                        autofocus
-                        @click.stop
-                      />
-                    </VCardText>
-                    <VDivider />
-                    <VList max-height="300" style="overflow-y: auto">
-                      <template v-if="filteredStates.length > 0">
-                        <VListItem
-                          v-for="(item, index) in filteredStates"
-                          :key="index"
-                          :value="item.value"
-                          @click="
-                            () => {
-                              onStateChange(item.value);
-                              state = item.title;
-                              isStateMenuOpen = false;
-                            }
-                          "
-                          :active="state_id === item.value"
-                        >
-                          <VListItemTitle>{{ item.title }}</VListItemTitle>
-                        </VListItem>
-                      </template>
-                      <VListItem
-                        v-if="filteredStates.length === 0 && stateSearchQuery"
-                        disabled
-                      >
-                        <VListItemTitle
-                          class="text-center text-body-2 text-medium-emphasis"
-                        >
-                          {{ $t('no_results_found') }}
-                        </VListItemTitle>
-                      </VListItem>
-                    </VList>
-                  </VCard>
-                </VMenu>
-              </div>
+              <VLabel class="text-body-2 mb-1">{{ $t('state') }}:</VLabel>
+              <AppSelectSearch
+                v-model="state_id"
+                :items="filteredStates"
+                :placeholder="$t('state')"
+                :disabled="!country_id"
+                item-value="value"
+                item-title="title"
+                @select="
+                  (item) => {
+                    onStateChange((item.value as string) || null);
+                    state = (item.title as string) || null;
+                  }
+                "
+              />
             </VCol>
             <VCol cols="12" md="6">
-              <div>
-                <VLabel class="mb-1 text-body-2">{{ $t('city') }}:</VLabel>
-                <VMenu v-model="isCityMenuOpen">
-                  <template #activator="{ props: menuProps }">
-                    <VTextField
-                      v-bind="menuProps"
-                      :model-value="
-                        filteredCities.find((c) => c.value === city_id)
-                          ?.title || ''
-                      "
-                      :placeholder="$t('city')"
-                      variant="outlined"
-                      readonly
-                      :disabled="!state_id || !country_id"
-                      append-inner-icon="tabler-chevron-down"
-                    />
-                  </template>
-                  <VCard>
-                    <VCardText class="pa-2">
-                      <AppTextField
-                        v-model="citySearchQuery"
-                        :placeholder="$t('search') + '...'"
-                        prepend-inner-icon="tabler-search"
-                        density="compact"
-                        hide-details
-                        autofocus
-                        @click.stop
-                      />
-                    </VCardText>
-                    <VDivider />
-                    <VList max-height="300" style="overflow-y: auto">
-                      <template v-if="filteredCities.length > 0">
-                        <VListItem
-                          v-for="(item, index) in filteredCities"
-                          :key="index"
-                          :value="item.value"
-                          @click="
-                            () => {
-                              city_id = item.value;
-                              city = item.title;
-                              isCityMenuOpen = false;
-                            }
-                          "
-                          :active="city_id === item.value"
-                        >
-                          <VListItemTitle>{{ item.title }}</VListItemTitle>
-                        </VListItem>
-                      </template>
-                      <VListItem
-                        v-if="filteredCities.length === 0 && citySearchQuery"
-                        disabled
-                      >
-                        <VListItemTitle
-                          class="text-center text-body-2 text-medium-emphasis"
-                        >
-                          {{ $t('no_results_found') }}
-                        </VListItemTitle>
-                      </VListItem>
-                    </VList>
-                  </VCard>
-                </VMenu>
-              </div>
+              <VLabel class="text-body-2 mb-1">{{ $t('city') }}:</VLabel>
+              <AppSelectSearch
+                v-model="city_id"
+                :items="filteredCities"
+                :placeholder="$t('city')"
+                :disabled="!state_id || !country_id"
+                item-value="value"
+                item-title="title"
+                @select="
+                  (item) => {
+                    city = (item.title as string) || null;
+                  }
+                "
+              />
             </VCol>
             <VCol cols="12" md="6">
+              <VLabel class="text-body-2 mb-1">{{ $t('address') }}:</VLabel>
               <AppTextField
                 v-model="address1Formatted"
                 :disabled="!country_id"
-                :label="$t('address') + ':'"
                 :placeholder="$t('address')"
               >
                 <template #append-inner>
@@ -1544,10 +1385,12 @@ watch(zip_code, () => {
               </AppTextField>
             </VCol>
             <VCol cols="12" md="6">
+              <VLabel class="text-body-2 mb-1"
+                >{{ $t('address_secondary') }}:</VLabel
+              >
               <AppTextField
                 v-model="address2Formatted"
                 :disabled="!country_id"
-                :label="$t('address_secondary') + ':'"
                 :placeholder="$t('address_secondary')"
               >
                 <template #append-inner>
@@ -1564,10 +1407,10 @@ watch(zip_code, () => {
               </AppTextField>
             </VCol>
             <VCol cols="12" md="6">
+              <VLabel class="text-body-2 mb-1">{{ $t('district') }}:</VLabel>
               <AppTextField
                 v-model="district"
                 :disabled="!country_id"
-                :label="$t('district') + ':'"
                 :placeholder="$t('district')"
               />
             </VCol>

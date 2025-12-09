@@ -14,12 +14,10 @@ export class UpdateStartProtocolTextUseCase {
   async execute(
     t: TFunction<'translation', undefined>,
     accountId: string,
-    isAdministrator: boolean,
     workerId: string,
     body: UpdateStartProtocolTextRequest
   ): Promise<{ generate_protocol_at_start: string | null }> {
     const existsWorkerById = await this.workerService.existsWorkerById(
-      isAdministrator,
       accountId,
       workerId
     );

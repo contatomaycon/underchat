@@ -18,8 +18,7 @@ export const listSector = async (
     const response = await sectorListerUseCase.execute(
       t,
       request.query,
-      tokenJwtData.account_id,
-      tokenJwtData.is_administrator
+      tokenJwtData.account_id
     );
 
     if (response) {

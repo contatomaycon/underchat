@@ -13,13 +13,8 @@ export class PlanAccountViewerUseCase {
 
   async execute(
     t: TFunction<'translation', undefined>,
-    accountId: string,
-    isAdministrator: boolean
+    accountId: string
   ): Promise<ViewPlanAccountResponse | null> {
-    if (!isAdministrator) {
-      throw new Error(t('is_not_administrator'));
-    }
-
     const accountExists =
       await this.accountService.existsAccountById(accountId);
 

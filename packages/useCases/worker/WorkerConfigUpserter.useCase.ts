@@ -15,12 +15,10 @@ export class WorkerConfigUpserterUseCase {
   async execute(
     t: TFunction<'translation', undefined>,
     accountId: string,
-    isAdministrator: boolean,
     workerId: string,
     body: UpdateWorkerConfigRequest
   ): Promise<WorkerConfig> {
     const existsWorkerById = await this.workerService.existsWorkerById(
-      isAdministrator,
       accountId,
       workerId
     );

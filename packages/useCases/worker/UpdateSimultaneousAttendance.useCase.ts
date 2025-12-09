@@ -14,12 +14,10 @@ export class UpdateSimultaneousAttendanceUseCase {
   async execute(
     t: TFunction<'translation', undefined>,
     accountId: string,
-    isAdministrator: boolean,
     workerId: string,
     body: UpdateSimultaneousAttendanceRequest
   ): Promise<{ simultaneous_attendance: number | null }> {
     const existsWorkerById = await this.workerService.existsWorkerById(
-      isAdministrator,
       accountId,
       workerId
     );

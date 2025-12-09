@@ -290,7 +290,6 @@ export class PlanAccountCancellationService {
       const workersWithBalancerPromises = workerIds.map(async (workerId) => {
         const viewWorkerBalancer = await this.workerService.viewWorkerBalancer(
           accountId,
-          true,
           workerId
         );
 
@@ -329,7 +328,6 @@ export class PlanAccountCancellationService {
       worker_id: workerId,
       server_id: workerData.server_id,
       account_id: workerData.account_id,
-      is_administrator: true,
     };
   }
 
@@ -359,7 +357,7 @@ export class PlanAccountCancellationService {
       worker_status_id: EWorkerStatus.deleting,
     };
 
-    return this.workerService.updateWorkerById(true, accountId, inputUpdate);
+    return this.workerService.updateWorkerById(accountId, inputUpdate);
   }
 
   private async deleteWorkerByAccountId(

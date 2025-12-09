@@ -27,7 +27,6 @@ export const updateProfileStatus = async (
       t,
       worker_profile_status_id,
       tokenJwtData.account_id,
-      tokenJwtData.is_administrator,
       body
     );
 

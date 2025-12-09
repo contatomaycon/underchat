@@ -193,13 +193,16 @@ watch(isVisible, (visible) => {
         <VCardText>
           <VRow>
             <VCol cols="12">
-              <AppSelect
+              <VLabel class="text-body-2 mb-1"
+                >{{ $t('contact_groups') }}:</VLabel
+              >
+              <AppSelectSearch
                 v-model="contact_group_id"
                 :items="itemsGroup"
-                item-title="title"
-                item-value="value"
-                :label="$t('contact_groups') + ':'"
                 :placeholder="$t('contact_groups')"
+                :clearable="true"
+                item-value="value"
+                item-title="title"
               />
             </VCol>
 

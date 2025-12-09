@@ -85,17 +85,11 @@ export class AccountService {
   listAccounts = async (
     perPage: number,
     currentPage: number,
-    query: ListAccountRequest,
-    isAdministrator: boolean
+    query: ListAccountRequest
   ): Promise<[ListAccountResponse[], number]> => {
     const [result, total] = await Promise.all([
-      this.accountListerRepository.listAccounts(
-        perPage,
-        currentPage,
-        query,
-        isAdministrator
-      ),
-      this.accountListerRepository.listAccountsTotal(query, isAdministrator),
+      this.accountListerRepository.listAccounts(perPage, currentPage, query),
+      this.accountListerRepository.listAccountsTotal(query),
     ]);
 
     return [result, total];
@@ -118,13 +112,9 @@ export class AccountService {
   };
 
   viewAccounts = async (
-    accountId: string,
-    isAdministrator: boolean
+    accountId: string
   ): Promise<ViewAccountResponse | null> => {
-    return this.accountViewerRepository.viewAccounts(
-      accountId,
-      isAdministrator
-    );
+    return this.accountViewerRepository.viewAccounts(accountId);
   };
 
   deleteAccountById = async (accountId: string): Promise<boolean> => {

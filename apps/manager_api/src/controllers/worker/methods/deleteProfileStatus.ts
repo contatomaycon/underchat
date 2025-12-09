@@ -21,8 +21,7 @@ export const deleteProfileStatus = async (
     const response = await workerProfileStatusDeleterUseCase.execute(
       t,
       worker_profile_status_id,
-      tokenJwtData.account_id,
-      tokenJwtData.is_administrator
+      tokenJwtData.account_id
     );
 
     if (response) {

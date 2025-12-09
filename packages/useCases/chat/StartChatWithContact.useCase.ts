@@ -60,7 +60,6 @@ export class StartChatWithContactUseCase {
     t: TFunction<'translation', undefined>,
     accountId: string,
     userId: string,
-    isAdministrator: boolean,
     body: StartChatWithContactRequest
   ): Promise<IChat> {
     const contactData = await this.validateAndGetContactData(
@@ -74,8 +73,7 @@ export class StartChatWithContactUseCase {
       accountId,
       userId,
       body.worker_id,
-      body.sector_id,
-      isAdministrator
+      body.sector_id
     );
 
     const workerConfigFields =
@@ -163,8 +161,7 @@ export class StartChatWithContactUseCase {
     accountId: string,
     userId: string,
     workerId: string,
-    sectorId: string | undefined,
-    isAdministrator: boolean
+    sectorId: string | undefined
   ): Promise<RequiredData> {
     const [user, account, worker] = await Promise.all([
       this.userService.viewUserNamePhoto(userId),
@@ -180,8 +177,7 @@ export class StartChatWithContactUseCase {
     if (sectorId) {
       const sectorData = await this.sectorService.viewSectorById(
         sectorId,
-        accountId,
-        isAdministrator
+        accountId
       );
 
       if (sectorData) {

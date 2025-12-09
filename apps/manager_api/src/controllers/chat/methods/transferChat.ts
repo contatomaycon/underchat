@@ -22,7 +22,6 @@ export const transferChat = async (
     const response = await transferChatUseCase.execute(
       t,
       tokenJwtData.account_id,
-      tokenJwtData.is_administrator,
       request.params,
       request.body,
       tokenJwtData.user_id,

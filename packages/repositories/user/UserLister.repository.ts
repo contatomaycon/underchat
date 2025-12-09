@@ -101,10 +101,7 @@ export class UserListerRepository {
     return filters;
   };
 
-  private setFilters(
-    accountId: string,
-    query: ListUserRequest
-  ): SQL<unknown> | undefined {
+  private setFilters(query: ListUserRequest): SQL<unknown> | undefined {
     if (query.user_status) {
       return eq(user.user_status_id, query.user_status);
     }
@@ -116,25 +113,29 @@ export class UserListerRepository {
     perPage: number,
     currentPage: number,
     query: ListUserRequest,
-    accountId: string,
-    isAdministrator: boolean,
+    accountId: string | null,
     searchHashes: string | null,
     excludeUserId: string
   ): Promise<ListUserResponse[]> => {
     const filtersUser = this.setFiltersUser(query, searchHashes);
-    const filters = this.setFilters(accountId, query);
-    const accountCondition = isAdministrator
-      ? undefined
-      : eq(user.account_id, accountId);
+    const filters = this.setFilters(query);
+
+    const whereConditions = [
+      isNull(user.deleted_at),
+      ne(user.user_id, excludeUserId),
+      filters,
+      ...filtersUser,
+    ].filter(isDefinedFilter);
+
+    if (accountId !== null && accountId !== undefined) {
+      whereConditions.push(eq(user.account_id, accountId));
+    }
+
+    const whereClause =
+      whereConditions.length > 0 ? and(...whereConditions) : undefined;
 
     const result = await this.db.query.user.findMany({
-      where: and(
-        accountCondition,
-        isNull(user.deleted_at),
-        ne(user.user_id, excludeUserId),
-        filters,
-        ...filtersUser
-      ),
+      where: whereClause,
       with: {
         uac: {
           columns: {
@@ -300,16 +301,26 @@ export class UserListerRepository {
 
   listUsersTotal = async (
     query: ListUserRequest,
-    accountId: string,
-    isAdministrator: boolean,
+    accountId: string | null,
     searchHashes: string | null,
     excludeUserId: string
   ): Promise<number> => {
     const filtersUser = this.setFiltersUser(query, searchHashes);
-    const filters = this.setFilters(accountId, query);
-    const accountCondition = isAdministrator
-      ? undefined
-      : eq(user.account_id, accountId);
+    const filters = this.setFilters(query);
+
+    const whereConditions = [
+      isNull(user.deleted_at),
+      ne(user.user_id, excludeUserId),
+      filters,
+      ...filtersUser,
+    ].filter(isDefinedFilter);
+
+    if (accountId !== null && accountId !== undefined) {
+      whereConditions.push(eq(user.account_id, accountId));
+    }
+
+    const whereClause =
+      whereConditions.length > 0 ? and(...whereConditions) : undefined;
 
     const result = await this.db
       .select({
@@ -322,15 +333,7 @@ export class UserListerRepository {
       .leftJoin(userAddress, eq(user.user_id, userAddress.user_id))
       .leftJoin(userDocument, eq(user.user_id, userDocument.user_id))
       .leftJoin(country, eq(userAddress.country_id, country.country_id))
-      .where(
-        and(
-          accountCondition,
-          isNull(user.deleted_at),
-          ne(user.user_id, excludeUserId),
-          filters,
-          ...filtersUser
-        )
-      )
+      .where(whereClause)
       .execute();
 
     return result[0]?.count ?? 0;

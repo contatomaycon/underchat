@@ -256,18 +256,20 @@ onBeforeUnmount(async () => {
           </div>
           <div class="d-flex align-center flex-wrap gap-4">
             <div class="server-status-filter">
-              <VLabel>{{ $t('status') }}:</VLabel>
-              <AppAutocomplete
-                item-title="text"
-                item-value="id"
-                :items="itemsStatus"
+              <VLabel class="text-body-2 mb-1">{{ $t('status') }}:</VLabel>
+              <AppSelectSearch
                 v-model="options.status"
+                :items="itemsStatus"
                 :placeholder="$t('select_state')"
+                :clearable="true"
+                item-value="id"
+                item-title="text"
+                @update:modelValue="options.page = 1"
               />
             </div>
 
             <div class="invoice-list-filter">
-              <VLabel>{{ $t('search') }}:</VLabel>
+              <VLabel class="text-body-2 mb-1">{{ $t('search') }}:</VLabel>
               <AppTextField
                 :placeholder="$t('search') + '...'"
                 append-inner-icon="tabler-search"

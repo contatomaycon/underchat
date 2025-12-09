@@ -47,13 +47,11 @@ export class SectorService {
 
   existsSectorById = async (
     sectorId: string,
-    accountId: string,
-    isAdministrator: boolean
+    accountId: string
   ): Promise<boolean> => {
     return this.sectorViewerExistsRepository.existsSectorById(
       sectorId,
-      accountId,
-      isAdministrator
+      accountId
     );
   };
 
@@ -74,22 +72,16 @@ export class SectorService {
     perPage: number,
     currentPage: number,
     query: ListSectorRequest,
-    accountId: string,
-    isAdministrator: boolean
+    accountId: string
   ): Promise<[ListSectorResponse[], number]> => {
     const [result, total] = await Promise.all([
       this.sectorListerRepository.listSector(
         perPage,
         currentPage,
         query,
-        accountId,
-        isAdministrator
+        accountId
       ),
-      this.sectorListerRepository.listSectorTotal(
-        query,
-        accountId,
-        isAdministrator
-      ),
+      this.sectorListerRepository.listSectorTotal(query, accountId),
     ]);
 
     return [result, total];
@@ -97,26 +89,16 @@ export class SectorService {
 
   viewSectorById = async (
     sectorId: string,
-    accountId: string,
-    isAdministrator: boolean
+    accountId: string
   ): Promise<ViewSectorResponse | null> => {
-    return this.sectorViewerRepository.viewSectorById(
-      sectorId,
-      accountId,
-      isAdministrator
-    );
+    return this.sectorViewerRepository.viewSectorById(sectorId, accountId);
   };
 
   deleteSectorById = async (
     sectorId: string,
-    accountId: string,
-    isAdministrator: boolean
+    accountId: string
   ): Promise<boolean> => {
-    return this.sectorDeleterRepository.deleteSectorById(
-      sectorId,
-      accountId,
-      isAdministrator
-    );
+    return this.sectorDeleterRepository.deleteSectorById(sectorId, accountId);
   };
 
   updateSectorById = async (
@@ -172,23 +154,15 @@ export class SectorService {
     );
   };
 
-  listAllSectors = async (
-    accountId: string,
-    isAdministrator: boolean
-  ): Promise<TransferSector[]> => {
-    return this.sectorAllListerRepository.listAllSectors(
-      accountId,
-      isAdministrator
-    );
+  listAllSectors = async (accountId: string): Promise<TransferSector[]> => {
+    return this.sectorAllListerRepository.listAllSectors(accountId);
   };
 
   listSectorsForTransfer = async (
-    accountId: string,
-    isAdministrator: boolean
+    accountId: string
   ): Promise<TransferSectorResponse[]> => {
     return this.sectorTransferListerRepository.listSectorsForTransfer(
-      accountId,
-      isAdministrator
+      accountId
     );
   };
 

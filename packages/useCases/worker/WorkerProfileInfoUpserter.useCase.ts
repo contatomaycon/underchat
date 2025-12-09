@@ -75,12 +75,10 @@ export class WorkerProfileInfoUpserterUseCase {
   async execute(
     t: TFunction<'translation', undefined>,
     accountId: string,
-    isAdministrator: boolean,
     workerId: string,
     body: UploadProfileInfoRequest
   ): Promise<UploadProfileInfoResponse> {
     const existsWorkerById = await this.workerService.existsWorkerById(
-      isAdministrator,
       accountId,
       workerId
     );

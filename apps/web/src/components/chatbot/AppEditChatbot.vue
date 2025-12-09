@@ -107,9 +107,9 @@ const handleUpdateChatbot = async () => {
       <VDivider />
       <VCardText class="pa-4">
         <VForm ref="refForm" @submit.prevent="handleUpdateChatbot">
-          <VTextField
+          <VLabel class="text-body-2 mb-1">{{ $t('name') }}:</VLabel>
+          <AppTextField
             v-model="chatbotName"
-            :label="$t('name')"
             :placeholder="$t('chatbot_name_placeholder')"
             :rules="nameRules"
             :disabled="isUpdating"

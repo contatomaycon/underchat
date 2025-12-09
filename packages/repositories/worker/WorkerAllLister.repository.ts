@@ -12,14 +12,7 @@ export class WorkerAllListerRepository {
     @inject('Database') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
-  listAllWorkers = async (
-    accountId: string,
-    isAdministrator: boolean
-  ): Promise<TransferWorker[]> => {
-    const accountCondition = isAdministrator
-      ? undefined
-      : eq(account.account_id, accountId);
-
+  listAllWorkers = async (accountId: string): Promise<TransferWorker[]> => {
     const result = await this.db
       .select({
         id: worker.worker_id,
@@ -37,7 +30,7 @@ export class WorkerAllListerRepository {
       .innerJoin(account, eq(account.account_id, worker.account_id))
       .where(
         and(
-          accountCondition,
+          eq(account.account_id, accountId),
           isNull(worker.deleted_at),
           eq(workerStatus.worker_status_id, EWorkerStatus.online)
         )

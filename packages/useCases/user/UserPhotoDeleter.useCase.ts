@@ -10,13 +10,11 @@ export class UserPhotoDeleterUseCase {
   async execute(
     t: TFunction<'translation', undefined>,
     userId: string,
-    accountId: string,
-    isAdministrator: boolean
+    accountId: string
   ): Promise<DeletePhotoResponse> {
     const existsUserById = await this.userService.existsUserById(
       userId,
-      accountId,
-      isAdministrator
+      accountId
     );
 
     if (!existsUserById) {

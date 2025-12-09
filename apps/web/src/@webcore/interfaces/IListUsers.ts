@@ -5,5 +5,6 @@ export interface IListUsers {
   per_page?: number;
   sort_by: SortRequest[];
   user_status?: string | null;
+  account_id?: string | null;
   search?: string | null;
 }

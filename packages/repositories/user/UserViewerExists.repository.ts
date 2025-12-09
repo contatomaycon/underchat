@@ -12,20 +12,19 @@ export class UserViewerExistsRepository {
 
   existsUserById = async (
     userId: string,
-    accountId: string,
-    isAdministrator: boolean
+    accountId: string
   ): Promise<boolean> => {
-    const accountCondition = isAdministrator
-      ? undefined
-      : eq(user.account_id, accountId);
-
     const result = await this.db
       .select({
         total: count(),
       })
       .from(user)
       .where(
-        and(accountCondition, eq(user.user_id, userId), isNull(user.deleted_at))
+        and(
+          eq(user.account_id, accountId),
+          eq(user.user_id, userId),
+          isNull(user.deleted_at)
+        )
       )
       .execute();
 

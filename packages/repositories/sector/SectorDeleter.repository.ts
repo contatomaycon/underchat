@@ -13,20 +13,18 @@ export class SectorDeleterRepository {
 
   deleteSectorById = async (
     sectorId: string,
-    accountId: string,
-    isAdministrator: boolean
+    accountId: string
   ): Promise<boolean> => {
     const date = currentTime();
-    const accountCondition = isAdministrator
-      ? undefined
-      : eq(sector.account_id, accountId);
 
     const result = await this.db
       .update(sector)
       .set({
         deleted_at: date,
       })
-      .where(and(accountCondition, eq(sector.sector_id, sectorId)))
+      .where(
+        and(eq(sector.account_id, accountId), eq(sector.sector_id, sectorId))
+      )
       .execute();
 
     return result.rowCount === 1;

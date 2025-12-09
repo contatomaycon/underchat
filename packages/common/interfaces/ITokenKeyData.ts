@@ -5,7 +5,6 @@ export interface ITokenKeyData {
   api_key_id: string;
   api_key: string;
   permission_role_id: string;
-  is_administrator: boolean;
   name: string;
   actions: IActionsTokenKeyData[];
 }

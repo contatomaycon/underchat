@@ -11,7 +11,7 @@ import { useChannelsStore } from '@/@webcore/stores/channels';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
-import { getAdministrator, getUser } from '@/@webcore/localStorage/user';
+import { getUser } from '@/@webcore/localStorage/user';
 import { DataTableHeader } from 'vuetify';
 import { ListWorkerResponse } from '@core/schema/worker/listWorker/response.schema';
 import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
@@ -73,7 +73,6 @@ const permissionsProfileStatus = [
 const { t } = useI18n();
 const channelsStore = useChannelsStore();
 useSnackbarCleanup(channelsStore);
-const isAdministrator = getAdministrator();
 const user = getUser();
 
 const itemsPerPage = ref([
@@ -155,8 +154,6 @@ const headers: DataTableHeader<ListWorkerResponse>[] = [
   { title: t('number'), key: 'number' },
   { title: t('status'), key: 'status' },
   { title: t('type'), key: 'type' },
-  ...(isAdministrator ? [{ title: t('server'), key: 'server' }] : []),
-  ...(isAdministrator ? [{ title: t('account'), key: 'account' }] : []),
   { title: t('connection_date'), key: 'connection_date' },
   { title: t('created_at'), key: 'created_at' },
   { title: t('actions'), key: 'actions', sortable: false },
@@ -297,29 +294,33 @@ onUnmounted(async () => {
           </div>
           <div class="d-flex align-center flex-wrap gap-4">
             <div class="type-filter">
-              <VLabel>{{ $t('type') }}:</VLabel>
-              <AppAutocomplete
-                item-title="text"
-                item-value="id"
-                :items="itemsType"
+              <VLabel class="text-body-2 mb-1">{{ $t('type') }}:</VLabel>
+              <AppSelectSearch
                 v-model="options.type"
+                :items="itemsType"
                 :placeholder="$t('select_type')"
+                :clearable="true"
+                item-value="id"
+                item-title="text"
+                @update:modelValue="options.page = 1"
               />
             </div>
 
             <div class="status-filter">
-              <VLabel>{{ $t('status') }}:</VLabel>
-              <AppAutocomplete
-                item-title="text"
-                item-value="id"
-                :items="itemsStatus"
+              <VLabel class="text-body-2 mb-1">{{ $t('status') }}:</VLabel>
+              <AppSelectSearch
                 v-model="options.status"
+                :items="itemsStatus"
                 :placeholder="$t('select_state')"
+                :clearable="true"
+                item-value="id"
+                item-title="text"
+                @update:modelValue="options.page = 1"
               />
             </div>
 
             <div class="invoice-list-filter">
-              <VLabel>{{ $t('search') }}:</VLabel>
+              <VLabel class="text-body-2 mb-1">{{ $t('search') }}:</VLabel>
               <AppTextField
                 :placeholder="$t('search') + '...'"
                 append-inner-icon="tabler-search"

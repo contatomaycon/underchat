@@ -82,17 +82,12 @@ export class WorkerListerRepository {
 
   listWorker = async (
     accountId: string,
-    isAdministrator: boolean,
     perPage: number,
     currentPage: number,
     query: ListWorkerRequest
   ): Promise<ListWorkerResponse[]> => {
     const orders = this.setOrders(query);
     const filters = this.setFilters(query);
-
-    const accountCondition = isAdministrator
-      ? undefined
-      : eq(account.account_id, accountId);
 
     const queryBuilder = this.db
       .select({
@@ -130,7 +125,13 @@ export class WorkerListerRepository {
       )
       .innerJoin(server, eq(server.server_id, worker.server_id))
       .innerJoin(account, eq(account.account_id, worker.account_id))
-      .where(and(accountCondition, isNull(worker.deleted_at), ...filters));
+      .where(
+        and(
+          eq(account.account_id, accountId),
+          isNull(worker.deleted_at),
+          ...filters
+        )
+      );
 
     if (orders.length) {
       queryBuilder.orderBy(...orders);
@@ -151,8 +152,8 @@ export class WorkerListerRepository {
       number: item.number,
       status: item.status,
       type: item.type,
-      server: isAdministrator ? item.server : undefined,
-      account: isAdministrator ? item.account : undefined,
+      server: item.server,
+      account: item.account,
       connection_date: item.connection_date,
       created_at: item.created_at,
       updated_at: item.updated_at,
@@ -161,13 +162,8 @@ export class WorkerListerRepository {
 
   listWorkerTotal = async (
     accountId: string,
-    isAdministrator: boolean,
     query: ListWorkerRequest
   ): Promise<number> => {
-    const accountCondition = isAdministrator
-      ? undefined
-      : eq(account.account_id, accountId);
-
     const filters = this.setFilters(query);
 
     const result = await this.db
@@ -185,7 +181,13 @@ export class WorkerListerRepository {
       )
       .innerJoin(server, eq(server.server_id, worker.server_id))
       .innerJoin(account, eq(account.account_id, worker.account_id))
-      .where(and(accountCondition, isNull(worker.deleted_at), ...filters))
+      .where(
+        and(
+          eq(account.account_id, accountId),
+          isNull(worker.deleted_at),
+          ...filters
+        )
+      )
       .execute();
 
     return result[0]?.count ?? 0;

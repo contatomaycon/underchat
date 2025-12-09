@@ -213,24 +213,25 @@ const totalRevenueDialog = computed(() => {
           </div>
           <div class="d-flex align-center flex-wrap gap-4">
             <div class="invoice-list-filter">
-              <VLabel>{{ $t('plan') }}:</VLabel>
-              <AppAutocomplete
-                item-title="text"
-                item-value="id"
-                :items="plans"
+              <VLabel class="text-body-2 mb-1">{{ $t('plan') }}:</VLabel>
+              <AppSelectSearch
                 v-model="selectedPlan"
+                :items="plans as any"
                 :placeholder="$t('select_plan')"
+                :clearable="true"
+                item-value="id"
+                item-title="text"
               />
             </div>
             <div class="invoice-list-filter">
-              <VLabel>{{ $t('start_date') }}:</VLabel>
+              <VLabel class="text-body-2 mb-1">{{ $t('start_date') }}:</VLabel>
               <AppDateTimePicker
                 v-model="startDate"
                 :placeholder="$t('select_date')"
               />
             </div>
             <div class="invoice-list-filter">
-              <VLabel>{{ $t('end_date') }}:</VLabel>
+              <VLabel class="text-body-2 mb-1">{{ $t('end_date') }}:</VLabel>
               <AppDateTimePicker
                 v-model="endDate"
                 :placeholder="$t('select_date')"

@@ -19,28 +19,76 @@ export class UserDeleterUseCase {
     await this.storageService.deleteImage(userPhoto.photo);
   }
 
-  async execute(
+  private async validateUserExistsInAccount(
     t: TFunction<'translation', undefined>,
     userId: string,
-    accountId: string,
-    isAdministrator: boolean
-  ): Promise<boolean> {
+    accountId: string
+  ): Promise<void> {
     const existsUserById = await this.userService.existsUserById(
       userId,
-      accountId,
-      isAdministrator
+      accountId
     );
 
     if (!existsUserById) {
       throw new Error(t('user_not_found'));
     }
+  }
+
+  private async validateUserExists(
+    t: TFunction<'translation', undefined>,
+    userId: string
+  ): Promise<string> {
+    const userAccountId = await this.userService.getUserAccountId(userId);
+
+    if (!userAccountId) {
+      throw new Error(t('user_not_found'));
+    }
+
+    return userAccountId;
+  }
+
+  private resolveAccountId(
+    accountId: string,
+    canOperateOnOthers: boolean,
+    userAccountId?: string | null
+  ): string {
+    if (!canOperateOnOthers) {
+      return accountId;
+    }
+
+    return userAccountId ?? accountId;
+  }
+
+  async execute(
+    t: TFunction<'translation', undefined>,
+    userId: string,
+    accountId: string,
+    canOperateOnOthers: boolean
+  ): Promise<boolean> {
+    if (!canOperateOnOthers) {
+      await this.validateUserExistsInAccount(t, userId, accountId);
+    }
+
+    let userAccountId: string | null = null;
+    if (canOperateOnOthers) {
+      userAccountId = await this.validateUserExists(t, userId);
+    }
 
     await this.deleteUserPhotoFromStorage(userId);
 
+    const accountIdToUse = this.resolveAccountId(
+      accountId,
+      canOperateOnOthers,
+      userAccountId
+    );
+
+    if (!accountIdToUse) {
+      throw new Error(t('user_not_found'));
+    }
+
     const deleteUserById = await this.userService.deleteUserById(
       userId,
-      accountId,
-      isAdministrator
+      accountIdToUse
     );
 
     if (!deleteUserById) {

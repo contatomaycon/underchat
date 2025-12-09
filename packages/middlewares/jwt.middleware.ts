@@ -14,7 +14,6 @@ import { EPermissionsRoles } from '@core/common/enums/EPermissions';
 import { IJwtGroupHierarchy } from '@core/common/interfaces/IJwtGroupHierarchy';
 import { ITokenJwtData } from '@core/common/interfaces/ITokenJwtData';
 import { routePathWithoutPrefix } from '@core/common/functions/routePathWithoutPrefix';
-import { EPermissionRole } from '@core/common/enums/EPermissionRole';
 import Redis from 'ioredis';
 import { UserService } from '@core/services/user.service';
 
@@ -62,8 +61,6 @@ async function generateTokenJwtAccess(
     (item) => item.permission_role_id !== null
   )?.permission_role_id;
 
-  const isAdministrator = permissionRoleId === EPermissionRole.administrator;
-
   let sectors: string[] = [];
   if (accountId) {
     const userService = container.resolve(UserService);
@@ -74,7 +71,6 @@ async function generateTokenJwtAccess(
     account_id: accountId,
     user_id: userId,
     permission_role_id: permissionRoleId,
-    is_administrator: isAdministrator,
     actions: responseAuth,
     sectors,
   } as ITokenJwtData;

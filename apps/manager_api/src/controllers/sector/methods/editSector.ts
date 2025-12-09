@@ -16,14 +16,13 @@ export const editSector = async (
   reply: FastifyReply
 ) => {
   const sectorUpdaterUseCase = container.resolve(SectorUpdaterUseCase);
-  const { t, tokenJwtData } = request;
+  const { t } = request;
 
   try {
     const response = await sectorUpdaterUseCase.execute(
       t,
       request.params.sector_id,
-      request.body,
-      tokenJwtData.is_administrator
+      request.body
     );
 
     if (response) {

@@ -12,13 +12,12 @@ export const viewPlanAccount = async (
   reply: FastifyReply
 ) => {
   const planAccountViewerUseCase = container.resolve(PlanAccountViewerUseCase);
-  const { t, tokenJwtData } = request;
+  const { t } = request;
 
   try {
     const response = await planAccountViewerUseCase.execute(
       t,
-      request.params.account_id,
-      tokenJwtData.is_administrator
+      request.params.account_id
     );
 
     if (response) {

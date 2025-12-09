@@ -9,13 +9,8 @@ export class AccountViewerUseCase {
 
   async execute(
     t: TFunction<'translation', undefined>,
-    accountId: string,
-    isAdministrator: boolean
+    accountId: string
   ): Promise<ViewAccountResponse | null> {
-    if (!isAdministrator) {
-      throw new Error(t('is_not_administrator'));
-    }
-
     const accountExists =
       await this.accountService.existsAccountById(accountId);
 
@@ -23,10 +18,7 @@ export class AccountViewerUseCase {
       throw new Error(t('account_not_found'));
     }
 
-    const viewAccount = await this.accountService.viewAccounts(
-      accountId,
-      isAdministrator
-    );
+    const viewAccount = await this.accountService.viewAccounts(accountId);
 
     if (!viewAccount) {
       throw new Error(t('account_not_found'));

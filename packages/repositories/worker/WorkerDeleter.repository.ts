@@ -12,14 +12,9 @@ export class WorkerDeleterRepository {
   ) {}
 
   deleteWorkerById = async (
-    isAdministrator: boolean,
     accountId: string,
     workerId: string
   ): Promise<boolean> => {
-    const accountCondition = isAdministrator
-      ? undefined
-      : eq(worker.account_id, accountId);
-
     const date = currentTime();
 
     const result = await this.db
@@ -27,7 +22,9 @@ export class WorkerDeleterRepository {
       .set({
         deleted_at: date,
       })
-      .where(and(eq(worker.worker_id, workerId), accountCondition))
+      .where(
+        and(eq(worker.account_id, accountId), eq(worker.worker_id, workerId))
+      )
       .execute();
 
     return result.rowCount === 1;

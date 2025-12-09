@@ -436,15 +436,16 @@ onBeforeUnmount(() => {
         <VCardText>
           <VRow>
             <VCol cols="12">
-              <VSelect
+              <VLabel class="text-body-2 mb-1"
+                >{{ $t('message_type') }}:</VLabel
+              >
+              <AppSelectSearch
                 v-model="selectedType"
                 :items="messageTypeOptions"
-                item-title="title"
+                :placeholder="$t('message_type')"
+                :clearable="true"
                 item-value="value"
-                :label="$t('message_type') + ':'"
-                :rules="[
-                  requiredValidator(selectedType, $t('message_type_required')),
-                ]"
+                item-title="title"
               />
             </VCol>
 
@@ -650,9 +651,9 @@ onBeforeUnmount(() => {
             </template>
 
             <VCol cols="12">
+              <VLabel class="text-body-2 mb-1">{{ $t('shortcut') }}:</VLabel>
               <AppTextField
                 v-model="command"
-                :label="$t('shortcut') + ':'"
                 :placeholder="$t('shortcut')"
                 :rules="[
                   requiredValidator(command, $t('shortcut_required')),
@@ -662,19 +663,16 @@ onBeforeUnmount(() => {
             </VCol>
 
             <VCol cols="12" md="6">
-              <AppSelect
+              <VLabel class="text-body-2 mb-1"
+                >{{ $t('message_status') }}:</VLabel
+              >
+              <AppSelectSearch
                 v-model="message_status_id"
                 :items="itemsStatus"
-                item-title="text"
-                item-value="value"
-                :label="$t('message_status') + ':'"
                 :placeholder="$t('message_status')"
-                :rules="[
-                  requiredValidator(
-                    message_status_id,
-                    $t('message_status_id_required')
-                  ),
-                ]"
+                :clearable="true"
+                item-value="value"
+                item-title="text"
               />
             </VCol>
           </VRow>

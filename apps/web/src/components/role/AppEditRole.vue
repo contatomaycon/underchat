@@ -71,11 +71,15 @@ const initializeModal = async () => {
   }
 };
 
-watch(isVisible, async (visible) => {
-  if (visible && roleId.value) {
-    await initializeModal();
-  }
-}, { immediate: true });
+watch(
+  isVisible,
+  async (visible) => {
+    if (visible && roleId.value) {
+      await initializeModal();
+    }
+  },
+  { immediate: true }
+);
 </script>
 
 <template>
@@ -94,17 +98,17 @@ watch(isVisible, async (visible) => {
         <VCardText>
           <VRow>
             <VCol cols="12">
+              <VLabel class="text-body-2 mb-1">{{ $t('name') }}:</VLabel>
               <AppTextField
                 v-model="name"
-                :label="$t('name') + ':'"
                 :placeholder="$t('name')"
                 :rules="[requiredValidator(name, $t('name_required'))]"
               />
             </VCol>
             <VCol cols="12">
+              <VLabel class="text-body-2 mb-1">{{ $t('description') }}:</VLabel>
               <AppTextarea
                 v-model="description"
-                :label="$t('description') + ':'"
                 :placeholder="$t('description')"
                 rows="3"
               />

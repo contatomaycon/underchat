@@ -963,8 +963,7 @@ export class ChatbotFlowRunnerService {
 
     const sectorData = await this.sectorService.viewSectorById(
       selectedSector,
-      createChat.account.id,
-      false
+      createChat.account.id
     );
 
     if (!sectorData) {
@@ -1819,8 +1818,7 @@ export class ChatbotFlowRunnerService {
 
     const sectorData = await this.sectorService.viewSectorById(
       sectorId,
-      accountId,
-      false
+      accountId
     );
 
     if (!sectorData) {

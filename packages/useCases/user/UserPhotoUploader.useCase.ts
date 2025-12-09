@@ -26,13 +26,11 @@ export class UserPhotoUploaderUseCase {
     t: TFunction<'translation', undefined>,
     userId: string,
     accountId: string,
-    isAdministrator: boolean,
     body: UploadPhotoRequest
   ): Promise<UploadPhotoResponse> {
     const existsUserById = await this.userService.existsUserById(
       userId,
-      accountId,
-      isAdministrator
+      accountId
     );
 
     if (!existsUserById) {

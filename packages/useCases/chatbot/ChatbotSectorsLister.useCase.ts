@@ -6,10 +6,7 @@ import { ListChatbotSectorsResponse } from '@core/schema/chatbot/listSectors/res
 export class ChatbotSectorsListerUseCase {
   constructor(private readonly chatbotService: ChatbotService) {}
 
-  async execute(
-    accountId: string,
-    isAdministrator: boolean
-  ): Promise<ListChatbotSectorsResponse> {
-    return this.chatbotService.listChatbotSectors(accountId, isAdministrator);
+  async execute(accountId: string): Promise<ListChatbotSectorsResponse> {
+    return this.chatbotService.listChatbotSectors(accountId);
   }
 }

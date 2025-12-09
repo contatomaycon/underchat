@@ -17,12 +17,10 @@ export class WorkerConnectionLogsUseCase {
   async execute(
     t: TFunction<'translation', undefined>,
     accountId: string,
-    isAdministrator: boolean,
     workerId: string,
     query: WorkerConnectionLogsQuery
   ): Promise<WorkerConnectionLogsResponse[]> {
     const exists = await this.workerService.existsWorkerById(
-      isAdministrator,
       accountId,
       workerId
     );

@@ -5,7 +5,7 @@ import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { useI18n } from 'vue-i18n';
 import { formatDateTime } from '@core/common/functions/formatDateTime';
 import { SortRequest } from '@core/schema/common/sortRequestSchema';
-import { getAdministrator, getUser } from '@/@webcore/localStorage/user';
+import { getUser } from '@/@webcore/localStorage/user';
 import { DataTableHeader } from 'vuetify';
 import { ListRoleResponse } from '@core/schema/role/listRole/response.schema';
 import { ERolePermissions } from '@core/common/enums/EPermissions/role';
@@ -64,7 +64,6 @@ const roleStore = useRolesStore();
 const permissionStore = usePermissionStore();
 useSnackbarCleanup(roleStore);
 useSnackbarCleanup(permissionStore);
-const isAdministrator = getAdministrator();
 const currentPermissionRoleId = getUser()?.type.user_type_id ?? null;
 
 const itemsPerPage = ref([
@@ -87,7 +86,6 @@ const rolePermissionsId = ref<string | null>(null);
 
 const headers: DataTableHeader<ListRoleResponse>[] = [
   { title: t('name'), key: 'name' },
-  ...(isAdministrator ? [{ title: t('account'), key: 'account' }] : []),
   { title: t('created_at'), key: 'created_at' },
   { title: t('actions'), key: 'actions', sortable: false },
 ];
@@ -193,7 +191,7 @@ watch(
           </div>
           <div class="d-flex align-center flex-wrap gap-4">
             <div class="invoice-list-filter">
-              <VLabel>{{ $t('search') }}:</VLabel>
+              <VLabel class="text-body-2 mb-1">{{ $t('search') }}:</VLabel>
               <AppTextField
                 :placeholder="$t('search') + '...'"
                 append-inner-icon="tabler-search"

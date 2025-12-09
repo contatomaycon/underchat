@@ -87,16 +87,16 @@ export class ContactGroupListerRepository {
     perPage: number,
     currentPage: number,
     query: ListContactGroupRequest,
-    isAdministrator: boolean,
     accountId: string
   ): Promise<ListContactGroupResponse[]> => {
     const filters = this.setFilters(query);
-    const accountCondition = isAdministrator
-      ? undefined
-      : eq(contactGroup.account_id, accountId);
 
     const result = await this.db.query.contactGroup.findMany({
-      where: and(isNull(contactGroup.deleted_at), ...filters, accountCondition),
+      where: and(
+        eq(contactGroup.account_id, accountId),
+        isNull(contactGroup.deleted_at),
+        ...filters
+      ),
       with: {
         cga: {
           columns: {
@@ -166,13 +166,9 @@ export class ContactGroupListerRepository {
 
   listContactGroupTotal = async (
     query: ListContactGroupRequest,
-    isAdministrator: boolean,
     accountId: string
   ): Promise<number> => {
     const filters = this.setFilters(query);
-    const accountCondition = isAdministrator
-      ? undefined
-      : eq(contactGroup.account_id, accountId);
 
     const result = await this.db
       .select({
@@ -195,7 +191,13 @@ export class ContactGroupListerRepository {
         labelTemplate,
         eq(contact.label_template_id, labelTemplate.label_template_id)
       )
-      .where(and(accountCondition, isNull(contactGroup.deleted_at), ...filters))
+      .where(
+        and(
+          eq(contactGroup.account_id, accountId),
+          isNull(contactGroup.deleted_at),
+          ...filters
+        )
+      )
       .execute();
 
     return result[0]?.count ?? 0;

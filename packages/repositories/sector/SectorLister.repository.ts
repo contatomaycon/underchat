@@ -71,14 +71,10 @@ export class SectorListerRepository {
     perPage: number,
     currentPage: number,
     query: ListSectorRequest,
-    accountId: string,
-    isAdministrator: boolean
+    accountId: string
   ): Promise<ListSectorResponse[]> => {
     const filters = this.setFilters(query);
     const orders = this.setOrders(query);
-    const accountCondition = isAdministrator
-      ? undefined
-      : eq(sector.account_id, accountId);
 
     const queryBuilder = this.db
       .select({
@@ -101,7 +97,13 @@ export class SectorListerRepository {
         sectorStatus,
         eq(sector.sector_status_id, sectorStatus.sector_status_id)
       )
-      .where(and(accountCondition, isNull(sector.deleted_at), ...filters));
+      .where(
+        and(
+          eq(sector.account_id, accountId),
+          isNull(sector.deleted_at),
+          ...filters
+        )
+      );
 
     if (orders.length) {
       queryBuilder.orderBy(...orders);
@@ -120,21 +122,17 @@ export class SectorListerRepository {
       sector_id: sector.sector_id,
       name: sector.name,
       color: sector.color,
-      sector_status: isAdministrator ? sector.sector_status : undefined,
-      account: isAdministrator ? sector.account : undefined,
+      sector_status: sector.sector_status,
+      account: sector.account,
       created_at: sector.created_at,
     })) as ListSectorResponse[];
   };
 
   listSectorTotal = async (
     query: ListSectorRequest,
-    accountId: string,
-    isAdministrator: boolean
+    accountId: string
   ): Promise<number> => {
     const filters = this.setFilters(query);
-    const accountCondition = isAdministrator
-      ? undefined
-      : eq(sector.account_id, accountId);
 
     const result = await this.db
       .select({
@@ -146,7 +144,13 @@ export class SectorListerRepository {
         sectorStatus,
         eq(sector.sector_status_id, sectorStatus.sector_status_id)
       )
-      .where(and(accountCondition, isNull(sector.deleted_at), ...filters))
+      .where(
+        and(
+          eq(sector.account_id, accountId),
+          isNull(sector.deleted_at),
+          ...filters
+        )
+      )
       .execute();
 
     return result[0]?.count ?? 0;

@@ -28,7 +28,6 @@ export class MessageTemplateService {
     perPage: number,
     currentPage: number,
     query: ListMessageTemplateRequest,
-    isAdministrator: boolean,
     accountId: string
   ): Promise<[ListMessageTemplateResponse[], number]> => {
     const [result, total] = await Promise.all([
@@ -36,12 +35,10 @@ export class MessageTemplateService {
         perPage,
         currentPage,
         query,
-        isAdministrator,
         accountId
       ),
       this.messageTemplateListerRepository.listMessageTemplateTotal(
         query,
-        isAdministrator,
         accountId
       ),
     ]);

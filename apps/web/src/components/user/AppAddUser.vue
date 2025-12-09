@@ -8,12 +8,14 @@ import { ECountry } from '@core/common/enums/ECountry';
 import { ViewZipcodeRequest } from '@core/schema/zipcode/viewZipcode/request.schema';
 import { useCountryCodes } from '@/composables/useCountryCodes';
 import { useStatesAndCities } from '@/composables/useStatesAndCities';
-import { getAdministrator, getUser } from '@/@webcore/localStorage/user';
+import { getUser } from '@/@webcore/localStorage/user';
 import { EColor } from '@core/common/enums/EColor';
 import { useI18n } from 'vue-i18n';
 import { requiredValidator } from '@/@webcore/utils/validators';
 import { usePasswordStrength } from '@/composables/usePasswordStrength';
 import { validatePassword } from '@/@webcore/utils/passwordStrength';
+import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
+import { can } from '@/@layouts/plugins/casl';
 
 const userStore = useUsersStore();
 const accountStore = useAccountStore();
@@ -23,49 +25,30 @@ const {
   cities,
   filteredStates,
   filteredCities,
-  stateSearchQuery,
-  citySearchQuery,
   loadStates,
   loadCities,
   clearCities,
 } = useStatesAndCities();
 const { t } = useI18n();
 
-const isAdministrator = computed(() => getAdministrator());
 const currentUser = computed(() => getUser());
+const hasFullAccess = computed(() =>
+  can([EGeneralPermissions.full_access, EGeneralPermissions.full_access_group])
+);
 const accountId = ref<string | null>(null);
-const accountsOptions = ref<{ account_id: string; name: string }[]>([]);
-const accountSearchQuery = ref('');
-const isAccountMenuOpen = ref(false);
+const accountsOptions = ref<{ id: string; text: string }[]>([]);
+const accountsLoading = ref(false);
 const permissionRoleId = ref<string | null>(null);
 const rolesOptions = ref<{ id: string; name: string }[]>([]);
-const roleSearchQuery = ref('');
-const isRoleMenuOpen = ref(false);
-
-const countrySearchQuery = ref('');
-const isCountryMenuOpen = ref(false);
-
-const filteredCountryCodes = computed(() => {
-  if (!countrySearchQuery.value) {
-    return countryCodes.value;
-  }
-  const query = countrySearchQuery.value.toLowerCase();
-  return countryCodes.value.filter((country) =>
-    country.title.toLowerCase().includes(query)
-  );
-});
-
-watch(isCountryMenuOpen, (isOpen) => {
-  if (!isOpen) {
-    countrySearchQuery.value = '';
-  }
-});
 
 const props = defineProps<{
   modelValue: boolean;
 }>();
 
-const emit = defineEmits<(e: 'update:modelValue', visible: boolean) => void>();
+const emit = defineEmits<{
+  'update:modelValue': [visible: boolean];
+  'user-created': [];
+}>();
 
 const isVisible = computed({
   get: () => props.modelValue,
@@ -184,8 +167,6 @@ const city = ref<string | null>(null);
 const state = ref<string | null>(null);
 const state_id = ref<string | null>(null);
 const city_id = ref<string | null>(null);
-const isStateMenuOpen = ref(false);
-const isCityMenuOpen = ref(false);
 const district = ref<string | null>(null);
 
 const isPasswordVisible = ref(false);
@@ -490,7 +471,7 @@ const buildUserPayload = () => {
     },
   };
 
-  if (isAdministrator.value && accountId.value) {
+  if (accountId.value) {
     payload.account_id = { value: accountId.value };
   }
 
@@ -514,7 +495,7 @@ const addUser = async () => {
 
   if (result) {
     isVisible.value = false;
-    await userStore.listUsers();
+    emit('user-created');
   }
 };
 
@@ -557,18 +538,6 @@ const onStateChange = async (stateId: string | null) => {
   }
 };
 
-watch(isStateMenuOpen, (isOpen) => {
-  if (!isOpen) {
-    stateSearchQuery.value = '';
-  }
-});
-
-watch(isCityMenuOpen, (isOpen) => {
-  if (!isOpen) {
-    citySearchQuery.value = '';
-  }
-});
-
 const resetForm = () => {
   email.value = null;
   password.value = null;
@@ -591,7 +560,7 @@ const resetForm = () => {
   district.value = null;
   accountId.value = null;
   permissionRoleId.value = null;
-  if (!isAdministrator.value && currentUser.value?.account_id) {
+  if (currentUser.value?.account_id) {
     accountId.value = currentUser.value.account_id;
   }
   photo.value = null;
@@ -1198,52 +1167,31 @@ const removePhoto = () => {
   photoPreview.value = null;
 };
 
-const loadAdministratorAccounts = async () => {
-  if (!isAdministrator.value) return;
-  const accounts = await accountStore.listAllAccounts();
-  if (accounts) {
-    accountsOptions.value = accounts;
-  }
-};
-
 const setCurrentUserAccount = () => {
-  if (isAdministrator.value) return;
   if (currentUser.value?.account_id) {
     accountId.value = currentUser.value.account_id;
   }
 };
 
-const filteredAccounts = computed(() => {
-  if (!accountSearchQuery.value) {
-    return accountsOptions.value;
-  }
-  const query = accountSearchQuery.value.toLowerCase();
-  return accountsOptions.value.filter((account) =>
-    account.name.toLowerCase().includes(query)
-  );
-});
+const loadAccounts = async () => {
+  if (!hasFullAccess.value) return;
 
-const filteredRoles = computed(() => {
-  if (!roleSearchQuery.value) {
-    return rolesOptions.value;
+  accountsLoading.value = true;
+  try {
+    const accounts = await accountStore.listAllAccounts();
+    if (accounts) {
+      accountsOptions.value = accounts.map((acc) => ({
+        id: acc.account_id,
+        text: acc.name,
+      }));
+    }
+  } catch (error) {
+    console.error('Error loading accounts:', error);
+    accountsOptions.value = [];
+  } finally {
+    accountsLoading.value = false;
   }
-  const query = roleSearchQuery.value.toLowerCase();
-  return rolesOptions.value.filter((role) =>
-    role.name.toLowerCase().includes(query)
-  );
-});
-
-watch(isAccountMenuOpen, (isOpen) => {
-  if (!isOpen) {
-    accountSearchQuery.value = '';
-  }
-});
-
-watch(isRoleMenuOpen, (isOpen) => {
-  if (!isOpen) {
-    roleSearchQuery.value = '';
-  }
-});
+};
 
 const loadRoles = async () => {
   const roles = await userStore.listUserRoles();
@@ -1255,8 +1203,8 @@ const loadRoles = async () => {
 const loadUserDataTab = async (force = false) => {
   if (!force && loadedTabs.value.has('user_data')) return;
 
-  await loadAdministratorAccounts();
   setCurrentUserAccount();
+  await loadAccounts();
   await loadRoles();
 
   loadedTabs.value.add('user_data');
@@ -1290,9 +1238,9 @@ const isInitializingModal = ref(false);
 const initializeModal = async () => {
   if (!isVisible.value) return;
   if (isInitializingModal.value) return;
-  
+
   isInitializingModal.value = true;
-  
+
   try {
     resetForm();
     loadedTabs.value.clear();
@@ -1304,20 +1252,33 @@ const initializeModal = async () => {
   }
 };
 
-watch(isVisible, async (visible) => {
-  if (visible) {
-    await initializeModal();
-  } else {
-    loadedTabs.value.clear();
-  }
-}, { immediate: true });
+watch(
+  isVisible,
+  async (visible) => {
+    if (visible) {
+      await initializeModal();
+    } else {
+      loadedTabs.value.clear();
+    }
+  },
+  { immediate: true }
+);
 
-watch(tab, async (newTab, oldTab) => {
-  if (isInitializingModal.value) return;
-  if (isVisible.value && newTab && newTab !== oldTab && oldTab !== undefined) {
-    await loadTabData(newTab);
-  }
-}, { immediate: false });
+watch(
+  tab,
+  async (newTab, oldTab) => {
+    if (isInitializingModal.value) return;
+    if (
+      isVisible.value &&
+      newTab &&
+      newTab !== oldTab &&
+      oldTab !== undefined
+    ) {
+      await loadTabData(newTab);
+    }
+  },
+  { immediate: false }
+);
 
 let timer: number | null = null;
 watch(zip_code, () => {
@@ -1427,10 +1388,12 @@ onMounted(resetForm);
                   <VCol cols="12" md="8" class="pa-6">
                     <VRow class="mb-4">
                       <VCol cols="12">
+                        <VLabel class="text-body-2 mb-1"
+                          >{{ $t('email') }}:</VLabel
+                        >
                         <AppTextField
                           v-model="email"
                           type="email"
-                          :label="$t('email') + ':'"
                           :placeholder="$t('email')"
                           :rules="[
                             emailValidator,
@@ -1442,160 +1405,48 @@ onMounted(resetForm);
 
                     <VDivider class="mb-4" />
                     <VRow class="mb-4">
-                      <VCol v-if="isAdministrator" cols="12" md="6">
-                        <div>
-                          <VLabel class="mb-1 text-body-2"
-                            >{{ $t('account') }}:</VLabel
-                          >
-                          <VMenu v-model="isAccountMenuOpen">
-                            <template #activator="{ props: menuProps }">
-                              <VTextField
-                                v-bind="menuProps"
-                                :model-value="
-                                  accountsOptions.find(
-                                    (a) => a.account_id === accountId
-                                  )?.name || ''
-                                "
-                                :placeholder="$t('select_account')"
-                                variant="outlined"
-                                readonly
-                                append-inner-icon="tabler-chevron-down"
-                                :rules="[
-                                  requiredValidator(
-                                    accountId,
-                                    $t('account_required')
-                                  ),
-                                ]"
-                              />
-                            </template>
-                            <VCard>
-                              <VCardText class="pa-2">
-                                <AppTextField
-                                  v-model="accountSearchQuery"
-                                  :placeholder="$t('search') + '...'"
-                                  prepend-inner-icon="tabler-search"
-                                  density="compact"
-                                  hide-details
-                                  autofocus
-                                  @click.stop
-                                />
-                              </VCardText>
-                              <VDivider />
-                              <VList max-height="300" style="overflow-y: auto">
-                                <VListItem
-                                  v-for="(item, index) in filteredAccounts"
-                                  :key="index"
-                                  :value="item.account_id"
-                                  @click="
-                                    () => {
-                                      accountId = item.account_id;
-                                      isAccountMenuOpen = false;
-                                    }
-                                  "
-                                  :active="accountId === item.account_id"
-                                >
-                                  <VListItemTitle>{{
-                                    item.name
-                                  }}</VListItemTitle>
-                                </VListItem>
-                                <VListItem
-                                  v-if="filteredAccounts.length === 0"
-                                  disabled
-                                >
-                                  <VListItemTitle
-                                    class="text-center text-body-2 text-medium-emphasis"
-                                  >
-                                    {{ $t('no_results_found') }}
-                                  </VListItemTitle>
-                                </VListItem>
-                              </VList>
-                            </VCard>
-                          </VMenu>
-                        </div>
+                      <VCol v-if="hasFullAccess" cols="12" md="6">
+                        <VLabel class="text-body-2 mb-1"
+                          >{{ $t('account') }}:</VLabel
+                        >
+                        <AppSelectSearch
+                          v-model="accountId"
+                          :items="accountsOptions"
+                          :placeholder="$t('select_account')"
+                          :clearable="true"
+                          :loading="accountsLoading"
+                          item-value="id"
+                          item-title="text"
+                        />
                       </VCol>
-
-                      <VCol cols="12" :md="isAdministrator ? 6 : 12">
-                        <div>
-                          <VLabel class="mb-1 text-body-2">
-                            {{ $t('role') }}:
-                          </VLabel>
-                          <VMenu v-model="isRoleMenuOpen">
-                            <template #activator="{ props: menuProps }">
-                              <VTextField
-                                v-bind="menuProps"
-                                :model-value="
-                                  rolesOptions.find(
-                                    (r) => r.id === permissionRoleId
-                                  )?.name || ''
-                                "
-                                :placeholder="$t('select_role')"
-                                variant="outlined"
-                                readonly
-                                :clearable="!!permissionRoleId"
-                                clear-icon="tabler-x"
-                                @click:clear="permissionRoleId = null"
-                                :append-inner-icon="
-                                  permissionRoleId
-                                    ? undefined
-                                    : 'tabler-chevron-down'
-                                "
-                              />
-                            </template>
-                            <VCard>
-                              <VCardText class="pa-2">
-                                <AppTextField
-                                  v-model="roleSearchQuery"
-                                  :placeholder="$t('search') + '...'"
-                                  prepend-inner-icon="tabler-search"
-                                  density="compact"
-                                  hide-details
-                                  autofocus
-                                  @click.stop
-                                />
-                              </VCardText>
-                              <VDivider />
-                              <VList max-height="300" style="overflow-y: auto">
-                                <VListItem
-                                  v-for="(item, index) in filteredRoles"
-                                  :key="index"
-                                  :value="item.id"
-                                  @click="
-                                    () => {
-                                      permissionRoleId = item.id;
-                                      isRoleMenuOpen = false;
-                                    }
-                                  "
-                                  :active="permissionRoleId === item.id"
-                                >
-                                  <VListItemTitle>{{
-                                    item.name
-                                  }}</VListItemTitle>
-                                </VListItem>
-                                <VListItem
-                                  v-if="filteredRoles.length === 0"
-                                  disabled
-                                >
-                                  <VListItemTitle
-                                    class="text-center text-body-2 text-medium-emphasis"
-                                  >
-                                    {{ $t('no_results_found') }}
-                                  </VListItemTitle>
-                                </VListItem>
-                              </VList>
-                            </VCard>
-                          </VMenu>
-                        </div>
+                      <VCol
+                        :cols="hasFullAccess ? 12 : 12"
+                        :md="hasFullAccess ? 6 : 12"
+                      >
+                        <VLabel class="text-body-2 mb-1"
+                          >{{ $t('role') }}:</VLabel
+                        >
+                        <AppSelectSearch
+                          v-model="permissionRoleId"
+                          :items="rolesOptions"
+                          :placeholder="$t('select_role')"
+                          :clearable="true"
+                          item-value="id"
+                          item-title="name"
+                        />
                       </VCol>
                     </VRow>
 
                     <VDivider class="mb-4" />
                     <VRow class="mb-2">
                       <VCol cols="12" md="6">
+                        <VLabel class="text-body-2 mb-1"
+                          >{{ $t('password') }}:</VLabel
+                        >
                         <AppTextField
                           id="new-password"
                           name="new-password"
                           v-model="password"
-                          :label="$t('password') + ':'"
                           :placeholder="$t('password')"
                           :type="isPasswordVisible ? 'text' : 'password'"
                           :autocomplete="
@@ -1659,11 +1510,13 @@ onMounted(resetForm);
                       </VCol>
 
                       <VCol cols="12" md="6">
+                        <VLabel class="text-body-2 mb-1"
+                          >{{ $t('confirm_password') }}:</VLabel
+                        >
                         <AppTextField
                           id="confirm-new-password"
                           name="confirm-new-password"
                           v-model="confirmPassword"
-                          :label="$t('confirm_password') + ':'"
                           :placeholder="$t('confirm_password')"
                           :type="isConfirmVisible ? 'text' : 'password'"
                           :autocomplete="
@@ -1704,63 +1557,23 @@ onMounted(resetForm);
               <VForm class="mt-4" ref="refFormStep2" @submit.prevent>
                 <VRow class="mb-2">
                   <VCol cols="12" md="6">
-                    <div>
-                      <VLabel class="mb-1 text-body-2"
-                        >{{ $t('phone_ddi') }}:</VLabel
-                      >
-                      <VMenu v-model="isCountryMenuOpen">
-                        <template #activator="{ props: menuProps }">
-                          <VTextField
-                            v-bind="menuProps"
-                            :model-value="
-                              countryCodes.find((c) => c.value === phone_ddi)
-                                ?.title || ''
-                            "
-                            :placeholder="$t('select_phone_ddi')"
-                            variant="outlined"
-                            readonly
-                            append-inner-icon="tabler-chevron-down"
-                          />
-                        </template>
-                        <VCard>
-                          <VCardText class="pa-2">
-                            <AppTextField
-                              v-model="countrySearchQuery"
-                              :placeholder="$t('search') + '...'"
-                              prepend-inner-icon="tabler-search"
-                              density="compact"
-                              hide-details
-                              autofocus
-                              @click.stop
-                            />
-                          </VCardText>
-                          <VDivider />
-                          <VList max-height="300" style="overflow-y: auto">
-                            <VListItem
-                              v-for="(item, index) in filteredCountryCodes"
-                              :key="index"
-                              :value="item.value"
-                              @click="
-                                () => {
-                                  phone_ddi = item.value;
-                                  isCountryMenuOpen = false;
-                                }
-                              "
-                              :active="phone_ddi === item.value"
-                            >
-                              <VListItemTitle>{{ item.title }}</VListItemTitle>
-                            </VListItem>
-                          </VList>
-                        </VCard>
-                      </VMenu>
-                    </div>
+                    <VLabel class="text-body-2 mb-1"
+                      >{{ $t('phone_ddi') }}:</VLabel
+                    >
+                    <AppSelectSearch
+                      v-model="phone_ddi"
+                      :items="countryCodes"
+                      :placeholder="$t('select_phone_ddi')"
+                      item-value="value"
+                      item-title="title"
+                    />
                   </VCol>
 
                   <VCol cols="12" md="6">
+                    <VLabel class="text-body-2 mb-1">{{ $t('phone') }}:</VLabel>
                     <AppTextField
                       v-model="phoneFormatted"
                       type="tel"
-                      :label="$t('phone') + ':'"
                       :placeholder="$t('phone')"
                       :rules="[
                         requiredValidator(phoneFormatted, $t('phone_required')),
@@ -1774,18 +1587,20 @@ onMounted(resetForm);
                   </VCol>
 
                   <VCol cols="12" md="6">
+                    <VLabel class="text-body-2 mb-1">{{ $t('name') }}:</VLabel>
                     <AppTextField
                       v-model="name"
-                      :label="$t('name') + ':'"
                       :placeholder="$t('name')"
                       :rules="[requiredValidator(name, $t('name_required'))]"
                     />
                   </VCol>
 
                   <VCol cols="12" md="6">
+                    <VLabel class="text-body-2 mb-1"
+                      >{{ $t('last_name') }}:</VLabel
+                    >
                     <AppTextField
                       v-model="last_name"
-                      :label="$t('last_name') + ':'"
                       :placeholder="$t('last_name')"
                       :rules="[
                         requiredValidator(last_name, $t('last_name_required')),
@@ -1794,15 +1609,18 @@ onMounted(resetForm);
                   </VCol>
 
                   <VCol cols="12" md="6">
-                    <AppSelect
-                      :model-value="user_document_type_id"
+                    <VLabel class="text-body-2 mb-1"
+                      >{{ $t('document_type') }}:</VLabel
+                    >
+                    <AppSelectSearch
+                      v-model="user_document_type_id"
                       :items="itemsDocuments"
-                      :label="$t('document_type') + ':'"
                       :placeholder="$t('document_type')"
-                      @update:model-value="
-                        user_document_type_id = $event;
-                        document = null;
-                      "
+                      :clearable="true"
+                      item-value="value"
+                      item-title="title"
+                      @select="document = null"
+                      @clear="document = null"
                     />
                   </VCol>
 
@@ -1818,9 +1636,11 @@ onMounted(resetForm);
                   </VCol>
 
                   <VCol cols="12" md="6">
+                    <VLabel class="text-body-2 mb-1"
+                      >{{ $t('birth_date') }}:</VLabel
+                    >
                     <AppDateTimePicker
                       v-model="birth_date"
-                      :label="$t('birth_date') + ':'"
                       :placeholder="$t('birth_date')"
                       :rules="[
                         requiredValidator(
@@ -1844,19 +1664,31 @@ onMounted(resetForm);
               <VForm class="mt-4" ref="refFormAddUser" @submit.prevent>
                 <VRow class="mb-2">
                   <VCol cols="12" md="6">
-                    <AppSelect
-                      :label="$t('country') + ':'"
-                      :placeholder="$t('country')"
-                      :model-value="country_id"
+                    <VLabel class="text-body-2 mb-1"
+                      >{{ $t('country') }}:</VLabel
+                    >
+                    <AppSelectSearch
+                      v-model="country_id"
                       :items="itemsCountry"
-                      @update:model-value="onCountryChange"
+                      :placeholder="$t('country')"
+                      :clearable="true"
+                      item-value="value"
+                      item-title="title"
+                      @select="
+                        (item) => onCountryChange(item.value as number | null)
+                      "
+                      @update:modelValue="
+                        (val) => onCountryChange(val as number | null)
+                      "
                     />
                   </VCol>
                   <VCol cols="12" md="6">
+                    <VLabel class="text-body-2 mb-1"
+                      >{{ $t('zip_code') }}:</VLabel
+                    >
                     <AppTextField
                       ref="zipInputRef"
                       v-model="zip_code"
-                      :label="$t('zip_code') + ':'"
                       :placeholder="$t('zip_code')"
                       :rules="[
                         requiredValidator(zip_code, $t('zip_code_required')),
@@ -1867,140 +1699,45 @@ onMounted(resetForm);
                     />
                   </VCol>
                   <VCol cols="12" md="6">
-                    <div>
-                      <VLabel class="mb-1 text-body-2"
-                        >{{ $t('state') }}:</VLabel
-                      >
-                      <VMenu v-model="isStateMenuOpen">
-                        <template #activator="{ props: menuProps }">
-                          <VTextField
-                            v-bind="menuProps"
-                            :model-value="
-                              filteredStates.find((s) => s.value === state_id)
-                                ?.title || ''
-                            "
-                            :placeholder="$t('state')"
-                            variant="outlined"
-                            readonly
-                            :disabled="!country_id"
-                            append-inner-icon="tabler-chevron-down"
-                          />
-                        </template>
-                        <VCard>
-                          <VCardText class="pa-2">
-                            <AppTextField
-                              v-model="stateSearchQuery"
-                              :placeholder="$t('search') + '...'"
-                              prepend-inner-icon="tabler-search"
-                              density="compact"
-                              hide-details
-                              autofocus
-                              @click.stop
-                            />
-                          </VCardText>
-                          <VDivider />
-                          <VList max-height="300" style="overflow-y: auto">
-                            <template v-if="filteredStates.length > 0">
-                              <VListItem
-                                v-for="(item, index) in filteredStates"
-                                :key="index"
-                                :value="item.value"
-                                @click="
-                                  () => {
-                                    onStateChange(item.value);
-                                    state = item.title;
-                                    isStateMenuOpen = false;
-                                  }
-                                "
-                                :active="state_id === item.value"
-                              >
-                                <VListItemTitle>{{
-                                  item.title
-                                }}</VListItemTitle>
-                              </VListItem>
-                            </template>
-                            <VListItem v-else-if="stateSearchQuery" disabled>
-                              <VListItemTitle
-                                class="text-center text-body-2 text-medium-emphasis"
-                              >
-                                {{ $t('no_results_found') }}
-                              </VListItemTitle>
-                            </VListItem>
-                          </VList>
-                        </VCard>
-                      </VMenu>
-                    </div>
+                    <VLabel class="text-body-2 mb-1">{{ $t('state') }}:</VLabel>
+                    <AppSelectSearch
+                      v-model="state_id"
+                      :items="filteredStates"
+                      :placeholder="$t('state')"
+                      :disabled="!country_id"
+                      item-value="value"
+                      item-title="title"
+                      @select="
+                        (item) => {
+                          onStateChange(item.value as string | null);
+                          state = item.title || '';
+                        }
+                      "
+                    />
                   </VCol>
                   <VCol cols="12" md="6">
-                    <div>
-                      <VLabel class="mb-1 text-body-2"
-                        >{{ $t('city') }}:</VLabel
-                      >
-                      <VMenu v-model="isCityMenuOpen">
-                        <template #activator="{ props: menuProps }">
-                          <VTextField
-                            v-bind="menuProps"
-                            :model-value="
-                              filteredCities.find((c) => c.value === city_id)
-                                ?.title || ''
-                            "
-                            :placeholder="$t('city')"
-                            variant="outlined"
-                            readonly
-                            :disabled="!state_id || !country_id"
-                            append-inner-icon="tabler-chevron-down"
-                          />
-                        </template>
-                        <VCard>
-                          <VCardText class="pa-2">
-                            <AppTextField
-                              v-model="citySearchQuery"
-                              :placeholder="$t('search') + '...'"
-                              prepend-inner-icon="tabler-search"
-                              density="compact"
-                              hide-details
-                              autofocus
-                              @click.stop
-                            />
-                          </VCardText>
-                          <VDivider />
-                          <VList max-height="300" style="overflow-y: auto">
-                            <template v-if="filteredCities.length > 0">
-                              <VListItem
-                                v-for="(item, index) in filteredCities"
-                                :key="index"
-                                :value="item.value"
-                                @click="
-                                  () => {
-                                    city_id = item.value;
-                                    city = item.title;
-                                    isCityMenuOpen = false;
-                                  }
-                                "
-                                :active="city_id === item.value"
-                              >
-                                <VListItemTitle>{{
-                                  item.title
-                                }}</VListItemTitle>
-                              </VListItem>
-                            </template>
-                            <VListItem v-else-if="citySearchQuery" disabled>
-                              <VListItemTitle
-                                class="text-center text-body-2 text-medium-emphasis"
-                              >
-                                {{ $t('no_results_found') }}
-                              </VListItemTitle>
-                            </VListItem>
-                          </VList>
-                        </VCard>
-                      </VMenu>
-                    </div>
+                    <VLabel class="text-body-2 mb-1">{{ $t('city') }}:</VLabel>
+                    <AppSelectSearch
+                      v-model="city_id"
+                      :items="filteredCities"
+                      :placeholder="$t('city')"
+                      :disabled="!state_id || !country_id"
+                      item-value="value"
+                      item-title="title"
+                      @select="
+                        (item) => {
+                          city = item.title || '';
+                        }
+                      "
+                    />
                   </VCol>
                   <VCol cols="12" md="6">
+                    <VLabel class="text-body-2 mb-1"
+                      >{{ $t('address') }}:</VLabel
+                    >
                     <AppTextField
                       v-model="address1"
                       :disabled="!country_id"
-                      :label="$t('address') + ':'"
                       :placeholder="$t('address')"
                       :rules="[
                         requiredValidator(address1, $t('address_required')),
@@ -2008,18 +1745,22 @@ onMounted(resetForm);
                     />
                   </VCol>
                   <VCol cols="12" md="6">
+                    <VLabel class="text-body-2 mb-1"
+                      >{{ $t('address_secondary') }}:</VLabel
+                    >
                     <AppTextField
                       v-model="address2"
                       :disabled="!country_id"
-                      :label="$t('address_secondary') + ':'"
                       :placeholder="$t('address_secondary')"
                     />
                   </VCol>
                   <VCol cols="12" md="6">
+                    <VLabel class="text-body-2 mb-1"
+                      >{{ $t('district') }}:</VLabel
+                    >
                     <AppTextField
                       v-model="district"
                       :disabled="!country_id"
-                      :label="$t('district') + ':'"
                       :placeholder="$t('district')"
                       :rules="[
                         requiredValidator(district, $t('district_required')),

@@ -81,11 +81,15 @@ const initializeModal = async () => {
   }
 };
 
-watch(isVisible, async (visible) => {
-  if (visible && accountId.value) {
-    await initializeModal();
-  }
-}, { immediate: true });
+watch(
+  isVisible,
+  async (visible) => {
+    if (visible && accountId.value) {
+      await initializeModal();
+    }
+  },
+  { immediate: true }
+);
 </script>
 
 <template>
@@ -104,9 +108,9 @@ watch(isVisible, async (visible) => {
         <VCardText>
           <VRow>
             <VCol cols="12" md="6">
+              <VLabel class="text-body-2 mb-1">{{ $t('name') }}:</VLabel>
               <AppTextField
                 v-model="name"
-                :label="$t('name') + ':'"
                 :placeholder="$t('name')"
                 maxlength="10"
                 :rules="[requiredValidator(name, $t('name_required'))]"
@@ -114,12 +118,14 @@ watch(isVisible, async (visible) => {
             </VCol>
 
             <VCol cols="12" md="6">
+              <VLabel class="text-body-2 mb-1"
+                >{{ $t('account_status') }}:</VLabel
+              >
               <AppSelect
                 v-model="accountStatus"
                 :items="accountStatusOptions"
                 item-title="name"
                 item-value="id"
-                :label="$t('account_status') + ':'"
                 :placeholder="$t('account_status')"
               />
             </VCol>

@@ -28,17 +28,7 @@ const tagData = ref<TagData>(getInitialData());
 const tags = ref<Array<{ value: string; title: string; color: string | null }>>(
   []
 );
-const tagSearch = ref('');
 const isLoadingTags = ref(false);
-const isTagMenuOpen = ref(false);
-
-const filteredTags = computed(() => {
-  if (!tagSearch.value) {
-    return tags.value;
-  }
-  const query = tagSearch.value.toLowerCase();
-  return tags.value.filter((tag) => tag?.title?.toLowerCase().includes(query));
-});
 
 const selectedTagTitle = computed(() => {
   const current = tags.value.find((t) => t.value === tagData.value.selectedTag);
@@ -90,22 +80,12 @@ onMounted(() => {
   }
 });
 
-watch(isTagMenuOpen, (isOpen) => {
-  if (isOpen) {
-    loadTags();
-  } else {
-    tagSearch.value = '';
-  }
-});
-
 watch(
   () => tagData.value.tagType,
   (newType) => {
     if (!newType) {
       tagData.value.selectedTag = null;
       tags.value = [];
-      tagSearch.value = '';
-      isTagMenuOpen.value = false;
     } else if (tags.value.length === 0) {
       loadTags();
     }
@@ -155,13 +135,15 @@ const handleRemove = () => {
       </VCardTitle>
 
       <VCardText class="pa-3">
+        <VLabel class="text-body-2 mb-1"
+          >{{ t('chatbot_tag_type_label') }}:</VLabel
+        >
         <VSelect
           v-model="tagData.tagType"
           :items="[
             { value: 'chat', title: t('chatbot_tag_type_chat') },
             { value: 'contact', title: t('chatbot_tag_type_contact') },
           ]"
-          :label="t('chatbot_tag_type_label')"
           variant="outlined"
           density="compact"
           class="mb-3"
@@ -170,73 +152,26 @@ const handleRemove = () => {
         />
 
         <div v-if="tagData.tagType" class="mb-3">
-          <VLabel class="mb-1 text-body-2"
-            >{{ t('chatbot_tag_label') }}
-            <span class="text-error">*</span></VLabel
+          <VLabel class="text-body-2 mb-1"
+            >{{ t('chatbot_tag_label') }}:</VLabel
           >
-          <VMenu v-model="isTagMenuOpen">
-            <template #activator="{ props: menuProps }">
-              <VTextField
-                v-bind="menuProps"
-                :model-value="selectedTagTitle"
-                :placeholder="t('chatbot_tag_search_placeholder')"
-                variant="outlined"
-                readonly
-                append-inner-icon="tabler-chevron-down"
-                :loading="isLoadingTags"
-                density="compact"
-                :error="!tagData.selectedTag"
-                :error-messages="
-                  !tagData.selectedTag ? [t('chatbot_tag_required')] : []
-                "
-                hide-details="auto"
+          <AppSelectSearch
+            v-model="tagData.selectedTag"
+            :items="tags"
+            :placeholder="t('chatbot_tag_search_placeholder')"
+            :loading="isLoadingTags"
+            item-value="value"
+            item-title="title"
+          >
+            <template #item-prepend="{ item }">
+              <VAvatar
+                size="24"
+                :style="{
+                  backgroundColor: item.color || '#1976D2',
+                }"
               />
             </template>
-            <VCard>
-              <VCardText>
-                <VTextField
-                  v-model="tagSearch"
-                  :placeholder="t('chatbot_tag_search_label_placeholder')"
-                  variant="outlined"
-                  density="compact"
-                  prepend-inner-icon="tabler-search"
-                  hide-details
-                />
-              </VCardText>
-              <VDivider />
-              <VList density="compact" class="max-height-300">
-                <VListItem
-                  v-for="tag in filteredTags"
-                  :key="tag.value"
-                  :value="tag.value"
-                  @click="
-                    tagData.selectedTag = tag.value;
-                    isTagMenuOpen = false;
-                  "
-                >
-                  <template #prepend>
-                    <VAvatar
-                      size="24"
-                      :style="{
-                        backgroundColor: tag.color || '#1976D2',
-                      }"
-                    />
-                  </template>
-                  <VListItemTitle>{{ tag.title }}</VListItemTitle>
-                </VListItem>
-                <VListItem
-                  v-if="filteredTags.length === 0 && !isLoadingTags"
-                  disabled
-                >
-                  <VListItemTitle
-                    class="text-center text-body-2 text-medium-emphasis"
-                  >
-                    {{ t('chatbot_tag_no_results') }}
-                  </VListItemTitle>
-                </VListItem>
-              </VList>
-            </VCard>
-          </VMenu>
+          </AppSelectSearch>
         </div>
       </VCardText>
     </VCard>

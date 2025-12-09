@@ -20,7 +20,6 @@ export const viewWorkerConfigForChat = async (
     const response = await workerConfigForChatViewerUseCase.execute(
       t,
       tokenJwtData.account_id,
-      tokenJwtData.is_administrator,
       request.params.worker_id
     );
 

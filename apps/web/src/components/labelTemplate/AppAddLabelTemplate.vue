@@ -27,7 +27,7 @@ const DEFAULT_COLOR = '#A89999';
 
 const color = ref<string>(DEFAULT_COLOR);
 const label = ref<string | null>(null);
-const label_status_id = ref<string | null>(null);
+const label_status_id = ref<string | null>(ELabelStatus.active);
 
 const refFormAddLabelTemplate = ref<VForm>();
 
@@ -58,7 +58,7 @@ const addLabelTemplate = async () => {
 
 const resetForm = () => {
   label.value = null;
-  label_status_id.value = null;
+  label_status_id.value = ELabelStatus.active;
   color.value = DEFAULT_COLOR;
   refFormAddLabelTemplate.value?.resetValidation();
 };
@@ -89,28 +89,25 @@ watch(isVisible, (visible) => {
         <VCardText>
           <VRow>
             <VCol cols="12">
+              <VLabel class="text-body-2 mb-1">{{ $t('label') }}:</VLabel>
               <AppTextField
                 v-model="label"
-                :label="$t('label') + ':'"
                 :placeholder="$t('label')"
                 :rules="[requiredValidator(label, $t('label_required'))]"
               />
             </VCol>
 
             <VCol cols="12" md="6">
-              <AppSelect
+              <VLabel class="text-body-2 mb-1"
+                >{{ $t('label_status') }}:</VLabel
+              >
+              <AppSelectSearch
                 v-model="label_status_id"
                 :items="itemsStatus"
-                item-title="text"
-                item-value="value"
-                :label="$t('label_status') + ':'"
                 :placeholder="$t('label_status')"
-                :rules="[
-                  requiredValidator(
-                    label_status_id,
-                    $t('label_status_id_required')
-                  ),
-                ]"
+                :clearable="true"
+                item-value="value"
+                item-title="text"
               />
             </VCol>
 

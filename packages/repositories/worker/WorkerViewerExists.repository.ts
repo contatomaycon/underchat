@@ -11,14 +11,9 @@ export class WorkerViewerExistsRepository {
   ) {}
 
   existsWorkerById = async (
-    isAdministrator: boolean,
     accountId: string,
     workerId: string
   ): Promise<boolean> => {
-    const accountCondition = isAdministrator
-      ? undefined
-      : eq(worker.account_id, accountId);
-
     const result = await this.db
       .select({
         total: count(),
@@ -26,7 +21,7 @@ export class WorkerViewerExistsRepository {
       .from(worker)
       .where(
         and(
-          accountCondition,
+          eq(worker.account_id, accountId),
           eq(worker.worker_id, workerId),
           isNull(worker.deleted_at)
         )
