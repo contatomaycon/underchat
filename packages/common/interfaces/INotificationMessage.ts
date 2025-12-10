@@ -9,7 +9,7 @@ export interface INotificationMessage {
     name: string | null;
   };
   worker: {
-    id: string;
+    id: string | null;
     name: string | null;
   };
   notification_type: {

@@ -96,10 +96,10 @@ export class NotificationMessageService {
   private async sendWhatsAppNotification(
     notification: any,
     phone: string | null,
-    workerId: string,
+    workerId: string | null,
     notificationMessage: INotificationMessage
   ): Promise<void> {
-    if (!notification.message_whatsapp || !phone) {
+    if (!notification.message_whatsapp || !phone || !workerId) {
       return;
     }
 
@@ -162,20 +162,6 @@ export class NotificationMessageService {
     const phone = this.userService.getUserPhoneDecrypted(userInfo.phone);
     const userEmail = await this.getUserEmail(masterUser.user_id);
 
-    const workerId =
-      notification.worker_id || (await this.getFirstActiveWorkerId(accountId));
-
-    if (!workerId) {
-      throw new Error('No active worker found for account');
-    }
-
-    const workerName =
-      await this.workerNameViewerRepository.findWorkerNameById(workerId);
-
-    if (!workerName) {
-      throw new Error('Worker not found');
-    }
-
     const { whatsappMessage, emailMessage, emailSubject } =
       await this.prepareNotificationMessages(
         notification,
@@ -186,6 +172,26 @@ export class NotificationMessageService {
 
     if (!notification.message_whatsapp && !notification.message_email) {
       return true;
+    }
+
+    let workerId: string | null = null;
+    let workerName: string | null = null;
+
+    if (notification.message_whatsapp) {
+      workerId =
+        notification.worker_id ||
+        (await this.getFirstActiveWorkerId(accountId));
+
+      if (!workerId) {
+        throw new Error('No active worker found for account');
+      }
+
+      workerName =
+        await this.workerNameViewerRepository.findWorkerNameById(workerId);
+
+      if (!workerName) {
+        throw new Error('Worker not found');
+      }
     }
 
     const remoteJid = phone
