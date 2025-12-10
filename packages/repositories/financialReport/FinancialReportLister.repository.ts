@@ -2,13 +2,14 @@ import * as schema from '@core/models';
 import { account, plan, accountPayment, expenditure } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, isNull, gte, lte, SQLWrapper, eq } from 'drizzle-orm';
+import { and, isNull, gte, lte, SQLWrapper, eq, inArray } from 'drizzle-orm';
 import { ListFinancialReportRequest } from '@core/schema/financialReport/listFinancialReport/request.schema';
 import {
   ListFinancialReportResponse,
   MonthlyDetail,
   DailyDetail,
 } from '@core/schema/financialReport/listFinancialReport/response.schema';
+import { EPaymentStatus } from '@core/common/enums/EPaymentStatus';
 
 @injectable()
 export class FinancialReportListerRepository {
@@ -20,6 +21,13 @@ export class FinancialReportListerRepository {
     query: ListFinancialReportRequest
   ): SQLWrapper[] => {
     const filters: SQLWrapper[] = [];
+
+    filters.push(
+      inArray(accountPayment.payment_status_id, [
+        EPaymentStatus.received,
+        EPaymentStatus.received_in_cash,
+      ])
+    );
 
     if (query.start_date) {
       filters.push(gte(accountPayment.created_at, query.start_date));
