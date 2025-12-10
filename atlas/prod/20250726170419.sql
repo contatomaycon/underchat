@@ -11,7 +11,7 @@ INSERT INTO "permission_action_groups" ("permission_action_group_id", "name", "d
   ('019a930d-c6f6-766d-9c83-b9db2f0d1aae', 'Chats', 'Grupo de permissões relacionadas a chats', 'chat_group'),
   ('019a930d-c6f6-766d-9c83-bf39f4a7a03c', 'Contas', 'Grupo de permissões relacionadas a contas', 'account_group'),
   ('019a930d-c6f6-766d-9c83-c07a5d1132eb', 'Setores', 'Grupo de permissões relacionadas a setores', 'sector_group'),
-  ('019a930d-c6f6-766d-9c83-c68d845f1195', 'Workers', 'Grupo de permissões relacionadas a workers', 'worker_group'),
+  ('019a930d-c6f6-766d-9c83-c68d845f1195', 'Canais', 'Grupo de permissões relacionadas a canais', 'worker_group'),
   ('019a930d-c6f6-766d-9c83-c9616d371514', 'Home', 'Grupo de permissões relacionadas à página inicial', 'home_group'),
   ('019a930d-c6f6-766d-9c83-cdb905c9de2e', 'Acesso Total', 'Grupo de permissões de acesso total', 'full_access_group'),
   ('019a930d-c6f6-766d-9c83-d77a537f99e7', 'Métricas', 'Grupo de permissões relacionadas a métricas', 'metrics_group');
