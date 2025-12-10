@@ -1,26 +1,17 @@
 import * as schema from '@core/models';
 import {
-  account,
+  accountPayment,
+  accountPaymentCrossSell,
   plan,
-  planAccount,
-  planCrossSellAccount,
   planCrossSell,
   planProduct,
   planProductDescription,
+  paymentBillingType,
+  account,
 } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import {
-  and,
-  eq,
-  isNull,
-  gte,
-  lte,
-  sql,
-  SQLWrapper,
-  inArray,
-  gt,
-} from 'drizzle-orm';
+import { and, eq, isNull, gte, lte, SQLWrapper, desc } from 'drizzle-orm';
 import { ListPlanSalesRequest } from '@core/schema/plan/listPlanSales/request.schema';
 import { ListPlanSalesResponse } from '@core/schema/plan/listPlanSales/response.schema';
 
@@ -34,15 +25,24 @@ export class PlanSalesListerRepository {
     const filters: SQLWrapper[] = [];
 
     if (query.plan_id) {
-      filters.push(eq(planAccount.plan_id, query.plan_id));
+      filters.push(eq(accountPayment.plan_id, query.plan_id));
     }
 
     if (query.start_date) {
-      filters.push(gte(account.created_at, query.start_date));
+      filters.push(gte(accountPayment.created_at, query.start_date));
     }
 
     if (query.end_date) {
-      filters.push(lte(account.created_at, query.end_date));
+      filters.push(lte(accountPayment.created_at, query.end_date));
+    }
+
+    if (query.payment_billing_type_id) {
+      filters.push(
+        eq(
+          accountPayment.payment_billing_type_id,
+          query.payment_billing_type_id
+        )
+      );
     }
 
     return filters;
@@ -52,31 +52,22 @@ export class PlanSalesListerRepository {
     query: ListPlanSalesRequest
   ): Promise<ListPlanSalesResponse[]> => {
     const filters = this.setFilters(query);
-    const planSalesResult = await this.getPlanSales(filters);
+    const payments = await this.getPayments(filters);
 
-    if (!planSalesResult.length) {
+    if (!payments.length) {
       return [];
     }
 
     const results: ListPlanSalesResponse[] = [];
 
-    for (const planSale of planSalesResult) {
-      const accountsForPlan = await this.getAccountsForPlan(
-        planSale.plan_id,
-        filters
-      );
-      const accountIds = accountsForPlan.map((a) => a.account_id);
-
-      const crossSellsResult = await this.getCrossSellsForAccounts(accountIds);
-      const totalRevenue = this.calculateTotalRevenue(
-        planSale.total_revenue,
-        crossSellsResult
+    for (const payment of payments) {
+      const crossSellsResult = await this.getCrossSellsForPayment(
+        payment.account_payment_id
       );
 
       const planSaleResponse = this.buildPlanSaleResponse(
-        planSale,
-        crossSellsResult,
-        totalRevenue
+        payment,
+        crossSellsResult
       );
       results.push(planSaleResponse);
     }
@@ -84,71 +75,52 @@ export class PlanSalesListerRepository {
     return results;
   };
 
-  private readonly getPlanSales = async (filters: SQLWrapper[]) => {
+  private readonly getPayments = async (filters: SQLWrapper[]) => {
     return this.db
       .select({
+        account_payment_id: accountPayment.account_payment_id,
         plan_id: plan.plan_id,
         plan_name: plan.name,
         price: plan.price,
         price_old: plan.price_old,
-        quantity_sold: sql<number>`COUNT(DISTINCT ${account.account_id})::int`,
-        total_revenue: sql<string>`(COUNT(DISTINCT ${account.account_id}) * ${plan.price})::text`,
-        created_at: sql<string>`MIN(${account.created_at})::text`,
-      })
-      .from(account)
-      .innerJoin(planAccount, eq(planAccount.account_id, account.account_id))
-      .innerJoin(plan, eq(planAccount.plan_id, plan.plan_id))
-      .where(
-        and(
-          isNull(account.deleted_at),
-          isNull(plan.deleted_at),
-          gt(planAccount.next_payment_date, sql`NOW()`),
-          ...filters
-        )
-      )
-      .groupBy(plan.plan_id, plan.name, plan.price, plan.price_old)
-      .execute();
-  };
-
-  private readonly getAccountsForPlan = async (
-    planId: string,
-    filters: SQLWrapper[]
-  ) => {
-    return this.db
-      .select({
+        payment_billing_type_id: paymentBillingType.payment_billing_type_id,
+        payment_billing_type_name: paymentBillingType.name,
         account_id: account.account_id,
+        account_name: account.name,
+        payment_value: accountPayment.value,
+        created_at: accountPayment.created_at,
       })
-      .from(account)
-      .innerJoin(planAccount, eq(planAccount.account_id, account.account_id))
-      .where(
-        and(
-          eq(planAccount.plan_id, planId),
-          gt(planAccount.next_payment_date, sql`NOW()`),
-          isNull(account.deleted_at),
-          ...filters
+      .from(accountPayment)
+      .innerJoin(plan, eq(accountPayment.plan_id, plan.plan_id))
+      .innerJoin(account, eq(accountPayment.account_id, account.account_id))
+      .innerJoin(
+        paymentBillingType,
+        eq(
+          accountPayment.payment_billing_type_id,
+          paymentBillingType.payment_billing_type_id
         )
       )
+      .where(
+        and(isNull(plan.deleted_at), isNull(account.deleted_at), ...filters)
+      )
+      .orderBy(desc(accountPayment.created_at))
       .execute();
   };
 
-  private readonly getCrossSellsForAccounts = async (accountIds: string[]) => {
-    if (!accountIds.length) {
-      return [];
-    }
-
+  private readonly getCrossSellsForPayment = async (paymentId: string) => {
     return this.db
       .select({
         plan_cross_sell_id: planCrossSell.plan_cross_sell_id,
         plan_product_name: planProductDescription.name,
-        total_price: sql<string>`SUM(${planCrossSell.price})::text`,
-        quantity: sql<number>`COUNT(DISTINCT ${planCrossSellAccount.account_id})::int`,
+        total_price: accountPaymentCrossSell.value,
+        quantity: accountPaymentCrossSell.quantity,
         cross_sell_quantity: planCrossSell.quantity,
       })
-      .from(planCrossSellAccount)
+      .from(accountPaymentCrossSell)
       .innerJoin(
         planCrossSell,
         eq(
-          planCrossSellAccount.plan_cross_sell_id,
+          accountPaymentCrossSell.plan_cross_sell_id,
           planCrossSell.plan_cross_sell_id
         )
       )
@@ -162,38 +134,25 @@ export class PlanSalesListerRepository {
       )
       .where(
         and(
-          inArray(planCrossSellAccount.account_id, accountIds),
-          isNull(planCrossSellAccount.deleted_at),
+          eq(accountPaymentCrossSell.account_payment_id, paymentId),
           isNull(planCrossSell.deleted_at)
         )
-      )
-      .groupBy(
-        planCrossSell.plan_cross_sell_id,
-        planProductDescription.name,
-        planCrossSell.quantity
       )
       .execute();
   };
 
-  private readonly calculateTotalRevenue = (
-    planRevenue: string,
-    crossSellsResult: Array<{ total_price: string }>
-  ): string => {
-    const planRevenueNumber = Number(planRevenue);
-    const crossSellsTotal = crossSellsResult.reduce(
-      (sum, cs) => sum + Number(cs.total_price),
-      0
-    );
-    return (planRevenueNumber + crossSellsTotal).toString();
-  };
-
   private readonly buildPlanSaleResponse = (
-    planSale: {
+    payment: {
+      account_payment_id: string;
       plan_id: string;
       plan_name: string;
       price: string;
       price_old: string;
-      quantity_sold: number;
+      payment_billing_type_id: string;
+      payment_billing_type_name: string;
+      account_id: string;
+      account_name: string;
+      payment_value: string;
       created_at: string | null;
     },
     crossSellsResult: Array<{
@@ -202,16 +161,25 @@ export class PlanSalesListerRepository {
       total_price: string;
       quantity: number;
       cross_sell_quantity: number;
-    }>,
-    totalRevenue: string
+    }>
   ): ListPlanSalesResponse => {
+    const crossSellsTotal = crossSellsResult.reduce(
+      (sum, cs) => sum + Number(cs.total_price),
+      0
+    );
+    const planValue = (
+      Number(payment.payment_value) - crossSellsTotal
+    ).toString();
+
     return {
-      plan_id: planSale.plan_id,
-      plan_name: planSale.plan_name,
-      price: planSale.price,
-      price_old: planSale.price_old,
-      quantity_sold: planSale.quantity_sold,
-      total_revenue: totalRevenue,
+      account_payment_id: payment.account_payment_id,
+      plan_id: payment.plan_id,
+      plan_name: payment.plan_name,
+      price: planValue,
+      price_old: payment.price_old,
+      total_revenue: payment.payment_value,
+      account_id: payment.account_id,
+      account_name: payment.account_name,
       cross_sells: crossSellsResult.map((cs) => ({
         plan_cross_sell_id: cs.plan_cross_sell_id,
         plan_product_name: cs.plan_product_name ?? null,
@@ -219,7 +187,8 @@ export class PlanSalesListerRepository {
         quantity: cs.quantity,
         cross_sell_quantity: cs.cross_sell_quantity,
       })),
-      created_at: planSale.created_at ?? null,
+      created_at: payment.created_at ?? null,
+      payment_billing_type_name: payment.payment_billing_type_name ?? null,
     };
   };
 }

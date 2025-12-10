@@ -69,14 +69,13 @@ const query = computed((): IListUsers => {
     page: options.value.page,
     per_page: options.value.itemsPerPage,
     sort_by: options.value.sortBy,
+    account_id: 'all',
   };
 
-  // Adicionar user_status apenas se não for null ou string vazia
   if (options.value.user_status && options.value.user_status !== '') {
     q.user_status = options.value.user_status;
   }
 
-  // Adicionar search apenas se não for null ou string vazia
   if (debouncedSearch.value && debouncedSearch.value.trim() !== '') {
     q.search = debouncedSearch.value.trim();
   }
@@ -94,7 +93,6 @@ const handleTableChange = (o: {
   options.value.sortBy = o.sortBy;
 };
 
-// Estatísticas
 const totalUsers = computed(() => userStore.pagings.total);
 const activeUsers = computed(() => {
   return userStore.list.filter(
@@ -145,7 +143,26 @@ function formatPhone(value: string | null | undefined): string {
   return `(${numbers.slice(0, 2)}) ${numbers.slice(2, 7)}-${numbers.slice(7)}`;
 }
 
-// Estados para descriptografia
+function formatDocument(value: string | null | undefined): string {
+  if (!value) return '';
+
+  if (/[.\-*]/.test(value)) {
+    return value;
+  }
+
+  const digits = value.replaceAll(/\D/g, '');
+
+  if (digits.length === 11) {
+    return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9, 11)}`;
+  }
+
+  if (digits.length === 14) {
+    return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8, 12)}-${digits.slice(12, 14)}`;
+  }
+
+  return value;
+}
+
 const decryptedData = ref<
   Record<
     string,
@@ -269,7 +286,6 @@ watch(
   { immediate: true, deep: true }
 );
 
-// Resetar página quando o status ou busca mudar
 watch(
   () => options.value.user_status,
   () => {
@@ -490,9 +506,11 @@ watch(
               <div class="d-flex align-center justify-space-between">
                 <span>
                   {{
-                    decryptedData[item.user_id]?.document ??
-                    item.user_document?.document_partial ??
-                    '-'
+                    formatDocument(
+                      decryptedData[item.user_id]?.document ??
+                        item.user_document?.document_partial ??
+                        null
+                    ) || '-'
                   }}
                 </span>
                 <VIcon

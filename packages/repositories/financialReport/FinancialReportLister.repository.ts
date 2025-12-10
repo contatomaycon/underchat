@@ -1,25 +1,8 @@
 import * as schema from '@core/models';
-import {
-  account,
-  plan,
-  planAccount,
-  planCrossSellAccount,
-  planCrossSell,
-  expenditure,
-} from '@core/models';
+import { account, plan, accountPayment, expenditure } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import {
-  and,
-  isNull,
-  gte,
-  lte,
-  SQLWrapper,
-  inArray,
-  eq,
-  gt,
-  sql,
-} from 'drizzle-orm';
+import { and, isNull, gte, lte, SQLWrapper, eq } from 'drizzle-orm';
 import { ListFinancialReportRequest } from '@core/schema/financialReport/listFinancialReport/request.schema';
 import {
   ListFinancialReportResponse,
@@ -39,11 +22,11 @@ export class FinancialReportListerRepository {
     const filters: SQLWrapper[] = [];
 
     if (query.start_date) {
-      filters.push(gte(account.created_at, query.start_date));
+      filters.push(gte(accountPayment.created_at, query.start_date));
     }
 
     if (query.end_date) {
-      filters.push(lte(account.created_at, query.end_date));
+      filters.push(lte(accountPayment.created_at, query.end_date));
     }
 
     return filters;
@@ -65,34 +48,37 @@ export class FinancialReportListerRepository {
     return filters;
   };
 
-  private readonly processPlanSaleByPeriod = (
-    planSale: { price: string; created_at: string | null },
+  private readonly processPaymentByPeriod = (
+    payment: { value: string; created_at: string | null },
     period: 'monthly' | 'annual' | 'daily',
     incomeByMonth: Map<string, number>,
     incomeByYear: Map<string, number>,
     incomeByDay: Map<string, number>
   ): number => {
-    const planPrice = Number(planSale.price);
+    const paymentValue = Number(payment.value);
 
-    if (!planSale.created_at) {
-      return planPrice;
+    if (!payment.created_at) {
+      return paymentValue;
     }
 
-    const date = new Date(planSale.created_at);
+    const date = new Date(payment.created_at);
 
     if (period === 'monthly') {
       const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
       incomeByMonth.set(
         monthKey,
-        (incomeByMonth.get(monthKey) || 0) + planPrice
+        (incomeByMonth.get(monthKey) || 0) + paymentValue
       );
-      return planPrice;
+      return paymentValue;
     }
 
     if (period === 'annual') {
       const yearKey = date.getFullYear().toString();
-      incomeByYear.set(yearKey, (incomeByYear.get(yearKey) || 0) + planPrice);
-      return planPrice;
+      incomeByYear.set(
+        yearKey,
+        (incomeByYear.get(yearKey) || 0) + paymentValue
+      );
+      return paymentValue;
     }
 
     if (period === 'daily') {
@@ -100,10 +86,10 @@ export class FinancialReportListerRepository {
       const month = String(date.getUTCMonth() + 1).padStart(2, '0');
       const day = String(date.getUTCDate()).padStart(2, '0');
       const dayKey = `${year}-${month}-${day}`;
-      incomeByDay.set(dayKey, (incomeByDay.get(dayKey) || 0) + planPrice);
+      incomeByDay.set(dayKey, (incomeByDay.get(dayKey) || 0) + paymentValue);
     }
 
-    return planPrice;
+    return paymentValue;
   };
 
   private readonly formatMonthlyDetails = (
@@ -294,27 +280,20 @@ export class FinancialReportListerRepository {
   }> => {
     const filters = this.setFilters(query);
 
-    const planSalesResult = await this.db
+    const paymentsResult = await this.db
       .select({
-        account_id: account.account_id,
-        plan_id: plan.plan_id,
-        price: plan.price,
-        created_at: account.created_at,
+        value: accountPayment.value,
+        created_at: accountPayment.created_at,
       })
-      .from(account)
-      .innerJoin(planAccount, eq(planAccount.account_id, account.account_id))
-      .innerJoin(plan, eq(planAccount.plan_id, plan.plan_id))
+      .from(accountPayment)
+      .innerJoin(plan, eq(accountPayment.plan_id, plan.plan_id))
+      .innerJoin(account, eq(accountPayment.account_id, account.account_id))
       .where(
-        and(
-          isNull(account.deleted_at),
-          isNull(plan.deleted_at),
-          gt(planAccount.next_payment_date, sql`NOW()`),
-          ...filters
-        )
+        and(isNull(plan.deleted_at), isNull(account.deleted_at), ...filters)
       )
       .execute();
 
-    if (!planSalesResult.length) {
+    if (!paymentsResult.length) {
       return {
         total: '0',
         byMonth: query.period === 'monthly' ? [] : undefined,
@@ -323,63 +302,14 @@ export class FinancialReportListerRepository {
       };
     }
 
-    const accountIds = planSalesResult.map((a) => a.account_id);
-
-    const crossSellFilters = [
-      inArray(planCrossSellAccount.account_id, accountIds),
-      isNull(planCrossSellAccount.deleted_at),
-      isNull(planCrossSell.deleted_at),
-    ];
-
-    if (query.start_date) {
-      crossSellFilters.push(
-        gte(planCrossSellAccount.created_at, query.start_date)
-      );
-    }
-
-    if (query.end_date) {
-      crossSellFilters.push(
-        lte(planCrossSellAccount.created_at, query.end_date)
-      );
-    }
-
-    const crossSellsResult = accountIds.length
-      ? await this.db
-          .select({
-            account_id: planCrossSellAccount.account_id,
-            price: planCrossSell.price,
-            created_at: planCrossSellAccount.created_at,
-          })
-          .from(planCrossSellAccount)
-          .innerJoin(
-            planCrossSell,
-            eq(
-              planCrossSellAccount.plan_cross_sell_id,
-              planCrossSell.plan_cross_sell_id
-            )
-          )
-          .where(and(...crossSellFilters))
-          .execute()
-      : [];
-
     let totalIncome = 0;
     const incomeByMonth = new Map<string, number>();
     const incomeByDay = new Map<string, number>();
     const incomeByYear = new Map<string, number>();
 
-    for (const planSale of planSalesResult) {
-      totalIncome += this.processPlanSaleByPeriod(
-        planSale,
-        query.period,
-        incomeByMonth,
-        incomeByYear,
-        incomeByDay
-      );
-    }
-
-    for (const crossSell of crossSellsResult) {
-      totalIncome += this.processPlanSaleByPeriod(
-        crossSell,
+    for (const payment of paymentsResult) {
+      totalIncome += this.processPaymentByPeriod(
+        payment,
         query.period,
         incomeByMonth,
         incomeByYear,

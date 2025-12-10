@@ -1091,9 +1091,14 @@
     "plan_name": "Nome do Plano",
     "quantity_sold": "Quantidade Vendida",
     "total_revenue": "Receita Total",
+    "account_name": "Nome da Conta",
+    "summary": "Resumo",
+    "total_sales": "Total de Vendas",
+    "sales_details": "Detalhes das Vendas",
     "start_date": "Data Inicial",
     "end_date": "Data Final",
     "select_date": "Selecione a data",
+    "select_payment_type": "Selecione o tipo de pagamento",
     "start_year": "Ano Inicial",
     "end_year": "Ano Final",
     "select_year": "Selecione o ano",
@@ -1701,5 +1706,6 @@
     "inss_value": "Valor INSS",
     "ir_value": "Valor IR",
     "pis_value": "Valor PIS",
-    "deductions": "Deduções"
+    "deductions": "Deduções",
+    "permission_denied": "Permissão negada"
 }
