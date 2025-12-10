@@ -10,6 +10,7 @@ import { listAccounts } from './methods/listAccounts';
 import { recreateChannel } from './methods/recreateChannel';
 import { deleteChannel } from './methods/deleteChannel';
 import { recreateChannelsAll } from './methods/recreateChannelsAll';
+import { channelsStatistics } from './methods/channelsStatistics';
 
 @injectable()
 class ConfigController {
@@ -24,6 +25,7 @@ class ConfigController {
   public recreateChannel = recreateChannel;
   public deleteChannel = deleteChannel;
   public recreateChannelsAll = recreateChannelsAll;
+  public channelsStatistics = channelsStatistics;
 }
 
 export default ConfigController;

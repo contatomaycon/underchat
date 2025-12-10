@@ -21,7 +21,6 @@ import {
 } from 'drizzle-orm';
 import { ListChannelsRequest } from '@core/schema/config/listChannels/request.schema';
 import { ListChannelsResponse } from '@core/schema/config/listChannels/response.schema';
-import { SortRequest } from '@core/schema/common/sortRequestSchema';
 
 @injectable()
 export class ChannelsListerRepository {

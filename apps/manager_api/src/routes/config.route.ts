@@ -12,6 +12,7 @@ import { listAccountsSchema } from '@core/schema/config/listAccounts';
 import { recreateChannelSchema } from '@core/schema/config/recreateChannel';
 import { deleteChannelSchema } from '@core/schema/config/deleteChannel';
 import { recreateChannelsAllSchema } from '@core/schema/config/recreateChannelsAll';
+import { channelsStatisticsSchema } from '@core/schema/config/channelsStatistics';
 import { configPermissions } from '@/permissions';
 
 export default async function configRoutes(server: FastifyInstance) {
@@ -110,6 +111,15 @@ export default async function configRoutes(server: FastifyInstance) {
   server.patch('/config/channels/recreate-all', {
     schema: recreateChannelsAllSchema,
     handler: configController.recreateChannelsAll,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, configPermissions),
+    ],
+  });
+
+  server.get('/config/channels/statistics', {
+    schema: channelsStatisticsSchema,
+    handler: configController.channelsStatistics,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, configPermissions),

@@ -119,6 +119,7 @@
   "channels_recreate_all_success": "{{success}} canais recriados com sucesso! {{errors}} erros.",
   "channels_recreate_all_error": "Erro ao recriar todos os canais!",
   "no_channels_to_recreate": "Nenhum canal encontrado para recriar!",
+  "channels_statistics_success": "Estatísticas dos canais obtidas com sucesso!",
   "worker_balancer_not_available": "Trabalhador balancer não disponível",
   "user_list_successfully": "Lista de usuários obtida com sucesso!",
   "user_list_not_found": "Nenhum usuário encontrado!",

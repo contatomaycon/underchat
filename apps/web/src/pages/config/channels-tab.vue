@@ -309,7 +309,7 @@ onUnmounted(async () => {
               {
                 key: 'offline',
                 label: t('offline'),
-                color: 'grey',
+                color: 'error',
                 icon: 'tabler-circle-x',
               },
               {
@@ -327,38 +327,35 @@ onUnmounted(async () => {
             ]"
             :key="index"
             class="statistics-card"
-            elevation="3"
+            elevation="2"
             variant="flat"
           >
-            <VCardText class="pa-6">
-              <div class="d-flex align-center justify-space-between">
-                <div class="flex-grow-1">
-                  <div class="text-body-2 text-medium-emphasis mb-2">
-                    {{ stat.label }}
-                  </div>
+            <VCardText class="pa-5">
+              <div class="d-flex flex-column">
+                <div class="d-flex align-center mb-3">
                   <div
-                    class="text-h4 font-weight-bold mb-1"
-                    :style="{ color: `rgb(var(--v-theme-${stat.color}))` }"
+                    class="statistics-icon-wrapper"
+                    :style="{
+                      backgroundColor: `rgb(var(--v-theme-${stat.color}))`,
+                    }"
                   >
-                    {{ (statistics as any)[stat.key]?.total ?? 0 }}
+                    <VIcon :icon="stat.icon" size="18" color="white" />
                   </div>
-                  <VChip
-                    :color="stat.color"
-                    size="small"
-                    variant="flat"
-                    class="mt-1"
-                  >
-                    {{ (statistics as any)[stat.key]?.percentage ?? 0 }}%
-                  </VChip>
                 </div>
-                <VAvatar
+                <div class="text-body-1 text-medium-emphasis mb-2">
+                  {{ stat.label }}
+                </div>
+                <div class="text-h4 font-weight-bold mb-4">
+                  {{ (statistics as any)[stat.key]?.total ?? 0 }}
+                </div>
+                <VChip
                   :color="stat.color"
-                  size="64"
-                  class="ml-4"
-                  variant="flat"
+                  size="small"
+                  variant="tonal"
+                  class="align-self-start"
                 >
-                  <VIcon :icon="stat.icon" size="32" />
-                </VAvatar>
+                  {{ (statistics as any)[stat.key]?.percentage ?? 0 }}%
+                </VChip>
               </div>
             </VCardText>
           </VCard>
@@ -596,7 +593,7 @@ onUnmounted(async () => {
 
 .statistics-container {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 1.5rem;
 }
 
@@ -606,9 +603,18 @@ onUnmounted(async () => {
   overflow: hidden;
 
   &:hover {
-    transform: translateY(-4px);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
   }
+}
+
+.statistics-icon-wrapper {
+  width: 36px;
+  height: 36px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .invoice-list-filter {
