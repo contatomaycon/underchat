@@ -11,9 +11,19 @@ import {
 } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, eq, isNull, gte, lte, SQLWrapper, desc } from 'drizzle-orm';
+import {
+  and,
+  eq,
+  isNull,
+  gte,
+  lte,
+  SQLWrapper,
+  desc,
+  inArray,
+} from 'drizzle-orm';
 import { ListPlanSalesRequest } from '@core/schema/plan/listPlanSales/request.schema';
 import { ListPlanSalesResponse } from '@core/schema/plan/listPlanSales/response.schema';
+import { EPaymentStatus } from '@core/common/enums/EPaymentStatus';
 
 @injectable()
 export class PlanSalesListerRepository {
@@ -23,6 +33,13 @@ export class PlanSalesListerRepository {
 
   private readonly setFilters = (query: ListPlanSalesRequest): SQLWrapper[] => {
     const filters: SQLWrapper[] = [];
+
+    filters.push(
+      inArray(accountPayment.payment_status_id, [
+        EPaymentStatus.received,
+        EPaymentStatus.received_in_cash,
+      ])
+    );
 
     if (query.plan_id) {
       filters.push(eq(accountPayment.plan_id, query.plan_id));
