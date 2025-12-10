@@ -26,7 +26,7 @@ export class ChannelsStatisticsRepository {
     };
   };
 
-  private getStatusCounts = async (): Promise<IStatusCount[]> => {
+  private readonly getStatusCounts = async (): Promise<IStatusCount[]> => {
     const result = await this.db
       .select({
         status_id: worker.worker_status_id,
@@ -44,7 +44,7 @@ export class ChannelsStatisticsRepository {
     }));
   };
 
-  private getTotalCount = async (): Promise<number> => {
+  private readonly getTotalCount = async (): Promise<number> => {
     const result = await this.db
       .select({
         count: count(),
