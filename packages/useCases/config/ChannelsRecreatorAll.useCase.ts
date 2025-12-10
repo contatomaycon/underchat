@@ -48,14 +48,14 @@ export class ChannelsRecreatorAllUseCase {
     let success = 0;
     let errors = 0;
 
-    results.forEach((result) => {
+    for (const result of results) {
       if (result.status === 'fulfilled') {
         success++;
-        return;
+        continue;
       }
 
       errors++;
-    });
+    }
 
     return { success, errors };
   }

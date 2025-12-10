@@ -29,71 +29,36 @@ export class ChannelsListerRepository {
     @inject('Database') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
-  private setOrders = (query: ListChannelsRequest): SQL[] => {
+  private readonly setOrders = (query: ListChannelsRequest): SQL[] => {
+    if (!query.sort_by?.length) {
+      return [];
+    }
+
+    const mapping: Record<string, SQLWrapper> = {
+      name: worker.name,
+      number: worker.number,
+      status: workerStatus.status,
+      type: workerType.type,
+      account: account.name,
+      server: server.name,
+      connection_date: worker.connection_date,
+      created_at: worker.created_at,
+    };
+
     const orders: SQL[] = [];
 
-    if (query.sort_by?.length) {
-      query.sort_by.forEach((sort: SortRequest) => {
-        if (sort.key === 'name') {
-          orders.push(
-            sort.order === 'asc' ? asc(worker.name) : desc(worker.name)
-          );
-        }
+    for (const sort of query.sort_by) {
+      const column = mapping[sort.key];
+      if (!column) continue;
 
-        if (sort.key === 'number') {
-          orders.push(
-            sort.order === 'asc' ? asc(worker.number) : desc(worker.number)
-          );
-        }
-
-        if (sort.key === 'status') {
-          orders.push(
-            sort.order === 'asc'
-              ? asc(workerStatus.status)
-              : desc(workerStatus.status)
-          );
-        }
-
-        if (sort.key === 'type') {
-          orders.push(
-            sort.order === 'asc' ? asc(workerType.type) : desc(workerType.type)
-          );
-        }
-
-        if (sort.key === 'account') {
-          orders.push(
-            sort.order === 'asc' ? asc(account.name) : desc(account.name)
-          );
-        }
-
-        if (sort.key === 'server') {
-          orders.push(
-            sort.order === 'asc' ? asc(server.name) : desc(server.name)
-          );
-        }
-
-        if (sort.key === 'connection_date') {
-          orders.push(
-            sort.order === 'asc'
-              ? asc(worker.connection_date)
-              : desc(worker.connection_date)
-          );
-        }
-
-        if (sort.key === 'created_at') {
-          orders.push(
-            sort.order === 'asc'
-              ? asc(worker.created_at)
-              : desc(worker.created_at)
-          );
-        }
-      });
+      const order = sort.order === 'asc' ? asc(column) : desc(column);
+      orders.push(order);
     }
 
     return orders;
   };
 
-  private setFilters = (query: ListChannelsRequest): SQLWrapper[] => {
+  private readonly setFilters = (query: ListChannelsRequest): SQLWrapper[] => {
     const filters: SQLWrapper[] = [];
 
     if (query.status) {

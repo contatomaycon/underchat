@@ -314,10 +314,7 @@ export class WorkerConsume {
 
     const [result] = await Promise.all([
       this.centrifugoPublish(dataPublish),
-      this.centrifugoService.publish(
-        channelsConfigCentrifugo(),
-        data as IWorkerPayload
-      ),
+      this.centrifugoService.publish(channelsConfigCentrifugo(), data),
     ]);
 
     return result;
@@ -381,10 +378,7 @@ export class WorkerConsume {
 
     const [result] = await Promise.all([
       this.centrifugoPublish(dataPublish),
-      this.centrifugoService.publish(
-        channelsConfigCentrifugo(),
-        data as IWorkerPayload
-      ),
+      this.centrifugoService.publish(channelsConfigCentrifugo(), data),
     ]);
 
     return result;
