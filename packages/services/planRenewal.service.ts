@@ -8,6 +8,9 @@ import { PlanReleaseService } from './planRelease.service';
 import { EPaymentStatus } from '@core/common/enums/EPaymentStatus';
 import { EPaymentBillingType } from '@core/common/enums/EPaymentBillingType';
 import { IPlanAccountRenewal } from '@core/common/interfaces/IPlanAccountRenewal';
+import { EBillingPeriod } from '@core/common/enums/EBillingPeriod';
+import { EAccountStatus } from '@core/common/enums/EAccountStatus';
+import { AccountUpdaterRepository } from '@core/repositories/account/AccountUpdater.repository';
 import Redis from 'ioredis';
 import { withLock } from '@core/common/functions/withLock';
 
@@ -22,6 +25,7 @@ export class PlanRenewalService {
     private readonly paymentService: PaymentService,
     private readonly planService: PlanService,
     private readonly planReleaseService: PlanReleaseService,
+    private readonly accountUpdaterRepository: AccountUpdaterRepository,
     @inject('Redis') private readonly redis: Redis
   ) {}
 
@@ -53,6 +57,38 @@ export class PlanRenewalService {
     return withLock(this.redis, lockKey, () =>
       this.processRenewal(planAccount)
     );
+  };
+
+  private readonly calculatePaymentValue = (
+    planAccount: IPlanAccountRenewal
+  ): number => {
+    const planPrice = Number(planAccount.plan.price);
+    const crossSellsTotal = planAccount.cross_sells.reduce(
+      (total, crossSell) => total + Number(crossSell.price),
+      0
+    );
+
+    return planPrice + crossSellsTotal;
+  };
+
+  private readonly getBillingPeriod = (
+    billingPeriodId: string | null
+  ): 'monthly' | 'annual' => {
+    if (billingPeriodId === EBillingPeriod.annual) {
+      return 'annual';
+    }
+
+    return 'monthly';
+  };
+
+  private readonly isPaymentRefused = (status: string): boolean => {
+    const successfulStatuses = ['RECEIVED', 'CONFIRMED', 'RECEIVED_IN_CASH'];
+
+    if (successfulStatuses.includes(status)) {
+      return false;
+    }
+
+    return true;
   };
 
   private readonly processRenewal = async (
@@ -94,7 +130,8 @@ export class PlanRenewalService {
       return;
     }
 
-    const paymentValue = Number(planAccount.value);
+    const paymentValue = this.calculatePaymentValue(planAccount);
+
     const paymentResult = await this.paymentService.createCreditCardPayment(
       planAccount.account_id,
       customer.user_customer,
@@ -128,8 +165,9 @@ export class PlanRenewalService {
       planId: planAccount.plan_id,
       billing: paymentResult.payment.id || '',
       paymentBillingTypeId: EPaymentBillingType.credit_card,
-      value: planAccount.value,
-      netValue: paymentResult.payment.netValue?.toString() || planAccount.value,
+      value: paymentValue.toString(),
+      netValue:
+        paymentResult.payment.netValue?.toString() || paymentValue.toString(),
       pixTransaction: null,
       paymentStatusId,
       billingPeriodId: planAccount.billing_period_id,
@@ -138,6 +176,21 @@ export class PlanRenewalService {
       userCardId: defaultCard.user_card_id,
       installment: null,
     });
+
+    if (planAccount.cross_sells.length > 0) {
+      const billingPeriod = this.getBillingPeriod(
+        planAccount.billing_period_id
+      );
+      const addons = planAccount.cross_sells.map((crossSell) => ({
+        plan_cross_sell_id: crossSell.plan_cross_sell_id,
+      }));
+
+      await this.planService.createAccountPaymentCrossSells({
+        accountPaymentId,
+        addons,
+        billingPeriod,
+      });
+    }
 
     if (paymentStatusId === EPaymentStatus.received) {
       const paymentDate =
@@ -149,10 +202,17 @@ export class PlanRenewalService {
         planId: planAccount.plan_id,
         billingPeriodId: planAccount.billing_period_id,
         recurringPayment: true,
-        value: planAccount.value,
+        value: paymentValue.toString(),
         paymentDate,
         paymentStatusId,
       });
+    }
+
+    if (this.isPaymentRefused(paymentResult.payment.status)) {
+      await this.accountUpdaterRepository.updateAccountStatusById(
+        planAccount.account_id,
+        EAccountStatus.inactive
+      );
     }
   };
 }

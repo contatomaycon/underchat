@@ -4,6 +4,7 @@ import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { IPlanAccountRenewal } from '@core/common/interfaces/IPlanAccountRenewal';
+import { EAccountStatus } from '@core/common/enums/EAccountStatus';
 
 @injectable()
 export class PlanAccountRenewalListerRepository {
@@ -29,6 +30,7 @@ export class PlanAccountRenewalListerRepository {
           FROM ${account} a
           WHERE a.account_id = ${planAccount.account_id}
             AND a.deleted_at IS NULL
+            AND a.account_status_id = ${EAccountStatus.active}
         )`,
         sql`EXISTS (
           SELECT 1 
