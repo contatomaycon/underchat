@@ -5,7 +5,7 @@ import { listNfseResponseSchema } from './response.schema';
 
 export const listNfseSchema = {
   description: 'Lista a configuração de NFSe',
-  tags: [ETagSwagger.account],
+  tags: [ETagSwagger.config],
   produces: ['application/json'],
   security: [
     {

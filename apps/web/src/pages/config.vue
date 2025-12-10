@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import NotificationsTab from './config/notifications-tab.vue';
 import NfseTab from './config/nfse-tab.vue';
+import ChannelsTab from './config/channels-tab.vue';
 
 definePage({
   meta: {
@@ -33,6 +34,9 @@ watch(tab, (v) => {
         <VTab value="nfse" prepend-icon="tabler-file-invoice">{{
           $t('nfse')
         }}</VTab>
+        <VTab value="channels" prepend-icon="tabler-message">{{
+          $t('channels')
+        }}</VTab>
       </VTabs>
     </VCardText>
 
@@ -43,6 +47,9 @@ watch(tab, (v) => {
         </VWindowItem>
         <VWindowItem value="nfse">
           <NfseTab />
+        </VWindowItem>
+        <VWindowItem value="channels">
+          <ChannelsTab />
         </VWindowItem>
       </VWindow>
     </VCardText>

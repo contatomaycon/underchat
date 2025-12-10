@@ -18,8 +18,7 @@ export const listRole = async (
     const response = await roleListerUseCase.execute(
       t,
       request.query,
-      tokenJwtData.account_id,
-      tokenJwtData.permission_role_id
+      tokenJwtData.account_id
     );
 
     if (response) {

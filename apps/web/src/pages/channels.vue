@@ -90,6 +90,7 @@ const itemsStatus = ref([
   { id: EWorkerStatus.offline, text: t('offline') },
   { id: EWorkerStatus.online, text: t('online') },
   { id: EWorkerStatus.new, text: t('new') },
+  { id: EWorkerStatus.creating, text: t('creating') },
   { id: EWorkerStatus.error, text: t('error') },
   { id: EWorkerStatus.mismatched, text: t('mismatched') },
 ]);
@@ -126,6 +127,8 @@ const resolveStatusVariant = (s: string | undefined | null) => {
   if (s === EWorkerStatus.online)
     return { color: EColor.success, text: t('online') };
   if (s === EWorkerStatus.new) return { color: EColor.info, text: t('new') };
+  if (s === EWorkerStatus.creating)
+    return { color: EColor.warning, text: t('creating') };
   if (s === EWorkerStatus.deleting)
     return { color: EColor.error, text: t('deleting') };
   if (s === EWorkerStatus.delete)
@@ -333,152 +336,166 @@ onUnmounted(async () => {
             </div>
           </div>
         </div>
-      </VCardText>
 
-      <VDataTableServer
-        v-model:page="options.page"
-        v-model:items-per-page="options.itemsPerPage"
-        :headers="headers"
-        :items="channelsStore.list"
-        :items-length="channelsStore.pagings.total"
-        :loading="channelsStore.loading"
-        :sort-by="options.sortBy"
-        @update:options="handleTableChange"
-        :loading-text="$t('loading_text')"
-      >
-        <template #item.name="{ item }">
-          <div class="d-flex flex-column ms-3">
-            <span
-              class="d-block font-weight-medium text-high-emphasis text-truncate"
-            >
-              {{ item.name }}
-            </span>
-          </div>
-        </template>
+        <VDivider class="my-4" />
 
-        <template #item.status="{ item }">
-          <VChip
-            :color="resolveStatusVariant(item?.status?.id).color"
-            size="small"
-          >
-            {{ resolveStatusVariant(item?.status?.id).text }}
-          </VChip>
-        </template>
-
-        <template #item.type="{ item }">
-          <VChip :color="resolveTypeVariant(item?.type?.id).color" size="small">
-            {{ resolveTypeVariant(item?.type?.id).text }}
-          </VChip>
-        </template>
-
-        <template #item.server="{ item }">
-          <span>{{ item.server?.name }}</span>
-        </template>
-
-        <template #item.number="{ item }">
-          <span>{{ item.number ? formatPhoneBR(item.number) : '-' }}</span>
-        </template>
-
-        <template #item.account="{ item }">
-          <span>{{ item.account?.name }}</span>
-        </template>
-
-        <template #item.connection_date="{ item }">
-          <span>{{
-            item.connection_date ? formatDateTime(item.connection_date) : '-'
-          }}</span>
-        </template>
-
-        <template #item.created_at="{ item }">
-          <span>{{ formatDateTime(item.created_at) }}</span>
-        </template>
-
-        <template #item.actions="{ item }">
-          <div class="d-flex gap-1">
-            <IconBtn
-              v-if="
-                EWorkerStatus.disponible === item.status?.id ||
-                EWorkerStatus.online === item.status?.id ||
-                EWorkerStatus.offline === item.status?.id ||
-                EWorkerStatus.mismatched === item.status?.id
-              "
-              ><VTooltip
-                location="top"
-                transition="scale-transition"
-                activator="parent"
-              >
-                <span>{{ $t('connect_channel') }}</span> </VTooltip
-              ><VIcon
-                icon="tabler-plug-connected"
-                @click="openConnectionDialog(item.id)"
-            /></IconBtn>
-
-            <IconBtn v-if="$canPermission(permissionsEdit)"
-              ><VTooltip
-                location="top"
-                transition="scale-transition"
-                activator="parent"
-              >
-                <span>{{ $t('edit_channel') }}</span> </VTooltip
-              ><VIcon icon="tabler-edit" @click="openEditDialog(item.id)"
-            /></IconBtn>
-
-            <IconBtn v-if="$canPermission(permissionsProfileStatus)"
-              ><VTooltip
-                location="top"
-                transition="scale-transition"
-                activator="parent"
-              >
-                <span>{{ $t('configurations') }}</span> </VTooltip
-              ><VIcon icon="tabler-settings" @click="openConfigDialog(item.id)"
-            /></IconBtn>
-
-            <IconBtn v-if="$canPermission(permissionsViewLogs)"
-              ><VTooltip
-                location="top"
-                transition="scale-transition"
-                activator="parent"
-              >
-                <span>{{ $t('worker_logs_connection') }}</span> </VTooltip
-              ><VIcon
-                icon="tabler-logs"
-                @click="openConnectionLogDialog(item.id)"
-            /></IconBtn>
-
-            <IconBtn v-if="$canPermission(permissionsRecreate)"
-              ><VTooltip
-                location="top"
-                transition="scale-transition"
-                activator="parent"
-              >
-                <span>{{ $t('recreate_channel') }}</span> </VTooltip
-              ><VIcon icon="tabler-refresh" @click="recreateChannel(item.id)"
-            /></IconBtn>
-
-            <IconBtn v-if="$canPermission(permissionsDelete)"
-              ><VTooltip
-                location="top"
-                transition="scale-transition"
-                activator="parent"
-              >
-                <span>{{ $t('delete_channel') }}</span> </VTooltip
-              ><VIcon icon="tabler-trash" @click="deleteChannel(item.id)"
-            /></IconBtn>
-          </div>
-        </template>
-
-        <template #no-data>
-          {{ $t('no_data_available') }}
-        </template>
-
-        <template #bottom>
-          <TablePagination
+        <div>
+          <VDataTableServer
+            class="data-table"
             v-model:page="options.page"
-            :items-per-page="options.itemsPerPage"
-            :total-items="channelsStore.pagings.total"
-          />
-        </template>
-      </VDataTableServer>
+            v-model:items-per-page="options.itemsPerPage"
+            :headers="headers"
+            :items="channelsStore.list"
+            :items-length="channelsStore.pagings.total"
+            :loading="channelsStore.loading"
+            :sort-by="options.sortBy"
+            @update:options="handleTableChange"
+            :loading-text="$t('loading_text')"
+          >
+            <template #item.name="{ item }">
+              <div class="d-flex flex-column ms-3">
+                <span
+                  class="d-block font-weight-medium text-high-emphasis text-truncate"
+                >
+                  {{ item.name }}
+                </span>
+              </div>
+            </template>
+
+            <template #item.status="{ item }">
+              <VChip
+                :color="resolveStatusVariant(item?.status?.id).color"
+                size="small"
+              >
+                {{ resolveStatusVariant(item?.status?.id).text }}
+              </VChip>
+            </template>
+
+            <template #item.type="{ item }">
+              <VChip
+                :color="resolveTypeVariant(item?.type?.id).color"
+                size="small"
+              >
+                {{ resolveTypeVariant(item?.type?.id).text }}
+              </VChip>
+            </template>
+
+            <template #item.server="{ item }">
+              <span>{{ item.server?.name }}</span>
+            </template>
+
+            <template #item.number="{ item }">
+              <span>{{ item.number ? formatPhoneBR(item.number) : '-' }}</span>
+            </template>
+
+            <template #item.account="{ item }">
+              <span>{{ item.account?.name }}</span>
+            </template>
+
+            <template #item.connection_date="{ item }">
+              <span>{{
+                item.connection_date
+                  ? formatDateTime(item.connection_date)
+                  : '-'
+              }}</span>
+            </template>
+
+            <template #item.created_at="{ item }">
+              <span>{{ formatDateTime(item.created_at) }}</span>
+            </template>
+
+            <template #item.actions="{ item }">
+              <div class="d-flex gap-1">
+                <IconBtn
+                  v-if="
+                    EWorkerStatus.disponible === item.status?.id ||
+                    EWorkerStatus.online === item.status?.id ||
+                    EWorkerStatus.offline === item.status?.id ||
+                    EWorkerStatus.mismatched === item.status?.id
+                  "
+                  ><VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>{{ $t('connect_channel') }}</span> </VTooltip
+                  ><VIcon
+                    icon="tabler-plug-connected"
+                    @click="openConnectionDialog(item.id)"
+                /></IconBtn>
+
+                <IconBtn v-if="$canPermission(permissionsEdit)"
+                  ><VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>{{ $t('edit_channel') }}</span> </VTooltip
+                  ><VIcon icon="tabler-edit" @click="openEditDialog(item.id)"
+                /></IconBtn>
+
+                <IconBtn v-if="$canPermission(permissionsProfileStatus)"
+                  ><VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>{{ $t('configurations') }}</span> </VTooltip
+                  ><VIcon
+                    icon="tabler-settings"
+                    @click="openConfigDialog(item.id)"
+                /></IconBtn>
+
+                <IconBtn v-if="$canPermission(permissionsViewLogs)"
+                  ><VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>{{ $t('worker_logs_connection') }}</span> </VTooltip
+                  ><VIcon
+                    icon="tabler-logs"
+                    @click="openConnectionLogDialog(item.id)"
+                /></IconBtn>
+
+                <IconBtn v-if="$canPermission(permissionsRecreate)"
+                  ><VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>{{ $t('recreate_channel') }}</span> </VTooltip
+                  ><VIcon
+                    icon="tabler-refresh"
+                    @click="recreateChannel(item.id)"
+                /></IconBtn>
+
+                <IconBtn v-if="$canPermission(permissionsDelete)"
+                  ><VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>{{ $t('delete_channel') }}</span> </VTooltip
+                  ><VIcon icon="tabler-trash" @click="deleteChannel(item.id)"
+                /></IconBtn>
+              </div>
+            </template>
+
+            <template #no-data>
+              {{ $t('no_data_available') }}
+            </template>
+
+            <template #bottom>
+              <TablePagination
+                v-model:page="options.page"
+                :items-per-page="options.itemsPerPage"
+                :total-items="channelsStore.pagings.total"
+              />
+            </template>
+          </VDataTableServer>
+        </div>
+      </VCardText>
 
       <VDialogHandler
         v-if="isDialogDeleterShow"
@@ -535,7 +552,7 @@ onUnmounted(async () => {
   </div>
 </template>
 
-<style lang="scss">
+<style lang="scss" scoped>
 .status-filter {
   inline-size: 12rem;
 }
@@ -546,5 +563,24 @@ onUnmounted(async () => {
 
 .invoice-list-filter {
   inline-size: 20rem;
+}
+
+.data-table {
+  :deep(.v-table__wrapper > table > thead) {
+    background-color: rgba(var(--v-theme-on-surface), 0.04);
+  }
+
+  :deep(.v-table__wrapper > table > thead > tr > th) {
+    background-color: transparent;
+    color: rgb(var(--v-theme-primary));
+    font-weight: 700;
+    border-bottom: 1px solid rgba(var(--v-theme-primary), 0.25);
+  }
+
+  :deep(
+    .v-table__wrapper > table > thead > tr > th .v-data-table-header__content
+  ) {
+    color: inherit;
+  }
 }
 </style>

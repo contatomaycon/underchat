@@ -7,3 +7,4 @@ INSERT INTO "worker_status" ("worker_status_id", "status") VALUES ('019a930d-c6f
 INSERT INTO "worker_status" ("worker_status_id", "status") VALUES ('019a930d-c6f6-766d-9c84-48cb970a9f21', 'error');
 INSERT INTO "worker_status" ("worker_status_id", "status") VALUES ('019a930d-c6f6-766d-9c84-4dc1777f8f69', 'delete');
 INSERT INTO "worker_status" ("worker_status_id", "status") VALUES ('019a930d-c6f6-766d-9c84-5056ccf66633', 'mismatched');
+INSERT INTO "worker_status" ("worker_status_id", "status") VALUES ('019a930d-c6f6-766d-9c84-52e87789979b', 'creating');

@@ -5,7 +5,7 @@ import { listNotificationsResponseSchema } from './response.schema';
 
 export const listNotificationsSchema = {
   description: 'Lista as notificações',
-  tags: [ETagSwagger.account],
+  tags: [ETagSwagger.config],
   produces: ['application/json'],
   security: [
     {

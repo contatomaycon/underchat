@@ -14,6 +14,7 @@ declare global {
   const acceptHMRUpdate: typeof import('pinia').acceptHMRUpdate
   const alphaDashValidator: typeof import('./src/@webcore/utils/validators').alphaDashValidator
   const alphaValidator: typeof import('./src/@webcore/utils/validators').alphaValidator
+  const applyLayoutTheme: typeof import('./src/@webcore/utils/applyLayoutTheme').applyLayoutTheme
   const asyncComputed: typeof import('@vueuse/core').asyncComputed
   const autoResetRef: typeof import('@vueuse/core').autoResetRef
   const avatarText: typeof import('./src/@webcore/utils/formatters').avatarText
@@ -416,6 +417,7 @@ declare module 'vue' {
     readonly acceptHMRUpdate: UnwrapRef<typeof import('pinia')['acceptHMRUpdate']>
     readonly alphaDashValidator: UnwrapRef<typeof import('./src/@webcore/utils/validators')['alphaDashValidator']>
     readonly alphaValidator: UnwrapRef<typeof import('./src/@webcore/utils/validators')['alphaValidator']>
+    readonly applyLayoutTheme: UnwrapRef<typeof import('./src/@webcore/utils/applyLayoutTheme')['applyLayoutTheme']>
     readonly asyncComputed: UnwrapRef<typeof import('@vueuse/core')['asyncComputed']>
     readonly autoResetRef: UnwrapRef<typeof import('@vueuse/core')['autoResetRef']>
     readonly avatarText: UnwrapRef<typeof import('./src/@webcore/utils/formatters')['avatarText']>

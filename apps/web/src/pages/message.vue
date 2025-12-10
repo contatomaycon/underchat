@@ -360,117 +360,128 @@ watch(
             </div>
           </div>
         </div>
-      </VCardText>
 
-      <VDataTableServer
-        v-model:page="options.page"
-        v-model:items-per-page="options.itemsPerPage"
-        :headers="headers"
-        :items="messageTemplateStore.list"
-        :items-length="messageTemplateStore.pagings.total"
-        :loading="messageTemplateStore.loading"
-        :sort-by="options.sortBy"
-        @update:options="handleTableChange"
-        :loading-text="$t('loading_text')"
-      >
-        <template #item.message="{ item }">
-          <span class="d-inline-block text-truncate" style="max-width: 350px">
-            {{ item.message }}
-          </span>
-        </template>
+        <VDivider class="my-4" />
 
-        <template #item.command="{ item }">
-          {{ item.command }}
-        </template>
-
-        <template #item.message_status="{ item }">
-          <VChip
-            v-if="item.message_status"
-            :color="
-              item.message_status.message_status_id === EMessageStatus.active
-                ? 'success'
-                : 'error'
-            "
-            size="small"
-            variant="tonal"
-          >
-            {{
-              item.message_status.message_status_id === EMessageStatus.active
-                ? $t('active')
-                : $t('inactive')
-            }}
-          </VChip>
-          <span v-else class="text-medium-emphasis">-</span>
-        </template>
-
-        <template #item.attachment_url="{ item }">
-          <div v-if="item.attachment_url" class="d-flex align-center">
-            <IconBtn @click="openAttachmentPreview(item)">
-              <VTooltip
-                location="top"
-                transition="scale-transition"
-                activator="parent"
-              >
-                <span>{{ $t('click_to_preview') }}</span>
-              </VTooltip>
-              <VIcon
-                :icon="getAttachmentIcon(item.attachment_url, item.type)"
-              />
-            </IconBtn>
-          </div>
-          <span v-else class="text-medium-emphasis">-</span>
-        </template>
-
-        <template #item.created_at="{ item }">
-          <span>{{ formatDateTime(item?.created_at ?? null) }}</span>
-        </template>
-
-        <template #item.actions="{ item }">
-          <div class="d-flex gap-1">
-            <IconBtn
-              v-if="
-                $canPermission(permissionsEdit) && item?.message_template_id
-              "
-              ><VTooltip
-                location="top"
-                transition="scale-transition"
-                activator="parent"
-              >
-                <span>{{ $t('edit_message_template') }}</span> </VTooltip
-              ><VIcon
-                icon="tabler-edit"
-                @click="openEditDialog(item.message_template_id)"
-            /></IconBtn>
-
-            <IconBtn
-              v-if="
-                $canPermission(permissionsDelete) && item.message_template_id
-              "
-              ><VTooltip
-                location="top"
-                transition="scale-transition"
-                activator="parent"
-              >
-                <span>{{ $t('delete_message_template') }}</span> </VTooltip
-              ><VIcon
-                icon="tabler-trash"
-                @click="deleteMessageTemplate(item.message_template_id)"
-            /></IconBtn>
-          </div>
-        </template>
-
-        <template #no-data>
-          {{ $t('no_data_available') }}
-        </template>
-
-        <template #bottom>
-          <TablePagination
+        <div>
+          <VDataTableServer
+            class="data-table"
             v-model:page="options.page"
-            :items-per-page="options.itemsPerPage"
-            :total-items="messageTemplateStore.pagings.total"
-          />
-        </template>
-      </VDataTableServer>
+            v-model:items-per-page="options.itemsPerPage"
+            :headers="headers"
+            :items="messageTemplateStore.list"
+            :items-length="messageTemplateStore.pagings.total"
+            :loading="messageTemplateStore.loading"
+            :sort-by="options.sortBy"
+            @update:options="handleTableChange"
+            :loading-text="$t('loading_text')"
+          >
+            <template #item.message="{ item }">
+              <span
+                class="d-inline-block text-truncate"
+                style="max-width: 350px"
+              >
+                {{ item.message }}
+              </span>
+            </template>
+
+            <template #item.command="{ item }">
+              {{ item.command }}
+            </template>
+
+            <template #item.message_status="{ item }">
+              <VChip
+                v-if="item.message_status"
+                :color="
+                  item.message_status.message_status_id ===
+                  EMessageStatus.active
+                    ? 'success'
+                    : 'error'
+                "
+                size="small"
+                variant="tonal"
+              >
+                {{
+                  item.message_status.message_status_id ===
+                  EMessageStatus.active
+                    ? $t('active')
+                    : $t('inactive')
+                }}
+              </VChip>
+              <span v-else class="text-medium-emphasis">-</span>
+            </template>
+
+            <template #item.attachment_url="{ item }">
+              <div v-if="item.attachment_url" class="d-flex align-center">
+                <IconBtn @click="openAttachmentPreview(item)">
+                  <VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>{{ $t('click_to_preview') }}</span>
+                  </VTooltip>
+                  <VIcon
+                    :icon="getAttachmentIcon(item.attachment_url, item.type)"
+                  />
+                </IconBtn>
+              </div>
+              <span v-else class="text-medium-emphasis">-</span>
+            </template>
+
+            <template #item.created_at="{ item }">
+              <span>{{ formatDateTime(item?.created_at ?? null) }}</span>
+            </template>
+
+            <template #item.actions="{ item }">
+              <div class="d-flex gap-1">
+                <IconBtn
+                  v-if="
+                    $canPermission(permissionsEdit) && item?.message_template_id
+                  "
+                  ><VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>{{ $t('edit_message_template') }}</span> </VTooltip
+                  ><VIcon
+                    icon="tabler-edit"
+                    @click="openEditDialog(item.message_template_id)"
+                /></IconBtn>
+
+                <IconBtn
+                  v-if="
+                    $canPermission(permissionsDelete) &&
+                    item.message_template_id
+                  "
+                  ><VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>{{ $t('delete_message_template') }}</span> </VTooltip
+                  ><VIcon
+                    icon="tabler-trash"
+                    @click="deleteMessageTemplate(item.message_template_id)"
+                /></IconBtn>
+              </div>
+            </template>
+
+            <template #no-data>
+              {{ $t('no_data_available') }}
+            </template>
+
+            <template #bottom>
+              <TablePagination
+                v-model:page="options.page"
+                :items-per-page="options.itemsPerPage"
+                :total-items="messageTemplateStore.pagings.total"
+              />
+            </template>
+          </VDataTableServer>
+        </div>
+      </VCardText>
 
       <VDialog v-model="attachmentPreviewDialog.open" max-width="800">
         <DialogCloseBtn @click="closeAttachmentPreview" />
@@ -605,7 +616,7 @@ watch(
   </div>
 </template>
 
-<style lang="scss">
+<style lang="scss" scoped>
 .status-filter {
   inline-size: 12rem;
 }
@@ -666,5 +677,24 @@ watch(
   z-index: 2;
   pointer-events: none;
   transform: translateX(-50%);
+}
+
+.data-table {
+  :deep(.v-table__wrapper > table > thead) {
+    background-color: rgba(var(--v-theme-on-surface), 0.04);
+  }
+
+  :deep(.v-table__wrapper > table > thead > tr > th) {
+    background-color: transparent;
+    color: rgb(var(--v-theme-primary));
+    font-weight: 700;
+    border-bottom: 1px solid rgba(var(--v-theme-primary), 0.25);
+  }
+
+  :deep(
+    .v-table__wrapper > table > thead > tr > th .v-data-table-header__content
+  ) {
+    color: inherit;
+  }
 }
 </style>

@@ -282,145 +282,152 @@ onBeforeUnmount(async () => {
             </div>
           </div>
         </div>
-      </VCardText>
 
-      <VDataTableServer
-        v-model:page="options.page"
-        v-model:items-per-page="options.itemsPerPage"
-        :headers="headers"
-        :items="serverStore.list_servers"
-        :items-length="serverStore.pagings.total"
-        :loading="serverStore.loading"
-        :sort-by="options.sortBy"
-        @update:options="handleTableChange"
-        :loading-text="$t('loading_text')"
-      >
-        <template #item.name="{ item }">
-          <div class="d-flex flex-column ms-3">
-            <span
-              class="d-block font-weight-medium text-high-emphasis text-truncate"
-            >
-              {{ item.name }}
-            </span>
-          </div>
-        </template>
+        <VDivider class="my-4" />
 
-        <template #item.status="{ item }">
-          <VChip
-            :color="resolveStatusVariant(item.status.id).color"
-            size="small"
-          >
-            {{ resolveStatusVariant(item.status.id).text }}
-          </VChip>
-        </template>
-
-        <template #item.ssh_port="{ item }">
-          <span>{{ item.ssh.ssh_port }}</span>
-        </template>
-
-        <template #item.ssh_ip="{ item }">
-          <span>{{ item.ssh.ssh_ip }}</span>
-        </template>
-
-        <template #item.web_domain="{ item }">
-          <span>{{ item.web.web_domain }}</span>
-        </template>
-
-        <template #item.last_sync="{ item }">
-          <span>{{ formatDateTime(item.last_sync) }}</span>
-        </template>
-
-        <template #item.created_at="{ item }">
-          <span>{{ formatDateTime(item.created_at) }}</span>
-        </template>
-
-        <template #item.actions="{ item }">
-          <div class="d-flex gap-1">
-            <IconBtn
-              v-if="
-                item.status.id !== EServerStatus.installing &&
-                $canPermission(permissionsReinstall)
-              "
-            >
-              <VTooltip
-                location="top"
-                transition="scale-transition"
-                activator="parent"
-              >
-                <span>
-                  {{ $t('reinstall_server') }}
-                </span>
-              </VTooltip>
-              <VIcon icon="tabler-refresh" @click="refreshServer(item.id)"
-            /></IconBtn>
-
-            <IconBtn
-              v-if="
-                item.status.id === EServerStatus.installing &&
-                $canPermission(permissionsServerLogsInstall)
-              "
-            >
-              <VTooltip
-                location="top"
-                transition="scale-transition"
-                activator="parent"
-              >
-                <span>{{ $t('console_installation') }}</span>
-              </VTooltip>
-              <VIcon
-                icon="tabler-terminal-2"
-                @click="openConsoleDialog(item.id)"
-            /></IconBtn>
-
-            <IconBtn
-              v-if="
-                item.status.id !== EServerStatus.installing &&
-                $canPermission(permissionsServerLogsInstall)
-              "
-            >
-              <VTooltip
-                location="top"
-                transition="scale-transition"
-                activator="parent"
-              >
-                <span>{{ $t('server_logs') }}</span> </VTooltip
-              ><VIcon icon="tabler-terminal-2" @click="openLogsDialog(item.id)"
-            /></IconBtn>
-
-            <IconBtn v-if="$canPermission(permissionsEdit)"
-              ><VTooltip
-                location="top"
-                transition="scale-transition"
-                activator="parent"
-              >
-                <span>{{ $t('edit_server') }}</span> </VTooltip
-              ><VIcon icon="tabler-edit" @click="openEditDialog(item.id)"
-            /></IconBtn>
-
-            <IconBtn v-if="$canPermission(permissionsDelete)"
-              ><VTooltip
-                location="top"
-                transition="scale-transition"
-                activator="parent"
-              >
-                <span>{{ $t('delete_server') }}</span> </VTooltip
-              ><VIcon icon="tabler-trash" @click="deleteServer(item.id)"
-            /></IconBtn>
-          </div>
-        </template>
-
-        <template #no-data>
-          {{ $t('no_data_available') }}
-        </template>
-
-        <template #bottom>
-          <TablePagination
+        <div>
+          <VDataTableServer
+            class="data-table"
             v-model:page="options.page"
-            :items-per-page="options.itemsPerPage"
-            :total-items="serverStore.pagings.total"
-          />
-        </template>
-      </VDataTableServer>
+            v-model:items-per-page="options.itemsPerPage"
+            :headers="headers"
+            :items="serverStore.list_servers"
+            :items-length="serverStore.pagings.total"
+            :loading="serverStore.loading"
+            :sort-by="options.sortBy"
+            @update:options="handleTableChange"
+            :loading-text="$t('loading_text')"
+          >
+            <template #item.name="{ item }">
+              <div class="d-flex flex-column ms-3">
+                <span
+                  class="d-block font-weight-medium text-high-emphasis text-truncate"
+                >
+                  {{ item.name }}
+                </span>
+              </div>
+            </template>
+
+            <template #item.status="{ item }">
+              <VChip
+                :color="resolveStatusVariant(item.status.id).color"
+                size="small"
+              >
+                {{ resolveStatusVariant(item.status.id).text }}
+              </VChip>
+            </template>
+
+            <template #item.ssh_port="{ item }">
+              <span>{{ item.ssh.ssh_port }}</span>
+            </template>
+
+            <template #item.ssh_ip="{ item }">
+              <span>{{ item.ssh.ssh_ip }}</span>
+            </template>
+
+            <template #item.web_domain="{ item }">
+              <span>{{ item.web.web_domain }}</span>
+            </template>
+
+            <template #item.last_sync="{ item }">
+              <span>{{ formatDateTime(item.last_sync) }}</span>
+            </template>
+
+            <template #item.created_at="{ item }">
+              <span>{{ formatDateTime(item.created_at) }}</span>
+            </template>
+
+            <template #item.actions="{ item }">
+              <div class="d-flex gap-1">
+                <IconBtn
+                  v-if="
+                    item.status.id !== EServerStatus.installing &&
+                    $canPermission(permissionsReinstall)
+                  "
+                >
+                  <VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>
+                      {{ $t('reinstall_server') }}
+                    </span>
+                  </VTooltip>
+                  <VIcon icon="tabler-refresh" @click="refreshServer(item.id)"
+                /></IconBtn>
+
+                <IconBtn
+                  v-if="
+                    item.status.id === EServerStatus.installing &&
+                    $canPermission(permissionsServerLogsInstall)
+                  "
+                >
+                  <VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>{{ $t('console_installation') }}</span>
+                  </VTooltip>
+                  <VIcon
+                    icon="tabler-terminal-2"
+                    @click="openConsoleDialog(item.id)"
+                /></IconBtn>
+
+                <IconBtn
+                  v-if="
+                    item.status.id !== EServerStatus.installing &&
+                    $canPermission(permissionsServerLogsInstall)
+                  "
+                >
+                  <VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>{{ $t('server_logs') }}</span> </VTooltip
+                  ><VIcon
+                    icon="tabler-terminal-2"
+                    @click="openLogsDialog(item.id)"
+                /></IconBtn>
+
+                <IconBtn v-if="$canPermission(permissionsEdit)"
+                  ><VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>{{ $t('edit_server') }}</span> </VTooltip
+                  ><VIcon icon="tabler-edit" @click="openEditDialog(item.id)"
+                /></IconBtn>
+
+                <IconBtn v-if="$canPermission(permissionsDelete)"
+                  ><VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>{{ $t('delete_server') }}</span> </VTooltip
+                  ><VIcon icon="tabler-trash" @click="deleteServer(item.id)"
+                /></IconBtn>
+              </div>
+            </template>
+
+            <template #no-data>
+              {{ $t('no_data_available') }}
+            </template>
+
+            <template #bottom>
+              <TablePagination
+                v-model:page="options.page"
+                :items-per-page="options.itemsPerPage"
+                :total-items="serverStore.pagings.total"
+              />
+            </template>
+          </VDataTableServer>
+        </div>
+      </VCardText>
 
       <VDialogHandler
         v-if="isDialogRefreshServerShow"
@@ -469,12 +476,31 @@ onBeforeUnmount(async () => {
   </div>
 </template>
 
-<style lang="scss">
+<style lang="scss" scoped>
 .server-status-filter {
   inline-size: 12rem;
 }
 
 .invoice-list-filter {
   inline-size: 20rem;
+}
+
+.data-table {
+  :deep(.v-table__wrapper > table > thead) {
+    background-color: rgba(var(--v-theme-on-surface), 0.04);
+  }
+
+  :deep(.v-table__wrapper > table > thead > tr > th) {
+    background-color: transparent;
+    color: rgb(var(--v-theme-primary));
+    font-weight: 700;
+    border-bottom: 1px solid rgba(var(--v-theme-primary), 0.25);
+  }
+
+  :deep(
+    .v-table__wrapper > table > thead > tr > th .v-data-table-header__content
+  ) {
+    color: inherit;
+  }
 }
 </style>

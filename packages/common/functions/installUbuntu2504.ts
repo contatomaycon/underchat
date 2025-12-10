@@ -144,8 +144,10 @@ export async function installUbuntu2504(
     `bash -c "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH && \
       hash -r && \
       cd /home/app && \
-      docker stop under-balance-api 2>/dev/null || true && \
-      docker rm -f under-balance-api 2>/dev/null || true"`,
+      if docker ps -a --format '{{.Names}}' | grep -q '^under-balance-api$'; then \
+        docker stop under-balance-api 2>/dev/null || true && \
+        docker rm -f under-balance-api 2>/dev/null || true; \
+      fi"`,
 
     `bash -c "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH && \
       hash -r && \

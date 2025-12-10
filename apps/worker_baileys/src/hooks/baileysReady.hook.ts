@@ -11,6 +11,7 @@ import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
+import { WorkerService } from '@core/services/worker.service';
 
 const RETRY_DELAY = 10000;
 let mismatchedStatusSent = false;
@@ -24,6 +25,25 @@ const updateWorkerMismatchedStatus = async (
   }
 
   try {
+    const workerService = container.resolve(WorkerService);
+    const viewWorkerType = await workerService.viewWorkerType(
+      accountId,
+      workerId
+    );
+
+    if (!viewWorkerType) {
+      return;
+    }
+
+    const viewWorker = await workerService.viewWorker(accountId, workerId);
+
+    if (
+      viewWorker?.status?.id === EWorkerStatus.new ||
+      viewWorker?.status?.id === EWorkerStatus.creating
+    ) {
+      return;
+    }
+
     const centrifugoService = container.resolve(CentrifugoService);
     const streamProducerService = container.resolve(StreamProducerService);
     const kafkaServiceQueueService = container.resolve(

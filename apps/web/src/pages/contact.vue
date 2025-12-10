@@ -350,147 +350,156 @@ watch(
             </div>
           </div>
         </div>
-      </VCardText>
 
-      <VDataTableServer
-        v-model:page="options.page"
-        v-model:items-per-page="options.itemsPerPage"
-        :headers="headers"
-        :items="contactStore.list"
-        :items-length="contactStore.pagings.total"
-        :loading="contactStore.loading"
-        :sort-by="options.sortBy"
-        @update:options="handleTableChange"
-        :loading-text="$t('loading_text')"
-      >
-        <template #item.photo="{ item }">
-          <div
-            class="contact-photo-square"
-            :class="{ 'cursor-pointer': item?.photo }"
-            @click="item?.photo && openPhotoViewer(item.photo)"
-          >
-            <VImg
-              v-if="item?.photo"
-              :src="item.photo"
-              alt="Contact photo"
-              cover
-            />
-            <VImg
-              v-else
-              :src="'/images/svg/avatar-default.svg'"
-              alt="Default avatar"
-              cover
-            />
-          </div>
-        </template>
+        <VDivider class="my-4" />
 
-        <template #item.name="{ item }">
-          {{ item?.name }}
-        </template>
-
-        <template #item.last_name="{ item }">
-          {{ item?.last_name }}
-        </template>
-
-        <template #item.nickname="{ item }">
-          {{ item?.nickname }}
-        </template>
-
-        <template #item.email="{ item }">
-          {{ item?.email_partial }}
-        </template>
-
-        <template #item.phone="{ item }">
-          {{ item?.phone_partial }}
-        </template>
-
-        <template #item.label_template="{ item }">
-          <VChip
-            v-if="item.label_template"
-            class="uc-chip"
-            size="small"
-            :style="{
-              backgroundColor: backgroundColor(item.label_template.color),
-              color: textColor(item.label_template.color),
-            }"
-          >
-            {{ item.label_template.label }}
-          </VChip>
-
-          <VChip v-else class="uc-chip uc-badge--muted" size="small">-</VChip>
-        </template>
-
-        <template #item.status="{ item }">
-          <VChip
-            v-if="item.is_valided"
-            class="uc-chip"
-            size="small"
-            color="success"
-          >
-            {{ $t('validated') }}
-          </VChip>
-          <VChip v-else class="uc-chip" size="small" color="error">
-            {{ $t('not_validated') }}
-          </VChip>
-        </template>
-
-        <template #item.actions="{ item }">
-          <div class="d-flex gap-1">
-            <IconBtn
-              v-if="
-                $canPermission(permissionsEdit) &&
-                !item.is_valided &&
-                item?.contact_id
-              "
-              ><VTooltip
-                location="top"
-                transition="scale-transition"
-                activator="parent"
-              >
-                <span>{{ $t('validate_contact') }}</span> </VTooltip
-              ><VIcon
-                icon="tabler-refresh"
-                @click="openValidateDialog(item.contact_id)"
-            /></IconBtn>
-
-            <IconBtn v-if="$canPermission(permissionsEdit) && item?.contact_id"
-              ><VTooltip
-                location="top"
-                transition="scale-transition"
-                activator="parent"
-              >
-                <span>{{ $t('edit_contact') }}</span> </VTooltip
-              ><VIcon
-                icon="tabler-edit"
-                @click="openEditDialog(item.contact_id)"
-            /></IconBtn>
-
-            <IconBtn v-if="$canPermission(permissionsDelete) && item.contact_id"
-              ><VTooltip
-                location="top"
-                transition="scale-transition"
-                activator="parent"
-              >
-                <span>{{ $t('delete_contact') }}</span> </VTooltip
-              ><VIcon
-                icon="tabler-trash"
-                @click="deleteContact(item.contact_id)"
-            /></IconBtn>
-          </div>
-        </template>
-
-        <template #no-data>
-          {{ $t('no_data_available') }}
-        </template>
-
-        <template #bottom>
-          <TablePagination
+        <div>
+          <VDataTableServer
+            class="data-table"
             v-model:page="options.page"
-            :items-per-page="options.itemsPerPage"
-            :total-items="contactStore.pagings.total"
-          />
-        </template>
-      </VDataTableServer>
+            v-model:items-per-page="options.itemsPerPage"
+            :headers="headers"
+            :items="contactStore.list"
+            :items-length="contactStore.pagings.total"
+            :loading="contactStore.loading"
+            :sort-by="options.sortBy"
+            @update:options="handleTableChange"
+            :loading-text="$t('loading_text')"
+          >
+            <template #item.photo="{ item }">
+              <div
+                class="contact-photo-square"
+                :class="{ 'cursor-pointer': item?.photo }"
+                @click="item?.photo && openPhotoViewer(item.photo)"
+              >
+                <VImg
+                  v-if="item?.photo"
+                  :src="item.photo"
+                  alt="Contact photo"
+                  cover
+                />
+                <VImg
+                  v-else
+                  :src="'/images/svg/avatar-default.svg'"
+                  alt="Default avatar"
+                  cover
+                />
+              </div>
+            </template>
+
+            <template #item.name="{ item }">
+              {{ item?.name }}
+            </template>
+
+            <template #item.last_name="{ item }">
+              {{ item?.last_name }}
+            </template>
+
+            <template #item.nickname="{ item }">
+              {{ item?.nickname }}
+            </template>
+
+            <template #item.email="{ item }">
+              {{ item?.email_partial }}
+            </template>
+
+            <template #item.phone="{ item }">
+              {{ item?.phone_partial }}
+            </template>
+
+            <template #item.label_template="{ item }">
+              <VChip
+                v-if="item.label_template"
+                class="uc-chip"
+                size="small"
+                :style="{
+                  backgroundColor: backgroundColor(item.label_template.color),
+                  color: textColor(item.label_template.color),
+                }"
+              >
+                {{ item.label_template.label }}
+              </VChip>
+
+              <VChip v-else class="uc-chip uc-badge--muted" size="small"
+                >-</VChip
+              >
+            </template>
+
+            <template #item.status="{ item }">
+              <VChip
+                v-if="item.is_valided"
+                class="uc-chip"
+                size="small"
+                color="success"
+              >
+                {{ $t('validated') }}
+              </VChip>
+              <VChip v-else class="uc-chip" size="small" color="error">
+                {{ $t('not_validated') }}
+              </VChip>
+            </template>
+
+            <template #item.actions="{ item }">
+              <div class="d-flex gap-1">
+                <IconBtn
+                  v-if="
+                    $canPermission(permissionsEdit) &&
+                    !item.is_valided &&
+                    item?.contact_id
+                  "
+                  ><VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>{{ $t('validate_contact') }}</span> </VTooltip
+                  ><VIcon
+                    icon="tabler-refresh"
+                    @click="openValidateDialog(item.contact_id)"
+                /></IconBtn>
+
+                <IconBtn
+                  v-if="$canPermission(permissionsEdit) && item?.contact_id"
+                  ><VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>{{ $t('edit_contact') }}</span> </VTooltip
+                  ><VIcon
+                    icon="tabler-edit"
+                    @click="openEditDialog(item.contact_id)"
+                /></IconBtn>
+
+                <IconBtn
+                  v-if="$canPermission(permissionsDelete) && item.contact_id"
+                  ><VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>{{ $t('delete_contact') }}</span> </VTooltip
+                  ><VIcon
+                    icon="tabler-trash"
+                    @click="deleteContact(item.contact_id)"
+                /></IconBtn>
+              </div>
+            </template>
+
+            <template #no-data>
+              {{ $t('no_data_available') }}
+            </template>
+
+            <template #bottom>
+              <TablePagination
+                v-model:page="options.page"
+                :items-per-page="options.itemsPerPage"
+                :total-items="contactStore.pagings.total"
+              />
+            </template>
+          </VDataTableServer>
+        </div>
+      </VCardText>
 
       <VDialogHandler
         v-if="isDialogDeleterShow"
@@ -579,7 +588,7 @@ watch(
   </div>
 </template>
 
-<style lang="scss">
+<style lang="scss" scoped>
 .status-filter {
   inline-size: 12rem;
 }
@@ -673,6 +682,25 @@ watch(
 
   &:hover {
     background: rgba(0, 0, 0, 0.7) !important;
+  }
+}
+
+.data-table {
+  :deep(.v-table__wrapper > table > thead) {
+    background-color: rgba(var(--v-theme-on-surface), 0.04);
+  }
+
+  :deep(.v-table__wrapper > table > thead > tr > th) {
+    background-color: transparent;
+    color: rgb(var(--v-theme-primary));
+    font-weight: 700;
+    border-bottom: 1px solid rgba(var(--v-theme-primary), 0.25);
+  }
+
+  :deep(
+    .v-table__wrapper > table > thead > tr > th .v-data-table-header__content
+  ) {
+    color: inherit;
   }
 }
 </style>

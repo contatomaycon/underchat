@@ -1,3 +1,4 @@
+import { h } from 'vue';
 import { breakpointsVuetifyV3 } from '@vueuse/core';
 import { VIcon } from 'vuetify/components/VIcon';
 import { defineThemeConfig } from '@webcore';
@@ -49,7 +50,6 @@ const footerType = (footerType: string | null | undefined) => {
 const titleLayout = (
   layout?.name ?? 'underchat'
 ).toLowerCase() as Lowercase<string>;
-const logoLayout = layout?.logo ?? logo;
 const contentWidthLayout =
   layout?.content_width === ContentWidth.Boxed
     ? ContentWidth.Boxed
@@ -65,13 +65,30 @@ const footer = footerType(layout?.footer);
 const isVerticalNavCollapsed = layout?.is_vertical_nav_collapsed ?? false;
 const isVerticalNavSemiDark = layout?.is_vertical_nav_semi_dark ?? true;
 
+const buildLogoNode = (layoutLogo?: string | null) => {
+  const logoContent = layoutLogo ?? logo;
+
+  if (
+    logoContent &&
+    (logoContent.startsWith('http://') || logoContent.startsWith('https://'))
+  ) {
+    return h('img', {
+      src: logoContent,
+      alt: 'Logo',
+      style: 'line-height:0; max-height: 2rem;',
+    });
+  }
+
+  return h('div', {
+    innerHTML: logoContent,
+    style: 'line-height:0; color: rgb(var(--v-global-theme-primary))',
+  });
+};
+
 export const { themeConfig, layoutConfig } = defineThemeConfig({
   app: {
     title: titleLayout,
-    logo: h('div', {
-      innerHTML: logoLayout,
-      style: 'line-height:0; color: rgb(var(--v-global-theme-primary))',
-    }),
+    logo: buildLogoNode(layout?.logo),
     contentWidth: contentWidthLayout,
     contentLayoutNav: contentLayoutNav,
     overlayNavFromBreakpoint: breakpointsVuetifyV3.lg - 1,

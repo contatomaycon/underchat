@@ -633,7 +633,9 @@ const openDocument = (url: string | null | undefined) => {
 
           <!-- Filtro por Protocolo -->
           <div v-if="searchBy === 'protocol'" class="invoice-list-filter">
-            <VLabel class="text-body-2 mb-1">{{ $t('search_by_protocol') }}:</VLabel>
+            <VLabel class="text-body-2 mb-1"
+              >{{ $t('search_by_protocol') }}:</VLabel
+            >
             <AppTextField
               v-model="protocol"
               :placeholder="$t('search_by_protocol')"
@@ -642,7 +644,9 @@ const openDocument = (url: string | null | undefined) => {
 
           <!-- Filtro por Cliente -->
           <div v-if="searchBy === 'client'" class="invoice-list-filter">
-            <VLabel class="text-body-2 mb-1">{{ $t('search_by_client') }}:</VLabel>
+            <VLabel class="text-body-2 mb-1"
+              >{{ $t('search_by_client') }}:</VLabel
+            >
             <AppTextField
               v-model="clientName"
               :placeholder="$t('search_by_client')"
@@ -651,7 +655,9 @@ const openDocument = (url: string | null | undefined) => {
 
           <!-- Filtro por Telefone -->
           <div v-if="searchBy === 'phone'" class="invoice-list-filter">
-            <VLabel class="text-body-2 mb-1">{{ $t('search_by_phone') }}:</VLabel>
+            <VLabel class="text-body-2 mb-1"
+              >{{ $t('search_by_phone') }}:</VLabel
+            >
             <AppTextField
               v-model="phoneFormatted"
               :placeholder="$t('search_by_phone')"
@@ -674,92 +680,97 @@ const openDocument = (url: string | null | undefined) => {
             </div>
           </div>
         </div>
-      </VCardText>
 
-      <VDataTableServer
-        v-model:page="options.page"
-        v-model:items-per-page="options.itemsPerPage"
-        :headers="headers"
-        :items="reportConversationHistoryStore.list"
-        :items-length="reportConversationHistoryStore.pagings.total"
-        :loading="reportConversationHistoryStore.loading"
-        :sort-by="options.sortBy"
-        @update:options="handleTableChange"
-        :loading-text="$t('loading_text')"
-      >
-        <template #item.date="{ item }">
-          <span>{{ formatDateTime(item.date) }}</span>
-        </template>
+        <VDivider class="my-4" />
 
-        <template #item.protocol="{ item }">
-          <div class="d-flex align-center justify-space-between w-100">
-            <span>{{ item.protocol || '-' }}</span>
-            <VBtn
-              v-if="getProtocolsList(item).length > 0"
-              icon
-              size="x-small"
-              variant="text"
-              color="primary"
-              density="compact"
-              class="flex-shrink-0"
-              @click="openProtocolsDialog(item, item.client)"
-            >
-              <VTooltip location="top">
-                <template #activator="{ props }">
-                  <VIcon v-bind="props" size="16">tabler-list</VIcon>
-                </template>
-                <span>{{ t('view_all_protocols') }}</span>
-              </VTooltip>
-            </VBtn>
-          </div>
-        </template>
-
-        <template #item.client="{ item }">
-          <span>{{ item.client || '-' }}</span>
-        </template>
-
-        <template #item.phone="{ item }">
-          <span>{{ item.phone ? formatPhoneBR(item.phone) : '-' }}</span>
-        </template>
-
-        <template #item.operator="{ item }">
-          <span>{{ item.operator || '-' }}</span>
-        </template>
-
-        <template #item.queue="{ item }">
-          <span>{{ item.queue || '-' }}</span>
-        </template>
-
-        <template #item.channel="{ item }">
-          <span>{{ item.channel || '-' }}</span>
-        </template>
-
-        <template #item.actions="{ item }">
-          <div class="d-flex justify-center">
-            <VBtn
-              size="x-small"
-              color="primary"
-              variant="text"
-              icon="tabler-eye"
-              @click="openConversationModal(item)"
-            >
-              <VIcon size="18">tabler-eye</VIcon>
-            </VBtn>
-          </div>
-        </template>
-
-        <template #no-data>
-          {{ $t('no_data_available') }}
-        </template>
-
-        <template #bottom>
-          <TablePagination
+        <div>
+          <VDataTableServer
+            class="data-table"
             v-model:page="options.page"
-            :items-per-page="options.itemsPerPage"
-            :total-items="reportConversationHistoryStore.pagings.total"
-          />
-        </template>
-      </VDataTableServer>
+            v-model:items-per-page="options.itemsPerPage"
+            :headers="headers"
+            :items="reportConversationHistoryStore.list"
+            :items-length="reportConversationHistoryStore.pagings.total"
+            :loading="reportConversationHistoryStore.loading"
+            :sort-by="options.sortBy"
+            @update:options="handleTableChange"
+            :loading-text="$t('loading_text')"
+          >
+            <template #item.date="{ item }">
+              <span>{{ formatDateTime(item.date) }}</span>
+            </template>
+
+            <template #item.protocol="{ item }">
+              <div class="d-flex align-center justify-space-between w-100">
+                <span>{{ item.protocol || '-' }}</span>
+                <VBtn
+                  v-if="getProtocolsList(item).length > 0"
+                  icon
+                  size="x-small"
+                  variant="text"
+                  color="primary"
+                  density="compact"
+                  class="flex-shrink-0"
+                  @click="openProtocolsDialog(item, item.client)"
+                >
+                  <VTooltip location="top">
+                    <template #activator="{ props }">
+                      <VIcon v-bind="props" size="16">tabler-list</VIcon>
+                    </template>
+                    <span>{{ t('view_all_protocols') }}</span>
+                  </VTooltip>
+                </VBtn>
+              </div>
+            </template>
+
+            <template #item.client="{ item }">
+              <span>{{ item.client || '-' }}</span>
+            </template>
+
+            <template #item.phone="{ item }">
+              <span>{{ item.phone ? formatPhoneBR(item.phone) : '-' }}</span>
+            </template>
+
+            <template #item.operator="{ item }">
+              <span>{{ item.operator || '-' }}</span>
+            </template>
+
+            <template #item.queue="{ item }">
+              <span>{{ item.queue || '-' }}</span>
+            </template>
+
+            <template #item.channel="{ item }">
+              <span>{{ item.channel || '-' }}</span>
+            </template>
+
+            <template #item.actions="{ item }">
+              <div class="d-flex justify-center">
+                <VBtn
+                  size="x-small"
+                  color="primary"
+                  variant="text"
+                  icon="tabler-eye"
+                  @click="openConversationModal(item)"
+                >
+                  <VIcon size="18">tabler-eye</VIcon>
+                </VBtn>
+              </div>
+            </template>
+
+            <template #no-data>
+              {{ $t('no_data_available') }}
+            </template>
+
+            <template #bottom>
+              <TablePagination
+                v-model:page="options.page"
+                :items-per-page="options.itemsPerPage"
+                :total-items="reportConversationHistoryStore.pagings.total"
+              />
+            </template>
+          </VDataTableServer>
+        </div>
+      </VCardText>
     </VCard>
 
     <!-- Modal de Visualização da Conversa -->
@@ -1376,7 +1387,7 @@ const openDocument = (url: string | null | undefined) => {
   </div>
 </template>
 
-<style lang="scss">
+<style lang="scss" scoped>
 .invoice-list-filter {
   inline-size: 20rem;
 }
@@ -1463,6 +1474,25 @@ const openDocument = (url: string | null | undefined) => {
         }
       }
     }
+  }
+}
+
+.data-table {
+  :deep(.v-table__wrapper > table > thead) {
+    background-color: rgba(var(--v-theme-on-surface), 0.04);
+  }
+
+  :deep(.v-table__wrapper > table > thead > tr > th) {
+    background-color: transparent;
+    color: rgb(var(--v-theme-primary));
+    font-weight: 700;
+    border-bottom: 1px solid rgba(var(--v-theme-primary), 0.25);
+  }
+
+  :deep(
+    .v-table__wrapper > table > thead > tr > th .v-data-table-header__content
+  ) {
+    color: inherit;
   }
 }
 </style>

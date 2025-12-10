@@ -6,7 +6,7 @@ import { updateNotificationsResponseSchema } from './response.schema';
 
 export const updateNotificationsSchema = {
   description: 'Atualiza ou cria as notificações',
-  tags: [ETagSwagger.account],
+  tags: [ETagSwagger.config],
   consumes: ['application/json'],
   produces: ['application/json'],
   security: [

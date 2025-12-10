@@ -12,6 +12,10 @@ import { ListWorkersResponse } from '@core/schema/notifications/listWorkers/resp
 import { ListNfseResponse } from '@core/schema/config/listNfse/response.schema';
 import { UpdateNfseRequest } from '@core/schema/config/updateNfse/request.schema';
 import { UpdateNfseResponse } from '@core/schema/config/updateNfse/response.schema';
+import { ListChannelsRequest } from '@core/schema/config/listChannels/request.schema';
+import { ListChannelsFinalResponse } from '@core/schema/config/listChannels/response.schema';
+import { ChannelsStatisticsResponse } from '@core/schema/config/channelsStatistics/response.schema';
+import { IAccountBasic } from '@core/common/interfaces/IAccountBasic';
 
 export const useSettingsStore = defineStore('settings', {
   state: () => ({
@@ -24,6 +28,7 @@ export const useSettingsStore = defineStore('settings', {
     loading: false,
     notifications: null as ListNotificationsResponse | null,
     nfse: null as ListNfseResponse | null,
+    channels: null as ListChannelsFinalResponse | null,
   }),
   actions: {
     showSnackbar(message: string, color: EColor) {
@@ -194,6 +199,200 @@ export const useSettingsStore = defineStore('settings', {
 
         this.showSnackbar(errorMessage, EColor.error);
 
+        return null;
+      }
+    },
+    async getChannels(
+      query: ListChannelsRequest
+    ): Promise<ListChannelsFinalResponse | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.get<
+          IApiResponse<ListChannelsFinalResponse>
+        >('/config/channels', {
+          params: query,
+        });
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        this.channels = data.data;
+
+        return data.data;
+      } catch {
+        this.loading = false;
+        return null;
+      }
+    },
+    async getAccounts(): Promise<IAccountBasic[] | null> {
+      try {
+        this.loading = true;
+
+        const response =
+          await axios.get<IApiResponse<IAccountBasic[]>>('/config/accounts');
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        return data.data;
+      } catch {
+        this.loading = false;
+        return null;
+      }
+    },
+
+    async recreateChannel(channelId: string): Promise<boolean> {
+      try {
+        this.loading = true;
+
+        const response = await axios.patch<IApiResponse<null>>(
+          `/config/channels/${channelId}/recreate`
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          this.showSnackbar(
+            data?.message ?? this.i18n.global.t('channel_recreate_error'),
+            EColor.error
+          );
+          return false;
+        }
+
+        this.showSnackbar(
+          data.message ?? this.i18n.global.t('channel_recreate_success'),
+          EColor.success
+        );
+
+        return true;
+      } catch (error) {
+        this.loading = false;
+        let errorMessage = this.i18n.global.t('channel_recreate_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        return false;
+      }
+    },
+
+    async deleteChannel(channelId: string): Promise<boolean> {
+      try {
+        this.loading = true;
+
+        const response = await axios.delete<IApiResponse<null>>(
+          `/config/channels/${channelId}`
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          this.showSnackbar(
+            data?.message ?? this.i18n.global.t('channel_delete_error'),
+            EColor.error
+          );
+          return false;
+        }
+
+        this.showSnackbar(
+          data.message ?? this.i18n.global.t('channel_delete_success'),
+          EColor.success
+        );
+
+        return true;
+      } catch (error) {
+        this.loading = false;
+        let errorMessage = this.i18n.global.t('channel_delete_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        return false;
+      }
+    },
+    async recreateChannelsAll(): Promise<{
+      success: number;
+      errors: number;
+    } | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.patch<
+          IApiResponse<{ success: number; errors: number }>
+        >('/config/channels/recreate-all');
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          this.showSnackbar(
+            data?.message ?? this.i18n.global.t('channels_recreate_all_error'),
+            EColor.error
+          );
+
+          return null;
+        }
+
+        this.showSnackbar(
+          this.i18n.global.t('channels_recreate_all_success', {
+            success: data.data.success,
+            errors: data.data.errors,
+          }),
+          EColor.success
+        );
+
+        return data.data;
+      } catch (error) {
+        this.loading = false;
+        let errorMessage = this.i18n.global.t('channels_recreate_all_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        return null;
+      }
+    },
+    async getChannelsStatistics(): Promise<ChannelsStatisticsResponse | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.get<
+          IApiResponse<ChannelsStatisticsResponse>
+        >('/config/channels/statistics');
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        return data.data;
+      } catch {
+        this.loading = false;
         return null;
       }
     },

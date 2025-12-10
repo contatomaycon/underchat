@@ -13,13 +13,11 @@ import {
   SQLWrapper,
   or,
   ilike,
-  ne,
 } from 'drizzle-orm';
 import { ESortOrder } from '@core/common/enums/ESortOrder';
 import { ListRoleResponse } from '@core/schema/role/listRole/response.schema';
 import { ListRoleRequest } from '@core/schema/role/listRole/request.schema';
 import { ESortByRole } from '@core/common/enums/ESortByRole';
-import { EPermissionRole } from '@core/common/enums/EPermissionRole';
 
 @injectable()
 export class RoleListerRepository {
@@ -75,23 +73,10 @@ export class RoleListerRepository {
     perPage: number,
     currentPage: number,
     query: ListRoleRequest,
-    accountId: string,
-    currentUserPermissionRoleId: string
+    accountId: string
   ): Promise<ListRoleResponse[]> => {
     const filters = this.setFilters(query);
     const orders = this.setOrders(query);
-    const excludeOwnRole = ne(
-      permissionRole.permission_role_id,
-      currentUserPermissionRoleId
-    );
-    const excludeAdministratorRole = ne(
-      permissionRole.permission_role_id,
-      '019a930d-c6f5-75af-82a5-899cb84b6089'
-    );
-    const excludeMasterRole = ne(
-      permissionRole.permission_role_id,
-      EPermissionRole.master
-    );
 
     const queryBuilder = this.db
       .select({
@@ -110,9 +95,6 @@ export class RoleListerRepository {
         and(
           eq(permissionRole.account_id, accountId),
           isNull(permissionRole.deleted_at),
-          excludeOwnRole,
-          excludeAdministratorRole,
-          excludeMasterRole,
           ...filters
         )
       );
@@ -141,22 +123,9 @@ export class RoleListerRepository {
 
   listRolesTotal = async (
     query: ListRoleRequest,
-    accountId: string,
-    currentUserPermissionRoleId: string
+    accountId: string
   ): Promise<number> => {
     const filters = this.setFilters(query);
-    const excludeOwnRole = ne(
-      permissionRole.permission_role_id,
-      currentUserPermissionRoleId
-    );
-    const excludeAdministratorRole = ne(
-      permissionRole.permission_role_id,
-      '019a930d-c6f5-75af-82a5-899cb84b6089'
-    );
-    const excludeMasterRole = ne(
-      permissionRole.permission_role_id,
-      EPermissionRole.master
-    );
 
     const result = await this.db
       .select({
@@ -168,9 +137,6 @@ export class RoleListerRepository {
         and(
           eq(permissionRole.account_id, accountId),
           isNull(permissionRole.deleted_at),
-          excludeOwnRole,
-          excludeAdministratorRole,
-          excludeMasterRole,
           ...filters
         )
       )

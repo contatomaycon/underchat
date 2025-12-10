@@ -175,94 +175,99 @@ watch(
             </div>
           </div>
         </div>
-      </VCardText>
 
-      <VDataTableServer
-        v-model:page="options.page"
-        v-model:items-per-page="options.itemsPerPage"
-        :headers="headers"
-        :items="crossSellStore.list"
-        :items-length="crossSellStore.pagings.total"
-        :loading="crossSellStore.loading"
-        :sort-by="options.sortBy"
-        @update:options="handleTableChange"
-        :loading-text="$t('loading_text')"
-      >
-        <template #item.plan_product="{ item }">
-          <span>{{ item.plan_product?.name || '-' }}</span>
-        </template>
+        <VDivider class="my-4" />
 
-        <template #item.price="{ item }">
-          {{
-            new Intl.NumberFormat('pt-BR', {
-              style: 'currency',
-              currency: 'BRL',
-            }).format(item.price ?? 0)
-          }}
-        </template>
-
-        <template #item.created_at="{ item }">
-          <span>{{ formatDateTime(item.created_at ?? null) }}</span>
-        </template>
-
-        <template #item.actions="{ item }">
-          <div class="d-flex gap-1">
-            <IconBtn v-if="$canPermission(permissionsCreate)">
-              <VTooltip
-                location="top"
-                transition="scale-transition"
-                activator="parent"
-              >
-                <span>{{ $t('link_account') }}</span>
-              </VTooltip>
-              <VIcon
-                icon="tabler-link"
-                @click="openLinkAccountDialog(item.plan_cross_sell_id)"
-              />
-            </IconBtn>
-
-            <IconBtn v-if="$canPermission(permissionsEdit)">
-              <VTooltip
-                location="top"
-                transition="scale-transition"
-                activator="parent"
-              >
-                <span>{{ $t('edit_cross_sell') }}</span>
-              </VTooltip>
-              <VIcon
-                icon="tabler-edit"
-                @click="openEditDialog(item.plan_cross_sell_id)"
-              />
-            </IconBtn>
-
-            <IconBtn v-if="$canPermission(permissionsDelete)">
-              <VTooltip
-                location="top"
-                transition="scale-transition"
-                activator="parent"
-              >
-                <span>{{ $t('delete_cross_sell') }}</span>
-              </VTooltip>
-              <VIcon
-                icon="tabler-trash"
-                @click="deleteCrossSell(item.plan_cross_sell_id)"
-              />
-            </IconBtn>
-          </div>
-        </template>
-
-        <template #no-data>
-          {{ $t('no_data_available') }}
-        </template>
-
-        <template #bottom>
-          <TablePagination
+        <div>
+          <VDataTableServer
+            class="data-table"
             v-model:page="options.page"
-            :items-per-page="options.itemsPerPage"
-            :total-items="crossSellStore.pagings.total"
-          />
-        </template>
-      </VDataTableServer>
+            v-model:items-per-page="options.itemsPerPage"
+            :headers="headers"
+            :items="crossSellStore.list"
+            :items-length="crossSellStore.pagings.total"
+            :loading="crossSellStore.loading"
+            :sort-by="options.sortBy"
+            @update:options="handleTableChange"
+            :loading-text="$t('loading_text')"
+          >
+            <template #item.plan_product="{ item }">
+              <span>{{ item.plan_product?.name || '-' }}</span>
+            </template>
+
+            <template #item.price="{ item }">
+              {{
+                new Intl.NumberFormat('pt-BR', {
+                  style: 'currency',
+                  currency: 'BRL',
+                }).format(item.price ?? 0)
+              }}
+            </template>
+
+            <template #item.created_at="{ item }">
+              <span>{{ formatDateTime(item.created_at ?? null) }}</span>
+            </template>
+
+            <template #item.actions="{ item }">
+              <div class="d-flex gap-1">
+                <IconBtn v-if="$canPermission(permissionsCreate)">
+                  <VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>{{ $t('link_account') }}</span>
+                  </VTooltip>
+                  <VIcon
+                    icon="tabler-link"
+                    @click="openLinkAccountDialog(item.plan_cross_sell_id)"
+                  />
+                </IconBtn>
+
+                <IconBtn v-if="$canPermission(permissionsEdit)">
+                  <VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>{{ $t('edit_cross_sell') }}</span>
+                  </VTooltip>
+                  <VIcon
+                    icon="tabler-edit"
+                    @click="openEditDialog(item.plan_cross_sell_id)"
+                  />
+                </IconBtn>
+
+                <IconBtn v-if="$canPermission(permissionsDelete)">
+                  <VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>{{ $t('delete_cross_sell') }}</span>
+                  </VTooltip>
+                  <VIcon
+                    icon="tabler-trash"
+                    @click="deleteCrossSell(item.plan_cross_sell_id)"
+                  />
+                </IconBtn>
+              </div>
+            </template>
+
+            <template #no-data>
+              {{ $t('no_data_available') }}
+            </template>
+
+            <template #bottom>
+              <TablePagination
+                v-model:page="options.page"
+                :items-per-page="options.itemsPerPage"
+                :total-items="crossSellStore.pagings.total"
+              />
+            </template>
+          </VDataTableServer>
+        </div>
+      </VCardText>
 
       <VDialogHandler
         v-if="isDialogDeleterShow"
@@ -301,8 +306,27 @@ watch(
   </div>
 </template>
 
-<style lang="scss">
+<style lang="scss" scoped>
 .invoice-list-filter {
   inline-size: 20rem;
+}
+
+.data-table {
+  :deep(.v-table__wrapper > table > thead) {
+    background-color: rgba(var(--v-theme-on-surface), 0.04);
+  }
+
+  :deep(.v-table__wrapper > table > thead > tr > th) {
+    background-color: transparent;
+    color: rgb(var(--v-theme-primary));
+    font-weight: 700;
+    border-bottom: 1px solid rgba(var(--v-theme-primary), 0.25);
+  }
+
+  :deep(
+    .v-table__wrapper > table > thead > tr > th .v-data-table-header__content
+  ) {
+    color: inherit;
+  }
 }
 </style>

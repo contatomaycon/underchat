@@ -252,70 +252,94 @@ watch(
             </div>
           </div>
         </div>
-      </VCardText>
 
-      <VDataTableServer
-        v-model:page="options.page"
-        v-model:items-per-page="options.itemsPerPage"
-        :headers="headers"
-        :items="accountStore.list"
-        :items-length="accountStore.pagings.total"
-        :loading="accountStore.loading"
-        :sort-by="options.sortBy"
-        @update:options="handleTableChange"
-        :loading-text="$t('loading_text')"
-      >
-        <template #item.name="{ item }">
-          <div class="d-flex flex-column ms-3">
-            <span
-              class="d-block font-weight-medium text-high-emphasis text-truncate"
-            >
-              {{ item.name }}
-            </span>
-          </div>
-        </template>
+        <VDivider class="my-4" />
 
-        <template #item.account_status="{ item }">
-          {{ resolveStatusText(item.account_status?.account_status_id) }}
-        </template>
-
-        <template #item.plan="{ item }">
-          <VChip
-            v-if="item.plan"
-            :color="resolvePlanVariant(item.plan?.name).color"
-            size="small"
-          >
-            {{ resolvePlanVariant(item.plan?.name).text }}
-          </VChip>
-          <span v-else>-</span>
-        </template>
-
-        <template #item.created_at="{ item }">
-          <span>{{ formatDateTime(item?.created_at ?? null) }}</span>
-        </template>
-
-        <template #no-data>
-          {{ $t('no_data_available') }}
-        </template>
-
-        <template #bottom>
-          <TablePagination
+        <div>
+          <VDataTableServer
+            class="data-table"
             v-model:page="options.page"
-            :items-per-page="options.itemsPerPage"
-            :total-items="accountStore.pagings.total"
-          />
-        </template>
-      </VDataTableServer>
+            v-model:items-per-page="options.itemsPerPage"
+            :headers="headers"
+            :items="accountStore.list"
+            :items-length="accountStore.pagings.total"
+            :loading="accountStore.loading"
+            :sort-by="options.sortBy"
+            @update:options="handleTableChange"
+            :loading-text="$t('loading_text')"
+          >
+            <template #item.name="{ item }">
+              <div class="d-flex flex-column ms-3">
+                <span
+                  class="d-block font-weight-medium text-high-emphasis text-truncate"
+                >
+                  {{ item.name }}
+                </span>
+              </div>
+            </template>
+
+            <template #item.account_status="{ item }">
+              {{ resolveStatusText(item.account_status?.account_status_id) }}
+            </template>
+
+            <template #item.plan="{ item }">
+              <VChip
+                v-if="item.plan"
+                :color="resolvePlanVariant(item.plan?.name).color"
+                size="small"
+              >
+                {{ resolvePlanVariant(item.plan?.name).text }}
+              </VChip>
+              <span v-else>-</span>
+            </template>
+
+            <template #item.created_at="{ item }">
+              <span>{{ formatDateTime(item?.created_at ?? null) }}</span>
+            </template>
+
+            <template #no-data>
+              {{ $t('no_data_available') }}
+            </template>
+
+            <template #bottom>
+              <TablePagination
+                v-model:page="options.page"
+                :items-per-page="options.itemsPerPage"
+                :total-items="accountStore.pagings.total"
+              />
+            </template>
+          </VDataTableServer>
+        </div>
+      </VCardText>
     </VCard>
   </div>
 </template>
 
-<style lang="scss">
+<style lang="scss" scoped>
 .status-filter {
   inline-size: 12rem;
 }
 
 .invoice-list-filter {
   inline-size: 20rem;
+}
+
+.data-table {
+  :deep(.v-table__wrapper > table > thead) {
+    background-color: rgba(var(--v-theme-on-surface), 0.04);
+  }
+
+  :deep(.v-table__wrapper > table > thead > tr > th) {
+    background-color: transparent;
+    color: rgb(var(--v-theme-primary));
+    font-weight: 700;
+    border-bottom: 1px solid rgba(var(--v-theme-primary), 0.25);
+  }
+
+  :deep(
+    .v-table__wrapper > table > thead > tr > th .v-data-table-header__content
+  ) {
+    color: inherit;
+  }
 }
 </style>

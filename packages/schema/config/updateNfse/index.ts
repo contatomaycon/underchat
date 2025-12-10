@@ -6,7 +6,7 @@ import { updateNfseResponseSchema } from './response.schema';
 
 export const updateNfseSchema = {
   description: 'Atualiza a configuração de NFSe',
-  tags: [ETagSwagger.account],
+  tags: [ETagSwagger.config],
   produces: ['application/json'],
   security: [
     {

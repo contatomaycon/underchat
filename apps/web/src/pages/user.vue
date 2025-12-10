@@ -362,163 +362,174 @@ watch(
             </div>
           </div>
         </div>
-      </VCardText>
 
-      <VDataTableServer
-        v-model:page="options.page"
-        v-model:items-per-page="options.itemsPerPage"
-        :headers="headers"
-        :items="userStore.list"
-        :items-length="userStore.pagings.total"
-        :loading="userStore.loading"
-        :sort-by="options.sortBy"
-        @update:options="handleTableChange"
-        :loading-text="$t('loading_text')"
-      >
-        <template #item.photo="{ item }">
-          <VTooltip location="top" transition="scale-transition">
-            <template #activator="{ props }">
-              <VBadge
-                v-bind="props"
-                dot
-                location="bottom right"
-                offset-x="3"
-                offset-y="3"
-                bordered
-                :color="
-                  resolveAvatarBadgeVariant(
-                    (item.chat_user?.status as EChatUserStatus) ||
-                      EChatUserStatus.offline,
-                    global.name.value === 'dark'
-                  )
-                "
-              >
-                <div
-                  class="user-photo-square"
-                  :class="{ 'cursor-pointer': item.user_info?.photo }"
-                  @click="
-                    item.user_info?.photo &&
-                    openPhotoViewer(item.user_info.photo)
-                  "
-                >
-                  <VImg
-                    v-if="item.user_info?.photo"
-                    :src="item.user_info.photo"
-                    alt="User photo"
-                    cover
-                  />
-                  <VImg
-                    v-else
-                    :src="'/images/svg/avatar-default.svg'"
-                    alt="Default avatar"
-                    cover
-                  />
-                </div>
-              </VBadge>
-            </template>
-            <span>
-              {{
-                resolvePresenceLabel(
-                  (item.chat_user?.status as EChatUserStatus) ||
-                    EChatUserStatus.offline
-                )
-              }}
-            </span>
-          </VTooltip>
-        </template>
+        <VDivider class="my-4" />
 
-        <template #item.account="{ item }">
-          {{ item.account?.name }}
-        </template>
-
-        <template #item.status="{ item }">
-          <VChip
-            v-if="item.user_status"
-            :color="
-              item.user_status.user_status_id === EUserStatus.active
-                ? 'success'
-                : item.user_status.user_status_id === EUserStatus.blocked
-                  ? 'error'
-                  : 'warning'
-            "
-            size="small"
-            variant="tonal"
-          >
-            {{
-              item.user_status.user_status_id === EUserStatus.active
-                ? $t('active')
-                : item.user_status.user_status_id === EUserStatus.blocked
-                  ? $t('blocked')
-                  : $t('inactive')
-            }}
-          </VChip>
-          <span v-else class="text-medium-emphasis">-</span>
-        </template>
-
-        <template #item.phone_partial="{ item }">
-          {{ item.user_info?.phone_partial }}
-        </template>
-
-        <template #item.document_partial="{ item }">
-          {{ item.user_document?.document_partial }}
-        </template>
-
-        <template #item.created_at="{ item }">
-          <span>{{ formatDateTime(item.created_at ?? null) }}</span>
-        </template>
-
-        <template #item.actions="{ item }">
-          <div class="d-flex gap-1">
-            <IconBtn v-if="canAssignRole(item.user_id)">
-              <VTooltip
-                location="top"
-                transition="scale-transition"
-                activator="parent"
-              >
-                <span>{{ $t('assign_role') }}</span>
-              </VTooltip>
-              <VIcon
-                icon="tabler-user-plus"
-                @click="openAssignRoleDialog(item.user_id)"
-              />
-            </IconBtn>
-
-            <IconBtn v-if="$canPermission(permissionsEdit)">
-              <VTooltip
-                location="top"
-                transition="scale-transition"
-                activator="parent"
-              >
-                <span>{{ $t('edit_user') }}</span>
-              </VTooltip>
-              <VIcon icon="tabler-edit" @click="openEditDialog(item.user_id)" />
-            </IconBtn>
-
-            <IconBtn v-if="$canPermission(permissionsDelete)">
-              <VTooltip
-                location="top"
-                transition="scale-transition"
-                activator="parent"
-              >
-                <span>{{ $t('delete_user') }}</span>
-              </VTooltip>
-              <VIcon icon="tabler-trash" @click="deleteUser(item.user_id)" />
-            </IconBtn>
-          </div>
-        </template>
-
-        <template #no-data>
-          {{ $t('no_data_available') }}
-        </template>
-
-        <template #bottom>
-          <TablePagination
+        <div>
+          <VDataTableServer
+            class="data-table"
             v-model:page="options.page"
-            :items-per-page="options.itemsPerPage"
-            :total-items="userStore.pagings.total"
-          />
-        </template>
-      </VDataTableServer>
+            v-model:items-per-page="options.itemsPerPage"
+            :headers="headers"
+            :items="userStore.list"
+            :items-length="userStore.pagings.total"
+            :loading="userStore.loading"
+            :sort-by="options.sortBy"
+            @update:options="handleTableChange"
+            :loading-text="$t('loading_text')"
+          >
+            <template #item.photo="{ item }">
+              <VTooltip location="top" transition="scale-transition">
+                <template #activator="{ props }">
+                  <VBadge
+                    v-bind="props"
+                    dot
+                    location="bottom right"
+                    offset-x="3"
+                    offset-y="3"
+                    bordered
+                    :color="
+                      resolveAvatarBadgeVariant(
+                        (item.chat_user?.status as EChatUserStatus) ||
+                          EChatUserStatus.offline,
+                        global.name.value === 'dark'
+                      )
+                    "
+                  >
+                    <div
+                      class="user-photo-square"
+                      :class="{ 'cursor-pointer': item.user_info?.photo }"
+                      @click="
+                        item.user_info?.photo &&
+                        openPhotoViewer(item.user_info.photo)
+                      "
+                    >
+                      <VImg
+                        v-if="item.user_info?.photo"
+                        :src="item.user_info.photo"
+                        alt="User photo"
+                        cover
+                      />
+                      <VImg
+                        v-else
+                        :src="'/images/svg/avatar-default.svg'"
+                        alt="Default avatar"
+                        cover
+                      />
+                    </div>
+                  </VBadge>
+                </template>
+                <span>
+                  {{
+                    resolvePresenceLabel(
+                      (item.chat_user?.status as EChatUserStatus) ||
+                        EChatUserStatus.offline
+                    )
+                  }}
+                </span>
+              </VTooltip>
+            </template>
+
+            <template #item.account="{ item }">
+              {{ item.account?.name }}
+            </template>
+
+            <template #item.status="{ item }">
+              <VChip
+                v-if="item.user_status"
+                :color="
+                  item.user_status.user_status_id === EUserStatus.active
+                    ? 'success'
+                    : item.user_status.user_status_id === EUserStatus.blocked
+                      ? 'error'
+                      : 'warning'
+                "
+                size="small"
+                variant="tonal"
+              >
+                {{
+                  item.user_status.user_status_id === EUserStatus.active
+                    ? $t('active')
+                    : item.user_status.user_status_id === EUserStatus.blocked
+                      ? $t('blocked')
+                      : $t('inactive')
+                }}
+              </VChip>
+              <span v-else class="text-medium-emphasis">-</span>
+            </template>
+
+            <template #item.phone_partial="{ item }">
+              {{ item.user_info?.phone_partial }}
+            </template>
+
+            <template #item.document_partial="{ item }">
+              {{ item.user_document?.document_partial }}
+            </template>
+
+            <template #item.created_at="{ item }">
+              <span>{{ formatDateTime(item.created_at ?? null) }}</span>
+            </template>
+
+            <template #item.actions="{ item }">
+              <div class="d-flex gap-1">
+                <IconBtn v-if="canAssignRole(item.user_id)">
+                  <VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>{{ $t('assign_role') }}</span>
+                  </VTooltip>
+                  <VIcon
+                    icon="tabler-user-plus"
+                    @click="openAssignRoleDialog(item.user_id)"
+                  />
+                </IconBtn>
+
+                <IconBtn v-if="$canPermission(permissionsEdit)">
+                  <VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>{{ $t('edit_user') }}</span>
+                  </VTooltip>
+                  <VIcon
+                    icon="tabler-edit"
+                    @click="openEditDialog(item.user_id)"
+                  />
+                </IconBtn>
+
+                <IconBtn v-if="$canPermission(permissionsDelete)">
+                  <VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>{{ $t('delete_user') }}</span>
+                  </VTooltip>
+                  <VIcon
+                    icon="tabler-trash"
+                    @click="deleteUser(item.user_id)"
+                  />
+                </IconBtn>
+              </div>
+            </template>
+
+            <template #no-data>
+              {{ $t('no_data_available') }}
+            </template>
+
+            <template #bottom>
+              <TablePagination
+                v-model:page="options.page"
+                :items-per-page="options.itemsPerPage"
+                :total-items="userStore.pagings.total"
+              />
+            </template>
+          </VDataTableServer>
+        </div>
+      </VCardText>
 
       <VDialogHandler
         v-if="isDialogDeleterShow"
@@ -606,7 +617,7 @@ watch(
   </div>
 </template>
 
-<style lang="scss">
+<style lang="scss" scoped>
 .status-filter {
   inline-size: 12rem;
 }
@@ -690,6 +701,25 @@ watch(
 
   &:hover {
     background: rgba(0, 0, 0, 0.7) !important;
+  }
+}
+
+.data-table {
+  :deep(.v-table__wrapper > table > thead) {
+    background-color: rgba(var(--v-theme-on-surface), 0.04);
+  }
+
+  :deep(.v-table__wrapper > table > thead > tr > th) {
+    background-color: transparent;
+    color: rgb(var(--v-theme-primary));
+    font-weight: 700;
+    border-bottom: 1px solid rgba(var(--v-theme-primary), 0.25);
+  }
+
+  :deep(
+    .v-table__wrapper > table > thead > tr > th .v-data-table-header__content
+  ) {
+    color: inherit;
   }
 }
 </style>

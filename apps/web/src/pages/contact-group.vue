@@ -175,73 +175,84 @@ watch(
             </div>
           </div>
         </div>
-      </VCardText>
 
-      <VDataTableServer
-        v-model:page="options.page"
-        v-model:items-per-page="options.itemsPerPage"
-        :headers="headers"
-        :items="contactGroupStore.list"
-        :items-length="contactGroupStore.pagings.total"
-        :loading="contactGroupStore.loading"
-        :sort-by="options.sortBy"
-        @update:options="handleTableChange"
-        :loading-text="$t('loading_text')"
-      >
-        <template #item.name="{ item }">
-          {{ item?.name }}
-        </template>
+        <VDivider class="my-4" />
 
-        <template #item.description="{ item }">
-          {{ item?.description }}
-        </template>
-
-        <template #item.created_at="{ item }">
-          <span>{{ formatDateTime(item?.created_at ?? null) }}</span>
-        </template>
-
-        <template #item.actions="{ item }">
-          <div class="d-flex gap-1">
-            <IconBtn
-              v-if="$canPermission(permissionsEdit) && item?.contact_group_id"
-              ><VTooltip
-                location="top"
-                transition="scale-transition"
-                activator="parent"
-              >
-                <span>{{ $t('add_or_delete_contact_group') }}</span> </VTooltip
-              ><VIcon
-                icon="tabler-square-rounded-plus"
-                @click="openEditDialog(item.contact_group_id)"
-            /></IconBtn>
-
-            <IconBtn
-              v-if="$canPermission(permissionsDelete) && item.contact_group_id"
-              ><VTooltip
-                location="top"
-                transition="scale-transition"
-                activator="parent"
-              >
-                <span>{{ $t('delete_contact_group') }}</span> </VTooltip
-              ><VIcon
-                icon="tabler-trash"
-                @click="deleteContactGroup(item.contact_group_id)"
-            /></IconBtn>
-          </div>
-        </template>
-
-        <template #no-data>
-          {{ $t('no_data_available') }}
-        </template>
-
-        <template #bottom>
-          <TablePagination
+        <div>
+          <VDataTableServer
+            class="data-table"
             v-model:page="options.page"
-            :items-per-page="options.itemsPerPage"
-            :total-items="contactGroupStore.pagings.total"
-          />
-        </template>
-      </VDataTableServer>
+            v-model:items-per-page="options.itemsPerPage"
+            :headers="headers"
+            :items="contactGroupStore.list"
+            :items-length="contactGroupStore.pagings.total"
+            :loading="contactGroupStore.loading"
+            :sort-by="options.sortBy"
+            @update:options="handleTableChange"
+            :loading-text="$t('loading_text')"
+          >
+            <template #item.name="{ item }">
+              {{ item?.name }}
+            </template>
+
+            <template #item.description="{ item }">
+              {{ item?.description }}
+            </template>
+
+            <template #item.created_at="{ item }">
+              <span>{{ formatDateTime(item?.created_at ?? null) }}</span>
+            </template>
+
+            <template #item.actions="{ item }">
+              <div class="d-flex gap-1">
+                <IconBtn
+                  v-if="
+                    $canPermission(permissionsEdit) && item?.contact_group_id
+                  "
+                  ><VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>{{
+                      $t('add_or_delete_contact_group')
+                    }}</span> </VTooltip
+                  ><VIcon
+                    icon="tabler-square-rounded-plus"
+                    @click="openEditDialog(item.contact_group_id)"
+                /></IconBtn>
+
+                <IconBtn
+                  v-if="
+                    $canPermission(permissionsDelete) && item.contact_group_id
+                  "
+                  ><VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>{{ $t('delete_contact_group') }}</span> </VTooltip
+                  ><VIcon
+                    icon="tabler-trash"
+                    @click="deleteContactGroup(item.contact_group_id)"
+                /></IconBtn>
+              </div>
+            </template>
+
+            <template #no-data>
+              {{ $t('no_data_available') }}
+            </template>
+
+            <template #bottom>
+              <TablePagination
+                v-model:page="options.page"
+                :items-per-page="options.itemsPerPage"
+                :total-items="contactGroupStore.pagings.total"
+              />
+            </template>
+          </VDataTableServer>
+        </div>
+      </VCardText>
 
       <VDialogHandler
         v-if="isDialogDeleterShow"
@@ -274,12 +285,31 @@ watch(
   </div>
 </template>
 
-<style lang="scss">
+<style lang="scss" scoped>
 .status-filter {
   inline-size: 12rem;
 }
 
 .invoice-list-filter {
   inline-size: 20rem;
+}
+
+.data-table {
+  :deep(.v-table__wrapper > table > thead) {
+    background-color: rgba(var(--v-theme-on-surface), 0.04);
+  }
+
+  :deep(.v-table__wrapper > table > thead > tr > th) {
+    background-color: transparent;
+    color: rgb(var(--v-theme-primary));
+    font-weight: 700;
+    border-bottom: 1px solid rgba(var(--v-theme-primary), 0.25);
+  }
+
+  :deep(
+    .v-table__wrapper > table > thead > tr > th .v-data-table-header__content
+  ) {
+    color: inherit;
+  }
 }
 </style>

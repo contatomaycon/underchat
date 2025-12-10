@@ -239,97 +239,102 @@ const totalRevenueDialog = computed(() => {
             </div>
           </div>
         </div>
-      </VCardText>
 
-      <VDataTableServer
-        v-model:page="options.page"
-        v-model:items-per-page="options.itemsPerPage"
-        :headers="headers"
-        :items="planStore.listSales"
-        :items-length="planStore.listSales.length"
-        :loading="planStore.loading"
-        :sort-by="options.sortBy"
-        @update:options="handleTableChange"
-        :loading-text="$t('loading_text')"
-      >
-        <template #item.plan_name="{ item }">
-          <div class="d-flex flex-column ms-3">
-            <span
-              class="d-block font-weight-medium text-high-emphasis text-truncate"
-            >
-              {{ item.plan_name }}
-            </span>
-          </div>
-        </template>
+        <VDivider class="my-4" />
 
-        <template #item.price="{ item }">
-          {{
-            new Intl.NumberFormat('pt-BR', {
-              style: 'currency',
-              currency: 'BRL',
-            }).format(Number(item.price))
-          }}
-        </template>
-
-        <template #item.price_old="{ item }">
-          <s>{{
-            new Intl.NumberFormat('pt-BR', {
-              style: 'currency',
-              currency: 'BRL',
-            }).format(Number(item.price_old))
-          }}</s>
-        </template>
-
-        <template #item.quantity_sold="{ item }">
-          <VChip color="primary" size="small">
-            {{ item.quantity_sold }}
-          </VChip>
-        </template>
-
-        <template #item.total_revenue="{ item }">
-          <span class="text-success font-weight-medium">
-            {{
-              new Intl.NumberFormat('pt-BR', {
-                style: 'currency',
-                currency: 'BRL',
-              }).format(Number(item.total_revenue))
-            }}
-          </span>
-        </template>
-
-        <template #item.cross_sells="{ item }">
-          <div class="d-flex align-center gap-2">
-            <VBtn
-              v-if="item.cross_sells.length > 0"
-              size="small"
-              color="primary"
-              variant="outlined"
-              @click="openCrossSellsDialog(item)"
-            >
-              {{ $t('view_addons') }} ({{ item.cross_sells.length }})
-            </VBtn>
-            <span v-else class="text-caption text-medium-emphasis">
-              {{ $t('no_addons') }}
-            </span>
-          </div>
-        </template>
-
-        <template #item.created_at="{ item }">
-          <span>{{ formatDateTime(item.created_at ?? null) }}</span>
-        </template>
-
-        <template #no-data>
-          {{ $t('no_data_available') }}
-        </template>
-
-        <template #bottom>
-          <TablePagination
+        <div>
+          <VDataTableServer
+            class="data-table"
             v-model:page="options.page"
-            :items-per-page="options.itemsPerPage"
-            :total-items="planStore.listSales.length"
-          />
-        </template>
-      </VDataTableServer>
+            v-model:items-per-page="options.itemsPerPage"
+            :headers="headers"
+            :items="planStore.listSales"
+            :items-length="planStore.listSales.length"
+            :loading="planStore.loading"
+            :sort-by="options.sortBy"
+            @update:options="handleTableChange"
+            :loading-text="$t('loading_text')"
+          >
+            <template #item.plan_name="{ item }">
+              <div class="d-flex flex-column ms-3">
+                <span
+                  class="d-block font-weight-medium text-high-emphasis text-truncate"
+                >
+                  {{ item.plan_name }}
+                </span>
+              </div>
+            </template>
+
+            <template #item.price="{ item }">
+              {{
+                new Intl.NumberFormat('pt-BR', {
+                  style: 'currency',
+                  currency: 'BRL',
+                }).format(Number(item.price))
+              }}
+            </template>
+
+            <template #item.price_old="{ item }">
+              <s>{{
+                new Intl.NumberFormat('pt-BR', {
+                  style: 'currency',
+                  currency: 'BRL',
+                }).format(Number(item.price_old))
+              }}</s>
+            </template>
+
+            <template #item.quantity_sold="{ item }">
+              <VChip color="primary" size="small">
+                {{ item.quantity_sold }}
+              </VChip>
+            </template>
+
+            <template #item.total_revenue="{ item }">
+              <span class="text-success font-weight-medium">
+                {{
+                  new Intl.NumberFormat('pt-BR', {
+                    style: 'currency',
+                    currency: 'BRL',
+                  }).format(Number(item.total_revenue))
+                }}
+              </span>
+            </template>
+
+            <template #item.cross_sells="{ item }">
+              <div class="d-flex align-center gap-2">
+                <VBtn
+                  v-if="item.cross_sells.length > 0"
+                  size="small"
+                  color="primary"
+                  variant="outlined"
+                  @click="openCrossSellsDialog(item)"
+                >
+                  {{ $t('view_addons') }} ({{ item.cross_sells.length }})
+                </VBtn>
+                <span v-else class="text-caption text-medium-emphasis">
+                  {{ $t('no_addons') }}
+                </span>
+              </div>
+            </template>
+
+            <template #item.created_at="{ item }">
+              <span>{{ formatDateTime(item.created_at ?? null) }}</span>
+            </template>
+
+            <template #no-data>
+              {{ $t('no_data_available') }}
+            </template>
+
+            <template #bottom>
+              <TablePagination
+                v-model:page="options.page"
+                :items-per-page="options.itemsPerPage"
+                :total-items="planStore.listSales.length"
+              />
+            </template>
+          </VDataTableServer>
+        </div>
+      </VCardText>
     </VCard>
 
     <VDialog v-model="showCrossSellsDialog" max-width="700" scrollable>
@@ -500,7 +505,7 @@ const totalRevenueDialog = computed(() => {
   </div>
 </template>
 
-<style lang="scss">
+<style lang="scss" scoped>
 .invoice-list-filter {
   inline-size: 20rem;
 }
@@ -524,6 +529,25 @@ const totalRevenueDialog = computed(() => {
     &:hover {
       background: rgba(var(--v-theme-on-surface), 0.3);
     }
+  }
+}
+
+.data-table {
+  :deep(.v-table__wrapper > table > thead) {
+    background-color: rgba(var(--v-theme-on-surface), 0.04);
+  }
+
+  :deep(.v-table__wrapper > table > thead > tr > th) {
+    background-color: transparent;
+    color: rgb(var(--v-theme-primary));
+    font-weight: 700;
+    border-bottom: 1px solid rgba(var(--v-theme-primary), 0.25);
+  }
+
+  :deep(
+    .v-table__wrapper > table > thead > tr > th .v-data-table-header__content
+  ) {
+    color: inherit;
   }
 }
 </style>

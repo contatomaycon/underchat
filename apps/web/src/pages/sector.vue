@@ -236,121 +236,129 @@ watch(
             </div>
           </div>
         </div>
-      </VCardText>
 
-      <VDataTableServer
-        v-model:page="options.page"
-        v-model:items-per-page="options.itemsPerPage"
-        :headers="headers"
-        :items="sectorStore.list"
-        :items-length="sectorStore.pagings.total"
-        :loading="sectorStore.loading"
-        :sort-by="options.sortBy"
-        @update:options="handleTableChange"
-        :loading-text="$t('loading_text')"
-      >
-        <template #item.name="{ item }">
-          <div class="d-flex flex-column ms-3">
-            <span
-              class="d-block font-weight-medium text-high-emphasis text-truncate"
-            >
-              {{ item.name }}
-            </span>
-          </div>
-        </template>
+        <VDivider class="my-4" />
 
-        <template #item.status="{ item }">
-          <VChip
-            v-if="item.sector_status"
-            :color="
-              item.sector_status.id === ESectorStatus.active
-                ? 'success'
-                : 'error'
-            "
-            size="small"
-            variant="tonal"
-          >
-            {{
-              item.sector_status.id === ESectorStatus.active
-                ? $t('active')
-                : $t('inactive')
-            }}
-          </VChip>
-          <span v-else class="text-medium-emphasis">-</span>
-        </template>
-
-        <template #item.account="{ item }">
-          {{ item.account?.name }}
-        </template>
-
-        <template #item.color="{ item }">
-          <VChip
-            class="uc-chip"
-            size="small"
-            :style="{
-              backgroundColor: backgroundColor(item.color),
-              color: textColor(item.color),
-            }"
-          >
-            {{ item.color }}
-          </VChip>
-        </template>
-
-        <template #item.created_at="{ item }">
-          <span>{{ formatDateTime(item.created_at) }}</span>
-        </template>
-
-        <template #item.actions="{ item }">
-          <div class="d-flex gap-1">
-            <IconBtn
-              ><VTooltip
-                location="top"
-                transition="scale-transition"
-                activator="parent"
-              >
-                <span>{{ $t('add_role') }}</span> </VTooltip
-              ><VIcon
-                icon="tabler-square-rounded-plus"
-                @click="openAddRoleDialog(item.sector_id)"
-            /></IconBtn>
-
-            <IconBtn v-if="$canPermission(permissionsEdit) && item.account?.id"
-              ><VTooltip
-                location="top"
-                transition="scale-transition"
-                activator="parent"
-              >
-                <span>{{ $t('edit_sector') }}</span> </VTooltip
-              ><VIcon
-                icon="tabler-edit"
-                @click="openEditDialog(item.sector_id)"
-            /></IconBtn>
-
-            <IconBtn
-              v-if="$canPermission(permissionsDelete) && item.account?.id"
-              ><VTooltip
-                location="top"
-                transition="scale-transition"
-                activator="parent"
-              >
-                <span>{{ $t('delete_sector') }}</span> </VTooltip
-              ><VIcon icon="tabler-trash" @click="deleteSector(item.sector_id)"
-            /></IconBtn>
-          </div>
-        </template>
-
-        <template #no-data>
-          {{ $t('no_data_available') }}
-        </template>
-
-        <template #bottom>
-          <TablePagination
+        <div>
+          <VDataTableServer
+            class="data-table"
             v-model:page="options.page"
-            :items-per-page="options.itemsPerPage"
-            :total-items="sectorStore.pagings.total"
-          />
-        </template>
-      </VDataTableServer>
+            v-model:items-per-page="options.itemsPerPage"
+            :headers="headers"
+            :items="sectorStore.list"
+            :items-length="sectorStore.pagings.total"
+            :loading="sectorStore.loading"
+            :sort-by="options.sortBy"
+            @update:options="handleTableChange"
+            :loading-text="$t('loading_text')"
+          >
+            <template #item.name="{ item }">
+              <div class="d-flex flex-column ms-3">
+                <span
+                  class="d-block font-weight-medium text-high-emphasis text-truncate"
+                >
+                  {{ item.name }}
+                </span>
+              </div>
+            </template>
+
+            <template #item.status="{ item }">
+              <VChip
+                v-if="item.sector_status"
+                :color="
+                  item.sector_status.id === ESectorStatus.active
+                    ? 'success'
+                    : 'error'
+                "
+                size="small"
+                variant="tonal"
+              >
+                {{
+                  item.sector_status.id === ESectorStatus.active
+                    ? $t('active')
+                    : $t('inactive')
+                }}
+              </VChip>
+              <span v-else class="text-medium-emphasis">-</span>
+            </template>
+
+            <template #item.account="{ item }">
+              {{ item.account?.name }}
+            </template>
+
+            <template #item.color="{ item }">
+              <VChip
+                class="uc-chip"
+                size="small"
+                :style="{
+                  backgroundColor: backgroundColor(item.color),
+                  color: textColor(item.color),
+                }"
+              >
+                {{ item.color }}
+              </VChip>
+            </template>
+
+            <template #item.created_at="{ item }">
+              <span>{{ formatDateTime(item.created_at) }}</span>
+            </template>
+
+            <template #item.actions="{ item }">
+              <div class="d-flex gap-1">
+                <IconBtn
+                  ><VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>{{ $t('add_role') }}</span> </VTooltip
+                  ><VIcon
+                    icon="tabler-square-rounded-plus"
+                    @click="openAddRoleDialog(item.sector_id)"
+                /></IconBtn>
+
+                <IconBtn
+                  v-if="$canPermission(permissionsEdit) && item.account?.id"
+                  ><VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>{{ $t('edit_sector') }}</span> </VTooltip
+                  ><VIcon
+                    icon="tabler-edit"
+                    @click="openEditDialog(item.sector_id)"
+                /></IconBtn>
+
+                <IconBtn
+                  v-if="$canPermission(permissionsDelete) && item.account?.id"
+                  ><VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>{{ $t('delete_sector') }}</span> </VTooltip
+                  ><VIcon
+                    icon="tabler-trash"
+                    @click="deleteSector(item.sector_id)"
+                /></IconBtn>
+              </div>
+            </template>
+
+            <template #no-data>
+              {{ $t('no_data_available') }}
+            </template>
+
+            <template #bottom>
+              <TablePagination
+                v-model:page="options.page"
+                :items-per-page="options.itemsPerPage"
+                :total-items="sectorStore.pagings.total"
+              />
+            </template>
+          </VDataTableServer>
+        </div>
+      </VCardText>
 
       <VDialogHandler
         v-if="isDialogDeleterShow"
@@ -387,7 +395,7 @@ watch(
   </div>
 </template>
 
-<style lang="scss">
+<style lang="scss" scoped>
 .status-filter {
   inline-size: 12rem;
 }
@@ -404,5 +412,24 @@ watch(
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.data-table {
+  :deep(.v-table__wrapper > table > thead) {
+    background-color: rgba(var(--v-theme-on-surface), 0.04);
+  }
+
+  :deep(.v-table__wrapper > table > thead > tr > th) {
+    background-color: transparent;
+    color: rgb(var(--v-theme-primary));
+    font-weight: 700;
+    border-bottom: 1px solid rgba(var(--v-theme-primary), 0.25);
+  }
+
+  :deep(
+    .v-table__wrapper > table > thead > tr > th .v-data-table-header__content
+  ) {
+    color: inherit;
+  }
 }
 </style>

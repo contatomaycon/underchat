@@ -18,7 +18,10 @@ import { StreamProducerService } from '@core/services/streamProducer.service';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
-import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
+import {
+  workerCentrifugoQueue,
+  channelsConfigCentrifugo,
+} from '@core/common/functions/centrifugoQueue';
 import { startHeartbeat } from '@core/common/functions/startHeartbeat';
 import { createConsumer } from '@core/common/functions/createConsumer';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
@@ -154,7 +157,9 @@ export class WorkerConsume {
 
   private async updateWorkerErrorStatus(
     workerId: string,
-    accountId: string
+    accountId: string,
+    action?: EWorkerAction,
+    serverId?: string
   ): Promise<PublishResult> {
     const inputUpdate: IUpdateWorker = {
       worker_id: workerId,
@@ -171,7 +176,30 @@ export class WorkerConsume {
       worker_status_id: EWorkerStatus.error,
     };
 
-    return this.centrifugoPublish(dataPublish);
+    const publishPromises: Promise<PublishResult>[] = [
+      this.centrifugoPublish(dataPublish),
+    ];
+
+    if (
+      (action === EWorkerAction.delete || action === EWorkerAction.recreate) &&
+      serverId
+    ) {
+      const errorPayload: IWorkerPayload = {
+        action,
+        worker_id: workerId,
+        server_id: serverId,
+        account_id: accountId,
+        worker_status_id: EWorkerStatus.error,
+      };
+
+      publishPromises.push(
+        this.centrifugoService.publish(channelsConfigCentrifugo(), errorPayload)
+      );
+    }
+
+    const [result] = await Promise.all(publishPromises);
+
+    return result;
   }
 
   private async recreateWorker(data: IWorkerPayload): Promise<PublishResult> {
@@ -181,7 +209,12 @@ export class WorkerConsume {
     );
 
     if (!viewWorkerType) {
-      await this.updateWorkerErrorStatus(data.worker_id, data.account_id);
+      await this.updateWorkerErrorStatus(
+        data.worker_id,
+        data.account_id,
+        data.action,
+        data.server_id
+      );
 
       throw new Error('Worker not found');
     }
@@ -192,7 +225,12 @@ export class WorkerConsume {
     );
 
     if (!removed) {
-      await this.updateWorkerErrorStatus(data.worker_id, data.account_id);
+      await this.updateWorkerErrorStatus(
+        data.worker_id,
+        data.account_id,
+        data.action,
+        data.server_id
+      );
 
       throw new Error('Worker removal failed');
     }
@@ -208,7 +246,12 @@ export class WorkerConsume {
     );
 
     if (!containerId) {
-      await this.updateWorkerErrorStatus(data.worker_id, data.account_id);
+      await this.updateWorkerErrorStatus(
+        data.worker_id,
+        data.account_id,
+        data.action,
+        data.server_id
+      );
 
       throw new Error('Worker creation failed');
     }
@@ -217,7 +260,12 @@ export class WorkerConsume {
       await this.containerHealthService.isServiceHealthy(containerId);
 
     if (!healthy) {
-      await this.updateWorkerErrorStatus(data.worker_id, data.account_id);
+      await this.updateWorkerErrorStatus(
+        data.worker_id,
+        data.account_id,
+        data.action,
+        data.server_id
+      );
       throw new Error('Worker service is not healthy');
     }
 
@@ -234,7 +282,12 @@ export class WorkerConsume {
     );
 
     if (!updated) {
-      await this.updateWorkerErrorStatus(data.worker_id, data.account_id);
+      await this.updateWorkerErrorStatus(
+        data.worker_id,
+        data.account_id,
+        data.action,
+        data.server_id
+      );
 
       throw new Error('Failed to update worker status');
     }
@@ -259,7 +312,12 @@ export class WorkerConsume {
       worker_status_id: EWorkerStatus.disponible,
     };
 
-    return this.centrifugoPublish(dataPublish);
+    const [result] = await Promise.all([
+      this.centrifugoPublish(dataPublish),
+      this.centrifugoService.publish(channelsConfigCentrifugo(), data),
+    ]);
+
+    return result;
   }
 
   private async deleteWorker(data: IWorkerPayload): Promise<PublishResult> {
@@ -269,7 +327,12 @@ export class WorkerConsume {
     );
 
     if (!exists) {
-      await this.updateWorkerErrorStatus(data.worker_id, data.account_id);
+      await this.updateWorkerErrorStatus(
+        data.worker_id,
+        data.account_id,
+        data.action,
+        data.server_id
+      );
 
       throw new Error('Worker not found');
     }
@@ -279,7 +342,12 @@ export class WorkerConsume {
     );
 
     if (!containerId) {
-      await this.updateWorkerErrorStatus(data.worker_id, data.account_id);
+      await this.updateWorkerErrorStatus(
+        data.worker_id,
+        data.account_id,
+        data.action,
+        data.server_id
+      );
 
       throw new Error('Worker removal failed');
     }
@@ -290,7 +358,12 @@ export class WorkerConsume {
     );
 
     if (!deleted) {
-      await this.updateWorkerErrorStatus(data.worker_id, data.account_id);
+      await this.updateWorkerErrorStatus(
+        data.worker_id,
+        data.account_id,
+        data.action,
+        data.server_id
+      );
 
       throw new Error('Failed to delete worker');
     }
@@ -303,7 +376,12 @@ export class WorkerConsume {
       worker_status_id: EWorkerStatus.delete,
     };
 
-    return this.centrifugoPublish(dataPublish);
+    const [result] = await Promise.all([
+      this.centrifugoPublish(dataPublish),
+      this.centrifugoService.publish(channelsConfigCentrifugo(), data),
+    ]);
+
+    return result;
   }
 
   private async createWorker(data: IWorkerPayload): Promise<PublishResult> {
@@ -312,6 +390,26 @@ export class WorkerConsume {
 
       throw new Error('Worker type ID is required');
     }
+
+    const inputUpdateCreating: IUpdateWorker = {
+      worker_id: data.worker_id,
+      worker_status_id: EWorkerStatus.creating,
+    };
+
+    await this.workerService.updateWorkerById(
+      data.account_id,
+      inputUpdateCreating
+    );
+
+    const dataPublishCreating: IBaileysConnectionState = {
+      code: ECodeMessage.info,
+      status: EBaileysConnectionStatus.info,
+      worker_id: data.worker_id,
+      account_id: data.account_id,
+      worker_status_id: EWorkerStatus.creating,
+    };
+
+    await this.centrifugoPublish(dataPublishCreating);
 
     const imageName = getImageWorker(data.worker_type_id);
 
