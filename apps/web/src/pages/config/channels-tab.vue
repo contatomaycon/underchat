@@ -90,6 +90,10 @@ const resolveStatusVariant = (s: string | undefined | null) => {
     return { color: EColor.error, text: t('error') };
   if (s === EWorkerStatus.mismatched)
     return { color: EColor.error, text: t('mismatched') };
+  if (s === EWorkerStatus.deleting)
+    return { color: EColor.error, text: t('deleting') };
+  if (s === EWorkerStatus.recreating)
+    return { color: EColor.info, text: t('recreating') };
 
   return { color: EColor.primary, text: t('unknown') };
 };
@@ -227,8 +231,6 @@ onMounted(async () => {
   await onMessage(
     channelsConfigCentrifugo(),
     (data: IBaileysConnectionState | IWorkerPayload) => {
-      console.log('data', data);
-
       updateChannelFromCentrifugo(data);
     }
   );
