@@ -18,7 +18,6 @@ export const createWorker = async (
     const response = await workerCreatorUseCase.execute(
       t,
       tokenJwtData.account_id,
-      tokenJwtData.is_administrator,
       request.body
     );
 
@@ -29,16 +28,12 @@ export const createWorker = async (
       });
     }
 
-    request.server.logger.info(response, request.id);
-
     return sendResponse(reply, {
       message: t('worker_creator_error'),
       httpStatusCode: EHTTPStatusCode.bad_request,
     });
   } catch (error) {
-    console.log(error);
-
-    request.server.logger.error(error, request.id);
+    console.error(error);
 
     if (error instanceof Error) {
       return sendResponse(reply, {

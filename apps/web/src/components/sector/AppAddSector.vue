@@ -63,23 +63,22 @@ onMounted(resetForm);
   <VDialog v-model="isVisible" max-width="600">
     <DialogCloseBtn @click="isVisible = false" />
 
-    <template v-if="sectorStore.loading">
-      <VOverlay
-        :model-value="sectorStore.loading"
-        class="align-center justify-center"
-      >
-        <VProgressCircular color="primary" indeterminate size="32" />
-      </VOverlay>
-    </template>
+    <VOverlay
+      :model-value="sectorStore.loading"
+      class="align-center justify-center"
+      contained
+    >
+      <VProgressCircular color="primary" indeterminate size="64" />
+    </VOverlay>
 
     <VForm ref="refFormAddSector" @submit.prevent>
       <VCard :title="$t('add_sector')">
         <VCardText>
           <VRow>
             <VCol cols="12">
+              <VLabel class="text-body-2 mb-1">{{ $t('name') }}:</VLabel>
               <AppTextField
                 v-model="name"
-                :label="$t('name') + ':'"
                 :placeholder="$t('name')"
                 :rules="[requiredValidator(name, $t('name_required'))]"
               />

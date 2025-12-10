@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ref, watch, nextTick, computed, onMounted, useAttrs } from 'vue';
 import type { PropType } from 'vue';
 import type {
   Options as FlatpickrOptions,
@@ -11,6 +12,7 @@ import { makeVInputProps } from 'vuetify/lib/components/VInput/VInput';
 import { VField, VInput, VLabel } from 'vuetify/components';
 import { filterInputAttrs } from 'vuetify/lib/util/helpers';
 import { useConfigStore } from '@webcore/stores/config';
+import { Portuguese } from 'flatpickr/dist/l10n/pt';
 
 defineOptions({
   inheritAttrs: false,
@@ -49,9 +51,6 @@ const props = defineProps({
 const emit = defineEmits<Emit>();
 
 interface Emit {
-  (e: 'click:control', val: MouseEvent): true;
-  (e: 'mousedown:control', val: MouseEvent): true;
-  (e: 'update:focused', val: MouseEvent): true;
   (e: 'update:modelValue', val: DateOption | DateOption[] | null): void;
   (e: 'click:clear', el: MouseEvent): void;
 }
@@ -78,12 +77,117 @@ if (compAttrs.config && compAttrs.config.inline) {
   Object.assign(compAttrs, { altInputClass: 'inlinePicker' });
 }
 
-compAttrs.config = {
-  ...compAttrs.config,
+const isValidDateValue = (
+  day: number,
+  month: number,
+  year: number
+): boolean => {
+  if (day < 1 || day > 31) return false;
+  if (month < 1 || month > 12) return false;
+  if (year < 1900 || year > 2100) return false;
+
+  const date = new Date(year, month - 1, day);
+  return (
+    date.getDate() === day &&
+    date.getMonth() === month - 1 &&
+    date.getFullYear() === year
+  );
+};
+
+const defaultConfig: FlatpickrOptions = {
+  locale: Portuguese,
+  dateFormat: 'Y-m-d',
+  altInput: true,
+  altFormat: 'd/m/Y',
+  allowInput: true,
+  clickOpens: true,
+  onReady: (selectedDates, dateStr, instance) => {
+    nextTick(() => {
+      enableYearEditing();
+      setupInputMask();
+    });
+  },
+  onChange: (selectedDates, dateStr, instance) => {
+    nextTick(() => {
+      setupInputMask();
+      const altInput = instance.altInput as HTMLInputElement;
+      if (altInput && selectedDates.length > 0) {
+        const date = selectedDates[0];
+        const day = String(date.getDate()).padStart(2, '0');
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const year = date.getFullYear();
+        altInput.value = `${day}/${month}/${year}`;
+      }
+    });
+  },
+  onClose: (selectedDates, dateStr, instance) => {
+    nextTick(() => {
+      const altInput = instance.altInput as HTMLInputElement;
+      if (altInput && selectedDates.length > 0) {
+        const date = selectedDates[0];
+        const day = String(date.getDate()).padStart(2, '0');
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const year = date.getFullYear();
+        altInput.value = `${day}/${month}/${year}`;
+      }
+    });
+  },
+  parseDate: (datestr, format): Date => {
+    if (!datestr || typeof datestr !== 'string') {
+      return new Date();
+    }
+
+    // Tenta fazer parse do formato dd/mm/yyyy (input do usuário)
+    const partsSlash = datestr.trim().split('/');
+    if (partsSlash.length === 3) {
+      const day = Number.parseInt(partsSlash[0], 10);
+      const month = Number.parseInt(partsSlash[1], 10);
+      const year = Number.parseInt(partsSlash[2], 10);
+      if (
+        !Number.isNaN(day) &&
+        !Number.isNaN(month) &&
+        !Number.isNaN(year) &&
+        isValidDateValue(day, month, year)
+      ) {
+        return new Date(year, month - 1, day);
+      }
+    }
+
+    // Tenta fazer parse do formato yyyy-mm-dd (vindo do backend)
+    const partsDash = datestr.trim().split('-');
+    if (partsDash.length === 3) {
+      const year = Number.parseInt(partsDash[0], 10);
+      const month = Number.parseInt(partsDash[1], 10);
+      const day = Number.parseInt(partsDash[2], 10);
+      if (
+        !Number.isNaN(day) &&
+        !Number.isNaN(month) &&
+        !Number.isNaN(year) &&
+        isValidDateValue(day, month, year)
+      ) {
+        return new Date(year, month - 1, day);
+      }
+    }
+
+    return new Date();
+  },
+  formatDate: (date, format) => {
+    if (!date || !(date instanceof Date) || Number.isNaN(date.getTime()))
+      return '';
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year = date.getFullYear();
+    return `${year}-${month}-${day}`;
+  },
   prevArrow:
     '<i class="tabler-chevron-left v-icon" style="font-size: 20px; height: 20px; width: 20px;"></i>',
   nextArrow:
     '<i class="tabler-chevron-right v-icon" style="font-size: 20px; height: 20px; width: 20px;"></i>',
+};
+
+compAttrs.config = {
+  ...defaultConfig,
+  ...compAttrs.config,
 };
 
 const onClear = (el: MouseEvent) => {
@@ -95,24 +199,384 @@ const onClear = (el: MouseEvent) => {
   });
 };
 
+const normalizeDay = (day: string): string => {
+  const dayNum = Number.parseInt(day, 10);
+  return dayNum > 31 ? '31' : day;
+};
+
+const normalizeMonth = (month: string): string => {
+  const monthNum = Number.parseInt(month, 10);
+  return monthNum > 12 ? '12' : month;
+};
+
+const formatPartialDate = (
+  digits: string,
+  day: string,
+  month: string
+): string => {
+  if (digits.length === 1) {
+    const d = Number.parseInt(digits[0], 10);
+    return d > 3 ? '' : digits;
+  }
+
+  if (digits.length === 2) {
+    return normalizeDay(day);
+  }
+
+  if (digits.length === 3) {
+    return `${normalizeDay(day)}/${digits[2]}`;
+  }
+
+  if (digits.length === 4) {
+    return `${normalizeDay(day)}/${normalizeMonth(month)}`;
+  }
+
+  return '';
+};
+
+const extractDigits = (value: string): string => {
+  return Array.from(value)
+    .filter((char) => /\d/.test(char))
+    .join('');
+};
+
+const applyDateMask = (value: string): string => {
+  const digits = extractDigits(value).slice(0, 8);
+  if (digits.length === 0) return '';
+
+  const day = digits.slice(0, 2);
+  const month = digits.slice(2, 4);
+  const year = digits.slice(4, 8);
+
+  if (digits.length < 5) {
+    return formatPartialDate(digits, day, month);
+  }
+
+  return `${normalizeDay(day)}/${normalizeMonth(month)}/${year}`;
+};
+
+const validateDateInput = (value: string): boolean => {
+  const parts = value.split('/');
+  if (parts.length !== 3) return true;
+
+  const day = Number.parseInt(parts[0], 10);
+  const month = Number.parseInt(parts[1], 10);
+  const year = Number.parseInt(parts[2], 10);
+
+  if (Number.isNaN(day) || Number.isNaN(month) || Number.isNaN(year))
+    return true;
+
+  if (parts[0].length === 2 && parts[1].length === 2 && parts[2].length === 4) {
+    return isValidDateValue(day, month, year);
+  }
+
+  if (parts[0].length === 2 && Number.parseInt(parts[0], 10) > 31) return false;
+  if (parts[1].length === 2 && Number.parseInt(parts[1], 10) > 12) return false;
+
+  return true;
+};
+
+const enableYearEditing = () => {
+  if (!refFlatPicker.value?.fp) return;
+
+  const calendarContainer = refFlatPicker.value.fp.calendarContainer;
+  if (!calendarContainer) return;
+
+  const yearInput = calendarContainer.querySelector(
+    '.numInput.cur-year'
+  ) as HTMLInputElement;
+
+  if (!yearInput) return;
+
+  yearInput.readOnly = false;
+  yearInput.removeAttribute('readonly');
+  yearInput.setAttribute('contenteditable', 'true');
+  yearInput.style.pointerEvents = 'auto';
+  yearInput.style.cursor = 'text';
+  yearInput.style.userSelect = 'text';
+  yearInput.style.webkitUserSelect = 'text';
+
+  const handleYearClick = (e: MouseEvent) => {
+    e.stopPropagation();
+    yearInput.focus();
+    setTimeout(() => {
+      yearInput.select();
+    }, 10);
+  };
+
+  const handleYearFocus = () => {
+    setTimeout(() => {
+      yearInput.select();
+    }, 10);
+  };
+
+  const handleYearMouseDown = (e: MouseEvent) => {
+    e.stopPropagation();
+  };
+
+  yearInput.removeEventListener('click', handleYearClick);
+  yearInput.removeEventListener('focus', handleYearFocus);
+  yearInput.removeEventListener('mousedown', handleYearMouseDown);
+
+  yearInput.addEventListener('click', handleYearClick, true);
+  yearInput.addEventListener('focus', handleYearFocus, true);
+  yearInput.addEventListener('mousedown', handleYearMouseDown, true);
+};
+
+const onCalendarOpen = () => {
+  isCalendarOpen.value = true;
+
+  nextTick(() => {
+    if (refFlatPicker.value?.fp) {
+      enableYearEditing();
+      setupInputMask();
+
+      const calendarContainer = refFlatPicker.value.fp.calendarContainer;
+      if (calendarContainer) {
+        const observer = new MutationObserver(() => {
+          enableYearEditing();
+        });
+
+        observer.observe(calendarContainer, {
+          childList: true,
+          subtree: true,
+        });
+
+        setTimeout(() => {
+          observer.disconnect();
+        }, 1000);
+      }
+    }
+  });
+};
+
 const vuetifyTheme = useTheme();
 const vuetifyThemesName = Object.keys(vuetifyTheme.themes.value);
 
 const updateThemeClassInCalendar = () => {
-  if (!refFlatPicker.value.fp.calendarContainer) return;
+  const container = refFlatPicker.value.fp.calendarContainer;
+  if (!container) return;
 
-  vuetifyThemesName.forEach((t) => {
-    refFlatPicker.value.fp.calendarContainer.classList.remove(`v-theme--${t}`);
-  });
-  refFlatPicker.value.fp.calendarContainer.classList.add(
-    `v-theme--${vuetifyTheme.global.name.value}`
-  );
+  for (const t of vuetifyThemesName) {
+    container.classList.remove(`v-theme--${t}`);
+  }
+  container.classList.add(`v-theme--${vuetifyTheme.global.name.value}`);
 };
 
 watch(() => configStore.theme, updateThemeClassInCalendar);
 
+let inputMaskHandlers: {
+  handleInput: ((e: Event) => void) | null;
+  handleKeyDown: ((e: KeyboardEvent) => void) | null;
+  handlePaste: ((e: ClipboardEvent) => void) | null;
+} = {
+  handleInput: null,
+  handleKeyDown: null,
+  handlePaste: null,
+};
+
+const setupInputMask = () => {
+  if (!refFlatPicker.value?.fp) return;
+
+  const input = (refFlatPicker.value.fp.altInput ||
+    refFlatPicker.value.fp.input) as HTMLInputElement;
+  if (!input) return;
+
+  if (inputMaskHandlers.handleInput) {
+    input.removeEventListener('input', inputMaskHandlers.handleInput);
+  }
+  if (inputMaskHandlers.handleKeyDown) {
+    input.removeEventListener('keydown', inputMaskHandlers.handleKeyDown);
+  }
+  if (inputMaskHandlers.handlePaste) {
+    input.removeEventListener('paste', inputMaskHandlers.handlePaste);
+  }
+
+  const findDigitPosition = (value: string, targetDigit: number): number => {
+    let digitCount = 0;
+    for (let i = 0; i < value.length; i++) {
+      if (/\d/.test(value[i])) {
+        digitCount++;
+        if (digitCount === targetDigit) {
+          return i + 1;
+        }
+      }
+    }
+    return value.length;
+  };
+
+  const calculateCursorPosition = (
+    maskedValue: string,
+    maskedDigits: string,
+    digitsBeforeCursor: number,
+    digitsAfter: number
+  ): number => {
+    if (digitsAfter > digitsBeforeCursor) {
+      const digitsAdded = digitsAfter - digitsBeforeCursor;
+      const newDigitPosition = digitsBeforeCursor + digitsAdded;
+
+      if (newDigitPosition === 2 && maskedDigits.length >= 2) {
+        return 3;
+      }
+      if (newDigitPosition === 4 && maskedDigits.length >= 4) {
+        return 6;
+      }
+      return findDigitPosition(maskedValue, newDigitPosition);
+    }
+
+    return findDigitPosition(maskedValue, digitsBeforeCursor);
+  };
+
+  const updateCursorPosition = (
+    target: HTMLInputElement,
+    maskedValue: string,
+    maskedDigits: string,
+    digitsBeforeCursor: number,
+    digitsAfter: number
+  ): void => {
+    const newCursorPos = Math.min(
+      calculateCursorPosition(
+        maskedValue,
+        maskedDigits,
+        digitsBeforeCursor,
+        digitsAfter
+      ),
+      maskedValue.length
+    );
+
+    nextTick(() => {
+      target.setSelectionRange(newCursorPos, newCursorPos);
+    });
+  };
+
+  const validateAndSetError = (
+    target: HTMLInputElement,
+    maskedValue: string
+  ): void => {
+    if (maskedValue.length === 10 && !validateDateInput(maskedValue)) {
+      target.setCustomValidity('Data inválida');
+      target.reportValidity();
+      setTimeout(() => {
+        target.setCustomValidity('');
+      }, 2000);
+      return;
+    }
+
+    if (maskedValue.length < 10) {
+      target.setCustomValidity('');
+    }
+  };
+
+  const handleInput = (e: Event) => {
+    const target = e.target as HTMLInputElement;
+    const originalValue = target.value;
+    const cursorPosBefore = target.selectionStart || 0;
+
+    const digitsBeforeCursor = extractDigits(
+      originalValue.slice(0, cursorPosBefore)
+    ).length;
+    const allDigits = extractDigits(originalValue);
+    const digitsAfter = allDigits.length;
+
+    const maskedValue = applyDateMask(originalValue);
+    const maskedDigits = extractDigits(maskedValue);
+
+    if (maskedValue !== originalValue) {
+      target.value = maskedValue;
+      updateCursorPosition(
+        target,
+        maskedValue,
+        maskedDigits,
+        digitsBeforeCursor,
+        digitsAfter
+      );
+    }
+
+    validateAndSetError(target, maskedValue);
+  };
+
+  const handleKeyDown = (e: KeyboardEvent) => {
+    const target = e.target as HTMLInputElement;
+    const key = e.key;
+
+    if (key === 'Backspace' || key === 'Delete') {
+      return;
+    }
+
+    if (key === 'v' && (e.ctrlKey || e.metaKey)) {
+      return;
+    }
+
+    if (
+      !/\d/.test(key) &&
+      !['Tab', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'Enter'].includes(key)
+    ) {
+      e.preventDefault();
+      return;
+    }
+
+    const currentValue = target.value;
+    const selectionStart = target.selectionStart || 0;
+    const selectionEnd = target.selectionEnd || 0;
+    const hasSelection = selectionStart !== selectionEnd;
+
+    if (hasSelection && /\d/.test(key)) {
+      e.preventDefault();
+      const beforeSelection = currentValue.slice(0, selectionStart);
+      const afterSelection = currentValue.slice(selectionEnd);
+      const newValue = beforeSelection + key + afterSelection;
+      target.value = applyDateMask(newValue);
+
+      const digitsBeforeCursor = extractDigits(beforeSelection).length + 1;
+      const newCursorPos = findDigitPosition(target.value, digitsBeforeCursor);
+      target.setSelectionRange(newCursorPos, newCursorPos);
+
+      const event = new Event('input', { bubbles: true });
+      target.dispatchEvent(event);
+      return;
+    }
+
+    const digits = extractDigits(currentValue);
+
+    if (digits.length >= 8 && /\d/.test(key) && !hasSelection) {
+      e.preventDefault();
+    }
+  };
+
+  const handlePaste = (e: ClipboardEvent) => {
+    e.preventDefault();
+    const pastedText = e.clipboardData?.getData('text') || '';
+    const maskedValue = applyDateMask(pastedText);
+    if (maskedValue) {
+      const target = e.target as HTMLInputElement;
+      target.value = maskedValue;
+      const event = new Event('input', { bubbles: true });
+      target.dispatchEvent(event);
+
+      if (maskedValue.length === 10 && !validateDateInput(maskedValue)) {
+        target.setCustomValidity('Data inválida');
+        target.reportValidity();
+        setTimeout(() => {
+          target.setCustomValidity('');
+        }, 2000);
+      }
+    }
+  };
+
+  inputMaskHandlers.handleInput = handleInput;
+  inputMaskHandlers.handleKeyDown = handleKeyDown;
+  inputMaskHandlers.handlePaste = handlePaste;
+
+  input.addEventListener('input', handleInput);
+  input.addEventListener('keydown', handleKeyDown);
+  input.addEventListener('paste', handlePaste);
+};
+
 onMounted(() => {
   updateThemeClassInCalendar();
+  nextTick(() => {
+    setupInputMask();
+  });
 });
 
 const emitModelValue = (val: DateOption | DateOption[] | null) => {
@@ -191,7 +655,7 @@ const elementId = computed(() => {
                 :readonly="isReadonly.value"
                 class="flat-picker-custom-style h-100 w-100"
                 :disabled="isReadonly.value"
-                @on-open="isCalendarOpen = true"
+                @on-open="onCalendarOpen"
                 @on-close="
                   isCalendarOpen = false;
                   validate();
@@ -245,7 +709,6 @@ $heading-color: rgba(
   var(--v-high-emphasis-opacity)
 );
 $body-color: rgba(var(--v-theme-on-background), var(--v-high-emphasis-opacity));
-$disabled-color: rgba(var(--v-theme-on-background), var(--v-disabled-opacity));
 
 input[altinputclass='inlinePicker'] {
   display: none;
@@ -532,7 +995,6 @@ input[altinputclass='inlinePicker'] {
   }
 
   .flatpickr-prev-month {
-    /* stylelint-disable-next-line liberty/use-logical-spec */
     right: 3.65rem;
     left: unset !important;
   }

@@ -7,6 +7,7 @@ import {
   EditUserParamsRequest,
   UpdateUserRequest,
 } from '@core/schema/user/editUser/request.schema';
+import { canOperateOnOtherAccounts } from '@core/common/functions/hasFullAccess';
 
 export const editUser = async (
   request: FastifyRequest<{
@@ -18,13 +19,26 @@ export const editUser = async (
   const userUpdaterUseCase = container.resolve(UserUpdaterUseCase);
   const { t, tokenJwtData } = request;
 
+  const canOperateOnOthers = canOperateOnOtherAccounts(tokenJwtData.actions);
+
   try {
+    if (request.body.account_id?.value && !canOperateOnOthers) {
+      return sendResponse(reply, {
+        message: t('permission_denied'),
+        httpStatusCode: EHTTPStatusCode.forbidden,
+      });
+    }
+
+    const accountIdToUse = request.body.account_id?.value
+      ? request.body.account_id.value
+      : tokenJwtData.account_id;
+
     const response = await userUpdaterUseCase.execute(
       t,
       request.params.user_id,
       request.body,
-      tokenJwtData.account_id,
-      tokenJwtData.is_administrator
+      accountIdToUse,
+      canOperateOnOthers
     );
 
     if (response) {
@@ -34,14 +48,12 @@ export const editUser = async (
       });
     }
 
-    request.server.logger.info(response, request.id);
-
     return sendResponse(reply, {
       message: t('user_update_error'),
       httpStatusCode: EHTTPStatusCode.bad_request,
     });
   } catch (error) {
-    request.server.logger.error(error, request.id);
+    console.error(error);
 
     if (error instanceof Error) {
       return sendResponse(reply, {

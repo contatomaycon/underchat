@@ -20,7 +20,6 @@ export const changeStatusConnection = async (
     await workerChangeStatusConnectionUseCase.execute(
       t,
       tokenJwtData.account_id,
-      tokenJwtData.is_administrator,
       request.body
     );
 
@@ -29,7 +28,7 @@ export const changeStatusConnection = async (
       httpStatusCode: EHTTPStatusCode.ok,
     });
   } catch (error) {
-    request.server.logger.error(error, request.id);
+    console.error(error);
 
     if (error instanceof Error) {
       return sendResponse(reply, {

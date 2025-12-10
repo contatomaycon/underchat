@@ -18,8 +18,7 @@ export const listRole = async (
     const response = await roleListerUseCase.execute(
       t,
       request.query,
-      tokenJwtData.account_id,
-      tokenJwtData.is_administrator
+      tokenJwtData.account_id
     );
 
     if (response) {
@@ -30,14 +29,12 @@ export const listRole = async (
       });
     }
 
-    request.server.logger.info(response, request.id);
-
     return sendResponse(reply, {
       message: t('role_list_not_found'),
       httpStatusCode: EHTTPStatusCode.bad_request,
     });
   } catch (error) {
-    request.server.logger.error(error, request.id);
+    console.error(error);
 
     if (error instanceof Error) {
       return sendResponse(reply, {

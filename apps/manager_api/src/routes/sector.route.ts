@@ -5,7 +5,6 @@ import {
   sectorCreatePermissions,
   sectorDeletePermissions,
   sectorEditPermissions,
-  sectorListPermissions,
   sectorViewPermissions,
 } from '@/permissions';
 import { createSectorSchema } from '@core/schema/sector/createSector';
@@ -16,8 +15,9 @@ import { editSectorSchema } from '@core/schema/sector/editSector';
 import { listSectorRoleAccountSchema } from '@core/schema/sector/listSectorRoleAccount';
 import { viewSectorRoleAccountSectorSchema } from '@core/schema/sector/viewSectorRoleAccountSector';
 import { createSectorRoleSchema } from '@core/schema/sector/createSectorRole';
+import { listSectorUsersSchema } from '@core/schema/sector/listSectorUsers';
 
-export default async function sectorRoutes(server: FastifyInstance) {
+export default function sectorRoutes(server: FastifyInstance) {
   const sectorController = container.resolve(SectorController);
 
   server.get('/sector', {
@@ -25,7 +25,7 @@ export default async function sectorRoutes(server: FastifyInstance) {
     handler: sectorController.listSector,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, sectorListPermissions),
+        server.authenticateJwt(request, reply, sectorViewPermissions),
     ],
   });
 
@@ -70,7 +70,7 @@ export default async function sectorRoutes(server: FastifyInstance) {
     handler: sectorController.listSectorRoleAccount,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, sectorListPermissions),
+        server.authenticateJwt(request, reply, sectorViewPermissions),
     ],
   });
 
@@ -89,6 +89,15 @@ export default async function sectorRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, sectorCreatePermissions),
+    ],
+  });
+
+  server.get('/sector/:sector_id/users', {
+    schema: listSectorUsersSchema,
+    handler: sectorController.listSectorUsers,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, sectorViewPermissions),
     ],
   });
 }

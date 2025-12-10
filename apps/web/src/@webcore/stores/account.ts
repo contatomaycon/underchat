@@ -18,12 +18,11 @@ import { IListAccounts } from '../interfaces/IListAccounts';
 import { ListAccountRequest } from '@core/schema/account/listAccount/request.schema';
 import { ViewAccountResponse } from '@core/schema/account/viewAccount/response.schema';
 import { CreateAccountRequest } from '@core/schema/account/createAccount/request.schema';
-import { IListPlans } from '../interfaces/IListPlans';
-import {
-  ListPlanFinalResponse,
-  ListPlanResponse,
-} from '@core/schema/plan/listPlan/response.schema';
-import { ListPlanRequest } from '@core/schema/plan/listPlan/request.schema';
+import { ViewAccountInfoResponse } from '@core/schema/account/viewAccountInfo/response.schema';
+import { EditAccountInfoParamsRequest } from '@core/schema/account/editAccountInfo/request.schema';
+import { IAccountBasic } from '@core/common/interfaces/IAccountBasic';
+import { ListAccountSubscriptionsResponse } from '@core/schema/account/listAccountSubscriptions/response.schema';
+import { ViewPlanAccountResponse } from '@core/schema/planAccount/viewPlanAccount/response.schema';
 
 export const useAccountStore = defineStore('account', {
   state: () => ({
@@ -35,7 +34,6 @@ export const useAccountStore = defineStore('account', {
     i18n: getI18n(),
     loading: false,
     list: [] as ListAccountResponse[],
-    listAllPlan: [] as ListPlanResponse[],
     pagings: {
       current_page: 1 as number,
       total_pages: 1 as number,
@@ -105,6 +103,41 @@ export const useAccountStore = defineStore('account', {
         this.loading = false;
 
         return null;
+      }
+    },
+
+    async listAllAccounts(): Promise<IAccountBasic[]> {
+      try {
+        this.loading = true;
+
+        const response =
+          await axios.get<IApiResponse<IAccountBasic[]>>(`/account/all`);
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('account_all_list_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return [];
+        }
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('account_all_list_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return [];
       }
     },
 
@@ -274,26 +307,14 @@ export const useAccountStore = defineStore('account', {
       }
     },
 
-    async listPlan(input?: IListPlans): Promise<ListPlanFinalResponse | null> {
+    async getAccountInfoById(
+      accountId: string
+    ): Promise<ViewAccountInfoResponse | null> {
       try {
         this.loading = true;
 
-        const request: ListPlanRequest | undefined = input
-          ? {
-              current_page: input.page,
-              per_page: input.per_page,
-              sort_by: input.sort_by,
-              plan_id: input.search,
-              name: input.name,
-              price: input.search,
-            }
-          : undefined;
-
-        const response = await axios.get<IApiResponse<ListPlanFinalResponse>>(
-          `/plan`,
-          {
-            params: request,
-          }
+        const response = await axios.get<IApiResponse<ViewAccountInfoResponse>>(
+          `/account/info/${accountId}`
         );
 
         this.loading = false;
@@ -302,19 +323,16 @@ export const useAccountStore = defineStore('account', {
 
         if (!data?.status || !data?.data) {
           const mensage =
-            data?.message ?? this.i18n.global.t('plan_list_error');
+            data?.message ?? this.i18n.global.t('account_info_view_error');
 
           this.showSnackbar(mensage, EColor.error);
 
           return null;
         }
 
-        this.listAllPlan = data.data.results;
-        this.pagings = data.data.pagings;
-
         return data.data;
       } catch (error) {
-        let errorMessage = this.i18n.global.t('plan_list_error');
+        let errorMessage = this.i18n.global.t('account_info_view_error');
         if (error instanceof AxiosError) {
           errorMessage = error?.response?.data?.message ?? errorMessage;
         }
@@ -324,6 +342,201 @@ export const useAccountStore = defineStore('account', {
         this.loading = false;
 
         return null;
+      }
+    },
+
+    async addAccountInfo(payload: FormData): Promise<boolean> {
+      try {
+        this.loading = true;
+
+        const response = await axios.post<IApiResponse<boolean>>(
+          `/account/info`,
+          payload
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('account_info_add_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return false;
+        }
+
+        this.showSnackbar(
+          this.i18n.global.t('account_info_add_success'),
+          EColor.success
+        );
+
+        return true;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('account_info_add_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return false;
+      }
+    },
+
+    async updateAccountInfo(
+      payload: EditAccountInfoParamsRequest,
+      body: FormData
+    ): Promise<boolean> {
+      try {
+        this.loading = true;
+
+        const response = await axios.patch<IApiResponse<boolean>>(
+          `/account/info/${payload.account_info_id}`,
+          body
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('account_info_edit_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return false;
+        }
+
+        this.showSnackbar(
+          this.i18n.global.t('account_info_edit_success'),
+          EColor.success
+        );
+
+        return true;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('account_info_edit_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return false;
+      }
+    },
+
+    async getAccountSubscriptions(
+      accountId: string
+    ): Promise<ListAccountSubscriptionsResponse | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.get<
+          IApiResponse<ListAccountSubscriptionsResponse>
+        >(`/account/${accountId}/subscriptions`);
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const mensage =
+            data?.message ??
+            this.i18n.global.t('account_subscriptions_list_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return null;
+        }
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t(
+          'account_subscriptions_list_error'
+        );
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return null;
+      }
+    },
+
+    async getPlanAccount(
+      accountId: string
+    ): Promise<ViewPlanAccountResponse | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.get<IApiResponse<ViewPlanAccountResponse>>(
+          `/account/${accountId}/plan-account`
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        return data.data;
+      } catch {
+        this.loading = false;
+        return null;
+      }
+    },
+
+    async updatePlanAccount(accountId: string, payload: any): Promise<boolean> {
+      try {
+        this.loading = true;
+
+        const response = await axios.patch<IApiResponse<boolean>>(
+          `/account/${accountId}/plan-account`,
+          payload
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('plan_account_update_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return false;
+        }
+
+        this.showSnackbar(
+          this.i18n.global.t('plan_account_update_successfully'),
+          EColor.success
+        );
+
+        return true;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('plan_account_update_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return false;
       }
     },
   },

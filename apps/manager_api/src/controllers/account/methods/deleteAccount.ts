@@ -12,13 +12,12 @@ export const deleteAccount = async (
   reply: FastifyReply
 ) => {
   const accountDeleterUseCase = container.resolve(AccountDeleterUseCase);
-  const { t, tokenJwtData } = request;
+  const { t } = request;
 
   try {
     const response = await accountDeleterUseCase.execute(
       t,
-      request.params.account_id,
-      tokenJwtData.is_administrator
+      request.params.account_id
     );
 
     if (response) {
@@ -28,14 +27,12 @@ export const deleteAccount = async (
       });
     }
 
-    request.server.logger.info(response, request.id);
-
     return sendResponse(reply, {
       message: t('account_deleter_error'),
       httpStatusCode: EHTTPStatusCode.bad_request,
     });
   } catch (error) {
-    request.server.logger.error(error, request.id);
+    console.error(error);
 
     if (error instanceof Error) {
       return sendResponse(reply, {

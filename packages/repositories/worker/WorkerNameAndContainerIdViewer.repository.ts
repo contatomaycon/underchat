@@ -1,0 +1,39 @@
+import * as schema from '@core/models';
+import { worker } from '@core/models';
+import { NodePgDatabase } from 'drizzle-orm/node-postgres';
+import { inject, injectable } from 'tsyringe';
+import { and, eq, isNull } from 'drizzle-orm';
+import { IViewWorkerNameAndContainerId } from '@core/common/interfaces/IViewWorkerNameAndContainerId';
+
+@injectable()
+export class WorkerNameAndContainerIdViewerRepository {
+  constructor(
+    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+  ) {}
+
+  viewWorkerNameAndContainerId = async (
+    accountId: string,
+    workerId: string
+  ): Promise<IViewWorkerNameAndContainerId | null> => {
+    const result = await this.db
+      .select({
+        worker_id: worker.worker_id,
+        container_id: worker.container_id,
+      })
+      .from(worker)
+      .where(
+        and(
+          eq(worker.account_id, accountId),
+          eq(worker.worker_id, workerId),
+          isNull(worker.deleted_at)
+        )
+      )
+      .execute();
+
+    if (!result?.length) {
+      return null;
+    }
+
+    return result[0] as IViewWorkerNameAndContainerId;
+  };
+}

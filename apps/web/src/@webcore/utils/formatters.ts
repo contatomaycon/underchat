@@ -3,42 +3,53 @@ import { ComposerTranslation } from 'vue-i18n';
 
 export const avatarText = (value?: string | null): string => {
   if (!value) return '';
-
   const words = value.trim().split(/\s+/);
-  if (words.length === 1) {
-    return words[0].substring(0, 2).toUpperCase();
-  }
-
+  if (words.length === 1) return words[0].substring(0, 2).toUpperCase();
   return (words[0].charAt(0) + words[1].charAt(0)).toUpperCase();
 };
 
-export const resolveAvatarBadgeVariant = (status: EChatUserStatus) => {
+export const getOfflineColorDark = (): string => {
+  return '#9e9e9e';
+};
+
+export const getOfflineColorLight = (): string => {
+  return '#757575';
+};
+
+export const resolveAvatarBadgeVariant = (
+  status: EChatUserStatus,
+  isDark?: boolean
+) => {
   if (status === EChatUserStatus.online) return 'success';
   if (status === EChatUserStatus.busy) return 'error';
   if (status === EChatUserStatus.away) return 'warning';
-  if (status === EChatUserStatus.offline) return 'secondary';
-  if (status === EChatUserStatus.do_not_disturb) return 'error';
-
+  if (status === EChatUserStatus.offline) {
+    return isDark ? getOfflineColorDark() : getOfflineColorLight();
+  }
+  if (status === EChatUserStatus.do_not_disturb) return 'warning';
   return 'secondary';
 };
 
-export const kFormatter = (num: number) => {
-  return Math.abs(num) > 9999
+export const kFormatter = (num: number) =>
+  Math.abs(num) > 9999
     ? `${Math.sign(num) * +(Math.abs(num) / 1000).toFixed(1)}k`
     : Math.abs(num).toLocaleString('en-US');
-};
 
-export const formatDate = (
-  value: string,
-  formatting: Intl.DateTimeFormatOptions = {
+const DEFAULT_DATE_FORMAT: Readonly<Intl.DateTimeFormatOptions> = Object.freeze(
+  {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
   }
+);
+
+export const formatDate = (
+  value: string,
+  formatting?: Intl.DateTimeFormatOptions
 ) => {
   if (!value) return value;
-
-  return new Intl.DateTimeFormat('en-US', formatting).format(new Date(value));
+  const options = formatting ?? DEFAULT_DATE_FORMAT;
+  return new Intl.DateTimeFormat('en-US', options).format(new Date(value));
 };
 
 export function formatDateToMonthShort(
@@ -58,9 +69,7 @@ export function formatDateToMonthShort(
 
   const yesterday = new Date(now);
   yesterday.setDate(now.getDate() - 1);
-  if (date.toDateString() === yesterday.toDateString()) {
-    return t('yesterday');
-  }
+  if (date.toDateString() === yesterday.toDateString()) return t('yesterday');
 
   const diffMs = now.getTime() - date.getTime();
   const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
@@ -80,7 +89,6 @@ export function formatDateToMonthShort(
   const day = String(date.getDate()).padStart(2, '0');
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const year = date.getFullYear();
-
   return `${day}/${month}/${year}`;
 }
 

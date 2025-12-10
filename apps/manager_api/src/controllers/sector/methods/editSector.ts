@@ -16,15 +16,13 @@ export const editSector = async (
   reply: FastifyReply
 ) => {
   const sectorUpdaterUseCase = container.resolve(SectorUpdaterUseCase);
-  const { t, tokenJwtData } = request;
+  const { t } = request;
 
   try {
     const response = await sectorUpdaterUseCase.execute(
       t,
       request.params.sector_id,
-      request.body,
-      tokenJwtData.account_id,
-      tokenJwtData.is_administrator
+      request.body
     );
 
     if (response) {
@@ -34,14 +32,12 @@ export const editSector = async (
       });
     }
 
-    request.server.logger.info(response, request.id);
-
     return sendResponse(reply, {
       message: t('sector_update_error'),
       httpStatusCode: EHTTPStatusCode.bad_request,
     });
   } catch (error) {
-    request.server.logger.error(error, request.id);
+    console.error(error);
 
     if (error instanceof Error) {
       return sendResponse(reply, {

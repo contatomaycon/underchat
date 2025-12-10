@@ -11,13 +11,13 @@ import { EColor } from '@core/common/enums/EColor';
 import { ISnackbar } from '@core/common/interfaces/ISnackbar';
 import { EPermissionsRoles } from '@core/common/enums/EPermissions';
 import {
-  setAdministrator,
   setLayout,
   setPermissions,
+  setSectors,
   setToken,
   setUser,
 } from '../localStorage/user';
-import { EPermissionRole } from '@core/common/enums/EPermissionRole';
+import { updateAbilityPermissions } from '@/plugins/casl/ability';
 
 export const useAuthStore = defineStore('auth', {
   state: () => ({
@@ -45,6 +45,11 @@ export const useAuthStore = defineStore('auth', {
       const url = import.meta.env.VITE_BACKEND_URL;
 
       if (!url) {
+        this.showSnackbar(
+          this.i18n.global.t('backend_url_not_configured') ||
+            'Backend URL não configurada. Verifique o arquivo .env',
+          EColor.error
+        );
         return false;
       }
 
@@ -86,14 +91,12 @@ export const useAuthStore = defineStore('auth', {
         this.permissions = (data.data.permissions ?? []) as EPermissionsRoles[];
         this.layout = data.data.layout as AccountInfoResponse;
 
-        const isAdministrator =
-          this.user.type.user_type_id === EPermissionRole.administrator;
-
         setUser(this.user);
         setToken(this.token);
         setPermissions(this.permissions);
         setLayout(this.layout);
-        setAdministrator(isAdministrator);
+        setSectors(data.data.sectors ?? []);
+        updateAbilityPermissions(this.permissions);
 
         return true;
       } catch (error) {

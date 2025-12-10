@@ -1,4 +1,4 @@
-import axios, { type AxiosResponse } from 'axios';
+import axios, { InternalAxiosRequestConfig, type AxiosResponse } from 'axios';
 import { getToken, removeUserData } from './localStorage/user';
 import { router } from '@/plugins/1.router';
 import { getI18n } from '@/plugins/i18n';
@@ -12,21 +12,22 @@ const createAxiosInstance = () =>
 const axiosAuth = createAxiosInstance();
 
 axiosAuth.interceptors.request.use(
-  (config) => {
+  (config: InternalAxiosRequestConfig) => {
     const token = getToken();
     const i18n = getI18n();
     const currentLocale = i18n.global.locale.value;
 
-    if (token && config.headers) {
-      config.headers['Authorization'] = `Bearer ${token}`;
+    if (config.headers) {
+      if (token) config.headers['Authorization'] = `Bearer ${token}`;
       config.headers['Accept-Language'] = currentLocale;
     }
 
     return config;
   },
-  (error) => {
-    const err = error instanceof Error ? error : new Error(String(error));
-    return Promise.reject(err);
+  (error: unknown) => {
+    if (error instanceof Error) throw error;
+
+    throw new Error(String(error));
   }
 );
 
@@ -41,12 +42,34 @@ axiosAuth.interceptors.response.use(
       !originalRequest._retry
     ) {
       originalRequest._retry = true;
-      removeUserData();
-      router.push({ name: 'login' });
+
+      const token = getToken();
+      const responseData = error.response.data as {
+        status?: boolean;
+        message?: string;
+        data?: unknown;
+        id?: string;
+      };
+
+      const isPermissionError =
+        token &&
+        responseData &&
+        typeof responseData.status === 'boolean' &&
+        responseData.status === false &&
+        responseData.message &&
+        responseData.id;
+
+      if (!isPermissionError) {
+        const { useChatStore } = await import('@webcore/stores/chat');
+        const chatStore = useChatStore();
+        chatStore.clearUser();
+        removeUserData();
+        router.push({ name: 'login' });
+      }
     }
 
     const err = error instanceof Error ? error : new Error(String(error));
-    return Promise.reject(err);
+    throw err;
   }
 );
 

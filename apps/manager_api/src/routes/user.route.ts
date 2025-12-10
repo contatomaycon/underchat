@@ -4,17 +4,27 @@ import UserController from '@/controllers/user';
 import {
   userCreatePermissions,
   userDeletePermissions,
-  userListPermissions,
   userUpdatePermissions,
   userViewPermissions,
 } from '@/permissions';
 import { listUserSchema } from '@core/schema/user/listUser';
+import { listAllUsersSchema } from '@core/schema/user/listAllUsers';
 import { deleteUserSchema } from '@core/schema/user/deleteUser';
 import { viewUserSchema } from '@core/schema/user/viewUser';
+import { viewUserPhoneSchema } from '@core/schema/user/viewUserPhone';
+import { viewUserEmailSchema } from '@core/schema/user/viewUserEmail';
+import { viewUserDocumentSchema } from '@core/schema/user/viewUserDocument';
+import { viewUserAddress1Schema } from '@core/schema/user/viewUserAddress1';
+import { viewUserAddress2Schema } from '@core/schema/user/viewUserAddress2';
 import { createUserSchema } from '@core/schema/user/createUser';
 import { editUserSchema } from '@core/schema/user/editUser';
+import { assignUserRoleSchema } from '@core/schema/user/assignUserRole';
+import { viewUserRoleSchema } from '@core/schema/user/viewUserRole';
+import { uploadPhotoSchema } from '@core/schema/user/uploadPhoto';
+import { deletePhotoSchema } from '@core/schema/user/deletePhoto';
+import { listUserRolesSchema } from '@core/schema/user/listUserRoles';
 
-export default async function userRoutes(server: FastifyInstance) {
+export default function userRoutes(server: FastifyInstance) {
   const userController = container.resolve(UserController);
 
   server.get('/user', {
@@ -22,7 +32,16 @@ export default async function userRoutes(server: FastifyInstance) {
     handler: userController.listUser,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, userListPermissions),
+        server.authenticateJwt(request, reply, userViewPermissions),
+    ],
+  });
+
+  server.get('/user/all', {
+    schema: listAllUsersSchema,
+    handler: userController.listAllUsers,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, userViewPermissions),
     ],
   });
 
@@ -44,6 +63,51 @@ export default async function userRoutes(server: FastifyInstance) {
     ],
   });
 
+  server.get('/user/:user_id/phone', {
+    schema: viewUserPhoneSchema,
+    handler: userController.viewUserPhone,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, userViewPermissions),
+    ],
+  });
+
+  server.get('/user/:user_id/email', {
+    schema: viewUserEmailSchema,
+    handler: userController.viewUserEmail,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, userViewPermissions),
+    ],
+  });
+
+  server.get('/user/:user_id/document', {
+    schema: viewUserDocumentSchema,
+    handler: userController.viewUserDocument,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, userViewPermissions),
+    ],
+  });
+
+  server.get('/user/:user_id/address1', {
+    schema: viewUserAddress1Schema,
+    handler: userController.viewUserAddress1,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, userViewPermissions),
+    ],
+  });
+
+  server.get('/user/:user_id/address2', {
+    schema: viewUserAddress2Schema,
+    handler: userController.viewUserAddress2,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, userViewPermissions),
+    ],
+  });
+
   server.delete('/user/:user_id', {
     schema: deleteUserSchema,
     handler: userController.deleteUser,
@@ -59,6 +123,51 @@ export default async function userRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, userUpdatePermissions),
+    ],
+  });
+
+  server.get('/user/:user_id/role', {
+    schema: viewUserRoleSchema,
+    handler: userController.viewUserRole,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, userViewPermissions),
+    ],
+  });
+
+  server.post('/user/:user_id/role', {
+    schema: assignUserRoleSchema,
+    handler: userController.assignUserRole,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, userViewPermissions),
+    ],
+  });
+
+  server.post('/user/:user_id/photo', {
+    schema: uploadPhotoSchema,
+    handler: userController.uploadPhoto,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, userUpdatePermissions),
+    ],
+  });
+
+  server.delete('/user/:user_id/photo', {
+    schema: deletePhotoSchema,
+    handler: userController.deletePhoto,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, userUpdatePermissions),
+    ],
+  });
+
+  server.get('/user/roles', {
+    schema: listUserRolesSchema,
+    handler: userController.listUserRoles,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, userViewPermissions),
     ],
   });
 }

@@ -62,11 +62,10 @@ const updatePopper = async () => {
   }
 };
 
-until(() => configStore.horizontalNavType)
-  .toMatch((type) => type === 'static')
-  .then(() => {
-    useEventListener('scroll', updatePopper);
-  });
+await until(() => configStore.horizontalNavType).toMatch(
+  (type) => type === 'static'
+);
+useEventListener('scroll', updatePopper);
 
 const isContentShown = ref(false);
 

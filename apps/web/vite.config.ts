@@ -30,7 +30,7 @@ export default defineConfig(() => {
       VueRouter({
         getRouteName: (routeNode) =>
           getPascalCaseRouteName(routeNode)
-            .replace(/([a-z\d])([A-Z])/g, '$1-$2')
+            .replaceAll(/([a-z\d])([A-Z])/g, '$1-$2')
             .toLowerCase(),
       }),
       vue({
@@ -105,9 +105,7 @@ export default defineConfig(() => {
         '@api-utils': fileURLToPath(
           new URL('./src/plugins/fake-api/utils/', import.meta.url)
         ),
-        '@core/': fileURLToPath(
-          new URL('../../packages/core/', import.meta.url)
-        ),
+        '@core/': fileURLToPath(new URL('../../packages/', import.meta.url)),
       },
     },
     build: { chunkSizeWarningLimit: 5000 },

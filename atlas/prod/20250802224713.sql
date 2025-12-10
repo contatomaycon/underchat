@@ -1,1 +1,1 @@
-INSERT INTO "permission_action" ("permission_action_id", "permission_module_id", "action") VALUES ('d7a7b06a-50d4-4266-8c40-14f2bba7e5b6', '1213af3e-7eac-4e50-8c22-240a136e4164', 'recreate_worker');
+INSERT INTO "permission_action" ("permission_action_id", "permission_module_id", "permission_action_group_id", "action", "name", "description") VALUES ('019a930d-c6f7-7374-86aa-ea7373c3e505', '019a930d-c6f6-766d-9c83-96314dc6574c', '019a930d-c6f6-766d-9c83-c68d845f1195', 'recreate_worker', 'Recriar Worker', 'Permite recriar workers do sistema');

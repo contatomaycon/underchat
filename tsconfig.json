@@ -12,11 +12,12 @@
     "emitDecoratorMetadata": true,
     "esModuleInterop": true,
     "paths": {
-      "@core/*": ["packages/core/*"],
+      "@core/*": ["packages/*"],
       "@elastic/elasticsearch/lib/api/types": [
         "node_modules/@elastic/elasticsearch/lib/api/types"
       ]
     }
   },
+  "include": ["packages/**/*"],
   "exclude": ["node_modules"]
 }

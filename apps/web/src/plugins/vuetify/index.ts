@@ -10,7 +10,7 @@ import { cookieRef } from '@/@layouts/stores/config';
 import '@webcore/scss/template/libs/vuetify/index.scss';
 import 'vuetify/styles';
 
-export default function (app: App) {
+export default function vuetifyPlugin(app: App) {
   const cookieThemeValues = {
     defaultTheme: resolveVuetifyTheme(themeConfig.app.theme),
     themes: {

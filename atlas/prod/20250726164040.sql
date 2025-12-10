@@ -12,6 +12,11 @@ CREATE TABLE "plan" (
   "name" character varying(50) NOT NULL,
   "price" numeric(10,2) NOT NULL,
   "price_old" numeric(10,2) NOT NULL,
+  "description" text NULL,
+  "annual_discount" numeric(5,2) NULL,
+  "icon" character varying(100) NULL,
+  "is_test" boolean NOT NULL DEFAULT false,
+  "days_trial" integer NULL,
   "created_at" timestamptz NULL DEFAULT now(),
   "updated_at" timestamptz NULL DEFAULT now(),
   "deleted_at" timestamptz NULL,
@@ -21,14 +26,12 @@ CREATE TABLE "plan" (
 CREATE TABLE "account" (
   "account_id" uuid NOT NULL,
   "account_status_id" uuid NOT NULL,
-  "plan_id" uuid NOT NULL,
   "name" character varying(10) NOT NULL,
   "created_at" timestamptz NULL DEFAULT now(),
   "updated_at" timestamptz NULL DEFAULT now(),
   "deleted_at" timestamptz NULL,
   PRIMARY KEY ("account_id"),
-  CONSTRAINT "account_account_status_id_account_status_account_status_id_fk" FOREIGN KEY ("account_status_id") REFERENCES "account_status" ("account_status_id") ON UPDATE NO ACTION ON DELETE NO ACTION,
-  CONSTRAINT "account_plan_id_plan_plan_id_fk" FOREIGN KEY ("plan_id") REFERENCES "plan" ("plan_id") ON UPDATE NO ACTION ON DELETE NO ACTION
+  CONSTRAINT "account_account_status_id_account_status_account_status_id_fk" FOREIGN KEY ("account_status_id") REFERENCES "account_status" ("account_status_id") ON UPDATE NO ACTION ON DELETE NO ACTION
 );
 -- Create "account_info" table
 CREATE TABLE "account_info" (
@@ -73,21 +76,36 @@ CREATE TABLE "permission_module" (
   "updated_at" timestamptz NULL DEFAULT now(),
   PRIMARY KEY ("module_id")
 );
+-- Create "permission_action_groups" table
+CREATE TABLE "permission_action_groups" (
+  "permission_action_group_id" uuid NOT NULL,
+  "name" character varying(200) NOT NULL,
+  "description" character varying(500),
+  "action" character varying(100) NOT NULL,
+  "created_at" timestamptz NULL DEFAULT now(),
+  "updated_at" timestamptz NULL DEFAULT now(),
+  PRIMARY KEY ("permission_action_group_id")
+);
 -- Create "permission_action" table
 CREATE TABLE "permission_action" (
   "permission_action_id" uuid NOT NULL,
   "permission_module_id" uuid NOT NULL,
+  "permission_action_group_id" uuid NOT NULL,
   "action" character varying(100) NOT NULL,
+  "name" character varying(200) NOT NULL,
+  "description" character varying(500),
   "created_at" timestamptz NULL DEFAULT now(),
   "updated_at" timestamptz NULL DEFAULT now(),
   PRIMARY KEY ("permission_action_id"),
-  CONSTRAINT "permission_action_permission_module_id_permission_module_module" FOREIGN KEY ("permission_module_id") REFERENCES "permission_module" ("module_id") ON UPDATE NO ACTION ON DELETE NO ACTION
+  CONSTRAINT "permission_action_permission_module_id_permission_module_module" FOREIGN KEY ("permission_module_id") REFERENCES "permission_module" ("module_id") ON UPDATE NO ACTION ON DELETE NO ACTION,
+  CONSTRAINT "permission_action_permission_action_group_id_permission_action_groups_permission_action_group_id_fk" FOREIGN KEY ("permission_action_group_id") REFERENCES "permission_action_groups" ("permission_action_group_id") ON UPDATE NO ACTION ON DELETE NO ACTION
 );
 -- Create "permission_role" table
 CREATE TABLE "permission_role" (
   "permission_role_id" uuid NOT NULL,
   "account_id" uuid NULL,
   "name" character varying(200) NOT NULL,
+  "description" character varying(500),
   "created_at" timestamptz NULL DEFAULT now(),
   "updated_at" timestamptz NULL DEFAULT now(),
   "deleted_at" timestamptz NULL,
@@ -107,9 +125,9 @@ CREATE TABLE "user" (
   "user_id" uuid NOT NULL,
   "account_id" uuid NOT NULL,
   "user_status_id" uuid NOT NULL,
-  "username" character varying(50) NULL,
   "email" character varying(500) NOT NULL,
-  "email_partial" character varying(25) NOT NULL,
+  "email_partial" character varying(50) NOT NULL,
+  "email_c" character varying(500) NOT NULL,
   "password" character varying(255) NOT NULL,
   "created_at" timestamptz NULL DEFAULT now(),
   "updated_at" timestamptz NULL DEFAULT now(),
@@ -134,13 +152,16 @@ CREATE TABLE "permission_assignment" (
 -- Create "permission_role_action" table
 CREATE TABLE "permission_role_action" (
   "permission_role_action_id" uuid NOT NULL,
-  "permission_action_id" uuid NOT NULL,
+  "permission_action_id" uuid NULL,
+  "permission_action_group_id" uuid NULL,
   "permission_role_id" uuid NOT NULL,
   "created_at" timestamptz NULL DEFAULT now(),
   "updated_at" timestamptz NULL DEFAULT now(),
   PRIMARY KEY ("permission_role_action_id"),
   CONSTRAINT "permission_role_action_permission_action_id_permission_action_p" FOREIGN KEY ("permission_action_id") REFERENCES "permission_action" ("permission_action_id") ON UPDATE NO ACTION ON DELETE NO ACTION,
-  CONSTRAINT "permission_role_action_permission_role_id_permission_role_permi" FOREIGN KEY ("permission_role_id") REFERENCES "permission_role" ("permission_role_id") ON UPDATE NO ACTION ON DELETE NO ACTION
+  CONSTRAINT "permission_role_action_permission_action_group_id_permission_action_groups_permission_action_group_id_fk" FOREIGN KEY ("permission_action_group_id") REFERENCES "permission_action_groups" ("permission_action_group_id") ON UPDATE NO ACTION ON DELETE NO ACTION,
+  CONSTRAINT "permission_role_action_permission_role_id_permission_role_permi" FOREIGN KEY ("permission_role_id") REFERENCES "permission_role" ("permission_role_id") ON UPDATE NO ACTION ON DELETE NO ACTION,
+  CONSTRAINT "permission_role_action_check" CHECK (("permission_action_id" IS NOT NULL AND "permission_action_group_id" IS NULL) OR ("permission_action_id" IS NULL AND "permission_action_group_id" IS NOT NULL))
 );
 -- Create "plan_product" table
 CREATE TABLE "plan_product" (
@@ -239,10 +260,12 @@ CREATE TABLE "user_address" (
   "zip_code" character varying(10) NOT NULL,
   "address1" character varying(1000) NOT NULL,
   "address1_partial" character varying(200) NOT NULL,
+  "address1_c" character varying(500) NOT NULL,
   "address2" character varying(1000) NULL,
   "address2_partial" character varying(200) NULL,
-  "city" character varying(100) NOT NULL,
-  "state" character varying(100) NOT NULL,
+  "address2_c" character varying(500) NULL,
+  "city_fiscal_code" character varying(100) NOT NULL,
+  "state_fiscal_code" character varying(100) NOT NULL,
   "district" character varying(100) NOT NULL,
   "created_at" timestamptz NULL DEFAULT now(),
   "updated_at" timestamptz NULL DEFAULT now(),
@@ -266,6 +289,7 @@ CREATE TABLE "user_document" (
   "user_id" uuid NOT NULL,
   "document" character varying(500) NOT NULL,
   "document_partial" character varying(50) NOT NULL,
+  "document_c" character varying(500) NOT NULL,
   "created_at" timestamptz NULL DEFAULT now(),
   "updated_at" timestamptz NULL DEFAULT now(),
   PRIMARY KEY ("user_document_id"),
@@ -279,6 +303,7 @@ CREATE TABLE "user_info" (
   "phone_ddi" character varying(5) NOT NULL,
   "phone" character varying(500) NOT NULL,
   "phone_partial" character varying(15) NOT NULL,
+  "phone_c" character varying(500) NOT NULL,
   "photo" character varying(255) NULL,
   "name" character varying(100) NOT NULL,
   "last_name" character varying(100) NOT NULL,

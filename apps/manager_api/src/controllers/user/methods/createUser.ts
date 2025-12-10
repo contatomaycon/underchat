@@ -1,5 +1,6 @@
 import { EHTTPStatusCode } from '@core/common/enums/EHTTPStatusCode';
 import { sendResponse } from '@core/common/functions/sendResponse';
+import { canOperateOnOtherAccounts } from '@core/common/functions/hasFullAccess';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
 import { CreateUserRequest } from '@core/schema/user/createUser/request.schema';
@@ -13,12 +14,26 @@ export const createUser = async (
 ) => {
   const userCreatorUseCase = container.resolve(UserCreatorUseCase);
   const { t, tokenJwtData } = request;
+  const canOperateOnOthers = canOperateOnOtherAccounts(tokenJwtData.actions);
 
   try {
+    let accountIdToUse = tokenJwtData.account_id;
+
+    if (request.body.account_id?.value) {
+      if (!canOperateOnOthers) {
+        return sendResponse(reply, {
+          message: t('permission_denied'),
+          httpStatusCode: EHTTPStatusCode.forbidden,
+        });
+      }
+
+      accountIdToUse = request.body.account_id.value;
+    }
+
     const response = await userCreatorUseCase.execute(
       t,
       request.body,
-      tokenJwtData.account_id
+      accountIdToUse
     );
 
     if (response) {
@@ -29,14 +44,12 @@ export const createUser = async (
       });
     }
 
-    request.server.logger.info(response, request.id);
-
     return sendResponse(reply, {
       message: t('user_creator_error'),
       httpStatusCode: EHTTPStatusCode.bad_request,
     });
   } catch (error) {
-    request.server.logger.error(error, request.id);
+    console.error(error);
 
     if (error instanceof Error) {
       return sendResponse(reply, {

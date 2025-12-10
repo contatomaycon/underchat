@@ -1,5 +1,6 @@
 import { EHTTPStatusCode } from '@core/common/enums/EHTTPStatusCode';
 import { sendResponse } from '@core/common/functions/sendResponse';
+import { canOperateOnOtherAccounts } from '@core/common/functions/hasFullAccess';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
 import { ViewUserRequest } from '@core/schema/user/viewUser/request.schema';
@@ -13,13 +14,14 @@ export const viewUser = async (
 ) => {
   const userViewerUseCase = container.resolve(UserViewerUseCase);
   const { t, tokenJwtData } = request;
+  const canOperateOnOthers = canOperateOnOtherAccounts(tokenJwtData.actions);
 
   try {
     const response = await userViewerUseCase.execute(
       t,
       request.params.user_id,
       tokenJwtData.account_id,
-      tokenJwtData.is_administrator
+      canOperateOnOthers
     );
 
     if (response) {
@@ -30,14 +32,12 @@ export const viewUser = async (
       });
     }
 
-    request.server.logger.info(response, request.id);
-
     return sendResponse(reply, {
       message: t('user_not_found'),
       httpStatusCode: EHTTPStatusCode.bad_request,
     });
   } catch (error) {
-    request.server.logger.error(error, request.id);
+    console.error(error);
 
     if (error instanceof Error) {
       return sendResponse(reply, {

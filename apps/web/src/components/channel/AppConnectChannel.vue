@@ -169,33 +169,33 @@ function startTimer() {
   elapsedSeconds.value = 0;
   clearTimer();
 
-  intervalId.value = window.setInterval(() => {
-    if (
-      (!phoneSent.value &&
-        connectionType.value === EBaileysConnectionType.phone) ||
-      statusCode.value === ECodeMessage.phoneNotAvailable
-    ) {
+  intervalId.value = (globalThis as Window & typeof globalThis).setInterval(
+    () => {
+      if (
+        (!phoneSent.value &&
+          connectionType.value === EBaileysConnectionType.phone) ||
+        statusCode.value === ECodeMessage.phoneNotAvailable
+      ) {
+        clearTimer();
+        return;
+      }
+
+      if (elapsedSeconds.value < totalSeconds.value) {
+        elapsedSeconds.value++;
+        return;
+      }
+
+      elapsedSeconds.value = 0;
+      if (attempt.value <= maxAttempts.value) {
+        attempt.value++;
+        reconnectChannel();
+        return;
+      }
+
       clearTimer();
-
-      return;
-    }
-
-    if (elapsedSeconds.value < totalSeconds.value) {
-      elapsedSeconds.value++;
-
-      return;
-    }
-
-    elapsedSeconds.value = 0;
-    if (attempt.value <= maxAttempts.value) {
-      attempt.value++;
-      reconnectChannel();
-
-      return;
-    }
-
-    clearTimer();
-  }, 1000);
+    },
+    1000
+  );
 }
 
 function clearTimer() {
@@ -220,7 +220,10 @@ function buildRequest(status: EWorkerStatus): StatusConnectionWorkerRequest {
 
 function startNextAttemptCountdown() {
   clearInterval(intervalIdNextAttempt.value!);
-  intervalIdNextAttempt.value = window.setInterval(() => {
+
+  intervalIdNextAttempt.value = (
+    globalThis as Window & typeof globalThis
+  ).setInterval(() => {
     if (secondsNextAttempt.value > 0) {
       secondsNextAttempt.value--;
       return;
@@ -310,14 +313,13 @@ onUnmounted(() => {
   <VDialog v-model="isVisible" max-width="600">
     <DialogCloseBtn @click="isVisible = false" />
 
-    <template v-if="channelStore.loading">
-      <VOverlay
-        :model-value="channelStore.loading"
-        class="align-center justify-center"
-      >
-        <VProgressCircular color="primary" indeterminate size="32" />
-      </VOverlay>
-    </template>
+    <VOverlay
+      :model-value="channelStore.loading"
+      class="align-center justify-center"
+      contained
+    >
+      <VProgressCircular color="primary" indeterminate size="64" />
+    </VOverlay>
 
     <VCard>
       <VRow no-gutters>

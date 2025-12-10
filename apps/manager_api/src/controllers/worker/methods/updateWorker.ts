@@ -18,7 +18,6 @@ export const updateWorker = async (
     const response = await workerUpdaterUseCase.execute(
       t,
       tokenJwtData.account_id,
-      tokenJwtData.is_administrator,
       request.params
     );
 
@@ -29,14 +28,12 @@ export const updateWorker = async (
       });
     }
 
-    request.server.logger.info(response, request.id);
-
     return sendResponse(reply, {
       message: t('channel_not_found'),
       httpStatusCode: EHTTPStatusCode.bad_request,
     });
   } catch (error) {
-    request.server.logger.error(error, request.id);
+    console.error(error);
 
     if (error instanceof Error) {
       return sendResponse(reply, {

@@ -1,0 +1,41 @@
+import { injectable } from 'tsyringe';
+import axios from 'axios';
+import { AsaasBaseService } from '../asaasBase.service';
+import { IAuthorizeAsaasInvoiceResponse } from '@core/common/interfaces/IAsaasInvoice';
+
+@injectable()
+export class AuthorizeInvoiceService {
+  constructor(private readonly asaasBaseService: AsaasBaseService) {}
+
+  authorizeInvoice = async (
+    invoiceId: string
+  ): Promise<IAuthorizeAsaasInvoiceResponse | null> => {
+    try {
+      const response = await this.asaasBaseService
+        .getAxiosInstance()
+        .post<IAuthorizeAsaasInvoiceResponse>(
+          `/v3/invoices/${invoiceId}/authorize`,
+          {}
+        );
+
+      if (response.status === 200 && response.data) {
+        return response.data;
+      }
+
+      return null;
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        console.error(
+          'Erro ao emitir nota fiscal no Asaas:',
+          error.response?.data
+        );
+      } else {
+        console.error(
+          'Erro desconhecido ao emitir nota fiscal no Asaas:',
+          error
+        );
+      }
+      return null;
+    }
+  };
+}

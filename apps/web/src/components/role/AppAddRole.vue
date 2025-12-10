@@ -4,7 +4,6 @@ import { CreateRoleRequest } from '@core/schema/role/createRole/request.schema';
 import { VForm } from 'vuetify/components/VForm';
 
 const roleStore = useRolesStore();
-const { t } = useI18n();
 
 const props = defineProps<{
   modelValue: boolean;
@@ -18,6 +17,7 @@ const isVisible = computed({
 });
 
 const name = ref<string | null>(null);
+const description = ref<string | null>(null);
 
 const refFormAddRole = ref<VForm>();
 
@@ -31,6 +31,7 @@ const addRole = async () => {
 
   const payload: CreateRoleRequest = {
     name: name.value,
+    description: description.value,
   };
 
   const result = await roleStore.addRoles(payload);
@@ -44,6 +45,7 @@ const addRole = async () => {
 
 const resetForm = () => {
   name.value = null;
+  description.value = null;
   refFormAddRole.value?.resetValidation();
 };
 
@@ -58,25 +60,32 @@ onMounted(resetForm);
   <VDialog v-model="isVisible" max-width="600">
     <DialogCloseBtn @click="isVisible = false" />
 
-    <template v-if="roleStore.loading">
-      <VOverlay
-        :model-value="roleStore.loading"
-        class="align-center justify-center"
-      >
-        <VProgressCircular color="primary" indeterminate size="32" />
-      </VOverlay>
-    </template>
+    <VOverlay
+      :model-value="roleStore.loading"
+      class="align-center justify-center"
+      contained
+    >
+      <VProgressCircular color="primary" indeterminate size="64" />
+    </VOverlay>
 
     <VForm ref="refFormAddRole" @submit.prevent>
       <VCard :title="$t('add_role')">
         <VCardText>
           <VRow>
             <VCol cols="12" sm="12" md="12">
+              <VLabel class="text-body-2 mb-1">{{ $t('name') }}:</VLabel>
               <AppTextField
                 v-model="name"
-                :label="$t('name') + ':'"
                 :placeholder="$t('name')"
                 :rules="[requiredValidator(name, $t('name_required'))]"
+              />
+            </VCol>
+            <VCol cols="12" sm="12" md="12">
+              <VLabel class="text-body-2 mb-1">{{ $t('description') }}:</VLabel>
+              <AppTextarea
+                v-model="description"
+                :placeholder="$t('description')"
+                rows="3"
               />
             </VCol>
           </VRow>

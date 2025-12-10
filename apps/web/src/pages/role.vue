@@ -5,17 +5,21 @@ import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { useI18n } from 'vue-i18n';
 import { formatDateTime } from '@core/common/functions/formatDateTime';
 import { SortRequest } from '@core/schema/common/sortRequestSchema';
-import { getAdministrator } from '@/@webcore/localStorage/user';
+import { getUser } from '@/@webcore/localStorage/user';
 import { DataTableHeader } from 'vuetify';
 import { ListRoleResponse } from '@core/schema/role/listRole/response.schema';
 import { ERolePermissions } from '@core/common/enums/EPermissions/role';
+import { EPermissionPermissions } from '@core/common/enums/EPermissions/permission';
 import { useRolesStore } from '@/@webcore/stores/role';
+import { usePermissionStore } from '@/@webcore/stores/permission';
+import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 
 definePage({
   meta: {
     permissions: [
       EGeneralPermissions.full_access,
-      ERolePermissions.role_list,
+      EGeneralPermissions.full_access_group,
+      ERolePermissions.role_group,
       ERolePermissions.role_view,
       ERolePermissions.role_create,
       ERolePermissions.role_edit,
@@ -26,20 +30,41 @@ definePage({
 
 const permissionsEdit = [
   EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  ERolePermissions.role_group,
   ERolePermissions.role_edit,
 ];
 const permissionsDelete = [
   EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  ERolePermissions.role_group,
   ERolePermissions.role_delete,
 ];
 const permissionsCreate = [
   EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  ERolePermissions.role_group,
   ERolePermissions.role_create,
+];
+const permissionsEditPermissions = [
+  EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  EPermissionPermissions.permission_group,
+  EPermissionPermissions.permission_edit,
+];
+const permissionsViewPermissions = [
+  EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  EPermissionPermissions.permission_group,
+  EPermissionPermissions.permission_view,
 ];
 
 const { t } = useI18n();
 const roleStore = useRolesStore();
-const isAdministrator = getAdministrator();
+const permissionStore = usePermissionStore();
+useSnackbarCleanup(roleStore);
+useSnackbarCleanup(permissionStore);
+const currentPermissionRoleId = getUser()?.type.user_type_id ?? null;
 
 const itemsPerPage = ref([
   { value: 5, title: '5' },
@@ -56,10 +81,11 @@ const roleToDelete = ref<string | null>(null);
 const isDialogEditRoleShow = ref(false);
 const isAddRoleVisible = ref(false);
 const roleToEdit = ref<string | null>(null);
+const isRolePermissionsDialogVisible = ref(false);
+const rolePermissionsId = ref<string | null>(null);
 
 const headers: DataTableHeader<ListRoleResponse>[] = [
   { title: t('name'), key: 'name' },
-  ...(isAdministrator ? [{ title: t('account'), key: 'account' }] : []),
   { title: t('created_at'), key: 'created_at' },
   { title: t('actions'), key: 'actions', sortable: false },
 ];
@@ -118,6 +144,17 @@ const openEditDialog = (id: string) => {
   isDialogEditRoleShow.value = true;
 };
 
+const openPermissionDialog = (id: string) => {
+  rolePermissionsId.value = id;
+  isRolePermissionsDialogVisible.value = true;
+};
+
+watch(isRolePermissionsDialogVisible, (visible) => {
+  if (!visible) {
+    rolePermissionsId.value = null;
+  }
+});
+
 watch(
   query,
   async (q) => {
@@ -154,7 +191,7 @@ watch(
           </div>
           <div class="d-flex align-center flex-wrap gap-4">
             <div class="invoice-list-filter">
-              <VLabel>{{ $t('search') }}:</VLabel>
+              <VLabel class="text-body-2 mb-1">{{ $t('search') }}:</VLabel>
               <AppTextField
                 :placeholder="$t('search') + '...'"
                 append-inner-icon="tabler-search"
@@ -167,85 +204,98 @@ watch(
             </div>
           </div>
         </div>
-      </VCardText>
 
-      <VDataTableServer
-        v-model:page="options.page"
-        v-model:items-per-page="options.itemsPerPage"
-        :headers="headers"
-        :items="roleStore.list"
-        :items-length="roleStore.pagings.total"
-        :loading="roleStore.loading"
-        :sort-by="options.sortBy"
-        @update:options="handleTableChange"
-        :loading-text="$t('loading_text')"
-      >
-        <template #item.name="{ item }">
-          <div class="d-flex flex-column ms-3">
-            <span
-              class="d-block font-weight-medium text-high-emphasis text-truncate"
-            >
-              {{ item.name }}
-            </span>
-          </div>
-        </template>
+        <VDivider class="my-4" />
 
-        <template #item.account="{ item }">
-          {{ item.account?.name }}
-        </template>
-
-        <template #item.created_at="{ item }">
-          <span>{{ formatDateTime(item.created_at) }}</span>
-        </template>
-
-        <template #item.actions="{ item }">
-          <div class="d-flex gap-1">
-            <IconBtn
-              v-if="
-                $canPermission(permissionsEdit) &&
-                (item.account?.id || isAdministrator)
-              "
-              ><VTooltip
-                location="top"
-                transition="scale-transition"
-                activator="parent"
-              >
-                <span>{{ $t('edit_role') }}</span> </VTooltip
-              ><VIcon
-                icon="tabler-edit"
-                @click="openEditDialog(item.permission_role_id)"
-            /></IconBtn>
-
-            <IconBtn
-              v-if="
-                $canPermission(permissionsDelete) &&
-                (item.account?.id || isAdministrator)
-              "
-              ><VTooltip
-                location="top"
-                transition="scale-transition"
-                activator="parent"
-              >
-                <span>{{ $t('delete_role') }}</span> </VTooltip
-              ><VIcon
-                icon="tabler-trash"
-                @click="deleteRole(item.permission_role_id)"
-            /></IconBtn>
-          </div>
-        </template>
-
-        <template #no-data>
-          {{ $t('no_data_available') }}
-        </template>
-
-        <template #bottom>
-          <TablePagination
+        <div>
+          <VDataTableServer
+            class="data-table"
             v-model:page="options.page"
-            :items-per-page="options.itemsPerPage"
-            :total-items="roleStore.pagings.total"
-          />
-        </template>
-      </VDataTableServer>
+            v-model:items-per-page="options.itemsPerPage"
+            :headers="headers"
+            :items="roleStore.list"
+            :items-length="roleStore.pagings.total"
+            :loading="roleStore.loading"
+            :sort-by="options.sortBy"
+            @update:options="handleTableChange"
+            :loading-text="$t('loading_text')"
+          >
+            <template #item.name="{ item }">
+              <div class="d-flex flex-column ms-3">
+                <span
+                  class="d-block font-weight-medium text-high-emphasis text-truncate"
+                >
+                  {{ item.name }}
+                </span>
+              </div>
+            </template>
+
+            <template #item.account="{ item }">
+              {{ item.account?.name }}
+            </template>
+
+            <template #item.created_at="{ item }">
+              <span>{{ formatDateTime(item.created_at) }}</span>
+            </template>
+
+            <template #item.actions="{ item }">
+              <div class="d-flex gap-1">
+                <IconBtn
+                  v-if="
+                    $canPermission(permissionsViewPermissions) &&
+                    item.permission_role_id !== currentPermissionRoleId
+                  "
+                  ><VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>{{ $t('permissions') }}</span> </VTooltip
+                  ><VIcon
+                    icon="tabler-key"
+                    @click="openPermissionDialog(item.permission_role_id)"
+                /></IconBtn>
+
+                <IconBtn v-if="$canPermission(permissionsEdit)"
+                  ><VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>{{ $t('edit_role') }}</span> </VTooltip
+                  ><VIcon
+                    icon="tabler-edit"
+                    @click="openEditDialog(item.permission_role_id)"
+                /></IconBtn>
+
+                <IconBtn v-if="$canPermission(permissionsDelete)"
+                  ><VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>{{ $t('delete_role') }}</span> </VTooltip
+                  ><VIcon
+                    icon="tabler-trash"
+                    @click="deleteRole(item.permission_role_id)"
+                /></IconBtn>
+              </div>
+            </template>
+
+            <template #no-data>
+              {{ $t('no_data_available') }}
+            </template>
+
+            <template #bottom>
+              <TablePagination
+                v-model:page="options.page"
+                :items-per-page="options.itemsPerPage"
+                :total-items="roleStore.pagings.total"
+              />
+            </template>
+          </VDataTableServer>
+        </div>
+      </VCardText>
 
       <VDialogHandler
         v-if="isDialogDeleterShow"
@@ -262,6 +312,13 @@ watch(
       />
 
       <AppAddRole v-if="isAddRoleVisible" v-model="isAddRoleVisible" />
+
+      <AppRolePermissions
+        v-if="isRolePermissionsDialogVisible"
+        v-model="isRolePermissionsDialogVisible"
+        :permission-role-id="rolePermissionsId"
+        :can-edit="$canPermission(permissionsEditPermissions)"
+      />
     </VCard>
 
     <VSnackbar
@@ -272,10 +329,19 @@ watch(
     >
       {{ roleStore.snackbar.message }}
     </VSnackbar>
+
+    <VSnackbar
+      v-model="permissionStore.snackbar.status"
+      transition="scroll-y-reverse-transition"
+      location="top end"
+      :color="permissionStore.snackbar.color"
+    >
+      {{ permissionStore.snackbar.message }}
+    </VSnackbar>
   </div>
 </template>
 
-<style lang="scss">
+<style lang="scss" scoped>
 .status-filter {
   inline-size: 12rem;
 }
@@ -286,5 +352,24 @@ watch(
 
 .invoice-list-filter {
   inline-size: 20rem;
+}
+
+.data-table {
+  :deep(.v-table__wrapper > table > thead) {
+    background-color: rgba(var(--v-theme-on-surface), 0.04);
+  }
+
+  :deep(.v-table__wrapper > table > thead > tr > th) {
+    background-color: transparent;
+    color: rgb(var(--v-theme-primary));
+    font-weight: 700;
+    border-bottom: 1px solid rgba(var(--v-theme-primary), 0.25);
+  }
+
+  :deep(
+    .v-table__wrapper > table > thead > tr > th .v-data-table-header__content
+  ) {
+    color: inherit;
+  }
 }
 </style>

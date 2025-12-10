@@ -1,0 +1,237 @@
+<script lang="ts" setup>
+import { useExpendituresStore } from '@/@webcore/stores/expenditure';
+import { CreateExpenditureRequest } from '@core/schema/expenditure/createExpenditure/request.schema';
+import { VForm } from 'vuetify/components/VForm';
+
+const expenditureStore = useExpendituresStore();
+const { t } = useI18n();
+
+const props = defineProps<{
+  modelValue: boolean;
+}>();
+
+const emit = defineEmits<(e: 'update:modelValue', visible: boolean) => void>();
+
+const isVisible = computed({
+  get: () => props.modelValue,
+  set: (v) => emit('update:modelValue', v),
+});
+
+const name = ref<string | null>(null);
+const description = ref<string | null>(null);
+const priceRaw = ref<number | null>(null);
+
+const refFormAddExpenditure = ref<VForm>();
+
+const { locale } = useI18n();
+
+const getCurrencyConfig = () => {
+  const localeMap: Record<string, { locale: string; currency: string }> = {
+    pt: { locale: 'pt-BR', currency: 'BRL' },
+    en: { locale: 'en-US', currency: 'USD' },
+    es: { locale: 'es-ES', currency: 'EUR' },
+  };
+
+  return localeMap[locale.value] || localeMap.pt;
+};
+
+const formatCurrency = (value: number | null | undefined): string => {
+  if (value === null || value === undefined) return '';
+  const config = getCurrencyConfig();
+  return new Intl.NumberFormat(config.locale, {
+    style: 'currency',
+    currency: config.currency,
+  }).format(value);
+};
+
+const removeInvalidChars = (value: string, allowedChars: string): string => {
+  return value
+    .split('')
+    .filter((char) => {
+      const code = char.codePointAt(0);
+      return (
+        (code !== undefined && code >= 48 && code <= 57) ||
+        allowedChars.includes(char)
+      );
+    })
+    .join('');
+};
+
+const parseCurrency = (value: string): number | null => {
+  if (!value) return null;
+  const config = getCurrencyConfig();
+  let cleanValue = removeInvalidChars(value, '.,-');
+
+  if (config.currency === 'BRL') {
+    cleanValue = cleanValue.replaceAll('.', '');
+    const commaIndex = cleanValue.indexOf(',');
+    if (commaIndex !== -1) {
+      cleanValue =
+        cleanValue.substring(0, commaIndex) +
+        '.' +
+        cleanValue.substring(commaIndex + 1);
+    }
+  } else if (config.currency === 'USD' || config.currency === 'EUR') {
+    cleanValue = cleanValue.replaceAll(',', '');
+  }
+
+  const parsed = Number.parseFloat(cleanValue);
+  return Number.isNaN(parsed) ? null : parsed;
+};
+
+const priceDisplay = ref<string>('');
+
+const price = computed({
+  get: () => priceDisplay.value,
+  set: (value: string) => {
+    priceDisplay.value = value;
+    priceRaw.value = parseCurrency(value);
+  },
+});
+
+const handlePriceInput = (event: Event) => {
+  const target = event.target as HTMLInputElement;
+  let value = target.value;
+
+  const config = getCurrencyConfig();
+
+  if (config.currency === 'BRL') {
+    value = removeInvalidChars(value, ',');
+    const parts = value.split(',');
+    if (parts.length > 2) {
+      value = parts[0] + ',' + parts.slice(1).join('');
+    }
+    if (parts[1] && parts[1].length > 2) {
+      value = parts[0] + ',' + parts[1].substring(0, 2);
+    }
+  } else {
+    value = removeInvalidChars(value, '.');
+    const parts = value.split('.');
+    if (parts.length > 2) {
+      value = parts[0] + '.' + parts.slice(1).join('');
+    }
+    if (parts[1] && parts[1].length > 2) {
+      value = parts[0] + '.' + parts[1].substring(0, 2);
+    }
+  }
+
+  priceDisplay.value = value;
+  priceRaw.value = parseCurrency(value);
+};
+
+const handlePriceBlur = () => {
+  if (priceRaw.value !== null) {
+    priceDisplay.value = formatCurrency(priceRaw.value);
+    return;
+  }
+
+  if (priceDisplay.value) {
+    const parsed = parseCurrency(priceDisplay.value);
+    if (parsed === null) {
+      priceDisplay.value = '';
+      priceRaw.value = null;
+      return;
+    }
+
+    priceRaw.value = parsed;
+    priceDisplay.value = formatCurrency(parsed);
+  } else {
+    priceDisplay.value = '';
+  }
+};
+
+const addExpenditure = async () => {
+  const validateForm = await refFormAddExpenditure?.value?.validate();
+  if (!validateForm?.valid) return;
+
+  if (!name.value || priceRaw.value === null) {
+    return;
+  }
+
+  const payload: CreateExpenditureRequest = {
+    name: name.value,
+    description: description.value || null,
+    price: priceRaw.value,
+  };
+
+  const result = await expenditureStore.addExpenditure(payload);
+
+  if (result) {
+    isVisible.value = false;
+
+    await expenditureStore.listExpenditures();
+  }
+};
+
+const resetForm = () => {
+  name.value = null;
+  description.value = null;
+  priceRaw.value = null;
+  priceDisplay.value = '';
+  refFormAddExpenditure.value?.resetValidation();
+};
+
+watch(isVisible, (visible) => {
+  if (visible) resetForm();
+});
+
+onMounted(resetForm);
+</script>
+
+<template>
+  <VDialog v-model="isVisible" max-width="600">
+    <DialogCloseBtn @click="isVisible = false" />
+
+    <VOverlay
+      :model-value="expenditureStore.loading"
+      class="align-center justify-center"
+      contained
+    >
+      <VProgressCircular color="primary" indeterminate size="64" />
+    </VOverlay>
+
+    <VForm ref="refFormAddExpenditure" @submit.prevent>
+      <VCard :title="$t('add_expenditure')">
+        <VCardText>
+          <VRow>
+            <VCol cols="12">
+              <VLabel class="text-body-2 mb-1">{{ $t('name') }}:</VLabel>
+              <AppTextField
+                v-model="name"
+                :placeholder="$t('name')"
+                :rules="[requiredValidator(name, $t('name_required'))]"
+              />
+            </VCol>
+
+            <VCol cols="12">
+              <VLabel class="text-body-2 mb-1">{{ $t('description') }}:</VLabel>
+              <AppTextarea
+                v-model="description"
+                :placeholder="$t('description')"
+                rows="3"
+              />
+            </VCol>
+
+            <VCol cols="12">
+              <VLabel class="text-body-2 mb-1">{{ $t('price') }}:</VLabel>
+              <AppTextField
+                v-model="price"
+                :placeholder="formatCurrency(0)"
+                :rules="[requiredValidator(priceRaw, $t('price_required'))]"
+                @input="handlePriceInput"
+                @blur="handlePriceBlur"
+              />
+            </VCol>
+          </VRow>
+        </VCardText>
+
+        <VCardText class="d-flex justify-end flex-wrap gap-3">
+          <VBtn variant="tonal" color="secondary" @click="isVisible = false">
+            {{ $t('cancel') }}
+          </VBtn>
+          <VBtn @click="addExpenditure"> {{ $t('add') }} </VBtn>
+        </VCardText>
+      </VCard>
+    </VForm>
+  </VDialog>
+</template>

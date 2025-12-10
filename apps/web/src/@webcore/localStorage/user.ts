@@ -4,22 +4,21 @@ import {
   AccountInfoResponse,
 } from '@core/schema/auth/login/response.schema';
 
+export const setSectors = (sectors: string[]): void => {
+  localStorage.setItem('sectors', JSON.stringify(sectors));
+};
+
+export const getSectors = (): string[] => {
+  const sectors = localStorage.getItem('sectors');
+  return sectors ? JSON.parse(sectors) : [];
+};
+
 export const setToken = (token: string): void => {
   localStorage.setItem('token', token);
 };
 
 export const getToken = (): string | null => {
   return localStorage.getItem('token');
-};
-
-export const setAdministrator = (isAdmin: boolean): void => {
-  localStorage.setItem('isAdministrator', JSON.stringify(isAdmin));
-};
-
-export const getAdministrator = (): boolean => {
-  const isAdmin = localStorage.getItem('isAdministrator');
-
-  return isAdmin ? JSON.parse(isAdmin) : false;
 };
 
 export const setPermissions = (permissions: EPermissionsRoles[]): void => {
@@ -57,14 +56,9 @@ export const removeUserData = (): boolean => {
   localStorage.removeItem('permissions');
   localStorage.removeItem('user');
   localStorage.removeItem('layout');
-  localStorage.removeItem('isAdministrator');
+  localStorage.removeItem('sectors');
 
-  return (
-    !getToken() &&
-    !getUser() &&
-    getPermissions().length === 0 &&
-    !getAdministrator()
-  );
+  return !getToken() && !getUser() && getPermissions().length === 0;
 };
 
 export const isLoggedIn = (): boolean => {

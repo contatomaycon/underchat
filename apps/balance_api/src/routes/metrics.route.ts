@@ -4,7 +4,7 @@ import { viewMetricsSchema } from '@core/schema/metrics/viewMetrics';
 import MetricsController from '@/controllers/metrics';
 import { metricsViewPermissions } from '@/permissions/metrics.permissions';
 
-export default async function metricsRoutes(server: FastifyInstance) {
+export default function metricsRoutes(server: FastifyInstance) {
   const metricsController = container.resolve(MetricsController);
 
   server.get('/metrics', {

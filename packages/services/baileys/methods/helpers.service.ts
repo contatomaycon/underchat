@@ -1,0 +1,209 @@
+import {
+  AnyMessageContent,
+  MiscMessageGenerationOptions,
+  WAMessage,
+  WASocket,
+} from '@whiskeysockets/baileys';
+import { injectable } from 'tsyringe';
+import { BaileysConnectionService } from './connection.service';
+import { onlyDigits } from '@core/common/functions/onlyDigits';
+import { buildCandidates } from '@core/common/functions/buildCandidatesBR';
+import { normalizeJid } from '@core/common/functions/normalizeJid';
+import { webcrypto as nodeCrypto } from 'node:crypto';
+
+@injectable()
+export class BaileysHelpersService {
+  constructor(private readonly connection: BaileysConnectionService) {
+    if (!this.connection.connected) {
+      this.connection.reconnect({ initial_connection: true });
+    }
+  }
+
+  async send(
+    address: string,
+    content: AnyMessageContent,
+    options?: MiscMessageGenerationOptions
+  ): Promise<WAMessage | undefined> {
+    const sock = this.socket();
+
+    if (address.includes('@')) {
+      await this.simulateHumanTyping(address, content);
+      return sock.sendMessage(address, content, options);
+    }
+
+    const { exists, jid } = await this.resolveJidFlexible(sock, address);
+    if (!exists || !jid) {
+      throw new Error(`Number not found on WhatsApp: ${address}`);
+    }
+
+    await this.simulateHumanTyping(jid, content);
+    return sock.sendMessage(jid, content, options);
+  }
+
+  private async simulateHumanTyping(jid: string, content: AnyMessageContent) {
+    const sock = this.socket();
+    const text = this.extractText(content);
+    const durationMs = this.estimateTypingMs(text);
+
+    const preThink = this.rand(150, 600);
+    await this.sleep(preThink);
+
+    const start = Date.now();
+    await sock.sendPresenceUpdate('composing', jid);
+
+    while (Date.now() - start < durationMs) {
+      const elapsed = Date.now() - start;
+      const remaining = durationMs - elapsed;
+      const tick = Math.min(1800, remaining);
+      await this.sleep(tick);
+      if (Date.now() - start < durationMs) {
+        await sock.sendPresenceUpdate('composing', jid);
+      }
+    }
+
+    await sock.sendPresenceUpdate('paused', jid);
+  }
+
+  private socket(): WASocket {
+    const s = this.connection.getSocket();
+    if (!s) {
+      throw new Error('Socket not connected');
+    }
+    return s;
+  }
+
+  private async resolveJidFlexible(sock: WASocket, raw: string) {
+    const candidates = buildCandidates(raw);
+    const probes = await Promise.all(
+      candidates.map(async (c) => {
+        const resp = await sock.onWhatsApp(onlyDigits(c));
+        const item = resp?.[0];
+        return {
+          candidate: c,
+          exists: !!item?.exists,
+          jid: item?.jid ? normalizeJid(item.jid) : undefined,
+        };
+      })
+    );
+
+    const found = probes.find((p) => p.exists && p.jid);
+    if (found) return { exists: true as const, jid: found.jid };
+    return { exists: false as const, jid: undefined };
+  }
+
+  private sleep(ms: number) {
+    return new Promise((r) => setTimeout(r, ms));
+  }
+
+  private rngFloat() {
+    const cryptoApi = (globalThis as any).crypto ?? nodeCrypto;
+    const arr = new Uint32Array(1);
+    cryptoApi.getRandomValues(arr);
+    return arr[0] / 0x100000000;
+  }
+
+  private rand(min: number, max: number) {
+    const a = Math.ceil(min);
+    const b = Math.floor(max);
+    return Math.floor(this.rngFloat() * (b - a + 1)) + a;
+  }
+
+  private countGraphemes(str: string) {
+    return Array.from(str ?? '').length;
+  }
+
+  private extractText(content: AnyMessageContent) {
+    if ((content as any)?.text) return String((content as any).text);
+    if ((content as any)?.caption) return String((content as any).caption);
+    if ((content as any)?.extendedTextMessage?.text)
+      return String((content as any).extendedTextMessage.text);
+    if ((content as any)?.react?.text)
+      return String((content as any).react.text);
+    return '';
+  }
+
+  private estimateTypingMs(text: string) {
+    const len = this.countGraphemes(text);
+
+    if (!len) {
+      return this.rand(300, 700);
+    }
+
+    const baseCps = this.rand(7, 12);
+    const base = (len / baseCps) * 1000;
+
+    const punctCount = (text.match(/[.,!?;:]/g) || []).length;
+    const newlineCount = (text.match(/\n/g) || []).length;
+    const emojiCount = (text.match(/\p{Extended_Pictographic}/gu) || []).length;
+
+    const punctPause = punctCount * this.rand(80, 220);
+    const newlinePause = newlineCount * this.rand(120, 320);
+    const emojiPause = emojiCount * this.rand(70, 180);
+
+    const jitter = base * (this.rand(-5, 12) / 100);
+    const total = base + punctPause + newlinePause + emojiPause + jitter;
+
+    const minMs = 400;
+    const maxMs = 8000;
+    const clamped = Math.max(minMs, Math.min(total, maxMs));
+
+    return Math.round(clamped);
+  }
+
+  getOwnJid(): string {
+    const sock = this.socket();
+    const ownJidRaw = sock.user?.id;
+
+    if (!ownJidRaw) {
+      throw new Error('Own JID not available');
+    }
+
+    const ownJid = normalizeJid(ownJidRaw);
+
+    if (!ownJid) {
+      throw new Error('Failed to normalize own JID');
+    }
+
+    return ownJid;
+  }
+
+  async updateProfileName(name: string): Promise<void> {
+    const sock = this.socket();
+    await sock.updateProfileName(name);
+  }
+
+  async updateProfileStatus(status: string): Promise<void> {
+    const sock = this.socket();
+    await sock.updateProfileStatus(status);
+  }
+
+  async removeProfilePicture(jid: string): Promise<void> {
+    const sock = this.socket();
+    await sock.removeProfilePicture(jid);
+  }
+
+  async updateProfilePicture(photoUrl: string): Promise<void> {
+    const sock = this.socket();
+    const ownJid = this.getOwnJid();
+    await sock.updateProfilePicture(ownJid, { url: photoUrl });
+  }
+
+  addOwnJidToStatusList(statusJidList: string[]): string[] {
+    try {
+      const ownJid = this.getOwnJid();
+
+      const normalizedStatusJidList = statusJidList.map(
+        (jid) => normalizeJid(jid) ?? jid
+      );
+      const ownJidExists = normalizedStatusJidList.includes(ownJid);
+
+      if (!ownJidExists) {
+        return [...statusJidList, ownJid];
+      }
+
+      return statusJidList;
+    } catch {
+      return statusJidList;
+    }
+  }
+}

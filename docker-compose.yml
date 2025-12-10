@@ -1,4 +1,3 @@
-version: '3'
 services:
   under-db:
     image: postgres:latest
@@ -22,7 +21,6 @@ services:
     restart: always
     volumes:
       - db_postgresql:/var/lib/postgresql
-      - db_postgresql_data:/var/lib/postgresql/data
 
   under-db-elastic:
     image: docker.elastic.co/elasticsearch/elasticsearch:9.0.1
@@ -91,7 +89,12 @@ services:
       - underchat
     restart: always
     volumes:
-      - temporal_postgresql:/var/lib/postgresql/data
+      - temporal_postgresql:/var/lib/postgresql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U temporal -d temporal']
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   under-temporal:
     image: temporalio/auto-setup:latest
@@ -107,7 +110,8 @@ services:
       - POSTGRES_SEEDS=under-temporal-db
       - DB_PORT=5432
     depends_on:
-      - under-temporal-db
+      under-temporal-db:
+        condition: service_healthy
     networks:
       - underchat
 
@@ -118,7 +122,8 @@ services:
     environment:
       - TEMPORAL_CLI_ADDRESS=under-temporal:7233
     depends_on:
-      - under-temporal
+      under-temporal:
+        condition: service_started
     networks:
       - underchat
 
@@ -131,7 +136,8 @@ services:
     environment:
       - TEMPORAL_ADDRESS=under-temporal:7233
     depends_on:
-      - under-temporal
+      under-temporal:
+        condition: service_started
     networks:
       - underchat
 
@@ -147,7 +153,6 @@ services:
     restart: always
     volumes:
       - atlas_db_postgresql:/var/lib/postgresql
-      - atlas_db_postgresql_data:/var/lib/postgresql/data
 
   under-atlas:
     build:
@@ -166,24 +171,39 @@ services:
       - ./:/app
 
   under-kafka:
-    image: bitnami/kafka:latest
+    image: apache/kafka:4.0.1
     container_name: under-kafka
     ports:
       - '9092:9092'
       - '29092:29092'
     environment:
-      - KAFKA_CFG_NODE_ID=0
-      - KAFKA_CFG_PROCESS_ROLES=broker,controller
-      - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
-      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
-      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:29092
-      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://under-kafka:9092,EXTERNAL://10.0.2.2:29092
-      - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=0@under-kafka:9093
+      CLUSTER_ID: '4L6g3nShT-eMCtK--X86sw'
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: 'broker,controller'
+      KAFKA_LISTENERS: 'PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:29092'
+      KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://under-kafka:9092,EXTERNAL://10.0.2.51:29092'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT'
+      KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
+      KAFKA_CONTROLLER_QUORUM_VOTERS: '1@under-kafka:9093'
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
     networks:
       - underchat
     volumes:
-      - kafka_data:/bitnami/kafka
+      - kafka_data:/var/lib/kafka/data
     restart: always
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'bash',
+          '-lc',
+          'kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1',
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
 
   under-kafdrop:
     image: obsidiandynamics/kafdrop:latest
@@ -256,10 +276,8 @@ volumes:
   temporal_postgresql:
   postgresql_data:
   db_postgresql:
-  db_postgresql_data:
   db_elastic_data:
   atlas_db_postgresql:
-  atlas_db_postgresql_data:
   elasticsearch_data:
   kafka_data:
   minio_data:

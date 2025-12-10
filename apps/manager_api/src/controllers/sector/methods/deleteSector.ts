@@ -18,8 +18,7 @@ export const deleteSector = async (
     const response = await sectorDeleterUseCase.execute(
       t,
       request.params.sector_id,
-      tokenJwtData.account_id,
-      tokenJwtData.is_administrator
+      tokenJwtData.account_id
     );
 
     if (response) {
@@ -29,14 +28,12 @@ export const deleteSector = async (
       });
     }
 
-    request.server.logger.info(response, request.id);
-
     return sendResponse(reply, {
       message: t('sector_deleter_error'),
       httpStatusCode: EHTTPStatusCode.bad_request,
     });
   } catch (error) {
-    request.server.logger.error(error, request.id);
+    console.error(error);
 
     if (error instanceof Error) {
       return sendResponse(reply, {

@@ -7,6 +7,7 @@ import {
   CreateMessageChatsParams,
 } from '@core/schema/chat/createMessageChats/request.schema';
 import { ChatMessageCreatorUseCase } from '@core/useCases/chat/ChatMessageCreator.useCase';
+import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 
 export const createMessageChats = async (
   request: FastifyRequest<{
@@ -25,7 +26,8 @@ export const createMessageChats = async (
       t,
       tokenJwtData.account_id,
       request.params,
-      request.body
+      request.body,
+      ETypeUserChat.operator
     );
 
     if (response) {
@@ -36,14 +38,12 @@ export const createMessageChats = async (
       });
     }
 
-    request.server.logger.info(response, request.id);
-
     return sendResponse(reply, {
       message: t('chat_create_not_found'),
       httpStatusCode: EHTTPStatusCode.bad_request,
     });
   } catch (error) {
-    request.server.logger.error(error, request.id);
+    console.error(error);
 
     if (error instanceof Error) {
       return sendResponse(reply, {

@@ -20,9 +20,12 @@ export const listMessageChats = async (
 
   try {
     const response = await chatMessageListerUseCase.execute(
+      t,
       tokenJwtData.account_id,
       request.query,
-      request.params
+      request.params,
+      tokenJwtData.user_id,
+      tokenJwtData.actions
     );
 
     if (response) {
@@ -33,14 +36,12 @@ export const listMessageChats = async (
       });
     }
 
-    request.server.logger.info(response, request.id);
-
     return sendResponse(reply, {
       message: t('chat_list_not_found'),
       httpStatusCode: EHTTPStatusCode.bad_request,
     });
   } catch (error) {
-    request.server.logger.error(error, request.id);
+    console.error(error);
 
     if (error instanceof Error) {
       return sendResponse(reply, {

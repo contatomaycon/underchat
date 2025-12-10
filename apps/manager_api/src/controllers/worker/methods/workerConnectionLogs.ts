@@ -24,7 +24,6 @@ export const workerConnectionLogs = async (
     const response = await workerConnectionLogsUseCase.execute(
       t,
       tokenJwtData.account_id,
-      tokenJwtData.is_administrator,
       request.params.worker_id,
       request.query
     );
@@ -37,14 +36,12 @@ export const workerConnectionLogs = async (
       });
     }
 
-    request.server.logger.info(response, request.id);
-
     return sendResponse(reply, {
       message: t('worker_connection_logs_not_found'),
       httpStatusCode: EHTTPStatusCode.bad_request,
     });
   } catch (error) {
-    request.server.logger.error(error, request.id);
+    console.error(error);
 
     if (error instanceof Error) {
       return sendResponse(reply, {

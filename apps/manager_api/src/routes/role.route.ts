@@ -5,7 +5,6 @@ import {
   roleCreatePermissions,
   roleDeletePermissions,
   roleEditPermissions,
-  roleListPermissions,
   roleViewPermissions,
 } from '@/permissions/role.permissions';
 import { listRoleSchema } from '@core/schema/role/listRole';
@@ -14,7 +13,7 @@ import { deleteRoleSchema } from '@core/schema/role/deleteRole';
 import { editRoleSchema } from '@core/schema/role/editRole';
 import { createRoleSchema } from '@core/schema/role/createRole';
 
-export default async function roleRoutes(server: FastifyInstance) {
+export default function roleRoutes(server: FastifyInstance) {
   const roleController = container.resolve(RoleController);
 
   server.get('/role', {
@@ -22,7 +21,7 @@ export default async function roleRoutes(server: FastifyInstance) {
     handler: roleController.listRole,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, roleListPermissions),
+        server.authenticateJwt(request, reply, roleViewPermissions),
     ],
   });
 
@@ -44,7 +43,7 @@ export default async function roleRoutes(server: FastifyInstance) {
     ],
   });
 
-  server.patch('/role/:permission_role_id/:name', {
+  server.put('/role/:permission_role_id', {
     schema: editRoleSchema,
     handler: roleController.editRole,
     preHandler: [

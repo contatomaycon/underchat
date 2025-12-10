@@ -4,6 +4,7 @@ import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
 import { DeleteUserRequest } from '@core/schema/user/deleteUser/request.schema';
 import { UserDeleterUseCase } from '@core/useCases/user/UserDeleter.useCase';
+import { canOperateOnOtherAccounts } from '@core/common/functions/hasFullAccess';
 
 export const deleteUser = async (
   request: FastifyRequest<{
@@ -14,12 +15,14 @@ export const deleteUser = async (
   const userDeleterUseCase = container.resolve(UserDeleterUseCase);
   const { t, tokenJwtData } = request;
 
+  const canOperateOnOthers = canOperateOnOtherAccounts(tokenJwtData.actions);
+
   try {
     const response = await userDeleterUseCase.execute(
       t,
       request.params.user_id,
       tokenJwtData.account_id,
-      tokenJwtData.is_administrator
+      canOperateOnOthers
     );
 
     if (response) {
@@ -29,14 +32,12 @@ export const deleteUser = async (
       });
     }
 
-    request.server.logger.info(response, request.id);
-
     return sendResponse(reply, {
       message: t('user_deleter_error'),
       httpStatusCode: EHTTPStatusCode.bad_request,
     });
   } catch (error) {
-    request.server.logger.error(error, request.id);
+    console.error(error);
 
     if (error instanceof Error) {
       return sendResponse(reply, {

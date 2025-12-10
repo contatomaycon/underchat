@@ -4,14 +4,13 @@ import { EPermissionsRoles } from '@core/common/enums/EPermissions';
 import { useAbility } from '@/plugins/casl/composables/useAbility';
 
 export const can = (permissions?: EPermissionsRoles[]): boolean => {
-  if (!permissions?.length) {
-    return false;
-  }
-
+  if (!permissions?.length) return true;
   const ability = useAbility();
 
   for (const perm of permissions) {
-    if (ability.can(perm, perm)) return true;
+    const can = ability.can(perm, perm);
+
+    if (can) return true;
   }
 
   return false;
@@ -31,6 +30,10 @@ export const canNavigate = (to: RouteLocationNormalized): boolean => {
   const ability = useAbility();
 
   const hasPermission = (perms?: EPermissionsRoles[]): boolean => {
+    if (perms === undefined) {
+      return true;
+    }
+
     if (!perms?.length) {
       return false;
     }
@@ -44,7 +47,7 @@ export const canNavigate = (to: RouteLocationNormalized): boolean => {
     return false;
   };
 
-  const target = to.matched[to.matched.length - 1];
+  const target = to.matched.at(-1);
   if (hasPermission(target?.meta?.permissions)) {
     return true;
   }

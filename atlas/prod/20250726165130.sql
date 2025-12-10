@@ -1,1 +1,1 @@
-INSERT INTO "api_key" ("api_key_id", "account_id", "key", "name") VALUES ('62447296-02c7-4d74-b072-2747f1bc97aa', '46d209e9-2df0-4033-a176-3d592e000c5c', 'coefYL1o5FEgCU0tLYRDHmH9m0iFmH5N', 'Load Balancer');
+INSERT INTO "api_key" ("api_key_id", "account_id", "key", "name") VALUES ('019a930d-c6f4-75ad-88ff-965fce526620', '019a930d-c6f4-75ad-88ff-8d2fcd5839e1', 'coefYL1o5FEgCU0tLYRDHmH9m0iFmH5N', 'Load Balancer');

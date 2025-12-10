@@ -8,6 +8,7 @@ import {
 } from '@core/schema/account/editAccount/request.schema';
 
 const accountStore = useAccountStore();
+
 const { t } = useI18n();
 
 const props = defineProps<{
@@ -25,7 +26,6 @@ const isVisible = computed({
 const accountId = toRef(props, 'accountId');
 const name = ref<string | null>(null);
 const accountStatus = ref<string | null>(null);
-const plan = ref<string | null>(null);
 const accountStatusOptions = Object.entries(EAccountStatus).map(
   ([key, value]) => ({
     name: t(`${key}`) || key,
@@ -33,14 +33,8 @@ const accountStatusOptions = Object.entries(EAccountStatus).map(
   })
 );
 
-const planOptions = computed(() =>
-  accountStore.listAllPlan.map((p) => ({
-    id: p.plan_id,
-    name: p.name,
-  }))
-);
-
 const refFormEditAccount = ref<VForm>();
+const isInitializingModal = ref(false);
 
 const updateAccount = async () => {
   const validateForm = await refFormEditAccount?.value?.validate();
@@ -59,9 +53,6 @@ const updateAccount = async () => {
     account_status: {
       account_status_id: accountStatus.value,
     },
-    plan: {
-      plan_id: plan.value,
-    },
   };
 
   const result = await accountStore.updateAccount(payload, body);
@@ -73,89 +64,69 @@ const updateAccount = async () => {
   }
 };
 
-watch(isVisible, async (visible) => {
-  if (visible && !accountStore.listAllPlan.length) {
-    await accountStore.listPlan();
-  }
-});
+const initializeModal = async () => {
+  if (!isVisible.value || !accountId.value) return;
+  if (isInitializingModal.value) return;
 
-onMounted(async () => {
-  if (!accountId.value) return;
+  isInitializingModal.value = true;
 
-  const account = await accountStore.getAccountById(accountId.value);
-  if (account) {
-    name.value = account.name;
-    accountStatus.value = account.account_status?.account_status_id ?? null;
-    plan.value = account.plan?.plan_id ?? null;
+  try {
+    const account = await accountStore.getAccountById(accountId.value);
+    if (account) {
+      name.value = account.name;
+      accountStatus.value = account.account_status?.account_status_id ?? null;
+    }
+  } finally {
+    isInitializingModal.value = false;
   }
+};
 
-  if (!accountStore.listAllPlan.length) {
-    await accountStore.listPlan();
-  }
-});
+watch(
+  isVisible,
+  async (visible) => {
+    if (visible && accountId.value) {
+      await initializeModal();
+    }
+  },
+  { immediate: true }
+);
 </script>
 
 <template>
   <VDialog v-model="isVisible" max-width="600">
     <DialogCloseBtn @click="isVisible = false" />
 
-    <template v-if="accountStore.loading">
-      <VOverlay
-        :model-value="accountStore.loading"
-        class="align-center justify-center"
-      >
-        <VProgressCircular color="primary" indeterminate size="32" />
-      </VOverlay>
-    </template>
-
     <VForm ref="refFormEditAccount" @submit.prevent>
-      <VCard :title="$t('edit_account')">
+      <VCard :title="$t('edit_account')" class="position-relative">
+        <VOverlay
+          :model-value="isInitializingModal || accountStore.loading"
+          class="align-center justify-center"
+          contained
+        >
+          <VProgressCircular color="primary" indeterminate size="64" />
+        </VOverlay>
         <VCardText>
           <VRow>
-            <VCol cols="12">
+            <VCol cols="12" md="6">
+              <VLabel class="text-body-2 mb-1">{{ $t('name') }}:</VLabel>
               <AppTextField
                 v-model="name"
-                :label="$t('name') + ':'"
                 :placeholder="$t('name')"
+                maxlength="10"
                 :rules="[requiredValidator(name, $t('name_required'))]"
               />
             </VCol>
 
-            <VCol cols="12" sm="6" md="6">
-              <label
-                :for="'account-status-select'"
-                class="d-block text-body-2 font-weight-medium mb-1"
+            <VCol cols="12" md="6">
+              <VLabel class="text-body-2 mb-1"
+                >{{ $t('account_status') }}:</VLabel
               >
-                {{ $t('account_status') }}:
-              </label>
-              <VSelect
+              <AppSelect
+                v-model="accountStatus"
                 :items="accountStatusOptions"
                 item-title="name"
                 item-value="id"
-                v-model="accountStatus"
-                dense
-                variant="outlined"
-                hide-details
-                style="min-width: 200px"
-              />
-            </VCol>
-
-            <VCol cols="12" sm="6" md="6">
-              <label
-                :for="'account-status-select'"
-                class="d-block text-body-2 font-weight-medium mb-1"
-              >
-                {{ $t('plan') }}:
-              </label>
-              <VSelect
-                :items="planOptions"
-                item-title="name"
-                item-value="id"
-                v-model="plan"
-                dense
-                variant="outlined"
-                hide-details
-                style="min-width: 200px"
+                :placeholder="$t('account_status')"
               />
             </VCol>
           </VRow>

@@ -12,14 +12,10 @@ export const listAccount = async (
   reply: FastifyReply
 ) => {
   const accountListerUseCase = container.resolve(AccountListerUseCase);
-  const { t, tokenJwtData } = request;
+  const { t } = request;
 
   try {
-    const response = await accountListerUseCase.execute(
-      t,
-      request.query,
-      tokenJwtData.is_administrator
-    );
+    const response = await accountListerUseCase.execute(request.query);
 
     if (response) {
       return sendResponse(reply, {
@@ -29,14 +25,12 @@ export const listAccount = async (
       });
     }
 
-    request.server.logger.info(response, request.id);
-
     return sendResponse(reply, {
       message: t('account_list_not_found'),
       httpStatusCode: EHTTPStatusCode.bad_request,
     });
   } catch (error) {
-    request.server.logger.error(error, request.id);
+    console.error(error);
 
     if (error instanceof Error) {
       return sendResponse(reply, {

@@ -51,25 +51,29 @@ const notifications = ref<Notification[]>([
 ]);
 
 const removeNotification = (notificationId: number) => {
-  notifications.value.forEach((item, index) => {
-    if (notificationId === item.id) notifications.value.splice(index, 1);
-  });
+  for (let index = 0; index < notifications.value.length; index++) {
+    const item = notifications.value[index];
+    if (notificationId === item.id) {
+      notifications.value.splice(index, 1);
+      break;
+    }
+  }
 };
 
 const markRead = (notificationId: number[]) => {
-  notifications.value.forEach((item) => {
-    notificationId.forEach((id) => {
+  for (const item of notifications.value) {
+    for (const id of notificationId) {
       if (id === item.id) item.isSeen = true;
-    });
-  });
+    }
+  }
 };
 
 const markUnRead = (notificationId: number[]) => {
-  notifications.value.forEach((item) => {
-    notificationId.forEach((id) => {
+  for (const item of notifications.value) {
+    for (const id of notificationId) {
       if (id === item.id) item.isSeen = false;
-    });
-  });
+    }
+  }
 };
 
 const handleNotificationClick = (notification: Notification) => {

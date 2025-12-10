@@ -5,3 +5,14 @@ export type AppAbility = MongoAbility<[EPermissionsRoles, EPermissionsRoles]>;
 
 export const ability =
   createMongoAbility<[EPermissionsRoles, EPermissionsRoles]>();
+
+export const updateAbilityPermissions = (
+  permissions: EPermissionsRoles[] = []
+): void => {
+  const roles = permissions.map((permission) => ({
+    action: permission,
+    subject: permission,
+  }));
+
+  ability.update(roles);
+};

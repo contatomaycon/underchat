@@ -12,13 +12,12 @@ export const viewAccount = async (
   reply: FastifyReply
 ) => {
   const accountViewerUseCase = container.resolve(AccountViewerUseCase);
-  const { t, tokenJwtData } = request;
+  const { t } = request;
 
   try {
     const response = await accountViewerUseCase.execute(
       t,
-      request.params.account_id,
-      tokenJwtData.is_administrator
+      request.params.account_id
     );
 
     if (response) {
@@ -29,14 +28,12 @@ export const viewAccount = async (
       });
     }
 
-    request.server.logger.info(response, request.id);
-
     return sendResponse(reply, {
       message: t('account_not_found'),
       httpStatusCode: EHTTPStatusCode.bad_request,
     });
   } catch (error) {
-    request.server.logger.error(error, request.id);
+    console.error(error);
 
     if (error instanceof Error) {
       return sendResponse(reply, {

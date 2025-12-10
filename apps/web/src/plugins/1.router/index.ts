@@ -1,6 +1,6 @@
 import { setupLayouts } from 'virtual:meta-layouts';
 import { App } from 'vue';
-import { createRouter, createWebHistory } from 'vue-router/auto';
+import { createRouter, createWebHistory } from 'vue-router';
 import { routes as autoRoutes } from 'vue-router/auto-routes';
 import { setupGuards } from './guards';
 
@@ -19,6 +19,6 @@ setupGuards(router);
 
 export { router };
 
-export default function (app: App) {
+export default function applyRouter(app: App) {
   app.use(router);
 }

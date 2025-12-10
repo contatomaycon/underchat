@@ -14,16 +14,18 @@ export const setupGuards = (router: Router) => {
       return;
     }
 
+    if (!isLogged && to.matched.length) {
+      return {
+        name: 'login',
+        query: {
+          ...to.query,
+          to: to.fullPath === '/' ? undefined : to.path,
+        },
+      };
+    }
+
     if (!canNavigate(to) && to.matched.length) {
-      return isLogged
-        ? { name: 'not-authorized' }
-        : {
-            name: 'login',
-            query: {
-              ...to.query,
-              to: to.fullPath !== '/' ? to.path : undefined,
-            },
-          };
+      return { name: 'not-authorized' };
     }
   });
 };

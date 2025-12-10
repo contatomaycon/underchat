@@ -8,10 +8,22 @@ import authV2MaskDark from '@images/pages/misc-mask-dark.png';
 import authV2MaskLight from '@images/pages/misc-mask-light.png';
 import { VNodeRenderer } from '@layouts/components/VNodeRenderer';
 import { themeConfig } from '@themeConfig';
+import { useConfigStore } from '@webcore/stores/config';
 import { useAuthStore } from '@webcore/stores/auth';
+import { useLayoutConfigStore } from '@layouts/stores/config';
+import { applyLayoutTheme } from '@/@webcore/utils/applyLayoutTheme';
+import { useChatStore } from '@webcore/stores/chat';
+import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import { VForm } from 'vuetify/components/VForm';
+import { useTheme } from 'vuetify';
 
 const authStore = useAuthStore();
+const chatStore = useChatStore();
+const configStore = useConfigStore();
+const layoutStore = useLayoutConfigStore();
+const vuetifyTheme = useTheme();
+useSnackbarCleanup(authStore);
+useSnackbarCleanup(chatStore);
 const route = useRoute();
 const router = useRouter();
 const ability = useAbility();
@@ -50,6 +62,16 @@ const handleLogin = async () => {
   const result = await authStore.login(form.value.login, form.value.password);
 
   if (result) {
+    try {
+      applyLayoutTheme(authStore.layout, {
+        configStore,
+        layoutStore,
+        vuetifyTheme,
+      });
+    } catch (error) {
+      console.error('Failed to apply layout/theme after login', error);
+    }
+    chatStore.updateUser();
     const permissions = authStore.permissions;
 
     const userAbilityRules = permissions.map((permission) => ({
@@ -57,11 +79,13 @@ const handleLogin = async () => {
       subject: permission,
     }));
 
-    await nextTick(() => {
+    try {
       ability.update(userAbilityRules);
+    } catch (error) {
+      console.error('Failed to update permissions after login', error);
+    }
 
-      router.replace(route.query.to ? String(route.query.to) : '/');
-    });
+    router.replace(route.query.to ? String(route.query.to) : '/');
   }
 };
 </script>
@@ -129,25 +153,20 @@ const handleLogin = async () => {
           <VForm ref="refFormLogin" @submit.prevent>
             <VRow>
               <VCol cols="12">
+                <VLabel class="text-body-2 mb-1">{{ $t('email') }}:</VLabel>
                 <AppTextField
                   v-model="form.login"
                   autofocus
-                  :label="$t('email_or_username')"
                   type="text"
                   placeholder="email@email.com"
-                  :rules="[
-                    requiredValidator(
-                      form.login,
-                      $t('email_or_username_required')
-                    ),
-                  ]"
+                  :rules="[requiredValidator(form.login, $t('email_required'))]"
                 />
               </VCol>
 
               <VCol cols="12">
+                <VLabel class="text-body-2 mb-1">{{ $t('password') }}:</VLabel>
                 <AppTextField
                   v-model="form.password"
-                  :label="$t('password')"
                   placeholder="············"
                   :type="isPasswordVisible ? 'text' : 'password'"
                   :append-inner-icon="

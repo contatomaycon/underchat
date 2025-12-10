@@ -15,7 +15,10 @@ const props = defineProps<{
   sectorId: string | null;
 }>();
 
-const emit = defineEmits<(e: 'update:modelValue', visible: boolean) => void>();
+const emit = defineEmits<{
+  (e: 'update:modelValue', visible: boolean): void;
+  (e: 'updated'): void;
+}>();
 
 const isVisible = computed({
   get: () => props.modelValue,
@@ -26,6 +29,7 @@ const sectorId = toRef(props, 'sectorId');
 const name = ref<string | null>(null);
 const color = ref<string | null>(null);
 const sectorStatus = ref<string | null>(null);
+const accountId = ref<string | null>(null);
 const sectorStatusOptions = Object.entries(ESectorStatus).map(
   ([key, value]) => ({
     name: t(`${key}`) || key,
@@ -47,7 +51,12 @@ const updateSector = async () => {
     sector_id: sectorId.value,
   };
 
+  if (!accountId.value) {
+    return;
+  }
+
   const body: EditSectorParamsBody = {
+    account_id: accountId.value,
     name: name.value,
     color: color.value.toUpperCase(),
     sector_status_id: sectorStatus.value,
@@ -57,8 +66,7 @@ const updateSector = async () => {
 
   if (result) {
     isVisible.value = false;
-
-    await sectorStore.listSectors();
+    emit('updated');
   }
 };
 
@@ -70,6 +78,7 @@ onMounted(async () => {
     name.value = sector.name;
     color.value = sector.color;
     sectorStatus.value = sector.sector_status?.id ?? null;
+    accountId.value = sector.account?.id ?? null;
   }
 });
 </script>
@@ -78,44 +87,36 @@ onMounted(async () => {
   <VDialog v-model="isVisible" max-width="600">
     <DialogCloseBtn @click="isVisible = false" />
 
-    <template v-if="sectorStore.loading">
-      <VOverlay
-        :model-value="sectorStore.loading"
-        class="align-center justify-center"
-      >
-        <VProgressCircular color="primary" indeterminate size="32" />
-      </VOverlay>
-    </template>
+    <VOverlay
+      :model-value="sectorStore.loading"
+      class="align-center justify-center"
+      contained
+    >
+      <VProgressCircular color="primary" indeterminate size="64" />
+    </VOverlay>
 
     <VForm ref="refFormEditSector" @submit.prevent>
       <VCard :title="$t('edit_sector')">
         <VCardText>
           <VRow>
             <VCol cols="12" sm="6" md="6">
+              <VLabel class="text-body-2 mb-1">{{ $t('name') }}:</VLabel>
               <AppTextField
                 v-model="name"
-                :label="$t('name') + ':'"
                 :placeholder="$t('name')"
                 :rules="[requiredValidator(name, $t('name_required'))]"
               />
             </VCol>
 
             <VCol cols="12" sm="6" md="6">
-              <label
-                :for="'sector-status-select'"
-                class="d-block text-body-2 font-weight-medium mb-1"
-              >
-                {{ $t('status') }}:
-              </label>
-              <VSelect
-                :items="sectorStatusOptions"
-                item-title="name"
-                item-value="id"
+              <VLabel class="text-body-2 mb-1">{{ $t('status') }}:</VLabel>
+              <AppSelectSearch
                 v-model="sectorStatus"
-                dense
-                variant="outlined"
-                hide-details
-                style="min-width: 200px"
+                :items="sectorStatusOptions"
+                :placeholder="$t('status')"
+                :clearable="true"
+                item-value="id"
+                item-title="name"
               />
             </VCol>
 

@@ -18,8 +18,7 @@ export const viewSector = async (
     const response = await sectorViewerUseCase.execute(
       t,
       request.params.sector_id,
-      tokenJwtData.account_id,
-      tokenJwtData.is_administrator
+      tokenJwtData.account_id
     );
 
     if (response) {
@@ -30,14 +29,12 @@ export const viewSector = async (
       });
     }
 
-    request.server.logger.info(response, request.id);
-
     return sendResponse(reply, {
       message: t('sector_not_found'),
       httpStatusCode: EHTTPStatusCode.bad_request,
     });
   } catch (error) {
-    request.server.logger.error(error, request.id);
+    console.error(error);
 
     if (error instanceof Error) {
       return sendResponse(reply, {

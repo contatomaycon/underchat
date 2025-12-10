@@ -1,2 +1,2 @@
-INSERT INTO "permission_assignment" ("permission_assignment_id", "permission_role_id", "user_id") VALUES ('12a7c666-6bcd-4f75-9ad0-f0fd4e1506f9', '6afec839-0772-4996-90ea-495ac84347e9', 'cd48e6ef-30bf-466d-9daa-8d4941d50df0');
-INSERT INTO "permission_assignment" ("permission_assignment_id", "permission_role_id", "account_id") VALUES ('bbd659d7-c19c-40c9-9fad-e18745440d4e', '506c972a-7612-4687-8094-9eef7da30d59', '46d209e9-2df0-4033-a176-3d592e000c5c');
+INSERT INTO "permission_assignment" ("permission_assignment_id", "permission_role_id", "user_id") VALUES ('019a930d-c6f6-766d-9c84-0f606af28346', '019a930d-c6f5-75af-82a5-899cb84b6089', '019a930d-c6f5-75af-82a5-9c31219f63db');
+INSERT INTO "permission_assignment" ("permission_assignment_id", "permission_role_id", "account_id") VALUES ('019a930d-c6f6-766d-9c84-124238b3f0ff', '019a930d-c6f5-75af-82a5-92fc241e9bef', '019a930d-c6f4-75ad-88ff-8d2fcd5839e1');

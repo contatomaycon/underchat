@@ -47,3 +47,41 @@ const label = computed(() => useAttrs().label as string | undefined);
     </VSelect>
   </div>
 </template>
+
+<style lang="scss">
+.app-select .label-color-circle {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.label-select {
+  .v-field__input {
+    > .v-select__selection {
+      margin: 0;
+      display: flex;
+      align-items: center;
+
+      > span:not(.label-color-circle):not(:has(.label-color-circle)),
+      > .v-select__selection-text {
+        display: none !important;
+      }
+    }
+  }
+
+  .v-select__selection {
+    .v-select__selection-text {
+      display: none !important;
+    }
+
+    > span:not(:has(.label-color-circle)):not(.label-color-circle) {
+      display: none !important;
+    }
+  }
+
+  .v-list-item__prepend {
+    margin-right: 8px;
+  }
+}
+</style>

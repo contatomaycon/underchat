@@ -1,3 +1,3 @@
-INSERT INTO "account_status" ("account_status_id", "name") VALUES ('0f9fe9c1-540a-4696-8a4f-90ab8f1b7a6f', 'active');
-INSERT INTO "account_status" ("account_status_id", "name") VALUES ('733ac32a-02f4-4dfd-87e2-a9ddff1d935c', 'inactive');
-INSERT INTO "account_status" ("account_status_id", "name") VALUES ('06a35a3e-8b90-4f0e-94ac-d35223dc399e', 'blocked');
+INSERT INTO "account_status" ("account_status_id", "name") VALUES ('019a930d-c6f4-75ad-88ff-6dc88da6ba96', 'active');
+INSERT INTO "account_status" ("account_status_id", "name") VALUES ('019a930d-c6f4-75ad-88ff-722f2a309227', 'inactive');
+INSERT INTO "account_status" ("account_status_id", "name") VALUES ('019a930d-c6f4-75ad-88ff-75403daff4e1', 'blocked');

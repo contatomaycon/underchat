@@ -17,7 +17,10 @@ export const listChats = async (
   try {
     const response = await chatListerUseCase.execute(
       tokenJwtData.account_id,
-      request.query
+      request.query,
+      tokenJwtData.user_id,
+      tokenJwtData.actions,
+      tokenJwtData.sectors
     );
 
     if (response) {
@@ -28,14 +31,12 @@ export const listChats = async (
       });
     }
 
-    request.server.logger.info(response, request.id);
-
     return sendResponse(reply, {
       message: t('chat_list_not_found'),
       httpStatusCode: EHTTPStatusCode.bad_request,
     });
   } catch (error) {
-    request.server.logger.error(error, request.id);
+    console.error(error);
 
     if (error instanceof Error) {
       return sendResponse(reply, {

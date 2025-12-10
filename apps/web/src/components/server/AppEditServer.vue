@@ -38,6 +38,7 @@ const itemsWebProtocol = ref([
 ]);
 
 const refFormEditServer = ref<VForm>();
+const isInitializingModal = ref(false);
 
 const updateServer = async () => {
   const validateForm = await refFormEditServer?.value?.validate();
@@ -99,32 +100,30 @@ onMounted(async () => {
   <VDialog v-model="isVisible" max-width="600">
     <DialogCloseBtn @click="isVisible = false" />
 
-    <template v-if="serverStore.loading">
-      <VOverlay
-        :model-value="serverStore.loading"
-        class="align-center justify-center"
-      >
-        <VProgressCircular color="primary" indeterminate size="32" />
-      </VOverlay>
-    </template>
-
     <VForm ref="refFormEditServer" @submit.prevent>
-      <VCard :title="$t('edit_server')">
+      <VCard :title="$t('edit_server')" class="position-relative">
+        <VOverlay
+          :model-value="isInitializingModal || serverStore.loading"
+          class="align-center justify-center"
+          contained
+        >
+          <VProgressCircular color="primary" indeterminate size="64" />
+        </VOverlay>
         <VCardText>
           <VRow>
             <VCol cols="12">
+              <VLabel class="text-body-2 mb-1">{{ $t('name') }}:</VLabel>
               <AppTextField
                 v-model="name"
-                :label="$t('name') + ':'"
                 :placeholder="$t('name_server')"
                 :rules="[requiredValidator(name, $t('name_required'))]"
               />
             </VCol>
 
             <VCol cols="12" sm="4" md="4">
+              <VLabel class="text-body-2 mb-1">{{ $t('ip') }}:</VLabel>
               <AppTextField
                 v-model="ip"
-                :label="$t('ip') + ':'"
                 :placeholder="$t('ip')"
                 :rules="[
                   requiredValidator(ip, $t('ip_required')),
@@ -135,9 +134,9 @@ onMounted(async () => {
             </VCol>
 
             <VCol cols="12" sm="4" md="4">
+              <VLabel class="text-body-2 mb-1">{{ $t('port') }}:</VLabel>
               <AppTextField
                 v-model="port"
-                :label="$t('port') + ':'"
                 :placeholder="$t('port')"
                 :rules="[requiredValidator(port, $t('port_required'))]"
                 type="number"
@@ -145,9 +144,11 @@ onMounted(async () => {
             </VCol>
 
             <VCol cols="12" sm="4" md="4">
+              <VLabel class="text-body-2 mb-1"
+                >{{ $t('workers_allowed') }}:</VLabel
+              >
               <AppTextField
                 v-model="quantityWorkers"
-                :label="$t('workers_allowed') + ':'"
                 :placeholder="$t('workers_allowed')"
                 :rules="[
                   requiredValidator(
@@ -160,21 +161,23 @@ onMounted(async () => {
             </VCol>
 
             <VCol cols="12" sm="4" md="4">
-              <AppSelect
-                :items="itemsWebProtocol"
+              <VLabel class="text-body-2 mb-1"
+                >{{ $t('web_protocol') }}:</VLabel
+              >
+              <AppSelectSearch
                 v-model="webProtocol"
-                :label="$t('web_protocol') + ':'"
+                :items="itemsWebProtocol"
                 :placeholder="$t('web_protocol')"
-                :rules="[
-                  requiredValidator(webProtocol, $t('web_protocol_required')),
-                ]"
+                :clearable="true"
+                item-value="value"
+                item-title="title"
               />
             </VCol>
 
             <VCol cols="12" sm="4" md="4">
+              <VLabel class="text-body-2 mb-1">{{ $t('web_domain') }}:</VLabel>
               <AppTextField
                 v-model="webDomain"
-                :label="$t('web_domain') + ':'"
                 :placeholder="$t('web_domain')"
                 :rules="[
                   requiredValidator(webDomain, $t('web_domain_required')),
@@ -183,9 +186,9 @@ onMounted(async () => {
             </VCol>
 
             <VCol cols="12" sm="4" md="4">
+              <VLabel class="text-body-2 mb-1">{{ $t('web_port') }}:</VLabel>
               <AppTextField
                 v-model="webPort"
-                :label="$t('web_port') + ':'"
                 :placeholder="$t('web_port')"
                 :rules="[requiredValidator(webPort, $t('web_port_required'))]"
                 type="number"
@@ -193,19 +196,13 @@ onMounted(async () => {
             </VCol>
 
             <VCol cols="12" sm="6" md="6">
-              <AppTextField
-                v-model="username"
-                :label="$t('username') + ':'"
-                :placeholder="$t('username')"
-              />
+              <VLabel class="text-body-2 mb-1">{{ $t('username') }}:</VLabel>
+              <AppTextField v-model="username" :placeholder="$t('username')" />
             </VCol>
 
             <VCol cols="12" sm="6" md="6">
-              <AppTextField
-                v-model="password"
-                :label="$t('password') + ':'"
-                :placeholder="$t('password')"
-              />
+              <VLabel class="text-body-2 mb-1">{{ $t('password') }}:</VLabel>
+              <AppTextField v-model="password" :placeholder="$t('password')" />
             </VCol>
           </VRow>
         </VCardText>

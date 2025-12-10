@@ -76,11 +76,13 @@ onUnmounted(() => {
   <VDialog v-model="isVisible" max-width="600">
     <DialogCloseBtn @click="isVisible = false" />
 
-    <template v-if="isLoading">
-      <VOverlay :model-value="isLoading" class="align-center justify-center">
-        <VProgressCircular indeterminate size="32" />
-      </VOverlay>
-    </template>
+    <VOverlay
+      :model-value="isLoading"
+      class="align-center justify-center"
+      contained
+    >
+      <VProgressCircular color="primary" indeterminate size="64" />
+    </VOverlay>
 
     <VCard :title="$t('console_installation')">
       <VCardText>

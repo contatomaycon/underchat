@@ -1,6 +1,9 @@
 <script lang="ts" setup>
 import { useRolesStore } from '@/@webcore/stores/role';
-import { EditRoleParamsRequest } from '@core/schema/role/editRole/request.schema';
+import {
+  EditRoleParamsRequest,
+  UpdateRoleRequest,
+} from '@core/schema/role/editRole/request.schema';
 import { VForm } from 'vuetify/components/VForm';
 
 const roleStore = useRolesStore();
@@ -20,8 +23,10 @@ const isVisible = computed({
 
 const roleId = toRef(props, 'roleId');
 const name = ref<string | null>(null);
+const description = ref<string | null>(null);
 
 const refFormEditRole = ref<VForm>();
+const isInitializingModal = ref(false);
 
 const updateServer = async () => {
   const validateForm = await refFormEditRole?.value?.validate();
@@ -32,11 +37,15 @@ const updateServer = async () => {
   }
 
   const payload: EditRoleParamsRequest = {
-    name: name.value,
     permission_role_id: roleId.value,
   };
 
-  const result = await roleStore.updateRole(payload);
+  const body: UpdateRoleRequest = {
+    name: name.value,
+    description: description.value,
+  };
+
+  const result = await roleStore.updateRole(payload, body);
 
   if (result) {
     isVisible.value = false;
@@ -45,39 +54,63 @@ const updateServer = async () => {
   }
 };
 
-onMounted(async () => {
-  if (!roleId.value) return;
+const initializeModal = async () => {
+  if (!isVisible.value || !roleId.value) return;
+  if (isInitializingModal.value) return;
 
-  const nameRole = await roleStore.getRoleById(roleId.value);
-  if (nameRole) {
-    name.value = nameRole.name;
+  isInitializingModal.value = true;
+
+  try {
+    const nameRole = await roleStore.getRoleById(roleId.value);
+    if (nameRole) {
+      name.value = nameRole.name;
+      description.value = nameRole.description ?? null;
+    }
+  } finally {
+    isInitializingModal.value = false;
   }
-});
+};
+
+watch(
+  isVisible,
+  async (visible) => {
+    if (visible && roleId.value) {
+      await initializeModal();
+    }
+  },
+  { immediate: true }
+);
 </script>
 
 <template>
   <VDialog v-model="isVisible" max-width="600">
     <DialogCloseBtn @click="isVisible = false" />
 
-    <template v-if="roleStore.loading">
-      <VOverlay
-        :model-value="roleStore.loading"
-        class="align-center justify-center"
-      >
-        <VProgressCircular color="primary" indeterminate size="32" />
-      </VOverlay>
-    </template>
-
     <VForm ref="refFormEditRole" @submit.prevent>
-      <VCard :title="$t('edit_role')">
+      <VCard :title="$t('edit_role')" class="position-relative">
+        <VOverlay
+          :model-value="isInitializingModal || roleStore.loading"
+          class="align-center justify-center"
+          contained
+        >
+          <VProgressCircular color="primary" indeterminate size="64" />
+        </VOverlay>
         <VCardText>
           <VRow>
             <VCol cols="12">
+              <VLabel class="text-body-2 mb-1">{{ $t('name') }}:</VLabel>
               <AppTextField
                 v-model="name"
-                :label="$t('name') + ':'"
                 :placeholder="$t('name')"
                 :rules="[requiredValidator(name, $t('name_required'))]"
+              />
+            </VCol>
+            <VCol cols="12">
+              <VLabel class="text-body-2 mb-1">{{ $t('description') }}:</VLabel>
+              <AppTextarea
+                v-model="description"
+                :placeholder="$t('description')"
+                rows="3"
               />
             </VCol>
           </VRow>

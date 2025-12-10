@@ -5,19 +5,20 @@ import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { useI18n } from 'vue-i18n';
 import { formatDateTime } from '@core/common/functions/formatDateTime';
 import { SortRequest } from '@core/schema/common/sortRequestSchema';
-import { getAdministrator } from '@/@webcore/localStorage/user';
 import { DataTableHeader } from 'vuetify';
 import { EAccountPermissions } from '@core/common/enums/EPermissions/account';
 import { useAccountStore } from '@/@webcore/stores/account';
 import { EAccountStatus } from '@core/common/enums/EAccountStatus';
 import { ListAccountResponse } from '@core/schema/account/listAccount/response.schema';
 import { EColor } from '@core/common/enums/EColor';
+import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 
 definePage({
   meta: {
     permissions: [
       EGeneralPermissions.full_access,
-      EAccountPermissions.account_list,
+      EGeneralPermissions.full_access_group,
+      EAccountPermissions.account_group,
       EAccountPermissions.account_view,
       EAccountPermissions.account_create,
       EAccountPermissions.account_update,
@@ -28,20 +29,26 @@ definePage({
 
 const permissionsEdit = [
   EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  EAccountPermissions.account_group,
   EAccountPermissions.account_update,
 ];
 const permissionsDelete = [
   EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  EAccountPermissions.account_group,
   EAccountPermissions.account_delete,
 ];
 const permissionsCreate = [
   EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  EAccountPermissions.account_group,
   EAccountPermissions.account_create,
 ];
 
 const { t } = useI18n();
 const accountStore = useAccountStore();
-const isAdministrator = getAdministrator();
+useSnackbarCleanup(accountStore);
 
 const itemsPerPage = ref([
   { value: 5, title: '5' },
@@ -59,11 +66,20 @@ const itemsStatus = ref([
   { id: EAccountStatus.blocked, text: t('blocked') },
 ]);
 
-const formatCurrency = (value?: number) => {
-  return new Intl.NumberFormat('pt-BR', {
-    style: 'currency',
-    currency: 'BRL',
-  }).format(value ?? 0);
+const resolveStatusText = (statusId?: string | null) => {
+  if (!statusId) {
+    return '-';
+  }
+
+  if (statusId === EAccountStatus.active) {
+    return t('active');
+  } else if (statusId === EAccountStatus.inactive) {
+    return t('inactive');
+  } else if (statusId === EAccountStatus.blocked) {
+    return t('blocked');
+  }
+
+  return '-';
 };
 
 const resolvePlanVariant = (planName?: string | null) => {
@@ -91,13 +107,17 @@ const accountToDelete = ref<string | null>(null);
 const isDialogEditAccountShow = ref(false);
 const isAddAccountVisible = ref(false);
 const accountToEdit = ref<string | null>(null);
+const accountInfo = ref<string | null>(null);
+const isDialogAccountInfoShow = ref(false);
+const accountSubscriptions = ref<string | null>(null);
+const isDialogAccountSubscriptionsShow = ref(false);
 
 const headers: DataTableHeader<ListAccountResponse>[] = [
   { title: t('name'), key: 'name' },
   { title: t('account_status'), key: 'account_status' },
   { title: t('plan'), key: 'plan' },
-  { title: t('price'), key: 'price' },
-  { title: t('price_old'), key: 'price_old' },
+  { title: t('recurring_payment'), key: 'recurring_payment' },
+  { title: t('billing_period'), key: 'billing_period' },
   { title: t('created_at'), key: 'created_at' },
   { title: t('actions'), key: 'actions', sortable: false },
 ];
@@ -156,6 +176,18 @@ const openEditDialog = (id: string) => {
   isDialogEditAccountShow.value = true;
 };
 
+const openAddRoleDialog = (id: string) => {
+  accountInfo.value = id;
+
+  isDialogAccountInfoShow.value = true;
+};
+
+const openSubscriptionsDialog = (id: string) => {
+  accountSubscriptions.value = id;
+
+  isDialogAccountSubscriptionsShow.value = true;
+};
+
 watch(
   query,
   async (q) => {
@@ -192,17 +224,19 @@ watch(
           </div>
           <div class="d-flex align-center flex-wrap gap-4">
             <div class="status-filter">
-              <VLabel>{{ $t('status') }}:</VLabel>
-              <AppAutocomplete
-                item-title="text"
-                item-value="id"
-                :items="itemsStatus"
+              <VLabel class="text-body-2 mb-1">{{ $t('status') }}:</VLabel>
+              <AppSelectSearch
                 v-model="options.account_status"
+                :items="itemsStatus"
                 :placeholder="$t('select_state')"
+                :clearable="true"
+                item-value="id"
+                item-title="text"
+                @update:modelValue="options.page = 1"
               />
             </div>
             <div class="invoice-list-filter">
-              <VLabel>{{ $t('search') }}:</VLabel>
+              <VLabel class="text-body-2 mb-1">{{ $t('search') }}:</VLabel>
               <AppTextField
                 :placeholder="$t('search') + '...'"
                 append-inner-icon="tabler-search"
@@ -215,107 +249,177 @@ watch(
             </div>
           </div>
         </div>
-      </VCardText>
 
-      <VDataTableServer
-        v-model:page="options.page"
-        v-model:items-per-page="options.itemsPerPage"
-        :headers="headers"
-        :items="accountStore.list"
-        :items-length="accountStore.pagings.total"
-        :loading="accountStore.loading"
-        :sort-by="options.sortBy"
-        @update:options="handleTableChange"
-        :loading-text="$t('loading_text')"
-      >
-        <template #item.name="{ item }">
-          <div class="d-flex flex-column ms-3">
-            <span
-              class="d-block font-weight-medium text-high-emphasis text-truncate"
-            >
-              {{ item.name }}
-            </span>
-          </div>
-        </template>
+        <VDivider class="my-4" />
 
-        <template #item.account_status="{ item }">
-          {{ $t(`${item.account_status?.name}`) }}
-        </template>
-
-        <template #item.plan="{ item }">
-          <VChip
-            :color="resolvePlanVariant(item.plan?.name).color"
-            size="small"
-          >
-            {{ resolvePlanVariant(item.plan?.name).text }}
-          </VChip>
-        </template>
-
-        <template #item.price="{ item }">
-          {{
-            new Intl.NumberFormat('pt-BR', {
-              style: 'currency',
-              currency: 'BRL',
-            }).format(item.plan?.price ?? 0)
-          }}
-        </template>
-
-        <template #item.price_old="{ item }">
-          <s>{{ formatCurrency(item.plan?.price_old) }}</s>
-        </template>
-
-        <template #item.created_at="{ item }">
-          <span>{{ formatDateTime(item?.created_at ?? null) }}</span>
-        </template>
-
-        <template #item.actions="{ item }">
-          <div class="d-flex gap-1">
-            <IconBtn
-              v-if="
-                $canPermission(permissionsEdit) &&
-                (item?.account_id || isAdministrator)
-              "
-              ><VTooltip
-                location="top"
-                transition="scale-transition"
-                activator="parent"
-              >
-                <span>{{ $t('edit_account') }}</span> </VTooltip
-              ><VIcon
-                icon="tabler-edit"
-                @click="openEditDialog(item.account_id)"
-            /></IconBtn>
-
-            <IconBtn
-              v-if="
-                $canPermission(permissionsDelete) &&
-                (item.account_id || isAdministrator)
-              "
-              ><VTooltip
-                location="top"
-                transition="scale-transition"
-                activator="parent"
-              >
-                <span>{{ $t('delete_account') }}</span> </VTooltip
-              ><VIcon
-                icon="tabler-trash"
-                @click="deleteAccount(item.account_id)"
-            /></IconBtn>
-          </div>
-        </template>
-
-        <template #no-data>
-          {{ $t('no_data_available') }}
-        </template>
-
-        <template #bottom>
-          <TablePagination
+        <div>
+          <VDataTableServer
+            class="data-table"
             v-model:page="options.page"
-            :items-per-page="options.itemsPerPage"
-            :total-items="accountStore.pagings.total"
-          />
-        </template>
-      </VDataTableServer>
+            v-model:items-per-page="options.itemsPerPage"
+            :headers="headers"
+            :items="accountStore.list"
+            :items-length="accountStore.pagings.total"
+            :loading="accountStore.loading"
+            :sort-by="options.sortBy"
+            @update:options="handleTableChange"
+            :loading-text="$t('loading_text')"
+          >
+            <template #item.name="{ item }">
+              <div class="d-flex flex-column ms-3">
+                <span
+                  class="d-block font-weight-medium text-high-emphasis text-truncate"
+                >
+                  {{ item.name }}
+                </span>
+              </div>
+            </template>
+
+            <template #item.account_status="{ item }">
+              <VChip
+                v-if="item.account_status"
+                :color="
+                  item.account_status.account_status_id ===
+                  EAccountStatus.active
+                    ? 'success'
+                    : item.account_status.account_status_id ===
+                        EAccountStatus.blocked
+                      ? 'error'
+                      : 'warning'
+                "
+                size="small"
+                variant="tonal"
+              >
+                {{
+                  item.account_status.account_status_id ===
+                  EAccountStatus.active
+                    ? $t('active')
+                    : item.account_status.account_status_id ===
+                        EAccountStatus.blocked
+                      ? $t('blocked')
+                      : $t('inactive')
+                }}
+              </VChip>
+              <span v-else class="text-medium-emphasis">-</span>
+            </template>
+
+            <template #item.plan="{ item }">
+              <VChip
+                v-if="item.plan"
+                :color="resolvePlanVariant(item.plan?.name).color"
+                class="uc-chip"
+                size="small"
+              >
+                {{ resolvePlanVariant(item.plan?.name).text }}
+              </VChip>
+
+              <VChip v-else class="uc-chip uc-badge--muted" size="small"
+                >-</VChip
+              >
+            </template>
+
+            <template #item.recurring_payment="{ item }">
+              <VChip
+                v-if="item.plan"
+                :color="item.plan.recurring_payment ? 'success' : 'warning'"
+                size="small"
+                variant="tonal"
+              >
+                {{ item.plan.recurring_payment ? $t('yes') : $t('no') }}
+              </VChip>
+              <span v-else class="text-medium-emphasis">-</span>
+            </template>
+
+            <template #item.billing_period="{ item }">
+              <VChip
+                v-if="item.plan?.billing_period"
+                :color="
+                  item.plan.billing_period === 'monthly' ? 'primary' : 'info'
+                "
+                size="small"
+                variant="tonal"
+              >
+                {{
+                  item.plan.billing_period === 'monthly'
+                    ? $t('monthly')
+                    : $t('annual')
+                }}
+              </VChip>
+              <span v-else class="text-medium-emphasis">-</span>
+            </template>
+
+            <template #item.created_at="{ item }">
+              <span>{{ formatDateTime(item?.created_at ?? null) }}</span>
+            </template>
+
+            <template #item.actions="{ item }">
+              <div class="d-flex gap-1">
+                <IconBtn
+                  ><VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>{{ $t('account_info') }}</span> </VTooltip
+                  ><VIcon
+                    icon="tabler-settings"
+                    @click="openAddRoleDialog(item.account_id)"
+                /></IconBtn>
+
+                <IconBtn
+                  ><VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>{{ $t('plan') }}</span> </VTooltip
+                  ><VIcon
+                    icon="tabler-credit-card"
+                    @click="openSubscriptionsDialog(item.account_id)"
+                /></IconBtn>
+
+                <IconBtn
+                  v-if="$canPermission(permissionsEdit) && item?.account_id"
+                  ><VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>{{ $t('edit_account') }}</span> </VTooltip
+                  ><VIcon
+                    icon="tabler-edit"
+                    @click="openEditDialog(item.account_id)"
+                /></IconBtn>
+
+                <IconBtn
+                  v-if="$canPermission(permissionsDelete) && item.account_id"
+                  ><VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>{{ $t('delete_account') }}</span> </VTooltip
+                  ><VIcon
+                    icon="tabler-trash"
+                    @click="deleteAccount(item.account_id)"
+                /></IconBtn>
+              </div>
+            </template>
+
+            <template #no-data>
+              {{ $t('no_data_available') }}
+            </template>
+
+            <template #bottom>
+              <TablePagination
+                v-model:page="options.page"
+                :items-per-page="options.itemsPerPage"
+                :total-items="accountStore.pagings.total"
+              />
+            </template>
+          </VDataTableServer>
+        </div>
+      </VCardText>
 
       <VDialogHandler
         v-if="isDialogDeleterShow"
@@ -329,6 +433,18 @@ watch(
         v-if="isDialogEditAccountShow"
         v-model="isDialogEditAccountShow"
         :account-id="accountToEdit"
+      />
+
+      <AppAccountInfo
+        v-if="isDialogAccountInfoShow"
+        v-model="isDialogAccountInfoShow"
+        :account-id="accountInfo"
+      />
+
+      <AppAccountSubscriptions
+        v-if="isDialogAccountSubscriptionsShow"
+        v-model="isDialogAccountSubscriptionsShow"
+        :account-id="accountSubscriptions"
       />
 
       <AppAddAccount v-if="isAddAccountVisible" v-model="isAddAccountVisible" />
@@ -345,12 +461,41 @@ watch(
   </div>
 </template>
 
-<style lang="scss">
+<style lang="scss" scoped>
 .status-filter {
   inline-size: 12rem;
 }
 
 .invoice-list-filter {
   inline-size: 20rem;
+}
+
+.uc-chip {
+  height: 24px;
+  min-width: 88px;
+  justify-content: center;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.data-table {
+  :deep(.v-table__wrapper > table > thead) {
+    background-color: rgba(var(--v-theme-on-surface), 0.04);
+  }
+
+  :deep(.v-table__wrapper > table > thead > tr > th) {
+    background-color: transparent;
+    color: rgb(var(--v-theme-primary));
+    font-weight: 700;
+    border-bottom: 1px solid rgba(var(--v-theme-primary), 0.25);
+  }
+
+  :deep(
+    .v-table__wrapper > table > thead > tr > th .v-data-table-header__content
+  ) {
+    color: inherit;
+  }
 }
 </style>

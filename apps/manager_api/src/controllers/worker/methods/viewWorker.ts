@@ -18,7 +18,6 @@ export const viewWorker = async (
     const response = await workerViewerUseCase.execute(
       t,
       tokenJwtData.account_id,
-      tokenJwtData.is_administrator,
       request.params.worker_id
     );
 
@@ -30,14 +29,12 @@ export const viewWorker = async (
       });
     }
 
-    request.server.logger.info(response, request.id);
-
     return sendResponse(reply, {
       message: t('worker_view_error'),
       httpStatusCode: EHTTPStatusCode.bad_request,
     });
   } catch (error) {
-    request.server.logger.error(error, request.id);
+    console.error(error);
 
     if (error instanceof Error) {
       return sendResponse(reply, {

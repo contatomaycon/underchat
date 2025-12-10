@@ -1,12 +1,10 @@
 <script setup lang="ts">
-import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
-import { EHomePermissions } from '@core/common/enums/EPermissions/home';
+import { useChannelsStore } from '@/@webcore/stores/channels';
+import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 
-definePage({
-  meta: {
-    permissions: [EGeneralPermissions.full_access, EHomePermissions.home_view],
-  },
-});
+const channelsStore = useChannelsStore();
+
+useSnackbarCleanup(channelsStore);
 </script>
 
 <template>
@@ -37,5 +35,14 @@ definePage({
         authentication.</VCardText
       >
     </VCard>
+
+    <VSnackbar
+      v-model="channelsStore.snackbar.status"
+      transition="scroll-y-reverse-transition"
+      location="top end"
+      :color="channelsStore.snackbar.color"
+    >
+      {{ channelsStore.snackbar.message }}
+    </VSnackbar>
   </div>
 </template>
