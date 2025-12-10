@@ -33,9 +33,6 @@ export class PlanRenewalService {
     const planAccounts =
       await this.planAccountRenewalListerRepository.findPlanAccountsForRenewal();
 
-    console.log('planAccounts');
-    console.dir(planAccounts, { depth: null, colors: true });
-
     if (planAccounts.length === 0) {
       return;
     }
