@@ -103,12 +103,22 @@ export class PlanRenewalService {
         `Usuário master não encontrado para account_id: ${planAccount.account_id}`
       );
 
+      await this.accountUpdaterRepository.updateAccountStatusById(
+        planAccount.account_id,
+        EAccountStatus.inactive
+      );
+
       return;
     }
 
     if (!customer) {
       console.warn(
         `Cliente não encontrado ou não pôde ser criado para account_id: ${planAccount.account_id}`
+      );
+
+      await this.accountUpdaterRepository.updateAccountStatusById(
+        planAccount.account_id,
+        EAccountStatus.inactive
       );
 
       return;
@@ -122,6 +132,11 @@ export class PlanRenewalService {
     if (!defaultCard) {
       console.warn(
         `Cartão padrão não encontrado para user_id: ${masterUser.user_id}`
+      );
+
+      await this.accountUpdaterRepository.updateAccountStatusById(
+        planAccount.account_id,
+        EAccountStatus.inactive
       );
 
       return;
@@ -145,6 +160,11 @@ export class PlanRenewalService {
     if (!paymentResult.payment) {
       console.error(
         `Falha ao criar pagamento para plan_account ${planAccount.plan_account_id}`
+      );
+
+      await this.accountUpdaterRepository.updateAccountStatusById(
+        planAccount.account_id,
+        EAccountStatus.inactive
       );
 
       return;
