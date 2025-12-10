@@ -11,17 +11,30 @@ export async function withLock<T>(
   options?: {
     ttlMs?: number;
     retryMs?: number;
+    preventDuplicate?: boolean;
+    duplicateTtlSeconds?: number;
   }
 ): Promise<T> {
   const key = `underchat:lock:${lockKey}`;
   const token = uuidv7();
   const ttlMs = options?.ttlMs ?? 20000;
   const retryMs = options?.retryMs ?? 150;
+  const preventDuplicate = options?.preventDuplicate ?? false;
+  const duplicateTtlSeconds = options?.duplicateTtlSeconds ?? 300;
+  const executedKey = preventDuplicate ? `underchat:executed:${lockKey}` : null;
 
   for (;;) {
     const ok = await redis.set(key, token, 'PX', ttlMs, 'NX');
 
     if (ok === 'OK') {
+      if (preventDuplicate && executedKey) {
+        const alreadyExecuted = await redis.get(executedKey);
+        if (alreadyExecuted) {
+          await releaseLock(redis, key, token);
+          return undefined as T;
+        }
+      }
+
       const interval = setInterval(
         () => {
           extendLock(redis, key, token, ttlMs).catch(() => {});
@@ -31,6 +44,10 @@ export async function withLock<T>(
 
       try {
         const result = await fn();
+
+        if (preventDuplicate && executedKey) {
+          await redis.set(executedKey, '1', 'EX', duplicateTtlSeconds);
+        }
 
         await releaseLock(redis, key, token);
         clearInterval(interval);

@@ -1,4 +1,4 @@
-import { injectable, inject } from 'tsyringe';
+import { injectable } from 'tsyringe';
 import { PlanReleaseRepository } from '@core/repositories/plan/PlanRelease.repository';
 import { EPaymentStatus } from '@core/common/enums/EPaymentStatus';
 import { EBillingPeriod } from '@core/common/enums/EBillingPeriod';
@@ -8,24 +8,17 @@ import { paymentAccountCentrifugo } from '@core/common/functions/centrifugoQueue
 import { AsaasService } from '@core/services/asaas';
 import { ICreateAsaasInvoiceRequest } from '@core/common/interfaces/IAsaasInvoice';
 import { AccountPaymentNfSeUpserterRepository } from '@core/repositories/account/AccountPaymentNfSeUpserter.repository';
-import { StreamProducerService } from '@core/services/streamProducer.service';
-import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
+import { NotificationMessageService } from './notificationMessage.service';
 import { ENotificationTypeId } from '@core/common/enums/ENotificationType';
-import Redis from 'ioredis';
-import { withLock } from '@core/common/functions/withLock';
 
 @injectable()
 export class PlanReleaseService {
-  private readonly notificationTtlSeconds = 60;
-
   constructor(
     private readonly planReleaseRepository: PlanReleaseRepository,
     private readonly centrifugoService: CentrifugoService,
     private readonly asaasService: AsaasService,
     private readonly accountPaymentNfSeUpserterRepository: AccountPaymentNfSeUpserterRepository,
-    private readonly streamProducerService: StreamProducerService,
-    private readonly kafkaServiceQueueService: KafkaServiceQueueService,
-    @inject('Redis') private readonly redis: Redis
+    private readonly notificationMessageService: NotificationMessageService
   ) {}
 
   private readonly mapAsaasStatusToPaymentStatus = (
@@ -267,7 +260,16 @@ export class PlanReleaseService {
     );
 
     if (data.shouldSendNotification !== false) {
-      await this.sendPlanNotification(data.accountId, data.planId);
+      const isRenewal = await this.checkIfPlanAccountIsActive(data.accountId);
+      const notificationTypeId = isRenewal
+        ? ENotificationTypeId.plan_renewal
+        : ENotificationTypeId.plan_new;
+
+      await this.notificationMessageService.sendPlanNotification(
+        data.accountId,
+        data.planId,
+        notificationTypeId
+      );
     }
   };
 
@@ -314,9 +316,17 @@ export class PlanReleaseService {
         paymentAsaasId
       );
 
-      await this.sendPlanNotification(
+      const isRenewal = await this.checkIfPlanAccountIsActive(
+        accountPaymentData.account_id
+      );
+      const notificationTypeId = isRenewal
+        ? ENotificationTypeId.plan_renewal
+        : ENotificationTypeId.plan_new;
+
+      await this.notificationMessageService.sendPlanNotification(
         accountPaymentData.account_id,
-        accountPaymentData.plan_id
+        accountPaymentData.plan_id,
+        notificationTypeId
       );
 
       return;
@@ -483,7 +493,16 @@ export class PlanReleaseService {
         accountPaymentData.billing || ''
       );
 
-      await this.sendPlanNotification(data.accountId, data.planId);
+      const isRenewal = await this.checkIfPlanAccountIsActive(data.accountId);
+      const notificationTypeId = isRenewal
+        ? ENotificationTypeId.plan_renewal
+        : ENotificationTypeId.plan_new;
+
+      await this.notificationMessageService.sendPlanNotification(
+        data.accountId,
+        data.planId,
+        notificationTypeId
+      );
 
       return;
     }
@@ -632,32 +651,4 @@ export class PlanReleaseService {
 
     return false;
   };
-
-  private async sendPlanNotification(
-    accountId: string,
-    planId: string
-  ): Promise<void> {
-    const isRenewal = await this.checkIfPlanAccountIsActive(accountId);
-    const notificationTypeId = isRenewal
-      ? ENotificationTypeId.plan_renewal
-      : ENotificationTypeId.plan_new;
-    const lockKey = `notification:${accountId}:${planId}:${notificationTypeId}`;
-
-    await withLock(
-      this.redis,
-      lockKey,
-      async () => {
-        const topic = this.kafkaServiceQueueService.notificationMessage();
-        await this.streamProducerService.send(topic, {
-          notification_type_id: notificationTypeId,
-          account_id: accountId,
-        });
-      },
-      {
-        ttlMs: this.notificationTtlSeconds * 1000,
-      }
-    ).catch((error) => {
-      console.error('Erro ao enviar notificação de plano liberado:', error);
-    });
-  }
 }

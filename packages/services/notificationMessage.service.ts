@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { NotificationMessageViewerRepository } from '@core/repositories/notifications/NotificationMessageViewer.repository';
 import { UserMasterViewerRepository } from '@core/repositories/user/UserMasterViewer.repository';
 import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
@@ -16,6 +16,9 @@ import { PlanCurrentInvoiceViewerRepository } from '@core/repositories/plan/Plan
 import { ENotificationType } from '@core/common/enums/ENotificationType';
 import { webcrypto } from 'node:crypto';
 import { EmailService } from './email.service';
+import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
+import Redis from 'ioredis';
+import { withLock } from '@core/common/functions/withLock';
 
 @injectable()
 export class NotificationMessageService {
@@ -30,7 +33,9 @@ export class NotificationMessageService {
     private readonly userInfoViewerRepository: UserInfoViewerRepository,
     private readonly workerNameViewerRepository: WorkerNameViewerRepository,
     private readonly planCurrentInvoiceViewerRepository: PlanCurrentInvoiceViewerRepository,
-    private readonly emailService: EmailService
+    private readonly emailService: EmailService,
+    private readonly kafkaServiceQueueService: KafkaServiceQueueService,
+    @inject('Redis') private readonly redis: Redis
   ) {}
 
   private async prepareNotificationMessages(
@@ -359,5 +364,32 @@ export class NotificationMessageService {
       console.error('Erro ao obter email do usuário:', error);
       return null;
     }
+  }
+
+  async sendPlanNotification(
+    accountId: string,
+    planId: string,
+    notificationTypeId: string
+  ): Promise<void> {
+    const lockKey = `notification:${accountId}:${planId}:${notificationTypeId}`;
+
+    await withLock(
+      this.redis,
+      lockKey,
+      async () => {
+        const topic = this.kafkaServiceQueueService.notificationMessage();
+        await this.streamProducerService.send(topic, {
+          notification_type_id: notificationTypeId,
+          account_id: accountId,
+        });
+      },
+      {
+        ttlMs: 60000,
+        preventDuplicate: true,
+        duplicateTtlSeconds: 300,
+      }
+    ).catch((error) => {
+      console.error('Erro ao enviar notificação de plano liberado:', error);
+    });
   }
 }
