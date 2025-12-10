@@ -6,13 +6,17 @@ import { delay } from './delay';
 
 export async function withLock<T>(
   redis: Redis,
-  lockId: string,
-  fn: () => Promise<T>
+  lockKey: string,
+  fn: () => Promise<T>,
+  options?: {
+    ttlMs?: number;
+    retryMs?: number;
+  }
 ): Promise<T> {
-  const key = `underchat:lock:jid:${lockId}`;
+  const key = `underchat:lock:${lockKey}`;
   const token = uuidv7();
-  const ttlMs = 20000;
-  const retryMs = 150;
+  const ttlMs = options?.ttlMs ?? 20000;
+  const retryMs = options?.retryMs ?? 150;
 
   for (;;) {
     const ok = await redis.set(key, token, 'PX', ttlMs, 'NX');

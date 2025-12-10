@@ -12,10 +12,10 @@ import { StreamProducerService } from '@core/services/streamProducer.service';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { ENotificationTypeId } from '@core/common/enums/ENotificationType';
 import Redis from 'ioredis';
+import { withLock } from '@core/common/functions/withLock';
 
 @injectable()
 export class PlanReleaseService {
-  private readonly notificationKeyPrefix = 'notification:sent:';
   private readonly notificationTtlSeconds = 60;
 
   constructor(
@@ -69,6 +69,18 @@ export class PlanReleaseService {
     );
   };
 
+  private readonly addOneMonth = (date: Date): Date => {
+    const result = new Date(date);
+    result.setMonth(result.getMonth() + 1);
+    return result;
+  };
+
+  private readonly addOneYear = (date: Date): Date => {
+    const result = new Date(date);
+    result.setFullYear(result.getFullYear() + 1);
+    return result;
+  };
+
   private readonly calculateNextPaymentDate = (
     paymentDate: string,
     billingPeriodId: string | null,
@@ -77,23 +89,30 @@ export class PlanReleaseService {
     currentNextPaymentDate: string | null
   ): string => {
     const paymentDateObj = new Date(paymentDate);
-    let daysToAdd = 0;
-
-    if (billingPeriodId === EBillingPeriod.monthly) {
-      daysToAdd = 30;
-    }
-
-    if (billingPeriodId === EBillingPeriod.annual) {
-      daysToAdd = 365;
-    }
 
     if (currentPlanId === newPlanId && currentNextPaymentDate) {
       const currentNextDate = new Date(currentNextPaymentDate);
-      currentNextDate.setDate(currentNextDate.getDate() + daysToAdd);
-      return currentNextDate.toISOString();
+      const now = new Date();
+
+      if (currentNextDate > now) {
+        if (billingPeriodId === EBillingPeriod.monthly) {
+          return this.addOneMonth(currentNextDate).toISOString();
+        }
+
+        if (billingPeriodId === EBillingPeriod.annual) {
+          return this.addOneYear(currentNextDate).toISOString();
+        }
+      }
     }
 
-    paymentDateObj.setDate(paymentDateObj.getDate() + daysToAdd);
+    if (billingPeriodId === EBillingPeriod.monthly) {
+      return this.addOneMonth(paymentDateObj).toISOString();
+    }
+
+    if (billingPeriodId === EBillingPeriod.annual) {
+      return this.addOneYear(paymentDateObj).toISOString();
+    }
+
     return paymentDateObj.toISOString();
   };
 
@@ -595,29 +614,23 @@ export class PlanReleaseService {
     accountId: string,
     planId: string
   ): Promise<void> {
-    const notificationKey = `${this.notificationKeyPrefix}${accountId}:${planId}:${ENotificationTypeId.plan}`;
+    const lockKey = `notification:${accountId}:${planId}:${ENotificationTypeId.plan}`;
 
-    const setResult = await this.redis.set(
-      notificationKey,
-      '1',
-      'EX',
-      this.notificationTtlSeconds,
-      'NX'
-    );
-
-    if (setResult !== 'OK') {
-      return;
-    }
-
-    try {
-      const topic = this.kafkaServiceQueueService.notificationMessage();
-      await this.streamProducerService.send(topic, {
-        notification_type_id: ENotificationTypeId.plan,
-        account_id: accountId,
-      });
-    } catch (error) {
-      await this.redis.del(notificationKey);
+    await withLock(
+      this.redis,
+      lockKey,
+      async () => {
+        const topic = this.kafkaServiceQueueService.notificationMessage();
+        await this.streamProducerService.send(topic, {
+          notification_type_id: ENotificationTypeId.plan,
+          account_id: accountId,
+        });
+      },
+      {
+        ttlMs: this.notificationTtlSeconds * 1000,
+      }
+    ).catch((error) => {
       console.error('Erro ao enviar notificação de plano liberado:', error);
-    }
+    });
   }
 }
