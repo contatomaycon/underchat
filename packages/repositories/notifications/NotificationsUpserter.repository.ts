@@ -38,6 +38,10 @@ export class NotificationsUpserterRepository {
         tx,
         ENotificationType.plan_expiration
       );
+      const planCancellationTypeId = await this.findNotificationTypeIdByName(
+        tx,
+        ENotificationType.plan_cancellation
+      );
 
       const twoFactorNotification =
         input.two_factor_notification !== undefined ||
@@ -99,11 +103,27 @@ export class NotificationsUpserterRepository {
             )
           : await this.findNotificationByType(tx, planExpirationTypeId);
 
+      const planCancellationNotification =
+        input.plan_cancellation_notification !== undefined ||
+        input.plan_cancellation_message_whatsapp !== undefined ||
+        input.plan_cancellation_message_email !== undefined ||
+        input.plan_cancellation_email_subject !== undefined
+          ? await this.upsertNotificationByType(
+              tx,
+              planCancellationTypeId,
+              input.plan_cancellation_notification,
+              input.plan_cancellation_message_whatsapp,
+              input.plan_cancellation_message_email,
+              input.plan_cancellation_email_subject
+            )
+          : await this.findNotificationByType(tx, planCancellationTypeId);
+
       const firstNotificationId =
         twoFactorNotification?.notification_id ||
         planNewNotification?.notification_id ||
         planRenewalNotification?.notification_id ||
         planExpirationNotification?.notification_id ||
+        planCancellationNotification?.notification_id ||
         uuidv7();
 
       return {
@@ -160,12 +180,26 @@ export class NotificationsUpserterRepository {
               },
             }
           : null,
+        plan_cancellation_notification: planCancellationNotification
+          ? {
+              whatsapp: {
+                worker_id: planCancellationNotification.nwr?.worker_id || null,
+                name: planCancellationNotification.nwr?.name || null,
+                message: planCancellationNotification.message_whatsapp || null,
+              },
+              email: {
+                subject: planCancellationNotification.email_subject || null,
+                message: planCancellationNotification.message_email || null,
+              },
+            }
+          : null,
         created_at: twoFactorNotification?.created_at || null,
         updated_at:
           twoFactorNotification?.updated_at ||
           planNewNotification?.updated_at ||
           planRenewalNotification?.updated_at ||
           planExpirationNotification?.updated_at ||
+          planCancellationNotification?.updated_at ||
           null,
       };
     });

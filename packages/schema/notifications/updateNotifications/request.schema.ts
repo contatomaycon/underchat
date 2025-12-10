@@ -49,6 +49,18 @@ export const updateNotificationsRequestSchema = Type.Object({
   plan_expiration_email_subject: Type.Optional(
     Type.Union([Type.String(), Type.Null()])
   ),
+  plan_cancellation_notification: Type.Optional(
+    Type.Union([Type.String({ format: 'uuid' }), Type.Null()])
+  ),
+  plan_cancellation_message_whatsapp: Type.Optional(
+    Type.Union([Type.String(), Type.Null()])
+  ),
+  plan_cancellation_message_email: Type.Optional(
+    Type.Union([Type.String(), Type.Null()])
+  ),
+  plan_cancellation_email_subject: Type.Optional(
+    Type.Union([Type.String(), Type.Null()])
+  ),
 });
 
 export type UpdateNotificationsRequest = Static<

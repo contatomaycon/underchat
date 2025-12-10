@@ -280,5 +280,72 @@ Obrigado por continuar conosco!', '<!DOCTYPE html>
         </tr>
     </table>
 </body>
-</html>', 'Renovação de Plano - Underchat', '2025-12-06 15:44:00.000000 +00:00', '2025-12-06 15:44:00.000000 +00:00')
+</html>', 'Renovação de Plano - Underchat', '2025-12-06 15:44:00.000000 +00:00', '2025-12-06 15:44:00.000000 +00:00'),
+  ('019af456-7890-1234-abcd-ef1234567890', NULL, '019a930d-c6f4-75ad-88ff-9e5f6a7b8c9e', '⚠️ *Cancelamento de Plano*
+Olá, {{name}}!
+Seu plano *{{plan}}* foi cancelado.
+Data de cancelamento: {{expiration_date}}
+Seu acesso permanecerá ativo até a data de vencimento.', '<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cancelamento de Plano - Underchat</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, ''Segoe UI'', Roboto, ''Helvetica Neue'', Arial, sans-serif; background-color: #f5f5f5;">
+    <table role="presentation" style="width: 100%; border-collapse: collapse; background-color: #f5f5f5;">
+        <tr>
+            <td align="center" style="padding: 40px 20px;">
+                <table role="presentation" style="max-width: 600px; width: 100%; background-color: #ffffff; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                    <!-- Header -->
+                    <tr>
+                        <td style="padding: 40px 40px 30px; text-align: center; background: linear-gradient(135deg, #dc3545 0%, #c82333 100%); border-radius: 8px 8px 0 0;">
+                            <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 600;">Underchat</h1>
+                        </td>
+                    </tr>
+                    <!-- Content -->
+                    <tr>
+                        <td style="padding: 40px;">
+                            <div style="text-align: center; margin-bottom: 30px;">
+                                <span style="font-size: 60px;">⚠️</span>
+                            </div>
+                            <h2 style="margin: 0 0 20px; color: #333333; font-size: 24px; font-weight: 600; text-align: center;">Cancelamento de Plano</h2>
+                            <p style="margin: 0 0 30px; color: #666666; font-size: 16px; line-height: 1.6;">Olá, {{name}}!</p>
+                            <p style="margin: 0 0 30px; color: #666666; font-size: 16px; line-height: 1.6;">Seu plano <strong style="color: #dc3545;">{{plan}}</strong> foi cancelado.</p>
+                            <div style="background: linear-gradient(135deg, #f8d7da 0%, #f5c6cb 100%); border-left: 4px solid #dc3545; border-radius: 8px; padding: 30px; margin: 30px 0;">
+                                <table role="presentation" style="width: 100%; border-collapse: collapse;">
+                                    <tr>
+                                        <td style="padding: 10px 0; color: #666666; font-size: 16px; border-bottom: 1px solid #dc3545;">
+                                            <strong style="color: #333333;">Plano:</strong>
+                                        </td>
+                                        <td style="padding: 10px 0; color: #333333; font-size: 16px; font-weight: 600; text-align: right; border-bottom: 1px solid #dc3545;">
+                                            {{plan}}
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td style="padding: 10px 0; color: #666666; font-size: 16px;">
+                                            <strong style="color: #333333;">Data de cancelamento:</strong>
+                                        </td>
+                                        <td style="padding: 10px 0; color: #333333; font-size: 16px; font-weight: 600; text-align: right;">
+                                            {{expiration_date}}
+                                        </td>
+                                    </tr>
+                                </table>
+                            </div>
+                            <p style="margin: 30px 0 0; color: #666666; font-size: 16px; line-height: 1.6; text-align: center;">Seu acesso permanecerá ativo até a data de vencimento.</p>
+                        </td>
+                    </tr>
+                    <!-- Footer -->
+                    <tr>
+                        <td style="padding: 30px 40px; background-color: #f8f9fa; border-radius: 0 0 8px 8px; text-align: center;">
+                            <p style="margin: 0; color: #999999; font-size: 12px; line-height: 1.6;">Se você não solicitou este cancelamento, entre em contato conosco.</p>
+                            <p style="margin: 10px 0 0; color: #999999; font-size: 12px;">© 2025 Underchat. Todos os direitos reservados.</p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>', 'Cancelamento de Plano - Underchat', '2025-12-06 15:45:00.000000 +00:00', '2025-12-06 15:45:00.000000 +00:00')
 ON CONFLICT ("notification_id") DO NOTHING;

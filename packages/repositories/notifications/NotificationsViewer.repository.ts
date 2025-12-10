@@ -25,6 +25,9 @@ export class NotificationsViewerRepository {
     const planExpirationTypeId = await this.findNotificationTypeIdByName(
       ENotificationType.plan_expiration
     );
+    const planCancellationTypeId = await this.findNotificationTypeIdByName(
+      ENotificationType.plan_cancellation
+    );
 
     const twoFactorNotification =
       await this.findNotificationByType(twoFactorTypeId);
@@ -34,12 +37,16 @@ export class NotificationsViewerRepository {
       await this.findNotificationByType(planRenewalTypeId);
     const planExpirationNotification =
       await this.findNotificationByType(planExpirationTypeId);
+    const planCancellationNotification = await this.findNotificationByType(
+      planCancellationTypeId
+    );
 
     const firstNotificationId =
       twoFactorNotification?.notification_id ||
       planNewNotification?.notification_id ||
       planRenewalNotification?.notification_id ||
       planExpirationNotification?.notification_id ||
+      planCancellationNotification?.notification_id ||
       null;
 
     return {
@@ -96,12 +103,26 @@ export class NotificationsViewerRepository {
             },
           }
         : null,
+      plan_cancellation_notification: planCancellationNotification
+        ? {
+            whatsapp: {
+              worker_id: planCancellationNotification.nwr?.worker_id || null,
+              name: planCancellationNotification.nwr?.name || null,
+              message: planCancellationNotification.message_whatsapp || null,
+            },
+            email: {
+              subject: planCancellationNotification.email_subject || null,
+              message: planCancellationNotification.message_email || null,
+            },
+          }
+        : null,
       created_at: twoFactorNotification?.created_at || null,
       updated_at:
         twoFactorNotification?.updated_at ||
         planNewNotification?.updated_at ||
         planRenewalNotification?.updated_at ||
         planExpirationNotification?.updated_at ||
+        planCancellationNotification?.updated_at ||
         null,
     };
   };
