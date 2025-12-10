@@ -14,6 +14,5 @@ INSERT INTO "permission_action_groups" ("permission_action_group_id", "name", "d
   ('019a930d-c6f6-766d-9c83-c68d845f1195', 'Workers', 'Grupo de permissões relacionadas a workers', 'worker_group'),
   ('019a930d-c6f6-766d-9c83-c9616d371514', 'Home', 'Grupo de permissões relacionadas à página inicial', 'home_group'),
   ('019a930d-c6f6-766d-9c83-cdb905c9de2e', 'Acesso Total', 'Grupo de permissões de acesso total', 'full_access_group'),
-  ('019a930d-c6f6-766d-9c83-d063536f7556', 'CEP', 'Grupo de permissões relacionadas a CEP', 'zipcode_group'),
   ('019a930d-c6f6-766d-9c83-d77a537f99e7', 'Métricas', 'Grupo de permissões relacionadas a métricas', 'metrics_group');
 
