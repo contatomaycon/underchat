@@ -530,6 +530,7 @@ export const usePlanStore = defineStore('plan', {
               plan_id: input.plan_id,
               start_date: input.start_date,
               end_date: input.end_date,
+              payment_billing_type_id: input.payment_billing_type_id,
             }
           : undefined;
 

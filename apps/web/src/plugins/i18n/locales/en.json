@@ -1145,9 +1145,14 @@
     "plan_name": "Plan Name",
     "quantity_sold": "Quantity Sold",
     "total_revenue": "Total Revenue",
+    "account_name": "Account Name",
+    "summary": "Summary",
+    "total_sales": "Total Sales",
+    "sales_details": "Sales Details",
     "start_date": "Start Date",
     "end_date": "End Date",
     "select_date": "Select date",
+    "select_payment_type": "Select payment type",
     "start_year": "Start Year",
     "end_year": "End Year",
     "select_year": "Select year",
@@ -1701,5 +1706,6 @@
     "inss_value": "INSS Value",
     "ir_value": "IR Value",
     "pis_value": "PIS Value",
-    "deductions": "Deductions"
+    "deductions": "Deductions",
+    "permission_denied": "Permission denied"
 }
