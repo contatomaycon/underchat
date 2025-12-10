@@ -89,7 +89,7 @@ export const useAuthStore = defineStore('auth', {
         this.user = data.data.user;
         this.token = data.data.token;
         this.permissions = (data.data.permissions ?? []) as EPermissionsRoles[];
-        this.layout = data.data.layout as AccountInfoResponse;
+        this.layout = data.data.layout;
 
         setUser(this.user);
         setToken(this.token);

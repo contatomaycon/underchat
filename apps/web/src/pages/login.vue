@@ -85,6 +85,7 @@ const handleLogin = async () => {
       console.error('Failed to update permissions after login', error);
     }
 
+    await nextTick();
     router.replace(route.query.to ? String(route.query.to) : '/');
   }
 };

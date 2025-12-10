@@ -41,8 +41,12 @@ export const getUser = (): AuthUserResponse | null => {
   return user ? JSON.parse(user) : null;
 };
 
-export const setLayout = (layout: AccountInfoResponse): void => {
-  localStorage.setItem('layout', JSON.stringify(layout));
+export const setLayout = (layout: AccountInfoResponse | null): void => {
+  if (layout === null) {
+    localStorage.removeItem('layout');
+  } else {
+    localStorage.setItem('layout', JSON.stringify(layout));
+  }
 };
 
 export const getLayout = (): AccountInfoResponse | null => {
@@ -62,5 +66,5 @@ export const removeUserData = (): boolean => {
 };
 
 export const isLoggedIn = (): boolean => {
-  return !!getToken() && !!getUser() && getPermissions().length > 0;
+  return !!getToken() && !!getUser();
 };
