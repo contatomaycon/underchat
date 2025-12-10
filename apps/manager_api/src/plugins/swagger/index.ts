@@ -119,6 +119,10 @@ const swaggerPlugin = async (fastify: FastifyInstance) => {
           name: ETagSwagger.reportConversationHistory,
           description: 'End-points relacionados ao histórico de conversas',
         },
+        {
+          name: ETagSwagger.config,
+          description: 'End-points relacionados à configurações',
+        },
       ],
     },
   });

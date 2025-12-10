@@ -5,7 +5,7 @@ import { deleteChannelRequestSchema } from './request.schema';
 
 export const deleteChannelSchema = {
   description: 'Deleta um canal',
-  tags: [ETagSwagger.account],
+  tags: [ETagSwagger.config],
   produces: ['application/json'],
   security: [
     {

@@ -176,6 +176,9 @@ watch(
 
 const channelToDelete = ref<string | null>(null);
 const isDialogDeleterShow = ref(false);
+const channelToRecreate = ref<string | null>(null);
+const isDialogRecreatorShow = ref(false);
+const isDialogRecreateAllShow = ref(false);
 
 const handleDelete = async () => {
   if (!channelToDelete.value) return;
@@ -188,11 +191,29 @@ const handleDelete = async () => {
   channelToDelete.value = null;
 };
 
-const handleRecreate = async (channelId: string) => {
-  const result = await settingsStore.recreateChannel(channelId);
+const recreateChannel = (id: string) => {
+  channelToRecreate.value = id;
+  isDialogRecreatorShow.value = true;
+};
+
+const handleRecreate = async () => {
+  if (!channelToRecreate.value) return;
+
+  const result = await settingsStore.recreateChannel(channelToRecreate.value);
   if (result) {
     await loadChannels();
   }
+
+  channelToRecreate.value = null;
+};
+
+const handleRecreateAll = async () => {
+  const result = await settingsStore.recreateChannelsAll();
+  if (result) {
+    await loadChannels();
+  }
+
+  isDialogRecreateAllShow.value = false;
 };
 
 const deleteChannel = (id: string) => {
@@ -263,6 +284,13 @@ onUnmounted(async () => {
                 "
               />
             </div>
+            <VBtn
+              color="primary"
+              variant="elevated"
+              @click="isDialogRecreateAllShow = true"
+            >
+              {{ $t('recreate_all') }}
+            </VBtn>
           </div>
 
           <div class="d-flex align-center flex-wrap gap-4">
@@ -405,7 +433,7 @@ onUnmounted(async () => {
                   </VTooltip>
                   <VIcon
                     icon="tabler-refresh"
-                    @click="handleRecreate(item.id)"
+                    @click="recreateChannel(item.id)"
                   />
                 </IconBtn>
 
@@ -449,6 +477,20 @@ onUnmounted(async () => {
       :title="$t('delete') + ' ' + $t('channel')"
       :message="$t('delete_channel_confirmation')"
       @confirm="handleDelete"
+    />
+
+    <VDialogHandler
+      v-model="isDialogRecreatorShow"
+      :title="$t('recreate') + ' ' + $t('channel')"
+      :message="$t('recreate_channel_confirmation')"
+      @confirm="handleRecreate"
+    />
+
+    <VDialogHandler
+      v-model="isDialogRecreateAllShow"
+      :title="$t('recreate_all')"
+      :message="$t('recreate_all_channels_confirmation')"
+      @confirm="handleRecreateAll"
     />
   </div>
 </template>

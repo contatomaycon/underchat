@@ -26,4 +26,5 @@ export enum ETagSwagger {
   reportConversationHistory = 'Histórico de Conversas',
   reportAttendance = 'Relatórios de Atendimentos',
   webhook = 'Webhook',
+  config = 'Configurações',
 }

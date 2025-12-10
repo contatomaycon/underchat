@@ -5,7 +5,7 @@ import { listWorkersResponseSchema } from './response.schema';
 
 export const listWorkersSchema = {
   description: 'Lista os workers da conta do usuário',
-  tags: [ETagSwagger.account],
+  tags: [ETagSwagger.config],
   produces: ['application/json'],
   security: [
     {

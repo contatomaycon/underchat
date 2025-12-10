@@ -30,4 +30,8 @@ export class ConfigService {
   ): Promise<IViewWorkerServer | null> => {
     return this.channelViewerRepository.viewChannelBalancer(channelId);
   };
+
+  listAllNonDeletedChannelIds = async (): Promise<string[]> => {
+    return this.channelsListerRepository.listAllNonDeletedChannelIds();
+  };
 }

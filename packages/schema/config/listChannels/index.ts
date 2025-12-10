@@ -6,7 +6,7 @@ import { listChannelsFinalResponseSchema } from './response.schema';
 
 export const listChannelsSchema = {
   description: 'Lista todos os canais',
-  tags: [ETagSwagger.account],
+  tags: [ETagSwagger.config],
   produces: ['application/json'],
   security: [
     {

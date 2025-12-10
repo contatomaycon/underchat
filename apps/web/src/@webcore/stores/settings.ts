@@ -328,5 +328,50 @@ export const useSettingsStore = defineStore('settings', {
         return false;
       }
     },
+    async recreateChannelsAll(): Promise<{
+      success: number;
+      errors: number;
+    } | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.patch<
+          IApiResponse<{ success: number; errors: number }>
+        >('/config/channels/recreate-all');
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          this.showSnackbar(
+            data?.message ?? this.i18n.global.t('channels_recreate_all_error'),
+            EColor.error
+          );
+
+          return null;
+        }
+
+        this.showSnackbar(
+          this.i18n.global.t('channels_recreate_all_success', {
+            success: data.data.success,
+            errors: data.data.errors,
+          }),
+          EColor.success
+        );
+
+        return data.data;
+      } catch (error) {
+        this.loading = false;
+        let errorMessage = this.i18n.global.t('channels_recreate_all_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        return null;
+      }
+    },
   },
 });

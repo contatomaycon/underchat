@@ -5,7 +5,7 @@ import { recreateChannelRequestSchema } from './request.schema';
 
 export const recreateChannelSchema = {
   description: 'Recria um canal',
-  tags: [ETagSwagger.account],
+  tags: [ETagSwagger.config],
   produces: ['application/json'],
   security: [
     {

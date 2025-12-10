@@ -5,7 +5,7 @@ import { listAccountsResponseSchema } from './response.schema';
 
 export const listAccountsSchema = {
   description: 'Lista todas as contas',
-  tags: [ETagSwagger.account],
+  tags: [ETagSwagger.config],
   produces: ['application/json'],
   security: [
     {

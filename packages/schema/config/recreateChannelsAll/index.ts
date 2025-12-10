@@ -1,10 +1,9 @@
 import { Type } from '@sinclair/typebox';
 import { ELanguage } from '@core/common/enums/ELanguage';
 import { ETagSwagger } from '@core/common/enums/ETagSwagger';
-import { listNotificationsResponseSchema } from './response.schema';
 
-export const listNotificationsSchema = {
-  description: 'Lista as notificações',
+export const recreateChannelsAllSchema = {
+  description: 'Recria todos os canais existentes',
   tags: [ETagSwagger.config],
   produces: ['application/json'],
   security: [
@@ -27,9 +26,21 @@ export const listNotificationsSchema = {
         id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
         status: Type.Boolean({ const: true }),
         message: Type.String(),
-        data: listNotificationsResponseSchema,
+        data: Type.Object({
+          success: Type.Number(),
+          errors: Type.Number(),
+        }),
       },
       { description: 'Successful' }
+    ),
+    400: Type.Object(
+      {
+        id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+        status: Type.Boolean({ default: false }),
+        message: Type.String(),
+        data: Type.Null(),
+      },
+      { description: 'Bad Request' }
     ),
     401: Type.Object(
       {

@@ -349,6 +349,8 @@
     "deleting": "Eliminando",
     "recreating": "Recreando",
     "recreate": "Recrear",
+    "recreate_all": "Recrear Todos",
+    "recreate_all_channels_confirmation": "¿Está seguro de que desea recrear todos los canales no eliminados?",
     "delete": "Eliminar",
     "user_list_error": "Ocurrió un error al listar los usuarios. Por favor, inténtalo de nuevo.",
     "user_view_error": "Ocurrió un error al ver el usuario. Por favor, inténtalo de nuevo.",

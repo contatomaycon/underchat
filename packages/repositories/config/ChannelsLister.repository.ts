@@ -10,20 +10,18 @@ import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import {
   and,
-  eq,
-  isNull,
-  SQL,
   asc,
   desc,
-  SQLWrapper,
+  eq,
   ilike,
+  isNull,
+  SQLWrapper,
   count,
-  or,
+  SQL,
 } from 'drizzle-orm';
-import { ListChannelsResponse } from '@core/schema/config/listChannels/response.schema';
 import { ListChannelsRequest } from '@core/schema/config/listChannels/request.schema';
-import { ESortByWorker } from '@core/common/enums/ESortByWorker';
-import { ESortOrder } from '@core/common/enums/ESortOrder';
+import { ListChannelsResponse } from '@core/schema/config/listChannels/response.schema';
+import { SortRequest } from '@core/schema/common/sortRequestSchema';
 
 @injectable()
 export class ChannelsListerRepository {
@@ -31,46 +29,72 @@ export class ChannelsListerRepository {
     @inject('Database') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
-  private readonly setOrders = (query: ListChannelsRequest): SQL[] => {
-    if (!query.sort_by?.length) {
-      return [asc(worker.created_at), desc(worker.worker_id)];
+  private setOrders = (query: ListChannelsRequest): SQL[] => {
+    const orders: SQL[] = [];
+
+    if (query.sort_by?.length) {
+      query.sort_by.forEach((sort: SortRequest) => {
+        if (sort.key === 'name') {
+          orders.push(
+            sort.order === 'asc' ? asc(worker.name) : desc(worker.name)
+          );
+        }
+
+        if (sort.key === 'number') {
+          orders.push(
+            sort.order === 'asc' ? asc(worker.number) : desc(worker.number)
+          );
+        }
+
+        if (sort.key === 'status') {
+          orders.push(
+            sort.order === 'asc'
+              ? asc(workerStatus.status)
+              : desc(workerStatus.status)
+          );
+        }
+
+        if (sort.key === 'type') {
+          orders.push(
+            sort.order === 'asc' ? asc(workerType.type) : desc(workerType.type)
+          );
+        }
+
+        if (sort.key === 'account') {
+          orders.push(
+            sort.order === 'asc' ? asc(account.name) : desc(account.name)
+          );
+        }
+
+        if (sort.key === 'server') {
+          orders.push(
+            sort.order === 'asc' ? asc(server.name) : desc(server.name)
+          );
+        }
+
+        if (sort.key === 'connection_date') {
+          orders.push(
+            sort.order === 'asc'
+              ? asc(worker.connection_date)
+              : desc(worker.connection_date)
+          );
+        }
+
+        if (sort.key === 'created_at') {
+          orders.push(
+            sort.order === 'asc'
+              ? asc(worker.created_at)
+              : desc(worker.created_at)
+          );
+        }
+      });
     }
 
-    const mapping: Record<ESortByWorker, SQLWrapper> = {
-      [ESortByWorker.name]: worker.name,
-      [ESortByWorker.number]: worker.number,
-      [ESortByWorker.server]: server.name,
-      [ESortByWorker.status]: workerStatus.status,
-      [ESortByWorker.type]: workerType.type,
-      [ESortByWorker.account]: account.name,
-      [ESortByWorker.created_at]: worker.created_at,
-    };
-
-    return query.sort_by.map(({ key, order }) => {
-      const column = mapping[key as ESortByWorker];
-
-      return order === ESortOrder.asc ? asc(column) : desc(column);
-    });
+    return orders;
   };
 
-  private readonly setFilters = (query: ListChannelsRequest): SQLWrapper[] => {
+  private setFilters = (query: ListChannelsRequest): SQLWrapper[] => {
     const filters: SQLWrapper[] = [];
-
-    if (query.name || query.number || query.server) {
-      const conditions: (SQLWrapper | undefined)[] = [
-        query.name ? ilike(worker.name, `%${query.name}%`) : undefined,
-        query.number ? ilike(worker.number, `%${query.number}%`) : undefined,
-        query.server ? ilike(server.name, `%${query.server}%`) : undefined,
-      ];
-
-      const combined = or(...conditions);
-
-      if (combined) filters.push(combined);
-    }
-
-    if (query.account) {
-      filters.push(eq(account.account_id, query.account));
-    }
 
     if (query.status) {
       filters.push(eq(workerStatus.worker_status_id, query.status));
@@ -78,6 +102,18 @@ export class ChannelsListerRepository {
 
     if (query.type) {
       filters.push(eq(workerType.worker_type_id, query.type));
+    }
+
+    if (query.account) {
+      filters.push(eq(account.account_id, query.account));
+    }
+
+    if (query.name) {
+      filters.push(ilike(worker.name, `%${query.name}%`));
+    }
+
+    if (query.number) {
+      filters.push(ilike(worker.number, `%${query.number}%`));
     }
 
     return filters;
@@ -182,5 +218,18 @@ export class ChannelsListerRepository {
       .execute();
 
     return result[0]?.count ?? 0;
+  };
+
+  listAllNonDeletedChannelIds = async (): Promise<string[]> => {
+    const result = await this.db
+      .select({
+        worker_id: worker.worker_id,
+      })
+      .from(worker)
+      .innerJoin(account, eq(account.account_id, worker.account_id))
+      .where(and(isNull(worker.deleted_at), isNull(account.deleted_at)))
+      .execute();
+
+    return result.map((item) => item.worker_id);
   };
 }

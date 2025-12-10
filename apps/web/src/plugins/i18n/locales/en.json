@@ -348,6 +348,8 @@
     "deleting": "Deleting",
     "recreating": "Recreating",
     "recreate": "Recreate",
+    "recreate_all": "Recreate All",
+    "recreate_all_channels_confirmation": "Are you sure you want to recreate all non-deleted channels?",
     "delete": "Delete",
     "user_list_error": "An error occurred while listing users. Please try again.",
     "user_view_error": "An error occurred while viewing the user. Please try again.",
