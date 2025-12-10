@@ -19,6 +19,7 @@ import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnect
 import { IWorkerPayload } from '@core/common/interfaces/IWorkerPayload';
 import { EWorkerAction } from '@core/common/enums/EWorkerAction';
 import VDialogHandler from '@/components/VDialogHandler.vue';
+import { ChannelsStatisticsResponse } from '@core/schema/config/channelsStatistics/response.schema';
 
 const { t } = useI18n();
 const settingsStore = useSettingsStore();
@@ -27,6 +28,7 @@ useSnackbarCleanup(settingsStore);
 const loading = ref(false);
 const channels = ref<ListChannelsResponse[]>([]);
 const total = ref(0);
+const statistics = ref<ChannelsStatisticsResponse | null>(null);
 
 const itemsPerPage = ref([
   { value: 5, title: '5' },
@@ -156,6 +158,13 @@ const loadChannels = async () => {
   loading.value = false;
 };
 
+const loadStatistics = async () => {
+  const result = await settingsStore.getChannelsStatistics();
+  if (result) {
+    statistics.value = result;
+  }
+};
+
 const handleTableChange = (o: {
   page: number;
   itemsPerPage: number;
@@ -185,6 +194,7 @@ const handleDelete = async () => {
 
   const result = await settingsStore.deleteChannel(channelToDelete.value);
   if (result) {
+    await loadStatistics();
     await loadChannels();
   }
 
@@ -210,6 +220,7 @@ const handleRecreate = async () => {
 const handleRecreateAll = async () => {
   const result = await settingsStore.recreateChannelsAll();
   if (result) {
+    await loadStatistics();
     await loadChannels();
   }
 
@@ -231,6 +242,7 @@ const updateChannelFromCentrifugo = (
       payload.action === EWorkerAction.delete ||
       payload.action === EWorkerAction.recreate
     ) {
+      loadStatistics();
       loadChannels();
     }
   } else {
@@ -247,6 +259,7 @@ const updateChannelFromCentrifugo = (
 
 onMounted(async () => {
   await loadAccounts();
+  await loadStatistics();
   await loadChannels();
 
   await onMessage(
@@ -272,6 +285,87 @@ onUnmounted(async () => {
       <VDivider />
 
       <VCardText>
+        <div v-if="statistics" class="statistics-container mb-6">
+          <VCard
+            v-for="(stat, index) in [
+              {
+                key: 'online',
+                label: t('online'),
+                color: 'success',
+                icon: 'tabler-circle-check',
+              },
+              {
+                key: 'disponible',
+                label: t('disponible'),
+                color: 'info',
+                icon: 'tabler-user-check',
+              },
+              {
+                key: 'new',
+                label: t('new'),
+                color: 'primary',
+                icon: 'tabler-sparkles',
+              },
+              {
+                key: 'offline',
+                label: t('offline'),
+                color: 'grey',
+                icon: 'tabler-circle-x',
+              },
+              {
+                key: 'error',
+                label: t('error'),
+                color: 'error',
+                icon: 'tabler-alert-circle',
+              },
+              {
+                key: 'mismatched',
+                label: t('mismatched'),
+                color: 'warning',
+                icon: 'tabler-alert-triangle',
+              },
+            ]"
+            :key="index"
+            class="statistics-card"
+            elevation="3"
+            variant="flat"
+          >
+            <VCardText class="pa-6">
+              <div class="d-flex align-center justify-space-between">
+                <div class="flex-grow-1">
+                  <div class="text-body-2 text-medium-emphasis mb-2">
+                    {{ stat.label }}
+                  </div>
+                  <div
+                    class="text-h4 font-weight-bold mb-1"
+                    :style="{ color: `rgb(var(--v-theme-${stat.color}))` }"
+                  >
+                    {{ (statistics as any)[stat.key]?.total ?? 0 }}
+                  </div>
+                  <VChip
+                    :color="stat.color"
+                    size="small"
+                    variant="flat"
+                    class="mt-1"
+                  >
+                    {{ (statistics as any)[stat.key]?.percentage ?? 0 }}%
+                  </VChip>
+                </div>
+                <VAvatar
+                  :color="stat.color"
+                  size="64"
+                  class="ml-4"
+                  variant="flat"
+                >
+                  <VIcon :icon="stat.icon" size="32" />
+                </VAvatar>
+              </div>
+            </VCardText>
+          </VCard>
+        </div>
+
+        <VDivider class="mb-4" />
+
         <div class="d-flex justify-space-between flex-wrap gap-4">
           <div class="d-flex gap-4 align-center">
             <div class="d-flex align-center gap-x-2">
@@ -498,6 +592,23 @@ onUnmounted(async () => {
 <style lang="scss" scoped>
 .status-filter {
   inline-size: 12rem;
+}
+
+.statistics-container {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1.5rem;
+}
+
+.statistics-card {
+  transition: all 0.3s ease;
+  border-radius: 12px;
+  overflow: hidden;
+
+  &:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  }
 }
 
 .invoice-list-filter {
