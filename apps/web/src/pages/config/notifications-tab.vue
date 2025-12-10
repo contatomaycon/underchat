@@ -731,171 +731,155 @@ onMounted(async () => {
         <VDivider />
 
         <VCardText class="pt-6">
-          <div v-if="!hasWorkers" class="text-center py-4">
-            <VIcon
-              icon="tabler-info-circle"
-              size="48"
-              color="warning"
-              class="mb-2"
-            />
-            <div class="text-body-1 text-medium-emphasis">
-              {{ $t('no_workers_available') }}
+          <div class="mb-6">
+            <div class="d-flex align-center gap-2 mb-4">
+              <VIcon icon="tabler-brand-whatsapp" color="success" />
+              <span class="text-h6">{{ $t('whatsapp') }}</span>
             </div>
+
+            <VAutocomplete
+              v-model="selectedWorkerId"
+              :items="workers"
+              item-title="name"
+              item-value="id"
+              :placeholder="$t('select_channel')"
+              variant="outlined"
+              clearable
+              :filter="filterWorkers"
+              :disabled="!hasWorkers"
+              prepend-inner-icon="tabler-search"
+            >
+              <template #no-data>
+                <div class="text-center py-4">
+                  <div class="text-body-2 text-medium-emphasis">
+                    {{ $t('no_results_found') }}
+                  </div>
+                </div>
+              </template>
+              <template #item="{ props: itemProps, item }">
+                <VListItem v-bind="itemProps">
+                  <template #prepend>
+                    <VIcon icon="tabler-device-mobile" class="me-2" />
+                  </template>
+                  <VListItemTitle>{{ item.raw.name }}</VListItemTitle>
+                  <VListItemSubtitle v-if="item.raw.number">
+                    {{ item.raw.number }}
+                  </VListItemSubtitle>
+                </VListItem>
+              </template>
+            </VAutocomplete>
+
+            <VLabel class="text-body-2 mb-1 mt-4">{{ $t('message') }}:</VLabel>
+            <VTextarea
+              v-model="whatsappMessage"
+              variant="outlined"
+              rows="4"
+              :placeholder="$t('notification_message_placeholder')"
+              :disabled="!hasWorkers || !selectedWorkerId"
+            />
           </div>
 
-          <template v-else>
-            <div class="mb-6">
-              <div class="d-flex align-center gap-2 mb-4">
-                <VIcon icon="tabler-brand-whatsapp" color="success" />
-                <span class="text-h6">{{ $t('whatsapp') }}</span>
-              </div>
+          <VDivider class="my-6" />
 
-              <VAutocomplete
-                v-model="selectedWorkerId"
-                :items="workers"
-                item-title="name"
-                item-value="id"
-                :placeholder="$t('select_channel')"
-                variant="outlined"
-                clearable
-                :filter="filterWorkers"
-                prepend-inner-icon="tabler-search"
-              >
-                <template #no-data>
-                  <div class="text-center py-4">
-                    <div class="text-body-2 text-medium-emphasis">
-                      {{ $t('no_results_found') }}
-                    </div>
-                  </div>
-                </template>
-                <template #item="{ props: itemProps, item }">
-                  <VListItem v-bind="itemProps">
-                    <template #prepend>
-                      <VIcon icon="tabler-device-mobile" class="me-2" />
-                    </template>
-                    <VListItemTitle>{{ item.raw.name }}</VListItemTitle>
-                    <VListItemSubtitle v-if="item.raw.number">
-                      {{ item.raw.number }}
-                    </VListItemSubtitle>
-                  </VListItem>
-                </template>
-              </VAutocomplete>
-
-              <VLabel class="text-body-2 mb-1 mt-4"
-                >{{ $t('message') }}:</VLabel
-              >
-              <VTextarea
-                v-model="whatsappMessage"
-                variant="outlined"
-                rows="4"
-                :placeholder="$t('notification_message_placeholder')"
-              />
+          <div>
+            <div class="d-flex align-center gap-2 mb-4">
+              <VIcon icon="tabler-mail" color="primary" />
+              <span class="text-h6">{{ $t('email') }}</span>
             </div>
 
-            <VDivider class="my-6" />
-
-            <div>
-              <div class="d-flex align-center gap-2 mb-4">
-                <VIcon icon="tabler-mail" color="primary" />
-                <span class="text-h6">{{ $t('email') }}</span>
-              </div>
-
-              <VLabel class="text-body-2 mb-1"
-                >{{ $t('email_subject') }}:</VLabel
-              >
-              <VTextField
-                v-model="emailSubject"
-                variant="outlined"
-                :placeholder="$t('email_subject_placeholder')"
-              />
-
-              <VLabel class="text-body-2 mb-1 mt-4"
-                >{{ $t('email_message') }}:</VLabel
-              >
-              <VTextarea
-                v-model="emailMessage"
-                variant="outlined"
-                rows="4"
-                :placeholder="$t('email_message_placeholder')"
-              />
-
-              <VCard v-if="emailMessage" variant="outlined" class="mt-4">
-                <VCardTitle class="text-body-2 pa-3 pb-2">
-                  {{ $t('email_preview') }}
-                </VCardTitle>
-                <VDivider />
-                <VCardText class="pa-4">
-                  <div
-                    v-if="emailSubject"
-                    class="mb-4 pb-4"
-                    style="
-                      border-bottom: 1px solid
-                        rgba(var(--v-theme-on-surface), 0.12);
-                    "
-                  >
-                    <div class="text-caption text-medium-emphasis mb-1">
-                      {{ $t('subject') }}:
-                    </div>
-                    <div class="text-body-1 font-weight-medium">
-                      {{ emailSubject }}
-                    </div>
-                  </div>
-                  <div
-                    v-if="emailMessage"
-                    v-html="emailMessage"
-                    class="email-preview-content"
-                  ></div>
-                  <div v-else class="text-body-2 text-medium-emphasis">
-                    {{ $t('no_email_preview_available') }}
-                  </div>
-                </VCardText>
-              </VCard>
-            </div>
-
-            <VCard
-              v-if="selectedNotificationType"
+            <VLabel class="text-body-2 mb-1">{{ $t('email_subject') }}:</VLabel>
+            <VTextField
+              v-model="emailSubject"
               variant="outlined"
-              color="info"
-              class="mt-4"
+              :placeholder="$t('email_subject_placeholder')"
+            />
+
+            <VLabel class="text-body-2 mb-1 mt-4"
+              >{{ $t('email_message') }}:</VLabel
             >
+            <VTextarea
+              v-model="emailMessage"
+              variant="outlined"
+              rows="4"
+              :placeholder="$t('email_message_placeholder')"
+            />
+
+            <VCard v-if="emailMessage" variant="outlined" class="mt-4">
+              <VCardTitle class="text-body-2 pa-3 pb-2">
+                {{ $t('email_preview') }}
+              </VCardTitle>
+              <VDivider />
               <VCardText class="pa-4">
-                <div class="text-body-2 font-weight-medium mb-2">
-                  {{ $t('allowed_parameters') }}:
-                </div>
                 <div
-                  v-if="selectedNotificationType === 'two_factor'"
-                  class="text-body-2"
+                  v-if="emailSubject"
+                  class="mb-4 pb-4"
+                  style="
+                    border-bottom: 1px solid
+                      rgba(var(--v-theme-on-surface), 0.12);
+                  "
                 >
-                  <div>• {{ $t('code') }}: {{ formatParameter('code') }}</div>
-                  <div>• {{ $t('name') }}: {{ formatParameter('name') }}</div>
-                </div>
-                <div
-                  v-else-if="selectedNotificationType === 'plan'"
-                  class="text-body-2"
-                >
-                  <div>• {{ $t('plan') }}: {{ formatParameter('plan') }}</div>
-                  <div>• {{ $t('name') }}: {{ formatParameter('name') }}</div>
-                  <div>
-                    • {{ $t('expiration_date') }}:
-                    {{ formatParameter('expiration_date') }}
+                  <div class="text-caption text-medium-emphasis mb-1">
+                    {{ $t('subject') }}:
                   </div>
-                  <div>• {{ $t('value') }}: {{ formatParameter('value') }}</div>
+                  <div class="text-body-1 font-weight-medium">
+                    {{ emailSubject }}
+                  </div>
                 </div>
                 <div
-                  v-else-if="selectedNotificationType === 'plan_expiration'"
-                  class="text-body-2"
-                >
-                  <div>• {{ $t('plan') }}: {{ formatParameter('plan') }}</div>
-                  <div>• {{ $t('name') }}: {{ formatParameter('name') }}</div>
-                  <div>
-                    • {{ $t('expiration_date') }}:
-                    {{ formatParameter('expiration_date') }}
-                  </div>
-                  <div>• {{ $t('value') }}: {{ formatParameter('value') }}</div>
+                  v-if="emailMessage"
+                  v-html="emailMessage"
+                  class="email-preview-content"
+                ></div>
+                <div v-else class="text-body-2 text-medium-emphasis">
+                  {{ $t('no_email_preview_available') }}
                 </div>
               </VCardText>
             </VCard>
-          </template>
+          </div>
+
+          <VCard
+            v-if="selectedNotificationType"
+            variant="outlined"
+            color="info"
+            class="mt-4"
+          >
+            <VCardText class="pa-4">
+              <div class="text-body-2 font-weight-medium mb-2">
+                {{ $t('allowed_parameters') }}:
+              </div>
+              <div
+                v-if="selectedNotificationType === 'two_factor'"
+                class="text-body-2"
+              >
+                <div>• {{ $t('code') }}: {{ formatParameter('code') }}</div>
+                <div>• {{ $t('name') }}: {{ formatParameter('name') }}</div>
+              </div>
+              <div
+                v-else-if="selectedNotificationType === 'plan'"
+                class="text-body-2"
+              >
+                <div>• {{ $t('plan') }}: {{ formatParameter('plan') }}</div>
+                <div>• {{ $t('name') }}: {{ formatParameter('name') }}</div>
+                <div>
+                  • {{ $t('expiration_date') }}:
+                  {{ formatParameter('expiration_date') }}
+                </div>
+                <div>• {{ $t('value') }}: {{ formatParameter('value') }}</div>
+              </div>
+              <div
+                v-else-if="selectedNotificationType === 'plan_expiration'"
+                class="text-body-2"
+              >
+                <div>• {{ $t('plan') }}: {{ formatParameter('plan') }}</div>
+                <div>• {{ $t('name') }}: {{ formatParameter('name') }}</div>
+                <div>
+                  • {{ $t('expiration_date') }}:
+                  {{ formatParameter('expiration_date') }}
+                </div>
+                <div>• {{ $t('value') }}: {{ formatParameter('value') }}</div>
+              </div>
+            </VCardText>
+          </VCard>
         </VCardText>
 
         <VCardText class="d-flex justify-space-between flex-wrap gap-3">
