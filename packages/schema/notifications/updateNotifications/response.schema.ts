@@ -19,7 +19,8 @@ const notificationSchema = Type.Object({
 export const updateNotificationsResponseSchema = Type.Object({
   notification_id: Type.String({ format: 'uuid' }),
   two_factor_notification: Type.Union([notificationSchema, Type.Null()]),
-  plan_notification: Type.Union([notificationSchema, Type.Null()]),
+  plan_new_notification: Type.Union([notificationSchema, Type.Null()]),
+  plan_renewal_notification: Type.Union([notificationSchema, Type.Null()]),
   plan_expiration_reminder: Type.Union([notificationSchema, Type.Null()]),
   created_at: Type.Union([Type.String(), Type.Null()]),
   updated_at: Type.Union([Type.String(), Type.Null()]),

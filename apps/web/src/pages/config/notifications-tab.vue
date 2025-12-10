@@ -21,7 +21,7 @@ const workers = ref<ListWorkersResponse>([]);
 
 const isWorkerModalOpen = ref(false);
 const selectedNotificationType = ref<
-  'two_factor' | 'plan' | 'plan_expiration' | null
+  'two_factor' | 'plan_new' | 'plan_renewal' | 'plan_expiration' | null
 >(null);
 const selectedWorkerId = ref<string | null>(null);
 const whatsappMessage = ref<string>('');
@@ -38,11 +38,20 @@ const isTwoFactorActive = computed(() => {
   );
 });
 
-const isPlanActive = computed(() => {
+const isPlanNewActive = computed(() => {
   return (
-    notifications.value?.plan_notification !== null &&
-    (notifications.value?.plan_notification?.whatsapp?.worker_id !== null ||
-      notifications.value?.plan_notification?.email?.message !== null)
+    notifications.value?.plan_new_notification !== null &&
+    (notifications.value?.plan_new_notification?.whatsapp?.worker_id !== null ||
+      notifications.value?.plan_new_notification?.email?.message !== null)
+  );
+});
+
+const isPlanRenewalActive = computed(() => {
+  return (
+    notifications.value?.plan_renewal_notification !== null &&
+    (notifications.value?.plan_renewal_notification?.whatsapp?.worker_id !==
+      null ||
+      notifications.value?.plan_renewal_notification?.email?.message !== null)
   );
 });
 
@@ -59,8 +68,12 @@ const twoFactorWorkerName = computed(() => {
   return notifications.value?.two_factor_notification?.whatsapp?.name || null;
 });
 
-const planWorkerName = computed(() => {
-  return notifications.value?.plan_notification?.whatsapp?.name || null;
+const planNewWorkerName = computed(() => {
+  return notifications.value?.plan_new_notification?.whatsapp?.name || null;
+});
+
+const planRenewalWorkerName = computed(() => {
+  return notifications.value?.plan_renewal_notification?.whatsapp?.name || null;
 });
 
 const planExpirationWorkerName = computed(() => {
@@ -90,7 +103,7 @@ const loadWorkers = async () => {
 };
 
 const openWorkerModal = async (
-  type: 'two_factor' | 'plan' | 'plan_expiration'
+  type: 'two_factor' | 'plan_new' | 'plan_renewal' | 'plan_expiration'
 ) => {
   selectedNotificationType.value = type;
   selectedWorkerId.value = null;
@@ -107,15 +120,25 @@ const openWorkerModal = async (
       notifications.value?.two_factor_notification?.email?.subject || '';
     emailMessage.value =
       notifications.value?.two_factor_notification?.email?.message || '';
-  } else if (type === 'plan') {
+  } else if (type === 'plan_new') {
     selectedWorkerId.value =
-      notifications.value?.plan_notification?.whatsapp?.worker_id || null;
+      notifications.value?.plan_new_notification?.whatsapp?.worker_id || null;
     whatsappMessage.value =
-      notifications.value?.plan_notification?.whatsapp?.message || '';
+      notifications.value?.plan_new_notification?.whatsapp?.message || '';
     emailSubject.value =
-      notifications.value?.plan_notification?.email?.subject || '';
+      notifications.value?.plan_new_notification?.email?.subject || '';
     emailMessage.value =
-      notifications.value?.plan_notification?.email?.message || '';
+      notifications.value?.plan_new_notification?.email?.message || '';
+  } else if (type === 'plan_renewal') {
+    selectedWorkerId.value =
+      notifications.value?.plan_renewal_notification?.whatsapp?.worker_id ||
+      null;
+    whatsappMessage.value =
+      notifications.value?.plan_renewal_notification?.whatsapp?.message || '';
+    emailSubject.value =
+      notifications.value?.plan_renewal_notification?.email?.subject || '';
+    emailMessage.value =
+      notifications.value?.plan_renewal_notification?.email?.message || '';
   } else if (type === 'plan_expiration') {
     selectedWorkerId.value =
       notifications.value?.plan_expiration_reminder?.whatsapp?.worker_id ||
@@ -162,11 +185,16 @@ const saveNotification = async () => {
       updateData.two_factor_message_whatsapp = whatsappMessage.value || null;
       updateData.two_factor_message_email = emailMessage.value || null;
       updateData.two_factor_email_subject = emailSubject.value || null;
-    } else if (selectedNotificationType.value === 'plan') {
-      updateData.plan_notification = selectedWorkerId.value;
-      updateData.plan_message_whatsapp = whatsappMessage.value || null;
-      updateData.plan_message_email = emailMessage.value || null;
-      updateData.plan_email_subject = emailSubject.value || null;
+    } else if (selectedNotificationType.value === 'plan_new') {
+      updateData.plan_new_notification = selectedWorkerId.value;
+      updateData.plan_new_message_whatsapp = whatsappMessage.value || null;
+      updateData.plan_new_message_email = emailMessage.value || null;
+      updateData.plan_new_email_subject = emailSubject.value || null;
+    } else if (selectedNotificationType.value === 'plan_renewal') {
+      updateData.plan_renewal_notification = selectedWorkerId.value;
+      updateData.plan_renewal_message_whatsapp = whatsappMessage.value || null;
+      updateData.plan_renewal_message_email = emailMessage.value || null;
+      updateData.plan_renewal_email_subject = emailSubject.value || null;
     } else if (selectedNotificationType.value === 'plan_expiration') {
       updateData.plan_expiration_reminder = selectedWorkerId.value;
       updateData.plan_expiration_message_whatsapp =
@@ -180,7 +208,8 @@ const saveNotification = async () => {
       notifications.value = {
         notification_id: result.notification_id,
         two_factor_notification: result.two_factor_notification,
-        plan_notification: result.plan_notification,
+        plan_new_notification: result.plan_new_notification,
+        plan_renewal_notification: result.plan_renewal_notification,
         plan_expiration_reminder: result.plan_expiration_reminder,
         created_at: result.created_at,
         updated_at: result.updated_at,
@@ -193,7 +222,7 @@ const saveNotification = async () => {
 };
 
 const removeNotification = async (
-  type: 'two_factor' | 'plan' | 'plan_expiration'
+  type: 'two_factor' | 'plan_new' | 'plan_renewal' | 'plan_expiration'
 ) => {
   try {
     isSaving.value = true;
@@ -202,8 +231,10 @@ const removeNotification = async (
 
     if (type === 'two_factor') {
       updateData.two_factor_notification = null;
-    } else if (type === 'plan') {
-      updateData.plan_notification = null;
+    } else if (type === 'plan_new') {
+      updateData.plan_new_notification = null;
+    } else if (type === 'plan_renewal') {
+      updateData.plan_renewal_notification = null;
     } else if (type === 'plan_expiration') {
       updateData.plan_expiration_reminder = null;
     }
@@ -213,7 +244,8 @@ const removeNotification = async (
       notifications.value = {
         notification_id: result.notification_id,
         two_factor_notification: result.two_factor_notification,
-        plan_notification: result.plan_notification,
+        plan_new_notification: result.plan_new_notification,
+        plan_renewal_notification: result.plan_renewal_notification,
         plan_expiration_reminder: result.plan_expiration_reminder,
         created_at: result.created_at,
         updated_at: result.updated_at,
@@ -277,7 +309,8 @@ const formatPhone = (phone: string | null): string => {
 const getNotificationTypeLabel = (typeName: string): string => {
   const typeMap: Record<string, string> = {
     TWO_FACTOR: t('two_factor_notification'),
-    PLAN: t('plan_notification'),
+    PLAN_NEW: t('plan_new_notification'),
+    PLAN_RENEWAL: t('plan_renewal_notification'),
     PLAN_EXPIRATION: t('plan_expiration_reminder'),
   };
   return typeMap[typeName] || typeName;
@@ -286,7 +319,8 @@ const getNotificationTypeLabel = (typeName: string): string => {
 const getNotificationTypeColor = (typeName: string): string => {
   const colorMap: Record<string, string> = {
     TWO_FACTOR: 'primary',
-    PLAN: 'success',
+    PLAN_NEW: 'success',
+    PLAN_RENEWAL: 'info',
     PLAN_EXPIRATION: 'warning',
   };
   return colorMap[typeName] || 'default';
@@ -406,34 +440,77 @@ onMounted(async () => {
                   variant="outlined"
                   class="notification-card"
                   :class="{
-                    'notification-card--active': isPlanActive,
+                    'notification-card--active': isPlanNewActive,
                   }"
-                  @click="openWorkerModal('plan')"
+                  @click="openWorkerModal('plan_new')"
                 >
                   <VCardText>
                     <div class="d-flex align-center justify-space-between mb-2">
                       <div class="d-flex align-center gap-2">
                         <VIcon
                           icon="tabler-package"
-                          :color="isPlanActive ? 'success' : 'error'"
+                          :color="isPlanNewActive ? 'success' : 'error'"
                         />
                         <span class="font-weight-medium">
-                          {{ $t('plan_notification') }}
+                          {{ $t('plan_new_notification') }}
                         </span>
                       </div>
                       <VChip
-                        :color="isPlanActive ? 'success' : 'error'"
+                        :color="isPlanNewActive ? 'success' : 'error'"
                         size="small"
                         variant="tonal"
                       >
-                        {{ isPlanActive ? $t('active') : $t('deactivated') }}
+                        {{ isPlanNewActive ? $t('active') : $t('deactivated') }}
                       </VChip>
                     </div>
                     <div
-                      v-if="planWorkerName"
+                      v-if="planNewWorkerName"
                       class="text-body-2 text-medium-emphasis"
                     >
-                      {{ $t('channel') }}: {{ planWorkerName }}
+                      {{ $t('channel') }}: {{ planNewWorkerName }}
+                    </div>
+                    <div v-else class="text-body-2 text-medium-emphasis">
+                      {{ $t('not_configured') }}
+                    </div>
+                  </VCardText>
+                </VCard>
+              </VCol>
+
+              <VCol cols="12" md="4">
+                <VCard
+                  variant="outlined"
+                  class="notification-card"
+                  :class="{
+                    'notification-card--active': isPlanRenewalActive,
+                  }"
+                  @click="openWorkerModal('plan_renewal')"
+                >
+                  <VCardText>
+                    <div class="d-flex align-center justify-space-between mb-2">
+                      <div class="d-flex align-center gap-2">
+                        <VIcon
+                          icon="tabler-refresh"
+                          :color="isPlanRenewalActive ? 'success' : 'error'"
+                        />
+                        <span class="font-weight-medium">
+                          {{ $t('plan_renewal_notification') }}
+                        </span>
+                      </div>
+                      <VChip
+                        :color="isPlanRenewalActive ? 'success' : 'error'"
+                        size="small"
+                        variant="tonal"
+                      >
+                        {{
+                          isPlanRenewalActive ? $t('active') : $t('deactivated')
+                        }}
+                      </VChip>
+                    </div>
+                    <div
+                      v-if="planRenewalWorkerName"
+                      class="text-body-2 text-medium-emphasis"
+                    >
+                      {{ $t('channel') }}: {{ planRenewalWorkerName }}
                     </div>
                     <div v-else class="text-body-2 text-medium-emphasis">
                       {{ $t('not_configured') }}
@@ -718,9 +795,11 @@ onMounted(async () => {
             {{
               selectedNotificationType === 'two_factor'
                 ? $t('two_factor_notification')
-                : selectedNotificationType === 'plan'
-                  ? $t('plan_notification')
-                  : $t('plan_expiration_reminder')
+                : selectedNotificationType === 'plan_new'
+                  ? $t('plan_new_notification')
+                  : selectedNotificationType === 'plan_renewal'
+                    ? $t('plan_renewal_notification')
+                    : $t('plan_expiration_reminder')
             }}
           </span>
           <IconBtn @click="closeWorkerModal">
@@ -855,7 +934,19 @@ onMounted(async () => {
                 <div>• {{ $t('name') }}: {{ formatParameter('name') }}</div>
               </div>
               <div
-                v-else-if="selectedNotificationType === 'plan'"
+                v-else-if="selectedNotificationType === 'plan_new'"
+                class="text-body-2"
+              >
+                <div>• {{ $t('plan') }}: {{ formatParameter('plan') }}</div>
+                <div>• {{ $t('name') }}: {{ formatParameter('name') }}</div>
+                <div>
+                  • {{ $t('expiration_date') }}:
+                  {{ formatParameter('expiration_date') }}
+                </div>
+                <div>• {{ $t('value') }}: {{ formatParameter('value') }}</div>
+              </div>
+              <div
+                v-else-if="selectedNotificationType === 'plan_renewal'"
                 class="text-body-2"
               >
                 <div>• {{ $t('plan') }}: {{ formatParameter('plan') }}</div>
@@ -888,7 +979,9 @@ onMounted(async () => {
               selectedNotificationType &&
               ((selectedNotificationType === 'two_factor' &&
                 isTwoFactorActive) ||
-                (selectedNotificationType === 'plan' && isPlanActive) ||
+                (selectedNotificationType === 'plan_new' && isPlanNewActive) ||
+                (selectedNotificationType === 'plan_renewal' &&
+                  isPlanRenewalActive) ||
                 (selectedNotificationType === 'plan_expiration' &&
                   isPlanExpirationActive))
             "

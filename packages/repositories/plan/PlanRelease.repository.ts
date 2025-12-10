@@ -122,6 +122,7 @@ export class PlanReleaseRepository {
     billing_period_id: string | null;
     value: string | null;
     last_payment_date: string | null;
+    cancellation_date: string | null;
   } | null> => {
     const planAcc = await this.db.query.planAccount.findFirst({
       where: eq(planAccount.account_id, accountId),
@@ -133,6 +134,7 @@ export class PlanReleaseRepository {
         billing_period_id: true,
         value: true,
         last_payment_date: true,
+        cancellation_date: true,
       },
     });
 

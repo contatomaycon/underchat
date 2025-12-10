@@ -321,7 +321,8 @@ export class NotificationMessageService {
     }
 
     if (
-      notificationTypeName === ENotificationType.plan ||
+      notificationTypeName === ENotificationType.plan_new ||
+      notificationTypeName === ENotificationType.plan_renewal ||
       notificationTypeName === ENotificationType.plan_expiration
     ) {
       const planData = await this.getPlanData(accountId);

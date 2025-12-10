@@ -610,11 +610,38 @@ export class PlanReleaseService {
     }
   };
 
+  private readonly checkIfPlanAccountIsActive = async (
+    accountId: string
+  ): Promise<boolean> => {
+    const existingPlanAccount =
+      await this.planReleaseRepository.findPlanAccountByAccountId(accountId);
+
+    if (!existingPlanAccount) {
+      return false;
+    }
+
+    if (!existingPlanAccount.cancellation_date) {
+      return true;
+    }
+
+    if (existingPlanAccount.next_payment_date) {
+      const nextPaymentDate = new Date(existingPlanAccount.next_payment_date);
+      const now = new Date();
+      return nextPaymentDate > now;
+    }
+
+    return false;
+  };
+
   private async sendPlanNotification(
     accountId: string,
     planId: string
   ): Promise<void> {
-    const lockKey = `notification:${accountId}:${planId}:${ENotificationTypeId.plan}`;
+    const isRenewal = await this.checkIfPlanAccountIsActive(accountId);
+    const notificationTypeId = isRenewal
+      ? ENotificationTypeId.plan_renewal
+      : ENotificationTypeId.plan_new;
+    const lockKey = `notification:${accountId}:${planId}:${notificationTypeId}`;
 
     await withLock(
       this.redis,
@@ -622,7 +649,7 @@ export class PlanReleaseService {
       async () => {
         const topic = this.kafkaServiceQueueService.notificationMessage();
         await this.streamProducerService.send(topic, {
-          notification_type_id: ENotificationTypeId.plan,
+          notification_type_id: notificationTypeId,
           account_id: accountId,
         });
       },

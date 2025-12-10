@@ -16,8 +16,11 @@ export class NotificationsViewerRepository {
     const twoFactorTypeId = await this.findNotificationTypeIdByName(
       ENotificationType.two_factor
     );
-    const planTypeId = await this.findNotificationTypeIdByName(
-      ENotificationType.plan
+    const planNewTypeId = await this.findNotificationTypeIdByName(
+      ENotificationType.plan_new
+    );
+    const planRenewalTypeId = await this.findNotificationTypeIdByName(
+      ENotificationType.plan_renewal
     );
     const planExpirationTypeId = await this.findNotificationTypeIdByName(
       ENotificationType.plan_expiration
@@ -25,13 +28,17 @@ export class NotificationsViewerRepository {
 
     const twoFactorNotification =
       await this.findNotificationByType(twoFactorTypeId);
-    const planNotification = await this.findNotificationByType(planTypeId);
+    const planNewNotification =
+      await this.findNotificationByType(planNewTypeId);
+    const planRenewalNotification =
+      await this.findNotificationByType(planRenewalTypeId);
     const planExpirationNotification =
       await this.findNotificationByType(planExpirationTypeId);
 
     const firstNotificationId =
       twoFactorNotification?.notification_id ||
-      planNotification?.notification_id ||
+      planNewNotification?.notification_id ||
+      planRenewalNotification?.notification_id ||
       planExpirationNotification?.notification_id ||
       null;
 
@@ -50,16 +57,29 @@ export class NotificationsViewerRepository {
             },
           }
         : null,
-      plan_notification: planNotification
+      plan_new_notification: planNewNotification
         ? {
             whatsapp: {
-              worker_id: planNotification.nwr?.worker_id || null,
-              name: planNotification.nwr?.name || null,
-              message: planNotification.message_whatsapp || null,
+              worker_id: planNewNotification.nwr?.worker_id || null,
+              name: planNewNotification.nwr?.name || null,
+              message: planNewNotification.message_whatsapp || null,
             },
             email: {
-              subject: planNotification.email_subject || null,
-              message: planNotification.message_email || null,
+              subject: planNewNotification.email_subject || null,
+              message: planNewNotification.message_email || null,
+            },
+          }
+        : null,
+      plan_renewal_notification: planRenewalNotification
+        ? {
+            whatsapp: {
+              worker_id: planRenewalNotification.nwr?.worker_id || null,
+              name: planRenewalNotification.nwr?.name || null,
+              message: planRenewalNotification.message_whatsapp || null,
+            },
+            email: {
+              subject: planRenewalNotification.email_subject || null,
+              message: planRenewalNotification.message_email || null,
             },
           }
         : null,
@@ -79,7 +99,8 @@ export class NotificationsViewerRepository {
       created_at: twoFactorNotification?.created_at || null,
       updated_at:
         twoFactorNotification?.updated_at ||
-        planNotification?.updated_at ||
+        planNewNotification?.updated_at ||
+        planRenewalNotification?.updated_at ||
         planExpirationNotification?.updated_at ||
         null,
     };

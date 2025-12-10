@@ -26,9 +26,13 @@ export class NotificationsUpserterRepository {
         tx,
         ENotificationType.two_factor
       );
-      const planTypeId = await this.findNotificationTypeIdByName(
+      const planNewTypeId = await this.findNotificationTypeIdByName(
         tx,
-        ENotificationType.plan
+        ENotificationType.plan_new
+      );
+      const planRenewalTypeId = await this.findNotificationTypeIdByName(
+        tx,
+        ENotificationType.plan_renewal
       );
       const planExpirationTypeId = await this.findNotificationTypeIdByName(
         tx,
@@ -50,20 +54,35 @@ export class NotificationsUpserterRepository {
             )
           : await this.findNotificationByType(tx, twoFactorTypeId);
 
-      const planNotification =
-        input.plan_notification !== undefined ||
-        input.plan_message_whatsapp !== undefined ||
-        input.plan_message_email !== undefined ||
-        input.plan_email_subject !== undefined
+      const planNewNotification =
+        input.plan_new_notification !== undefined ||
+        input.plan_new_message_whatsapp !== undefined ||
+        input.plan_new_message_email !== undefined ||
+        input.plan_new_email_subject !== undefined
           ? await this.upsertNotificationByType(
               tx,
-              planTypeId,
-              input.plan_notification,
-              input.plan_message_whatsapp,
-              input.plan_message_email,
-              input.plan_email_subject
+              planNewTypeId,
+              input.plan_new_notification,
+              input.plan_new_message_whatsapp,
+              input.plan_new_message_email,
+              input.plan_new_email_subject
             )
-          : await this.findNotificationByType(tx, planTypeId);
+          : await this.findNotificationByType(tx, planNewTypeId);
+
+      const planRenewalNotification =
+        input.plan_renewal_notification !== undefined ||
+        input.plan_renewal_message_whatsapp !== undefined ||
+        input.plan_renewal_message_email !== undefined ||
+        input.plan_renewal_email_subject !== undefined
+          ? await this.upsertNotificationByType(
+              tx,
+              planRenewalTypeId,
+              input.plan_renewal_notification,
+              input.plan_renewal_message_whatsapp,
+              input.plan_renewal_message_email,
+              input.plan_renewal_email_subject
+            )
+          : await this.findNotificationByType(tx, planRenewalTypeId);
 
       const planExpirationNotification =
         input.plan_expiration_reminder !== undefined ||
@@ -82,7 +101,8 @@ export class NotificationsUpserterRepository {
 
       const firstNotificationId =
         twoFactorNotification?.notification_id ||
-        planNotification?.notification_id ||
+        planNewNotification?.notification_id ||
+        planRenewalNotification?.notification_id ||
         planExpirationNotification?.notification_id ||
         uuidv7();
 
@@ -101,16 +121,29 @@ export class NotificationsUpserterRepository {
               },
             }
           : null,
-        plan_notification: planNotification
+        plan_new_notification: planNewNotification
           ? {
               whatsapp: {
-                worker_id: planNotification.nwr?.worker_id || null,
-                name: planNotification.nwr?.name || null,
-                message: planNotification.message_whatsapp || null,
+                worker_id: planNewNotification.nwr?.worker_id || null,
+                name: planNewNotification.nwr?.name || null,
+                message: planNewNotification.message_whatsapp || null,
               },
               email: {
-                subject: planNotification.email_subject || null,
-                message: planNotification.message_email || null,
+                subject: planNewNotification.email_subject || null,
+                message: planNewNotification.message_email || null,
+              },
+            }
+          : null,
+        plan_renewal_notification: planRenewalNotification
+          ? {
+              whatsapp: {
+                worker_id: planRenewalNotification.nwr?.worker_id || null,
+                name: planRenewalNotification.nwr?.name || null,
+                message: planRenewalNotification.message_whatsapp || null,
+              },
+              email: {
+                subject: planRenewalNotification.email_subject || null,
+                message: planRenewalNotification.message_email || null,
               },
             }
           : null,
@@ -130,7 +163,8 @@ export class NotificationsUpserterRepository {
         created_at: twoFactorNotification?.created_at || null,
         updated_at:
           twoFactorNotification?.updated_at ||
-          planNotification?.updated_at ||
+          planNewNotification?.updated_at ||
+          planRenewalNotification?.updated_at ||
           planExpirationNotification?.updated_at ||
           null,
       };

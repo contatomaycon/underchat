@@ -10,7 +10,10 @@ import { EPaymentBillingType } from '@core/common/enums/EPaymentBillingType';
 import { IPlanAccountRenewal } from '@core/common/interfaces/IPlanAccountRenewal';
 import { EBillingPeriod } from '@core/common/enums/EBillingPeriod';
 import { EAccountStatus } from '@core/common/enums/EAccountStatus';
+import { ENotificationTypeId } from '@core/common/enums/ENotificationType';
 import { AccountUpdaterRepository } from '@core/repositories/account/AccountUpdater.repository';
+import { StreamProducerService } from './streamProducer.service';
+import { KafkaServiceQueueService } from './kafkaServiceQueue.service';
 import Redis from 'ioredis';
 import { withLock } from '@core/common/functions/withLock';
 
@@ -26,6 +29,8 @@ export class PlanRenewalService {
     private readonly planService: PlanService,
     private readonly planReleaseService: PlanReleaseService,
     private readonly accountUpdaterRepository: AccountUpdaterRepository,
+    private readonly streamProducerService: StreamProducerService,
+    private readonly kafkaServiceQueueService: KafkaServiceQueueService,
     @inject('Redis') private readonly redis: Redis
   ) {}
 
@@ -225,11 +230,40 @@ export class PlanRenewalService {
       });
     }
 
+    await this.sendRenewalNotification(
+      planAccount.account_id,
+      planAccount.plan_id
+    );
+
     if (this.isPaymentRefused(paymentResult.payment.status)) {
       await this.accountUpdaterRepository.updateAccountStatusById(
         planAccount.account_id,
         EAccountStatus.inactive
       );
     }
+  };
+
+  private readonly sendRenewalNotification = async (
+    accountId: string,
+    planId: string
+  ): Promise<void> => {
+    const lockKey = `notification:${accountId}:${planId}:${ENotificationTypeId.plan_renewal}`;
+
+    await withLock(
+      this.redis,
+      lockKey,
+      async () => {
+        const topic = this.kafkaServiceQueueService.notificationMessage();
+        await this.streamProducerService.send(topic, {
+          notification_type_id: ENotificationTypeId.plan_renewal,
+          account_id: accountId,
+        });
+      },
+      {
+        ttlMs: 60000,
+      }
+    ).catch((error) => {
+      console.error('Erro ao enviar notificação de renovação de plano:', error);
+    });
   };
 }
