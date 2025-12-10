@@ -10,7 +10,7 @@ import QRCode from 'qrcode';
 import P from 'pino';
 import fs from 'node:fs';
 import path from 'node:path';
-import { singleton } from 'tsyringe';
+import { singleton, container } from 'tsyringe';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { baileysEnvironment } from '@core/config/environments';
 import { EBaileysConnectionStatus as Status } from '@core/common/enums/EBaileysConnectionStatus';
@@ -31,7 +31,6 @@ import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 import { BaileysIncomingMessageService } from './incoming.service';
 import { getPhoneNumber } from '@core/common/functions/getPhoneNumber';
 import { WorkerService } from '@core/services/worker.service';
-import { container } from 'tsyringe';
 
 const FOLDER = `/app/data/storage/${baileysEnvironment.baileysWorkerId}`;
 const CHANNEL = workerCentrifugoQueue(baileysEnvironment.baileysAccountId);

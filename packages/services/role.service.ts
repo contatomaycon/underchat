@@ -29,22 +29,16 @@ export class RoleService {
     perPage: number,
     currentPage: number,
     query: ListRoleRequest,
-    accountId: string,
-    currentUserPermissionRoleId: string
+    accountId: string
   ): Promise<[ListRoleResponse[], number]> => {
     const [result, total] = await Promise.all([
       this.roleListerRepository.listRoles(
         perPage,
         currentPage,
         query,
-        accountId,
-        currentUserPermissionRoleId
+        accountId
       ),
-      this.roleListerRepository.listRolesTotal(
-        query,
-        accountId,
-        currentUserPermissionRoleId
-      ),
+      this.roleListerRepository.listRolesTotal(query, accountId),
     ]);
 
     return [result, total];

@@ -50,7 +50,6 @@ const footerType = (footerType: string | null | undefined) => {
 const titleLayout = (
   layout?.name ?? 'underchat'
 ).toLowerCase() as Lowercase<string>;
-const logoLayout = layout?.logo ?? logo;
 const contentWidthLayout =
   layout?.content_width === ContentWidth.Boxed
     ? ContentWidth.Boxed

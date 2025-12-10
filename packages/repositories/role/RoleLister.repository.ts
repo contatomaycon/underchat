@@ -73,8 +73,7 @@ export class RoleListerRepository {
     perPage: number,
     currentPage: number,
     query: ListRoleRequest,
-    accountId: string,
-    currentUserPermissionRoleId: string
+    accountId: string
   ): Promise<ListRoleResponse[]> => {
     const filters = this.setFilters(query);
     const orders = this.setOrders(query);
@@ -124,8 +123,7 @@ export class RoleListerRepository {
 
   listRolesTotal = async (
     query: ListRoleRequest,
-    accountId: string,
-    currentUserPermissionRoleId: string
+    accountId: string
   ): Promise<number> => {
     const filters = this.setFilters(query);
 

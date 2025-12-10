@@ -1,4 +1,4 @@
-import { injectable, inject } from 'tsyringe';
+import { injectable } from 'tsyringe';
 import { ChannelsListerRepository } from '@core/repositories/config/ChannelsLister.repository';
 import { ChannelViewerRepository } from '@core/repositories/config/ChannelViewer.repository';
 import { ListChannelsRequest } from '@core/schema/config/listChannels/request.schema';
