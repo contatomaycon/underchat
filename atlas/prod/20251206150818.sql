@@ -282,9 +282,12 @@ Obrigado por continuar conosco!', '<!DOCTYPE html>
 </body>
 </html>', 'Renovação de Plano - Underchat', '2025-12-06 15:44:00.000000 +00:00', '2025-12-06 15:44:00.000000 +00:00'),
   ('019af456-7890-1234-abcd-ef1234567890', NULL, '019a930d-c6f4-75ad-88ff-9e5f6a7b8c9e', '⚠️ *Cancelamento de Plano*
-Olá, {{name}}!
+
+Olá, *{{name}}*!
+
 Seu plano *{{plan}}* foi cancelado.
 Data de cancelamento: {{expiration_date}}
+
 Seu acesso permanecerá ativo até a data de vencimento.', '<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -349,9 +352,12 @@ Seu acesso permanecerá ativo até a data de vencimento.', '<!DOCTYPE html>
 </body>
 </html>', 'Cancelamento de Plano - Underchat', '2025-12-06 15:45:00.000000 +00:00', '2025-12-06 15:45:00.000000 +00:00'),
   ('019af457-8901-2345-bcde-f12345678901', NULL, '019a930d-c6f4-75ad-88ff-9f6a7b8c9d0e', '❌ *Falha no Pagamento em Recorrência*
-Olá, {{name}}!
+
+Olá, *{{name}}*!
+
 Ocorreu uma falha no pagamento automático do seu plano *{{plan}}*.
 Valor: R$ {{value}}
+
 Por favor, verifique seus dados de pagamento e tente novamente.', '<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
