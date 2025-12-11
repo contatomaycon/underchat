@@ -1,5 +1,5 @@
 import * as schema from '@core/models';
-import { planAccount, plan } from '@core/models';
+import { planAccount, plan, account } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { eq, and, isNull } from 'drizzle-orm';
@@ -7,6 +7,7 @@ import { UpdatePlanAccountRequest } from '@core/schema/planAccount/updatePlanAcc
 import { currentTime } from '@core/common/functions/currentTime';
 import { v7 as uuidv7 } from 'uuid';
 import { EBillingPeriod } from '@core/common/enums/EBillingPeriod';
+import { EAccountStatus } from '@core/common/enums/EAccountStatus';
 import { ICalculatedPlanAccountData } from '@core/common/interfaces/IPlanAccountUpdater';
 
 @injectable()
@@ -82,15 +83,20 @@ export class PlanAccountUpdaterRepository {
       };
 
       if (existingPlanAccount) {
-        return this.updateExistingPlanAccount(
-          tx,
-          accountId,
-          input,
-          calculatedData
-        );
+        await Promise.all([
+          this.updateExistingPlanAccount(tx, accountId, input, calculatedData),
+          this.ensureAccountIsActive(tx, accountId),
+        ]);
+
+        return true;
       }
 
-      return this.createNewPlanAccount(tx, accountId, input, calculatedData);
+      await Promise.all([
+        this.createNewPlanAccount(tx, accountId, input, calculatedData),
+        this.ensureAccountIsActive(tx, accountId),
+      ]);
+
+      return true;
     });
   };
 
@@ -330,6 +336,34 @@ export class PlanAccountUpdaterRepository {
     });
 
     return true;
+  };
+
+  private readonly ensureAccountIsActive = async (
+    tx: Parameters<
+      Parameters<NodePgDatabase<typeof schema>['transaction']>[0]
+    >[0],
+    accountId: string
+  ): Promise<void> => {
+    const accountData = await tx.query.account.findFirst({
+      where: eq(account.account_id, accountId),
+      columns: {
+        account_status_id: true,
+      },
+    });
+
+    if (!accountData) {
+      return;
+    }
+
+    if (accountData.account_status_id !== EAccountStatus.active) {
+      await tx
+        .update(account)
+        .set({
+          account_status_id: EAccountStatus.active,
+          updated_at: currentTime(),
+        })
+        .where(eq(account.account_id, accountId));
+    }
   };
 
   updatePlanAccountByAccountId = async (
