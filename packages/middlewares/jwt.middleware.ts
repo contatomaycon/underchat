@@ -44,7 +44,7 @@ async function handleApiKeyCache(
   } as IJwtMiddleware);
 
   if (responseAuth) {
-    await redis.set(cacheKey, JSON.stringify(responseAuth), 'EX', 1800);
+    await redis.set(cacheKey, JSON.stringify(responseAuth), 'EX', 600);
   }
 
   return responseAuth;
