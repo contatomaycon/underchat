@@ -5,7 +5,7 @@ import { cancelPlanAccountResponseSchema } from './response.schema';
 
 export const cancelPlanAccountSchema = {
   description: 'Cancela a assinatura do plano',
-  tags: [ETagSwagger.account],
+  tags: [ETagSwagger.accountSettings],
   produces: ['application/json'],
   security: [
     {

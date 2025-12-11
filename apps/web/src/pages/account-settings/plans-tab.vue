@@ -613,6 +613,18 @@ const isCancelButtonDisabled = computed(() => {
 });
 
 const isCancelling = ref(false);
+const isReactivating = ref(false);
+
+const isInCancellationProcess = computed(() => {
+  if (!planInvoice.value) return false;
+
+  const hasCancellationDate = !!planInvoice.value.cancellation_date;
+  const isAccountInactive =
+    planInvoice.value.account_status_id &&
+    planInvoice.value.account_status_id !== EAccountStatus.active;
+
+  return hasCancellationDate || isAccountInactive;
+});
 
 const cancelSubscription = async () => {
   if (isCancelling.value || isCancelButtonDisabled.value) return;
@@ -625,6 +637,20 @@ const cancelSubscription = async () => {
     }
   } finally {
     isCancelling.value = false;
+  }
+};
+
+const reactivateSubscription = async () => {
+  if (isReactivating.value) return;
+
+  try {
+    isReactivating.value = true;
+    const result = await accountSettingsStore.reactivatePlanAccount();
+    if (result) {
+      await loadPlanInvoice();
+    }
+  } finally {
+    isReactivating.value = false;
   }
 };
 
@@ -796,6 +822,7 @@ onMounted(() => {
                 {{ $t('upgrade_plan') }}
               </VBtn>
               <VBtn
+                v-if="!isInCancellationProcess"
                 :color="cancelButtonColor"
                 variant="outlined"
                 :disabled="isCancelButtonDisabled || isCancelling"
@@ -803,6 +830,16 @@ onMounted(() => {
                 @click="cancelSubscription"
               >
                 {{ $t('cancel_subscription') }}
+              </VBtn>
+              <VBtn
+                v-if="isInCancellationProcess"
+                color="success"
+                variant="outlined"
+                :disabled="isReactivating"
+                :loading="isReactivating"
+                @click="reactivateSubscription"
+              >
+                {{ $t('reactivate_subscription') }}
               </VBtn>
             </div>
 

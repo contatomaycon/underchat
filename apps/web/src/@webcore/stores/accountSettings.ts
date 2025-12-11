@@ -39,6 +39,7 @@ import { CreateUserCardRequest } from '@core/schema/accountSettings/createUserCa
 import { CreateUserCardResponse } from '@core/schema/accountSettings/createUserCard/response.schema';
 import { ViewAccountPaymentNfseResponse } from '@core/schema/accountSettings/viewAccountPaymentNfse/response.schema';
 import { CancelPlanAccountResponse } from '@core/schema/accountSettings/cancelPlanAccount/response.schema';
+import { ReactivatePlanAccountResponse } from '@core/schema/accountSettings/reactivatePlanAccount/response.schema';
 import { getUser } from '@/@webcore/localStorage/user';
 
 export const useAccountSettingsStore = defineStore('accountSettings', {
@@ -764,6 +765,42 @@ export const useAccountSettingsStore = defineStore('accountSettings', {
         this.showSnackbar(errorMessage, EColor.error);
 
         return null;
+      }
+    },
+    async reactivatePlanAccount(): Promise<boolean> {
+      try {
+        this.loading = true;
+
+        const response = await axios.post<
+          IApiResponse<ReactivatePlanAccountResponse>
+        >('/account-settings/plan/reactivate');
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const message =
+            data?.message ?? this.i18n.global.t('plan_reactivation_error');
+
+          this.showSnackbar(message, EColor.error);
+
+          return false;
+        }
+
+        this.showSnackbar(data.message ?? data.data.message, EColor.success);
+
+        return true;
+      } catch (error) {
+        this.loading = false;
+        let errorMessage = this.i18n.global.t('plan_reactivation_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        return false;
       }
     },
   },

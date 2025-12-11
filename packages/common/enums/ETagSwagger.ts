@@ -14,6 +14,7 @@ export enum ETagSwagger {
   chatbot = 'Chatbot',
   zipcode = 'CEP',
   account = 'Conta',
+  accountSettings = 'Configurações da Conta',
   plan = 'Planos',
   messageTemplate = 'Templates de Mensagem',
   labelTemplate = 'Templates de Etiqueta',

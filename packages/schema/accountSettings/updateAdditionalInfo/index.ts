@@ -6,7 +6,7 @@ import { updateAdditionalInfoResponseSchema } from './response.schema';
 
 export const updateAdditionalInfoSchema = {
   description: 'Atualiza informações adicionais do usuário autenticado',
-  tags: [ETagSwagger.account],
+  tags: [ETagSwagger.accountSettings],
   consumes: ['application/json'],
   security: [
     {

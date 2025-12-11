@@ -6,7 +6,7 @@ import { listAccountPaymentsFinalResponseSchema } from './response.schema';
 
 export const listAccountPaymentsSchema = {
   description: 'Lista todas as faturas da conta',
-  tags: [ETagSwagger.account],
+  tags: [ETagSwagger.accountSettings],
   produces: ['application/json'],
   security: [
     {

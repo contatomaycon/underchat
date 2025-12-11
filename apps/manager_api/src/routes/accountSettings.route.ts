@@ -23,6 +23,7 @@ import { updateUserCardDefaultSchema } from '@core/schema/accountSettings/update
 import { createUserCardSchema } from '@core/schema/accountSettings/createUserCard';
 import { viewAccountPaymentNfseSchema } from '@core/schema/accountSettings/viewAccountPaymentNfse';
 import { cancelPlanAccountSchema } from '@core/schema/accountSettings/cancelPlanAccount';
+import { reactivatePlanAccountSchema } from '@core/schema/accountSettings/reactivatePlanAccount';
 import { planInvoicePermissions } from '@/permissions';
 
 export default async function accountSettingsRoutes(server: FastifyInstance) {
@@ -189,6 +190,15 @@ export default async function accountSettingsRoutes(server: FastifyInstance) {
   server.post('/account-settings/plan/cancel', {
     schema: cancelPlanAccountSchema,
     handler: accountSettingsController.cancelPlanAccount,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, planInvoicePermissions),
+    ],
+  });
+
+  server.post('/account-settings/plan/reactivate', {
+    schema: reactivatePlanAccountSchema,
+    handler: accountSettingsController.reactivatePlanAccount,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, planInvoicePermissions),

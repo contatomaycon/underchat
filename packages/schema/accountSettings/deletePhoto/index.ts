@@ -5,7 +5,7 @@ import { deletePhotoResponseSchema } from './response.schema';
 
 export const deletePhotoSchema = {
   description: 'Remove a foto de perfil do usuário',
-  tags: [ETagSwagger.account],
+  tags: [ETagSwagger.accountSettings],
   produces: ['application/json'],
   security: [
     {

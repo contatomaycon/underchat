@@ -1,11 +1,10 @@
 import { Type } from '@sinclair/typebox';
 import { ELanguage } from '@core/common/enums/ELanguage';
 import { ETagSwagger } from '@core/common/enums/ETagSwagger';
-import { changePasswordRequestSchema } from './request.schema';
-import { changePasswordResponseSchema } from './response.schema';
+import { reactivatePlanAccountResponseSchema } from './response.schema';
 
-export const changePasswordSchema = {
-  description: 'Altera a senha do usuário',
+export const reactivatePlanAccountSchema = {
+  description: 'Reativa a assinatura do plano',
   tags: [ETagSwagger.accountSettings],
   produces: ['application/json'],
   security: [
@@ -22,25 +21,15 @@ export const changePasswordSchema = {
       })
     ),
   }),
-  body: changePasswordRequestSchema,
   response: {
     200: Type.Object(
       {
         id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
         status: Type.Boolean({ const: true }),
         message: Type.String(),
-        data: changePasswordResponseSchema,
+        data: reactivatePlanAccountResponseSchema,
       },
       { description: 'Successful' }
-    ),
-    400: Type.Object(
-      {
-        id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
-        status: Type.Boolean({ default: false }),
-        message: Type.String(),
-        data: Type.Null(),
-      },
-      { description: 'Bad Request' }
     ),
     401: Type.Object(
       {

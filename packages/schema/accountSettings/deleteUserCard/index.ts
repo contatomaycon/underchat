@@ -5,7 +5,7 @@ import { deleteUserCardRequestSchema } from './request.schema';
 
 export const deleteUserCardSchema = {
   description: 'Remove um cartão de crédito do usuário',
-  tags: [ETagSwagger.account],
+  tags: [ETagSwagger.accountSettings],
   produces: ['application/json'],
   security: [
     {

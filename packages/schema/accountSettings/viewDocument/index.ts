@@ -5,7 +5,7 @@ import { viewDocumentResponseSchema } from './response.schema';
 
 export const viewDocumentSchema = {
   description: 'Visualiza o documento descriptografado do usuário autenticado',
-  tags: [ETagSwagger.account],
+  tags: [ETagSwagger.accountSettings],
   produces: ['application/json'],
   security: [
     {

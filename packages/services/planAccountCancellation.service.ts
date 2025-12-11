@@ -23,6 +23,7 @@ import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 import { IViewWorkerServer } from '@core/common/interfaces/IViewWorkerServer';
 import { NotificationMessageService } from '@core/services/notificationMessage.service';
 import { ENotificationTypeId } from '@core/common/enums/ENotificationType';
+import { PlanAccountReactivatorTransactionRepository } from '@core/repositories/accountSettings/PlanAccountReactivatorTransaction.repository';
 
 @injectable()
 export class PlanAccountCancellationService {
@@ -34,7 +35,8 @@ export class PlanAccountCancellationService {
     private readonly streamProducerService: StreamProducerService,
     private readonly centrifugoService: CentrifugoService,
     private readonly kafkaBalanceQueueService: KafkaBalanceQueueService,
-    private readonly notificationMessageService: NotificationMessageService
+    private readonly notificationMessageService: NotificationMessageService,
+    private readonly planAccountReactivatorTransactionRepository: PlanAccountReactivatorTransactionRepository
   ) {}
 
   private isWithin7DaysPeriod(lastPaymentDate: string | null): boolean {
@@ -571,5 +573,26 @@ export class PlanAccountCancellationService {
     ]);
 
     return this.buildCancellationMessage(t, cancellationResult);
+  }
+
+  async reactivatePlanAccount(
+    t: TFunction<'translation', undefined>,
+    accountId: string
+  ): Promise<string> {
+    const cancelledPlan =
+      await this.planAccountCancellerRepository.findCancelledPlanAccount(
+        accountId
+      );
+
+    if (!cancelledPlan) {
+      throw new Error(t('plan_not_cancelled'));
+    }
+
+    await this.planAccountReactivatorTransactionRepository.executeReactivation(
+      t,
+      accountId
+    );
+
+    return t('plan_reactivated_successfully');
   }
 }
