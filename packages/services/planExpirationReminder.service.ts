@@ -50,13 +50,7 @@ export class PlanExpirationReminderService {
       planAccountId,
       days
     );
-
-    if (alreadySent) {
-      console.log(
-        `Notificação já enviada para account ${accountId}, plan ${planAccountId}, ${days} dias`
-      );
-      return;
-    }
+    if (alreadySent) return;
 
     try {
       await this.notificationMessageService.sendPlanNotification(
@@ -66,10 +60,6 @@ export class PlanExpirationReminderService {
       );
 
       await this.markNotificationAsSent(accountId, planAccountId, days);
-
-      console.log(
-        `Notificação de vencimento enviada: account ${accountId}, plan ${planAccountId}, ${days} dias restantes`
-      );
     } catch (error) {
       console.error(
         `Erro ao enviar notificação de vencimento para account ${accountId}:`,
@@ -88,10 +78,6 @@ export class PlanExpirationReminderService {
             days
           );
 
-        console.log(
-          `Encontrados ${expiringPlans.length} planos expirando em ${days} dias`
-        );
-
         const notificationPromises = expiringPlans.map((plan) =>
           this.sendReminderNotification(
             plan.account_id,
@@ -104,8 +90,6 @@ export class PlanExpirationReminderService {
       });
 
       await Promise.all(allPlansPromises);
-
-      console.log('Processamento de lembretes de vencimento concluído');
     } catch (error) {
       console.error('Erro ao processar lembretes de vencimento:', error);
       throw error;
