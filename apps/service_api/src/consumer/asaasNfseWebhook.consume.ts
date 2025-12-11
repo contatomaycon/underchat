@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import fp from 'fastify-plugin';
 import { container } from 'tsyringe';
-import { AsaasNfseWebhookConsume } from '@core/consumer/Webhook/AsaasNfseWebhook.consume';
+import { AsaasNfseWebhookConsume } from '@core/consumer/webhook/AsaasNfseWebhook.consume';
 
 export default fp(
   async (fastify: FastifyInstance) => {
