@@ -686,6 +686,7 @@
     "msg_csv_or_vcard": "El archivo debe estar en formato CSV o vCard (.vcf) y seguir el patrón de columnas: Nombre, Apellido, Email, DDI, Teléfono, Apodo, Fecha de Nacimiento y Notas.",
     "plan_all_list_error": "Ocurrió un error al listar todos los planes. Por favor, inténtalo de nuevo.",
     "plans": "Planes",
+    "manage": "Gestionar",
     "add_plan": "Agregar Plan",
     "edit_plan": "Editar Plan",
     "is_test_plan": "Es plan de prueba",

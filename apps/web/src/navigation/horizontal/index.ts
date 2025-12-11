@@ -168,6 +168,20 @@ export default [
     icon: { icon: 'tabler-package' },
     children: [
       {
+        title: 'manage',
+        to: {
+          name: 'account-settings' as keyof RouteNamedMap,
+          query: { tab: 'plans' },
+        },
+        icon: { icon: 'tabler-settings' },
+        permissions: [
+          EGeneralPermissions.full_access,
+          EGeneralPermissions.full_access_group,
+          EPlanPermissions.plan_group,
+          EPlanPermissions.plan_invoice,
+        ],
+      },
+      {
         title: 'plans_pricing',
         to: { name: 'plans' as keyof RouteNamedMap },
         icon: { icon: 'tabler-package' },
