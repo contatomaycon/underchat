@@ -636,8 +636,11 @@ export class PaymentService {
       email: sensitiveData.email || '',
       cpfCnpj: sensitiveData.document || '',
       postalCode: addressData.postalCode || '',
-      addressNumber: addressData.addressNumber || '',
-      addressComplement: addressData.complement || undefined,
+      addressNumber: sensitiveData.address1 || addressData.addressNumber || '',
+      addressComplement:
+        addressData.complement ||
+        `${sensitiveData.address1} ${sensitiveData.address2}` ||
+        undefined,
       phone: sensitiveData.phone || '',
       mobilePhone: sensitiveData.phone || undefined,
     };
