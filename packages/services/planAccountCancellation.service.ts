@@ -21,6 +21,8 @@ import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { IUpdateWorker } from '@core/common/interfaces/IUpdateWorker';
 import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 import { IViewWorkerServer } from '@core/common/interfaces/IViewWorkerServer';
+import { NotificationMessageService } from '@core/services/notificationMessage.service';
+import { ENotificationTypeId } from '@core/common/enums/ENotificationType';
 
 @injectable()
 export class PlanAccountCancellationService {
@@ -31,7 +33,8 @@ export class PlanAccountCancellationService {
     private readonly workerService: WorkerService,
     private readonly streamProducerService: StreamProducerService,
     private readonly centrifugoService: CentrifugoService,
-    private readonly kafkaBalanceQueueService: KafkaBalanceQueueService
+    private readonly kafkaBalanceQueueService: KafkaBalanceQueueService,
+    private readonly notificationMessageService: NotificationMessageService
   ) {}
 
   private isWithin7DaysPeriod(lastPaymentDate: string | null): boolean {
@@ -512,6 +515,26 @@ export class PlanAccountCancellationService {
     ]);
   }
 
+  private async sendCancellationNotification(
+    accountId: string,
+    planAccountId: string,
+    isWithin7Days: boolean
+  ): Promise<void> {
+    if (isWithin7Days) {
+      return;
+    }
+
+    try {
+      await this.notificationMessageService.sendPlanNotification(
+        accountId,
+        planAccountId,
+        ENotificationTypeId.plan_cancellation
+      );
+    } catch (error) {
+      console.error('Erro ao enviar notificação de cancelamento:', error);
+    }
+  }
+
   private async cancelPlanAccountByPlanAccountId(
     t: TFunction<'translation', undefined>,
     planAccountId: string,
@@ -538,7 +561,14 @@ export class PlanAccountCancellationService {
       throw new Error(t('subscription_cancellation_error'));
     }
 
-    await this.finalizeCancellation(t, accountId, accountStatusId);
+    await Promise.all([
+      this.finalizeCancellation(t, accountId, accountStatusId),
+      this.sendCancellationNotification(
+        accountId,
+        planAccountId,
+        cancellationResult.isWithin7Days
+      ),
+    ]);
 
     return this.buildCancellationMessage(t, cancellationResult);
   }
