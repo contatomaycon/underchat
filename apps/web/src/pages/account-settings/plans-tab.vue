@@ -152,8 +152,12 @@ const getProgressPercentage = computed(() => {
 });
 
 const getAlertStatus = computed(() => {
-  if (planInvoice.value?.cancellation_date) {
-    const nextPaymentDateStr = planInvoice.value.next_payment_date;
+  const isAccountInactive =
+    planInvoice.value?.account_status_id &&
+    planInvoice.value.account_status_id !== EAccountStatus.active;
+
+  if (planInvoice.value?.cancellation_date || isAccountInactive) {
+    const nextPaymentDateStr = planInvoice.value?.next_payment_date;
     if (nextPaymentDateStr) {
       const nextPaymentDate = new Date(nextPaymentDateStr);
       const now = new Date();
@@ -186,8 +190,12 @@ const getAlertStatus = computed(() => {
 });
 
 const getAlertMessage = computed(() => {
-  if (planInvoice.value?.cancellation_date) {
-    const nextPaymentDateStr = planInvoice.value.next_payment_date;
+  const isAccountInactive =
+    planInvoice.value?.account_status_id &&
+    planInvoice.value.account_status_id !== EAccountStatus.active;
+
+  if (planInvoice.value?.cancellation_date || isAccountInactive) {
+    const nextPaymentDateStr = planInvoice.value?.next_payment_date;
     if (nextPaymentDateStr) {
       const nextPaymentDate = new Date(nextPaymentDateStr);
       const now = new Date();
