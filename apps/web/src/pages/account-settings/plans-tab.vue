@@ -565,27 +565,25 @@ const planStatus = computed(() => {
   if (!planInvoice.value) return null;
 
   const accountStatusId = planInvoice.value.account_status_id;
-
-  if (accountStatusId === EAccountStatus.inactive) {
-    return { label: t('cancelling'), color: 'warning' };
-  }
-
   const hasCancellationDate = !!planInvoice.value.cancellation_date;
   const nextPaymentDateStr = planInvoice.value.next_payment_date;
 
-  if (!hasCancellationDate) {
+  if (!hasCancellationDate && accountStatusId === EAccountStatus.active) {
     return { label: t('active'), color: 'success' };
   }
 
-  if (nextPaymentDateStr) {
-    const nextPaymentDate = new Date(nextPaymentDateStr);
-    const now = new Date();
-    if (nextPaymentDate > now) {
-      return { label: t('cancelling'), color: 'warning' };
+  if (hasCancellationDate || accountStatusId === EAccountStatus.inactive) {
+    if (nextPaymentDateStr) {
+      const nextPaymentDate = new Date(nextPaymentDateStr);
+      const now = new Date();
+      if (nextPaymentDate > now) {
+        return { label: t('cancelling'), color: 'warning' };
+      }
     }
+    return { label: t('cancelled'), color: 'error' };
   }
 
-  return { label: t('cancelled'), color: 'error' };
+  return { label: t('active'), color: 'success' };
 });
 
 const cancelButtonColor = computed(() => {
@@ -623,7 +621,40 @@ const isInCancellationProcess = computed(() => {
     planInvoice.value.account_status_id &&
     planInvoice.value.account_status_id !== EAccountStatus.active;
 
-  return hasCancellationDate || isAccountInactive;
+  if (!hasCancellationDate && !isAccountInactive) return false;
+
+  const nextPaymentDateStr = planInvoice.value.next_payment_date;
+  if (nextPaymentDateStr) {
+    const nextPaymentDate = new Date(nextPaymentDateStr);
+    const now = new Date();
+    return nextPaymentDate > now;
+  }
+
+  return false;
+});
+
+const isPlanCancelled = computed(() => {
+  if (!planInvoice.value) return false;
+
+  const hasCancellationDate = !!planInvoice.value.cancellation_date;
+  const isAccountInactive =
+    planInvoice.value.account_status_id &&
+    planInvoice.value.account_status_id !== EAccountStatus.active;
+
+  if (!hasCancellationDate && !isAccountInactive) return false;
+
+  const nextPaymentDateStr = planInvoice.value.next_payment_date;
+  if (nextPaymentDateStr) {
+    const nextPaymentDate = new Date(nextPaymentDateStr);
+    const now = new Date();
+    return nextPaymentDate <= now;
+  }
+
+  return true;
+});
+
+const renewButtonText = computed(() => {
+  return isPlanCancelled.value ? t('hire') : t('upgrade_plan');
 });
 
 const cancelSubscription = async () => {
@@ -762,21 +793,6 @@ onMounted(() => {
                 </div>
               </div>
 
-              <div class="mb-3">
-                <div class="d-flex align-center justify-space-between mb-1">
-                  <span class="text-body-2 text-medium-emphasis">
-                    {{ $t('recurring_payment') }}
-                  </span>
-                  <VSwitch
-                    :model-value="planInvoice.recurring_payment ?? false"
-                    :disabled="loading || cardsLoading"
-                    color="primary"
-                    @update:model-value="toggleRecurringPayment"
-                    hide-details
-                  />
-                </div>
-              </div>
-
               <div v-if="planInvoice.cancellation_date" class="mb-3">
                 <div class="d-flex align-center justify-space-between mb-1">
                   <span class="text-body-2 text-medium-emphasis">
@@ -785,6 +801,23 @@ onMounted(() => {
                   <span class="text-body-1 font-weight-medium text-error">
                     {{ formatDate(planInvoice.cancellation_date) }}
                   </span>
+                </div>
+              </div>
+
+              <div v-if="!isPlanCancelled" class="mb-3">
+                <div class="d-flex align-center justify-space-between mb-1">
+                  <span class="text-body-2 text-medium-emphasis">
+                    {{ $t('recurring_payment') }}
+                  </span>
+                  <VSwitch
+                    :model-value="planInvoice.recurring_payment ?? false"
+                    :disabled="
+                      loading || cardsLoading || isInCancellationProcess
+                    "
+                    color="primary"
+                    @update:model-value="toggleRecurringPayment"
+                    hide-details
+                  />
                 </div>
               </div>
             </div>
@@ -819,10 +852,10 @@ onMounted(() => {
 
             <div class="d-flex gap-2">
               <VBtn color="primary" variant="flat" @click="renewPlan">
-                {{ $t('upgrade_plan') }}
+                {{ renewButtonText }}
               </VBtn>
               <VBtn
-                v-if="!isInCancellationProcess"
+                v-if="!isInCancellationProcess && !isPlanCancelled"
                 :color="cancelButtonColor"
                 variant="outlined"
                 :disabled="isCancelButtonDisabled || isCancelling"
@@ -832,7 +865,7 @@ onMounted(() => {
                 {{ $t('cancel_subscription') }}
               </VBtn>
               <VBtn
-                v-if="isInCancellationProcess"
+                v-if="isInCancellationProcess && !isPlanCancelled"
                 color="success"
                 variant="outlined"
                 :disabled="isReactivating"

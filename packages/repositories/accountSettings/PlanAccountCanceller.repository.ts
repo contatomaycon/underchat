@@ -100,9 +100,11 @@ export class PlanAccountCancellerRepository {
     const updateData: {
       cancellation_date: string;
       next_payment_date?: null;
+      recurring_payment: boolean;
       updated_at: string;
     } = {
       cancellation_date: cancellationDate,
+      recurring_payment: false,
       updated_at: currentTime(),
     };
 
@@ -157,9 +159,11 @@ export class PlanAccountCancellerRepository {
     const updateData: {
       cancellation_date: string;
       next_payment_date?: null;
+      recurring_payment: boolean;
       updated_at: string;
     } = {
       cancellation_date: cancellationDate,
+      recurring_payment: false,
       updated_at: currentTime(),
     };
 
