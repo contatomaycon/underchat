@@ -284,6 +284,10 @@ const canDeleteCard = (card: ListUserCardResponse): boolean => {
     return true;
   }
 
+  if (isPlanCancelled.value) {
+    return true;
+  }
+
   const hasRecurringPayment = planInvoice.value.recurring_payment === true;
 
   if (hasRecurringPayment && userCards.value.length === 1) {

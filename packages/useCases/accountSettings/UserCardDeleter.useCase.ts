@@ -5,6 +5,7 @@ import { PlanRecurringUpdaterRepository } from '@core/repositories/accountSettin
 import { PlanCurrentInvoiceViewerRepository } from '@core/repositories/plan/PlanCurrentInvoiceViewer.repository';
 import { UserCardsListerRepository } from '@core/repositories/plan/UserCardsLister.repository';
 import { UserCardDefaultUpdaterRepository } from '@core/repositories/accountSettings/UserCardDefaultUpdater.repository';
+import { EAccountStatus } from '@core/common/enums/EAccountStatus';
 
 @injectable()
 export class UserCardDeleterUseCase {
@@ -34,9 +35,10 @@ export class UserCardDeleterUseCase {
       throw new Error(t('card_not_found'));
     }
 
+    const isPlanCancelled = this.checkIfPlanIsCancelled(planInvoice);
     const hasRecurringPayment = planInvoice?.recurring_payment === true;
 
-    if (hasRecurringPayment && cards.length === 1) {
+    if (!isPlanCancelled && hasRecurringPayment && cards.length === 1) {
       throw new Error(t('cannot_delete_last_card'));
     }
 
@@ -70,4 +72,30 @@ export class UserCardDeleterUseCase {
 
     return true;
   };
+
+  private checkIfPlanIsCancelled(
+    planInvoice: {
+      cancellation_date: string | null;
+      next_payment_date: string | null;
+      account_status_id: string | null;
+    } | null
+  ): boolean {
+    if (!planInvoice) return false;
+
+    const hasCancellationDate = !!planInvoice.cancellation_date;
+    const isAccountInactive =
+      planInvoice.account_status_id &&
+      planInvoice.account_status_id !== EAccountStatus.active;
+
+    if (!hasCancellationDate && !isAccountInactive) return false;
+
+    const nextPaymentDateStr = planInvoice.next_payment_date;
+    if (nextPaymentDateStr) {
+      const nextPaymentDate = new Date(nextPaymentDateStr);
+      const now = new Date();
+      return nextPaymentDate <= now;
+    }
+
+    return true;
+  }
 }
