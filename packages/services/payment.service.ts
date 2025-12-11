@@ -149,13 +149,10 @@ export class PaymentService {
       address2: string | null;
     }
   ): Promise<IGetAsaasCustomerResponse | null> => {
-    if (!sensitiveData.document) {
-      return null;
-    }
+    if (!sensitiveData.document) return null;
+
     const userView = await this.userService.viewUserById(userId, accountId);
-    if (!userView) {
-      return null;
-    }
+    if (!userView) return null;
 
     const createCustomerRequest = this.buildCreateCustomerRequest(
       userId,
@@ -205,7 +202,7 @@ export class PaymentService {
       mobilePhone: phoneData.mobilePhone,
       address: addressData.address,
       addressNumber: addressData.addressNumber,
-      complement: addressData.complement,
+      complement: addressData.complement || sensitiveData.address2 || undefined,
       province: addressData.province,
       postalCode: addressData.postalCode,
       company: isCNPJ ? userView.account?.name : undefined,
@@ -286,25 +283,13 @@ export class PaymentService {
       const addressParts = parseAddress(sensitiveData.address1);
 
       return {
-        address: addressParts.street,
-        addressNumber: addressParts.number,
+        address: sensitiveData.address1 || addressParts.street,
+        addressNumber: sensitiveData.address2 || addressParts.number,
         complement:
-          addressParts.complement || sensitiveData.address2 || undefined,
+          addressParts.complement ||
+          `${sensitiveData.address1} ${sensitiveData.address2}`,
         province: userView.user_address?.district || undefined,
         postalCode: userView.user_address?.zip_code || undefined,
-      };
-    }
-
-    if (userView.user_address?.address1_partial) {
-      return {
-        address: userView.user_address.address1_partial,
-        addressNumber: undefined,
-        complement:
-          sensitiveData.address2 ||
-          userView.user_address.address2_partial ||
-          undefined,
-        province: userView.user_address.district || undefined,
-        postalCode: userView.user_address.zip_code || undefined,
       };
     }
 

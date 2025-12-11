@@ -5,6 +5,7 @@ import {
   IListAsaasInstallmentPaymentsRequest,
   IListAsaasInstallmentPaymentsResponse,
 } from '@core/common/interfaces/IAsaasInstallment';
+import { IAsaasErrorResponse } from '@core/common/interfaces/IAsaasCreditCard';
 
 @injectable()
 export class ListInstallmentPaymentsService {
@@ -37,17 +38,18 @@ export class ListInstallmentPaymentsService {
       return null;
     } catch (error) {
       if (axios.isAxiosError(error)) {
-        console.error(
-          'Erro ao listar cobranças do parcelamento no Asaas:',
-          error.response?.data
-        );
-      } else {
-        console.error(
-          'Erro desconhecido ao listar cobranças do parcelamento no Asaas:',
-          error
-        );
+        const errorData = error.response?.data as IAsaasErrorResponse;
+
+        if (errorData?.errors && errorData.errors.length > 0) {
+          const firstErrorDescription = errorData.errors[0].description;
+
+          throw new Error(firstErrorDescription);
+        }
+
+        throw new Error('Erro ao listar cobranças de parcelamento');
       }
-      return null;
+
+      throw new Error('Erro desconhecido ao listar cobranças de parcelamento');
     }
   };
 }

@@ -5,6 +5,7 @@ import {
   ICancelAsaasInvoiceRequest,
   ICancelAsaasInvoiceResponse,
 } from '@core/common/interfaces/IAsaasInvoice';
+import { IAsaasErrorResponse } from '@core/common/interfaces/IAsaasCreditCard';
 
 @injectable()
 export class CancelInvoiceService {
@@ -29,17 +30,18 @@ export class CancelInvoiceService {
       return null;
     } catch (error) {
       if (axios.isAxiosError(error)) {
-        console.error(
-          'Erro ao cancelar nota fiscal no Asaas:',
-          error.response?.data
-        );
-      } else {
-        console.error(
-          'Erro desconhecido ao cancelar nota fiscal no Asaas:',
-          error
-        );
+        const errorData = error.response?.data as IAsaasErrorResponse;
+
+        if (errorData?.errors && errorData.errors.length > 0) {
+          const firstErrorDescription = errorData.errors[0].description;
+
+          throw new Error(firstErrorDescription);
+        }
+
+        throw new Error('Erro ao cancelar nota fiscal');
       }
-      return null;
+
+      throw new Error('Erro desconhecido ao cancelar nota fiscal');
     }
   };
 }

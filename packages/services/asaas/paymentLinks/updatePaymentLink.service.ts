@@ -5,6 +5,7 @@ import {
   IUpdateAsaasPaymentLinkRequest,
   IUpdateAsaasPaymentLinkResponse,
 } from '@core/common/interfaces/IAsaasPaymentLink';
+import { IAsaasErrorResponse } from '@core/common/interfaces/IAsaasCreditCard';
 
 @injectable()
 export class UpdatePaymentLinkService {
@@ -29,17 +30,18 @@ export class UpdatePaymentLinkService {
       return null;
     } catch (error) {
       if (axios.isAxiosError(error)) {
-        console.error(
-          'Erro ao atualizar link de pagamentos no Asaas:',
-          error.response?.data
-        );
-      } else {
-        console.error(
-          'Erro desconhecido ao atualizar link de pagamentos no Asaas:',
-          error
-        );
+        const errorData = error.response?.data as IAsaasErrorResponse;
+
+        if (errorData?.errors && errorData.errors.length > 0) {
+          const firstErrorDescription = errorData.errors[0].description;
+
+          throw new Error(firstErrorDescription);
+        }
+
+        throw new Error('Erro ao atualizar link de pagamentos');
       }
-      return null;
+
+      throw new Error('Erro desconhecido ao atualizar link de pagamentos');
     }
   };
 }

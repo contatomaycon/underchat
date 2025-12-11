@@ -5,6 +5,7 @@ import {
   IListAsaasSubscriptionPaymentsRequest,
   IListAsaasSubscriptionPaymentsResponse,
 } from '@core/common/interfaces/IAsaasSubscription';
+import { IAsaasErrorResponse } from '@core/common/interfaces/IAsaasCreditCard';
 
 @injectable()
 export class ListSubscriptionPaymentsService {
@@ -37,17 +38,18 @@ export class ListSubscriptionPaymentsService {
       return null;
     } catch (error) {
       if (axios.isAxiosError(error)) {
-        console.error(
-          'Erro ao listar cobranças da assinatura no Asaas:',
-          error.response?.data
-        );
-      } else {
-        console.error(
-          'Erro desconhecido ao listar cobranças da assinatura no Asaas:',
-          error
-        );
+        const errorData = error.response?.data as IAsaasErrorResponse;
+
+        if (errorData?.errors && errorData.errors.length > 0) {
+          const firstErrorDescription = errorData.errors[0].description;
+
+          throw new Error(firstErrorDescription);
+        }
+
+        throw new Error('Erro ao listar cobranças da assinatura');
       }
-      return null;
+
+      throw new Error('Erro desconhecido ao listar cobranças da assinatura');
     }
   };
 }

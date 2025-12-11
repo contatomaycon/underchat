@@ -2,6 +2,7 @@ import { injectable } from 'tsyringe';
 import axios from 'axios';
 import { AsaasBaseService } from '../asaasBase.service';
 import { IDeleteAsaasInstallmentResponse } from '@core/common/interfaces/IAsaasInstallment';
+import { IAsaasErrorResponse } from '@core/common/interfaces/IAsaasCreditCard';
 
 @injectable()
 export class DeleteInstallmentService {
@@ -24,17 +25,18 @@ export class DeleteInstallmentService {
       return null;
     } catch (error) {
       if (axios.isAxiosError(error)) {
-        console.error(
-          'Erro ao remover parcelamento no Asaas:',
-          error.response?.data
-        );
-      } else {
-        console.error(
-          'Erro desconhecido ao remover parcelamento no Asaas:',
-          error
-        );
+        const errorData = error.response?.data as IAsaasErrorResponse;
+
+        if (errorData?.errors && errorData.errors.length > 0) {
+          const firstErrorDescription = errorData.errors[0].description;
+
+          throw new Error(firstErrorDescription);
+        }
+
+        throw new Error('Erro ao remover parcelamento');
       }
-      return null;
+
+      throw new Error('Erro desconhecido ao remover parcelamento');
     }
   };
 }
