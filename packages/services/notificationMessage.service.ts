@@ -165,6 +165,9 @@ export class NotificationMessageService {
 
     const fullName = userInfo.name || userInfo.last_name || null;
     const phone = this.userService.getUserPhoneDecrypted(userInfo.phone);
+    const remoteJid = this.userService.getUserPhoneJidDecrypted(
+      userInfo.phone_jid
+    );
     const userEmail = await this.getUserEmail(masterUser.user_id);
 
     const { whatsappMessage, emailMessage, emailSubject } =
@@ -199,15 +202,18 @@ export class NotificationMessageService {
       }
     }
 
-    const remoteJid = phone
-      ? normalizePhoneToJid(phone, userInfo.phone_ddi) || null
-      : null;
+    if (!phone || !userInfo?.phone_ddi) {
+      throw new Error('Remote JID or phone or phone DDI not found');
+    }
 
     const notificationMessage: INotificationMessage = {
       id: notification.notification_id,
+      user_id: masterUser.user_id,
       notification_id: notification.notification_id,
       message_key: {
         remote_jid: remoteJid,
+        phone_ddi: userInfo.phone_ddi,
+        phone_number: phone,
       },
       account: {
         id: accountId,

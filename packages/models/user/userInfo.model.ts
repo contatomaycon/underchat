@@ -11,6 +11,7 @@ export const userInfo = pgTable('user_info', {
   phone: varchar({ length: 500 }).notNull(),
   phone_partial: varchar({ length: 15 }).notNull(),
   phone_c: varchar({ length: 500 }).notNull(),
+  phone_jid: varchar({ length: 500 }),
   photo: varchar({ length: 255 }),
   name: varchar({ length: 100 }).notNull(),
   last_name: varchar({ length: 100 }).notNull(),

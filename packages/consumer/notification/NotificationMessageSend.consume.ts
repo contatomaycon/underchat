@@ -7,6 +7,7 @@ import { startHeartbeat } from '@core/common/functions/startHeartbeat';
 import { createConsumer } from '@core/common/functions/createConsumer';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 import { INotificationMessage } from '@core/common/interfaces/INotificationMessage';
+import { BaileysPhoneValidationService } from '@core/services/baileys/methods/phoneValidation.service';
 
 @singleton()
 export class NotificationMessageSendConsume {
@@ -15,7 +16,8 @@ export class NotificationMessageSendConsume {
   constructor(
     @inject('Kafka') private readonly kafka: Kafka,
     private readonly kafkaBaileysQueueService: KafkaBaileysQueueService,
-    private readonly baileysMessageTextService: BaileysMessageTextService
+    private readonly baileysMessageTextService: BaileysMessageTextService,
+    private readonly baileysPhoneValidationService: BaileysPhoneValidationService
   ) {}
 
   private get consumerOrThrow(): Consumer {
@@ -111,14 +113,53 @@ export class NotificationMessageSendConsume {
   private async processNotificationMessage(
     data: INotificationMessage
   ): Promise<void> {
-    if (!data.message_whatsapp || !data.message_key?.remote_jid) {
+    if (!data.message_whatsapp) return;
+
+    if (data.message_key.remote_jid) {
+      await this.baileysMessageTextService.sendText(
+        data.message_key.remote_jid,
+        data.message_whatsapp
+      );
+
       return;
     }
 
+    const result = await this.baileysPhoneValidationService.validatePhone(
+      data.message_key.phone_ddi,
+      data.message_key.phone_number
+    );
+
+    if (!result.valid || !result.jid) return;
+
     await this.baileysMessageTextService.sendText(
-      data.message_key.remote_jid,
+      result.jid,
       data.message_whatsapp
     );
+
+    await this.sendPhoneJidUpdateRequest(data.user_id, result.jid);
+  }
+
+  private async sendPhoneJidUpdateRequest(
+    userId: string,
+    phoneJid: string
+  ): Promise<void> {
+    try {
+      const topic = this.kafkaBaileysQueueService.userPhoneJidUpdate();
+
+      await this.kafka.producer().send({
+        topic,
+        messages: [
+          {
+            value: JSON.stringify({
+              user_id: userId,
+              phone_jid: phoneJid,
+            }),
+          },
+        ],
+      });
+    } catch (error) {
+      console.error('Erro ao enviar atualização de phone_jid:', error);
+    }
   }
 
   private async commitNext(

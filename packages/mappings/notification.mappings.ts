@@ -5,6 +5,9 @@ export const notificationMappings = () => {
         id: {
           type: 'keyword',
         },
+        user_id: {
+          type: 'keyword',
+        },
         notification_id: {
           type: 'keyword',
         },
@@ -12,6 +15,12 @@ export const notificationMappings = () => {
           type: 'nested',
           properties: {
             remote_jid: {
+              type: 'keyword',
+            },
+            phone_ddi: {
+              type: 'keyword',
+            },
+            phone_number: {
               type: 'keyword',
             },
           },
