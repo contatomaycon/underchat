@@ -36,6 +36,17 @@ export class PlanAccountCancellerRepository {
     });
   };
 
+  findPlanAccountWithCancellation = async (accountId: string) => {
+    return this.db.query.planAccount.findFirst({
+      where: eq(planAccount.account_id, accountId),
+      columns: {
+        plan_account_id: true,
+        cancellation_date: true,
+        next_payment_date: true,
+      },
+    });
+  };
+
   findPlanAccountById = async (planAccountId: string) => {
     return this.db.query.planAccount.findFirst({
       where: and(

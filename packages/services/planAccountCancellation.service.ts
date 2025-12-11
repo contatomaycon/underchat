@@ -442,6 +442,24 @@ export class PlanAccountCancellationService {
       );
 
     if (!planAccountData?.plan_account_id) {
+      const existingPlanAccount =
+        await this.planAccountCancellerRepository.findPlanAccountWithCancellation(
+          accountId
+        );
+
+      if (existingPlanAccount?.cancellation_date) {
+        const nextPaymentDateStr = existingPlanAccount.next_payment_date;
+        if (nextPaymentDateStr) {
+          const nextPaymentDate = new Date(nextPaymentDateStr);
+          const now = new Date();
+          if (nextPaymentDate > now) {
+            throw new Error(t('plan_already_cancelling'));
+          }
+        }
+
+        throw new Error(t('plan_not_found_or_already_cancelled'));
+      }
+
       throw new Error(t('plan_not_found_or_already_cancelled'));
     }
 

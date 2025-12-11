@@ -586,7 +586,22 @@ const cancelButtonColor = computed(() => {
 });
 
 const isCancelButtonDisabled = computed(() => {
-  return !!planInvoice.value?.cancellation_date;
+  if (!planInvoice.value) return true;
+
+  const accountStatusId = planInvoice.value.account_status_id;
+  if (accountStatusId === EAccountStatus.inactive) return true;
+
+  const hasCancellationDate = !!planInvoice.value.cancellation_date;
+  if (!hasCancellationDate) return false;
+
+  const nextPaymentDateStr = planInvoice.value.next_payment_date;
+  if (!nextPaymentDateStr) return true;
+
+  const nextPaymentDate = new Date(nextPaymentDateStr);
+  const now = new Date();
+  const isCancelling = nextPaymentDate > now;
+
+  return isCancelling;
 });
 
 const isCancelling = ref(false);

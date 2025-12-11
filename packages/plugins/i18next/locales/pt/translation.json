@@ -575,6 +575,7 @@
   "nfse_not_found": "Configuração de NFSe não encontrada",
   "nfse_update_error": "Erro ao atualizar configuração de NFSe",
   "plan_not_found_or_already_cancelled": "Plano não encontrado ou já cancelado",
+  "plan_already_cancelling": "O plano já está em processo de cancelamento",
   "last_payment_date_not_found": "Data do último pagamento não encontrada",
   "subscription_cancellation_error": "Erro ao cancelar assinatura",
   "subscription_cancelled_successfully": "Assinatura cancelada com sucesso",
