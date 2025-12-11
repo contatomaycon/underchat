@@ -61,6 +61,18 @@ export const updateNotificationsRequestSchema = Type.Object({
   plan_cancellation_email_subject: Type.Optional(
     Type.Union([Type.String(), Type.Null()])
   ),
+  recurring_payment_failure_notification: Type.Optional(
+    Type.Union([Type.String({ format: 'uuid' }), Type.Null()])
+  ),
+  recurring_payment_failure_message_whatsapp: Type.Optional(
+    Type.Union([Type.String(), Type.Null()])
+  ),
+  recurring_payment_failure_message_email: Type.Optional(
+    Type.Union([Type.String(), Type.Null()])
+  ),
+  recurring_payment_failure_email_subject: Type.Optional(
+    Type.Union([Type.String(), Type.Null()])
+  ),
 });
 
 export type UpdateNotificationsRequest = Static<

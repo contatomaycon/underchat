@@ -335,7 +335,8 @@ export class NotificationMessageService {
       notificationTypeName === ENotificationType.plan_new ||
       notificationTypeName === ENotificationType.plan_renewal ||
       notificationTypeName === ENotificationType.plan_expiration ||
-      notificationTypeName === ENotificationType.plan_cancellation
+      notificationTypeName === ENotificationType.plan_cancellation ||
+      notificationTypeName === ENotificationType.recurring_payment_failure
     ) {
       const planData = await this.getPlanData(accountId);
       replacedMessage = replacedMessage.replaceAll(

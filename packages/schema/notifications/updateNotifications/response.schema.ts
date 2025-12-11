@@ -23,6 +23,10 @@ export const updateNotificationsResponseSchema = Type.Object({
   plan_renewal_notification: Type.Union([notificationSchema, Type.Null()]),
   plan_expiration_reminder: Type.Union([notificationSchema, Type.Null()]),
   plan_cancellation_notification: Type.Union([notificationSchema, Type.Null()]),
+  recurring_payment_failure_notification: Type.Union([
+    notificationSchema,
+    Type.Null(),
+  ]),
   created_at: Type.Union([Type.String(), Type.Null()]),
   updated_at: Type.Union([Type.String(), Type.Null()]),
 });

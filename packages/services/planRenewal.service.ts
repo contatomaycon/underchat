@@ -106,10 +106,17 @@ export class PlanRenewalService {
         `Usuário master não encontrado para account_id: ${planAccount.account_id}`
       );
 
-      await this.accountUpdaterRepository.updateAccountStatusById(
-        planAccount.account_id,
-        EAccountStatus.inactive
-      );
+      await Promise.all([
+        this.accountUpdaterRepository.updateAccountStatusById(
+          planAccount.account_id,
+          EAccountStatus.inactive
+        ),
+        this.notificationMessageService.sendPlanNotification(
+          planAccount.account_id,
+          planAccount.plan_id,
+          ENotificationTypeId.recurring_payment_failure
+        ),
+      ]);
 
       return;
     }
@@ -119,10 +126,17 @@ export class PlanRenewalService {
         `Cliente não encontrado ou não pôde ser criado para account_id: ${planAccount.account_id}`
       );
 
-      await this.accountUpdaterRepository.updateAccountStatusById(
-        planAccount.account_id,
-        EAccountStatus.inactive
-      );
+      await Promise.all([
+        this.accountUpdaterRepository.updateAccountStatusById(
+          planAccount.account_id,
+          EAccountStatus.inactive
+        ),
+        this.notificationMessageService.sendPlanNotification(
+          planAccount.account_id,
+          planAccount.plan_id,
+          ENotificationTypeId.recurring_payment_failure
+        ),
+      ]);
 
       return;
     }
@@ -137,10 +151,17 @@ export class PlanRenewalService {
         `Cartão padrão não encontrado para user_id: ${masterUser.user_id}`
       );
 
-      await this.accountUpdaterRepository.updateAccountStatusById(
-        planAccount.account_id,
-        EAccountStatus.inactive
-      );
+      await Promise.all([
+        this.accountUpdaterRepository.updateAccountStatusById(
+          planAccount.account_id,
+          EAccountStatus.inactive
+        ),
+        this.notificationMessageService.sendPlanNotification(
+          planAccount.account_id,
+          planAccount.plan_id,
+          ENotificationTypeId.recurring_payment_failure
+        ),
+      ]);
 
       return;
     }
@@ -165,10 +186,17 @@ export class PlanRenewalService {
         `Falha ao criar pagamento para plan_account ${planAccount.plan_account_id}`
       );
 
-      await this.accountUpdaterRepository.updateAccountStatusById(
-        planAccount.account_id,
-        EAccountStatus.inactive
-      );
+      await Promise.all([
+        this.accountUpdaterRepository.updateAccountStatusById(
+          planAccount.account_id,
+          EAccountStatus.inactive
+        ),
+        this.notificationMessageService.sendPlanNotification(
+          planAccount.account_id,
+          planAccount.plan_id,
+          ENotificationTypeId.recurring_payment_failure
+        ),
+      ]);
 
       return;
     }
@@ -228,17 +256,26 @@ export class PlanRenewalService {
       });
     }
 
+    if (this.isPaymentRefused(paymentResult.payment.status)) {
+      await Promise.all([
+        this.accountUpdaterRepository.updateAccountStatusById(
+          planAccount.account_id,
+          EAccountStatus.inactive
+        ),
+        this.notificationMessageService.sendPlanNotification(
+          planAccount.account_id,
+          planAccount.plan_id,
+          ENotificationTypeId.recurring_payment_failure
+        ),
+      ]);
+
+      return;
+    }
+
     await this.notificationMessageService.sendPlanNotification(
       planAccount.account_id,
       planAccount.plan_id,
       ENotificationTypeId.plan_renewal
     );
-
-    if (this.isPaymentRefused(paymentResult.payment.status)) {
-      await this.accountUpdaterRepository.updateAccountStatusById(
-        planAccount.account_id,
-        EAccountStatus.inactive
-      );
-    }
   };
 }

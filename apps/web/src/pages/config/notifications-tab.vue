@@ -26,6 +26,7 @@ const selectedNotificationType = ref<
   | 'plan_renewal'
   | 'plan_expiration'
   | 'plan_cancellation'
+  | 'recurring_payment_failure'
   | null
 >(null);
 const selectedWorkerId = ref<string | null>(null);
@@ -79,6 +80,16 @@ const isPlanCancellationActive = computed(() => {
   );
 });
 
+const isRecurringPaymentFailureActive = computed(() => {
+  return (
+    notifications.value?.recurring_payment_failure_notification !== null &&
+    (notifications.value?.recurring_payment_failure_notification?.whatsapp
+      ?.worker_id !== null ||
+      notifications.value?.recurring_payment_failure_notification?.email
+        ?.message !== null)
+  );
+});
+
 const twoFactorWorkerName = computed(() => {
   return notifications.value?.two_factor_notification?.whatsapp?.name || null;
 });
@@ -98,6 +109,13 @@ const planExpirationWorkerName = computed(() => {
 const planCancellationWorkerName = computed(() => {
   return (
     notifications.value?.plan_cancellation_notification?.whatsapp?.name || null
+  );
+});
+
+const recurringPaymentFailureWorkerName = computed(() => {
+  return (
+    notifications.value?.recurring_payment_failure_notification?.whatsapp
+      ?.name || null
   );
 });
 
@@ -130,6 +148,7 @@ const openWorkerModal = async (
     | 'plan_renewal'
     | 'plan_expiration'
     | 'plan_cancellation'
+    | 'recurring_payment_failure'
 ) => {
   selectedNotificationType.value = type;
   selectedWorkerId.value = null;
@@ -186,6 +205,19 @@ const openWorkerModal = async (
       notifications.value?.plan_cancellation_notification?.email?.subject || '';
     emailMessage.value =
       notifications.value?.plan_cancellation_notification?.email?.message || '';
+  } else if (type === 'recurring_payment_failure') {
+    selectedWorkerId.value =
+      notifications.value?.recurring_payment_failure_notification?.whatsapp
+        ?.worker_id || null;
+    whatsappMessage.value =
+      notifications.value?.recurring_payment_failure_notification?.whatsapp
+        ?.message || '';
+    emailSubject.value =
+      notifications.value?.recurring_payment_failure_notification?.email
+        ?.subject || '';
+    emailMessage.value =
+      notifications.value?.recurring_payment_failure_notification?.email
+        ?.message || '';
   }
 
   await loadWorkers();
@@ -244,6 +276,15 @@ const saveNotification = async () => {
         whatsappMessage.value || null;
       updateData.plan_cancellation_message_email = emailMessage.value || null;
       updateData.plan_cancellation_email_subject = emailSubject.value || null;
+    } else if (selectedNotificationType.value === 'recurring_payment_failure') {
+      updateData.recurring_payment_failure_notification =
+        selectedWorkerId.value;
+      updateData.recurring_payment_failure_message_whatsapp =
+        whatsappMessage.value || null;
+      updateData.recurring_payment_failure_message_email =
+        emailMessage.value || null;
+      updateData.recurring_payment_failure_email_subject =
+        emailSubject.value || null;
     }
 
     const result = await settingsStore.updateNotifications(updateData);
@@ -255,6 +296,8 @@ const saveNotification = async () => {
         plan_renewal_notification: result.plan_renewal_notification,
         plan_expiration_reminder: result.plan_expiration_reminder,
         plan_cancellation_notification: result.plan_cancellation_notification,
+        recurring_payment_failure_notification:
+          result.recurring_payment_failure_notification,
         created_at: result.created_at,
         updated_at: result.updated_at,
       };
@@ -272,6 +315,7 @@ const removeNotification = async (
     | 'plan_renewal'
     | 'plan_expiration'
     | 'plan_cancellation'
+    | 'recurring_payment_failure'
 ) => {
   try {
     isSaving.value = true;
@@ -288,6 +332,8 @@ const removeNotification = async (
       updateData.plan_expiration_reminder = null;
     } else if (type === 'plan_cancellation') {
       updateData.plan_cancellation_notification = null;
+    } else if (type === 'recurring_payment_failure') {
+      updateData.recurring_payment_failure_notification = null;
     }
 
     const result = await settingsStore.updateNotifications(updateData);
@@ -299,6 +345,8 @@ const removeNotification = async (
         plan_renewal_notification: result.plan_renewal_notification,
         plan_expiration_reminder: result.plan_expiration_reminder,
         plan_cancellation_notification: result.plan_cancellation_notification,
+        recurring_payment_failure_notification:
+          result.recurring_payment_failure_notification,
         created_at: result.created_at,
         updated_at: result.updated_at,
       };
@@ -365,6 +413,7 @@ const getNotificationTypeLabel = (typeName: string): string => {
     PLAN_RENEWAL: t('plan_renewal_notification'),
     PLAN_EXPIRATION: t('plan_expiration_reminder'),
     PLAN_CANCELLATION: t('plan_cancellation_notification'),
+    RECURRING_PAYMENT_FAILURE: t('recurring_payment_failure_notification'),
   };
   return typeMap[typeName] || typeName;
 };
@@ -376,6 +425,7 @@ const getNotificationTypeColor = (typeName: string): string => {
     PLAN_RENEWAL: 'info',
     PLAN_EXPIRATION: 'warning',
     PLAN_CANCELLATION: 'error',
+    RECURRING_PAYMENT_FAILURE: 'error',
   };
   return colorMap[typeName] || 'default';
 };
@@ -664,6 +714,59 @@ onMounted(async () => {
                   </VCardText>
                 </VCard>
               </VCol>
+
+              <VCol cols="12" md="4">
+                <VCard
+                  variant="outlined"
+                  class="notification-card"
+                  :class="{
+                    'notification-card--active':
+                      isRecurringPaymentFailureActive,
+                  }"
+                  @click="openWorkerModal('recurring_payment_failure')"
+                >
+                  <VCardText>
+                    <div class="d-flex align-center justify-space-between mb-2">
+                      <div class="d-flex align-center gap-2">
+                        <VIcon
+                          icon="tabler-alert-circle"
+                          :color="
+                            isRecurringPaymentFailureActive
+                              ? 'success'
+                              : 'error'
+                          "
+                        />
+                        <span class="font-weight-medium">
+                          {{ $t('recurring_payment_failure_notification') }}
+                        </span>
+                      </div>
+                      <VChip
+                        :color="
+                          isRecurringPaymentFailureActive ? 'success' : 'error'
+                        "
+                        size="small"
+                        variant="tonal"
+                      >
+                        {{
+                          isRecurringPaymentFailureActive
+                            ? $t('active')
+                            : $t('deactivated')
+                        }}
+                      </VChip>
+                    </div>
+                    <div
+                      v-if="recurringPaymentFailureWorkerName"
+                      class="text-body-2 text-medium-emphasis"
+                    >
+                      {{ $t('channel') }}:
+                      {{ recurringPaymentFailureWorkerName }}
+                    </div>
+                    <div v-else class="text-body-2 text-medium-emphasis">
+                      {{ $t('not_configured') }}
+                    </div>
+                  </VCardText>
+                </VCard>
+              </VCol>
             </VRow>
           </VCardText>
         </VCard>
@@ -902,7 +1005,9 @@ onMounted(async () => {
                     ? $t('plan_renewal_notification')
                     : selectedNotificationType === 'plan_expiration'
                       ? $t('plan_expiration_reminder')
-                      : $t('plan_cancellation_notification')
+                      : selectedNotificationType === 'plan_cancellation'
+                        ? $t('plan_cancellation_notification')
+                        : $t('recurring_payment_failure_notification')
             }}
           </span>
           <IconBtn @click="closeWorkerModal">
@@ -1084,6 +1189,16 @@ onMounted(async () => {
                 </div>
                 <div>• {{ $t('value') }}: {{ formatParameter('value') }}</div>
               </div>
+              <div
+                v-else-if="
+                  selectedNotificationType === 'recurring_payment_failure'
+                "
+                class="text-body-2"
+              >
+                <div>• {{ $t('plan') }}: {{ formatParameter('plan') }}</div>
+                <div>• {{ $t('name') }}: {{ formatParameter('name') }}</div>
+                <div>• {{ $t('value') }}: {{ formatParameter('value') }}</div>
+              </div>
             </VCardText>
           </VCard>
         </VCardText>
@@ -1100,7 +1215,9 @@ onMounted(async () => {
                 (selectedNotificationType === 'plan_expiration' &&
                   isPlanExpirationActive) ||
                 (selectedNotificationType === 'plan_cancellation' &&
-                  isPlanCancellationActive))
+                  isPlanCancellationActive) ||
+                (selectedNotificationType === 'recurring_payment_failure' &&
+                  isRecurringPaymentFailureActive))
             "
             color="error"
             variant="tonal"

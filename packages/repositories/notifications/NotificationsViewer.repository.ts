@@ -28,6 +28,10 @@ export class NotificationsViewerRepository {
     const planCancellationTypeId = await this.findNotificationTypeIdByName(
       ENotificationType.plan_cancellation
     );
+    const recurringPaymentFailureTypeId =
+      await this.findNotificationTypeIdByName(
+        ENotificationType.recurring_payment_failure
+      );
 
     const twoFactorNotification =
       await this.findNotificationByType(twoFactorTypeId);
@@ -40,6 +44,8 @@ export class NotificationsViewerRepository {
     const planCancellationNotification = await this.findNotificationByType(
       planCancellationTypeId
     );
+    const recurringPaymentFailureNotification =
+      await this.findNotificationByType(recurringPaymentFailureTypeId);
 
     const firstNotificationId =
       twoFactorNotification?.notification_id ||
@@ -47,6 +53,7 @@ export class NotificationsViewerRepository {
       planRenewalNotification?.notification_id ||
       planExpirationNotification?.notification_id ||
       planCancellationNotification?.notification_id ||
+      recurringPaymentFailureNotification?.notification_id ||
       null;
 
     return {
@@ -116,6 +123,24 @@ export class NotificationsViewerRepository {
             },
           }
         : null,
+      recurring_payment_failure_notification:
+        recurringPaymentFailureNotification
+          ? {
+              whatsapp: {
+                worker_id:
+                  recurringPaymentFailureNotification.nwr?.worker_id || null,
+                name: recurringPaymentFailureNotification.nwr?.name || null,
+                message:
+                  recurringPaymentFailureNotification.message_whatsapp || null,
+              },
+              email: {
+                subject:
+                  recurringPaymentFailureNotification.email_subject || null,
+                message:
+                  recurringPaymentFailureNotification.message_email || null,
+              },
+            }
+          : null,
       created_at: twoFactorNotification?.created_at || null,
       updated_at:
         twoFactorNotification?.updated_at ||
@@ -123,6 +148,7 @@ export class NotificationsViewerRepository {
         planRenewalNotification?.updated_at ||
         planExpirationNotification?.updated_at ||
         planCancellationNotification?.updated_at ||
+        recurringPaymentFailureNotification?.updated_at ||
         null,
     };
   };
