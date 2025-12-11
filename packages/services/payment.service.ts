@@ -24,6 +24,7 @@ import { UserCardsListerRepository } from '@core/repositories/plan/UserCardsList
 import { UserInfoViewerRepository } from '@core/repositories/plan/UserInfoViewer.repository';
 import { ViewUserInfoResponse } from '@core/schema/plan/viewUserInfo/response.schema';
 import { parseAddress } from '@core/common/functions/parseAddress';
+import { UserMasterViewerRepository } from '@core/repositories/user/UserMasterViewer.repository';
 
 @injectable()
 export class PaymentService {
@@ -33,7 +34,8 @@ export class PaymentService {
     private readonly userService: UserService,
     private readonly userCardCreatorRepository: UserCardCreatorRepository,
     private readonly userCardsListerRepository: UserCardsListerRepository,
-    private readonly userInfoViewerRepository: UserInfoViewerRepository
+    private readonly userInfoViewerRepository: UserInfoViewerRepository,
+    private readonly userMasterViewerRepository: UserMasterViewerRepository
   ) {}
 
   getOrCreateCustomer = async (
@@ -74,7 +76,16 @@ export class PaymentService {
   private readonly getUserIdByAccountId = async (
     accountId: string
   ): Promise<string | null> => {
-    return this.userCustomerRepository.getFirstUserIdByAccountId(accountId);
+    const masterUser =
+      await this.userMasterViewerRepository.findMasterUserByAccountId(
+        accountId
+      );
+
+    if (!masterUser) {
+      return null;
+    }
+
+    return masterUser.user_id;
   };
 
   private readonly findOrCreateAsaasCustomer = async (
