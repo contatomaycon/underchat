@@ -14,6 +14,7 @@ export const viewCurrentPlanInvoiceResponseSchema = Type.Object({
   cancellation_date: Type.Union([Type.String(), Type.Null()]),
   billing_period: Type.Union([Type.String(), Type.Null()]),
   plan_account_value: Type.Union([Type.Number(), Type.Null()]),
+  account_status_id: Type.Union([Type.String({ format: 'uuid' }), Type.Null()]),
 });
 
 export type ViewCurrentPlanInvoiceResponse = Static<

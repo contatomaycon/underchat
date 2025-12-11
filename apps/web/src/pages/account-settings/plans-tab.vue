@@ -7,6 +7,7 @@ import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import { ViewCurrentPlanInvoiceResponse } from '@core/schema/accountSettings/viewCurrentPlanInvoice/response.schema';
 import { ListUserCardResponse } from '@core/schema/plan/listUserCards/response.schema';
 import { ListAccountPlanProductsResponse } from '@core/schema/accountSettings/listAccountPlanProducts/response.schema';
+import { EAccountStatus } from '@core/common/enums/EAccountStatus';
 import creditCardType from 'credit-card-type';
 import visaSvg from '@images/icons/payments/card/visa.svg?url';
 import mastercardSvg from '@images/icons/payments/card/mastercard.svg?url';
@@ -554,6 +555,12 @@ const isWithin7Days = computed(() => {
 
 const planStatus = computed(() => {
   if (!planInvoice.value) return null;
+
+  const accountStatusId = planInvoice.value.account_status_id;
+
+  if (accountStatusId === EAccountStatus.inactive) {
+    return { label: t('cancelling'), color: 'warning' };
+  }
 
   const hasCancellationDate = !!planInvoice.value.cancellation_date;
   const nextPaymentDateStr = planInvoice.value.next_payment_date;
