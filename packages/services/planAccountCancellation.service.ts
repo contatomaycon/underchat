@@ -460,6 +460,13 @@ export class PlanAccountCancellationService {
         throw new Error(t('plan_not_found_or_already_cancelled'));
       }
 
+      if (
+        existingPlanAccount?.account_status_id &&
+        existingPlanAccount.account_status_id !== EAccountStatus.active
+      ) {
+        throw new Error(t('plan_already_cancelling'));
+      }
+
       throw new Error(t('plan_not_found_or_already_cancelled'));
     }
 
