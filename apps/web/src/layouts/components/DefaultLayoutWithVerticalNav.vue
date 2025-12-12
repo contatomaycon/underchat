@@ -5,12 +5,19 @@ import Footer from '@/layouts/components/Footer.vue';
 import NavbarThemeSwitcher from '@/layouts/components/NavbarThemeSwitcher.vue';
 import UserProfile from '@/layouts/components/UserProfile.vue';
 import NavBarI18n from '@webcore/components/I18n.vue';
-
 import { VerticalNavLayout } from '@layouts';
+import { useAuthStore } from '@/@webcore/stores/auth';
+import { filterNavItemsByPlan } from '@/navigation/filterByPlan';
+
+const authStore = useAuthStore();
+
+const computedNavItems = computed(() => {
+  return filterNavItemsByPlan(navItems, authStore.planIsActive);
+});
 </script>
 
 <template>
-  <VerticalNavLayout :nav-items="navItems">
+  <VerticalNavLayout :nav-items="computedNavItems">
     <template #navbar="{ toggleVerticalOverlayNavActive }">
       <div class="d-flex h-100 align-center">
         <IconBtn

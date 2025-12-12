@@ -22,6 +22,7 @@ export default [
     title: 'home',
     to: { name: 'root' as keyof RouteNamedMap },
     icon: { icon: 'tabler-smart-home' },
+    allowedWhenExpired: true,
   },
   {
     title: 'chat',
@@ -174,6 +175,7 @@ export default [
           query: { tab: 'plans' },
         },
         icon: { icon: 'tabler-settings' },
+        allowedWhenExpired: true,
         permissions: [
           EGeneralPermissions.full_access,
           EGeneralPermissions.full_access_group,
@@ -185,6 +187,7 @@ export default [
         title: 'plans_pricing',
         to: { name: 'plans' as keyof RouteNamedMap },
         icon: { icon: 'tabler-package' },
+        allowedWhenExpired: true,
         permissions: [
           EGeneralPermissions.full_access,
           EGeneralPermissions.full_access_group,
@@ -309,6 +312,7 @@ export default [
       query: { tab: 'customize' },
     },
     icon: { icon: 'tabler-palette' },
+    allowedWhenExpired: true,
     permissions: [
       EGeneralPermissions.full_access,
       EGeneralPermissions.full_access_group,

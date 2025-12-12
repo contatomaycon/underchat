@@ -225,6 +225,13 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       | never
     >,
+    'plan-expired': RouteRecordInfo<
+      'plan-expired',
+      '/plan-expired',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
     'plans': RouteRecordInfo<
       'plans',
       '/plans',
@@ -496,6 +503,12 @@ declare module 'vue-router/auto-routes' {
     'src/pages/plan.vue': {
       routes:
         | 'plan'
+      views:
+        | never
+    }
+    'src/pages/plan-expired.vue': {
+      routes:
+        | 'plan-expired'
       views:
         | never
     }

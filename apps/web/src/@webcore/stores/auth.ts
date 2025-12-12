@@ -17,6 +17,7 @@ import {
   setToken,
   setUser,
   setPlanStatus,
+  getPlanStatus,
 } from '../localStorage/user';
 import { updateAbilityPermissions } from '@/plugins/casl/ability';
 
@@ -32,7 +33,7 @@ export const useAuthStore = defineStore('auth', {
     token: null as string | null,
     permissions: [] as EPermissionsRoles[],
     layout: null as AccountInfoResponse | null,
-    planIsActive: false,
+    planIsActive: getPlanStatus(),
   }),
   actions: {
     showSnackbar(message: string, color: EColor) {
