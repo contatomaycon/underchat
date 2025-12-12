@@ -14,6 +14,7 @@ import { deleteLabelTemplateSchema } from '@core/schema/labelTemplate/deleteLabe
 import { editLabelTemplateSchema } from '@core/schema/labelTemplate/editLabelTemplate';
 import { listLabelTemplateAllSchema } from '@core/schema/labelTemplate/listLabelTemplateAll';
 import { planGuard } from '@/plugins/planGuard';
+import { planStatus } from '@/plugins/planStatus';
 
 export default async function labelTemplateRoutes(server: FastifyInstance) {
   const labelTemplateController = container.resolve(LabelTemplateController);
@@ -25,6 +26,7 @@ export default async function labelTemplateRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, labelTemplateViewPermissions),
       planGuard,
+      planStatus,
     ],
   });
 
@@ -35,6 +37,7 @@ export default async function labelTemplateRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, labelTemplateViewPermissions),
       planGuard,
+      planStatus,
     ],
   });
 
@@ -45,6 +48,7 @@ export default async function labelTemplateRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, labelTemplateCreatePermissions),
       planGuard,
+      planStatus,
     ],
   });
 
@@ -55,6 +59,7 @@ export default async function labelTemplateRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, labelTemplateViewPermissions),
       planGuard,
+      planStatus,
     ],
   });
 
@@ -65,6 +70,7 @@ export default async function labelTemplateRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, labelTemplateDeletePermissions),
       planGuard,
+      planStatus,
     ],
   });
 
@@ -75,6 +81,7 @@ export default async function labelTemplateRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, labelTemplateUpdatePermissions),
       planGuard,
+      planStatus,
     ],
   });
 }

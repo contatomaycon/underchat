@@ -24,6 +24,7 @@ import { uploadPhotoSchema } from '@core/schema/user/uploadPhoto';
 import { deletePhotoSchema } from '@core/schema/user/deletePhoto';
 import { listUserRolesSchema } from '@core/schema/user/listUserRoles';
 import { planGuard } from '@/plugins/planGuard';
+import { planStatus } from '@/plugins/planStatus';
 
 export default function userRoutes(server: FastifyInstance) {
   const userController = container.resolve(UserController);
@@ -35,6 +36,7 @@ export default function userRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, userViewPermissions),
       planGuard,
+      planStatus,
     ],
   });
 
@@ -45,6 +47,7 @@ export default function userRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, userViewPermissions),
       planGuard,
+      planStatus,
     ],
   });
 
@@ -55,6 +58,7 @@ export default function userRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, userCreatePermissions),
       planGuard,
+      planStatus,
     ],
   });
 
@@ -65,6 +69,7 @@ export default function userRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, userViewPermissions),
       planGuard,
+      planStatus,
     ],
   });
 
@@ -75,6 +80,7 @@ export default function userRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, userViewPermissions),
       planGuard,
+      planStatus,
     ],
   });
 
@@ -85,6 +91,7 @@ export default function userRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, userViewPermissions),
       planGuard,
+      planStatus,
     ],
   });
 
@@ -95,6 +102,7 @@ export default function userRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, userViewPermissions),
       planGuard,
+      planStatus,
     ],
   });
 
@@ -105,6 +113,7 @@ export default function userRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, userViewPermissions),
       planGuard,
+      planStatus,
     ],
   });
 
@@ -115,6 +124,7 @@ export default function userRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, userViewPermissions),
       planGuard,
+      planStatus,
     ],
   });
 
@@ -125,6 +135,7 @@ export default function userRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, userDeletePermissions),
       planGuard,
+      planStatus,
     ],
   });
 
@@ -135,6 +146,7 @@ export default function userRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, userUpdatePermissions),
       planGuard,
+      planStatus,
     ],
   });
 
@@ -145,6 +157,7 @@ export default function userRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, userViewPermissions),
       planGuard,
+      planStatus,
     ],
   });
 
@@ -155,6 +168,7 @@ export default function userRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, userViewPermissions),
       planGuard,
+      planStatus,
     ],
   });
 
@@ -165,6 +179,7 @@ export default function userRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, userUpdatePermissions),
       planGuard,
+      planStatus,
     ],
   });
 
@@ -175,6 +190,7 @@ export default function userRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, userUpdatePermissions),
       planGuard,
+      planStatus,
     ],
   });
 
@@ -185,6 +201,7 @@ export default function userRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, userViewPermissions),
       planGuard,
+      planStatus,
     ],
   });
 }

@@ -3,6 +3,7 @@ import { container } from 'tsyringe';
 import { listChatsSchema } from '@core/schema/chat/listChats';
 import ChatController from '@/controllers/chat';
 import { planGuard } from '@/plugins/planGuard';
+import { planStatus } from '@/plugins/planStatus';
 import { chatPermissions } from '@/permissions';
 import { updateChatsUserSchema } from '@core/schema/chat/updateChatsUser';
 import { listMessageChatsSchema } from '@core/schema/chat/listMessageChats';
@@ -44,6 +45,7 @@ export default function chatRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, chatPermissions),
       planGuard,
+      planStatus,
     ],
   });
 
@@ -54,6 +56,7 @@ export default function chatRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, chatPermissions),
       planGuard,
+      planStatus,
     ],
   });
 
@@ -64,6 +67,7 @@ export default function chatRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, chatPermissions),
       planGuard,
+      planStatus,
     ],
   });
 
@@ -74,6 +78,7 @@ export default function chatRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, chatPermissions),
       planGuard,
+      planStatus,
     ],
   });
 
@@ -84,6 +89,7 @@ export default function chatRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, chatPermissions),
       planGuard,
+      planStatus,
     ],
   });
 
@@ -94,6 +100,7 @@ export default function chatRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, chatPermissions),
       planGuard,
+      planStatus,
     ],
   });
 
@@ -104,6 +111,7 @@ export default function chatRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, chatPermissions),
       planGuard,
+      planStatus,
     ],
   });
 
@@ -114,6 +122,7 @@ export default function chatRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, chatPermissions),
       planGuard,
+      planStatus,
     ],
   });
 
@@ -124,6 +133,7 @@ export default function chatRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, chatPermissions),
       planGuard,
+      planStatus,
     ],
   });
 
@@ -134,6 +144,7 @@ export default function chatRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, chatPermissions),
       planGuard,
+      planStatus,
     ],
   });
 
@@ -144,6 +155,7 @@ export default function chatRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, chatPermissions),
       planGuard,
+      planStatus,
     ],
   });
 
@@ -154,6 +166,7 @@ export default function chatRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, chatPermissions),
       planGuard,
+      planStatus,
     ],
   });
 
@@ -164,6 +177,7 @@ export default function chatRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, chatPermissions),
       planGuard,
+      planStatus,
     ],
   });
 
@@ -174,6 +188,7 @@ export default function chatRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, chatPermissions),
       planGuard,
+      planStatus,
     ],
   });
 
@@ -184,6 +199,7 @@ export default function chatRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, chatPermissions),
       planGuard,
+      planStatus,
     ],
   });
 
@@ -194,6 +210,7 @@ export default function chatRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, chatPermissions),
       planGuard,
+      planStatus,
     ],
   });
 
@@ -204,6 +221,7 @@ export default function chatRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, chatPermissions),
       planGuard,
+      planStatus,
     ],
   });
 
@@ -214,6 +232,7 @@ export default function chatRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, chatPermissions),
       planGuard,
+      planStatus,
     ],
   });
 
@@ -224,6 +243,7 @@ export default function chatRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, chatPermissions),
       planGuard,
+      planStatus,
     ],
   });
 
@@ -234,6 +254,7 @@ export default function chatRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, chatPermissions),
       planGuard,
+      planStatus,
     ],
   });
 
@@ -244,6 +265,7 @@ export default function chatRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, chatPermissions),
       planGuard,
+      planStatus,
     ],
   });
 
@@ -254,6 +276,7 @@ export default function chatRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, chatPermissions),
       planGuard,
+      planStatus,
     ],
   });
 
@@ -264,6 +287,7 @@ export default function chatRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, chatPermissions),
       planGuard,
+      planStatus,
     ],
   });
 
@@ -274,6 +298,7 @@ export default function chatRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, chatPermissions),
       planGuard,
+      planStatus,
     ],
   });
 
@@ -284,6 +309,7 @@ export default function chatRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, chatPermissions),
       planGuard,
+      planStatus,
     ],
   });
 
@@ -294,6 +320,7 @@ export default function chatRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, chatPermissions),
       planGuard,
+      planStatus,
     ],
   });
 
@@ -304,6 +331,7 @@ export default function chatRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, chatPermissions),
       planGuard,
+      planStatus,
     ],
   });
 
@@ -314,6 +342,7 @@ export default function chatRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, chatPermissions),
       planGuard,
+      planStatus,
     ],
   });
 
@@ -324,6 +353,7 @@ export default function chatRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, chatPermissions),
       planGuard,
+      planStatus,
     ],
   });
 
@@ -334,6 +364,7 @@ export default function chatRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, chatPermissions),
       planGuard,
+      planStatus,
     ],
   });
 }

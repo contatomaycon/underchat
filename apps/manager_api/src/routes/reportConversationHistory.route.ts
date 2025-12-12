@@ -4,6 +4,7 @@ import { reportConversationHistoryViewPermissions } from '@/permissions/reportCo
 import ReportConversationHistoryController from '@/controllers/reportConversationHistory';
 import { listReportConversationHistorySchema } from '@core/schema/reportConversationHistory/listReportConversationHistory';
 import { planGuard } from '@/plugins/planGuard';
+import { planStatus } from '@/plugins/planStatus';
 
 export default function reportConversationHistoryRoutes(
   server: FastifyInstance
@@ -23,6 +24,7 @@ export default function reportConversationHistoryRoutes(
           reportConversationHistoryViewPermissions
         ),
       planGuard,
+      planStatus,
     ],
   });
 }

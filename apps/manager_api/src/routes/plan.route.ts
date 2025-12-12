@@ -27,6 +27,7 @@ import { calculateUpgradeDiscountSchema } from '@core/schema/plan/calculateUpgra
 import { createOrderPaymentSchema } from '@core/schema/plan/createOrderPayment';
 import { listAvailableCrossSellSchema } from '@core/schema/plan/listAvailableCrossSell';
 import { checkTestPlanAlreadyUsedSchema } from '@core/schema/plan/checkTestPlanAlreadyUsed';
+import { planStatus } from '@/plugins/planStatus';
 
 export default function planRoutes(server: FastifyInstance) {
   const planController = container.resolve(PlanController);
@@ -37,6 +38,7 @@ export default function planRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, planViewPermissions),
+      planStatus,
     ],
   });
 
@@ -46,6 +48,7 @@ export default function planRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, planViewPermissions),
+      planStatus,
     ],
   });
 
@@ -55,6 +58,7 @@ export default function planRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, planCreatePermissions),
+      planStatus,
     ],
   });
 
@@ -64,6 +68,7 @@ export default function planRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, planUpdatePermissions),
+      planStatus,
     ],
   });
 
@@ -73,6 +78,7 @@ export default function planRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, planDeletePermissions),
+      planStatus,
     ],
   });
 
@@ -82,6 +88,7 @@ export default function planRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, planCreatePermissions),
+      planStatus,
     ],
   });
 
@@ -91,6 +98,7 @@ export default function planRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, planViewPermissions),
+      planStatus,
     ],
   });
 
@@ -100,6 +108,7 @@ export default function planRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, planDeletePermissions),
+      planStatus,
     ],
   });
 
@@ -109,6 +118,7 @@ export default function planRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, planViewPermissions),
+      planStatus,
     ],
   });
 
@@ -118,6 +128,7 @@ export default function planRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, planInvoicePermissions),
+      planStatus,
     ],
   });
 
@@ -127,6 +138,7 @@ export default function planRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, planInvoicePermissions),
+      planStatus,
     ],
   });
 
@@ -136,6 +148,7 @@ export default function planRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, planInvoicePermissions),
+      planStatus,
     ],
   });
 
@@ -145,6 +158,7 @@ export default function planRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, planViewPermissions),
+      planStatus,
     ],
   });
 
@@ -154,6 +168,7 @@ export default function planRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, planInvoicePermissions),
+      planStatus,
     ],
   });
 
@@ -163,6 +178,7 @@ export default function planRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, planInvoicePermissions),
+      planStatus,
     ],
   });
 
@@ -172,6 +188,7 @@ export default function planRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, planInvoicePermissions),
+      planStatus,
     ],
   });
 
@@ -181,6 +198,7 @@ export default function planRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, planInvoicePermissions),
+      planStatus,
     ],
   });
 
@@ -190,6 +208,7 @@ export default function planRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, planInvoicePermissions),
+      planStatus,
     ],
   });
 
@@ -199,6 +218,7 @@ export default function planRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, planInvoicePermissions),
+      planStatus,
     ],
   });
 }

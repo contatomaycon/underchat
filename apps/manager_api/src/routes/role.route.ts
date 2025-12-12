@@ -13,6 +13,7 @@ import { deleteRoleSchema } from '@core/schema/role/deleteRole';
 import { editRoleSchema } from '@core/schema/role/editRole';
 import { createRoleSchema } from '@core/schema/role/createRole';
 import { planGuard } from '@/plugins/planGuard';
+import { planStatus } from '@/plugins/planStatus';
 
 export default function roleRoutes(server: FastifyInstance) {
   const roleController = container.resolve(RoleController);
@@ -24,6 +25,7 @@ export default function roleRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, roleViewPermissions),
       planGuard,
+      planStatus,
     ],
   });
 
@@ -34,6 +36,7 @@ export default function roleRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, roleViewPermissions),
       planGuard,
+      planStatus,
     ],
   });
 
@@ -44,6 +47,7 @@ export default function roleRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, roleDeletePermissions),
       planGuard,
+      planStatus,
     ],
   });
 
@@ -54,6 +58,7 @@ export default function roleRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, roleEditPermissions),
       planGuard,
+      planStatus,
     ],
   });
 
@@ -64,6 +69,7 @@ export default function roleRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, roleCreatePermissions),
       planGuard,
+      planStatus,
     ],
   });
 }

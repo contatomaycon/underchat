@@ -1,5 +1,10 @@
 import axios, { InternalAxiosRequestConfig, type AxiosResponse } from 'axios';
-import { getToken, removeUserData } from './localStorage/user';
+import {
+  getPlanStatus,
+  getToken,
+  removeUserData,
+  setPlanStatus,
+} from './localStorage/user';
 import { router } from '@/plugins/1.router';
 import { getI18n } from '@/plugins/i18n';
 
@@ -32,7 +37,20 @@ axiosAuth.interceptors.request.use(
 );
 
 axiosAuth.interceptors.response.use(
-  (response: AxiosResponse<unknown>) => response,
+  (response: AxiosResponse<unknown>) => {
+    const planHeader = response.headers?.['x-plan-active'];
+    if (planHeader !== undefined) {
+      const headerValue = String(planHeader).toLowerCase() === 'true';
+      const current = getPlanStatus();
+      const shouldUpdate = headerValue !== current;
+
+      if (shouldUpdate) {
+        setPlanStatus(headerValue);
+      }
+    }
+
+    return response;
+  },
   async (error) => {
     const originalRequest = error.config;
 
