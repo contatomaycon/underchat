@@ -1090,6 +1090,8 @@ watch(
           </VRow>
         </VCardText>
 
+        <VDivider />
+
         <VCardText class="d-flex justify-end flex-wrap gap-3">
           <template v-if="hasAccountInfo">
             <VBtn color="primary" @click="updateAccountInfo">
