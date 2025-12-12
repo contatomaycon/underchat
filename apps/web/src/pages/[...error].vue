@@ -20,14 +20,13 @@ const goHome = () => {
           <VIcon icon="tabler-map-pin-exclamation" size="42" />
         </VAvatar>
         <div>
-          <h4 class="text-h5 mb-2">Página não encontrada</h4>
+          <h4 class="text-h5 mb-2">{{ $t('not_found_title') }}</h4>
           <p class="text-body-1 text-medium-emphasis mb-0">
-            Não encontramos a página solicitada. Volte para o início e continue
-            navegando.
+            {{ $t('not_found_description') }}
           </p>
         </div>
         <VBtn color="primary" variant="flat" @click="goHome">
-          Voltar para o início
+          {{ $t('not_found_cta') }}
         </VBtn>
       </VCardText>
     </VCard>

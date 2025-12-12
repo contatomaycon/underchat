@@ -20,14 +20,13 @@ const goHome = () => {
           <VIcon icon="tabler-lock-off" size="42" />
         </VAvatar>
         <div>
-          <h4 class="text-h5 mb-2">Acesso não autorizado</h4>
+          <h4 class="text-h5 mb-2">{{ $t('not_authorized_title') }}</h4>
           <p class="text-body-1 text-medium-emphasis mb-0">
-            Você não tem permissão para acessar esta página. Volte para o início
-            e tente outra opção.
+            {{ $t('not_authorized_description') }}
           </p>
         </div>
         <VBtn color="primary" variant="flat" @click="goHome">
-          Voltar para o início
+          {{ $t('not_authorized_cta') }}
         </VBtn>
       </VCardText>
     </VCard>

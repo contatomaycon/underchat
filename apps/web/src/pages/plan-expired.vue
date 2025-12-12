@@ -17,14 +17,13 @@ const goToRenewal = () => {
           <VIcon icon="tabler-clipboard-x" size="42" />
         </VAvatar>
         <div>
-          <h4 class="text-h5 mb-2">Plano vencido</h4>
+          <h4 class="text-h5 mb-2">{{ $t('plan_expired_title') }}</h4>
           <p class="text-body-1 text-medium-emphasis mb-0">
-            Seu plano está vencido. Renove para continuar utilizando todas as
-            funcionalidades.
+            {{ $t('plan_expired_description') }}
           </p>
         </div>
         <VBtn color="primary" variant="flat" @click="goToRenewal">
-          Renovar plano
+          {{ $t('plan_expired_cta') }}
         </VBtn>
       </VCardText>
     </VCard>
