@@ -1,14 +1,13 @@
 import type { Router, RouteLocationRaw } from 'vue-router';
 import { canNavigate } from '@layouts/plugins/casl';
 import { isLoggedIn } from '@/@webcore/localStorage/user';
-import { getPlanStatus } from '@/@webcore/localStorage/user';
 import { useAuthStore } from '@/@webcore/stores/auth';
 
 export const setupGuards = (router: Router) => {
   router.beforeEach((to): RouteLocationRaw | void => {
     const isLogged = isLoggedIn();
     const authStore = useAuthStore();
-    const planActive = authStore.planIsActive || getPlanStatus();
+    const planActive = authStore.planIsActive;
     const allowedPlanRoutes = new Set([
       'root',
       'index',

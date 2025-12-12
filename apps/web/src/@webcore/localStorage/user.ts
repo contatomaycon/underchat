@@ -57,6 +57,23 @@ export const getLayout = (): AccountInfoResponse | null => {
   return layout ? JSON.parse(layout) : null;
 };
 
+const setPlanStatusToStorage = (isActive: boolean): void => {
+  localStorage.setItem(PLAN_STATUS_KEY, JSON.stringify(isActive));
+};
+
+const getPlanStatusFromStorage = (): boolean => {
+  const value = localStorage.getItem(PLAN_STATUS_KEY);
+  return value ? JSON.parse(value) : false;
+};
+
+export const initializePlanStatus = (): boolean => {
+  return getPlanStatusFromStorage();
+};
+
+export const persistPlanStatus = (isActive: boolean): void => {
+  setPlanStatusToStorage(isActive);
+};
+
 export const removeUserData = (): boolean => {
   localStorage.removeItem('token');
   localStorage.removeItem('permissions');
@@ -70,14 +87,4 @@ export const removeUserData = (): boolean => {
 
 export const isLoggedIn = (): boolean => {
   return !!getToken() && !!getUser();
-};
-
-export const setPlanStatus = (isActive: boolean): void => {
-  localStorage.setItem(PLAN_STATUS_KEY, JSON.stringify(isActive));
-};
-
-export const getPlanStatus = (): boolean => {
-  const value = localStorage.getItem(PLAN_STATUS_KEY);
-
-  return value ? JSON.parse(value) : false;
 };

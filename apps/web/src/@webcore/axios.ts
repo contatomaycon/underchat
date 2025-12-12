@@ -1,10 +1,5 @@
 import axios, { InternalAxiosRequestConfig, type AxiosResponse } from 'axios';
-import {
-  getPlanStatus,
-  getToken,
-  removeUserData,
-  setPlanStatus,
-} from './localStorage/user';
+import { getToken, removeUserData } from './localStorage/user';
 import { router } from '@/plugins/1.router';
 import { getI18n } from '@/plugins/i18n';
 
@@ -37,7 +32,7 @@ axiosAuth.interceptors.request.use(
 );
 
 axiosAuth.interceptors.response.use(
-  (response: AxiosResponse<unknown>) => {
+  async (response: AxiosResponse<unknown>) => {
     const headerValueRaw =
       typeof response.headers?.get === 'function'
         ? response.headers.get('x-plan-active')
@@ -45,11 +40,16 @@ axiosAuth.interceptors.response.use(
 
     if (headerValueRaw !== undefined && headerValueRaw !== null) {
       const headerValue = String(headerValueRaw).toLowerCase() === 'true';
-      const current = getPlanStatus();
-      const shouldUpdate = headerValue !== current;
 
-      if (shouldUpdate) {
-        setPlanStatus(headerValue);
+      try {
+        const { useAuthStore } = await import('@webcore/stores/auth');
+        const authStore = useAuthStore();
+
+        if (authStore.planIsActive !== headerValue) {
+          authStore.updatePlanStatus(headerValue);
+        }
+      } catch (error) {
+        console.error('Erro ao atualizar status do plano:', error);
       }
     }
 

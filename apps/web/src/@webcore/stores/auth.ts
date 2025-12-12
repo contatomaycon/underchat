@@ -16,8 +16,8 @@ import {
   setSectors,
   setToken,
   setUser,
-  setPlanStatus,
-  getPlanStatus,
+  initializePlanStatus,
+  persistPlanStatus,
 } from '../localStorage/user';
 import { updateAbilityPermissions } from '@/plugins/casl/ability';
 
@@ -33,7 +33,7 @@ export const useAuthStore = defineStore('auth', {
     token: null as string | null,
     permissions: [] as EPermissionsRoles[],
     layout: null as AccountInfoResponse | null,
-    planIsActive: getPlanStatus(),
+    planIsActive: initializePlanStatus(),
   }),
   actions: {
     showSnackbar(message: string, color: EColor) {
@@ -43,6 +43,10 @@ export const useAuthStore = defineStore('auth', {
     },
     hideSnackbar() {
       this.snackbar.status = false;
+    },
+    updatePlanStatus(isActive: boolean) {
+      this.planIsActive = isActive;
+      persistPlanStatus(isActive);
     },
     async login(login: string, password: string): Promise<boolean> {
       const url = import.meta.env.VITE_BACKEND_URL;
@@ -100,7 +104,7 @@ export const useAuthStore = defineStore('auth', {
         setPermissions(this.permissions);
         setLayout(this.layout);
         setSectors(data.data.sectors ?? []);
-        setPlanStatus(this.planIsActive);
+        persistPlanStatus(this.planIsActive);
         updateAbilityPermissions(this.permissions);
 
         return true;
