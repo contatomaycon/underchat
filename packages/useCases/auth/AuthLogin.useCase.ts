@@ -13,6 +13,8 @@ import { PresenceService } from '@core/services/presence.service';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { chatAccountCentrifugo } from '@core/common/functions/centrifugoQueue';
 import Redis from 'ioredis';
+import { createJwtSessionKey } from '@core/common/functions/createCacheKey';
+import { randomUUID } from 'crypto';
 
 @injectable()
 export class AuthLoginUseCase {
@@ -85,6 +87,15 @@ export class AuthLoginUseCase {
     return true;
   }
 
+  private async setActiveSession(
+    accountId: string,
+    userId: string,
+    sessionId: string
+  ): Promise<void> {
+    const sessionKey = createJwtSessionKey(accountId, userId);
+    await this.redis.set(sessionKey, sessionId);
+  }
+
   async execute(
     t: TFunction<'translation', undefined>,
     reply: FastifyReply,
@@ -104,12 +115,14 @@ export class AuthLoginUseCase {
       result.user_id,
       result.account_id
     );
+    const sessionId = randomUUID();
 
     const token = await reply.jwtSign(
       {
         user_id: result.user_id,
         module,
         account_id: result.account_id,
+        session_id: sessionId,
       },
       {
         sign: {
@@ -134,6 +147,7 @@ export class AuthLoginUseCase {
     }
 
     await this.presenceService.setUserAway(result.user_id);
+    await this.setActiveSession(result.account_id, result.user_id, sessionId);
 
     return {
       user: result,

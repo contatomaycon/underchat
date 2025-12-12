@@ -4,7 +4,10 @@ import { FastifyReply, FastifyRequest } from 'fastify';
 import fp from 'fastify-plugin';
 import { ApiJwtViewerUseCase } from '@core/useCases/api/ApiJwtViewer.useCase';
 import { container } from 'tsyringe';
-import { createJwtCacheKey } from '@core/common/functions/createCacheKey';
+import {
+  createJwtCacheKey,
+  createJwtSessionKey,
+} from '@core/common/functions/createCacheKey';
 import { getRootPath } from '@core/common/functions/getRootPath';
 import { hasRequiredPermission } from '@core/common/functions/hasRequiredPermission';
 import { generalEnvironment } from '@core/config/environments';
@@ -20,7 +23,7 @@ import { UserService } from '@core/services/user.service';
 async function handleApiKeyCache(
   redis: Redis,
   cacheKey: string,
-  decoded: { user_id: string; account_id: string },
+  decoded: { user_id: string; account_id: string; session_id: string },
   routeModule: string,
   module: ERouteModule,
   permissions?: EPermissionsRoles[] | null
@@ -60,6 +63,7 @@ async function handleApiKeyCache(
 
 async function generateTokenJwtAccess(
   userId: string,
+  sessionId: string,
   responseAuth: IJwtPermissionsWithPlan
 ): Promise<ITokenJwtData> {
   const accountId = responseAuth.actions.find(
@@ -78,6 +82,7 @@ async function generateTokenJwtAccess(
   return {
     account_id: accountId,
     user_id: userId,
+    session_id: sessionId,
     permission_role_id: permissionRoleId,
     actions: responseAuth.actions,
     sectors,
@@ -99,6 +104,7 @@ async function authenticateJwt(
       user_id: string;
       module: ERouteModule;
       account_id: string;
+      session_id: string;
     } = await request.jwtVerify({
       verify: {
         key: generalEnvironment.jwtSecret,
@@ -123,6 +129,30 @@ async function authenticateJwt(
     }
 
     if (!decoded.account_id) {
+      return sendResponse(reply, {
+        message: t('not_authorized'),
+        httpStatusCode: EHTTPStatusCode.unauthorized,
+      });
+    }
+
+    if (!decoded.session_id) {
+      return sendResponse(reply, {
+        message: t('not_authorized'),
+        httpStatusCode: EHTTPStatusCode.unauthorized,
+      });
+    }
+
+    const sessionKey = createJwtSessionKey(decoded.account_id, decoded.user_id);
+    const activeSession = await Redis.get(sessionKey);
+
+    if (!activeSession) {
+      return sendResponse(reply, {
+        message: t('not_authorized'),
+        httpStatusCode: EHTTPStatusCode.unauthorized,
+      });
+    }
+
+    if (activeSession !== decoded.session_id) {
       return sendResponse(reply, {
         message: t('not_authorized'),
         httpStatusCode: EHTTPStatusCode.unauthorized,
@@ -166,6 +196,7 @@ async function authenticateJwt(
 
     request.tokenJwtData = await generateTokenJwtAccess(
       decoded.user_id,
+      decoded.session_id,
       responseAuth
     );
     request.permissionsRoute = permissions ?? null;

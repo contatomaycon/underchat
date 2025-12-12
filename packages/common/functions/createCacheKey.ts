@@ -44,3 +44,15 @@ export function createKeyApiCacheKey(
   const encodedRouteModule = encodeURIComponent(routeModule);
   return joinParts(['keyCache', keyApi, encodedRouteModule]);
 }
+
+export function createJwtSessionKey(accountId: string, userId: string): string {
+  if (!accountId) {
+    throw new Error('account id is required');
+  }
+
+  if (!userId) {
+    throw new Error('user id is required');
+  }
+
+  return joinParts(['jwtSession', accountId, userId]);
+}

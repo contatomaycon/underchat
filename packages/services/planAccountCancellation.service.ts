@@ -41,8 +41,7 @@ export class PlanAccountCancellationService {
     @inject('Redis') private readonly redis: Redis
   ) {}
 
-  private async deleteAccountJwtCache(accountId: string): Promise<void> {
-    const pattern = `jwtCache:${accountId}:*`;
+  private async deleteKeysByPattern(pattern: string): Promise<void> {
     const stream = this.redis.scanStream({
       match: pattern,
       count: 100,
@@ -51,7 +50,9 @@ export class PlanAccountCancellationService {
     const keysToDelete: string[] = [];
 
     stream.on('data', (keys: string[]) => {
-      keysToDelete.push(...keys);
+      for (const key of keys) {
+        keysToDelete.push(key);
+      }
     });
 
     await new Promise<void>((resolve) => {
@@ -63,6 +64,17 @@ export class PlanAccountCancellationService {
     if (keysToDelete.length > 0) {
       await this.redis.del(...keysToDelete);
     }
+  }
+
+  private async deleteAccountJwtCache(accountId: string): Promise<void> {
+    const patterns = [`jwtCache:${accountId}:*`, `jwtSession:${accountId}:*`];
+    const deletions: Promise<void>[] = [];
+
+    for (const pattern of patterns) {
+      deletions.push(this.deleteKeysByPattern(pattern));
+    }
+
+    await Promise.all(deletions);
   }
 
   private isWithin7DaysPeriod(lastPaymentDate: string | null): boolean {
