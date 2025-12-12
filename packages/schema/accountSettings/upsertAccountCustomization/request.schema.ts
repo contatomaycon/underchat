@@ -1,11 +1,7 @@
 import { Static, Type } from '@sinclair/typebox';
 import { uploadFileRequestSchema } from '@core/schema/upload/request.schema';
 
-export const updateAccountCustomizationParamsRequestSchema = Type.Object({
-  account_info_id: Type.String({ format: 'uuid' }),
-});
-
-export const updateAccountCustomizationRequestSchema = Type.Object({
+export const upsertAccountCustomizationRequestSchema = Type.Object({
   logo: Type.Optional(Type.Union([uploadFileRequestSchema, Type.Null()])),
   delete_logo: Type.Optional(
     Type.Object({
@@ -50,10 +46,6 @@ export const updateAccountCustomizationRequestSchema = Type.Object({
   }),
 });
 
-export type UpdateAccountCustomizationRequest = Static<
-  typeof updateAccountCustomizationRequestSchema
->;
-
-export type UpdateAccountCustomizationParamsRequest = Static<
-  typeof updateAccountCustomizationParamsRequestSchema
+export type UpsertAccountCustomizationRequest = Static<
+  typeof upsertAccountCustomizationRequestSchema
 >;

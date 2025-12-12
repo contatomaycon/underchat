@@ -10,7 +10,6 @@ import { ELanguage } from '@core/common/enums/ELanguage';
 import { ESkin } from '@core/common/enums/ESkin';
 import { ENavbar } from '@core/common/enums/ENavbar';
 import { EFooter } from '@core/common/enums/EFooter';
-import { EditAccountInfoParamsRequest } from '@core/schema/account/editAccountInfo/request.schema';
 import { EColor } from '@core/common/enums/EColor';
 import { applyLayoutTheme } from '@webcore/utils/applyLayoutTheme';
 import { useConfigStore } from '@webcore/stores/config';
@@ -31,12 +30,14 @@ const props = defineProps<{
 
 function appendIfDefined(fd: FormData, key: string, value: unknown) {
   if (value === null || value === undefined) return;
-  if (typeof value === 'boolean') fd.append(key, value ? 'true' : 'false');
-  else fd.append(key, value as Blob | string);
+  if (typeof value === 'boolean') {
+    fd.append(key, value ? 'true' : 'false');
+    return;
+  }
+  fd.append(key, value as Blob | string);
 }
 
 function buildAccountInfoForm(opts: {
-  account_id: string;
   logo?: File | null;
   shouldDeleteLogo?: boolean;
   content_width: EContentWidth | null;
@@ -56,11 +57,12 @@ function buildAccountInfoForm(opts: {
 
   if (opts.shouldDeleteLogo) {
     fd.append('delete_logo', 'true');
-  } else if (opts.logo instanceof File) {
+  }
+
+  if (!opts.shouldDeleteLogo && opts.logo instanceof File) {
     fd.append('logo', opts.logo);
   }
 
-  appendIfDefined(fd, 'account_id', opts.account_id);
   appendIfDefined(fd, 'content_width', opts.content_width);
   appendIfDefined(fd, 'content_layout_nav', opts.content_layout_nav);
   appendIfDefined(fd, 'default_locale', opts.default_locale);
@@ -694,17 +696,9 @@ onBeforeUnmount(() => {
 const updateAccountInfo = async () => {
   const validateForm = await refFormEditAccount?.value?.validate();
   if (!validateForm?.valid) return;
-
-  if (!accountInfoId.value || !accountId.value) {
-    return;
-  }
-
-  const payload: EditAccountInfoParamsRequest = {
-    account_info_id: accountInfoId.value,
-  };
+  if (!accountId.value) return;
 
   const body = buildAccountInfoForm({
-    account_id: accountId.value,
     logo: logoFile.value ?? null,
     shouldDeleteLogo: shouldDeleteLogo.value,
     content_width: contentWidth.value as EContentWidth,
@@ -721,12 +715,10 @@ const updateAccountInfo = async () => {
     dark_secondary_color: darkSecondaryColor.value,
   });
 
-  const success = await accountSettingsStore.updateAccountInfo(payload, body);
+  const success = await accountSettingsStore.saveAccountInfo(body);
   if (!success) return;
 
-  const updatedAccountInfo = await accountSettingsStore.getAccountInfoById(
-    accountId.value
-  );
+  const updatedAccountInfo = await accountSettingsStore.getAccountInfoById();
   if (!updatedAccountInfo) return;
 
   setLayout(updatedAccountInfo);
@@ -737,12 +729,9 @@ const addAccountInfo = async () => {
   const validateForm = await refFormEditAccount?.value?.validate();
   if (!validateForm?.valid) return;
 
-  if (!accountId.value) {
-    return;
-  }
+  if (!accountId.value) return;
 
   const payload = buildAccountInfoForm({
-    account_id: accountId.value,
     logo: logoFile.value ?? null,
     shouldDeleteLogo: false,
     content_width: contentWidth.value as EContentWidth,
@@ -759,12 +748,10 @@ const addAccountInfo = async () => {
     dark_secondary_color: darkSecondaryColor.value,
   });
 
-  const success = await accountSettingsStore.addAccountInfo(payload);
+  const success = await accountSettingsStore.saveAccountInfo(payload);
   if (!success) return;
 
-  const updatedAccountInfo = await accountSettingsStore.getAccountInfoById(
-    accountId.value
-  );
+  const updatedAccountInfo = await accountSettingsStore.getAccountInfoById();
   if (!updatedAccountInfo) return;
 
   setLayout(updatedAccountInfo);
@@ -776,7 +763,7 @@ watch(
   async (newAccountId) => {
     if (!newAccountId) return;
 
-    const account = await accountSettingsStore.getAccountInfoById(newAccountId);
+    const account = await accountSettingsStore.getAccountInfoById();
     if (account) {
       accountInfoId.value = account.account_info_id;
       logoUrl.value = account.logo ?? null;

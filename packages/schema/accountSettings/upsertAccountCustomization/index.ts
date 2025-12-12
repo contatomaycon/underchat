@@ -1,10 +1,10 @@
 import { Type } from '@sinclair/typebox';
 import { ELanguage } from '@core/common/enums/ELanguage';
 import { ETagSwagger } from '@core/common/enums/ETagSwagger';
-import { createAccountCustomizationRequestSchema } from './request.schema';
+import { upsertAccountCustomizationRequestSchema } from './request.schema';
 
-export const createAccountCustomizationSchema = {
-  description: 'Cria a personalização da conta',
+export const upsertAccountCustomizationSchema = {
+  description: 'Cria ou atualiza a personalização da conta',
   tags: [ETagSwagger.accountSettings],
   consumes: ['multipart/form-data'],
   produces: ['application/json'],
@@ -22,14 +22,16 @@ export const createAccountCustomizationSchema = {
       })
     ),
   }),
-  body: createAccountCustomizationRequestSchema,
+  body: upsertAccountCustomizationRequestSchema,
   response: {
     200: Type.Object(
       {
         id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
         status: Type.Boolean({ const: true }),
         message: Type.String(),
-        data: Type.Boolean(),
+        data: Type.Object({
+          created: Type.Boolean(),
+        }),
       },
       { description: 'Successful' }
     ),

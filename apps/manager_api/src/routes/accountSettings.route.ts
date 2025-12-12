@@ -29,8 +29,7 @@ import {
   planInvoicePermissions,
 } from '@/permissions';
 import { viewAccountCustomizationSchema } from '@core/schema/accountSettings/viewAccountCustomization';
-import { createAccountCustomizationSchema } from '@core/schema/accountSettings/createAccountCustomization';
-import { updateAccountCustomizationSchema } from '@core/schema/accountSettings/updateAccountCustomization';
+import { upsertAccountCustomizationSchema } from '@core/schema/accountSettings/upsertAccountCustomization';
 
 export default async function accountSettingsRoutes(server: FastifyInstance) {
   const accountSettingsController = container.resolve(
@@ -52,18 +51,9 @@ export default async function accountSettingsRoutes(server: FastifyInstance) {
     ],
   });
 
-  server.post('/account-settings/account-info', {
-    schema: createAccountCustomizationSchema,
-    handler: accountSettingsController.createAccountCustomization,
-    preHandler: [
-      (request, reply) =>
-        server.authenticateJwt(request, reply, accountCustomizePermissions),
-    ],
-  });
-
-  server.patch('/account-settings/account-info/:account_info_id', {
-    schema: updateAccountCustomizationSchema,
-    handler: accountSettingsController.updateAccountCustomization,
+  server.put('/account-settings/account-info', {
+    schema: upsertAccountCustomizationSchema,
+    handler: accountSettingsController.upsertAccountCustomization,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, accountCustomizePermissions),

@@ -1,22 +1,23 @@
 import { injectable } from 'tsyringe';
 import { TFunction } from 'i18next';
-import { AccountInfoViewerUseCase } from '@core/useCases/account/AccountInfoViewer.useCase';
 import { ViewAccountInfoResponse } from '@core/schema/account/viewAccountInfo/response.schema';
+import { AccountService } from '@core/services/account.service';
 
 @injectable()
 export class AccountCustomizationViewerUseCase {
-  constructor(
-    private readonly accountInfoViewerUseCase: AccountInfoViewerUseCase
-  ) {}
+  constructor(private readonly accountService: AccountService) {}
 
   async execute(
     t: TFunction<'translation', undefined>,
-    accountId: string | null | undefined
+    accountId: string
   ): Promise<ViewAccountInfoResponse | null> {
-    if (!accountId) {
-      throw new Error(t('account_not_found'));
+    const accountInfoExists =
+      await this.accountService.existsAccountInfoById(accountId);
+
+    if (!accountInfoExists) {
+      throw new Error(t('account_info_not_found'));
     }
 
-    return this.accountInfoViewerUseCase.execute(t, accountId);
+    return this.accountService.viewAccountInfoByAccountId(accountId);
   }
 }
