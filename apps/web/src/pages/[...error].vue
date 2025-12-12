@@ -1,49 +1,49 @@
 <script setup lang="ts">
-import { useGenerateImageVariant } from '@webcore/composable/useGenerateImageVariant';
-import misc404 from '@images/pages/404.png';
-import miscMaskDark from '@images/pages/misc-mask-dark.png';
-import miscMaskLight from '@images/pages/misc-mask-light.png';
-
-const authThemeMask = useGenerateImageVariant(miscMaskLight, miscMaskDark);
-
 definePage({
   alias: '/pages/misc/not-found/:error(.*)',
-  meta: {
-    layout: 'blank',
-    public: true,
-  },
 });
+
+const router = useRouter();
+const goHome = () => {
+  router.push({ name: 'root' });
+};
 </script>
 
 <template>
-  <div class="misc-wrapper">
-    <ErrorHeader
-      status-code="404"
-      title="Page Not Found ⚠️"
-      description="We couldn't find the page you are looking for."
-    />
-
-    <VBtn to="/" class="mb-11"> Back to Home </VBtn>
-
-    <!-- 👉 Image -->
-    <div class="misc-avatar w-100 text-center">
-      <VImg
-        :src="misc404"
-        alt="error 404"
-        :max-height="$vuetify.display.smAndDown ? 350 : 500"
-        class="mx-auto"
-      />
-    </div>
-
-    <img
-      class="misc-footer-img d-none d-md-block"
-      :src="authThemeMask"
-      alt="misc-footer-img"
-      height="320"
-    />
+  <div class="plan-expired-wrapper">
+    <VCard
+      variant="elevated"
+      class="text-center pa-8 account-settings-card plan-expired-card"
+    >
+      <VCardText class="d-flex flex-column align-center gap-4">
+        <VAvatar color="primary" variant="tonal" size="80">
+          <VIcon icon="tabler-map-pin-exclamation" size="42" />
+        </VAvatar>
+        <div>
+          <h4 class="text-h5 mb-2">Página não encontrada</h4>
+          <p class="text-body-1 text-medium-emphasis mb-0">
+            Não encontramos a página solicitada. Volte para o início e continue
+            navegando.
+          </p>
+        </div>
+        <VBtn color="primary" variant="flat" @click="goHome">
+          Voltar para o início
+        </VBtn>
+      </VCardText>
+    </VCard>
   </div>
 </template>
 
-<style lang="scss">
-@use '@webcore/scss/template/pages/misc.scss';
+<style scoped>
+.plan-expired-wrapper {
+  min-height: calc(100vh - 120px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.plan-expired-card {
+  width: 100%;
+  min-height: 70vh;
+}
 </style>
