@@ -65,6 +65,7 @@ export class PlanCurrentInvoiceViewerRepository {
                 description: true,
                 annual_discount: true,
                 icon: true,
+                is_test: true,
               },
             },
             bpl: {
@@ -149,6 +150,7 @@ export class PlanCurrentInvoiceViewerRepository {
       description: string | null;
       annual_discount: string | null;
       icon: string | null;
+      is_test: boolean | null;
     },
     lastPaymentDate: string | null,
     nextPaymentDate: string | null,
@@ -168,6 +170,7 @@ export class PlanCurrentInvoiceViewerRepository {
       annual_discount: planData.annual_discount
         ? String(planData.annual_discount)
         : null,
+      is_test: planData.is_test ?? null,
       next_payment_date: nextPaymentDate,
       last_payment_date: lastPaymentDate,
       recurring_payment: recurringPayment,
@@ -187,6 +190,7 @@ export class PlanCurrentInvoiceViewerRepository {
       plan_price_old: null,
       plan_description: null,
       annual_discount: null,
+      is_test: null,
       next_payment_date: null,
       last_payment_date: null,
       recurring_payment: null,

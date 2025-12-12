@@ -8,6 +8,7 @@ export const viewCurrentPlanInvoiceResponseSchema = Type.Object({
   plan_price_old: Type.Union([Type.Number(), Type.Null()]),
   plan_description: Type.Union([Type.String(), Type.Null()]),
   annual_discount: Type.Union([Type.String(), Type.Null()]),
+  is_test: Type.Union([Type.Boolean(), Type.Null()]),
   next_payment_date: Type.Union([Type.String(), Type.Null()]),
   last_payment_date: Type.Union([Type.String(), Type.Null()]),
   recurring_payment: Type.Union([Type.Boolean(), Type.Null()]),

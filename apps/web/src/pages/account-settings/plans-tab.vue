@@ -595,6 +595,12 @@ const cancelButtonColor = computed(() => {
   return 'default';
 });
 
+const isTrialPlan = computed(() => {
+  if (!planInvoice.value) return false;
+
+  return planInvoice.value.is_test === true;
+});
+
 const isCancelButtonDisabled = computed(() => {
   if (!planInvoice.value) return true;
 
@@ -658,7 +664,10 @@ const isPlanCancelled = computed(() => {
 });
 
 const renewButtonText = computed(() => {
-  return isPlanCancelled.value ? t('hire') : t('upgrade_plan');
+  if (isTrialPlan.value) return t('hire');
+  if (isPlanCancelled.value) return t('hire');
+
+  return t('upgrade_plan');
 });
 
 const cancelSubscription = async () => {
@@ -707,6 +716,11 @@ const isPlanActive = computed(() => {
 });
 
 const renewPlan = () => {
+  if (isTrialPlan.value) {
+    router.push({ name: 'plans' });
+    return;
+  }
+
   if (!planInvoice.value) return;
 
   if (isPlanActive.value) {
@@ -718,9 +732,10 @@ const renewPlan = () => {
         billing: billingPeriod,
       },
     });
-  } else {
-    router.push({ name: 'plans' });
+    return;
   }
+
+  router.push({ name: 'plans' });
 };
 
 onMounted(() => {
@@ -816,7 +831,10 @@ onMounted(() => {
                   <VSwitch
                     :model-value="planInvoice.recurring_payment ?? false"
                     :disabled="
-                      loading || cardsLoading || isInCancellationProcess
+                      loading ||
+                      cardsLoading ||
+                      isInCancellationProcess ||
+                      isTrialPlan
                     "
                     color="primary"
                     @update:model-value="toggleRecurringPayment"
@@ -859,7 +877,9 @@ onMounted(() => {
                 {{ renewButtonText }}
               </VBtn>
               <VBtn
-                v-if="!isInCancellationProcess && !isPlanCancelled"
+                v-if="
+                  !isTrialPlan && !isInCancellationProcess && !isPlanCancelled
+                "
                 :color="cancelButtonColor"
                 variant="outlined"
                 :disabled="isCancelButtonDisabled || isCancelling"
