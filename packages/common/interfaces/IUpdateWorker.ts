@@ -9,4 +9,5 @@ export interface IUpdateWorker {
   number?: string;
   container_id?: string;
   connection_date?: string;
+  deleted_at?: string;
 }

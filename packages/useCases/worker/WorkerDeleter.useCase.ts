@@ -9,6 +9,7 @@ import { EWorkerAction } from '@core/common/enums/EWorkerAction';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { KafkaBalanceQueueService } from '@core/services/kafkaBalanceQueue.service';
 import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
+import { currentTime } from '@core/common/functions/currentTime';
 
 @injectable()
 export class WorkerDeleterUseCase {
@@ -81,6 +82,7 @@ export class WorkerDeleterUseCase {
     const inputUpdate: IUpdateWorker = {
       worker_id: workerId,
       worker_status_id: EWorkerStatus.deleting,
+      deleted_at: currentTime(),
     };
 
     return this.workerService.updateWorkerById(accountId, inputUpdate);
