@@ -1178,6 +1178,15 @@ watch(
       </VCardText>
     </VCard>
   </VDialog>
+
+  <VSnackbar
+    v-model="accountSettingsStore.snackbar.status"
+    transition="scroll-y-reverse-transition"
+    location="top end"
+    :color="accountSettingsStore.snackbar.color"
+  >
+    {{ accountSettingsStore.snackbar.message }}
+  </VSnackbar>
 </template>
 
 <style scoped>
