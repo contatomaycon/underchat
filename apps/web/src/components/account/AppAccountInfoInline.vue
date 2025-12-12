@@ -1,6 +1,7 @@
 <script lang="ts" setup>
 import { computed, nextTick, ref, toRef, watch } from 'vue';
 import { VForm } from 'vuetify/components/VForm';
+import { useTheme } from 'vuetify';
 import { useAccountSettingsStore } from '@/@webcore/stores/accountSettings';
 import { useI18n } from 'vue-i18n';
 import { EContentWidth } from '@core/common/enums/EContentWidth';
@@ -12,10 +13,17 @@ import { EFooter } from '@core/common/enums/EFooter';
 import { EditAccountInfoParamsRequest } from '@core/schema/account/editAccountInfo/request.schema';
 import { EColor } from '@core/common/enums/EColor';
 import { applyLayoutTheme } from '@webcore/utils/applyLayoutTheme';
+import { useConfigStore } from '@webcore/stores/config';
+import { useLayoutConfigStore } from '@layouts/stores/config';
 import { setLayout } from '@webcore/localStorage/user';
 
 const accountSettingsStore = useAccountSettingsStore();
 const { t } = useI18n();
+const layoutThemeContext = {
+  vuetifyTheme: useTheme(),
+  configStore: useConfigStore(),
+  layoutStore: useLayoutConfigStore(),
+};
 
 const props = defineProps<{
   accountId: string | null;
@@ -722,7 +730,7 @@ const updateAccountInfo = async () => {
   if (!updatedAccountInfo) return;
 
   setLayout(updatedAccountInfo);
-  applyLayoutTheme(updatedAccountInfo);
+  applyLayoutTheme(updatedAccountInfo, layoutThemeContext);
 };
 
 const addAccountInfo = async () => {
@@ -760,7 +768,7 @@ const addAccountInfo = async () => {
   if (!updatedAccountInfo) return;
 
   setLayout(updatedAccountInfo);
-  applyLayoutTheme(updatedAccountInfo);
+  applyLayoutTheme(updatedAccountInfo, layoutThemeContext);
 };
 
 watch(
