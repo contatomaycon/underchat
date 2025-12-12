@@ -30,18 +30,18 @@ export class ListCustomersService {
 
       return response.data;
     } catch (error) {
-      if (!axios.isAxiosError(error)) {
-        throw new Error('Erro desconhecido ao listar clientes');
+      if (axios.isAxiosError(error)) {
+        const errorData = error.response?.data as IAsaasErrorResponse;
+
+        if (errorData?.errors && errorData.errors.length > 0) {
+          const firstErrorDescription = errorData.errors[0].description;
+          throw new Error(firstErrorDescription);
+        }
+
+        throw new Error('Erro ao listar clientes');
       }
 
-      const errorData = error.response?.data as IAsaasErrorResponse;
-
-      if (errorData?.errors && errorData.errors.length > 0) {
-        const firstErrorDescription = errorData.errors[0].description;
-        throw new Error(firstErrorDescription);
-      }
-
-      throw new Error('Erro ao listar clientes');
+      throw new Error('Erro desconhecido ao listar clientes');
     }
   };
 
@@ -53,15 +53,19 @@ export class ListCustomersService {
       return '';
     }
 
+    const toStringIfDefined = (
+      value?: string | number | boolean
+    ): string | undefined => {
+      if (value === undefined) {
+        return undefined;
+      }
+
+      return value.toString();
+    };
+
     const entries: Array<[string, string | undefined]> = [
-      [
-        'offset',
-        request.offset !== undefined ? request.offset.toString() : undefined,
-      ],
-      [
-        'limit',
-        request.limit !== undefined ? request.limit.toString() : undefined,
-      ],
+      ['offset', toStringIfDefined(request.offset)],
+      ['limit', toStringIfDefined(request.limit)],
       ['name', request.name],
       ['email', request.email],
       ['cpfCnpj', request.cpfCnpj],

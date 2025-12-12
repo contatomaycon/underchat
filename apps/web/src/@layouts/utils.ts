@@ -73,7 +73,11 @@ export const isNavLinkActive = (link: NavLink, router: Router) => {
       return entries.join('|');
     }
 
-    return String(value);
+    if (typeof value === 'symbol') {
+      return value.toString();
+    }
+
+    return String(value as string | number | boolean | bigint);
   };
 
   const keys = new Set([

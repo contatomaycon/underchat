@@ -53,25 +53,21 @@ export class ListPaymentLinksService {
       return '';
     }
 
+    const toStringIfDefined = (
+      value?: string | number | boolean
+    ): string | undefined => {
+      if (value === undefined) {
+        return undefined;
+      }
+
+      return value.toString();
+    };
+
     const entries: Array<[string, string | undefined]> = [
-      [
-        'offset',
-        request.offset !== undefined ? request.offset.toString() : undefined,
-      ],
-      [
-        'limit',
-        request.limit !== undefined ? request.limit.toString() : undefined,
-      ],
-      [
-        'active',
-        request.active !== undefined ? request.active.toString() : undefined,
-      ],
-      [
-        'includeDeleted',
-        request.includeDeleted !== undefined
-          ? request.includeDeleted.toString()
-          : undefined,
-      ],
+      ['offset', toStringIfDefined(request.offset)],
+      ['limit', toStringIfDefined(request.limit)],
+      ['active', toStringIfDefined(request.active)],
+      ['includeDeleted', toStringIfDefined(request.includeDeleted)],
       ['name', request.name],
       ['externalReference', request.externalReference],
     ];

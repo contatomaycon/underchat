@@ -55,15 +55,19 @@ export class ListSubscriptionInvoicesService {
       return '';
     }
 
+    const toStringIfDefined = (
+      value?: string | number | boolean
+    ): string | undefined => {
+      if (value === undefined) {
+        return undefined;
+      }
+
+      return value.toString();
+    };
+
     const entries: Array<[string, string | undefined]> = [
-      [
-        'offset',
-        request.offset !== undefined ? request.offset.toString() : undefined,
-      ],
-      [
-        'limit',
-        request.limit !== undefined ? request.limit.toString() : undefined,
-      ],
+      ['offset', toStringIfDefined(request.offset)],
+      ['limit', toStringIfDefined(request.limit)],
       ['effectiveDate[ge]', request['effectiveDate[ge]']],
       ['effectiveDate[le]', request['effectiveDate[le]']],
       ['externalReference', request.externalReference],
