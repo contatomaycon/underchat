@@ -40,6 +40,8 @@ import { IViewWorkerNameAndId } from '@core/common/interfaces/IViewWorkerNameAnd
 import { WorkerConfigFieldsViewerRepository } from '@core/repositories/worker/WorkerConfigFieldsViewer.repository';
 import { IWorkerConfigFields } from '@core/common/interfaces/IWorkerConfigFields';
 import { WorkerAllListerRepository } from '@core/repositories/worker/WorkerAllLister.repository';
+import { WorkerMonitorViewerRepository } from '@core/repositories/worker/WorkerMonitorViewer.repository';
+import { IWorkerMonitor } from '@core/common/interfaces/IWorkerMonitor';
 import { TransferWorker } from '@core/schema/chat/listTransferOptions/response.schema';
 import Redis from 'ioredis';
 
@@ -70,6 +72,7 @@ export class WorkerService {
     private readonly workerNameAndIdViewerRepository: WorkerNameAndIdViewerRepository,
     private readonly workerConfigFieldsViewerRepository: WorkerConfigFieldsViewerRepository,
     private readonly workerAllListerRepository: WorkerAllListerRepository,
+    private readonly workerMonitorViewerRepository: WorkerMonitorViewerRepository,
     @inject('Redis') private readonly redis: Redis
   ) {
     this.docker = new Docker({ socketPath: '/var/run/docker.sock' });
@@ -400,5 +403,15 @@ export class WorkerService {
 
   listAllWorkers = async (accountId: string): Promise<TransferWorker[]> => {
     return this.workerAllListerRepository.listAllWorkers(accountId);
+  };
+
+  listWorkersForMonitor = async (): Promise<IWorkerMonitor[]> => {
+    return this.workerMonitorViewerRepository.listWorkers();
+  };
+
+  viewWorkerForMonitor = async (
+    workerId: string
+  ): Promise<IWorkerMonitor | null> => {
+    return this.workerMonitorViewerRepository.viewWorker(workerId);
   };
 }
