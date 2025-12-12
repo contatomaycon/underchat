@@ -16,6 +16,7 @@ import {
   setSectors,
   setToken,
   setUser,
+  setPlanStatus,
 } from '../localStorage/user';
 import { updateAbilityPermissions } from '@/plugins/casl/ability';
 
@@ -31,6 +32,7 @@ export const useAuthStore = defineStore('auth', {
     token: null as string | null,
     permissions: [] as EPermissionsRoles[],
     layout: null as AccountInfoResponse | null,
+    planIsActive: false,
   }),
   actions: {
     showSnackbar(message: string, color: EColor) {
@@ -90,12 +92,14 @@ export const useAuthStore = defineStore('auth', {
         this.token = data.data.token;
         this.permissions = (data.data.permissions ?? []) as EPermissionsRoles[];
         this.layout = data.data.layout;
+        this.planIsActive = data.data.plan_is_active ?? false;
 
         setUser(this.user);
         setToken(this.token);
         setPermissions(this.permissions);
         setLayout(this.layout);
         setSectors(data.data.sectors ?? []);
+        setPlanStatus(this.planIsActive);
         updateAbilityPermissions(this.permissions);
 
         return true;

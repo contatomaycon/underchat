@@ -4,10 +4,15 @@ import { FastifyReply, FastifyRequest } from 'fastify';
 import { TFunction } from 'i18next';
 import { RefreshTokenResponse } from '@core/schema/auth/refrehToken/response.schema';
 import { ERouteModule } from '@core/common/enums/ERouteModule';
+import { AccountService } from '@core/services/account.service';
+import { UserService } from '@core/services/user.service';
 
 @injectable()
 export class AuthRefreshTokenUseCase {
-  constructor() {}
+  constructor(
+    private readonly accountService: AccountService,
+    private readonly userService: UserService
+  ) {}
 
   async execute(
     t: TFunction<'translation', undefined>,
@@ -35,6 +40,14 @@ export class AuthRefreshTokenUseCase {
       throw new Error(t('invalid_token_module'));
     }
 
+    const accountId = await this.userService.getUserAccountId(
+      decodeToken.user_id
+    );
+
+    if (!accountId) {
+      throw new Error(t('invalid_token'));
+    }
+
     const payload = {
       user_id: decodeToken.user_id,
       module: request.module,
@@ -47,8 +60,11 @@ export class AuthRefreshTokenUseCase {
       },
     });
 
+    const planIsActive = await this.accountService.isPlanActive(accountId);
+
     return {
       token,
+      plan_is_active: planIsActive,
     };
   }
 }

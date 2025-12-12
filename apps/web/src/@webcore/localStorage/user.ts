@@ -4,6 +4,8 @@ import {
   AccountInfoResponse,
 } from '@core/schema/auth/login/response.schema';
 
+const PLAN_STATUS_KEY = 'plan_is_active';
+
 export const setSectors = (sectors: string[]): void => {
   localStorage.setItem('sectors', JSON.stringify(sectors));
 };
@@ -61,10 +63,21 @@ export const removeUserData = (): boolean => {
   localStorage.removeItem('user');
   localStorage.removeItem('layout');
   localStorage.removeItem('sectors');
+  localStorage.removeItem(PLAN_STATUS_KEY);
 
   return !getToken() && !getUser() && getPermissions().length === 0;
 };
 
 export const isLoggedIn = (): boolean => {
   return !!getToken() && !!getUser();
+};
+
+export const setPlanStatus = (isActive: boolean): void => {
+  localStorage.setItem(PLAN_STATUS_KEY, JSON.stringify(isActive));
+};
+
+export const getPlanStatus = (): boolean => {
+  const value = localStorage.getItem(PLAN_STATUS_KEY);
+
+  return value ? JSON.parse(value) : false;
 };

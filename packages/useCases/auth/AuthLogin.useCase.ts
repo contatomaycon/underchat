@@ -11,7 +11,6 @@ import { AccountService } from '@core/services/account.service';
 import { UserService } from '@core/services/user.service';
 import { PresenceService } from '@core/services/presence.service';
 import { CentrifugoService } from '@core/services/centrifugo.service';
-import { UserAccountViewerRepository } from '@core/repositories/user/UserAccountViewer.repository';
 import { chatAccountCentrifugo } from '@core/common/functions/centrifugoQueue';
 import Redis from 'ioredis';
 
@@ -22,10 +21,9 @@ export class AuthLoginUseCase {
     private readonly permissionService: PermissionService,
     private readonly accountService: AccountService,
     private readonly userService: UserService,
-    @inject('Redis') private readonly redis: Redis,
     private readonly presenceService: PresenceService,
     private readonly centrifugoService: CentrifugoService,
-    private readonly userAccountViewerRepository: UserAccountViewerRepository
+    @inject('Redis') private readonly redis: Redis
   ) {}
 
   private async invalidateUserJwtCache(userId: string): Promise<void> {
@@ -76,7 +74,7 @@ export class AuthLoginUseCase {
     }
 
     const [accountId] = await Promise.all([
-      this.userAccountViewerRepository.getUserAccountId(userId),
+      this.userService.getUserAccountId(userId),
       this.invalidateUserJwtCache(userId),
     ]);
 
@@ -123,6 +121,10 @@ export class AuthLoginUseCase {
       this.userService.listUserSectors(result.account_id, result.user_id),
     ]);
 
+    const planIsActive = await this.accountService.isPlanActive(
+      result.account_id
+    );
+
     if (hadDuplicateLogin) {
       await new Promise((resolve) => setTimeout(resolve, 200));
     }
@@ -135,6 +137,7 @@ export class AuthLoginUseCase {
       permissions,
       layout: accountInfo,
       sectors,
+      plan_is_active: planIsActive,
     };
   }
 }

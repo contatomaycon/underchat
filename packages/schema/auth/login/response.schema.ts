@@ -78,6 +78,7 @@ export const authLoginResponseSchema = Type.Object({
   layout: Type.Union([accountInfoResponseSchema, Type.Null()]),
   token: Type.String(),
   sectors: Type.Array(Type.String()),
+  plan_is_active: Type.Boolean(),
 });
 
 export type AuthLoginResponse = Static<typeof authLoginResponseSchema>;
