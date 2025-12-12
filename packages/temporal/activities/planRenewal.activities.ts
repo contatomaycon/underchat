@@ -1,12 +1,15 @@
 import { PlanRenewalService } from '@core/services/planRenewal.service';
-import { container } from 'tsyringe';
+import { injectable } from 'tsyringe';
 
 export interface IPlanRenewalActivity {
   processPlanRenewals(): Promise<void>;
 }
 
-export async function processPlanRenewals(): Promise<void> {
-  const planRenewalService = container.resolve(PlanRenewalService);
+@injectable()
+export class PlanRenewalActivity implements IPlanRenewalActivity {
+  constructor(private readonly planRenewalService: PlanRenewalService) {}
 
-  await planRenewalService.processRenewals();
+  processPlanRenewals = async (): Promise<void> => {
+    await this.planRenewalService.processRenewals();
+  };
 }

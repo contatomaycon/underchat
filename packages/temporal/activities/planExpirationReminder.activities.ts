@@ -1,14 +1,17 @@
 import { PlanExpirationReminderService } from '@core/services/planExpirationReminder.service';
-import { container } from 'tsyringe';
+import { injectable } from 'tsyringe';
 
 export interface IPlanExpirationReminderActivity {
   processPlanExpirationReminders(): Promise<void>;
 }
 
-export async function processPlanExpirationReminders(): Promise<void> {
-  const planExpirationReminderService = container.resolve(
-    PlanExpirationReminderService
-  );
+@injectable()
+export class PlanExpirationReminderActivity implements IPlanExpirationReminderActivity {
+  constructor(
+    private readonly planExpirationReminderService: PlanExpirationReminderService
+  ) {}
 
-  await planExpirationReminderService.processExpirationReminders();
+  processPlanExpirationReminders = async (): Promise<void> => {
+    await this.planExpirationReminderService.processExpirationReminders();
+  };
 }
