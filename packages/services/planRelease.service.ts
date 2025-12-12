@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { inject, injectable } from 'tsyringe';
 import { PlanReleaseRepository } from '@core/repositories/plan/PlanRelease.repository';
 import { EPaymentStatus } from '@core/common/enums/EPaymentStatus';
 import { EBillingPeriod } from '@core/common/enums/EBillingPeriod';
@@ -10,6 +10,8 @@ import { ICreateAsaasInvoiceRequest } from '@core/common/interfaces/IAsaasInvoic
 import { AccountPaymentNfSeUpserterRepository } from '@core/repositories/account/AccountPaymentNfSeUpserter.repository';
 import { NotificationMessageService } from './notificationMessage.service';
 import { ENotificationTypeId } from '@core/common/enums/ENotificationType';
+import Redis from 'ioredis';
+import { withLock } from '@core/common/functions/withLock';
 
 @injectable()
 export class PlanReleaseService {
@@ -18,7 +20,8 @@ export class PlanReleaseService {
     private readonly centrifugoService: CentrifugoService,
     private readonly asaasService: AsaasService,
     private readonly accountPaymentNfSeUpserterRepository: AccountPaymentNfSeUpserterRepository,
-    private readonly notificationMessageService: NotificationMessageService
+    private readonly notificationMessageService: NotificationMessageService,
+    @inject('Redis') private readonly redis: Redis
   ) {}
 
   private readonly mapAsaasStatusToPaymentStatus = (
@@ -185,21 +188,27 @@ export class PlanReleaseService {
     value: string;
     nextPaymentDate: string;
   }): Promise<void> => {
-    await this.planReleaseRepository.processPaymentAndReleasePlan({
-      accountPaymentId: data.accountPaymentId,
-      paymentStatusId: data.paymentStatusId,
-      paymentDate: data.paymentDate,
-      pixTransaction: data.pixTransaction,
-      accountId: data.accountId,
-      planId: data.planId,
-      accountPaymentIdForPlan: data.accountPaymentId,
-      recurringPayment: data.recurringPayment,
-      billingPeriodId: data.billingPeriodId,
-      lastPaymentDate: data.paymentDate || new Date().toISOString(),
-      nextPaymentDate: data.nextPaymentDate,
-      value: data.value,
-      shouldReleasePlan: false,
-    });
+    await withLock(
+      this.redis,
+      `plan-account:${data.accountId}`,
+      () =>
+        this.planReleaseRepository.processPaymentAndReleasePlan({
+          accountPaymentId: data.accountPaymentId,
+          paymentStatusId: data.paymentStatusId,
+          paymentDate: data.paymentDate,
+          pixTransaction: data.pixTransaction,
+          accountId: data.accountId,
+          planId: data.planId,
+          accountPaymentIdForPlan: data.accountPaymentId,
+          recurringPayment: data.recurringPayment,
+          billingPeriodId: data.billingPeriodId,
+          lastPaymentDate: data.paymentDate || new Date().toISOString(),
+          nextPaymentDate: data.nextPaymentDate,
+          value: data.value,
+          shouldReleasePlan: false,
+        }),
+      { ttlMs: 20000 }
+    );
   };
 
   private readonly releasePlanForPayment = async (data: {
@@ -238,21 +247,27 @@ export class PlanReleaseService {
         )
       : data.value;
 
-    await this.planReleaseRepository.processPaymentAndReleasePlan({
-      accountPaymentId: data.accountPaymentId,
-      paymentStatusId: data.paymentStatusId,
-      paymentDate: data.paymentDate,
-      pixTransaction: data.pixTransaction,
-      accountId: data.accountId,
-      planId: data.planId,
-      accountPaymentIdForPlan: data.accountPaymentId,
-      recurringPayment: data.recurringPayment,
-      billingPeriodId: data.billingPeriodId,
-      lastPaymentDate: data.paymentDate,
-      nextPaymentDate,
-      value: finalValue,
-      shouldReleasePlan: true,
-    });
+    await withLock(
+      this.redis,
+      `plan-account:${data.accountId}`,
+      () =>
+        this.planReleaseRepository.processPaymentAndReleasePlan({
+          accountPaymentId: data.accountPaymentId,
+          paymentStatusId: data.paymentStatusId,
+          paymentDate: data.paymentDate,
+          pixTransaction: data.pixTransaction,
+          accountId: data.accountId,
+          planId: data.planId,
+          accountPaymentIdForPlan: data.accountPaymentId,
+          recurringPayment: data.recurringPayment,
+          billingPeriodId: data.billingPeriodId,
+          lastPaymentDate: data.paymentDate,
+          nextPaymentDate,
+          value: finalValue,
+          shouldReleasePlan: true,
+        }),
+      { ttlMs: 20000 }
+    );
 
     await this.createInvoiceForPayment(
       data.accountPaymentId,
