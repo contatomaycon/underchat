@@ -30,6 +30,8 @@ export const useLayoutConfigStore = defineStore('layoutConfig', () => {
     layoutConfig.app.contentWidth
   );
   const appContentLayoutNav = ref(layoutConfig.app.contentLayoutNav);
+  const appLogo = ref(layoutConfig.app.logo);
+  const appTitle = ref(layoutConfig.app.title);
 
   watch(appContentLayoutNav, (val) => {
     if (val === AppContentLayoutNav.Horizontal) {
@@ -107,5 +109,7 @@ export const useLayoutConfigStore = defineStore('layoutConfig', () => {
     isAppRTL,
     _layoutClasses,
     isVerticalNavMini,
+    appLogo,
+    appTitle,
   };
 });

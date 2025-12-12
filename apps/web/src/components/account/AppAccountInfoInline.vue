@@ -11,6 +11,8 @@ import { ENavbar } from '@core/common/enums/ENavbar';
 import { EFooter } from '@core/common/enums/EFooter';
 import { EditAccountInfoParamsRequest } from '@core/schema/account/editAccountInfo/request.schema';
 import { EColor } from '@core/common/enums/EColor';
+import { applyLayoutTheme } from '@webcore/utils/applyLayoutTheme';
+import { setLayout } from '@webcore/localStorage/user';
 
 const accountSettingsStore = useAccountSettingsStore();
 const { t } = useI18n();
@@ -711,7 +713,16 @@ const updateAccountInfo = async () => {
     dark_secondary_color: darkSecondaryColor.value,
   });
 
-  await accountSettingsStore.updateAccountInfo(payload, body);
+  const success = await accountSettingsStore.updateAccountInfo(payload, body);
+  if (!success) return;
+
+  const updatedAccountInfo = await accountSettingsStore.getAccountInfoById(
+    accountId.value
+  );
+  if (!updatedAccountInfo) return;
+
+  setLayout(updatedAccountInfo);
+  applyLayoutTheme(updatedAccountInfo);
 };
 
 const addAccountInfo = async () => {
@@ -740,7 +751,16 @@ const addAccountInfo = async () => {
     dark_secondary_color: darkSecondaryColor.value,
   });
 
-  await accountSettingsStore.addAccountInfo(payload);
+  const success = await accountSettingsStore.addAccountInfo(payload);
+  if (!success) return;
+
+  const updatedAccountInfo = await accountSettingsStore.getAccountInfoById(
+    accountId.value
+  );
+  if (!updatedAccountInfo) return;
+
+  setLayout(updatedAccountInfo);
+  applyLayoutTheme(updatedAccountInfo);
 };
 
 watch(
