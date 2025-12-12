@@ -14,6 +14,8 @@ import { useLayoutConfigStore } from '@layouts/stores/config';
 import { applyLayoutTheme } from '@/@webcore/utils/applyLayoutTheme';
 import { useChatStore } from '@webcore/stores/chat';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
+import { resetConnection } from '@webcore/centrifugo';
+import { resetPresencePermissionError } from '@webcore/presence';
 import { VForm } from 'vuetify/components/VForm';
 import { useTheme } from 'vuetify';
 
@@ -71,6 +73,10 @@ const handleLogin = async () => {
     } catch (error) {
       console.error('Failed to apply layout/theme after login', error);
     }
+
+    resetConnection();
+    resetPresencePermissionError();
+
     chatStore.updateUser();
     const permissions = authStore.permissions;
 
@@ -85,6 +91,7 @@ const handleLogin = async () => {
       console.error('Failed to update permissions after login', error);
     }
 
+    await nextTick();
     router.replace(route.query.to ? String(route.query.to) : '/');
   }
 };

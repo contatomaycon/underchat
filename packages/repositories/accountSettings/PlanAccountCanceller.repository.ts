@@ -1,9 +1,11 @@
 import * as schema from '@core/models';
-import { planAccount, worker, accountPaymentNfSe } from '@core/models';
+import { planAccount, worker, accountPaymentNfSe, account } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull, isNotNull, or } from 'drizzle-orm';
 import { currentTime } from '@core/common/functions/currentTime';
+import { IPlanAccountWithCancellation } from '@core/common/interfaces/IPlanAccountWithCancellation';
+import { EAccountStatus } from '@core/common/enums/EAccountStatus';
 
 @injectable()
 export class PlanAccountCancellerRepository {
@@ -34,6 +36,34 @@ export class PlanAccountCancellerRepository {
         },
       },
     });
+  };
+
+  findPlanAccountWithCancellation = async (
+    accountId: string
+  ): Promise<IPlanAccountWithCancellation | null> => {
+    const result = await this.db
+      .select({
+        plan_account_id: planAccount.plan_account_id,
+        cancellation_date: planAccount.cancellation_date,
+        next_payment_date: planAccount.next_payment_date,
+        account_status_id: account.account_status_id,
+      })
+      .from(planAccount)
+      .innerJoin(account, eq(planAccount.account_id, account.account_id))
+      .where(
+        and(
+          eq(planAccount.account_id, accountId),
+          isNull(planAccount.cancellation_date)
+        )
+      )
+      .limit(1)
+      .execute();
+
+    if (result.length === 0) {
+      return null;
+    }
+
+    return result[0];
   };
 
   findPlanAccountById = async (planAccountId: string) => {
@@ -70,9 +100,11 @@ export class PlanAccountCancellerRepository {
     const updateData: {
       cancellation_date: string;
       next_payment_date?: null;
+      recurring_payment: boolean;
       updated_at: string;
     } = {
       cancellation_date: cancellationDate,
+      recurring_payment: false,
       updated_at: currentTime(),
     };
 
@@ -127,9 +159,11 @@ export class PlanAccountCancellerRepository {
     const updateData: {
       cancellation_date: string;
       next_payment_date?: null;
+      recurring_payment: boolean;
       updated_at: string;
     } = {
       cancellation_date: cancellationDate,
+      recurring_payment: false,
       updated_at: currentTime(),
     };
 
@@ -149,5 +183,30 @@ export class PlanAccountCancellerRepository {
       .execute();
 
     return (result.rowCount ?? 0) > 0;
+  };
+
+  findCancelledPlanAccount = async (accountId: string) => {
+    const result = await this.db
+      .select({
+        plan_account_id: planAccount.plan_account_id,
+        account_id: planAccount.account_id,
+        cancellation_date: planAccount.cancellation_date,
+        next_payment_date: planAccount.next_payment_date,
+      })
+      .from(planAccount)
+      .innerJoin(account, eq(planAccount.account_id, account.account_id))
+      .where(
+        and(
+          eq(planAccount.account_id, accountId),
+          or(
+            isNotNull(planAccount.cancellation_date),
+            eq(account.account_status_id, EAccountStatus.inactive)
+          )
+        )
+      )
+      .limit(1)
+      .execute();
+
+    return result[0] || null;
   };
 }

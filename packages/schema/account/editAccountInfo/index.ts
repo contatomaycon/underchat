@@ -3,7 +3,7 @@ import { ELanguage } from '@core/common/enums/ELanguage';
 import { ETagSwagger } from '@core/common/enums/ETagSwagger';
 import {
   editAccountInfoParamsRequestSchema,
-  editAccountInfoResponseSchema,
+  editAccountInfoRequestSchema,
 } from './request.schema';
 
 export const editAccountInfoSchema = {
@@ -26,7 +26,7 @@ export const editAccountInfoSchema = {
     ),
   }),
   params: editAccountInfoParamsRequestSchema,
-  body: editAccountInfoResponseSchema,
+  body: editAccountInfoRequestSchema,
   response: {
     200: Type.Object(
       {

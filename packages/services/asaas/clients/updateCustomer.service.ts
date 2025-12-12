@@ -5,6 +5,7 @@ import {
   IUpdateAsaasCustomerRequest,
   IUpdateAsaasCustomerResponse,
 } from '@core/common/interfaces/IAsaasCustomer';
+import { IAsaasErrorResponse } from '@core/common/interfaces/IAsaasCreditCard';
 
 @injectable()
 export class UpdateCustomerService {
@@ -29,17 +30,18 @@ export class UpdateCustomerService {
       return null;
     } catch (error) {
       if (axios.isAxiosError(error)) {
-        console.error(
-          'Erro ao atualizar cliente no Asaas:',
-          error.response?.data
-        );
-      } else {
-        console.error(
-          'Erro desconhecido ao atualizar cliente no Asaas:',
-          error
-        );
+        const errorData = error.response?.data as IAsaasErrorResponse;
+
+        if (errorData?.errors && errorData.errors.length > 0) {
+          const firstErrorDescription = errorData.errors[0].description;
+
+          throw new Error(firstErrorDescription);
+        }
+
+        throw new Error('Erro ao atualizar cliente');
       }
-      return null;
+
+      throw new Error('Erro desconhecido ao atualizar cliente');
     }
   };
 }

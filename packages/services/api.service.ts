@@ -2,6 +2,7 @@ import { ERouteModule } from '@core/common/enums/ERouteModule';
 import { MiddlewareApiKeyRepository } from '@core/repositories/middleware/MiddlewareApiKey.repository';
 import { MiddlewareJwtRepository } from '@core/repositories/middleware/MiddlewareJwt.repository';
 import { injectable } from 'tsyringe';
+import { IJwtPermissionsWithPlan } from '@core/common/interfaces/IJwtPermissionsWithPlan';
 
 @injectable()
 export class ApiService {
@@ -14,7 +15,7 @@ export class ApiService {
     userId: string,
     routeModule: ERouteModule,
     module: ERouteModule
-  ) => {
+  ): Promise<IJwtPermissionsWithPlan> => {
     return this.middlewareJwtRepository.find(userId, routeModule, module);
   };
 

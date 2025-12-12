@@ -1,8 +1,8 @@
 import * as schema from '@core/models';
-import { userCustomer, user } from '@core/models';
+import { userCustomer } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, eq, isNull } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 
 @injectable()
@@ -48,19 +48,5 @@ export class UserCustomerRepository {
       user_customer_id: userCustomerId,
       user_customer: customerId,
     };
-  };
-
-  getFirstUserIdByAccountId = async (
-    accountId: string
-  ): Promise<string | null> => {
-    const result = await this.db.query.user.findFirst({
-      where: and(eq(user.account_id, accountId), isNull(user.deleted_at)),
-      columns: {
-        user_id: true,
-      },
-      orderBy: (users, { asc }) => [asc(users.created_at)],
-    });
-
-    return result?.user_id || null;
   };
 }

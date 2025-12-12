@@ -21,7 +21,13 @@ const workers = ref<ListWorkersResponse>([]);
 
 const isWorkerModalOpen = ref(false);
 const selectedNotificationType = ref<
-  'two_factor' | 'plan' | 'plan_expiration' | null
+  | 'two_factor'
+  | 'plan_new'
+  | 'plan_renewal'
+  | 'plan_expiration'
+  | 'plan_cancellation'
+  | 'recurring_payment_failure'
+  | null
 >(null);
 const selectedWorkerId = ref<string | null>(null);
 const whatsappMessage = ref<string>('');
@@ -38,11 +44,20 @@ const isTwoFactorActive = computed(() => {
   );
 });
 
-const isPlanActive = computed(() => {
+const isPlanNewActive = computed(() => {
   return (
-    notifications.value?.plan_notification !== null &&
-    (notifications.value?.plan_notification?.whatsapp?.worker_id !== null ||
-      notifications.value?.plan_notification?.email?.message !== null)
+    notifications.value?.plan_new_notification !== null &&
+    (notifications.value?.plan_new_notification?.whatsapp?.worker_id !== null ||
+      notifications.value?.plan_new_notification?.email?.message !== null)
+  );
+});
+
+const isPlanRenewalActive = computed(() => {
+  return (
+    notifications.value?.plan_renewal_notification !== null &&
+    (notifications.value?.plan_renewal_notification?.whatsapp?.worker_id !==
+      null ||
+      notifications.value?.plan_renewal_notification?.email?.message !== null)
   );
 });
 
@@ -55,16 +70,53 @@ const isPlanExpirationActive = computed(() => {
   );
 });
 
+const isPlanCancellationActive = computed(() => {
+  return (
+    notifications.value?.plan_cancellation_notification !== null &&
+    (notifications.value?.plan_cancellation_notification?.whatsapp
+      ?.worker_id !== null ||
+      notifications.value?.plan_cancellation_notification?.email?.message !==
+        null)
+  );
+});
+
+const isRecurringPaymentFailureActive = computed(() => {
+  return (
+    notifications.value?.recurring_payment_failure_notification !== null &&
+    (notifications.value?.recurring_payment_failure_notification?.whatsapp
+      ?.worker_id !== null ||
+      notifications.value?.recurring_payment_failure_notification?.email
+        ?.message !== null)
+  );
+});
+
 const twoFactorWorkerName = computed(() => {
   return notifications.value?.two_factor_notification?.whatsapp?.name || null;
 });
 
-const planWorkerName = computed(() => {
-  return notifications.value?.plan_notification?.whatsapp?.name || null;
+const planNewWorkerName = computed(() => {
+  return notifications.value?.plan_new_notification?.whatsapp?.name || null;
+});
+
+const planRenewalWorkerName = computed(() => {
+  return notifications.value?.plan_renewal_notification?.whatsapp?.name || null;
 });
 
 const planExpirationWorkerName = computed(() => {
   return notifications.value?.plan_expiration_reminder?.whatsapp?.name || null;
+});
+
+const planCancellationWorkerName = computed(() => {
+  return (
+    notifications.value?.plan_cancellation_notification?.whatsapp?.name || null
+  );
+});
+
+const recurringPaymentFailureWorkerName = computed(() => {
+  return (
+    notifications.value?.recurring_payment_failure_notification?.whatsapp
+      ?.name || null
+  );
 });
 
 const hasWorkers = computed(() => workers.value.length > 0);
@@ -90,7 +142,13 @@ const loadWorkers = async () => {
 };
 
 const openWorkerModal = async (
-  type: 'two_factor' | 'plan' | 'plan_expiration'
+  type:
+    | 'two_factor'
+    | 'plan_new'
+    | 'plan_renewal'
+    | 'plan_expiration'
+    | 'plan_cancellation'
+    | 'recurring_payment_failure'
 ) => {
   selectedNotificationType.value = type;
   selectedWorkerId.value = null;
@@ -107,15 +165,25 @@ const openWorkerModal = async (
       notifications.value?.two_factor_notification?.email?.subject || '';
     emailMessage.value =
       notifications.value?.two_factor_notification?.email?.message || '';
-  } else if (type === 'plan') {
+  } else if (type === 'plan_new') {
     selectedWorkerId.value =
-      notifications.value?.plan_notification?.whatsapp?.worker_id || null;
+      notifications.value?.plan_new_notification?.whatsapp?.worker_id || null;
     whatsappMessage.value =
-      notifications.value?.plan_notification?.whatsapp?.message || '';
+      notifications.value?.plan_new_notification?.whatsapp?.message || '';
     emailSubject.value =
-      notifications.value?.plan_notification?.email?.subject || '';
+      notifications.value?.plan_new_notification?.email?.subject || '';
     emailMessage.value =
-      notifications.value?.plan_notification?.email?.message || '';
+      notifications.value?.plan_new_notification?.email?.message || '';
+  } else if (type === 'plan_renewal') {
+    selectedWorkerId.value =
+      notifications.value?.plan_renewal_notification?.whatsapp?.worker_id ||
+      null;
+    whatsappMessage.value =
+      notifications.value?.plan_renewal_notification?.whatsapp?.message || '';
+    emailSubject.value =
+      notifications.value?.plan_renewal_notification?.email?.subject || '';
+    emailMessage.value =
+      notifications.value?.plan_renewal_notification?.email?.message || '';
   } else if (type === 'plan_expiration') {
     selectedWorkerId.value =
       notifications.value?.plan_expiration_reminder?.whatsapp?.worker_id ||
@@ -126,6 +194,30 @@ const openWorkerModal = async (
       notifications.value?.plan_expiration_reminder?.email?.subject || '';
     emailMessage.value =
       notifications.value?.plan_expiration_reminder?.email?.message || '';
+  } else if (type === 'plan_cancellation') {
+    selectedWorkerId.value =
+      notifications.value?.plan_cancellation_notification?.whatsapp
+        ?.worker_id || null;
+    whatsappMessage.value =
+      notifications.value?.plan_cancellation_notification?.whatsapp?.message ||
+      '';
+    emailSubject.value =
+      notifications.value?.plan_cancellation_notification?.email?.subject || '';
+    emailMessage.value =
+      notifications.value?.plan_cancellation_notification?.email?.message || '';
+  } else if (type === 'recurring_payment_failure') {
+    selectedWorkerId.value =
+      notifications.value?.recurring_payment_failure_notification?.whatsapp
+        ?.worker_id || null;
+    whatsappMessage.value =
+      notifications.value?.recurring_payment_failure_notification?.whatsapp
+        ?.message || '';
+    emailSubject.value =
+      notifications.value?.recurring_payment_failure_notification?.email
+        ?.subject || '';
+    emailMessage.value =
+      notifications.value?.recurring_payment_failure_notification?.email
+        ?.message || '';
   }
 
   await loadWorkers();
@@ -162,17 +254,37 @@ const saveNotification = async () => {
       updateData.two_factor_message_whatsapp = whatsappMessage.value || null;
       updateData.two_factor_message_email = emailMessage.value || null;
       updateData.two_factor_email_subject = emailSubject.value || null;
-    } else if (selectedNotificationType.value === 'plan') {
-      updateData.plan_notification = selectedWorkerId.value;
-      updateData.plan_message_whatsapp = whatsappMessage.value || null;
-      updateData.plan_message_email = emailMessage.value || null;
-      updateData.plan_email_subject = emailSubject.value || null;
+    } else if (selectedNotificationType.value === 'plan_new') {
+      updateData.plan_new_notification = selectedWorkerId.value;
+      updateData.plan_new_message_whatsapp = whatsappMessage.value || null;
+      updateData.plan_new_message_email = emailMessage.value || null;
+      updateData.plan_new_email_subject = emailSubject.value || null;
+    } else if (selectedNotificationType.value === 'plan_renewal') {
+      updateData.plan_renewal_notification = selectedWorkerId.value;
+      updateData.plan_renewal_message_whatsapp = whatsappMessage.value || null;
+      updateData.plan_renewal_message_email = emailMessage.value || null;
+      updateData.plan_renewal_email_subject = emailSubject.value || null;
     } else if (selectedNotificationType.value === 'plan_expiration') {
       updateData.plan_expiration_reminder = selectedWorkerId.value;
       updateData.plan_expiration_message_whatsapp =
         whatsappMessage.value || null;
       updateData.plan_expiration_message_email = emailMessage.value || null;
       updateData.plan_expiration_email_subject = emailSubject.value || null;
+    } else if (selectedNotificationType.value === 'plan_cancellation') {
+      updateData.plan_cancellation_notification = selectedWorkerId.value;
+      updateData.plan_cancellation_message_whatsapp =
+        whatsappMessage.value || null;
+      updateData.plan_cancellation_message_email = emailMessage.value || null;
+      updateData.plan_cancellation_email_subject = emailSubject.value || null;
+    } else if (selectedNotificationType.value === 'recurring_payment_failure') {
+      updateData.recurring_payment_failure_notification =
+        selectedWorkerId.value;
+      updateData.recurring_payment_failure_message_whatsapp =
+        whatsappMessage.value || null;
+      updateData.recurring_payment_failure_message_email =
+        emailMessage.value || null;
+      updateData.recurring_payment_failure_email_subject =
+        emailSubject.value || null;
     }
 
     const result = await settingsStore.updateNotifications(updateData);
@@ -180,8 +292,12 @@ const saveNotification = async () => {
       notifications.value = {
         notification_id: result.notification_id,
         two_factor_notification: result.two_factor_notification,
-        plan_notification: result.plan_notification,
+        plan_new_notification: result.plan_new_notification,
+        plan_renewal_notification: result.plan_renewal_notification,
         plan_expiration_reminder: result.plan_expiration_reminder,
+        plan_cancellation_notification: result.plan_cancellation_notification,
+        recurring_payment_failure_notification:
+          result.recurring_payment_failure_notification,
         created_at: result.created_at,
         updated_at: result.updated_at,
       };
@@ -193,7 +309,13 @@ const saveNotification = async () => {
 };
 
 const removeNotification = async (
-  type: 'two_factor' | 'plan' | 'plan_expiration'
+  type:
+    | 'two_factor'
+    | 'plan_new'
+    | 'plan_renewal'
+    | 'plan_expiration'
+    | 'plan_cancellation'
+    | 'recurring_payment_failure'
 ) => {
   try {
     isSaving.value = true;
@@ -202,10 +324,16 @@ const removeNotification = async (
 
     if (type === 'two_factor') {
       updateData.two_factor_notification = null;
-    } else if (type === 'plan') {
-      updateData.plan_notification = null;
+    } else if (type === 'plan_new') {
+      updateData.plan_new_notification = null;
+    } else if (type === 'plan_renewal') {
+      updateData.plan_renewal_notification = null;
     } else if (type === 'plan_expiration') {
       updateData.plan_expiration_reminder = null;
+    } else if (type === 'plan_cancellation') {
+      updateData.plan_cancellation_notification = null;
+    } else if (type === 'recurring_payment_failure') {
+      updateData.recurring_payment_failure_notification = null;
     }
 
     const result = await settingsStore.updateNotifications(updateData);
@@ -213,8 +341,12 @@ const removeNotification = async (
       notifications.value = {
         notification_id: result.notification_id,
         two_factor_notification: result.two_factor_notification,
-        plan_notification: result.plan_notification,
+        plan_new_notification: result.plan_new_notification,
+        plan_renewal_notification: result.plan_renewal_notification,
         plan_expiration_reminder: result.plan_expiration_reminder,
+        plan_cancellation_notification: result.plan_cancellation_notification,
+        recurring_payment_failure_notification:
+          result.recurring_payment_failure_notification,
         created_at: result.created_at,
         updated_at: result.updated_at,
       };
@@ -277,8 +409,11 @@ const formatPhone = (phone: string | null): string => {
 const getNotificationTypeLabel = (typeName: string): string => {
   const typeMap: Record<string, string> = {
     TWO_FACTOR: t('two_factor_notification'),
-    PLAN: t('plan_notification'),
+    PLAN_NEW: t('plan_new_notification'),
+    PLAN_RENEWAL: t('plan_renewal_notification'),
     PLAN_EXPIRATION: t('plan_expiration_reminder'),
+    PLAN_CANCELLATION: t('plan_cancellation_notification'),
+    RECURRING_PAYMENT_FAILURE: t('recurring_payment_failure_notification'),
   };
   return typeMap[typeName] || typeName;
 };
@@ -286,8 +421,11 @@ const getNotificationTypeLabel = (typeName: string): string => {
 const getNotificationTypeColor = (typeName: string): string => {
   const colorMap: Record<string, string> = {
     TWO_FACTOR: 'primary',
-    PLAN: 'success',
+    PLAN_NEW: 'success',
+    PLAN_RENEWAL: 'info',
     PLAN_EXPIRATION: 'warning',
+    PLAN_CANCELLATION: 'error',
+    RECURRING_PAYMENT_FAILURE: 'error',
   };
   return colorMap[typeName] || 'default';
 };
@@ -406,34 +544,77 @@ onMounted(async () => {
                   variant="outlined"
                   class="notification-card"
                   :class="{
-                    'notification-card--active': isPlanActive,
+                    'notification-card--active': isPlanNewActive,
                   }"
-                  @click="openWorkerModal('plan')"
+                  @click="openWorkerModal('plan_new')"
                 >
                   <VCardText>
                     <div class="d-flex align-center justify-space-between mb-2">
                       <div class="d-flex align-center gap-2">
                         <VIcon
                           icon="tabler-package"
-                          :color="isPlanActive ? 'success' : 'error'"
+                          :color="isPlanNewActive ? 'success' : 'error'"
                         />
                         <span class="font-weight-medium">
-                          {{ $t('plan_notification') }}
+                          {{ $t('plan_new_notification') }}
                         </span>
                       </div>
                       <VChip
-                        :color="isPlanActive ? 'success' : 'error'"
+                        :color="isPlanNewActive ? 'success' : 'error'"
                         size="small"
                         variant="tonal"
                       >
-                        {{ isPlanActive ? $t('active') : $t('deactivated') }}
+                        {{ isPlanNewActive ? $t('active') : $t('deactivated') }}
                       </VChip>
                     </div>
                     <div
-                      v-if="planWorkerName"
+                      v-if="planNewWorkerName"
                       class="text-body-2 text-medium-emphasis"
                     >
-                      {{ $t('channel') }}: {{ planWorkerName }}
+                      {{ $t('channel') }}: {{ planNewWorkerName }}
+                    </div>
+                    <div v-else class="text-body-2 text-medium-emphasis">
+                      {{ $t('not_configured') }}
+                    </div>
+                  </VCardText>
+                </VCard>
+              </VCol>
+
+              <VCol cols="12" md="4">
+                <VCard
+                  variant="outlined"
+                  class="notification-card"
+                  :class="{
+                    'notification-card--active': isPlanRenewalActive,
+                  }"
+                  @click="openWorkerModal('plan_renewal')"
+                >
+                  <VCardText>
+                    <div class="d-flex align-center justify-space-between mb-2">
+                      <div class="d-flex align-center gap-2">
+                        <VIcon
+                          icon="tabler-refresh"
+                          :color="isPlanRenewalActive ? 'success' : 'error'"
+                        />
+                        <span class="font-weight-medium">
+                          {{ $t('plan_renewal_notification') }}
+                        </span>
+                      </div>
+                      <VChip
+                        :color="isPlanRenewalActive ? 'success' : 'error'"
+                        size="small"
+                        variant="tonal"
+                      >
+                        {{
+                          isPlanRenewalActive ? $t('active') : $t('deactivated')
+                        }}
+                      </VChip>
+                    </div>
+                    <div
+                      v-if="planRenewalWorkerName"
+                      class="text-body-2 text-medium-emphasis"
+                    >
+                      {{ $t('channel') }}: {{ planRenewalWorkerName }}
                     </div>
                     <div v-else class="text-body-2 text-medium-emphasis">
                       {{ $t('not_configured') }}
@@ -479,6 +660,106 @@ onMounted(async () => {
                       class="text-body-2 text-medium-emphasis"
                     >
                       {{ $t('channel') }}: {{ planExpirationWorkerName }}
+                    </div>
+                    <div v-else class="text-body-2 text-medium-emphasis">
+                      {{ $t('not_configured') }}
+                    </div>
+                  </VCardText>
+                </VCard>
+              </VCol>
+
+              <VCol cols="12" md="4">
+                <VCard
+                  variant="outlined"
+                  class="notification-card"
+                  :class="{
+                    'notification-card--active': isPlanCancellationActive,
+                  }"
+                  @click="openWorkerModal('plan_cancellation')"
+                >
+                  <VCardText>
+                    <div class="d-flex align-center justify-space-between mb-2">
+                      <div class="d-flex align-center gap-2">
+                        <VIcon
+                          icon="tabler-ban"
+                          :color="
+                            isPlanCancellationActive ? 'success' : 'error'
+                          "
+                        />
+                        <span class="font-weight-medium">
+                          {{ $t('plan_cancellation_notification') }}
+                        </span>
+                      </div>
+                      <VChip
+                        :color="isPlanCancellationActive ? 'success' : 'error'"
+                        size="small"
+                        variant="tonal"
+                      >
+                        {{
+                          isPlanCancellationActive
+                            ? $t('active')
+                            : $t('deactivated')
+                        }}
+                      </VChip>
+                    </div>
+                    <div
+                      v-if="planCancellationWorkerName"
+                      class="text-body-2 text-medium-emphasis"
+                    >
+                      {{ $t('channel') }}: {{ planCancellationWorkerName }}
+                    </div>
+                    <div v-else class="text-body-2 text-medium-emphasis">
+                      {{ $t('not_configured') }}
+                    </div>
+                  </VCardText>
+                </VCard>
+              </VCol>
+
+              <VCol cols="12" md="4">
+                <VCard
+                  variant="outlined"
+                  class="notification-card"
+                  :class="{
+                    'notification-card--active':
+                      isRecurringPaymentFailureActive,
+                  }"
+                  @click="openWorkerModal('recurring_payment_failure')"
+                >
+                  <VCardText>
+                    <div class="d-flex align-center justify-space-between mb-2">
+                      <div class="d-flex align-center gap-2">
+                        <VIcon
+                          icon="tabler-alert-circle"
+                          :color="
+                            isRecurringPaymentFailureActive
+                              ? 'success'
+                              : 'error'
+                          "
+                        />
+                        <span class="font-weight-medium">
+                          {{ $t('recurring_payment_failure_notification') }}
+                        </span>
+                      </div>
+                      <VChip
+                        :color="
+                          isRecurringPaymentFailureActive ? 'success' : 'error'
+                        "
+                        size="small"
+                        variant="tonal"
+                      >
+                        {{
+                          isRecurringPaymentFailureActive
+                            ? $t('active')
+                            : $t('deactivated')
+                        }}
+                      </VChip>
+                    </div>
+                    <div
+                      v-if="recurringPaymentFailureWorkerName"
+                      class="text-body-2 text-medium-emphasis"
+                    >
+                      {{ $t('channel') }}:
+                      {{ recurringPaymentFailureWorkerName }}
                     </div>
                     <div v-else class="text-body-2 text-medium-emphasis">
                       {{ $t('not_configured') }}
@@ -718,9 +999,15 @@ onMounted(async () => {
             {{
               selectedNotificationType === 'two_factor'
                 ? $t('two_factor_notification')
-                : selectedNotificationType === 'plan'
-                  ? $t('plan_notification')
-                  : $t('plan_expiration_reminder')
+                : selectedNotificationType === 'plan_new'
+                  ? $t('plan_new_notification')
+                  : selectedNotificationType === 'plan_renewal'
+                    ? $t('plan_renewal_notification')
+                    : selectedNotificationType === 'plan_expiration'
+                      ? $t('plan_expiration_reminder')
+                      : selectedNotificationType === 'plan_cancellation'
+                        ? $t('plan_cancellation_notification')
+                        : $t('recurring_payment_failure_notification')
             }}
           </span>
           <IconBtn @click="closeWorkerModal">
@@ -731,171 +1018,189 @@ onMounted(async () => {
         <VDivider />
 
         <VCardText class="pt-6">
-          <div v-if="!hasWorkers" class="text-center py-4">
-            <VIcon
-              icon="tabler-info-circle"
-              size="48"
-              color="warning"
-              class="mb-2"
-            />
-            <div class="text-body-1 text-medium-emphasis">
-              {{ $t('no_workers_available') }}
+          <div class="mb-6">
+            <div class="d-flex align-center gap-2 mb-4">
+              <VIcon icon="tabler-brand-whatsapp" color="success" />
+              <span class="text-h6">{{ $t('whatsapp') }}</span>
             </div>
+
+            <VAutocomplete
+              v-model="selectedWorkerId"
+              :items="workers"
+              item-title="name"
+              item-value="id"
+              :placeholder="$t('select_channel')"
+              variant="outlined"
+              clearable
+              :filter="filterWorkers"
+              :disabled="!hasWorkers"
+              prepend-inner-icon="tabler-search"
+            >
+              <template #no-data>
+                <div class="text-center py-4">
+                  <div class="text-body-2 text-medium-emphasis">
+                    {{ $t('no_results_found') }}
+                  </div>
+                </div>
+              </template>
+              <template #item="{ props: itemProps, item }">
+                <VListItem v-bind="itemProps">
+                  <template #prepend>
+                    <VIcon icon="tabler-device-mobile" class="me-2" />
+                  </template>
+                  <VListItemTitle>{{ item.raw.name }}</VListItemTitle>
+                  <VListItemSubtitle v-if="item.raw.number">
+                    {{ item.raw.number }}
+                  </VListItemSubtitle>
+                </VListItem>
+              </template>
+            </VAutocomplete>
+
+            <VLabel class="text-body-2 mb-1 mt-4">{{ $t('message') }}:</VLabel>
+            <VTextarea
+              v-model="whatsappMessage"
+              variant="outlined"
+              rows="4"
+              :placeholder="$t('notification_message_placeholder')"
+              :disabled="!hasWorkers || !selectedWorkerId"
+            />
           </div>
 
-          <template v-else>
-            <div class="mb-6">
-              <div class="d-flex align-center gap-2 mb-4">
-                <VIcon icon="tabler-brand-whatsapp" color="success" />
-                <span class="text-h6">{{ $t('whatsapp') }}</span>
-              </div>
+          <VDivider class="my-6" />
 
-              <VAutocomplete
-                v-model="selectedWorkerId"
-                :items="workers"
-                item-title="name"
-                item-value="id"
-                :placeholder="$t('select_channel')"
-                variant="outlined"
-                clearable
-                :filter="filterWorkers"
-                prepend-inner-icon="tabler-search"
-              >
-                <template #no-data>
-                  <div class="text-center py-4">
-                    <div class="text-body-2 text-medium-emphasis">
-                      {{ $t('no_results_found') }}
-                    </div>
-                  </div>
-                </template>
-                <template #item="{ props: itemProps, item }">
-                  <VListItem v-bind="itemProps">
-                    <template #prepend>
-                      <VIcon icon="tabler-device-mobile" class="me-2" />
-                    </template>
-                    <VListItemTitle>{{ item.raw.name }}</VListItemTitle>
-                    <VListItemSubtitle v-if="item.raw.number">
-                      {{ item.raw.number }}
-                    </VListItemSubtitle>
-                  </VListItem>
-                </template>
-              </VAutocomplete>
-
-              <VLabel class="text-body-2 mb-1 mt-4"
-                >{{ $t('message') }}:</VLabel
-              >
-              <VTextarea
-                v-model="whatsappMessage"
-                variant="outlined"
-                rows="4"
-                :placeholder="$t('notification_message_placeholder')"
-              />
+          <div>
+            <div class="d-flex align-center gap-2 mb-4">
+              <VIcon icon="tabler-mail" color="primary" />
+              <span class="text-h6">{{ $t('email') }}</span>
             </div>
 
-            <VDivider class="my-6" />
-
-            <div>
-              <div class="d-flex align-center gap-2 mb-4">
-                <VIcon icon="tabler-mail" color="primary" />
-                <span class="text-h6">{{ $t('email') }}</span>
-              </div>
-
-              <VLabel class="text-body-2 mb-1"
-                >{{ $t('email_subject') }}:</VLabel
-              >
-              <VTextField
-                v-model="emailSubject"
-                variant="outlined"
-                :placeholder="$t('email_subject_placeholder')"
-              />
-
-              <VLabel class="text-body-2 mb-1 mt-4"
-                >{{ $t('email_message') }}:</VLabel
-              >
-              <VTextarea
-                v-model="emailMessage"
-                variant="outlined"
-                rows="4"
-                :placeholder="$t('email_message_placeholder')"
-              />
-
-              <VCard v-if="emailMessage" variant="outlined" class="mt-4">
-                <VCardTitle class="text-body-2 pa-3 pb-2">
-                  {{ $t('email_preview') }}
-                </VCardTitle>
-                <VDivider />
-                <VCardText class="pa-4">
-                  <div
-                    v-if="emailSubject"
-                    class="mb-4 pb-4"
-                    style="
-                      border-bottom: 1px solid
-                        rgba(var(--v-theme-on-surface), 0.12);
-                    "
-                  >
-                    <div class="text-caption text-medium-emphasis mb-1">
-                      {{ $t('subject') }}:
-                    </div>
-                    <div class="text-body-1 font-weight-medium">
-                      {{ emailSubject }}
-                    </div>
-                  </div>
-                  <div
-                    v-if="emailMessage"
-                    v-html="emailMessage"
-                    class="email-preview-content"
-                  ></div>
-                  <div v-else class="text-body-2 text-medium-emphasis">
-                    {{ $t('no_email_preview_available') }}
-                  </div>
-                </VCardText>
-              </VCard>
-            </div>
-
-            <VCard
-              v-if="selectedNotificationType"
+            <VLabel class="text-body-2 mb-1">{{ $t('email_subject') }}:</VLabel>
+            <VTextField
+              v-model="emailSubject"
               variant="outlined"
-              color="info"
-              class="mt-4"
+              :placeholder="$t('email_subject_placeholder')"
+            />
+
+            <VLabel class="text-body-2 mb-1 mt-4"
+              >{{ $t('email_message') }}:</VLabel
             >
+            <VTextarea
+              v-model="emailMessage"
+              variant="outlined"
+              rows="4"
+              :placeholder="$t('email_message_placeholder')"
+            />
+
+            <VCard v-if="emailMessage" variant="outlined" class="mt-4">
+              <VCardTitle class="text-body-2 pa-3 pb-2">
+                {{ $t('email_preview') }}
+              </VCardTitle>
+              <VDivider />
               <VCardText class="pa-4">
-                <div class="text-body-2 font-weight-medium mb-2">
-                  {{ $t('allowed_parameters') }}:
-                </div>
                 <div
-                  v-if="selectedNotificationType === 'two_factor'"
-                  class="text-body-2"
+                  v-if="emailSubject"
+                  class="mb-4 pb-4"
+                  style="
+                    border-bottom: 1px solid
+                      rgba(var(--v-theme-on-surface), 0.12);
+                  "
                 >
-                  <div>• {{ $t('code') }}: {{ formatParameter('code') }}</div>
-                  <div>• {{ $t('name') }}: {{ formatParameter('name') }}</div>
-                </div>
-                <div
-                  v-else-if="selectedNotificationType === 'plan'"
-                  class="text-body-2"
-                >
-                  <div>• {{ $t('plan') }}: {{ formatParameter('plan') }}</div>
-                  <div>• {{ $t('name') }}: {{ formatParameter('name') }}</div>
-                  <div>
-                    • {{ $t('expiration_date') }}:
-                    {{ formatParameter('expiration_date') }}
+                  <div class="text-caption text-medium-emphasis mb-1">
+                    {{ $t('subject') }}:
                   </div>
-                  <div>• {{ $t('value') }}: {{ formatParameter('value') }}</div>
+                  <div class="text-body-1 font-weight-medium">
+                    {{ emailSubject }}
+                  </div>
                 </div>
                 <div
-                  v-else-if="selectedNotificationType === 'plan_expiration'"
-                  class="text-body-2"
-                >
-                  <div>• {{ $t('plan') }}: {{ formatParameter('plan') }}</div>
-                  <div>• {{ $t('name') }}: {{ formatParameter('name') }}</div>
-                  <div>
-                    • {{ $t('expiration_date') }}:
-                    {{ formatParameter('expiration_date') }}
-                  </div>
-                  <div>• {{ $t('value') }}: {{ formatParameter('value') }}</div>
+                  v-if="emailMessage"
+                  v-html="emailMessage"
+                  class="email-preview-content"
+                ></div>
+                <div v-else class="text-body-2 text-medium-emphasis">
+                  {{ $t('no_email_preview_available') }}
                 </div>
               </VCardText>
             </VCard>
-          </template>
+          </div>
+
+          <VCard
+            v-if="selectedNotificationType"
+            variant="outlined"
+            color="info"
+            class="mt-4"
+          >
+            <VCardText class="pa-4">
+              <div class="text-body-2 font-weight-medium mb-2">
+                {{ $t('allowed_parameters') }}:
+              </div>
+              <div
+                v-if="selectedNotificationType === 'two_factor'"
+                class="text-body-2"
+              >
+                <div>• {{ $t('code') }}: {{ formatParameter('code') }}</div>
+                <div>• {{ $t('name') }}: {{ formatParameter('name') }}</div>
+              </div>
+              <div
+                v-else-if="selectedNotificationType === 'plan_new'"
+                class="text-body-2"
+              >
+                <div>• {{ $t('plan') }}: {{ formatParameter('plan') }}</div>
+                <div>• {{ $t('name') }}: {{ formatParameter('name') }}</div>
+                <div>
+                  • {{ $t('expiration_date') }}:
+                  {{ formatParameter('expiration_date') }}
+                </div>
+                <div>• {{ $t('value') }}: {{ formatParameter('value') }}</div>
+              </div>
+              <div
+                v-else-if="selectedNotificationType === 'plan_renewal'"
+                class="text-body-2"
+              >
+                <div>• {{ $t('plan') }}: {{ formatParameter('plan') }}</div>
+                <div>• {{ $t('name') }}: {{ formatParameter('name') }}</div>
+                <div>
+                  • {{ $t('expiration_date') }}:
+                  {{ formatParameter('expiration_date') }}
+                </div>
+                <div>• {{ $t('value') }}: {{ formatParameter('value') }}</div>
+              </div>
+              <div
+                v-else-if="selectedNotificationType === 'plan_expiration'"
+                class="text-body-2"
+              >
+                <div>• {{ $t('plan') }}: {{ formatParameter('plan') }}</div>
+                <div>• {{ $t('name') }}: {{ formatParameter('name') }}</div>
+                <div>
+                  • {{ $t('expiration_date') }}:
+                  {{ formatParameter('expiration_date') }}
+                </div>
+                <div>• {{ $t('value') }}: {{ formatParameter('value') }}</div>
+              </div>
+              <div
+                v-else-if="selectedNotificationType === 'plan_cancellation'"
+                class="text-body-2"
+              >
+                <div>• {{ $t('plan') }}: {{ formatParameter('plan') }}</div>
+                <div>• {{ $t('name') }}: {{ formatParameter('name') }}</div>
+                <div>
+                  • {{ $t('expiration_date') }}:
+                  {{ formatParameter('expiration_date') }}
+                </div>
+                <div>• {{ $t('value') }}: {{ formatParameter('value') }}</div>
+              </div>
+              <div
+                v-else-if="
+                  selectedNotificationType === 'recurring_payment_failure'
+                "
+                class="text-body-2"
+              >
+                <div>• {{ $t('plan') }}: {{ formatParameter('plan') }}</div>
+                <div>• {{ $t('name') }}: {{ formatParameter('name') }}</div>
+                <div>• {{ $t('value') }}: {{ formatParameter('value') }}</div>
+              </div>
+            </VCardText>
+          </VCard>
         </VCardText>
 
         <VCardText class="d-flex justify-space-between flex-wrap gap-3">
@@ -904,9 +1209,15 @@ onMounted(async () => {
               selectedNotificationType &&
               ((selectedNotificationType === 'two_factor' &&
                 isTwoFactorActive) ||
-                (selectedNotificationType === 'plan' && isPlanActive) ||
+                (selectedNotificationType === 'plan_new' && isPlanNewActive) ||
+                (selectedNotificationType === 'plan_renewal' &&
+                  isPlanRenewalActive) ||
                 (selectedNotificationType === 'plan_expiration' &&
-                  isPlanExpirationActive))
+                  isPlanExpirationActive) ||
+                (selectedNotificationType === 'plan_cancellation' &&
+                  isPlanCancellationActive) ||
+                (selectedNotificationType === 'recurring_payment_failure' &&
+                  isRecurringPaymentFailureActive))
             "
             color="error"
             variant="tonal"

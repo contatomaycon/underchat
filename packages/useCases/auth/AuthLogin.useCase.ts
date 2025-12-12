@@ -11,9 +11,10 @@ import { AccountService } from '@core/services/account.service';
 import { UserService } from '@core/services/user.service';
 import { PresenceService } from '@core/services/presence.service';
 import { CentrifugoService } from '@core/services/centrifugo.service';
-import { UserAccountViewerRepository } from '@core/repositories/user/UserAccountViewer.repository';
 import { chatAccountCentrifugo } from '@core/common/functions/centrifugoQueue';
 import Redis from 'ioredis';
+import { createJwtSessionKey } from '@core/common/functions/createCacheKey';
+import { randomUUID } from 'node:crypto';
 
 @injectable()
 export class AuthLoginUseCase {
@@ -22,14 +23,16 @@ export class AuthLoginUseCase {
     private readonly permissionService: PermissionService,
     private readonly accountService: AccountService,
     private readonly userService: UserService,
-    @inject('Redis') private readonly redis: Redis,
     private readonly presenceService: PresenceService,
     private readonly centrifugoService: CentrifugoService,
-    private readonly userAccountViewerRepository: UserAccountViewerRepository
+    @inject('Redis') private readonly redis: Redis
   ) {}
 
-  private async invalidateUserJwtCache(userId: string): Promise<void> {
-    const pattern = `jwtCache:${userId}*`;
+  private async invalidateUserJwtCache(
+    accountId: string,
+    userId: string
+  ): Promise<void> {
+    const pattern = `jwtCache:${accountId}:${userId}*`;
     const stream = this.redis.scanStream({
       match: pattern,
       count: 100,
@@ -68,23 +71,29 @@ export class AuthLoginUseCase {
     }
   }
 
-  private async handleDuplicateLogin(userId: string): Promise<boolean> {
+  private async handleDuplicateLogin(
+    userId: string,
+    accountId: string
+  ): Promise<boolean> {
     const isAlreadyLoggedIn = await this.presenceService.isUserLoggedIn(userId);
 
     if (!isAlreadyLoggedIn) {
       return false;
     }
 
-    const [accountId] = await Promise.all([
-      this.userAccountViewerRepository.getUserAccountId(userId),
-      this.invalidateUserJwtCache(userId),
-    ]);
-
-    if (accountId) {
-      await this.notifyPreviousSession(userId, accountId);
-    }
+    await this.invalidateUserJwtCache(accountId, userId);
+    await this.notifyPreviousSession(userId, accountId);
 
     return true;
+  }
+
+  private async setActiveSession(
+    accountId: string,
+    userId: string,
+    sessionId: string
+  ): Promise<void> {
+    const sessionKey = createJwtSessionKey(accountId, userId);
+    await this.redis.set(sessionKey, sessionId);
   }
 
   async execute(
@@ -102,12 +111,18 @@ export class AuthLoginUseCase {
       throw new Error(t('login_invalid'));
     }
 
-    const hadDuplicateLogin = await this.handleDuplicateLogin(result.user_id);
+    const hadDuplicateLogin = await this.handleDuplicateLogin(
+      result.user_id,
+      result.account_id
+    );
+    const sessionId = randomUUID();
 
     const token = await reply.jwtSign(
       {
         user_id: result.user_id,
         module,
+        account_id: result.account_id,
+        session_id: sessionId,
       },
       {
         sign: {
@@ -123,11 +138,16 @@ export class AuthLoginUseCase {
       this.userService.listUserSectors(result.account_id, result.user_id),
     ]);
 
+    const planIsActive = await this.accountService.isPlanActive(
+      result.account_id
+    );
+
     if (hadDuplicateLogin) {
       await new Promise((resolve) => setTimeout(resolve, 200));
     }
 
     await this.presenceService.setUserAway(result.user_id);
+    await this.setActiveSession(result.account_id, result.user_id, sessionId);
 
     return {
       user: result,
@@ -135,6 +155,7 @@ export class AuthLoginUseCase {
       permissions,
       layout: accountInfo,
       sectors,
+      plan_is_active: planIsActive,
     };
   }
 }

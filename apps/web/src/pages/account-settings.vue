@@ -2,12 +2,14 @@
 import { ref, watch, computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
+import { EAccountPermissions } from '@core/common/enums/EPermissions/account';
 import { EPlanPermissions } from '@core/common/enums/EPermissions/plan';
 import { useAbility } from '@/plugins/casl/composables/useAbility';
 import AccountTab from './account-settings/account-tab.vue';
 import SecurityTab from './account-settings/security-tab.vue';
 import PlansTab from './account-settings/plans-tab.vue';
 import InvoicesTab from './account-settings/invoices-tab.vue';
+import CustomizeTab from './account-settings/customize-tab.vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -24,24 +26,59 @@ const canAccessPlanInvoice = computed(() => {
   return permissions.some((perm) => ability.can(perm, perm));
 });
 
-const tab = ref((route.query.tab as string) || 'account');
+const canCustomizeAccount = computed(() => {
+  const permissions = [
+    EGeneralPermissions.full_access,
+    EGeneralPermissions.full_access_group,
+    EAccountPermissions.account_group,
+    EAccountPermissions.account_customize,
+  ];
+
+  return permissions.some((perm) => ability.can(perm, perm));
+});
+
+const resolveTab = (nextTab: string) => {
+  if (
+    (nextTab === 'plans' || nextTab === 'invoices') &&
+    !canAccessPlanInvoice.value
+  ) {
+    return 'account';
+  }
+
+  if (nextTab === 'customize' && !canCustomizeAccount.value) {
+    return 'account';
+  }
+
+  return nextTab;
+};
+
+const tab = ref(resolveTab((route.query.tab as string) || 'account'));
 
 watch(tab, (v) => {
-  router.replace({ query: { ...route.query, tab: v } });
+  const nextTab = resolveTab(v);
+
+  if (tab.value !== nextTab) {
+    tab.value = nextTab;
+    return;
+  }
+
+  if (route.query.tab !== nextTab) {
+    router.replace({ query: { ...route.query, tab: nextTab } });
+  }
 });
 
 watch(
   () => route.query.tab,
   (newTab) => {
     if (newTab && typeof newTab === 'string') {
-      if (
-        (newTab === 'plans' || newTab === 'invoices') &&
-        !canAccessPlanInvoice.value
-      ) {
-        router.replace({ query: { ...route.query, tab: 'account' } });
-        tab.value = 'account';
-      } else {
-        tab.value = newTab;
+      const allowedTab = resolveTab(newTab);
+
+      if (route.query.tab !== allowedTab) {
+        router.replace({ query: { ...route.query, tab: allowedTab } });
+      }
+
+      if (tab.value !== allowedTab) {
+        tab.value = allowedTab;
       }
     }
   },
@@ -58,6 +95,13 @@ watch(
         </VTab>
         <VTab value="security" prepend-icon="tabler-lock">
           {{ $t('security') }}
+        </VTab>
+        <VTab
+          v-if="canCustomizeAccount"
+          value="customize"
+          prepend-icon="tabler-palette"
+        >
+          {{ $t('customize') }}
         </VTab>
         <VTab
           v-if="canAccessPlanInvoice"
@@ -82,6 +126,9 @@ watch(
       </VWindowItem>
       <VWindowItem value="security">
         <SecurityTab />
+      </VWindowItem>
+      <VWindowItem v-if="canCustomizeAccount" value="customize">
+        <CustomizeTab />
       </VWindowItem>
       <VWindowItem v-if="canAccessPlanInvoice" value="plans">
         <PlansTab />

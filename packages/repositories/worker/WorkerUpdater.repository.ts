@@ -40,6 +40,10 @@ export class WorkerUpdaterRepository {
       inputUpdate.connection_date = input.connection_date;
     }
 
+    if (input.deleted_at) {
+      inputUpdate.deleted_at = input.deleted_at;
+    }
+
     return inputUpdate;
   }
 

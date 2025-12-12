@@ -26,14 +26,27 @@ export class NotificationsUpserterRepository {
         tx,
         ENotificationType.two_factor
       );
-      const planTypeId = await this.findNotificationTypeIdByName(
+      const planNewTypeId = await this.findNotificationTypeIdByName(
         tx,
-        ENotificationType.plan
+        ENotificationType.plan_new
+      );
+      const planRenewalTypeId = await this.findNotificationTypeIdByName(
+        tx,
+        ENotificationType.plan_renewal
       );
       const planExpirationTypeId = await this.findNotificationTypeIdByName(
         tx,
         ENotificationType.plan_expiration
       );
+      const planCancellationTypeId = await this.findNotificationTypeIdByName(
+        tx,
+        ENotificationType.plan_cancellation
+      );
+      const recurringPaymentFailureTypeId =
+        await this.findNotificationTypeIdByName(
+          tx,
+          ENotificationType.recurring_payment_failure
+        );
 
       const twoFactorNotification =
         input.two_factor_notification !== undefined ||
@@ -50,20 +63,35 @@ export class NotificationsUpserterRepository {
             )
           : await this.findNotificationByType(tx, twoFactorTypeId);
 
-      const planNotification =
-        input.plan_notification !== undefined ||
-        input.plan_message_whatsapp !== undefined ||
-        input.plan_message_email !== undefined ||
-        input.plan_email_subject !== undefined
+      const planNewNotification =
+        input.plan_new_notification !== undefined ||
+        input.plan_new_message_whatsapp !== undefined ||
+        input.plan_new_message_email !== undefined ||
+        input.plan_new_email_subject !== undefined
           ? await this.upsertNotificationByType(
               tx,
-              planTypeId,
-              input.plan_notification,
-              input.plan_message_whatsapp,
-              input.plan_message_email,
-              input.plan_email_subject
+              planNewTypeId,
+              input.plan_new_notification,
+              input.plan_new_message_whatsapp,
+              input.plan_new_message_email,
+              input.plan_new_email_subject
             )
-          : await this.findNotificationByType(tx, planTypeId);
+          : await this.findNotificationByType(tx, planNewTypeId);
+
+      const planRenewalNotification =
+        input.plan_renewal_notification !== undefined ||
+        input.plan_renewal_message_whatsapp !== undefined ||
+        input.plan_renewal_message_email !== undefined ||
+        input.plan_renewal_email_subject !== undefined
+          ? await this.upsertNotificationByType(
+              tx,
+              planRenewalTypeId,
+              input.plan_renewal_notification,
+              input.plan_renewal_message_whatsapp,
+              input.plan_renewal_message_email,
+              input.plan_renewal_email_subject
+            )
+          : await this.findNotificationByType(tx, planRenewalTypeId);
 
       const planExpirationNotification =
         input.plan_expiration_reminder !== undefined ||
@@ -80,10 +108,46 @@ export class NotificationsUpserterRepository {
             )
           : await this.findNotificationByType(tx, planExpirationTypeId);
 
+      const planCancellationNotification =
+        input.plan_cancellation_notification !== undefined ||
+        input.plan_cancellation_message_whatsapp !== undefined ||
+        input.plan_cancellation_message_email !== undefined ||
+        input.plan_cancellation_email_subject !== undefined
+          ? await this.upsertNotificationByType(
+              tx,
+              planCancellationTypeId,
+              input.plan_cancellation_notification,
+              input.plan_cancellation_message_whatsapp,
+              input.plan_cancellation_message_email,
+              input.plan_cancellation_email_subject
+            )
+          : await this.findNotificationByType(tx, planCancellationTypeId);
+
+      const recurringPaymentFailureNotification =
+        input.recurring_payment_failure_notification !== undefined ||
+        input.recurring_payment_failure_message_whatsapp !== undefined ||
+        input.recurring_payment_failure_message_email !== undefined ||
+        input.recurring_payment_failure_email_subject !== undefined
+          ? await this.upsertNotificationByType(
+              tx,
+              recurringPaymentFailureTypeId,
+              input.recurring_payment_failure_notification,
+              input.recurring_payment_failure_message_whatsapp,
+              input.recurring_payment_failure_message_email,
+              input.recurring_payment_failure_email_subject
+            )
+          : await this.findNotificationByType(
+              tx,
+              recurringPaymentFailureTypeId
+            );
+
       const firstNotificationId =
         twoFactorNotification?.notification_id ||
-        planNotification?.notification_id ||
+        planNewNotification?.notification_id ||
+        planRenewalNotification?.notification_id ||
         planExpirationNotification?.notification_id ||
+        planCancellationNotification?.notification_id ||
+        recurringPaymentFailureNotification?.notification_id ||
         uuidv7();
 
       return {
@@ -101,16 +165,29 @@ export class NotificationsUpserterRepository {
               },
             }
           : null,
-        plan_notification: planNotification
+        plan_new_notification: planNewNotification
           ? {
               whatsapp: {
-                worker_id: planNotification.nwr?.worker_id || null,
-                name: planNotification.nwr?.name || null,
-                message: planNotification.message_whatsapp || null,
+                worker_id: planNewNotification.nwr?.worker_id || null,
+                name: planNewNotification.nwr?.name || null,
+                message: planNewNotification.message_whatsapp || null,
               },
               email: {
-                subject: planNotification.email_subject || null,
-                message: planNotification.message_email || null,
+                subject: planNewNotification.email_subject || null,
+                message: planNewNotification.message_email || null,
+              },
+            }
+          : null,
+        plan_renewal_notification: planRenewalNotification
+          ? {
+              whatsapp: {
+                worker_id: planRenewalNotification.nwr?.worker_id || null,
+                name: planRenewalNotification.nwr?.name || null,
+                message: planRenewalNotification.message_whatsapp || null,
+              },
+              email: {
+                subject: planRenewalNotification.email_subject || null,
+                message: planRenewalNotification.message_email || null,
               },
             }
           : null,
@@ -127,11 +204,46 @@ export class NotificationsUpserterRepository {
               },
             }
           : null,
+        plan_cancellation_notification: planCancellationNotification
+          ? {
+              whatsapp: {
+                worker_id: planCancellationNotification.nwr?.worker_id || null,
+                name: planCancellationNotification.nwr?.name || null,
+                message: planCancellationNotification.message_whatsapp || null,
+              },
+              email: {
+                subject: planCancellationNotification.email_subject || null,
+                message: planCancellationNotification.message_email || null,
+              },
+            }
+          : null,
+        recurring_payment_failure_notification:
+          recurringPaymentFailureNotification
+            ? {
+                whatsapp: {
+                  worker_id:
+                    recurringPaymentFailureNotification.nwr?.worker_id || null,
+                  name: recurringPaymentFailureNotification.nwr?.name || null,
+                  message:
+                    recurringPaymentFailureNotification.message_whatsapp ||
+                    null,
+                },
+                email: {
+                  subject:
+                    recurringPaymentFailureNotification.email_subject || null,
+                  message:
+                    recurringPaymentFailureNotification.message_email || null,
+                },
+              }
+            : null,
         created_at: twoFactorNotification?.created_at || null,
         updated_at:
           twoFactorNotification?.updated_at ||
-          planNotification?.updated_at ||
+          planNewNotification?.updated_at ||
+          planRenewalNotification?.updated_at ||
           planExpirationNotification?.updated_at ||
+          planCancellationNotification?.updated_at ||
+          recurringPaymentFailureNotification?.updated_at ||
           null,
       };
     });

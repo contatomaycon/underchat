@@ -1,0 +1,64 @@
+import { injectable } from 'tsyringe';
+import { AccountService } from '@core/services/account.service';
+import { StorageService } from '@core/services/storage.service';
+import { EditAccountInfoRequest } from '@core/schema/account/editAccountInfo/request.schema';
+import { UpsertAccountCustomizationRequest } from '@core/schema/accountSettings/upsertAccountCustomization/request.schema';
+import { AccountInfoUpserterTransactionRepository } from '@core/repositories/account/AccountInfoUpserterTransaction.repository';
+
+@injectable()
+export class AccountCustomizationUpserterUseCase {
+  constructor(
+    private readonly accountService: AccountService,
+    private readonly storageService: StorageService,
+    private readonly accountInfoUpserterTransactionRepository: AccountInfoUpserterTransactionRepository
+  ) {}
+
+  async execute(
+    accountId: string,
+    body: UpsertAccountCustomizationRequest
+  ): Promise<{ created: boolean }> {
+    const payload: EditAccountInfoRequest = {
+      ...body,
+      account_id: { value: accountId },
+    };
+
+    const currentAccountInfo =
+      await this.accountService.viewAccountInfoByAccountId(accountId);
+
+    let urlLogo: string | null | undefined = undefined;
+
+    if (payload.delete_logo?.value) {
+      const currentLogoUrl = currentAccountInfo?.account_info_id
+        ? await this.accountService.viewLogoByAccountInfoId(
+            currentAccountInfo.account_info_id
+          )
+        : null;
+
+      if (currentLogoUrl) {
+        await this.storageService.deleteImage(currentLogoUrl);
+      }
+
+      urlLogo = null;
+    }
+
+    const logoFile = payload.logo;
+
+    if (!payload.delete_logo?.value && logoFile) {
+      const uploadResult = await this.storageService.uploadImage(
+        logoFile,
+        accountId
+      );
+
+      urlLogo = uploadResult?.url ?? null;
+    }
+
+    const { created } =
+      await this.accountInfoUpserterTransactionRepository.upsertAccountInfo(
+        accountId,
+        payload,
+        urlLogo
+      );
+
+    return { created };
+  }
+}

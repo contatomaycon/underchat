@@ -18,6 +18,15 @@ export type CreditCardBrand =
   | 'JCB'
   | 'UNKNOWN';
 
+export interface IAsaasError {
+  code: string;
+  description: string;
+}
+
+export interface IAsaasErrorResponse {
+  errors: IAsaasError[];
+}
+
 export interface ITokenizeAsaasCreditCardRequest {
   customer: string;
   creditCard: IAsaasCreditCardRequest;

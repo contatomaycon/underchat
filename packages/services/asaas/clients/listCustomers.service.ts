@@ -5,6 +5,7 @@ import {
   IListAsaasCustomersRequest,
   IListAsaasCustomersResponse,
 } from '@core/common/interfaces/IAsaasCustomer';
+import { IAsaasErrorResponse } from '@core/common/interfaces/IAsaasCreditCard';
 
 @injectable()
 export class ListCustomersService {
@@ -14,37 +15,7 @@ export class ListCustomersService {
     request?: IListAsaasCustomersRequest
   ): Promise<IListAsaasCustomersResponse | null> => {
     try {
-      const params = new URLSearchParams();
-
-      if (request?.offset !== undefined) {
-        params.append('offset', request.offset.toString());
-      }
-
-      if (request?.limit !== undefined) {
-        params.append('limit', request.limit.toString());
-      }
-
-      if (request?.name) {
-        params.append('name', request.name);
-      }
-
-      if (request?.email) {
-        params.append('email', request.email);
-      }
-
-      if (request?.cpfCnpj) {
-        params.append('cpfCnpj', request.cpfCnpj);
-      }
-
-      if (request?.groupName) {
-        params.append('groupName', request.groupName);
-      }
-
-      if (request?.externalReference) {
-        params.append('externalReference', request.externalReference);
-      }
-
-      const queryString = params.toString();
+      const queryString = this.buildQueryString(request);
       const url = queryString
         ? `/v3/customers?${queryString}`
         : '/v3/customers';
@@ -53,21 +24,61 @@ export class ListCustomersService {
         .getAxiosInstance()
         .get<IListAsaasCustomersResponse>(url);
 
-      if (response.status === 200 && response.data) {
-        return response.data;
+      if (response.status !== 200 || !response.data) {
+        return null;
       }
 
-      return null;
+      return response.data;
     } catch (error) {
       if (axios.isAxiosError(error)) {
-        console.error(
-          'Erro ao listar clientes no Asaas:',
-          error.response?.data
-        );
-      } else {
-        console.error('Erro desconhecido ao listar clientes no Asaas:', error);
+        const errorData = error.response?.data as IAsaasErrorResponse;
+
+        if (errorData?.errors && errorData.errors.length > 0) {
+          const firstErrorDescription = errorData.errors[0].description;
+          throw new Error(firstErrorDescription);
+        }
+
+        throw new Error('Erro ao listar clientes');
       }
-      return null;
+
+      throw new Error('Erro desconhecido ao listar clientes');
     }
+  };
+
+  private readonly buildQueryString = (
+    request?: IListAsaasCustomersRequest
+  ): string => {
+    const params = new URLSearchParams();
+    if (!request) {
+      return '';
+    }
+
+    const toStringIfDefined = (
+      value?: string | number | boolean
+    ): string | undefined => {
+      if (value === undefined) {
+        return undefined;
+      }
+
+      return value.toString();
+    };
+
+    const entries: Array<[string, string | undefined]> = [
+      ['offset', toStringIfDefined(request.offset)],
+      ['limit', toStringIfDefined(request.limit)],
+      ['name', request.name],
+      ['email', request.email],
+      ['cpfCnpj', request.cpfCnpj],
+      ['groupName', request.groupName],
+      ['externalReference', request.externalReference],
+    ];
+
+    for (const [key, value] of entries) {
+      if (value) {
+        params.append(key, value);
+      }
+    }
+
+    return params.toString();
   };
 }

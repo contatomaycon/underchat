@@ -5,6 +5,7 @@ import {
   ICreateAsaasInstallmentWithCreditCardRequest,
   ICreateAsaasInstallmentWithCreditCardResponse,
 } from '@core/common/interfaces/IAsaasInstallment';
+import { IAsaasErrorResponse } from '@core/common/interfaces/IAsaasCreditCard';
 
 @injectable()
 export class CreateInstallmentWithCreditCardService {
@@ -28,17 +29,20 @@ export class CreateInstallmentWithCreditCardService {
       return null;
     } catch (error) {
       if (axios.isAxiosError(error)) {
-        console.error(
-          'Erro ao criar parcelamento com cartão de crédito no Asaas:',
-          error.response?.data
-        );
-      } else {
-        console.error(
-          'Erro desconhecido ao criar parcelamento com cartão de crédito no Asaas:',
-          error
-        );
+        const errorData = error.response?.data as IAsaasErrorResponse;
+
+        if (errorData?.errors && errorData.errors.length > 0) {
+          const firstErrorDescription = errorData.errors[0].description;
+
+          throw new Error(firstErrorDescription);
+        }
+
+        throw new Error('Erro ao criar parcelamento com cartão de crédito');
       }
-      return null;
+
+      throw new Error(
+        'Erro desconhecido ao criar parcelamento com cartão de crédito'
+      );
     }
   };
 }

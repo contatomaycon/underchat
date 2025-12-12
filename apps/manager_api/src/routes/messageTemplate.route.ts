@@ -12,6 +12,8 @@ import { createMessageTemplateSchema } from '@core/schema/messageTemplate/create
 import { viewMessageTemplateSchema } from '@core/schema/messageTemplate/viewMessageTemplate';
 import { deleteMessageTemplateSchema } from '@core/schema/messageTemplate/deleteMessageTemplate';
 import { editMessageTemplateSchema } from '@core/schema/messageTemplate/editMessageTemplate';
+import { planGuard } from '@/plugins/planGuard';
+import { planStatus } from '@/plugins/planStatus';
 
 export default async function messageTemplateRoutes(server: FastifyInstance) {
   const messageTemplateController = container.resolve(
@@ -24,6 +26,8 @@ export default async function messageTemplateRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, messageTemplateViewPermissions),
+      planGuard,
+      planStatus,
     ],
   });
 
@@ -37,6 +41,8 @@ export default async function messageTemplateRoutes(server: FastifyInstance) {
           reply,
           messageTemplateCreatePermissions
         ),
+      planGuard,
+      planStatus,
     ],
   });
 
@@ -46,6 +52,8 @@ export default async function messageTemplateRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, messageTemplateViewPermissions),
+      planGuard,
+      planStatus,
     ],
   });
 
@@ -59,6 +67,8 @@ export default async function messageTemplateRoutes(server: FastifyInstance) {
           reply,
           messageTemplateDeletePermissions
         ),
+      planGuard,
+      planStatus,
     ],
   });
 
@@ -72,6 +82,8 @@ export default async function messageTemplateRoutes(server: FastifyInstance) {
           reply,
           messageTemplateUpdatePermissions
         ),
+      planGuard,
+      planStatus,
     ],
   });
 }

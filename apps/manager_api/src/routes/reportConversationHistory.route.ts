@@ -3,6 +3,8 @@ import { container } from 'tsyringe';
 import { reportConversationHistoryViewPermissions } from '@/permissions/reportConversationHistory.permissions';
 import ReportConversationHistoryController from '@/controllers/reportConversationHistory';
 import { listReportConversationHistorySchema } from '@core/schema/reportConversationHistory/listReportConversationHistory';
+import { planGuard } from '@/plugins/planGuard';
+import { planStatus } from '@/plugins/planStatus';
 
 export default function reportConversationHistoryRoutes(
   server: FastifyInstance
@@ -21,6 +23,8 @@ export default function reportConversationHistoryRoutes(
           reply,
           reportConversationHistoryViewPermissions
         ),
+      planGuard,
+      planStatus,
     ],
   });
 }

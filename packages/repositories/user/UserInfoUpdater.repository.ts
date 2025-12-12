@@ -65,4 +65,17 @@ export class UserInfoUpdaterRepository {
 
     return result.rowCount === 1;
   };
+
+  updatePhoneJidById = async (
+    userId: string,
+    phoneJid: string
+  ): Promise<boolean> => {
+    const result = await this.db
+      .update(userInfo)
+      .set({ phone_jid: phoneJid })
+      .where(eq(userInfo.user_id, userId))
+      .execute();
+
+    return (result.rowCount ?? 0) > 0;
+  };
 }

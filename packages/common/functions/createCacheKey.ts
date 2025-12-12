@@ -1,20 +1,58 @@
-export function createCacheKey(
-  nameCache: string,
-  idCache: string | string[] | undefined,
-  paramsCache?: string
+function joinParts(parts: string[]): string {
+  const filteredParts = parts.filter(Boolean);
+
+  if (!filteredParts.length) {
+    throw new Error('invalid cache key parts');
+  }
+
+  return filteredParts.join(':');
+}
+
+export function createJwtCacheKey(
+  accountId: string,
+  userId: string,
+  routeModule: string
 ): string {
-  if (!idCache) {
-    throw new Error('id is required');
+  if (!accountId) {
+    throw new Error('account id is required');
   }
 
-  const idCacheKey = Array.isArray(idCache) ? idCache[0] : idCache;
-
-  let cacheKey = `${nameCache}:${idCacheKey}`;
-
-  if (paramsCache) {
-    const encodedparamsCache = encodeURIComponent(paramsCache);
-    cacheKey += `:${encodedparamsCache}`;
+  if (!userId) {
+    throw new Error('user id is required');
   }
 
-  return cacheKey;
+  if (!routeModule) {
+    throw new Error('route module is required');
+  }
+
+  const encodedRouteModule = encodeURIComponent(routeModule);
+  return joinParts(['jwtCache', accountId, userId, encodedRouteModule]);
+}
+
+export function createKeyApiCacheKey(
+  keyApi: string,
+  routeModule: string
+): string {
+  if (!keyApi) {
+    throw new Error('key api is required');
+  }
+
+  if (!routeModule) {
+    throw new Error('route module is required');
+  }
+
+  const encodedRouteModule = encodeURIComponent(routeModule);
+  return joinParts(['keyCache', keyApi, encodedRouteModule]);
+}
+
+export function createJwtSessionKey(accountId: string, userId: string): string {
+  if (!accountId) {
+    throw new Error('account id is required');
+  }
+
+  if (!userId) {
+    throw new Error('user id is required');
+  }
+
+  return joinParts(['jwtSession', accountId, userId]);
 }

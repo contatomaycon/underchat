@@ -7,7 +7,7 @@ import { viewAccountPaymentNfseResponseSchema } from './response.schema';
 export const viewAccountPaymentNfseSchema = {
   description:
     'Visualiza informações detalhadas da nota fiscal de um pagamento',
-  tags: [ETagSwagger.account],
+  tags: [ETagSwagger.accountSettings],
   produces: ['application/json'],
   security: [
     {

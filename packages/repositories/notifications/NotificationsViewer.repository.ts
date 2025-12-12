@@ -16,23 +16,44 @@ export class NotificationsViewerRepository {
     const twoFactorTypeId = await this.findNotificationTypeIdByName(
       ENotificationType.two_factor
     );
-    const planTypeId = await this.findNotificationTypeIdByName(
-      ENotificationType.plan
+    const planNewTypeId = await this.findNotificationTypeIdByName(
+      ENotificationType.plan_new
+    );
+    const planRenewalTypeId = await this.findNotificationTypeIdByName(
+      ENotificationType.plan_renewal
     );
     const planExpirationTypeId = await this.findNotificationTypeIdByName(
       ENotificationType.plan_expiration
     );
+    const planCancellationTypeId = await this.findNotificationTypeIdByName(
+      ENotificationType.plan_cancellation
+    );
+    const recurringPaymentFailureTypeId =
+      await this.findNotificationTypeIdByName(
+        ENotificationType.recurring_payment_failure
+      );
 
     const twoFactorNotification =
       await this.findNotificationByType(twoFactorTypeId);
-    const planNotification = await this.findNotificationByType(planTypeId);
+    const planNewNotification =
+      await this.findNotificationByType(planNewTypeId);
+    const planRenewalNotification =
+      await this.findNotificationByType(planRenewalTypeId);
     const planExpirationNotification =
       await this.findNotificationByType(planExpirationTypeId);
+    const planCancellationNotification = await this.findNotificationByType(
+      planCancellationTypeId
+    );
+    const recurringPaymentFailureNotification =
+      await this.findNotificationByType(recurringPaymentFailureTypeId);
 
     const firstNotificationId =
       twoFactorNotification?.notification_id ||
-      planNotification?.notification_id ||
+      planNewNotification?.notification_id ||
+      planRenewalNotification?.notification_id ||
       planExpirationNotification?.notification_id ||
+      planCancellationNotification?.notification_id ||
+      recurringPaymentFailureNotification?.notification_id ||
       null;
 
     return {
@@ -50,16 +71,29 @@ export class NotificationsViewerRepository {
             },
           }
         : null,
-      plan_notification: planNotification
+      plan_new_notification: planNewNotification
         ? {
             whatsapp: {
-              worker_id: planNotification.nwr?.worker_id || null,
-              name: planNotification.nwr?.name || null,
-              message: planNotification.message_whatsapp || null,
+              worker_id: planNewNotification.nwr?.worker_id || null,
+              name: planNewNotification.nwr?.name || null,
+              message: planNewNotification.message_whatsapp || null,
             },
             email: {
-              subject: planNotification.email_subject || null,
-              message: planNotification.message_email || null,
+              subject: planNewNotification.email_subject || null,
+              message: planNewNotification.message_email || null,
+            },
+          }
+        : null,
+      plan_renewal_notification: planRenewalNotification
+        ? {
+            whatsapp: {
+              worker_id: planRenewalNotification.nwr?.worker_id || null,
+              name: planRenewalNotification.nwr?.name || null,
+              message: planRenewalNotification.message_whatsapp || null,
+            },
+            email: {
+              subject: planRenewalNotification.email_subject || null,
+              message: planRenewalNotification.message_email || null,
             },
           }
         : null,
@@ -76,11 +110,45 @@ export class NotificationsViewerRepository {
             },
           }
         : null,
+      plan_cancellation_notification: planCancellationNotification
+        ? {
+            whatsapp: {
+              worker_id: planCancellationNotification.nwr?.worker_id || null,
+              name: planCancellationNotification.nwr?.name || null,
+              message: planCancellationNotification.message_whatsapp || null,
+            },
+            email: {
+              subject: planCancellationNotification.email_subject || null,
+              message: planCancellationNotification.message_email || null,
+            },
+          }
+        : null,
+      recurring_payment_failure_notification:
+        recurringPaymentFailureNotification
+          ? {
+              whatsapp: {
+                worker_id:
+                  recurringPaymentFailureNotification.nwr?.worker_id || null,
+                name: recurringPaymentFailureNotification.nwr?.name || null,
+                message:
+                  recurringPaymentFailureNotification.message_whatsapp || null,
+              },
+              email: {
+                subject:
+                  recurringPaymentFailureNotification.email_subject || null,
+                message:
+                  recurringPaymentFailureNotification.message_email || null,
+              },
+            }
+          : null,
       created_at: twoFactorNotification?.created_at || null,
       updated_at:
         twoFactorNotification?.updated_at ||
-        planNotification?.updated_at ||
+        planNewNotification?.updated_at ||
+        planRenewalNotification?.updated_at ||
         planExpirationNotification?.updated_at ||
+        planCancellationNotification?.updated_at ||
+        recurringPaymentFailureNotification?.updated_at ||
         null,
     };
   };

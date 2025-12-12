@@ -14,6 +14,8 @@ import { listChatbotFlowSchema } from '@core/schema/chatbot/listChatbotFlow';
 import { saveChatbotFlowConfigurationsSchema } from '@core/schema/chatbot/saveChatbotFlowConfigurations';
 import { listChatbotFlowConfigurationsSchema } from '@core/schema/chatbot/listChatbotFlowConfigurations';
 import { deleteChatbotSchema } from '@core/schema/chatbot/deleteChatbot';
+import { planGuard } from '@/plugins/planGuard';
+import { planStatus } from '@/plugins/planStatus';
 
 export default function chatbotRoutes(server: FastifyInstance) {
   const chatbotController = container.resolve(ChatbotController);
@@ -24,6 +26,8 @@ export default function chatbotRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, chatbotPermissions),
+      planGuard,
+      planStatus,
     ],
   });
 
@@ -33,6 +37,8 @@ export default function chatbotRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, chatbotPermissions),
+      planGuard,
+      planStatus,
     ],
   });
 
@@ -42,6 +48,8 @@ export default function chatbotRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, chatbotPermissions),
+      planGuard,
+      planStatus,
     ],
   });
 
@@ -51,6 +59,8 @@ export default function chatbotRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, chatbotPermissions),
+      planGuard,
+      planStatus,
     ],
   });
 
@@ -60,6 +70,8 @@ export default function chatbotRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, chatbotPermissions),
+      planGuard,
+      planStatus,
     ],
   });
 
@@ -69,6 +81,8 @@ export default function chatbotRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, chatbotPermissions),
+      planGuard,
+      planStatus,
     ],
   });
 
@@ -78,6 +92,8 @@ export default function chatbotRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, chatbotPermissions),
+      planGuard,
+      planStatus,
     ],
   });
 
@@ -87,6 +103,8 @@ export default function chatbotRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, chatbotPermissions),
+      planGuard,
+      planStatus,
     ],
   });
 
@@ -96,6 +114,8 @@ export default function chatbotRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, chatbotPermissions),
+      planGuard,
+      planStatus,
     ],
   });
 
@@ -105,6 +125,8 @@ export default function chatbotRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, chatbotPermissions),
+      planGuard,
+      planStatus,
     ],
   });
 
@@ -114,6 +136,8 @@ export default function chatbotRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, chatbotPermissions),
+      planGuard,
+      planStatus,
     ],
   });
 
@@ -123,6 +147,8 @@ export default function chatbotRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, chatbotPermissions),
+      planGuard,
+      planStatus,
     ],
   });
 }

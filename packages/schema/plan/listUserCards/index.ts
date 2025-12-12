@@ -5,7 +5,7 @@ import { listUserCardsFinalResponseSchema } from './response.schema';
 
 export const listUserCardsSchema = {
   description: 'Lista os cartões de crédito do usuário',
-  tags: [ETagSwagger.plan],
+  tags: [ETagSwagger.accountSettings],
   produces: ['application/json'],
   security: [
     {

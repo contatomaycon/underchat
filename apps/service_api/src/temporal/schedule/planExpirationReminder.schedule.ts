@@ -3,31 +3,33 @@ import { getHandleSchedule } from '@core/common/functions/getHandleSchedule';
 import { container } from 'tsyringe';
 import { Client } from '@temporalio/client';
 
-export const baileysSchedule = async (fastify: FastifyInstance) => {
+export const planExpirationReminderSchedule = async (
+  fastify: FastifyInstance
+) => {
   const clientTemporal = container.resolve<Client>('TemporalClient');
-  const scheduleId = 'baileys-schedule';
+  const scheduleId = 'plan-expiration-reminder-schedule';
 
   const handleSchedule = clientTemporal.schedule.getHandle(scheduleId);
-  const statusBaileysSchedule = await getHandleSchedule(handleSchedule);
+  const statusSchedule = await getHandleSchedule(handleSchedule);
 
-  if (!statusBaileysSchedule) {
+  if (!statusSchedule) {
     try {
       await clientTemporal.schedule.create({
         scheduleId,
         spec: {
-          intervals: [{ every: '600s' }],
+          intervals: [{ every: '1h' }],
         },
         action: {
           type: 'startWorkflow',
-          workflowType: 'baileysWorkflow',
-          taskQueue: 'baileys-queue',
+          workflowType: 'planExpirationReminderWorkflow',
+          taskQueue: 'plan-expiration-reminder-queue',
           args: [],
         },
       });
 
-      fastify.log.info('Schedule "baileys-schedule" created');
+      fastify.log.info('Schedule "plan-expiration-reminder-schedule" created');
     } catch {
-      fastify.log.error('Error creating schedule');
+      fastify.log.error('Error creating plan expiration reminder schedule');
     }
   }
 };

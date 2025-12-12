@@ -1,7 +1,19 @@
-import axios, { InternalAxiosRequestConfig, type AxiosResponse } from 'axios';
-import { getToken, removeUserData } from './localStorage/user';
+import axios, {
+  InternalAxiosRequestConfig,
+  AxiosHeaders,
+  type AxiosResponse,
+  type AxiosRequestHeaders,
+} from 'axios';
+import {
+  getToken,
+  removeUserData,
+  setToken,
+  persistPlanStatus,
+} from './localStorage/user';
 import { router } from '@/plugins/1.router';
 import { getI18n } from '@/plugins/i18n';
+import { IApiResponse } from '@core/common/interfaces/IApiResponse';
+import { RefreshTokenResponse } from '@core/schema/auth/refrehToken/response.schema';
 
 const createAxiosInstance = () =>
   axios.create({
@@ -11,17 +23,111 @@ const createAxiosInstance = () =>
 
 const axiosAuth = createAxiosInstance();
 
+const getCurrentLocale = (): string => {
+  const i18n = getI18n();
+  return i18n.global.locale.value;
+};
+
+const applyAuthHeaders = (
+  headers: AxiosRequestHeaders | AxiosHeaders | undefined,
+  token: string | null,
+  locale: string
+): AxiosRequestHeaders | AxiosHeaders => {
+  const nextHeaders = AxiosHeaders.from(headers ?? {});
+  nextHeaders.set('Accept-Language', locale);
+  if (token) {
+    nextHeaders.set('Authorization', `Bearer ${token}`);
+  }
+  return nextHeaders;
+};
+
+const refreshSession = async (): Promise<string | null> => {
+  const token = getToken();
+  if (!token) return null;
+
+  const url = import.meta.env.VITE_BACKEND_URL;
+  if (!url) return null;
+
+  try {
+    const currentLocale = getCurrentLocale();
+    const response = await axios.post<
+      IApiResponse<RefreshTokenResponse | null>
+    >(
+      `${url}/v1/auth/refresh-token`,
+      {},
+      {
+        headers: applyAuthHeaders(undefined, token, currentLocale),
+      }
+    );
+
+    const data = response?.data;
+    if (!data?.status) return null;
+    if (!data.data) return null;
+
+    const refreshedToken = data.data.token;
+    const { useAuthStore } = await import('@webcore/stores/auth');
+    const authStore = useAuthStore();
+    authStore.token = refreshedToken;
+    authStore.updatePlanStatus(data.data.plan_is_active ?? false);
+    setToken(refreshedToken);
+    persistPlanStatus(data.data.plan_is_active ?? false);
+
+    return refreshedToken;
+  } catch {
+    return null;
+  }
+};
+
+const logoutAndRedirect = async () => {
+  const { useChatStore } = await import('@webcore/stores/chat');
+  const chatStore = useChatStore();
+  chatStore.clearUser();
+  removeUserData();
+  router.push({ name: 'login' });
+};
+
+const updatePlanStatusFromResponse = async (
+  response: AxiosResponse<unknown>
+): Promise<void> => {
+  const headerValueRaw =
+    typeof response.headers?.get === 'function'
+      ? response.headers.get('x-plan-active')
+      : response.headers?.['x-plan-active'];
+
+  if (headerValueRaw === undefined || headerValueRaw === null) return;
+
+  const headerValue = String(headerValueRaw).toLowerCase() === 'true';
+  const { useAuthStore } = await import('@webcore/stores/auth');
+  const authStore = useAuthStore();
+  if (authStore.planIsActive === headerValue) return;
+  authStore.updatePlanStatus(headerValue);
+};
+
+const retryWithRefreshedToken = async (
+  originalRequest: InternalAxiosRequestConfig
+) => {
+  const refreshedToken = await refreshSession();
+  if (!refreshedToken) return null;
+  const headers = originalRequest.headers;
+  originalRequest.headers = applyAuthHeaders(
+    headers,
+    refreshedToken,
+    getCurrentLocale()
+  );
+  return axiosAuth(originalRequest);
+};
+
 axiosAuth.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
     const token = getToken();
-    const i18n = getI18n();
-    const currentLocale = i18n.global.locale.value;
-
+    const currentLocale = getCurrentLocale();
     if (config.headers) {
-      if (token) config.headers['Authorization'] = `Bearer ${token}`;
-      config.headers['Accept-Language'] = currentLocale;
+      config.headers = applyAuthHeaders(
+        config.headers as AxiosRequestHeaders | AxiosHeaders | undefined,
+        token,
+        currentLocale
+      );
     }
-
     return config;
   },
   (error: unknown) => {
@@ -32,7 +138,10 @@ axiosAuth.interceptors.request.use(
 );
 
 axiosAuth.interceptors.response.use(
-  (response: AxiosResponse<unknown>) => response,
+  async (response: AxiosResponse<unknown>) => {
+    await updatePlanStatusFromResponse(response);
+    return response;
+  },
   async (error) => {
     const originalRequest = error.config;
 
@@ -43,29 +152,9 @@ axiosAuth.interceptors.response.use(
     ) {
       originalRequest._retry = true;
 
-      const token = getToken();
-      const responseData = error.response.data as {
-        status?: boolean;
-        message?: string;
-        data?: unknown;
-        id?: string;
-      };
-
-      const isPermissionError =
-        token &&
-        responseData &&
-        typeof responseData.status === 'boolean' &&
-        responseData.status === false &&
-        responseData.message &&
-        responseData.id;
-
-      if (!isPermissionError) {
-        const { useChatStore } = await import('@webcore/stores/chat');
-        const chatStore = useChatStore();
-        chatStore.clearUser();
-        removeUserData();
-        router.push({ name: 'login' });
-      }
+      const retried = await retryWithRefreshedToken(originalRequest);
+      if (retried) return retried;
+      await logoutAndRedirect();
     }
 
     const err = error instanceof Error ? error : new Error(String(error));

@@ -1,4 +1,4 @@
-import { injectable, inject } from 'tsyringe';
+import { inject, injectable } from 'tsyringe';
 import { PlanReleaseRepository } from '@core/repositories/plan/PlanRelease.repository';
 import { EPaymentStatus } from '@core/common/enums/EPaymentStatus';
 import { EBillingPeriod } from '@core/common/enums/EBillingPeriod';
@@ -8,23 +8,19 @@ import { paymentAccountCentrifugo } from '@core/common/functions/centrifugoQueue
 import { AsaasService } from '@core/services/asaas';
 import { ICreateAsaasInvoiceRequest } from '@core/common/interfaces/IAsaasInvoice';
 import { AccountPaymentNfSeUpserterRepository } from '@core/repositories/account/AccountPaymentNfSeUpserter.repository';
-import { StreamProducerService } from '@core/services/streamProducer.service';
-import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
+import { NotificationMessageService } from './notificationMessage.service';
 import { ENotificationTypeId } from '@core/common/enums/ENotificationType';
 import Redis from 'ioredis';
+import { withLock } from '@core/common/functions/withLock';
 
 @injectable()
 export class PlanReleaseService {
-  private readonly notificationKeyPrefix = 'notification:sent:';
-  private readonly notificationTtlSeconds = 60;
-
   constructor(
     private readonly planReleaseRepository: PlanReleaseRepository,
     private readonly centrifugoService: CentrifugoService,
     private readonly asaasService: AsaasService,
     private readonly accountPaymentNfSeUpserterRepository: AccountPaymentNfSeUpserterRepository,
-    private readonly streamProducerService: StreamProducerService,
-    private readonly kafkaServiceQueueService: KafkaServiceQueueService,
+    private readonly notificationMessageService: NotificationMessageService,
     @inject('Redis') private readonly redis: Redis
   ) {}
 
@@ -69,6 +65,18 @@ export class PlanReleaseService {
     );
   };
 
+  private readonly addOneMonth = (date: Date): Date => {
+    const result = new Date(date);
+    result.setMonth(result.getMonth() + 1);
+    return result;
+  };
+
+  private readonly addOneYear = (date: Date): Date => {
+    const result = new Date(date);
+    result.setFullYear(result.getFullYear() + 1);
+    return result;
+  };
+
   private readonly calculateNextPaymentDate = (
     paymentDate: string,
     billingPeriodId: string | null,
@@ -77,23 +85,30 @@ export class PlanReleaseService {
     currentNextPaymentDate: string | null
   ): string => {
     const paymentDateObj = new Date(paymentDate);
-    let daysToAdd = 0;
-
-    if (billingPeriodId === EBillingPeriod.monthly) {
-      daysToAdd = 30;
-    }
-
-    if (billingPeriodId === EBillingPeriod.annual) {
-      daysToAdd = 365;
-    }
 
     if (currentPlanId === newPlanId && currentNextPaymentDate) {
       const currentNextDate = new Date(currentNextPaymentDate);
-      currentNextDate.setDate(currentNextDate.getDate() + daysToAdd);
-      return currentNextDate.toISOString();
+      const now = new Date();
+
+      if (currentNextDate > now) {
+        if (billingPeriodId === EBillingPeriod.monthly) {
+          return this.addOneMonth(currentNextDate).toISOString();
+        }
+
+        if (billingPeriodId === EBillingPeriod.annual) {
+          return this.addOneYear(currentNextDate).toISOString();
+        }
+      }
     }
 
-    paymentDateObj.setDate(paymentDateObj.getDate() + daysToAdd);
+    if (billingPeriodId === EBillingPeriod.monthly) {
+      return this.addOneMonth(paymentDateObj).toISOString();
+    }
+
+    if (billingPeriodId === EBillingPeriod.annual) {
+      return this.addOneYear(paymentDateObj).toISOString();
+    }
+
     return paymentDateObj.toISOString();
   };
 
@@ -173,21 +188,27 @@ export class PlanReleaseService {
     value: string;
     nextPaymentDate: string;
   }): Promise<void> => {
-    await this.planReleaseRepository.processPaymentAndReleasePlan({
-      accountPaymentId: data.accountPaymentId,
-      paymentStatusId: data.paymentStatusId,
-      paymentDate: data.paymentDate,
-      pixTransaction: data.pixTransaction,
-      accountId: data.accountId,
-      planId: data.planId,
-      accountPaymentIdForPlan: data.accountPaymentId,
-      recurringPayment: data.recurringPayment,
-      billingPeriodId: data.billingPeriodId,
-      lastPaymentDate: data.paymentDate || new Date().toISOString(),
-      nextPaymentDate: data.nextPaymentDate,
-      value: data.value,
-      shouldReleasePlan: false,
-    });
+    await withLock(
+      this.redis,
+      `plan-account:${data.accountId}`,
+      () =>
+        this.planReleaseRepository.processPaymentAndReleasePlan({
+          accountPaymentId: data.accountPaymentId,
+          paymentStatusId: data.paymentStatusId,
+          paymentDate: data.paymentDate,
+          pixTransaction: data.pixTransaction,
+          accountId: data.accountId,
+          planId: data.planId,
+          accountPaymentIdForPlan: data.accountPaymentId,
+          recurringPayment: data.recurringPayment,
+          billingPeriodId: data.billingPeriodId,
+          lastPaymentDate: data.paymentDate || new Date().toISOString(),
+          nextPaymentDate: data.nextPaymentDate,
+          value: data.value,
+          shouldReleasePlan: false,
+        }),
+      { ttlMs: 20000 }
+    );
   };
 
   private readonly releasePlanForPayment = async (data: {
@@ -226,21 +247,27 @@ export class PlanReleaseService {
         )
       : data.value;
 
-    await this.planReleaseRepository.processPaymentAndReleasePlan({
-      accountPaymentId: data.accountPaymentId,
-      paymentStatusId: data.paymentStatusId,
-      paymentDate: data.paymentDate,
-      pixTransaction: data.pixTransaction,
-      accountId: data.accountId,
-      planId: data.planId,
-      accountPaymentIdForPlan: data.accountPaymentId,
-      recurringPayment: data.recurringPayment,
-      billingPeriodId: data.billingPeriodId,
-      lastPaymentDate: data.paymentDate,
-      nextPaymentDate,
-      value: finalValue,
-      shouldReleasePlan: true,
-    });
+    await withLock(
+      this.redis,
+      `plan-account:${data.accountId}`,
+      () =>
+        this.planReleaseRepository.processPaymentAndReleasePlan({
+          accountPaymentId: data.accountPaymentId,
+          paymentStatusId: data.paymentStatusId,
+          paymentDate: data.paymentDate,
+          pixTransaction: data.pixTransaction,
+          accountId: data.accountId,
+          planId: data.planId,
+          accountPaymentIdForPlan: data.accountPaymentId,
+          recurringPayment: data.recurringPayment,
+          billingPeriodId: data.billingPeriodId,
+          lastPaymentDate: data.paymentDate,
+          nextPaymentDate,
+          value: finalValue,
+          shouldReleasePlan: true,
+        }),
+      { ttlMs: 20000 }
+    );
 
     await this.createInvoiceForPayment(
       data.accountPaymentId,
@@ -248,7 +275,16 @@ export class PlanReleaseService {
     );
 
     if (data.shouldSendNotification !== false) {
-      await this.sendPlanNotification(data.accountId, data.planId);
+      const isRenewal = await this.checkIfPlanAccountIsActive(data.accountId);
+      const notificationTypeId = isRenewal
+        ? ENotificationTypeId.plan_renewal
+        : ENotificationTypeId.plan_new;
+
+      await this.notificationMessageService.sendPlanNotification(
+        data.accountId,
+        data.planId,
+        notificationTypeId
+      );
     }
   };
 
@@ -295,9 +331,17 @@ export class PlanReleaseService {
         paymentAsaasId
       );
 
-      await this.sendPlanNotification(
+      const isRenewal = await this.checkIfPlanAccountIsActive(
+        accountPaymentData.account_id
+      );
+      const notificationTypeId = isRenewal
+        ? ENotificationTypeId.plan_renewal
+        : ENotificationTypeId.plan_new;
+
+      await this.notificationMessageService.sendPlanNotification(
         accountPaymentData.account_id,
-        accountPaymentData.plan_id
+        accountPaymentData.plan_id,
+        notificationTypeId
       );
 
       return;
@@ -464,7 +508,16 @@ export class PlanReleaseService {
         accountPaymentData.billing || ''
       );
 
-      await this.sendPlanNotification(data.accountId, data.planId);
+      const isRenewal = await this.checkIfPlanAccountIsActive(data.accountId);
+      const notificationTypeId = isRenewal
+        ? ENotificationTypeId.plan_renewal
+        : ENotificationTypeId.plan_new;
+
+      await this.notificationMessageService.sendPlanNotification(
+        data.accountId,
+        data.planId,
+        notificationTypeId
+      );
 
       return;
     }
@@ -591,33 +644,26 @@ export class PlanReleaseService {
     }
   };
 
-  private async sendPlanNotification(
-    accountId: string,
-    planId: string
-  ): Promise<void> {
-    const notificationKey = `${this.notificationKeyPrefix}${accountId}:${planId}:${ENotificationTypeId.plan}`;
+  private readonly checkIfPlanAccountIsActive = async (
+    accountId: string
+  ): Promise<boolean> => {
+    const existingPlanAccount =
+      await this.planReleaseRepository.findPlanAccountByAccountId(accountId);
 
-    const setResult = await this.redis.set(
-      notificationKey,
-      '1',
-      'EX',
-      this.notificationTtlSeconds,
-      'NX'
-    );
-
-    if (setResult !== 'OK') {
-      return;
+    if (!existingPlanAccount) {
+      return false;
     }
 
-    try {
-      const topic = this.kafkaServiceQueueService.notificationMessage();
-      await this.streamProducerService.send(topic, {
-        notification_type_id: ENotificationTypeId.plan,
-        account_id: accountId,
-      });
-    } catch (error) {
-      await this.redis.del(notificationKey);
-      console.error('Erro ao enviar notificação de plano liberado:', error);
+    if (!existingPlanAccount.cancellation_date) {
+      return true;
     }
-  }
+
+    if (existingPlanAccount.next_payment_date) {
+      const nextPaymentDate = new Date(existingPlanAccount.next_payment_date);
+      const now = new Date();
+      return nextPaymentDate > now;
+    }
+
+    return false;
+  };
 }

@@ -2,6 +2,7 @@ import { injectable } from 'tsyringe';
 import axios from 'axios';
 import { AsaasBaseService } from '../asaasBase.service';
 import { IGetAsaasCustomerResponse } from '@core/common/interfaces/IAsaasCustomer';
+import { IAsaasErrorResponse } from '@core/common/interfaces/IAsaasCreditCard';
 
 @injectable()
 export class GetCustomerService {
@@ -22,17 +23,18 @@ export class GetCustomerService {
       return null;
     } catch (error) {
       if (axios.isAxiosError(error)) {
-        console.error(
-          'Erro ao recuperar cliente no Asaas:',
-          error.response?.data
-        );
-      } else {
-        console.error(
-          'Erro desconhecido ao recuperar cliente no Asaas:',
-          error
-        );
+        const errorData = error.response?.data as IAsaasErrorResponse;
+
+        if (errorData?.errors && errorData.errors.length > 0) {
+          const firstErrorDescription = errorData.errors[0].description;
+
+          throw new Error(firstErrorDescription);
+        }
+
+        throw new Error('Erro ao buscar cliente');
       }
-      return null;
+
+      throw new Error('Erro desconhecido ao buscar cliente');
     }
   };
 }

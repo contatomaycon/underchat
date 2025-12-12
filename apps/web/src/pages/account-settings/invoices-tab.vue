@@ -569,7 +569,9 @@ watch(
     border-bottom: 1px solid rgba(var(--v-theme-primary), 0.25);
   }
 
-  :deep(.v-table__wrapper > table > thead > tr > th .v-data-table-header__content) {
+  :deep(
+    .v-table__wrapper > table > thead > tr > th .v-data-table-header__content
+  ) {
     color: inherit;
   }
 }

@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { inject, injectable } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { AsaasService } from '@core/services/asaas';
 import { currentTime } from '@core/common/functions/currentTime';
@@ -21,6 +21,10 @@ import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { IUpdateWorker } from '@core/common/interfaces/IUpdateWorker';
 import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 import { IViewWorkerServer } from '@core/common/interfaces/IViewWorkerServer';
+import { NotificationMessageService } from '@core/services/notificationMessage.service';
+import { ENotificationTypeId } from '@core/common/enums/ENotificationType';
+import { PlanAccountReactivatorTransactionRepository } from '@core/repositories/accountSettings/PlanAccountReactivatorTransaction.repository';
+import Redis from 'ioredis';
 
 @injectable()
 export class PlanAccountCancellationService {
@@ -31,8 +35,47 @@ export class PlanAccountCancellationService {
     private readonly workerService: WorkerService,
     private readonly streamProducerService: StreamProducerService,
     private readonly centrifugoService: CentrifugoService,
-    private readonly kafkaBalanceQueueService: KafkaBalanceQueueService
+    private readonly kafkaBalanceQueueService: KafkaBalanceQueueService,
+    private readonly notificationMessageService: NotificationMessageService,
+    private readonly planAccountReactivatorTransactionRepository: PlanAccountReactivatorTransactionRepository,
+    @inject('Redis') private readonly redis: Redis
   ) {}
+
+  private async deleteKeysByPattern(pattern: string): Promise<void> {
+    const stream = this.redis.scanStream({
+      match: pattern,
+      count: 100,
+    });
+
+    const keysToDelete: string[] = [];
+
+    stream.on('data', (keys: string[]) => {
+      for (const key of keys) {
+        keysToDelete.push(key);
+      }
+    });
+
+    await new Promise<void>((resolve) => {
+      stream.on('end', () => {
+        resolve();
+      });
+    });
+
+    if (keysToDelete.length > 0) {
+      await this.redis.del(...keysToDelete);
+    }
+  }
+
+  private async deleteAccountJwtCache(accountId: string): Promise<void> {
+    const patterns = [`jwtCache:${accountId}:*`, `jwtSession:${accountId}:*`];
+    const deletions: Promise<void>[] = [];
+
+    for (const pattern of patterns) {
+      deletions.push(this.deleteKeysByPattern(pattern));
+    }
+
+    await Promise.all(deletions);
+  }
 
   private isWithin7DaysPeriod(lastPaymentDate: string | null): boolean {
     if (!lastPaymentDate) return false;
@@ -442,6 +485,31 @@ export class PlanAccountCancellationService {
       );
 
     if (!planAccountData?.plan_account_id) {
+      const existingPlanAccount =
+        await this.planAccountCancellerRepository.findPlanAccountWithCancellation(
+          accountId
+        );
+
+      if (existingPlanAccount?.cancellation_date) {
+        const nextPaymentDateStr = existingPlanAccount.next_payment_date;
+        if (nextPaymentDateStr) {
+          const nextPaymentDate = new Date(nextPaymentDateStr);
+          const now = new Date();
+          if (nextPaymentDate > now) {
+            throw new Error(t('plan_already_cancelling'));
+          }
+        }
+
+        throw new Error(t('plan_not_found_or_already_cancelled'));
+      }
+
+      if (
+        existingPlanAccount?.account_status_id &&
+        existingPlanAccount.account_status_id !== EAccountStatus.active
+      ) {
+        throw new Error(t('plan_already_cancelling'));
+      }
+
       throw new Error(t('plan_not_found_or_already_cancelled'));
     }
 
@@ -487,6 +555,26 @@ export class PlanAccountCancellationService {
     ]);
   }
 
+  private async sendCancellationNotification(
+    accountId: string,
+    planAccountId: string,
+    isWithin7Days: boolean
+  ): Promise<void> {
+    if (isWithin7Days) {
+      return;
+    }
+
+    try {
+      await this.notificationMessageService.sendPlanNotification(
+        accountId,
+        planAccountId,
+        ENotificationTypeId.plan_cancellation
+      );
+    } catch (error) {
+      console.error('Erro ao enviar notificação de cancelamento:', error);
+    }
+  }
+
   private async cancelPlanAccountByPlanAccountId(
     t: TFunction<'translation', undefined>,
     planAccountId: string,
@@ -513,8 +601,37 @@ export class PlanAccountCancellationService {
       throw new Error(t('subscription_cancellation_error'));
     }
 
-    await this.finalizeCancellation(t, accountId, accountStatusId);
+    await Promise.all([
+      this.finalizeCancellation(t, accountId, accountStatusId),
+      this.sendCancellationNotification(
+        accountId,
+        planAccountId,
+        cancellationResult.isWithin7Days
+      ),
+      this.deleteAccountJwtCache(accountId),
+    ]);
 
     return this.buildCancellationMessage(t, cancellationResult);
+  }
+
+  async reactivatePlanAccount(
+    t: TFunction<'translation', undefined>,
+    accountId: string
+  ): Promise<string> {
+    const cancelledPlan =
+      await this.planAccountCancellerRepository.findCancelledPlanAccount(
+        accountId
+      );
+
+    if (!cancelledPlan) {
+      throw new Error(t('plan_not_cancelled'));
+    }
+
+    await this.planAccountReactivatorTransactionRepository.executeReactivation(
+      t,
+      accountId
+    );
+
+    return t('plan_reactivated_successfully');
   }
 }

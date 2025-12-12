@@ -304,6 +304,7 @@ CREATE TABLE "user_info" (
   "phone" character varying(500) NOT NULL,
   "phone_partial" character varying(15) NOT NULL,
   "phone_c" character varying(500) NOT NULL,
+  "phone_jid" character varying(500) NULL,
   "photo" character varying(255) NULL,
   "name" character varying(100) NOT NULL,
   "last_name" character varying(100) NOT NULL,

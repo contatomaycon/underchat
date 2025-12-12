@@ -19,6 +19,12 @@ export const accountUpdatePermissions = [
   EAccountPermissions.account_group,
   EAccountPermissions.account_update,
 ];
+export const accountCustomizePermissions = [
+  EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  EAccountPermissions.account_group,
+  EAccountPermissions.account_customize,
+];
 export const accountCreatePermissions = [
   EGeneralPermissions.full_access,
   EGeneralPermissions.full_access_group,

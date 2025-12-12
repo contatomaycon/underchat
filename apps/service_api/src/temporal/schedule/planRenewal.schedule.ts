@@ -3,31 +3,31 @@ import { getHandleSchedule } from '@core/common/functions/getHandleSchedule';
 import { container } from 'tsyringe';
 import { Client } from '@temporalio/client';
 
-export const serverSchedule = async (fastify: FastifyInstance) => {
+export const planRenewalSchedule = async (fastify: FastifyInstance) => {
   const clientTemporal = container.resolve<Client>('TemporalClient');
-  const scheduleId = 'server-schedule';
+  const scheduleId = 'plan-renewal-schedule';
 
   const handleSchedule = clientTemporal.schedule.getHandle(scheduleId);
-  const statusServerSchendule = await getHandleSchedule(handleSchedule);
+  const statusSchedule = await getHandleSchedule(handleSchedule);
 
-  if (!statusServerSchendule) {
+  if (!statusSchedule) {
     try {
       await clientTemporal.schedule.create({
         scheduleId,
         spec: {
-          intervals: [{ every: '120s' }],
+          intervals: [{ every: '1h' }],
         },
         action: {
           type: 'startWorkflow',
-          workflowType: 'serverWorkflow',
-          taskQueue: 'server-queue',
+          workflowType: 'planRenewalWorkflow',
+          taskQueue: 'plan-renewal-queue',
           args: [],
         },
       });
 
-      fastify.log.info('Schedule "server-schedule" created');
+      fastify.log.info('Schedule "plan-renewal-schedule" created');
     } catch {
-      fastify.log.error('Error creating schedule');
+      fastify.log.error('Error creating plan renewal schedule');
     }
   }
 };

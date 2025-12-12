@@ -5,7 +5,7 @@ import { viewCurrentPlanInvoiceResponseSchema } from './response.schema';
 
 export const viewCurrentPlanInvoiceSchema = {
   description: 'Visualiza informações detalhadas do plano atual para fatura',
-  tags: [ETagSwagger.account],
+  tags: [ETagSwagger.accountSettings],
   produces: ['application/json'],
   security: [
     {

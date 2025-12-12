@@ -576,6 +576,7 @@
   "nfse_not_found": "Configuración de NFSe no encontrada",
   "nfse_update_error": "Error al actualizar configuración de NFSe",
   "plan_not_found_or_already_cancelled": "Plan no encontrado o ya cancelado",
+  "plan_already_cancelling": "El plan ya está en proceso de cancelación",
   "last_payment_date_not_found": "Fecha del último pago no encontrada",
   "subscription_cancellation_error": "Error al cancelar suscripción",
   "subscription_cancelled_successfully": "Suscripción cancelada con éxito",
@@ -583,6 +584,11 @@
   "subscription_cancelled": "suscripción cancelada",
   "invoice_cancelled": "factura cancelada",
   "subscription_cancelled_and_actions_successfully": "Suscripción cancelada y {{actions}} con éxito",
+  "plan_not_cancelled": "El plan no está cancelado",
+  "plan_reactivation_error": "Error al reactivar plan",
+  "account_reactivation_error": "Error al reactivar cuenta",
+  "plan_reactivated_successfully": "Plan reactivado con éxito",
+  "reactivate_subscription": "Reactivar Suscripción",
   "chatbot_flow_configurations_list_successfully": "¡Configuraciones de flujo del chatbot listadas con éxito!",
   "chatbot_flow_configurations_save_error": "¡Error al guardar configuraciones de flujo del chatbot!",
   "chatbot_flow_configurations_save_success": "¡Configuraciones de flujo del chatbot guardadas con éxito!",
@@ -632,5 +638,6 @@
   "total_attendance_time": "Tiempo Total de Atención",
   "average_wait_time": "Tiempo Promedio de Espera",
   "average_attendance_time": "Tiempo Promedio de Atención",
-  "to": "hasta"
+  "to": "hasta",
+  "plan_expired_alert": "Su plan está vencido. Renueve para seguir utilizando todas las funcionalidades."
 }

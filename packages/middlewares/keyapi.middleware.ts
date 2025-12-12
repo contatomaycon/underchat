@@ -1,5 +1,5 @@
 import { EHTTPStatusCode } from '@core/common/enums/EHTTPStatusCode';
-import { createCacheKey } from '@core/common/functions/createCacheKey';
+import { createKeyApiCacheKey } from '@core/common/functions/createCacheKey';
 import { getRootPath } from '@core/common/functions/getRootPath';
 import { sendResponse } from '@core/common/functions/sendResponse';
 import { ApiKeyViewerUseCase } from '@core/useCases/api/ApiKeyViewer.useCase';
@@ -15,10 +15,22 @@ import { routePathWithoutPrefix } from '@core/common/functions/routePathWithoutP
 import { ERouteModule } from '@core/common/enums/ERouteModule';
 import Redis from 'ioredis';
 
+function getKeyApiValue(keyapi: string | string[] | undefined): string | null {
+  if (!keyapi) {
+    return null;
+  }
+
+  if (Array.isArray(keyapi)) {
+    return keyapi[0] ?? null;
+  }
+
+  return keyapi;
+}
+
 async function handleApiKeyCache(
   redis: Redis,
   cacheKey: string,
-  keyapi: string | string[] | undefined,
+  keyapi: string,
   routeModule: string,
   module: ERouteModule,
   permissions?: EPermissionsRoles[] | null
@@ -80,8 +92,9 @@ async function authenticateKeyApi(
 ): Promise<void> {
   const { t } = request;
   const { Redis } = request.server;
-  const { keyapi } = request.headers;
+  const { keyapi: headerKeyApi } = request.headers;
   const routePath = routePathWithoutPrefix(request);
+  const keyapi = getKeyApiValue(headerKeyApi);
 
   if (!keyapi || !routePath || !permissions) {
     return sendResponse(reply, {
@@ -92,7 +105,7 @@ async function authenticateKeyApi(
 
   try {
     const routeModule = getRootPath(routePath, request.module);
-    const cacheKey = createCacheKey('keyCache', keyapi, routeModule);
+    const cacheKey = createKeyApiCacheKey(keyapi, routeModule);
     const responseAuth = await handleApiKeyCache(
       Redis,
       cacheKey,

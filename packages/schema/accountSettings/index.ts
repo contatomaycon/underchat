@@ -10,3 +10,5 @@ export * from './viewAdditionalInfo';
 export * from './viewCurrentPlanInvoice';
 export * from './viewAccountPaymentNfse';
 export * from './cancelPlanAccount';
+export * from './viewAccountCustomization';
+export * from './upsertAccountCustomization';

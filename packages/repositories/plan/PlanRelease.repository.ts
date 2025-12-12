@@ -122,6 +122,7 @@ export class PlanReleaseRepository {
     billing_period_id: string | null;
     value: string | null;
     last_payment_date: string | null;
+    cancellation_date: string | null;
   } | null> => {
     const planAcc = await this.db.query.planAccount.findFirst({
       where: eq(planAccount.account_id, accountId),
@@ -133,7 +134,9 @@ export class PlanReleaseRepository {
         billing_period_id: true,
         value: true,
         last_payment_date: true,
+        cancellation_date: true,
       },
+      orderBy: (planAccount, { desc }) => [desc(planAccount.updated_at)],
     });
 
     return planAcc || null;
@@ -153,6 +156,7 @@ export class PlanReleaseRepository {
         plan_id: true,
         next_payment_date: true,
       },
+      orderBy: (planAccount, { desc }) => [desc(planAccount.updated_at)],
     });
 
     return planAcc || null;
@@ -177,6 +181,7 @@ export class PlanReleaseRepository {
         next_payment_date: true,
         billing_period_id: true,
       },
+      orderBy: (planAccount, { desc }) => [desc(planAccount.updated_at)],
     });
 
     return planAcc || null;
@@ -617,6 +622,65 @@ export class PlanReleaseRepository {
     return planData || null;
   };
 
+  private readonly createTestPlanAccountRecord = async (
+    tx: Parameters<
+      Parameters<NodePgDatabase<typeof schema>['transaction']>[0]
+    >[0],
+    data: {
+      accountId: string;
+      planId: string;
+      lastPaymentDate: string;
+      nextPaymentDate: string;
+    }
+  ): Promise<void> => {
+    const planAccountId = randomUUID();
+    const planAccountData = {
+      plan_account_id: planAccountId,
+      account_id: data.accountId,
+      plan_id: data.planId,
+      account_payment_id: null,
+      recurring_payment: false,
+      billing_period_id: EBillingPeriod.monthly,
+      last_payment_date: data.lastPaymentDate,
+      next_payment_date: data.nextPaymentDate,
+      cancellation_date: null,
+      value: '0',
+      created_at: data.lastPaymentDate,
+      updated_at: data.lastPaymentDate,
+    };
+
+    await tx.insert(planAccount).values(planAccountData);
+  };
+
+  private readonly updateTestPlanAccountRecord = async (
+    tx: Parameters<
+      Parameters<NodePgDatabase<typeof schema>['transaction']>[0]
+    >[0],
+    data: {
+      planAccountId: string;
+      planId: string;
+      lastPaymentDate: string;
+      nextPaymentDate: string;
+    }
+  ): Promise<void> => {
+    const planAccountData = {
+      plan_id: data.planId,
+      account_payment_id: null,
+      recurring_payment: false,
+      billing_period_id: EBillingPeriod.monthly,
+      last_payment_date: data.lastPaymentDate,
+      next_payment_date: data.nextPaymentDate,
+      cancellation_date: null,
+      value: '0',
+      updated_at: data.lastPaymentDate,
+    };
+
+    await tx
+      .update(planAccount)
+      .set(planAccountData)
+      .where(eq(planAccount.plan_account_id, data.planAccountId));
+  };
+
   createTestPlanAccount = async (data: {
     accountId: string;
     planId: string;
@@ -627,23 +691,33 @@ export class PlanReleaseRepository {
       const nextPaymentDate = new Date(now);
       nextPaymentDate.setDate(nextPaymentDate.getDate() + data.daysTrial);
 
-      const planAccountId = randomUUID();
-      const planAccountData = {
-        plan_account_id: planAccountId,
-        account_id: data.accountId,
-        plan_id: data.planId,
-        account_payment_id: null,
-        recurring_payment: false,
-        billing_period_id: EBillingPeriod.monthly,
-        last_payment_date: now.toISOString(),
-        next_payment_date: nextPaymentDate.toISOString(),
-        cancellation_date: null,
-        value: '0',
-        created_at: now.toISOString(),
-        updated_at: now.toISOString(),
-      };
+      const nowIso = now.toISOString();
+      const nextPaymentDateIso = nextPaymentDate.toISOString();
 
-      await tx.insert(planAccount).values(planAccountData);
+      const existingPlanAccount = await this.findPlanAccountByAccountIdTx(
+        tx,
+        data.accountId
+      );
+
+      if (existingPlanAccount) {
+        await this.updateTestPlanAccountRecord(tx, {
+          planAccountId: existingPlanAccount.plan_account_id,
+          planId: data.planId,
+          lastPaymentDate: nowIso,
+          nextPaymentDate: nextPaymentDateIso,
+        });
+
+        await this.updateAccountStatusToActive(tx, data.accountId);
+
+        return;
+      }
+
+      await this.createTestPlanAccountRecord(tx, {
+        accountId: data.accountId,
+        planId: data.planId,
+        lastPaymentDate: nowIso,
+        nextPaymentDate: nextPaymentDateIso,
+      });
 
       await this.updateAccountStatusToActive(tx, data.accountId);
     });
