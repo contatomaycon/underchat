@@ -90,24 +90,24 @@ watch(
   <div class="account-settings-page">
     <div class="mb-6">
       <VTabs v-model="tab">
-      <VTab value="account" prepend-icon="tabler-user">
-        {{ $t('account') }}
-      </VTab>
-      <VTab value="security" prepend-icon="tabler-lock">
-        {{ $t('security') }}
-      </VTab>
-      <VTab
-        v-if="canCustomizeAccount"
-        value="customize"
-        prepend-icon="tabler-brush"
-      >
-        {{ $t('customize') }}
-      </VTab>
-      <VTab
-        v-if="canAccessPlanInvoice"
-        value="plans"
-        prepend-icon="tabler-package"
-      >
+        <VTab value="account" prepend-icon="tabler-user">
+          {{ $t('account') }}
+        </VTab>
+        <VTab value="security" prepend-icon="tabler-lock">
+          {{ $t('security') }}
+        </VTab>
+        <VTab
+          v-if="canCustomizeAccount"
+          value="customize"
+          prepend-icon="tabler-palette"
+        >
+          {{ $t('customize') }}
+        </VTab>
+        <VTab
+          v-if="canAccessPlanInvoice"
+          value="plans"
+          prepend-icon="tabler-package"
+        >
           {{ $t('plans') }}
         </VTab>
         <VTab

@@ -303,6 +303,20 @@ export default [
     ],
   },
   {
+    title: 'customize',
+    to: {
+      name: 'account-settings' as keyof RouteNamedMap,
+      query: { tab: 'customize' },
+    },
+    icon: { icon: 'tabler-palette' },
+    permissions: [
+      EGeneralPermissions.full_access,
+      EGeneralPermissions.full_access_group,
+      EAccountPermissions.account_group,
+      EAccountPermissions.account_customize,
+    ],
+  },
+  {
     title: 'config',
     to: { name: 'config' as keyof RouteNamedMap },
     icon: { icon: 'tabler-settings' },

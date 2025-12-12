@@ -784,11 +784,14 @@ watch(
     </VOverlay>
 
     <VForm ref="refFormEditAccount" @submit.prevent>
-      <VCard :title="$t('account_info')">
+      <VCard variant="elevated" class="account-settings-card">
+        <VCardTitle class="text-h6 pa-6 pb-4">
+          {{ $t('account_info') }}
+        </VCardTitle>
+        <VDivider />
         <VCardText>
           <VRow>
             <VCol cols="12">
-              <VDivider class="mb-4" />
               <h3 class="text-h6 mb-4">{{ $t('logo') }}</h3>
             </VCol>
 
@@ -1310,5 +1313,11 @@ watch(
 .color-value {
   font-size: 0.875rem;
   color: rgba(var(--v-theme-on-surface), 0.7);
+}
+
+.account-settings-card {
+  background-color: rgb(var(--v-theme-surface)) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1) !important;
+  border-radius: 8px;
 }
 </style>
