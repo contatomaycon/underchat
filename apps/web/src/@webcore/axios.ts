@@ -38,9 +38,13 @@ axiosAuth.interceptors.request.use(
 
 axiosAuth.interceptors.response.use(
   (response: AxiosResponse<unknown>) => {
-    const planHeader = response.headers?.['x-plan-active'];
-    if (planHeader !== undefined) {
-      const headerValue = String(planHeader).toLowerCase() === 'true';
+    const headerValueRaw =
+      typeof response.headers?.get === 'function'
+        ? response.headers.get('x-plan-active')
+        : response.headers?.['x-plan-active'];
+
+    if (headerValueRaw !== undefined && headerValueRaw !== null) {
+      const headerValue = String(headerValueRaw).toLowerCase() === 'true';
       const current = getPlanStatus();
       const shouldUpdate = headerValue !== current;
 
