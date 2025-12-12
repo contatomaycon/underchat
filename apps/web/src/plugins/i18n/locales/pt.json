@@ -519,6 +519,8 @@
     "account_info_deleted_error": "Ocorreu um erro ao excluir as informações da conta. Por favor, tente novamente.",
     "account_info_deleted_success": "Informações da conta excluídas com sucesso.",
     "account_info": "Personalização da Conta",
+    "customize": "Personalizar",
+    "account_customization_hint": "Gerencie logo, cores e layout da sua conta.",
     "english": "Inglês",
     "portuguese": "Português",
     "spanish": "Espanhol",

@@ -24,7 +24,13 @@ import { createUserCardSchema } from '@core/schema/accountSettings/createUserCar
 import { viewAccountPaymentNfseSchema } from '@core/schema/accountSettings/viewAccountPaymentNfse';
 import { cancelPlanAccountSchema } from '@core/schema/accountSettings/cancelPlanAccount';
 import { reactivatePlanAccountSchema } from '@core/schema/accountSettings/reactivatePlanAccount';
-import { planInvoicePermissions } from '@/permissions';
+import {
+  accountCustomizePermissions,
+  planInvoicePermissions,
+} from '@/permissions';
+import { viewAccountCustomizationSchema } from '@core/schema/accountSettings/viewAccountCustomization';
+import { createAccountCustomizationSchema } from '@core/schema/accountSettings/createAccountCustomization';
+import { updateAccountCustomizationSchema } from '@core/schema/accountSettings/updateAccountCustomization';
 
 export default async function accountSettingsRoutes(server: FastifyInstance) {
   const accountSettingsController = container.resolve(
@@ -35,6 +41,33 @@ export default async function accountSettingsRoutes(server: FastifyInstance) {
     schema: updatePhotoSchema,
     handler: accountSettingsController.updatePhoto,
     preHandler: [(request, reply) => server.authenticateJwt(request, reply)],
+  });
+
+  server.get('/account-settings/account-info', {
+    schema: viewAccountCustomizationSchema,
+    handler: accountSettingsController.viewAccountCustomization,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, accountCustomizePermissions),
+    ],
+  });
+
+  server.post('/account-settings/account-info', {
+    schema: createAccountCustomizationSchema,
+    handler: accountSettingsController.createAccountCustomization,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, accountCustomizePermissions),
+    ],
+  });
+
+  server.patch('/account-settings/account-info/:account_info_id', {
+    schema: updateAccountCustomizationSchema,
+    handler: accountSettingsController.updateAccountCustomization,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, accountCustomizePermissions),
+    ],
   });
 
   server.delete('/account-settings/photo', {

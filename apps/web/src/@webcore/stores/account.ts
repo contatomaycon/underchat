@@ -314,7 +314,10 @@ export const useAccountStore = defineStore('account', {
         this.loading = true;
 
         const response = await axios.get<IApiResponse<ViewAccountInfoResponse>>(
-          `/account/info/${accountId}`
+          '/account-settings/account-info',
+          {
+            params: { account_id: accountId },
+          }
         );
 
         this.loading = false;
@@ -350,7 +353,7 @@ export const useAccountStore = defineStore('account', {
         this.loading = true;
 
         const response = await axios.post<IApiResponse<boolean>>(
-          `/account/info`,
+          `/account-settings/account-info`,
           payload
         );
 
@@ -395,7 +398,7 @@ export const useAccountStore = defineStore('account', {
         this.loading = true;
 
         const response = await axios.patch<IApiResponse<boolean>>(
-          `/account/info/${payload.account_info_id}`,
+          `/account-settings/account-info/${payload.account_info_id}`,
           body
         );
 

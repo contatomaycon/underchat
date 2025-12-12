@@ -41,6 +41,8 @@ import { ViewAccountPaymentNfseResponse } from '@core/schema/accountSettings/vie
 import { CancelPlanAccountResponse } from '@core/schema/accountSettings/cancelPlanAccount/response.schema';
 import { ReactivatePlanAccountResponse } from '@core/schema/accountSettings/reactivatePlanAccount/response.schema';
 import { getUser } from '@/@webcore/localStorage/user';
+import { ViewAccountInfoResponse } from '@core/schema/account/viewAccountInfo/response.schema';
+import { EditAccountInfoParamsRequest } from '@core/schema/account/editAccountInfo/request.schema';
 
 export const useAccountSettingsStore = defineStore('accountSettings', {
   state: () => ({
@@ -243,6 +245,131 @@ export const useAccountSettingsStore = defineStore('accountSettings', {
         this.showSnackbar(errorMessage, EColor.error);
 
         return null;
+      }
+    },
+    async getAccountInfoById(
+      accountId?: string | null
+    ): Promise<ViewAccountInfoResponse | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.get<IApiResponse<ViewAccountInfoResponse>>(
+          '/account-settings/account-info',
+          {
+            params: accountId ? { account_id: accountId } : undefined,
+          }
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('account_info_view_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return null;
+        }
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('account_info_view_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return null;
+      }
+    },
+    async addAccountInfo(payload: FormData): Promise<boolean> {
+      try {
+        this.loading = true;
+
+        const response = await axios.post<IApiResponse<boolean>>(
+          `/account-settings/account-info`,
+          payload
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('account_info_add_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return false;
+        }
+
+        this.showSnackbar(
+          this.i18n.global.t('account_info_add_success'),
+          EColor.success
+        );
+
+        return true;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('account_info_add_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return false;
+      }
+    },
+    async updateAccountInfo(
+      payload: EditAccountInfoParamsRequest,
+      body: FormData
+    ): Promise<boolean> {
+      try {
+        this.loading = true;
+
+        const response = await axios.patch<IApiResponse<boolean>>(
+          `/account-settings/account-info/${payload.account_info_id}`,
+          body
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('account_info_edit_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return false;
+        }
+
+        this.showSnackbar(
+          this.i18n.global.t('account_info_edit_success'),
+          EColor.success
+        );
+
+        return true;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('account_info_edit_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return false;
       }
     },
     async getPhoneDecrypted(): Promise<string | null> {

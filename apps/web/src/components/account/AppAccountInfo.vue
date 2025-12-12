@@ -1,6 +1,6 @@
 <script lang="ts" setup>
 import { VForm } from 'vuetify/components/VForm';
-import { useAccountStore } from '@/@webcore/stores/account';
+import { useAccountSettingsStore } from '@/@webcore/stores/accountSettings';
 import { EContentWidth } from '@core/common/enums/EContentWidth';
 import { EContentLayoutNav } from '@core/common/enums/EContentLayoutNav';
 import { ELanguage } from '@core/common/enums/ELanguage';
@@ -10,19 +10,29 @@ import { EFooter } from '@core/common/enums/EFooter';
 import { EditAccountInfoParamsRequest } from '@core/schema/account/editAccountInfo/request.schema';
 import { EColor } from '@core/common/enums/EColor';
 
-const accountStore = useAccountStore();
+const accountSettingsStore = useAccountSettingsStore();
 const { t } = useI18n();
 
-const props = defineProps<{
-  modelValue: boolean;
-  accountId: string | null;
-}>();
+const props = withDefaults(
+  defineProps<{
+    modelValue: boolean;
+    accountId: string | null;
+    useDialog?: boolean;
+  }>(),
+  {
+    useDialog: true,
+  }
+);
 
 const emit = defineEmits<(e: 'update:modelValue', visible: boolean) => void>();
 
+const isDialogMode = computed(() => props.useDialog !== false);
+
 const isVisible = computed({
-  get: () => props.modelValue,
-  set: (v) => emit('update:modelValue', v),
+  get: () => (isDialogMode.value ? props.modelValue : true),
+  set: (v) => {
+    if (isDialogMode.value) emit('update:modelValue', v);
+  },
 });
 
 function appendIfDefined(fd: FormData, key: string, value: unknown) {
@@ -186,7 +196,7 @@ const openFileSelector = () => {
 
 const handleImageSelect = (file: File) => {
   if (file.size > MAX_FILE_SIZE_BYTES) {
-    accountStore.showSnackbar(
+    accountSettingsStore.showSnackbar(
       t('profile_status_file_size_exceeded', { max: '16 MB' }),
       EColor.error
     );
@@ -602,7 +612,7 @@ const cropImage = () => {
   const ctx = canvas.getContext('2d');
 
   if (!ctx || !img.complete) {
-    accountStore.showSnackbar(t('wait_image_load'), EColor.warning);
+    accountSettingsStore.showSnackbar(t('wait_image_load'), EColor.warning);
     return;
   }
 
@@ -717,11 +727,11 @@ const updateAccountInfo = async () => {
     dark_secondary_color: darkSecondaryColor.value,
   });
 
-  const result = await accountStore.updateAccountInfo(payload, body);
+  const result = await accountSettingsStore.updateAccountInfo(payload, body);
 
   if (result) {
     isVisible.value = false;
-    await accountStore.getAccountInfoById(accountId.value);
+    await accountSettingsStore.getAccountInfoById(accountId.value);
   }
 };
 
@@ -751,7 +761,7 @@ const addAccountInfo = async () => {
     dark_secondary_color: darkSecondaryColor.value,
   });
 
-  const result = await accountStore.addAccountInfo(payload);
+  const result = await accountSettingsStore.addAccountInfo(payload);
 
   if (result) {
     isVisible.value = false;
@@ -763,7 +773,7 @@ watch(
   async (newAccountId) => {
     if (!newAccountId) return;
 
-    const account = await accountStore.getAccountInfoById(newAccountId);
+    const account = await accountSettingsStore.getAccountInfoById(newAccountId);
     if (account) {
       accountInfoId.value = account.account_info_id;
       logoUrl.value = account.logo ?? null;
@@ -789,11 +799,22 @@ watch(
 </script>
 
 <template>
-  <VDialog v-model="isVisible" max-width="900">
-    <DialogCloseBtn @click="isVisible = false" />
+  <component
+    :is="isDialogMode ? 'VDialog' : 'div'"
+    v-bind="
+      isDialogMode
+        ? {
+            'model-value': isVisible,
+            'onUpdate:modelValue': (v) => (isVisible = v),
+            maxWidth: 900,
+          }
+        : { class: 'account-info-inline' }
+    "
+  >
+    <DialogCloseBtn v-if="isDialogMode" @click="isVisible = false" />
 
     <VOverlay
-      :model-value="accountStore.loading"
+      :model-value="accountSettingsStore.loading"
       class="align-center justify-center"
       contained
     >
@@ -1105,7 +1126,12 @@ watch(
         </VCardText>
 
         <VCardText class="d-flex justify-end flex-wrap gap-3">
-          <VBtn variant="tonal" color="secondary" @click="isVisible = false">
+          <VBtn
+            v-if="isDialogMode"
+            variant="tonal"
+            color="secondary"
+            @click="isVisible = false"
+          >
             {{ $t('cancel') }}
           </VBtn>
           <template v-if="hasAccountInfo">
@@ -1122,7 +1148,7 @@ watch(
         </VCardText>
       </VCard>
     </VForm>
-  </VDialog>
+  </component>
 
   <VDialog v-model="isCropModalOpen" max-width="500" persistent>
     <VCard>
@@ -1194,6 +1220,12 @@ watch(
     </VCard>
   </VDialog>
 </template>
+
+<style scoped>
+.account-info-inline {
+  position: relative;
+}
+</style>
 
 <style lang="scss" scoped>
 .logo-preview-container {

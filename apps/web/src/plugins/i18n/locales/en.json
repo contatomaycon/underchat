@@ -506,6 +506,8 @@
     "account_info_deleted_error": "An error occurred while deleting the account info. Please try again.",
     "account_info_deleted_success": "Account info deleted successfully.",
     "account_info": "Account Customization",
+    "customize": "Customize",
+    "account_customization_hint": "Manage your account logo, colors, and layout.",
     "english": "English",
     "portuguese": "Portuguese",
     "spanish": "Spanish",
