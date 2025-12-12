@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { inject, injectable } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { AsaasService } from '@core/services/asaas';
 import { currentTime } from '@core/common/functions/currentTime';
@@ -24,6 +24,7 @@ import { IViewWorkerServer } from '@core/common/interfaces/IViewWorkerServer';
 import { NotificationMessageService } from '@core/services/notificationMessage.service';
 import { ENotificationTypeId } from '@core/common/enums/ENotificationType';
 import { PlanAccountReactivatorTransactionRepository } from '@core/repositories/accountSettings/PlanAccountReactivatorTransaction.repository';
+import Redis from 'ioredis';
 
 @injectable()
 export class PlanAccountCancellationService {
@@ -36,8 +37,33 @@ export class PlanAccountCancellationService {
     private readonly centrifugoService: CentrifugoService,
     private readonly kafkaBalanceQueueService: KafkaBalanceQueueService,
     private readonly notificationMessageService: NotificationMessageService,
-    private readonly planAccountReactivatorTransactionRepository: PlanAccountReactivatorTransactionRepository
+    private readonly planAccountReactivatorTransactionRepository: PlanAccountReactivatorTransactionRepository,
+    @inject('Redis') private readonly redis: Redis
   ) {}
+
+  private async deleteAccountJwtCache(accountId: string): Promise<void> {
+    const pattern = `jwtCache:${accountId}:*`;
+    const stream = this.redis.scanStream({
+      match: pattern,
+      count: 100,
+    });
+
+    const keysToDelete: string[] = [];
+
+    stream.on('data', (keys: string[]) => {
+      keysToDelete.push(...keys);
+    });
+
+    await new Promise<void>((resolve) => {
+      stream.on('end', () => {
+        resolve();
+      });
+    });
+
+    if (keysToDelete.length > 0) {
+      await this.redis.del(...keysToDelete);
+    }
+  }
 
   private isWithin7DaysPeriod(lastPaymentDate: string | null): boolean {
     if (!lastPaymentDate) return false;
@@ -570,6 +596,7 @@ export class PlanAccountCancellationService {
         planAccountId,
         cancellationResult.isWithin7Days
       ),
+      this.deleteAccountJwtCache(accountId),
     ]);
 
     return this.buildCancellationMessage(t, cancellationResult);

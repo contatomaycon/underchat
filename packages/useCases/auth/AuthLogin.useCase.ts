@@ -26,8 +26,11 @@ export class AuthLoginUseCase {
     @inject('Redis') private readonly redis: Redis
   ) {}
 
-  private async invalidateUserJwtCache(userId: string): Promise<void> {
-    const pattern = `jwtCache:${userId}*`;
+  private async invalidateUserJwtCache(
+    accountId: string,
+    userId: string
+  ): Promise<void> {
+    const pattern = `jwtCache:${accountId}:${userId}*`;
     const stream = this.redis.scanStream({
       match: pattern,
       count: 100,
@@ -66,21 +69,18 @@ export class AuthLoginUseCase {
     }
   }
 
-  private async handleDuplicateLogin(userId: string): Promise<boolean> {
+  private async handleDuplicateLogin(
+    userId: string,
+    accountId: string
+  ): Promise<boolean> {
     const isAlreadyLoggedIn = await this.presenceService.isUserLoggedIn(userId);
 
     if (!isAlreadyLoggedIn) {
       return false;
     }
 
-    const [accountId] = await Promise.all([
-      this.userService.getUserAccountId(userId),
-      this.invalidateUserJwtCache(userId),
-    ]);
-
-    if (accountId) {
-      await this.notifyPreviousSession(userId, accountId);
-    }
+    await this.invalidateUserJwtCache(accountId, userId);
+    await this.notifyPreviousSession(userId, accountId);
 
     return true;
   }
@@ -100,12 +100,16 @@ export class AuthLoginUseCase {
       throw new Error(t('login_invalid'));
     }
 
-    const hadDuplicateLogin = await this.handleDuplicateLogin(result.user_id);
+    const hadDuplicateLogin = await this.handleDuplicateLogin(
+      result.user_id,
+      result.account_id
+    );
 
     const token = await reply.jwtSign(
       {
         user_id: result.user_id,
         module,
+        account_id: result.account_id,
       },
       {
         sign: {

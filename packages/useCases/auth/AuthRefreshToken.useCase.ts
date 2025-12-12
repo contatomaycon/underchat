@@ -22,6 +22,7 @@ export class AuthRefreshTokenUseCase {
     const decodeToken: {
       user_id: string;
       module: ERouteModule;
+      account_id: string;
     } = await request.jwtVerify({
       verify: {
         key: generalEnvironment.jwtSecret,
@@ -40,6 +41,10 @@ export class AuthRefreshTokenUseCase {
       throw new Error(t('invalid_token_module'));
     }
 
+    if (!decodeToken.account_id) {
+      throw new Error(t('invalid_token'));
+    }
+
     const accountId = await this.userService.getUserAccountId(
       decodeToken.user_id
     );
@@ -48,9 +53,14 @@ export class AuthRefreshTokenUseCase {
       throw new Error(t('invalid_token'));
     }
 
+    if (accountId !== decodeToken.account_id) {
+      throw new Error(t('invalid_token'));
+    }
+
     const payload = {
       user_id: decodeToken.user_id,
       module: request.module,
+      account_id: accountId,
     };
 
     const token = await reply.jwtSign(payload, {
