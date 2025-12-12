@@ -66,7 +66,12 @@ export class PlanAccountCancellationService {
     }
   }
 
-  private async deleteAccountJwtCache(accountId: string): Promise<void> {
+  private async deleteAccountJwtCache(
+    accountId: string,
+    isWithin7Days: boolean
+  ): Promise<void> {
+    if (!isWithin7Days) return;
+
     const patterns = [`jwtCache:${accountId}:*`, `jwtSession:${accountId}:*`];
     const deletions: Promise<void>[] = [];
 
@@ -608,7 +613,7 @@ export class PlanAccountCancellationService {
         planAccountId,
         cancellationResult.isWithin7Days
       ),
-      this.deleteAccountJwtCache(accountId),
+      this.deleteAccountJwtCache(accountId, cancellationResult.isWithin7Days),
     ]);
 
     return this.buildCancellationMessage(t, cancellationResult);
