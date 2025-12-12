@@ -86,39 +86,50 @@ export class PlanAccountRenewalListerRepository {
       },
     });
 
-    return result
-      .filter((item) => item.next_payment_date !== null && item.pac && item.ppl)
-      .map((item) => {
-        const crossSells =
-          item.pac?.pca
-            ?.filter((cs) => !cs.deleted_at && cs.pca && !cs.pca.deleted_at)
-            .map((cs) => ({
-              plan_cross_sell_id: cs.pca!.plan_cross_sell_id,
-              plan_cross_sell_account_id: cs.plan_cross_sell_account_id,
-              quantity: cs.pca!.quantity,
-              price: cs.pca!.price,
-            })) || [];
+    const items: IPlanAccountRenewal[] = [];
 
-        return {
-          plan_account_id: item.plan_account_id,
-          account_id: item.account_id,
-          plan_id: item.plan_id,
-          billing_period_id: item.billing_period_id,
-          value: item.value,
-          next_payment_date: item.next_payment_date!,
-          plan: {
-            plan_id: item.ppl.plan_id,
-            name: item.ppl.name,
-            price: item.ppl.price,
-            price_old: item.ppl.price_old,
-            description: item.ppl.description,
-            annual_discount: item.ppl.annual_discount,
-            icon: item.ppl.icon,
-            is_test: item.ppl.is_test,
-            days_trial: item.ppl.days_trial,
-          },
-          cross_sells: crossSells,
-        } as IPlanAccountRenewal;
+    for (const item of result) {
+      if (!item.next_payment_date || !item.pac || !item.ppl) {
+        continue;
+      }
+
+      const crossSells: IPlanAccountRenewal['cross_sells'] = [];
+
+      if (item.pac.pca) {
+        for (const cs of item.pac.pca) {
+          if (cs && !cs.deleted_at && cs.pca && !cs.pca.deleted_at) {
+            crossSells.push({
+              plan_cross_sell_id: cs.pca.plan_cross_sell_id,
+              plan_cross_sell_account_id: cs.plan_cross_sell_account_id,
+              quantity: cs.pca.quantity,
+              price: cs.pca.price,
+            });
+          }
+        }
+      }
+
+      items.push({
+        plan_account_id: item.plan_account_id,
+        account_id: item.account_id,
+        plan_id: item.plan_id,
+        billing_period_id: item.billing_period_id,
+        value: item.value,
+        next_payment_date: item.next_payment_date,
+        plan: {
+          plan_id: item.ppl.plan_id,
+          name: item.ppl.name,
+          price: item.ppl.price,
+          price_old: item.ppl.price_old,
+          description: item.ppl.description,
+          annual_discount: item.ppl.annual_discount,
+          icon: item.ppl.icon,
+          is_test: item.ppl.is_test,
+          days_trial: item.ppl.days_trial,
+        },
+        cross_sells: crossSells,
       });
+    }
+
+    return items;
   };
 }

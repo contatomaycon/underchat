@@ -114,7 +114,9 @@ export class MiddlewareJwtRepository {
           plan_is_active?: boolean | null;
         }
     );
-    const actions = typedRows.map(({ plan_is_active: _plan, ...action }) => {
+    const actions = typedRows.map((row) => {
+      const action = { ...row };
+      delete (action as { plan_is_active?: boolean }).plan_is_active;
       return action;
     });
     const planIsActive = typedRows.some((row) => row.plan_is_active === true);

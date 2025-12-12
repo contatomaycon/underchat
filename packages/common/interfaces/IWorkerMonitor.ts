@@ -11,4 +11,3 @@ export interface IWorkerMonitor {
   deleted_at: string | null;
   container_id: string | null;
 }
-

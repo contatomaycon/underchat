@@ -8,7 +8,6 @@ import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.servi
 import { notificationMappings } from '@core/mappings/notification.mappings';
 import { WorkerActiveByAccountViewerRepository } from '@core/repositories/worker/WorkerActiveByAccountViewer.repository';
 import { UserService } from './user.service';
-import { normalizePhoneToJid } from '@core/common/functions/normalizePhoneToJid';
 import { UserInfoViewerRepository } from '@core/repositories/user/UserInfoViewer.repository';
 import { WorkerNameViewerRepository } from '@core/repositories/worker/WorkerNameViewer.repository';
 import { INotificationMessage } from '@core/common/interfaces/INotificationMessage';

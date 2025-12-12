@@ -1,5 +1,5 @@
 import * as schema from '@core/models';
-import { userCustomer, user } from '@core/models';
+import { userCustomer } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { eq } from 'drizzle-orm';

@@ -56,4 +56,3 @@ export class WorkerMonitorViewerRepository {
     return result[0] as IWorkerMonitor;
   };
 }
-

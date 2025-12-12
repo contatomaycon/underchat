@@ -5,11 +5,10 @@ import {
   NodePgQueryResultHKT,
 } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull, ExtractTablesWithRelations } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
 import { currentTime } from '@core/common/functions/currentTime';
 import { EditAccountInfoRequest } from '@core/schema/account/editAccountInfo/request.schema';
-import { ExtractTablesWithRelations } from 'drizzle-orm';
 import { PgTransaction } from 'drizzle-orm/pg-core';
 
 @injectable()
