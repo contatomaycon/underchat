@@ -33,6 +33,8 @@ const props = withDefaults(defineProps<Props>(), {
       <Component
         :is="item.to ? 'RouterLink' : 'a'"
         v-bind="getComputedNavLinkToProp(item)"
+        :active-class="item.to ? '' : undefined"
+        :exact-active-class="item.to ? '' : undefined"
         :class="{
           'router-link-active router-link-exact-active': isNavLinkActive(
             item,

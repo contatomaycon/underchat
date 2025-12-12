@@ -34,17 +34,51 @@ export const resolveNavLinkRouteName = (link: NavLink, router: Router) => {
 };
 
 export const isNavLinkActive = (link: NavLink, router: Router) => {
-  const matchedRoutes = router.currentRoute.value.matched;
+  const currentRoute = router.currentRoute.value;
   const resolveRoutedName = resolveNavLinkRouteName(link, router);
-
   if (!resolveRoutedName) return false;
 
-  return matchedRoutes.some((route) => {
-    return (
-      route.name === resolveRoutedName ||
-      route.meta.navActiveLink === resolveRoutedName
+  const targetLocation = link.to ? router.resolve(link.to) : null;
+  const targetQuery = targetLocation?.query ?? {};
+  const matchedRoutes = currentRoute.matched;
+
+  const matchesRoute =
+    matchedRoutes.some(
+      (route) =>
+        route.name === resolveRoutedName ||
+        route.meta.navActiveLink === resolveRoutedName
+    ) || currentRoute.name === resolveRoutedName;
+
+  if (!matchesRoute) return false;
+
+  const normalizeQueryValue = (value: unknown) => {
+    if (Array.isArray(value)) {
+      return value.map(String).sort().join('|');
+    }
+    return value === undefined ? undefined : String(value);
+  };
+
+  const keys = new Set([
+    ...Object.keys(targetQuery),
+    ...Object.keys(currentRoute.query ?? {}),
+  ]);
+
+  for (const key of keys) {
+    const expected = normalizeQueryValue(
+      // @ts-expect-error targetQuery index
+      targetQuery[key]
     );
-  });
+    const current = normalizeQueryValue(
+      // @ts-expect-error currentRoute.query index
+      currentRoute.query?.[key]
+    );
+
+    if (expected !== current) {
+      return false;
+    }
+  }
+
+  return true;
 };
 
 export const isNavGroupActive = (
