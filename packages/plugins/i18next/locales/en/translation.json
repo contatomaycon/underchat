@@ -638,5 +638,6 @@
   "total_attendance_time": "Total Attendance Time",
   "average_wait_time": "Average Wait Time",
   "average_attendance_time": "Average Attendance Time",
-  "to": "to"
+  "to": "to",
+  "plan_expired_alert": "Your plan has expired. Renew to keep using all features."
 }

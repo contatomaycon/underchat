@@ -10,4 +10,5 @@ export enum EHTTPStatusCode {
   request_timeout = 408,
   conflict = 409,
   internal_server_error = 500,
+  payment_required = 402,
 }

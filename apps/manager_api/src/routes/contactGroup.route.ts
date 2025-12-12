@@ -14,6 +14,7 @@ import { viewContactGroupSchema } from '@core/schema/contactGroup/viewContactGro
 import { deleteContactGroupSchema } from '@core/schema/contactGroup/deleteContactGroup';
 import { editContactGroupSchema } from '@core/schema/contactGroup/editContactGroup';
 import { createContactGroupAssignmentSchema } from '@core/schema/contactGroup/createContactGroupAssignment';
+import { planGuard } from '@/plugins/planGuard';
 
 export default async function contactGroupRoutes(server: FastifyInstance) {
   const contactGroupController = container.resolve(ContactGroupController);
@@ -24,6 +25,7 @@ export default async function contactGroupRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, contactGroupViewPermissions),
+      planGuard,
     ],
   });
 
@@ -33,6 +35,7 @@ export default async function contactGroupRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, contactGroupViewPermissions),
+      planGuard,
     ],
   });
 
@@ -42,6 +45,7 @@ export default async function contactGroupRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, contactGroupCreatePermissions),
+      planGuard,
     ],
   });
 
@@ -51,6 +55,7 @@ export default async function contactGroupRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, contactGroupViewPermissions),
+      planGuard,
     ],
   });
 
@@ -60,6 +65,7 @@ export default async function contactGroupRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, contactGroupDeletePermissions),
+      planGuard,
     ],
   });
 
@@ -69,6 +75,7 @@ export default async function contactGroupRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, contactGroupUpdatePermissions),
+      planGuard,
     ],
   });
 
@@ -78,6 +85,7 @@ export default async function contactGroupRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, contactGroupCreatePermissions),
+      planGuard,
     ],
   });
 }

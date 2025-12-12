@@ -638,5 +638,6 @@
   "total_attendance_time": "Tiempo Total de Atención",
   "average_wait_time": "Tiempo Promedio de Espera",
   "average_attendance_time": "Tiempo Promedio de Atención",
-  "to": "hasta"
+  "to": "hasta",
+  "plan_expired_alert": "Su plan está vencido. Renueve para seguir utilizando todas las funcionalidades."
 }

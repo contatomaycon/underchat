@@ -37,6 +37,7 @@ import { updateShowMessageOnCallSchema } from '@core/schema/worker/updateShowMes
 import { viewShowMessageOnCallSchema } from '@core/schema/worker/viewShowMessageOnCall';
 import { updateChatbotSchema } from '@core/schema/worker/updateChatbot';
 import { viewChatbotSchema } from '@core/schema/worker/viewChatbot';
+import { planGuard } from '@/plugins/planGuard';
 
 export default function workerRoutes(server: FastifyInstance) {
   const workerController = container.resolve(WorkerController);
@@ -47,6 +48,7 @@ export default function workerRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, workerCreatePermissions),
+      planGuard,
     ],
   });
 
@@ -56,6 +58,7 @@ export default function workerRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, workerRecreatePermissions),
+      planGuard,
     ],
   });
 
@@ -65,6 +68,7 @@ export default function workerRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, workerViewPermissions),
+      planGuard,
     ],
   });
 
@@ -74,6 +78,7 @@ export default function workerRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, workerViewPermissions),
+      planGuard,
     ],
   });
 
@@ -83,6 +88,7 @@ export default function workerRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, workerEditPermissions),
+      planGuard,
     ],
   });
 
@@ -92,6 +98,7 @@ export default function workerRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, workerDeletePermissions),
+      planGuard,
     ],
   });
 
@@ -101,6 +108,7 @@ export default function workerRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, workerCreatePermissions),
+      planGuard,
     ],
   });
 
@@ -110,6 +118,7 @@ export default function workerRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, workerProfileStatusPermissions),
+      planGuard,
     ],
   });
 
@@ -119,6 +128,7 @@ export default function workerRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, workerProfileStatusPermissions),
+      planGuard,
     ],
   });
 
@@ -128,6 +138,7 @@ export default function workerRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, workerProfileStatusPermissions),
+      planGuard,
     ],
   });
 
@@ -137,6 +148,7 @@ export default function workerRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, workerProfileStatusPermissions),
+      planGuard,
     ],
   });
 
@@ -146,6 +158,7 @@ export default function workerRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, workerLogsConnectionPermissions),
+      planGuard,
     ],
   });
 
@@ -155,6 +168,7 @@ export default function workerRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, workerProfileInfoPermissions),
+      planGuard,
     ],
   });
 
@@ -164,6 +178,7 @@ export default function workerRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, workerProfileInfoPermissions),
+      planGuard,
     ],
   });
 
@@ -173,6 +188,7 @@ export default function workerRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, workerViewPermissions),
+      planGuard,
     ],
   });
 
@@ -182,6 +198,7 @@ export default function workerRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, workerEditPermissions),
+      planGuard,
     ],
   });
 
@@ -191,6 +208,7 @@ export default function workerRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, workerViewPermissions),
+      planGuard,
     ],
   });
 
@@ -200,6 +218,7 @@ export default function workerRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, workerEditPermissions),
+      planGuard,
     ],
   });
 
@@ -209,6 +228,7 @@ export default function workerRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, workerViewPermissions),
+      planGuard,
     ],
   });
 
@@ -218,6 +238,7 @@ export default function workerRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, workerEditPermissions),
+      planGuard,
     ],
   });
 
@@ -227,6 +248,7 @@ export default function workerRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, workerViewPermissions),
+      planGuard,
     ],
   });
 
@@ -236,6 +258,7 @@ export default function workerRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, workerEditPermissions),
+      planGuard,
     ],
   });
 
@@ -245,6 +268,7 @@ export default function workerRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, workerViewPermissions),
+      planGuard,
     ],
   });
 
@@ -254,6 +278,7 @@ export default function workerRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, workerEditPermissions),
+      planGuard,
     ],
   });
 
@@ -263,6 +288,7 @@ export default function workerRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, workerViewPermissions),
+      planGuard,
     ],
   });
 
@@ -272,6 +298,7 @@ export default function workerRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, workerEditPermissions),
+      planGuard,
     ],
   });
 }

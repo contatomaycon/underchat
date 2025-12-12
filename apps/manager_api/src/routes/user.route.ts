@@ -23,6 +23,7 @@ import { viewUserRoleSchema } from '@core/schema/user/viewUserRole';
 import { uploadPhotoSchema } from '@core/schema/user/uploadPhoto';
 import { deletePhotoSchema } from '@core/schema/user/deletePhoto';
 import { listUserRolesSchema } from '@core/schema/user/listUserRoles';
+import { planGuard } from '@/plugins/planGuard';
 
 export default function userRoutes(server: FastifyInstance) {
   const userController = container.resolve(UserController);
@@ -33,6 +34,7 @@ export default function userRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, userViewPermissions),
+      planGuard,
     ],
   });
 
@@ -42,6 +44,7 @@ export default function userRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, userViewPermissions),
+      planGuard,
     ],
   });
 
@@ -51,6 +54,7 @@ export default function userRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, userCreatePermissions),
+      planGuard,
     ],
   });
 
@@ -60,6 +64,7 @@ export default function userRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, userViewPermissions),
+      planGuard,
     ],
   });
 
@@ -69,6 +74,7 @@ export default function userRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, userViewPermissions),
+      planGuard,
     ],
   });
 
@@ -78,6 +84,7 @@ export default function userRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, userViewPermissions),
+      planGuard,
     ],
   });
 
@@ -87,6 +94,7 @@ export default function userRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, userViewPermissions),
+      planGuard,
     ],
   });
 
@@ -96,6 +104,7 @@ export default function userRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, userViewPermissions),
+      planGuard,
     ],
   });
 
@@ -105,6 +114,7 @@ export default function userRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, userViewPermissions),
+      planGuard,
     ],
   });
 
@@ -114,6 +124,7 @@ export default function userRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, userDeletePermissions),
+      planGuard,
     ],
   });
 
@@ -123,6 +134,7 @@ export default function userRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, userUpdatePermissions),
+      planGuard,
     ],
   });
 
@@ -132,6 +144,7 @@ export default function userRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, userViewPermissions),
+      planGuard,
     ],
   });
 
@@ -141,6 +154,7 @@ export default function userRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, userViewPermissions),
+      planGuard,
     ],
   });
 
@@ -150,6 +164,7 @@ export default function userRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, userUpdatePermissions),
+      planGuard,
     ],
   });
 
@@ -159,6 +174,7 @@ export default function userRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, userUpdatePermissions),
+      planGuard,
     ],
   });
 
@@ -168,6 +184,7 @@ export default function userRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, userViewPermissions),
+      planGuard,
     ],
   });
 }
