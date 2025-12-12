@@ -16,16 +16,8 @@ const accountSettingsStore = useAccountSettingsStore();
 const { t } = useI18n();
 
 const props = defineProps<{
-  modelValue: boolean;
   accountId: string | null;
 }>();
-
-const emit = defineEmits<(e: 'update:modelValue', visible: boolean) => void>();
-
-const isVisible = computed({
-  get: () => props.modelValue,
-  set: (v) => emit('update:modelValue', v),
-});
 
 function appendIfDefined(fd: FormData, key: string, value: unknown) {
   if (value === null || value === undefined) return;
@@ -719,12 +711,7 @@ const updateAccountInfo = async () => {
     dark_secondary_color: darkSecondaryColor.value,
   });
 
-  const result = await accountSettingsStore.updateAccountInfo(payload, body);
-
-  if (result) {
-    isVisible.value = false;
-    await accountSettingsStore.getAccountInfoById(accountId.value);
-  }
+  await accountSettingsStore.updateAccountInfo(payload, body);
 };
 
 const addAccountInfo = async () => {
@@ -753,11 +740,7 @@ const addAccountInfo = async () => {
     dark_secondary_color: darkSecondaryColor.value,
   });
 
-  const result = await accountSettingsStore.addAccountInfo(payload);
-
-  if (result) {
-    isVisible.value = false;
-  }
+  await accountSettingsStore.addAccountInfo(payload);
 };
 
 watch(
@@ -791,9 +774,7 @@ watch(
 </script>
 
 <template>
-  <VDialog v-model="isVisible" max-width="900">
-    <DialogCloseBtn @click="isVisible = false" />
-
+  <div class="account-info-inline">
     <VOverlay
       :model-value="accountSettingsStore.loading"
       class="align-center justify-center"
@@ -1107,9 +1088,6 @@ watch(
         </VCardText>
 
         <VCardText class="d-flex justify-end flex-wrap gap-3">
-          <VBtn variant="tonal" color="secondary" @click="isVisible = false">
-            {{ $t('cancel') }}
-          </VBtn>
           <template v-if="hasAccountInfo">
             <VBtn color="primary" @click="updateAccountInfo">
               {{ $t('update') }}
@@ -1124,7 +1102,7 @@ watch(
         </VCardText>
       </VCard>
     </VForm>
-  </VDialog>
+  </div>
 
   <VDialog v-model="isCropModalOpen" max-width="500" persistent>
     <VCard>
@@ -1197,6 +1175,17 @@ watch(
   </VDialog>
 </template>
 
+<style scoped>
+.account-info-inline {
+  position: relative;
+}
+</style>
+
+<style scoped>
+.account-info-inline {
+  position: relative;
+}
+</style>
 
 <style lang="scss" scoped>
 .logo-preview-container {

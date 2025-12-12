@@ -20,7 +20,7 @@ import { AccountInfoCreatorRepository } from '@core/repositories/account/Account
 import { AccountInfoUpdaterRepository } from '@core/repositories/account/AccountInfoUpdater.repository';
 import { AccountInfoByIdViewerExistsRepository } from '@core/repositories/account/AccountInfoByIdViewerExists.repository';
 import { CreateAccountInfoRequest } from '@core/schema/account/createAccountInfo/request.schema';
-import { EditAccountInfoResponse } from '@core/schema/account/editAccountInfo/request.schema';
+import { EditAccountInfoRequest } from '@core/schema/account/editAccountInfo/request.schema';
 import { AccountAllListerRepository } from '@core/repositories/account/AccountAllLister.repository';
 import { IAccountBasic } from '@core/common/interfaces/IAccountBasic';
 import { AccountSubscriptionsListerRepository } from '@core/repositories/account/AccountSubscriptionsLister.repository';
@@ -143,7 +143,7 @@ export class AccountService {
 
   updateAccountInfoById = async (
     accountInfoId: string,
-    input: EditAccountInfoResponse,
+    input: EditAccountInfoRequest,
     urlLogo: string | null | undefined
   ): Promise<boolean> => {
     return this.accountInfoUpdaterRepository.updateAccountInfoById(

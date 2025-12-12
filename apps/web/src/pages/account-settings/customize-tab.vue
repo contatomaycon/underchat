@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
-import AppAccountInfo from '@/components/account/AppAccountInfo.vue';
+import AppAccountInfoInline from '@/components/account/AppAccountInfoInline.vue';
 import { getUser } from '@/@webcore/localStorage/user';
 
 const accountId = ref<string | null>(null);
@@ -23,11 +23,9 @@ onMounted(() => {
       </VCardText>
     </VCard>
 
-    <AppAccountInfo
+    <AppAccountInfoInline
       v-if="accountId"
-      :model-value="true"
       :account-id="accountId"
-      :use-dialog="false"
     />
   </div>
 </template>
