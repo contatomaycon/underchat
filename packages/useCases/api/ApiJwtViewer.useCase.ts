@@ -1,7 +1,7 @@
 import { ApiService } from '@core/services/api.service';
 import { injectable } from 'tsyringe';
 import { IJwtMiddleware } from '@core/common/interfaces/IJwtMiddleware';
-import { IJwtGroupHierarchy } from '@core/common/interfaces/IJwtGroupHierarchy';
+import { IJwtPermissionsWithPlan } from '@core/common/interfaces/IJwtPermissionsWithPlan';
 
 @injectable()
 export class ApiJwtViewerUseCase {
@@ -11,7 +11,7 @@ export class ApiJwtViewerUseCase {
     userId,
     routeModule,
     module,
-  }: IJwtMiddleware): Promise<IJwtGroupHierarchy[]> {
+  }: IJwtMiddleware): Promise<IJwtPermissionsWithPlan> {
     return this.apiService.findApiByJwt(userId, routeModule, module);
   }
 }
