@@ -19,6 +19,9 @@ import { IWorkerPayload } from '@core/common/interfaces/IWorkerPayload';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
+import { AccountService } from './account.service';
+import { IPlanAccountStatus } from '@core/common/interfaces/IPlanAccountStatus';
+import { EAccountStatus } from '@core/common/enums/EAccountStatus';
 
 @injectable()
 export class WorkerMonitorService {
@@ -31,7 +34,8 @@ export class WorkerMonitorService {
     private readonly passwordEncryptorService: PasswordEncryptorService,
     private readonly streamProducerService: StreamProducerService,
     private readonly kafkaBalanceQueueService: KafkaBalanceQueueService,
-    private readonly centrifugoService: CentrifugoService
+    private readonly centrifugoService: CentrifugoService,
+    private readonly accountService: AccountService
   ) {}
 
   run = async (): Promise<void> => {
@@ -112,6 +116,16 @@ export class WorkerMonitorService {
       return;
     }
 
+    const planStatus = await this.accountService.viewPlanStatus(
+      worker.account_id
+    );
+    const planCancelled = this.isPlanCancelled(planStatus);
+    if (planCancelled) {
+      await this.removeContainer(workerId, server.server_id, sshConfig);
+      await this.removeStorage(workerId, server.server_id, sshConfig);
+      return;
+    }
+
     if (this.isDeletingTimeout(worker)) {
       await this.handleDeleting(worker, server, sshConfig);
       return;
@@ -155,6 +169,15 @@ export class WorkerMonitorService {
     sshConfig: ConnectConfig
   ): Promise<void> => {
     if (worker.deleted_at) {
+      return;
+    }
+
+    const planStatus = await this.accountService.viewPlanStatus(
+      worker.account_id
+    );
+    const planCancelled = this.isPlanCancelled(planStatus);
+    if (planCancelled) {
+      await this.removeStorage(worker.worker_id, server.server_id, sshConfig);
       return;
     }
 
@@ -352,6 +375,15 @@ export class WorkerMonitorService {
     await this.sshService.runCommands(serverId, sshConfig, [command], false);
   };
 
+  private removeStorage = async (
+    workerId: string,
+    serverId: string,
+    sshConfig: ConnectConfig
+  ): Promise<void> => {
+    const command = `rm -rf /app/data/storage/${workerId}`;
+    await this.sshService.runCommands(serverId, sshConfig, [command], false);
+  };
+
   private shouldCheckFastify = (worker: IWorkerMonitor): boolean => {
     const statuses = [
       EWorkerStatus.online,
@@ -398,6 +430,37 @@ export class WorkerMonitorService {
     }
 
     return this.isOlderThanTimeout(worker.updated_at);
+  };
+
+  private isPlanCancelled = (plan: IPlanAccountStatus | null): boolean => {
+    if (!plan) {
+      return true;
+    }
+
+    const blocked = plan.account_status_id === EAccountStatus.blocked;
+    if (blocked) {
+      return true;
+    }
+
+    const nextPayment = plan.next_payment_date
+      ? new Date(plan.next_payment_date)
+      : null;
+    const invalidDate = !nextPayment || Number.isNaN(nextPayment.getTime());
+    if (invalidDate) {
+      return true;
+    }
+
+    const expired = nextPayment.getTime() <= Date.now();
+    if (expired) {
+      return true;
+    }
+
+    const inactive = plan.account_status_id === EAccountStatus.inactive;
+    if (inactive && plan.cancellation_date) {
+      return true;
+    }
+
+    return false;
   };
 
   private isOlderThanTimeout = (dateIso: string | null): boolean => {

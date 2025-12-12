@@ -27,6 +27,7 @@ import { AccountSubscriptionsListerRepository } from '@core/repositories/account
 import { ListAccountSubscriptionsResponse } from '@core/schema/account/listAccountSubscriptions/response.schema';
 import { PlanAccountStatusViewerRepository } from '@core/repositories/planAccount/PlanAccountStatusViewer.repository';
 import { EAccountStatus } from '@core/common/enums/EAccountStatus';
+import { IPlanAccountStatus } from '@core/common/interfaces/IPlanAccountStatus';
 
 @injectable()
 export class AccountService {
@@ -207,5 +208,13 @@ export class AccountService {
     }
 
     return true;
+  };
+
+  viewPlanStatus = async (
+    accountId: string
+  ): Promise<IPlanAccountStatus | null> => {
+    return this.planAccountStatusViewerRepository.viewLatestByAccountId(
+      accountId
+    );
   };
 }
