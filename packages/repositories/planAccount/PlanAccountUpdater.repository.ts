@@ -18,10 +18,7 @@ export class PlanAccountUpdaterRepository {
 
   findPlanAccountByAccountId = async (accountId: string) => {
     return this.db.query.planAccount.findFirst({
-      where: and(
-        eq(planAccount.account_id, accountId),
-        isNull(planAccount.cancellation_date)
-      ),
+      where: eq(planAccount.account_id, accountId),
       columns: {
         plan_account_id: true,
         plan_id: true,
@@ -32,6 +29,7 @@ export class PlanAccountUpdaterRepository {
         cancellation_date: true,
         value: true,
       },
+      orderBy: (planAccount, { desc }) => [desc(planAccount.updated_at)],
     });
   };
 
@@ -85,7 +83,7 @@ export class PlanAccountUpdaterRepository {
       if (existingPlanAccount) {
         const planUpdated = await this.updateExistingPlanAccount(
           tx,
-          accountId,
+          existingPlanAccount.plan_account_id,
           input,
           calculatedData
         );
@@ -113,14 +111,12 @@ export class PlanAccountUpdaterRepository {
     accountId: string
   ) => {
     return tx.query.planAccount.findFirst({
-      where: and(
-        eq(planAccount.account_id, accountId),
-        isNull(planAccount.cancellation_date)
-      ),
+      where: eq(planAccount.account_id, accountId),
       columns: {
         plan_account_id: true,
         last_payment_date: true,
       },
+      orderBy: (planAccount, { desc }) => [desc(planAccount.updated_at)],
     });
   };
 
@@ -286,7 +282,7 @@ export class PlanAccountUpdaterRepository {
     tx: Parameters<
       Parameters<NodePgDatabase<typeof schema>['transaction']>[0]
     >[0],
-    accountId: string,
+    planAccountId: string,
     input: UpdatePlanAccountRequest,
     calculatedData: ICalculatedPlanAccountData
   ): Promise<boolean> => {
@@ -304,12 +300,7 @@ export class PlanAccountUpdaterRepository {
     const result = await tx
       .update(planAccount)
       .set(updateData)
-      .where(
-        and(
-          eq(planAccount.account_id, accountId),
-          isNull(planAccount.cancellation_date)
-        )
-      )
+      .where(eq(planAccount.plan_account_id, planAccountId))
       .execute();
 
     return (result.rowCount ?? 0) > 0;
