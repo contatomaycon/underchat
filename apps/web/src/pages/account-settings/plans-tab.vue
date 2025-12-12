@@ -1151,7 +1151,8 @@ onMounted(() => {
     <VRow v-else>
       <VCol cols="12" class="text-center mt-12">
         <VCard variant="elevated" class="account-settings-card pa-8">
-          <VCardText>
+          <VCardText class="text-center py-8">
+            <VIcon icon="tabler-clipboard-check" size="48" class="mb-4" />
             <p class="text-body-1 text-medium-emphasis mb-0">
               {{ $t('no_plan_found') }}
             </p>
