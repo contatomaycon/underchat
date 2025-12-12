@@ -6,7 +6,7 @@ export const filterNavItemsByPlan = (
 
   const result: any[] = [];
 
-  items.forEach((item) => {
+  for (const item of items) {
     const hasChildren = 'children' in item;
 
     if (hasChildren) {
@@ -16,13 +16,13 @@ export const filterNavItemsByPlan = (
         const clone = { ...item, children };
         result.push(clone);
       }
-      return;
+      continue;
     }
 
     if (item.allowedWhenExpired === true) {
       result.push(item);
     }
-  });
+  }
 
   return result;
 };

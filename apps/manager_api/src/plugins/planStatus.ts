@@ -8,14 +8,18 @@ export const planStatus = async (
   reply.header('x-plan-active', active ? 'true' : 'false');
 
   const currentExpose = reply.getHeader('access-control-expose-headers');
-  const exposeList = Array.isArray(currentExpose)
-    ? currentExpose
-    : typeof currentExpose === 'string'
-      ? currentExpose
-          .split(',')
-          .map((v) => v.trim())
-          .filter(Boolean)
-      : [];
+  let exposeList: string[] = [];
+
+  if (Array.isArray(currentExpose)) {
+    exposeList = currentExpose;
+  }
+
+  if (!Array.isArray(currentExpose) && typeof currentExpose === 'string') {
+    exposeList = currentExpose
+      .split(',')
+      .map((v) => v.trim())
+      .filter(Boolean);
+  }
 
   const hasPlanHeader = exposeList.some(
     (h) => h.toLowerCase() === 'x-plan-active'

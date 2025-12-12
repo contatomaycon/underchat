@@ -23,44 +23,49 @@ export async function withLock<T>(
   const duplicateTtlSeconds = options?.duplicateTtlSeconds ?? 300;
   const executedKey = preventDuplicate ? `underchat:executed:${lockKey}` : null;
 
-  for (;;) {
+  const startExtension = () =>
+    setInterval(
+      () => {
+        extendLock(redis, key, token, ttlMs).catch(() => {});
+      },
+      Math.floor(ttlMs / 2)
+    );
+
+  const tryLock = async (): Promise<T> => {
     const ok = await redis.set(key, token, 'PX', ttlMs, 'NX');
+    if (ok !== 'OK') {
+      await delay(retryMs);
+      return tryLock();
+    }
 
-    if (ok === 'OK') {
-      if (preventDuplicate && executedKey) {
-        const alreadyExecuted = await redis.get(executedKey);
-        if (alreadyExecuted) {
-          await releaseLock(redis, key, token);
-          return undefined as T;
-        }
-      }
-
-      const interval = setInterval(
-        () => {
-          extendLock(redis, key, token, ttlMs).catch(() => {});
-        },
-        Math.floor(ttlMs / 2)
-      );
-
-      try {
-        const result = await fn();
-
-        if (preventDuplicate && executedKey) {
-          await redis.set(executedKey, '1', 'EX', duplicateTtlSeconds);
-        }
-
+    if (preventDuplicate && executedKey) {
+      const alreadyExecuted = await redis.get(executedKey);
+      if (alreadyExecuted) {
         await releaseLock(redis, key, token);
-        clearInterval(interval);
-
-        return result;
-      } catch (e) {
-        await releaseLock(redis, key, token);
-        clearInterval(interval);
-
-        throw e;
+        return undefined as T;
       }
     }
 
-    await delay(retryMs);
-  }
+    const interval = startExtension();
+
+    try {
+      const result = await fn();
+
+      if (preventDuplicate && executedKey) {
+        await redis.set(executedKey, '1', 'EX', duplicateTtlSeconds);
+      }
+
+      await releaseLock(redis, key, token);
+      clearInterval(interval);
+
+      return result;
+    } catch (e) {
+      await releaseLock(redis, key, token);
+      clearInterval(interval);
+
+      throw e;
+    }
+  };
+
+  return tryLock();
 }

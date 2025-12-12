@@ -83,20 +83,26 @@ export class PlanAccountUpdaterRepository {
       };
 
       if (existingPlanAccount) {
-        await Promise.all([
-          this.updateExistingPlanAccount(tx, accountId, input, calculatedData),
-          this.ensureAccountIsActive(tx, accountId),
-        ]);
+        const planUpdated = await this.updateExistingPlanAccount(
+          tx,
+          accountId,
+          input,
+          calculatedData
+        );
+        await this.ensureAccountIsActive(tx, accountId);
 
-        return true;
+        return planUpdated;
       }
 
-      await Promise.all([
-        this.createNewPlanAccount(tx, accountId, input, calculatedData),
-        this.ensureAccountIsActive(tx, accountId),
-      ]);
+      const planCreated = await this.createNewPlanAccount(
+        tx,
+        accountId,
+        input,
+        calculatedData
+      );
+      await this.ensureAccountIsActive(tx, accountId);
 
-      return true;
+      return planCreated;
     });
   };
 

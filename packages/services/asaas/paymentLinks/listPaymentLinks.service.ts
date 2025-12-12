@@ -15,33 +15,7 @@ export class ListPaymentLinksService {
     request?: IListAsaasPaymentLinksRequest
   ): Promise<IListAsaasPaymentLinksResponse | null> => {
     try {
-      const params = new URLSearchParams();
-
-      if (request?.offset !== undefined) {
-        params.append('offset', request.offset.toString());
-      }
-
-      if (request?.limit !== undefined) {
-        params.append('limit', request.limit.toString());
-      }
-
-      if (request?.active !== undefined) {
-        params.append('active', request.active.toString());
-      }
-
-      if (request?.includeDeleted !== undefined) {
-        params.append('includeDeleted', request.includeDeleted.toString());
-      }
-
-      if (request?.name) {
-        params.append('name', request.name);
-      }
-
-      if (request?.externalReference) {
-        params.append('externalReference', request.externalReference);
-      }
-
-      const queryString = params.toString();
+      const queryString = this.buildQueryString(request);
       const url = queryString
         ? `/v3/paymentLinks?${queryString}`
         : '/v3/paymentLinks';
@@ -50,25 +24,64 @@ export class ListPaymentLinksService {
         .getAxiosInstance()
         .get<IListAsaasPaymentLinksResponse>(url);
 
-      if (response.status === 200 && response.data) {
-        return response.data;
+      if (response.status !== 200 || !response.data) {
+        return null;
       }
 
-      return null;
+      return response.data;
     } catch (error) {
-      if (axios.isAxiosError(error)) {
-        const errorData = error.response?.data as IAsaasErrorResponse;
-
-        if (errorData?.errors && errorData.errors.length > 0) {
-          const firstErrorDescription = errorData.errors[0].description;
-
-          throw new Error(firstErrorDescription);
-        }
-
-        throw new Error('Erro ao listar links de pagamentos');
+      if (!axios.isAxiosError(error)) {
+        throw new Error('Erro desconhecido ao listar links de pagamentos');
       }
 
-      throw new Error('Erro desconhecido ao listar links de pagamentos');
+      const errorData = error.response?.data as IAsaasErrorResponse;
+
+      if (errorData?.errors && errorData.errors.length > 0) {
+        const firstErrorDescription = errorData.errors[0].description;
+        throw new Error(firstErrorDescription);
+      }
+
+      throw new Error('Erro ao listar links de pagamentos');
     }
+  };
+
+  private readonly buildQueryString = (
+    request?: IListAsaasPaymentLinksRequest
+  ): string => {
+    const params = new URLSearchParams();
+    if (!request) {
+      return '';
+    }
+
+    const entries: Array<[string, string | undefined]> = [
+      [
+        'offset',
+        request.offset !== undefined ? request.offset.toString() : undefined,
+      ],
+      [
+        'limit',
+        request.limit !== undefined ? request.limit.toString() : undefined,
+      ],
+      [
+        'active',
+        request.active !== undefined ? request.active.toString() : undefined,
+      ],
+      [
+        'includeDeleted',
+        request.includeDeleted !== undefined
+          ? request.includeDeleted.toString()
+          : undefined,
+      ],
+      ['name', request.name],
+      ['externalReference', request.externalReference],
+    ];
+
+    for (const [key, value] of entries) {
+      if (value) {
+        params.append(key, value);
+      }
+    }
+
+    return params.toString();
   };
 }

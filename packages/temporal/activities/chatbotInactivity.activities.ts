@@ -24,7 +24,7 @@ export class ChatbotInactivityActivity implements IChatbotInactivityActivity {
     await this.chatbotFlowRunnerService.processScheduledInactivityChecks(t);
   };
 
-  private ensureI18nInitialized = async (): Promise<void> => {
+  private readonly ensureI18nInitialized = async (): Promise<void> => {
     if (this.i18nInitialized && i18next.isInitialized) {
       return;
     }

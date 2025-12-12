@@ -31,7 +31,7 @@ export class BalanceMonitorActivity implements IBalanceMonitorActivity {
     await Promise.all(tasks);
   };
 
-  private checkServer = async (
+  private readonly checkServer = async (
     serverData: IBalanceMonitorServer
   ): Promise<void> => {
     const sshConfig = this.buildSshConfig(serverData);
@@ -63,7 +63,7 @@ export class BalanceMonitorActivity implements IBalanceMonitorActivity {
     );
   };
 
-  private buildSshConfig = (
+  private readonly buildSshConfig = (
     serverData: IBalanceMonitorServer
   ): ConnectConfig => ({
     host: serverData.ssh_ip,
@@ -72,7 +72,7 @@ export class BalanceMonitorActivity implements IBalanceMonitorActivity {
     password: this.passwordEncryptorService.decrypt(serverData.ssh_password),
   });
 
-  private setOfflineIfNeeded = async (
+  private readonly setOfflineIfNeeded = async (
     serverData: IBalanceMonitorServer
   ): Promise<void> => {
     const alreadyOffline =
@@ -86,7 +86,7 @@ export class BalanceMonitorActivity implements IBalanceMonitorActivity {
     );
   };
 
-  private isHealthy = async (url: string): Promise<boolean> => {
+  private readonly isHealthy = async (url: string): Promise<boolean> => {
     try {
       const response = await axios.get(url, { timeout: 5000 });
       return response.status === 200;
@@ -95,7 +95,7 @@ export class BalanceMonitorActivity implements IBalanceMonitorActivity {
     }
   };
 
-  private resolveProtocol = (protocol: string | null): string => {
+  private readonly resolveProtocol = (protocol: string | null): string => {
     const normalized = protocol?.toLowerCase();
     if (normalized === 'https') {
       return 'https';

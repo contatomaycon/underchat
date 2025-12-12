@@ -23,7 +23,7 @@ export class PlanAccountRenewalListerRepository {
         eq(planAccount.recurring_payment, true),
         isNull(planAccount.cancellation_date),
         sql`${planAccount.next_payment_date} IS NOT NULL`,
-        sql`${planAccount.next_payment_date}::timestamptz <= ${sql.raw(`'${threeHoursLaterISO}'`)}::timestamptz`,
+        sql`${planAccount.next_payment_date}::timestamptz <= ${threeHoursLaterISO}::timestamptz`,
         sql`EXISTS (
           SELECT 1 
           FROM ${account} a

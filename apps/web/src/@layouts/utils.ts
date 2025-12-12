@@ -1,4 +1,4 @@
-import type { Router } from 'vue-router';
+import type { Router, RouteLocationRaw } from 'vue-router';
 import { layoutConfig } from '@layouts/config';
 import { AppContentLayoutNav } from '@layouts/enums';
 import { useLayoutConfigStore } from '@layouts/stores/config';
@@ -16,8 +16,8 @@ export const getComputedNavLinkToProp = computed(() => (link: NavLink) => {
   if (link.to) {
     props.to =
       typeof link.to === 'string'
-        ? { name: link.to as keyof RouteNamedMap }
-        : link.to;
+        ? ({ name: link.to as keyof RouteNamedMap } as RouteLocationRaw)
+        : (link.to as RouteLocationRaw);
   } else {
     props.href = link.href;
   }
@@ -51,11 +51,29 @@ export const isNavLinkActive = (link: NavLink, router: Router) => {
 
   if (!matchesRoute) return false;
 
-  const normalizeQueryValue = (value: unknown) => {
+  const normalizeQueryValue = (value: unknown): string | undefined => {
     if (Array.isArray(value)) {
-      return value.map(String).sort().join('|');
+      const sorted = value.map(String).toSorted((a, b) => a.localeCompare(b));
+      return sorted.join('|');
     }
-    return value === undefined ? undefined : String(value);
+
+    if (value === undefined) return undefined;
+
+    if (value === null) return 'null';
+
+    if (typeof value === 'object') {
+      const record = value as Record<string, unknown>;
+      const entries = Object.keys(record)
+        .toSorted((a, b) => a.localeCompare(b))
+        .map((key) => {
+          const entryValue = normalizeQueryValue(record[key]);
+          return `${key}:${entryValue ?? ''}`;
+        });
+
+      return entries.join('|');
+    }
+
+    return String(value);
   };
 
   const keys = new Set([
@@ -64,14 +82,8 @@ export const isNavLinkActive = (link: NavLink, router: Router) => {
   ]);
 
   for (const key of keys) {
-    const expected = normalizeQueryValue(
-      // @ts-expect-error targetQuery index
-      targetQuery[key]
-    );
-    const current = normalizeQueryValue(
-      // @ts-expect-error currentRoute.query index
-      currentRoute.query?.[key]
-    );
+    const expected = normalizeQueryValue(targetQuery[key]);
+    const current = normalizeQueryValue(currentRoute.query?.[key]);
 
     if (expected !== current) {
       return false;

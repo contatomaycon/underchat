@@ -51,11 +51,11 @@ export class WorkerMonitorService {
     );
 
     const workersByServer = new Map<string, IWorkerMonitor[]>();
-    workers.forEach((worker) => {
+    for (const worker of workers) {
       const list = workersByServer.get(worker.server_id) ?? [];
       list.push(worker);
       workersByServer.set(worker.server_id, list);
-    });
+    }
 
     const tasks = servers.map((server) =>
       this.checkServer(server, workersById, workersByServer)
@@ -64,7 +64,7 @@ export class WorkerMonitorService {
     await Promise.all(tasks);
   };
 
-  private checkServer = async (
+  private readonly checkServer = async (
     server: IBalanceMonitorServer,
     workersById: Map<string, IWorkerMonitor>,
     workersByServer: Map<string, IWorkerMonitor[]>
@@ -98,7 +98,7 @@ export class WorkerMonitorService {
     await Promise.all(allTasks);
   };
 
-  private processContainer = async (
+  private readonly processContainer = async (
     workerId: string,
     server: IBalanceMonitorServer,
     sshConfig: ConnectConfig,
@@ -163,7 +163,7 @@ export class WorkerMonitorService {
     await this.syncConnectionStatus(worker, connectionHealthy);
   };
 
-  private handleMissingContainer = async (
+  private readonly handleMissingContainer = async (
     worker: IWorkerMonitor,
     server: IBalanceMonitorServer,
     sshConfig: ConnectConfig
@@ -199,7 +199,7 @@ export class WorkerMonitorService {
     await this.handleRecreate(worker, server);
   };
 
-  private handleDeleting = async (
+  private readonly handleDeleting = async (
     worker: IWorkerMonitor,
     server: IBalanceMonitorServer,
     sshConfig: ConnectConfig
@@ -228,7 +228,7 @@ export class WorkerMonitorService {
     );
   };
 
-  private handleRecreate = async (
+  private readonly handleRecreate = async (
     worker: IWorkerMonitor,
     server: IBalanceMonitorServer
   ): Promise<void> => {
@@ -258,7 +258,7 @@ export class WorkerMonitorService {
     );
   };
 
-  private syncConnectionStatus = async (
+  private readonly syncConnectionStatus = async (
     worker: IWorkerMonitor,
     connectionHealthy: boolean
   ): Promise<void> => {
@@ -289,14 +289,16 @@ export class WorkerMonitorService {
     );
   };
 
-  private buildSshConfig = (server: IBalanceMonitorServer): ConnectConfig => ({
+  private readonly buildSshConfig = (
+    server: IBalanceMonitorServer
+  ): ConnectConfig => ({
     host: server.ssh_ip,
     port: server.ssh_port,
     username: this.passwordEncryptorService.decrypt(server.ssh_username),
     password: this.passwordEncryptorService.decrypt(server.ssh_password),
   });
 
-  private listContainers = async (
+  private readonly listContainers = async (
     serverId: string,
     sshConfig: ConnectConfig
   ): Promise<string[]> => {
@@ -317,7 +319,7 @@ export class WorkerMonitorService {
     return list.filter((name) => !!name);
   };
 
-  private checkFastify = async (
+  private readonly checkFastify = async (
     workerId: string,
     serverId: string,
     sshConfig: ConnectConfig
@@ -336,7 +338,7 @@ export class WorkerMonitorService {
     return code === 200;
   };
 
-  private checkConnection = async (
+  private readonly checkConnection = async (
     workerId: string,
     serverId: string,
     sshConfig: ConnectConfig
@@ -355,7 +357,7 @@ export class WorkerMonitorService {
     return code === 200;
   };
 
-  private parseHttpCode = (raw: string): number | null => {
+  private readonly parseHttpCode = (raw: string): number | null => {
     const trimmed = raw.trim();
     const numeric = Number(trimmed);
     if (!Number.isFinite(numeric)) {
@@ -365,7 +367,7 @@ export class WorkerMonitorService {
     return numeric;
   };
 
-  private removeContainer = async (
+  private readonly removeContainer = async (
     workerId: string,
     serverId: string,
     sshConfig: ConnectConfig
@@ -375,7 +377,7 @@ export class WorkerMonitorService {
     await this.sshService.runCommands(serverId, sshConfig, [command], false);
   };
 
-  private removeStorage = async (
+  private readonly removeStorage = async (
     workerId: string,
     serverId: string,
     sshConfig: ConnectConfig
@@ -384,7 +386,7 @@ export class WorkerMonitorService {
     await this.sshService.runCommands(serverId, sshConfig, [command], false);
   };
 
-  private shouldCheckFastify = (worker: IWorkerMonitor): boolean => {
+  private readonly shouldCheckFastify = (worker: IWorkerMonitor): boolean => {
     const statuses = [
       EWorkerStatus.online,
       EWorkerStatus.offline,
@@ -394,13 +396,15 @@ export class WorkerMonitorService {
     return statuses.includes(worker.worker_status_id);
   };
 
-  private shouldCheckConnection = (worker: IWorkerMonitor): boolean => {
+  private readonly shouldCheckConnection = (
+    worker: IWorkerMonitor
+  ): boolean => {
     const statuses = [EWorkerStatus.online, EWorkerStatus.offline];
 
     return statuses.includes(worker.worker_status_id);
   };
 
-  private isProvisioning = (worker: IWorkerMonitor): boolean => {
+  private readonly isProvisioning = (worker: IWorkerMonitor): boolean => {
     const statuses = [
       EWorkerStatus.new,
       EWorkerStatus.recreating,
@@ -410,7 +414,7 @@ export class WorkerMonitorService {
     return statuses.includes(worker.worker_status_id);
   };
 
-  private isStuck = (worker: IWorkerMonitor): boolean => {
+  private readonly isStuck = (worker: IWorkerMonitor): boolean => {
     const statuses = [
       EWorkerStatus.new,
       EWorkerStatus.recreating,
@@ -424,7 +428,7 @@ export class WorkerMonitorService {
     return this.isOlderThanTimeout(worker.updated_at);
   };
 
-  private isDeletingTimeout = (worker: IWorkerMonitor): boolean => {
+  private readonly isDeletingTimeout = (worker: IWorkerMonitor): boolean => {
     if (worker.worker_status_id !== EWorkerStatus.deleting) {
       return false;
     }
@@ -432,7 +436,9 @@ export class WorkerMonitorService {
     return this.isOlderThanTimeout(worker.updated_at);
   };
 
-  private isPlanCancelled = (plan: IPlanAccountStatus | null): boolean => {
+  private readonly isPlanCancelled = (
+    plan: IPlanAccountStatus | null
+  ): boolean => {
     if (!plan) {
       return true;
     }
@@ -463,7 +469,7 @@ export class WorkerMonitorService {
     return false;
   };
 
-  private isOlderThanTimeout = (dateIso: string | null): boolean => {
+  private readonly isOlderThanTimeout = (dateIso: string | null): boolean => {
     if (!dateIso) {
       return true;
     }

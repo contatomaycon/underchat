@@ -19,10 +19,10 @@ export class PlanExpirationReminderRepository {
     const targetDate = new Date(now);
     targetDate.setDate(targetDate.getDate() + days);
 
-    const startOfDay = new Date(targetDate.getTime());
+    const startOfDay = new Date(targetDate);
     startOfDay.setHours(0, 0, 0, 0);
 
-    const endOfDay = new Date(targetDate.getTime());
+    const endOfDay = new Date(targetDate);
     endOfDay.setHours(23, 59, 59, 999);
 
     const result = await this.db

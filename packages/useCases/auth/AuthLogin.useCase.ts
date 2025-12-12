@@ -14,7 +14,7 @@ import { CentrifugoService } from '@core/services/centrifugo.service';
 import { chatAccountCentrifugo } from '@core/common/functions/centrifugoQueue';
 import Redis from 'ioredis';
 import { createJwtSessionKey } from '@core/common/functions/createCacheKey';
-import { randomUUID } from 'crypto';
+import { randomUUID } from 'node:crypto';
 
 @injectable()
 export class AuthLoginUseCase {

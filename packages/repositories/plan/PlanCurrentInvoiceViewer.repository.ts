@@ -30,16 +30,16 @@ export class PlanCurrentInvoiceViewerRepository {
       planAccount.next_payment_date
     );
 
-    return this.buildPlanInvoiceResponse(
-      planAccount.ppl,
-      planAccount.last_payment_date,
-      planAccount.next_payment_date,
-      planAccount.recurring_payment,
-      planAccount.cancellation_date,
+    return this.buildPlanInvoiceResponse({
+      planData: planAccount.ppl,
+      lastPaymentDate: planAccount.last_payment_date,
+      nextPaymentDate: planAccount.next_payment_date,
+      recurringPayment: planAccount.recurring_payment,
+      cancellationDate: planAccount.cancellation_date,
       billingPeriodValue,
-      planAccount.value,
-      accountResult?.account_status_id || null
-    );
+      planAccountValue: planAccount.value,
+      accountStatusId: accountResult?.account_status_id || null,
+    });
   };
 
   private readonly findAccountWithPlanAccounts = async (accountId: string) => {
@@ -141,7 +141,7 @@ export class PlanCurrentInvoiceViewerRepository {
     return calculateBillingPeriodByDates(lastPaymentDate, nextPaymentDate);
   };
 
-  private readonly buildPlanInvoiceResponse = (
+  private readonly buildPlanInvoiceResponse = (input: {
     planData: {
       plan_id: string;
       name: string;
@@ -151,33 +151,35 @@ export class PlanCurrentInvoiceViewerRepository {
       annual_discount: string | null;
       icon: string | null;
       is_test: boolean | null;
-    },
-    lastPaymentDate: string | null,
-    nextPaymentDate: string | null,
-    recurringPayment: boolean,
-    cancellationDate: string | null,
-    billingPeriodValue: string | null,
-    planAccountValue: string | null,
-    accountStatusId: string | null
-  ): ViewCurrentPlanInvoiceResponse => {
+    };
+    lastPaymentDate: string | null;
+    nextPaymentDate: string | null;
+    recurringPayment: boolean;
+    cancellationDate: string | null;
+    billingPeriodValue: string | null;
+    planAccountValue: string | null;
+    accountStatusId: string | null;
+  }): ViewCurrentPlanInvoiceResponse => {
     return {
-      plan_id: planData.plan_id,
-      plan_name: planData.name,
-      plan_icon: planData.icon,
-      plan_price: Number(planData.price),
-      plan_price_old: Number(planData.price_old),
-      plan_description: planData.description,
-      annual_discount: planData.annual_discount
-        ? String(planData.annual_discount)
+      plan_id: input.planData.plan_id,
+      plan_name: input.planData.name,
+      plan_icon: input.planData.icon,
+      plan_price: Number(input.planData.price),
+      plan_price_old: Number(input.planData.price_old),
+      plan_description: input.planData.description,
+      annual_discount: input.planData.annual_discount
+        ? String(input.planData.annual_discount)
         : null,
-      is_test: planData.is_test ?? null,
-      next_payment_date: nextPaymentDate,
-      last_payment_date: lastPaymentDate,
-      recurring_payment: recurringPayment,
-      cancellation_date: cancellationDate,
-      billing_period: billingPeriodValue,
-      plan_account_value: planAccountValue ? Number(planAccountValue) : null,
-      account_status_id: accountStatusId,
+      is_test: input.planData.is_test ?? null,
+      next_payment_date: input.nextPaymentDate,
+      last_payment_date: input.lastPaymentDate,
+      recurring_payment: input.recurringPayment,
+      cancellation_date: input.cancellationDate,
+      billing_period: input.billingPeriodValue,
+      plan_account_value: input.planAccountValue
+        ? Number(input.planAccountValue)
+        : null,
+      account_status_id: input.accountStatusId,
     };
   };
 

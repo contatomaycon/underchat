@@ -17,7 +17,7 @@ export class PlanAccountReactivatorTransactionRepository {
     @inject('Database') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
-  private reactivatePlanAccount = async (
+  private readonly reactivatePlanAccount = async (
     tx: PgTransaction<
       NodePgQueryResultHKT,
       typeof schema,
@@ -37,7 +37,7 @@ export class PlanAccountReactivatorTransactionRepository {
     return (result.rowCount ?? 0) > 0;
   };
 
-  private reactivateAccount = async (
+  private readonly reactivateAccount = async (
     tx: PgTransaction<
       NodePgQueryResultHKT,
       typeof schema,

@@ -145,7 +145,7 @@ export class AccountInfoUpserterTransactionRepository {
     return createInput;
   }
 
-  private findExistingAccountInfo = async (
+  private readonly findExistingAccountInfo = async (
     tx: PgTransaction<
       NodePgQueryResultHKT,
       typeof schema,

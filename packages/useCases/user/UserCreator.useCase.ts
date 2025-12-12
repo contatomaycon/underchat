@@ -84,11 +84,12 @@ export class UserCreatorUseCase {
         this.userService.totalUserByAccount(accountId),
       ]);
 
-    if (viewAccountQuantityProduct <= 0) {
+    const userLimit = viewAccountQuantityProduct + 1;
+    if (userLimit <= 0) {
       throw new Error(t('user_not_available'));
     }
 
-    if (totalUserByAccountId >= viewAccountQuantityProduct) {
+    if (totalUserByAccountId >= userLimit) {
       throw new Error(t('user_not_available_additional'));
     }
   }
