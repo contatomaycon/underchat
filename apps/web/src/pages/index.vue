@@ -460,7 +460,7 @@ const chatsChartOptions = computed(() => ({
       </VCol>
       <VCol cols="12" sm="6" md="3">
         <CardStatisticsVertical
-          title="Canais WhatsApp"
+          title="Canais"
           :stats="`${channelsConnected}/${channelsTotal}`"
           icon="tabler-robot"
           color="info"
