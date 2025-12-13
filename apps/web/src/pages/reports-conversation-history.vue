@@ -772,7 +772,8 @@ const copyToClipboard = async (text: string) => {
                     !item.pdf_status ||
                     item.pdf_status === 'PENDING' ||
                     item.pdf_status === 'PROCESSING' ||
-                    item.pdf_status === 'FAILED'
+                    item.pdf_status === 'FAILED' ||
+                    item.pdf_status === 'DONE'
                   "
                   size="x-small"
                   color="primary"
@@ -795,11 +796,17 @@ const copyToClipboard = async (text: string) => {
                         :icon="
                           item.pdf_status === 'PROCESSING'
                             ? 'tabler-loader'
-                            : 'tabler-file-type-pdf'
+                            : item.pdf_status === 'DONE'
+                              ? 'tabler-refresh'
+                              : 'tabler-file-type-pdf'
                         "
                       ></VIcon>
                     </template>
-                    <span>{{ t('generate_pdf') }}</span>
+                    <span>{{
+                      item.pdf_status === 'DONE'
+                        ? t('regenerate_pdf')
+                        : t('generate_pdf')
+                    }}</span>
                   </VTooltip>
                 </VBtn>
 

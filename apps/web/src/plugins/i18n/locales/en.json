@@ -1426,6 +1426,7 @@
     "chatbot_transfer_message_sector_user_default": "You have been transferred to attendant *{{ user }}* from sector *{{ sector }}*. You will be attended shortly.",
     "download_pdf": "Download PDF",
     "generate_pdf": "Generate PDF",
+    "regenerate_pdf": "Regenerate PDF",
     "report_conversation_history_pdf_generation_started": "PDF generation started successfully!",
     "report_conversation_history_pdf_generation_error": "Error generating PDF. Please try again.",
     "report_conversation_history_pdf_download_error": "Error downloading PDF. Please try again.",

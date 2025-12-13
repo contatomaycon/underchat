@@ -14,96 +14,72 @@ export class ReportConversationHistoryPdfUpserterRepository {
   upsertPdf = async (
     accountId: string,
     chatId: string
-  ): Promise<{ id: string; status: EReportConversationHistoryPdfStatus }> => {
-    const existing = await this.findByAccountAndChat(accountId, chatId);
-
-    if (existing) {
-      if (existing.status === EReportConversationHistoryPdfStatus.done) {
-        return {
-          id: existing.id,
-          status: existing.status,
-        };
-      }
-
-      return await this.updateToPending(existing.id);
-    }
-
-    return await this.createPdf(accountId, chatId);
-  };
-
-  private findByAccountAndChat = async (
-    accountId: string,
-    chatId: string
   ): Promise<{
     id: string;
     status: EReportConversationHistoryPdfStatus;
-  } | null> => {
-    const result = await this.db
-      .select({
-        id: reportConversationHistoryPdf.id,
-        status: reportConversationHistoryPdf.status,
-      })
-      .from(reportConversationHistoryPdf)
-      .where(
-        and(
-          eq(reportConversationHistoryPdf.account_id, accountId),
-          eq(reportConversationHistoryPdf.chat_id, chatId)
+    oldUrlPdf: string | null;
+  }> => {
+    return this.db.transaction(async (tx) => {
+      const existing = await tx
+        .select({
+          id: reportConversationHistoryPdf.id,
+          status: reportConversationHistoryPdf.status,
+          url_pdf: reportConversationHistoryPdf.url_pdf,
+        })
+        .from(reportConversationHistoryPdf)
+        .where(
+          and(
+            eq(reportConversationHistoryPdf.account_id, accountId),
+            eq(reportConversationHistoryPdf.chat_id, chatId)
+          )
         )
-      )
-      .limit(1)
-      .execute();
+        .limit(1)
+        .execute();
 
-    if (!result.length) {
-      return null;
-    }
+      if (existing.length > 0) {
+        const record = existing[0];
+        const oldUrlPdf = record.url_pdf;
 
-    return result[0];
-  };
+        const updated = await tx
+          .update(reportConversationHistoryPdf)
+          .set({
+            status: EReportConversationHistoryPdfStatus.pending,
+            requested_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .where(eq(reportConversationHistoryPdf.id, record.id))
+          .returning({
+            id: reportConversationHistoryPdf.id,
+            status: reportConversationHistoryPdf.status,
+          })
+          .execute();
 
-  private createPdf = async (
-    accountId: string,
-    chatId: string
-  ): Promise<{ id: string; status: EReportConversationHistoryPdfStatus }> => {
-    const created = await this.db
-      .insert(reportConversationHistoryPdf)
-      .values({
-        account_id: accountId,
-        chat_id: chatId,
-        status: EReportConversationHistoryPdfStatus.pending,
-        requested_at: new Date().toISOString(),
-      })
-      .returning({
-        id: reportConversationHistoryPdf.id,
-        status: reportConversationHistoryPdf.status,
-      })
-      .execute();
+        return {
+          id: updated[0].id,
+          status: updated[0].status,
+          oldUrlPdf,
+        };
+      }
 
-    return {
-      id: created[0].id,
-      status: created[0].status,
-    };
-  };
+      const created = await tx
+        .insert(reportConversationHistoryPdf)
+        .values({
+          account_id: accountId,
+          chat_id: chatId,
+          status: EReportConversationHistoryPdfStatus.pending,
+          requested_at: new Date().toISOString(),
+        })
+        .returning({
+          id: reportConversationHistoryPdf.id,
+          status: reportConversationHistoryPdf.status,
+        })
+        .execute();
 
-  private updateToPending = async (
-    pdfId: string
-  ): Promise<{ id: string; status: EReportConversationHistoryPdfStatus }> => {
-    const updated = await this.db
-      .update(reportConversationHistoryPdf)
-      .set({
-        status: EReportConversationHistoryPdfStatus.pending,
-        requested_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      })
-      .where(eq(reportConversationHistoryPdf.id, pdfId))
-      .returning({
-        id: reportConversationHistoryPdf.id,
-        status: reportConversationHistoryPdf.status,
-      })
-      .execute();
-
-    return {
-      id: updated[0].id,
-      status: updated[0].status,
-    };
+      return {
+        id: created[0].id,
+        status: created[0].status,
+        oldUrlPdf: null,
+      };
+    });
   };
 }
