@@ -27,12 +27,13 @@ import { IConnectionFailureTracker } from '@core/common/interfaces/IConnectionFa
 @injectable()
 export class WorkerMonitorService {
   private readonly timeoutMinutes = 5;
-  private readonly maxConnectionFailures = 5;
+  private readonly maxConnectionFailures = 3;
   private readonly connectionCheckIntervalMs = 60 * 1000;
   private readonly connectionFailureTrackers = new Map<
     string,
     IConnectionFailureTracker
   >();
+  private readonly activeContinuousChecks = new Set<string>();
 
   constructor(
     private readonly workerService: WorkerService,
@@ -202,7 +203,9 @@ export class WorkerMonitorService {
 
     await this.syncConnectionStatusWithFailureTracking(
       worker,
-      connectionHealthy
+      connectionHealthy,
+      server.server_id,
+      sshConfig
     );
   };
 
@@ -308,7 +311,9 @@ export class WorkerMonitorService {
 
   private readonly syncConnectionStatusWithFailureTracking = async (
     worker: IWorkerMonitor,
-    connectionHealthy: boolean
+    connectionHealthy: boolean,
+    serverId: string,
+    sshConfig: ConnectConfig
   ): Promise<void> => {
     const now = Date.now();
     const tracker = this.connectionFailureTrackers.get(worker.worker_id);
@@ -346,25 +351,24 @@ export class WorkerMonitorService {
 
     if (!tracker) {
       console.log(
-        `[WorkerMonitor] Worker ${worker.worker_id} - Primeira falha detectada, criando tracker`
+        `[WorkerMonitor] Worker ${worker.worker_id} - Primeira falha detectada, iniciando verificações consecutivas`
       );
       this.connectionFailureTrackers.set(worker.worker_id, {
         failureCount: 1,
         lastCheckTimestamp: now,
       });
-      return;
-    }
 
-    const timeSinceLastCheck = now - tracker.lastCheckTimestamp;
-    const minutesSinceLastCheck = timeSinceLastCheck / 1000 / 60;
-    console.log(
-      `[WorkerMonitor] Worker ${worker.worker_id} - Tempo desde última verificação: ${minutesSinceLastCheck.toFixed(2)} minutos`
-    );
+      if (!this.activeContinuousChecks.has(worker.worker_id)) {
+        this.activeContinuousChecks.add(worker.worker_id);
+        this.startContinuousConnectionCheck(
+          worker,
+          serverId,
+          sshConfig
+        ).finally(() => {
+          this.activeContinuousChecks.delete(worker.worker_id);
+        });
+      }
 
-    if (timeSinceLastCheck < this.connectionCheckIntervalMs) {
-      console.log(
-        `[WorkerMonitor] Worker ${worker.worker_id} - Intervalo mínimo não atingido, ignorando falha`
-      );
       return;
     }
 
@@ -394,6 +398,108 @@ export class WorkerMonitorService {
         );
       }
     }
+  };
+
+  private readonly startContinuousConnectionCheck = async (
+    worker: IWorkerMonitor,
+    serverId: string,
+    sshConfig: ConnectConfig
+  ): Promise<void> => {
+    for (let attempt = 2; attempt <= this.maxConnectionFailures; attempt++) {
+      await this.sleep(this.connectionCheckIntervalMs);
+
+      const tracker = this.connectionFailureTrackers.get(worker.worker_id);
+      if (!tracker) {
+        console.log(
+          `[WorkerMonitor] Worker ${worker.worker_id} - Tracker removido, parando verificações consecutivas`
+        );
+        return;
+      }
+
+      const currentWorker = await this.getCurrentWorkerStatus(worker.worker_id);
+      if (!currentWorker) {
+        console.log(
+          `[WorkerMonitor] Worker ${worker.worker_id} - Worker não encontrado, parando verificações`
+        );
+        this.connectionFailureTrackers.delete(worker.worker_id);
+        return;
+      }
+
+      if (
+        currentWorker.worker_status_id !== EWorkerStatus.online &&
+        currentWorker.worker_status_id !== EWorkerStatus.offline
+      ) {
+        console.log(
+          `[WorkerMonitor] Worker ${worker.worker_id} - Status mudou para ${currentWorker.worker_status_id}, parando verificações`
+        );
+        this.connectionFailureTrackers.delete(worker.worker_id);
+        return;
+      }
+
+      console.log(
+        `[WorkerMonitor] Worker ${worker.worker_id} - Verificação consecutiva ${attempt}/${this.maxConnectionFailures}`
+      );
+
+      const connectionHealthy = await this.checkConnection(
+        worker.worker_id,
+        serverId,
+        sshConfig
+      );
+
+      if (connectionHealthy) {
+        console.log(
+          `[WorkerMonitor] Worker ${worker.worker_id} - Conexão recuperada na tentativa ${attempt}, removendo tracker`
+        );
+        this.connectionFailureTrackers.delete(worker.worker_id);
+        this.activeContinuousChecks.delete(worker.worker_id);
+
+        if (currentWorker.worker_status_id === EWorkerStatus.offline) {
+          await this.updateWorkerStatus(
+            currentWorker,
+            EWorkerStatus.online,
+            ECodeMessage.info,
+            EBaileysConnectionStatus.info
+          );
+        }
+
+        return;
+      }
+
+      const updatedTracker = this.connectionFailureTrackers.get(
+        worker.worker_id
+      );
+      if (updatedTracker) {
+        updatedTracker.failureCount = attempt;
+        updatedTracker.lastCheckTimestamp = Date.now();
+        this.connectionFailureTrackers.set(worker.worker_id, updatedTracker);
+      }
+
+      if (attempt >= this.maxConnectionFailures) {
+        this.activeContinuousChecks.delete(worker.worker_id);
+        if (currentWorker.worker_status_id !== EWorkerStatus.offline) {
+          console.log(
+            `[WorkerMonitor] Worker ${worker.worker_id} - Marcando como OFFLINE após ${attempt} falhas consecutivas`
+          );
+          await this.updateWorkerStatus(
+            currentWorker,
+            EWorkerStatus.offline,
+            ECodeMessage.info,
+            EBaileysConnectionStatus.info
+          );
+        }
+      }
+    }
+  };
+
+  private readonly getCurrentWorkerStatus = async (
+    workerId: string
+  ): Promise<IWorkerMonitor | null> => {
+    const workers = await this.workerService.listWorkersForMonitor();
+    return workers.find((w) => w.worker_id === workerId) || null;
+  };
+
+  private readonly sleep = (ms: number): Promise<void> => {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   };
 
   private readonly updateWorkerStatus = async (
