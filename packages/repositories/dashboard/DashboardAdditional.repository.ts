@@ -421,13 +421,13 @@ export class DashboardAdditionalRepository {
     return sectors;
   };
 
-  private formatTime = (seconds: number): string => {
+  private readonly formatTime = (seconds: number): string => {
     const minutes = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${minutes}m ${secs}s`;
   };
 
-  private calculateResponseTime = (
+  private readonly calculateResponseTime = (
     date: number | null,
     startedAt: number | null
   ): number | null => {
@@ -439,7 +439,7 @@ export class DashboardAdditionalRepository {
     return responseTime > 0 ? responseTime : null;
   };
 
-  private calculateResolutionTime = (
+  private readonly calculateResolutionTime = (
     startedAt: number | null,
     closedAt: number | null
   ): number | null => {
@@ -451,7 +451,7 @@ export class DashboardAdditionalRepository {
     return resolutionTime > 0 ? resolutionTime : null;
   };
 
-  private processChatTimes = (
+  private readonly processChatTimes = (
     chats: any[]
   ): {
     totalResponseTime: number;
@@ -494,11 +494,11 @@ export class DashboardAdditionalRepository {
     };
   };
 
-  private calculateAverage = (total: number, count: number): number => {
+  private readonly calculateAverage = (total: number, count: number): number => {
     return count > 0 ? Math.floor(total / count) : 0;
   };
 
-  private calculateProductivity = (totalAttendances: number): number => {
+  private readonly calculateProductivity = (totalAttendances: number): number => {
     if (totalAttendances === 0) {
       return 0;
     }

@@ -41,7 +41,7 @@ function hasPlanActiveHeader(exposeList: string[]): boolean {
 }
 
 function addPlanActiveHeader(exposeList: string[]): string[] {
-  const filtered = exposeList.filter((item) => item);
+  const filtered = exposeList.filter(Boolean);
   filtered.push(PLAN_ACTIVE_HEADER);
   return filtered;
 }
