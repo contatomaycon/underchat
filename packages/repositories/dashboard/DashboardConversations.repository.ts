@@ -138,7 +138,7 @@ export class DashboardConversationsRepository {
     return months;
   };
 
-  private getChatsCountByStatusAndDateRange = async (
+  private readonly getChatsCountByStatusAndDateRange = async (
     accountId: string,
     status: EChatStatus,
     startDate: string,

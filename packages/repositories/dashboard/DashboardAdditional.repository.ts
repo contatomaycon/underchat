@@ -421,6 +421,91 @@ export class DashboardAdditionalRepository {
     return sectors;
   };
 
+  private formatTime = (seconds: number): string => {
+    const minutes = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${minutes}m ${secs}s`;
+  };
+
+  private calculateResponseTime = (
+    date: number | null,
+    startedAt: number | null
+  ): number | null => {
+    if (!date || !startedAt) {
+      return null;
+    }
+
+    const responseTime = Math.floor((startedAt - date) / 1000);
+    return responseTime > 0 ? responseTime : null;
+  };
+
+  private calculateResolutionTime = (
+    startedAt: number | null,
+    closedAt: number | null
+  ): number | null => {
+    if (!startedAt || !closedAt) {
+      return null;
+    }
+
+    const resolutionTime = Math.floor((closedAt - startedAt) / 1000);
+    return resolutionTime > 0 ? resolutionTime : null;
+  };
+
+  private processChatTimes = (
+    chats: any[]
+  ): {
+    totalResponseTime: number;
+    totalResolutionTime: number;
+    responseCount: number;
+    resolutionCount: number;
+  } => {
+    let totalResponseTime = 0;
+    let totalResolutionTime = 0;
+    let responseCount = 0;
+    let resolutionCount = 0;
+
+    for (const chat of chats) {
+      const date = chat.date ? new Date(chat.date).getTime() : null;
+      const startedAt = chat.started_at
+        ? new Date(chat.started_at).getTime()
+        : null;
+      const closedAt = chat.closed_at
+        ? new Date(chat.closed_at).getTime()
+        : null;
+
+      const responseTime = this.calculateResponseTime(date, startedAt);
+      if (responseTime !== null) {
+        totalResponseTime += responseTime;
+        responseCount++;
+      }
+
+      const resolutionTime = this.calculateResolutionTime(startedAt, closedAt);
+      if (resolutionTime !== null) {
+        totalResolutionTime += resolutionTime;
+        resolutionCount++;
+      }
+    }
+
+    return {
+      totalResponseTime,
+      totalResolutionTime,
+      responseCount,
+      resolutionCount,
+    };
+  };
+
+  private calculateAverage = (total: number, count: number): number => {
+    return count > 0 ? Math.floor(total / count) : 0;
+  };
+
+  private calculateProductivity = (totalAttendances: number): number => {
+    if (totalAttendances === 0) {
+      return 0;
+    }
+
+    return Math.min(100, Math.floor((totalAttendances / 1500) * 100));
+  };
+
   getAttendanceMetrics = async (
     accountId: string
   ): Promise<{
@@ -475,59 +560,28 @@ export class DashboardAdditionalRepository {
 
     const chats = result?.hits?.hits?.map((hit: any) => hit._source) || [];
 
-    let totalResponseTime = 0;
-    let totalResolutionTime = 0;
-    let responseCount = 0;
-    let resolutionCount = 0;
+    const {
+      totalResponseTime,
+      totalResolutionTime,
+      responseCount,
+      resolutionCount,
+    } = this.processChatTimes(chats);
 
-    for (const chat of chats) {
-      const date = chat.date ? new Date(chat.date).getTime() : null;
-      const startedAt = chat.started_at
-        ? new Date(chat.started_at).getTime()
-        : null;
-      const closedAt = chat.closed_at
-        ? new Date(chat.closed_at).getTime()
-        : null;
-
-      if (date && startedAt) {
-        const responseTime = Math.floor((startedAt - date) / 1000);
-        if (responseTime > 0) {
-          totalResponseTime += responseTime;
-          responseCount++;
-        }
-      }
-
-      if (startedAt && closedAt) {
-        const resolutionTime = Math.floor((closedAt - startedAt) / 1000);
-        if (resolutionTime > 0) {
-          totalResolutionTime += resolutionTime;
-          resolutionCount++;
-        }
-      }
-    }
-
-    const avgResponseSeconds =
-      responseCount > 0 ? Math.floor(totalResponseTime / responseCount) : 0;
-    const avgResolutionSeconds =
-      resolutionCount > 0
-        ? Math.floor(totalResolutionTime / resolutionCount)
-        : 0;
-
-    const formatTime = (seconds: number): string => {
-      const minutes = Math.floor(seconds / 60);
-      const secs = seconds % 60;
-      return `${minutes}m ${secs}s`;
-    };
+    const avgResponseSeconds = this.calculateAverage(
+      totalResponseTime,
+      responseCount
+    );
+    const avgResolutionSeconds = this.calculateAverage(
+      totalResolutionTime,
+      resolutionCount
+    );
 
     const totalAttendances = chats.length;
-    const productivity =
-      totalAttendances > 0
-        ? Math.min(100, Math.floor((totalAttendances / 1500) * 100))
-        : 0;
+    const productivity = this.calculateProductivity(totalAttendances);
 
     return {
-      avgResponseTime: formatTime(avgResponseSeconds),
-      avgResolutionTime: formatTime(avgResolutionSeconds),
+      avgResponseTime: this.formatTime(avgResponseSeconds),
+      avgResolutionTime: this.formatTime(avgResolutionSeconds),
       totalAttendances,
       productivity,
     };

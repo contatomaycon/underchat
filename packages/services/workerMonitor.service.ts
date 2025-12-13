@@ -341,6 +341,71 @@ export class WorkerMonitorService {
     }
   };
 
+  private readonly validateWorkerForCheck = (
+    workerId: string,
+    currentWorker: IWorkerMonitor | null
+  ): currentWorker is IWorkerMonitor => {
+    if (!currentWorker) {
+      this.connectionFailureTrackers.delete(workerId);
+      return false;
+    }
+
+    if (
+      currentWorker.worker_status_id !== EWorkerStatus.online &&
+      currentWorker.worker_status_id !== EWorkerStatus.offline
+    ) {
+      this.connectionFailureTrackers.delete(workerId);
+      return false;
+    }
+
+    return true;
+  };
+
+  private readonly handleHealthyConnection = async (
+    workerId: string,
+    currentWorker: IWorkerMonitor
+  ): Promise<void> => {
+    this.connectionFailureTrackers.delete(workerId);
+    this.activeContinuousChecks.delete(workerId);
+
+    if (currentWorker.worker_status_id === EWorkerStatus.offline) {
+      await this.updateWorkerStatus(
+        currentWorker,
+        EWorkerStatus.online,
+        ECodeMessage.info,
+        EBaileysConnectionStatus.info
+      );
+    }
+  };
+
+  private readonly updateFailureTracker = (
+    workerId: string,
+    attempt: number
+  ): void => {
+    const updatedTracker = this.connectionFailureTrackers.get(workerId);
+    if (updatedTracker) {
+      updatedTracker.failureCount = attempt;
+      updatedTracker.lastCheckTimestamp = Date.now();
+      this.connectionFailureTrackers.set(workerId, updatedTracker);
+    }
+  };
+
+  private readonly handleMaxFailuresReached = async (
+    workerId: string,
+    currentWorker: IWorkerMonitor
+  ): Promise<void> => {
+    this.activeContinuousChecks.delete(workerId);
+
+    if (currentWorker.worker_status_id !== EWorkerStatus.offline) {
+      await this.updateWorkerStatus(
+        currentWorker,
+        EWorkerStatus.offline,
+        ECodeMessage.info,
+        EBaileysConnectionStatus.info
+      );
+    }
+  };
+
   private readonly startContinuousConnectionCheck = async (
     worker: IWorkerMonitor,
     serverId: string,
@@ -355,16 +420,7 @@ export class WorkerMonitorService {
       }
 
       const currentWorker = await this.getCurrentWorkerStatus(worker.worker_id);
-      if (!currentWorker) {
-        this.connectionFailureTrackers.delete(worker.worker_id);
-        return;
-      }
-
-      if (
-        currentWorker.worker_status_id !== EWorkerStatus.online &&
-        currentWorker.worker_status_id !== EWorkerStatus.offline
-      ) {
-        this.connectionFailureTrackers.delete(worker.worker_id);
+      if (!this.validateWorkerForCheck(worker.worker_id, currentWorker)) {
         return;
       }
 
@@ -375,40 +431,14 @@ export class WorkerMonitorService {
       );
 
       if (connectionHealthy) {
-        this.connectionFailureTrackers.delete(worker.worker_id);
-        this.activeContinuousChecks.delete(worker.worker_id);
-
-        if (currentWorker.worker_status_id === EWorkerStatus.offline) {
-          await this.updateWorkerStatus(
-            currentWorker,
-            EWorkerStatus.online,
-            ECodeMessage.info,
-            EBaileysConnectionStatus.info
-          );
-        }
-
+        await this.handleHealthyConnection(worker.worker_id, currentWorker);
         return;
       }
 
-      const updatedTracker = this.connectionFailureTrackers.get(
-        worker.worker_id
-      );
-      if (updatedTracker) {
-        updatedTracker.failureCount = attempt;
-        updatedTracker.lastCheckTimestamp = Date.now();
-        this.connectionFailureTrackers.set(worker.worker_id, updatedTracker);
-      }
+      this.updateFailureTracker(worker.worker_id, attempt);
 
       if (attempt >= this.maxConnectionFailures) {
-        this.activeContinuousChecks.delete(worker.worker_id);
-        if (currentWorker.worker_status_id !== EWorkerStatus.offline) {
-          await this.updateWorkerStatus(
-            currentWorker,
-            EWorkerStatus.offline,
-            ECodeMessage.info,
-            EBaileysConnectionStatus.info
-          );
-        }
+        await this.handleMaxFailuresReached(worker.worker_id, currentWorker);
       }
     }
   };
