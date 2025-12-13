@@ -6,6 +6,7 @@ import puppeteer from 'puppeteer';
 import { ListMessageResult } from '@core/schema/chat/listMessageChats/response.schema';
 import { ReportConversationHistoryPdfUpdaterRepository } from '@core/repositories/reportConversationHistory/ReportConversationHistoryPdfUpdater.repository';
 import { EReportConversationHistoryPdfStatus } from '@core/common/enums/EReportConversationHistoryPdfStatus';
+import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 
 @injectable()
 export class ReportConversationHistoryPdfService {
@@ -91,39 +92,30 @@ export class ReportConversationHistoryPdfService {
   }
 
   private generateHtmlFromMessages(messages: ListMessageResult[]): string {
-    const messagesHtml = messages
-      .map((msg) => {
-        const isUser = msg.type_user === 'user';
-        const dateStr = msg.date || '';
-        let formattedDate = '';
+    const parts: string[] = [];
 
-        if (dateStr) {
-          const date = new Date(dateStr);
-          if (!isNaN(date.getTime())) {
-            const day = String(date.getDate()).padStart(2, '0');
-            const month = String(date.getMonth() + 1).padStart(2, '0');
-            const year = date.getFullYear();
-            const hours = String(date.getHours()).padStart(2, '0');
-            const minutes = String(date.getMinutes()).padStart(2, '0');
-            formattedDate = `${day}/${month}/${year} ${hours}:${minutes}`;
-          }
-        }
+    for (const msg of messages) {
+      const isUser = msg.type_user === ETypeUserChat.client;
+      const formattedDate = this.formatDate(msg.date || '');
+      const author = this.getAuthorName(msg, isUser);
+      const content = this.formatMessageContent(msg.content);
+      const alignmentClass = isUser ? 'left' : 'right';
+      const timeOnly = this.formatTimeOnly(msg.date || '');
 
-        const author = isUser ? 'Cliente' : 'Atendente';
-        const content = this.formatMessageContent(msg.content);
-
-        return `
-          <div style="margin-bottom: 20px; padding: 10px; border-left: 3px solid ${isUser ? '#4CAF50' : '#2196F3'}; background: ${isUser ? '#f1f8f4' : '#f0f7ff'};">
-            <div style="font-weight: bold; margin-bottom: 5px; color: ${isUser ? '#2e7d32' : '#1976d2'};">
-              ${author}${formattedDate ? ` - ${formattedDate}` : ''}
-            </div>
-            <div style="color: #333;">
-              ${content}
+      parts.push(`
+        <div class="msg-row ${alignmentClass}">
+          <div class="msg-time">${timeOnly}</div>
+          <div class="bubble ${alignmentClass}">
+            <div class="content">${content}</div>
+            <div class="meta">
+              <span class="author">${author}</span>
             </div>
           </div>
-        `;
-      })
-      .join('');
+        </div>
+      `);
+    }
+
+    const messagesHtml = parts.join('');
 
     return `
       <!DOCTYPE html>
@@ -131,19 +123,75 @@ export class ReportConversationHistoryPdfService {
         <head>
           <meta charset="UTF-8">
           <style>
-            body {
-              font-family: Arial, sans-serif;
-              padding: 20px;
-              line-height: 1.6;
-            }
+            body { font-family: Arial, sans-serif; padding: 24px; background: #f4f5f7; }
+            .chat-log { display: flex; flex-direction: column; gap: 8px; }
+            .msg-row { display: flex; width: 100%; align-items: flex-start; gap: 8px; }
+            .msg-row.left { justify-content: flex-start; }
+            .msg-row.right { justify-content: flex-end; }
+            .msg-time { font-size: 11px; color: rgba(17,27,33,0.6); white-space: nowrap; padding-top: 2px; }
+            .msg-row.left .msg-time { order: 1; }
+            .msg-row.right .msg-time { order: 3; }
+            .bubble { max-width: 65%; width: fit-content; padding: 8px 12px 20px 12px; border-radius: 8px; position: relative; line-height: 1.5; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
+            .msg-row.left .bubble { order: 2; background: rgb(255, 255, 255); color: #111b21; }
+            .msg-row.right .bubble { order: 2; background: rgb(217, 253, 211); color: #111b21; }
+            .content { font-size: 14.2px; word-break: break-word; margin-bottom: 4px; }
+            .meta { position: absolute; right: 8px; bottom: 4px; display: flex; gap: 4px; align-items: center; font-size: 11px; color: rgba(17,27,33,0.6); }
+            .author { font-weight: 500; }
           </style>
         </head>
         <body>
           <h1>Histórico de Conversas</h1>
-          ${messagesHtml}
+          <div class="chat-log">
+            ${messagesHtml}
+          </div>
         </body>
       </html>
     `;
+  }
+
+  private getAuthorName(msg: ListMessageResult, isUser: boolean): string {
+    if (isUser) {
+      if (msg.content?.contact?.name) {
+        const lastName = msg.content.contact.last_name || '';
+        return `${msg.content.contact.name}${lastName ? ` ${lastName}` : ''}`.trim();
+      }
+      return 'Cliente';
+    }
+
+    return msg.user?.name || 'Operador';
+  }
+
+  private formatTimeOnly(dateStr: string): string {
+    if (!dateStr) {
+      return '';
+    }
+
+    const date = new Date(dateStr);
+    if (isNaN(date.getTime())) {
+      return '';
+    }
+
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    return `${hours}:${minutes}`;
+  }
+
+  private formatDate(dateStr: string): string {
+    if (!dateStr) {
+      return '';
+    }
+
+    const date = new Date(dateStr);
+    if (isNaN(date.getTime())) {
+      return '';
+    }
+
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year = date.getFullYear();
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    return `${day}/${month}/${year} ${hours}:${minutes}`;
   }
 
   private formatMessageContent(content: any): string {
