@@ -1,18 +1,15 @@
 <script setup lang="ts">
 import { ref, watch, computed, onMounted } from 'vue';
-import { useRouter } from 'vue-router';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { useI18n } from 'vue-i18n';
 import { formatDateTime } from '@core/common/functions/formatDateTime';
 import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
-import { formatDate } from '@/@webcore/utils/formatters';
 import { SortRequest } from '@core/schema/common/sortRequestSchema';
 import { DataTableHeader } from 'vuetify';
 import { EReportConversationHistoryPermissions } from '@core/common/enums/EPermissions/reportConversationHistory';
 import { useReportConversationHistoryStore } from '@/@webcore/stores/reportConversationHistory';
 import { useSectorsStore } from '@/@webcore/stores/sector';
 import { useUsersStore } from '@/@webcore/stores/user';
-import { useChatStore } from '@/@webcore/stores/chat';
 import { ReportConversationHistoryResult } from '@core/schema/reportConversationHistory/listReportConversationHistory/response.schema';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import axios from '@webcore/axios';
@@ -22,10 +19,11 @@ import {
   ListMessageResult,
 } from '@core/schema/chat/listMessageChats/response.schema';
 import { ListMessageChatsQuery } from '@core/schema/chat/listMessageChats/request.schema';
-import { EMessageType } from '@core/common/enums/EMessageType';
-import { isTypeUser } from '@core/common/functions/isTypeUser';
 import { EColor } from '@core/common/enums/EColor';
 import { refDebounced } from '@vueuse/core';
+import ChatLogViewer from '@/components/chat/ChatLogViewer.vue';
+import ChatMediaViewer from '@/components/chat/ChatMediaViewer.vue';
+import { MglMap, MglMarker } from 'vue-maplibre-gl';
 
 type ProtocolWithType = {
   protocol: string;
@@ -44,11 +42,9 @@ definePage({
 });
 
 const { t } = useI18n();
-const router = useRouter();
 const reportConversationHistoryStore = useReportConversationHistoryStore();
 const sectorsStore = useSectorsStore();
 const usersStore = useUsersStore();
-const chatStore = useChatStore();
 
 useSnackbarCleanup(reportConversationHistoryStore);
 
@@ -63,10 +59,38 @@ const selectedClientForProtocols = ref<string>('');
 const selectedChatInfo = ref<ReportConversationHistoryResult | null>(null);
 const imageViewerOpen = ref(false);
 const imageViewerSrc = ref<string>('');
+const imageViewerCaption = ref<string>('');
+const imageViewerKind = ref<'image' | 'video'>('image');
+const locationModalOpen = ref(false);
+const locationData = ref<{
+  latitude: number;
+  longitude: number;
+  name?: string | null;
+  address?: string | null;
+} | null>(null);
 
-const openImageViewer = (src: string) => {
+const handleOpenImage = (src: string, caption?: string) => {
   imageViewerSrc.value = src;
+  imageViewerCaption.value = caption || '';
+  imageViewerKind.value = 'image';
   imageViewerOpen.value = true;
+};
+
+const handleOpenVideo = (src: string, caption?: string) => {
+  imageViewerSrc.value = src;
+  imageViewerCaption.value = caption || '';
+  imageViewerKind.value = 'video';
+  imageViewerOpen.value = true;
+};
+
+const handleOpenLocation = (data: {
+  latitude: number;
+  longitude: number;
+  name?: string | null;
+  address?: string | null;
+}) => {
+  locationData.value = data;
+  locationModalOpen.value = true;
 };
 
 const itemsPerPage = ref([
@@ -305,162 +329,6 @@ const openConversationModal = async (item: ReportConversationHistoryResult) => {
   }
 };
 
-const getMessageText = (message: ListMessageResult): string => {
-  if (!message.content) return '';
-  let text = message.content.message || '';
-
-  const namePrefixRegex = /^\*[^*]+\*:\n\n/;
-  text = text.replace(namePrefixRegex, '');
-
-  return text;
-};
-
-const getSenderName = (message: ListMessageResult): string => {
-  if (isTypeUser(message)) {
-    return selectedChatInfo.value?.client || t('client');
-  } else {
-    return (
-      message.user?.name || selectedChatInfo.value?.operator || t('operator')
-    );
-  }
-};
-
-const isOperatorMessage = (message: ListMessageResult): boolean => {
-  return !isTypeUser(message);
-};
-
-const resolvePhoto = (message: ListMessageResult): string => {
-  if (isTypeUser(message)) {
-    if (message.content?.contact?.photo) {
-      return message.content.contact.photo;
-    }
-    return '/images/svg/avatar-default.svg';
-  }
-  if (message.user?.photo) return message.user.photo;
-  return '/images/svg/avatar-default.svg';
-};
-
-const isPhotoExist = (message: ListMessageResult): boolean => {
-  const photo = resolvePhoto(message);
-  return Boolean(photo && photo !== '/images/svg/avatar-default.svg');
-};
-
-const formatWhatsAppText = (text: string): string => {
-  if (!text) return '';
-
-  const escapeHtml = (str: string) => {
-    const div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML;
-  };
-
-  let formatted = escapeHtml(text);
-
-  formatted = formatted.replaceAll(/`([^`]+?)`/g, '<code>$1</code>');
-  formatted = formatted.replaceAll(/~([^~]+?)~/g, '<s>$1</s>');
-  formatted = formatted.replaceAll(/(?<!_)_([^_\n]+?)_(?!_)/g, '<em>$1</em>');
-  formatted = formatted.replaceAll(
-    /(?<!\*)\*([^*\n]+?)\*(?!\*)/g,
-    '<strong>$1</strong>'
-  );
-
-  return formatted;
-};
-
-const formatDateSeparator = (dateString: string): string => {
-  if (!dateString) return '';
-
-  const date = new Date(dateString);
-  const now = new Date();
-
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const messageDate = new Date(
-    date.getFullYear(),
-    date.getMonth(),
-    date.getDate()
-  );
-
-  if (messageDate.getTime() === today.getTime()) {
-    return t('today');
-  }
-
-  const yesterday = new Date(today);
-  yesterday.setDate(yesterday.getDate() - 1);
-  if (messageDate.getTime() === yesterday.getTime()) {
-    return t('yesterday');
-  }
-
-  const diffMs = today.getTime() - messageDate.getTime();
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-
-  if (diffDays < 7 && diffDays > 0) {
-    const weekdays = [
-      t('sunday'),
-      t('monday'),
-      t('tuesday'),
-      t('wednesday'),
-      t('thursday'),
-      t('friday'),
-      t('saturday'),
-    ];
-    return weekdays[date.getDay()];
-  }
-
-  const day = String(date.getDate()).padStart(2, '0');
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const year = date.getFullYear();
-  return `${day}/${month}/${year}`;
-};
-
-const isSameDay = (date1: string, date2: string): boolean => {
-  if (!date1 || !date2) return false;
-
-  const d1 = new Date(date1);
-  const d2 = new Date(date2);
-
-  return (
-    d1.getDate() === d2.getDate() &&
-    d1.getMonth() === d2.getMonth() &&
-    d1.getFullYear() === d2.getFullYear()
-  );
-};
-
-type MessageWithSeparator = {
-  type: 'message' | 'separator';
-  message?: ListMessageResult;
-  separatorDate?: string;
-  separatorLabel?: string;
-};
-
-const messagesWithSeparators = computed<MessageWithSeparator[]>(() => {
-  const messages = conversationMessages.value;
-
-  if (messages.length === 0) return [];
-
-  const result: MessageWithSeparator[] = [];
-  let lastDate: string | null = null;
-
-  for (const message of messages) {
-    const messageDate = message.date;
-
-    if (!lastDate || !isSameDay(messageDate, lastDate)) {
-      result.push({
-        type: 'separator',
-        separatorDate: messageDate,
-        separatorLabel: formatDateSeparator(messageDate),
-      });
-      lastDate = messageDate;
-    }
-
-    result.push({
-      type: 'message',
-      message,
-    });
-  }
-
-  return result;
-});
-
 watch(
   query,
   async () => {
@@ -528,10 +396,6 @@ const openProtocolsDialog = (
   isProtocolsDialogOpen.value = true;
 };
 
-const getProtocolTypeLabel = (type: 'T' | 'U' | 'A'): string => {
-  return type;
-};
-
 const getProtocolTypeColor = (type: 'T' | 'U' | 'A'): string => {
   switch (type) {
     case 'T':
@@ -557,11 +421,6 @@ const copyToClipboard = async (text: string) => {
       error instanceof Error ? error.message : t('error_copying_protocol');
     reportConversationHistoryStore.showSnackbar(errorMessage, EColor.error);
   }
-};
-
-const openDocument = (url: string | null | undefined) => {
-  if (!url) return;
-  window.open(url, '_blank');
 };
 </script>
 
@@ -802,471 +661,104 @@ const openDocument = (url: string | null | undefined) => {
             background-color: rgb(var(--v-theme-background));
           "
         >
-          <div class="chat-log pa-4" style="min-height: 100%">
-            <div
-              v-if="loadingMessages"
-              class="d-flex justify-center align-center"
-              style="height: 100%"
-            >
-              <VProgressCircular indeterminate color="primary" />
-            </div>
-
-            <div
-              v-else-if="conversationMessages.length === 0"
-              class="d-flex justify-center align-center"
-              style="height: 100%"
-            >
-              <div class="text-body-1 text-medium-emphasis">
-                {{ t('no_messages_found') }}
-              </div>
-            </div>
-
-            <div v-else class="d-flex flex-column">
-              <template
-                v-for="(item, index) in messagesWithSeparators"
-                :key="
-                  item.type === 'separator'
-                    ? `separator-${item.separatorDate}`
-                    : `msg-${item.message?.message_id}`
-                "
-              >
-                <div
-                  v-if="item.type === 'separator'"
-                  class="d-flex justify-center align-center my-4 date-separator-wrapper"
-                  style="width: 100%; gap: 8px"
-                >
-                  <div
-                    class="date-separator-line"
-                    style="
-                      flex: 0.25;
-                      height: 1px;
-                      background-color: rgba(var(--v-theme-on-surface), 0.12);
-                    "
-                  ></div>
-                  <div
-                    class="date-separator"
-                    style="
-                      font-size: 0.75rem;
-                      font-weight: 500;
-                      background-color: rgba(var(--v-theme-on-surface), 0.12);
-                      color: rgba(var(--v-theme-on-surface), 0.65);
-                      padding: 4px 12px;
-                      border-radius: 7.5px;
-                      display: inline-block;
-                      min-width: fit-content;
-                      white-space: nowrap;
-                    "
-                  >
-                    {{ item.separatorLabel }}
-                  </div>
-                  <div
-                    class="date-separator-line"
-                    style="
-                      flex: 0.25;
-                      height: 1px;
-                      background-color: rgba(var(--v-theme-on-surface), 0.12);
-                    "
-                  ></div>
-                </div>
-                <div
-                  v-else-if="item.type === 'message' && item.message"
-                  class="chat-group d-flex align-start position-relative"
-                  :class="[
-                    {
-                      'flex-row-reverse':
-                        !isTypeUser(item.message) &&
-                        item.message.content?.type !== EMessageType.system,
-                      'justify-center':
-                        item.message.content?.type === EMessageType.system,
-                      'mb-6':
-                        index < messagesWithSeparators.length - 1 &&
-                        messagesWithSeparators[index + 1]?.type === 'message',
-                    },
-                  ]"
-                >
-                  <div
-                    v-if="item.message.content?.type !== EMessageType.system"
-                    class="chat-avatar"
-                    :class="!isTypeUser(item.message) ? 'ms-4' : 'me-4'"
-                  >
-                    <VTooltip
-                      v-if="
-                        !isTypeUser(item.message) && item.message.user?.name
-                      "
-                      location="top"
-                      :text="item.message.user.name"
-                    >
-                      <template #activator="{ props }">
-                        <VAvatar
-                          v-bind="props"
-                          size="32"
-                          :variant="
-                            !isPhotoExist(item.message) ? 'tonal' : undefined
-                          "
-                        >
-                          <VImg :src="resolvePhoto(item.message)" />
-                        </VAvatar>
-                      </template>
-                    </VTooltip>
-                    <VTooltip
-                      v-else-if="
-                        isTypeUser(item.message) && getSenderName(item.message)
-                      "
-                      location="top"
-                      :text="getSenderName(item.message)"
-                    >
-                      <template #activator="{ props }">
-                        <VAvatar
-                          v-bind="props"
-                          size="32"
-                          :variant="
-                            !isPhotoExist(item.message) ? 'tonal' : undefined
-                          "
-                        >
-                          <VImg :src="resolvePhoto(item.message)" />
-                        </VAvatar>
-                      </template>
-                    </VTooltip>
-                    <VAvatar
-                      v-else
-                      size="32"
-                      :variant="
-                        !isPhotoExist(item.message) ? 'tonal' : undefined
-                      "
-                    >
-                      <VImg :src="resolvePhoto(item.message)" />
-                    </VAvatar>
-                  </div>
-
-                  <div
-                    class="chat-body d-inline-flex flex-column position-relative"
-                    :class="
-                      item.message.content?.type === EMessageType.system
-                        ? 'align-center'
-                        : !isTypeUser(item.message)
-                          ? 'align-end'
-                          : 'align-start'
-                    "
-                  >
-                    <div
-                      class="chat-content-wrapper"
-                      :class="
-                        !isTypeUser(item.message)
-                          ? 'wrapper-operator'
-                          : 'wrapper-client'
-                      "
-                    >
-                      <div
-                        class="chat-content py-2 px-2 elevation-2"
-                        :class="
-                          item.message.content?.type === EMessageType.system
-                            ? 'chat-center'
-                            : isTypeUser(item.message)
-                              ? 'chat-left'
-                              : 'chat-right'
-                        "
-                        :style="{
-                          backgroundColor:
-                            item.message.content?.type ===
-                            EMessageType.annotation
-                              ? 'rgb(255, 243, 205)'
-                              : item.message.content?.type ===
-                                  EMessageType.system
-                                ? 'rgb(227, 242, 253)'
-                                : isTypeUser(item.message)
-                                  ? 'rgb(var(--v-theme-surface))'
-                                  : 'rgb(217, 253, 211)',
-                        }"
-                      >
-                        <!-- Nome do remetente -->
-                        <div
-                          v-if="
-                            item.message.content?.type !== EMessageType.system
-                          "
-                          class="text-caption font-weight-medium mb-2"
-                          :style="{
-                            opacity: 0.8,
-                            color: isTypeUser(item.message)
-                              ? 'rgb(var(--v-theme-on-surface))'
-                              : 'rgb(var(--v-theme-title))',
-                          }"
-                        >
-                          {{ getSenderName(item.message) }}
-                        </div>
-
-                        <!-- Imagem -->
-                        <div
-                          v-if="
-                            item.message.content?.type === EMessageType.image &&
-                            item.message.content?.image?.url
-                          "
-                          :class="[
-                            'image-bubble',
-                            !isTypeUser(item.message)
-                              ? 'image-bubble--right'
-                              : 'image-bubble--left',
-                          ]"
-                          class="mb-3"
-                          @click="
-                            () =>
-                              openImageViewer(
-                                item.message!.content!.image!.url!
-                              )
-                          "
-                        >
-                          <VImg
-                            :src="item.message.content.image.url"
-                            :aspect-ratio="
-                              item.message.content.image.width &&
-                              item.message.content.image.height
-                                ? item.message.content.image.width /
-                                  item.message.content.image.height
-                                : undefined
-                            "
-                            class="image-thumb"
-                            width="120"
-                            cover
-                          />
-                          <p
-                            v-if="item.message.content.image.caption"
-                            class="image-caption mt-3"
-                            :style="{
-                              color: isTypeUser(item.message)
-                                ? 'rgb(var(--v-theme-on-surface))'
-                                : 'rgb(var(--v-theme-title))',
-                            }"
-                          >
-                            <span
-                              v-html="
-                                formatWhatsAppText(
-                                  item.message.content.image.caption
-                                )
-                              "
-                            ></span>
-                          </p>
-                        </div>
-
-                        <!-- Vídeo -->
-                        <div
-                          v-else-if="
-                            item.message.content?.type === EMessageType.video &&
-                            item.message.content?.video?.url
-                          "
-                          class="mb-3"
-                        >
-                          <div class="d-flex align-center gap-2 mb-3">
-                            <VIcon>tabler-video</VIcon>
-                            <a
-                              :href="item.message.content.video.url"
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              class="text-body-2 text-primary text-decoration-none"
-                            >
-                              {{ t('video') }} - {{ t('click_to_view') }}
-                            </a>
-                          </div>
-                          <div
-                            v-if="item.message.content.video.caption"
-                            class="text-body-2"
-                            v-html="
-                              formatWhatsAppText(
-                                item.message.content.video.caption
-                              )
-                            "
-                          ></div>
-                        </div>
-
-                        <!-- Áudio -->
-                        <div
-                          v-else-if="
-                            item.message.content?.type === EMessageType.audio &&
-                            item.message.content?.audio?.url
-                          "
-                          class="mb-3"
-                        >
-                          <div class="d-flex align-center gap-2">
-                            <VIcon>tabler-music</VIcon>
-                            <a
-                              :href="item.message.content.audio.url"
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              class="text-body-2 text-primary text-decoration-none"
-                            >
-                              {{ t('audio') }} - {{ t('click_to_listen') }}
-                            </a>
-                          </div>
-                        </div>
-
-                        <!-- Sticker -->
-                        <div
-                          v-else-if="
-                            item.message.content?.type ===
-                              EMessageType.sticker &&
-                            item.message.content?.sticker?.url
-                          "
-                          class="mb-3"
-                        >
-                          <img
-                            :src="item.message.content.sticker.url"
-                            alt="Sticker"
-                            style="
-                              max-width: 100px;
-                              max-height: 100px;
-                              object-fit: contain;
-                            "
-                          />
-                        </div>
-
-                        <!-- Documento -->
-                        <div
-                          v-else-if="
-                            item.message.content?.type ===
-                              EMessageType.document &&
-                            item.message.content?.document?.url
-                          "
-                          class="mb-3 d-flex align-center gap-2"
-                        >
-                          <VIcon>tabler-file</VIcon>
-                          <div class="flex-grow-1">
-                            <div class="text-body-2 font-weight-medium">
-                              {{
-                                item.message.content.document.name ||
-                                t('document')
-                              }}
-                            </div>
-                            <div class="text-caption text-medium-emphasis">
-                              {{
-                                item.message.content.document.size
-                                  ? `${(item.message.content.document.size / 1024).toFixed(2)} KB`
-                                  : ''
-                              }}
-                            </div>
-                          </div>
-                          <VBtn
-                            icon
-                            size="small"
-                            variant="text"
-                            @click="
-                              openDocument(item.message?.content?.document?.url)
-                            "
-                          >
-                            <VIcon>tabler-download</VIcon>
-                          </VBtn>
-                        </div>
-
-                        <!-- Localização -->
-                        <div
-                          v-else-if="item.message.content?.location"
-                          class="mb-3"
-                        >
-                          <div class="text-body-2 font-weight-medium">
-                            📍
-                            {{
-                              item.message.content.location.name ||
-                              t('location')
-                            }}
-                          </div>
-                          <div
-                            v-if="item.message.content.location.address"
-                            class="text-caption text-medium-emphasis"
-                          >
-                            {{ item.message.content.location.address }}
-                          </div>
-                        </div>
-
-                        <!-- Contato -->
-                        <div
-                          v-else-if="item.message.content?.contact"
-                          class="mb-3"
-                        >
-                          <div class="text-body-2">
-                            👤 {{ item.message.content.contact.name }}
-                            {{ item.message.content.contact.last_name || '' }}
-                          </div>
-                          <div
-                            v-if="item.message.content.contact.phone"
-                            class="text-caption text-medium-emphasis"
-                          >
-                            {{ item.message.content.contact.phone }}
-                          </div>
-                        </div>
-
-                        <!-- Texto -->
-                        <div
-                          v-if="
-                            item.message.content?.message &&
-                            item.message.content?.type !== EMessageType.image &&
-                            item.message.content?.type !== EMessageType.video &&
-                            item.message.content?.type !== EMessageType.audio &&
-                            item.message.content?.type !==
-                              EMessageType.sticker &&
-                            item.message.content?.type !==
-                              EMessageType.document &&
-                            item.message.content?.type !==
-                              EMessageType.contact_card
-                          "
-                          class="d-flex align-end gap-2"
-                        >
-                          <p
-                            class="text-base message-text mb-0 flex-grow-1"
-                            :style="{
-                              color: isTypeUser(item.message)
-                                ? 'rgb(var(--v-theme-on-surface))'
-                                : 'rgb(var(--v-theme-title))',
-                            }"
-                            v-html="
-                              formatWhatsAppText(getMessageText(item.message))
-                            "
-                          ></p>
-                          <span
-                            class="message-time text-caption"
-                            :style="{
-                              color: isTypeUser(item.message)
-                                ? 'rgba(var(--v-theme-on-surface), 0.6)'
-                                : 'rgba(17, 27, 33, 0.6)',
-                              flexShrink: 0,
-                              whiteSpace: 'nowrap',
-                            }"
-                          >
-                            {{
-                              formatDate(item.message.date, {
-                                hour: '2-digit',
-                                minute: '2-digit',
-                                hour12: false,
-                              })
-                            }}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </template>
-            </div>
+          <div class="pa-4" style="min-height: 100%">
+            <ChatLogViewer
+              :messages="conversationMessages"
+              :client-name="selectedChatInfo?.client || ''"
+              :operator-name="selectedChatInfo?.operator || ''"
+              :loading="loadingMessages"
+              @open-image="handleOpenImage"
+              @open-video="handleOpenVideo"
+              @open-location="handleOpenLocation"
+            />
           </div>
         </VCardText>
       </VCard>
     </VDialog>
 
-    <!-- Visualizador de Imagens -->
-    <VDialog v-model="imageViewerOpen" max-width="900" scrollable>
-      <VCard>
-        <VCardTitle class="d-flex justify-space-between align-center">
-          <span>{{ t('image') }}</span>
-          <VBtn icon variant="text" @click="imageViewerOpen = false">
-            <VIcon>tabler-x</VIcon>
+    <ChatMediaViewer
+      v-model="imageViewerOpen"
+      :src="imageViewerSrc"
+      :caption="imageViewerCaption"
+      :kind="imageViewerKind"
+    />
+
+    <VDialog v-model="locationModalOpen" max-width="600" :scrollable="false">
+      <VCard v-if="locationData">
+        <VCardTitle class="d-flex align-center justify-space-between">
+          <span>{{ t('location') }}</span>
+          <VBtn
+            icon
+            variant="text"
+            size="small"
+            @click="locationModalOpen = false"
+          >
+            <VIcon size="20">tabler-x</VIcon>
           </VBtn>
         </VCardTitle>
-        <VDivider />
-        <VCardText class="pa-4 d-flex justify-center">
-          <VImg
-            v-if="imageViewerSrc"
-            :src="imageViewerSrc"
-            max-width="800"
-            max-height="600"
-            contain
-          />
+        <VCardText>
+          <div class="location-map-wrapper">
+            <MglMap
+              :map-style="{
+                version: 8,
+                sources: {
+                  'osm-tiles': {
+                    type: 'raster',
+                    tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+                    tileSize: 256,
+                    attribution: '&copy; OpenStreetMap contributors',
+                  },
+                },
+                layers: [
+                  {
+                    id: 'osm-tiles-layer',
+                    type: 'raster',
+                    source: 'osm-tiles',
+                    minzoom: 0,
+                    maxzoom: 22,
+                  },
+                ],
+              }"
+              :center="
+                locationData
+                  ? [locationData.longitude, locationData.latitude]
+                  : [0, 0]
+              "
+              :zoom="15"
+              :interactive="false"
+              :attribution-control="false"
+              :navigation-control="false"
+              style="width: 100%; height: 400px"
+            >
+              <MglMarker
+                v-if="locationData"
+                :coordinates="[locationData.longitude, locationData.latitude]"
+                color="#ef4444"
+              />
+            </MglMap>
+          </div>
+          <div v-if="locationData.name" class="mt-4">
+            <div class="text-body-1 font-weight-medium mb-1">
+              {{ locationData.name }}
+            </div>
+          </div>
+          <div v-if="locationData.address" class="mt-2">
+            <div class="text-body-2 text-medium-emphasis">
+              {{ locationData.address }}
+            </div>
+          </div>
         </VCardText>
+        <VDivider />
+        <VCardActions>
+          <VSpacer />
+          <VBtn
+            variant="tonal"
+            color="secondary"
+            @click="locationModalOpen = false"
+          >
+            {{ t('close') }}
+          </VBtn>
+        </VCardActions>
       </VCard>
     </VDialog>
 
