@@ -488,21 +488,6 @@ onMounted(async () => {
 <template>
   <div>
     <VRow class="mb-4">
-      <VCol cols="12">
-        <div class="d-flex align-center justify-space-between flex-wrap gap-4">
-          <div>
-            <h1 class="text-h4 font-weight-bold mb-n1">
-              {{ t('dashboard_title') }}
-            </h1>
-            <p class="text-body-2 text-medium-emphasis mt-n1">
-              {{ t('dashboard_subtitle') }}
-            </p>
-          </div>
-        </div>
-      </VCol>
-    </VRow>
-
-    <VRow class="mb-4">
       <VCol cols="12" sm="6" md="3">
         <VCard v-if="dashboardStore.loadingStats">
           <VCardText>
