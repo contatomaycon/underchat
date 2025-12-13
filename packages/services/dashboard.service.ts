@@ -1,14 +1,17 @@
 import { injectable } from 'tsyringe';
 import { DashboardStatsRepository } from '@core/repositories/dashboard/DashboardStats.repository';
 import { DashboardConversationsRepository } from '@core/repositories/dashboard/DashboardConversations.repository';
+import { DashboardAdditionalRepository } from '@core/repositories/dashboard/DashboardAdditional.repository';
 import { GetDashboardStatsResponse } from '@core/schema/dashboard/getDashboardStats/response.schema';
 import { GetDashboardConversationsResponse } from '@core/schema/dashboard/getDashboardConversations/response.schema';
+import { GetDashboardAdditionalResponse } from '@core/schema/dashboard/getDashboardAdditional/response.schema';
 
 @injectable()
 export class DashboardService {
   constructor(
     private readonly dashboardStatsRepository: DashboardStatsRepository,
-    private readonly dashboardConversationsRepository: DashboardConversationsRepository
+    private readonly dashboardConversationsRepository: DashboardConversationsRepository,
+    private readonly dashboardAdditionalRepository: DashboardAdditionalRepository
   ) {}
 
   getDashboardStats = async (
@@ -63,10 +66,53 @@ export class DashboardService {
       ),
     ]);
 
+    const sparklineData = [10, 20, 15, 30, 25, 40, 35];
+
     return {
       active,
       closed,
+      sparklineData,
       evolution,
+    };
+  };
+
+  getDashboardAdditional = async (
+    accountId: string
+  ): Promise<GetDashboardAdditionalResponse> => {
+    const [
+      contactsGrowth,
+      attendancePerformance,
+      sectorsDistribution,
+      attendanceMetrics,
+      chatbotsTotal,
+      chatbotsActive,
+      contactGroupsTotal,
+      messageTemplatesTotal,
+      labelTemplatesTotal,
+    ] = await Promise.all([
+      this.dashboardAdditionalRepository.getContactsGrowthMonthly(accountId),
+      this.dashboardAdditionalRepository.getAttendancePerformance(accountId),
+      this.dashboardAdditionalRepository.getSectorsDistribution(accountId),
+      this.dashboardAdditionalRepository.getAttendanceMetrics(accountId),
+      this.dashboardAdditionalRepository.getChatbotsTotal(accountId),
+      this.dashboardAdditionalRepository.getChatbotsActive(accountId),
+      this.dashboardAdditionalRepository.getContactGroupsTotal(accountId),
+      this.dashboardAdditionalRepository.getMessageTemplatesTotal(accountId),
+      this.dashboardAdditionalRepository.getLabelTemplatesTotal(accountId),
+    ]);
+
+    return {
+      contactsGrowth,
+      attendancePerformance,
+      sectorsDistribution,
+      attendanceMetrics,
+      chatbots: {
+        total: chatbotsTotal,
+        active: chatbotsActive,
+      },
+      contactGroups: contactGroupsTotal,
+      messageTemplates: messageTemplatesTotal,
+      labelTemplates: labelTemplatesTotal,
     };
   };
 }

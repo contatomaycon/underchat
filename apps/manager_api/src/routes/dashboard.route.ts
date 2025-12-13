@@ -3,6 +3,7 @@ import { container } from 'tsyringe';
 import DashboardController from '@/controllers/dashboard';
 import { getDashboardStatsSchema } from '@core/schema/dashboard/getDashboardStats';
 import { getDashboardConversationsSchema } from '@core/schema/dashboard/getDashboardConversations';
+import { getDashboardAdditionalSchema } from '@core/schema/dashboard/getDashboardAdditional';
 
 export default function dashboardRoutes(server: FastifyInstance) {
   const dashboardController = container.resolve(DashboardController);
@@ -18,6 +19,14 @@ export default function dashboardRoutes(server: FastifyInstance) {
   server.get('/dashboard/conversations', {
     schema: getDashboardConversationsSchema,
     handler: dashboardController.getDashboardConversations,
+    preHandler: [
+      (request, reply) => server.authenticateJwt(request, reply, []),
+    ],
+  });
+
+  server.get('/dashboard/additional', {
+    schema: getDashboardAdditionalSchema,
+    handler: dashboardController.getDashboardAdditional,
     preHandler: [
       (request, reply) => server.authenticateJwt(request, reply, []),
     ],

@@ -643,5 +643,7 @@
   "dashboard_stats_loaded_successfully": "Estatísticas do dashboard carregadas com sucesso!",
   "dashboard_stats_not_found": "Estatísticas do dashboard não encontradas!",
   "dashboard_conversations_loaded_successfully": "Conversas do dashboard carregadas com sucesso!",
-  "dashboard_conversations_not_found": "Conversas do dashboard não encontradas!"
+  "dashboard_conversations_not_found": "Conversas do dashboard não encontradas!",
+  "dashboard_additional_loaded_successfully": "Dados adicionais do dashboard carregados com sucesso!",
+  "dashboard_additional_not_found": "Dados adicionais do dashboard não encontrados!"
 }

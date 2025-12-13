@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { computed, onMounted } from 'vue';
 import { useTheme } from 'vuetify';
 import { useI18n } from 'vue-i18n';
 import { hexToRgb } from '@webcore/utils/colorConverter';
@@ -36,19 +36,35 @@ const contactsGrowth = computed(
   () => dashboardStore.stats?.contacts.growth ?? 0
 );
 const chatsActive = computed(() => dashboardStore.conversations?.active ?? 0);
-const chatsClosed = computed(() => dashboardStore.conversations?.closed ?? 0);
-const chatbotsActive = ref(10);
-const chatbotsTotal = ref(12);
-const sectorsTotal = ref(15);
-const contactGroupsTotal = ref(48);
-const messageTemplatesTotal = ref(67);
-const labelTemplatesTotal = ref(23);
-const rolesTotal = ref(9);
+const chatbotsActive = computed(
+  () => dashboardStore.additional?.chatbots.active ?? 0
+);
+const chatbotsTotal = computed(
+  () => dashboardStore.additional?.chatbots.total ?? 0
+);
+const contactGroupsTotal = computed(
+  () => dashboardStore.additional?.contactGroups ?? 0
+);
+const messageTemplatesTotal = computed(
+  () => dashboardStore.additional?.messageTemplates ?? 0
+);
+const labelTemplatesTotal = computed(
+  () => dashboardStore.additional?.labelTemplates ?? 0
+);
 
-const avgResponseTime = ref('2m 34s');
-const avgResolutionTime = ref('15m 42s');
-const productivity = ref(87);
-const totalAttendances = ref(1245);
+const avgResponseTime = computed(
+  () => dashboardStore.additional?.attendanceMetrics.avgResponseTime ?? '0m 0s'
+);
+const avgResolutionTime = computed(
+  () =>
+    dashboardStore.additional?.attendanceMetrics.avgResolutionTime ?? '0m 0s'
+);
+const productivity = computed(
+  () => dashboardStore.additional?.attendanceMetrics.productivity ?? 0
+);
+const totalAttendances = computed(
+  () => dashboardStore.additional?.attendanceMetrics.totalAttendances ?? 0
+);
 
 const conversationsEvolutionData = computed(() => {
   const evolution = dashboardStore.conversations?.evolution ?? [];
@@ -101,34 +117,22 @@ const conversationsEvolutionOptions = computed(() => ({
   },
 }));
 
-const contactsGrowthData = computed(() => ({
-  labels: [
-    t('dashboard_month_jan'),
-    t('dashboard_month_feb'),
-    t('dashboard_month_mar'),
-    t('dashboard_month_apr'),
-    t('dashboard_month_may'),
-    t('dashboard_month_jun'),
-    t('dashboard_month_jul'),
-    t('dashboard_month_aug'),
-    t('dashboard_month_sep'),
-    t('dashboard_month_oct'),
-    t('dashboard_month_nov'),
-    t('dashboard_month_dec'),
-  ],
-  datasets: [
-    {
-      label: t('dashboard_contacts_growth_label'),
-      data: [
-        2100, 2200, 2300, 2400, 2500, 2600, 2700, 2750, 2800, 2820, 2835, 2847,
-      ],
-      borderColor: 'rgb(255, 152, 0)',
-      backgroundColor: 'rgba(255, 152, 0, 0.1)',
-      tension: 0.4,
-      fill: true,
-    },
-  ],
-}));
+const contactsGrowthData = computed(() => {
+  const growth = dashboardStore.additional?.contactsGrowth ?? [];
+  return {
+    labels: growth.map((item) => item.month),
+    datasets: [
+      {
+        label: t('dashboard_contacts_growth_label'),
+        data: growth.map((item) => item.total),
+        borderColor: getThemeColor('warning'),
+        backgroundColor: getThemeColor('warning'),
+        tension: 0.4,
+        fill: true,
+      },
+    ],
+  };
+});
 
 const contactsGrowthOptions = computed(() => ({
   responsive: true,
@@ -153,31 +157,30 @@ const contactsGrowthOptions = computed(() => ({
   },
 }));
 
-const sectorsDistributionData = computed(() => ({
-  labels: [
-    t('dashboard_sector_service'),
-    t('dashboard_sector_sales'),
-    t('dashboard_sector_support'),
-    t('dashboard_sector_financial'),
-    t('dashboard_sector_technical'),
-    t('dashboard_sector_others'),
-  ],
-  datasets: [
-    {
-      data: [35, 25, 20, 10, 7, 3],
-      backgroundColor: [
-        'rgba(25, 118, 210, 0.8)',
-        'rgba(46, 125, 50, 0.8)',
-        'rgba(255, 152, 0, 0.8)',
-        'rgba(156, 39, 176, 0.8)',
-        'rgba(233, 30, 99, 0.8)',
-        'rgba(158, 158, 158, 0.8)',
-      ],
-      borderWidth: 2,
-      borderColor: '#fff',
-    },
-  ],
-}));
+const sectorsDistributionData = computed(() => {
+  const sectors = dashboardStore.additional?.sectorsDistribution ?? [];
+  const colors = [
+    'rgba(25, 118, 210, 0.8)',
+    'rgba(46, 125, 50, 0.8)',
+    'rgba(255, 152, 0, 0.8)',
+    'rgba(156, 39, 176, 0.8)',
+    'rgba(233, 30, 99, 0.8)',
+    'rgba(158, 158, 158, 0.8)',
+  ];
+  return {
+    labels: sectors.map((sector) => sector.sectorName),
+    datasets: [
+      {
+        data: sectors.map((sector) => sector.count),
+        backgroundColor: sectors.map(
+          (_, index) => colors[index % colors.length]
+        ),
+        borderWidth: 2,
+        borderColor: '#fff',
+      },
+    ],
+  };
+});
 
 const sectorsDistributionOptions = computed(() => ({
   responsive: true,
@@ -214,29 +217,33 @@ const channelsStatusOptions = computed(() => ({
   },
 }));
 
-const attendancePerformanceData = computed(() => ({
-  labels: [
-    t('dashboard_weekday_mon'),
-    t('dashboard_weekday_tue'),
-    t('dashboard_weekday_wed'),
-    t('dashboard_weekday_thu'),
-    t('dashboard_weekday_fri'),
-    t('dashboard_weekday_sat'),
-    t('dashboard_weekday_sun'),
-  ],
-  datasets: [
-    {
-      label: t('dashboard_attendances_completed'),
-      data: [185, 210, 195, 225, 240, 150, 120],
-      backgroundColor: 'rgba(25, 118, 210, 0.8)',
-    },
-    {
-      label: t('dashboard_daily_goal'),
-      data: [200, 200, 200, 200, 200, 200, 200],
-      backgroundColor: 'rgba(46, 125, 50, 0.6)',
-    },
-  ],
-}));
+const attendancePerformanceData = computed(() => {
+  const performance = dashboardStore.additional?.attendancePerformance ?? [];
+  const dayLabels: Record<string, string> = {
+    dom: t('day_sun_short'),
+    seg: t('day_mon_short'),
+    ter: t('day_tue_short'),
+    qua: t('day_wed_short'),
+    qui: t('day_thu_short'),
+    sex: t('day_fri_short'),
+    sáb: t('day_sat_short'),
+  };
+  return {
+    labels: performance.map((item) => dayLabels[item.day] || item.day),
+    datasets: [
+      {
+        label: t('dashboard_attendances_performed_label'),
+        data: performance.map((item) => item.performed),
+        backgroundColor: getThemeColor('primary'),
+      },
+      {
+        label: t('dashboard_daily_goal_label'),
+        data: performance.map((item) => item.goal),
+        backgroundColor: getThemeColor('success'),
+      },
+    ],
+  };
+});
 
 const attendancePerformanceOptions = computed(() => ({
   responsive: true,
@@ -436,6 +443,7 @@ onMounted(async () => {
   await Promise.all([
     dashboardStore.getDashboardStats(),
     dashboardStore.getDashboardConversations(),
+    dashboardStore.getDashboardAdditional(),
   ]);
 });
 </script>
@@ -612,7 +620,7 @@ onMounted(async () => {
           <VCardTitle>{{ t('dashboard_contacts_growth') }}</VCardTitle>
           <VCardText class="flex-grow-1 d-flex flex-column">
             <div
-              v-if="dashboardStore.loadingStats"
+              v-if="dashboardStore.loadingAdditional"
               style="height: 250px; flex-shrink: 0"
             >
               <VSkeletonLoader type="image" height="250" />
@@ -650,7 +658,13 @@ onMounted(async () => {
         <VCard class="flex-grow-1 d-flex flex-column">
           <VCardTitle>{{ t('dashboard_attendance_performance') }}</VCardTitle>
           <VCardText class="flex-grow-1 d-flex flex-column">
-            <div style="height: 250px; flex-shrink: 0">
+            <div
+              v-if="dashboardStore.loadingAdditional"
+              style="height: 250px; flex-shrink: 0"
+            >
+              <VSkeletonLoader type="image" height="250" />
+            </div>
+            <div v-else style="height: 250px; flex-shrink: 0">
               <BarChart
                 :chart-data="attendancePerformanceData"
                 :chart-options="attendancePerformanceOptions"
@@ -686,7 +700,14 @@ onMounted(async () => {
         <VCard class="flex-grow-1 d-flex flex-column">
           <VCardTitle>{{ t('dashboard_sectors_distribution') }}</VCardTitle>
           <VCardText class="flex-grow-1 d-flex flex-column">
-            <div class="flex-grow-1" style="min-height: 300px">
+            <div
+              v-if="dashboardStore.loadingAdditional"
+              class="flex-grow-1"
+              style="min-height: 300px"
+            >
+              <VSkeletonLoader type="image" height="300" />
+            </div>
+            <div v-else class="flex-grow-1" style="min-height: 300px">
               <DoughnutChart
                 :chart-data="sectorsDistributionData"
                 :chart-options="sectorsDistributionOptions"
@@ -702,7 +723,14 @@ onMounted(async () => {
           <VCardText class="flex-grow-1">
             <VRow class="h-100">
               <VCol cols="12" sm="6">
-                <VCard variant="tonal" color="primary" class="h-100">
+                <VCard
+                  v-if="dashboardStore.loadingAdditional"
+                  flat
+                  class="h-100 d-flex align-center justify-center"
+                >
+                  <VSkeletonLoader type="text, text" />
+                </VCard>
+                <VCard v-else variant="tonal" color="primary" class="h-100">
                   <VCardText>
                     <div class="d-flex align-center gap-3">
                       <VAvatar color="primary" size="48" variant="tonal">
@@ -721,7 +749,14 @@ onMounted(async () => {
                 </VCard>
               </VCol>
               <VCol cols="12" sm="6">
-                <VCard variant="tonal" color="success" class="h-100">
+                <VCard
+                  v-if="dashboardStore.loadingAdditional"
+                  flat
+                  class="h-100 d-flex align-center justify-center"
+                >
+                  <VSkeletonLoader type="text, text" />
+                </VCard>
+                <VCard v-else variant="tonal" color="success" class="h-100">
                   <VCardText>
                     <div class="d-flex align-center gap-3">
                       <VAvatar color="success" size="48" variant="tonal">
@@ -740,7 +775,14 @@ onMounted(async () => {
                 </VCard>
               </VCol>
               <VCol cols="12" sm="6">
-                <VCard variant="tonal" color="warning" class="h-100">
+                <VCard
+                  v-if="dashboardStore.loadingAdditional"
+                  flat
+                  class="h-100 d-flex align-center justify-center"
+                >
+                  <VSkeletonLoader type="text, text" />
+                </VCard>
+                <VCard v-else variant="tonal" color="warning" class="h-100">
                   <VCardText>
                     <div class="d-flex align-center gap-3">
                       <VAvatar color="warning" size="48" variant="tonal">
@@ -759,7 +801,14 @@ onMounted(async () => {
                 </VCard>
               </VCol>
               <VCol cols="12" sm="6">
-                <VCard variant="tonal" color="info" class="h-100">
+                <VCard
+                  v-if="dashboardStore.loadingAdditional"
+                  flat
+                  class="h-100 d-flex align-center justify-center"
+                >
+                  <VSkeletonLoader type="text, text" />
+                </VCard>
+                <VCard v-else variant="tonal" color="info" class="h-100">
                   <VCardText>
                     <div class="d-flex align-center gap-3">
                       <VAvatar color="info" size="48" variant="tonal">
@@ -787,7 +836,17 @@ onMounted(async () => {
       <VCol cols="12" sm="6" md="3" class="d-flex">
         <VCard class="flex-grow-1 d-flex flex-column">
           <VCardText class="flex-grow-1 d-flex flex-column">
-            <div class="d-flex align-center justify-space-between">
+            <VCard
+              v-if="dashboardStore.loadingAdditional"
+              flat
+              class="flex-grow-1 d-flex align-center justify-center"
+            >
+              <VSkeletonLoader type="text, text, avatar" />
+            </VCard>
+            <div
+              v-else
+              class="d-flex align-center justify-space-between flex-grow-1"
+            >
               <div>
                 <p class="text-body-2 text-medium-emphasis mb-1">
                   {{ t('dashboard_active_chatbots') }}
@@ -806,7 +865,17 @@ onMounted(async () => {
       <VCol cols="12" sm="6" md="3" class="d-flex">
         <VCard class="flex-grow-1 d-flex flex-column">
           <VCardText class="flex-grow-1 d-flex flex-column">
-            <div class="d-flex align-center justify-space-between">
+            <VCard
+              v-if="dashboardStore.loadingAdditional"
+              flat
+              class="flex-grow-1 d-flex align-center justify-center"
+            >
+              <VSkeletonLoader type="text, text, avatar" />
+            </VCard>
+            <div
+              v-else
+              class="d-flex align-center justify-space-between flex-grow-1"
+            >
               <div>
                 <p class="text-body-2 text-medium-emphasis mb-1">
                   {{ t('dashboard_contact_groups') }}
@@ -825,7 +894,17 @@ onMounted(async () => {
       <VCol cols="12" sm="6" md="3" class="d-flex">
         <VCard class="flex-grow-1 d-flex flex-column">
           <VCardText class="flex-grow-1 d-flex flex-column">
-            <div class="d-flex align-center justify-space-between">
+            <VCard
+              v-if="dashboardStore.loadingAdditional"
+              flat
+              class="flex-grow-1 d-flex align-center justify-center"
+            >
+              <VSkeletonLoader type="text, text, avatar" />
+            </VCard>
+            <div
+              v-else
+              class="d-flex align-center justify-space-between flex-grow-1"
+            >
               <div>
                 <p class="text-body-2 text-medium-emphasis mb-1">
                   {{ t('dashboard_message_templates') }}
@@ -844,7 +923,17 @@ onMounted(async () => {
       <VCol cols="12" sm="6" md="3" class="d-flex">
         <VCard class="flex-grow-1 d-flex flex-column">
           <VCardText class="flex-grow-1 d-flex flex-column">
-            <div class="d-flex align-center justify-space-between">
+            <VCard
+              v-if="dashboardStore.loadingAdditional"
+              flat
+              class="flex-grow-1 d-flex align-center justify-center"
+            >
+              <VSkeletonLoader type="text, text, avatar" />
+            </VCard>
+            <div
+              v-else
+              class="d-flex align-center justify-space-between flex-grow-1"
+            >
               <div>
                 <p class="text-body-2 text-medium-emphasis mb-1">
                   {{ t('dashboard_label_templates') }}

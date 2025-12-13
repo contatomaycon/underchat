@@ -7,6 +7,7 @@ import axios from '@webcore/axios';
 import { AxiosError } from 'axios';
 import { GetDashboardStatsResponse } from '@core/schema/dashboard/getDashboardStats/response.schema';
 import { GetDashboardConversationsResponse } from '@core/schema/dashboard/getDashboardConversations/response.schema';
+import { GetDashboardAdditionalResponse } from '@core/schema/dashboard/getDashboardAdditional/response.schema';
 
 export const useDashboardStore = defineStore('dashboard', {
   state: () => ({
@@ -18,8 +19,10 @@ export const useDashboardStore = defineStore('dashboard', {
     i18n: getI18n(),
     loadingStats: false,
     loadingConversations: false,
+    loadingAdditional: false,
     stats: null as GetDashboardStatsResponse | null,
     conversations: null as GetDashboardConversationsResponse | null,
+    additional: null as GetDashboardAdditionalResponse | null,
   }),
   actions: {
     showSnackbar(message: string, color: EColor) {
@@ -83,6 +86,33 @@ export const useDashboardStore = defineStore('dashboard', {
         return null;
       } finally {
         this.loadingConversations = false;
+      }
+    },
+    async getDashboardAdditional(): Promise<GetDashboardAdditionalResponse | null> {
+      try {
+        this.loadingAdditional = true;
+
+        const response = await axios.get<
+          IApiResponse<GetDashboardAdditionalResponse>
+        >('/dashboard/additional');
+
+        if (response.data.status && response.data.data) {
+          this.additional = response.data.data;
+          return response.data.data;
+        }
+
+        return null;
+      } catch (error) {
+        if (error instanceof AxiosError) {
+          const message =
+            error.response?.data?.message ||
+            this.i18n.global.t('dashboard_additional_error');
+          this.showSnackbar(message, EColor.error);
+        }
+
+        return null;
+      } finally {
+        this.loadingAdditional = false;
       }
     },
   },

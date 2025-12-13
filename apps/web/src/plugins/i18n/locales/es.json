@@ -1759,7 +1759,9 @@
     "dashboard_closed_conversations_label": "Conversaciones Cerradas",
     "dashboard_contacts_growth_label": "Crecimiento de Contactos",
     "dashboard_attendances_completed": "Atenciones Realizadas",
+    "dashboard_attendances_performed_label": "Atenciones Realizadas",
     "dashboard_daily_goal": "Meta Diaria",
+    "dashboard_daily_goal_label": "Meta Diaria",
     "dashboard_users_label": "Usuarios",
     "dashboard_channels_label": "Canales",
     "dashboard_contacts_label": "Contactos",
@@ -1788,5 +1790,13 @@
     "dashboard_weekday_thu": "Jue",
     "dashboard_weekday_fri": "Vie",
     "dashboard_weekday_sat": "Sáb",
-    "dashboard_weekday_sun": "Dom"
+    "dashboard_weekday_sun": "Dom",
+    "day_sun_short": "Dom",
+    "day_mon_short": "Lun",
+    "day_tue_short": "Mar",
+    "day_wed_short": "Mié",
+    "day_thu_short": "Jue",
+    "day_fri_short": "Vie",
+    "day_sat_short": "Sáb",
+    "dashboard_additional_error": "Error al cargar datos adicionales del dashboard"
 }
