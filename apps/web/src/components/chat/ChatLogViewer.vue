@@ -1924,6 +1924,19 @@ const handleOpenLocation = (message: ListMessageResult) => {
     &.is-deleted .image-caption {
       text-decoration: line-through;
     }
+
+    &:has(.image-bubble),
+    &:has(.video-bubble),
+    &:has(.sticker-bubble),
+    &:has(.document-bubble),
+    &:has(.location-bubble),
+    &:has(.contact-bubble) {
+      padding-bottom: 0.5rem !important;
+    }
+
+    &:has(.audio-bubble) {
+      padding-bottom: 1.6rem !important;
+    }
   }
 
   .message-block {
@@ -1942,7 +1955,7 @@ const handleOpenLocation = (message: ListMessageResult) => {
     position: absolute;
     left: 0;
     right: 0;
-    bottom: 0;
+    bottom: 2px;
     display: flex;
     align-items: flex-end;
     gap: 4px;
@@ -2280,10 +2293,10 @@ const handleOpenLocation = (message: ListMessageResult) => {
     padding: 12px;
     border-radius: 10px;
     background: rgba(var(--v-theme-on-surface), 0.04);
-    margin-bottom: 6px;
+    margin-bottom: 0;
     max-width: 100%;
     position: relative;
-    padding-bottom: 36px;
+    padding-bottom: 12px;
 
     &.is-deleted {
       pointer-events: none;
@@ -2350,7 +2363,8 @@ const handleOpenLocation = (message: ListMessageResult) => {
     transition: opacity 0.2s;
     overflow: hidden;
     position: relative;
-    padding-bottom: 24px;
+    padding-bottom: 0;
+    margin-bottom: 0;
 
     &:hover {
       opacity: 0.9;
@@ -2394,7 +2408,8 @@ const handleOpenLocation = (message: ListMessageResult) => {
   .contact-bubble {
     max-width: 100%;
     position: relative;
-    padding-bottom: 24px;
+    padding-bottom: 0;
+    margin-bottom: 0;
 
     &.is-deleted {
       opacity: 0.7;
@@ -2414,7 +2429,8 @@ const handleOpenLocation = (message: ListMessageResult) => {
     max-inline-size: 380px;
     inline-size: 100%;
     position: relative;
-    padding-bottom: 12px;
+    padding-bottom: 0;
+    margin-bottom: 0;
 
     &.audio-bubble--left {
       border-start-end-radius: 6px;
