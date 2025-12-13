@@ -167,6 +167,21 @@ const sectorsDistributionData = computed(() => {
     'rgba(233, 30, 99, 0.8)',
     'rgba(158, 158, 158, 0.8)',
   ];
+
+  if (sectors.length === 0) {
+    return {
+      labels: [t('dashboard_no_data')],
+      datasets: [
+        {
+          data: [1],
+          backgroundColor: ['rgba(158, 158, 158, 0.8)'],
+          borderWidth: 2,
+          borderColor: '#fff',
+        },
+      ],
+    };
+  }
+
   return {
     labels: sectors.map((sector) => sector.sectorName),
     datasets: [
@@ -192,20 +207,36 @@ const sectorsDistributionOptions = computed(() => ({
   },
 }));
 
-const channelsStatusData = computed(() => ({
-  labels: [t('dashboard_connected'), t('dashboard_disconnected')],
-  datasets: [
-    {
-      data: [
-        channelsConnected.value,
-        channelsTotal.value - channelsConnected.value,
+const channelsStatusData = computed(() => {
+  const connected = channelsConnected.value;
+  const disconnected = channelsTotal.value - channelsConnected.value;
+
+  if (channelsTotal.value === 0) {
+    return {
+      labels: [t('dashboard_no_data')],
+      datasets: [
+        {
+          data: [1],
+          backgroundColor: ['rgba(158, 158, 158, 0.8)'],
+          borderWidth: 2,
+          borderColor: '#fff',
+        },
       ],
-      backgroundColor: ['rgba(46, 125, 50, 0.8)', 'rgba(244, 67, 54, 0.8)'],
-      borderWidth: 2,
-      borderColor: '#fff',
-    },
-  ],
-}));
+    };
+  }
+
+  return {
+    labels: [t('dashboard_connected'), t('dashboard_disconnected')],
+    datasets: [
+      {
+        data: [connected, disconnected],
+        backgroundColor: ['rgba(46, 125, 50, 0.8)', 'rgba(244, 67, 54, 0.8)'],
+        borderWidth: 2,
+        borderColor: '#fff',
+      },
+    ],
+  };
+});
 
 const channelsStatusOptions = computed(() => ({
   responsive: true,
@@ -228,18 +259,24 @@ const attendancePerformanceData = computed(() => {
     sex: t('day_fri_short'),
     sáb: t('day_sat_short'),
   };
+  const primaryColor = getThemeColor('primary');
+  const successColor = getThemeColor('success');
   return {
     labels: performance.map((item) => dayLabels[item.day] || item.day),
     datasets: [
       {
         label: t('dashboard_attendances_performed_label'),
         data: performance.map((item) => item.performed),
-        backgroundColor: getThemeColor('primary'),
+        backgroundColor: primaryColor,
+        borderColor: primaryColor,
+        borderWidth: 1,
       },
       {
         label: t('dashboard_daily_average_label'),
         data: performance.map((item) => item.average),
-        backgroundColor: getThemeColor('success'),
+        backgroundColor: successColor,
+        borderColor: successColor,
+        borderWidth: 1,
       },
     ],
   };
@@ -413,7 +450,7 @@ const chatsChartOptions = computed(() => ({
   stroke: {
     curve: 'smooth',
     width: 2,
-    colors: [getThemeColor('error')],
+    colors: [getThemeColor('success')],
   },
   fill: {
     type: 'gradient',
@@ -425,18 +462,18 @@ const chatsChartOptions = computed(() => ({
       colorStops: [
         {
           offset: 0,
-          color: getThemeColor('error'),
+          color: getThemeColor('success'),
           opacity: 0.7,
         },
         {
           offset: 100,
-          color: getThemeColor('error'),
+          color: getThemeColor('success'),
           opacity: 0.5,
         },
       ],
     },
   },
-  colors: [getThemeColor('error')],
+  colors: [getThemeColor('success')],
 }));
 
 onMounted(async () => {
@@ -454,18 +491,13 @@ onMounted(async () => {
       <VCol cols="12">
         <div class="d-flex align-center justify-space-between flex-wrap gap-4">
           <div>
-            <h1 class="text-h4 font-weight-bold">{{ t('dashboard_title') }}</h1>
-            <p class="text-body-2 text-medium-emphasis mt-1">
+            <h1 class="text-h4 font-weight-bold mb-n1">
+              {{ t('dashboard_title') }}
+            </h1>
+            <p class="text-body-2 text-medium-emphasis mt-n1">
               {{ t('dashboard_subtitle') }}
             </p>
           </div>
-          <VChip
-            color="success"
-            variant="tonal"
-            prepend-icon="tabler-circle-check"
-          >
-            {{ t('dashboard_system_operational') }}
-          </VChip>
         </div>
       </VCol>
     </VRow>
@@ -533,7 +565,7 @@ onMounted(async () => {
           :title="t('dashboard_active_conversations')"
           :stats="chatsActive.toString()"
           icon="tabler-messages"
-          color="error"
+          color="success"
           :height="80"
           :series="chatsSeries"
           :chart-options="chatsChartOptions"

@@ -1799,5 +1799,6 @@
     "day_thu_short": "Thu",
     "day_fri_short": "Fri",
     "day_sat_short": "Sat",
+    "dashboard_no_data": "No data",
     "dashboard_additional_error": "Error loading additional dashboard data"
 }
