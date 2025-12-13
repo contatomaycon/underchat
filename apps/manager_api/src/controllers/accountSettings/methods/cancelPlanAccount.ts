@@ -1,5 +1,6 @@
 import { EHTTPStatusCode } from '@core/common/enums/EHTTPStatusCode';
 import { sendResponse } from '@core/common/functions/sendResponse';
+import { setPlanActiveHeader } from '@core/common/functions/setPlanActiveHeader';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
 import { PlanAccountCancellerUseCase } from '@core/useCases/accountSettings/PlanAccountCanceller.useCase';
@@ -14,10 +15,9 @@ export const cancelPlanAccount = async (
   const { t, tokenJwtData } = request;
 
   try {
-    const message = await planAccountCancellerUseCase.execute(
-      t,
-      tokenJwtData.account_id
-    );
+    const message = await planAccountCancellerUseCase.execute(t, tokenJwtData);
+
+    setPlanActiveHeader(reply, tokenJwtData.plan_is_active === true);
 
     return sendResponse(reply, {
       message,
