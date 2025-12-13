@@ -494,11 +494,16 @@ export class DashboardAdditionalRepository {
     };
   };
 
-  private readonly calculateAverage = (total: number, count: number): number => {
+  private readonly calculateAverage = (
+    total: number,
+    count: number
+  ): number => {
     return count > 0 ? Math.floor(total / count) : 0;
   };
 
-  private readonly calculateProductivity = (totalAttendances: number): number => {
+  private readonly calculateProductivity = (
+    totalAttendances: number
+  ): number => {
     if (totalAttendances === 0) {
       return 0;
     }
