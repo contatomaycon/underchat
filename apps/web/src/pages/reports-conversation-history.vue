@@ -19,6 +19,8 @@ import { refDebounced } from '@vueuse/core';
 import ChatLogViewer from '@/components/chat/ChatLogViewer.vue';
 import ChatMediaViewer from '@/components/chat/ChatMediaViewer.vue';
 import { MglMap, MglMarker } from 'vue-maplibre-gl';
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
 
 type ProtocolWithType = {
   protocol: string;
@@ -45,6 +47,7 @@ const isConversationModalOpen = ref(false);
 const selectedChatId = ref<string | null>(null);
 const conversationMessages = ref<ListMessageResult[]>([]);
 const loadingMessages = ref(false);
+const downloadingPdf = ref(false);
 const isProtocolsDialogOpen = ref(false);
 const selectedProtocols = ref<string[]>([]);
 const selectedProtocolsWithType = ref<ProtocolWithType[]>([]);
@@ -413,6 +416,182 @@ watch(
   { deep: true }
 );
 
+const downloadConversationPdf = async () => {
+  if (!selectedChatInfo.value || conversationMessages.value.length === 0) {
+    return;
+  }
+
+  downloadingPdf.value = true;
+
+  try {
+    await nextTick();
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+
+    const chatLogElement = document.querySelector(
+      '.chat-log-viewer'
+    ) as HTMLElement;
+
+    if (!chatLogElement) {
+      reportConversationHistoryStore.showSnackbar(
+        t('report_conversation_history_pdf_generate_error'),
+        EColor.error
+      );
+      downloadingPdf.value = false;
+      return;
+    }
+
+    const containerElement = chatLogElement.parentElement as HTMLElement;
+    if (!containerElement) {
+      reportConversationHistoryStore.showSnackbar(
+        t('report_conversation_history_pdf_generate_error'),
+        EColor.error
+      );
+      downloadingPdf.value = false;
+      return;
+    }
+
+    const originalScrollTop =
+      containerElement.scrollTop || chatLogElement.scrollTop;
+    containerElement.scrollTop = 0;
+    chatLogElement.scrollTop = 0;
+
+    const originalOverflow = containerElement.style.overflow;
+    const originalHeight = containerElement.style.height;
+    containerElement.style.overflow = 'visible';
+    containerElement.style.height = 'auto';
+
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    const canvas = await html2canvas(chatLogElement, {
+      scale: 2,
+      useCORS: true,
+      logging: true,
+      backgroundColor: '#ffffff',
+      allowTaint: true,
+      foreignObjectRendering: false,
+      removeContainer: false,
+      onclone: (clonedDoc, element) => {
+        const clonedChatLog = clonedDoc.querySelector(
+          '.chat-log-viewer'
+        ) as HTMLElement;
+
+        if (clonedChatLog) {
+          clonedChatLog.style.backgroundColor = '#ffffff';
+          clonedChatLog.style.width = '100%';
+          clonedChatLog.style.minHeight = '100%';
+          clonedChatLog.style.position = 'relative';
+          clonedChatLog.style.overflow = 'visible';
+
+          const clonedChatContentElements = clonedChatLog.querySelectorAll(
+            '.chat-content'
+          ) as NodeListOf<HTMLElement>;
+
+          for (const element of clonedChatContentElements) {
+            const computedStyle = window.getComputedStyle(element);
+            let backgroundColor = computedStyle.backgroundColor;
+
+            if (backgroundColor && backgroundColor.includes('var(--')) {
+              const root = getComputedStyle(document.documentElement);
+              const surfaceColor = root
+                .getPropertyValue('--v-theme-surface')
+                .trim();
+              if (surfaceColor) {
+                backgroundColor = surfaceColor.startsWith('#')
+                  ? surfaceColor
+                  : `rgb(${surfaceColor})`;
+              }
+            }
+
+            const isWhiteOrTransparent =
+              !backgroundColor ||
+              backgroundColor === 'rgba(0, 0, 0, 0)' ||
+              backgroundColor === 'transparent' ||
+              (backgroundColor.includes('255') &&
+                backgroundColor.includes('255, 255, 255')) ||
+              backgroundColor === 'rgb(255, 255, 255)' ||
+              backgroundColor === '#ffffff' ||
+              backgroundColor === '#FFFFFF';
+
+            if (isWhiteOrTransparent) {
+              element.style.backgroundColor = '#ffffff';
+              element.style.border = '1px solid rgba(0, 0, 0, 0.12)';
+              element.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.08)';
+            }
+          }
+
+          const clonedIcons = clonedChatLog.querySelectorAll(
+            '.v-icon, [class*="icon"], [class*="Icon"], svg, i'
+          ) as NodeListOf<HTMLElement>;
+          for (const icon of clonedIcons) {
+            icon.style.display = 'inline-block';
+            icon.style.visibility = 'visible';
+            icon.style.opacity = '1';
+          }
+
+          const svgElements = clonedChatLog.querySelectorAll('svg');
+          for (const svg of svgElements) {
+            svg.style.display = 'inline-block';
+            svg.style.visibility = 'visible';
+            svg.style.opacity = '1';
+          }
+        }
+      },
+    });
+
+    containerElement.style.overflow = originalOverflow;
+    containerElement.style.height = originalHeight;
+    containerElement.scrollTop = originalScrollTop;
+    chatLogElement.scrollTop = originalScrollTop;
+
+    const imgData = canvas.toDataURL('image/png');
+    const pdf = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4',
+    });
+
+    const pdfWidth = pdf.internal.pageSize.getWidth();
+    const pdfHeight = pdf.internal.pageSize.getHeight();
+    const imgWidth = canvas.width;
+    const imgHeight = canvas.height;
+    const ratio = Math.min(pdfWidth / imgWidth, pdfHeight / imgHeight);
+    const imgScaledWidth = imgWidth * ratio;
+    const imgScaledHeight = imgHeight * ratio;
+
+    const totalPages = Math.ceil(imgScaledHeight / pdfHeight);
+
+    for (let i = 0; i < totalPages; i++) {
+      if (i > 0) {
+        pdf.addPage();
+      }
+
+      const yPosition = -(i * pdfHeight);
+
+      pdf.addImage(
+        imgData,
+        'PNG',
+        0,
+        yPosition,
+        imgScaledWidth,
+        imgScaledHeight,
+        undefined,
+        'FAST'
+      );
+    }
+
+    const fileName = `historico-conversas-${selectedChatInfo.value.client}-${new Date().toISOString().split('T')[0]}.pdf`;
+    pdf.save(fileName);
+  } catch (error: any) {
+    console.error('Erro ao gerar PDF:', error);
+    const errorMessage =
+      error?.message || t('report_conversation_history_pdf_generate_error');
+
+    reportConversationHistoryStore.showSnackbar(errorMessage, EColor.error);
+  } finally {
+    downloadingPdf.value = false;
+  }
+};
+
 watch(phoneDebounced, async () => {
   if (searchBy.value === 'phone') {
     await loadHistory();
@@ -728,9 +907,20 @@ const copyToClipboard = async (text: string) => {
               }})
             </div>
           </div>
-          <VBtn icon variant="text" @click="isConversationModalOpen = false">
-            <VIcon>tabler-x</VIcon>
-          </VBtn>
+          <div class="d-flex gap-2">
+            <VBtn
+              icon
+              variant="text"
+              :loading="downloadingPdf"
+              :disabled="conversationMessages.length === 0"
+              @click="downloadConversationPdf"
+            >
+              <VIcon>tabler-download</VIcon>
+            </VBtn>
+            <VBtn icon variant="text" @click="isConversationModalOpen = false">
+              <VIcon>tabler-x</VIcon>
+            </VBtn>
+          </div>
         </VCardTitle>
 
         <VDivider />
