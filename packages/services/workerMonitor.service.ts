@@ -22,10 +22,18 @@ import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionS
 import { AccountService } from './account.service';
 import { IPlanAccountStatus } from '@core/common/interfaces/IPlanAccountStatus';
 import { EAccountStatus } from '@core/common/enums/EAccountStatus';
+import { IConnectionFailureTracker } from '@core/common/interfaces/IConnectionFailureTracker';
 
 @injectable()
 export class WorkerMonitorService {
   private readonly timeoutMinutes = 5;
+  private readonly maxConnectionFailures = 3;
+  private readonly connectionCheckIntervalMs = 60 * 1000;
+  private readonly connectionFailureTrackers = new Map<
+    string,
+    IConnectionFailureTracker
+  >();
+  private readonly activeContinuousChecks = new Set<string>();
 
   constructor(
     private readonly workerService: WorkerService,
@@ -150,6 +158,7 @@ export class WorkerMonitorService {
     }
 
     const checkConnection = this.shouldCheckConnection(worker);
+
     if (!checkConnection) {
       return;
     }
@@ -160,7 +169,12 @@ export class WorkerMonitorService {
       sshConfig
     );
 
-    await this.syncConnectionStatus(worker, connectionHealthy);
+    await this.syncConnectionStatusWithFailureTracking(
+      worker,
+      connectionHealthy,
+      server.server_id,
+      sshConfig
+    );
   };
 
   private readonly handleMissingContainer = async (
@@ -187,6 +201,11 @@ export class WorkerMonitorService {
       if (timeout) {
         await this.handleDeleting(worker, server, sshConfig);
       }
+      return;
+    }
+
+    const isOffline = worker.worker_status_id === EWorkerStatus.offline;
+    if (isOffline) {
       return;
     }
 
@@ -258,29 +277,197 @@ export class WorkerMonitorService {
     );
   };
 
-  private readonly syncConnectionStatus = async (
+  private readonly syncConnectionStatusWithFailureTracking = async (
     worker: IWorkerMonitor,
-    connectionHealthy: boolean
+    connectionHealthy: boolean,
+    serverId: string,
+    sshConfig: ConnectConfig
   ): Promise<void> => {
-    const desiredStatus = connectionHealthy
-      ? EWorkerStatus.online
-      : EWorkerStatus.offline;
+    const now = Date.now();
+    const tracker = this.connectionFailureTrackers.get(worker.worker_id);
 
-    if (desiredStatus === worker.worker_status_id) {
+    if (connectionHealthy) {
+      if (tracker) {
+        this.connectionFailureTrackers.delete(worker.worker_id);
+      }
+
+      if (worker.worker_status_id === EWorkerStatus.offline) {
+        await this.updateWorkerStatus(
+          worker,
+          EWorkerStatus.online,
+          ECodeMessage.info,
+          EBaileysConnectionStatus.info
+        );
+      }
+
       return;
     }
 
-    await this.workerService.updateStatusWorker(
-      worker.worker_id,
-      desiredStatus
-    );
+    if (!tracker) {
+      this.connectionFailureTrackers.set(worker.worker_id, {
+        failureCount: 1,
+        lastCheckTimestamp: now,
+      });
+
+      if (!this.activeContinuousChecks.has(worker.worker_id)) {
+        this.activeContinuousChecks.add(worker.worker_id);
+        this.startContinuousConnectionCheck(
+          worker,
+          serverId,
+          sshConfig
+        ).finally(() => {
+          this.activeContinuousChecks.delete(worker.worker_id);
+        });
+      }
+
+      return;
+    }
+
+    const newFailureCount = tracker.failureCount + 1;
+    this.connectionFailureTrackers.set(worker.worker_id, {
+      failureCount: newFailureCount,
+      lastCheckTimestamp: now,
+    });
+
+    if (newFailureCount >= this.maxConnectionFailures) {
+      if (worker.worker_status_id !== EWorkerStatus.offline) {
+        await this.updateWorkerStatus(
+          worker,
+          EWorkerStatus.offline,
+          ECodeMessage.info,
+          EBaileysConnectionStatus.info
+        );
+      }
+    }
+  };
+
+  private readonly validateWorkerForCheck = (
+    workerId: string,
+    currentWorker: IWorkerMonitor | null
+  ): currentWorker is IWorkerMonitor => {
+    if (!currentWorker) {
+      this.connectionFailureTrackers.delete(workerId);
+      return false;
+    }
+
+    if (
+      currentWorker.worker_status_id !== EWorkerStatus.online &&
+      currentWorker.worker_status_id !== EWorkerStatus.offline
+    ) {
+      this.connectionFailureTrackers.delete(workerId);
+      return false;
+    }
+
+    return true;
+  };
+
+  private readonly handleHealthyConnection = async (
+    workerId: string,
+    currentWorker: IWorkerMonitor
+  ): Promise<void> => {
+    this.connectionFailureTrackers.delete(workerId);
+    this.activeContinuousChecks.delete(workerId);
+
+    if (currentWorker.worker_status_id === EWorkerStatus.offline) {
+      await this.updateWorkerStatus(
+        currentWorker,
+        EWorkerStatus.online,
+        ECodeMessage.info,
+        EBaileysConnectionStatus.info
+      );
+    }
+  };
+
+  private readonly updateFailureTracker = (
+    workerId: string,
+    attempt: number
+  ): void => {
+    const updatedTracker = this.connectionFailureTrackers.get(workerId);
+    if (updatedTracker) {
+      updatedTracker.failureCount = attempt;
+      updatedTracker.lastCheckTimestamp = Date.now();
+      this.connectionFailureTrackers.set(workerId, updatedTracker);
+    }
+  };
+
+  private readonly handleMaxFailuresReached = async (
+    workerId: string,
+    currentWorker: IWorkerMonitor
+  ): Promise<void> => {
+    this.activeContinuousChecks.delete(workerId);
+
+    if (currentWorker.worker_status_id !== EWorkerStatus.offline) {
+      await this.updateWorkerStatus(
+        currentWorker,
+        EWorkerStatus.offline,
+        ECodeMessage.info,
+        EBaileysConnectionStatus.info
+      );
+    }
+  };
+
+  private readonly startContinuousConnectionCheck = async (
+    worker: IWorkerMonitor,
+    serverId: string,
+    sshConfig: ConnectConfig
+  ): Promise<void> => {
+    for (let attempt = 2; attempt <= this.maxConnectionFailures; attempt++) {
+      await this.sleep(this.connectionCheckIntervalMs);
+
+      const tracker = this.connectionFailureTrackers.get(worker.worker_id);
+      if (!tracker) {
+        return;
+      }
+
+      const currentWorker = await this.getCurrentWorkerStatus(worker.worker_id);
+      if (!this.validateWorkerForCheck(worker.worker_id, currentWorker)) {
+        return;
+      }
+
+      const connectionHealthy = await this.checkConnection(
+        worker.worker_id,
+        serverId,
+        sshConfig
+      );
+
+      if (connectionHealthy) {
+        await this.handleHealthyConnection(worker.worker_id, currentWorker);
+        return;
+      }
+
+      this.updateFailureTracker(worker.worker_id, attempt);
+
+      if (attempt >= this.maxConnectionFailures) {
+        await this.handleMaxFailuresReached(worker.worker_id, currentWorker);
+      }
+    }
+  };
+
+  private readonly getCurrentWorkerStatus = async (
+    workerId: string
+  ): Promise<IWorkerMonitor | null> => {
+    const workers = await this.workerService.listWorkersForMonitor();
+    return workers.find((w) => w.worker_id === workerId) || null;
+  };
+
+  private readonly sleep = (ms: number): Promise<void> => {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  };
+
+  private readonly updateWorkerStatus = async (
+    worker: IWorkerMonitor,
+    status: EWorkerStatus,
+    code: ECodeMessage,
+    connectionStatus: EBaileysConnectionStatus
+  ): Promise<void> => {
+    await this.workerService.updateStatusWorker(worker.worker_id, status);
 
     const payload: IBaileysConnectionState = {
-      code: ECodeMessage.info,
-      status: EBaileysConnectionStatus.info,
+      code,
+      status: connectionStatus,
       worker_id: worker.worker_id,
       account_id: worker.account_id,
-      worker_status_id: desiredStatus,
+      worker_status_id: status,
     };
 
     await this.centrifugoService.publishSub(
@@ -345,16 +532,21 @@ export class WorkerMonitorService {
   ): Promise<boolean> => {
     const command = `bash -c "docker exec ${workerId} sh -c 'curl -s -o /dev/null -w \\"%{http_code}\\" http://127.0.0.1:3005/v1/connection/health/check'"`;
 
-    const outputs = await this.sshService.runCommands(
-      serverId,
-      sshConfig,
-      [command],
-      false
-    );
+    try {
+      const outputs = await this.sshService.runCommands(
+        serverId,
+        sshConfig,
+        [command],
+        false
+      );
 
-    const code = this.parseHttpCode(outputs.map((r) => r.output).join(''));
+      const rawOutput = outputs.map((r) => r.output).join('');
+      const code = this.parseHttpCode(rawOutput);
 
-    return code === 200;
+      return code === 200;
+    } catch {
+      return false;
+    }
   };
 
   private readonly parseHttpCode = (raw: string): number | null => {

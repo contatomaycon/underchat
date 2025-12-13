@@ -8,6 +8,7 @@ import {
   IPlanAccountWithPayment,
   CancellationType,
 } from '@core/common/interfaces/IPlanAccountCancellation';
+import { ITokenJwtData } from '@core/common/interfaces/ITokenJwtData';
 import { PlanAccountCancellerRepository } from '@core/repositories/accountSettings/PlanAccountCanceller.repository';
 import { AccountUpdaterRepository } from '@core/repositories/account/AccountUpdater.repository';
 import { EAccountStatus } from '@core/common/enums/EAccountStatus';
@@ -41,7 +42,20 @@ export class PlanAccountCancellationService {
     @inject('Redis') private readonly redis: Redis
   ) {}
 
-  private async deleteKeysByPattern(pattern: string): Promise<void> {
+  private shouldSkipKey(key: string, userIdToKeep?: string): boolean {
+    if (!userIdToKeep) return false;
+
+    const parts = key.split(':');
+    const userIndex = 2;
+    const userFromKey = parts[userIndex];
+
+    return userFromKey === userIdToKeep;
+  }
+
+  private async deleteKeysByPattern(
+    pattern: string,
+    userIdToKeep?: string
+  ): Promise<void> {
     const stream = this.redis.scanStream({
       match: pattern,
       count: 100,
@@ -51,6 +65,9 @@ export class PlanAccountCancellationService {
 
     stream.on('data', (keys: string[]) => {
       for (const key of keys) {
+        const shouldSkip = this.shouldSkipKey(key, userIdToKeep);
+        if (shouldSkip) continue;
+
         keysToDelete.push(key);
       }
     });
@@ -66,15 +83,66 @@ export class PlanAccountCancellationService {
     }
   }
 
-  private async deleteAccountJwtCache(accountId: string): Promise<void> {
+  private async deleteAccountJwtCache(
+    accountId: string,
+    isWithin7Days: boolean,
+    userIdToKeep?: string
+  ): Promise<void> {
+    if (!isWithin7Days) return;
+
     const patterns = [`jwtCache:${accountId}:*`, `jwtSession:${accountId}:*`];
     const deletions: Promise<void>[] = [];
 
     for (const pattern of patterns) {
-      deletions.push(this.deleteKeysByPattern(pattern));
+      deletions.push(this.deleteKeysByPattern(pattern, userIdToKeep));
     }
 
     await Promise.all(deletions);
+  }
+
+  private async setPlanInactiveInCacheKey(key: string): Promise<void> {
+    const cachedValue = await this.redis.get(key);
+    if (!cachedValue) return;
+
+    let parsed: { plan_is_active?: boolean };
+    try {
+      parsed = JSON.parse(cachedValue) as { plan_is_active?: boolean };
+    } catch {
+      return;
+    }
+
+    if (parsed.plan_is_active === false) return;
+
+    parsed.plan_is_active = false;
+    await this.redis.set(key, JSON.stringify(parsed), 'EX', 600);
+  }
+
+  private async updateCurrentUserJwtCachePlanInactive(
+    accountId: string,
+    userId: string
+  ): Promise<void> {
+    const pattern = `jwtCache:${accountId}:${userId}:*`;
+    const updatePromises: Promise<void>[] = [];
+    const stream = this.redis.scanStream({
+      match: pattern,
+      count: 100,
+    });
+
+    stream.on('data', (keys: string[]) => {
+      for (const key of keys) {
+        updatePromises.push(this.setPlanInactiveInCacheKey(key));
+      }
+    });
+
+    await new Promise<void>((resolve) => {
+      stream.on('end', () => {
+        resolve();
+      });
+    });
+
+    if (updatePromises.length === 0) return;
+
+    await Promise.all(updatePromises);
   }
 
   private isWithin7DaysPeriod(lastPaymentDate: string | null): boolean {
@@ -477,7 +545,8 @@ export class PlanAccountCancellationService {
   async cancelPlanAccount(
     t: TFunction<'translation', undefined>,
     accountId: string,
-    accountStatusId: EAccountStatus
+    accountStatusId: EAccountStatus,
+    tokenJwtData?: ITokenJwtData | null
   ): Promise<string> {
     const planAccountData =
       await this.planAccountCancellerRepository.findPlanAccountWithPayment(
@@ -517,7 +586,8 @@ export class PlanAccountCancellationService {
       t,
       planAccountData.plan_account_id,
       accountId,
-      accountStatusId
+      accountStatusId,
+      tokenJwtData
     );
   }
 
@@ -579,7 +649,8 @@ export class PlanAccountCancellationService {
     t: TFunction<'translation', undefined>,
     planAccountId: string,
     accountId: string,
-    accountStatusId: EAccountStatus
+    accountStatusId: EAccountStatus,
+    tokenJwtData?: ITokenJwtData | null
   ): Promise<string> {
     const planAccountData =
       await this.planAccountCancellerRepository.findPlanAccountById(
@@ -601,15 +672,32 @@ export class PlanAccountCancellationService {
       throw new Error(t('subscription_cancellation_error'));
     }
 
-    await Promise.all([
+    const userIdToKeep = tokenJwtData?.user_id;
+    const tasks: Array<Promise<void>> = [
       this.finalizeCancellation(t, accountId, accountStatusId),
       this.sendCancellationNotification(
         accountId,
         planAccountId,
         cancellationResult.isWithin7Days
       ),
-      this.deleteAccountJwtCache(accountId),
-    ]);
+      this.deleteAccountJwtCache(
+        accountId,
+        cancellationResult.isWithin7Days,
+        userIdToKeep
+      ),
+    ];
+
+    if (cancellationResult.isWithin7Days && userIdToKeep) {
+      tasks.push(
+        this.updateCurrentUserJwtCachePlanInactive(accountId, userIdToKeep)
+      );
+    }
+
+    if (cancellationResult.isWithin7Days && tokenJwtData) {
+      tokenJwtData.plan_is_active = false;
+    }
+
+    await Promise.all(tasks);
 
     return this.buildCancellationMessage(t, cancellationResult);
   }

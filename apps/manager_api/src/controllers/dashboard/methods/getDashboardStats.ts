@@ -1,27 +1,34 @@
 import { EHTTPStatusCode } from '@core/common/enums/EHTTPStatusCode';
 import { sendResponse } from '@core/common/functions/sendResponse';
-import { setPlanActiveHeader } from '@core/common/functions/setPlanActiveHeader';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
-import { PlanAccountCancellerUseCase } from '@core/useCases/accountSettings/PlanAccountCanceller.useCase';
+import { DashboardStatsViewerUseCase } from '@core/useCases/dashboard/DashboardStatsViewer.useCase';
 
-export const cancelPlanAccount = async (
+export const getDashboardStats = async (
   request: FastifyRequest,
   reply: FastifyReply
 ) => {
-  const planAccountCancellerUseCase = container.resolve(
-    PlanAccountCancellerUseCase
+  const dashboardStatsViewerUseCase = container.resolve(
+    DashboardStatsViewerUseCase
   );
   const { t, tokenJwtData } = request;
 
   try {
-    const message = await planAccountCancellerUseCase.execute(t, tokenJwtData);
+    const response = await dashboardStatsViewerUseCase.execute(
+      tokenJwtData.account_id
+    );
 
-    setPlanActiveHeader(reply, tokenJwtData.plan_is_active === true);
+    if (response) {
+      return sendResponse(reply, {
+        message: t('dashboard_stats_loaded_successfully'),
+        httpStatusCode: EHTTPStatusCode.ok,
+        data: response,
+      });
+    }
 
     return sendResponse(reply, {
-      message,
-      httpStatusCode: EHTTPStatusCode.ok,
+      message: t('dashboard_stats_not_found'),
+      httpStatusCode: EHTTPStatusCode.bad_request,
     });
   } catch (error) {
     console.error(error);
@@ -29,7 +36,7 @@ export const cancelPlanAccount = async (
     if (error instanceof Error) {
       return sendResponse(reply, {
         message: error.message,
-        httpStatusCode: EHTTPStatusCode.bad_request,
+        httpStatusCode: EHTTPStatusCode.internal_server_error,
       });
     }
 

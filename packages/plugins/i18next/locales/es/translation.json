@@ -639,5 +639,11 @@
   "average_wait_time": "Tiempo Promedio de Espera",
   "average_attendance_time": "Tiempo Promedio de Atención",
   "to": "hasta",
-  "plan_expired_alert": "Su plan está vencido. Renueve para seguir utilizando todas las funcionalidades."
+  "plan_expired_alert": "Su plan está vencido. Renueve para seguir utilizando todas las funcionalidades.",
+  "dashboard_stats_loaded_successfully": "¡Estadísticas del dashboard cargadas con éxito!",
+  "dashboard_stats_not_found": "¡Estadísticas del dashboard no encontradas!",
+  "dashboard_conversations_loaded_successfully": "¡Conversaciones del dashboard cargadas con éxito!",
+  "dashboard_conversations_not_found": "¡Conversaciones del dashboard no encontradas!",
+  "dashboard_additional_loaded_successfully": "¡Datos adicionales del dashboard cargados con éxito!",
+  "dashboard_additional_not_found": "¡Datos adicionales del dashboard no encontrados!"
 }

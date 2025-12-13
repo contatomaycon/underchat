@@ -28,4 +28,5 @@ export enum ETagSwagger {
   reportAttendance = 'Relatórios de Atendimentos',
   webhook = 'Webhook',
   config = 'Configurações',
+  dashboard = 'Dashboard',
 }

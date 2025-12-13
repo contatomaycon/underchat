@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { computed, onMounted, ref, nextTick, watch } from 'vue';
+import VueApexCharts from 'vue3-apexcharts';
+
 interface Props {
   title: string;
   color?: string;
@@ -12,6 +15,41 @@ interface Props {
 const props = withDefaults(defineProps<Props>(), {
   color: 'primary',
 });
+
+const isMounted = ref(false);
+const chartKey = ref(0);
+
+const hasValidChartData = computed(() => {
+  return (
+    props.series &&
+    Array.isArray(props.series) &&
+    props.series.length > 0 &&
+    props.series[0] &&
+    typeof props.series[0] === 'object' &&
+    'data' in props.series[0] &&
+    Array.isArray(props.series[0].data) &&
+    props.series[0].data.length > 0
+  );
+});
+
+const shouldRenderChart = computed(() => {
+  return isMounted.value && hasValidChartData.value;
+});
+
+onMounted(async () => {
+  await nextTick();
+  isMounted.value = true;
+});
+
+watch(
+  () => [props.series, props.chartOptions],
+  () => {
+    if (isMounted.value && hasValidChartData.value) {
+      chartKey.value += 1;
+    }
+  },
+  { deep: true }
+);
 </script>
 
 <template>
@@ -36,10 +74,12 @@ const props = withDefaults(defineProps<Props>(), {
       </div>
     </VCardText>
 
-    <VueApexCharts
-      :series="props.series"
-      :options="props.chartOptions"
-      :height="props.height"
-    />
+    <div v-if="shouldRenderChart" :key="chartKey">
+      <VueApexCharts
+        :series="props.series"
+        :options="props.chartOptions"
+        :height="props.height"
+      />
+    </div>
   </VCard>
 </template>

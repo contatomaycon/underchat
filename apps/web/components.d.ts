@@ -128,6 +128,7 @@ declare module 'vue' {
     ThemeSwitcher: typeof import('./src/@webcore/components/ThemeSwitcher.vue')['default']
     TiptapEditor: typeof import('./src/@webcore/components/TiptapEditor.vue')['default']
     VDialogHandler: typeof import('./src/components/VDialogHandler.vue')['default']
+    VueApexCharts: typeof import('vue3-apexcharts')['default']
   }
 }
 
@@ -249,4 +250,5 @@ declare global {
   const ThemeSwitcher: typeof import('./src/@webcore/components/ThemeSwitcher.vue')['default']
   const TiptapEditor: typeof import('./src/@webcore/components/TiptapEditor.vue')['default']
   const VDialogHandler: typeof import('./src/components/VDialogHandler.vue')['default']
+  const VueApexCharts: typeof import('vue3-apexcharts')['default']
 }

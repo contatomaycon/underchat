@@ -1,6 +1,7 @@
 import {
   CategoryScale,
   Chart as ChartJS,
+  Filler,
   Legend,
   LineElement,
   LinearScale,
@@ -19,7 +20,8 @@ ChartJS.register(
   LineElement,
   LinearScale,
   PointElement,
-  CategoryScale
+  CategoryScale,
+  Filler
 );
 
 export default defineComponent({
