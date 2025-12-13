@@ -256,6 +256,7 @@ export class ReportConversationHistoryListerUseCase {
       queue: sector?.name || null,
       channel: worker?.name || 'WhatsApp',
       chat_id: chat.chat_id,
+      photo: chat.photo || contact?.photo || null,
     };
   }
 
