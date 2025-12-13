@@ -1,0 +1,45 @@
+import { EHTTPStatusCode } from '@core/common/enums/EHTTPStatusCode';
+import { sendResponse } from '@core/common/functions/sendResponse';
+import { FastifyReply, FastifyRequest } from 'fastify';
+import { container } from 'tsyringe';
+import { GenerateReportConversationHistoryPdfParams } from '@core/schema/reportConversationHistory/generateReportConversationHistoryPdf/request.schema';
+import { ReportConversationHistoryPdfGeneratorUseCase } from '@core/useCases/reportConversationHistory/ReportConversationHistoryPdfGenerator.useCase';
+
+export const generateReportConversationHistoryPdf = async (
+  request: FastifyRequest<{
+    Params: GenerateReportConversationHistoryPdfParams;
+  }>,
+  reply: FastifyReply
+) => {
+  const reportConversationHistoryPdfGeneratorUseCase = container.resolve(
+    ReportConversationHistoryPdfGeneratorUseCase
+  );
+  const { t, tokenJwtData } = request;
+
+  try {
+    const response = await reportConversationHistoryPdfGeneratorUseCase.execute(
+      tokenJwtData.account_id,
+      request.params.chat_id
+    );
+
+    return sendResponse(reply, {
+      message: t('report_conversation_history_pdf_generation_started'),
+      httpStatusCode: EHTTPStatusCode.ok,
+      data: response,
+    });
+  } catch (error) {
+    console.error(error);
+
+    if (error instanceof Error) {
+      return sendResponse(reply, {
+        message: error.message,
+        httpStatusCode: EHTTPStatusCode.internal_server_error,
+      });
+    }
+
+    return sendResponse(reply, {
+      message: t('internal_server_error'),
+      httpStatusCode: EHTTPStatusCode.internal_server_error,
+    });
+  }
+};

@@ -29,3 +29,9 @@ export function paymentAccountCentrifugo(accountId: string): string {
 export function channelsConfigCentrifugo(): string {
   return 'channels:config';
 }
+
+export function reportConversationHistoryPdfAccountCentrifugo(
+  accountId: string
+): string {
+  return `reports:account#${accountId}`;
+}
