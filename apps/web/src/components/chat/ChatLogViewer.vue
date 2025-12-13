@@ -806,13 +806,13 @@ const handleOpenLocation = (message: ListMessageResult) => {
 </script>
 
 <template>
-  <div class="chat-log-viewer">
+  <div class="chat-log-viewer" style="min-height: 100%">
     <div
       v-if="loading"
       class="d-flex justify-center align-center"
-      style="height: 100%"
+      style="height: 100%; min-height: 500px"
     >
-      <VProgressCircular indeterminate color="primary" />
+      <VProgressCircular indeterminate color="primary" size="64" width="4" />
     </div>
 
     <div
