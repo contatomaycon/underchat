@@ -529,11 +529,6 @@ const downloadConversationPdf = async () => {
       },
     });
 
-    containerElement.style.overflow = originalOverflow;
-    containerElement.style.height = originalHeight;
-    containerElement.scrollTop = originalScrollTop;
-    chatLogElement.scrollTop = originalScrollTop;
-
     const imgData = canvas.toDataURL('image/png');
     const pdf = new jsPDF({
       orientation: 'portrait',
@@ -541,33 +536,189 @@ const downloadConversationPdf = async () => {
       format: 'a4',
     });
 
+    const marginLeft = 10;
+    const marginRight = 10;
+    const marginTop = 8;
+    const marginBottom = 8;
+
     const pdfWidth = pdf.internal.pageSize.getWidth();
     const pdfHeight = pdf.internal.pageSize.getHeight();
+    const availableWidth = pdfWidth - marginLeft - marginRight;
+    const availableHeight = pdfHeight - marginTop - marginBottom;
+
     const imgWidth = canvas.width;
     const imgHeight = canvas.height;
-    const ratio = Math.min(pdfWidth / imgWidth, pdfHeight / imgHeight);
-    const imgScaledWidth = imgWidth * ratio;
+    const ratio = availableWidth / imgWidth;
+    const imgScaledWidth = availableWidth;
     const imgScaledHeight = imgHeight * ratio;
 
-    const totalPages = Math.ceil(imgScaledHeight / pdfHeight);
+    const messageElements = chatLogElement.querySelectorAll(
+      '.chat-group, .date-separator-wrapper'
+    ) as NodeListOf<HTMLElement>;
 
-    for (let i = 0; i < totalPages; i++) {
+    const messagePositions: Array<{ top: number; bottom: number }> = [];
+    const containerRect = chatLogElement.getBoundingClientRect();
+    const html2canvasScale = 2;
+    const scaleFactor = canvas.height / chatLogElement.offsetHeight;
+
+    for (const element of messageElements) {
+      const rect = element.getBoundingClientRect();
+      const elementTop = rect.top - containerRect.top;
+      const elementBottom = rect.bottom - containerRect.top;
+      const relativeTop = elementTop * scaleFactor;
+      const relativeBottom = elementBottom * scaleFactor;
+
+      if (
+        relativeBottom > relativeTop &&
+        relativeTop >= 0 &&
+        relativeBottom <= canvas.height
+      ) {
+        messagePositions.push({
+          top: Math.max(0, relativeTop),
+          bottom: Math.min(canvas.height, relativeBottom),
+        });
+      }
+    }
+
+    messagePositions.sort((a, b) => a.top - b.top);
+
+    const totalPages = Math.ceil(imgScaledHeight / availableHeight);
+    const pageBreaks: number[] = [0];
+    const minPageHeight = (availableHeight / ratio) * 0.3;
+    const safeMargin = 20;
+
+    for (let i = 1; i < totalPages; i++) {
+      const idealBreakY = (i * availableHeight) / ratio;
+      const lastBreakY = pageBreaks[pageBreaks.length - 1];
+      const minBreakY = lastBreakY + minPageHeight;
+
+      let bestBreakY = idealBreakY;
+      let messageIntersected = false;
+
+      for (const msg of messagePositions) {
+        const msgTop = msg.top;
+        const msgBottom = msg.bottom;
+        const msgHeight = msgBottom - msgTop;
+
+        if (idealBreakY >= msgTop && idealBreakY <= msgBottom) {
+          bestBreakY = msgBottom + safeMargin;
+          messageIntersected = true;
+          break;
+        }
+
+        if (
+          idealBreakY > msgTop - safeMargin &&
+          idealBreakY < msgBottom + safeMargin
+        ) {
+          bestBreakY = msgBottom + safeMargin;
+          messageIntersected = true;
+          break;
+        }
+
+        if (
+          idealBreakY > msgBottom &&
+          idealBreakY < msgBottom + safeMargin + msgHeight * 0.1
+        ) {
+          bestBreakY = msgBottom + safeMargin;
+          messageIntersected = true;
+          break;
+        }
+      }
+
+      if (!messageIntersected) {
+        let closestMessageAfter: number | null = null;
+        let closestMessageBefore: number | null = null;
+        let closestDistanceAfter = Infinity;
+        let closestDistanceBefore = Infinity;
+
+        for (const msg of messagePositions) {
+          if (msg.bottom < idealBreakY) {
+            const distance = idealBreakY - msg.bottom;
+            if (distance < closestDistanceBefore && distance <= 100) {
+              closestDistanceBefore = distance;
+              closestMessageBefore = msg.bottom;
+            }
+          }
+
+          if (msg.top > idealBreakY) {
+            const distance = msg.top - idealBreakY;
+            if (distance < closestDistanceAfter && distance <= 100) {
+              closestDistanceAfter = distance;
+              closestMessageAfter = msg.top;
+            }
+          }
+        }
+
+        if (closestMessageBefore !== null) {
+          bestBreakY = closestMessageBefore + safeMargin;
+        }
+
+        if (
+          closestMessageAfter !== null &&
+          closestDistanceAfter < closestDistanceBefore
+        ) {
+          bestBreakY = closestMessageAfter - safeMargin;
+        }
+      }
+
+      if (bestBreakY < minBreakY) {
+        bestBreakY = minBreakY;
+      }
+
+      if (bestBreakY >= imgHeight - 10) {
+        break;
+      }
+
+      pageBreaks.push(Math.min(bestBreakY, imgHeight));
+    }
+
+    if (pageBreaks[pageBreaks.length - 1] < imgHeight - 10) {
+      pageBreaks.push(imgHeight);
+    }
+
+    for (let i = 0; i < pageBreaks.length - 1; i++) {
       if (i > 0) {
         pdf.addPage();
       }
 
-      const yPosition = -(i * pdfHeight);
+      const sourceY = pageBreaks[i];
+      const nextBreakY = pageBreaks[i + 1];
+      const sourceHeight = nextBreakY - sourceY;
+      const displayHeight = sourceHeight * ratio;
 
-      pdf.addImage(
-        imgData,
-        'PNG',
-        0,
-        yPosition,
-        imgScaledWidth,
-        imgScaledHeight,
-        undefined,
-        'FAST'
-      );
+      if (sourceHeight <= 0) continue;
+
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = imgWidth;
+      tempCanvas.height = Math.ceil(sourceHeight);
+      const tempCtx = tempCanvas.getContext('2d');
+
+      if (tempCtx) {
+        tempCtx.drawImage(
+          canvas,
+          0,
+          Math.floor(sourceY),
+          imgWidth,
+          Math.ceil(sourceHeight),
+          0,
+          0,
+          imgWidth,
+          Math.ceil(sourceHeight)
+        );
+
+        const pageImgData = tempCanvas.toDataURL('image/png');
+
+        pdf.addImage(
+          pageImgData,
+          'PNG',
+          marginLeft,
+          marginTop,
+          imgScaledWidth,
+          displayHeight,
+          undefined,
+          'FAST'
+        );
+      }
     }
 
     const fileName = `historico-conversas-${selectedChatInfo.value.client}-${new Date().toISOString().split('T')[0]}.pdf`;
