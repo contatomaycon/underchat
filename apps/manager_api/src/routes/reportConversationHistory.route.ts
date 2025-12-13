@@ -6,6 +6,9 @@ import { listReportConversationHistorySchema } from '@core/schema/reportConversa
 import { listReportConversationHistoryMessagesSchema } from '@core/schema/reportConversationHistory/listReportConversationHistoryMessages';
 import { listReportConversationHistorySectorsSchema } from '@core/schema/reportConversationHistory/listReportConversationHistorySectors';
 import { listReportConversationHistoryUsersSchema } from '@core/schema/reportConversationHistory/listReportConversationHistoryUsers';
+import { viewReportConversationHistoryContactSchema } from '@core/schema/reportConversationHistory/viewReportConversationHistoryContact';
+import { viewReportConversationHistoryContactEmailSchema } from '@core/schema/reportConversationHistory/viewReportConversationHistoryContactEmail';
+import { viewReportConversationHistoryContactPhoneSchema } from '@core/schema/reportConversationHistory/viewReportConversationHistoryContactPhone';
 import { planGuard } from '@/plugins/planGuard';
 import { planStatus } from '@/plugins/planStatus';
 
@@ -67,6 +70,51 @@ export default function reportConversationHistoryRoutes(
     schema: listReportConversationHistoryUsersSchema,
     handler:
       reportConversationHistoryController.listReportConversationHistoryUsers,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(
+          request,
+          reply,
+          reportConversationHistoryViewPermissions
+        ),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.get('/report-conversation-history/contacts/:contact_id', {
+    schema: viewReportConversationHistoryContactSchema,
+    handler: reportConversationHistoryController.viewContact,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(
+          request,
+          reply,
+          reportConversationHistoryViewPermissions
+        ),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.get('/report-conversation-history/contacts/:contact_id/email', {
+    schema: viewReportConversationHistoryContactEmailSchema,
+    handler: reportConversationHistoryController.viewContactEmail,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(
+          request,
+          reply,
+          reportConversationHistoryViewPermissions
+        ),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.get('/report-conversation-history/contacts/:contact_id/phone', {
+    schema: viewReportConversationHistoryContactPhoneSchema,
+    handler: reportConversationHistoryController.viewContactPhone,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(

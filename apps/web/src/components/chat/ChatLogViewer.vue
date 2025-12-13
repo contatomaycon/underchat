@@ -775,6 +775,7 @@ const emit = defineEmits<{
       address?: string | null;
     },
   ];
+  openContact: [contactId: string];
 }>();
 
 const handleOpenImage = (message: ListMessageResult) => {
@@ -802,6 +803,11 @@ const handleOpenLocation = (message: ListMessageResult) => {
     name: location.name ?? null,
     address: location.address ?? null,
   });
+};
+
+const handleContactClick = (message: ListMessageResult) => {
+  if (!message.content?.contact?.contact_id) return;
+  emit('openContact', message.content.contact.contact_id);
 };
 </script>
 
@@ -1469,12 +1475,18 @@ const handleOpenLocation = (message: ListMessageResult) => {
                   >
                     <div
                       class="contact-item d-flex align-center gap-3 pa-3"
+                      :class="{
+                        'contact-item--clickable':
+                          !item.message.deleted &&
+                          item.message.content.contact.contact_id,
+                      }"
                       :style="{
                         backgroundColor: isTypeUser(item.message)
                           ? 'rgba(var(--v-theme-surface), 0.5)'
                           : 'rgba(255, 255, 255, 0.3)',
                         borderRadius: '8px',
                       }"
+                      @click="handleContactClick(item.message)"
                     >
                       <VAvatar
                         size="40"
@@ -2419,6 +2431,18 @@ const handleOpenLocation = (message: ListMessageResult) => {
       margin-top: 8px;
       white-space: pre-wrap;
       word-break: break-word;
+    }
+
+    .contact-item--clickable {
+      cursor: pointer;
+      transition:
+        opacity 0.2s ease,
+        transform 0.2s ease;
+
+      &:hover {
+        opacity: 0.9;
+        transform: scale(1.01);
+      }
     }
   }
 

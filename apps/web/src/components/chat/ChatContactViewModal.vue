@@ -1,16 +1,28 @@
 <script lang="ts" setup>
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { useChatStore } from '@/@webcore/stores/chat';
+import { useReportConversationHistoryStore } from '@/@webcore/stores/reportConversationHistory';
 import { ViewChatContactResponse } from '@core/schema/chat/viewContact/response.schema';
+import { ViewReportConversationHistoryContactResponse } from '@core/schema/reportConversationHistory/viewReportConversationHistoryContact/response.schema';
 import { useI18n } from 'vue-i18n';
 
 const { t } = useI18n();
 const chatStore = useChatStore();
+const reportConversationHistoryStore = useReportConversationHistoryStore();
 
-const props = defineProps<{
-  modelValue: boolean;
-  contact: ViewChatContactResponse | null;
-}>();
+const props = withDefaults(
+  defineProps<{
+    modelValue: boolean;
+    contact:
+      | ViewChatContactResponse
+      | ViewReportConversationHistoryContactResponse
+      | null;
+    useReportStore?: boolean;
+  }>(),
+  {
+    useReportStore: false,
+  }
+);
 
 const emit = defineEmits<{
   'update:modelValue': [value: boolean];
@@ -71,9 +83,11 @@ const toggleViewEmailVisibility = async () => {
   }
 
   isLoadingViewEmail.value = true;
-  const decryptedEmail = await chatStore.getChatContactEmailDecrypted(
-    props.contact.contact_id
-  );
+  const decryptedEmail = props.useReportStore
+    ? await reportConversationHistoryStore.getReportConversationHistoryContactEmailDecrypted(
+        props.contact.contact_id
+      )
+    : await chatStore.getChatContactEmailDecrypted(props.contact.contact_id);
   isLoadingViewEmail.value = false;
 
   if (decryptedEmail) {
@@ -98,9 +112,11 @@ const toggleViewPhoneVisibility = async () => {
   }
 
   isLoadingViewPhone.value = true;
-  const decryptedPhone = await chatStore.getChatContactPhoneDecrypted(
-    props.contact.contact_id
-  );
+  const decryptedPhone = props.useReportStore
+    ? await reportConversationHistoryStore.getReportConversationHistoryContactPhoneDecrypted(
+        props.contact.contact_id
+      )
+    : await chatStore.getChatContactPhoneDecrypted(props.contact.contact_id);
   isLoadingViewPhone.value = false;
 
   if (decryptedPhone) {
@@ -134,7 +150,11 @@ watch(
     <DialogCloseBtn @click="isOpen = false" />
 
     <VOverlay
-      :model-value="chatStore.loading"
+      :model-value="
+        props.useReportStore
+          ? reportConversationHistoryStore.loading
+          : chatStore.loading
+      "
       class="align-center justify-center"
       contained
     >

@@ -15,7 +15,9 @@ import { EColor } from '@core/common/enums/EColor';
 import { refDebounced } from '@vueuse/core';
 import ChatLogViewer from '@/components/chat/ChatLogViewer.vue';
 import ChatMediaViewer from '@/components/chat/ChatMediaViewer.vue';
+import ChatContactViewModal from '@/components/chat/ChatContactViewModal.vue';
 import { MglMap, MglMarker } from 'vue-maplibre-gl';
+import { ViewReportConversationHistoryContactResponse } from '@core/schema/reportConversationHistory/viewReportConversationHistoryContact/response.schema';
 
 type ProtocolWithType = {
   protocol: string;
@@ -57,6 +59,11 @@ const locationData = ref<{
   name?: string | null;
   address?: string | null;
 } | null>(null);
+const contactModalOpen = ref(false);
+const contactData = ref<ViewReportConversationHistoryContactResponse | null>(
+  null
+);
+const isLoadingContact = ref(false);
 
 const handleOpenImage = (src: string, caption?: string) => {
   imageViewerSrc.value = src;
@@ -80,6 +87,23 @@ const handleOpenLocation = (data: {
 }) => {
   locationData.value = data;
   locationModalOpen.value = true;
+};
+
+const handleOpenContact = async (contactId: string) => {
+  isLoadingContact.value = true;
+  contactData.value = null;
+  contactModalOpen.value = true;
+
+  const contact =
+    await reportConversationHistoryStore.getReportConversationHistoryContact(
+      contactId
+    );
+
+  if (contact) {
+    contactData.value = contact;
+  }
+
+  isLoadingContact.value = false;
 };
 
 const itemsPerPage = ref([
@@ -733,6 +757,7 @@ const copyToClipboard = async (text: string) => {
               @open-image="handleOpenImage"
               @open-video="handleOpenVideo"
               @open-location="handleOpenLocation"
+              @open-contact="handleOpenContact"
             />
           </div>
         </VCardText>
@@ -744,6 +769,12 @@ const copyToClipboard = async (text: string) => {
       :src="imageViewerSrc"
       :caption="imageViewerCaption"
       :kind="imageViewerKind"
+    />
+
+    <ChatContactViewModal
+      v-model="contactModalOpen"
+      :contact="contactData"
+      :use-report-store="true"
     />
 
     <VDialog v-model="locationModalOpen" max-width="600" :scrollable="false">
