@@ -8,8 +8,6 @@ import { SortRequest } from '@core/schema/common/sortRequestSchema';
 import { DataTableHeader } from 'vuetify';
 import { EReportConversationHistoryPermissions } from '@core/common/enums/EPermissions/reportConversationHistory';
 import { useReportConversationHistoryStore } from '@/@webcore/stores/reportConversationHistory';
-import { useSectorsStore } from '@/@webcore/stores/sector';
-import { useUsersStore } from '@/@webcore/stores/user';
 import { ReportConversationHistoryResult } from '@core/schema/reportConversationHistory/listReportConversationHistory/response.schema';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import axios from '@webcore/axios';
@@ -40,8 +38,6 @@ definePage({
 
 const { t } = useI18n();
 const reportConversationHistoryStore = useReportConversationHistoryStore();
-const sectorsStore = useSectorsStore();
-const usersStore = useUsersStore();
 
 useSnackbarCleanup(reportConversationHistoryStore);
 
@@ -182,44 +178,57 @@ const sectors = ref<Array<{ id: string | null; text: string }>>([]);
 const operators = ref<Array<{ id: string | null; text: string }>>([]);
 
 onMounted(async () => {
-  const [, allUsers] = await Promise.all([
-    sectorsStore.listSectors({ per_page: 200, page: 1, sort_by: [] }),
-    usersStore.listAllUsers(),
-  ]);
+  try {
+    const [sectorsResponse, usersResponse] = await Promise.all([
+      axios.get<IApiResponse<{ sectors: any[] }>>(
+        '/report-conversation-history/sectors'
+      ),
+      axios.get<IApiResponse<{ users: any[] }>>(
+        '/report-conversation-history/users'
+      ),
+    ]);
 
-  sectors.value = [
-    { id: null, text: t('all') },
-    ...sectorsStore.list.map((sector) => ({
-      id: sector.sector_id,
-      text: sector.name,
-    })),
-  ];
+    sectors.value = [
+      { id: null, text: t('all') },
+      ...(sectorsResponse?.data?.data?.sectors || []).map((sector: any) => ({
+        id: sector.sector_id,
+        text: sector.name,
+      })),
+    ];
 
-  operators.value = [
-    { id: null, text: t('all') },
-    ...(allUsers || [])
-      .filter((user) => {
-        const name = user?.first_name || user?.last_name;
-        return user?.user_id && name;
-      })
-      .map((user) => {
-        let fullName = '';
-        if (user.first_name) {
-          fullName = user.first_name;
-          if (user.last_name) {
-            fullName = `${fullName} ${user.last_name}`;
+    operators.value = [
+      { id: null, text: t('all') },
+      ...(usersResponse?.data?.data?.users || [])
+        .filter((user: any) => {
+          const name = user?.first_name || user?.last_name;
+          return user?.user_id && name;
+        })
+        .map((user: any) => {
+          let fullName = '';
+          if (user.first_name) {
+            fullName = user.first_name;
+            if (user.last_name) {
+              fullName = `${fullName} ${user.last_name}`;
+            }
+          } else {
+            fullName = user.last_name || '';
           }
-        } else {
-          fullName = user.last_name || '';
-        }
-        return {
-          id: String(user.user_id),
-          text: String(fullName),
-        };
-      }),
-  ];
+          return {
+            id: String(user.user_id),
+            text: String(fullName),
+          };
+        }),
+    ];
 
-  await loadHistory();
+    await loadHistory();
+  } catch (error: any) {
+    const errorMessage =
+      error?.response?.data?.message ||
+      error?.message ||
+      t('report_conversation_history_list_error');
+
+    reportConversationHistoryStore.showSnackbar(errorMessage, EColor.error);
+  }
 });
 
 const formatDateForApi = (

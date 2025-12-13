@@ -220,6 +220,8 @@
   "report_conversation_history_list_successfully": "¡Historial de conversaciones obtenido con éxito!",
   "report_conversation_history_list_not_found": "¡No se encontraron datos para el historial de conversaciones!",
   "report_conversation_history_messages_list_successfully": "¡Mensajes del historial de conversaciones obtenidos con éxito!",
+  "report_conversation_history_sectors_list_successfully": "¡Sectores obtenidos con éxito!",
+  "report_conversation_history_users_list_successfully": "¡Usuarios obtenidos con éxito!",
   "plan_list_successfully": "¡Lista de planes obtenida con éxito!",
   "plan_list_not_found": "¡No se encontraron planes!",
   "plan_name_required": "¡El nombre del plan es obligatorio!",
