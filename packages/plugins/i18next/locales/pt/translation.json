@@ -221,6 +221,7 @@
   "report_conversation_history_messages_list_successfully": "Mensagens do histórico de conversas obtidas com sucesso!",
   "report_conversation_history_sectors_list_successfully": "Setores obtidos com sucesso!",
   "report_conversation_history_users_list_successfully": "Usuários obtidos com sucesso!",
+  "report_conversation_history_pdf_generate_error": "Ocorreu um erro ao gerar o PDF do histórico de conversas. Por favor, tente novamente.",
   "plan_list_successfully": "Lista de planos obtida com sucesso!",
   "plan_list_not_found": "Nenhum plano encontrado!",
   "plan_name_required": "O nome do plano é obrigatório!",
