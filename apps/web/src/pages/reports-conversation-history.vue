@@ -101,7 +101,7 @@ const itemsPerPage = ref([
 const searchByOptions = ref([
   { value: 'date', title: t('date') },
   { value: 'operator', title: t('operator') },
-  { value: 'queue', title: t('queue') },
+  { value: 'queue', title: t('sector') },
   { value: 'protocol', title: t('protocol') },
   { value: 'client', title: t('client') },
   { value: 'phone', title: t('phone') },
@@ -113,7 +113,7 @@ const headers: DataTableHeader<ReportConversationHistoryResult>[] = [
   { title: t('client'), key: 'client', sortable: true },
   { title: t('phone'), key: 'phone', sortable: false },
   { title: t('operator'), key: 'operator', sortable: false },
-  { title: t('queue'), key: 'queue', sortable: false },
+  { title: t('sector'), key: 'queue', sortable: false },
   { title: t('channel'), key: 'channel', sortable: false },
   { title: t('view'), key: 'actions', sortable: false, width: '100px' },
 ];
@@ -181,32 +181,30 @@ const sectors = ref<Array<{ id: string | null; text: string }>>([]);
 const operators = ref<Array<{ id: string | null; text: string }>>([]);
 
 onMounted(async () => {
-  try {
-    const [sectorsResponse, usersResponse] = await Promise.all([
-      axios.get<IApiResponse<{ sectors: any[] }>>(
-        '/report-conversation-history/sectors'
-      ),
-      axios.get<IApiResponse<{ users: any[] }>>(
-        '/report-conversation-history/users'
-      ),
-    ]);
+  const [sectorsData, usersData] = await Promise.all([
+    reportConversationHistoryStore.listReportConversationHistorySectors(),
+    reportConversationHistoryStore.listReportConversationHistoryUsers(),
+  ]);
 
+  if (sectorsData) {
     sectors.value = [
       { id: null, text: t('all') },
-      ...(sectorsResponse?.data?.data?.sectors || []).map((sector: any) => ({
+      ...sectorsData.map((sector) => ({
         id: sector.sector_id,
         text: sector.name,
       })),
     ];
+  }
 
+  if (usersData) {
     operators.value = [
       { id: null, text: t('all') },
-      ...(usersResponse?.data?.data?.users || [])
-        .filter((user: any) => {
+      ...usersData
+        .filter((user) => {
           const name = user?.first_name || user?.last_name;
           return user?.user_id && name;
         })
-        .map((user: any) => {
+        .map((user) => {
           let fullName = '';
           if (user.first_name) {
             fullName = user.first_name;
@@ -222,16 +220,9 @@ onMounted(async () => {
           };
         }),
     ];
-
-    await loadHistory();
-  } catch (error: any) {
-    const errorMessage =
-      error?.response?.data?.message ||
-      error?.message ||
-      t('report_conversation_history_list_error');
-
-    reportConversationHistoryStore.showSnackbar(errorMessage, EColor.error);
   }
+
+  await loadHistory();
 });
 
 const formatDateForApi = (
@@ -730,15 +721,15 @@ const copyToClipboard = async (text: string) => {
             />
           </div>
 
-          <!-- Filtro por Fila -->
+          <!-- Filtro por Setor -->
           <div v-if="searchBy === 'queue'" class="invoice-list-filter">
             <VLabel class="text-body-2 mb-1"
-              >{{ $t('search_by_queue') }}:</VLabel
+              >{{ $t('search_by_sector') }}:</VLabel
             >
             <AppSelectSearch
               v-model="queueId"
               :items="sectors as any"
-              :placeholder="$t('search_by_queue')"
+              :placeholder="$t('search_by_sector')"
               :clearable="true"
               item-value="id"
               item-title="text"
