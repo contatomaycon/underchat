@@ -12,12 +12,14 @@ interface Props {
   clientName?: string;
   operatorName?: string;
   loading?: boolean;
+  clientPhoto?: string | null;
 }
 
 const props = withDefaults(defineProps<Props>(), {
   clientName: '',
   operatorName: '',
   loading: false,
+  clientPhoto: null,
 });
 
 const { t } = useI18n();
@@ -303,6 +305,9 @@ const resolvePhoto = (message: ListMessageResult): string => {
   if (isTypeUser(message)) {
     if (message.content?.contact?.photo) {
       return message.content.contact.photo;
+    }
+    if (props.clientPhoto) {
+      return props.clientPhoto;
     }
     return '/images/svg/avatar-default.svg';
   }

@@ -666,6 +666,7 @@ const copyToClipboard = async (text: string) => {
               :messages="conversationMessages"
               :client-name="selectedChatInfo?.client || ''"
               :operator-name="selectedChatInfo?.operator || ''"
+              :client-photo="selectedChatInfo?.photo || null"
               :loading="loadingMessages"
               @open-image="handleOpenImage"
               @open-video="handleOpenVideo"
