@@ -639,5 +639,9 @@
   "average_wait_time": "Average Wait Time",
   "average_attendance_time": "Average Attendance Time",
   "to": "to",
-  "plan_expired_alert": "Your plan has expired. Renew to keep using all features."
+  "plan_expired_alert": "Your plan has expired. Renew to keep using all features.",
+  "dashboard_stats_loaded_successfully": "Dashboard statistics loaded successfully!",
+  "dashboard_stats_not_found": "Dashboard statistics not found!",
+  "dashboard_conversations_loaded_successfully": "Dashboard conversations loaded successfully!",
+  "dashboard_conversations_not_found": "Dashboard conversations not found!"
 }

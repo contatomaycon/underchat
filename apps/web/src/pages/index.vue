@@ -1,16 +1,21 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { useTheme } from 'vuetify';
+import { useI18n } from 'vue-i18n';
 import { hexToRgb } from '@webcore/utils/colorConverter';
 import BarChart from '@/@webcore/libs/chartjs/components/BarChart';
 import LineChart from '@/@webcore/libs/chartjs/components/LineChart';
 import DoughnutChart from '@/@webcore/libs/chartjs/components/DoughnutChart';
 import CardStatisticsVertical from '@/@webcore/components/cards/CardStatisticsVertical.vue';
 import { useChannelsStore } from '@/@webcore/stores/channels';
+import { useDashboardStore } from '@/@webcore/stores/dashboard';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 
+const { t } = useI18n();
 const channelsStore = useChannelsStore();
+const dashboardStore = useDashboardStore();
 useSnackbarCleanup(channelsStore);
+useSnackbarCleanup(dashboardStore);
 
 const theme = useTheme();
 
@@ -21,16 +26,19 @@ const getThemeColor = (colorName: string): string => {
   return `rgb(${rgb})`;
 };
 
-const usersTotal = ref(156);
-const usersActive = ref(142);
-const channelsTotal = ref(8);
-const channelsConnected = ref(7);
-const chatbotsTotal = ref(12);
+const usersTotal = computed(() => dashboardStore.stats?.users.total ?? 0);
+const channelsTotal = computed(() => dashboardStore.stats?.channels.total ?? 0);
+const channelsConnected = computed(
+  () => dashboardStore.stats?.channels.connected ?? 0
+);
+const contactsTotal = computed(() => dashboardStore.stats?.contacts.total ?? 0);
+const contactsGrowth = computed(
+  () => dashboardStore.stats?.contacts.growth ?? 0
+);
+const chatsActive = computed(() => dashboardStore.conversations?.active ?? 0);
+const chatsClosed = computed(() => dashboardStore.conversations?.closed ?? 0);
 const chatbotsActive = ref(10);
-const contactsTotal = ref(2847);
-const contactsGrowth = ref(234);
-const chatsActive = ref(892);
-const chatsClosed = ref(353);
+const chatbotsTotal = ref(12);
 const sectorsTotal = ref(15);
 const contactGroupsTotal = ref(48);
 const messageTemplatesTotal = ref(67);
@@ -42,40 +50,30 @@ const avgResolutionTime = ref('15m 42s');
 const productivity = ref(87);
 const totalAttendances = ref(1245);
 
-const conversationsEvolutionData = computed(() => ({
-  labels: [
-    'Jan',
-    'Fev',
-    'Mar',
-    'Abr',
-    'Mai',
-    'Jun',
-    'Jul',
-    'Ago',
-    'Set',
-    'Out',
-    'Nov',
-    'Dez',
-  ],
-  datasets: [
-    {
-      label: 'Conversas Ativas',
-      data: [650, 720, 680, 750, 820, 780, 850, 880, 920, 890, 910, 892],
-      borderColor: 'rgb(25, 118, 210)',
-      backgroundColor: 'rgba(25, 118, 210, 0.1)',
-      tension: 0.4,
-      fill: true,
-    },
-    {
-      label: 'Conversas Encerradas',
-      data: [280, 310, 290, 320, 350, 330, 360, 370, 380, 360, 355, 353],
-      borderColor: 'rgb(46, 125, 50)',
-      backgroundColor: 'rgba(46, 125, 50, 0.1)',
-      tension: 0.4,
-      fill: true,
-    },
-  ],
-}));
+const conversationsEvolutionData = computed(() => {
+  const evolution = dashboardStore.conversations?.evolution ?? [];
+  return {
+    labels: evolution.map((item) => item.month),
+    datasets: [
+      {
+        label: t('dashboard_active_conversations_label'),
+        data: evolution.map((item) => item.active),
+        borderColor: 'rgb(25, 118, 210)',
+        backgroundColor: 'rgba(25, 118, 210, 0.1)',
+        tension: 0.4,
+        fill: true,
+      },
+      {
+        label: t('dashboard_closed_conversations_label'),
+        data: evolution.map((item) => item.closed),
+        borderColor: 'rgb(46, 125, 50)',
+        backgroundColor: 'rgba(46, 125, 50, 0.1)',
+        tension: 0.4,
+        fill: true,
+      },
+    ],
+  };
+});
 
 const conversationsEvolutionOptions = computed(() => ({
   responsive: true,
@@ -105,22 +103,22 @@ const conversationsEvolutionOptions = computed(() => ({
 
 const contactsGrowthData = computed(() => ({
   labels: [
-    'Jan',
-    'Fev',
-    'Mar',
-    'Abr',
-    'Mai',
-    'Jun',
-    'Jul',
-    'Ago',
-    'Set',
-    'Out',
-    'Nov',
-    'Dez',
+    t('dashboard_month_jan'),
+    t('dashboard_month_feb'),
+    t('dashboard_month_mar'),
+    t('dashboard_month_apr'),
+    t('dashboard_month_may'),
+    t('dashboard_month_jun'),
+    t('dashboard_month_jul'),
+    t('dashboard_month_aug'),
+    t('dashboard_month_sep'),
+    t('dashboard_month_oct'),
+    t('dashboard_month_nov'),
+    t('dashboard_month_dec'),
   ],
   datasets: [
     {
-      label: 'Crescimento de Contatos',
+      label: t('dashboard_contacts_growth_label'),
       data: [
         2100, 2200, 2300, 2400, 2500, 2600, 2700, 2750, 2800, 2820, 2835, 2847,
       ],
@@ -157,12 +155,12 @@ const contactsGrowthOptions = computed(() => ({
 
 const sectorsDistributionData = computed(() => ({
   labels: [
-    'Atendimento',
-    'Vendas',
-    'Suporte',
-    'Financeiro',
-    'Técnico',
-    'Outros',
+    t('dashboard_sector_service'),
+    t('dashboard_sector_sales'),
+    t('dashboard_sector_support'),
+    t('dashboard_sector_financial'),
+    t('dashboard_sector_technical'),
+    t('dashboard_sector_others'),
   ],
   datasets: [
     {
@@ -192,7 +190,7 @@ const sectorsDistributionOptions = computed(() => ({
 }));
 
 const channelsStatusData = computed(() => ({
-  labels: ['Conectados', 'Desconectados'],
+  labels: [t('dashboard_connected'), t('dashboard_disconnected')],
   datasets: [
     {
       data: [
@@ -217,15 +215,23 @@ const channelsStatusOptions = computed(() => ({
 }));
 
 const attendancePerformanceData = computed(() => ({
-  labels: ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'],
+  labels: [
+    t('dashboard_weekday_mon'),
+    t('dashboard_weekday_tue'),
+    t('dashboard_weekday_wed'),
+    t('dashboard_weekday_thu'),
+    t('dashboard_weekday_fri'),
+    t('dashboard_weekday_sat'),
+    t('dashboard_weekday_sun'),
+  ],
   datasets: [
     {
-      label: 'Atendimentos Realizados',
+      label: t('dashboard_attendances_completed'),
       data: [185, 210, 195, 225, 240, 150, 120],
       backgroundColor: 'rgba(25, 118, 210, 0.8)',
     },
     {
-      label: 'Meta Diária',
+      label: t('dashboard_daily_goal'),
       data: [200, 200, 200, 200, 200, 200, 200],
       backgroundColor: 'rgba(46, 125, 50, 0.6)',
     },
@@ -257,8 +263,8 @@ const attendancePerformanceOptions = computed(() => ({
 
 const usersSeries = computed(() => [
   {
-    name: 'Usuários',
-    data: [140, 142, 145, 143, 144, 146, 142],
+    name: t('dashboard_users_label'),
+    data: dashboardStore.stats?.users.sparklineData ?? [0, 0, 0, 0, 0, 0, 0],
   },
 ]);
 
@@ -299,8 +305,8 @@ const usersChartOptions = computed(() => ({
 
 const chatbotsSeries = computed(() => [
   {
-    name: 'Chatbots',
-    data: [8, 9, 10, 11, 10, 12, 10],
+    name: t('dashboard_channels_label'),
+    data: dashboardStore.stats?.channels.sparklineData ?? [0, 0, 0, 0, 0, 0, 0],
   },
 ]);
 
@@ -341,8 +347,8 @@ const chatbotsChartOptions = computed(() => ({
 
 const contactsSeries = computed(() => [
   {
-    name: 'Contatos',
-    data: [2800, 2820, 2830, 2835, 2840, 2845, 2847],
+    name: t('dashboard_contacts_label'),
+    data: dashboardStore.stats?.contacts.sparklineData ?? [0, 0, 0, 0, 0, 0, 0],
   },
 ]);
 
@@ -381,12 +387,15 @@ const contactsChartOptions = computed(() => ({
   colors: [getThemeColor('warning')],
 }));
 
-const chatsSeries = computed(() => [
-  {
-    name: 'Conversas',
-    data: [850, 870, 880, 890, 885, 895, 892],
-  },
-]);
+const chatsSeries = computed(() => {
+  const active = dashboardStore.conversations?.active ?? 0;
+  return [
+    {
+      name: t('dashboard_conversations_label'),
+      data: [active, active, active, active, active, active, active],
+    },
+  ];
+});
 
 const chatsChartOptions = computed(() => ({
   chart: {
@@ -422,6 +431,13 @@ const chatsChartOptions = computed(() => ({
   },
   colors: [getThemeColor('error')],
 }));
+
+onMounted(async () => {
+  await Promise.all([
+    dashboardStore.getDashboardStats(),
+    dashboardStore.getDashboardConversations(),
+  ]);
+});
 </script>
 
 <template>
@@ -430,9 +446,9 @@ const chatsChartOptions = computed(() => ({
       <VCol cols="12">
         <div class="d-flex align-center justify-space-between flex-wrap gap-4">
           <div>
-            <h1 class="text-h4 font-weight-bold">Dashboard</h1>
+            <h1 class="text-h4 font-weight-bold">{{ t('dashboard_title') }}</h1>
             <p class="text-body-2 text-medium-emphasis mt-1">
-              Visão geral do sistema
+              {{ t('dashboard_subtitle') }}
             </p>
           </div>
           <VChip
@@ -440,7 +456,7 @@ const chatsChartOptions = computed(() => ({
             variant="tonal"
             prepend-icon="tabler-circle-check"
           >
-            Sistema Operacional
+            {{ t('dashboard_system_operational') }}
           </VChip>
         </div>
       </VCol>
@@ -448,8 +464,14 @@ const chatsChartOptions = computed(() => ({
 
     <VRow class="mb-4">
       <VCol cols="12" sm="6" md="3">
+        <VCard v-if="dashboardStore.loadingStats">
+          <VCardText>
+            <VSkeletonLoader type="text, text, image" />
+          </VCardText>
+        </VCard>
         <CardStatisticsVertical
-          title="Usuários"
+          v-else
+          :title="t('dashboard_users')"
           :stats="usersTotal.toString()"
           icon="tabler-users"
           color="primary"
@@ -459,8 +481,14 @@ const chatsChartOptions = computed(() => ({
         />
       </VCol>
       <VCol cols="12" sm="6" md="3">
+        <VCard v-if="dashboardStore.loadingStats">
+          <VCardText>
+            <VSkeletonLoader type="text, text, image" />
+          </VCardText>
+        </VCard>
         <CardStatisticsVertical
-          title="Canais"
+          v-else
+          :title="t('dashboard_channels')"
           :stats="`${channelsConnected}/${channelsTotal}`"
           icon="tabler-robot"
           color="info"
@@ -470,8 +498,14 @@ const chatsChartOptions = computed(() => ({
         />
       </VCol>
       <VCol cols="12" sm="6" md="3">
+        <VCard v-if="dashboardStore.loadingStats">
+          <VCardText>
+            <VSkeletonLoader type="text, text, image" />
+          </VCardText>
+        </VCard>
         <CardStatisticsVertical
-          title="Contatos"
+          v-else
+          :title="t('dashboard_contacts')"
           :stats="contactsTotal.toLocaleString('pt-BR')"
           icon="tabler-address-book"
           color="warning"
@@ -481,8 +515,14 @@ const chatsChartOptions = computed(() => ({
         />
       </VCol>
       <VCol cols="12" sm="6" md="3">
+        <VCard v-if="dashboardStore.loadingConversations">
+          <VCardText>
+            <VSkeletonLoader type="text, text, image" />
+          </VCardText>
+        </VCard>
         <CardStatisticsVertical
-          title="Conversas Ativas"
+          v-else
+          :title="t('dashboard_active_conversations')"
           :stats="chatsActive.toString()"
           icon="tabler-messages"
           color="error"
@@ -497,13 +537,20 @@ const chatsChartOptions = computed(() => ({
       <VCol cols="12" md="8" class="d-flex">
         <VCard class="flex-grow-1 d-flex flex-column">
           <VCardTitle class="d-flex align-center justify-space-between">
-            <span>Evolução de Conversas</span>
+            <span>{{ t('dashboard_conversations_evolution') }}</span>
             <VChip size="small" color="primary" variant="tonal">
-              Últimos 12 meses
+              {{ t('dashboard_last_12_months') }}
             </VChip>
           </VCardTitle>
           <VCardText class="flex-grow-1 d-flex flex-column">
-            <div class="flex-grow-1" style="min-height: 300px">
+            <div
+              v-if="dashboardStore.loadingConversations"
+              class="flex-grow-1"
+              style="min-height: 300px"
+            >
+              <VSkeletonLoader type="image" height="300" />
+            </div>
+            <div v-else class="flex-grow-1" style="min-height: 300px">
               <LineChart
                 :chart-data="conversationsEvolutionData"
                 :chart-options="conversationsEvolutionOptions"
@@ -515,9 +562,15 @@ const chatsChartOptions = computed(() => ({
       </VCol>
       <VCol cols="12" md="4" class="d-flex">
         <VCard class="flex-grow-1 d-flex flex-column">
-          <VCardTitle>Status dos Canais</VCardTitle>
+          <VCardTitle>{{ t('dashboard_channels_status') }}</VCardTitle>
           <VCardText class="flex-grow-1 d-flex flex-column">
-            <div style="height: 300px; flex-shrink: 0">
+            <div
+              v-if="dashboardStore.loadingStats"
+              style="height: 300px; flex-shrink: 0"
+            >
+              <VSkeletonLoader type="image" height="300" />
+            </div>
+            <div v-else style="height: 300px; flex-shrink: 0">
               <DoughnutChart
                 :chart-data="channelsStatusData"
                 :chart-options="channelsStatusOptions"
@@ -528,7 +581,9 @@ const chatsChartOptions = computed(() => ({
               <div class="d-flex align-center justify-space-between">
                 <div class="d-flex align-center gap-2">
                   <VIcon icon="tabler-circle" size="12" color="success" />
-                  <span class="text-body-2">Conectados</span>
+                  <span class="text-body-2">{{
+                    t('dashboard_connected')
+                  }}</span>
                 </div>
                 <span class="text-body-1 font-weight-medium">
                   {{ channelsConnected }}
@@ -537,7 +592,9 @@ const chatsChartOptions = computed(() => ({
               <div class="d-flex align-center justify-space-between">
                 <div class="d-flex align-center gap-2">
                   <VIcon icon="tabler-circle" size="12" color="error" />
-                  <span class="text-body-2">Desconectados</span>
+                  <span class="text-body-2">{{
+                    t('dashboard_disconnected')
+                  }}</span>
                 </div>
                 <span class="text-body-1 font-weight-medium">
                   {{ channelsTotal - channelsConnected }}
@@ -552,9 +609,15 @@ const chatsChartOptions = computed(() => ({
     <VRow class="mb-4 dashboard-row">
       <VCol cols="12" md="6" class="d-flex">
         <VCard class="flex-grow-1 d-flex flex-column">
-          <VCardTitle>Crescimento de Contatos</VCardTitle>
+          <VCardTitle>{{ t('dashboard_contacts_growth') }}</VCardTitle>
           <VCardText class="flex-grow-1 d-flex flex-column">
-            <div style="height: 250px; flex-shrink: 0">
+            <div
+              v-if="dashboardStore.loadingStats"
+              style="height: 250px; flex-shrink: 0"
+            >
+              <VSkeletonLoader type="image" height="250" />
+            </div>
+            <div v-else style="height: 250px; flex-shrink: 0">
               <LineChart
                 :chart-data="contactsGrowthData"
                 :chart-options="contactsGrowthOptions"
@@ -564,7 +627,7 @@ const chatsChartOptions = computed(() => ({
             <div class="mt-4 d-flex align-center gap-4" style="flex-shrink: 0">
               <div>
                 <span class="text-body-2 text-medium-emphasis d-block">
-                  Total
+                  {{ t('dashboard_total') }}
                 </span>
                 <span class="text-h6 font-weight-bold">
                   {{ contactsTotal.toLocaleString('pt-BR') }}
@@ -573,7 +636,7 @@ const chatsChartOptions = computed(() => ({
               <VDivider vertical />
               <div>
                 <span class="text-body-2 text-medium-emphasis d-block">
-                  Crescimento
+                  {{ t('dashboard_growth') }}
                 </span>
                 <span class="text-h6 font-weight-bold text-success">
                   +{{ contactsGrowth }}
@@ -585,7 +648,7 @@ const chatsChartOptions = computed(() => ({
       </VCol>
       <VCol cols="12" md="6" class="d-flex">
         <VCard class="flex-grow-1 d-flex flex-column">
-          <VCardTitle>Desempenho de Atendimento</VCardTitle>
+          <VCardTitle>{{ t('dashboard_attendance_performance') }}</VCardTitle>
           <VCardText class="flex-grow-1 d-flex flex-column">
             <div style="height: 250px; flex-shrink: 0">
               <BarChart
@@ -597,7 +660,7 @@ const chatsChartOptions = computed(() => ({
             <div class="mt-4 d-flex align-center gap-4" style="flex-shrink: 0">
               <div>
                 <span class="text-body-2 text-medium-emphasis d-block">
-                  Total de Atendimentos
+                  {{ t('dashboard_total_attendances') }}
                 </span>
                 <span class="text-h6 font-weight-bold">
                   {{ totalAttendances }}
@@ -606,7 +669,7 @@ const chatsChartOptions = computed(() => ({
               <VDivider vertical />
               <div>
                 <span class="text-body-2 text-medium-emphasis d-block">
-                  Produtividade
+                  {{ t('dashboard_productivity') }}
                 </span>
                 <span class="text-h6 font-weight-bold text-success">
                   {{ productivity }}%
@@ -621,7 +684,7 @@ const chatsChartOptions = computed(() => ({
     <VRow class="mb-4 dashboard-row">
       <VCol cols="12" md="6" class="d-flex">
         <VCard class="flex-grow-1 d-flex flex-column">
-          <VCardTitle>Distribuição por Setores</VCardTitle>
+          <VCardTitle>{{ t('dashboard_sectors_distribution') }}</VCardTitle>
           <VCardText class="flex-grow-1 d-flex flex-column">
             <div class="flex-grow-1" style="min-height: 300px">
               <DoughnutChart
@@ -635,7 +698,7 @@ const chatsChartOptions = computed(() => ({
       </VCol>
       <VCol cols="12" md="6" class="d-flex">
         <VCard class="flex-grow-1 d-flex flex-column">
-          <VCardTitle>Métricas de Atendimento</VCardTitle>
+          <VCardTitle>{{ t('dashboard_attendance_metrics') }}</VCardTitle>
           <VCardText class="flex-grow-1">
             <VRow class="h-100">
               <VCol cols="12" sm="6">
@@ -647,7 +710,7 @@ const chatsChartOptions = computed(() => ({
                       </VAvatar>
                       <div>
                         <p class="text-body-2 text-medium-emphasis mb-1">
-                          Tempo Médio de Resposta
+                          {{ t('dashboard_avg_response_time') }}
                         </p>
                         <h4 class="text-h5 font-weight-bold">
                           {{ avgResponseTime }}
@@ -666,7 +729,7 @@ const chatsChartOptions = computed(() => ({
                       </VAvatar>
                       <div>
                         <p class="text-body-2 text-medium-emphasis mb-1">
-                          Tempo Médio de Resolução
+                          {{ t('dashboard_avg_resolution_time') }}
                         </p>
                         <h4 class="text-h5 font-weight-bold">
                           {{ avgResolutionTime }}
@@ -685,7 +748,7 @@ const chatsChartOptions = computed(() => ({
                       </VAvatar>
                       <div>
                         <p class="text-body-2 text-medium-emphasis mb-1">
-                          Total de Atendimentos
+                          {{ t('dashboard_total_attendances') }}
                         </p>
                         <h4 class="text-h5 font-weight-bold">
                           {{ totalAttendances }}
@@ -704,7 +767,7 @@ const chatsChartOptions = computed(() => ({
                       </VAvatar>
                       <div>
                         <p class="text-body-2 text-medium-emphasis mb-1">
-                          Produtividade
+                          {{ t('dashboard_productivity') }}
                         </p>
                         <h4 class="text-h5 font-weight-bold">
                           {{ productivity }}%
@@ -727,7 +790,7 @@ const chatsChartOptions = computed(() => ({
             <div class="d-flex align-center justify-space-between">
               <div>
                 <p class="text-body-2 text-medium-emphasis mb-1">
-                  Chatbots Ativos
+                  {{ t('dashboard_active_chatbots') }}
                 </p>
                 <h3 class="text-h4 font-weight-bold">
                   {{ chatbotsActive }}/{{ chatbotsTotal }}
@@ -746,7 +809,7 @@ const chatsChartOptions = computed(() => ({
             <div class="d-flex align-center justify-space-between">
               <div>
                 <p class="text-body-2 text-medium-emphasis mb-1">
-                  Grupos de Contatos
+                  {{ t('dashboard_contact_groups') }}
                 </p>
                 <h3 class="text-h4 font-weight-bold">
                   {{ contactGroupsTotal }}
@@ -765,7 +828,7 @@ const chatsChartOptions = computed(() => ({
             <div class="d-flex align-center justify-space-between">
               <div>
                 <p class="text-body-2 text-medium-emphasis mb-1">
-                  Templates de Mensagem
+                  {{ t('dashboard_message_templates') }}
                 </p>
                 <h3 class="text-h4 font-weight-bold">
                   {{ messageTemplatesTotal }}
@@ -784,7 +847,7 @@ const chatsChartOptions = computed(() => ({
             <div class="d-flex align-center justify-space-between">
               <div>
                 <p class="text-body-2 text-medium-emphasis mb-1">
-                  Templates de Label
+                  {{ t('dashboard_label_templates') }}
                 </p>
                 <h3 class="text-h4 font-weight-bold">
                   {{ labelTemplatesTotal }}
