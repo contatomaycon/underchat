@@ -498,7 +498,7 @@ onMounted(async () => {
           v-else
           :title="t('dashboard_channels')"
           :stats="`${channelsConnected}/${channelsTotal}`"
-          icon="tabler-robot"
+          icon="tabler-plug"
           color="info"
           :height="80"
           :series="chatbotsSeries"
