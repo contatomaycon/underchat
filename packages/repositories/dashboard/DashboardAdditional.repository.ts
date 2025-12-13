@@ -9,7 +9,7 @@ import {
 } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, count, eq, isNull, gte, lt, asc } from 'drizzle-orm';
+import { and, count, eq, isNull, lt, asc } from 'drizzle-orm';
 import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
@@ -352,8 +352,7 @@ export class DashboardAdditionalRepository {
       );
 
       const total = result?.hits?.total;
-      const count =
-        typeof total === 'number' ? total : (total?.value ?? 0);
+      const count = typeof total === 'number' ? total : (total?.value ?? 0);
 
       return {
         sectorId: sectorItem.sector_id,

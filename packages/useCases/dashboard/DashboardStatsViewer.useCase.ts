@@ -1,4 +1,4 @@
-import { inject, injectable } from 'tsyringe';
+import { injectable } from 'tsyringe';
 import { DashboardService } from '@core/services/dashboard.service';
 import { GetDashboardStatsResponse } from '@core/schema/dashboard/getDashboardStats/response.schema';
 

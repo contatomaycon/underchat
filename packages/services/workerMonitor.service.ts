@@ -514,7 +514,7 @@ export class WorkerMonitorService {
       const code = this.parseHttpCode(rawOutput);
 
       return code === 200;
-    } catch (error) {
+    } catch {
       return false;
     }
   };
