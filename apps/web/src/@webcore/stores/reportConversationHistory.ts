@@ -14,6 +14,7 @@ import { PagingResponseSchema } from '@core/schema/common/pagingResponseSchema';
 import { ListReportConversationHistorySectorsResponse } from '@core/schema/reportConversationHistory/listReportConversationHistorySectors/response.schema';
 import { ListReportConversationHistoryUsersResponse } from '@core/schema/reportConversationHistory/listReportConversationHistoryUsers/response.schema';
 import { ListReportConversationHistoryMessagesResponse } from '@core/schema/reportConversationHistory/listReportConversationHistoryMessages/response.schema';
+import { ViewReportConversationHistoryContactResponse } from '@core/schema/reportConversationHistory/viewReportConversationHistoryContact/response.schema';
 
 export const useReportConversationHistoryStore = defineStore(
   'reportConversationHistory',
@@ -200,6 +201,75 @@ export const useReportConversationHistoryStore = defineStore(
 
           this.showSnackbar(errorMessage, EColor.error);
 
+          return null;
+        }
+      },
+      async getReportConversationHistoryContact(
+        contactId: string
+      ): Promise<ViewReportConversationHistoryContactResponse | null> {
+        try {
+          const response = await axios.get<
+            IApiResponse<ViewReportConversationHistoryContactResponse>
+          >(`/report-conversation-history/contacts/${contactId}`);
+
+          const data = response?.data;
+
+          if (!data?.status || !data?.data) {
+            const message =
+              data?.message ?? this.i18n.global.t('contact_not_found');
+
+            this.showSnackbar(message, EColor.error);
+
+            return null;
+          }
+
+          return data.data;
+        } catch (error) {
+          let errorMessage = this.i18n.global.t('contact_not_found');
+          if (error instanceof AxiosError) {
+            errorMessage = error?.response?.data?.message ?? errorMessage;
+          }
+
+          this.showSnackbar(errorMessage, EColor.error);
+
+          return null;
+        }
+      },
+      async getReportConversationHistoryContactEmailDecrypted(
+        contactId: string
+      ): Promise<string | null> {
+        try {
+          const response = await axios.get<IApiResponse<{ email: string }>>(
+            `/report-conversation-history/contacts/${contactId}/email`
+          );
+
+          const data = response?.data;
+
+          if (!data?.status || !data?.data) {
+            return null;
+          }
+
+          return data.data.email;
+        } catch {
+          return null;
+        }
+      },
+      async getReportConversationHistoryContactPhoneDecrypted(
+        contactId: string
+      ): Promise<string | null> {
+        try {
+          const response = await axios.get<IApiResponse<{ phone: string }>>(
+            `/report-conversation-history/contacts/${contactId}/phone`
+          );
+
+          const data = response?.data;
+
+          if (!data?.status || !data?.data) {
+            return null;
+          }
+
+          return data.data.phone;
+        } catch {
           return null;
         }
       },

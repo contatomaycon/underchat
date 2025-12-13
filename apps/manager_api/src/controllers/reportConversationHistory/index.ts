@@ -3,6 +3,9 @@ import { listReportConversationHistory } from './methods/listReportConversationH
 import { listReportConversationHistoryMessages } from './methods/listReportConversationHistoryMessages';
 import { listReportConversationHistorySectors } from './methods/listReportConversationHistorySectors';
 import { listReportConversationHistoryUsers } from './methods/listReportConversationHistoryUsers';
+import { viewContact } from './methods/viewContact';
+import { viewContactEmail } from './methods/viewContactEmail';
+import { viewContactPhone } from './methods/viewContactPhone';
 
 @injectable()
 class ReportConversationHistoryController {
@@ -13,6 +16,9 @@ class ReportConversationHistoryController {
     listReportConversationHistorySectors;
   public listReportConversationHistoryUsers =
     listReportConversationHistoryUsers;
+  public viewContact = viewContact;
+  public viewContactEmail = viewContactEmail;
+  public viewContactPhone = viewContactPhone;
 }
 
 export default ReportConversationHistoryController;
