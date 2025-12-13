@@ -1423,6 +1423,7 @@
     "chatbot_transfer_message_sector_user_default": "Você foi transferido para o atendente *{{ user }}* do setor *{{ sector }}*. Em breve você será atendido.",
     "download_pdf": "Baixar PDF",
     "generate_pdf": "Gerar PDF",
+    "regenerate_pdf": "Regenerar PDF",
     "report_conversation_history_pdf_generation_started": "Geração do PDF iniciada com sucesso!",
     "report_conversation_history_pdf_generation_error": "Erro ao gerar o PDF. Por favor, tente novamente.",
     "report_conversation_history_pdf_download_error": "Erro ao baixar o PDF. Por favor, tente novamente.",

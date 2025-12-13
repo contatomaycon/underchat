@@ -21,18 +21,12 @@ export class ReportConversationHistoryPdfGeneratorUseCase {
       chatId
     );
 
-    if (pdfRecord.status === 'DONE') {
-      return {
-        pdf_id: pdfRecord.id,
-        status: pdfRecord.status,
-      };
-    }
-
     const payload = {
       account_id: accountId,
       chat_id: chatId,
       pdf_record_id: pdfRecord.id,
       requested_at: new Date().toISOString(),
+      old_url_pdf: pdfRecord.oldUrlPdf,
     };
 
     const topic =
