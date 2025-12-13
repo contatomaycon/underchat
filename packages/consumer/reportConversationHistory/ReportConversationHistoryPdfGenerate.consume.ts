@@ -220,15 +220,29 @@ export class ReportConversationHistoryPdfGenerateConsume {
   private generateHtmlFromMessages(messages: any[]): string {
     const messagesHtml = messages
       .map((msg) => {
-        const isUser = msg.message?.from === 'user';
-        const date = new Date(msg.message?.date || '').toLocaleString('pt-BR');
+        const isUser = msg.type_user === 'user';
+        const dateStr = msg.date || '';
+        let formattedDate = '';
+
+        if (dateStr) {
+          const date = new Date(dateStr);
+          if (!isNaN(date.getTime())) {
+            const day = String(date.getDate()).padStart(2, '0');
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const year = date.getFullYear();
+            const hours = String(date.getHours()).padStart(2, '0');
+            const minutes = String(date.getMinutes()).padStart(2, '0');
+            formattedDate = `${day}/${month}/${year} ${hours}:${minutes}`;
+          }
+        }
+
         const author = isUser ? 'Cliente' : 'Atendente';
-        const content = this.formatMessageContent(msg.message?.content);
+        const content = this.formatMessageContent(msg.content);
 
         return `
           <div style="margin-bottom: 20px; padding: 10px; border-left: 3px solid ${isUser ? '#4CAF50' : '#2196F3'}; background: ${isUser ? '#f1f8f4' : '#f0f7ff'};">
             <div style="font-weight: bold; margin-bottom: 5px; color: ${isUser ? '#2e7d32' : '#1976d2'};">
-              ${author} - ${date}
+              ${author}${formattedDate ? ` - ${formattedDate}` : ''}
             </div>
             <div style="color: #333;">
               ${content}
