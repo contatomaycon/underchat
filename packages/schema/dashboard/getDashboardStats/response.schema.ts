@@ -8,6 +8,7 @@ const userStatsSchema = Type.Object({
 const channelStatsSchema = Type.Object({
   total: Type.Number(),
   connected: Type.Number(),
+  allowed: Type.Number(),
   sparkline_data: Type.Array(Type.Number()),
 });
 

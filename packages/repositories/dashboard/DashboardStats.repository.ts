@@ -3,11 +3,14 @@ import { user, worker, contact } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { and, count, eq, isNull, sql, gte, lt } from 'drizzle-orm';
+import { AccountQuantityProductViewerRepository } from '@core/repositories/account/AccountQuantityProductViewer.repository';
+import { EPlanProduct } from '@core/common/enums/EPlanProduct';
 
 @injectable()
 export class DashboardStatsRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('Database') private readonly db: NodePgDatabase<typeof schema>,
+    private readonly accountQuantityProductViewerRepository: AccountQuantityProductViewerRepository
   ) {}
 
   getUsersTotal = async (accountId: string): Promise<number> => {
@@ -184,5 +187,12 @@ export class DashboardStatsRepository {
     );
 
     return results;
+  };
+
+  getChannelsAllowed = async (accountId: string): Promise<number> => {
+    return this.accountQuantityProductViewerRepository.viewAccountQuantityProduct(
+      accountId,
+      EPlanProduct.worker
+    );
   };
 }

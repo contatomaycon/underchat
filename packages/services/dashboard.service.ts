@@ -22,6 +22,7 @@ export class DashboardService {
       usersSparkline,
       channelsTotal,
       channelsConnected,
+      channelsAllowed,
       channelsSparkline,
       contactsTotal,
       contactsGrowth,
@@ -31,6 +32,7 @@ export class DashboardService {
       this.dashboardStatsRepository.getUsersSparklineData(accountId),
       this.dashboardStatsRepository.getChannelsTotal(accountId),
       this.dashboardStatsRepository.getChannelsConnected(accountId),
+      this.dashboardStatsRepository.getChannelsAllowed(accountId),
       this.dashboardStatsRepository.getChannelsSparklineData(accountId),
       this.dashboardStatsRepository.getContactsTotal(accountId),
       this.dashboardStatsRepository.getContactsGrowth(accountId),
@@ -45,6 +47,7 @@ export class DashboardService {
       channels: {
         total: channelsTotal,
         connected: channelsConnected,
+        allowed: channelsAllowed,
         sparkline_data: channelsSparkline,
       },
       contacts: {

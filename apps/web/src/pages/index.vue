@@ -31,6 +31,9 @@ const channelsTotal = computed(() => dashboardStore.stats?.channels.total ?? 0);
 const channelsConnected = computed(
   () => dashboardStore.stats?.channels.connected ?? 0
 );
+const channelsAllowed = computed(
+  () => dashboardStore.stats?.channels.allowed ?? 0
+);
 const contactsTotal = computed(() => dashboardStore.stats?.contacts.total ?? 0);
 const contactsGrowth = computed(
   () => dashboardStore.stats?.contacts.growth ?? 0
@@ -520,7 +523,7 @@ onMounted(async () => {
         <CardStatisticsVertical
           v-else
           :title="t('dashboard_channels')"
-          :stats="`${channelsConnected}/${channelsTotal}`"
+          :stats="`${channelsConnected}/${channelsAllowed}`"
           icon="tabler-plug"
           color="info"
           :height="80"
