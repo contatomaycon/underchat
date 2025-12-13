@@ -5,13 +5,15 @@ import {
   contactGroup,
   messageTemplate,
   labelTemplate,
+  sector,
 } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, count, eq, isNull, gte, lt } from 'drizzle-orm';
+import { and, count, eq, isNull, gte, lt, asc } from 'drizzle-orm';
 import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
+import { ESectorStatus } from '@core/common/enums/ESectorStatus';
 
 @injectable()
 export class DashboardAdditionalRepository {
@@ -290,78 +292,77 @@ export class DashboardAdditionalRepository {
   ): Promise<
     Array<{ sectorId: string; sectorName: string; count: number }>
   > => {
-    const queryElastic = {
-      size: 0,
-      query: {
-        bool: {
-          must: [
-            {
-              nested: {
-                path: 'account',
-                query: {
-                  term: {
-                    'account.id': accountId,
+    const allSectors = await this.db
+      .select({
+        sector_id: sector.sector_id,
+        name: sector.name,
+      })
+      .from(sector)
+      .where(
+        and(
+          eq(sector.account_id, accountId),
+          isNull(sector.deleted_at),
+          eq(sector.sector_status_id, ESectorStatus.active)
+        )
+      )
+      .orderBy(asc(sector.name))
+      .execute();
+
+    const sectorCountPromises = allSectors.map(async (sectorItem) => {
+      const queryElastic = {
+        size: 0,
+        query: {
+          bool: {
+            must: [
+              {
+                nested: {
+                  path: 'account',
+                  query: {
+                    term: {
+                      'account.id': accountId,
+                    },
                   },
                 },
               },
-            },
-          ],
-          filter: [
-            {
-              term: {
-                status: EChatStatus.closed,
-              },
-            },
-          ],
-        },
-      },
-      aggs: {
-        sectors: {
-          nested: {
-            path: 'sector',
-          },
-          aggs: {
-            sector_names: {
-              terms: {
-                field: 'sector.id',
-                size: 100,
-              },
-              aggs: {
-                sector_name: {
-                  terms: {
-                    field: 'sector.name',
-                    size: 1,
+              {
+                nested: {
+                  path: 'sector',
+                  query: {
+                    term: {
+                      'sector.id': sectorItem.sector_id,
+                    },
                   },
                 },
               },
-            },
+            ],
+            filter: [
+              {
+                term: {
+                  status: EChatStatus.closed,
+                },
+              },
+            ],
           },
         },
-      },
-    };
+      };
 
-    const result = await this.elasticDatabaseService.select(
-      EElasticIndex.chat,
-      queryElastic
-    );
+      const result = await this.elasticDatabaseService.select(
+        EElasticIndex.chat,
+        queryElastic
+      );
 
-    const sectors: Array<{
-      sectorId: string;
-      sectorName: string;
-      count: number;
-    }> = [];
+      const total = result?.hits?.total;
+      const count =
+        typeof total === 'number' ? total : (total?.value ?? 0);
 
-    const aggregations = result?.aggregations as any;
-    if (aggregations?.sectors?.sector_names?.buckets) {
-      for (const bucket of aggregations.sectors.sector_names.buckets) {
-        const sectorNameBucket = bucket.sector_name?.buckets?.[0];
-        sectors.push({
-          sectorId: bucket.key as string,
-          sectorName: (sectorNameBucket?.key as string) || 'Sem Setor',
-          count: bucket.doc_count,
-        });
-      }
-    }
+      return {
+        sectorId: sectorItem.sector_id,
+        sectorName: sectorItem.name,
+        count,
+      };
+    });
+
+    const sectors = await Promise.all(sectorCountPromises);
 
     const noSectorQuery = {
       size: 0,
