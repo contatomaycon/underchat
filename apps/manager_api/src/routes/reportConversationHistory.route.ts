@@ -4,6 +4,8 @@ import { reportConversationHistoryViewPermissions } from '@/permissions/reportCo
 import ReportConversationHistoryController from '@/controllers/reportConversationHistory';
 import { listReportConversationHistorySchema } from '@core/schema/reportConversationHistory/listReportConversationHistory';
 import { listReportConversationHistoryMessagesSchema } from '@core/schema/reportConversationHistory/listReportConversationHistoryMessages';
+import { listReportConversationHistorySectorsSchema } from '@core/schema/reportConversationHistory/listReportConversationHistorySectors';
+import { listReportConversationHistoryUsersSchema } from '@core/schema/reportConversationHistory/listReportConversationHistoryUsers';
 import { planGuard } from '@/plugins/planGuard';
 import { planStatus } from '@/plugins/planStatus';
 
@@ -33,6 +35,38 @@ export default function reportConversationHistoryRoutes(
     schema: listReportConversationHistoryMessagesSchema,
     handler:
       reportConversationHistoryController.listReportConversationHistoryMessages,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(
+          request,
+          reply,
+          reportConversationHistoryViewPermissions
+        ),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.get('/report-conversation-history/sectors', {
+    schema: listReportConversationHistorySectorsSchema,
+    handler:
+      reportConversationHistoryController.listReportConversationHistorySectors,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(
+          request,
+          reply,
+          reportConversationHistoryViewPermissions
+        ),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.get('/report-conversation-history/users', {
+    schema: listReportConversationHistoryUsersSchema,
+    handler:
+      reportConversationHistoryController.listReportConversationHistoryUsers,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(

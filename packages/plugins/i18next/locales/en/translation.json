@@ -224,6 +224,8 @@
   "report_conversation_history_list_successfully": "Conversation history retrieved successfully!",
   "report_conversation_history_list_not_found": "No data found for conversation history!",
   "report_conversation_history_messages_list_successfully": "Conversation history messages retrieved successfully!",
+  "report_conversation_history_sectors_list_successfully": "Sectors retrieved successfully!",
+  "report_conversation_history_users_list_successfully": "Users retrieved successfully!",
   "plan_list_successfully": "Plan list retrieved successfully!",
   "plan_list_not_found": "No plans found!",
   "plan_name_required": "Plan name is required!",
