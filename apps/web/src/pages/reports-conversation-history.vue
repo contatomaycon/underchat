@@ -723,8 +723,9 @@ const copyToClipboard = async (text: string) => {
               v-if="selectedChatInfo"
               class="text-caption text-medium-emphasis"
             >
-              {{ selectedChatInfo.client }} -
-              {{ formatPhoneBR(selectedChatInfo.phone) }}
+              {{ selectedChatInfo.client }} ({{
+                formatPhoneBR(selectedChatInfo.phone)
+              }})
             </div>
           </div>
           <VBtn icon variant="text" @click="isConversationModalOpen = false">
