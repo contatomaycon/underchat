@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, computed, onMounted, nextTick } from 'vue';
+import { ref, watch, computed, onMounted, onUnmounted, nextTick } from 'vue';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { useI18n } from 'vue-i18n';
 import { formatDateTime } from '@core/common/functions/formatDateTime';
@@ -18,6 +18,11 @@ import ChatMediaViewer from '@/components/chat/ChatMediaViewer.vue';
 import ChatContactViewModal from '@/components/chat/ChatContactViewModal.vue';
 import { MglMap, MglMarker } from 'vue-maplibre-gl';
 import { ViewReportConversationHistoryContactResponse } from '@core/schema/reportConversationHistory/viewReportConversationHistoryContact/response.schema';
+import { onMessage, unsubscribe } from '@/@webcore/centrifugo';
+import { reportConversationHistoryPdfAccountCentrifugo } from '@core/common/functions/centrifugoQueue';
+import { IReportConversationHistoryPdfNotification } from '@core/common/interfaces/IReportConversationHistoryPdfNotification';
+import { getUser } from '@/@webcore/localStorage/user';
+import { Subscription } from 'centrifuge';
 
 type ProtocolWithType = {
   protocol: string;
@@ -64,6 +69,7 @@ const contactData = ref<ViewReportConversationHistoryContactResponse | null>(
   null
 );
 const isLoadingContact = ref(false);
+const pdfNotificationSubscription = ref<Subscription | null>(null);
 
 const handleOpenImage = (src: string, caption?: string) => {
   imageViewerSrc.value = src;
@@ -106,6 +112,40 @@ const handleOpenContact = async (contactId: string) => {
   isLoadingContact.value = false;
 };
 
+const handleGeneratePdf = async (item: ReportConversationHistoryResult) => {
+  const result =
+    await reportConversationHistoryStore.generateReportConversationHistoryPdf(
+      item.chat_id
+    );
+
+  if (result) {
+    item.pdf_status = result.status;
+    reportConversationHistoryStore.showSnackbar(
+      t('report_conversation_history_pdf_generation_started'),
+      EColor.success
+    );
+  }
+};
+
+const handleDownloadPdf = async (item: ReportConversationHistoryResult) => {
+  await reportConversationHistoryStore.downloadReportConversationHistoryPdf(
+    item.chat_id
+  );
+};
+
+const loadPdfStatuses = async () => {
+  for (const item of reportConversationHistoryStore.list) {
+    const pdfStatus =
+      await reportConversationHistoryStore.viewReportConversationHistoryPdf(
+        item.chat_id
+      );
+
+    if (pdfStatus) {
+      item.pdf_status = pdfStatus.status;
+    }
+  }
+};
+
 const itemsPerPage = ref([
   { value: 5, title: '5' },
   { value: 10, title: '10' },
@@ -132,7 +172,7 @@ const headers: DataTableHeader<ReportConversationHistoryResult>[] = [
   { title: t('operator'), key: 'operator', sortable: false },
   { title: t('sector'), key: 'queue', sortable: false },
   { title: t('channel'), key: 'channel', sortable: false },
-  { title: t('view'), key: 'actions', sortable: false, width: '100px' },
+  { title: t('actions'), key: 'actions', sortable: false, width: '150px' },
 ];
 
 const options = ref({
@@ -240,6 +280,38 @@ onMounted(async () => {
   }
 
   await loadHistory();
+  await loadPdfStatuses();
+
+  const user = getUser();
+  if (user?.account_id) {
+    const channel = reportConversationHistoryPdfAccountCentrifugo(
+      user.account_id
+    );
+
+    pdfNotificationSubscription.value = await onMessage(
+      channel,
+      (data: IReportConversationHistoryPdfNotification) => {
+        const item = reportConversationHistoryStore.list.find(
+          (item) => item.chat_id === data.chat_id
+        );
+
+        if (item) {
+          item.pdf_status = data.status;
+        }
+      }
+    );
+  }
+});
+
+onUnmounted(async () => {
+  const user = getUser();
+  if (user?.account_id && pdfNotificationSubscription.value) {
+    const channel = reportConversationHistoryPdfAccountCentrifugo(
+      user.account_id
+    );
+    await unsubscribe(channel);
+    pdfNotificationSubscription.value = null;
+  }
 });
 
 const formatDateForApi = (
@@ -679,7 +751,7 @@ const copyToClipboard = async (text: string) => {
             </template>
 
             <template #item.actions="{ item }">
-              <div class="d-flex justify-center">
+              <div class="d-flex justify-center gap-2">
                 <VBtn
                   size="x-small"
                   color="primary"
@@ -687,7 +759,63 @@ const copyToClipboard = async (text: string) => {
                   icon="tabler-eye"
                   @click="openConversationModal(item)"
                 >
-                  <VIcon size="18">tabler-eye</VIcon>
+                  <VTooltip location="top">
+                    <template #activator="{ props }">
+                      <VIcon v-bind="props" size="18">tabler-eye</VIcon>
+                    </template>
+                    <span>{{ t('view') }}</span>
+                  </VTooltip>
+                </VBtn>
+
+                <VBtn
+                  v-if="
+                    !item.pdf_status ||
+                    item.pdf_status === 'PENDING' ||
+                    item.pdf_status === 'PROCESSING' ||
+                    item.pdf_status === 'FAILED'
+                  "
+                  size="x-small"
+                  color="primary"
+                  variant="text"
+                  :disabled="
+                    item.pdf_status === 'PENDING' ||
+                    item.pdf_status === 'PROCESSING'
+                  "
+                  :loading="
+                    item.pdf_status === 'PENDING' ||
+                    item.pdf_status === 'PROCESSING'
+                  "
+                  @click="handleGeneratePdf(item)"
+                >
+                  <VTooltip location="top">
+                    <template #activator="{ props }">
+                      <VIcon
+                        v-bind="props"
+                        size="18"
+                        :icon="
+                          item.pdf_status === 'PROCESSING'
+                            ? 'tabler-loader'
+                            : 'tabler-file-type-pdf'
+                        "
+                      ></VIcon>
+                    </template>
+                    <span>{{ t('generate_pdf') }}</span>
+                  </VTooltip>
+                </VBtn>
+
+                <VBtn
+                  v-if="item.pdf_status === 'DONE'"
+                  size="x-small"
+                  color="success"
+                  variant="text"
+                  @click="handleDownloadPdf(item)"
+                >
+                  <VTooltip location="top">
+                    <template #activator="{ props }">
+                      <VIcon v-bind="props" size="18">tabler-download</VIcon>
+                    </template>
+                    <span>{{ t('download_pdf') }}</span>
+                  </VTooltip>
                 </VBtn>
               </div>
             </template>

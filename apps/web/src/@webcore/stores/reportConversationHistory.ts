@@ -273,6 +273,102 @@ export const useReportConversationHistoryStore = defineStore(
           return null;
         }
       },
+      async generateReportConversationHistoryPdf(
+        chatId: string
+      ): Promise<{ pdf_id: string; status: string } | null> {
+        try {
+          const response = await axios.post<
+            IApiResponse<{ pdf_id: string; status: string }>
+          >(`/report-conversation-history/${chatId}/pdf`);
+
+          const data = response?.data;
+
+          if (!data?.status || !data?.data) {
+            const message =
+              data?.message ??
+              this.i18n.global.t(
+                'report_conversation_history_pdf_generation_error'
+              );
+
+            this.showSnackbar(message, EColor.error);
+
+            return null;
+          }
+
+          return data.data;
+        } catch (error) {
+          let errorMessage = this.i18n.global.t(
+            'report_conversation_history_pdf_generation_error'
+          );
+          if (error instanceof AxiosError) {
+            errorMessage = error?.response?.data?.message ?? errorMessage;
+          }
+
+          this.showSnackbar(errorMessage, EColor.error);
+
+          return null;
+        }
+      },
+      async viewReportConversationHistoryPdf(chatId: string): Promise<{
+        pdf_id: string;
+        url_pdf: string | null;
+        status: string;
+        requested_at: string | null;
+        generated_at: string | null;
+      } | null> {
+        try {
+          const response = await axios.get<
+            IApiResponse<{
+              pdf_id: string;
+              url_pdf: string | null;
+              status: string;
+              requested_at: string | null;
+              generated_at: string | null;
+            }>
+          >(`/report-conversation-history/${chatId}/pdf`);
+
+          const data = response?.data;
+
+          if (!data?.status || !data?.data) {
+            return null;
+          }
+
+          return data.data;
+        } catch {
+          return null;
+        }
+      },
+      async downloadReportConversationHistoryPdf(
+        chatId: string
+      ): Promise<void> {
+        try {
+          const response = await axios.get(
+            `/report-conversation-history/${chatId}/pdf/download`,
+            {
+              responseType: 'blob',
+            }
+          );
+
+          const blob = new Blob([response.data], { type: 'application/pdf' });
+          const url = window.URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = `conversation-history-${chatId}.pdf`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          window.URL.revokeObjectURL(url);
+        } catch (error) {
+          let errorMessage = this.i18n.global.t(
+            'report_conversation_history_pdf_download_error'
+          );
+          if (error instanceof AxiosError) {
+            errorMessage = error?.response?.data?.message ?? errorMessage;
+          }
+
+          this.showSnackbar(errorMessage, EColor.error);
+        }
+      },
     },
   }
 );

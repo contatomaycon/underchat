@@ -20,6 +20,7 @@ export const reportConversationHistoryResultSchema = Type.Object({
   channel: Type.String(),
   chat_id: Type.String(),
   photo: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  pdf_status: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 });
 
 export const listReportConversationHistoryFinalResponseSchema = Type.Object({

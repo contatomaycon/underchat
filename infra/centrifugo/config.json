@@ -55,6 +55,12 @@
         "allow_subscribe_for_client": true,
         "allow_publish_for_client": true,
         "presence": false
+      },
+      {
+        "name": "reports",
+        "allow_subscribe_for_client": true,
+        "allow_publish_for_client": true,
+        "presence": false
       }
     ]
   }

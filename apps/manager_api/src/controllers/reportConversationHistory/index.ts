@@ -6,6 +6,9 @@ import { listReportConversationHistoryUsers } from './methods/listReportConversa
 import { viewContact } from './methods/viewContact';
 import { viewContactEmail } from './methods/viewContactEmail';
 import { viewContactPhone } from './methods/viewContactPhone';
+import { generateReportConversationHistoryPdf } from './methods/generateReportConversationHistoryPdf';
+import { viewReportConversationHistoryPdf } from './methods/viewReportConversationHistoryPdf';
+import { downloadReportConversationHistoryPdf } from './methods/downloadReportConversationHistoryPdf';
 
 @injectable()
 class ReportConversationHistoryController {
@@ -19,6 +22,11 @@ class ReportConversationHistoryController {
   public viewContact = viewContact;
   public viewContactEmail = viewContactEmail;
   public viewContactPhone = viewContactPhone;
+  public generateReportConversationHistoryPdf =
+    generateReportConversationHistoryPdf;
+  public viewReportConversationHistoryPdf = viewReportConversationHistoryPdf;
+  public downloadReportConversationHistoryPdf =
+    downloadReportConversationHistoryPdf;
 }
 
 export default ReportConversationHistoryController;
