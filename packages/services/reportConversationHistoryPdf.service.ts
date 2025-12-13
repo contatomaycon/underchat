@@ -7,13 +7,19 @@ import { ListMessageResult } from '@core/schema/chat/listMessageChats/response.s
 import { ReportConversationHistoryPdfUpdaterRepository } from '@core/repositories/reportConversationHistory/ReportConversationHistoryPdfUpdater.repository';
 import { EReportConversationHistoryPdfStatus } from '@core/common/enums/EReportConversationHistoryPdfStatus';
 import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
+import { ElasticDatabaseService } from './elasticDatabase.service';
+import { EElasticIndex } from '@core/common/enums/EElasticIndex';
+import { IChat } from '@core/common/interfaces/IChat';
+import { ReportConversationHistoryMessagesListerUseCase } from '@core/useCases/reportConversationHistory/ReportConversationHistoryMessagesLister.useCase';
 
 @injectable()
 export class ReportConversationHistoryPdfService {
   constructor(
     private readonly storageService: StorageService,
     @inject(ReportConversationHistoryPdfUpdaterRepository)
-    private readonly pdfUpdaterRepository: ReportConversationHistoryPdfUpdaterRepository
+    private readonly pdfUpdaterRepository: ReportConversationHistoryPdfUpdaterRepository,
+    private readonly elasticDatabaseService: ElasticDatabaseService,
+    private readonly messagesListerUseCase: ReportConversationHistoryMessagesListerUseCase
   ) {}
 
   async deletePdf(url: string | null): Promise<void> {
@@ -39,12 +45,17 @@ export class ReportConversationHistoryPdfService {
     await this.pdfUpdaterRepository.updatePdfUrl(pdfId, url, status);
   }
 
-  async generatePdf(
-    accountId: string,
-    chatId: string,
-    messages: ListMessageResult[]
-  ): Promise<string> {
-    const html = this.generateHtmlFromMessages(messages);
+  async generatePdf(accountId: string, chatId: string): Promise<string> {
+    const [chat, messagesResult] = await Promise.all([
+      this.getChat(accountId, chatId),
+      this.messagesListerUseCase.execute(accountId, chatId),
+    ]);
+
+    const clientName = chat?.name || chat?.contact?.name || 'Cliente';
+    const html = this.generateHtmlFromMessages(
+      messagesResult.messages,
+      clientName
+    );
 
     const browser = await puppeteer.launch({
       headless: true,
@@ -91,24 +102,67 @@ export class ReportConversationHistoryPdfService {
     }
   }
 
-  private generateHtmlFromMessages(messages: ListMessageResult[]): string {
+  private async getChat(
+    accountId: string,
+    chatId: string
+  ): Promise<IChat | null> {
+    const queryElastic = {
+      size: 1,
+      query: {
+        bool: {
+          must: [
+            {
+              nested: {
+                path: 'account',
+                query: {
+                  term: {
+                    'account.id': accountId,
+                  },
+                },
+              },
+            },
+          ],
+          filter: [
+            {
+              term: {
+                chat_id: chatId,
+              },
+            },
+          ],
+        },
+      },
+    };
+
+    const result = await this.elasticDatabaseService.select<IChat>(
+      EElasticIndex.chat,
+      queryElastic
+    );
+
+    const hit = result?.hits?.hits?.[0];
+    return (hit?._source as IChat) || null;
+  }
+
+  private generateHtmlFromMessages(
+    messages: ListMessageResult[],
+    clientName: string
+  ): string {
     const parts: string[] = [];
 
     for (const msg of messages) {
       const isUser = msg.type_user === ETypeUserChat.client;
       const formattedDate = this.formatDate(msg.date || '');
-      const author = this.getAuthorName(msg, isUser);
+      const author = this.getAuthorName(msg, isUser, clientName);
       const content = this.formatMessageContent(msg.content);
       const alignmentClass = isUser ? 'left' : 'right';
       const timeOnly = this.formatTimeOnly(msg.date || '');
 
       parts.push(`
         <div class="msg-row ${alignmentClass}">
-          <div class="msg-time">${timeOnly}</div>
+          <div class="msg-name">${author}</div>
           <div class="bubble ${alignmentClass}">
             <div class="content">${content}</div>
             <div class="meta">
-              <span class="author">${author}</span>
+              <span class="time">${timeOnly}</span>
             </div>
           </div>
         </div>
@@ -128,15 +182,15 @@ export class ReportConversationHistoryPdfService {
             .msg-row { display: flex; width: 100%; align-items: flex-start; gap: 8px; }
             .msg-row.left { justify-content: flex-start; }
             .msg-row.right { justify-content: flex-end; }
-            .msg-time { font-size: 11px; color: rgba(17,27,33,0.6); white-space: nowrap; padding-top: 2px; }
-            .msg-row.left .msg-time { order: 1; }
-            .msg-row.right .msg-time { order: 3; }
+            .msg-name { font-size: 11px; color: rgba(17,27,33,0.6); white-space: nowrap; padding-top: 2px; font-weight: 500; }
+            .msg-row.left .msg-name { order: 1; }
+            .msg-row.right .msg-name { order: 3; }
             .bubble { max-width: 65%; width: fit-content; padding: 8px 12px 20px 12px; border-radius: 8px; position: relative; line-height: 1.5; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
             .msg-row.left .bubble { order: 2; background: rgb(255, 255, 255); color: #111b21; }
             .msg-row.right .bubble { order: 2; background: rgb(217, 253, 211); color: #111b21; }
             .content { font-size: 14.2px; word-break: break-word; margin-bottom: 4px; }
             .meta { position: absolute; right: 8px; bottom: 4px; display: flex; gap: 4px; align-items: center; font-size: 11px; color: rgba(17,27,33,0.6); }
-            .author { font-weight: 500; }
+            .time { font-weight: 500; }
           </style>
         </head>
         <body>
@@ -149,13 +203,13 @@ export class ReportConversationHistoryPdfService {
     `;
   }
 
-  private getAuthorName(msg: ListMessageResult, isUser: boolean): string {
+  private getAuthorName(
+    msg: ListMessageResult,
+    isUser: boolean,
+    clientName: string
+  ): string {
     if (isUser) {
-      if (msg.content?.contact?.name) {
-        const lastName = msg.content.contact.last_name || '';
-        return `${msg.content.contact.name}${lastName ? ` ${lastName}` : ''}`.trim();
-      }
-      return 'Cliente';
+      return clientName;
     }
 
     return msg.user?.name || 'Operador';

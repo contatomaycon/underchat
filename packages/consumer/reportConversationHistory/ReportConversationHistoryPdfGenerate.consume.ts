@@ -1,7 +1,6 @@
 import { singleton, inject } from 'tsyringe';
 import { Kafka, Consumer } from 'kafkajs';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
-import { ReportConversationHistoryMessagesListerUseCase } from '@core/useCases/reportConversationHistory/ReportConversationHistoryMessagesLister.useCase';
 import { ReportConversationHistoryPdfService } from '@core/services/reportConversationHistoryPdf.service';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { EReportConversationHistoryPdfStatus } from '@core/common/enums/EReportConversationHistoryPdfStatus';
@@ -19,7 +18,6 @@ export class ReportConversationHistoryPdfGenerateConsume {
   constructor(
     @inject('Kafka') private readonly kafka: Kafka,
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
-    private readonly messagesListerUseCase: ReportConversationHistoryMessagesListerUseCase,
     private readonly pdfService: ReportConversationHistoryPdfService,
     private readonly centrifugoService: CentrifugoService
   ) {}
@@ -131,15 +129,9 @@ export class ReportConversationHistoryPdfGenerateConsume {
       await this.pdfService.deletePdf(data.old_url_pdf);
     }
 
-    const messages = await this.messagesListerUseCase.execute(
-      data.account_id,
-      data.chat_id
-    );
-
     const url = await this.pdfService.generatePdf(
       data.account_id,
-      data.chat_id,
-      messages.messages
+      data.chat_id
     );
 
     await this.pdfService.updatePdfUrl(
