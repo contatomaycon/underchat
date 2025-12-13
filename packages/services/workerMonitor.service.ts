@@ -22,10 +22,17 @@ import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionS
 import { AccountService } from './account.service';
 import { IPlanAccountStatus } from '@core/common/interfaces/IPlanAccountStatus';
 import { EAccountStatus } from '@core/common/enums/EAccountStatus';
+import { IConnectionFailureTracker } from '@core/common/interfaces/IConnectionFailureTracker';
 
 @injectable()
 export class WorkerMonitorService {
   private readonly timeoutMinutes = 5;
+  private readonly maxConnectionFailures = 5;
+  private readonly connectionCheckIntervalMs = 60 * 1000;
+  private readonly connectionFailureTrackers = new Map<
+    string,
+    IConnectionFailureTracker
+  >();
 
   constructor(
     private readonly workerService: WorkerService,
@@ -160,7 +167,10 @@ export class WorkerMonitorService {
       sshConfig
     );
 
-    await this.syncConnectionStatus(worker, connectionHealthy);
+    await this.syncConnectionStatusWithFailureTracking(
+      worker,
+      connectionHealthy
+    );
   };
 
   private readonly handleMissingContainer = async (
@@ -187,6 +197,11 @@ export class WorkerMonitorService {
       if (timeout) {
         await this.handleDeleting(worker, server, sshConfig);
       }
+      return;
+    }
+
+    const isOffline = worker.worker_status_id === EWorkerStatus.offline;
+    if (isOffline) {
       return;
     }
 
@@ -258,29 +273,75 @@ export class WorkerMonitorService {
     );
   };
 
-  private readonly syncConnectionStatus = async (
+  private readonly syncConnectionStatusWithFailureTracking = async (
     worker: IWorkerMonitor,
     connectionHealthy: boolean
   ): Promise<void> => {
-    const desiredStatus = connectionHealthy
-      ? EWorkerStatus.online
-      : EWorkerStatus.offline;
+    const now = Date.now();
+    const tracker = this.connectionFailureTrackers.get(worker.worker_id);
 
-    if (desiredStatus === worker.worker_status_id) {
+    if (connectionHealthy) {
+      if (tracker) {
+        this.connectionFailureTrackers.delete(worker.worker_id);
+      }
+
+      if (worker.worker_status_id === EWorkerStatus.offline) {
+        await this.updateWorkerStatus(
+          worker,
+          EWorkerStatus.online,
+          ECodeMessage.info,
+          EBaileysConnectionStatus.info
+        );
+      }
+
       return;
     }
 
-    await this.workerService.updateStatusWorker(
-      worker.worker_id,
-      desiredStatus
-    );
+    if (!tracker) {
+      this.connectionFailureTrackers.set(worker.worker_id, {
+        failureCount: 1,
+        lastCheckTimestamp: now,
+      });
+      return;
+    }
+
+    const timeSinceLastCheck = now - tracker.lastCheckTimestamp;
+    if (timeSinceLastCheck < this.connectionCheckIntervalMs) {
+      return;
+    }
+
+    const newFailureCount = tracker.failureCount + 1;
+    this.connectionFailureTrackers.set(worker.worker_id, {
+      failureCount: newFailureCount,
+      lastCheckTimestamp: now,
+    });
+
+    if (newFailureCount >= this.maxConnectionFailures) {
+      if (worker.worker_status_id !== EWorkerStatus.offline) {
+        await this.updateWorkerStatus(
+          worker,
+          EWorkerStatus.offline,
+          ECodeMessage.info,
+          EBaileysConnectionStatus.info
+        );
+      }
+    }
+  };
+
+  private readonly updateWorkerStatus = async (
+    worker: IWorkerMonitor,
+    status: EWorkerStatus,
+    code: ECodeMessage,
+    connectionStatus: EBaileysConnectionStatus
+  ): Promise<void> => {
+    await this.workerService.updateStatusWorker(worker.worker_id, status);
 
     const payload: IBaileysConnectionState = {
-      code: ECodeMessage.info,
-      status: EBaileysConnectionStatus.info,
+      code,
+      status: connectionStatus,
       worker_id: worker.worker_id,
       account_id: worker.account_id,
-      worker_status_id: desiredStatus,
+      worker_status_id: status,
     };
 
     await this.centrifugoService.publishSub(
