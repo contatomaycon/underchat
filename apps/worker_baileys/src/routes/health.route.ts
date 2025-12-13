@@ -10,4 +10,9 @@ export default function healthRoutes(server: FastifyInstance) {
     schema: healthCheckSchema,
     handler: healthController.view,
   });
+
+  server.get('/connection/health/check', {
+    schema: healthCheckSchema,
+    handler: healthController.viewConnectionHealth,
+  });
 }

@@ -14,6 +14,14 @@ export const healthCheckSchema = {
       },
       { description: 'Successful' }
     ),
+    503: Type.Object(
+      {
+        status: Type.Boolean(),
+        message: Type.String(),
+        data: Type.Null(),
+      },
+      { description: 'Service Unavailable' }
+    ),
     500: Type.Object(
       {
         status: Type.Boolean(),
