@@ -310,14 +310,14 @@ const usersChartOptions = computed(() => ({
   colors: [getThemeColor('primary')],
 }));
 
-const chatbotsSeries = computed(() => [
+const channelsSparklineSeries = computed(() => [
   {
     name: t('dashboard_channels_label'),
     data: dashboardStore.stats?.channels.sparklineData ?? [0, 0, 0, 0, 0, 0, 0],
   },
 ]);
 
-const chatbotsChartOptions = computed(() => ({
+const channelsSparklineChartOptions = computed(() => ({
   chart: {
     type: 'area',
     toolbar: { show: false },
@@ -501,8 +501,8 @@ onMounted(async () => {
           icon="tabler-plug"
           color="info"
           :height="80"
-          :series="chatbotsSeries"
-          :chart-options="chatbotsChartOptions"
+          :series="channelsSparklineSeries"
+          :chart-options="channelsSparklineChartOptions"
         />
       </VCol>
       <VCol cols="12" sm="6" md="3">
@@ -856,7 +856,7 @@ onMounted(async () => {
                 </h3>
               </div>
               <VAvatar color="success" variant="tonal" size="56">
-                <VIcon icon="tabler-message-chatbot" size="28" />
+                <VIcon icon="tabler-robot" size="28" />
               </VAvatar>
             </div>
           </VCardText>
@@ -914,7 +914,7 @@ onMounted(async () => {
                 </h3>
               </div>
               <VAvatar color="warning" variant="tonal" size="56">
-                <VIcon icon="tabler-file-text" size="28" />
+                <VIcon icon="tabler-message" size="28" />
               </VAvatar>
             </div>
           </VCardText>
@@ -943,7 +943,7 @@ onMounted(async () => {
                 </h3>
               </div>
               <VAvatar color="purple" variant="tonal" size="56">
-                <VIcon icon="tabler-tags" size="28" />
+                <VIcon icon="tabler-label" size="28" />
               </VAvatar>
             </div>
           </VCardText>
