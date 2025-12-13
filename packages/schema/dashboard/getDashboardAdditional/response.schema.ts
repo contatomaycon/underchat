@@ -12,15 +12,15 @@ const attendancePerformanceSchema = Type.Object({
 });
 
 const sectorDistributionSchema = Type.Object({
-  sectorId: Type.String(),
-  sectorName: Type.String(),
+  sector_id: Type.String(),
+  sector_name: Type.String(),
   count: Type.Number(),
 });
 
 const attendanceMetricsSchema = Type.Object({
-  avgResponseTime: Type.String(),
-  avgResolutionTime: Type.String(),
-  totalAttendances: Type.Number(),
+  avg_response_time: Type.String(),
+  avg_resolution_time: Type.String(),
+  total_attendances: Type.Number(),
   productivity: Type.Number(),
 });
 
@@ -30,14 +30,14 @@ const chatbotsSchema = Type.Object({
 });
 
 export const getDashboardAdditionalResponseSchema = Type.Object({
-  contactsGrowth: Type.Array(contactsGrowthMonthlySchema),
-  attendancePerformance: Type.Array(attendancePerformanceSchema),
-  sectorsDistribution: Type.Array(sectorDistributionSchema),
-  attendanceMetrics: attendanceMetricsSchema,
+  contacts_growth: Type.Array(contactsGrowthMonthlySchema),
+  attendance_performance: Type.Array(attendancePerformanceSchema),
+  sectors_distribution: Type.Array(sectorDistributionSchema),
+  attendance_metrics: attendanceMetricsSchema,
   chatbots: chatbotsSchema,
-  contactGroups: Type.Number(),
-  messageTemplates: Type.Number(),
-  labelTemplates: Type.Number(),
+  contact_groups: Type.Number(),
+  message_templates: Type.Number(),
+  label_templates: Type.Number(),
 });
 
 export type GetDashboardAdditionalResponse = Static<

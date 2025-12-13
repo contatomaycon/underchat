@@ -43,27 +43,29 @@ const chatbotsTotal = computed(
   () => dashboardStore.additional?.chatbots.total ?? 0
 );
 const contactGroupsTotal = computed(
-  () => dashboardStore.additional?.contactGroups ?? 0
+  () => dashboardStore.additional?.contact_groups ?? 0
 );
 const messageTemplatesTotal = computed(
-  () => dashboardStore.additional?.messageTemplates ?? 0
+  () => dashboardStore.additional?.message_templates ?? 0
 );
 const labelTemplatesTotal = computed(
-  () => dashboardStore.additional?.labelTemplates ?? 0
+  () => dashboardStore.additional?.label_templates ?? 0
 );
 
 const avgResponseTime = computed(
-  () => dashboardStore.additional?.attendanceMetrics.avgResponseTime ?? '0m 0s'
+  () =>
+    dashboardStore.additional?.attendance_metrics?.avg_response_time ?? '0m 0s'
 );
 const avgResolutionTime = computed(
   () =>
-    dashboardStore.additional?.attendanceMetrics.avgResolutionTime ?? '0m 0s'
+    dashboardStore.additional?.attendance_metrics?.avg_resolution_time ??
+    '0m 0s'
 );
 const productivity = computed(
-  () => dashboardStore.additional?.attendanceMetrics.productivity ?? 0
+  () => dashboardStore.additional?.attendance_metrics?.productivity ?? 0
 );
 const totalAttendances = computed(
-  () => dashboardStore.additional?.attendanceMetrics.totalAttendances ?? 0
+  () => dashboardStore.additional?.attendance_metrics?.total_attendances ?? 0
 );
 
 const conversationsEvolutionData = computed(() => {
@@ -118,7 +120,7 @@ const conversationsEvolutionOptions = computed(() => ({
 }));
 
 const contactsGrowthData = computed(() => {
-  const growth = dashboardStore.additional?.contactsGrowth ?? [];
+  const growth = dashboardStore.additional?.contacts_growth ?? [];
   return {
     labels: growth.map((item) => item.month),
     datasets: [
@@ -158,7 +160,7 @@ const contactsGrowthOptions = computed(() => ({
 }));
 
 const sectorsDistributionData = computed(() => {
-  const sectors = dashboardStore.additional?.sectorsDistribution ?? [];
+  const sectors = dashboardStore.additional?.sectors_distribution ?? [];
   const colors = [
     'rgba(25, 118, 210, 0.8)',
     'rgba(46, 125, 50, 0.8)',
@@ -183,7 +185,7 @@ const sectorsDistributionData = computed(() => {
   }
 
   return {
-    labels: sectors.map((sector) => sector.sectorName),
+    labels: sectors.map((sector) => sector.sector_name),
     datasets: [
       {
         data: sectors.map((sector) => sector.count),
@@ -249,7 +251,7 @@ const channelsStatusOptions = computed(() => ({
 }));
 
 const attendancePerformanceData = computed(() => {
-  const performance = dashboardStore.additional?.attendancePerformance ?? [];
+  const performance = dashboardStore.additional?.attendance_performance ?? [];
   const dayLabels: Record<string, string> = {
     dom: t('day_sun_short'),
     seg: t('day_mon_short'),
@@ -308,7 +310,7 @@ const attendancePerformanceOptions = computed(() => ({
 const usersSeries = computed(() => [
   {
     name: t('dashboard_users_label'),
-    data: dashboardStore.stats?.users.sparklineData ?? [0, 0, 0, 0, 0, 0, 0],
+    data: dashboardStore.stats?.users.sparkline_data ?? [0, 0, 0, 0, 0, 0, 0],
   },
 ]);
 
@@ -350,7 +352,9 @@ const usersChartOptions = computed(() => ({
 const channelsSparklineSeries = computed(() => [
   {
     name: t('dashboard_channels_label'),
-    data: dashboardStore.stats?.channels.sparklineData ?? [0, 0, 0, 0, 0, 0, 0],
+    data: dashboardStore.stats?.channels.sparkline_data ?? [
+      0, 0, 0, 0, 0, 0, 0,
+    ],
   },
 ]);
 
@@ -392,7 +396,9 @@ const channelsSparklineChartOptions = computed(() => ({
 const contactsSeries = computed(() => [
   {
     name: t('dashboard_contacts_label'),
-    data: dashboardStore.stats?.contacts.sparklineData ?? [0, 0, 0, 0, 0, 0, 0],
+    data: dashboardStore.stats?.contacts.sparkline_data ?? [
+      0, 0, 0, 0, 0, 0, 0,
+    ],
   },
 ]);
 

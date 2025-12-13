@@ -9,7 +9,7 @@ const evolutionDataSchema = Type.Object({
 export const getDashboardConversationsResponseSchema = Type.Object({
   active: Type.Number(),
   closed: Type.Number(),
-  sparklineData: Type.Array(Type.Number()),
+  sparkline_data: Type.Array(Type.Number()),
   evolution: Type.Array(evolutionDataSchema),
 });
 

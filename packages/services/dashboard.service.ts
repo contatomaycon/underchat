@@ -40,17 +40,17 @@ export class DashboardService {
     return {
       users: {
         total: usersTotal,
-        sparklineData: usersSparkline,
+        sparkline_data: usersSparkline,
       },
       channels: {
         total: channelsTotal,
         connected: channelsConnected,
-        sparklineData: channelsSparkline,
+        sparkline_data: channelsSparkline,
       },
       contacts: {
         total: contactsTotal,
         growth: contactsGrowth,
-        sparklineData: contactsSparkline,
+        sparkline_data: contactsSparkline,
       },
     };
   };
@@ -71,7 +71,7 @@ export class DashboardService {
     return {
       active,
       closed,
-      sparklineData,
+      sparkline_data: sparklineData,
       evolution,
     };
   };
@@ -102,17 +102,26 @@ export class DashboardService {
     ]);
 
     return {
-      contactsGrowth,
-      attendancePerformance,
-      sectorsDistribution,
-      attendanceMetrics,
+      contacts_growth: contactsGrowth,
+      attendance_performance: attendancePerformance,
+      sectors_distribution: sectorsDistribution.map((sector) => ({
+        sector_id: sector.sectorId,
+        sector_name: sector.sectorName,
+        count: sector.count,
+      })),
+      attendance_metrics: {
+        avg_response_time: attendanceMetrics.avgResponseTime,
+        avg_resolution_time: attendanceMetrics.avgResolutionTime,
+        total_attendances: attendanceMetrics.totalAttendances,
+        productivity: attendanceMetrics.productivity,
+      },
       chatbots: {
         total: chatbotsTotal,
         active: chatbotsActive,
       },
-      contactGroups: contactGroupsTotal,
-      messageTemplates: messageTemplatesTotal,
-      labelTemplates: labelTemplatesTotal,
+      contact_groups: contactGroupsTotal,
+      message_templates: messageTemplatesTotal,
+      label_templates: labelTemplatesTotal,
     };
   };
 }
