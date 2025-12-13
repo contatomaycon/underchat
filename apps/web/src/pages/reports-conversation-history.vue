@@ -10,10 +10,7 @@ import { EReportConversationHistoryPermissions } from '@core/common/enums/EPermi
 import { useReportConversationHistoryStore } from '@/@webcore/stores/reportConversationHistory';
 import { ReportConversationHistoryResult } from '@core/schema/reportConversationHistory/listReportConversationHistory/response.schema';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
-import axios from '@webcore/axios';
-import { IApiResponse } from '@core/common/interfaces/IApiResponse';
 import { ListMessageResult } from '@core/schema/chat/listMessageChats/response.schema';
-import { ListReportConversationHistoryMessagesResponse } from '@core/schema/reportConversationHistory/listReportConversationHistoryMessages/response.schema';
 import { EColor } from '@core/common/enums/EColor';
 import { refDebounced } from '@vueuse/core';
 import ChatLogViewer from '@/components/chat/ChatLogViewer.vue';
@@ -295,32 +292,22 @@ const openConversationModal = async (item: ReportConversationHistoryResult) => {
   conversationMessages.value = [];
   isConversationModalOpen.value = true;
 
-  try {
-    const response = await axios.get<
-      IApiResponse<ListReportConversationHistoryMessagesResponse>
-    >(`/report-conversation-history/${item.chat_id}/messages`);
+  const response =
+    await reportConversationHistoryStore.listReportConversationHistoryMessages(
+      item.chat_id
+    );
 
-    if (response?.data?.status && response.data?.data) {
-      conversationMessages.value = response.data.data.messages;
-    } else {
-      conversationMessages.value = [];
-    }
-  } catch (error: any) {
+  if (response?.messages) {
+    conversationMessages.value = response.messages;
+  } else {
     conversationMessages.value = [];
-
-    const errorMessage =
-      error?.response?.data?.message ||
-      error?.message ||
-      t('report_conversation_history_list_error');
-
-    reportConversationHistoryStore.showSnackbar(errorMessage, EColor.error);
-  } finally {
-    loadingMessages.value = false;
-    await nextTick();
-    setTimeout(() => {
-      scrollToBottom();
-    }, 600);
   }
+
+  loadingMessages.value = false;
+  await nextTick();
+  setTimeout(() => {
+    scrollToBottom();
+  }, 600);
 };
 
 const scrollToBottom = (retries = 5) => {
