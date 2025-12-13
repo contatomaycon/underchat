@@ -44,7 +44,6 @@ const reportConversationHistoryStore = useReportConversationHistoryStore();
 useSnackbarCleanup(reportConversationHistoryStore);
 
 const isConversationModalOpen = ref(false);
-const selectedChatId = ref<string | null>(null);
 const conversationMessages = ref<ListMessageResult[]>([]);
 const loadingMessages = ref(false);
 const downloadingPdf = ref(false);
@@ -294,7 +293,6 @@ const conversationModalRef = ref<HTMLElement | null>(null);
 const conversationScrollRef = ref<HTMLElement | null>(null);
 
 const openConversationModal = async (item: ReportConversationHistoryResult) => {
-  selectedChatId.value = item.chat_id;
   selectedChatInfo.value = item;
   loadingMessages.value = true;
   conversationMessages.value = [];
@@ -407,6 +405,314 @@ watch(
   { deep: true }
 );
 
+const generateConversationPdf = async (
+  clientName: string,
+  onError: (message: string) => void
+): Promise<void> => {
+  await nextTick();
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+
+  const chatLogElement = document.querySelector(
+    '.chat-log-viewer'
+  ) as HTMLElement;
+
+  if (!chatLogElement) {
+    onError(t('report_conversation_history_pdf_generate_error'));
+    return;
+  }
+
+  const containerElement = chatLogElement.parentElement as HTMLElement;
+  if (!containerElement) {
+    onError(t('report_conversation_history_pdf_generate_error'));
+    return;
+  }
+
+  const originalScrollTop =
+    containerElement.scrollTop || chatLogElement.scrollTop;
+  containerElement.scrollTop = 0;
+  chatLogElement.scrollTop = 0;
+
+  const originalOverflow = containerElement.style.overflow;
+  const originalHeight = containerElement.style.height;
+  containerElement.style.overflow = 'visible';
+  containerElement.style.height = 'auto';
+
+  await new Promise((resolve) => setTimeout(resolve, 300));
+
+  const canvas = await html2canvas(chatLogElement, {
+    scale: 2,
+    useCORS: true,
+    logging: true,
+    backgroundColor: '#ffffff',
+    allowTaint: true,
+    foreignObjectRendering: false,
+    removeContainer: false,
+    onclone: (clonedDoc) => {
+      const clonedChatLog = clonedDoc.querySelector(
+        '.chat-log-viewer'
+      ) as HTMLElement;
+
+      if (clonedChatLog) {
+        clonedChatLog.style.backgroundColor = '#ffffff';
+        clonedChatLog.style.width = '100%';
+        clonedChatLog.style.minHeight = '100%';
+        clonedChatLog.style.position = 'relative';
+        clonedChatLog.style.overflow = 'visible';
+
+        const clonedChatContentElements = clonedChatLog.querySelectorAll(
+          '.chat-content'
+        ) as NodeListOf<HTMLElement>;
+
+        for (const element of clonedChatContentElements) {
+          const computedStyle = window.getComputedStyle(element);
+          let backgroundColor = computedStyle.backgroundColor;
+
+          if (backgroundColor && backgroundColor.includes('var(--')) {
+            const root = getComputedStyle(document.documentElement);
+            const surfaceColor = root
+              .getPropertyValue('--v-theme-surface')
+              .trim();
+            if (surfaceColor) {
+              backgroundColor = surfaceColor.startsWith('#')
+                ? surfaceColor
+                : `rgb(${surfaceColor})`;
+            }
+          }
+
+          const isWhiteOrTransparent =
+            !backgroundColor ||
+            backgroundColor === 'rgba(0, 0, 0, 0)' ||
+            backgroundColor === 'transparent' ||
+            (backgroundColor.includes('255') &&
+              backgroundColor.includes('255, 255, 255')) ||
+            backgroundColor === 'rgb(255, 255, 255)' ||
+            backgroundColor === '#ffffff' ||
+            backgroundColor === '#FFFFFF';
+
+          if (isWhiteOrTransparent) {
+            element.style.backgroundColor = '#ffffff';
+            element.style.border = '1px solid rgba(0, 0, 0, 0.12)';
+            element.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.08)';
+          }
+        }
+
+        const clonedIcons = clonedChatLog.querySelectorAll(
+          '.v-icon, [class*="icon"], [class*="Icon"], svg, i'
+        ) as NodeListOf<HTMLElement>;
+        for (const icon of clonedIcons) {
+          icon.style.display = 'inline-block';
+          icon.style.visibility = 'visible';
+          icon.style.opacity = '1';
+        }
+
+        const svgElements = clonedChatLog.querySelectorAll('svg');
+        for (const svg of svgElements) {
+          svg.style.display = 'inline-block';
+          svg.style.visibility = 'visible';
+          svg.style.opacity = '1';
+        }
+      }
+    },
+  });
+
+  containerElement.style.overflow = originalOverflow;
+  containerElement.style.height = originalHeight;
+  containerElement.scrollTop = originalScrollTop;
+  chatLogElement.scrollTop = originalScrollTop;
+
+  const pdf = new jsPDF({
+    orientation: 'portrait',
+    unit: 'mm',
+    format: 'a4',
+  });
+
+  const marginLeft = 10;
+  const marginRight = 10;
+  const marginTop = 8;
+  const marginBottom = 8;
+
+  const pdfWidth = pdf.internal.pageSize.getWidth();
+  const pdfHeight = pdf.internal.pageSize.getHeight();
+  const availableWidth = pdfWidth - marginLeft - marginRight;
+  const availableHeight = pdfHeight - marginTop - marginBottom;
+
+  const imgWidth = canvas.width;
+  const imgHeight = canvas.height;
+  const ratio = availableWidth / imgWidth;
+
+  const messageElements = chatLogElement.querySelectorAll(
+    '.chat-group, .date-separator-wrapper'
+  ) as NodeListOf<HTMLElement>;
+
+  const messagePositions: Array<{ top: number; bottom: number }> = [];
+  const containerRect = chatLogElement.getBoundingClientRect();
+  const scaleFactor = canvas.height / chatLogElement.offsetHeight;
+
+  for (const element of messageElements) {
+    const rect = element.getBoundingClientRect();
+    const elementTop = rect.top - containerRect.top;
+    const elementBottom = rect.bottom - containerRect.top;
+    const relativeTop = elementTop * scaleFactor;
+    const relativeBottom = elementBottom * scaleFactor;
+
+    if (
+      relativeBottom > relativeTop &&
+      relativeTop >= 0 &&
+      relativeBottom <= canvas.height
+    ) {
+      messagePositions.push({
+        top: Math.max(0, relativeTop),
+        bottom: Math.min(canvas.height, relativeBottom),
+      });
+    }
+  }
+
+  messagePositions.sort((a, b) => a.top - b.top);
+
+  const imgScaledHeight = imgHeight * ratio;
+  const totalPages = Math.ceil(imgScaledHeight / availableHeight);
+  const pageBreaks: number[] = [0];
+  const minPageHeight = (availableHeight / ratio) * 0.3;
+  const safeMargin = 20;
+
+  for (let i = 1; i < totalPages; i++) {
+    const idealBreakY = (i * availableHeight) / ratio;
+    const lastBreakY = pageBreaks[pageBreaks.length - 1];
+    const minBreakY = lastBreakY + minPageHeight;
+
+    let bestBreakY = idealBreakY;
+    let messageIntersected = false;
+
+    for (const msg of messagePositions) {
+      const msgTop = msg.top;
+      const msgBottom = msg.bottom;
+      const msgHeight = msgBottom - msgTop;
+
+      if (idealBreakY >= msgTop && idealBreakY <= msgBottom) {
+        bestBreakY = msgBottom + safeMargin;
+        messageIntersected = true;
+        break;
+      }
+
+      if (
+        idealBreakY > msgTop - safeMargin &&
+        idealBreakY < msgBottom + safeMargin
+      ) {
+        bestBreakY = msgBottom + safeMargin;
+        messageIntersected = true;
+        break;
+      }
+
+      if (
+        idealBreakY > msgBottom &&
+        idealBreakY < msgBottom + safeMargin + msgHeight * 0.1
+      ) {
+        bestBreakY = msgBottom + safeMargin;
+        messageIntersected = true;
+        break;
+      }
+    }
+
+    if (!messageIntersected) {
+      let closestMessageAfter: number | null = null;
+      let closestMessageBefore: number | null = null;
+      let closestDistanceAfter = Infinity;
+      let closestDistanceBefore = Infinity;
+
+      for (const msg of messagePositions) {
+        if (msg.bottom < idealBreakY) {
+          const distance = idealBreakY - msg.bottom;
+          if (distance < closestDistanceBefore && distance <= 100) {
+            closestDistanceBefore = distance;
+            closestMessageBefore = msg.bottom;
+          }
+        }
+
+        if (msg.top > idealBreakY) {
+          const distance = msg.top - idealBreakY;
+          if (distance < closestDistanceAfter && distance <= 100) {
+            closestDistanceAfter = distance;
+            closestMessageAfter = msg.top;
+          }
+        }
+      }
+
+      if (closestMessageBefore !== null) {
+        bestBreakY = closestMessageBefore + safeMargin;
+      }
+
+      if (
+        closestMessageAfter !== null &&
+        closestDistanceAfter < closestDistanceBefore
+      ) {
+        bestBreakY = closestMessageAfter - safeMargin;
+      }
+    }
+
+    if (bestBreakY < minBreakY) {
+      bestBreakY = minBreakY;
+    }
+
+    if (bestBreakY >= imgHeight - 10) {
+      break;
+    }
+
+    pageBreaks.push(Math.min(bestBreakY, imgHeight));
+  }
+
+  if (pageBreaks[pageBreaks.length - 1] < imgHeight - 10) {
+    pageBreaks.push(imgHeight);
+  }
+
+  for (let i = 0; i < pageBreaks.length - 1; i++) {
+    if (i > 0) {
+      pdf.addPage();
+    }
+
+    const sourceY = pageBreaks[i];
+    const nextBreakY = pageBreaks[i + 1];
+    const sourceHeight = nextBreakY - sourceY;
+    const displayHeight = sourceHeight * ratio;
+
+    if (sourceHeight <= 0) continue;
+
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = imgWidth;
+    tempCanvas.height = Math.ceil(sourceHeight);
+    const tempCtx = tempCanvas.getContext('2d');
+
+    if (tempCtx) {
+      tempCtx.drawImage(
+        canvas,
+        0,
+        Math.floor(sourceY),
+        imgWidth,
+        Math.ceil(sourceHeight),
+        0,
+        0,
+        imgWidth,
+        Math.ceil(sourceHeight)
+      );
+
+      const pageImgData = tempCanvas.toDataURL('image/png');
+
+      pdf.addImage(
+        pageImgData,
+        'PNG',
+        marginLeft,
+        marginTop,
+        availableWidth,
+        displayHeight,
+        undefined,
+        'FAST'
+      );
+    }
+  }
+
+  const fileName = `historico-conversas-${clientName}-${new Date().toISOString().split('T')[0]}.pdf`;
+  pdf.save(fileName);
+};
+
 const downloadConversationPdf = async () => {
   if (!selectedChatInfo.value || conversationMessages.value.length === 0) {
     return;
@@ -415,314 +721,12 @@ const downloadConversationPdf = async () => {
   downloadingPdf.value = true;
 
   try {
-    await nextTick();
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-
-    const chatLogElement = document.querySelector(
-      '.chat-log-viewer'
-    ) as HTMLElement;
-
-    if (!chatLogElement) {
-      reportConversationHistoryStore.showSnackbar(
-        t('report_conversation_history_pdf_generate_error'),
-        EColor.error
-      );
-      downloadingPdf.value = false;
-      return;
-    }
-
-    const containerElement = chatLogElement.parentElement as HTMLElement;
-    if (!containerElement) {
-      reportConversationHistoryStore.showSnackbar(
-        t('report_conversation_history_pdf_generate_error'),
-        EColor.error
-      );
-      downloadingPdf.value = false;
-      return;
-    }
-
-    const originalScrollTop =
-      containerElement.scrollTop || chatLogElement.scrollTop;
-    containerElement.scrollTop = 0;
-    chatLogElement.scrollTop = 0;
-
-    const originalOverflow = containerElement.style.overflow;
-    const originalHeight = containerElement.style.height;
-    containerElement.style.overflow = 'visible';
-    containerElement.style.height = 'auto';
-
-    await new Promise((resolve) => setTimeout(resolve, 300));
-
-    const canvas = await html2canvas(chatLogElement, {
-      scale: 2,
-      useCORS: true,
-      logging: true,
-      backgroundColor: '#ffffff',
-      allowTaint: true,
-      foreignObjectRendering: false,
-      removeContainer: false,
-      onclone: (clonedDoc, element) => {
-        const clonedChatLog = clonedDoc.querySelector(
-          '.chat-log-viewer'
-        ) as HTMLElement;
-
-        if (clonedChatLog) {
-          clonedChatLog.style.backgroundColor = '#ffffff';
-          clonedChatLog.style.width = '100%';
-          clonedChatLog.style.minHeight = '100%';
-          clonedChatLog.style.position = 'relative';
-          clonedChatLog.style.overflow = 'visible';
-
-          const clonedChatContentElements = clonedChatLog.querySelectorAll(
-            '.chat-content'
-          ) as NodeListOf<HTMLElement>;
-
-          for (const element of clonedChatContentElements) {
-            const computedStyle = window.getComputedStyle(element);
-            let backgroundColor = computedStyle.backgroundColor;
-
-            if (backgroundColor && backgroundColor.includes('var(--')) {
-              const root = getComputedStyle(document.documentElement);
-              const surfaceColor = root
-                .getPropertyValue('--v-theme-surface')
-                .trim();
-              if (surfaceColor) {
-                backgroundColor = surfaceColor.startsWith('#')
-                  ? surfaceColor
-                  : `rgb(${surfaceColor})`;
-              }
-            }
-
-            const isWhiteOrTransparent =
-              !backgroundColor ||
-              backgroundColor === 'rgba(0, 0, 0, 0)' ||
-              backgroundColor === 'transparent' ||
-              (backgroundColor.includes('255') &&
-                backgroundColor.includes('255, 255, 255')) ||
-              backgroundColor === 'rgb(255, 255, 255)' ||
-              backgroundColor === '#ffffff' ||
-              backgroundColor === '#FFFFFF';
-
-            if (isWhiteOrTransparent) {
-              element.style.backgroundColor = '#ffffff';
-              element.style.border = '1px solid rgba(0, 0, 0, 0.12)';
-              element.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.08)';
-            }
-          }
-
-          const clonedIcons = clonedChatLog.querySelectorAll(
-            '.v-icon, [class*="icon"], [class*="Icon"], svg, i'
-          ) as NodeListOf<HTMLElement>;
-          for (const icon of clonedIcons) {
-            icon.style.display = 'inline-block';
-            icon.style.visibility = 'visible';
-            icon.style.opacity = '1';
-          }
-
-          const svgElements = clonedChatLog.querySelectorAll('svg');
-          for (const svg of svgElements) {
-            svg.style.display = 'inline-block';
-            svg.style.visibility = 'visible';
-            svg.style.opacity = '1';
-          }
-        }
-      },
-    });
-
-    const imgData = canvas.toDataURL('image/png');
-    const pdf = new jsPDF({
-      orientation: 'portrait',
-      unit: 'mm',
-      format: 'a4',
-    });
-
-    const marginLeft = 10;
-    const marginRight = 10;
-    const marginTop = 8;
-    const marginBottom = 8;
-
-    const pdfWidth = pdf.internal.pageSize.getWidth();
-    const pdfHeight = pdf.internal.pageSize.getHeight();
-    const availableWidth = pdfWidth - marginLeft - marginRight;
-    const availableHeight = pdfHeight - marginTop - marginBottom;
-
-    const imgWidth = canvas.width;
-    const imgHeight = canvas.height;
-    const ratio = availableWidth / imgWidth;
-    const imgScaledWidth = availableWidth;
-    const imgScaledHeight = imgHeight * ratio;
-
-    const messageElements = chatLogElement.querySelectorAll(
-      '.chat-group, .date-separator-wrapper'
-    ) as NodeListOf<HTMLElement>;
-
-    const messagePositions: Array<{ top: number; bottom: number }> = [];
-    const containerRect = chatLogElement.getBoundingClientRect();
-    const html2canvasScale = 2;
-    const scaleFactor = canvas.height / chatLogElement.offsetHeight;
-
-    for (const element of messageElements) {
-      const rect = element.getBoundingClientRect();
-      const elementTop = rect.top - containerRect.top;
-      const elementBottom = rect.bottom - containerRect.top;
-      const relativeTop = elementTop * scaleFactor;
-      const relativeBottom = elementBottom * scaleFactor;
-
-      if (
-        relativeBottom > relativeTop &&
-        relativeTop >= 0 &&
-        relativeBottom <= canvas.height
-      ) {
-        messagePositions.push({
-          top: Math.max(0, relativeTop),
-          bottom: Math.min(canvas.height, relativeBottom),
-        });
+    await generateConversationPdf(
+      selectedChatInfo.value.client,
+      (errorMessage) => {
+        reportConversationHistoryStore.showSnackbar(errorMessage, EColor.error);
       }
-    }
-
-    messagePositions.sort((a, b) => a.top - b.top);
-
-    const totalPages = Math.ceil(imgScaledHeight / availableHeight);
-    const pageBreaks: number[] = [0];
-    const minPageHeight = (availableHeight / ratio) * 0.3;
-    const safeMargin = 20;
-
-    for (let i = 1; i < totalPages; i++) {
-      const idealBreakY = (i * availableHeight) / ratio;
-      const lastBreakY = pageBreaks[pageBreaks.length - 1];
-      const minBreakY = lastBreakY + minPageHeight;
-
-      let bestBreakY = idealBreakY;
-      let messageIntersected = false;
-
-      for (const msg of messagePositions) {
-        const msgTop = msg.top;
-        const msgBottom = msg.bottom;
-        const msgHeight = msgBottom - msgTop;
-
-        if (idealBreakY >= msgTop && idealBreakY <= msgBottom) {
-          bestBreakY = msgBottom + safeMargin;
-          messageIntersected = true;
-          break;
-        }
-
-        if (
-          idealBreakY > msgTop - safeMargin &&
-          idealBreakY < msgBottom + safeMargin
-        ) {
-          bestBreakY = msgBottom + safeMargin;
-          messageIntersected = true;
-          break;
-        }
-
-        if (
-          idealBreakY > msgBottom &&
-          idealBreakY < msgBottom + safeMargin + msgHeight * 0.1
-        ) {
-          bestBreakY = msgBottom + safeMargin;
-          messageIntersected = true;
-          break;
-        }
-      }
-
-      if (!messageIntersected) {
-        let closestMessageAfter: number | null = null;
-        let closestMessageBefore: number | null = null;
-        let closestDistanceAfter = Infinity;
-        let closestDistanceBefore = Infinity;
-
-        for (const msg of messagePositions) {
-          if (msg.bottom < idealBreakY) {
-            const distance = idealBreakY - msg.bottom;
-            if (distance < closestDistanceBefore && distance <= 100) {
-              closestDistanceBefore = distance;
-              closestMessageBefore = msg.bottom;
-            }
-          }
-
-          if (msg.top > idealBreakY) {
-            const distance = msg.top - idealBreakY;
-            if (distance < closestDistanceAfter && distance <= 100) {
-              closestDistanceAfter = distance;
-              closestMessageAfter = msg.top;
-            }
-          }
-        }
-
-        if (closestMessageBefore !== null) {
-          bestBreakY = closestMessageBefore + safeMargin;
-        }
-
-        if (
-          closestMessageAfter !== null &&
-          closestDistanceAfter < closestDistanceBefore
-        ) {
-          bestBreakY = closestMessageAfter - safeMargin;
-        }
-      }
-
-      if (bestBreakY < minBreakY) {
-        bestBreakY = minBreakY;
-      }
-
-      if (bestBreakY >= imgHeight - 10) {
-        break;
-      }
-
-      pageBreaks.push(Math.min(bestBreakY, imgHeight));
-    }
-
-    if (pageBreaks[pageBreaks.length - 1] < imgHeight - 10) {
-      pageBreaks.push(imgHeight);
-    }
-
-    for (let i = 0; i < pageBreaks.length - 1; i++) {
-      if (i > 0) {
-        pdf.addPage();
-      }
-
-      const sourceY = pageBreaks[i];
-      const nextBreakY = pageBreaks[i + 1];
-      const sourceHeight = nextBreakY - sourceY;
-      const displayHeight = sourceHeight * ratio;
-
-      if (sourceHeight <= 0) continue;
-
-      const tempCanvas = document.createElement('canvas');
-      tempCanvas.width = imgWidth;
-      tempCanvas.height = Math.ceil(sourceHeight);
-      const tempCtx = tempCanvas.getContext('2d');
-
-      if (tempCtx) {
-        tempCtx.drawImage(
-          canvas,
-          0,
-          Math.floor(sourceY),
-          imgWidth,
-          Math.ceil(sourceHeight),
-          0,
-          0,
-          imgWidth,
-          Math.ceil(sourceHeight)
-        );
-
-        const pageImgData = tempCanvas.toDataURL('image/png');
-
-        pdf.addImage(
-          pageImgData,
-          'PNG',
-          marginLeft,
-          marginTop,
-          imgScaledWidth,
-          displayHeight,
-          undefined,
-          'FAST'
-        );
-      }
-    }
-
-    const fileName = `historico-conversas-${selectedChatInfo.value.client}-${new Date().toISOString().split('T')[0]}.pdf`;
-    pdf.save(fileName);
+    );
   } catch (error: any) {
     console.error('Erro ao gerar PDF:', error);
     const errorMessage =
