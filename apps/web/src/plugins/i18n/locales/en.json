@@ -1762,6 +1762,7 @@
     "dashboard_attendances_performed_label": "Attendances Performed",
     "dashboard_daily_goal": "Daily Goal",
     "dashboard_daily_goal_label": "Daily Goal",
+    "dashboard_daily_average_label": "Daily Average",
     "dashboard_users_label": "Users",
     "dashboard_channels_label": "Channels",
     "dashboard_contacts_label": "Contacts",

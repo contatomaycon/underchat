@@ -8,7 +8,7 @@ const contactsGrowthMonthlySchema = Type.Object({
 const attendancePerformanceSchema = Type.Object({
   day: Type.String(),
   performed: Type.Number(),
-  goal: Type.Number(),
+  average: Type.Number(),
 });
 
 const sectorDistributionSchema = Type.Object({

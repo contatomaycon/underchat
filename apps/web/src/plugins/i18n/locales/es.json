@@ -1762,6 +1762,7 @@
     "dashboard_attendances_performed_label": "Atenciones Realizadas",
     "dashboard_daily_goal": "Meta Diaria",
     "dashboard_daily_goal_label": "Meta Diaria",
+    "dashboard_daily_average_label": "Promedio del Día",
     "dashboard_users_label": "Usuarios",
     "dashboard_channels_label": "Canales",
     "dashboard_contacts_label": "Contactos",

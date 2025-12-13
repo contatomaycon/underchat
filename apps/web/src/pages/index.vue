@@ -237,8 +237,8 @@ const attendancePerformanceData = computed(() => {
         backgroundColor: getThemeColor('primary'),
       },
       {
-        label: t('dashboard_daily_goal_label'),
-        data: performance.map((item) => item.goal),
+        label: t('dashboard_daily_average_label'),
+        data: performance.map((item) => item.average),
         backgroundColor: getThemeColor('success'),
       },
     ],
