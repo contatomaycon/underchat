@@ -219,6 +219,7 @@
   "financial_report_list_not_found": "No data found for financial report!",
   "report_conversation_history_list_successfully": "Conversation history retrieved successfully!",
   "report_conversation_history_list_not_found": "No data found for conversation history!",
+  "report_conversation_history_messages_list_successfully": "Conversation history messages retrieved successfully!",
   "plan_list_successfully": "Plan list retrieved successfully!",
   "plan_list_not_found": "No plans found!",
   "plan_name_required": "Plan name is required!",

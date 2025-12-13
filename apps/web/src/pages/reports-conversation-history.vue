@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, computed, onMounted } from 'vue';
+import { ref, watch, computed, onMounted, nextTick } from 'vue';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { useI18n } from 'vue-i18n';
 import { formatDateTime } from '@core/common/functions/formatDateTime';
@@ -14,11 +14,8 @@ import { ReportConversationHistoryResult } from '@core/schema/reportConversation
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import axios from '@webcore/axios';
 import { IApiResponse } from '@core/common/interfaces/IApiResponse';
-import {
-  ListMessageResponse,
-  ListMessageResult,
-} from '@core/schema/chat/listMessageChats/response.schema';
-import { ListMessageChatsQuery } from '@core/schema/chat/listMessageChats/request.schema';
+import { ListMessageResult } from '@core/schema/chat/listMessageChats/response.schema';
+import { ListReportConversationHistoryMessagesResponse } from '@core/schema/reportConversationHistory/listReportConversationHistoryMessages/response.schema';
 import { EColor } from '@core/common/enums/EColor';
 import { refDebounced } from '@vueuse/core';
 import ChatLogViewer from '@/components/chat/ChatLogViewer.vue';
@@ -290,28 +287,23 @@ const loadHistory = async () => {
   );
 };
 
+const conversationModalRef = ref<HTMLElement | null>(null);
+const conversationScrollRef = ref<HTMLElement | null>(null);
+
 const openConversationModal = async (item: ReportConversationHistoryResult) => {
   selectedChatId.value = item.chat_id;
   selectedChatInfo.value = item;
-  isConversationModalOpen.value = true;
   loadingMessages.value = true;
   conversationMessages.value = [];
+  isConversationModalOpen.value = true;
 
   try {
-    const query: ListMessageChatsQuery = {
-      current_page: 1,
-      per_page: 200,
-    };
-
-    const response = await axios.get<IApiResponse<ListMessageResponse>>(
-      `/chat/${item.chat_id}`,
-      {
-        params: query,
-      }
-    );
+    const response = await axios.get<
+      IApiResponse<ListReportConversationHistoryMessagesResponse>
+    >(`/report-conversation-history/${item.chat_id}/messages`);
 
     if (response?.data?.status && response.data?.data) {
-      conversationMessages.value = [...response.data.data.results].reverse();
+      conversationMessages.value = response.data.data.messages;
     } else {
       conversationMessages.value = [];
     }
@@ -326,8 +318,83 @@ const openConversationModal = async (item: ReportConversationHistoryResult) => {
     reportConversationHistoryStore.showSnackbar(errorMessage, EColor.error);
   } finally {
     loadingMessages.value = false;
+    await nextTick();
+    setTimeout(() => {
+      scrollToBottom();
+    }, 600);
   }
 };
+
+const scrollToBottom = (retries = 5) => {
+  requestAnimationFrame(() => {
+    let scrollContainer: HTMLElement | null = null;
+
+    if (conversationScrollRef.value) {
+      const element = conversationScrollRef.value as HTMLElement;
+      if (element && element.parentElement) {
+        scrollContainer = element.parentElement;
+      }
+    }
+
+    if (!scrollContainer && conversationModalRef.value) {
+      const modalElement =
+        conversationModalRef.value instanceof HTMLElement
+          ? conversationModalRef.value
+          : (conversationModalRef.value as any)?.$el;
+
+      if (modalElement) {
+        scrollContainer = modalElement.querySelector(
+          '.v-card-text'
+        ) as HTMLElement;
+      }
+    }
+
+    if (scrollContainer) {
+      const maxScroll =
+        scrollContainer.scrollHeight - scrollContainer.clientHeight;
+      scrollContainer.scrollTop = maxScroll;
+
+      if (retries > 0 && scrollContainer.scrollTop < maxScroll - 10) {
+        setTimeout(() => {
+          scrollToBottom(retries - 1);
+        }, 300);
+      }
+    } else if (retries > 0) {
+      setTimeout(() => {
+        scrollToBottom(retries - 1);
+      }, 300);
+    }
+  });
+};
+
+const handleModalOpened = async () => {
+  await nextTick();
+  setTimeout(() => {
+    scrollToBottom();
+  }, 800);
+};
+
+watch(
+  [conversationMessages, loadingMessages],
+  async () => {
+    if (!loadingMessages.value && conversationMessages.value.length > 0) {
+      await nextTick();
+      setTimeout(() => {
+        scrollToBottom();
+      }, 500);
+    }
+  },
+  { deep: true }
+);
+
+watch(isConversationModalOpen, async (isOpen) => {
+  if (isOpen) {
+    await nextTick();
+    setTimeout(() => {
+      scrollToBottom();
+    }, 500);
+  }
+});
 
 watch(
   query,
@@ -633,8 +700,13 @@ const copyToClipboard = async (text: string) => {
     </VCard>
 
     <!-- Modal de Visualização da Conversa -->
-    <VDialog v-model="isConversationModalOpen" max-width="900" scrollable>
-      <VCard>
+    <VDialog
+      v-model="isConversationModalOpen"
+      max-width="900"
+      scrollable
+      @opened="handleModalOpened"
+    >
+      <VCard ref="conversationModalRef">
         <VCardTitle class="d-flex justify-space-between align-center">
           <div>
             <div class="text-h6">{{ t('conversation_history') }}</div>
@@ -654,14 +726,18 @@ const copyToClipboard = async (text: string) => {
         <VDivider />
 
         <VCardText
-          class="pa-0"
+          class="pa-0 position-relative"
           style="
             height: 600px;
             overflow-y: auto;
             background-color: rgb(var(--v-theme-background));
           "
         >
-          <div class="pa-4" style="min-height: 100%">
+          <div
+            ref="conversationScrollRef"
+            class="pa-4"
+            style="min-height: 100%"
+          >
             <ChatLogViewer
               :messages="conversationMessages"
               :client-name="selectedChatInfo?.client || ''"
