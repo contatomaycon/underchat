@@ -96,16 +96,14 @@ export class DashboardConversationsRepository {
     accountId: string
   ): Promise<IConversationEvolution[]> => {
     const now = new Date();
-    const twelveMonthsAgo = new Date();
-    twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
-    twelveMonthsAgo.setDate(1);
-    twelveMonthsAgo.setHours(0, 0, 0, 0);
+    const currentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    currentMonth.setHours(0, 0, 0, 0);
 
     const months: IConversationEvolution[] = [];
 
-    for (let i = 0; i < 12; i++) {
-      const monthStart = new Date(twelveMonthsAgo);
-      monthStart.setMonth(monthStart.getMonth() + i);
+    for (let i = 11; i >= 0; i--) {
+      const monthStart = new Date(currentMonth);
+      monthStart.setMonth(monthStart.getMonth() - i);
 
       const monthEnd = new Date(monthStart);
       monthEnd.setMonth(monthEnd.getMonth() + 1);
