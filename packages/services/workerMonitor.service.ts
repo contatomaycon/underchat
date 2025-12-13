@@ -50,26 +50,8 @@ export class WorkerMonitorService {
     const servers = await this.serverService.listBalanceServers();
     const workers = await this.workerService.listWorkersForMonitor();
 
-    console.log(
-      `[WorkerMonitor] Iniciando monitoramento - Servers: ${servers.length}, Workers: ${workers.length}`
-    );
-
     if (!servers.length) {
-      console.log('[WorkerMonitor] Nenhum servidor encontrado');
       return;
-    }
-
-    const offlineWorkers = workers.filter(
-      (w) => w.worker_status_id === EWorkerStatus.offline
-    );
-    if (offlineWorkers.length > 0) {
-      console.log(
-        `[WorkerMonitor] Workers offline encontrados: ${offlineWorkers.length}`,
-        offlineWorkers.map((w) => ({
-          worker_id: w.worker_id,
-          status: w.worker_status_id,
-        }))
-      );
     }
 
     const workersById = new Map<string, IWorkerMonitor>(
@@ -137,10 +119,6 @@ export class WorkerMonitorService {
       return;
     }
 
-    console.log(
-      `[WorkerMonitor] Processando container: ${workerId}, Status: ${worker.worker_status_id}`
-    );
-
     if (worker.deleted_at) {
       await this.removeContainer(workerId, server.server_id, sshConfig);
       return;
@@ -180,25 +158,15 @@ export class WorkerMonitorService {
     }
 
     const checkConnection = this.shouldCheckConnection(worker);
-    console.log(
-      `[WorkerMonitor] Worker ${workerId} - shouldCheckConnection: ${checkConnection}, Status: ${worker.worker_status_id}`
-    );
 
     if (!checkConnection) {
-      console.log(
-        `[WorkerMonitor] Worker ${workerId} - Verificação de conexão ignorada (status não permite)`
-      );
       return;
     }
 
-    console.log(`[WorkerMonitor] Worker ${workerId} - Verificando conexão...`);
     const connectionHealthy = await this.checkConnection(
       workerId,
       server.server_id,
       sshConfig
-    );
-    console.log(
-      `[WorkerMonitor] Worker ${workerId} - Resultado verificação conexão: ${connectionHealthy}`
     );
 
     await this.syncConnectionStatusWithFailureTracking(
@@ -318,31 +286,17 @@ export class WorkerMonitorService {
     const now = Date.now();
     const tracker = this.connectionFailureTrackers.get(worker.worker_id);
 
-    console.log(
-      `[WorkerMonitor] syncConnectionStatus - Worker: ${worker.worker_id}, Status atual: ${worker.worker_status_id}, ConnectionHealthy: ${connectionHealthy}, Tracker: ${tracker ? `count=${tracker.failureCount}, lastCheck=${new Date(tracker.lastCheckTimestamp).toISOString()}` : 'null'}`
-    );
-
     if (connectionHealthy) {
       if (tracker) {
-        console.log(
-          `[WorkerMonitor] Worker ${worker.worker_id} - Removendo tracker de falhas (conexão saudável)`
-        );
         this.connectionFailureTrackers.delete(worker.worker_id);
       }
 
       if (worker.worker_status_id === EWorkerStatus.offline) {
-        console.log(
-          `[WorkerMonitor] Worker ${worker.worker_id} - Retornando para ONLINE (conexão saudável)`
-        );
         await this.updateWorkerStatus(
           worker,
           EWorkerStatus.online,
           ECodeMessage.info,
           EBaileysConnectionStatus.info
-        );
-      } else {
-        console.log(
-          `[WorkerMonitor] Worker ${worker.worker_id} - Já está online, não precisa atualizar`
         );
       }
 
@@ -350,9 +304,6 @@ export class WorkerMonitorService {
     }
 
     if (!tracker) {
-      console.log(
-        `[WorkerMonitor] Worker ${worker.worker_id} - Primeira falha detectada, iniciando verificações consecutivas`
-      );
       this.connectionFailureTrackers.set(worker.worker_id, {
         failureCount: 1,
         lastCheckTimestamp: now,
@@ -373,9 +324,6 @@ export class WorkerMonitorService {
     }
 
     const newFailureCount = tracker.failureCount + 1;
-    console.log(
-      `[WorkerMonitor] Worker ${worker.worker_id} - Incrementando contador de falhas: ${newFailureCount}/${this.maxConnectionFailures}`
-    );
     this.connectionFailureTrackers.set(worker.worker_id, {
       failureCount: newFailureCount,
       lastCheckTimestamp: now,
@@ -383,18 +331,11 @@ export class WorkerMonitorService {
 
     if (newFailureCount >= this.maxConnectionFailures) {
       if (worker.worker_status_id !== EWorkerStatus.offline) {
-        console.log(
-          `[WorkerMonitor] Worker ${worker.worker_id} - Marcando como OFFLINE (${newFailureCount} falhas consecutivas)`
-        );
         await this.updateWorkerStatus(
           worker,
           EWorkerStatus.offline,
           ECodeMessage.info,
           EBaileysConnectionStatus.info
-        );
-      } else {
-        console.log(
-          `[WorkerMonitor] Worker ${worker.worker_id} - Já está offline, não precisa atualizar`
         );
       }
     }
@@ -410,17 +351,11 @@ export class WorkerMonitorService {
 
       const tracker = this.connectionFailureTrackers.get(worker.worker_id);
       if (!tracker) {
-        console.log(
-          `[WorkerMonitor] Worker ${worker.worker_id} - Tracker removido, parando verificações consecutivas`
-        );
         return;
       }
 
       const currentWorker = await this.getCurrentWorkerStatus(worker.worker_id);
       if (!currentWorker) {
-        console.log(
-          `[WorkerMonitor] Worker ${worker.worker_id} - Worker não encontrado, parando verificações`
-        );
         this.connectionFailureTrackers.delete(worker.worker_id);
         return;
       }
@@ -429,16 +364,9 @@ export class WorkerMonitorService {
         currentWorker.worker_status_id !== EWorkerStatus.online &&
         currentWorker.worker_status_id !== EWorkerStatus.offline
       ) {
-        console.log(
-          `[WorkerMonitor] Worker ${worker.worker_id} - Status mudou para ${currentWorker.worker_status_id}, parando verificações`
-        );
         this.connectionFailureTrackers.delete(worker.worker_id);
         return;
       }
-
-      console.log(
-        `[WorkerMonitor] Worker ${worker.worker_id} - Verificação consecutiva ${attempt}/${this.maxConnectionFailures}`
-      );
 
       const connectionHealthy = await this.checkConnection(
         worker.worker_id,
@@ -447,9 +375,6 @@ export class WorkerMonitorService {
       );
 
       if (connectionHealthy) {
-        console.log(
-          `[WorkerMonitor] Worker ${worker.worker_id} - Conexão recuperada na tentativa ${attempt}, removendo tracker`
-        );
         this.connectionFailureTrackers.delete(worker.worker_id);
         this.activeContinuousChecks.delete(worker.worker_id);
 
@@ -477,9 +402,6 @@ export class WorkerMonitorService {
       if (attempt >= this.maxConnectionFailures) {
         this.activeContinuousChecks.delete(worker.worker_id);
         if (currentWorker.worker_status_id !== EWorkerStatus.offline) {
-          console.log(
-            `[WorkerMonitor] Worker ${worker.worker_id} - Marcando como OFFLINE após ${attempt} falhas consecutivas`
-          );
           await this.updateWorkerStatus(
             currentWorker,
             EWorkerStatus.offline,
@@ -508,38 +430,20 @@ export class WorkerMonitorService {
     code: ECodeMessage,
     connectionStatus: EBaileysConnectionStatus
   ): Promise<void> => {
-    console.log(
-      `[WorkerMonitor] updateWorkerStatus - Worker: ${worker.worker_id}, Status atual: ${worker.worker_status_id}, Novo status: ${status}`
+    await this.workerService.updateStatusWorker(worker.worker_id, status);
+
+    const payload: IBaileysConnectionState = {
+      code,
+      status: connectionStatus,
+      worker_id: worker.worker_id,
+      account_id: worker.account_id,
+      worker_status_id: status,
+    };
+
+    await this.centrifugoService.publishSub(
+      workerCentrifugoQueue(worker.account_id),
+      payload
     );
-
-    try {
-      await this.workerService.updateStatusWorker(worker.worker_id, status);
-      console.log(
-        `[WorkerMonitor] updateWorkerStatus - Status atualizado no banco de dados para worker ${worker.worker_id}`
-      );
-
-      const payload: IBaileysConnectionState = {
-        code,
-        status: connectionStatus,
-        worker_id: worker.worker_id,
-        account_id: worker.account_id,
-        worker_status_id: status,
-      };
-
-      await this.centrifugoService.publishSub(
-        workerCentrifugoQueue(worker.account_id),
-        payload
-      );
-      console.log(
-        `[WorkerMonitor] updateWorkerStatus - Notificação enviada via Centrifugo para worker ${worker.worker_id}`
-      );
-    } catch (error) {
-      console.error(
-        `[WorkerMonitor] updateWorkerStatus - Erro ao atualizar status do worker ${worker.worker_id}:`,
-        error
-      );
-      throw error;
-    }
   };
 
   private readonly buildSshConfig = (
@@ -609,16 +513,8 @@ export class WorkerMonitorService {
       const rawOutput = outputs.map((r) => r.output).join('');
       const code = this.parseHttpCode(rawOutput);
 
-      console.log(
-        `[WorkerMonitor] checkConnection - Worker: ${workerId}, HTTP Code: ${code}, Raw Output: ${rawOutput.substring(0, 100)}`
-      );
-
       return code === 200;
     } catch (error) {
-      console.error(
-        `[WorkerMonitor] checkConnection - Erro ao verificar conexão do worker ${workerId}:`,
-        error
-      );
       return false;
     }
   };
@@ -666,13 +562,8 @@ export class WorkerMonitorService {
     worker: IWorkerMonitor
   ): boolean => {
     const statuses = [EWorkerStatus.online, EWorkerStatus.offline];
-    const shouldCheck = statuses.includes(worker.worker_status_id);
 
-    console.log(
-      `[WorkerMonitor] shouldCheckConnection - Worker: ${worker.worker_id}, Status: ${worker.worker_status_id}, ShouldCheck: ${shouldCheck}`
-    );
-
-    return shouldCheck;
+    return statuses.includes(worker.worker_status_id);
   };
 
   private readonly isProvisioning = (worker: IWorkerMonitor): boolean => {
