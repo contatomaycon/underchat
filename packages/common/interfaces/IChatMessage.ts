@@ -48,6 +48,13 @@ export interface IQuotedMessage {
   contact?: IContactMessage | null;
 }
 
+export type QuotedMessageType = Omit<IQuotedMessage, 'key' | 'type'> & {
+  type?: string | EMessageType | null;
+  key: Omit<IQuotedMessage['key'], 'is_view_once'> & {
+    is_view_once?: boolean;
+  };
+};
+
 export interface IReaction {
   emoji: string;
   user_id?: string | null;
