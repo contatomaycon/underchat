@@ -6,7 +6,7 @@ import { useI18n } from 'vue-i18n';
 import { formatDateTime } from '@core/common/functions/formatDateTime';
 import { SortRequest } from '@core/schema/common/sortRequestSchema';
 import { DataTableHeader } from 'vuetify';
-import { useUsersStore } from '@/@webcore/stores/user';
+import { useReportUsersStore } from '@/@webcore/stores/reportUsers';
 import { EUserStatus } from '@core/common/enums/EUserStatus';
 import { ListUserResponse } from '@core/schema/user/listUser/response.schema';
 import { IListUsers } from '@/@webcore/interfaces/IListUsers';
@@ -24,7 +24,7 @@ definePage({
 });
 
 const { t } = useI18n();
-const userStore = useUsersStore();
+const reportUsersStore = useReportUsersStore();
 
 const itemsPerPage = ref([
   { value: 5, title: '5' },
@@ -69,14 +69,13 @@ const query = computed((): IListUsers => {
     page: options.value.page,
     per_page: options.value.itemsPerPage,
     sort_by: options.value.sortBy,
+    account_id: 'all',
   };
 
-  // Adicionar user_status apenas se não for null ou string vazia
   if (options.value.user_status && options.value.user_status !== '') {
     q.user_status = options.value.user_status;
   }
 
-  // Adicionar search apenas se não for null ou string vazia
   if (debouncedSearch.value && debouncedSearch.value.trim() !== '') {
     q.search = debouncedSearch.value.trim();
   }
@@ -94,20 +93,19 @@ const handleTableChange = (o: {
   options.value.sortBy = o.sortBy;
 };
 
-// Estatísticas
-const totalUsers = computed(() => userStore.pagings.total);
+const totalUsers = computed(() => reportUsersStore.pagings.total);
 const activeUsers = computed(() => {
-  return userStore.list.filter(
+  return reportUsersStore.list.filter(
     (user) => user.user_status?.user_status_id === EUserStatus.active
   ).length;
 });
 const inactiveUsers = computed(() => {
-  return userStore.list.filter(
+  return reportUsersStore.list.filter(
     (user) => user.user_status?.user_status_id === EUserStatus.inactive
   ).length;
 });
 const blockedUsers = computed(() => {
-  return userStore.list.filter(
+  return reportUsersStore.list.filter(
     (user) => user.user_status?.user_status_id === EUserStatus.blocked
   ).length;
 });
@@ -145,7 +143,26 @@ function formatPhone(value: string | null | undefined): string {
   return `(${numbers.slice(0, 2)}) ${numbers.slice(2, 7)}-${numbers.slice(7)}`;
 }
 
-// Estados para descriptografia
+function formatDocument(value: string | null | undefined): string {
+  if (!value) return '';
+
+  if (/[.\-*]/.test(value)) {
+    return value;
+  }
+
+  const digits = value.replaceAll(/\D/g, '');
+
+  if (digits.length === 11) {
+    return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9, 11)}`;
+  }
+
+  if (digits.length === 14) {
+    return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8, 12)}-${digits.slice(12, 14)}`;
+  }
+
+  return value;
+}
+
 const decryptedData = ref<
   Record<
     string,
@@ -183,7 +200,7 @@ const toggleEmailVisibility = async (userId: string, currentEmail: string) => {
   }
 
   isLoadingDecrypt.value[userId].email = true;
-  const decrypted = await userStore.getUserEmailDecrypted(userId);
+  const decrypted = await reportUsersStore.getUserEmailDecrypted(userId);
   isLoadingDecrypt.value[userId].email = false;
 
   if (decrypted) {
@@ -213,7 +230,7 @@ const togglePhoneVisibility = async (userId: string, currentPhone: string) => {
   }
 
   isLoadingDecrypt.value[userId].phone = true;
-  const decrypted = await userStore.getUserPhoneDecrypted(userId);
+  const decrypted = await reportUsersStore.getUserPhoneDecrypted(userId);
   isLoadingDecrypt.value[userId].phone = false;
 
   if (decrypted) {
@@ -246,7 +263,7 @@ const toggleDocumentVisibility = async (
   }
 
   isLoadingDecrypt.value[userId].document = true;
-  const decrypted = await userStore.getUserDocumentDecrypted(userId);
+  const decrypted = await reportUsersStore.getUserDocumentDecrypted(userId);
   isLoadingDecrypt.value[userId].document = false;
 
   if (decrypted) {
@@ -264,12 +281,11 @@ const toggleDocumentVisibility = async (
 watch(
   query,
   async (q) => {
-    await userStore.listUsers(q);
+    await reportUsersStore.listUsers(q);
   },
   { immediate: true, deep: true }
 );
 
-// Resetar página quando o status ou busca mudar
 watch(
   () => options.value.user_status,
   () => {
@@ -410,9 +426,9 @@ watch(
             v-model:page="options.page"
             v-model:items-per-page="options.itemsPerPage"
             :headers="headers"
-            :items="userStore.list"
-            :items-length="userStore.pagings.total"
-            :loading="userStore.loading"
+            :items="reportUsersStore.list"
+            :items-length="reportUsersStore.pagings.total"
+            :loading="reportUsersStore.loading"
             :sort-by="options.sortBy"
             @update:options="handleTableChange"
             :loading-text="$t('loading_text')"
@@ -490,9 +506,11 @@ watch(
               <div class="d-flex align-center justify-space-between">
                 <span>
                   {{
-                    decryptedData[item.user_id]?.document ??
-                    item.user_document?.document_partial ??
-                    '-'
+                    formatDocument(
+                      decryptedData[item.user_id]?.document ??
+                        item.user_document?.document_partial ??
+                        null
+                    ) || '-'
                   }}
                 </span>
                 <VIcon
@@ -533,7 +551,7 @@ watch(
               <TablePagination
                 v-model:page="options.page"
                 :items-per-page="options.itemsPerPage"
-                :total-items="userStore.pagings.total"
+                :total-items="reportUsersStore.pagings.total"
               />
             </template>
           </VDataTableServer>

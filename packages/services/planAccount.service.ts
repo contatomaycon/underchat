@@ -1,11 +1,14 @@
-import { injectable } from 'tsyringe';
+import { inject, injectable } from 'tsyringe';
 import { PlanAccountUpdaterRepository } from '@core/repositories/planAccount/PlanAccountUpdater.repository';
 import { UpdatePlanAccountRequest } from '@core/schema/planAccount/updatePlanAccount/request.schema';
+import { withLock } from '@core/common/functions/withLock';
+import Redis from 'ioredis';
 
 @injectable()
 export class PlanAccountService {
   constructor(
-    private readonly planAccountUpdaterRepository: PlanAccountUpdaterRepository
+    private readonly planAccountUpdaterRepository: PlanAccountUpdaterRepository,
+    @inject('Redis') private readonly redis: Redis
   ) {}
 
   findPlanAccountByAccountId = async (accountId: string) => {
@@ -18,9 +21,18 @@ export class PlanAccountService {
     accountId: string,
     input: UpdatePlanAccountRequest
   ): Promise<boolean> => {
-    return this.planAccountUpdaterRepository.updatePlanAccountByAccountId(
-      accountId,
-      input
+    const lockKey = `plan-account:${accountId}`;
+    const result = await withLock(
+      this.redis,
+      lockKey,
+      () =>
+        this.planAccountUpdaterRepository.updatePlanAccountByAccountId(
+          accountId,
+          input
+        ),
+      { ttlMs: 20000 }
     );
+
+    return result ?? false;
   };
 }

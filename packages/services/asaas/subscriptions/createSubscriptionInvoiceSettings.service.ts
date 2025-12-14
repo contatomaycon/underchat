@@ -5,6 +5,7 @@ import {
   ICreateAsaasSubscriptionInvoiceSettingsRequest,
   ICreateAsaasSubscriptionInvoiceSettingsResponse,
 } from '@core/common/interfaces/IAsaasSubscription';
+import { IAsaasErrorResponse } from '@core/common/interfaces/IAsaasCreditCard';
 
 @injectable()
 export class CreateSubscriptionInvoiceSettingsService {
@@ -29,17 +30,22 @@ export class CreateSubscriptionInvoiceSettingsService {
       return null;
     } catch (error) {
       if (axios.isAxiosError(error)) {
-        console.error(
-          'Erro ao criar configuração de nota fiscal da assinatura no Asaas:',
-          error.response?.data
-        );
-      } else {
-        console.error(
-          'Erro desconhecido ao criar configuração de nota fiscal da assinatura no Asaas:',
-          error
+        const errorData = error.response?.data as IAsaasErrorResponse;
+
+        if (errorData?.errors && errorData.errors.length > 0) {
+          const firstErrorDescription = errorData.errors[0].description;
+
+          throw new Error(firstErrorDescription);
+        }
+
+        throw new Error(
+          'Erro ao criar configuração de nota fiscal da assinatura'
         );
       }
-      return null;
+
+      throw new Error(
+        'Erro desconhecido ao criar configuração de nota fiscal da assinatura'
+      );
     }
   };
 }

@@ -5,7 +5,7 @@ import { updatePlanRecurringRequestSchema } from './request.schema';
 
 export const updatePlanRecurringSchema = {
   description: 'Atualiza a recorrência do plano da conta',
-  tags: [ETagSwagger.account],
+  tags: [ETagSwagger.accountSettings],
   produces: ['application/json'],
   security: [
     {

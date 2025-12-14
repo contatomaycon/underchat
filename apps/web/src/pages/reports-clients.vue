@@ -6,7 +6,7 @@ import { useI18n } from 'vue-i18n';
 import { formatDateTime } from '@core/common/functions/formatDateTime';
 import { SortRequest } from '@core/schema/common/sortRequestSchema';
 import { DataTableHeader } from 'vuetify';
-import { useAccountStore } from '@/@webcore/stores/account';
+import { useReportClientsStore } from '@/@webcore/stores/reportClients';
 import { EAccountStatus } from '@core/common/enums/EAccountStatus';
 import { ListAccountResponse } from '@core/schema/account/listAccount/response.schema';
 import { EFinancialPermissions } from '@core/common/enums/EPermissions/financial';
@@ -23,7 +23,7 @@ definePage({
 });
 
 const { t } = useI18n();
-const accountStore = useAccountStore();
+const reportClientsStore = useReportClientsStore();
 
 const itemsPerPage = ref([
   { value: 5, title: '5' },
@@ -80,21 +80,21 @@ const handleTableChange = (o: {
   options.value.sortBy = o.sortBy;
 };
 
-const totalClients = computed(() => accountStore.pagings.total);
+const totalClients = computed(() => reportClientsStore.pagings.total);
 const activeClients = computed(() => {
-  return accountStore.list.filter(
+  return reportClientsStore.list.filter(
     (account) =>
       account.account_status?.account_status_id === EAccountStatus.active
   ).length;
 });
 const inactiveClients = computed(() => {
-  return accountStore.list.filter(
+  return reportClientsStore.list.filter(
     (account) =>
       account.account_status?.account_status_id === EAccountStatus.inactive
   ).length;
 });
 const blockedClients = computed(() => {
-  return accountStore.list.filter(
+  return reportClientsStore.list.filter(
     (account) =>
       account.account_status?.account_status_id === EAccountStatus.blocked
   ).length;
@@ -138,7 +138,7 @@ const resolvePlanVariant = (planName?: string | null) => {
 watch(
   query,
   async (q) => {
-    await accountStore.listAccount(q);
+    await reportClientsStore.listAccount(q);
   },
   { immediate: true, deep: true }
 );
@@ -261,9 +261,9 @@ watch(
             v-model:page="options.page"
             v-model:items-per-page="options.itemsPerPage"
             :headers="headers"
-            :items="accountStore.list"
-            :items-length="accountStore.pagings.total"
-            :loading="accountStore.loading"
+            :items="reportClientsStore.list"
+            :items-length="reportClientsStore.pagings.total"
+            :loading="reportClientsStore.loading"
             :sort-by="options.sortBy"
             @update:options="handleTableChange"
             :loading-text="$t('loading_text')"
@@ -305,7 +305,7 @@ watch(
               <TablePagination
                 v-model:page="options.page"
                 :items-per-page="options.itemsPerPage"
-                :total-items="accountStore.pagings.total"
+                :total-items="reportClientsStore.pagings.total"
               />
             </template>
           </VDataTableServer>

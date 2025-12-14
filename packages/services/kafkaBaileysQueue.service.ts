@@ -39,4 +39,8 @@ export class KafkaBaileysQueueService {
   workerNotificationMessage = (workerId: string) => {
     return `worker.${workerId}.notification.message`;
   };
+
+  userPhoneJidUpdate = () => {
+    return 'user.phone.jid.update';
+  };
 }

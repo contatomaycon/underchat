@@ -13,14 +13,30 @@ export const updateNotificationsRequestSchema = Type.Object({
   two_factor_email_subject: Type.Optional(
     Type.Union([Type.String(), Type.Null()])
   ),
-  plan_notification: Type.Optional(
+  plan_new_notification: Type.Optional(
     Type.Union([Type.String({ format: 'uuid' }), Type.Null()])
   ),
-  plan_message_whatsapp: Type.Optional(
+  plan_new_message_whatsapp: Type.Optional(
     Type.Union([Type.String(), Type.Null()])
   ),
-  plan_message_email: Type.Optional(Type.Union([Type.String(), Type.Null()])),
-  plan_email_subject: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  plan_new_message_email: Type.Optional(
+    Type.Union([Type.String(), Type.Null()])
+  ),
+  plan_new_email_subject: Type.Optional(
+    Type.Union([Type.String(), Type.Null()])
+  ),
+  plan_renewal_notification: Type.Optional(
+    Type.Union([Type.String({ format: 'uuid' }), Type.Null()])
+  ),
+  plan_renewal_message_whatsapp: Type.Optional(
+    Type.Union([Type.String(), Type.Null()])
+  ),
+  plan_renewal_message_email: Type.Optional(
+    Type.Union([Type.String(), Type.Null()])
+  ),
+  plan_renewal_email_subject: Type.Optional(
+    Type.Union([Type.String(), Type.Null()])
+  ),
   plan_expiration_reminder: Type.Optional(
     Type.Union([Type.String({ format: 'uuid' }), Type.Null()])
   ),
@@ -31,6 +47,30 @@ export const updateNotificationsRequestSchema = Type.Object({
     Type.Union([Type.String(), Type.Null()])
   ),
   plan_expiration_email_subject: Type.Optional(
+    Type.Union([Type.String(), Type.Null()])
+  ),
+  plan_cancellation_notification: Type.Optional(
+    Type.Union([Type.String({ format: 'uuid' }), Type.Null()])
+  ),
+  plan_cancellation_message_whatsapp: Type.Optional(
+    Type.Union([Type.String(), Type.Null()])
+  ),
+  plan_cancellation_message_email: Type.Optional(
+    Type.Union([Type.String(), Type.Null()])
+  ),
+  plan_cancellation_email_subject: Type.Optional(
+    Type.Union([Type.String(), Type.Null()])
+  ),
+  recurring_payment_failure_notification: Type.Optional(
+    Type.Union([Type.String({ format: 'uuid' }), Type.Null()])
+  ),
+  recurring_payment_failure_message_whatsapp: Type.Optional(
+    Type.Union([Type.String(), Type.Null()])
+  ),
+  recurring_payment_failure_message_email: Type.Optional(
+    Type.Union([Type.String(), Type.Null()])
+  ),
+  recurring_payment_failure_email_subject: Type.Optional(
     Type.Union([Type.String(), Type.Null()])
   ),
 });

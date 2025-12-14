@@ -8,6 +8,7 @@ import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import { EColor } from '@core/common/enums/EColor';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EPlanPermissions } from '@core/common/enums/EPermissions/plan';
+import { EAccountPermissions } from '@core/common/enums/EPermissions/account';
 import { useTheme } from 'vuetify';
 import { useAbility } from '@/plugins/casl/composables/useAbility';
 
@@ -24,6 +25,17 @@ const canAccessPlanInvoice = computed(() => {
     EGeneralPermissions.full_access_group,
     EPlanPermissions.plan_group,
     EPlanPermissions.plan_invoice,
+  ];
+
+  return permissions.some((perm) => ability.can(perm, perm));
+});
+
+const canCustomizeAccount = computed(() => {
+  const permissions = [
+    EGeneralPermissions.full_access,
+    EGeneralPermissions.full_access_group,
+    EAccountPermissions.account_group,
+    EAccountPermissions.account_customize,
   ];
 
   return permissions.some((perm) => ability.can(perm, perm));
@@ -714,6 +726,18 @@ onMounted(() => {
             </template>
 
             <VListItemTitle>{{ $t('security') }}</VListItemTitle>
+          </VListItem>
+
+          <VListItem
+            v-if="canCustomizeAccount"
+            @click="navigateToAccountSettings('customize')"
+            link
+          >
+            <template #prepend>
+              <VIcon class="me-2" icon="tabler-palette" size="22" />
+            </template>
+
+            <VListItemTitle>{{ $t('customize') }}</VListItemTitle>
           </VListItem>
 
           <VListItem

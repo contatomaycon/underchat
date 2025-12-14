@@ -1,4 +1,4 @@
-import type { Router } from 'vue-router';
+import type { Router, RouteLocationRaw } from 'vue-router';
 import { layoutConfig } from '@layouts/config';
 import { AppContentLayoutNav } from '@layouts/enums';
 import { useLayoutConfigStore } from '@layouts/stores/config';
@@ -16,8 +16,8 @@ export const getComputedNavLinkToProp = computed(() => (link: NavLink) => {
   if (link.to) {
     props.to =
       typeof link.to === 'string'
-        ? { name: link.to as keyof RouteNamedMap }
-        : link.to;
+        ? ({ name: link.to as keyof RouteNamedMap } as RouteLocationRaw)
+        : (link.to as RouteLocationRaw);
   } else {
     props.href = link.href;
   }
@@ -34,17 +34,67 @@ export const resolveNavLinkRouteName = (link: NavLink, router: Router) => {
 };
 
 export const isNavLinkActive = (link: NavLink, router: Router) => {
-  const matchedRoutes = router.currentRoute.value.matched;
+  const currentRoute = router.currentRoute.value;
   const resolveRoutedName = resolveNavLinkRouteName(link, router);
-
   if (!resolveRoutedName) return false;
 
-  return matchedRoutes.some((route) => {
-    return (
-      route.name === resolveRoutedName ||
-      route.meta.navActiveLink === resolveRoutedName
-    );
-  });
+  const targetLocation = link.to ? router.resolve(link.to) : null;
+  const targetQuery = targetLocation?.query ?? {};
+  const matchedRoutes = currentRoute.matched;
+
+  const matchesRoute =
+    matchedRoutes.some(
+      (route) =>
+        route.name === resolveRoutedName ||
+        route.meta.navActiveLink === resolveRoutedName
+    ) || currentRoute.name === resolveRoutedName;
+
+  if (!matchesRoute) return false;
+
+  const normalizeQueryValue = (value: unknown): string | undefined => {
+    if (Array.isArray(value)) {
+      const sorted = value.map(String).toSorted((a, b) => a.localeCompare(b));
+      return sorted.join('|');
+    }
+
+    if (value === undefined) return undefined;
+
+    if (value === null) return 'null';
+
+    if (typeof value === 'object') {
+      const record = value as Record<string, unknown>;
+      const entries = Object.keys(record)
+        .toSorted((a, b) => a.localeCompare(b))
+        .map((key) => {
+          const entryValue = normalizeQueryValue(record[key]);
+          return `${key}:${entryValue ?? ''}`;
+        });
+
+      return entries.join('|');
+    }
+
+    if (typeof value === 'symbol') {
+      return value.toString();
+    }
+
+    return String(value as string | number | boolean | bigint);
+  };
+
+  const keys = new Set([
+    ...Object.keys(targetQuery),
+    ...Object.keys(currentRoute.query ?? {}),
+  ]);
+
+  for (const key of keys) {
+    const expected = normalizeQueryValue(targetQuery[key]);
+    const current = normalizeQueryValue(currentRoute.query?.[key]);
+
+    if (expected !== current) {
+      return false;
+    }
+  }
+
+  return true;
 };
 
 export const isNavGroupActive = (

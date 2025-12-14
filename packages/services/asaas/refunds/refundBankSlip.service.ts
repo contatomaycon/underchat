@@ -2,6 +2,7 @@ import { injectable } from 'tsyringe';
 import axios from 'axios';
 import { AsaasBaseService } from '../asaasBase.service';
 import { IRefundAsaasBankSlipResponse } from '@core/common/interfaces/IAsaasRefund';
+import { IAsaasErrorResponse } from '@core/common/interfaces/IAsaasCreditCard';
 
 @injectable()
 export class RefundBankSlipService {
@@ -25,14 +26,18 @@ export class RefundBankSlipService {
       return null;
     } catch (error) {
       if (axios.isAxiosError(error)) {
-        console.error(
-          'Erro ao estornar boleto no Asaas:',
-          error.response?.data
-        );
-      } else {
-        console.error('Erro desconhecido ao estornar boleto no Asaas:', error);
+        const errorData = error.response?.data as IAsaasErrorResponse;
+
+        if (errorData?.errors && errorData.errors.length > 0) {
+          const firstErrorDescription = errorData.errors[0].description;
+
+          throw new Error(firstErrorDescription);
+        }
+
+        throw new Error('Erro ao estornar boleto');
       }
-      return null;
+
+      throw new Error('Erro desconhecido ao estornar boleto');
     }
   };
 }

@@ -1023,25 +1023,6 @@ const loadAdditionalInfo = async () => {
   }
 };
 
-const loadAddressFromChatStore = () => {
-  if (!chatStore.user?.address) {
-    return;
-  }
-
-  zip_code.value = chatStore.user.address.zip_code ?? null;
-  address1Partial.value = chatStore.user.address.address1_partial ?? null;
-  address1.value = null;
-  isAddress1Decrypted.value = false;
-  address1HasBeenEdited.value = false;
-  address2Partial.value = chatStore.user.address.address2_partial ?? null;
-  address2.value = null;
-  isAddress2Decrypted.value = false;
-  address2HasBeenEdited.value = false;
-  district.value = chatStore.user.address.district ?? null;
-  state.value = chatStore.user.address.state ?? null;
-  city.value = chatStore.user.address.city ?? null;
-};
-
 const loadAddressData = async () => {
   const addressData = await accountSettingsStore.getAddressComplete();
 
@@ -1051,22 +1032,14 @@ const loadAddressData = async () => {
 
   country_id.value = addressData.country_id ?? ECountry.Brasil;
   zip_code.value = addressData.zip_code ?? null;
-
-  if (
-    !address1Partial.value ||
-    address1HasBeenEdited.value ||
-    isAddress1Decrypted.value
-  ) {
-    address1.value = addressData.address1 ?? null;
-  }
-  if (
-    !address2Partial.value ||
-    address2HasBeenEdited.value ||
-    isAddress2Decrypted.value
-  ) {
-    address2.value = addressData.address2 ?? null;
-  }
-
+  address1Partial.value = addressData.address1_partial ?? null;
+  address2Partial.value = addressData.address2_partial ?? null;
+  address1.value = null;
+  address2.value = null;
+  isAddress1Decrypted.value = false;
+  isAddress2Decrypted.value = false;
+  address1HasBeenEdited.value = false;
+  address2HasBeenEdited.value = false;
   district.value = addressData.district ?? null;
   state.value = addressData.state ?? null;
   city.value = addressData.city ?? null;
@@ -1094,7 +1067,6 @@ const setDefaultValues = () => {
 const loadUserData = async () => {
   await loadAdditionalInfo();
   setDefaultValues();
-  loadAddressFromChatStore();
   await loadAddressData();
   isInitializing.value = false;
 };

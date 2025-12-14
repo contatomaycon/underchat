@@ -6,7 +6,7 @@ import { updatePhotoResponseSchema } from './response.schema';
 
 export const updatePhotoSchema = {
   description: 'Atualiza a foto de perfil do usuário autenticado',
-  tags: [ETagSwagger.account],
+  tags: [ETagSwagger.accountSettings],
   produces: ['application/json'],
   consumes: ['multipart/form-data'],
   security: [

@@ -5,7 +5,7 @@ import { viewAdditionalInfoResponseSchema } from './response.schema';
 
 export const viewAdditionalInfoSchema = {
   description: 'Visualiza as informações adicionais do usuário autenticado',
-  tags: [ETagSwagger.account],
+  tags: [ETagSwagger.accountSettings],
   produces: ['application/json'],
   security: [
     {

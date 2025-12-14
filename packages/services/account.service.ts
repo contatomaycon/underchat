@@ -20,11 +20,14 @@ import { AccountInfoCreatorRepository } from '@core/repositories/account/Account
 import { AccountInfoUpdaterRepository } from '@core/repositories/account/AccountInfoUpdater.repository';
 import { AccountInfoByIdViewerExistsRepository } from '@core/repositories/account/AccountInfoByIdViewerExists.repository';
 import { CreateAccountInfoRequest } from '@core/schema/account/createAccountInfo/request.schema';
-import { EditAccountInfoResponse } from '@core/schema/account/editAccountInfo/request.schema';
+import { EditAccountInfoRequest } from '@core/schema/account/editAccountInfo/request.schema';
 import { AccountAllListerRepository } from '@core/repositories/account/AccountAllLister.repository';
 import { IAccountBasic } from '@core/common/interfaces/IAccountBasic';
 import { AccountSubscriptionsListerRepository } from '@core/repositories/account/AccountSubscriptionsLister.repository';
 import { ListAccountSubscriptionsResponse } from '@core/schema/account/listAccountSubscriptions/response.schema';
+import { PlanAccountStatusViewerRepository } from '@core/repositories/planAccount/PlanAccountStatusViewer.repository';
+import { EAccountStatus } from '@core/common/enums/EAccountStatus';
+import { IPlanAccountStatus } from '@core/common/interfaces/IPlanAccountStatus';
 
 @injectable()
 export class AccountService {
@@ -43,7 +46,8 @@ export class AccountService {
     private readonly accountInfoUpdaterRepository: AccountInfoUpdaterRepository,
     private readonly accountInfoByIdViewerExistsRepository: AccountInfoByIdViewerExistsRepository,
     private readonly accountAllListerRepository: AccountAllListerRepository,
-    private readonly accountSubscriptionsListerRepository: AccountSubscriptionsListerRepository
+    private readonly accountSubscriptionsListerRepository: AccountSubscriptionsListerRepository,
+    private readonly planAccountStatusViewerRepository: PlanAccountStatusViewerRepository
   ) {}
 
   viewAccountInfoByAccountId = async (
@@ -143,7 +147,7 @@ export class AccountService {
 
   updateAccountInfoById = async (
     accountInfoId: string,
-    input: EditAccountInfoResponse,
+    input: EditAccountInfoRequest,
     urlLogo: string | null | undefined
   ): Promise<boolean> => {
     return this.accountInfoUpdaterRepository.updateAccountInfoById(
@@ -163,6 +167,53 @@ export class AccountService {
     accountId: string
   ): Promise<ListAccountSubscriptionsResponse | null> => {
     return this.accountSubscriptionsListerRepository.listAccountSubscriptions(
+      accountId
+    );
+  };
+
+  isPlanActive = async (accountId: string): Promise<boolean> => {
+    const latest =
+      await this.planAccountStatusViewerRepository.viewLatestByAccountId(
+        accountId
+      );
+    if (!latest) {
+      return false;
+    }
+
+    if (latest.account_status_id === EAccountStatus.blocked) {
+      return false;
+    }
+
+    if (!latest.next_payment_date) {
+      return false;
+    }
+
+    const nextPayment = new Date(latest.next_payment_date);
+    if (Number.isNaN(nextPayment.getTime())) {
+      return false;
+    }
+
+    const now = Date.now();
+    if (nextPayment.getTime() <= now) {
+      return false;
+    }
+
+    if (latest.cancellation_date) {
+      return true;
+    }
+
+    const activeStatus = latest.account_status_id === EAccountStatus.active;
+    if (!activeStatus) {
+      return latest.account_status_id === EAccountStatus.inactive;
+    }
+
+    return true;
+  };
+
+  viewPlanStatus = async (
+    accountId: string
+  ): Promise<IPlanAccountStatus | null> => {
+    return this.planAccountStatusViewerRepository.viewLatestByAccountId(
       accountId
     );
   };

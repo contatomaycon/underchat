@@ -4,6 +4,7 @@ import { ERouteModule } from '@core/common/enums/ERouteModule';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { IJwtGroupHierarchy } from '@core/common/interfaces/IJwtGroupHierarchy';
 import { EUserStatus } from '@core/common/enums/EUserStatus';
+import { IJwtPermissionsWithPlan } from '@core/common/interfaces/IJwtPermissionsWithPlan';
 import { EAccountStatus } from '@core/common/enums/EAccountStatus';
 
 @injectable()
@@ -16,7 +17,7 @@ export class MiddlewareJwtRepository {
     userId: string,
     routeModule: string,
     module: ERouteModule
-  ): Promise<IJwtGroupHierarchy[]> {
+  ): Promise<IJwtPermissionsWithPlan> {
     const query = `
       WITH UserPermissions AS (
           SELECT DISTINCT
@@ -24,10 +25,21 @@ export class MiddlewareJwtRepository {
               pa.permission_role_id,
               pr.name AS role_name,
               pm.module AS module_name,
-              paa.action AS action_name
+              paa.action AS action_name,
+              CASE
+                  WHEN ac.account_status_id = '${EAccountStatus.blocked}' THEN false
+                  WHEN pac.plan_account_id IS NULL THEN false
+                  WHEN pac.next_payment_date IS NULL THEN false
+                  WHEN pac.next_payment_date <= NOW() THEN false
+                  WHEN pac.cancellation_date IS NOT NULL THEN true
+                  WHEN ac.account_status_id = '${EAccountStatus.inactive}' THEN true
+                  WHEN ac.account_status_id = '${EAccountStatus.active}' THEN true
+                  ELSE false
+              END AS plan_is_active
           FROM "permission_assignment" pa
           JOIN "user" u ON u.user_id = pa.user_id AND u.user_status_id = '${EUserStatus.active}' AND u.deleted_at IS NULL
-          JOIN "account" ac ON ac.account_id =  u.account_id AND ac.deleted_at IS NULL AND ac.account_status_id = '${EAccountStatus.active}'
+          JOIN "account" ac ON ac.account_id =  u.account_id AND ac.deleted_at IS NULL
+          LEFT JOIN "plan_account" pac ON pac.account_id = ac.account_id
           JOIN "permission_role" pr ON pa.permission_role_id = pr.permission_role_id
           JOIN "permission_role_action" pra ON pra.permission_role_id = pr.permission_role_id
           JOIN "permission_action" paa ON paa.permission_action_id = pra.permission_action_id
@@ -39,10 +51,21 @@ export class MiddlewareJwtRepository {
               pa.permission_role_id,
               pr.name AS role_name,
               pm.module AS module_name,
-              paa.action AS action_name
+              paa.action AS action_name,
+              CASE
+                  WHEN ac.account_status_id = '${EAccountStatus.blocked}' THEN false
+                  WHEN pac.plan_account_id IS NULL THEN false
+                  WHEN pac.next_payment_date IS NULL THEN false
+                  WHEN pac.next_payment_date <= NOW() THEN false
+                  WHEN pac.cancellation_date IS NOT NULL THEN true
+                  WHEN ac.account_status_id = '${EAccountStatus.inactive}' THEN true
+                  WHEN ac.account_status_id = '${EAccountStatus.active}' THEN true
+                  ELSE false
+              END AS plan_is_active
           FROM "permission_assignment" pa
           JOIN "user" u ON u.user_id = pa.user_id AND u.user_status_id = '${EUserStatus.active}' AND u.deleted_at IS NULL
-          JOIN "account" ac ON ac.account_id =  u.account_id AND ac.deleted_at IS NULL AND ac.account_status_id = '${EAccountStatus.active}'
+          JOIN "account" ac ON ac.account_id =  u.account_id AND ac.deleted_at IS NULL
+          LEFT JOIN "plan_account" pac ON pac.account_id = ac.account_id
           JOIN "permission_role" pr ON pa.permission_role_id = pr.permission_role_id
           JOIN "permission_role_action" pra ON pra.permission_role_id = pr.permission_role_id
           JOIN "permission_action_groups" pag ON pag.permission_action_group_id = pra.permission_action_group_id
@@ -55,10 +78,21 @@ export class MiddlewareJwtRepository {
               pa.permission_role_id,
               pr.name AS role_name,
               pm.module AS module_name,
-              pag.action AS action_name
+              pag.action AS action_name,
+              CASE
+                  WHEN ac.account_status_id = '${EAccountStatus.blocked}' THEN false
+                  WHEN pac.plan_account_id IS NULL THEN false
+                  WHEN pac.next_payment_date IS NULL THEN false
+                  WHEN pac.next_payment_date <= NOW() THEN false
+                  WHEN pac.cancellation_date IS NOT NULL THEN true
+                  WHEN ac.account_status_id = '${EAccountStatus.inactive}' THEN true
+                  WHEN ac.account_status_id = '${EAccountStatus.active}' THEN true
+                  ELSE false
+              END AS plan_is_active
           FROM "permission_assignment" pa
           JOIN "user" u ON u.user_id = pa.user_id AND u.user_status_id = '${EUserStatus.active}' AND u.deleted_at IS NULL
-          JOIN "account" ac ON ac.account_id =  u.account_id AND ac.deleted_at IS NULL AND ac.account_status_id = '${EAccountStatus.active}'
+          JOIN "account" ac ON ac.account_id =  u.account_id AND ac.deleted_at IS NULL
+          LEFT JOIN "plan_account" pac ON pac.account_id = ac.account_id
           JOIN "permission_role" pr ON pa.permission_role_id = pr.permission_role_id
           JOIN "permission_role_action" pra ON pra.permission_role_id = pr.permission_role_id
           JOIN "permission_action_groups" pag ON pag.permission_action_group_id = pra.permission_action_group_id
@@ -73,10 +107,23 @@ export class MiddlewareJwtRepository {
 
     const result = await this.db.execute(query);
 
-    if (result?.rowCount === 0) {
-      return [] as IJwtGroupHierarchy[];
-    }
+    const rows = result?.rows ?? [];
+    const typedRows = rows.map(
+      (row) =>
+        row as unknown as IJwtGroupHierarchy & {
+          plan_is_active?: boolean | null;
+        }
+    );
+    const actions = typedRows.map((row) => {
+      const action = { ...row };
+      delete (action as { plan_is_active?: boolean }).plan_is_active;
+      return action;
+    });
+    const planIsActive = typedRows.some((row) => row.plan_is_active === true);
 
-    return result.rows as unknown as IJwtGroupHierarchy[];
+    return {
+      actions: actions as unknown as IJwtGroupHierarchy[],
+      plan_is_active: planIsActive,
+    };
   }
 }

@@ -41,7 +41,6 @@ export class UserSectorsListerRepository {
           eq(permissionAssignment.user_id, userId),
           eq(permissionRole.account_id, accountId),
           eq(sector.account_id, accountId),
-          isNull(permissionAssignment.account_id),
           isNull(sector.deleted_at),
           isNull(sectorRole.deleted_at)
         )

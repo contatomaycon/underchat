@@ -4,14 +4,14 @@ import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
 import {
   EditAccountInfoParamsRequest,
-  EditAccountInfoResponse,
+  EditAccountInfoRequest,
 } from '@core/schema/account/editAccountInfo/request.schema';
 import { AccountInfoUpdaterUseCase } from '@core/useCases/account/AccountInfoUpdater.useCase';
 
 export const editAccountInfo = async (
   request: FastifyRequest<{
     Params: EditAccountInfoParamsRequest;
-    Body: EditAccountInfoResponse;
+    Body: EditAccountInfoRequest;
   }>,
   reply: FastifyReply
 ) => {

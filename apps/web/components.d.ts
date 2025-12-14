@@ -13,6 +13,7 @@ export {}
 declare module 'vue' {
   export interface GlobalComponents {
     AppAccountInfo: typeof import('./src/components/account/AppAccountInfo.vue')['default']
+    AppAccountInfoInline: typeof import('./src/components/account/AppAccountInfoInline.vue')['default']
     AppAccountSubscriptions: typeof import('./src/components/account/AppAccountSubscriptions.vue')['default']
     AppAddAccount: typeof import('./src/components/account/AppAddAccount.vue')['default']
     AppAddChannel: typeof import('./src/components/channel/AppAddChannel.vue')['default']
@@ -94,6 +95,7 @@ declare module 'vue' {
     ChatLinkPreview: typeof import('./src/components/chat/ChatLinkPreview.vue')['default']
     ChatLocationPicker: typeof import('./src/components/chat/ChatLocationPicker.vue')['default']
     ChatLog: typeof import('./src/components/chat/ChatLog.vue')['default']
+    ChatLogViewer: typeof import('./src/components/chat/ChatLogViewer.vue')['default']
     ChatMediaViewer: typeof import('./src/components/chat/ChatMediaViewer.vue')['default']
     ChatQueue: typeof import('./src/components/chat/ChatQueue.vue')['default']
     ChatQueueStatusBanner: typeof import('./src/components/chat/ChatQueueStatusBanner.vue')['default']
@@ -127,12 +129,14 @@ declare module 'vue' {
     ThemeSwitcher: typeof import('./src/@webcore/components/ThemeSwitcher.vue')['default']
     TiptapEditor: typeof import('./src/@webcore/components/TiptapEditor.vue')['default']
     VDialogHandler: typeof import('./src/components/VDialogHandler.vue')['default']
+    VueApexCharts: typeof import('vue3-apexcharts')['default']
   }
 }
 
 // For TSX support
 declare global {
   const AppAccountInfo: typeof import('./src/components/account/AppAccountInfo.vue')['default']
+  const AppAccountInfoInline: typeof import('./src/components/account/AppAccountInfoInline.vue')['default']
   const AppAccountSubscriptions: typeof import('./src/components/account/AppAccountSubscriptions.vue')['default']
   const AppAddAccount: typeof import('./src/components/account/AppAddAccount.vue')['default']
   const AppAddChannel: typeof import('./src/components/channel/AppAddChannel.vue')['default']
@@ -214,6 +218,7 @@ declare global {
   const ChatLinkPreview: typeof import('./src/components/chat/ChatLinkPreview.vue')['default']
   const ChatLocationPicker: typeof import('./src/components/chat/ChatLocationPicker.vue')['default']
   const ChatLog: typeof import('./src/components/chat/ChatLog.vue')['default']
+  const ChatLogViewer: typeof import('./src/components/chat/ChatLogViewer.vue')['default']
   const ChatMediaViewer: typeof import('./src/components/chat/ChatMediaViewer.vue')['default']
   const ChatQueue: typeof import('./src/components/chat/ChatQueue.vue')['default']
   const ChatQueueStatusBanner: typeof import('./src/components/chat/ChatQueueStatusBanner.vue')['default']
@@ -247,4 +252,5 @@ declare global {
   const ThemeSwitcher: typeof import('./src/@webcore/components/ThemeSwitcher.vue')['default']
   const TiptapEditor: typeof import('./src/@webcore/components/TiptapEditor.vue')['default']
   const VDialogHandler: typeof import('./src/components/VDialogHandler.vue')['default']
+  const VueApexCharts: typeof import('vue3-apexcharts')['default']
 }

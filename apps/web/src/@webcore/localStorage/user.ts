@@ -4,6 +4,8 @@ import {
   AccountInfoResponse,
 } from '@core/schema/auth/login/response.schema';
 
+const PLAN_STATUS_KEY = 'plan_is_active';
+
 export const setSectors = (sectors: string[]): void => {
   localStorage.setItem('sectors', JSON.stringify(sectors));
 };
@@ -41,8 +43,12 @@ export const getUser = (): AuthUserResponse | null => {
   return user ? JSON.parse(user) : null;
 };
 
-export const setLayout = (layout: AccountInfoResponse): void => {
-  localStorage.setItem('layout', JSON.stringify(layout));
+export const setLayout = (layout: AccountInfoResponse | null): void => {
+  if (layout === null) {
+    localStorage.removeItem('layout');
+  } else {
+    localStorage.setItem('layout', JSON.stringify(layout));
+  }
 };
 
 export const getLayout = (): AccountInfoResponse | null => {
@@ -51,16 +57,34 @@ export const getLayout = (): AccountInfoResponse | null => {
   return layout ? JSON.parse(layout) : null;
 };
 
+const setPlanStatusToStorage = (isActive: boolean): void => {
+  localStorage.setItem(PLAN_STATUS_KEY, JSON.stringify(isActive));
+};
+
+const getPlanStatusFromStorage = (): boolean => {
+  const value = localStorage.getItem(PLAN_STATUS_KEY);
+  return value ? JSON.parse(value) : false;
+};
+
+export const initializePlanStatus = (): boolean => {
+  return getPlanStatusFromStorage();
+};
+
+export const persistPlanStatus = (isActive: boolean): void => {
+  setPlanStatusToStorage(isActive);
+};
+
 export const removeUserData = (): boolean => {
   localStorage.removeItem('token');
   localStorage.removeItem('permissions');
   localStorage.removeItem('user');
   localStorage.removeItem('layout');
   localStorage.removeItem('sectors');
+  localStorage.removeItem(PLAN_STATUS_KEY);
 
   return !getToken() && !getUser() && getPermissions().length === 0;
 };
 
 export const isLoggedIn = (): boolean => {
-  return !!getToken() && !!getUser() && getPermissions().length > 0;
+  return !!getToken() && !!getUser();
 };

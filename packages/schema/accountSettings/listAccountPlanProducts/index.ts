@@ -5,7 +5,7 @@ import { listAccountPlanProductsFinalResponseSchema } from './response.schema';
 
 export const listAccountPlanProductsSchema = {
   description: 'Lista os produtos do plano da conta com informações de uso',
-  tags: [ETagSwagger.account],
+  tags: [ETagSwagger.accountSettings],
   produces: ['application/json'],
   security: [
     {

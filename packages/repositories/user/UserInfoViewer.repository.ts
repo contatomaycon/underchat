@@ -16,6 +16,7 @@ export class UserInfoViewerRepository {
       columns: {
         phone: true,
         phone_ddi: true,
+        phone_jid: true,
         name: true,
         last_name: true,
       },

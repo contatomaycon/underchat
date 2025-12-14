@@ -1,7 +1,6 @@
 import { injectable } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { PaymentService } from '@core/services/payment.service';
-import { UserCustomerRepository } from '@core/repositories/payment/UserCustomer.repository';
 import { UserCardsListerRepository } from '@core/repositories/plan/UserCardsLister.repository';
 import { CreateUserCardRequest } from '@core/schema/accountSettings/createUserCard/request.schema';
 import { CreateUserCardResponse } from '@core/schema/accountSettings/createUserCard/response.schema';
@@ -10,18 +9,18 @@ import { CreateUserCardResponse } from '@core/schema/accountSettings/createUserC
 export class UserCardCreatorUseCase {
   constructor(
     private readonly paymentService: PaymentService,
-    private readonly userCustomerRepository: UserCustomerRepository,
     private readonly userCardsListerRepository: UserCardsListerRepository
   ) {}
 
   execute = async (
     t: TFunction<'translation', undefined>,
     userId: string,
+    accountId: string,
     remoteIp: string,
     input: CreateUserCardRequest
   ): Promise<CreateUserCardResponse> => {
     const userCustomer =
-      await this.userCustomerRepository.getUserCustomerByUserId(userId);
+      await this.paymentService.getOrCreateCustomer(accountId);
 
     if (!userCustomer) {
       throw new Error(t('user_customer_not_found'));

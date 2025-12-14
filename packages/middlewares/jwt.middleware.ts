@@ -4,15 +4,18 @@ import { FastifyReply, FastifyRequest } from 'fastify';
 import fp from 'fastify-plugin';
 import { ApiJwtViewerUseCase } from '@core/useCases/api/ApiJwtViewer.useCase';
 import { container } from 'tsyringe';
-import { createCacheKey } from '@core/common/functions/createCacheKey';
+import {
+  createJwtCacheKey,
+  createJwtSessionKey,
+} from '@core/common/functions/createCacheKey';
 import { getRootPath } from '@core/common/functions/getRootPath';
 import { hasRequiredPermission } from '@core/common/functions/hasRequiredPermission';
 import { generalEnvironment } from '@core/config/environments';
 import { ERouteModule } from '@core/common/enums/ERouteModule';
 import { IJwtMiddleware } from '@core/common/interfaces/IJwtMiddleware';
 import { EPermissionsRoles } from '@core/common/enums/EPermissions';
-import { IJwtGroupHierarchy } from '@core/common/interfaces/IJwtGroupHierarchy';
 import { ITokenJwtData } from '@core/common/interfaces/ITokenJwtData';
+import { IJwtPermissionsWithPlan } from '@core/common/interfaces/IJwtPermissionsWithPlan';
 import { routePathWithoutPrefix } from '@core/common/functions/routePathWithoutPrefix';
 import Redis from 'ioredis';
 import { UserService } from '@core/services/user.service';
@@ -20,17 +23,21 @@ import { UserService } from '@core/services/user.service';
 async function handleApiKeyCache(
   redis: Redis,
   cacheKey: string,
-  decoded: { user_id: string },
+  decoded: { user_id: string; account_id: string; session_id: string },
   routeModule: string,
   module: ERouteModule,
   permissions?: EPermissionsRoles[] | null
-): Promise<IJwtGroupHierarchy[]> {
+): Promise<IJwtPermissionsWithPlan | null> {
   const cacheAuth = await redis.get(cacheKey);
   if (cacheAuth) {
-    const cachedPermissions = JSON.parse(cacheAuth) as IJwtGroupHierarchy[];
-    const hasPermission = hasRequiredPermission(cachedPermissions, permissions);
+    const cachedPermissions = JSON.parse(cacheAuth) as IJwtPermissionsWithPlan;
+    const hasPermission = hasRequiredPermission(
+      cachedPermissions.actions,
+      permissions
+    );
+    const canUseCache = hasPermission && cachedPermissions.plan_is_active;
 
-    if (hasPermission) {
+    if (canUseCache) {
       return cachedPermissions;
     }
   }
@@ -43,8 +50,12 @@ async function handleApiKeyCache(
     module,
   } as IJwtMiddleware);
 
-  if (responseAuth) {
-    await redis.set(cacheKey, JSON.stringify(responseAuth), 'EX', 1800);
+  if (!responseAuth) {
+    return null;
+  }
+
+  if (responseAuth.plan_is_active) {
+    await redis.set(cacheKey, JSON.stringify(responseAuth), 'EX', 600);
   }
 
   return responseAuth;
@@ -52,12 +63,13 @@ async function handleApiKeyCache(
 
 async function generateTokenJwtAccess(
   userId: string,
-  responseAuth: IJwtGroupHierarchy[]
+  sessionId: string,
+  responseAuth: IJwtPermissionsWithPlan
 ): Promise<ITokenJwtData> {
-  const accountId = responseAuth.find(
+  const accountId = responseAuth.actions.find(
     (item) => item.account_id !== null
   )?.account_id;
-  const permissionRoleId = responseAuth.find(
+  const permissionRoleId = responseAuth.actions.find(
     (item) => item.permission_role_id !== null
   )?.permission_role_id;
 
@@ -70,9 +82,11 @@ async function generateTokenJwtAccess(
   return {
     account_id: accountId,
     user_id: userId,
+    session_id: sessionId,
     permission_role_id: permissionRoleId,
-    actions: responseAuth,
+    actions: responseAuth.actions,
     sectors,
+    plan_is_active: responseAuth.plan_is_active,
   } as ITokenJwtData;
 }
 
@@ -89,6 +103,8 @@ async function authenticateJwt(
     const decoded: {
       user_id: string;
       module: ERouteModule;
+      account_id: string;
+      session_id: string;
     } = await request.jwtVerify({
       verify: {
         key: generalEnvironment.jwtSecret,
@@ -112,8 +128,43 @@ async function authenticateJwt(
       });
     }
 
+    if (!decoded.account_id) {
+      return sendResponse(reply, {
+        message: t('not_authorized'),
+        httpStatusCode: EHTTPStatusCode.unauthorized,
+      });
+    }
+
+    if (!decoded.session_id) {
+      return sendResponse(reply, {
+        message: t('not_authorized'),
+        httpStatusCode: EHTTPStatusCode.unauthorized,
+      });
+    }
+
+    const sessionKey = createJwtSessionKey(decoded.account_id, decoded.user_id);
+    const activeSession = await Redis.get(sessionKey);
+
+    if (!activeSession) {
+      return sendResponse(reply, {
+        message: t('not_authorized'),
+        httpStatusCode: EHTTPStatusCode.unauthorized,
+      });
+    }
+
+    if (activeSession !== decoded.session_id) {
+      return sendResponse(reply, {
+        message: t('not_authorized'),
+        httpStatusCode: EHTTPStatusCode.unauthorized,
+      });
+    }
+
     const routeModule = getRootPath(routePath, request.module);
-    const cacheKey = createCacheKey('jwtCache', decoded.user_id, routeModule);
+    const cacheKey = createJwtCacheKey(
+      decoded.account_id,
+      decoded.user_id,
+      routeModule
+    );
 
     const responseAuth = await handleApiKeyCache(
       Redis,
@@ -131,7 +182,10 @@ async function authenticateJwt(
       });
     }
 
-    const hasPermission = hasRequiredPermission(responseAuth, permissions);
+    const hasPermission = hasRequiredPermission(
+      responseAuth.actions,
+      permissions
+    );
 
     if (!hasPermission) {
       return sendResponse(reply, {
@@ -142,6 +196,7 @@ async function authenticateJwt(
 
     request.tokenJwtData = await generateTokenJwtAccess(
       decoded.user_id,
+      decoded.session_id,
       responseAuth
     );
     request.permissionsRoute = permissions ?? null;

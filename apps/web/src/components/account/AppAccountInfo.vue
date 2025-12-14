@@ -1,16 +1,17 @@
 <script lang="ts" setup>
+import { computed, nextTick, ref, toRef, watch } from 'vue';
 import { VForm } from 'vuetify/components/VForm';
-import { useAccountStore } from '@/@webcore/stores/account';
+import { useAccountSettingsStore } from '@/@webcore/stores/accountSettings';
+import { useI18n } from 'vue-i18n';
 import { EContentWidth } from '@core/common/enums/EContentWidth';
 import { EContentLayoutNav } from '@core/common/enums/EContentLayoutNav';
 import { ELanguage } from '@core/common/enums/ELanguage';
 import { ESkin } from '@core/common/enums/ESkin';
 import { ENavbar } from '@core/common/enums/ENavbar';
 import { EFooter } from '@core/common/enums/EFooter';
-import { EditAccountInfoParamsRequest } from '@core/schema/account/editAccountInfo/request.schema';
 import { EColor } from '@core/common/enums/EColor';
 
-const accountStore = useAccountStore();
+const accountSettingsStore = useAccountSettingsStore();
 const { t } = useI18n();
 
 const props = defineProps<{
@@ -27,12 +28,14 @@ const isVisible = computed({
 
 function appendIfDefined(fd: FormData, key: string, value: unknown) {
   if (value === null || value === undefined) return;
-  if (typeof value === 'boolean') fd.append(key, value ? 'true' : 'false');
-  else fd.append(key, value as Blob | string);
+  if (typeof value === 'boolean') {
+    fd.append(key, value ? 'true' : 'false');
+    return;
+  }
+  fd.append(key, value as Blob | string);
 }
 
 function buildAccountInfoForm(opts: {
-  account_id: string;
   logo?: File | null;
   shouldDeleteLogo?: boolean;
   content_width: EContentWidth | null;
@@ -52,11 +55,12 @@ function buildAccountInfoForm(opts: {
 
   if (opts.shouldDeleteLogo) {
     fd.append('delete_logo', 'true');
-  } else if (opts.logo instanceof File) {
+  }
+
+  if (!opts.shouldDeleteLogo && opts.logo instanceof File) {
     fd.append('logo', opts.logo);
   }
 
-  appendIfDefined(fd, 'account_id', opts.account_id);
   appendIfDefined(fd, 'content_width', opts.content_width);
   appendIfDefined(fd, 'content_layout_nav', opts.content_layout_nav);
   appendIfDefined(fd, 'default_locale', opts.default_locale);
@@ -186,7 +190,7 @@ const openFileSelector = () => {
 
 const handleImageSelect = (file: File) => {
   if (file.size > MAX_FILE_SIZE_BYTES) {
-    accountStore.showSnackbar(
+    accountSettingsStore.showSnackbar(
       t('profile_status_file_size_exceeded', { max: '16 MB' }),
       EColor.error
     );
@@ -602,7 +606,7 @@ const cropImage = () => {
   const ctx = canvas.getContext('2d');
 
   if (!ctx || !img.complete) {
-    accountStore.showSnackbar(t('wait_image_load'), EColor.warning);
+    accountSettingsStore.showSnackbar(t('wait_image_load'), EColor.warning);
     return;
   }
 
@@ -691,16 +695,11 @@ const updateAccountInfo = async () => {
   const validateForm = await refFormEditAccount?.value?.validate();
   if (!validateForm?.valid) return;
 
-  if (!accountInfoId.value || !accountId.value) {
+  if (!accountId.value) {
     return;
   }
 
-  const payload: EditAccountInfoParamsRequest = {
-    account_info_id: accountInfoId.value,
-  };
-
   const body = buildAccountInfoForm({
-    account_id: accountId.value,
     logo: logoFile.value ?? null,
     shouldDeleteLogo: shouldDeleteLogo.value,
     content_width: contentWidth.value as EContentWidth,
@@ -717,11 +716,11 @@ const updateAccountInfo = async () => {
     dark_secondary_color: darkSecondaryColor.value,
   });
 
-  const result = await accountStore.updateAccountInfo(payload, body);
+  const result = await accountSettingsStore.saveAccountInfo(body);
 
   if (result) {
     isVisible.value = false;
-    await accountStore.getAccountInfoById(accountId.value);
+    await accountSettingsStore.getAccountInfoById();
   }
 };
 
@@ -729,12 +728,9 @@ const addAccountInfo = async () => {
   const validateForm = await refFormEditAccount?.value?.validate();
   if (!validateForm?.valid) return;
 
-  if (!accountId.value) {
-    return;
-  }
+  if (!accountId.value) return;
 
   const payload = buildAccountInfoForm({
-    account_id: accountId.value,
     logo: logoFile.value ?? null,
     shouldDeleteLogo: false,
     content_width: contentWidth.value as EContentWidth,
@@ -751,7 +747,7 @@ const addAccountInfo = async () => {
     dark_secondary_color: darkSecondaryColor.value,
   });
 
-  const result = await accountStore.addAccountInfo(payload);
+  const result = await accountSettingsStore.saveAccountInfo(payload);
 
   if (result) {
     isVisible.value = false;
@@ -763,7 +759,7 @@ watch(
   async (newAccountId) => {
     if (!newAccountId) return;
 
-    const account = await accountStore.getAccountInfoById(newAccountId);
+    const account = await accountSettingsStore.getAccountInfoById();
     if (account) {
       accountInfoId.value = account.account_info_id;
       logoUrl.value = account.logo ?? null;
@@ -793,7 +789,7 @@ watch(
     <DialogCloseBtn @click="isVisible = false" />
 
     <VOverlay
-      :model-value="accountStore.loading"
+      :model-value="accountSettingsStore.loading"
       class="align-center justify-center"
       contained
     >

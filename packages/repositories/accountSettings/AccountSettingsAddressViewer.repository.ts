@@ -38,8 +38,8 @@ export class AccountSettingsAddressViewerRepository {
       },
       columns: {
         zip_code: true,
-        address1: true,
-        address2: true,
+        address1_partial: true,
+        address2_partial: true,
         district: true,
         city_fiscal_code: true,
         state_fiscal_code: true,
@@ -57,8 +57,8 @@ export class AccountSettingsAddressViewerRepository {
     return {
       country_id: result.uuc?.country_id ?? null,
       zip_code: result.zip_code,
-      address1: result.address1,
-      address2: result.address2,
+      address1_partial: result.address1_partial,
+      address2_partial: result.address2_partial,
       city: cityName,
       state: stateName,
       state_id: result.uzs?.id_zipcode_state ?? null,

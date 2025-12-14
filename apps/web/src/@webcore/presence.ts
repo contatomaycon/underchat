@@ -19,6 +19,7 @@ const HEARTBEAT_INTERVALS: Record<PresenceMode, number> = {
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 let listenersBound = false;
 let currentMode: PresenceMode | null = null;
+let hasPermissionError = false;
 
 const chatStore = useChatStore();
 
@@ -78,10 +79,12 @@ const sendPresence = async (
   mode: PresenceMode,
   asHeartbeat = false
 ): Promise<void> => {
-  const userId = chatStore.user?.user_id;
+  if (!isLoggedIn()) return;
 
-  if (!userId) {
-    console.warn('Cannot send presence: user_id not available');
+  const userId = chatStore.user?.user_id;
+  if (!userId) return;
+
+  if (hasPermissionError && !asHeartbeat) {
     return;
   }
 
@@ -93,8 +96,17 @@ const sendPresence = async (
     is_heartbeat: asHeartbeat,
   };
 
-  await publish(channel, message).catch((error) => {
-    console.error('Failed to send presence via Centrifugo', error);
+  await publish(channel, message).catch((error: any) => {
+    if (error?.code === 103) {
+      hasPermissionError = true;
+      if (!asHeartbeat) {
+        console.warn(
+          'Permission denied for presence channel. Connection may need to be reset.'
+        );
+      }
+    } else {
+      console.error('Failed to send presence via Centrifugo', error);
+    }
   });
 };
 
@@ -106,8 +118,19 @@ const stopHeartbeatLoop = (): void => {
 };
 
 async function applyMode(mode: PresenceMode, force = false): Promise<void> {
+  if (!isLoggedIn()) {
+    stopHeartbeatLoop();
+    currentMode = null;
+
+    return;
+  }
+
   const sameMode = currentMode === mode;
   currentMode = mode;
+
+  if (!sameMode || force) {
+    hasPermissionError = false;
+  }
 
   if (!sameMode || force) {
     await sendPresence(mode, false).catch(() => {});
@@ -184,8 +207,14 @@ export const refreshUpdateProfileSidebarContent = (
 };
 
 export const refreshPresenceForCurrentRoute = (): void => {
+  if (!isLoggedIn()) return;
+
   const targetMode = resolveTargetMode();
   applyMode(targetMode, false).catch(() => {});
+};
+
+export const resetPresencePermissionError = (): void => {
+  hasPermissionError = false;
 };
 
 const bindPresenceListeners = (): void => {

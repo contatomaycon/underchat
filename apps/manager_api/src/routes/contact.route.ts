@@ -17,6 +17,8 @@ import { editContactSchema } from '@core/schema/contact/editContact';
 import { exportContactSchema } from '@core/schema/contact/exportContact';
 import { validateContactSchema } from '@core/schema/contact/validateContact';
 import { deleteContactPhotoSchema } from '@core/schema/contact/deletePhoto';
+import { planGuard } from '@/plugins/planGuard';
+import { planStatus } from '@/plugins/planStatus';
 
 export default async function contactRoutes(server: FastifyInstance) {
   const contactController = container.resolve(ContactController);
@@ -27,6 +29,8 @@ export default async function contactRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, contactViewPermissions),
+      planGuard,
+      planStatus,
     ],
   });
 
@@ -36,6 +40,8 @@ export default async function contactRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, contactCreatePermissions),
+      planGuard,
+      planStatus,
     ],
   });
 
@@ -45,6 +51,8 @@ export default async function contactRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, contactViewPermissions),
+      planGuard,
+      planStatus,
     ],
   });
 
@@ -54,6 +62,8 @@ export default async function contactRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, contactViewPermissions),
+      planGuard,
+      planStatus,
     ],
   });
 
@@ -63,6 +73,8 @@ export default async function contactRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, contactViewPermissions),
+      planGuard,
+      planStatus,
     ],
   });
 
@@ -72,6 +84,8 @@ export default async function contactRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, contactDeletePermissions),
+      planGuard,
+      planStatus,
     ],
   });
 
@@ -81,6 +95,8 @@ export default async function contactRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, contactUpdatePermissions),
+      planGuard,
+      planStatus,
     ],
   });
 
@@ -90,6 +106,8 @@ export default async function contactRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, contactViewPermissions),
+      planGuard,
+      planStatus,
     ],
   });
 
@@ -99,6 +117,8 @@ export default async function contactRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, contactViewPermissions),
+      planGuard,
+      planStatus,
     ],
   });
 
@@ -108,6 +128,8 @@ export default async function contactRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, contactUpdatePermissions),
+      planGuard,
+      planStatus,
     ],
   });
 }

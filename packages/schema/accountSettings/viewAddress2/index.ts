@@ -5,7 +5,7 @@ import { viewAddress2ResponseSchema } from './response.schema';
 
 export const viewAddress2Schema = {
   description: 'Visualiza o endereço 2 descriptografado do usuário autenticado',
-  tags: [ETagSwagger.account],
+  tags: [ETagSwagger.accountSettings],
   produces: ['application/json'],
   security: [
     {

@@ -9,7 +9,6 @@ import { ERolePermissions } from './role';
 import { EChatPermissions } from './chat';
 import { EChatbotPermissions } from './chatbot';
 import { ESectorPermissions } from './sector';
-import { EZipcodePermissions } from './zipcode';
 import { EAccountPermissions } from './account';
 import { EPlanPermissions } from './plan';
 import { EMessageTemplatePermissions } from './messageTemplate';
@@ -34,7 +33,6 @@ export type EPermissionsRoles =
   | EChatPermissions
   | EChatbotPermissions
   | ESectorPermissions
-  | EZipcodePermissions
   | EAccountPermissions
   | EPlanPermissions
   | EMessageTemplatePermissions

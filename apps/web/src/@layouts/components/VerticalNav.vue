@@ -84,11 +84,11 @@ const hideTitleAndIcon = configStore.isVerticalNavMini(isHovered);
     <div class="nav-header">
       <slot name="nav-header">
         <RouterLink to="/" class="app-logo app-title-wrapper">
-          <VNodeRenderer :nodes="layoutConfig.app.logo" />
+          <VNodeRenderer :nodes="configStore.appLogo" />
 
           <Transition name="vertical-nav-app-title">
             <h1 v-show="!hideTitleAndIcon" class="app-logo-title">
-              {{ layoutConfig.app.title }}
+              {{ configStore.appTitle }}
             </h1>
           </Transition>
         </RouterLink>

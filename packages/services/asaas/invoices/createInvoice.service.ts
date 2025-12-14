@@ -5,6 +5,7 @@ import {
   ICreateAsaasInvoiceRequest,
   ICreateAsaasInvoiceResponse,
 } from '@core/common/interfaces/IAsaasInvoice';
+import { IAsaasErrorResponse } from '@core/common/interfaces/IAsaasCreditCard';
 
 @injectable()
 export class CreateInvoiceService {
@@ -25,17 +26,18 @@ export class CreateInvoiceService {
       return null;
     } catch (error) {
       if (axios.isAxiosError(error)) {
-        console.error(
-          'Erro ao agendar nota fiscal no Asaas:',
-          error.response?.data
-        );
-      } else {
-        console.error(
-          'Erro desconhecido ao agendar nota fiscal no Asaas:',
-          error
-        );
+        const errorData = error.response?.data as IAsaasErrorResponse;
+
+        if (errorData?.errors && errorData.errors.length > 0) {
+          const firstErrorDescription = errorData.errors[0].description;
+
+          throw new Error(firstErrorDescription);
+        }
+
+        throw new Error('Erro ao agendar nota fiscal');
       }
-      return null;
+
+      throw new Error('Erro desconhecido ao agendar nota fiscal');
     }
   };
 }

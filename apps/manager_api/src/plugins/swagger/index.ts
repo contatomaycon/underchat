@@ -123,6 +123,14 @@ const swaggerPlugin = async (fastify: FastifyInstance) => {
           name: ETagSwagger.config,
           description: 'End-points relacionados à configurações',
         },
+        {
+          name: ETagSwagger.accountSettings,
+          description: 'End-points relacionados à configurações da conta',
+        },
+        {
+          name: ETagSwagger.dashboard,
+          description: 'End-points relacionados ao dashboard',
+        },
       ],
     },
   });

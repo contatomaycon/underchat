@@ -5,7 +5,7 @@ import { viewPhoneResponseSchema } from './response.schema';
 
 export const viewPhoneSchema = {
   description: 'Visualiza o telefone descriptografado do usuário autenticado',
-  tags: [ETagSwagger.account],
+  tags: [ETagSwagger.accountSettings],
   produces: ['application/json'],
   security: [
     {

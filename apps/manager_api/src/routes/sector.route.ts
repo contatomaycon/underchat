@@ -16,6 +16,8 @@ import { listSectorRoleAccountSchema } from '@core/schema/sector/listSectorRoleA
 import { viewSectorRoleAccountSectorSchema } from '@core/schema/sector/viewSectorRoleAccountSector';
 import { createSectorRoleSchema } from '@core/schema/sector/createSectorRole';
 import { listSectorUsersSchema } from '@core/schema/sector/listSectorUsers';
+import { planGuard } from '@/plugins/planGuard';
+import { planStatus } from '@/plugins/planStatus';
 
 export default function sectorRoutes(server: FastifyInstance) {
   const sectorController = container.resolve(SectorController);
@@ -26,6 +28,8 @@ export default function sectorRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, sectorViewPermissions),
+      planGuard,
+      planStatus,
     ],
   });
 
@@ -35,6 +39,8 @@ export default function sectorRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, sectorViewPermissions),
+      planGuard,
+      planStatus,
     ],
   });
 
@@ -44,6 +50,8 @@ export default function sectorRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, sectorDeletePermissions),
+      planGuard,
+      planStatus,
     ],
   });
 
@@ -53,6 +61,8 @@ export default function sectorRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, sectorEditPermissions),
+      planGuard,
+      planStatus,
     ],
   });
 
@@ -62,6 +72,8 @@ export default function sectorRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, sectorCreatePermissions),
+      planGuard,
+      planStatus,
     ],
   });
 
@@ -71,6 +83,8 @@ export default function sectorRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, sectorViewPermissions),
+      planGuard,
+      planStatus,
     ],
   });
 
@@ -80,6 +94,8 @@ export default function sectorRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, sectorViewPermissions),
+      planGuard,
+      planStatus,
     ],
   });
 
@@ -89,6 +105,8 @@ export default function sectorRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, sectorCreatePermissions),
+      planGuard,
+      planStatus,
     ],
   });
 
@@ -98,6 +116,8 @@ export default function sectorRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, sectorViewPermissions),
+      planGuard,
+      planStatus,
     ],
   });
 }

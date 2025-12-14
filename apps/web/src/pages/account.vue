@@ -8,6 +8,7 @@ import { SortRequest } from '@core/schema/common/sortRequestSchema';
 import { DataTableHeader } from 'vuetify';
 import { EAccountPermissions } from '@core/common/enums/EPermissions/account';
 import { useAccountStore } from '@/@webcore/stores/account';
+import { useAccountSettingsStore } from '@/@webcore/stores/accountSettings';
 import { EAccountStatus } from '@core/common/enums/EAccountStatus';
 import { ListAccountResponse } from '@core/schema/account/listAccount/response.schema';
 import { EColor } from '@core/common/enums/EColor';
@@ -45,10 +46,18 @@ const permissionsCreate = [
   EAccountPermissions.account_group,
   EAccountPermissions.account_create,
 ];
+const permissionsCustomize = [
+  EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  EAccountPermissions.account_group,
+  EAccountPermissions.account_customize,
+];
 
 const { t } = useI18n();
 const accountStore = useAccountStore();
+const accountSettingsStore = useAccountSettingsStore();
 useSnackbarCleanup(accountStore);
+useSnackbarCleanup(accountSettingsStore);
 
 const itemsPerPage = ref([
   { value: 5, title: '5' },
@@ -355,6 +364,7 @@ watch(
             <template #item.actions="{ item }">
               <div class="d-flex gap-1">
                 <IconBtn
+                  v-if="$canPermission(permissionsCustomize)"
                   ><VTooltip
                     location="top"
                     transition="scale-transition"
@@ -457,6 +467,14 @@ watch(
       :color="accountStore.snackbar.color"
     >
       {{ accountStore.snackbar.message }}
+    </VSnackbar>
+    <VSnackbar
+      v-model="accountSettingsStore.snackbar.status"
+      transition="scroll-y-reverse-transition"
+      location="top end"
+      :color="accountSettingsStore.snackbar.color"
+    >
+      {{ accountSettingsStore.snackbar.message }}
     </VSnackbar>
   </div>
 </template>

@@ -19,6 +19,7 @@ export const createUserCard = async (
     const result = await userCardCreatorUseCase.execute(
       t,
       tokenJwtData.user_id,
+      tokenJwtData.account_id,
       remoteIp,
       body
     );

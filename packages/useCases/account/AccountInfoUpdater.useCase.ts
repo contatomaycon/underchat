@@ -2,7 +2,7 @@ import { injectable } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { AccountService } from '@core/services/account.service';
 import { StorageService } from '@core/services/storage.service';
-import { EditAccountInfoResponse } from '@core/schema/account/editAccountInfo/request.schema';
+import { EditAccountInfoRequest } from '@core/schema/account/editAccountInfo/request.schema';
 
 @injectable()
 export class AccountInfoUpdaterUseCase {
@@ -14,7 +14,7 @@ export class AccountInfoUpdaterUseCase {
   async execute(
     t: TFunction<'translation', undefined>,
     accountInfoId: string,
-    body: EditAccountInfoResponse
+    body: EditAccountInfoRequest
   ): Promise<boolean> {
     const accountInfoExists =
       await this.accountService.accountInfoByIdExists(accountInfoId);
@@ -25,9 +25,11 @@ export class AccountInfoUpdaterUseCase {
 
     let urlLogo: string | null | undefined = undefined;
 
-    if (body.delete_logo) {
+    if (body.delete_logo?.value) {
       const currentLogoUrl =
         await this.accountService.viewLogoByAccountInfoId(accountInfoId);
+
+      console.log('currentLogoUrl', currentLogoUrl);
 
       if (currentLogoUrl) {
         await this.storageService.deleteImage(currentLogoUrl);

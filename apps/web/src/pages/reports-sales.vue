@@ -5,10 +5,11 @@ import { useI18n } from 'vue-i18n';
 import { formatDateTime } from '@core/common/functions/formatDateTime';
 import { SortRequest } from '@core/schema/common/sortRequestSchema';
 import { DataTableHeader } from 'vuetify';
-import { usePlanStore } from '@/@webcore/stores/plan';
+import { useReportSalesStore } from '@/@webcore/stores/reportSales';
 import { ListPlanSalesResponse } from '@core/schema/plan/listPlanSales/response.schema';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import { EFinancialPermissions } from '@core/common/enums/EPermissions/financial';
+import { EPaymentBillingType } from '@core/common/enums/EPaymentBillingType';
 
 definePage({
   meta: {
@@ -22,8 +23,8 @@ definePage({
 });
 
 const { t } = useI18n();
-const planStore = usePlanStore();
-useSnackbarCleanup(planStore);
+const reportSalesStore = useReportSalesStore();
+useSnackbarCleanup(reportSalesStore);
 
 const itemsPerPage = ref([
   { value: 5, title: '5' },
@@ -35,11 +36,12 @@ const itemsPerPage = ref([
 ]);
 
 const headers: DataTableHeader<ListPlanSalesResponse>[] = [
+  { title: t('account_name'), key: 'account_name' },
   { title: t('plan_name'), key: 'plan_name' },
   { title: t('price'), key: 'price' },
   { title: t('price_old'), key: 'price_old' },
-  { title: t('quantity_sold'), key: 'quantity_sold' },
   { title: t('total_revenue'), key: 'total_revenue' },
+  { title: t('payment_type'), key: 'payment_billing_type_name' },
   { title: t('cross_sells'), key: 'cross_sells' },
   { title: t('created_at'), key: 'created_at' },
 ];
@@ -53,14 +55,37 @@ const options = ref({
 const selectedPlan = ref<string | null>(null);
 const startDate = ref<string | null>(null);
 const endDate = ref<string | null>(null);
+const selectedPaymentType = ref<string | null>(null);
 
 const plans = ref<Array<{ id: string | null; text: string }>>([]);
 
+const paymentTypes = ref<Array<{ id: string | null; text: string }>>([
+  { id: null, text: t('all') },
+  { id: EPaymentBillingType.boleto, text: t('payment_billing_type_boleto') },
+  {
+    id: EPaymentBillingType.credit_card,
+    text: t('payment_billing_type_credit_card'),
+  },
+  {
+    id: EPaymentBillingType.debit_card,
+    text: t('payment_billing_type_debit_card'),
+  },
+  { id: EPaymentBillingType.pix, text: t('payment_billing_type_pix') },
+  {
+    id: EPaymentBillingType.transfer,
+    text: t('payment_billing_type_transfer'),
+  },
+  {
+    id: EPaymentBillingType.deposit,
+    text: t('payment_billing_type_deposit'),
+  },
+]);
+
 onMounted(async () => {
-  await planStore.listPlanAll();
+  await reportSalesStore.listPlanAll();
   plans.value = [
     { id: null, text: t('all') },
-    ...planStore.listAll.map((plan) => ({
+    ...reportSalesStore.listAll.map((plan) => ({
       id: plan.plan_id,
       text: plan.name,
     })),
@@ -88,25 +113,26 @@ const query = computed(() => {
     plan_id: selectedPlan.value || null,
     start_date: formatDateForApi(startDate.value, false),
     end_date: formatDateForApi(endDate.value, true),
+    payment_billing_type_id: selectedPaymentType.value || null,
   };
 });
 
-const totalPlans = computed(() => {
-  return planStore.listSales.length;
+const totalSales = computed(() => {
+  return reportSalesStore.listSales.length;
 });
 
 const totalRevenue = computed(() => {
-  return planStore.listSales.reduce(
+  return reportSalesStore.listSales.reduce(
     (sum, item) => sum + Number(item.total_revenue),
     0
   );
 });
 
 const loadSales = async () => {
-  await planStore.listPlanSales(query.value);
+  await reportSalesStore.listPlanSales(query.value);
 };
 
-watch([selectedPlan, startDate, endDate], () => {
+watch([selectedPlan, startDate, endDate, selectedPaymentType], () => {
   loadSales();
 });
 
@@ -141,14 +167,35 @@ const totalAddonsValue = computed(() => {
 
 const planRevenueDialog = computed(() => {
   if (!selectedPlanItem.value) return 0;
-  const planPrice = Number(selectedPlanItem.value.price);
-  const quantity = selectedPlanItem.value.quantity_sold;
-  return planPrice * quantity;
+  return Number(selectedPlanItem.value.price);
 });
 
 const totalRevenueDialog = computed(() => {
   return planRevenueDialog.value + totalAddonsValue.value;
 });
+
+const getPaymentBillingTypeIcon = (
+  typeName: string | null | undefined
+): string => {
+  if (!typeName) return 'tabler-currency-dollar';
+  const iconMap: Record<string, string> = {
+    BOLETO: 'tabler-file-invoice',
+    CREDIT_CARD: 'tabler-credit-card',
+    DEBIT_CARD: 'tabler-credit-card-off',
+    PIX: 'tabler-qrcode',
+    TRANSFER: 'tabler-transfer',
+    DEPOSIT: 'tabler-building-bank',
+  };
+  return iconMap[typeName] || 'tabler-currency-dollar';
+};
+
+const getPaymentBillingTypeLabel = (
+  typeName: string | null | undefined
+): string => {
+  if (!typeName) return '-';
+  const translationKey = `payment_billing_type_${typeName.toLowerCase()}`;
+  return t(translationKey, typeName);
+};
 </script>
 
 <template>
@@ -159,10 +206,10 @@ const totalRevenueDialog = computed(() => {
           <div class="d-flex justify-space-between align-center">
             <div>
               <div class="text-body-2 text-medium-emphasis mb-1">
-                {{ $t('total_plans') }}
+                {{ $t('total_sales') }}
               </div>
               <div class="text-h4 font-weight-bold text-primary">
-                {{ totalPlans }}
+                {{ totalSales }}
               </div>
             </div>
             <VAvatar color="primary" variant="tonal" size="56">
@@ -224,6 +271,19 @@ const totalRevenueDialog = computed(() => {
               />
             </div>
             <div class="invoice-list-filter">
+              <VLabel class="text-body-2 mb-1"
+                >{{ $t('payment_type') }}:</VLabel
+              >
+              <AppSelectSearch
+                v-model="selectedPaymentType"
+                :items="paymentTypes as any"
+                :placeholder="$t('select_payment_type')"
+                :clearable="true"
+                item-value="id"
+                item-title="text"
+              />
+            </div>
+            <div class="invoice-list-filter">
               <VLabel class="text-body-2 mb-1">{{ $t('start_date') }}:</VLabel>
               <AppDateTimePicker
                 v-model="startDate"
@@ -248,13 +308,23 @@ const totalRevenueDialog = computed(() => {
             v-model:page="options.page"
             v-model:items-per-page="options.itemsPerPage"
             :headers="headers"
-            :items="planStore.listSales"
-            :items-length="planStore.listSales.length"
-            :loading="planStore.loading"
+            :items="reportSalesStore.listSales"
+            :items-length="reportSalesStore.listSales.length"
+            :loading="reportSalesStore.loading"
             :sort-by="options.sortBy"
             @update:options="handleTableChange"
             :loading-text="$t('loading_text')"
           >
+            <template #item.account_name="{ item }">
+              <div class="d-flex flex-column ms-3">
+                <span
+                  class="d-block font-weight-medium text-high-emphasis text-truncate"
+                >
+                  {{ item.account_name }}
+                </span>
+              </div>
+            </template>
+
             <template #item.plan_name="{ item }">
               <div class="d-flex flex-column ms-3">
                 <span
@@ -283,12 +353,6 @@ const totalRevenueDialog = computed(() => {
               }}</s>
             </template>
 
-            <template #item.quantity_sold="{ item }">
-              <VChip color="primary" size="small">
-                {{ item.quantity_sold }}
-              </VChip>
-            </template>
-
             <template #item.total_revenue="{ item }">
               <span class="text-success font-weight-medium">
                 {{
@@ -298,6 +362,21 @@ const totalRevenueDialog = computed(() => {
                   }).format(Number(item.total_revenue))
                 }}
               </span>
+            </template>
+
+            <template #item.payment_billing_type_name="{ item }">
+              <div class="d-flex align-center gap-2">
+                <VIcon
+                  :icon="
+                    getPaymentBillingTypeIcon(item.payment_billing_type_name)
+                  "
+                  size="18"
+                  color="primary"
+                />
+                <span>{{
+                  getPaymentBillingTypeLabel(item.payment_billing_type_name)
+                }}</span>
+              </div>
             </template>
 
             <template #item.cross_sells="{ item }">
@@ -329,7 +408,7 @@ const totalRevenueDialog = computed(() => {
               <TablePagination
                 v-model:page="options.page"
                 :items-per-page="options.itemsPerPage"
-                :total-items="planStore.listSales.length"
+                :total-items="reportSalesStore.listSales.length"
               />
             </template>
           </VDataTableServer>
@@ -370,17 +449,6 @@ const totalRevenueDialog = computed(() => {
                     style: 'currency',
                     currency: 'BRL',
                   }).format(planRevenueDialog)
-                }}
-              </span>
-            </div>
-            <div class="d-flex justify-space-between align-center">
-              <span class="text-caption text-medium-emphasis">
-                {{ selectedPlanItem.quantity_sold }} {{ $t('units') }} ×
-                {{
-                  new Intl.NumberFormat('pt-BR', {
-                    style: 'currency',
-                    currency: 'BRL',
-                  }).format(Number(selectedPlanItem.price))
                 }}
               </span>
             </div>

@@ -6,7 +6,7 @@ import { changePasswordResponseSchema } from './response.schema';
 
 export const changePasswordSchema = {
   description: 'Altera a senha do usuário',
-  tags: [ETagSwagger.account],
+  tags: [ETagSwagger.accountSettings],
   produces: ['application/json'],
   security: [
     {

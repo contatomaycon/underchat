@@ -121,3 +121,15 @@ export const unsubscribe = async (channel: string): Promise<void> => {
     sub.unsubscribe();
   }
 };
+
+export const resetConnection = (): void => {
+  if (centrifugeClient) {
+    try {
+      centrifugeClient.disconnect();
+    } catch (error) {
+      console.warn('Error disconnecting Centrifugo client', error);
+    }
+    centrifugeClient = null;
+  }
+  tokenGenerationPromise = null;
+};

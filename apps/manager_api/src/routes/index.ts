@@ -25,6 +25,10 @@ import reportConversationHistoryRoutes from './reportConversationHistory.route';
 import reportAttendanceRoutes from './reportAttendance.route';
 import configRoutes from './config.route';
 import webhookRoutes from './webhook.route';
+import dashboardRoutes from './dashboard.route';
+import reportSalesRoutes from './reportSales.route';
+import reportClientsRoutes from './reportClients.route';
+import reportUsersRoutes from './reportUsers.route';
 
 export default function registerRoutes(server: FastifyInstance) {
   server.register(authRoutes);
@@ -53,4 +57,8 @@ export default function registerRoutes(server: FastifyInstance) {
   server.register(reportAttendanceRoutes);
   server.register(configRoutes);
   server.register(webhookRoutes);
+  server.register(dashboardRoutes);
+  server.register(reportSalesRoutes);
+  server.register(reportClientsRoutes);
+  server.register(reportUsersRoutes);
 }

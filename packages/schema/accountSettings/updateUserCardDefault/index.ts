@@ -5,7 +5,7 @@ import { updateUserCardDefaultRequestSchema } from './request.schema';
 
 export const updateUserCardDefaultSchema = {
   description: 'Atualiza um cartão como padrão',
-  tags: [ETagSwagger.account],
+  tags: [ETagSwagger.accountSettings],
   produces: ['application/json'],
   security: [
     {

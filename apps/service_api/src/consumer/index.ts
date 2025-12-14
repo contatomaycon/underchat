@@ -10,6 +10,8 @@ import profileStatusExternalIdUpdateConsume from './profileStatusExternalIdUpdat
 import asaasInvoiceWebhookConsume from './asaasInvoiceWebhook.consume';
 import asaasNfseWebhookConsume from './asaasNfseWebhook.consume';
 import notificationMessageConsume from './notificationMessage.consume';
+import userPhoneJidUpdateConsume from './userPhoneJidUpdate.consume';
+import reportConversationHistoryPdfGenerateConsume from './reportConversationHistoryPdfGenerate.consume';
 
 export default async function registerConsumer(server: FastifyInstance) {
   await server.register(balanceConsume);
@@ -23,4 +25,6 @@ export default async function registerConsumer(server: FastifyInstance) {
   await server.register(asaasInvoiceWebhookConsume);
   await server.register(asaasNfseWebhookConsume);
   await server.register(notificationMessageConsume);
+  await server.register(userPhoneJidUpdateConsume);
+  await server.register(reportConversationHistoryPdfGenerateConsume);
 }

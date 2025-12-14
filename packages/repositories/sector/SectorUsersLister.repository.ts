@@ -56,8 +56,7 @@ export class SectorUsersListerRepository {
           eq(permissionRole.account_id, accountId),
           eq(user.account_id, accountId),
           isNull(user.deleted_at),
-          isNull(userInfo.deleted_at),
-          isNull(permissionAssignment.account_id)
+          isNull(userInfo.deleted_at)
         )
       )
       .groupBy(

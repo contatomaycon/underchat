@@ -18,6 +18,8 @@ export class KafkaServiceQueueService {
     const asaasInvoiceWebhook = this.asaasInvoiceWebhook();
     const asaasNfseWebhook = this.asaasNfseWebhook();
     const notificationMessage = this.notificationMessage();
+    const reportConversationHistoryPdfGenerate =
+      this.reportConversationHistoryPdfGenerate();
 
     return [
       createServer,
@@ -32,6 +34,7 @@ export class KafkaServiceQueueService {
       asaasInvoiceWebhook,
       asaasNfseWebhook,
       notificationMessage,
+      reportConversationHistoryPdfGenerate,
     ];
   };
 
@@ -91,5 +94,9 @@ export class KafkaServiceQueueService {
 
   notificationMessage = () => {
     return `notification.message`;
+  };
+
+  reportConversationHistoryPdfGenerate = () => {
+    return `report.conversation.history.pdf.generate`;
   };
 }

@@ -43,4 +43,30 @@ export class SectorAllListerRepository {
 
     return result as TransferSector[];
   };
+
+  listAllSectorsForReport = async (
+    accountId: string
+  ): Promise<Array<{ sector_id: string; name: string }>> => {
+    const result = await this.db
+      .select({
+        sector_id: sector.sector_id,
+        name: sector.name,
+      })
+      .from(sector)
+      .where(
+        and(
+          eq(sector.account_id, accountId),
+          isNull(sector.deleted_at),
+          eq(sector.sector_status_id, ESectorStatus.active)
+        )
+      )
+      .orderBy(asc(sector.name))
+      .execute();
+
+    if (!result?.length) {
+      return [];
+    }
+
+    return result;
+  };
 }

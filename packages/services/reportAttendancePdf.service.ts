@@ -1,7 +1,6 @@
 import { injectable } from 'tsyringe';
 import { TFunction } from 'i18next';
 import PDFDocument from 'pdfkit';
-import { ChartJSNodeCanvas } from 'chartjs-node-canvas';
 import { ReportAttendanceResult } from '@core/schema/reportAttendance/listReportAttendance/response.schema';
 
 type ReportType = 'queue' | 'analyst' | 'general';
@@ -17,13 +16,6 @@ export class ReportAttendancePdfService {
     startDate: string,
     endDate: string
   ): Promise<Buffer> {
-    const chartImage = await this.generateChartImage(
-      t,
-      data,
-      reportType,
-      periodType
-    );
-
     return new Promise((resolve, reject) => {
       try {
         const doc = new PDFDocument({ margin: 50, size: 'A4' });
@@ -47,16 +39,7 @@ export class ReportAttendancePdfService {
         doc.fontSize(12).font('Helvetica').text(dateRange, { align: 'center' });
         doc.moveDown(1);
 
-        if (chartImage) {
-          const chartWidth = 495;
-          const chartHeight = 300;
-          doc.image(chartImage, 50, doc.y, {
-            width: chartWidth,
-            height: chartHeight,
-            fit: [chartWidth, chartHeight],
-          });
-          doc.y += chartHeight + 20;
-        }
+        this.drawChart(doc, t, data, reportType, periodType);
 
         doc
           .fontSize(12)
@@ -352,59 +335,256 @@ export class ReportAttendancePdfService {
     return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
   }
 
-  private async generateChartImage(
+  private validateChartData(
+    data: ReportAttendanceResult[],
+    chartData: {
+      labels: string[];
+      datasets: Array<{
+        label: string;
+        data: number[];
+        backgroundColor: string;
+      }>;
+    },
+    doc: PDFKit.PDFDocument
+  ): boolean {
+    if (!data || data.length === 0) {
+      console.log('[PDF] Sem dados para desenhar gráfico');
+      doc.moveDown(0.5);
+      return false;
+    }
+
+    if (
+      !chartData.labels.length ||
+      !chartData.datasets.length ||
+      chartData.datasets.every((dataset) =>
+        dataset.data.every((value) => value === 0)
+      )
+    ) {
+      console.log('[PDF] Dados insuficientes para desenhar gráfico');
+      doc.moveDown(0.5);
+      return false;
+    }
+
+    return true;
+  }
+
+  private calculateMaxValue(datasets: Array<{ data: number[] }>): number {
+    let maxValue = 0;
+    for (const dataset of datasets) {
+      for (const value of dataset.data) {
+        if (value > maxValue) {
+          maxValue = value;
+        }
+      }
+    }
+    return maxValue;
+  }
+
+  private drawHorizontalGridLines(
+    doc: PDFKit.PDFDocument,
+    chartLeft: number,
+    chartWidth: number,
+    chartHeight: number,
+    drawingBottom: number,
+    maxValue: number,
+    horizontalLines: number
+  ): void {
+    const axisColor = '#555555';
+    const gridColor = '#DDDDDD';
+
+    for (let i = 0; i <= horizontalLines; i++) {
+      const value = (maxValue / horizontalLines) * i;
+      const percentage = value / maxValue;
+      const y = drawingBottom - percentage * chartHeight;
+
+      doc
+        .strokeColor(i === 0 ? axisColor : gridColor)
+        .lineWidth(i === 0 ? 1.2 : 0.6)
+        .moveTo(chartLeft, y)
+        .lineTo(chartLeft + chartWidth, y)
+        .stroke();
+
+      doc
+        .fontSize(8)
+        .fillColor('#333333')
+        .text(Math.round(value).toString(), chartLeft - 30, y - 5, {
+          width: 25,
+          align: 'right',
+        });
+    }
+  }
+
+  private drawAxes(
+    doc: PDFKit.PDFDocument,
+    chartLeft: number,
+    chartWidth: number,
+    drawingTop: number,
+    drawingBottom: number
+  ): void {
+    const axisColor = '#555555';
+    doc
+      .strokeColor(axisColor)
+      .lineWidth(1)
+      .moveTo(chartLeft, drawingTop)
+      .lineTo(chartLeft, drawingBottom)
+      .lineTo(chartLeft + chartWidth, drawingBottom)
+      .stroke();
+  }
+
+  private drawBars(
+    doc: PDFKit.PDFDocument,
+    config: {
+      chartLeft: number;
+      chartWidth: number;
+      chartHeight: number;
+      drawingBottom: number;
+      maxValue: number;
+    },
+    labels: string[],
+    datasets: Array<{ data: number[]; backgroundColor: string }>
+  ): void {
+    const { chartLeft, chartWidth, chartHeight, drawingBottom, maxValue } =
+      config;
+    const datasetCount = datasets.length;
+    const groupWidth = chartWidth / labels.length;
+    const groupPadding = 12;
+    const interBarSpacing = datasetCount > 1 ? 4 : 0;
+    const usableWidth =
+      groupWidth - groupPadding - (datasetCount - 1) * interBarSpacing;
+    const barWidth = Math.max(usableWidth / datasetCount, 4);
+
+    for (const [labelIndex, label] of labels.entries()) {
+      const baseX = chartLeft + labelIndex * groupWidth + groupPadding / 2;
+      for (const [datasetIndex, dataset] of datasets.entries()) {
+        const value = dataset.data[labelIndex] || 0;
+        if (value <= 0) {
+          continue;
+        }
+        const height = (value / maxValue) * chartHeight;
+        const x = baseX + datasetIndex * (barWidth + interBarSpacing);
+        const y = drawingBottom - height;
+        doc
+          .save()
+          .lineWidth(0)
+          .fillColor(dataset.backgroundColor || '#4B82F0')
+          .rect(x, y, barWidth, Math.max(height, 1))
+          .fill()
+          .restore();
+      }
+
+      doc
+        .fontSize(8)
+        .fillColor('#333333')
+        .text(label, chartLeft + labelIndex * groupWidth, drawingBottom + 4, {
+          width: groupWidth,
+          align: 'center',
+        });
+    }
+  }
+
+  private drawLegend(
+    doc: PDFKit.PDFDocument,
+    chartLeft: number,
+    chartWidth: number,
+    drawingBottom: number,
+    datasets: Array<{ label: string; backgroundColor: string }>
+  ): number {
+    const legendItemsPerRow = Math.max(Math.floor(chartWidth / 160), 1);
+    const legendItemWidth = chartWidth / legendItemsPerRow;
+    let legendRows = 0;
+
+    for (const [index, dataset] of datasets.entries()) {
+      const row = Math.floor(index / legendItemsPerRow);
+      const column = index % legendItemsPerRow;
+      const legendX = chartLeft + column * legendItemWidth;
+      const legendY = drawingBottom + 20 + row * 14;
+      doc
+        .save()
+        .fillColor(dataset.backgroundColor || '#4B82F0')
+        .rect(legendX, legendY, 10, 10)
+        .fill()
+        .restore();
+      doc
+        .fontSize(9)
+        .fillColor('#333333')
+        .text(dataset.label, legendX + 14, legendY - 2, {
+          width: legendItemWidth - 14,
+          align: 'left',
+        });
+      legendRows = Math.max(legendRows, row + 1);
+    }
+
+    return legendRows;
+  }
+
+  private drawChart(
+    doc: PDFKit.PDFDocument,
     t: TFunction<'translation', undefined>,
     data: ReportAttendanceResult[],
     reportType: ReportType,
     periodType: PeriodType
-  ): Promise<Buffer | null> {
-    if (!data || data.length === 0) {
-      return null;
+  ): void {
+    const chartData = this.prepareChartData(t, data, reportType);
+    if (!this.validateChartData(data, chartData, doc)) {
+      return;
     }
 
-    try {
-      const width = 800;
-      const height = 400;
-      const chartJSNodeCanvas = new ChartJSNodeCanvas({
-        width,
-        height,
-        backgroundColour: 'white',
-      });
+    const pageWidth = doc.page.width;
+    const chartWidth =
+      pageWidth - doc.page.margins.left - doc.page.margins.right;
+    const chartHeight = 220;
+    const chartLeft = doc.page.margins.left;
 
-      const chartData = this.prepareChartData(t, data, reportType);
-      const chartTitle = this.getReportTitle(t, reportType, periodType);
+    const chartTitle = this.getReportTitle(t, reportType, periodType);
+    doc.fontSize(12).font('Helvetica-Bold').text(chartTitle, chartLeft, doc.y, {
+      width: chartWidth,
+      align: 'left',
+    });
 
-      const configuration = {
-        type: 'bar' as const,
-        data: chartData,
-        options: {
-          responsive: false,
-          plugins: {
-            legend: {
-              position: 'bottom' as const,
-            },
-            title: {
-              display: true,
-              text: chartTitle,
-              font: {
-                size: 16,
-              },
-            },
-          },
-          scales: {
-            y: {
-              beginAtZero: true,
-            },
-          },
-        },
-      };
+    doc.moveDown(0.3);
+    const drawingTop = doc.y;
+    const drawingBottom = drawingTop + chartHeight;
 
-      const imageBuffer = await chartJSNodeCanvas.renderToBuffer(configuration);
-      return imageBuffer;
-    } catch (error) {
-      console.error('Erro ao gerar gráfico:', error);
-      return null;
+    const maxValue = this.calculateMaxValue(chartData.datasets);
+    if (maxValue === 0) {
+      doc.y = drawingBottom + 10;
+      return;
     }
+
+    this.drawHorizontalGridLines(
+      doc,
+      chartLeft,
+      chartWidth,
+      chartHeight,
+      drawingBottom,
+      maxValue,
+      5
+    );
+
+    this.drawAxes(doc, chartLeft, chartWidth, drawingTop, drawingBottom);
+
+    this.drawBars(
+      doc,
+      {
+        chartLeft,
+        chartWidth,
+        chartHeight,
+        drawingBottom,
+        maxValue,
+      },
+      chartData.labels,
+      chartData.datasets
+    );
+
+    const legendRows = this.drawLegend(
+      doc,
+      chartLeft,
+      chartWidth,
+      drawingBottom,
+      chartData.datasets
+    );
+
+    doc.y = drawingBottom + 20 + legendRows * 14 + 10;
   }
 
   private prepareChartData(
@@ -427,7 +607,7 @@ export class ReportAttendancePdfService {
         const period = item.period || '';
         const category =
           reportType === 'queue'
-            ? item.queue || 'Sem Fila'
+            ? item.queue || 'Sem Setor'
             : item.analyst || 'Sem Analista';
 
         categoriesSet.add(category);

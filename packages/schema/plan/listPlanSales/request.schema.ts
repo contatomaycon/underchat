@@ -10,6 +10,9 @@ export const listPlanSalesRequestSchema = Type.Object({
   end_date: Type.Optional(
     Type.Union([Type.String({ format: 'date-time' }), Type.Null()])
   ),
+  payment_billing_type_id: Type.Optional(
+    Type.Union([Type.String({ format: 'uuid' }), Type.Null()])
+  ),
 });
 
 export type ListPlanSalesRequest = Static<typeof listPlanSalesRequestSchema>;

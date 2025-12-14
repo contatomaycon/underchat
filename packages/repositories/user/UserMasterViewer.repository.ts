@@ -40,8 +40,7 @@ export class UserMasterViewerRepository {
             EPermissionRole.administrator,
           ]),
           isNull(user.deleted_at),
-          isNull(account.deleted_at),
-          isNull(permissionAssignment.account_id)
+          isNull(account.deleted_at)
         )
       )
       .limit(1)

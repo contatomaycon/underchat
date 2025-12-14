@@ -411,6 +411,33 @@ export class UserService {
     }
   };
 
+  getUserPhoneJidDecrypted = (
+    encryptedPhoneJid: string | null | undefined
+  ): string | null => {
+    if (!encryptedPhoneJid) return null;
+
+    if (typeof encryptedPhoneJid !== 'string') {
+      return null;
+    }
+
+    const isAESFormat =
+      encryptedPhoneJid.includes(':') &&
+      encryptedPhoneJid.split(':').length === 3;
+
+    if (!isAESFormat) {
+      return null;
+    }
+
+    try {
+      const decryptedPhone =
+        this.passwordEncryptorService.decrypt(encryptedPhoneJid);
+
+      return decryptedPhone;
+    } catch {
+      return null;
+    }
+  };
+
   getUserEmailDecrypted = (
     encryptedEmail: string | null | undefined
   ): string | null => {
@@ -716,5 +743,17 @@ export class UserService {
     };
 
     return this.userUpdaterRepository.updateUserById(userId, input, accountId);
+  };
+
+  updateUserPhoneJid = async (
+    userId: string,
+    phoneJid: string
+  ): Promise<boolean> => {
+    const phoneJidEncrypted = this.passwordEncryptorService.encrypt(phoneJid);
+
+    return this.userInfoUpdaterRepository.updatePhoneJidById(
+      userId,
+      phoneJidEncrypted
+    );
   };
 }

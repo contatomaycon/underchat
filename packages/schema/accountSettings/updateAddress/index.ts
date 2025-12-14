@@ -6,7 +6,7 @@ import { updateAddressResponseSchema } from './response.schema';
 
 export const updateAddressSchema = {
   description: 'Atualiza o endereço do usuário autenticado',
-  tags: [ETagSwagger.account],
+  tags: [ETagSwagger.accountSettings],
   produces: ['application/json'],
   consumes: ['application/json'],
   security: [

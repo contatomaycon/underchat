@@ -19,6 +19,8 @@ import { ServerSshViewerNotIdByIpExistsRepository } from '@core/repositories/ser
 import { ServerViewerRepository } from '@core/repositories/server/ServerViewer.repository';
 import { ViewServerResponse } from '@core/schema/server/viewServer/response.schema';
 import { ServerListerRepository } from '@core/repositories/server/ServerLister.repository';
+import { ServerBalanceMonitorViewerRepository } from '@core/repositories/server/ServerBalanceMonitorViewer.repository';
+import { IBalanceMonitorServer } from '@core/common/interfaces/IBalanceMonitorServer';
 import { ListServerResponse } from '@core/schema/server/listServer/response.schema';
 import { ListServerRequest } from '@core/schema/server/listServer/request.schema';
 import { CentrifugoService } from './centrifugo.service';
@@ -58,7 +60,8 @@ export class ServerService {
     private readonly serverCreatorRepository: ServerCreatorRepository,
     private readonly serverWebDeleterRepository: ServerWebDeleterRepository,
     private readonly serverWebViewerRepository: ServerWebViewerRepository,
-    private readonly serverSshListerRepository: ServerSshListerRepository
+    private readonly serverSshListerRepository: ServerSshListerRepository,
+    private readonly serverBalanceMonitorViewerRepository: ServerBalanceMonitorViewerRepository
   ) {}
 
   createServer = async (
@@ -144,6 +147,10 @@ export class ServerService {
 
   deleteServerWebById = async (serverId: string): Promise<boolean> => {
     return this.serverWebDeleterRepository.deleteServerWebById(serverId);
+  };
+
+  listBalanceServers = async (): Promise<IBalanceMonitorServer[]> => {
+    return this.serverBalanceMonitorViewerRepository.listEligible();
   };
 
   existsServerById = async (serverId: string): Promise<boolean> => {

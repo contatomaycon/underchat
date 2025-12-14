@@ -50,6 +50,7 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       Record<never, never>,
       | 'account-settings-account-tab'
+      | 'account-settings-customize-tab'
       | 'account-settings-invoices-tab'
       | 'account-settings-plans-tab'
       | 'account-settings-security-tab'
@@ -57,6 +58,13 @@ declare module 'vue-router/auto-routes' {
     'account-settings-account-tab': RouteRecordInfo<
       'account-settings-account-tab',
       '/account-settings/account-tab',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
+    'account-settings-customize-tab': RouteRecordInfo<
+      'account-settings-customize-tab',
+      '/account-settings/customize-tab',
       Record<never, never>,
       Record<never, never>,
       | never
@@ -217,6 +225,13 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       | never
     >,
+    'plan-expired': RouteRecordInfo<
+      'plan-expired',
+      '/plan-expired',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
     'plans': RouteRecordInfo<
       'plans',
       '/plans',
@@ -336,6 +351,7 @@ declare module 'vue-router/auto-routes' {
       routes:
         | 'account-settings'
         | 'account-settings-account-tab'
+        | 'account-settings-customize-tab'
         | 'account-settings-invoices-tab'
         | 'account-settings-plans-tab'
         | 'account-settings-security-tab'
@@ -345,6 +361,12 @@ declare module 'vue-router/auto-routes' {
     'src/pages/account-settings/account-tab.vue': {
       routes:
         | 'account-settings-account-tab'
+      views:
+        | never
+    }
+    'src/pages/account-settings/customize-tab.vue': {
+      routes:
+        | 'account-settings-customize-tab'
       views:
         | never
     }
@@ -481,6 +503,12 @@ declare module 'vue-router/auto-routes' {
     'src/pages/plan.vue': {
       routes:
         | 'plan'
+      views:
+        | never
+    }
+    'src/pages/plan-expired.vue': {
+      routes:
+        | 'plan-expired'
       views:
         | never
     }

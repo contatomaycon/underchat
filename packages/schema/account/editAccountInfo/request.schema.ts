@@ -9,12 +9,16 @@ export type EditAccountInfoParamsRequest = Static<
   typeof editAccountInfoParamsRequestSchema
 >;
 
-export const editAccountInfoResponseSchema = Type.Object({
+export const editAccountInfoRequestSchema = Type.Object({
   account_id: Type.Object({
     value: Type.String({ format: 'uuid' }),
   }),
   logo: Type.Optional(Type.Union([uploadFileRequestSchema, Type.Null()])),
-  delete_logo: Type.Optional(Type.Boolean()),
+  delete_logo: Type.Optional(
+    Type.Object({
+      value: Type.Union([Type.Boolean(), Type.Null()]),
+    })
+  ),
   content_width: Type.Object({
     value: Type.Union([Type.String(), Type.Null()]),
   }),
@@ -53,6 +57,6 @@ export const editAccountInfoResponseSchema = Type.Object({
   }),
 });
 
-export type EditAccountInfoResponse = Static<
-  typeof editAccountInfoResponseSchema
+export type EditAccountInfoRequest = Static<
+  typeof editAccountInfoRequestSchema
 >;

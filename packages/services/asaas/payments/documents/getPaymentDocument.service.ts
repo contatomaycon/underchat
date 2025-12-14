@@ -2,6 +2,7 @@ import { injectable } from 'tsyringe';
 import axios from 'axios';
 import { AsaasBaseService } from '../../asaasBase.service';
 import { IUploadAsaasPaymentDocumentResponse } from '@core/common/interfaces/IAsaasPayment';
+import { IAsaasErrorResponse } from '@core/common/interfaces/IAsaasCreditCard';
 
 @injectable()
 export class GetPaymentDocumentService {
@@ -25,17 +26,18 @@ export class GetPaymentDocumentService {
       return null;
     } catch (error) {
       if (axios.isAxiosError(error)) {
-        console.error(
-          'Erro ao recuperar documento da cobrança no Asaas:',
-          error.response?.data
-        );
-      } else {
-        console.error(
-          'Erro desconhecido ao recuperar documento da cobrança no Asaas:',
-          error
-        );
+        const errorData = error.response?.data as IAsaasErrorResponse;
+
+        if (errorData?.errors && errorData.errors.length > 0) {
+          const firstErrorDescription = errorData.errors[0].description;
+
+          throw new Error(firstErrorDescription);
+        }
+
+        throw new Error('Erro ao recuperar documento da cobrança');
       }
-      return null;
+
+      throw new Error('Erro desconhecido ao recuperar documento da cobrança');
     }
   };
 }

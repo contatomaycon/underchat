@@ -137,6 +137,8 @@ export const applyLayoutTheme = (
   layoutStore.navbarType = navbar;
   layoutStore.footerType = footer;
   layoutStore.isVerticalNavCollapsed = isVerticalNavCollapsed;
+  layoutStore.appLogo = logoNode;
+  layoutStore.appTitle = title;
 
   const matchedLang = themeConfig.app.i18n.langConfig?.find(
     (lang) => lang.i18nLang === defaultLocale

@@ -9,14 +9,19 @@ const crossSellSchema = Type.Object({
 });
 
 export const listPlanSalesResponseSchema = Type.Object({
+  account_payment_id: Type.String({ format: 'uuid' }),
   plan_id: Type.String({ format: 'uuid' }),
   plan_name: Type.String(),
   price: Type.String(),
   price_old: Type.String(),
-  quantity_sold: Type.Number(),
   total_revenue: Type.String(),
+  account_id: Type.String({ format: 'uuid' }),
+  account_name: Type.String(),
   cross_sells: Type.Array(crossSellSchema),
   created_at: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  payment_billing_type_name: Type.Optional(
+    Type.Union([Type.String(), Type.Null()])
+  ),
 });
 
 export const listPlanSalesFinalResponseSchema = Type.Object({

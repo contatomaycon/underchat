@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { NotificationMessageViewerRepository } from '@core/repositories/notifications/NotificationMessageViewer.repository';
 import { UserMasterViewerRepository } from '@core/repositories/user/UserMasterViewer.repository';
 import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
@@ -8,7 +8,6 @@ import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.servi
 import { notificationMappings } from '@core/mappings/notification.mappings';
 import { WorkerActiveByAccountViewerRepository } from '@core/repositories/worker/WorkerActiveByAccountViewer.repository';
 import { UserService } from './user.service';
-import { normalizePhoneToJid } from '@core/common/functions/normalizePhoneToJid';
 import { UserInfoViewerRepository } from '@core/repositories/user/UserInfoViewer.repository';
 import { WorkerNameViewerRepository } from '@core/repositories/worker/WorkerNameViewer.repository';
 import { INotificationMessage } from '@core/common/interfaces/INotificationMessage';
@@ -16,6 +15,9 @@ import { PlanCurrentInvoiceViewerRepository } from '@core/repositories/plan/Plan
 import { ENotificationType } from '@core/common/enums/ENotificationType';
 import { webcrypto } from 'node:crypto';
 import { EmailService } from './email.service';
+import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
+import Redis from 'ioredis';
+import { withLock } from '@core/common/functions/withLock';
 
 @injectable()
 export class NotificationMessageService {
@@ -30,7 +32,9 @@ export class NotificationMessageService {
     private readonly userInfoViewerRepository: UserInfoViewerRepository,
     private readonly workerNameViewerRepository: WorkerNameViewerRepository,
     private readonly planCurrentInvoiceViewerRepository: PlanCurrentInvoiceViewerRepository,
-    private readonly emailService: EmailService
+    private readonly emailService: EmailService,
+    private readonly kafkaServiceQueueService: KafkaServiceQueueService,
+    @inject('Redis') private readonly redis: Redis
   ) {}
 
   private async prepareNotificationMessages(
@@ -96,10 +100,10 @@ export class NotificationMessageService {
   private async sendWhatsAppNotification(
     notification: any,
     phone: string | null,
-    workerId: string,
+    workerId: string | null,
     notificationMessage: INotificationMessage
   ): Promise<void> {
-    if (!notification.message_whatsapp || !phone) {
+    if (!notification.message_whatsapp || !phone || !workerId) {
       return;
     }
 
@@ -160,21 +164,10 @@ export class NotificationMessageService {
 
     const fullName = userInfo.name || userInfo.last_name || null;
     const phone = this.userService.getUserPhoneDecrypted(userInfo.phone);
+    const remoteJid = this.userService.getUserPhoneJidDecrypted(
+      userInfo.phone_jid
+    );
     const userEmail = await this.getUserEmail(masterUser.user_id);
-
-    const workerId =
-      notification.worker_id || (await this.getFirstActiveWorkerId(accountId));
-
-    if (!workerId) {
-      throw new Error('No active worker found for account');
-    }
-
-    const workerName =
-      await this.workerNameViewerRepository.findWorkerNameById(workerId);
-
-    if (!workerName) {
-      throw new Error('Worker not found');
-    }
 
     const { whatsappMessage, emailMessage, emailSubject } =
       await this.prepareNotificationMessages(
@@ -188,15 +181,38 @@ export class NotificationMessageService {
       return true;
     }
 
-    const remoteJid = phone
-      ? normalizePhoneToJid(phone, userInfo.phone_ddi) || null
-      : null;
+    let workerId: string | null = null;
+    let workerName: string | null = null;
+
+    if (notification.message_whatsapp) {
+      workerId =
+        notification.worker_id ||
+        (await this.getFirstActiveWorkerId(accountId));
+
+      if (!workerId) {
+        throw new Error('No active worker found for account');
+      }
+
+      workerName =
+        await this.workerNameViewerRepository.findWorkerNameById(workerId);
+
+      if (!workerName) {
+        throw new Error('Worker not found');
+      }
+    }
+
+    if (!phone || !userInfo?.phone_ddi) {
+      throw new Error('Remote JID or phone or phone DDI not found');
+    }
 
     const notificationMessage: INotificationMessage = {
       id: notification.notification_id,
+      user_id: masterUser.user_id,
       notification_id: notification.notification_id,
       message_key: {
         remote_jid: remoteJid,
+        phone_ddi: userInfo.phone_ddi,
+        phone_number: phone,
       },
       account: {
         id: accountId,
@@ -321,8 +337,11 @@ export class NotificationMessageService {
     }
 
     if (
-      notificationTypeName === ENotificationType.plan ||
-      notificationTypeName === ENotificationType.plan_expiration
+      notificationTypeName === ENotificationType.plan_new ||
+      notificationTypeName === ENotificationType.plan_renewal ||
+      notificationTypeName === ENotificationType.plan_expiration ||
+      notificationTypeName === ENotificationType.plan_cancellation ||
+      notificationTypeName === ENotificationType.recurring_payment_failure
     ) {
       const planData = await this.getPlanData(accountId);
       replacedMessage = replacedMessage.replaceAll(
@@ -352,5 +371,32 @@ export class NotificationMessageService {
       console.error('Erro ao obter email do usuário:', error);
       return null;
     }
+  }
+
+  async sendPlanNotification(
+    accountId: string,
+    planId: string,
+    notificationTypeId: string
+  ): Promise<void> {
+    const lockKey = `notification:${accountId}:${planId}:${notificationTypeId}`;
+
+    await withLock(
+      this.redis,
+      lockKey,
+      async () => {
+        const topic = this.kafkaServiceQueueService.notificationMessage();
+        await this.streamProducerService.send(topic, {
+          notification_type_id: notificationTypeId,
+          account_id: accountId,
+        });
+      },
+      {
+        ttlMs: 60000,
+        preventDuplicate: true,
+        duplicateTtlSeconds: 300,
+      }
+    ).catch((error) => {
+      console.error('Erro ao enviar notificação de plano liberado:', error);
+    });
   }
 }

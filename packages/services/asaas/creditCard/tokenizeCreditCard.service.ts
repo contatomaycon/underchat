@@ -4,6 +4,7 @@ import { AsaasBaseService } from '../asaasBase.service';
 import {
   ITokenizeAsaasCreditCardRequest,
   ITokenizeAsaasCreditCardResponse,
+  IAsaasErrorResponse,
 } from '@core/common/interfaces/IAsaasCreditCard';
 
 @injectable()
@@ -28,17 +29,18 @@ export class TokenizeCreditCardService {
       return null;
     } catch (error) {
       if (axios.isAxiosError(error)) {
-        console.error(
-          'Erro ao tokenizar cartão de crédito no Asaas:',
-          error.response?.data
-        );
-      } else {
-        console.error(
-          'Erro desconhecido ao tokenizar cartão de crédito no Asaas:',
-          error
-        );
+        const errorData = error.response?.data as IAsaasErrorResponse;
+
+        if (errorData?.errors && errorData.errors.length > 0) {
+          const firstErrorDescription = errorData.errors[0].description;
+
+          throw new Error(firstErrorDescription);
+        }
+
+        throw new Error('Erro ao tokenizar cartão de crédito');
       }
-      return null;
+
+      throw new Error('Erro desconhecido ao tokenizar cartão de crédito');
     }
   };
 }

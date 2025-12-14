@@ -3,7 +3,7 @@ import { accountInfo } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { eq } from 'drizzle-orm';
-import { EditAccountInfoResponse } from '@core/schema/account/editAccountInfo/request.schema';
+import { EditAccountInfoRequest } from '@core/schema/account/editAccountInfo/request.schema';
 
 @injectable()
 export class AccountInfoUpdaterRepository {
@@ -12,7 +12,7 @@ export class AccountInfoUpdaterRepository {
   ) {}
 
   private updateInput(
-    input: EditAccountInfoResponse,
+    input: EditAccountInfoRequest,
     urlLogo: string | null | undefined
   ): Partial<typeof accountInfo.$inferInsert> {
     const inputUpdate: Partial<typeof accountInfo.$inferInsert> = {};
@@ -76,7 +76,7 @@ export class AccountInfoUpdaterRepository {
 
   updateAccountInfoById = async (
     accountInfoId: string,
-    input: EditAccountInfoResponse,
+    input: EditAccountInfoRequest,
     urlLogo: string | null | undefined
   ): Promise<boolean> => {
     const updateInput = this.updateInput(input, urlLogo);

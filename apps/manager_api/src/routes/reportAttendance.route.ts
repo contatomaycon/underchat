@@ -3,6 +3,8 @@ import { container } from 'tsyringe';
 import { reportAttendanceViewPermissions } from '@/permissions/reportAttendance.permissions';
 import ReportAttendanceController from '@/controllers/reportAttendance';
 import { listReportAttendanceSchema } from '@core/schema/reportAttendance/listReportAttendance';
+import { planGuard } from '@/plugins/planGuard';
+import { planStatus } from '@/plugins/planStatus';
 
 export default function reportAttendanceRoutes(server: FastifyInstance) {
   const reportAttendanceController = container.resolve(
@@ -15,6 +17,8 @@ export default function reportAttendanceRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, reportAttendanceViewPermissions),
+      planGuard,
+      planStatus,
     ],
   });
 
@@ -26,6 +30,8 @@ export default function reportAttendanceRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, reportAttendanceViewPermissions),
+      planGuard,
+      planStatus,
     ],
   });
 }

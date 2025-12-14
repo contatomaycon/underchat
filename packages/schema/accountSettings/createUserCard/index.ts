@@ -6,7 +6,7 @@ import { createUserCardResponseSchema } from './response.schema';
 
 export const createUserCardSchema = {
   description: 'Adiciona um novo cartão de crédito para o usuário',
-  tags: [ETagSwagger.account],
+  tags: [ETagSwagger.accountSettings],
   produces: ['application/json'],
   security: [
     {
