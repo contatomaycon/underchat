@@ -1435,6 +1435,7 @@
     "report_conversation_history_pdf_deleted_successfully": "¡PDF eliminado con éxito!",
     "report_conversation_history_pdf_delete_error": "Error al eliminar el PDF. Por favor, intente nuevamente.",
     "delete_pdf": "Eliminar PDF",
+    "delete_pdf_confirmation": "¿Está seguro de que desea eliminar este PDF?",
     "no_messages_found": "No se encontraron mensajes",
     "image": "Imagen",
     "video": "Vídeo",
