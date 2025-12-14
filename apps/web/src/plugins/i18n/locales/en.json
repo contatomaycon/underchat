@@ -1432,6 +1432,7 @@
     "report_conversation_history_pdf_deleted_successfully": "PDF deleted successfully!",
     "report_conversation_history_pdf_delete_error": "Error deleting PDF. Please try again.",
     "delete_pdf": "Delete PDF",
+    "delete_pdf_confirmation": "Are you sure you want to delete this PDF?",
     "no_messages_found": "No messages found",
     "image": "Image",
     "video": "Video",

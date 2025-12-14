@@ -16,6 +16,7 @@ import { refDebounced } from '@vueuse/core';
 import ChatLogViewer from '@/components/chat/ChatLogViewer.vue';
 import ChatMediaViewer from '@/components/chat/ChatMediaViewer.vue';
 import ChatContactViewModal from '@/components/chat/ChatContactViewModal.vue';
+import VDialogHandler from '@/components/VDialogHandler.vue';
 import { MglMap, MglMarker } from 'vue-maplibre-gl';
 import { ViewReportConversationHistoryContactResponse } from '@core/schema/reportConversationHistory/viewReportConversationHistoryContact/response.schema';
 import { onMessage, unsubscribe } from '@/@webcore/centrifugo';
@@ -70,6 +71,8 @@ const contactData = ref<ViewReportConversationHistoryContactResponse | null>(
 );
 const isLoadingContact = ref(false);
 const pdfNotificationSubscription = ref<Subscription | null>(null);
+const isDeletePdfDialogOpen = ref(false);
+const pdfToDelete = ref<ReportConversationHistoryResult | null>(null);
 
 const handleOpenImage = (src: string, caption?: string) => {
   imageViewerSrc.value = src;
@@ -133,15 +136,26 @@ const handleDownloadPdf = async (item: ReportConversationHistoryResult) => {
   );
 };
 
-const handleDeletePdf = async (item: ReportConversationHistoryResult) => {
+const handleDeletePdf = (item: ReportConversationHistoryResult) => {
+  pdfToDelete.value = item;
+  isDeletePdfDialogOpen.value = true;
+};
+
+const confirmDeletePdf = async () => {
+  if (!pdfToDelete.value) {
+    return;
+  }
+
   const deleted =
     await reportConversationHistoryStore.deleteReportConversationHistoryPdf(
-      item.chat_id
+      pdfToDelete.value.chat_id
     );
 
   if (deleted) {
-    item.pdf_status = null;
+    pdfToDelete.value.pdf_status = null;
   }
+
+  pdfToDelete.value = null;
 };
 
 const loadPdfStatuses = async () => {
@@ -1144,6 +1158,22 @@ const copyToClipboard = async (text: string) => {
         </VCardActions>
       </VCard>
     </VDialog>
+
+    <VDialogHandler
+      v-model="isDeletePdfDialogOpen"
+      :title="t('delete_pdf')"
+      :message="t('delete_pdf_confirmation')"
+      @confirm="confirmDeletePdf"
+    />
+
+    <VSnackbar
+      v-model="reportConversationHistoryStore.snackbar.status"
+      transition="scroll-y-reverse-transition"
+      location="top end"
+      :color="reportConversationHistoryStore.snackbar.color"
+    >
+      {{ reportConversationHistoryStore.snackbar.message }}
+    </VSnackbar>
   </div>
 </template>
 
