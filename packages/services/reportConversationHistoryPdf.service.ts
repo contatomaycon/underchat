@@ -230,6 +230,7 @@ export class ReportConversationHistoryPdfService {
             <div class="msg-name">${author}</div>
           </div>
           <div class="bubble ${alignmentClass} ${mediaClass} ${reactionsClass}">
+            ${this.formatQuoted(msg, clientName)}
             <div class="content">${content}</div>
             <div class="meta">
               <span class="time">${timeOnly}</span>
@@ -268,7 +269,7 @@ export class ReportConversationHistoryPdfService {
             .msg-row.right .msg-avatar { order: 3; }
             .avatar-img { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; background: #e0e0e0; }
             .msg-name { font-size: 11px; color: rgba(17,27,33,0.6); white-space: nowrap; font-weight: 500; text-align: center; }
-            .bubble { max-width: 65%; width: fit-content; padding: 8px 12px 20px 12px; border-radius: 8px; position: relative; line-height: 1.5; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
+            .bubble { max-width: 65%; min-width: 120px; width: fit-content; padding: 8px 12px 20px 12px; border-radius: 8px; position: relative; line-height: 1.5; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
             .bubble.has-reactions { padding-bottom: 28px; padding-right: 60px; }
             .bubble.bubble-media { max-width: 280px; }
             .msg-row.left .bubble { order: 2; background: rgb(255, 255, 255); color: #111b21; }
@@ -306,6 +307,20 @@ export class ReportConversationHistoryPdfService {
             .reaction-summary-item { display: inline-flex; align-items: center; gap: 4px; }
             .reaction-summary-emoji { font-size: 0.9rem; line-height: 1; }
             .reaction-summary-count { font-size: 0.7rem; font-weight: 600; color: rgba(17, 27, 33, 0.7); }
+            .quoted-block { border-left: 3px solid rgba(25, 118, 210, 0.5); padding-left: 8px; margin-bottom: 8px; padding-top: 4px; padding-bottom: 4px; border-radius: 4px; background: rgba(17, 27, 33, 0.04); }
+            .quoted-block.is-right { border-left: none; border-right: 3px solid rgba(25, 118, 210, 0.5); padding-left: 0; padding-right: 8px; }
+            .quoted-name { font-size: 12px; font-weight: 600; color: rgba(25, 118, 210, 0.9); margin-bottom: 2px; }
+            .quoted-content { font-size: 12.8px; color: rgba(17, 27, 33, 0.7); }
+            .quoted-media { width: 44px; height: 44px; border-radius: 4px; overflow: hidden; margin-bottom: 4px; }
+            .quoted-media img { width: 100%; height: 100%; object-fit: cover; }
+            .quoted-location, .quoted-document, .quoted-audio, .quoted-contact, .quoted-sticker { display: flex; align-items: center; gap: 8px; }
+            .quoted-document-info, .quoted-audio-info, .quoted-video-info, .quoted-image-info { display: flex; flex-direction: column; gap: 2px; }
+            .quoted-document-name, .quoted-audio-name, .quoted-video-name, .quoted-image-name { font-size: 12.8px; font-weight: 600; color: rgb(25, 118, 210); max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+            .quoted-document-meta, .quoted-audio-meta, .quoted-video-meta, .quoted-image-meta { font-size: 11.2px; color: rgba(17, 27, 33, 0.6); }
+            .quoted-text { color: rgba(17, 27, 33, 0.7); }
+            .quoted-video-thumb { width: 100%; height: 100%; object-fit: cover; }
+            .quoted-video-overlay { position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.3); }
+            .quoted-video-placeholder { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; background: rgba(17, 27, 33, 0.1); }
           </style>
         </head>
         <body>
@@ -1278,5 +1293,354 @@ export class ReportConversationHistoryPdfService {
     }
 
     return `${averageSeconds}s`;
+  }
+
+  private formatQuoted(msg: ListMessageResult, clientName: string): string {
+    if (!msg.content?.quoted) {
+      return '';
+    }
+
+    const quoted = msg.content.quoted;
+    const isUser = msg.type_user === ETypeUserChat.client;
+    const isRight = !isUser;
+    const quotedName = this.resolveQuotedName(quoted, clientName);
+    const quotedType = quoted.type || '';
+
+    const parts: string[] = [];
+
+    parts.push(`
+      <div class="quoted-block ${isRight ? 'is-right' : ''}">
+        <div class="quoted-name">${this.escapeHtml(quotedName)}</div>
+        <div class="quoted-content">
+    `);
+
+    if (this.hasQuotedImage(quoted)) {
+      const imageSrc = this.resolveQuotedImageSrc(quoted);
+      const imageName = this.resolveQuotedImageName();
+      const imageMeta = this.resolveQuotedImageMeta(quoted);
+
+      parts.push(`
+        <div class="quoted-media quoted-media--image">
+          <img src="${this.escapeHtml(imageSrc)}" alt="Imagem" />
+        </div>
+        <div class="quoted-image-info">
+          <span class="quoted-image-name">${this.escapeHtml(imageName)}</span>
+          ${imageMeta ? `<span class="quoted-image-meta">${this.escapeHtml(imageMeta)}</span>` : ''}
+        </div>
+      `);
+    }
+
+    if (this.hasQuotedLocation(quoted)) {
+      parts.push(`
+        <div class="quoted-location">
+          <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="width: 22px; height: 22px; fill: rgb(25, 118, 210);">
+            <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+          </svg>
+          <div class="quoted-location-info">
+            <span class="quoted-location-name">Localização</span>
+          </div>
+        </div>
+      `);
+    }
+
+    if (this.hasQuotedDocument(quoted)) {
+      const docName = this.resolveQuotedDocumentName(quoted);
+      const docMeta = this.resolveQuotedDocumentMeta(quoted);
+      const docIcon = this.resolveQuotedDocumentIcon(quoted);
+
+      parts.push(`
+        <div class="quoted-document">
+          <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="width: 26px; height: 26px; fill: rgb(25, 118, 210);">
+            ${this.getDocumentIconSvg(docIcon)}
+          </svg>
+          <div class="quoted-document-info">
+            <span class="quoted-document-name">${this.escapeHtml(docName)}</span>
+            ${docMeta ? `<span class="quoted-document-meta">${this.escapeHtml(docMeta)}</span>` : ''}
+          </div>
+        </div>
+      `);
+    }
+
+    if (this.hasQuotedSticker(quoted)) {
+      const stickerSrc = this.resolveQuotedStickerSrc(quoted);
+
+      parts.push(`
+        <div class="quoted-sticker">
+          <div class="quoted-media quoted-media--image">
+            <img src="${this.escapeHtml(stickerSrc)}" alt="Sticker" style="object-fit: contain;" />
+          </div>
+        </div>
+      `);
+    }
+
+    if (this.hasQuotedVideo(quoted)) {
+      const videoUrl = this.resolveQuotedVideoUrl(quoted);
+      const videoPoster = this.resolveQuotedVideoPoster(quoted);
+      const videoName = this.resolveQuotedVideoName();
+      const videoMeta = this.resolveQuotedVideoMeta(quoted);
+
+      parts.push(`
+        <div class="quoted-media quoted-media--video" style="position: relative;">
+          ${
+            videoUrl
+              ? `<img src="${this.escapeHtml(videoPoster || videoUrl)}" alt="Vídeo" class="quoted-video-thumb" />
+               <div class="quoted-video-overlay">
+                 <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="width: 16px; height: 16px; fill: white;">
+                   <path d="M8 5v14l11-7z"/>
+                 </svg>
+               </div>`
+              : `<div class="quoted-video-placeholder">
+                 <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="width: 20px; height: 20px; fill: rgba(17, 27, 33, 0.6);">
+                   <path d="M8 5v14l11-7z"/>
+                 </svg>
+               </div>`
+          }
+        </div>
+        <div class="quoted-video-info">
+          <span class="quoted-video-name">${this.escapeHtml(videoName)}</span>
+          ${videoMeta ? `<span class="quoted-video-meta">${this.escapeHtml(videoMeta)}</span>` : ''}
+        </div>
+      `);
+    }
+
+    if (this.hasQuotedAudio(quoted)) {
+      const audioName = this.resolveQuotedAudioName();
+      const audioMeta = this.resolveQuotedAudioMeta(quoted);
+
+      parts.push(`
+        <div class="quoted-audio">
+          <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="width: 22px; height: 22px; fill: rgb(25, 118, 210);">
+            <path d="M12 14c1.66 0 2.99-1.34 2.99-3L15 5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"/>
+          </svg>
+          <div class="quoted-audio-info">
+            <span class="quoted-audio-name">${this.escapeHtml(audioName)}</span>
+            ${audioMeta ? `<span class="quoted-audio-meta">${this.escapeHtml(audioMeta)}</span>` : ''}
+          </div>
+        </div>
+      `);
+    }
+
+    if (this.hasQuotedContact(quoted)) {
+      parts.push(`
+        <div class="quoted-contact">
+          <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="width: 22px; height: 22px; fill: rgb(25, 118, 210);">
+            <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+          </svg>
+          <div class="quoted-contact-info">
+            <span class="quoted-contact-name">Contato</span>
+          </div>
+        </div>
+      `);
+    }
+
+    const quotedText = this.resolveQuotedText(quoted, quotedType);
+    if (
+      quotedText &&
+      quotedType !== EMessageType.video &&
+      quotedType !== EMessageType.image &&
+      quotedType !== EMessageType.audio &&
+      quotedType !== EMessageType.sticker &&
+      quotedType !== EMessageType.location &&
+      quotedType !== EMessageType.contact_card
+    ) {
+      const shouldFormat =
+        quotedType === EMessageType.text ||
+        quotedType === EMessageType.system ||
+        quotedType === EMessageType.annotation;
+
+      parts.push(`
+        <div class="quoted-text">
+          ${shouldFormat ? quotedText.replace(/\n/g, '<br>') : this.escapeHtml(quotedText)}
+        </div>
+      `);
+    }
+
+    parts.push(`
+        </div>
+      </div>
+    `);
+
+    return parts.join('');
+  }
+
+  private resolveQuotedName(quoted: any, clientName: string): string {
+    const fromMe = quoted?.key?.from_me ?? null;
+    if (fromMe === true) return 'Operador';
+    if (fromMe === false) return this.getFirstName(clientName);
+    return '';
+  }
+
+  private resolveQuotedText(quoted: any, quotedType: string): string {
+    if (!quoted) {
+      return '';
+    }
+
+    if (quotedType === EMessageType.image || quoted.image) {
+      return quoted.image?.caption || 'Foto';
+    }
+
+    if (quotedType === EMessageType.document && quoted.document) {
+      return quoted.message ?? '';
+    }
+
+    if (quotedType === EMessageType.video) {
+      return quoted.video?.caption || '';
+    }
+
+    if (quotedType === EMessageType.audio) {
+      return quoted.message ?? 'Áudio';
+    }
+
+    if (quotedType === EMessageType.sticker) {
+      return 'Sticker';
+    }
+
+    if (quotedType === EMessageType.location) {
+      return quoted.location?.name || quoted.location?.address || 'Localização';
+    }
+
+    return quoted.message ?? '';
+  }
+
+  private resolveQuotedImageSrc(quoted: any): string {
+    const image = quoted?.image;
+    if (!image) return '';
+    return image.url || image.thumbnail || '';
+  }
+
+  private hasQuotedImage(quoted: any): boolean {
+    const image = quoted?.image;
+    if (!image) return false;
+    return !!(image.url || image.thumbnail);
+  }
+
+  private hasQuotedVideo(quoted: any): boolean {
+    return !!quoted?.video;
+  }
+
+  private hasQuotedAudio(quoted: any): boolean {
+    return !!quoted?.audio;
+  }
+
+  private hasQuotedSticker(quoted: any): boolean {
+    return !!quoted?.sticker;
+  }
+
+  private hasQuotedLocation(quoted: any): boolean {
+    return !!(quoted?.type === EMessageType.location && quoted.location);
+  }
+
+  private hasQuotedContact(quoted: any): boolean {
+    return !!(quoted?.type === EMessageType.contact_card && quoted.contact);
+  }
+
+  private hasQuotedDocument(quoted: any): boolean {
+    if (!quoted) return false;
+    return quoted.type === EMessageType.document && !!quoted.document;
+  }
+
+  private resolveQuotedDocumentIcon(quoted: any): string {
+    const ext = quoted?.document?.extension?.toLowerCase();
+    const documentIconMap: Record<string, string> = {
+      pdf: 'pdf',
+      doc: 'doc',
+      docx: 'doc',
+      xls: 'xls',
+      xlsx: 'xls',
+      csv: 'xls',
+      ppt: 'ppt',
+      pptx: 'ppt',
+      zip: 'zip',
+      rar: 'zip',
+      '7z': 'zip',
+    };
+
+    if (ext && documentIconMap[ext]) {
+      return documentIconMap[ext];
+    }
+
+    const mimetype = quoted?.document?.mimetype ?? '';
+    if (mimetype.includes('pdf')) return 'pdf';
+    if (mimetype.includes('word')) return 'doc';
+    if (mimetype.includes('sheet') || mimetype.includes('excel')) return 'xls';
+    if (mimetype.includes('presentation')) return 'ppt';
+    if (mimetype.includes('zip') || mimetype.includes('compressed'))
+      return 'zip';
+
+    return 'file';
+  }
+
+  private getDocumentIconSvg(iconType: string): string {
+    const icons: Record<string, string> = {
+      pdf: '<path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/>',
+      doc: '<path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/>',
+      xls: '<path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/>',
+      ppt: '<path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/>',
+      zip: '<path d="M20 6h-2.18c.11-.31.18-.65.18-1a2.996 2.996 0 0 0-5.5-1.65l-.5.67-.5-.68C10.96 2.54 10 2 9 2 7.34 2 6 3.34 6 5c0 .35.07.69.18 1H4c-1.11 0-1.99.89-1.99 2L2 19c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2zm-5-2c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zM9 4c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm11 15H4v-2h16v2zm0-5H4V8h5.08L7 10.83 8.62 12 11 8.76l1-1.36 1 1.36L15.38 12 17 10.83 14.92 8H20v6z"/>',
+      file: '<path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/>',
+    };
+
+    return icons[iconType] || icons.file;
+  }
+
+  private resolveQuotedDocumentName(quoted: any): string {
+    return quoted?.document?.name ?? 'Documento';
+  }
+
+  private resolveQuotedDocumentMeta(quoted: any): string {
+    const doc = quoted?.document;
+    if (!doc) return '';
+    const ext = doc.extension ? doc.extension.toUpperCase() : 'FILE';
+    if (!doc.size) return ext;
+    return `${ext} • ${this.formatDocumentSize(doc.size)}`;
+  }
+
+  private resolveQuotedImageName(): string {
+    return 'Foto';
+  }
+
+  private resolveQuotedImageMeta(quoted: any): string {
+    const image = quoted?.image;
+    if (!image) return '';
+    const ext = image.extension ? image.extension.toUpperCase() : 'IMAGE';
+    const size = image.size ? this.formatDocumentSize(image.size) : null;
+    return [ext, size].filter(Boolean).join(' • ');
+  }
+
+  private resolveQuotedVideoName(): string {
+    return 'Vídeo';
+  }
+
+  private resolveQuotedVideoUrl(quoted: any): string {
+    return quoted?.video?.url ?? '';
+  }
+
+  private resolveQuotedVideoPoster(quoted: any): string {
+    return quoted?.video?.thumbnail ?? '';
+  }
+
+  private resolveQuotedVideoMeta(quoted: any): string {
+    const video = quoted?.video;
+    if (!video) return '';
+    const ext = video.extension ? video.extension.toUpperCase() : 'VIDEO';
+    const size = video.size ? this.formatDocumentSize(video.size) : null;
+    const duration = this.formatVideoDuration(video.duration);
+    return [ext, size, duration].filter(Boolean).join(' • ');
+  }
+
+  private resolveQuotedAudioName(): string {
+    return 'Áudio';
+  }
+
+  private resolveQuotedAudioMeta(quoted: any): string {
+    const audio = quoted?.audio;
+    if (!audio) return '';
+    const size = audio.size ? this.formatDocumentSize(audio.size) : null;
+    const duration = this.formatVideoDuration(audio.duration);
+    return [size, duration].filter(Boolean).join(' • ');
+  }
+
+  private resolveQuotedStickerSrc(quoted: any): string {
+    return quoted?.sticker?.url || '';
   }
 }
