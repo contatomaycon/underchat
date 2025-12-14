@@ -194,7 +194,7 @@ export class ReportConversationHistoryPdfService {
             }
           }
         } catch (e) {
-          // Ignore errors
+          console.error(e);
         }
       }
 

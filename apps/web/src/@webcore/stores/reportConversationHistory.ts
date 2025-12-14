@@ -369,6 +369,49 @@ export const useReportConversationHistoryStore = defineStore(
           this.showSnackbar(errorMessage, EColor.error);
         }
       },
+      async deleteReportConversationHistoryPdf(
+        chatId: string
+      ): Promise<boolean> {
+        try {
+          const response = await axios.delete<
+            IApiResponse<{ deleted: boolean }>
+          >(`/report-conversation-history/${chatId}/pdf`);
+
+          const data = response?.data;
+
+          if (!data?.status || !data?.data) {
+            const message =
+              data?.message ??
+              this.i18n.global.t(
+                'report_conversation_history_pdf_delete_error'
+              );
+
+            this.showSnackbar(message, EColor.error);
+
+            return false;
+          }
+
+          this.showSnackbar(
+            this.i18n.global.t(
+              'report_conversation_history_pdf_deleted_successfully'
+            ),
+            EColor.success
+          );
+
+          return true;
+        } catch (error) {
+          let errorMessage = this.i18n.global.t(
+            'report_conversation_history_pdf_delete_error'
+          );
+          if (error instanceof AxiosError) {
+            errorMessage = error?.response?.data?.message ?? errorMessage;
+          }
+
+          this.showSnackbar(errorMessage, EColor.error);
+
+          return false;
+        }
+      },
     },
   }
 );
