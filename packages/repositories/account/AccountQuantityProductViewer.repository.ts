@@ -32,7 +32,8 @@ export class AccountQuantityProductViewerRepository {
           eq(account.account_id, accountId),
           gt(planAccount.next_payment_date, sql`NOW()`),
           eq(planItems.plan_product_id, planProductId),
-          isNull(account.deleted_at)
+          isNull(account.deleted_at),
+          isNull(planItems.deleted_at)
         )
       )
       .execute();
