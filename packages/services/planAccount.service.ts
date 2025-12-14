@@ -160,4 +160,28 @@ export class PlanAccountService {
       throw new Error(t('contact_not_available_additional'));
     }
   }
+
+  async validateCanCreateContactReceived(
+    t: TFunction<'translation', undefined>,
+    accountId: string
+  ): Promise<boolean> {
+    const [viewAccountQuantityProduct, totalContactByAccountId] =
+      await Promise.all([
+        this.accountService.viewAccountQuantityProduct(
+          accountId,
+          EPlanProduct.contact
+        ),
+        this.dashboardStatsRepository.getContactsTotal(accountId),
+      ]);
+
+    if (viewAccountQuantityProduct <= 0) {
+      return false;
+    }
+
+    if (totalContactByAccountId >= viewAccountQuantityProduct) {
+      return false;
+    }
+
+    return true;
+  }
 }
