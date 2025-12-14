@@ -7,6 +7,7 @@ import { ListMessageResult } from '@core/schema/chat/listMessageChats/response.s
 import { ReportConversationHistoryPdfUpdaterRepository } from '@core/repositories/reportConversationHistory/ReportConversationHistoryPdfUpdater.repository';
 import { EReportConversationHistoryPdfStatus } from '@core/common/enums/EReportConversationHistoryPdfStatus';
 import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
+import { EMessageType } from '@core/common/enums/EMessageType';
 import { ElasticDatabaseService } from './elasticDatabase.service';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { IChat } from '@core/common/interfaces/IChat';
@@ -211,6 +212,16 @@ export class ReportConversationHistoryPdfService {
       const contentType = msg.content?.type || '';
       const isMediaType = ['audio', 'video', 'document'].includes(contentType);
       const mediaClass = isMediaType ? 'bubble-media' : '';
+      const reactionsHtml = this.formatReactions(
+        msg,
+        contentType,
+        alignmentClass
+      );
+      const hasReactions =
+        msg.content?.reactions &&
+        msg.content.reactions.length > 0 &&
+        contentType !== EMessageType.annotation;
+      const reactionsClass = hasReactions ? 'has-reactions' : '';
 
       parts.push(`
         <div class="msg-row ${alignmentClass}">
@@ -218,11 +229,12 @@ export class ReportConversationHistoryPdfService {
             <img src="${photo}" alt="${author}" class="avatar-img" />
             <div class="msg-name">${author}</div>
           </div>
-          <div class="bubble ${alignmentClass} ${mediaClass}">
+          <div class="bubble ${alignmentClass} ${mediaClass} ${reactionsClass}">
             <div class="content">${content}</div>
             <div class="meta">
               <span class="time">${timeOnly}</span>
             </div>
+            ${reactionsHtml}
           </div>
         </div>
       `);
@@ -244,11 +256,11 @@ export class ReportConversationHistoryPdfService {
             .header-label { font-weight: 600; color: #111b21; width: 220px; font-size: 14px; }
             .header-value { color: rgba(17,27,33,0.8); font-size: 14px; flex: 1; }
             .header-divider { border-top: 1px solid rgba(17, 27, 33, 0.12); margin: 16px 0; width: 100%; }
-            .chat-log { display: flex; flex-direction: column; gap: 8px; }
+            .chat-log { display: flex; flex-direction: column; gap: 16px; }
             .date-separator-wrapper { display: flex; justify-content: center; align-items: center; width: 100%; gap: 8px; margin: 16px 0; }
             .date-separator-line { flex: 0.25; height: 1px; background-color: rgba(17, 27, 33, 0.12); }
             .date-separator { font-size: 0.75rem; font-weight: 500; background-color: rgba(17, 27, 33, 0.12); color: rgba(17, 27, 33, 0.65); padding: 4px 12px; border-radius: 7.5px; display: inline-block; min-width: fit-content; white-space: nowrap; }
-            .msg-row { display: flex; width: 100%; align-items: flex-start; gap: 8px; }
+            .msg-row { display: flex; width: 100%; align-items: flex-start; gap: 8px; margin-bottom: 8px; }
             .msg-row.left { justify-content: flex-start; }
             .msg-row.right { justify-content: flex-end; }
             .msg-avatar { display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 50px; }
@@ -257,6 +269,7 @@ export class ReportConversationHistoryPdfService {
             .avatar-img { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; background: #e0e0e0; }
             .msg-name { font-size: 11px; color: rgba(17,27,33,0.6); white-space: nowrap; font-weight: 500; text-align: center; }
             .bubble { max-width: 65%; width: fit-content; padding: 8px 12px 20px 12px; border-radius: 8px; position: relative; line-height: 1.5; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
+            .bubble.has-reactions { padding-bottom: 28px; padding-right: 60px; }
             .bubble.bubble-media { max-width: 280px; }
             .msg-row.left .bubble { order: 2; background: rgb(255, 255, 255); color: #111b21; }
             .msg-row.right .bubble { order: 2; background: rgb(217, 253, 211); color: #111b21; }
@@ -285,6 +298,14 @@ export class ReportConversationHistoryPdfService {
             .content .document-player-meta { font-size: 12px; color: rgba(17,27,33,0.6); }
             .meta { position: absolute; right: 8px; bottom: 4px; display: flex; gap: 4px; align-items: center; font-size: 11px; color: rgba(17,27,33,0.6); }
             .time { font-weight: 500; }
+            .reactions-summary { position: absolute; display: inline-flex; gap: 4px; bottom: 0; transform: translateY(50%); z-index: 11; }
+            .reactions-summary--left { justify-content: flex-start; left: 16px; }
+            .reactions-summary--right { justify-content: flex-end; right: 16px; }
+            .reactions-summary--center { justify-content: center; left: 50%; transform: translateX(-50%) translateY(60%); }
+            .reaction-summary-bubble { display: inline-flex; align-items: center; background: rgb(255, 255, 255); border-radius: 999px; padding: 2px 8px; min-height: 22px; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08); border: 0.5px solid rgba(17, 27, 33, 0.08); gap: 8px; }
+            .reaction-summary-item { display: inline-flex; align-items: center; gap: 4px; }
+            .reaction-summary-emoji { font-size: 0.9rem; line-height: 1; }
+            .reaction-summary-count { font-size: 0.7rem; font-weight: 600; color: rgba(17, 27, 33, 0.7); }
           </style>
         </head>
         <body>
@@ -837,6 +858,84 @@ export class ReportConversationHistoryPdfService {
     } catch {
       return url;
     }
+  }
+
+  private getReactionsSummary(
+    reactions?: Array<{ emoji?: string | null }> | null
+  ): Array<{ emoji: string; count: number }> {
+    if (!reactions?.length) {
+      return [];
+    }
+
+    const summary = new Map<string, { emoji: string; count: number }>();
+
+    for (const reaction of reactions) {
+      if (!reaction?.emoji) {
+        continue;
+      }
+
+      const current = summary.get(reaction.emoji);
+      if (!current) {
+        summary.set(reaction.emoji, { emoji: reaction.emoji, count: 1 });
+        continue;
+      }
+
+      current.count += 1;
+    }
+
+    return Array.from(summary.values()).sort((a, b) => {
+      if (b.count !== a.count) {
+        return b.count - a.count;
+      }
+      return a.emoji.localeCompare(b.emoji);
+    });
+  }
+
+  private formatReactions(
+    msg: ListMessageResult,
+    contentType: string,
+    alignmentClass: string
+  ): string {
+    if (
+      !msg.content?.reactions ||
+      msg.content.reactions.length === 0 ||
+      contentType === EMessageType.annotation
+    ) {
+      return '';
+    }
+
+    const reactionsSummary = this.getReactionsSummary(msg.content.reactions);
+    if (reactionsSummary.length === 0) {
+      return '';
+    }
+
+    let positionClass = 'reactions-summary--left';
+    if (contentType === EMessageType.system) {
+      positionClass = 'reactions-summary--center';
+    } else if (alignmentClass === 'right') {
+      positionClass = 'reactions-summary--right';
+    }
+
+    const reactionItems = reactionsSummary
+      .map(
+        (reaction) => `
+        <div class="reaction-summary-item">
+          <span class="reaction-summary-emoji">${this.escapeHtml(
+            reaction.emoji
+          )}</span>
+          <span class="reaction-summary-count">${reaction.count}</span>
+        </div>
+      `
+      )
+      .join('');
+
+    return `
+      <div class="reactions-summary ${positionClass}">
+        <div class="reaction-summary-bubble">
+          ${reactionItems}
+        </div>
+      </div>
+    `;
   }
 
   private formatContactCard(
