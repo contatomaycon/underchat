@@ -9,6 +9,7 @@ import {
 import { setPaginationData } from '@core/common/functions/createPaginationData';
 import { IElasticsearchBoolClause } from '@core/common/interfaces/IElasticsearchQuery';
 import { IChat } from '@core/common/interfaces/IChat';
+import { ReportConversationHistoryPdfViewerRepository } from '@core/repositories/reportConversationHistory/ReportConversationHistoryPdfViewer.repository';
 
 type ProtocolWithType = {
   protocol: string;
@@ -18,7 +19,8 @@ type ProtocolWithType = {
 @injectable()
 export class ReportConversationHistoryListerUseCase {
   constructor(
-    private readonly elasticDatabaseService: ElasticDatabaseService
+    private readonly elasticDatabaseService: ElasticDatabaseService,
+    private readonly pdfViewerRepository: ReportConversationHistoryPdfViewerRepository
   ) {}
 
   private buildQuery(
@@ -226,7 +228,10 @@ export class ReportConversationHistoryListerUseCase {
     );
   }
 
-  private mapChatToResult(chat: any): ReportConversationHistoryResult {
+  private mapChatToResult(
+    chat: any,
+    pdfStatusMap: Map<string, string>
+  ): ReportConversationHistoryResult {
     const user = this.normalizeNestedField(chat.user);
     const sector = this.normalizeNestedField(chat.sector);
     const worker = this.normalizeNestedField(chat.worker);
@@ -241,6 +246,8 @@ export class ReportConversationHistoryListerUseCase {
       protocolsWithType.push({ protocol, type: 'A' });
       uniqueProtocols.push(protocol);
     }
+
+    const pdfStatus = pdfStatusMap.get(chat.chat_id) || null;
 
     return {
       date: chat.date,
@@ -257,6 +264,7 @@ export class ReportConversationHistoryListerUseCase {
       channel: worker?.name || 'WhatsApp',
       chat_id: chat.chat_id,
       photo: chat.photo || contact?.photo || null,
+      pdf_status: pdfStatus,
     };
   }
 
@@ -284,8 +292,15 @@ export class ReportConversationHistoryListerUseCase {
     const total = result.hits.total as { value: number; relation: string };
     const hits = result.hits.hits;
 
+    const chatIds = hits.map((hit) => (hit._source as IChat).chat_id);
+    const pdfStatusMap =
+      await this.pdfViewerRepository.listPdfsByAccountAndChatIds(
+        accountId,
+        chatIds
+      );
+
     const results: ReportConversationHistoryResult[] = hits.map((hit) =>
-      this.mapChatToResult(hit._source as IChat)
+      this.mapChatToResult(hit._source as IChat, pdfStatusMap)
     );
 
     return {
