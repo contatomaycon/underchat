@@ -292,6 +292,54 @@ const hasMessageVersions = (message: ListMessageResult): boolean => {
   return !!(message.content?.version && message.content.version.length > 0);
 };
 
+const getMessageEditHistory = (
+  message: ListMessageResult
+): Array<{
+  text: string;
+  date: string;
+  isOriginal: boolean;
+}> => {
+  if (!message.content) return [];
+
+  const history: Array<{ text: string; date: string; isOriginal: boolean }> =
+    [];
+
+  const versions = message.content.version ?? [];
+  const sortedVersions = [...versions].sort(
+    (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+  );
+
+  for (const version of sortedVersions) {
+    if (version.message) {
+      history.push({
+        text: version.message,
+        date: version.date,
+        isOriginal: false,
+      });
+    }
+  }
+
+  if (message.content.message) {
+    history.push({
+      text: message.content.message,
+      date: message.date,
+      isOriginal: true,
+    });
+  }
+
+  return history;
+};
+
+const editHistoryModalOpen = ref(false);
+const viewingEditHistory = ref<ListMessageResult | null>(null);
+
+const onViewEditHistory = (m: ListMessageResult) => {
+  if (!hasMessageVersions(m)) return;
+
+  viewingEditHistory.value = m;
+  editHistoryModalOpen.value = true;
+};
+
 const shouldFormatMessage = (message: ListMessageResult): boolean => {
   const messageType = message.content?.type;
   return (
@@ -956,8 +1004,15 @@ const handleContactClick = (message: ListMessageResult) => {
                       item.message.content?.reactions &&
                       item.message.content.reactions.length > 0 &&
                       item.message.content?.type !== EMessageType.annotation,
+                    'has-edit-history':
+                      hasMessageVersions(item.message) && !item.message.deleted,
                   },
                 ]"
+                @click.stop="
+                  hasMessageVersions(item.message) && !item.message.deleted
+                    ? onViewEditHistory(item.message)
+                    : null
+                "
                 :style="{
                   backgroundColor:
                     item.message.content?.type === EMessageType.annotation
@@ -1876,6 +1931,64 @@ const handleContactClick = (message: ListMessageResult) => {
       </template>
     </div>
   </div>
+
+  <VDialog v-model="editHistoryModalOpen" max-width="600" :scrollable="false">
+    <VCard v-if="viewingEditHistory">
+      <VCardTitle class="d-flex align-center justify-space-between">
+        <span>{{ t('chat_edit_history') }}</span>
+        <VBtn
+          icon
+          variant="text"
+          size="small"
+          @click="editHistoryModalOpen = false"
+        >
+          <VIcon size="20">tabler-x</VIcon>
+        </VBtn>
+      </VCardTitle>
+      <VCardText>
+        <div class="edit-history-list">
+          <div
+            v-for="(item, index) in getMessageEditHistory(viewingEditHistory)"
+            :key="index"
+            class="edit-history-item"
+            :class="{
+              'edit-history-item--current': index === 0 && !item.isOriginal,
+              'edit-history-item--original': item.isOriginal,
+            }"
+          >
+            <div class="edit-history-header">
+              <span class="edit-history-label">
+                {{
+                  item.isOriginal
+                    ? t('chat_original_message')
+                    : t('chat_edited_version')
+                }}
+              </span>
+              <span class="edit-history-date">
+                {{
+                  formatDate(item.date, {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    hour12: false,
+                  })
+                }}
+              </span>
+            </div>
+            <div class="edit-history-text">{{ item.text }}</div>
+          </div>
+        </div>
+      </VCardText>
+      <VCardText class="d-flex justify-end">
+        <VBtn
+          variant="tonal"
+          color="secondary"
+          @click="editHistoryModalOpen = false"
+        >
+          {{ t('close', 'Fechar') }}
+        </VBtn>
+      </VCardText>
+    </VCard>
+  </VDialog>
 </template>
 
 <style lang="scss" scoped>
@@ -1958,6 +2071,15 @@ const handleContactClick = (message: ListMessageResult) => {
       min-width: 120px;
       padding-left: 0.75rem !important;
       padding-right: 0.75rem !important;
+    }
+
+    &.has-edit-history {
+      cursor: pointer;
+      transition: opacity 0.2s ease;
+
+      &:hover {
+        opacity: 0.95;
+      }
     }
 
     &.chat-left {
@@ -2688,5 +2810,53 @@ const handleContactClick = (message: ListMessageResult) => {
     min-width: 200px;
     max-width: 400px;
   }
+}
+
+.edit-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.edit-history-item {
+  padding: 12px;
+  border-radius: 8px;
+  background: rgba(var(--v-theme-on-surface), 0.04);
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.1);
+
+  &.edit-history-item--current {
+    background: rgba(var(--v-theme-primary), 0.1);
+    border-color: rgba(var(--v-theme-primary), 0.3);
+  }
+
+  &.edit-history-item--original {
+    background: rgba(var(--v-theme-on-surface), 0.02);
+  }
+}
+
+.edit-history-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.edit-history-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: rgba(var(--v-theme-on-surface), 0.7);
+}
+
+.edit-history-date {
+  font-size: 0.7rem;
+  color: rgba(var(--v-theme-on-surface), 0.5);
+}
+
+.edit-history-text {
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: rgb(var(--v-theme-on-surface));
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 </style>
