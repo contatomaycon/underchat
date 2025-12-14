@@ -103,6 +103,101 @@ export class ReportConversationHistoryPdfService {
       await page.setContent(html, { waitUntil: 'networkidle0' });
       await page.setViewport({ width: 1200, height: 800 });
 
+      // @ts-ignore - Código executado no navegador, não no Node.js
+      await page.evaluate(() => {
+        // @ts-ignore
+        return new Promise<void>((resolve: () => void) => {
+          const doc = (globalThis as any).document;
+          if (!doc) {
+            resolve();
+            return;
+          }
+
+          const mapContainers = doc.querySelectorAll('[id^="map-"]') as any;
+          if (mapContainers.length === 0) {
+            resolve();
+            return;
+          }
+
+          let loadedCount = 0;
+          const totalMaps = mapContainers.length;
+          let allMapsResolved = false;
+
+          const checkMapLoaded = (container: any) => {
+            if (allMapsResolved) return;
+
+            // @ts-ignore - HTMLCanvasElement existe no navegador
+            const canvas = container.querySelector(
+              '[class*="maplibregl-canvas"]'
+            ) as any;
+            const isLoaded =
+              container.getAttribute('data-map-loaded') === 'true';
+
+            const hasValidCanvas =
+              canvas &&
+              canvas.width > 0 &&
+              canvas.height > 0 &&
+              canvas.getContext;
+
+            if (hasValidCanvas || isLoaded) {
+              loadedCount++;
+              if (loadedCount === totalMaps && !allMapsResolved) {
+                allMapsResolved = true;
+                setTimeout(() => resolve(), 3000);
+              }
+            }
+          };
+
+          const checkInterval = setInterval(() => {
+            for (let i = 0; i < mapContainers.length; i++) {
+              checkMapLoaded(mapContainers[i]);
+            }
+
+            if (allMapsResolved) {
+              clearInterval(checkInterval);
+            }
+          }, 500);
+
+          setTimeout(() => {
+            clearInterval(checkInterval);
+            if (!allMapsResolved) {
+              allMapsResolved = true;
+              resolve();
+            }
+          }, 25000);
+        });
+      });
+
+      const mapContainers = await page.$$('[id^="map-"]');
+      for (const container of mapContainers) {
+        try {
+          const screenshot = await container.screenshot({
+            type: 'png',
+            encoding: 'base64',
+          });
+          if (screenshot) {
+            const mapId = await container.evaluate((el) =>
+              el.getAttribute('id')
+            );
+            if (mapId) {
+              await page.evaluate(
+                (id: string, imgData: string) => {
+                  const doc = (globalThis as any).document;
+                  const container = doc.getElementById(id);
+                  if (container) {
+                    container.innerHTML = `<img src="data:image/png;base64,${imgData}" style="width: 100%; height: 100%; object-fit: cover;" />`;
+                  }
+                },
+                mapId,
+                screenshot as string
+              );
+            }
+          }
+        } catch (e) {
+          // Ignore errors
+        }
+      }
+
       const pdfBuffer = await page.pdf({
         format: 'A4',
         printBackground: true,
@@ -307,6 +402,8 @@ export class ReportConversationHistoryPdfService {
       <html>
         <head>
           <meta charset="UTF-8">
+          <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
+          <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
           <style>
             body { font-family: Arial, sans-serif; padding: 24px; background: #f4f5f7; }
             .header { background: #ffffff; padding: 20px; border-radius: 8px; margin-bottom: 24px; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
@@ -717,22 +814,155 @@ export class ReportConversationHistoryPdfService {
 
     if (content.type === 'location') {
       const location = content.location;
-      const parts: string[] = ['[Localização]'];
+      const parts: string[] = [];
+
+      if (location?.latitude && location?.longitude) {
+        parts.push(`
+          <div class="location-map-preview" style="
+            width: 200px;
+            max-width: 100%;
+            height: 112px;
+            border-radius: 8px 8px 0 0;
+            overflow: hidden;
+            margin-bottom: 0;
+            position: relative;
+            background: #e5e5e5;
+          ">
+            <div id="map-${location.latitude}-${location.longitude}" style="
+              width: 100%;
+              height: 100%;
+              position: relative;
+            "></div>
+            <script>
+              (function() {
+                const mapId = 'map-${location.latitude}-${location.longitude}';
+                let mapInitialized = false;
+                
+                function initMap() {
+                  if (mapInitialized) return;
+                  if (typeof maplibregl === 'undefined') return;
+                  
+                  const container = document.getElementById(mapId);
+                  if (!container) return;
+                  
+                  mapInitialized = true;
+                  
+                  const map = new maplibregl.Map({
+                    container: mapId,
+                    style: {
+                      version: 8,
+                      sources: {
+                        'osm-tiles': {
+                          type: 'raster',
+                          tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+                          tileSize: 256,
+                          attribution: '&copy; OpenStreetMap contributors'
+                        }
+                      },
+                      layers: [{
+                        id: 'osm-tiles-layer',
+                        type: 'raster',
+                        source: 'osm-tiles',
+                        minzoom: 0,
+                        maxzoom: 22
+                      }]
+                    },
+                    center: [${location.longitude}, ${location.latitude}],
+                    zoom: 15,
+                    interactive: false,
+                    attributionControl: false
+                  });
+                  
+                  map.on('load', function() {
+                    new maplibregl.Marker({ color: '#ef4444' })
+                      .setLngLat([${location.longitude}, ${location.latitude}])
+                      .addTo(map);
+                  });
+                  
+                  map.on('data', function() {
+                    if (map.loaded() && map.isStyleLoaded()) {
+                      container.setAttribute('data-map-loaded', 'true');
+                    }
+                  });
+                  
+                  map.on('idle', function() {
+                    if (map.loaded() && map.isStyleLoaded()) {
+                      container.setAttribute('data-map-loaded', 'true');
+                    }
+                  });
+                  
+                  setTimeout(function() {
+                    if (map.loaded() && map.isStyleLoaded()) {
+                      container.setAttribute('data-map-loaded', 'true');
+                    }
+                  }, 3000);
+                }
+                
+                function tryInit() {
+                  if (typeof maplibregl !== 'undefined') {
+                    initMap();
+                  } else {
+                    setTimeout(tryInit, 100);
+                  }
+                }
+                
+                if (document.readyState === 'complete' || document.readyState === 'interactive') {
+                  setTimeout(tryInit, 500);
+                } else {
+                  window.addEventListener('load', function() {
+                    setTimeout(tryInit, 500);
+                  });
+                  document.addEventListener('DOMContentLoaded', function() {
+                    setTimeout(tryInit, 500);
+                  });
+                }
+                
+                setTimeout(tryInit, 1000);
+              })();
+            </script>
+          </div>
+        `);
+      }
 
       if (location?.name || location?.address) {
-        const locationText = location.name || location.address || '';
-        parts.push(`<div>${this.escapeHtml(locationText)}</div>`);
+        const locationName = location.name || '';
+        const locationAddress = location.address || '';
+        parts.push(`
+          <div class="location-info" style="
+            padding: 12px;
+            ${location?.latitude && location?.longitude ? 'border-radius: 0 0 8px 8px;' : 'border-radius: 8px;'}
+          ">
+            ${
+              locationName
+                ? `<div class="location-name" style="
+              font-weight: 500;
+              margin-bottom: ${locationAddress ? '4px' : '0'};
+              font-size: 14px;
+            ">${this.escapeHtml(locationName)}</div>`
+                : ''
+            }
+            ${
+              locationAddress
+                ? `<div class="location-address" style="
+              font-size: 12px;
+              color: rgba(17, 27, 33, 0.7);
+              word-break: break-word;
+            ">${this.escapeHtml(locationAddress)}</div>`
+                : ''
+            }
+          </div>
+        `);
       }
 
       if (location?.latitude && location?.longitude) {
         const googleMapsUrl = `https://www.google.com/maps?q=${location.latitude},${location.longitude}`;
         const escapedUrl = this.escapeHtml(googleMapsUrl);
         parts.push(
-          `<div class="media-link"><b>Link:</b> <a href="${escapedUrl}" target="_blank" rel="noopener noreferrer">${escapedUrl}</a></div>`
+          `<div class="media-link" style="margin-top: 8px;"><b>Link:</b> <a href="${escapedUrl}" target="_blank" rel="noopener noreferrer">${escapedUrl}</a></div>`
         );
       }
 
-      return parts.join('');
+      return parts.length > 0 ? parts.join('') : '[Localização]';
     }
 
     if (content.type === 'contact_card') {
