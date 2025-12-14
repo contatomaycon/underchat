@@ -335,20 +335,24 @@ export class ReportAttendancePdfService {
     return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
   }
 
-  private drawChart(
-    doc: PDFKit.PDFDocument,
-    t: TFunction<'translation', undefined>,
+  private validateChartData(
     data: ReportAttendanceResult[],
-    reportType: ReportType,
-    periodType: PeriodType
-  ): void {
+    chartData: {
+      labels: string[];
+      datasets: Array<{
+        label: string;
+        data: number[];
+        backgroundColor: string;
+      }>;
+    },
+    doc: PDFKit.PDFDocument
+  ): boolean {
     if (!data || data.length === 0) {
       console.log('[PDF] Sem dados para desenhar gráfico');
       doc.moveDown(0.5);
-      return;
+      return false;
     }
 
-    const chartData = this.prepareChartData(t, data, reportType);
     if (
       !chartData.labels.length ||
       !chartData.datasets.length ||
@@ -358,41 +362,36 @@ export class ReportAttendancePdfService {
     ) {
       console.log('[PDF] Dados insuficientes para desenhar gráfico');
       doc.moveDown(0.5);
-      return;
+      return false;
     }
 
-    const pageWidth = doc.page.width;
-    const chartWidth =
-      pageWidth - doc.page.margins.left - doc.page.margins.right;
-    const chartHeight = 220;
-    const chartLeft = doc.page.margins.left;
-    const axisColor = '#555555';
-    const gridColor = '#DDDDDD';
+    return true;
+  }
 
-    const chartTitle = this.getReportTitle(t, reportType, periodType);
-    doc.fontSize(12).font('Helvetica-Bold').text(chartTitle, chartLeft, doc.y, {
-      width: chartWidth,
-      align: 'left',
-    });
-
-    doc.moveDown(0.3);
-    const drawingTop = doc.y;
-    const drawingBottom = drawingTop + chartHeight;
-
+  private calculateMaxValue(datasets: Array<{ data: number[] }>): number {
     let maxValue = 0;
-    for (const dataset of chartData.datasets) {
+    for (const dataset of datasets) {
       for (const value of dataset.data) {
         if (value > maxValue) {
           maxValue = value;
         }
       }
     }
-    if (maxValue === 0) {
-      doc.y = drawingBottom + 10;
-      return;
-    }
+    return maxValue;
+  }
 
-    const horizontalLines = 5;
+  private drawHorizontalGridLines(
+    doc: PDFKit.PDFDocument,
+    chartLeft: number,
+    chartWidth: number,
+    chartHeight: number,
+    drawingBottom: number,
+    maxValue: number,
+    horizontalLines: number
+  ): void {
+    const axisColor = '#555555';
+    const gridColor = '#DDDDDD';
+
     for (let i = 0; i <= horizontalLines; i++) {
       const value = (maxValue / horizontalLines) * i;
       const percentage = value / maxValue;
@@ -413,7 +412,16 @@ export class ReportAttendancePdfService {
           align: 'right',
         });
     }
+  }
 
+  private drawAxes(
+    doc: PDFKit.PDFDocument,
+    chartLeft: number,
+    chartWidth: number,
+    drawingTop: number,
+    drawingBottom: number
+  ): void {
+    const axisColor = '#555555';
     doc
       .strokeColor(axisColor)
       .lineWidth(1)
@@ -421,9 +429,18 @@ export class ReportAttendancePdfService {
       .lineTo(chartLeft, drawingBottom)
       .lineTo(chartLeft + chartWidth, drawingBottom)
       .stroke();
+  }
 
-    const labels = chartData.labels;
-    const datasets = chartData.datasets;
+  private drawBars(
+    doc: PDFKit.PDFDocument,
+    chartLeft: number,
+    chartWidth: number,
+    chartHeight: number,
+    drawingBottom: number,
+    labels: string[],
+    datasets: Array<{ data: number[]; backgroundColor: string }>,
+    maxValue: number
+  ): void {
     const datasetCount = datasets.length;
     const groupWidth = chartWidth / labels.length;
     const groupPadding = 12;
@@ -459,10 +476,19 @@ export class ReportAttendancePdfService {
           align: 'center',
         });
     }
+  }
 
+  private drawLegend(
+    doc: PDFKit.PDFDocument,
+    chartLeft: number,
+    chartWidth: number,
+    drawingBottom: number,
+    datasets: Array<{ label: string; backgroundColor: string }>
+  ): number {
     const legendItemsPerRow = Math.max(Math.floor(chartWidth / 160), 1);
     const legendItemWidth = chartWidth / legendItemsPerRow;
     let legendRows = 0;
+
     for (const [index, dataset] of datasets.entries()) {
       const row = Math.floor(index / legendItemsPerRow);
       const column = index % legendItemsPerRow;
@@ -483,6 +509,74 @@ export class ReportAttendancePdfService {
         });
       legendRows = Math.max(legendRows, row + 1);
     }
+
+    return legendRows;
+  }
+
+  private drawChart(
+    doc: PDFKit.PDFDocument,
+    t: TFunction<'translation', undefined>,
+    data: ReportAttendanceResult[],
+    reportType: ReportType,
+    periodType: PeriodType
+  ): void {
+    const chartData = this.prepareChartData(t, data, reportType);
+    if (!this.validateChartData(data, chartData, doc)) {
+      return;
+    }
+
+    const pageWidth = doc.page.width;
+    const chartWidth =
+      pageWidth - doc.page.margins.left - doc.page.margins.right;
+    const chartHeight = 220;
+    const chartLeft = doc.page.margins.left;
+
+    const chartTitle = this.getReportTitle(t, reportType, periodType);
+    doc.fontSize(12).font('Helvetica-Bold').text(chartTitle, chartLeft, doc.y, {
+      width: chartWidth,
+      align: 'left',
+    });
+
+    doc.moveDown(0.3);
+    const drawingTop = doc.y;
+    const drawingBottom = drawingTop + chartHeight;
+
+    const maxValue = this.calculateMaxValue(chartData.datasets);
+    if (maxValue === 0) {
+      doc.y = drawingBottom + 10;
+      return;
+    }
+
+    this.drawHorizontalGridLines(
+      doc,
+      chartLeft,
+      chartWidth,
+      chartHeight,
+      drawingBottom,
+      maxValue,
+      5
+    );
+
+    this.drawAxes(doc, chartLeft, chartWidth, drawingTop, drawingBottom);
+
+    this.drawBars(
+      doc,
+      chartLeft,
+      chartWidth,
+      chartHeight,
+      drawingBottom,
+      chartData.labels,
+      chartData.datasets,
+      maxValue
+    );
+
+    const legendRows = this.drawLegend(
+      doc,
+      chartLeft,
+      chartWidth,
+      drawingBottom,
+      chartData.datasets
+    );
 
     doc.y = drawingBottom + 20 + legendRows * 14 + 10;
   }
