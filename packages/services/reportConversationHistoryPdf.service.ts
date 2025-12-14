@@ -1018,7 +1018,7 @@ export class ReportConversationHistoryPdfService {
         return `[${t('contact')}]`;
       }
 
-      return this.formatContactCard(contact, msg, content.message, t);
+      return this.formatContactCard(contact, msg, content.message);
     }
 
     if (content.type === EMessageType.annotation && content.message) {
@@ -1333,8 +1333,7 @@ export class ReportConversationHistoryPdfService {
   private formatContactCard(
     contact: any,
     msg: ListMessageResult,
-    message: string | null | undefined,
-    t: TFunction<'translation', undefined>
+    message: string | null | undefined
   ): string {
     const isUser = msg.type_user === ETypeUserChat.client;
     const hasPhoto = !!contact.photo;
