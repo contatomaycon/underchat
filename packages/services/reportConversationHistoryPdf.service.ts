@@ -224,6 +224,9 @@ export class ReportConversationHistoryPdfService {
       const reactionsClass = hasReactions ? 'has-reactions' : '';
       const isDeleted = msg.deleted === true;
       const deletedClass = isDeleted ? 'is-deleted' : '';
+      const hasVersions = !!(
+        msg.content?.version && msg.content.version.length > 0
+      );
 
       parts.push(`
         <div class="msg-row ${alignmentClass}">
@@ -236,6 +239,7 @@ export class ReportConversationHistoryPdfService {
             <div class="content">
               ${content}
               ${isDeleted ? '<div class="message-deleted-badge">Removido</div>' : ''}
+              ${hasVersions ? '<div class="message-edited-badge">Editado</div>' : ''}
             </div>
             <div class="meta">
               <div class="meta-content">
@@ -288,6 +292,8 @@ export class ReportConversationHistoryPdfService {
             .msg-row.right .bubble { order: 2; background: rgb(217, 253, 211); color: #111b21; }
             .content { font-size: 14.2px; word-break: break-word; margin-bottom: 4px; }
             .content:has(+ .meta .message-deleted-badge) { margin-bottom: 0; }
+            .message-current-version { margin-bottom: 8px; }
+            .message-version { font-size: 13px; color: rgba(17, 27, 33, 0.7); margin-bottom: 4px; }
             .content img { max-width: 200px; max-height: 200px; width: auto; height: auto; border-radius: 8px; margin-bottom: 8px; object-fit: contain; }
             .content img.sticker-img { max-width: 100px; max-height: 100px; }
             .content .media-link { font-size: 12px; margin-top: 4px; max-width: 100%; overflow-wrap: break-word; }
@@ -315,6 +321,7 @@ export class ReportConversationHistoryPdfService {
             .meta-row { display: flex; gap: 4px; align-items: center; }
             .time { font-weight: 500; }
             .message-deleted-badge { font-size: 10.4px; color: rgba(17, 27, 33, 0.5); font-style: italic; line-height: 1; margin-top: 6px; text-align: right; text-decoration: none; display: block; }
+            .message-edited-badge { font-size: 10.4px; color: rgba(17, 27, 33, 0.5); font-style: italic; line-height: 1; margin-top: 6px; text-align: right; text-decoration: none; display: block; }
             .reactions-summary { position: absolute; display: inline-flex; gap: 4px; bottom: 0; transform: translateY(50%); z-index: 11; }
             .reactions-summary--left { justify-content: flex-start; left: 16px; }
             .reactions-summary--right { justify-content: flex-end; right: 16px; }
@@ -486,15 +493,35 @@ export class ReportConversationHistoryPdfService {
 
     if (content.type === 'text' && content.message) {
       const parts: string[] = [];
-      const messageText = content.message.replace(/\n/g, '<br>');
 
-      if (content.link_preview?.title) {
+      if (content.version && content.version.length > 0) {
+        const currentText = (content.message || '').replace(/\n/g, '<br>');
+        parts.push(
+          `<div class="message-current-version"><strong>${currentText}</strong></div>`
+        );
+
+        const sortedVersions = [...content.version].sort(
+          (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+        );
+
+        for (let i = 0; i < sortedVersions.length; i++) {
+          const version = sortedVersions[i];
+          const versionText = (version.message || '').replace(/\n/g, '<br>');
+          const versionNumber = i + 1;
+          parts.push(
+            `<div class="message-version">Versão ${versionNumber}: ${versionText}</div>`
+          );
+        }
+      } else {
+        const messageText = content.message.replace(/\n/g, '<br>');
         parts.push(messageText);
-        parts.push(this.formatLinkPreview(content.link_preview, msg));
-        return parts.join('');
       }
 
-      return messageText;
+      if (content.link_preview?.title) {
+        parts.push(this.formatLinkPreview(content.link_preview, msg));
+      }
+
+      return parts.join('');
     }
 
     if (content.type === 'image') {
