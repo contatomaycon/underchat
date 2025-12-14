@@ -12,6 +12,7 @@ import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { IChat } from '@core/common/interfaces/IChat';
 import { ReportConversationHistoryMessagesListerUseCase } from '@core/useCases/reportConversationHistory/ReportConversationHistoryMessagesLister.useCase';
 import { ChatContactService } from './chatContact.service';
+import { extractPhoneAndDdi } from '@core/common/functions/extractPhoneAndDdi';
 
 @injectable()
 export class ReportConversationHistoryPdfService {
@@ -85,7 +86,8 @@ export class ReportConversationHistoryPdfService {
     const html = this.generateHtmlFromMessages(
       messagesResult.messages,
       clientName,
-      clientPhoto
+      clientPhoto,
+      chat
     );
 
     this.contactPhoneCache.clear();
@@ -178,7 +180,8 @@ export class ReportConversationHistoryPdfService {
   private generateHtmlFromMessages(
     messages: ListMessageResult[],
     clientName: string,
-    clientPhoto: string | null
+    clientPhoto: string | null,
+    chat: IChat | null
   ): string {
     const parts: string[] = [];
     let lastDate: string | null = null;
@@ -226,6 +229,7 @@ export class ReportConversationHistoryPdfService {
     }
 
     const messagesHtml = parts.join('');
+    const headerHtml = this.generateHeaderHtml(chat, messages);
 
     return `
       <!DOCTYPE html>
@@ -234,6 +238,12 @@ export class ReportConversationHistoryPdfService {
           <meta charset="UTF-8">
           <style>
             body { font-family: Arial, sans-serif; padding: 24px; background: #f4f5f7; }
+            .header { background: #ffffff; padding: 20px; border-radius: 8px; margin-bottom: 24px; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
+            .header-row { display: flex; margin-bottom: 12px; }
+            .header-row:last-child { margin-bottom: 0; }
+            .header-label { font-weight: 600; color: #111b21; width: 220px; font-size: 14px; }
+            .header-value { color: rgba(17,27,33,0.8); font-size: 14px; flex: 1; }
+            .header-divider { border-top: 1px solid rgba(17, 27, 33, 0.12); margin: 16px 0; width: 100%; }
             .chat-log { display: flex; flex-direction: column; gap: 8px; }
             .date-separator-wrapper { display: flex; justify-content: center; align-items: center; width: 100%; gap: 8px; margin: 16px 0; }
             .date-separator-line { flex: 0.25; height: 1px; background-color: rgba(17, 27, 33, 0.12); }
@@ -278,7 +288,7 @@ export class ReportConversationHistoryPdfService {
           </style>
         </head>
         <body>
-          <h1>Histórico de Conversas</h1>
+          ${headerHtml}
           <div class="chat-log">
             ${messagesHtml}
           </div>
@@ -647,7 +657,23 @@ export class ReportConversationHistoryPdfService {
   }
 
   private formatPhone(phone: string, ddi?: string | null): string {
-    const numbers = phone.replaceAll(/\D/g, '').slice(0, 11);
+    const phoneWithPlus = phone.startsWith('+') ? phone : `+${phone}`;
+    const extracted = extractPhoneAndDdi(phoneWithPlus);
+
+    let phoneNumbers = phone.replaceAll(/\D/g, '');
+    let phoneDdi = ddi;
+
+    if (extracted) {
+      phoneDdi = extracted.phone_ddi;
+      phoneNumbers = extracted.phone;
+    } else if (phoneDdi && phoneNumbers.startsWith(phoneDdi)) {
+      phoneNumbers = phoneNumbers.slice(phoneDdi.length);
+    } else if (!phoneDdi && phoneNumbers.length > 11) {
+      phoneDdi = phoneNumbers.slice(0, 2);
+      phoneNumbers = phoneNumbers.slice(2);
+    }
+
+    const numbers = phoneNumbers.slice(0, 11);
     let formatted = '';
 
     if (numbers.length <= 2) {
@@ -660,10 +686,246 @@ export class ReportConversationHistoryPdfService {
       formatted = `(${numbers.slice(0, 2)}) ${numbers.slice(2, 7)}-${numbers.slice(7)}`;
     }
 
-    if (ddi) {
-      return `+${ddi} ${formatted}`;
+    if (phoneDdi) {
+      return `+${phoneDdi} ${formatted}`;
     }
 
     return formatted;
+  }
+
+  private generateHeaderHtml(
+    chat: IChat | null,
+    messages: ListMessageResult[]
+  ): string {
+    if (!chat) {
+      return '';
+    }
+
+    const name = chat.name || chat.contact?.name || '-';
+    const phone = chat.phone || '';
+    const phoneDdi = chat.contact?.phone_ddi || null;
+    const formattedPhone = phone ? this.formatPhone(phone, phoneDdi) : '-';
+    const sector = chat.sector?.name || '-';
+
+    const firstMessage = messages.length > 0 ? messages[0] : null;
+    const lastMessage =
+      messages.length > 0 ? messages[messages.length - 1] : null;
+
+    const firstMessageDate = firstMessage?.date || null;
+    const lastMessageDate = lastMessage?.date || null;
+
+    const attendanceDate = firstMessageDate
+      ? this.formatFullDateTime(firstMessageDate)
+      : '-';
+    const closingDate = lastMessageDate
+      ? this.formatFullDateTime(lastMessageDate)
+      : '-';
+
+    const protocolStart =
+      chat.protocol_start && chat.protocol_start.length > 0
+        ? chat.protocol_start.join(', ')
+        : '-';
+
+    const protocolTransfer =
+      chat.protocol_transfer && chat.protocol_transfer.length > 0
+        ? chat.protocol_transfer.join(', ')
+        : '-';
+
+    const protocolUra =
+      chat.protocol_ura && chat.protocol_ura.length > 0
+        ? chat.protocol_ura.join(', ')
+        : '-';
+
+    const attendanceTime = this.calculateAttendanceTime(
+      firstMessageDate,
+      lastMessageDate
+    );
+
+    const averageResponseTime = this.calculateAverageResponseTime(messages);
+
+    return `
+      <div class="header">
+        <div class="header-row">
+          <div class="header-label">Nome:</div>
+          <div class="header-value">${this.escapeHtml(name)}</div>
+        </div>
+        <div class="header-row">
+          <div class="header-label">Telefone:</div>
+          <div class="header-value">${this.escapeHtml(formattedPhone)}</div>
+        </div>
+        <div class="header-row">
+          <div class="header-label">Data de Atendimento:</div>
+          <div class="header-value">${this.escapeHtml(attendanceDate)}</div>
+        </div>
+        <div class="header-row">
+          <div class="header-label">Data de Encerramento:</div>
+          <div class="header-value">${this.escapeHtml(closingDate)}</div>
+        </div>
+        <div class="header-row">
+          <div class="header-label">Setor:</div>
+          <div class="header-value">${this.escapeHtml(sector)}</div>
+        </div>
+        <div class="header-divider"></div>
+        <div class="header-row">
+          <div class="header-label">Protocolo de Atendimento:</div>
+          <div class="header-value">${this.escapeHtml(protocolStart)}</div>
+        </div>
+        <div class="header-row">
+          <div class="header-label">Protocolo de Transferência:</div>
+          <div class="header-value">${this.escapeHtml(protocolTransfer)}</div>
+        </div>
+        <div class="header-row">
+          <div class="header-label">Protocolo URA:</div>
+          <div class="header-value">${this.escapeHtml(protocolUra)}</div>
+        </div>
+        <div class="header-row">
+          <div class="header-label">Tempo de Atendimento:</div>
+          <div class="header-value">${this.escapeHtml(attendanceTime)}</div>
+        </div>
+        <div class="header-row">
+          <div class="header-label">Tempo Médio de Resposta:</div>
+          <div class="header-value">${this.escapeHtml(averageResponseTime)}</div>
+        </div>
+      </div>
+    `;
+  }
+
+  private formatFullDateTime(dateString: string): string {
+    if (!dateString) {
+      return '';
+    }
+
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) {
+      return '';
+    }
+
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year = date.getFullYear();
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+
+    return `${day}/${month}/${year} às ${hours}:${minutes}`;
+  }
+
+  private calculateAttendanceTime(
+    startDate: string | null,
+    endDate: string | null
+  ): string {
+    if (!startDate || !endDate) {
+      return '-';
+    }
+
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+      return '-';
+    }
+
+    const diffMs = end.getTime() - start.getTime();
+    if (diffMs < 0) {
+      return '-';
+    }
+
+    const diffSeconds = Math.floor(diffMs / 1000);
+    const diffMinutes = Math.floor(diffSeconds / 60);
+    const diffHours = Math.floor(diffMinutes / 60);
+    const diffDays = Math.floor(diffHours / 24);
+
+    if (diffDays > 0) {
+      const hours = diffHours % 24;
+      const minutes = diffMinutes % 60;
+      if (hours > 0) {
+        return `${diffDays}d ${hours}h ${minutes}min`;
+      }
+      return `${diffDays}d ${minutes}min`;
+    }
+
+    if (diffHours > 0) {
+      const minutes = diffMinutes % 60;
+      if (minutes > 0) {
+        return `${diffHours}h ${minutes}min`;
+      }
+      return `${diffHours}h`;
+    }
+
+    if (diffMinutes > 0) {
+      const seconds = diffSeconds % 60;
+      if (seconds > 0) {
+        return `${diffMinutes}min ${seconds}s`;
+      }
+      return `${diffMinutes}min`;
+    }
+
+    return `${diffSeconds}s`;
+  }
+
+  private calculateAverageResponseTime(messages: ListMessageResult[]): string {
+    if (messages.length < 2) {
+      return '-';
+    }
+
+    const responseTimes: number[] = [];
+
+    for (let i = 0; i < messages.length - 1; i++) {
+      const currentMsg = messages[i];
+      const nextMsg = messages[i + 1];
+
+      if (
+        currentMsg.type_user === ETypeUserChat.client &&
+        nextMsg.type_user === ETypeUserChat.operator
+      ) {
+        const currentDate = new Date(currentMsg.date || '');
+        const nextDate = new Date(nextMsg.date || '');
+
+        if (!isNaN(currentDate.getTime()) && !isNaN(nextDate.getTime())) {
+          const diffMs = nextDate.getTime() - currentDate.getTime();
+          if (diffMs >= 0) {
+            responseTimes.push(diffMs);
+          }
+        }
+      }
+    }
+
+    if (responseTimes.length === 0) {
+      return '-';
+    }
+
+    const totalMs = responseTimes.reduce((sum, time) => sum + time, 0);
+    const averageMs = totalMs / responseTimes.length;
+
+    const averageSeconds = Math.floor(averageMs / 1000);
+    const averageMinutes = Math.floor(averageSeconds / 60);
+    const averageHours = Math.floor(averageMinutes / 60);
+    const averageDays = Math.floor(averageHours / 24);
+
+    if (averageDays > 0) {
+      const hours = averageHours % 24;
+      const minutes = averageMinutes % 60;
+      if (hours > 0) {
+        return `${averageDays}d ${hours}h ${minutes}min`;
+      }
+      return `${averageDays}d ${minutes}min`;
+    }
+
+    if (averageHours > 0) {
+      const minutes = averageMinutes % 60;
+      if (minutes > 0) {
+        return `${averageHours}h ${minutes}min`;
+      }
+      return `${averageHours}h`;
+    }
+
+    if (averageMinutes > 0) {
+      const seconds = averageSeconds % 60;
+      if (seconds > 0) {
+        return `${averageMinutes}min ${seconds}s`;
+      }
+      return `${averageMinutes}min`;
+    }
+
+    return `${averageSeconds}s`;
   }
 }
