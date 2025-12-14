@@ -611,18 +611,11 @@ export class ReportConversationHistoryPdfService {
 
     if (content.type === 'contact_card') {
       const contact = content.contact;
-      const parts: string[] = ['[Contato]'];
-
-      if (contact?.contact_id) {
-        const phone = this.contactPhoneCache.get(contact.contact_id);
-        if (phone) {
-          const phoneDdi = contact.phone_ddi || null;
-          const formattedPhone = this.formatPhone(phone, phoneDdi);
-          parts.push(`<div>${this.escapeHtml(formattedPhone)}</div>`);
-        }
+      if (!contact) {
+        return '[Contato]';
       }
 
-      return parts.join('');
+      return this.formatContactCard(contact, msg, content.message);
     }
 
     return '[Mensagem não suportada]';
@@ -844,6 +837,110 @@ export class ReportConversationHistoryPdfService {
     } catch {
       return url;
     }
+  }
+
+  private formatContactCard(
+    contact: any,
+    msg: ListMessageResult,
+    message?: string | null
+  ): string {
+    const isUser = msg.type_user === ETypeUserChat.client;
+    const hasPhoto = !!contact.photo;
+    const contactPhoto = hasPhoto ? contact.photo : this.getDefaultAvatar();
+    const contactName = contact.name || '';
+    const contactLastName = contact.last_name || '';
+    const fullName = contactLastName
+      ? `${contactName} ${contactLastName}`
+      : contactName;
+
+    let phoneDisplay = '';
+    if (contact.contact_id) {
+      const phone = this.contactPhoneCache.get(contact.contact_id);
+      if (phone) {
+        const phoneDdi = contact.phone_ddi || null;
+        phoneDisplay = this.formatPhone(phone, phoneDdi);
+      }
+    }
+
+    if (!phoneDisplay && contact.phone_partial) {
+      phoneDisplay = contact.phone_partial;
+    }
+
+    const backgroundColor = isUser
+      ? 'rgba(255, 255, 255, 0.5)'
+      : 'rgba(255, 255, 255, 0.3)';
+    const textColor = isUser ? 'rgb(17, 27, 33)' : 'rgb(17, 27, 33)';
+
+    const parts: string[] = [];
+
+    parts.push(`
+      <div class="contact-bubble" style="
+        max-width: 100%;
+        position: relative;
+        padding-bottom: 0;
+        margin-bottom: 0;
+      ">
+        <div class="contact-item" style="
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 12px;
+          background-color: ${backgroundColor};
+          border-radius: 8px;
+        ">
+          <div style="
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            overflow: hidden;
+            flex-shrink: 0;
+            background-color: ${hasPhoto ? 'transparent' : 'rgba(25, 118, 210, 0.12)'};
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+          ">
+            <img src="${this.escapeHtml(contactPhoto)}" alt="${this.escapeHtml(fullName)}" style="
+              width: 100%;
+              height: 100%;
+              object-fit: contain;
+              object-position: center;
+            " />
+          </div>
+          <div style="flex: 1; min-width: 0;">
+            <div style="
+              font-size: 14px;
+              font-weight: 500;
+              color: ${textColor};
+              margin-bottom: ${phoneDisplay ? '2px' : '0'};
+            ">${this.escapeHtml(fullName)}</div>
+            ${
+              phoneDisplay
+                ? `<div style="
+                  font-size: 12px;
+                  color: rgba(17, 27, 33, 0.6);
+                ">${this.escapeHtml(phoneDisplay)}</div>`
+                : ''
+            }
+          </div>
+        </div>
+        ${
+          message
+            ? `<p style="
+              margin-top: 8px;
+              margin-bottom: 0;
+              white-space: pre-wrap;
+              word-break: break-word;
+              color: ${textColor};
+              font-size: 14px;
+              line-height: 1.5;
+            ">${this.escapeHtml(message.replace(/\n/g, '<br>'))}</p>`
+            : ''
+        }
+      </div>
+    `);
+
+    return parts.join('');
   }
 
   private generateHeaderHtml(
