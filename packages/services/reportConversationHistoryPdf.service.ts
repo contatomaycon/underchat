@@ -212,23 +212,23 @@ export class ReportConversationHistoryPdfService {
             .msg-row.left .bubble { order: 2; background: rgb(255, 255, 255); color: #111b21; }
             .msg-row.right .bubble { order: 2; background: rgb(217, 253, 211); color: #111b21; }
             .content { font-size: 14.2px; word-break: break-word; margin-bottom: 4px; }
-            .content img { max-width: 120px; max-height: 120px; width: auto; height: auto; border-radius: 8px; margin-bottom: 8px; object-fit: contain; }
-            .content img.sticker-img { max-width: 80px; max-height: 80px; }
+            .content img { max-width: 200px; max-height: 200px; width: auto; height: auto; border-radius: 8px; margin-bottom: 8px; object-fit: contain; }
+            .content img.sticker-img { max-width: 100px; max-height: 100px; }
             .content .media-link { font-size: 12px; margin-top: 4px; max-width: 100%; overflow-wrap: break-word; }
             .content .media-link a { color: #1976d2; text-decoration: none; word-break: break-all; display: inline-block; max-width: 100%; }
             .content .media-link a:hover { text-decoration: underline; }
-            .content .audio-player { display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: rgba(0,0,0,0.05); border-radius: 6px; margin-bottom: 8px; }
+            .content .audio-player { display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: rgba(0,0,0,0.05); border-radius: 6px; margin-bottom: 8px; max-width: 200px; }
             .content .audio-player-icon { width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.1); border-radius: 50%; flex-shrink: 0; }
             .content .audio-player-icon svg { width: 14px; height: 14px; fill: #111b21; }
             .content .audio-player-info { flex: 1; min-width: 0; }
             .content .audio-player-duration { font-size: 12px; color: #111b21; font-weight: 500; }
-            .content .video-player { display: flex; flex-direction: column; gap: 6px; padding: 6px 10px; background: rgba(0,0,0,0.05); border-radius: 6px; margin-bottom: 8px; }
+            .content .video-player { display: flex; flex-direction: column; gap: 6px; padding: 6px 10px; background: rgba(0,0,0,0.05); border-radius: 6px; margin-bottom: 8px; max-width: 200px; }
             .content .video-player-header { display: flex; align-items: center; gap: 8px; }
             .content .video-player-icon { width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.1); border-radius: 50%; flex-shrink: 0; }
             .content .video-player-icon svg { width: 14px; height: 14px; fill: #111b21; }
             .content .video-player-info { flex: 1; min-width: 0; }
             .content .video-player-meta { font-size: 11px; color: rgba(17,27,33,0.6); }
-            .content .document-player { display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: rgba(0,0,0,0.05); border-radius: 6px; margin-bottom: 8px; }
+            .content .document-player { display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: rgba(0,0,0,0.05); border-radius: 6px; margin-bottom: 8px; max-width: 200px; }
             .content .document-player-icon { width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.1); border-radius: 6px; flex-shrink: 0; }
             .content .document-player-icon svg { width: 16px; height: 16px; fill: #1976d2; }
             .content .document-player-info { flex: 1; min-width: 0; }
