@@ -952,6 +952,10 @@ const handleContactClick = (message: ListMessageResult) => {
                       : 'chat-right',
                   {
                     'is-deleted': item.message.deleted,
+                    'has-reactions':
+                      item.message.content?.reactions &&
+                      item.message.content.reactions.length > 0 &&
+                      item.message.content?.type !== EMessageType.annotation,
                   },
                 ]"
                 :style="{
@@ -1949,6 +1953,40 @@ const handleContactClick = (message: ListMessageResult) => {
     &:has(.audio-bubble) {
       padding-bottom: 1.6rem !important;
     }
+
+    &.has-reactions {
+      padding-bottom: 1.8rem !important;
+    }
+
+    &.chat-left {
+      .message-meta {
+        color: rgba(var(--v-theme-on-surface), 0.6);
+
+        .message-time {
+          color: rgba(var(--v-theme-on-surface), 0.6);
+        }
+      }
+    }
+
+    &.chat-right {
+      .message-meta {
+        color: rgba(17, 27, 33, 0.6);
+
+        .message-time {
+          color: rgba(17, 27, 33, 0.6);
+        }
+      }
+    }
+
+    &.chat-center {
+      .message-meta {
+        color: rgba(17, 27, 33, 0.6);
+
+        .message-time {
+          color: rgba(17, 27, 33, 0.6);
+        }
+      }
+    }
   }
 
   .message-block {
@@ -2014,36 +2052,8 @@ const handleContactClick = (message: ListMessageResult) => {
     }
   }
 
-  .chat-content {
-    &.chat-left {
-      .message-meta {
-        color: rgba(var(--v-theme-on-surface), 0.6);
-
-        .message-time {
-          color: rgba(var(--v-theme-on-surface), 0.6);
-        }
-      }
-    }
-
-    &.chat-right {
-      .message-meta {
-        color: rgba(17, 27, 33, 0.6);
-
-        .message-time {
-          color: rgba(17, 27, 33, 0.6);
-        }
-      }
-    }
-
-    &.chat-center {
-      .message-meta {
-        color: rgba(17, 27, 33, 0.6);
-
-        .message-time {
-          color: rgba(17, 27, 33, 0.6);
-        }
-      }
-    }
+  .chat-content.has-reactions .message-meta {
+    bottom: 20px;
   }
 
   .message-meta--audio {
@@ -2620,8 +2630,7 @@ const handleContactClick = (message: ListMessageResult) => {
     position: absolute;
     display: inline-flex;
     gap: 4px;
-    bottom: 0;
-    transform: translateY(50%);
+    bottom: -11px;
     margin-inline-start: auto;
     z-index: 11;
 
@@ -2639,7 +2648,7 @@ const handleContactClick = (message: ListMessageResult) => {
     &--center {
       justify-content: center;
       left: 50%;
-      transform: translateX(-50%) translateY(60%);
+      transform: translateX(-50%);
     }
 
     .reaction-summary-bubble {
