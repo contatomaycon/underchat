@@ -212,6 +212,8 @@ export class ReportConversationHistoryPdfService {
       const contentType = msg.content?.type || '';
       const isMediaType = ['audio', 'video', 'document'].includes(contentType);
       const mediaClass = isMediaType ? 'bubble-media' : '';
+      const isAnnotation = contentType === EMessageType.annotation;
+      const annotationClass = isAnnotation ? 'is-annotation' : '';
       const reactionsHtml = this.formatReactions(
         msg,
         contentType,
@@ -251,9 +253,22 @@ export class ReportConversationHistoryPdfService {
             )
           : basePaddingBottom;
       const paddingRight = reactionsCount > 0 ? 60 : 12;
-      const bubbleStyle = hasReactions
-        ? `padding-bottom: ${paddingBottom}px; padding-right: ${paddingRight}px;`
-        : '';
+      const backgroundColor = isAnnotation
+        ? 'rgb(255, 243, 205)'
+        : contentType === EMessageType.system
+          ? 'rgb(227, 242, 253)'
+          : '';
+      const bubbleStyleParts: string[] = [];
+      if (hasReactions) {
+        bubbleStyleParts.push(
+          `padding-bottom: ${paddingBottom}px; padding-right: ${paddingRight}px;`
+        );
+      }
+      if (backgroundColor) {
+        bubbleStyleParts.push(`background: ${backgroundColor};`);
+      }
+      const bubbleStyle =
+        bubbleStyleParts.length > 0 ? bubbleStyleParts.join(' ') : '';
       const metaBottomValue =
         reactionsCount > 0 ? Math.max(4, reactionHeight / 2 + 2) : 4;
       const metaStyle = hasReactions ? `bottom: ${metaBottomValue}px;` : '';
@@ -264,7 +279,7 @@ export class ReportConversationHistoryPdfService {
             <img src="${photo}" alt="${author}" class="avatar-img" />
             <div class="msg-name">${author}</div>
           </div>
-          <div class="bubble ${alignmentClass} ${mediaClass} ${reactionsClass} ${deletedClass}" style="${bubbleStyle}">
+          <div class="bubble ${alignmentClass} ${mediaClass} ${reactionsClass} ${deletedClass} ${annotationClass}" style="${bubbleStyle}">
             ${this.formatQuoted(msg, clientName)}
             <div class="content">
               <div class="message-text">${content}</div>
@@ -727,6 +742,11 @@ export class ReportConversationHistoryPdfService {
       }
 
       return this.formatContactCard(contact, msg, content.message);
+    }
+
+    if (content.type === EMessageType.annotation && content.message) {
+      const messageText = content.message.replace(/\n/g, '<br>');
+      return messageText;
     }
 
     return '[Mensagem não suportada]';
