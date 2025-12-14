@@ -433,7 +433,16 @@ export class ReportConversationHistoryPdfService {
     }
 
     if (content.type === 'text' && content.message) {
-      return content.message.replace(/\n/g, '<br>');
+      const parts: string[] = [];
+      const messageText = content.message.replace(/\n/g, '<br>');
+
+      if (content.link_preview?.title) {
+        parts.push(messageText);
+        parts.push(this.formatLinkPreview(content.link_preview, msg));
+        return parts.join('');
+      }
+
+      return messageText;
     }
 
     if (content.type === 'image') {
@@ -691,6 +700,150 @@ export class ReportConversationHistoryPdfService {
     }
 
     return formatted;
+  }
+
+  private formatLinkPreview(linkPreview: any, msg: ListMessageResult): string {
+    if (!linkPreview?.title) {
+      return '';
+    }
+
+    const isUser = msg.type_user === ETypeUserChat.client;
+    const previewImage = this.resolvePreviewImage(linkPreview);
+    const previewUrl = this.resolvePreviewUrl(linkPreview);
+    const domain = this.domainFromUrl(previewUrl);
+    const title = linkPreview.title || '';
+    const description = linkPreview.description || '';
+
+    const backgroundColor = isUser
+      ? 'rgb(243, 244, 246)'
+      : 'rgb(214, 243, 207)';
+    const textColor = isUser ? 'rgb(17, 27, 33)' : 'rgb(17, 27, 33)';
+
+    const parts: string[] = [];
+
+    parts.push(`
+      <div class="link-preview" style="
+        padding: 12px;
+        margin-top: 8px;
+        margin-bottom: 8px;
+        max-width: 100%;
+        background-color: ${backgroundColor};
+        color: ${textColor};
+        border-radius: 8px;
+      ">
+        <div class="lp-main" style="display: flex; gap: 12px;">
+    `);
+
+    if (previewImage) {
+      parts.push(`
+        <div class="lp-thumb" style="
+          width: 80px;
+          height: 80px;
+          border-radius: 4px;
+          overflow: hidden;
+          flex-shrink: 0;
+        ">
+          <img src="${this.escapeHtml(previewImage)}" alt="" style="
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+          " />
+        </div>
+      `);
+    }
+
+    parts.push(`
+      <div class="lp-text" style="flex: 1; min-width: 0;">
+        ${
+          domain
+            ? `<div class="lp-domain" style="
+          font-size: 12px;
+          margin-bottom: 4px;
+          color: rgba(17, 27, 33, 0.6);
+        ">${this.escapeHtml(domain)}</div>`
+            : ''
+        }
+        <div class="lp-title" style="
+          font-size: 14px;
+          font-weight: 600;
+          margin-bottom: 4px;
+          line-height: 1.3;
+        ">${this.escapeHtml(title)}</div>
+        ${
+          description
+            ? `<div class="lp-desc" style="
+          font-size: 12px;
+          color: rgba(17, 27, 33, 0.7);
+          line-height: 1.4;
+        ">${this.escapeHtml(description)}</div>`
+            : ''
+        }
+      </div>
+    </div>
+    `);
+
+    if (previewUrl) {
+      parts.push(`
+        <a href="${this.escapeHtml(previewUrl)}" target="_blank" rel="noopener noreferrer" class="lp-url" style="
+          display: block;
+          margin-top: 8px;
+          font-size: 14px;
+          color: rgba(25, 118, 210, 0.9);
+          text-decoration: none;
+          word-break: break-all;
+        ">${this.escapeHtml(previewUrl)}</a>
+      `);
+    }
+
+    parts.push('</div>');
+
+    return parts.join('');
+  }
+
+  private resolvePreviewImage(linkPreview?: any): string {
+    if (!linkPreview) {
+      return '';
+    }
+
+    if (linkPreview.originalThumbnailUrl) {
+      return linkPreview.originalThumbnailUrl;
+    }
+
+    if (linkPreview.highQualityThumbnail) {
+      return linkPreview.highQualityThumbnail;
+    }
+
+    if (linkPreview.jpegThumbnail) {
+      if (typeof linkPreview.jpegThumbnail === 'string') {
+        if (linkPreview.jpegThumbnail.startsWith('data:')) {
+          return linkPreview.jpegThumbnail;
+        }
+        return `data:image/jpeg;base64,${linkPreview.jpegThumbnail}`;
+      }
+    }
+
+    return '';
+  }
+
+  private resolvePreviewUrl(linkPreview?: any): string {
+    if (!linkPreview) {
+      return '';
+    }
+
+    return linkPreview['canonical-url'] || linkPreview['matched-text'] || '';
+  }
+
+  private domainFromUrl(url: string): string {
+    if (!url) {
+      return '';
+    }
+
+    try {
+      const urlObj = new URL(url);
+      return urlObj.hostname.replace(/^www\./, '');
+    } catch {
+      return url;
+    }
   }
 
   private generateHeaderHtml(
