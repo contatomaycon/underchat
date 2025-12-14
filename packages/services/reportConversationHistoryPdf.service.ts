@@ -892,7 +892,7 @@ export class ReportConversationHistoryPdfService {
             width: 40px;
             height: 40px;
             border-radius: 50%;
-            overflow: hidden;
+            overflow: visible;
             flex-shrink: 0;
             background-color: ${hasPhoto ? 'transparent' : 'rgba(25, 118, 210, 0.12)'};
             display: flex;
@@ -901,10 +901,12 @@ export class ReportConversationHistoryPdfService {
             position: relative;
           ">
             <img src="${this.escapeHtml(contactPhoto)}" alt="${this.escapeHtml(fullName)}" style="
-              width: 100%;
-              height: 100%;
+              width: 40px;
+              height: 40px;
+              border-radius: 50%;
               object-fit: contain;
               object-position: center;
+              background-color: ${hasPhoto ? 'transparent' : 'rgba(25, 118, 210, 0.12)'};
             " />
           </div>
           <div style="flex: 1; min-width: 0;">
