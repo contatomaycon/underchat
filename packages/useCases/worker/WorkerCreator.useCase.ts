@@ -3,7 +3,6 @@ import { TFunction } from 'i18next';
 import { WorkerService } from '@core/services/worker.service';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { AccountService } from '@core/services/account.service';
-import { EPlanProduct } from '@core/common/enums/EPlanProduct';
 import { CreateWorkerRequest } from '@core/schema/worker/createWorker/request.schema';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { v7 as uuidv7 } from 'uuid';
@@ -14,6 +13,7 @@ import { CentrifugoService } from '@core/services/centrifugo.service';
 import { ICreateWorker } from '@core/common/interfaces/ICreateWorker';
 import { KafkaBalanceQueueService } from '@core/services/kafkaBalanceQueue.service';
 import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
+import { PlanAccountService } from '@core/services/planAccount.service';
 
 @injectable()
 export class WorkerCreatorUseCase {
@@ -22,7 +22,8 @@ export class WorkerCreatorUseCase {
     private readonly accountService: AccountService,
     private readonly streamProducerService: StreamProducerService,
     private readonly centrifugoService: CentrifugoService,
-    private readonly kafkaBalanceQueueService: KafkaBalanceQueueService
+    private readonly kafkaBalanceQueueService: KafkaBalanceQueueService,
+    private readonly planAccountService: PlanAccountService
   ) {}
 
   private async validate(
@@ -36,22 +37,7 @@ export class WorkerCreatorUseCase {
       throw new Error(t('account_not_found'));
     }
 
-    const [viewAccountQuantityProduct, totalWorkerByAccountId] =
-      await Promise.all([
-        this.accountService.viewAccountQuantityProduct(
-          accountId,
-          EPlanProduct.worker
-        ),
-        this.workerService.totalWorkerByAccountId(accountId),
-      ]);
-
-    if (viewAccountQuantityProduct <= 0) {
-      throw new Error(t('worker_not_available'));
-    }
-
-    if (totalWorkerByAccountId >= viewAccountQuantityProduct) {
-      throw new Error(t('worker_not_available_additional'));
-    }
+    await this.planAccountService.validateCanCreateWorker(t, accountId);
   }
 
   private async onWorkerCreated(

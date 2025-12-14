@@ -3,12 +3,22 @@ import { PlanAccountUpdaterRepository } from '@core/repositories/planAccount/Pla
 import { UpdatePlanAccountRequest } from '@core/schema/planAccount/updatePlanAccount/request.schema';
 import { withLock } from '@core/common/functions/withLock';
 import Redis from 'ioredis';
+import { AccountService } from './account.service';
+import { UserService } from './user.service';
+import { WorkerService } from './worker.service';
+import { RoleService } from './role.service';
+import { EPlanProduct } from '@core/common/enums/EPlanProduct';
+import { TFunction } from 'i18next';
 
 @injectable()
 export class PlanAccountService {
   constructor(
     private readonly planAccountUpdaterRepository: PlanAccountUpdaterRepository,
-    @inject('Redis') private readonly redis: Redis
+    @inject('Redis') private readonly redis: Redis,
+    private readonly accountService: AccountService,
+    private readonly userService: UserService,
+    private readonly workerService: WorkerService,
+    private readonly roleService: RoleService
   ) {}
 
   findPlanAccountByAccountId = async (accountId: string) => {
@@ -35,4 +45,71 @@ export class PlanAccountService {
 
     return result ?? false;
   };
+
+  async validateCanCreateUser(
+    t: TFunction<'translation', undefined>,
+    accountId: string
+  ): Promise<void> {
+    const [viewAccountQuantityProduct, totalUserByAccountId] =
+      await Promise.all([
+        this.accountService.viewAccountQuantityProduct(
+          accountId,
+          EPlanProduct.user
+        ),
+        this.userService.totalUserByAccount(accountId),
+      ]);
+
+    const userLimit = viewAccountQuantityProduct + 1;
+    if (userLimit <= 0) {
+      throw new Error(t('user_not_available'));
+    }
+
+    if (totalUserByAccountId >= userLimit) {
+      throw new Error(t('user_not_available_additional'));
+    }
+  }
+
+  async validateCanCreateWorker(
+    t: TFunction<'translation', undefined>,
+    accountId: string
+  ): Promise<void> {
+    const [viewAccountQuantityProduct, totalWorkerByAccountId] =
+      await Promise.all([
+        this.accountService.viewAccountQuantityProduct(
+          accountId,
+          EPlanProduct.worker
+        ),
+        this.workerService.totalWorkerByAccountId(accountId),
+      ]);
+
+    if (viewAccountQuantityProduct <= 0) {
+      throw new Error(t('worker_not_available'));
+    }
+
+    if (totalWorkerByAccountId >= viewAccountQuantityProduct) {
+      throw new Error(t('worker_not_available_additional'));
+    }
+  }
+
+  async validateCanCreateRole(
+    t: TFunction<'translation', undefined>,
+    accountId: string
+  ): Promise<void> {
+    const [viewAccountQuantityProduct, totalRoleByAccountId] =
+      await Promise.all([
+        this.accountService.viewAccountQuantityProduct(
+          accountId,
+          EPlanProduct.role
+        ),
+        this.roleService.totalRoleByAccount(accountId),
+      ]);
+
+    if (viewAccountQuantityProduct <= 0) {
+      throw new Error(t('role_not_available'));
+    }
+
+    if (totalRoleByAccountId >= viewAccountQuantityProduct) {
+      throw new Error(t('role_not_available_additional'));
+    }
+  }
 }
