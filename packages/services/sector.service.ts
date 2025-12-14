@@ -186,4 +186,10 @@ export class SectorService {
       status: user.chat_user?.status || null,
     }));
   };
+
+  listAllSectorsForReport = async (
+    accountId: string
+  ): Promise<Array<{ sector_id: string; name: string }>> => {
+    return this.sectorAllListerRepository.listAllSectorsForReport(accountId);
+  };
 }

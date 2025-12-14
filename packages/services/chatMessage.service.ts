@@ -879,12 +879,19 @@ export class ChatMessageService {
       type
     );
 
+    const linkPreview =
+      'linkPreview' in options ? options.linkPreview : undefined;
+    const processedLinkPreview = await this.processLinkPreview(
+      linkPreview,
+      chatData.account.id
+    );
+
     const textMessage = this.createTextMessage({
       chat: chatData,
       chatId,
       type,
       message: formattedMessage,
-      linkPreview: 'linkPreview' in options ? options.linkPreview : undefined,
+      linkPreview: processedLinkPreview,
       messageQuotedId: messageContext.quotedId,
       quotedMessage: messageContext.quotedMessage,
       hash: messageContext.normalizedHash,
@@ -892,6 +899,111 @@ export class ChatMessageService {
     });
 
     return this.publishMessage(textMessage);
+  }
+
+  private async processLinkPreview(
+    linkPreview: any,
+    accountId: string
+  ): Promise<any> {
+    if (!linkPreview) {
+      return linkPreview;
+    }
+
+    const thumbnailUrl = await this.uploadLinkPreviewThumbnail(
+      linkPreview,
+      accountId
+    );
+
+    if (!thumbnailUrl) {
+      return linkPreview;
+    }
+
+    return this.buildProcessedPreview(linkPreview, thumbnailUrl);
+  }
+
+  private async uploadLinkPreviewThumbnail(
+    linkPreview: any,
+    accountId: string
+  ): Promise<string | null> {
+    if (linkPreview.originalThumbnailUrl) {
+      return this.uploadThumbnailFromUrl(
+        linkPreview.originalThumbnailUrl,
+        accountId
+      );
+    }
+
+    if (linkPreview.jpegThumbnail) {
+      return this.uploadThumbnailFromBase64(
+        linkPreview.jpegThumbnail,
+        accountId
+      );
+    }
+
+    return null;
+  }
+
+  private async uploadThumbnailFromUrl(
+    url: string,
+    accountId: string
+  ): Promise<string | null> {
+    try {
+      const uploadResult = await this.storageService.uploadFromUrl(
+        url,
+        accountId,
+        'link-preview-thumbnail'
+      );
+
+      return uploadResult?.url || null;
+    } catch (error) {
+      console.error('Erro ao fazer upload da imagem do link preview:', error);
+      return null;
+    }
+  }
+
+  private async uploadThumbnailFromBase64(
+    jpegThumbnail: string,
+    accountId: string
+  ): Promise<string | null> {
+    try {
+      const base64Data = this.extractBase64Data(jpegThumbnail);
+      const buffer = Buffer.from(base64Data, 'base64');
+
+      const uploadResult = await this.storageService.uploadFromBuffer(
+        buffer,
+        accountId,
+        {
+          fileName: 'link-preview-thumbnail.jpg',
+          mimetype: 'image/jpeg',
+        }
+      );
+
+      return uploadResult?.url || null;
+    } catch (error) {
+      console.error(
+        'Erro ao fazer upload da imagem base64 do link preview:',
+        error
+      );
+      return null;
+    }
+  }
+
+  private extractBase64Data(base64String: string): string {
+    if (base64String.includes(',')) {
+      return base64String.split(',')[1];
+    }
+
+    if (base64String.includes(';base64,')) {
+      return base64String.split(';base64,')[1];
+    }
+
+    return base64String;
+  }
+
+  private buildProcessedPreview(linkPreview: any, thumbnailUrl: string): any {
+    const processedPreview = { ...linkPreview };
+    processedPreview.originalThumbnailUrl = thumbnailUrl;
+    delete processedPreview.jpegThumbnail;
+    return processedPreview;
   }
 
   private async sendImageMessage(
