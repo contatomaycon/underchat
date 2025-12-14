@@ -301,14 +301,16 @@ export class ReportConversationHistoryPdfService {
       const author = this.getAuthorName(msg, isUser, clientName);
       const photo = this.getPhoto(msg, isUser, clientPhoto);
       const content = this.formatMessageContent(msg.content, msg);
-      const alignmentClass = isUser ? 'left' : 'right';
+      const contentType = msg.content?.type || '';
+      const isSystem = contentType === EMessageType.system;
+      const alignmentClass = isSystem ? 'center' : isUser ? 'left' : 'right';
       const timeOnly = this.formatTimeOnly(msg.date || '');
 
-      const contentType = msg.content?.type || '';
       const isMediaType = ['audio', 'video', 'document'].includes(contentType);
       const mediaClass = isMediaType ? 'bubble-media' : '';
       const isAnnotation = contentType === EMessageType.annotation;
       const annotationClass = isAnnotation ? 'is-annotation' : '';
+      const systemClass = isSystem ? 'is-system' : '';
       const reactionsHtml = this.formatReactions(
         msg,
         contentType,
@@ -370,11 +372,17 @@ export class ReportConversationHistoryPdfService {
 
       parts.push(`
         <div class="msg-row ${alignmentClass}">
+          ${
+            !isSystem
+              ? `
           <div class="msg-avatar">
             <img src="${photo}" alt="${author}" class="avatar-img" />
             <div class="msg-name">${author}</div>
           </div>
-          <div class="bubble ${alignmentClass} ${mediaClass} ${reactionsClass} ${deletedClass} ${annotationClass}" style="${bubbleStyle}">
+          `
+              : ''
+          }
+          <div class="bubble ${alignmentClass} ${mediaClass} ${reactionsClass} ${deletedClass} ${annotationClass} ${systemClass}" style="${bubbleStyle}">
             ${this.formatQuoted(msg, clientName)}
             <div class="content">
               <div class="message-text">${content}</div>
@@ -419,6 +427,7 @@ export class ReportConversationHistoryPdfService {
             .msg-row { display: flex; width: 100%; align-items: flex-start; gap: 8px; margin-bottom: 8px; }
             .msg-row.left { justify-content: flex-start; }
             .msg-row.right { justify-content: flex-end; }
+            .msg-row.center { justify-content: center; }
             .msg-avatar { display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 50px; }
             .msg-row.left .msg-avatar { order: 1; }
             .msg-row.right .msg-avatar { order: 3; }
@@ -432,6 +441,11 @@ export class ReportConversationHistoryPdfService {
             .bubble.is-deleted .content .message-deleted-badge { text-decoration: none !important; }
             .bubble.is-deleted .content .message-edited-badge { text-decoration: none !important; }
             .bubble.is-deleted .quoted-text, .bubble.is-deleted .image-caption, .bubble.is-deleted .video-caption, .bubble.is-deleted .audio-caption, .bubble.is-deleted .contact-caption { text-decoration: line-through; }
+            .bubble.is-system { border-radius: 6px; text-align: center; margin: 0 auto; }
+            .bubble.is-system .content { text-align: center; }
+            .bubble.is-system .content .message-text { text-align: center; }
+            .bubble.is-system .meta { text-align: center; }
+            .bubble.is-system .meta .meta-content { align-items: center; }
             .msg-row.left .bubble { order: 2; background: rgb(255, 255, 255); color: #111b21; }
             .msg-row.right .bubble { order: 2; background: rgb(217, 253, 211); color: #111b21; }
             .content { font-size: 14.2px; word-break: break-word; margin-bottom: 4px; }
@@ -633,6 +647,11 @@ export class ReportConversationHistoryPdfService {
   private formatMessageContent(content: any, msg: ListMessageResult): string {
     if (!content) {
       return '';
+    }
+
+    if (content.type === EMessageType.system && content.message) {
+      const messageText = content.message.replace(/\n/g, '<br>');
+      return messageText;
     }
 
     if (content.type === 'text' && content.message) {
