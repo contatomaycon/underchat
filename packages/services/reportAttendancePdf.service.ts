@@ -432,12 +432,12 @@ export class ReportAttendancePdfService {
       groupWidth - groupPadding - (datasetCount - 1) * interBarSpacing;
     const barWidth = Math.max(usableWidth / datasetCount, 4);
 
-    labels.forEach((label, labelIndex) => {
+    for (const [labelIndex, label] of labels.entries()) {
       const baseX = chartLeft + labelIndex * groupWidth + groupPadding / 2;
-      datasets.forEach((dataset, datasetIndex) => {
+      for (const [datasetIndex, dataset] of datasets.entries()) {
         const value = dataset.data[labelIndex] || 0;
         if (value <= 0) {
-          return;
+          continue;
         }
         const height = (value / maxValue) * chartHeight;
         const x = baseX + datasetIndex * (barWidth + interBarSpacing);
@@ -449,7 +449,7 @@ export class ReportAttendancePdfService {
           .rect(x, y, barWidth, Math.max(height, 1))
           .fill()
           .restore();
-      });
+      }
 
       doc
         .fontSize(8)
@@ -458,12 +458,12 @@ export class ReportAttendancePdfService {
           width: groupWidth,
           align: 'center',
         });
-    });
+    }
 
     const legendItemsPerRow = Math.max(Math.floor(chartWidth / 160), 1);
     const legendItemWidth = chartWidth / legendItemsPerRow;
     let legendRows = 0;
-    datasets.forEach((dataset, index) => {
+    for (const [index, dataset] of datasets.entries()) {
       const row = Math.floor(index / legendItemsPerRow);
       const column = index % legendItemsPerRow;
       const legendX = chartLeft + column * legendItemWidth;
@@ -482,7 +482,7 @@ export class ReportAttendancePdfService {
           align: 'left',
         });
       legendRows = Math.max(legendRows, row + 1);
-    });
+    }
 
     doc.y = drawingBottom + 20 + legendRows * 14 + 10;
   }
