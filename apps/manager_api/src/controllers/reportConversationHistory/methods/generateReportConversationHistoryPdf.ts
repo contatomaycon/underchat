@@ -15,11 +15,13 @@ export const generateReportConversationHistoryPdf = async (
     ReportConversationHistoryPdfGeneratorUseCase
   );
   const { t, tokenJwtData } = request;
+  const language = request.languageData?.code || 'pt';
 
   try {
     const response = await reportConversationHistoryPdfGeneratorUseCase.execute(
       tokenJwtData.account_id,
-      request.params.chat_id
+      request.params.chat_id,
+      language
     );
 
     return sendResponse(reply, {

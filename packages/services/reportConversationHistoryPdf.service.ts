@@ -14,6 +14,7 @@ import { IChat } from '@core/common/interfaces/IChat';
 import { ReportConversationHistoryMessagesListerUseCase } from '@core/useCases/reportConversationHistory/ReportConversationHistoryMessagesLister.useCase';
 import { ChatContactService } from './chatContact.service';
 import { extractPhoneAndDdi } from '@core/common/functions/extractPhoneAndDdi';
+import { TFunction } from 'i18next';
 
 @injectable()
 export class ReportConversationHistoryPdfService {
@@ -48,13 +49,17 @@ export class ReportConversationHistoryPdfService {
     await this.pdfUpdaterRepository.updatePdfUrl(pdfId, url, status);
   }
 
-  async generatePdf(accountId: string, chatId: string): Promise<string> {
+  async generatePdf(
+    accountId: string,
+    chatId: string,
+    t: TFunction<'translation', undefined>
+  ): Promise<string> {
     const [chat, messagesResult] = await Promise.all([
       this.getChat(accountId, chatId),
       this.messagesListerUseCase.execute(accountId, chatId),
     ]);
 
-    const clientName = chat?.name || chat?.contact?.name || 'Cliente';
+    const clientName = chat?.name || chat?.contact?.name || t('client');
     const clientPhoto = chat?.photo || chat?.contact?.photo || null;
 
     const uniqueContactIds = new Set<string>();
@@ -88,7 +93,8 @@ export class ReportConversationHistoryPdfService {
       messagesResult.messages,
       clientName,
       clientPhoto,
-      chat
+      chat,
+      t
     );
 
     this.contactPhoneCache.clear();
@@ -287,7 +293,8 @@ export class ReportConversationHistoryPdfService {
     messages: ListMessageResult[],
     clientName: string,
     clientPhoto: string | null,
-    chat: IChat | null
+    chat: IChat | null,
+    t: TFunction<'translation', undefined>
   ): string {
     const parts: string[] = [];
     let lastDate: string | null = null;
@@ -296,7 +303,7 @@ export class ReportConversationHistoryPdfService {
       const messageDate = msg.date || '';
 
       if (!lastDate || !this.isSameDay(messageDate, lastDate)) {
-        const separatorLabel = this.formatDateSeparator(messageDate);
+        const separatorLabel = this.formatDateSeparator(messageDate, t);
         parts.push(`
           <div class="date-separator-wrapper">
             <div class="date-separator-line"></div>
@@ -308,9 +315,9 @@ export class ReportConversationHistoryPdfService {
       }
 
       const isUser = msg.type_user === ETypeUserChat.client;
-      const author = this.getAuthorName(msg, isUser, clientName);
+      const author = this.getAuthorName(msg, isUser, clientName, t);
       const photo = this.getPhoto(msg, isUser, clientPhoto);
-      const content = this.formatMessageContent(msg.content, msg);
+      const content = this.formatMessageContent(msg.content, msg, t);
       const contentType = msg.content?.type || '';
       const isSystem = contentType === EMessageType.system;
       const alignmentClass = isSystem ? 'center' : isUser ? 'left' : 'right';
@@ -393,11 +400,11 @@ export class ReportConversationHistoryPdfService {
               : ''
           }
           <div class="bubble ${alignmentClass} ${mediaClass} ${reactionsClass} ${deletedClass} ${annotationClass} ${systemClass}" style="${bubbleStyle}">
-            ${this.formatQuoted(msg, clientName)}
+            ${this.formatQuoted(msg, clientName, t)}
             <div class="content">
               <div class="message-text">${content}</div>
-              ${isDeleted ? '<div class="message-deleted-badge">Removido</div>' : ''}
-              ${hasVersions ? '<div class="message-edited-badge">Editado</div>' : ''}
+              ${isDeleted ? `<div class="message-deleted-badge">${t('removed')}</div>` : ''}
+              ${hasVersions ? `<div class="message-edited-badge">${t('edited')}</div>` : ''}
             </div>
             <div class="meta" style="${metaStyle}">
               <div class="meta-content">
@@ -413,7 +420,7 @@ export class ReportConversationHistoryPdfService {
     }
 
     const messagesHtml = parts.join('');
-    const headerHtml = this.generateHeaderHtml(chat, messages);
+    const headerHtml = this.generateHeaderHtml(chat, messages, t);
 
     return `
       <!DOCTYPE html>
@@ -543,7 +550,10 @@ export class ReportConversationHistoryPdfService {
     );
   }
 
-  private formatDateSeparator(dateString: string): string {
+  private formatDateSeparator(
+    dateString: string,
+    t: TFunction<'translation', undefined>
+  ): string {
     if (!dateString) {
       return '';
     }
@@ -562,13 +572,13 @@ export class ReportConversationHistoryPdfService {
     );
 
     if (messageDate.getTime() === today.getTime()) {
-      return 'Hoje';
+      return t('today');
     }
 
     const yesterday = new Date(today);
     yesterday.setDate(yesterday.getDate() - 1);
     if (messageDate.getTime() === yesterday.getTime()) {
-      return 'Ontem';
+      return t('yesterday');
     }
 
     const diffMs = today.getTime() - messageDate.getTime();
@@ -576,13 +586,13 @@ export class ReportConversationHistoryPdfService {
 
     if (diffDays < 7 && diffDays > 0) {
       const weekdays = [
-        'Domingo',
-        'Segunda-feira',
-        'Terça-feira',
-        'Quarta-feira',
-        'Quinta-feira',
-        'Sexta-feira',
-        'Sábado',
+        t('sunday'),
+        t('monday'),
+        t('tuesday'),
+        t('wednesday'),
+        t('thursday'),
+        t('friday'),
+        t('saturday'),
       ];
       return weekdays[date.getDay()];
     }
@@ -596,19 +606,23 @@ export class ReportConversationHistoryPdfService {
   private getAuthorName(
     msg: ListMessageResult,
     isUser: boolean,
-    clientName: string
+    clientName: string,
+    t: TFunction<'translation', undefined>
   ): string {
     if (isUser) {
-      return this.getFirstName(clientName);
+      return this.getFirstName(clientName, t);
     }
 
-    const operatorName = msg.user?.name || 'Operador';
-    return this.getFirstName(operatorName);
+    const operatorName = msg.user?.name || t('operator');
+    return this.getFirstName(operatorName, t);
   }
 
-  private getFirstName(fullName: string): string {
+  private getFirstName(
+    fullName: string,
+    t: TFunction<'translation', undefined>
+  ): string {
     if (!fullName || !fullName.trim()) {
-      return 'Usuário';
+      return t('user');
     }
 
     const trimmed = fullName.trim();
@@ -654,7 +668,11 @@ export class ReportConversationHistoryPdfService {
     return `${hours}:${minutes}`;
   }
 
-  private formatMessageContent(content: any, msg: ListMessageResult): string {
+  private formatMessageContent(
+    content: any,
+    msg: ListMessageResult,
+    t: TFunction<'translation', undefined>
+  ): string {
     if (!content) {
       return '';
     }
@@ -682,7 +700,7 @@ export class ReportConversationHistoryPdfService {
           const versionText = (version.message || '').replace(/\n/g, '<br>');
           const versionNumber = i + 1;
           parts.push(
-            `<div class="message-version">Versão ${versionNumber}: ${versionText}</div>`
+            `<div class="message-version">${t('version')} ${versionNumber}: ${versionText}</div>`
           );
         }
       } else {
@@ -704,9 +722,9 @@ export class ReportConversationHistoryPdfService {
 
       if (imageUrl) {
         const escapedUrl = this.escapeHtml(imageUrl);
-        parts.push(`<img src="${escapedUrl}" alt="Imagem" />`);
+        parts.push(`<img src="${escapedUrl}" alt="${t('image')}" />`);
         parts.push(
-          `<div class="media-link"><b>Link:</b> <a href="${escapedUrl}" target="_blank" rel="noopener noreferrer">${escapedUrl}</a></div>`
+          `<div class="media-link"><b>${t('link')}:</b> <a href="${escapedUrl}" target="_blank" rel="noopener noreferrer">${escapedUrl}</a></div>`
         );
       }
 
@@ -714,7 +732,7 @@ export class ReportConversationHistoryPdfService {
         parts.push(`<div>${caption.replace(/\n/g, '<br>')}</div>`);
       }
 
-      return parts.length > 0 ? parts.join('') : '[Imagem]';
+      return parts.length > 0 ? parts.join('') : `[${t('image')}]`;
     }
 
     if (content.type === 'sticker') {
@@ -724,14 +742,14 @@ export class ReportConversationHistoryPdfService {
       if (stickerUrl) {
         const escapedUrl = this.escapeHtml(stickerUrl);
         parts.push(
-          `<img src="${escapedUrl}" alt="Sticker" class="sticker-img" />`
+          `<img src="${escapedUrl}" alt="${t('sticker')}" class="sticker-img" />`
         );
         parts.push(
-          `<div class="media-link"><b>Link:</b> <a href="${escapedUrl}" target="_blank" rel="noopener noreferrer">${escapedUrl}</a></div>`
+          `<div class="media-link"><b>${t('link')}:</b> <a href="${escapedUrl}" target="_blank" rel="noopener noreferrer">${escapedUrl}</a></div>`
         );
       }
 
-      return parts.length > 0 ? parts.join('') : '[Sticker]';
+      return parts.length > 0 ? parts.join('') : `[${t('sticker')}]`;
     }
 
     if (content.type === 'video') {
@@ -766,7 +784,7 @@ export class ReportConversationHistoryPdfService {
           </div>
         `);
         parts.push(
-          `<div class="media-link"><b>Link:</b> <a href="${escapedUrl}" target="_blank" rel="noopener noreferrer">${escapedUrl}</a></div>`
+          `<div class="media-link"><b>${t('link')}:</b> <a href="${escapedUrl}" target="_blank" rel="noopener noreferrer">${escapedUrl}</a></div>`
         );
       }
 
@@ -774,7 +792,7 @@ export class ReportConversationHistoryPdfService {
         parts.push(`<div>${caption.replace(/\n/g, '<br>')}</div>`);
       }
 
-      return parts.length > 0 ? parts.join('') : '[Vídeo]';
+      return parts.length > 0 ? parts.join('') : `[${t('video')}]`;
     }
 
     if (content.type === 'audio') {
@@ -800,11 +818,11 @@ export class ReportConversationHistoryPdfService {
           </div>
         `);
         parts.push(
-          `<div class="media-link"><b>Link:</b> <a href="${escapedUrl}" target="_blank" rel="noopener noreferrer">${escapedUrl}</a></div>`
+          `<div class="media-link"><b>${t('link')}:</b> <a href="${escapedUrl}" target="_blank" rel="noopener noreferrer">${escapedUrl}</a></div>`
         );
       }
 
-      return parts.length > 0 ? parts.join('') : '[Áudio]';
+      return parts.length > 0 ? parts.join('') : `[${t('audio')}]`;
     }
 
     if (content.type === 'document') {
@@ -813,7 +831,7 @@ export class ReportConversationHistoryPdfService {
 
       if (documentUrl) {
         const escapedUrl = this.escapeHtml(documentUrl);
-        const name = content.document?.name || 'Documento';
+        const name = content.document?.name || t('document');
         const extension = content.document?.extension?.toUpperCase() || 'FILE';
         const size = content.document?.size
           ? this.formatDocumentSize(content.document.size)
@@ -834,11 +852,11 @@ export class ReportConversationHistoryPdfService {
           </div>
         `);
         parts.push(
-          `<div class="media-link"><b>Link:</b> <a href="${escapedUrl}" target="_blank" rel="noopener noreferrer">${escapedUrl}</a></div>`
+          `<div class="media-link"><b>${t('link')}:</b> <a href="${escapedUrl}" target="_blank" rel="noopener noreferrer">${escapedUrl}</a></div>`
         );
       }
 
-      return parts.length > 0 ? parts.join('') : '[Documento]';
+      return parts.length > 0 ? parts.join('') : `[${t('document')}]`;
     }
 
     if (content.type === 'location') {
@@ -987,20 +1005,20 @@ export class ReportConversationHistoryPdfService {
         const googleMapsUrl = `https://www.google.com/maps?q=${location.latitude},${location.longitude}`;
         const escapedUrl = this.escapeHtml(googleMapsUrl);
         parts.push(
-          `<div class="media-link" style="margin-top: 8px;"><b>Link:</b> <a href="${escapedUrl}" target="_blank" rel="noopener noreferrer">${escapedUrl}</a></div>`
+          `<div class="media-link" style="margin-top: 8px;"><b>${t('link')}:</b> <a href="${escapedUrl}" target="_blank" rel="noopener noreferrer">${escapedUrl}</a></div>`
         );
       }
 
-      return parts.length > 0 ? parts.join('') : '[Localização]';
+      return parts.length > 0 ? parts.join('') : `[${t('location')}]`;
     }
 
     if (content.type === 'contact_card') {
       const contact = content.contact;
       if (!contact) {
-        return '[Contato]';
+        return `[${t('contact')}]`;
       }
 
-      return this.formatContactCard(contact, msg, content.message);
+      return this.formatContactCard(contact, msg, content.message, t);
     }
 
     if (content.type === EMessageType.annotation && content.message) {
@@ -1008,7 +1026,7 @@ export class ReportConversationHistoryPdfService {
       return messageText;
     }
 
-    return '[Mensagem não suportada]';
+    return `[${t('unsupported_message')}]`;
   }
 
   private escapeHtml(text: string): string {
@@ -1314,7 +1332,8 @@ export class ReportConversationHistoryPdfService {
   private formatContactCard(
     contact: any,
     msg: ListMessageResult,
-    message?: string | null
+    message: string | null | undefined,
+    t: TFunction<'translation', undefined>
   ): string {
     const isUser = msg.type_user === ETypeUserChat.client;
     const hasPhoto = !!contact.photo;
@@ -1425,7 +1444,8 @@ export class ReportConversationHistoryPdfService {
 
   private generateHeaderHtml(
     chat: IChat | null,
-    messages: ListMessageResult[]
+    messages: ListMessageResult[],
+    t: TFunction<'translation', undefined>
   ): string {
     if (!chat) {
       return '';
@@ -1445,10 +1465,10 @@ export class ReportConversationHistoryPdfService {
     const lastMessageDate = lastMessage?.date || null;
 
     const attendanceDate = firstMessageDate
-      ? this.formatFullDateTime(firstMessageDate)
+      ? this.formatFullDateTime(firstMessageDate, t)
       : '-';
     const closingDate = lastMessageDate
-      ? this.formatFullDateTime(lastMessageDate)
+      ? this.formatFullDateTime(lastMessageDate, t)
       : '-';
 
     const protocolStart =
@@ -1468,59 +1488,63 @@ export class ReportConversationHistoryPdfService {
 
     const attendanceTime = this.calculateAttendanceTime(
       firstMessageDate,
-      lastMessageDate
+      lastMessageDate,
+      t
     );
 
-    const averageResponseTime = this.calculateAverageResponseTime(messages);
+    const averageResponseTime = this.calculateAverageResponseTime(messages, t);
 
     return `
       <div class="header">
         <div class="header-row">
-          <div class="header-label">Nome:</div>
+          <div class="header-label">${t('name')}:</div>
           <div class="header-value">${this.escapeHtml(name)}</div>
         </div>
         <div class="header-row">
-          <div class="header-label">Telefone:</div>
+          <div class="header-label">${t('phone')}:</div>
           <div class="header-value">${this.escapeHtml(formattedPhone)}</div>
         </div>
         <div class="header-row">
-          <div class="header-label">Data de Atendimento:</div>
+          <div class="header-label">${t('attendance_date')}:</div>
           <div class="header-value">${this.escapeHtml(attendanceDate)}</div>
         </div>
         <div class="header-row">
-          <div class="header-label">Data de Encerramento:</div>
+          <div class="header-label">${t('closing_date')}:</div>
           <div class="header-value">${this.escapeHtml(closingDate)}</div>
         </div>
         <div class="header-row">
-          <div class="header-label">Setor:</div>
+          <div class="header-label">${t('sector')}:</div>
           <div class="header-value">${this.escapeHtml(sector)}</div>
         </div>
         <div class="header-divider"></div>
         <div class="header-row">
-          <div class="header-label">Protocolo de Atendimento:</div>
+          <div class="header-label">${t('attendance_protocol')}:</div>
           <div class="header-value">${this.escapeHtml(protocolStart)}</div>
         </div>
         <div class="header-row">
-          <div class="header-label">Protocolo de Transferência:</div>
+          <div class="header-label">${t('transfer_protocol')}:</div>
           <div class="header-value">${this.escapeHtml(protocolTransfer)}</div>
         </div>
         <div class="header-row">
-          <div class="header-label">Protocolo URA:</div>
+          <div class="header-label">${t('ura_protocol')}:</div>
           <div class="header-value">${this.escapeHtml(protocolUra)}</div>
         </div>
         <div class="header-row">
-          <div class="header-label">Tempo de Atendimento:</div>
+          <div class="header-label">${t('attendance_time')}:</div>
           <div class="header-value">${this.escapeHtml(attendanceTime)}</div>
         </div>
         <div class="header-row">
-          <div class="header-label">Tempo Médio de Resposta:</div>
+          <div class="header-label">${t('average_response_time')}:</div>
           <div class="header-value">${this.escapeHtml(averageResponseTime)}</div>
         </div>
       </div>
     `;
   }
 
-  private formatFullDateTime(dateString: string): string {
+  private formatFullDateTime(
+    dateString: string,
+    t: TFunction<'translation', undefined>
+  ): string {
     if (!dateString) {
       return '';
     }
@@ -1536,12 +1560,13 @@ export class ReportConversationHistoryPdfService {
     const hours = String(date.getHours()).padStart(2, '0');
     const minutes = String(date.getMinutes()).padStart(2, '0');
 
-    return `${day}/${month}/${year} às ${hours}:${minutes}`;
+    return `${day}/${month}/${year} ${t('at')} ${hours}:${minutes}`;
   }
 
   private calculateAttendanceTime(
     startDate: string | null,
-    endDate: string | null
+    endDate: string | null,
+    t: TFunction<'translation', undefined>
   ): string {
     if (!startDate || !endDate) {
       return '-';
@@ -1568,31 +1593,34 @@ export class ReportConversationHistoryPdfService {
       const hours = diffHours % 24;
       const minutes = diffMinutes % 60;
       if (hours > 0) {
-        return `${diffDays}d ${hours}h ${minutes}min`;
+        return `${diffDays}${t('day_abbrev')} ${hours}${t('hour_abbrev')} ${minutes}${t('minute_abbrev')}`;
       }
-      return `${diffDays}d ${minutes}min`;
+      return `${diffDays}${t('day_abbrev')} ${minutes}${t('minute_abbrev')}`;
     }
 
     if (diffHours > 0) {
       const minutes = diffMinutes % 60;
       if (minutes > 0) {
-        return `${diffHours}h ${minutes}min`;
+        return `${diffHours}${t('hour_abbrev')} ${minutes}${t('minute_abbrev')}`;
       }
-      return `${diffHours}h`;
+      return `${diffHours}${t('hour_abbrev')}`;
     }
 
     if (diffMinutes > 0) {
       const seconds = diffSeconds % 60;
       if (seconds > 0) {
-        return `${diffMinutes}min ${seconds}s`;
+        return `${diffMinutes}${t('minute_abbrev')} ${seconds}${t('second_abbrev')}`;
       }
-      return `${diffMinutes}min`;
+      return `${diffMinutes}${t('minute_abbrev')}`;
     }
 
-    return `${diffSeconds}s`;
+    return `${diffSeconds}${t('second_abbrev')}`;
   }
 
-  private calculateAverageResponseTime(messages: ListMessageResult[]): string {
+  private calculateAverageResponseTime(
+    messages: ListMessageResult[],
+    t: TFunction<'translation', undefined>
+  ): string {
     if (messages.length < 2) {
       return '-';
     }
@@ -1635,31 +1663,35 @@ export class ReportConversationHistoryPdfService {
       const hours = averageHours % 24;
       const minutes = averageMinutes % 60;
       if (hours > 0) {
-        return `${averageDays}d ${hours}h ${minutes}min`;
+        return `${averageDays}${t('day_abbrev')} ${hours}${t('hour_abbrev')} ${minutes}${t('minute_abbrev')}`;
       }
-      return `${averageDays}d ${minutes}min`;
+      return `${averageDays}${t('day_abbrev')} ${minutes}${t('minute_abbrev')}`;
     }
 
     if (averageHours > 0) {
       const minutes = averageMinutes % 60;
       if (minutes > 0) {
-        return `${averageHours}h ${minutes}min`;
+        return `${averageHours}${t('hour_abbrev')} ${minutes}${t('minute_abbrev')}`;
       }
-      return `${averageHours}h`;
+      return `${averageHours}${t('hour_abbrev')}`;
     }
 
     if (averageMinutes > 0) {
       const seconds = averageSeconds % 60;
       if (seconds > 0) {
-        return `${averageMinutes}min ${seconds}s`;
+        return `${averageMinutes}${t('minute_abbrev')} ${seconds}${t('second_abbrev')}`;
       }
-      return `${averageMinutes}min`;
+      return `${averageMinutes}${t('minute_abbrev')}`;
     }
 
-    return `${averageSeconds}s`;
+    return `${averageSeconds}${t('second_abbrev')}`;
   }
 
-  private formatQuoted(msg: ListMessageResult, clientName: string): string {
+  private formatQuoted(
+    msg: ListMessageResult,
+    clientName: string,
+    t: TFunction<'translation', undefined>
+  ): string {
     if (!msg.content?.quoted) {
       return '';
     }
@@ -1667,7 +1699,7 @@ export class ReportConversationHistoryPdfService {
     const quoted = msg.content.quoted;
     const isUser = msg.type_user === ETypeUserChat.client;
     const isRight = !isUser;
-    const quotedName = this.resolveQuotedName(quoted, clientName);
+    const quotedName = this.resolveQuotedName(quoted, clientName, t);
     const quotedType = quoted.type || '';
 
     const parts: string[] = [];
@@ -1680,12 +1712,12 @@ export class ReportConversationHistoryPdfService {
 
     if (this.hasQuotedImage(quoted)) {
       const imageSrc = this.resolveQuotedImageSrc(quoted);
-      const imageName = this.resolveQuotedImageName();
+      const imageName = this.resolveQuotedImageName(t);
       const imageMeta = this.resolveQuotedImageMeta(quoted);
 
       parts.push(`
         <div class="quoted-media quoted-media--image">
-          <img src="${this.escapeHtml(imageSrc)}" alt="Imagem" />
+          <img src="${this.escapeHtml(imageSrc)}" alt="${t('image')}" />
         </div>
         <div class="quoted-image-info">
           <span class="quoted-image-name">${this.escapeHtml(imageName)}</span>
@@ -1701,14 +1733,14 @@ export class ReportConversationHistoryPdfService {
             <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
           </svg>
           <div class="quoted-location-info">
-            <span class="quoted-location-name">Localização</span>
+            <span class="quoted-location-name">${t('location')}</span>
           </div>
         </div>
       `);
     }
 
     if (this.hasQuotedDocument(quoted)) {
-      const docName = this.resolveQuotedDocumentName(quoted);
+      const docName = this.resolveQuotedDocumentName(quoted, t);
       const docMeta = this.resolveQuotedDocumentMeta(quoted);
       const docIcon = this.resolveQuotedDocumentIcon(quoted);
 
@@ -1731,7 +1763,7 @@ export class ReportConversationHistoryPdfService {
       parts.push(`
         <div class="quoted-sticker">
           <div class="quoted-media quoted-media--image">
-            <img src="${this.escapeHtml(stickerSrc)}" alt="Sticker" style="object-fit: contain;" />
+            <img src="${this.escapeHtml(stickerSrc)}" alt="${t('sticker')}" style="object-fit: contain;" />
           </div>
         </div>
       `);
@@ -1740,14 +1772,14 @@ export class ReportConversationHistoryPdfService {
     if (this.hasQuotedVideo(quoted)) {
       const videoUrl = this.resolveQuotedVideoUrl(quoted);
       const videoPoster = this.resolveQuotedVideoPoster(quoted);
-      const videoName = this.resolveQuotedVideoName();
+      const videoName = this.resolveQuotedVideoName(t);
       const videoMeta = this.resolveQuotedVideoMeta(quoted);
 
       parts.push(`
         <div class="quoted-media quoted-media--video" style="position: relative;">
           ${
             videoUrl
-              ? `<img src="${this.escapeHtml(videoPoster || videoUrl)}" alt="Vídeo" class="quoted-video-thumb" />
+              ? `<img src="${this.escapeHtml(videoPoster || videoUrl)}" alt="${t('video')}" class="quoted-video-thumb" />
                <div class="quoted-video-overlay">
                  <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="width: 16px; height: 16px; fill: white;">
                    <path d="M8 5v14l11-7z"/>
@@ -1768,7 +1800,7 @@ export class ReportConversationHistoryPdfService {
     }
 
     if (this.hasQuotedAudio(quoted)) {
-      const audioName = this.resolveQuotedAudioName();
+      const audioName = this.resolveQuotedAudioName(t);
       const audioMeta = this.resolveQuotedAudioMeta(quoted);
 
       parts.push(`
@@ -1791,13 +1823,13 @@ export class ReportConversationHistoryPdfService {
             <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
           </svg>
           <div class="quoted-contact-info">
-            <span class="quoted-contact-name">Contato</span>
+            <span class="quoted-contact-name">${t('contact')}</span>
           </div>
         </div>
       `);
     }
 
-    const quotedText = this.resolveQuotedText(quoted, quotedType);
+    const quotedText = this.resolveQuotedText(quoted, quotedType, t);
     if (
       quotedText &&
       quotedType !== EMessageType.video &&
@@ -1827,20 +1859,28 @@ export class ReportConversationHistoryPdfService {
     return parts.join('');
   }
 
-  private resolveQuotedName(quoted: any, clientName: string): string {
+  private resolveQuotedName(
+    quoted: any,
+    clientName: string,
+    t: TFunction<'translation', undefined>
+  ): string {
     const fromMe = quoted?.key?.from_me ?? null;
-    if (fromMe === true) return 'Operador';
-    if (fromMe === false) return this.getFirstName(clientName);
+    if (fromMe === true) return t('operator');
+    if (fromMe === false) return this.getFirstName(clientName, t);
     return '';
   }
 
-  private resolveQuotedText(quoted: any, quotedType: string): string {
+  private resolveQuotedText(
+    quoted: any,
+    quotedType: string,
+    t: TFunction<'translation', undefined>
+  ): string {
     if (!quoted) {
       return '';
     }
 
     if (quotedType === EMessageType.image || quoted.image) {
-      return quoted.image?.caption || 'Foto';
+      return quoted.image?.caption || t('photo');
     }
 
     if (quotedType === EMessageType.document && quoted.document) {
@@ -1852,15 +1892,15 @@ export class ReportConversationHistoryPdfService {
     }
 
     if (quotedType === EMessageType.audio) {
-      return quoted.message ?? 'Áudio';
+      return quoted.message ?? t('audio');
     }
 
     if (quotedType === EMessageType.sticker) {
-      return 'Sticker';
+      return t('sticker');
     }
 
     if (quotedType === EMessageType.location) {
-      return quoted.location?.name || quoted.location?.address || 'Localização';
+      return quoted.location?.name || quoted.location?.address || t('location');
     }
 
     return quoted.message ?? '';
@@ -1947,8 +1987,11 @@ export class ReportConversationHistoryPdfService {
     return icons[iconType] || icons.file;
   }
 
-  private resolveQuotedDocumentName(quoted: any): string {
-    return quoted?.document?.name ?? 'Documento';
+  private resolveQuotedDocumentName(
+    quoted: any,
+    t: TFunction<'translation', undefined>
+  ): string {
+    return quoted?.document?.name ?? t('document');
   }
 
   private resolveQuotedDocumentMeta(quoted: any): string {
@@ -1959,8 +2002,10 @@ export class ReportConversationHistoryPdfService {
     return `${ext} • ${this.formatDocumentSize(doc.size)}`;
   }
 
-  private resolveQuotedImageName(): string {
-    return 'Foto';
+  private resolveQuotedImageName(
+    t: TFunction<'translation', undefined>
+  ): string {
+    return t('photo');
   }
 
   private resolveQuotedImageMeta(quoted: any): string {
@@ -1971,8 +2016,10 @@ export class ReportConversationHistoryPdfService {
     return [ext, size].filter(Boolean).join(' • ');
   }
 
-  private resolveQuotedVideoName(): string {
-    return 'Vídeo';
+  private resolveQuotedVideoName(
+    t: TFunction<'translation', undefined>
+  ): string {
+    return t('video');
   }
 
   private resolveQuotedVideoUrl(quoted: any): string {
@@ -1992,8 +2039,10 @@ export class ReportConversationHistoryPdfService {
     return [ext, size, duration].filter(Boolean).join(' • ');
   }
 
-  private resolveQuotedAudioName(): string {
-    return 'Áudio';
+  private resolveQuotedAudioName(
+    t: TFunction<'translation', undefined>
+  ): string {
+    return t('audio');
   }
 
   private resolveQuotedAudioMeta(quoted: any): string {

@@ -1,9 +1,11 @@
-import { FastifyInstance } from 'fastify';
+import { FastifyInstance, FastifyRequest } from 'fastify';
 import fp from 'fastify-plugin';
 import i18next from 'i18next';
 import Backend from 'i18next-fs-backend';
 import { plugin, LanguageDetector } from 'i18next-http-middleware';
 import path = require('path');
+import { getLanguageFromHeader } from '@core/common/functions/getLanguageFromHeader';
+import { createLanguageData } from '@core/common/functions/createLanguageData';
 
 async function i18nextPlugin(fastify: FastifyInstance) {
   const localesPath = path.join(
@@ -34,6 +36,13 @@ async function i18nextPlugin(fastify: FastifyInstance) {
   });
 
   fastify.decorate('i18n', i18next.t);
+
+  fastify.addHook('onRequest', async (request: FastifyRequest) => {
+    const acceptLanguage = request.headers['accept-language'];
+    const language = getLanguageFromHeader(acceptLanguage);
+
+    request.languageData = createLanguageData(language);
+  });
 }
 
 export default fp(i18nextPlugin);

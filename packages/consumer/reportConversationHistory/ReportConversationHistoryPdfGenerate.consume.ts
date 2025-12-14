@@ -10,6 +10,7 @@ import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 import { IReportConversationHistoryPdfGeneratePayload } from '@core/common/interfaces/IReportConversationHistoryPdfGeneratePayload';
 import { IReportConversationHistoryPdfNotification } from '@core/common/interfaces/IReportConversationHistoryPdfNotification';
 import { reportConversationHistoryPdfAccountCentrifugo } from '@core/common/functions/centrifugoQueue';
+import { createI18nInstance } from '@core/common/functions/createI18nInstance';
 
 @singleton()
 export class ReportConversationHistoryPdfGenerateConsume {
@@ -129,9 +130,12 @@ export class ReportConversationHistoryPdfGenerateConsume {
       await this.pdfService.deletePdf(data.old_url_pdf);
     }
 
+    const t = await createI18nInstance(data.language || 'pt');
+
     const url = await this.pdfService.generatePdf(
       data.account_id,
-      data.chat_id
+      data.chat_id,
+      t
     );
 
     await this.pdfService.updatePdfUrl(

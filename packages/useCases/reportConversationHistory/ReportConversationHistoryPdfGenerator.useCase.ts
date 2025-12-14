@@ -14,7 +14,8 @@ export class ReportConversationHistoryPdfGeneratorUseCase {
 
   async execute(
     accountId: string,
-    chatId: string
+    chatId: string,
+    language: string
   ): Promise<GenerateReportConversationHistoryPdfResponse> {
     const pdfRecord = await this.pdfUpserterRepository.upsertPdf(
       accountId,
@@ -27,6 +28,7 @@ export class ReportConversationHistoryPdfGeneratorUseCase {
       pdf_record_id: pdfRecord.id,
       requested_at: new Date().toISOString(),
       old_url_pdf: pdfRecord.oldUrlPdf,
+      language,
     };
 
     const topic =
