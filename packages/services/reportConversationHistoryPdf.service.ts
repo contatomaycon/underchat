@@ -162,8 +162,12 @@ export class ReportConversationHistoryPdfService {
             return isMapContainerLoaded(container);
           };
 
+          const scheduleResolve = (resolveFn: () => void): void => {
+            setTimeout(resolveFn, 3000);
+          };
+
           const handleAllMapsLoaded = (): void => {
-            setTimeout(() => resolve(), 3000);
+            scheduleResolve(resolve);
           };
 
           const handleMapCheck = (checkInterval: NodeJS.Timeout): void => {
@@ -193,12 +197,19 @@ export class ReportConversationHistoryPdfService {
             }
           };
 
+          const scheduleTimeout = (
+            timeoutFn: () => void,
+            delay: number
+          ): void => {
+            setTimeout(timeoutFn, delay);
+          };
+
           const checkInterval = setInterval(
             () => handleMapCheck(checkInterval),
             500
           );
 
-          setTimeout(() => handleTimeout(checkInterval), 25000);
+          scheduleTimeout(() => handleTimeout(checkInterval), 25000);
         });
       });
 
