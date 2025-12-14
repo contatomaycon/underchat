@@ -402,7 +402,7 @@ export class ReportConversationHistoryPdfService {
           <div class="bubble ${alignmentClass} ${mediaClass} ${reactionsClass} ${deletedClass} ${annotationClass} ${systemClass}" style="${bubbleStyle}">
             ${this.formatQuoted(msg, clientName, t)}
             <div class="content">
-              <div class="message-text">${content}</div>
+              <div class="message-text" style="word-break: break-word; overflow-wrap: break-word; hyphens: none;">${content}</div>
               ${isDeleted ? `<div class="message-deleted-badge">${t('removed')}</div>` : ''}
               ${hasVersions ? `<div class="message-edited-badge">${t('edited')}</div>` : ''}
             </div>
@@ -465,14 +465,14 @@ export class ReportConversationHistoryPdfService {
             .bubble.is-system .meta .meta-content { align-items: center; }
             .msg-row.left .bubble { order: 2; background: rgb(255, 255, 255); color: #111b21; }
             .msg-row.right .bubble { order: 2; background: rgb(217, 253, 211); color: #111b21; }
-            .content { font-size: 14.2px; word-break: break-word; margin-bottom: 4px; }
+            .content { font-size: 14.2px; word-break: break-word; overflow-wrap: break-word; hyphens: none; margin-bottom: 4px; }
             .content:has(+ .meta .message-deleted-badge) { margin-bottom: 0; }
             .message-current-version { margin-bottom: 8px; }
             .message-version { font-size: 13px; color: rgba(17, 27, 33, 0.7); margin-bottom: 4px; }
             .content img { max-width: 200px; max-height: 200px; width: auto; height: auto; border-radius: 8px; margin-bottom: 8px; object-fit: contain; }
             .content img.sticker-img { max-width: 100px; max-height: 100px; }
             .content .media-link { font-size: 12px; margin-top: 4px; max-width: 100%; overflow-wrap: break-word; }
-            .content .media-link a { color: #1976d2; text-decoration: none; word-break: break-all; display: inline-block; max-width: 100%; }
+            .content .media-link a { color: #1976d2; text-decoration: none; word-break: break-word; overflow-wrap: anywhere; display: inline-block; max-width: 100%; }
             .content .media-link a:hover { text-decoration: underline; }
             .content .audio-player { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: rgba(0,0,0,0.05); border-radius: 6px; margin-bottom: 8px; width: 100%; box-sizing: border-box; }
             .content .audio-player-icon { width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.1); border-radius: 50%; flex-shrink: 0; }
@@ -1195,7 +1195,8 @@ export class ReportConversationHistoryPdfService {
           font-size: 14px;
           color: rgba(25, 118, 210, 0.9);
           text-decoration: none;
-          word-break: break-all;
+          word-break: break-word;
+          overflow-wrap: anywhere;
         ">${this.escapeHtml(previewUrl)}</a>
       `);
     }
