@@ -158,19 +158,6 @@ const confirmDeletePdf = async () => {
   pdfToDelete.value = null;
 };
 
-const loadPdfStatuses = async () => {
-  for (const item of reportConversationHistoryStore.list) {
-    const pdfStatus =
-      await reportConversationHistoryStore.viewReportConversationHistoryPdf(
-        item.chat_id
-      );
-
-    if (pdfStatus) {
-      item.pdf_status = pdfStatus.status;
-    }
-  }
-};
-
 const itemsPerPage = ref([
   { value: 5, title: '5' },
   { value: 10, title: '10' },
@@ -305,7 +292,6 @@ onMounted(async () => {
   }
 
   await loadHistory();
-  await loadPdfStatuses();
 
   const user = getUser();
   if (user?.account_id) {
@@ -916,9 +902,51 @@ const copyToClipboard = async (text: string) => {
               }})
             </div>
           </div>
-          <VBtn icon variant="text" @click="isConversationModalOpen = false">
-            <VIcon>tabler-x</VIcon>
-          </VBtn>
+          <div class="d-flex align-center gap-2">
+            <VBtn
+              v-if="selectedChatInfo && selectedChatInfo.pdf_status === 'DONE'"
+              size="small"
+              color="success"
+              variant="flat"
+              @click="handleDownloadPdf(selectedChatInfo)"
+            >
+              <VIcon start size="18">tabler-download</VIcon>
+              {{ t('download_pdf') }}
+            </VBtn>
+            <VBtn
+              v-if="
+                selectedChatInfo &&
+                (!selectedChatInfo.pdf_status ||
+                  selectedChatInfo.pdf_status !== 'DONE')
+              "
+              size="small"
+              color="primary"
+              variant="flat"
+              :disabled="
+                selectedChatInfo.pdf_status === 'PENDING' ||
+                selectedChatInfo.pdf_status === 'PROCESSING'
+              "
+              :loading="
+                selectedChatInfo.pdf_status === 'PENDING' ||
+                selectedChatInfo.pdf_status === 'PROCESSING'
+              "
+              @click="handleGeneratePdf(selectedChatInfo)"
+            >
+              <VIcon
+                start
+                size="18"
+                :icon="
+                  selectedChatInfo.pdf_status === 'PROCESSING'
+                    ? 'tabler-loader'
+                    : 'tabler-file-type-pdf'
+                "
+              ></VIcon>
+              {{ t('generate_pdf') }}
+            </VBtn>
+            <VBtn icon variant="text" @click="isConversationModalOpen = false">
+              <VIcon>tabler-x</VIcon>
+            </VBtn>
+          </div>
         </VCardTitle>
 
         <VDivider />
