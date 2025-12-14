@@ -2031,20 +2031,6 @@ const handleContactClick = (message: ListMessageResult) => {
     min-height: 40px;
     overflow: visible !important;
 
-    &.chat-left {
-      border-start-end-radius: 6px;
-    }
-
-    &.chat-right {
-      border-start-start-radius: 6px;
-    }
-
-    &.chat-center {
-      border-radius: 6px;
-      text-align: center;
-      margin: 0 auto;
-    }
-
     &.is-deleted {
       opacity: 0.7;
     }
@@ -2083,6 +2069,8 @@ const handleContactClick = (message: ListMessageResult) => {
     }
 
     &.chat-left {
+      border-start-end-radius: 6px;
+
       .message-meta {
         color: rgba(var(--v-theme-on-surface), 0.6);
 
@@ -2093,6 +2081,8 @@ const handleContactClick = (message: ListMessageResult) => {
     }
 
     &.chat-right {
+      border-start-start-radius: 6px;
+
       .message-meta {
         color: rgba(17, 27, 33, 0.6);
 
@@ -2103,6 +2093,10 @@ const handleContactClick = (message: ListMessageResult) => {
     }
 
     &.chat-center {
+      border-radius: 6px;
+      text-align: center;
+      margin: 0 auto;
+
       .message-meta {
         color: rgba(17, 27, 33, 0.6);
 

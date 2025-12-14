@@ -18,7 +18,7 @@ import { TFunction } from 'i18next';
 
 @injectable()
 export class ReportConversationHistoryPdfService {
-  private contactPhoneCache: Map<string, string | null> = new Map();
+  private readonly contactPhoneCache: Map<string, string | null> = new Map();
 
   constructor(
     private readonly storageService: StorageService,
@@ -119,7 +119,7 @@ export class ReportConversationHistoryPdfService {
             return;
           }
 
-          const mapContainers = doc.querySelectorAll('[id^="map-"]') as any;
+          const mapContainers = doc.querySelectorAll('[id^="map-"]');
           if (mapContainers.length === 0) {
             resolve();
             return;
@@ -129,15 +129,12 @@ export class ReportConversationHistoryPdfService {
           const totalMaps = mapContainers.length;
           let allMapsResolved = false;
 
-          const checkMapLoaded = (container: any) => {
-            if (allMapsResolved) return;
-
+          const isMapContainerLoaded = (container: any): boolean => {
             // @ts-ignore - HTMLCanvasElement existe no navegador
             const canvas = container.querySelector(
               '[class*="maplibregl-canvas"]'
-            ) as any;
-            const isLoaded =
-              container.getAttribute('data-map-loaded') === 'true';
+            );
+            const isLoaded = container.dataset.mapLoaded === 'true';
 
             const hasValidCanvas =
               canvas &&
@@ -145,22 +142,31 @@ export class ReportConversationHistoryPdfService {
               canvas.height > 0 &&
               canvas.getContext;
 
-            if (hasValidCanvas || isLoaded) {
-              loadedCount++;
-              if (loadedCount === totalMaps && !allMapsResolved) {
-                allMapsResolved = true;
-                setTimeout(() => resolve(), 3000);
-              }
-            }
+            return hasValidCanvas || isLoaded;
+          };
+
+          const checkMapLoaded = (container: any): boolean => {
+            if (allMapsResolved) return false;
+
+            return isMapContainerLoaded(container);
           };
 
           const checkInterval = setInterval(() => {
-            for (let i = 0; i < mapContainers.length; i++) {
-              checkMapLoaded(mapContainers[i]);
-            }
-
             if (allMapsResolved) {
               clearInterval(checkInterval);
+              return;
+            }
+
+            for (const container of mapContainers) {
+              if (checkMapLoaded(container)) {
+                loadedCount++;
+              }
+            }
+
+            if (loadedCount === totalMaps && !allMapsResolved) {
+              allMapsResolved = true;
+              clearInterval(checkInterval);
+              setTimeout(() => resolve(), 3000);
             }
           }, 500);
 
@@ -289,6 +295,132 @@ export class ReportConversationHistoryPdfService {
     return (hit?._source as IChat) || null;
   }
 
+  private calculateReactionStyles(reactionsCount: number): {
+    paddingBottom: number;
+    paddingRight: number;
+    metaBottom: number;
+  } {
+    const basePaddingBottom = 20;
+    const reactionHeight = 22;
+    const reactionOffset = reactionHeight / 2;
+    const metaBottomPosition = 4;
+    const metaHeight = 16;
+    const extraSpace = 4;
+
+    const paddingBottom =
+      reactionsCount > 0
+        ? Math.max(
+            basePaddingBottom + reactionHeight / 2,
+            reactionOffset +
+              metaBottomPosition +
+              metaHeight +
+              extraSpace +
+              reactionsCount * 2
+          )
+        : basePaddingBottom;
+
+    const paddingRight = reactionsCount > 0 ? 60 : 12;
+    const metaBottom =
+      reactionsCount > 0 ? Math.max(4, reactionHeight / 2 + 2) : 4;
+
+    return { paddingBottom, paddingRight, metaBottom };
+  }
+
+  private getBubbleClasses(
+    contentType: string,
+    isSystem: boolean,
+    hasReactions: boolean,
+    isDeleted: boolean
+  ): string {
+    const isMediaType = ['audio', 'video', 'document'].includes(contentType);
+    const mediaClass = isMediaType ? 'bubble-media' : '';
+    const isAnnotation = contentType === EMessageType.annotation;
+    const annotationClass = isAnnotation ? 'is-annotation' : '';
+    const systemClass = isSystem ? 'is-system' : '';
+    const reactionsClass = hasReactions ? 'has-reactions' : '';
+    const deletedClass = isDeleted ? 'is-deleted' : '';
+
+    return `${mediaClass} ${reactionsClass} ${deletedClass} ${annotationClass} ${systemClass}`.trim();
+  }
+
+  private getBubbleStyle(
+    hasReactions: boolean,
+    reactionsCount: number,
+    contentType: string,
+    isAnnotation: boolean
+  ): string {
+    const styles = this.calculateReactionStyles(reactionsCount);
+    const bubbleStyleParts: string[] = [];
+
+    if (hasReactions) {
+      bubbleStyleParts.push(
+        `padding-bottom: ${styles.paddingBottom}px; padding-right: ${styles.paddingRight}px;`
+      );
+    }
+
+    let backgroundColor = '';
+    if (isAnnotation) {
+      backgroundColor = 'rgb(255, 243, 205)';
+    } else if (contentType === EMessageType.system) {
+      backgroundColor = 'rgb(227, 242, 253)';
+    }
+
+    if (backgroundColor) {
+      bubbleStyleParts.push(`background: ${backgroundColor};`);
+    }
+
+    return bubbleStyleParts.length > 0 ? bubbleStyleParts.join(' ') : '';
+  }
+
+  private generateMessageHtml(
+    msg: ListMessageResult,
+    author: string,
+    photo: string,
+    content: string,
+    isSystem: boolean,
+    alignmentClass: string,
+    timeOnly: string,
+    bubbleClasses: string,
+    bubbleStyle: string,
+    metaStyle: string,
+    reactionsHtml: string,
+    isDeleted: boolean,
+    hasVersions: boolean,
+    clientName: string,
+    t: TFunction<'translation', undefined>
+  ): string {
+    const avatarHtml = isSystem
+      ? ''
+      : `
+          <div class="msg-avatar">
+            <img src="${photo}" alt="${author}" class="avatar-img" />
+            <div class="msg-name">${author}</div>
+          </div>
+          `;
+
+    return `
+        <div class="msg-row ${alignmentClass}">
+          ${avatarHtml}
+          <div class="bubble ${alignmentClass} ${bubbleClasses}" style="${bubbleStyle}">
+            ${this.formatQuoted(msg, clientName, t)}
+            <div class="content">
+              <div class="message-text" style="word-break: break-word; overflow-wrap: break-word; hyphens: none;">${content}</div>
+              ${isDeleted ? `<div class="message-deleted-badge">${t('removed')}</div>` : ''}
+              ${hasVersions ? `<div class="message-edited-badge">${t('edited')}</div>` : ''}
+            </div>
+            <div class="meta" style="${metaStyle}">
+              <div class="meta-content">
+                <div class="meta-row">
+                  <span class="time">${timeOnly}</span>
+                </div>
+              </div>
+            </div>
+            ${reactionsHtml}
+          </div>
+        </div>
+      `;
+  }
+
   private generateHtmlFromMessages(
     messages: ListMessageResult[],
     clientName: string,
@@ -320,26 +452,25 @@ export class ReportConversationHistoryPdfService {
       const content = this.formatMessageContent(msg.content, msg, t);
       const contentType = msg.content?.type || '';
       const isSystem = contentType === EMessageType.system;
-      const alignmentClass = isSystem ? 'center' : isUser ? 'left' : 'right';
+      let alignmentClass = 'right';
+      if (isSystem) {
+        alignmentClass = 'center';
+      } else if (isUser) {
+        alignmentClass = 'left';
+      }
       const timeOnly = this.formatTimeOnly(msg.date || '');
 
-      const isMediaType = ['audio', 'video', 'document'].includes(contentType);
-      const mediaClass = isMediaType ? 'bubble-media' : '';
-      const isAnnotation = contentType === EMessageType.annotation;
-      const annotationClass = isAnnotation ? 'is-annotation' : '';
-      const systemClass = isSystem ? 'is-system' : '';
       const reactionsHtml = this.formatReactions(
         msg,
         contentType,
         alignmentClass
       );
-      const hasReactions =
+      const hasReactions = !!(
         msg.content?.reactions &&
         msg.content.reactions.length > 0 &&
-        contentType !== EMessageType.annotation;
-      const reactionsClass = hasReactions ? 'has-reactions' : '';
+        contentType !== EMessageType.annotation
+      );
       const isDeleted = msg.deleted === true;
-      const deletedClass = isDeleted ? 'is-deleted' : '';
       const hasVersions = !!(
         msg.content?.version && msg.content.version.length > 0
       );
@@ -349,74 +480,45 @@ export class ReportConversationHistoryPdfService {
           ? this.getReactionsSummary(msg.content.reactions)
           : [];
       const reactionsCount = reactionsSummary.length;
-      const basePaddingBottom = 20;
-      const reactionHeight = 22;
-      const reactionOffset = reactionHeight / 2;
-      const metaBottomPosition = 4;
-      const metaHeight = 16;
-      const extraSpace = 4;
-      const paddingBottom =
-        reactionsCount > 0
-          ? Math.max(
-              basePaddingBottom + reactionHeight / 2,
-              reactionOffset +
-                metaBottomPosition +
-                metaHeight +
-                extraSpace +
-                reactionsCount * 2
-            )
-          : basePaddingBottom;
-      const paddingRight = reactionsCount > 0 ? 60 : 12;
-      const backgroundColor = isAnnotation
-        ? 'rgb(255, 243, 205)'
-        : contentType === EMessageType.system
-          ? 'rgb(227, 242, 253)'
-          : '';
-      const bubbleStyleParts: string[] = [];
-      if (hasReactions) {
-        bubbleStyleParts.push(
-          `padding-bottom: ${paddingBottom}px; padding-right: ${paddingRight}px;`
-        );
-      }
-      if (backgroundColor) {
-        bubbleStyleParts.push(`background: ${backgroundColor};`);
-      }
-      const bubbleStyle =
-        bubbleStyleParts.length > 0 ? bubbleStyleParts.join(' ') : '';
-      const metaBottomValue =
-        reactionsCount > 0 ? Math.max(4, reactionHeight / 2 + 2) : 4;
-      const metaStyle = hasReactions ? `bottom: ${metaBottomValue}px;` : '';
 
-      parts.push(`
-        <div class="msg-row ${alignmentClass}">
-          ${
-            !isSystem
-              ? `
-          <div class="msg-avatar">
-            <img src="${photo}" alt="${author}" class="avatar-img" />
-            <div class="msg-name">${author}</div>
-          </div>
-          `
-              : ''
-          }
-          <div class="bubble ${alignmentClass} ${mediaClass} ${reactionsClass} ${deletedClass} ${annotationClass} ${systemClass}" style="${bubbleStyle}">
-            ${this.formatQuoted(msg, clientName, t)}
-            <div class="content">
-              <div class="message-text" style="word-break: break-word; overflow-wrap: break-word; hyphens: none;">${content}</div>
-              ${isDeleted ? `<div class="message-deleted-badge">${t('removed')}</div>` : ''}
-              ${hasVersions ? `<div class="message-edited-badge">${t('edited')}</div>` : ''}
-            </div>
-            <div class="meta" style="${metaStyle}">
-              <div class="meta-content">
-                <div class="meta-row">
-                  <span class="time">${timeOnly}</span>
-                </div>
-              </div>
-            </div>
-            ${reactionsHtml}
-          </div>
-        </div>
-      `);
+      const bubbleClasses = this.getBubbleClasses(
+        contentType,
+        isSystem,
+        hasReactions,
+        isDeleted
+      );
+
+      const bubbleStyle = this.getBubbleStyle(
+        hasReactions,
+        reactionsCount,
+        contentType,
+        contentType === EMessageType.annotation
+      );
+
+      const reactionStyles = this.calculateReactionStyles(reactionsCount);
+      const metaStyle = hasReactions
+        ? `bottom: ${reactionStyles.metaBottom}px;`
+        : '';
+
+      const messageHtml = this.generateMessageHtml(
+        msg,
+        author,
+        photo,
+        content,
+        isSystem,
+        alignmentClass,
+        timeOnly,
+        bubbleClasses,
+        bubbleStyle,
+        metaStyle,
+        reactionsHtml,
+        isDeleted,
+        hasVersions,
+        clientName,
+        t
+      );
+
+      parts.push(messageHtml);
     }
 
     const messagesHtml = parts.join('');
@@ -539,7 +641,7 @@ export class ReportConversationHistoryPdfService {
     const d1 = new Date(date1);
     const d2 = new Date(date2);
 
-    if (isNaN(d1.getTime()) || isNaN(d2.getTime())) {
+    if (Number.isNaN(d1.getTime()) || Number.isNaN(d2.getTime())) {
       return false;
     }
 
@@ -559,7 +661,7 @@ export class ReportConversationHistoryPdfService {
     }
 
     const date = new Date(dateString);
-    if (isNaN(date.getTime())) {
+    if (Number.isNaN(date.getTime())) {
       return '';
     }
 
@@ -621,7 +723,7 @@ export class ReportConversationHistoryPdfService {
     fullName: string,
     t: TFunction<'translation', undefined>
   ): string {
-    if (!fullName || !fullName.trim()) {
+    if (!fullName?.trim()) {
       return t('user');
     }
 
@@ -659,13 +761,420 @@ export class ReportConversationHistoryPdfService {
     }
 
     const date = new Date(dateStr);
-    if (isNaN(date.getTime())) {
+    if (Number.isNaN(date.getTime())) {
       return '';
     }
 
     const hours = String(date.getHours()).padStart(2, '0');
     const minutes = String(date.getMinutes()).padStart(2, '0');
     return `${hours}:${minutes}`;
+  }
+
+  private formatSystemMessage(
+    content: any,
+    t: TFunction<'translation', undefined>
+  ): string {
+    if (content.type === EMessageType.system && content.message) {
+      return content.message.replaceAll('\n', '<br>');
+    }
+    return '';
+  }
+
+  private formatTextMessage(
+    content: any,
+    msg: ListMessageResult,
+    t: TFunction<'translation', undefined>
+  ): string {
+    if (content.type !== 'text' || !content.message) {
+      return '';
+    }
+
+    const parts: string[] = [];
+
+    if (content.version && content.version.length > 0) {
+      const currentText = (content.message || '').replaceAll('\n', '<br>');
+      parts.push(
+        `<div class="message-current-version"><strong>${currentText}</strong></div>`
+      );
+
+      const sortedVersions = [...content.version].sort(
+        (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+      );
+
+      for (let i = 0; i < sortedVersions.length; i++) {
+        const version = sortedVersions[i];
+        const versionText = (version.message || '').replaceAll('\n', '<br>');
+        const versionNumber = i + 1;
+        parts.push(
+          `<div class="message-version">${t('version')} ${versionNumber}: ${versionText}</div>`
+        );
+      }
+    } else {
+      const messageText = content.message.replaceAll('\n', '<br>');
+      parts.push(messageText);
+    }
+
+    if (content.link_preview?.title) {
+      parts.push(this.formatLinkPreview(content.link_preview, msg));
+    }
+
+    return parts.join('');
+  }
+
+  private formatImageMessage(
+    content: any,
+    t: TFunction<'translation', undefined>
+  ): string {
+    if (content.type !== 'image') {
+      return '';
+    }
+
+    const imageUrl = content.image?.url || '';
+    const caption = content.image?.caption || '';
+    const parts: string[] = [];
+
+    if (imageUrl) {
+      const escapedUrl = this.escapeHtml(imageUrl);
+      parts.push(
+        `<img src="${escapedUrl}" alt="${t('image')}" />`,
+        `<div class="media-link"><b>${t('link')}:</b> <a href="${escapedUrl}" target="_blank" rel="noopener noreferrer">${escapedUrl}</a></div>`
+      );
+    }
+
+    if (caption) {
+      parts.push(`<div>${caption.replaceAll('\n', '<br>')}</div>`);
+    }
+
+    return parts.length > 0 ? parts.join('') : `[${t('image')}]`;
+  }
+
+  private formatStickerMessage(
+    content: any,
+    t: TFunction<'translation', undefined>
+  ): string {
+    if (content.type !== 'sticker') {
+      return '';
+    }
+
+    const stickerUrl = content.sticker?.url || '';
+    const parts: string[] = [];
+
+    if (stickerUrl) {
+      const escapedUrl = this.escapeHtml(stickerUrl);
+      parts.push(
+        `<img src="${escapedUrl}" alt="${t('sticker')}" class="sticker-img" />`,
+        `<div class="media-link"><b>${t('link')}:</b> <a href="${escapedUrl}" target="_blank" rel="noopener noreferrer">${escapedUrl}</a></div>`
+      );
+    }
+
+    return parts.length > 0 ? parts.join('') : `[${t('sticker')}]`;
+  }
+
+  private formatVideoMessage(
+    content: any,
+    t: TFunction<'translation', undefined>
+  ): string {
+    if (content.type !== 'video') {
+      return '';
+    }
+
+    const videoUrl = content.video?.url || '';
+    const caption = content.video?.caption || '';
+    const parts: string[] = [];
+
+    if (videoUrl) {
+      const escapedUrl = this.escapeHtml(videoUrl);
+      const extension = content.video?.extension?.toUpperCase() || 'VIDEO';
+      const size = content.video?.size
+        ? this.formatDocumentSize(content.video.size)
+        : null;
+      const duration = content.video?.duration
+        ? this.formatVideoDuration(content.video.duration)
+        : null;
+      const metaParts = [extension, size, duration].filter(Boolean);
+      const meta = metaParts.join(' • ');
+
+      parts.push(
+        `
+        <div class="video-player">
+          <div class="video-player-header">
+            <div class="video-player-icon">
+              <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path d="M8 5v14l11-7z"/>
+              </svg>
+            </div>
+            <div class="video-player-info">
+              <div class="video-player-meta">${this.escapeHtml(meta)}</div>
+            </div>
+          </div>
+        </div>
+      `,
+        `<div class="media-link"><b>${t('link')}:</b> <a href="${escapedUrl}" target="_blank" rel="noopener noreferrer">${escapedUrl}</a></div>`
+      );
+    }
+
+    if (caption) {
+      parts.push(`<div>${caption.replaceAll('\n', '<br>')}</div>`);
+    }
+
+    return parts.length > 0 ? parts.join('') : `[${t('video')}]`;
+  }
+
+  private formatAudioMessage(
+    content: any,
+    t: TFunction<'translation', undefined>
+  ): string {
+    if (content.type !== 'audio') {
+      return '';
+    }
+
+    const audioUrl = content.audio?.url || '';
+    const parts: string[] = [];
+
+    if (audioUrl) {
+      const escapedUrl = this.escapeHtml(audioUrl);
+      const duration = content.audio?.duration
+        ? this.formatAudioTime(content.audio.duration)
+        : '0:00';
+
+      parts.push(
+        `
+        <div class="audio-player">
+          <div class="audio-player-icon">
+            <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path d="M8 5v14l11-7z"/>
+            </svg>
+          </div>
+          <div class="audio-player-info">
+            <div class="audio-player-duration">${this.escapeHtml(duration)}</div>
+          </div>
+        </div>
+      `,
+        `<div class="media-link"><b>${t('link')}:</b> <a href="${escapedUrl}" target="_blank" rel="noopener noreferrer">${escapedUrl}</a></div>`
+      );
+    }
+
+    return parts.length > 0 ? parts.join('') : `[${t('audio')}]`;
+  }
+
+  private formatDocumentMessage(
+    content: any,
+    t: TFunction<'translation', undefined>
+  ): string {
+    if (content.type !== 'document') {
+      return '';
+    }
+
+    const documentUrl = content.document?.url || '';
+    const parts: string[] = [];
+
+    if (documentUrl) {
+      const escapedUrl = this.escapeHtml(documentUrl);
+      const name = content.document?.name || t('document');
+      const extension = content.document?.extension?.toUpperCase() || 'FILE';
+      const size = content.document?.size
+        ? this.formatDocumentSize(content.document.size)
+        : null;
+      const meta = size ? `${extension} • ${size}` : extension;
+
+      parts.push(
+        `
+        <div class="document-player">
+          <div class="document-player-icon">
+            <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/>
+            </svg>
+          </div>
+          <div class="document-player-info">
+            <div class="document-player-name">${this.escapeHtml(name)}</div>
+            <div class="document-player-meta">${this.escapeHtml(meta)}</div>
+          </div>
+        </div>
+      `,
+        `<div class="media-link"><b>${t('link')}:</b> <a href="${escapedUrl}" target="_blank" rel="noopener noreferrer">${escapedUrl}</a></div>`
+      );
+    }
+
+    return parts.length > 0 ? parts.join('') : `[${t('document')}]`;
+  }
+
+  private formatLocationMessage(
+    content: any,
+    t: TFunction<'translation', undefined>
+  ): string {
+    if (content.type !== 'location') {
+      return '';
+    }
+
+    const location = content.location;
+    const parts: string[] = [];
+
+    if (location?.latitude && location?.longitude) {
+      parts.push(this.generateLocationMapHtml(location));
+    }
+
+    if (location?.name || location?.address) {
+      parts.push(this.generateLocationInfoHtml(location));
+    }
+
+    if (location?.latitude && location?.longitude) {
+      const googleMapsUrl = `https://www.google.com/maps?q=${location.latitude},${location.longitude}`;
+      const escapedUrl = this.escapeHtml(googleMapsUrl);
+      parts.push(
+        `<div class="media-link" style="margin-top: 8px;"><b>${t('link')}:</b> <a href="${escapedUrl}" target="_blank" rel="noopener noreferrer">${escapedUrl}</a></div>`
+      );
+    }
+
+    return parts.length > 0 ? parts.join('') : `[${t('location')}]`;
+  }
+
+  private generateLocationMapHtml(location: any): string {
+    return `
+      <div class="location-map-preview" style="
+        width: 200px;
+        max-width: 100%;
+        height: 112px;
+        border-radius: 8px 8px 0 0;
+        overflow: hidden;
+        margin-bottom: 0;
+        position: relative;
+        background: #e5e5e5;
+      ">
+        <div id="map-${location.latitude}-${location.longitude}" style="
+          width: 100%;
+          height: 100%;
+          position: relative;
+        "></div>
+        <script>
+          (function() {
+            const mapId = 'map-${location.latitude}-${location.longitude}';
+            let mapInitialized = false;
+            
+            function initMap() {
+              if (mapInitialized) return;
+              if (typeof maplibregl === 'undefined') return;
+              
+              const container = document.getElementById(mapId);
+              if (!container) return;
+              
+              mapInitialized = true;
+              
+              const map = new maplibregl.Map({
+                container: mapId,
+                style: {
+                  version: 8,
+                  sources: {
+                    'osm-tiles': {
+                      type: 'raster',
+                      tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+                      tileSize: 256,
+                      attribution: '&copy; OpenStreetMap contributors'
+                    }
+                  },
+                  layers: [{
+                    id: 'osm-tiles-layer',
+                    type: 'raster',
+                    source: 'osm-tiles',
+                    minzoom: 0,
+                    maxzoom: 22
+                  }]
+                },
+                center: [${location.longitude}, ${location.latitude}],
+                zoom: 15,
+                interactive: false,
+                attributionControl: false
+              });
+              
+              map.on('load', function() {
+                new maplibregl.Marker({ color: '#ef4444' })
+                  .setLngLat([${location.longitude}, ${location.latitude}])
+                  .addTo(map);
+              });
+              
+              map.on('data', function() {
+                if (map.loaded() && map.isStyleLoaded()) {
+                  container.setAttribute('data-map-loaded', 'true');
+                }
+              });
+              
+              map.on('idle', function() {
+                if (map.loaded() && map.isStyleLoaded()) {
+                  container.setAttribute('data-map-loaded', 'true');
+                }
+              });
+              
+              setTimeout(function() {
+                if (map.loaded() && map.isStyleLoaded()) {
+                  container.setAttribute('data-map-loaded', 'true');
+                }
+              }, 3000);
+            }
+            
+            function tryInit() {
+              if (typeof maplibregl !== 'undefined') {
+                initMap();
+              } else {
+                setTimeout(tryInit, 100);
+              }
+            }
+            
+            if (document.readyState === 'complete' || document.readyState === 'interactive') {
+              setTimeout(tryInit, 500);
+            } else {
+              window.addEventListener('load', function() {
+                setTimeout(tryInit, 500);
+              });
+              document.addEventListener('DOMContentLoaded', function() {
+                setTimeout(tryInit, 500);
+              });
+            }
+            
+            setTimeout(tryInit, 1000);
+          })();
+        </script>
+      </div>
+    `;
+  }
+
+  private generateLocationInfoHtml(location: any): string {
+    const locationName = location.name || '';
+    const locationAddress = location.address || '';
+    const marginBottom = locationAddress ? '4px' : '0';
+    return `
+      <div class="location-info" style="
+        padding: 12px;
+        ${location?.latitude && location?.longitude ? 'border-radius: 0 0 8px 8px;' : 'border-radius: 8px;'}
+      ">
+        ${
+          locationName
+            ? `<div class="location-name" style="
+          font-weight: 500;
+          margin-bottom: ${marginBottom};
+          font-size: 14px;
+        ">${this.escapeHtml(locationName)}</div>`
+            : ''
+        }
+        ${
+          locationAddress
+            ? `<div class="location-address" style="
+          font-size: 12px;
+          color: rgba(17, 27, 33, 0.7);
+          word-break: break-word;
+        ">${this.escapeHtml(locationAddress)}</div>`
+            : ''
+        }
+      </div>
+    `;
+  }
+
+  private formatAnnotationMessage(
+    content: any,
+    t: TFunction<'translation', undefined>
+  ): string {
+    if (content.type === EMessageType.annotation && content.message) {
+      return content.message.replaceAll('\n', '<br>');
+    }
+    return '';
   }
 
   private formatMessageContent(
@@ -677,367 +1186,51 @@ export class ReportConversationHistoryPdfService {
       return '';
     }
 
-    if (content.type === EMessageType.system && content.message) {
-      const messageText = content.message.replace(/\n/g, '<br>');
-      return messageText;
-    }
+    const systemMessage = this.formatSystemMessage(content, t);
+    if (systemMessage) return systemMessage;
 
-    if (content.type === 'text' && content.message) {
-      const parts: string[] = [];
+    const textMessage = this.formatTextMessage(content, msg, t);
+    if (textMessage) return textMessage;
 
-      if (content.version && content.version.length > 0) {
-        const currentText = (content.message || '').replace(/\n/g, '<br>');
-        parts.push(
-          `<div class="message-current-version"><strong>${currentText}</strong></div>`
-        );
+    const imageMessage = this.formatImageMessage(content, t);
+    if (imageMessage) return imageMessage;
 
-        const sortedVersions = [...content.version].sort(
-          (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
-        );
+    const stickerMessage = this.formatStickerMessage(content, t);
+    if (stickerMessage) return stickerMessage;
 
-        for (let i = 0; i < sortedVersions.length; i++) {
-          const version = sortedVersions[i];
-          const versionText = (version.message || '').replace(/\n/g, '<br>');
-          const versionNumber = i + 1;
-          parts.push(
-            `<div class="message-version">${t('version')} ${versionNumber}: ${versionText}</div>`
-          );
-        }
-      } else {
-        const messageText = content.message.replace(/\n/g, '<br>');
-        parts.push(messageText);
-      }
+    const videoMessage = this.formatVideoMessage(content, t);
+    if (videoMessage) return videoMessage;
 
-      if (content.link_preview?.title) {
-        parts.push(this.formatLinkPreview(content.link_preview, msg));
-      }
+    const audioMessage = this.formatAudioMessage(content, t);
+    if (audioMessage) return audioMessage;
 
-      return parts.join('');
-    }
+    const documentMessage = this.formatDocumentMessage(content, t);
+    if (documentMessage) return documentMessage;
 
-    if (content.type === 'image') {
-      const imageUrl = content.image?.url || '';
-      const caption = content.image?.caption || '';
-      const parts: string[] = [];
-
-      if (imageUrl) {
-        const escapedUrl = this.escapeHtml(imageUrl);
-        parts.push(`<img src="${escapedUrl}" alt="${t('image')}" />`);
-        parts.push(
-          `<div class="media-link"><b>${t('link')}:</b> <a href="${escapedUrl}" target="_blank" rel="noopener noreferrer">${escapedUrl}</a></div>`
-        );
-      }
-
-      if (caption) {
-        parts.push(`<div>${caption.replace(/\n/g, '<br>')}</div>`);
-      }
-
-      return parts.length > 0 ? parts.join('') : `[${t('image')}]`;
-    }
-
-    if (content.type === 'sticker') {
-      const stickerUrl = content.sticker?.url || '';
-      const parts: string[] = [];
-
-      if (stickerUrl) {
-        const escapedUrl = this.escapeHtml(stickerUrl);
-        parts.push(
-          `<img src="${escapedUrl}" alt="${t('sticker')}" class="sticker-img" />`
-        );
-        parts.push(
-          `<div class="media-link"><b>${t('link')}:</b> <a href="${escapedUrl}" target="_blank" rel="noopener noreferrer">${escapedUrl}</a></div>`
-        );
-      }
-
-      return parts.length > 0 ? parts.join('') : `[${t('sticker')}]`;
-    }
-
-    if (content.type === 'video') {
-      const videoUrl = content.video?.url || '';
-      const caption = content.video?.caption || '';
-      const parts: string[] = [];
-
-      if (videoUrl) {
-        const escapedUrl = this.escapeHtml(videoUrl);
-        const extension = content.video?.extension?.toUpperCase() || 'VIDEO';
-        const size = content.video?.size
-          ? this.formatDocumentSize(content.video.size)
-          : null;
-        const duration = content.video?.duration
-          ? this.formatVideoDuration(content.video.duration)
-          : null;
-        const metaParts = [extension, size, duration].filter(Boolean);
-        const meta = metaParts.join(' • ');
-
-        parts.push(`
-          <div class="video-player">
-            <div class="video-player-header">
-              <div class="video-player-icon">
-                <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M8 5v14l11-7z"/>
-                </svg>
-              </div>
-              <div class="video-player-info">
-                <div class="video-player-meta">${this.escapeHtml(meta)}</div>
-              </div>
-            </div>
-          </div>
-        `);
-        parts.push(
-          `<div class="media-link"><b>${t('link')}:</b> <a href="${escapedUrl}" target="_blank" rel="noopener noreferrer">${escapedUrl}</a></div>`
-        );
-      }
-
-      if (caption) {
-        parts.push(`<div>${caption.replace(/\n/g, '<br>')}</div>`);
-      }
-
-      return parts.length > 0 ? parts.join('') : `[${t('video')}]`;
-    }
-
-    if (content.type === 'audio') {
-      const audioUrl = content.audio?.url || '';
-      const parts: string[] = [];
-
-      if (audioUrl) {
-        const escapedUrl = this.escapeHtml(audioUrl);
-        const duration = content.audio?.duration
-          ? this.formatAudioTime(content.audio.duration)
-          : '0:00';
-
-        parts.push(`
-          <div class="audio-player">
-            <div class="audio-player-icon">
-              <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                <path d="M8 5v14l11-7z"/>
-              </svg>
-            </div>
-            <div class="audio-player-info">
-              <div class="audio-player-duration">${this.escapeHtml(duration)}</div>
-            </div>
-          </div>
-        `);
-        parts.push(
-          `<div class="media-link"><b>${t('link')}:</b> <a href="${escapedUrl}" target="_blank" rel="noopener noreferrer">${escapedUrl}</a></div>`
-        );
-      }
-
-      return parts.length > 0 ? parts.join('') : `[${t('audio')}]`;
-    }
-
-    if (content.type === 'document') {
-      const documentUrl = content.document?.url || '';
-      const parts: string[] = [];
-
-      if (documentUrl) {
-        const escapedUrl = this.escapeHtml(documentUrl);
-        const name = content.document?.name || t('document');
-        const extension = content.document?.extension?.toUpperCase() || 'FILE';
-        const size = content.document?.size
-          ? this.formatDocumentSize(content.document.size)
-          : null;
-        const meta = size ? `${extension} • ${size}` : extension;
-
-        parts.push(`
-          <div class="document-player">
-            <div class="document-player-icon">
-              <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                <path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/>
-              </svg>
-            </div>
-            <div class="document-player-info">
-              <div class="document-player-name">${this.escapeHtml(name)}</div>
-              <div class="document-player-meta">${this.escapeHtml(meta)}</div>
-            </div>
-          </div>
-        `);
-        parts.push(
-          `<div class="media-link"><b>${t('link')}:</b> <a href="${escapedUrl}" target="_blank" rel="noopener noreferrer">${escapedUrl}</a></div>`
-        );
-      }
-
-      return parts.length > 0 ? parts.join('') : `[${t('document')}]`;
-    }
-
-    if (content.type === 'location') {
-      const location = content.location;
-      const parts: string[] = [];
-
-      if (location?.latitude && location?.longitude) {
-        parts.push(`
-          <div class="location-map-preview" style="
-            width: 200px;
-            max-width: 100%;
-            height: 112px;
-            border-radius: 8px 8px 0 0;
-            overflow: hidden;
-            margin-bottom: 0;
-            position: relative;
-            background: #e5e5e5;
-          ">
-            <div id="map-${location.latitude}-${location.longitude}" style="
-              width: 100%;
-              height: 100%;
-              position: relative;
-            "></div>
-            <script>
-              (function() {
-                const mapId = 'map-${location.latitude}-${location.longitude}';
-                let mapInitialized = false;
-                
-                function initMap() {
-                  if (mapInitialized) return;
-                  if (typeof maplibregl === 'undefined') return;
-                  
-                  const container = document.getElementById(mapId);
-                  if (!container) return;
-                  
-                  mapInitialized = true;
-                  
-                  const map = new maplibregl.Map({
-                    container: mapId,
-                    style: {
-                      version: 8,
-                      sources: {
-                        'osm-tiles': {
-                          type: 'raster',
-                          tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
-                          tileSize: 256,
-                          attribution: '&copy; OpenStreetMap contributors'
-                        }
-                      },
-                      layers: [{
-                        id: 'osm-tiles-layer',
-                        type: 'raster',
-                        source: 'osm-tiles',
-                        minzoom: 0,
-                        maxzoom: 22
-                      }]
-                    },
-                    center: [${location.longitude}, ${location.latitude}],
-                    zoom: 15,
-                    interactive: false,
-                    attributionControl: false
-                  });
-                  
-                  map.on('load', function() {
-                    new maplibregl.Marker({ color: '#ef4444' })
-                      .setLngLat([${location.longitude}, ${location.latitude}])
-                      .addTo(map);
-                  });
-                  
-                  map.on('data', function() {
-                    if (map.loaded() && map.isStyleLoaded()) {
-                      container.setAttribute('data-map-loaded', 'true');
-                    }
-                  });
-                  
-                  map.on('idle', function() {
-                    if (map.loaded() && map.isStyleLoaded()) {
-                      container.setAttribute('data-map-loaded', 'true');
-                    }
-                  });
-                  
-                  setTimeout(function() {
-                    if (map.loaded() && map.isStyleLoaded()) {
-                      container.setAttribute('data-map-loaded', 'true');
-                    }
-                  }, 3000);
-                }
-                
-                function tryInit() {
-                  if (typeof maplibregl !== 'undefined') {
-                    initMap();
-                  } else {
-                    setTimeout(tryInit, 100);
-                  }
-                }
-                
-                if (document.readyState === 'complete' || document.readyState === 'interactive') {
-                  setTimeout(tryInit, 500);
-                } else {
-                  window.addEventListener('load', function() {
-                    setTimeout(tryInit, 500);
-                  });
-                  document.addEventListener('DOMContentLoaded', function() {
-                    setTimeout(tryInit, 500);
-                  });
-                }
-                
-                setTimeout(tryInit, 1000);
-              })();
-            </script>
-          </div>
-        `);
-      }
-
-      if (location?.name || location?.address) {
-        const locationName = location.name || '';
-        const locationAddress = location.address || '';
-        parts.push(`
-          <div class="location-info" style="
-            padding: 12px;
-            ${location?.latitude && location?.longitude ? 'border-radius: 0 0 8px 8px;' : 'border-radius: 8px;'}
-          ">
-            ${
-              locationName
-                ? `<div class="location-name" style="
-              font-weight: 500;
-              margin-bottom: ${locationAddress ? '4px' : '0'};
-              font-size: 14px;
-            ">${this.escapeHtml(locationName)}</div>`
-                : ''
-            }
-            ${
-              locationAddress
-                ? `<div class="location-address" style="
-              font-size: 12px;
-              color: rgba(17, 27, 33, 0.7);
-              word-break: break-word;
-            ">${this.escapeHtml(locationAddress)}</div>`
-                : ''
-            }
-          </div>
-        `);
-      }
-
-      if (location?.latitude && location?.longitude) {
-        const googleMapsUrl = `https://www.google.com/maps?q=${location.latitude},${location.longitude}`;
-        const escapedUrl = this.escapeHtml(googleMapsUrl);
-        parts.push(
-          `<div class="media-link" style="margin-top: 8px;"><b>${t('link')}:</b> <a href="${escapedUrl}" target="_blank" rel="noopener noreferrer">${escapedUrl}</a></div>`
-        );
-      }
-
-      return parts.length > 0 ? parts.join('') : `[${t('location')}]`;
-    }
+    const locationMessage = this.formatLocationMessage(content, t);
+    if (locationMessage) return locationMessage;
 
     if (content.type === 'contact_card') {
       const contact = content.contact;
       if (!contact) {
         return `[${t('contact')}]`;
       }
-
       return this.formatContactCard(contact, msg, content.message);
     }
 
-    if (content.type === EMessageType.annotation && content.message) {
-      const messageText = content.message.replace(/\n/g, '<br>');
-      return messageText;
-    }
+    const annotationMessage = this.formatAnnotationMessage(content, t);
+    if (annotationMessage) return annotationMessage;
 
     return `[${t('unsupported_message')}]`;
   }
 
   private escapeHtml(text: string): string {
-    const map: Record<string, string> = {
-      '&': '&amp;',
-      '<': '&lt;',
-      '>': '&gt;',
-      '"': '&quot;',
-      "'": '&#039;',
-    };
-    return text.replace(/[&<>"']/g, (m) => map[m]);
+    return text
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#039;');
   }
 
   private formatDocumentSize(bytes?: number | null): string {
@@ -1122,7 +1315,7 @@ export class ReportConversationHistoryPdfService {
     const backgroundColor = isUser
       ? 'rgb(243, 244, 246)'
       : 'rgb(214, 243, 207)';
-    const textColor = isUser ? 'rgb(17, 27, 33)' : 'rgb(17, 27, 33)';
+    const textColor = 'rgb(17, 27, 33)';
 
     const parts: string[] = [];
 
@@ -1330,6 +1523,103 @@ export class ReportConversationHistoryPdfService {
     `;
   }
 
+  private getContactPhoneDisplay(contact: any): string {
+    if (!contact.contact_id) {
+      return contact.phone_partial || '';
+    }
+
+    const phone = this.contactPhoneCache.get(contact.contact_id);
+    if (!phone) {
+      return contact.phone_partial || '';
+    }
+
+    const phoneDdi = contact.phone_ddi || null;
+    if (phoneDdi) {
+      const phoneDigits = phone.replaceAll(/\D/g, '');
+      const fullPhone = `${phoneDdi}${phoneDigits}`;
+      return this.formatPhone(fullPhone, phoneDdi);
+    }
+
+    return this.formatPhone(phone, null);
+  }
+
+  private generateContactAvatarHtml(
+    contactPhoto: string,
+    fullName: string,
+    hasPhoto: boolean
+  ): string {
+    const backgroundColor = hasPhoto
+      ? 'transparent'
+      : 'rgba(25, 118, 210, 0.12)';
+    return `
+          <div style="
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            overflow: visible;
+            flex-shrink: 0;
+            background-color: ${backgroundColor};
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+          ">
+            <img src="${this.escapeHtml(contactPhoto)}" alt="${this.escapeHtml(fullName)}" style="
+              width: 40px;
+              height: 40px;
+              border-radius: 50%;
+              object-fit: contain;
+              object-position: center;
+              background-color: ${backgroundColor};
+            " />
+          </div>`;
+  }
+
+  private generateContactInfoHtml(
+    fullName: string,
+    phoneDisplay: string,
+    textColor: string
+  ): string {
+    const marginBottom = phoneDisplay ? '2px' : '0';
+    const phoneHtml = phoneDisplay
+      ? `<div style="
+          font-size: 12px;
+          color: rgba(17, 27, 33, 0.6);
+        ">${this.escapeHtml(phoneDisplay)}</div>`
+      : '';
+
+    return `
+          <div style="flex: 1; min-width: 0;">
+            <div style="
+              font-size: 14px;
+              font-weight: 500;
+              color: ${textColor};
+              margin-bottom: ${marginBottom};
+            ">${this.escapeHtml(fullName)}</div>
+            ${phoneHtml}
+          </div>`;
+  }
+
+  private generateContactMessageHtml(
+    message: string | null | undefined,
+    textColor: string
+  ): string {
+    if (!message) {
+      return '';
+    }
+
+    return `
+        <p style="
+          margin-top: 8px;
+          margin-bottom: 0;
+          white-space: pre-wrap;
+          word-break: break-word;
+          color: ${textColor};
+          font-size: 14px;
+          line-height: 1.5;
+        ">${this.escapeHtml(message.replaceAll('\n', '<br>'))}</p>`;
+  }
+
   private formatContactCard(
     contact: any,
     msg: ListMessageResult,
@@ -1344,33 +1634,26 @@ export class ReportConversationHistoryPdfService {
       ? `${contactName} ${contactLastName}`
       : contactName;
 
-    let phoneDisplay = '';
-    if (contact.contact_id) {
-      const phone = this.contactPhoneCache.get(contact.contact_id);
-      if (phone) {
-        const phoneDdi = contact.phone_ddi || null;
-        if (phoneDdi) {
-          const phoneDigits = phone.replaceAll(/\D/g, '');
-          const fullPhone = `${phoneDdi}${phoneDigits}`;
-          phoneDisplay = this.formatPhone(fullPhone, phoneDdi);
-        } else {
-          phoneDisplay = this.formatPhone(phone, null);
-        }
-      }
-    }
-
-    if (!phoneDisplay && contact.phone_partial) {
-      phoneDisplay = contact.phone_partial;
-    }
+    const phoneDisplay = this.getContactPhoneDisplay(contact);
 
     const backgroundColor = isUser
       ? 'rgba(255, 255, 255, 0.5)'
       : 'rgba(255, 255, 255, 0.3)';
-    const textColor = isUser ? 'rgb(17, 27, 33)' : 'rgb(17, 27, 33)';
+    const textColor = 'rgb(17, 27, 33)';
 
-    const parts: string[] = [];
+    const avatarHtml = this.generateContactAvatarHtml(
+      contactPhoto,
+      fullName,
+      hasPhoto
+    );
+    const infoHtml = this.generateContactInfoHtml(
+      fullName,
+      phoneDisplay,
+      textColor
+    );
+    const messageHtml = this.generateContactMessageHtml(message, textColor);
 
-    parts.push(`
+    return `
       <div class="contact-bubble" style="
         max-width: 100%;
         position: relative;
@@ -1385,61 +1668,12 @@ export class ReportConversationHistoryPdfService {
           background-color: ${backgroundColor};
           border-radius: 8px;
         ">
-          <div style="
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-            overflow: visible;
-            flex-shrink: 0;
-            background-color: ${hasPhoto ? 'transparent' : 'rgba(25, 118, 210, 0.12)'};
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            position: relative;
-          ">
-            <img src="${this.escapeHtml(contactPhoto)}" alt="${this.escapeHtml(fullName)}" style="
-              width: 40px;
-              height: 40px;
-              border-radius: 50%;
-              object-fit: contain;
-              object-position: center;
-              background-color: ${hasPhoto ? 'transparent' : 'rgba(25, 118, 210, 0.12)'};
-            " />
-          </div>
-          <div style="flex: 1; min-width: 0;">
-            <div style="
-              font-size: 14px;
-              font-weight: 500;
-              color: ${textColor};
-              margin-bottom: ${phoneDisplay ? '2px' : '0'};
-            ">${this.escapeHtml(fullName)}</div>
-            ${
-              phoneDisplay
-                ? `<div style="
-                  font-size: 12px;
-                  color: rgba(17, 27, 33, 0.6);
-                ">${this.escapeHtml(phoneDisplay)}</div>`
-                : ''
-            }
-          </div>
+          ${avatarHtml}
+          ${infoHtml}
         </div>
-        ${
-          message
-            ? `<p style="
-              margin-top: 8px;
-              margin-bottom: 0;
-              white-space: pre-wrap;
-              word-break: break-word;
-              color: ${textColor};
-              font-size: 14px;
-              line-height: 1.5;
-            ">${this.escapeHtml(message.replace(/\n/g, '<br>'))}</p>`
-            : ''
-        }
+        ${messageHtml}
       </div>
-    `);
-
-    return parts.join('');
+    `;
   }
 
   private generateHeaderHtml(
@@ -1458,8 +1692,7 @@ export class ReportConversationHistoryPdfService {
     const sector = chat.sector?.name || '-';
 
     const firstMessage = messages.length > 0 ? messages[0] : null;
-    const lastMessage =
-      messages.length > 0 ? messages[messages.length - 1] : null;
+    const lastMessage = messages.length > 0 ? (messages.at(-1) ?? null) : null;
 
     const firstMessageDate = firstMessage?.date || null;
     const lastMessageDate = lastMessage?.date || null;
@@ -1550,7 +1783,7 @@ export class ReportConversationHistoryPdfService {
     }
 
     const date = new Date(dateString);
-    if (isNaN(date.getTime())) {
+    if (Number.isNaN(date.getTime())) {
       return '';
     }
 
@@ -1575,7 +1808,7 @@ export class ReportConversationHistoryPdfService {
     const start = new Date(startDate);
     const end = new Date(endDate);
 
-    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
       return '-';
     }
 
@@ -1617,6 +1850,107 @@ export class ReportConversationHistoryPdfService {
     return `${diffSeconds}${t('second_abbrev')}`;
   }
 
+  private collectResponseTimes(messages: ListMessageResult[]): number[] {
+    const responseTimes: number[] = [];
+
+    for (let i = 0; i < messages.length - 1; i++) {
+      const currentMsg = messages[i];
+      const nextMsg = messages[i + 1];
+
+      if (
+        currentMsg.type_user !== ETypeUserChat.client ||
+        nextMsg.type_user !== ETypeUserChat.operator
+      ) {
+        continue;
+      }
+
+      const currentDate = new Date(currentMsg.date || '');
+      const nextDate = new Date(nextMsg.date || '');
+
+      if (
+        Number.isNaN(currentDate.getTime()) ||
+        Number.isNaN(nextDate.getTime())
+      ) {
+        continue;
+      }
+
+      const diffMs = nextDate.getTime() - currentDate.getTime();
+      if (diffMs >= 0) {
+        responseTimes.push(diffMs);
+      }
+    }
+
+    return responseTimes;
+  }
+
+  private formatAverageTime(
+    averageMs: number,
+    t: TFunction<'translation', undefined>
+  ): string {
+    const averageSeconds = Math.floor(averageMs / 1000);
+    const averageMinutes = Math.floor(averageSeconds / 60);
+    const averageHours = Math.floor(averageMinutes / 60);
+    const averageDays = Math.floor(averageHours / 24);
+
+    if (averageDays > 0) {
+      return this.formatDaysTime(averageDays, averageHours, averageMinutes, t);
+    }
+
+    if (averageHours > 0) {
+      return this.formatHoursTime(averageHours, averageMinutes, t);
+    }
+
+    if (averageMinutes > 0) {
+      return this.formatMinutesTime(averageMinutes, averageSeconds, t);
+    }
+
+    return `${averageSeconds}${t('second_abbrev')}`;
+  }
+
+  private formatDaysTime(
+    days: number,
+    hours: number,
+    minutes: number,
+    t: TFunction<'translation', undefined>
+  ): string {
+    const hoursRemainder = hours % 24;
+    const minutesRemainder = minutes % 60;
+
+    if (hoursRemainder > 0) {
+      return `${days}${t('day_abbrev')} ${hoursRemainder}${t('hour_abbrev')} ${minutesRemainder}${t('minute_abbrev')}`;
+    }
+
+    return `${days}${t('day_abbrev')} ${minutesRemainder}${t('minute_abbrev')}`;
+  }
+
+  private formatHoursTime(
+    hours: number,
+    minutes: number,
+    t: TFunction<'translation', undefined>
+  ): string {
+    const minutesRemainder = minutes % 60;
+
+    if (minutesRemainder > 0) {
+      return `${hours}${t('hour_abbrev')} ${minutesRemainder}${t('minute_abbrev')}`;
+    }
+
+    return `${hours}${t('hour_abbrev')}`;
+  }
+
+  private formatMinutesTime(
+    minutes: number,
+    seconds: number,
+    t: TFunction<'translation', undefined>
+  ): string {
+    const secondsRemainder = seconds % 60;
+
+    if (secondsRemainder > 0) {
+      return `${minutes}${t('minute_abbrev')} ${secondsRemainder}${t('second_abbrev')}`;
+    }
+
+    return `${minutes}${t('minute_abbrev')}`;
+  }
+
   private calculateAverageResponseTime(
     messages: ListMessageResult[],
     t: TFunction<'translation', undefined>
@@ -1625,27 +1959,7 @@ export class ReportConversationHistoryPdfService {
       return '-';
     }
 
-    const responseTimes: number[] = [];
-
-    for (let i = 0; i < messages.length - 1; i++) {
-      const currentMsg = messages[i];
-      const nextMsg = messages[i + 1];
-
-      if (
-        currentMsg.type_user === ETypeUserChat.client &&
-        nextMsg.type_user === ETypeUserChat.operator
-      ) {
-        const currentDate = new Date(currentMsg.date || '');
-        const nextDate = new Date(nextMsg.date || '');
-
-        if (!isNaN(currentDate.getTime()) && !isNaN(nextDate.getTime())) {
-          const diffMs = nextDate.getTime() - currentDate.getTime();
-          if (diffMs >= 0) {
-            responseTimes.push(diffMs);
-          }
-        }
-      }
-    }
+    const responseTimes = this.collectResponseTimes(messages);
 
     if (responseTimes.length === 0) {
       return '-';
@@ -1654,37 +1968,180 @@ export class ReportConversationHistoryPdfService {
     const totalMs = responseTimes.reduce((sum, time) => sum + time, 0);
     const averageMs = totalMs / responseTimes.length;
 
-    const averageSeconds = Math.floor(averageMs / 1000);
-    const averageMinutes = Math.floor(averageSeconds / 60);
-    const averageHours = Math.floor(averageMinutes / 60);
-    const averageDays = Math.floor(averageHours / 24);
+    return this.formatAverageTime(averageMs, t);
+  }
 
-    if (averageDays > 0) {
-      const hours = averageHours % 24;
-      const minutes = averageMinutes % 60;
-      if (hours > 0) {
-        return `${averageDays}${t('day_abbrev')} ${hours}${t('hour_abbrev')} ${minutes}${t('minute_abbrev')}`;
-      }
-      return `${averageDays}${t('day_abbrev')} ${minutes}${t('minute_abbrev')}`;
-    }
+  private generateQuotedImageHtml(
+    quoted: any,
+    t: TFunction<'translation', undefined>
+  ): string {
+    const imageSrc = this.resolveQuotedImageSrc(quoted);
+    const imageName = this.resolveQuotedImageName(t);
+    const imageMeta = this.resolveQuotedImageMeta(quoted);
 
-    if (averageHours > 0) {
-      const minutes = averageMinutes % 60;
-      if (minutes > 0) {
-        return `${averageHours}${t('hour_abbrev')} ${minutes}${t('minute_abbrev')}`;
-      }
-      return `${averageHours}${t('hour_abbrev')}`;
-    }
+    return `
+        <div class="quoted-media quoted-media--image">
+          <img src="${this.escapeHtml(imageSrc)}" alt="${t('image')}" />
+        </div>
+        <div class="quoted-image-info">
+          <span class="quoted-image-name">${this.escapeHtml(imageName)}</span>
+          ${imageMeta ? `<span class="quoted-image-meta">${this.escapeHtml(imageMeta)}</span>` : ''}
+        </div>
+      `;
+  }
 
-    if (averageMinutes > 0) {
-      const seconds = averageSeconds % 60;
-      if (seconds > 0) {
-        return `${averageMinutes}${t('minute_abbrev')} ${seconds}${t('second_abbrev')}`;
-      }
-      return `${averageMinutes}${t('minute_abbrev')}`;
-    }
+  private generateQuotedLocationHtml(
+    t: TFunction<'translation', undefined>
+  ): string {
+    return `
+        <div class="quoted-location">
+          <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="width: 22px; height: 22px; fill: rgb(25, 118, 210);">
+            <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+          </svg>
+          <div class="quoted-location-info">
+            <span class="quoted-location-name">${t('location')}</span>
+          </div>
+        </div>
+      `;
+  }
 
-    return `${averageSeconds}${t('second_abbrev')}`;
+  private generateQuotedDocumentHtml(
+    quoted: any,
+    t: TFunction<'translation', undefined>
+  ): string {
+    const docName = this.resolveQuotedDocumentName(quoted, t);
+    const docMeta = this.resolveQuotedDocumentMeta(quoted);
+    const docIcon = this.resolveQuotedDocumentIcon(quoted);
+
+    return `
+        <div class="quoted-document">
+          <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="width: 26px; height: 26px; fill: rgb(25, 118, 210);">
+            ${this.getDocumentIconSvg(docIcon)}
+          </svg>
+          <div class="quoted-document-info">
+            <span class="quoted-document-name">${this.escapeHtml(docName)}</span>
+            ${docMeta ? `<span class="quoted-document-meta">${this.escapeHtml(docMeta)}</span>` : ''}
+          </div>
+        </div>
+      `;
+  }
+
+  private generateQuotedStickerHtml(
+    quoted: any,
+    t: TFunction<'translation', undefined>
+  ): string {
+    const stickerSrc = this.resolveQuotedStickerSrc(quoted);
+
+    return `
+        <div class="quoted-sticker">
+          <div class="quoted-media quoted-media--image">
+            <img src="${this.escapeHtml(stickerSrc)}" alt="${t('sticker')}" style="object-fit: contain;" />
+          </div>
+        </div>
+      `;
+  }
+
+  private generateQuotedVideoHtml(
+    quoted: any,
+    t: TFunction<'translation', undefined>
+  ): string {
+    const videoUrl = this.resolveQuotedVideoUrl(quoted);
+    const videoPoster = this.resolveQuotedVideoPoster(quoted);
+    const videoName = this.resolveQuotedVideoName(t);
+    const videoMeta = this.resolveQuotedVideoMeta(quoted);
+
+    const videoThumbHtml = videoUrl
+      ? `<img src="${this.escapeHtml(videoPoster || videoUrl)}" alt="${t('video')}" class="quoted-video-thumb" />
+               <div class="quoted-video-overlay">
+                 <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="width: 16px; height: 16px; fill: white;">
+                   <path d="M8 5v14l11-7z"/>
+                 </svg>
+               </div>`
+      : `<div class="quoted-video-placeholder">
+                 <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="width: 20px; height: 20px; fill: rgba(17, 27, 33, 0.6);">
+                   <path d="M8 5v14l11-7z"/>
+                 </svg>
+               </div>`;
+
+    return `
+        <div class="quoted-media quoted-media--video" style="position: relative;">
+          ${videoThumbHtml}
+        </div>
+        <div class="quoted-video-info">
+          <span class="quoted-video-name">${this.escapeHtml(videoName)}</span>
+          ${videoMeta ? `<span class="quoted-video-meta">${this.escapeHtml(videoMeta)}</span>` : ''}
+        </div>
+      `;
+  }
+
+  private generateQuotedAudioHtml(
+    quoted: any,
+    t: TFunction<'translation', undefined>
+  ): string {
+    const audioName = this.resolveQuotedAudioName(t);
+    const audioMeta = this.resolveQuotedAudioMeta(quoted);
+
+    return `
+        <div class="quoted-audio">
+          <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="width: 22px; height: 22px; fill: rgb(25, 118, 210);">
+            <path d="M12 14c1.66 0 2.99-1.34 2.99-3L15 5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"/>
+          </svg>
+          <div class="quoted-audio-info">
+            <span class="quoted-audio-name">${this.escapeHtml(audioName)}</span>
+            ${audioMeta ? `<span class="quoted-audio-meta">${this.escapeHtml(audioMeta)}</span>` : ''}
+          </div>
+        </div>
+      `;
+  }
+
+  private generateQuotedContactHtml(
+    t: TFunction<'translation', undefined>
+  ): string {
+    return `
+        <div class="quoted-contact">
+          <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="width: 22px; height: 22px; fill: rgb(25, 118, 210);">
+            <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+          </svg>
+          <div class="quoted-contact-info">
+            <span class="quoted-contact-name">${t('contact')}</span>
+          </div>
+        </div>
+      `;
+  }
+
+  private shouldShowQuotedText(quotedType: string): boolean {
+    return (
+      quotedType !== EMessageType.video &&
+      quotedType !== EMessageType.image &&
+      quotedType !== EMessageType.audio &&
+      quotedType !== EMessageType.sticker &&
+      quotedType !== EMessageType.location &&
+      quotedType !== EMessageType.contact_card
+    );
+  }
+
+  private shouldFormatQuotedText(quotedType: string): boolean {
+    return (
+      quotedType === EMessageType.text ||
+      quotedType === EMessageType.system ||
+      quotedType === EMessageType.annotation
+    );
+  }
+
+  private generateQuotedTextHtml(
+    quotedText: string,
+    quotedType: string
+  ): string {
+    const shouldFormat = this.shouldFormatQuotedText(quotedType);
+    const formattedText = shouldFormat
+      ? quotedText.replaceAll('\n', '<br>')
+      : this.escapeHtml(quotedText);
+
+    return `
+        <div class="quoted-text">
+          ${formattedText}
+        </div>
+      `;
   }
 
   private formatQuoted(
@@ -1711,144 +2168,36 @@ export class ReportConversationHistoryPdfService {
     `);
 
     if (this.hasQuotedImage(quoted)) {
-      const imageSrc = this.resolveQuotedImageSrc(quoted);
-      const imageName = this.resolveQuotedImageName(t);
-      const imageMeta = this.resolveQuotedImageMeta(quoted);
-
-      parts.push(`
-        <div class="quoted-media quoted-media--image">
-          <img src="${this.escapeHtml(imageSrc)}" alt="${t('image')}" />
-        </div>
-        <div class="quoted-image-info">
-          <span class="quoted-image-name">${this.escapeHtml(imageName)}</span>
-          ${imageMeta ? `<span class="quoted-image-meta">${this.escapeHtml(imageMeta)}</span>` : ''}
-        </div>
-      `);
+      parts.push(this.generateQuotedImageHtml(quoted, t));
     }
 
     if (this.hasQuotedLocation(quoted)) {
-      parts.push(`
-        <div class="quoted-location">
-          <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="width: 22px; height: 22px; fill: rgb(25, 118, 210);">
-            <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
-          </svg>
-          <div class="quoted-location-info">
-            <span class="quoted-location-name">${t('location')}</span>
-          </div>
-        </div>
-      `);
+      parts.push(this.generateQuotedLocationHtml(t));
     }
 
     if (this.hasQuotedDocument(quoted)) {
-      const docName = this.resolveQuotedDocumentName(quoted, t);
-      const docMeta = this.resolveQuotedDocumentMeta(quoted);
-      const docIcon = this.resolveQuotedDocumentIcon(quoted);
-
-      parts.push(`
-        <div class="quoted-document">
-          <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="width: 26px; height: 26px; fill: rgb(25, 118, 210);">
-            ${this.getDocumentIconSvg(docIcon)}
-          </svg>
-          <div class="quoted-document-info">
-            <span class="quoted-document-name">${this.escapeHtml(docName)}</span>
-            ${docMeta ? `<span class="quoted-document-meta">${this.escapeHtml(docMeta)}</span>` : ''}
-          </div>
-        </div>
-      `);
+      parts.push(this.generateQuotedDocumentHtml(quoted, t));
     }
 
     if (this.hasQuotedSticker(quoted)) {
-      const stickerSrc = this.resolveQuotedStickerSrc(quoted);
-
-      parts.push(`
-        <div class="quoted-sticker">
-          <div class="quoted-media quoted-media--image">
-            <img src="${this.escapeHtml(stickerSrc)}" alt="${t('sticker')}" style="object-fit: contain;" />
-          </div>
-        </div>
-      `);
+      parts.push(this.generateQuotedStickerHtml(quoted, t));
     }
 
     if (this.hasQuotedVideo(quoted)) {
-      const videoUrl = this.resolveQuotedVideoUrl(quoted);
-      const videoPoster = this.resolveQuotedVideoPoster(quoted);
-      const videoName = this.resolveQuotedVideoName(t);
-      const videoMeta = this.resolveQuotedVideoMeta(quoted);
-
-      parts.push(`
-        <div class="quoted-media quoted-media--video" style="position: relative;">
-          ${
-            videoUrl
-              ? `<img src="${this.escapeHtml(videoPoster || videoUrl)}" alt="${t('video')}" class="quoted-video-thumb" />
-               <div class="quoted-video-overlay">
-                 <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="width: 16px; height: 16px; fill: white;">
-                   <path d="M8 5v14l11-7z"/>
-                 </svg>
-               </div>`
-              : `<div class="quoted-video-placeholder">
-                 <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="width: 20px; height: 20px; fill: rgba(17, 27, 33, 0.6);">
-                   <path d="M8 5v14l11-7z"/>
-                 </svg>
-               </div>`
-          }
-        </div>
-        <div class="quoted-video-info">
-          <span class="quoted-video-name">${this.escapeHtml(videoName)}</span>
-          ${videoMeta ? `<span class="quoted-video-meta">${this.escapeHtml(videoMeta)}</span>` : ''}
-        </div>
-      `);
+      parts.push(this.generateQuotedVideoHtml(quoted, t));
     }
 
     if (this.hasQuotedAudio(quoted)) {
-      const audioName = this.resolveQuotedAudioName(t);
-      const audioMeta = this.resolveQuotedAudioMeta(quoted);
-
-      parts.push(`
-        <div class="quoted-audio">
-          <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="width: 22px; height: 22px; fill: rgb(25, 118, 210);">
-            <path d="M12 14c1.66 0 2.99-1.34 2.99-3L15 5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"/>
-          </svg>
-          <div class="quoted-audio-info">
-            <span class="quoted-audio-name">${this.escapeHtml(audioName)}</span>
-            ${audioMeta ? `<span class="quoted-audio-meta">${this.escapeHtml(audioMeta)}</span>` : ''}
-          </div>
-        </div>
-      `);
+      parts.push(this.generateQuotedAudioHtml(quoted, t));
     }
 
     if (this.hasQuotedContact(quoted)) {
-      parts.push(`
-        <div class="quoted-contact">
-          <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="width: 22px; height: 22px; fill: rgb(25, 118, 210);">
-            <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
-          </svg>
-          <div class="quoted-contact-info">
-            <span class="quoted-contact-name">${t('contact')}</span>
-          </div>
-        </div>
-      `);
+      parts.push(this.generateQuotedContactHtml(t));
     }
 
     const quotedText = this.resolveQuotedText(quoted, quotedType, t);
-    if (
-      quotedText &&
-      quotedType !== EMessageType.video &&
-      quotedType !== EMessageType.image &&
-      quotedType !== EMessageType.audio &&
-      quotedType !== EMessageType.sticker &&
-      quotedType !== EMessageType.location &&
-      quotedType !== EMessageType.contact_card
-    ) {
-      const shouldFormat =
-        quotedType === EMessageType.text ||
-        quotedType === EMessageType.system ||
-        quotedType === EMessageType.annotation;
-
-      parts.push(`
-        <div class="quoted-text">
-          ${shouldFormat ? quotedText.replace(/\n/g, '<br>') : this.escapeHtml(quotedText)}
-        </div>
-      `);
+    if (quotedText && this.shouldShowQuotedText(quotedType)) {
+      parts.push(this.generateQuotedTextHtml(quotedText, quotedType));
     }
 
     parts.push(`
