@@ -256,23 +256,23 @@ export class ReportConversationHistoryPdfService {
             .content .media-link { font-size: 12px; margin-top: 4px; max-width: 100%; overflow-wrap: break-word; }
             .content .media-link a { color: #1976d2; text-decoration: none; word-break: break-all; display: inline-block; max-width: 100%; }
             .content .media-link a:hover { text-decoration: underline; }
-            .content .audio-player { display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: rgba(0,0,0,0.05); border-radius: 6px; margin-bottom: 8px; max-width: 200px; }
-            .content .audio-player-icon { width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.1); border-radius: 50%; flex-shrink: 0; }
-            .content .audio-player-icon svg { width: 14px; height: 14px; fill: #111b21; }
+            .content .audio-player { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: rgba(0,0,0,0.05); border-radius: 6px; margin-bottom: 8px; max-width: 200px; }
+            .content .audio-player-icon { width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.1); border-radius: 50%; flex-shrink: 0; }
+            .content .audio-player-icon svg { width: 16px; height: 16px; fill: #111b21; }
             .content .audio-player-info { flex: 1; min-width: 0; }
-            .content .audio-player-duration { font-size: 12px; color: #111b21; font-weight: 500; }
-            .content .video-player { display: flex; flex-direction: column; gap: 6px; padding: 6px 10px; background: rgba(0,0,0,0.05); border-radius: 6px; margin-bottom: 8px; max-width: 200px; }
-            .content .video-player-header { display: flex; align-items: center; gap: 8px; }
-            .content .video-player-icon { width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.1); border-radius: 50%; flex-shrink: 0; }
-            .content .video-player-icon svg { width: 14px; height: 14px; fill: #111b21; }
+            .content .audio-player-duration { font-size: 13px; color: #111b21; font-weight: 500; }
+            .content .video-player { display: flex; flex-direction: column; gap: 8px; padding: 8px 12px; background: rgba(0,0,0,0.05); border-radius: 6px; margin-bottom: 8px; max-width: 200px; }
+            .content .video-player-header { display: flex; align-items: center; gap: 10px; }
+            .content .video-player-icon { width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.1); border-radius: 50%; flex-shrink: 0; }
+            .content .video-player-icon svg { width: 16px; height: 16px; fill: #111b21; }
             .content .video-player-info { flex: 1; min-width: 0; }
-            .content .video-player-meta { font-size: 11px; color: rgba(17,27,33,0.6); }
-            .content .document-player { display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: rgba(0,0,0,0.05); border-radius: 6px; margin-bottom: 8px; max-width: 200px; }
-            .content .document-player-icon { width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.1); border-radius: 6px; flex-shrink: 0; }
-            .content .document-player-icon svg { width: 16px; height: 16px; fill: #1976d2; }
+            .content .video-player-meta { font-size: 12px; color: rgba(17,27,33,0.6); }
+            .content .document-player { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: rgba(0,0,0,0.05); border-radius: 6px; margin-bottom: 8px; max-width: 200px; }
+            .content .document-player-icon { width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.1); border-radius: 6px; flex-shrink: 0; }
+            .content .document-player-icon svg { width: 18px; height: 18px; fill: #1976d2; }
             .content .document-player-info { flex: 1; min-width: 0; }
-            .content .document-player-name { font-size: 12px; color: #111b21; font-weight: 500; margin-bottom: 2px; word-break: break-word; }
-            .content .document-player-meta { font-size: 11px; color: rgba(17,27,33,0.6); }
+            .content .document-player-name { font-size: 13px; color: #111b21; font-weight: 500; margin-bottom: 2px; word-break: break-word; }
+            .content .document-player-meta { font-size: 12px; color: rgba(17,27,33,0.6); }
             .meta { position: absolute; right: 8px; bottom: 4px; display: flex; gap: 4px; align-items: center; font-size: 11px; color: rgba(17,27,33,0.6); }
             .time { font-weight: 500; }
           </style>
