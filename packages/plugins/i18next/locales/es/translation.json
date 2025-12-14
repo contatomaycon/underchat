@@ -233,6 +233,7 @@
   "report_conversation_history_pdf_not_found": "¡PDF del historial de conversaciones no encontrado!",
   "report_conversation_history_pdf_view_successfully": "¡PDF del historial de conversaciones visualizado con éxito!",
   "report_conversation_history_pdf_not_ready": "¡El PDF del historial de conversaciones aún no está listo!",
+  "report_conversation_history_pdf_deleted_successfully": "¡PDF del historial de conversaciones eliminado con éxito!",
   "plan_list_successfully": "¡Lista de planes obtenida con éxito!",
   "plan_list_not_found": "¡No se encontraron planes!",
   "plan_name_required": "¡El nombre del plan es obligatorio!",

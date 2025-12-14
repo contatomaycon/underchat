@@ -133,6 +133,17 @@ const handleDownloadPdf = async (item: ReportConversationHistoryResult) => {
   );
 };
 
+const handleDeletePdf = async (item: ReportConversationHistoryResult) => {
+  const deleted =
+    await reportConversationHistoryStore.deleteReportConversationHistoryPdf(
+      item.chat_id
+    );
+
+  if (deleted) {
+    item.pdf_status = null;
+  }
+};
+
 const loadPdfStatuses = async () => {
   for (const item of reportConversationHistoryStore.list) {
     const pdfStatus =
@@ -772,8 +783,7 @@ const copyToClipboard = async (text: string) => {
                     !item.pdf_status ||
                     item.pdf_status === 'PENDING' ||
                     item.pdf_status === 'PROCESSING' ||
-                    item.pdf_status === 'FAILED' ||
-                    item.pdf_status === 'DONE'
+                    item.pdf_status === 'FAILED'
                   "
                   size="x-small"
                   color="primary"
@@ -796,17 +806,11 @@ const copyToClipboard = async (text: string) => {
                         :icon="
                           item.pdf_status === 'PROCESSING'
                             ? 'tabler-loader'
-                            : item.pdf_status === 'DONE'
-                              ? 'tabler-refresh'
-                              : 'tabler-file-type-pdf'
+                            : 'tabler-file-type-pdf'
                         "
                       ></VIcon>
                     </template>
-                    <span>{{
-                      item.pdf_status === 'DONE'
-                        ? t('regenerate_pdf')
-                        : t('generate_pdf')
-                    }}</span>
+                    <span>{{ t('generate_pdf') }}</span>
                   </VTooltip>
                 </VBtn>
 
@@ -824,6 +828,41 @@ const copyToClipboard = async (text: string) => {
                     <span>{{ t('download_pdf') }}</span>
                   </VTooltip>
                 </VBtn>
+
+                <VMenu
+                  v-if="item.pdf_status === 'DONE'"
+                  :close-on-content-click="true"
+                  location="bottom end"
+                  offset="6"
+                >
+                  <template #activator="{ props }">
+                    <VBtn
+                      v-bind="props"
+                      size="x-small"
+                      color="primary"
+                      variant="text"
+                      icon
+                    >
+                      <VIcon size="18">tabler-dots-vertical</VIcon>
+                    </VBtn>
+                  </template>
+
+                  <VList density="compact" min-width="180">
+                    <VListItem @click="handleGeneratePdf(item)">
+                      <template #prepend>
+                        <VIcon size="18">tabler-refresh</VIcon>
+                      </template>
+                      <VListItemTitle>{{ t('regenerate_pdf') }}</VListItemTitle>
+                    </VListItem>
+
+                    <VListItem @click="handleDeletePdf(item)">
+                      <template #prepend>
+                        <VIcon size="18">tabler-trash</VIcon>
+                      </template>
+                      <VListItemTitle>{{ t('delete_pdf') }}</VListItemTitle>
+                    </VListItem>
+                  </VList>
+                </VMenu>
               </div>
             </template>
 

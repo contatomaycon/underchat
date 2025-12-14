@@ -9,6 +9,7 @@ import { viewContactPhone } from './methods/viewContactPhone';
 import { generateReportConversationHistoryPdf } from './methods/generateReportConversationHistoryPdf';
 import { viewReportConversationHistoryPdf } from './methods/viewReportConversationHistoryPdf';
 import { downloadReportConversationHistoryPdf } from './methods/downloadReportConversationHistoryPdf';
+import { deleteReportConversationHistoryPdf } from './methods/deleteReportConversationHistoryPdf';
 
 @injectable()
 class ReportConversationHistoryController {
@@ -27,6 +28,8 @@ class ReportConversationHistoryController {
   public viewReportConversationHistoryPdf = viewReportConversationHistoryPdf;
   public downloadReportConversationHistoryPdf =
     downloadReportConversationHistoryPdf;
+  public deleteReportConversationHistoryPdf =
+    deleteReportConversationHistoryPdf;
 }
 
 export default ReportConversationHistoryController;

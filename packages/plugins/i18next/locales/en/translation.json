@@ -233,6 +233,7 @@
   "report_conversation_history_pdf_not_found": "Conversation history PDF not found!",
   "report_conversation_history_pdf_view_successfully": "Conversation history PDF viewed successfully!",
   "report_conversation_history_pdf_not_ready": "Conversation history PDF is not ready yet!",
+  "report_conversation_history_pdf_deleted_successfully": "Conversation history PDF deleted successfully!",
   "plan_list_successfully": "Plan list retrieved successfully!",
   "plan_list_not_found": "No plans found!",
   "plan_name_required": "Plan name is required!",

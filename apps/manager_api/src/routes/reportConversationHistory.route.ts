@@ -12,6 +12,7 @@ import { viewReportConversationHistoryContactPhoneSchema } from '@core/schema/re
 import { generateReportConversationHistoryPdfSchema } from '@core/schema/reportConversationHistory/generateReportConversationHistoryPdf';
 import { viewReportConversationHistoryPdfSchema } from '@core/schema/reportConversationHistory/viewReportConversationHistoryPdf';
 import { downloadReportConversationHistoryPdfSchema } from '@core/schema/reportConversationHistory/downloadReportConversationHistoryPdf';
+import { deleteReportConversationHistoryPdfSchema } from '@core/schema/reportConversationHistory/deleteReportConversationHistoryPdf';
 import { planGuard } from '@/plugins/planGuard';
 import { planStatus } from '@/plugins/planStatus';
 
@@ -166,6 +167,22 @@ export default function reportConversationHistoryRoutes(
     schema: downloadReportConversationHistoryPdfSchema,
     handler:
       reportConversationHistoryController.downloadReportConversationHistoryPdf,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(
+          request,
+          reply,
+          reportConversationHistoryViewPermissions
+        ),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.delete('/report-conversation-history/:chat_id/pdf', {
+    schema: deleteReportConversationHistoryPdfSchema,
+    handler:
+      reportConversationHistoryController.deleteReportConversationHistoryPdf,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(
