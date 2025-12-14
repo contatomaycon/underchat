@@ -269,7 +269,7 @@ export class ReportConversationHistoryPdfService {
             .msg-row.right .msg-avatar { order: 3; }
             .avatar-img { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; background: #e0e0e0; }
             .msg-name { font-size: 11px; color: rgba(17,27,33,0.6); white-space: nowrap; font-weight: 500; text-align: center; }
-            .bubble { max-width: 65%; min-width: 120px; width: fit-content; padding: 8px 12px 20px 12px; border-radius: 8px; position: relative; line-height: 1.5; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
+            .bubble { max-width: 65%; min-width: 50px; width: fit-content; padding: 8px 12px 20px 12px; border-radius: 8px; position: relative; line-height: 1.5; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
             .bubble.has-reactions { padding-bottom: 28px; padding-right: 60px; }
             .bubble.bubble-media { max-width: 280px; }
             .msg-row.left .bubble { order: 2; background: rgb(255, 255, 255); color: #111b21; }
