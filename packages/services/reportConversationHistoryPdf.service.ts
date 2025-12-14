@@ -237,7 +237,7 @@ export class ReportConversationHistoryPdfService {
           <div class="bubble ${alignmentClass} ${mediaClass} ${reactionsClass} ${deletedClass}">
             ${this.formatQuoted(msg, clientName)}
             <div class="content">
-              ${content}
+              <div class="message-text">${content}</div>
               ${isDeleted ? '<div class="message-deleted-badge">Removido</div>' : ''}
               ${hasVersions ? '<div class="message-edited-badge">Editado</div>' : ''}
             </div>
@@ -286,8 +286,10 @@ export class ReportConversationHistoryPdfService {
             .bubble.has-reactions { padding-bottom: 28px; padding-right: 60px; }
             .bubble.bubble-media { max-width: 280px; }
             .bubble.is-deleted { opacity: 0.7; }
-            .bubble.is-deleted .content > *:not(.message-deleted-badge), .bubble.is-deleted .quoted-text, .bubble.is-deleted .image-caption, .bubble.is-deleted .video-caption, .bubble.is-deleted .audio-caption, .bubble.is-deleted .contact-caption { text-decoration: line-through; }
-            .bubble.is-deleted .message-deleted-badge { text-decoration: none !important; }
+            .bubble.is-deleted .content .message-text { text-decoration: line-through; }
+            .bubble.is-deleted .content .message-deleted-badge { text-decoration: none !important; }
+            .bubble.is-deleted .content .message-edited-badge { text-decoration: none !important; }
+            .bubble.is-deleted .quoted-text, .bubble.is-deleted .image-caption, .bubble.is-deleted .video-caption, .bubble.is-deleted .audio-caption, .bubble.is-deleted .contact-caption { text-decoration: line-through; }
             .msg-row.left .bubble { order: 2; background: rgb(255, 255, 255); color: #111b21; }
             .msg-row.right .bubble { order: 2; background: rgb(217, 253, 211); color: #111b21; }
             .content { font-size: 14.2px; word-break: break-word; margin-bottom: 4px; }
