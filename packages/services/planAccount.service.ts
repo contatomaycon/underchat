@@ -161,10 +161,7 @@ export class PlanAccountService {
     }
   }
 
-  async validateCanCreateContactReceived(
-    t: TFunction<'translation', undefined>,
-    accountId: string
-  ): Promise<boolean> {
+  async validateCanCreateContactReceived(accountId: string): Promise<boolean> {
     const [viewAccountQuantityProduct, totalContactByAccountId] =
       await Promise.all([
         this.accountService.viewAccountQuantityProduct(
