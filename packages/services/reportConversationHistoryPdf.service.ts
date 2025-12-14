@@ -11,14 +11,18 @@ import { ElasticDatabaseService } from './elasticDatabase.service';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { IChat } from '@core/common/interfaces/IChat';
 import { ReportConversationHistoryMessagesListerUseCase } from '@core/useCases/reportConversationHistory/ReportConversationHistoryMessagesLister.useCase';
+import { ChatContactService } from './chatContact.service';
 
 @injectable()
 export class ReportConversationHistoryPdfService {
+  private contactPhoneCache: Map<string, string | null> = new Map();
+
   constructor(
     private readonly storageService: StorageService,
     private readonly pdfUpdaterRepository: ReportConversationHistoryPdfUpdaterRepository,
     private readonly elasticDatabaseService: ElasticDatabaseService,
-    private readonly messagesListerUseCase: ReportConversationHistoryMessagesListerUseCase
+    private readonly messagesListerUseCase: ReportConversationHistoryMessagesListerUseCase,
+    private readonly chatContactService: ChatContactService
   ) {}
 
   async deletePdf(url: string | null): Promise<void> {
@@ -50,11 +54,41 @@ export class ReportConversationHistoryPdfService {
 
     const clientName = chat?.name || chat?.contact?.name || 'Cliente';
     const clientPhoto = chat?.photo || chat?.contact?.photo || null;
+
+    const uniqueContactIds = new Set<string>();
+    for (const msg of messagesResult.messages) {
+      const contactId = msg.content?.contact?.contact_id;
+      if (contactId && typeof contactId === 'string') {
+        uniqueContactIds.add(contactId);
+      }
+    }
+
+    const phonePromises = Array.from(uniqueContactIds).map(
+      async (contactId) => {
+        try {
+          const phone =
+            await this.chatContactService.getChatContactPhoneDecrypted(
+              contactId
+            );
+          return { contactId, phone };
+        } catch {
+          return { contactId, phone: null };
+        }
+      }
+    );
+
+    const phoneResults = await Promise.all(phonePromises);
+    for (const { contactId, phone } of phoneResults) {
+      this.contactPhoneCache.set(contactId, phone);
+    }
+
     const html = this.generateHtmlFromMessages(
       messagesResult.messages,
       clientName,
       clientPhoto
     );
+
+    this.contactPhoneCache.clear();
 
     const browser = await puppeteer.launch({
       headless: true,
@@ -171,13 +205,17 @@ export class ReportConversationHistoryPdfService {
       const alignmentClass = isUser ? 'left' : 'right';
       const timeOnly = this.formatTimeOnly(msg.date || '');
 
+      const contentType = msg.content?.type || '';
+      const isMediaType = ['audio', 'video', 'document'].includes(contentType);
+      const mediaClass = isMediaType ? 'bubble-media' : '';
+
       parts.push(`
         <div class="msg-row ${alignmentClass}">
           <div class="msg-avatar">
             <img src="${photo}" alt="${author}" class="avatar-img" />
             <div class="msg-name">${author}</div>
           </div>
-          <div class="bubble ${alignmentClass}">
+          <div class="bubble ${alignmentClass} ${mediaClass}">
             <div class="content">${content}</div>
             <div class="meta">
               <span class="time">${timeOnly}</span>
@@ -209,6 +247,7 @@ export class ReportConversationHistoryPdfService {
             .avatar-img { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; background: #e0e0e0; }
             .msg-name { font-size: 11px; color: rgba(17,27,33,0.6); white-space: nowrap; font-weight: 500; text-align: center; }
             .bubble { max-width: 65%; width: fit-content; padding: 8px 12px 20px 12px; border-radius: 8px; position: relative; line-height: 1.5; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
+            .bubble.bubble-media { max-width: 280px; }
             .msg-row.left .bubble { order: 2; background: rgb(255, 255, 255); color: #111b21; }
             .msg-row.right .bubble { order: 2; background: rgb(217, 253, 211); color: #111b21; }
             .content { font-size: 14.2px; word-break: break-word; margin-bottom: 4px; }
@@ -532,11 +571,39 @@ export class ReportConversationHistoryPdfService {
     }
 
     if (content.type === 'location') {
-      return `[Localização] ${content.name || ''}`;
+      const location = content.location;
+      const parts: string[] = ['[Localização]'];
+
+      if (location?.name || location?.address) {
+        const locationText = location.name || location.address || '';
+        parts.push(`<div>${this.escapeHtml(locationText)}</div>`);
+      }
+
+      if (location?.latitude && location?.longitude) {
+        const googleMapsUrl = `https://www.google.com/maps?q=${location.latitude},${location.longitude}`;
+        const escapedUrl = this.escapeHtml(googleMapsUrl);
+        parts.push(
+          `<div class="media-link"><b>Link:</b> <a href="${escapedUrl}" target="_blank" rel="noopener noreferrer">${escapedUrl}</a></div>`
+        );
+      }
+
+      return parts.join('');
     }
 
     if (content.type === 'contact_card') {
-      return `[Contato] ${content.contact?.name || ''}`;
+      const contact = content.contact;
+      const parts: string[] = ['[Contato]'];
+
+      if (contact?.contact_id) {
+        const phone = this.contactPhoneCache.get(contact.contact_id);
+        if (phone) {
+          const phoneDdi = contact.phone_ddi || null;
+          const formattedPhone = this.formatPhone(phone, phoneDdi);
+          parts.push(`<div>${this.escapeHtml(formattedPhone)}</div>`);
+        }
+      }
+
+      return parts.join('');
     }
 
     return '[Mensagem não suportada]';
@@ -577,5 +644,26 @@ export class ReportConversationHistoryPdfService {
     const minutes = Math.floor(totalSeconds / 60);
     const secs = totalSeconds % 60;
     return `${minutes}:${secs.toString().padStart(2, '0')}`;
+  }
+
+  private formatPhone(phone: string, ddi?: string | null): string {
+    const numbers = phone.replaceAll(/\D/g, '').slice(0, 11);
+    let formatted = '';
+
+    if (numbers.length <= 2) {
+      formatted = numbers;
+    } else if (numbers.length <= 6) {
+      formatted = `(${numbers.slice(0, 2)}) ${numbers.slice(2)}`;
+    } else if (numbers.length <= 10) {
+      formatted = `(${numbers.slice(0, 2)}) ${numbers.slice(2, 6)}-${numbers.slice(6)}`;
+    } else {
+      formatted = `(${numbers.slice(0, 2)}) ${numbers.slice(2, 7)}-${numbers.slice(7)}`;
+    }
+
+    if (ddi) {
+      return `+${ddi} ${formatted}`;
+    }
+
+    return formatted;
   }
 }
