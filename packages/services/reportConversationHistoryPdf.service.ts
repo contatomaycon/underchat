@@ -233,10 +233,12 @@ export class ReportConversationHistoryPdfService {
           </div>
           <div class="bubble ${alignmentClass} ${mediaClass} ${reactionsClass} ${deletedClass}">
             ${this.formatQuoted(msg, clientName)}
-            <div class="content">${content}</div>
+            <div class="content">
+              ${content}
+              ${isDeleted ? '<div class="message-deleted-badge">Removido</div>' : ''}
+            </div>
             <div class="meta">
               <div class="meta-content">
-                ${isDeleted ? '<span class="message-deleted-badge">Removido</span>' : ''}
                 <div class="meta-row">
                   <span class="time">${timeOnly}</span>
                 </div>
@@ -280,7 +282,8 @@ export class ReportConversationHistoryPdfService {
             .bubble.has-reactions { padding-bottom: 28px; padding-right: 60px; }
             .bubble.bubble-media { max-width: 280px; }
             .bubble.is-deleted { opacity: 0.7; }
-            .bubble.is-deleted .content, .bubble.is-deleted .quoted-text, .bubble.is-deleted .image-caption, .bubble.is-deleted .video-caption, .bubble.is-deleted .audio-caption, .bubble.is-deleted .contact-caption { text-decoration: line-through; }
+            .bubble.is-deleted .content > *:not(.message-deleted-badge), .bubble.is-deleted .quoted-text, .bubble.is-deleted .image-caption, .bubble.is-deleted .video-caption, .bubble.is-deleted .audio-caption, .bubble.is-deleted .contact-caption { text-decoration: line-through; }
+            .bubble.is-deleted .message-deleted-badge { text-decoration: none !important; }
             .msg-row.left .bubble { order: 2; background: rgb(255, 255, 255); color: #111b21; }
             .msg-row.right .bubble { order: 2; background: rgb(217, 253, 211); color: #111b21; }
             .content { font-size: 14.2px; word-break: break-word; margin-bottom: 4px; }
@@ -307,10 +310,10 @@ export class ReportConversationHistoryPdfService {
             .content .document-player-name { font-size: 13px; color: #111b21; font-weight: 500; margin-bottom: 2px; word-break: break-word; }
             .content .document-player-meta { font-size: 12px; color: rgba(17,27,33,0.6); }
             .meta { position: absolute; right: 8px; bottom: 4px; display: flex; flex-direction: column; gap: 4px; align-items: flex-end; font-size: 11px; color: rgba(17,27,33,0.6); }
-            .meta-content { display: flex; flex-direction: column; gap: 4px; align-items: flex-end; }
+            .meta-content { display: flex; flex-direction: column; gap: 6px; align-items: flex-end; }
             .meta-row { display: flex; gap: 4px; align-items: center; }
             .time { font-weight: 500; }
-            .message-deleted-badge { font-size: 10.4px; color: rgba(17, 27, 33, 0.5); font-style: italic; line-height: 1; }
+            .message-deleted-badge { font-size: 10.4px; color: rgba(17, 27, 33, 0.5); font-style: italic; line-height: 1; margin-top: 4px; text-align: right; text-decoration: none; }
             .reactions-summary { position: absolute; display: inline-flex; gap: 4px; bottom: 0; transform: translateY(50%); z-index: 11; }
             .reactions-summary--left { justify-content: flex-start; left: 16px; }
             .reactions-summary--right { justify-content: flex-end; right: 16px; }
