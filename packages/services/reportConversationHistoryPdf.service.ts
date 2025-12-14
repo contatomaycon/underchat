@@ -770,20 +770,24 @@ export class ReportConversationHistoryPdfService {
   }
 
   private formatPhone(phone: string, ddi?: string | null): string {
-    const phoneWithPlus = phone.startsWith('+') ? phone : `+${phone}`;
-    const extracted = extractPhoneAndDdi(phoneWithPlus);
-
     let phoneNumbers = phone.replaceAll(/\D/g, '');
     let phoneDdi = ddi;
 
-    if (extracted) {
-      phoneDdi = extracted.phone_ddi;
-      phoneNumbers = extracted.phone;
-    } else if (phoneDdi && phoneNumbers.startsWith(phoneDdi)) {
-      phoneNumbers = phoneNumbers.slice(phoneDdi.length);
-    } else if (!phoneDdi && phoneNumbers.length > 11) {
-      phoneDdi = phoneNumbers.slice(0, 2);
-      phoneNumbers = phoneNumbers.slice(2);
+    if (phoneDdi) {
+      if (phoneNumbers.startsWith(phoneDdi)) {
+        phoneNumbers = phoneNumbers.slice(phoneDdi.length);
+      }
+    } else {
+      const phoneWithPlus = phone.startsWith('+') ? phone : `+${phone}`;
+      const extracted = extractPhoneAndDdi(phoneWithPlus);
+
+      if (extracted) {
+        phoneDdi = extracted.phone_ddi;
+        phoneNumbers = extracted.phone;
+      } else if (phoneNumbers.length > 11) {
+        phoneDdi = phoneNumbers.slice(0, 2);
+        phoneNumbers = phoneNumbers.slice(2);
+      }
     }
 
     const numbers = phoneNumbers.slice(0, 11);
@@ -1047,7 +1051,13 @@ export class ReportConversationHistoryPdfService {
       const phone = this.contactPhoneCache.get(contact.contact_id);
       if (phone) {
         const phoneDdi = contact.phone_ddi || null;
-        phoneDisplay = this.formatPhone(phone, phoneDdi);
+        if (phoneDdi) {
+          const phoneDigits = phone.replaceAll(/\D/g, '');
+          const fullPhone = `${phoneDdi}${phoneDigits}`;
+          phoneDisplay = this.formatPhone(fullPhone, phoneDdi);
+        } else {
+          phoneDisplay = this.formatPhone(phone, null);
+        }
       }
     }
 

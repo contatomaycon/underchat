@@ -1955,7 +1955,9 @@ const handleContactClick = (message: ListMessageResult) => {
     }
 
     &.has-reactions {
-      padding-bottom: 1.8rem !important;
+      min-width: 120px;
+      padding-left: 0.75rem !important;
+      padding-right: 0.75rem !important;
     }
 
     &.chat-left {
@@ -2005,7 +2007,7 @@ const handleContactClick = (message: ListMessageResult) => {
     position: absolute;
     left: 0;
     right: 0;
-    bottom: 2px;
+    bottom: 6px;
     display: flex;
     align-items: flex-end;
     gap: 4px;
@@ -2020,9 +2022,8 @@ const handleContactClick = (message: ListMessageResult) => {
     }
 
     .message-audio-duration {
-      font-weight: 500;
-      white-space: nowrap;
       margin-right: auto;
+      font-weight: 500;
     }
 
     .message-meta-content {
@@ -2050,10 +2051,6 @@ const handleContactClick = (message: ListMessageResult) => {
       font-style: italic;
       line-height: 1;
     }
-  }
-
-  .chat-content.has-reactions .message-meta {
-    bottom: 20px;
   }
 
   .message-meta--audio {
@@ -2315,7 +2312,7 @@ const handleContactClick = (message: ListMessageResult) => {
     padding: 12px;
     border-radius: 10px;
     background: rgba(var(--v-theme-on-surface), 0.04);
-    margin-bottom: 0;
+    margin-bottom: 16px;
     max-width: 100%;
     position: relative;
     padding-bottom: 12px;
@@ -2431,7 +2428,7 @@ const handleContactClick = (message: ListMessageResult) => {
     max-width: 100%;
     position: relative;
     padding-bottom: 0;
-    margin-bottom: 0;
+    margin-bottom: 16px;
 
     &.is-deleted {
       opacity: 0.7;
@@ -2630,7 +2627,8 @@ const handleContactClick = (message: ListMessageResult) => {
     position: absolute;
     display: inline-flex;
     gap: 4px;
-    bottom: -11px;
+    bottom: -2px;
+    transform: translateY(60%);
     margin-inline-start: auto;
     z-index: 11;
 
@@ -2648,7 +2646,7 @@ const handleContactClick = (message: ListMessageResult) => {
     &--center {
       justify-content: center;
       left: 50%;
-      transform: translateX(-50%);
+      transform: translateX(-50%) translateY(60%);
     }
 
     .reaction-summary-bubble {
@@ -2656,7 +2654,7 @@ const handleContactClick = (message: ListMessageResult) => {
       align-items: center;
       background: rgb(var(--v-theme-surface));
       border-radius: 999px;
-      padding: 2px 8px;
+      padding: 2px 10px;
       min-height: 22px;
       box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
       border: 0.5px solid rgba(var(--v-theme-on-surface), 0.08);
