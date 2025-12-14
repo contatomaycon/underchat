@@ -162,7 +162,11 @@ export class ReportConversationHistoryPdfService {
             return isMapContainerLoaded(container);
           };
 
-          const checkInterval = setInterval(() => {
+          const handleAllMapsLoaded = (): void => {
+            setTimeout(() => resolve(), 3000);
+          };
+
+          const handleMapCheck = (checkInterval: NodeJS.Timeout): void => {
             if (allMapsResolved) {
               clearInterval(checkInterval);
               return;
@@ -177,17 +181,24 @@ export class ReportConversationHistoryPdfService {
             if (loadedCount === totalMaps && !allMapsResolved) {
               allMapsResolved = true;
               clearInterval(checkInterval);
-              setTimeout(() => resolve(), 3000);
+              handleAllMapsLoaded();
             }
-          }, 500);
+          };
 
-          setTimeout(() => {
+          const handleTimeout = (checkInterval: NodeJS.Timeout): void => {
             clearInterval(checkInterval);
             if (!allMapsResolved) {
               allMapsResolved = true;
               resolve();
             }
-          }, 25000);
+          };
+
+          const checkInterval = setInterval(
+            () => handleMapCheck(checkInterval),
+            500
+          );
+
+          setTimeout(() => handleTimeout(checkInterval), 25000);
         });
       });
 
@@ -263,7 +274,7 @@ export class ReportConversationHistoryPdfService {
           }
         },
         mapId,
-        screenshot as string
+        screenshot
       );
     } catch (e) {
       console.error(e);
@@ -387,23 +398,40 @@ export class ReportConversationHistoryPdfService {
     return bubbleStyleParts.length > 0 ? bubbleStyleParts.join(' ') : '';
   }
 
-  private generateMessageHtml(
-    msg: ListMessageResult,
-    author: string,
-    photo: string,
-    content: string,
-    isSystem: boolean,
-    alignmentClass: string,
-    timeOnly: string,
-    bubbleClasses: string,
-    bubbleStyle: string,
-    metaStyle: string,
-    reactionsHtml: string,
-    isDeleted: boolean,
-    hasVersions: boolean,
-    clientName: string,
-    t: TFunction<'translation', undefined>
-  ): string {
+  private generateMessageHtml(params: {
+    msg: ListMessageResult;
+    author: string;
+    photo: string;
+    content: string;
+    isSystem: boolean;
+    alignmentClass: string;
+    timeOnly: string;
+    bubbleClasses: string;
+    bubbleStyle: string;
+    metaStyle: string;
+    reactionsHtml: string;
+    isDeleted: boolean;
+    hasVersions: boolean;
+    clientName: string;
+    t: TFunction<'translation', undefined>;
+  }): string {
+    const {
+      msg,
+      author,
+      photo,
+      content,
+      isSystem,
+      alignmentClass,
+      timeOnly,
+      bubbleClasses,
+      bubbleStyle,
+      metaStyle,
+      reactionsHtml,
+      isDeleted,
+      hasVersions,
+      clientName,
+      t,
+    } = params;
     const avatarHtml = isSystem
       ? ''
       : `
@@ -517,7 +545,7 @@ export class ReportConversationHistoryPdfService {
         ? `bottom: ${reactionStyles.metaBottom}px;`
         : '';
 
-      const messageHtml = this.generateMessageHtml(
+      const messageHtml = this.generateMessageHtml({
         msg,
         author,
         photo,
@@ -532,8 +560,8 @@ export class ReportConversationHistoryPdfService {
         isDeleted,
         hasVersions,
         clientName,
-        t
-      );
+        t,
+      });
 
       parts.push(messageHtml);
     }
