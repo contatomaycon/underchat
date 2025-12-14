@@ -170,32 +170,7 @@ export class ReportConversationHistoryPdfService {
 
       const mapContainers = await page.$$('[id^="map-"]');
       for (const container of mapContainers) {
-        try {
-          const screenshot = await container.screenshot({
-            type: 'png',
-            encoding: 'base64',
-          });
-          if (screenshot) {
-            const mapId = await container.evaluate((el) =>
-              el.getAttribute('id')
-            );
-            if (mapId) {
-              await page.evaluate(
-                (id: string, imgData: string) => {
-                  const doc = (globalThis as any).document;
-                  const container = doc.getElementById(id);
-                  if (container) {
-                    container.innerHTML = `<img src="data:image/png;base64,${imgData}" style="width: 100%; height: 100%; object-fit: cover;" />`;
-                  }
-                },
-                mapId,
-                screenshot as string
-              );
-            }
-          }
-        } catch (e) {
-          console.error(e);
-        }
+        await this.processMapContainer(page, container);
       }
 
       const pdfBuffer = await page.pdf({
@@ -230,6 +205,41 @@ export class ReportConversationHistoryPdfService {
     } catch (error) {
       await browser.close();
       throw error;
+    }
+  }
+
+  private async processMapContainer(page: any, container: any): Promise<void> {
+    try {
+      const screenshot = await container.screenshot({
+        type: 'png',
+        encoding: 'base64',
+      });
+
+      if (!screenshot) {
+        return;
+      }
+
+      const mapId = await container.evaluate((el: any) =>
+        el.getAttribute('id')
+      );
+
+      if (!mapId) {
+        return;
+      }
+
+      await page.evaluate(
+        (id: string, imgData: string) => {
+          const doc = (globalThis as any).document;
+          const container = doc.getElementById(id);
+          if (container) {
+            container.innerHTML = `<img src="data:image/png;base64,${imgData}" style="width: 100%; height: 100%; object-fit: cover;" />`;
+          }
+        },
+        mapId,
+        screenshot as string
+      );
+    } catch (e) {
+      console.error(e);
     }
   }
 
