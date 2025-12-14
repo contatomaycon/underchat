@@ -433,14 +433,18 @@ export class ReportAttendancePdfService {
 
   private drawBars(
     doc: PDFKit.PDFDocument,
-    chartLeft: number,
-    chartWidth: number,
-    chartHeight: number,
-    drawingBottom: number,
+    config: {
+      chartLeft: number;
+      chartWidth: number;
+      chartHeight: number;
+      drawingBottom: number;
+      maxValue: number;
+    },
     labels: string[],
-    datasets: Array<{ data: number[]; backgroundColor: string }>,
-    maxValue: number
+    datasets: Array<{ data: number[]; backgroundColor: string }>
   ): void {
+    const { chartLeft, chartWidth, chartHeight, drawingBottom, maxValue } =
+      config;
     const datasetCount = datasets.length;
     const groupWidth = chartWidth / labels.length;
     const groupPadding = 12;
@@ -561,13 +565,15 @@ export class ReportAttendancePdfService {
 
     this.drawBars(
       doc,
-      chartLeft,
-      chartWidth,
-      chartHeight,
-      drawingBottom,
+      {
+        chartLeft,
+        chartWidth,
+        chartHeight,
+        drawingBottom,
+        maxValue,
+      },
       chartData.labels,
-      chartData.datasets,
-      maxValue
+      chartData.datasets
     );
 
     const legendRows = this.drawLegend(
