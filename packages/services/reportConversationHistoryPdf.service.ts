@@ -228,20 +228,50 @@ export class ReportConversationHistoryPdfService {
         msg.content?.version && msg.content.version.length > 0
       );
 
+      const reactionsSummary =
+        hasReactions && msg.content?.reactions
+          ? this.getReactionsSummary(msg.content.reactions)
+          : [];
+      const reactionsCount = reactionsSummary.length;
+      const basePaddingBottom = 20;
+      const reactionHeight = 22;
+      const reactionOffset = reactionHeight / 2;
+      const metaBottomPosition = 4;
+      const metaHeight = 16;
+      const extraSpace = 4;
+      const paddingBottom =
+        reactionsCount > 0
+          ? Math.max(
+              basePaddingBottom + reactionHeight / 2,
+              reactionOffset +
+                metaBottomPosition +
+                metaHeight +
+                extraSpace +
+                reactionsCount * 2
+            )
+          : basePaddingBottom;
+      const paddingRight = reactionsCount > 0 ? 60 : 12;
+      const bubbleStyle = hasReactions
+        ? `padding-bottom: ${paddingBottom}px; padding-right: ${paddingRight}px;`
+        : '';
+      const metaBottomValue =
+        reactionsCount > 0 ? Math.max(4, reactionHeight / 2 + 2) : 4;
+      const metaStyle = hasReactions ? `bottom: ${metaBottomValue}px;` : '';
+
       parts.push(`
         <div class="msg-row ${alignmentClass}">
           <div class="msg-avatar">
             <img src="${photo}" alt="${author}" class="avatar-img" />
             <div class="msg-name">${author}</div>
           </div>
-          <div class="bubble ${alignmentClass} ${mediaClass} ${reactionsClass} ${deletedClass}">
+          <div class="bubble ${alignmentClass} ${mediaClass} ${reactionsClass} ${deletedClass}" style="${bubbleStyle}">
             ${this.formatQuoted(msg, clientName)}
             <div class="content">
               <div class="message-text">${content}</div>
               ${isDeleted ? '<div class="message-deleted-badge">Removido</div>' : ''}
               ${hasVersions ? '<div class="message-edited-badge">Editado</div>' : ''}
             </div>
-            <div class="meta">
+            <div class="meta" style="${metaStyle}">
               <div class="meta-content">
                 <div class="meta-row">
                   <span class="time">${timeOnly}</span>
