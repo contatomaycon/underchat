@@ -212,11 +212,28 @@ export class ReportConversationHistoryPdfService {
             .msg-row.left .bubble { order: 2; background: rgb(255, 255, 255); color: #111b21; }
             .msg-row.right .bubble { order: 2; background: rgb(217, 253, 211); color: #111b21; }
             .content { font-size: 14.2px; word-break: break-word; margin-bottom: 4px; }
-            .content img { max-width: 200px; max-height: 200px; width: auto; height: auto; border-radius: 8px; margin-bottom: 8px; object-fit: contain; }
-            .content img.sticker-img { max-width: 100px; max-height: 100px; }
+            .content img { max-width: 120px; max-height: 120px; width: auto; height: auto; border-radius: 8px; margin-bottom: 8px; object-fit: contain; }
+            .content img.sticker-img { max-width: 80px; max-height: 80px; }
             .content .media-link { font-size: 12px; margin-top: 4px; max-width: 100%; overflow-wrap: break-word; }
             .content .media-link a { color: #1976d2; text-decoration: none; word-break: break-all; display: inline-block; max-width: 100%; }
             .content .media-link a:hover { text-decoration: underline; }
+            .content .audio-player { display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: rgba(0,0,0,0.05); border-radius: 6px; margin-bottom: 8px; }
+            .content .audio-player-icon { width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.1); border-radius: 50%; flex-shrink: 0; }
+            .content .audio-player-icon svg { width: 14px; height: 14px; fill: #111b21; }
+            .content .audio-player-info { flex: 1; min-width: 0; }
+            .content .audio-player-duration { font-size: 12px; color: #111b21; font-weight: 500; }
+            .content .video-player { display: flex; flex-direction: column; gap: 6px; padding: 6px 10px; background: rgba(0,0,0,0.05); border-radius: 6px; margin-bottom: 8px; }
+            .content .video-player-header { display: flex; align-items: center; gap: 8px; }
+            .content .video-player-icon { width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.1); border-radius: 50%; flex-shrink: 0; }
+            .content .video-player-icon svg { width: 14px; height: 14px; fill: #111b21; }
+            .content .video-player-info { flex: 1; min-width: 0; }
+            .content .video-player-meta { font-size: 11px; color: rgba(17,27,33,0.6); }
+            .content .document-player { display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: rgba(0,0,0,0.05); border-radius: 6px; margin-bottom: 8px; }
+            .content .document-player-icon { width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.1); border-radius: 6px; flex-shrink: 0; }
+            .content .document-player-icon svg { width: 16px; height: 16px; fill: #1976d2; }
+            .content .document-player-info { flex: 1; min-width: 0; }
+            .content .document-player-name { font-size: 12px; color: #111b21; font-weight: 500; margin-bottom: 2px; word-break: break-word; }
+            .content .document-player-meta { font-size: 11px; color: rgba(17,27,33,0.6); }
             .meta { position: absolute; right: 8px; bottom: 4px; display: flex; gap: 4px; align-items: center; font-size: 11px; color: rgba(17,27,33,0.6); }
             .time { font-weight: 500; }
           </style>
@@ -408,15 +425,110 @@ export class ReportConversationHistoryPdfService {
     }
 
     if (content.type === 'video') {
-      return `[Vídeo] ${content.caption || ''}`;
+      const videoUrl = content.video?.url || '';
+      const caption = content.video?.caption || '';
+      const parts: string[] = [];
+
+      if (videoUrl) {
+        const escapedUrl = this.escapeHtml(videoUrl);
+        const extension = content.video?.extension?.toUpperCase() || 'VIDEO';
+        const size = content.video?.size
+          ? this.formatDocumentSize(content.video.size)
+          : null;
+        const duration = content.video?.duration
+          ? this.formatVideoDuration(content.video.duration)
+          : null;
+        const metaParts = [extension, size, duration].filter(Boolean);
+        const meta = metaParts.join(' • ');
+
+        parts.push(`
+          <div class="video-player">
+            <div class="video-player-header">
+              <div class="video-player-icon">
+                <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M8 5v14l11-7z"/>
+                </svg>
+              </div>
+              <div class="video-player-info">
+                <div class="video-player-meta">${this.escapeHtml(meta)}</div>
+              </div>
+            </div>
+          </div>
+        `);
+        parts.push(
+          `<div class="media-link"><b>Link:</b> <a href="${escapedUrl}" target="_blank" rel="noopener noreferrer">${escapedUrl}</a></div>`
+        );
+      }
+
+      if (caption) {
+        parts.push(`<div>${caption.replace(/\n/g, '<br>')}</div>`);
+      }
+
+      return parts.length > 0 ? parts.join('') : '[Vídeo]';
     }
 
     if (content.type === 'audio') {
-      return `[Áudio]`;
+      const audioUrl = content.audio?.url || '';
+      const parts: string[] = [];
+
+      if (audioUrl) {
+        const escapedUrl = this.escapeHtml(audioUrl);
+        const duration = content.audio?.duration
+          ? this.formatAudioTime(content.audio.duration)
+          : '0:00';
+
+        parts.push(`
+          <div class="audio-player">
+            <div class="audio-player-icon">
+              <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path d="M8 5v14l11-7z"/>
+              </svg>
+            </div>
+            <div class="audio-player-info">
+              <div class="audio-player-duration">${this.escapeHtml(duration)}</div>
+            </div>
+          </div>
+        `);
+        parts.push(
+          `<div class="media-link"><b>Link:</b> <a href="${escapedUrl}" target="_blank" rel="noopener noreferrer">${escapedUrl}</a></div>`
+        );
+      }
+
+      return parts.length > 0 ? parts.join('') : '[Áudio]';
     }
 
     if (content.type === 'document') {
-      return `[Documento] ${content.filename || ''}`;
+      const documentUrl = content.document?.url || '';
+      const parts: string[] = [];
+
+      if (documentUrl) {
+        const escapedUrl = this.escapeHtml(documentUrl);
+        const name = content.document?.name || 'Documento';
+        const extension = content.document?.extension?.toUpperCase() || 'FILE';
+        const size = content.document?.size
+          ? this.formatDocumentSize(content.document.size)
+          : null;
+        const meta = size ? `${extension} • ${size}` : extension;
+
+        parts.push(`
+          <div class="document-player">
+            <div class="document-player-icon">
+              <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/>
+              </svg>
+            </div>
+            <div class="document-player-info">
+              <div class="document-player-name">${this.escapeHtml(name)}</div>
+              <div class="document-player-meta">${this.escapeHtml(meta)}</div>
+            </div>
+          </div>
+        `);
+        parts.push(
+          `<div class="media-link"><b>Link:</b> <a href="${escapedUrl}" target="_blank" rel="noopener noreferrer">${escapedUrl}</a></div>`
+        );
+      }
+
+      return parts.length > 0 ? parts.join('') : '[Documento]';
     }
 
     if (content.type === 'location') {
@@ -439,5 +551,31 @@ export class ReportConversationHistoryPdfService {
       "'": '&#039;',
     };
     return text.replace(/[&<>"']/g, (m) => map[m]);
+  }
+
+  private formatDocumentSize(bytes?: number | null): string {
+    if (!bytes) return '';
+    const kb = bytes / 1024;
+    if (kb < 1024) return `${Math.round(kb)} KB`;
+    const mb = kb / 1024;
+    return `${mb.toFixed(2)} MB`;
+  }
+
+  private formatVideoDuration(duration?: number | null): string {
+    if (!duration || duration <= 0) return '';
+    const totalSeconds = Math.floor(duration);
+    const minutes = Math.floor(totalSeconds / 60)
+      .toString()
+      .padStart(2, '0');
+    const seconds = (totalSeconds % 60).toString().padStart(2, '0');
+    return `${minutes}:${seconds}`;
+  }
+
+  private formatAudioTime(seconds?: number | null): string {
+    if (!seconds || seconds <= 0) return '0:00';
+    const totalSeconds = Math.floor(seconds);
+    const minutes = Math.floor(totalSeconds / 60);
+    const secs = totalSeconds % 60;
+    return `${minutes}:${secs.toString().padStart(2, '0')}`;
   }
 }
