@@ -350,14 +350,14 @@ export const useReportConversationHistoryStore = defineStore(
           );
 
           const blob = new Blob([response.data], { type: 'application/pdf' });
-          const url = window.URL.createObjectURL(blob);
+          const url = globalThis.URL.createObjectURL(blob);
           const link = document.createElement('a');
           link.href = url;
           link.download = `conversation-history-${chatId}.pdf`;
           document.body.appendChild(link);
           link.click();
-          document.body.removeChild(link);
-          window.URL.revokeObjectURL(url);
+          link.remove();
+          globalThis.URL.revokeObjectURL(url);
         } catch (error) {
           let errorMessage = this.i18n.global.t(
             'report_conversation_history_pdf_download_error'

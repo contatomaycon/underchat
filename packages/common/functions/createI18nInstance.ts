@@ -1,6 +1,6 @@
 import i18next, { TFunction } from 'i18next';
 import Backend from 'i18next-fs-backend';
-import path from 'path';
+import path from 'node:path';
 
 export async function createI18nInstance(
   language: string
