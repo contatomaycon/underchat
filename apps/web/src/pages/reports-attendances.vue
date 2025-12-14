@@ -209,7 +209,7 @@ const prepareChartData = (data: any[]) => {
       const period = item.period || '';
       const category =
         reportType.value === 'queue'
-          ? item.queue || 'Sem Fila'
+          ? item.queue || 'Sem Setor'
           : item.analyst || 'Sem Analista';
 
       categoriesSet.add(category);

@@ -616,7 +616,7 @@ const openDocument = (url: string | null | undefined) => {
             />
           </div>
 
-          <!-- Filtro por Fila -->
+          <!-- Filtro por Setor -->
           <div v-if="searchBy === 'queue'" class="invoice-list-filter">
             <VLabel class="text-body-2 mb-1"
               >{{ $t('search_by_queue') }}:</VLabel
