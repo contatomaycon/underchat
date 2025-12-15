@@ -5,6 +5,7 @@ import { EScheduleType } from '@core/common/enums/EScheduleType';
 import { EScheduleSendTo } from '@core/common/enums/EScheduleSendTo';
 import { refDebounced } from '@vueuse/core';
 import { EditScheduleParamsRequest } from '@core/schema/schedule/editSchedule/request.schema';
+import { formatDateToDateTimePicker } from '@core/common/functions/formatDateToDateTimePicker';
 
 const scheduleStore = useScheduleStore();
 const { t } = useI18n();
@@ -455,7 +456,7 @@ watch(
         message.value = schedule.message ?? null;
         workerId.value = schedule.worker.worker_id;
         sendTo.value = schedule.send_to as EScheduleSendTo;
-        sendDate.value = schedule.send_date ?? null;
+        sendDate.value = formatDateToDateTimePicker(schedule.send_date ?? null);
         existingAttachmentUrl.value = schedule?.url ?? null;
         selectedType.value =
           (schedule.type as EScheduleType) || EScheduleType.text;
