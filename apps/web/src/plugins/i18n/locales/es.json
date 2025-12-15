@@ -1839,5 +1839,9 @@
     "channel_required": "Por favor, seleccione un canal.",
     "send_to_required": "Por favor, seleccione a quién enviar.",
     "send_date_required": "Por favor, seleccione la fecha de envío.",
-    "select_send_to": "Seleccione a quién enviar"
+    "select_send_to": "Seleccione a quién enviar",
+    "schedule_messages": "Mensajes del Agendamiento",
+    "schedule_messages_list_error": "Error al listar mensajes del agendamiento. Por favor, intente nuevamente.",
+    "schedule_messages_list_successfully": "¡Mensajes del agendamiento listados con éxito!",
+    "schedule_messages_list_not_found": "No se encontraron mensajes para este agendamiento."
 }

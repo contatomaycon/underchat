@@ -1839,5 +1839,9 @@
     "channel_required": "Please select a channel.",
     "send_to_required": "Please select who to send to.",
     "send_date_required": "Please select the send date.",
-    "select_send_to": "Select who to send to"
+    "select_send_to": "Select who to send to",
+    "schedule_messages": "Schedule Messages",
+    "schedule_messages_list_error": "Error listing schedule messages. Please try again.",
+    "schedule_messages_list_successfully": "Schedule messages listed successfully!",
+    "schedule_messages_list_not_found": "No messages found for this schedule."
 }

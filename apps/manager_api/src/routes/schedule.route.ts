@@ -15,6 +15,7 @@ import { editScheduleSchema } from '@core/schema/schedule/editSchedule';
 import { listScheduleWorkersSchema } from '@core/schema/schedule/listScheduleWorkers';
 import { listScheduleContactsSchema } from '@core/schema/schedule/listScheduleContacts';
 import { listScheduleContactGroupsSchema } from '@core/schema/schedule/listScheduleContactGroups';
+import { listScheduleMessagesSchema } from '@core/schema/schedule/listScheduleMessages';
 import { planGuard } from '@/plugins/planGuard';
 import { planStatus } from '@/plugins/planStatus';
 
@@ -101,6 +102,17 @@ export default function scheduleRoutes(server: FastifyInstance) {
   server.get('/schedule/contact-groups', {
     schema: listScheduleContactGroupsSchema,
     handler: scheduleController.listScheduleContactGroups,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, scheduleViewPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.get('/schedule/messages', {
+    schema: listScheduleMessagesSchema,
+    handler: scheduleController.listScheduleMessages,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, scheduleViewPermissions),

@@ -15,7 +15,11 @@ import { ListScheduleContactsRequest } from '@core/schema/schedule/listScheduleC
 import { ListScheduleContactsResponse } from '@core/schema/schedule/listScheduleContacts/response.schema';
 import { ScheduleContactGroupsListerRepository } from '@core/repositories/schedule/ScheduleContactGroupsLister.repository';
 import { ListScheduleContactGroupsResponse } from '@core/schema/schedule/listScheduleContactGroups/response.schema';
+import { ScheduleMessagesListerRepository } from '@core/repositories/schedule/ScheduleMessagesLister.repository';
+import { ListScheduleMessagesRequest } from '@core/schema/schedule/listScheduleMessages/request.schema';
+import { ListScheduleMessagesResponse } from '@core/schema/schedule/listScheduleMessages/response.schema';
 import { IUpdateSchedule } from '@core/interfaces/repositories/schedule/IUpdateSchedule';
+import { setPaginationData } from '@core/common/functions/createPaginationData';
 
 @injectable()
 export class ScheduleService {
@@ -28,7 +32,8 @@ export class ScheduleService {
     private readonly scheduleUpdaterRepository: ScheduleUpdaterRepository,
     private readonly scheduleWorkersListerRepository: ScheduleWorkersListerRepository,
     private readonly scheduleContactsListerRepository: ScheduleContactsListerRepository,
-    private readonly scheduleContactGroupsListerRepository: ScheduleContactGroupsListerRepository
+    private readonly scheduleContactGroupsListerRepository: ScheduleContactGroupsListerRepository,
+    private readonly scheduleMessagesListerRepository: ScheduleMessagesListerRepository
   ) {}
 
   listSchedules = async (
@@ -123,5 +128,33 @@ export class ScheduleService {
     return this.scheduleContactGroupsListerRepository.listScheduleContactGroups(
       accountId
     );
+  };
+
+  listScheduleMessages = async (
+    query: ListScheduleMessagesRequest,
+    accountId: string
+  ): Promise<ListScheduleMessagesResponse | null> => {
+    const currentPage = query.current_page ?? 1;
+    const perPage = query.per_page ?? 50;
+
+    const [messages, total] =
+      await this.scheduleMessagesListerRepository.listScheduleMessages(
+        query.schedule_id,
+        accountId,
+        currentPage,
+        perPage
+      );
+
+    const pagings = setPaginationData(
+      messages.length,
+      total,
+      perPage,
+      currentPage
+    );
+
+    return {
+      results: messages,
+      pagings,
+    };
   };
 }

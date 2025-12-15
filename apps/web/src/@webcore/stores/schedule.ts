@@ -22,6 +22,8 @@ import { ListScheduleWorkersFinalResponse } from '@core/schema/schedule/listSche
 import { ListScheduleContactsFinalResponse } from '@core/schema/schedule/listScheduleContacts/response.schema';
 import { ListScheduleContactGroupsFinalResponse } from '@core/schema/schedule/listScheduleContactGroups/response.schema';
 import { ListScheduleContactsRequest } from '@core/schema/schedule/listScheduleContacts/request.schema';
+import { ListScheduleMessagesResponse } from '@core/schema/schedule/listScheduleMessages/response.schema';
+import { ListScheduleMessagesRequest } from '@core/schema/schedule/listScheduleMessages/request.schema';
 
 export const useScheduleStore = defineStore('schedule', {
   state: () => ({
@@ -390,6 +392,54 @@ export const useScheduleStore = defineStore('schedule', {
         let errorMessage = this.i18n.global.t(
           'schedule_contact_groups_list_error'
         );
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return null;
+      }
+    },
+
+    async listScheduleMessages(
+      scheduleId: string,
+      page: number = 1,
+      perPage: number = 50
+    ): Promise<ListScheduleMessagesResponse | null> {
+      try {
+        this.loading = true;
+
+        const request: ListScheduleMessagesRequest = {
+          schedule_id: scheduleId,
+          current_page: page,
+          per_page: perPage,
+        };
+
+        const response = await axios.get<
+          IApiResponse<ListScheduleMessagesResponse>
+        >(`/schedule/messages`, {
+          params: request,
+        });
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('schedule_messages_list_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return null;
+        }
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('schedule_messages_list_error');
         if (error instanceof AxiosError) {
           errorMessage = error?.response?.data?.message ?? errorMessage;
         }

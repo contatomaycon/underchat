@@ -269,6 +269,8 @@ const scheduleToDelete = ref<string | null>(null);
 const isDialogEditScheduleShow = ref(false);
 const isAddScheduleVisible = ref(false);
 const scheduleToEdit = ref<string | null>(null);
+const isViewMessagesDialogShow = ref(false);
+const scheduleToView = ref<string | null>(null);
 
 const headers: DataTableHeader<ListScheduleResponse>[] = [
   { title: t('worker'), key: 'worker' },
@@ -336,6 +338,11 @@ const openEditDialog = (id: string) => {
   scheduleToEdit.value = id;
 
   isDialogEditScheduleShow.value = true;
+};
+
+const openViewMessagesDialog = (id: string) => {
+  scheduleToView.value = id;
+  isViewMessagesDialogShow.value = true;
 };
 
 watch(
@@ -501,6 +508,18 @@ watch(
                     @click="openEditDialog(item.schedule_id)"
                 /></IconBtn>
 
+                <IconBtn v-if="item.schedule_id"
+                  ><VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>{{ $t('view') }}</span> </VTooltip
+                  ><VIcon
+                    icon="tabler-eye"
+                    @click="openViewMessagesDialog(item.schedule_id)"
+                /></IconBtn>
+
                 <IconBtn
                   v-if="$canPermission(permissionsDelete) && item.schedule_id"
                   ><VTooltip
@@ -650,6 +669,12 @@ watch(
       <AppAddSchedule
         v-if="isAddScheduleVisible"
         v-model="isAddScheduleVisible"
+      />
+
+      <AppViewScheduleMessages
+        v-if="isViewMessagesDialogShow"
+        v-model="isViewMessagesDialogShow"
+        :schedule-id="scheduleToView"
       />
     </VCard>
 
