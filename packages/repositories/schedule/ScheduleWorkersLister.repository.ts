@@ -1,5 +1,5 @@
 import * as schema from '@core/models';
-import { worker, account } from '@core/models';
+import { worker } from '@core/models';
 import { ListScheduleWorkersResponse } from '@core/schema/schedule/listScheduleWorkers/response.schema';
 import { and, eq, isNull, asc } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';

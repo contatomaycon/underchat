@@ -1,5 +1,4 @@
 import { injectable } from 'tsyringe';
-import { TFunction } from 'i18next';
 import { ScheduleMessagesListerRepository } from '@core/repositories/schedule/ScheduleMessagesLister.repository';
 import { ListScheduleMessagesRequest } from '@core/schema/schedule/listScheduleMessages/request.schema';
 import { ListScheduleMessagesResponse } from '@core/schema/schedule/listScheduleMessages/response.schema';

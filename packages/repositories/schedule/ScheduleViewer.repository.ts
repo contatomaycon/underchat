@@ -8,7 +8,7 @@ import {
   contactGroup,
 } from '@core/models';
 import { ViewScheduleResponse } from '@core/schema/schedule/viewSchedule/response.schema';
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 
@@ -52,7 +52,7 @@ export class ScheduleViewerRepository {
   };
 
   private readonly getScheduledContactsData = async (scheduleId: string) => {
-    return await this.db
+    return this.db
       .select({
         contact_id: contact.contact_id,
         contact_name: contact.name,
@@ -76,10 +76,10 @@ export class ScheduleViewerRepository {
     >
   ): ViewScheduleResponse['contacts'] => {
     const contactsList = scheduledContactsResult
-      .filter((sc) => sc.contact_id)
+      .filter((sc) => sc.contact_id && sc.contact_name)
       .map((sc) => ({
-        contact_id: sc.contact_id!,
-        name: sc.contact_name!,
+        contact_id: sc.contact_id ?? '',
+        name: sc.contact_name ?? '',
         phone_partial: sc.contact_phone_partial ?? null,
       }));
 
@@ -92,10 +92,10 @@ export class ScheduleViewerRepository {
     >
   ): ViewScheduleResponse['contact_groups'] => {
     const contactGroupsList = scheduledContactsResult
-      .filter((sc) => sc.contact_group_id)
+      .filter((sc) => sc.contact_group_id && sc.contact_group_name)
       .map((sc) => ({
-        contact_group_id: sc.contact_group_id!,
-        name: sc.contact_group_name!,
+        contact_group_id: sc.contact_group_id ?? '',
+        name: sc.contact_group_name ?? '',
       }));
 
     return contactGroupsList.length > 0 ? contactGroupsList : undefined;
