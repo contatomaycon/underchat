@@ -1824,6 +1824,7 @@
     "schedule_deleted_error": "Error al eliminar agendamiento. Por favor, inténtalo de nuevo.",
     "schedule_deleted_success": "¡Agendamiento eliminado con éxito!",
     "pending": "Pendiente",
+    "processing": "En procesamiento",
     "sent": "Enviado",
     "failed": "Fallido",
     "schedule_workers_list_error": "Error al listar canales. Por favor, inténtalo de nuevo.",

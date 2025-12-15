@@ -251,6 +251,7 @@ const getSendToLabel = (sendTo: string): string => {
 
 const getStatusLabel = (status: string): string => {
   if (status === EScheduleStatus.pending) return t('pending');
+  if (status === EScheduleStatus.processing) return t('processing');
   if (status === EScheduleStatus.sent) return t('sent');
   if (status === EScheduleStatus.failed) return t('failed');
   return status;
@@ -258,6 +259,7 @@ const getStatusLabel = (status: string): string => {
 
 const getStatusColor = (status: string): string => {
   if (status === EScheduleStatus.pending) return 'warning';
+  if (status === EScheduleStatus.processing) return 'info';
   if (status === EScheduleStatus.sent) return 'success';
   if (status === EScheduleStatus.failed) return 'error';
   return 'default';

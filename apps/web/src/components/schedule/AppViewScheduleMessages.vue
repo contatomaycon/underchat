@@ -3,6 +3,7 @@ import { ref, watch, computed } from 'vue';
 import { useScheduleStore } from '@/@webcore/stores/schedule';
 import { EScheduleType } from '@core/common/enums/EScheduleType';
 import { formatDateTime } from '@core/common/functions/formatDateTime';
+import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
 import { ScheduleMessageResult } from '@core/schema/schedule/listScheduleMessages/response.schema';
 import { DataTableHeader } from 'vuetify';
 
@@ -51,12 +52,31 @@ const getContactName = (item: ScheduleMessageResult): string => {
 };
 
 const getContactPhone = (item: ScheduleMessageResult): string => {
-  if (item.contact?.phone_ddi && item.contact?.phone) {
+  if (!item.contact?.phone) {
+    return '-';
+  }
+
+  if (item.contact.phone_ddi && item.contact.phone) {
+    const fullPhone = `${item.contact.phone_ddi}${item.contact.phone}`;
+    const formatted = formatPhoneBR(fullPhone);
+
+    if (formatted !== fullPhone) {
+      return formatted;
+    }
+
     return `${item.contact.phone_ddi} ${item.contact.phone}`;
   }
-  if (item.contact?.phone) {
+
+  if (item.contact.phone) {
+    const formatted = formatPhoneBR(item.contact.phone);
+
+    if (formatted !== item.contact.phone) {
+      return formatted;
+    }
+
     return item.contact.phone;
   }
+
   return '-';
 };
 
@@ -68,6 +88,7 @@ const getStatusLabel = (status: string): string => {
   if (status === 'sent') return t('sent');
   if (status === 'failed') return t('failed');
   if (status === 'pending') return t('pending');
+  if (status === 'processing') return t('processing');
   return status;
 };
 
@@ -75,6 +96,7 @@ const getStatusColor = (status: string): string => {
   if (status === 'sent') return 'success';
   if (status === 'failed') return 'error';
   if (status === 'pending') return 'warning';
+  if (status === 'processing') return 'info';
   return 'default';
 };
 

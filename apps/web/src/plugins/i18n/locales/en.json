@@ -1824,6 +1824,7 @@
     "schedule_deleted_error": "Error deleting schedule. Please try again.",
     "schedule_deleted_success": "Schedule deleted successfully!",
     "pending": "Pending",
+    "processing": "Processing",
     "sent": "Sent",
     "failed": "Failed",
     "schedule_workers_list_error": "Error listing channels. Please try again.",
