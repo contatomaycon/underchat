@@ -1439,6 +1439,7 @@
     "audio": "Audio",
     "sticker": "Sticker",
     "location": "Location",
+    "location_map_unavailable": "Map unavailable",
     "contact": "Contact",
     "click_to_view": "Click to view",
     "click_to_listen": "Click to listen",

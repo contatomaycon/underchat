@@ -1439,6 +1439,7 @@
     "audio": "Audio",
     "sticker": "Pegatina",
     "location": "Ubicación",
+    "location_map_unavailable": "Mapa no disponible",
     "contact": "Contacto",
     "click_to_view": "Haga clic para ver",
     "click_to_listen": "Haga clic para escuchar",

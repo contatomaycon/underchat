@@ -1439,6 +1439,7 @@
     "audio": "Áudio",
     "sticker": "Figurinha",
     "location": "Localização",
+    "location_map_unavailable": "Mapa indisponível",
     "contact": "Contato",
     "click_to_view": "Clique para visualizar",
     "click_to_listen": "Clique para ouvir",

@@ -1,5 +1,12 @@
 <script lang="ts" setup>
-import { computed, ref, reactive, onUnmounted, watch } from 'vue';
+import {
+  computed,
+  ref,
+  reactive,
+  onUnmounted,
+  watch,
+  onErrorCaptured,
+} from 'vue';
 import { ListMessageResult } from '@core/schema/chat/listMessageChats/response.schema';
 import { isTypeUser } from '@core/common/functions/isTypeUser';
 import { EMessageType } from '@core/common/enums/EMessageType';
@@ -250,6 +257,43 @@ const mapStyle = computed(() => {
       },
     ],
   };
+});
+
+const isWebGLSupported = (): boolean => {
+  try {
+    const canvas = document.createElement('canvas');
+    const gl =
+      canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+    return !!gl;
+  } catch {
+    return false;
+  }
+};
+
+const webGLSupported = ref(isWebGLSupported());
+const mapErrors = reactive<Record<string, boolean>>({});
+
+const handleMapError = (messageId: string) => {
+  mapErrors[messageId] = true;
+};
+
+onErrorCaptured((err, instance) => {
+  if (
+    err.message &&
+    (err.message.includes('WebGL') ||
+      err.message.includes('webglcontextcreationerror') ||
+      err.message.includes('Failed to initialize WebGL'))
+  ) {
+    webGLSupported.value = false;
+    if (instance && (instance as any).$props?.key) {
+      const messageId = (instance as any).$props.key.replace('map-', '');
+      if (messageId) {
+        handleMapError(messageId);
+      }
+    }
+    return false;
+  }
+  return true;
 });
 
 const formatWhatsAppText = (text: string): string => {
@@ -1470,7 +1514,22 @@ const handleContactClick = (message: ListMessageResult) => {
                     @click="handleOpenLocation(item.message)"
                   >
                     <div class="location-map-preview">
+                      <div
+                        v-if="
+                          !webGLSupported || mapErrors[item.message.message_id]
+                        "
+                        class="location-map-fallback"
+                      >
+                        <VIcon size="32" color="primary">tabler-map-pin</VIcon>
+                        <span class="text-caption mt-2">
+                          {{
+                            t('location_map_unavailable', 'Mapa indisponível')
+                          }}
+                        </span>
+                      </div>
                       <MglMap
+                        v-else
+                        :key="`map-${item.message.message_id}`"
                         :map-style="mapStyle"
                         :center="[
                           item.message.content.location.longitude,
@@ -2521,6 +2580,17 @@ const handleContactClick = (message: ListMessageResult) => {
         width: 100% !important;
         height: 112px !important;
         pointer-events: none;
+      }
+
+      .location-map-fallback {
+        width: 100%;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        background: rgba(var(--v-theme-on-surface), 0.05);
+        color: rgba(var(--v-theme-on-surface), 0.6);
       }
     }
 
