@@ -10,6 +10,7 @@ import { EAccountPermissions } from '@core/common/enums/EPermissions/account';
 import { EMessageTemplatePermissions } from '@core/common/enums/EPermissions/messageTemplate';
 import { ELabelTemplatePermissions } from '@core/common/enums/EPermissions/labelTemplate';
 import { EContactPermissions } from '@core/common/enums/EPermissions/contact';
+import { ESchedulePermissions } from '@core/common/enums/EPermissions/schedule';
 import { EChatbotPermissions } from '@core/common/enums/EPermissions/chatbot';
 import { EPlanPermissions } from '@core/common/enums/EPermissions/plan';
 import { EFinancialPermissions } from '@core/common/enums/EPermissions/financial';
@@ -90,6 +91,20 @@ export default [
           EMessageTemplatePermissions.message_create,
           EMessageTemplatePermissions.message_update,
           EMessageTemplatePermissions.message_delete,
+        ],
+      },
+      {
+        title: 'schedules',
+        to: { name: 'schedule' as keyof RouteNamedMap },
+        icon: { icon: 'tabler-calendar-time' },
+        permissions: [
+          EGeneralPermissions.full_access,
+          EGeneralPermissions.full_access_group,
+          ESchedulePermissions.schedule_group,
+          ESchedulePermissions.schedule_view,
+          ESchedulePermissions.schedule_create,
+          ESchedulePermissions.schedule_update,
+          ESchedulePermissions.schedule_delete,
         ],
       },
     ],

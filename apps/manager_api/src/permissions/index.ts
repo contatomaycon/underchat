@@ -14,3 +14,4 @@ export * from './contactGroup.permissions';
 export * from './permission.permissions';
 export * from './expenditure.permissions';
 export * from './config.permissions';
+export * from './schedule.permissions';

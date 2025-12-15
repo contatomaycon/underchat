@@ -29,4 +29,5 @@ export enum ETagSwagger {
   webhook = 'Webhook',
   config = 'Configurações',
   dashboard = 'Dashboard',
+  schedule = 'Agendamentos',
 }

@@ -50,22 +50,14 @@ export const uploadProfileStatusRequestSchema = Type.Object({
     }),
   ]),
   contact_group_ids: Type.Optional(
-    Type.Union([
-      Type.Array(Type.String()),
-      Type.String(),
-      Type.Object({
-        value: Type.Union([Type.Array(Type.String()), Type.String()]),
-      }),
-    ])
+    Type.Object({
+      value: Type.Union([Type.Array(Type.String()), Type.String()]),
+    })
   ),
   contact_ids: Type.Optional(
-    Type.Union([
-      Type.Array(Type.String()),
-      Type.String(),
-      Type.Object({
-        value: Type.Union([Type.Array(Type.String()), Type.String()]),
-      }),
-    ])
+    Type.Object({
+      value: Type.Union([Type.Array(Type.String()), Type.String()]),
+    })
   ),
 });
 

@@ -26,6 +26,7 @@ import reportAttendanceRoutes from './reportAttendance.route';
 import configRoutes from './config.route';
 import webhookRoutes from './webhook.route';
 import dashboardRoutes from './dashboard.route';
+import scheduleRoutes from './schedule.route';
 
 export default function registerRoutes(server: FastifyInstance) {
   server.register(authRoutes);
@@ -55,4 +56,5 @@ export default function registerRoutes(server: FastifyInstance) {
   server.register(configRoutes);
   server.register(webhookRoutes);
   server.register(dashboardRoutes);
+  server.register(scheduleRoutes);
 }

@@ -6,6 +6,7 @@ import { UploadProfileStatusResponse } from '@core/schema/worker/uploadProfileSt
 import { UploadProfileStatusRequest } from '@core/schema/worker/uploadProfileStatus/request.schema';
 import { UploadFileRequest } from '@core/schema/upload/request.schema';
 import { VisibilityType } from '@core/common/interfaces/IVisibilityData';
+import { extractArrayField } from '@core/common/functions/extractArrayField';
 
 @injectable()
 export class WorkerProfileStatusUploaderUseCase {
@@ -68,31 +69,6 @@ export class WorkerProfileStatusUploaderUseCase {
     return photos as UploadFileRequest | UploadFileRequest[];
   }
 
-  private normalizeArrayField(field: unknown): string[] | undefined {
-    if (field === undefined || field === null) return undefined;
-
-    if (Array.isArray(field)) {
-      return field.filter((item): item is string => typeof item === 'string');
-    }
-
-    if (typeof field === 'string') {
-      return [field];
-    }
-
-    if (typeof field === 'object' && field !== null && 'value' in field) {
-      const value = (field as { value: unknown }).value;
-      if (Array.isArray(value)) {
-        return value.filter((item): item is string => typeof item === 'string');
-      }
-
-      if (typeof value === 'string') {
-        return [value];
-      }
-    }
-
-    return undefined;
-  }
-
   private normalizeIsPermanent(isPermanent: unknown): boolean {
     if (isPermanent === undefined || isPermanent === null) {
       return false;
@@ -153,8 +129,11 @@ export class WorkerProfileStatusUploaderUseCase {
     const visibilityType = this.normalizeField(
       body.visibility_type
     ) as VisibilityType;
-    const contactGroupIds = this.normalizeArrayField(body.contact_group_ids);
-    const contactIds = this.normalizeArrayField(body.contact_ids);
+    const contactGroupIdsArray = extractArrayField(body.contact_group_ids);
+    const contactIdsArray = extractArrayField(body.contact_ids);
+    const contactGroupIds =
+      contactGroupIdsArray.length > 0 ? contactGroupIdsArray : undefined;
+    const contactIds = contactIdsArray.length > 0 ? contactIdsArray : undefined;
 
     if (!visibilityType) {
       throw new Error(t('profile_status_visibility_required'));

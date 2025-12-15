@@ -1,10 +1,18 @@
-import { pgTable, uuid, timestamp, varchar, text } from 'drizzle-orm/pg-core';
+import {
+  pgTable,
+  uuid,
+  timestamp,
+  varchar,
+  text,
+  integer,
+} from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 import { account } from '../account';
 import { worker } from '../worker';
 import { scheduledContact } from './scheduledContact.model';
 import { EScheduleType } from '@core/common/enums/EScheduleType';
 import { EScheduleSendTo } from '@core/common/enums/EScheduleSendTo';
+import { EScheduleStatus } from '@core/common/enums/EScheduleStatus';
 
 export const schedule = pgTable('schedule', {
   schedule_id: uuid().primaryKey().notNull(),
@@ -14,17 +22,22 @@ export const schedule = pgTable('schedule', {
   worker_id: uuid()
     .references(() => worker.worker_id)
     .notNull(),
-  scheduled_contact_id: uuid().references(
-    () => scheduledContact.scheduled_contact_id
-  ),
   type: varchar({ length: 20 }).notNull().$type<EScheduleType>(),
   send_to: varchar({ length: 30 }).notNull().$type<EScheduleSendTo>(),
   message: text(),
   url: varchar({ length: 500 }),
+  mimetype: varchar({ length: 100 }),
+  duration: integer(),
+  width: integer(),
+  height: integer(),
   send_date: timestamp({
     mode: 'string',
     withTimezone: true,
   }).notNull(),
+  status: varchar({ length: 20 })
+    .notNull()
+    .$type<EScheduleStatus>()
+    .default(EScheduleStatus.pending),
   created_at: timestamp({
     mode: 'string',
     withTimezone: true,
@@ -35,7 +48,7 @@ export const schedule = pgTable('schedule', {
   }).defaultNow(),
 });
 
-export const scheduleRelations = relations(schedule, ({ one }) => ({
+export const scheduleRelations = relations(schedule, ({ one, many }) => ({
   sac: one(account, {
     fields: [schedule.account_id],
     references: [account.account_id],
@@ -44,8 +57,5 @@ export const scheduleRelations = relations(schedule, ({ one }) => ({
     fields: [schedule.worker_id],
     references: [worker.worker_id],
   }),
-  ssc: one(scheduledContact, {
-    fields: [schedule.scheduled_contact_id],
-    references: [scheduledContact.scheduled_contact_id],
-  }),
+  scs: many(scheduledContact),
 }));
