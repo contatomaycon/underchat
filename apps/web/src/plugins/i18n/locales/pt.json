@@ -1479,6 +1479,7 @@
     "upgrade_plan": "Renovar",
     "hire": "Contratar",
     "cancel_subscription": "Cancelar Assinatura",
+    "cancel_subscription_confirmation": "Tem certeza que deseja cancelar sua assinatura? Esta ação não pode ser desfeita.",
     "reactivate_subscription": "Reativar Assinatura",
     "plan_update_attention": "Precisamos da sua atenção! Seu plano precisa ser atualizado.",
     "plan_update_attention_title": "Precisamos da sua atenção!",

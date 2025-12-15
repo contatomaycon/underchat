@@ -1479,6 +1479,7 @@
     "upgrade_plan": "Renew",
     "hire": "Hire",
     "cancel_subscription": "Cancel Subscription",
+    "cancel_subscription_confirmation": "Are you sure you want to cancel your subscription? This action cannot be undone.",
     "reactivate_subscription": "Reactivate Subscription",
     "plan_update_attention": "We need your attention! Your plan needs to be updated.",
     "plan_update_attention_title": "We need your attention!",
