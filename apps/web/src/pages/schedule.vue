@@ -4,6 +4,7 @@ import { refDebounced } from '@vueuse/core';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { useI18n } from 'vue-i18n';
 import { formatDateTime } from '@core/common/functions/formatDateTime';
+import { formatDate } from '@core/common/functions/formatDate';
 import { SortRequest } from '@core/schema/common/sortRequestSchema';
 import { DataTableHeader } from 'vuetify';
 import { ESchedulePermissions } from '@core/common/enums/EPermissions/schedule';
@@ -11,6 +12,7 @@ import { useScheduleStore } from '@/@webcore/stores/schedule';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import { EScheduleType } from '@core/common/enums/EScheduleType';
 import { EScheduleSendTo } from '@core/common/enums/EScheduleSendTo';
+import { EScheduleStatus } from '@core/common/enums/EScheduleStatus';
 import { ListScheduleResponse } from '@core/schema/schedule/listSchedule/response.schema';
 
 definePage({
@@ -247,6 +249,20 @@ const getSendToLabel = (sendTo: string): string => {
   return sendTo;
 };
 
+const getStatusLabel = (status: string): string => {
+  if (status === EScheduleStatus.pending) return t('pending');
+  if (status === EScheduleStatus.sent) return t('sent');
+  if (status === EScheduleStatus.failed) return t('failed');
+  return status;
+};
+
+const getStatusColor = (status: string): string => {
+  if (status === EScheduleStatus.pending) return 'warning';
+  if (status === EScheduleStatus.sent) return 'success';
+  if (status === EScheduleStatus.failed) return 'error';
+  return 'default';
+};
+
 const isDialogDeleterShow = ref(false);
 const scheduleToDelete = ref<string | null>(null);
 
@@ -261,6 +277,7 @@ const headers: DataTableHeader<ListScheduleResponse>[] = [
   { title: t('message'), key: 'message' },
   { title: t('attachment'), key: 'url' },
   { title: t('send_date'), key: 'send_date' },
+  { title: t('status'), key: 'status' },
   { title: t('created_at'), key: 'created_at' },
   { title: t('actions'), key: 'actions', sortable: false },
 ];
@@ -453,8 +470,20 @@ watch(
               <span>{{ formatDateTime(item?.send_date ?? null) }}</span>
             </template>
 
+            <template #item.status="{ item }">
+              <VChip
+                v-if="item.status"
+                :color="getStatusColor(item.status)"
+                size="small"
+                variant="tonal"
+              >
+                {{ getStatusLabel(item.status) }}
+              </VChip>
+              <span v-else class="text-medium-emphasis">-</span>
+            </template>
+
             <template #item.created_at="{ item }">
-              <span>{{ formatDateTime(item?.created_at ?? null) }}</span>
+              <span>{{ formatDate(item?.created_at ?? null) }}</span>
             </template>
 
             <template #item.actions="{ item }">

@@ -24,6 +24,7 @@ export const listScheduleResponseSchema = Type.Object({
   width: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
   height: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
   send_date: Type.String(),
+  status: Type.String(),
   created_at: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 });
 

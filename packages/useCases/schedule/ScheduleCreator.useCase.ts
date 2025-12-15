@@ -10,7 +10,7 @@ import { UploadFileResponse } from '@core/schema/upload/response.schema';
 import { EScheduleType } from '@core/common/enums/EScheduleType';
 import { WorkerService } from '@core/services/worker.service';
 import { EScheduleSendTo } from '@core/common/enums/EScheduleSendTo';
-import moment from 'moment-timezone';
+import moment from 'moment';
 import { extractArrayField } from '@core/common/functions/extractArrayField';
 
 @injectable()
@@ -92,14 +92,13 @@ export class ScheduleCreatorUseCase {
       throw new Error(t('send_date_required'));
     }
 
-    const timeZone = 'America/Sao_Paulo';
-    const date = moment.tz(sendDate, 'YYYY-MM-DD HH:mm', true, timeZone);
+    const date = moment(sendDate, 'YYYY-MM-DD HH:mm', true);
 
     if (!date.isValid()) {
       throw new Error(t('send_date_invalid_format'));
     }
 
-    const now = moment.tz(timeZone);
+    const now = moment();
 
     if (date.isBefore(now)) {
       throw new Error(t('send_date_must_be_future'));
@@ -366,13 +365,7 @@ export class ScheduleCreatorUseCase {
     contactIds: string[],
     contactGroupIds: string[]
   ) {
-    const timeZone = 'America/Sao_Paulo';
-    const sendDateMoment = moment.tz(
-      sendDate,
-      'YYYY-MM-DD HH:mm',
-      true,
-      timeZone
-    );
+    const sendDateMoment = moment(sendDate, 'YYYY-MM-DD HH:mm', true);
     const sendDateISO = sendDateMoment.isValid()
       ? sendDateMoment.toISOString()
       : sendDate;

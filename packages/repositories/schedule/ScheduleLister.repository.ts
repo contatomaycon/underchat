@@ -82,6 +82,7 @@ export class ScheduleListerRepository {
     width: number | null;
     height: number | null;
     send_date: string;
+    status: string;
     created_at: string | null;
   }): ListScheduleResponse => {
     return {
@@ -103,6 +104,7 @@ export class ScheduleListerRepository {
       width: item.width ?? null,
       height: item.height ?? null,
       send_date: item.send_date,
+      status: item.status,
       created_at: item.created_at ? item.created_at : null,
     };
   };
@@ -136,6 +138,7 @@ export class ScheduleListerRepository {
         width: schedule.width,
         height: schedule.height,
         send_date: schedule.send_date,
+        status: schedule.status,
         created_at: schedule.created_at,
       })
       .from(schedule)
