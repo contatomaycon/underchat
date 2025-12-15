@@ -23,6 +23,7 @@ import { IScheduleMessageResult } from '@core/common/interfaces/IScheduleMessage
 import { IScheduleContactValidated } from '@core/common/interfaces/IScheduleContactValidated';
 import moment from 'moment-timezone';
 import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
+import { generateProtocol } from '@core/common/functions/generateProtocol';
 
 @injectable()
 export class ScheduleSendService {
@@ -65,34 +66,8 @@ export class ScheduleSendService {
     return 'Boa noite';
   }
 
-  private async getProtocol(
-    accountId: string,
-    workerId: string,
-    phone: string
-  ): Promise<string> {
-    const chat = await this.chatService.findChatByPhone(
-      accountId,
-      workerId,
-      phone
-    );
-
-    if (!chat) {
-      return '';
-    }
-
-    if (chat.protocol_start && chat.protocol_start.length > 0) {
-      return chat.protocol_start[chat.protocol_start.length - 1];
-    }
-
-    if (chat.protocol_transfer && chat.protocol_transfer.length > 0) {
-      return chat.protocol_transfer[chat.protocol_transfer.length - 1];
-    }
-
-    if (chat.protocol_ura && chat.protocol_ura.length > 0) {
-      return chat.protocol_ura[chat.protocol_ura.length - 1];
-    }
-
-    return '';
+  private getProtocol(): string {
+    return generateProtocol();
   }
 
   private async replaceTags(
@@ -110,11 +85,7 @@ export class ScheduleSendService {
     const date = now.format('DD/MM/YYYY');
     const time = now.format('HH:mm');
     const greeting = this.getGreeting();
-    const protocol = await this.getProtocol(
-      schedule.account_id,
-      schedule.worker_id,
-      phone ?? ''
-    );
+    const protocol = this.getProtocol();
 
     let replaced = message;
 
