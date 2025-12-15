@@ -105,6 +105,25 @@ const hasNewFile = ref(false);
 const fileInputKey = ref(0);
 const fileSizeError = ref<string | null>(null);
 const isLoading = ref(false);
+const previewDialog = ref<{
+  open: boolean;
+  src: string | null;
+  caption: string | null;
+  text: string | null;
+  type: EScheduleType | null;
+}>({
+  open: false,
+  src: null,
+  caption: null,
+  text: null,
+  type: null,
+});
+const audioPreviewRef = ref<HTMLAudioElement | null>(null);
+const isAudioPlaying = ref(false);
+const audioProgress = ref(0);
+const audioDuration = ref(0);
+const audioCurrentTime = ref(0);
+const audioWaveformBars = ref<number[]>([]);
 const workerId = ref<string | null>(null);
 const sendTo = ref<EScheduleSendTo | null>(null);
 const sendDate = ref<string | null>(null);
@@ -398,17 +417,89 @@ const loadContactGroups = async () => {
   }
 };
 
-const openFilePreview = () => {
-  if (filePreview.value) {
-    window.open(filePreview.value.src, '_blank');
+const openPreview = (
+  src: string | null,
+  caption?: string | null,
+  text?: string | null,
+  type?: EScheduleType
+) => {
+  previewDialog.value = {
+    open: true,
+    src: text ? null : src,
+    caption: caption && caption.trim() ? caption.trim() : null,
+    text: text && text.trim() ? text.trim() : null,
+    type: type || null,
+  };
+};
+
+const closePreview = () => {
+  if (audioPreviewRef.value) {
+    audioPreviewRef.value.pause();
+    audioPreviewRef.value.currentTime = 0;
+  }
+  isAudioPlaying.value = false;
+  audioProgress.value = 0;
+  audioDuration.value = 0;
+  audioCurrentTime.value = 0;
+  audioWaveformBars.value = [];
+  previewDialog.value = {
+    open: false,
+    src: null,
+    caption: null,
+    text: null,
+    type: null,
+  };
+};
+
+const createDefaultWaveform = (): number[] => {
+  return new Array(64).fill(0.3);
+};
+
+const toggleAudioPreview = () => {
+  if (!audioPreviewRef.value) return;
+
+  if (isAudioPlaying.value) {
+    audioPreviewRef.value.pause();
+    return;
+  }
+
+  audioPreviewRef.value.play().catch(() => {
+    isAudioPlaying.value = false;
+  });
+};
+
+const updateAudioProgress = () => {
+  if (!audioPreviewRef.value) return;
+  audioCurrentTime.value = audioPreviewRef.value.currentTime;
+  if (audioDuration.value > 0) {
+    audioProgress.value =
+      (audioPreviewRef.value.currentTime / audioDuration.value) * 100;
   }
 };
 
-const openExistingAttachment = () => {
-  if (existingAttachmentUrl.value) {
-    window.open(existingAttachmentUrl.value, '_blank');
+const updateAudioDuration = () => {
+  if (!audioPreviewRef.value) return;
+  audioDuration.value = audioPreviewRef.value.duration;
+  if (!audioWaveformBars.value.length) {
+    audioWaveformBars.value = createDefaultWaveform();
   }
 };
+
+const formatAudioTime = (seconds: number): string => {
+  if (!seconds || Number.isNaN(seconds)) return '0:00';
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+};
+
+const audioTimeDisplay = computed(() => {
+  if (isAudioPlaying.value) {
+    return `${formatAudioTime(audioCurrentTime.value)} / ${formatAudioTime(
+      audioDuration.value
+    )}`;
+  }
+  return formatAudioTime(audioDuration.value);
+});
 
 watch(selectedType, () => {
   if (hasNewFile.value) {
@@ -482,6 +573,7 @@ onBeforeUnmount(() => {
   if (filePreview.value?.src) {
     URL.revokeObjectURL(filePreview.value.src);
   }
+  closePreview();
 });
 </script>
 
@@ -533,9 +625,28 @@ onBeforeUnmount(() => {
             </VCol>
 
             <VCol v-if="showTextInput" cols="12">
-              <label class="text-body-2 mb-1" for="message-textarea">
-                {{ $t('message') }}:
-              </label>
+              <div class="d-flex align-center justify-space-between mb-1">
+                <label class="text-body-2" for="message-textarea">
+                  {{ $t('message') }}:
+                </label>
+                <VBtn
+                  v-if="message && message.trim()"
+                  size="x-small"
+                  variant="text"
+                  color="primary"
+                  @click="
+                    openPreview(
+                      null,
+                      null,
+                      message && message.trim() ? message : null,
+                      selectedType
+                    )
+                  "
+                >
+                  <VIcon start icon="tabler-eye" size="16" />
+                  {{ $t('preview') }}
+                </VBtn>
+              </div>
               <VTextarea
                 id="message-textarea"
                 v-model="message"
@@ -577,16 +688,22 @@ onBeforeUnmount(() => {
                   {{ fileSizeError }}
                 </small>
                 <div v-if="existingAttachmentUrl && !hasNewFile" class="mt-2">
-                  <VChip
+                  <VBtn
                     size="small"
                     variant="tonal"
                     color="primary"
-                    class="cursor-pointer"
-                    @click="openExistingAttachment"
+                    @click="
+                      openPreview(
+                        existingAttachmentUrl,
+                        message && message.trim() ? message : null,
+                        null,
+                        selectedType
+                      )
+                    "
                   >
-                    <VIcon start icon="tabler-paperclip" class="mr-1" />
-                    {{ $t('click_to_preview') }}
-                  </VChip>
+                    <VIcon start icon="tabler-eye" size="16" />
+                    {{ $t('preview') }}
+                  </VBtn>
                 </div>
                 <small
                   v-if="!fileSizeError"
@@ -617,13 +734,38 @@ onBeforeUnmount(() => {
               </VCol>
 
               <VCol v-if="filePreview" cols="12">
-                <p class="text-caption text-medium-emphasis mb-1">
-                  {{ $t('preview') }}:
-                </p>
+                <div class="d-flex align-center gap-2 mb-1">
+                  <p class="text-caption text-medium-emphasis mb-0">
+                    {{ $t('preview') }}:
+                  </p>
+                  <VBtn
+                    size="x-small"
+                    variant="text"
+                    color="primary"
+                    @click="
+                      openPreview(
+                        filePreview.src,
+                        message && message.trim() ? message : null,
+                        null,
+                        selectedType
+                      )
+                    "
+                  >
+                    <VIcon start icon="tabler-eye" size="16" />
+                    {{ $t('preview') }}
+                  </VBtn>
+                </div>
                 <VCard
                   class="pa-1 cursor-pointer"
                   style="max-width: 200px"
-                  @click="openFilePreview"
+                  @click="
+                    openPreview(
+                      filePreview.src,
+                      message && message.trim() ? message : null,
+                      null,
+                      selectedType
+                    )
+                  "
                 >
                   <VImg
                     v-if="selectedType === EScheduleType.image"
@@ -794,5 +936,165 @@ onBeforeUnmount(() => {
         </VCardText>
       </VCard>
     </VForm>
+
+    <VDialog v-model="previewDialog.open" max-width="800">
+      <DialogCloseBtn @click="closePreview" />
+      <VCard :title="$t('preview')">
+        <VCardText>
+          <VImg
+            v-if="
+              previewDialog.src && previewDialog.type === EScheduleType.image
+            "
+            :src="previewDialog.src"
+            max-height="420"
+            class="rounded"
+            contain
+          />
+          <video
+            v-if="
+              previewDialog.src && previewDialog.type === EScheduleType.video
+            "
+            :src="previewDialog.src"
+            max-height="600"
+            class="rounded"
+            style="width: 100%"
+            controls
+          >
+            <track kind="captions" />
+          </video>
+          <div
+            v-if="
+              previewDialog.src && previewDialog.type === EScheduleType.audio
+            "
+            class="d-flex flex-column align-center pa-6"
+          >
+            <div class="audio-preview-container w-100">
+              <div class="audio-waveform-container mb-4">
+                <div class="audio-waveform">
+                  <div
+                    v-for="(bar, index) in audioWaveformBars"
+                    :key="index"
+                    class="audio-waveform-bar"
+                    :class="{
+                      'audio-waveform-bar--active':
+                        audioProgress >
+                        (index / audioWaveformBars.length) * 100,
+                    }"
+                    :style="{
+                      height: `${Math.max(10, bar * 100)}%`,
+                    }"
+                  ></div>
+                </div>
+                <div
+                  class="audio-progress-indicator"
+                  :style="{
+                    left: `${audioProgress}%`,
+                  }"
+                ></div>
+              </div>
+              <div class="d-flex align-center justify-center gap-4 w-100">
+                <VBtn
+                  :icon="
+                    isAudioPlaying
+                      ? 'tabler-player-pause'
+                      : 'tabler-player-play'
+                  "
+                  variant="flat"
+                  color="primary"
+                  size="large"
+                  @click="toggleAudioPreview"
+                />
+                <div class="flex-grow-1">
+                  <audio
+                    ref="audioPreviewRef"
+                    :src="previewDialog.src || undefined"
+                    @timeupdate="updateAudioProgress"
+                    @loadedmetadata="updateAudioDuration"
+                    @play="isAudioPlaying = true"
+                    @pause="isAudioPlaying = false"
+                    @ended="isAudioPlaying = false"
+                  >
+                    <track kind="captions" />
+                  </audio>
+                  <div class="text-caption text-center">
+                    {{ audioTimeDisplay }}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div
+            v-if="previewDialog.text"
+            class="d-flex align-center justify-center pa-8"
+            style="min-height: 200px"
+          >
+            <p class="text-body-1 text-center">
+              {{ previewDialog.text }}
+            </p>
+          </div>
+          <div v-if="previewDialog.caption" class="mt-4 text-center">
+            <p class="text-body-2 text-medium-emphasis font-italic">
+              {{ previewDialog.caption }}
+            </p>
+          </div>
+        </VCardText>
+      </VCard>
+    </VDialog>
   </VDialog>
 </template>
+
+<style lang="scss" scoped>
+.audio-preview-container {
+  width: 100%;
+  max-width: 500px;
+}
+
+.audio-waveform-container {
+  position: relative;
+  width: 100%;
+  height: 80px;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  background: rgba(var(--v-theme-surface-variant), 0.1);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.audio-waveform {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 4px;
+  padding: 12px;
+  z-index: 1;
+  height: 100%;
+  width: 100%;
+}
+
+.audio-waveform-bar {
+  flex: 1;
+  min-width: 3px;
+  max-width: 4px;
+  background: rgba(var(--v-theme-primary), 0.4);
+  border-radius: 2px;
+  transition: background 0.2s ease;
+}
+
+.audio-waveform-bar--active {
+  background: rgba(var(--v-theme-primary), 0.8);
+}
+
+.audio-progress-indicator {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: rgba(var(--v-theme-primary), 1);
+  z-index: 2;
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+</style>
