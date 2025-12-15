@@ -9,6 +9,7 @@ import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { IScheduleContactValidated } from '@core/common/interfaces/IScheduleContactValidated';
 import { IScheduledContactData } from '@core/common/interfaces/IScheduledContactData';
+import { EScheduleSendTo } from '@core/common/enums/EScheduleSendTo';
 
 @injectable()
 export class ScheduleContactsValidatedListerRepository {
@@ -68,10 +69,24 @@ export class ScheduleContactsValidatedListerRepository {
   }
 
   private async getValidatedContacts(
-    contactIds: string[]
+    contactIds: string[],
+    accountId?: string
   ): Promise<IScheduleContactValidated[]> {
-    if (contactIds.length === 0) {
+    if (contactIds.length === 0 && !accountId) {
       return [];
+    }
+
+    const conditions = [
+      eq(contact.is_valided, true),
+      isNull(contact.deleted_at),
+    ];
+
+    if (accountId) {
+      conditions.push(eq(contact.account_id, accountId));
+    }
+
+    if (contactIds.length > 0) {
+      conditions.push(inArray(contact.contact_id, contactIds));
     }
 
     const contacts = await this.db
@@ -83,13 +98,7 @@ export class ScheduleContactsValidatedListerRepository {
         phone_partial: contact.phone_partial,
       })
       .from(contact)
-      .where(
-        and(
-          inArray(contact.contact_id, contactIds),
-          eq(contact.is_valided, true),
-          isNull(contact.deleted_at)
-        )
-      )
+      .where(and(...conditions))
       .execute();
 
     return contacts.map((c) => ({
@@ -102,8 +111,14 @@ export class ScheduleContactsValidatedListerRepository {
   }
 
   listValidatedContactsBySchedule = async (
-    scheduleId: string
+    scheduleId: string,
+    sendTo: string,
+    accountId: string
   ): Promise<IScheduleContactValidated[]> => {
+    if (sendTo === EScheduleSendTo.all) {
+      return this.getValidatedContacts([], accountId);
+    }
+
     const scheduledContacts = await this.getScheduledContacts(scheduleId);
 
     const { contactIds, contactGroupIds } =
@@ -117,6 +132,6 @@ export class ScheduleContactsValidatedListerRepository {
       ...contactsFromGroups.filter((id) => !contactIds.includes(id)),
     ];
 
-    return this.getValidatedContacts(allContactIds);
+    return this.getValidatedContacts(allContactIds, accountId);
   };
 }

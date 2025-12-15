@@ -623,7 +623,9 @@ export class ScheduleSendService {
 
           const contacts =
             await this.scheduleContactsValidatedListerRepository.listValidatedContactsBySchedule(
-              schedule.schedule_id
+              schedule.schedule_id,
+              schedule.send_to,
+              schedule.account_id
             );
 
           if (contacts.length === 0) {
