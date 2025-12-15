@@ -7,6 +7,7 @@ import {
   onUnmounted,
   nextTick,
   computed,
+  onErrorCaptured,
 } from 'vue';
 import { storeToRefs } from 'pinia';
 import { useChatStore } from '@/@webcore/stores/chat';
@@ -98,6 +99,33 @@ const mapCenter = computed<[number, number]>(() => {
 });
 
 const mapZoom = computed(() => 15);
+
+const isWebGLSupported = (): boolean => {
+  try {
+    const canvas = document.createElement('canvas');
+    const gl =
+      canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+    return !!gl;
+  } catch {
+    return false;
+  }
+};
+
+const webGLSupported = ref(isWebGLSupported());
+const mapErrors = reactive<Record<string, boolean>>({});
+
+onErrorCaptured((err) => {
+  if (
+    err.message &&
+    (err.message.includes('WebGL') ||
+      err.message.includes('webglcontextcreationerror') ||
+      err.message.includes('Failed to initialize WebGL'))
+  ) {
+    webGLSupported.value = false;
+    return false;
+  }
+  return true;
+});
 
 const markerPosition = computed<[number, number]>(() => {
   if (!locationData.value) return [0, 0];
@@ -2483,7 +2511,22 @@ onUnmounted(() => {
                     @click="openLocation(item.message)"
                   >
                     <div class="location-map-preview">
+                      <div
+                        v-if="
+                          !webGLSupported || mapErrors[item.message.message_id]
+                        "
+                        class="location-map-fallback"
+                      >
+                        <VIcon size="32" color="primary">tabler-map-pin</VIcon>
+                        <span class="text-caption mt-2">
+                          {{
+                            t('location_map_unavailable', 'Mapa indisponível')
+                          }}
+                        </span>
+                      </div>
                       <MglMap
+                        v-else
+                        :key="`map-${item.message.message_id}`"
                         :map-style="mapStyle"
                         :center="[
                           item.message.content.location.longitude,
@@ -3202,7 +3245,14 @@ onUnmounted(() => {
           v-if="locationModalOpen && locationData"
           class="location-map-wrapper"
         >
+          <div v-if="!webGLSupported" class="location-map-fallback-modal">
+            <VIcon size="48" color="primary">tabler-map-pin</VIcon>
+            <span class="text-body-1 mt-4">
+              {{ t('location_map_unavailable', 'Mapa indisponível') }}
+            </span>
+          </div>
           <MglMap
+            v-else
             ref="locationMapRef"
             :map-style="mapStyle"
             :center="mapCenter"
@@ -4713,6 +4763,17 @@ onUnmounted(() => {
       height: 112px !important;
       pointer-events: none;
     }
+
+    .location-map-fallback {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: rgba(var(--v-theme-on-surface), 0.05);
+      color: rgba(var(--v-theme-on-surface), 0.6);
+    }
   }
 
   .location-info {
@@ -4801,6 +4862,17 @@ onUnmounted(() => {
   height: 500px;
   position: relative;
   overflow: hidden;
+
+  .location-map-fallback-modal {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: rgba(var(--v-theme-on-surface), 0.05);
+    color: rgba(var(--v-theme-on-surface), 0.6);
+  }
 }
 
 .scroll-to-bottom-btn {
