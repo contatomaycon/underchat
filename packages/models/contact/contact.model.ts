@@ -11,6 +11,7 @@ import { account } from '../account';
 import { labelTemplate } from '../label';
 import { contactGroupAssignment } from './contactGroupAssignment.model';
 import { workerProfileStatusContact } from '../worker/workerProfileStatusContact.model';
+import { scheduledContact } from '../schedule';
 
 export const contact = pgTable('contact', {
   contact_id: uuid().primaryKey().notNull(),
@@ -55,4 +56,5 @@ export const contactRelations = relations(contact, ({ one, many }) => ({
   }),
   cga: many(contactGroupAssignment),
   cpc: many(workerProfileStatusContact),
+  csc: many(scheduledContact),
 }));
