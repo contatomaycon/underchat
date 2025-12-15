@@ -405,7 +405,10 @@ watch(
             </p>
           </div>
           <div v-if="previewDialog.caption" class="mt-4 text-center">
-            <p class="text-body-2 text-medium-emphasis font-italic">
+            <p
+              class="text-body-2 text-medium-emphasis font-italic"
+              style="white-space: pre-wrap; word-break: break-word"
+            >
               {{ previewDialog.caption }}
             </p>
           </div>
