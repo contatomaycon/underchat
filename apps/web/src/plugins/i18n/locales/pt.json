@@ -1843,6 +1843,16 @@
     "select_send_to": "Selecione para quem enviar",
     "schedule_messages": "Mensagens do Agendamento",
     "schedule_messages_list_error": "Erro ao listar mensagens do agendamento. Por favor, tente novamente.",
-    "schedule_messages_list_successfully": "Mensagens do agendamento listadas com sucesso!",
-    "schedule_messages_list_not_found": "Nenhuma mensagem encontrada para este agendamento."
+    "available_tags": "Tags Disponíveis",
+    "tag_greeting_description": "Saudação baseada no horário (Bom dia, Boa tarde, Boa noite)",
+    "tag_name_description": "Nome do contato salvo ou nome que vem do WhatsApp",
+    "tag_protocol_description": "Protocolo de atendimento",
+    "tag_date_description": "Data atual formatada",
+    "tag_time_description": "Hora atual formatada",
+    "tag_account_name_description": "Nome da conta/empresa",
+    "tag_phone_description": "Número do WhatsApp do contato",
+    "tag_channel_name_description": "Nome do canal",
+    "good_morning": "Bom dia",
+    "good_afternoon": "Boa tarde",
+    "good_evening": "Boa noite"
 }

@@ -724,5 +724,7 @@
   "send_date_required": "¡La fecha de envío es obligatoria!",
   "send_date_invalid_format": "¡La fecha de envío debe estar en el formato YYYY-MM-DD HH:mm!",
   "send_date_must_be_future": "¡La fecha de envío debe ser mayor que la fecha actual!",
-  "worker_id_required": "¡El canal es obligatorio!"
+  "worker_id_required": "¡El canal es obligatorio!",
+  "schedule_messages_list_successfully": "¡Mensajes del agendamiento listados con éxito!",
+  "schedule_messages_list_not_found": "No se encontraron mensajes para este agendamiento."
 }

@@ -1843,6 +1843,16 @@
     "select_send_to": "Seleccione a quién enviar",
     "schedule_messages": "Mensajes del Agendamiento",
     "schedule_messages_list_error": "Error al listar mensajes del agendamiento. Por favor, intente nuevamente.",
-    "schedule_messages_list_successfully": "¡Mensajes del agendamiento listados con éxito!",
-    "schedule_messages_list_not_found": "No se encontraron mensajes para este agendamiento."
+    "available_tags": "Etiquetas Disponibles",
+    "tag_greeting_description": "Saludo basado en la hora del día (Buenos días, Buenas tardes, Buenas noches)",
+    "tag_name_description": "Nombre del contacto guardado o nombre que viene de WhatsApp",
+    "tag_protocol_description": "Protocolo de atención",
+    "tag_date_description": "Fecha actual formateada",
+    "tag_time_description": "Hora actual formateada",
+    "tag_account_name_description": "Nombre de la cuenta/empresa",
+    "tag_phone_description": "Número de WhatsApp del contacto",
+    "tag_channel_name_description": "Nombre del canal",
+    "good_morning": "Buenos días",
+    "good_afternoon": "Buenas tardes",
+    "good_evening": "Buenas noches"
 }

@@ -3,6 +3,7 @@ import { SchedulePendingListerRepository } from '@core/repositories/schedule/Sch
 import { ScheduleContactsValidatedListerRepository } from '@core/repositories/schedule/ScheduleContactsValidatedLister.repository';
 import { ScheduleStatusUpdaterRepository } from '@core/repositories/schedule/ScheduleStatusUpdater.repository';
 import { ContactService } from './contact.service';
+import { ChatService } from './chat.service';
 import { normalizePhoneToJid } from '@core/common/functions/normalizePhoneToJid';
 import { KafkaBaileysQueueService } from './kafkaBaileysQueue.service';
 import { StreamProducerService } from './streamProducer.service';
@@ -20,6 +21,8 @@ import { withLock } from '@core/common/functions/withLock';
 import { ISchedulePendingData } from '@core/interfaces/repositories/schedule/ISchedulePendingData';
 import { IScheduleMessageResult } from '@core/common/interfaces/IScheduleMessageResult';
 import { IScheduleContactValidated } from '@core/common/interfaces/IScheduleContactValidated';
+import moment from 'moment-timezone';
+import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
 
 @injectable()
 export class ScheduleSendService {
@@ -27,11 +30,14 @@ export class ScheduleSendService {
   private readonly DELAY_MIN_MS = 1000;
   private readonly DELAY_MAX_MS = 4000;
 
+  private readonly BRAZIL_TIMEZONE = 'America/Sao_Paulo';
+
   constructor(
     private readonly schedulePendingListerRepository: SchedulePendingListerRepository,
     private readonly scheduleContactsValidatedListerRepository: ScheduleContactsValidatedListerRepository,
     private readonly scheduleStatusUpdaterRepository: ScheduleStatusUpdaterRepository,
     private readonly contactService: ContactService,
+    private readonly chatService: ChatService,
     private readonly kafkaBaileysQueueService: KafkaBaileysQueueService,
     private readonly streamProducerService: StreamProducerService,
     private readonly elasticDatabaseService: ElasticDatabaseService,
@@ -43,6 +49,91 @@ export class ScheduleSendService {
       Math.random() * (this.DELAY_MAX_MS - this.DELAY_MIN_MS) +
         this.DELAY_MIN_MS
     );
+  }
+
+  private getGreeting(): string {
+    const hour = moment().tz(this.BRAZIL_TIMEZONE).hour();
+
+    if (hour >= 5 && hour < 12) {
+      return 'Bom dia';
+    }
+
+    if (hour >= 12 && hour < 18) {
+      return 'Boa tarde';
+    }
+
+    return 'Boa noite';
+  }
+
+  private async getProtocol(
+    accountId: string,
+    workerId: string,
+    phone: string
+  ): Promise<string> {
+    const chat = await this.chatService.findChatByPhone(
+      accountId,
+      workerId,
+      phone
+    );
+
+    if (!chat) {
+      return '';
+    }
+
+    if (chat.protocol_start && chat.protocol_start.length > 0) {
+      return chat.protocol_start[chat.protocol_start.length - 1];
+    }
+
+    if (chat.protocol_transfer && chat.protocol_transfer.length > 0) {
+      return chat.protocol_transfer[chat.protocol_transfer.length - 1];
+    }
+
+    if (chat.protocol_ura && chat.protocol_ura.length > 0) {
+      return chat.protocol_ura[chat.protocol_ura.length - 1];
+    }
+
+    return '';
+  }
+
+  private async replaceTags(
+    message: string | null,
+    schedule: ISchedulePendingData,
+    contact: IScheduleContactValidated
+  ): Promise<string> {
+    if (!message) {
+      return '';
+    }
+
+    const phone = this.contactService.getContactPhoneDecrypted(contact.phone);
+    const phoneFormatted = phone ? formatPhoneBR(phone) : '';
+    const now = moment().tz(this.BRAZIL_TIMEZONE);
+    const date = now.format('DD/MM/YYYY');
+    const time = now.format('HH:mm');
+    const greeting = this.getGreeting();
+    const protocol = await this.getProtocol(
+      schedule.account_id,
+      schedule.worker_id,
+      phone ?? ''
+    );
+
+    let replaced = message;
+
+    replaced = replaced.replace(/\{\{ greeting \}\}/g, greeting);
+    replaced = replaced.replace(/\{\{ name \}\}/g, contact.name || '');
+    replaced = replaced.replace(/\{\{ protocol \}\}/g, protocol);
+    replaced = replaced.replace(/\{\{ date \}\}/g, date);
+    replaced = replaced.replace(/\{\{ time \}\}/g, time);
+    replaced = replaced.replace(
+      /\{\{ account_name \}\}/g,
+      schedule.account_name
+    );
+    replaced = replaced.replace(/\{\{ phone \}\}/g, phoneFormatted);
+    replaced = replaced.replace(
+      /\{\{ channel_name \}\}/g,
+      schedule.worker_name
+    );
+
+    return replaced;
   }
 
   private getDuplicateLockKey(scheduleId: string, contactId: string): string {
@@ -115,35 +206,41 @@ export class ScheduleSendService {
     return total.value > 0;
   }
 
-  private createTextMessage(
+  private async createTextMessage(
     schedule: ISchedulePendingData,
-    baseMessage: IChatMessage
-  ): IChatMessage {
+    baseMessage: IChatMessage,
+    contact: IScheduleContactValidated
+  ): Promise<IChatMessage> {
+    const message = await this.replaceTags(schedule.message, schedule, contact);
+
     return {
       ...baseMessage,
       content: {
         type: EMessageType.text,
-        message: schedule.message,
+        message,
       },
     };
   }
 
-  private createImageMessage(
+  private async createImageMessage(
     schedule: ISchedulePendingData,
-    baseMessage: IChatMessage
-  ): IChatMessage {
+    baseMessage: IChatMessage,
+    contact: IScheduleContactValidated
+  ): Promise<IChatMessage> {
     if (!schedule.url) {
       return baseMessage;
     }
+
+    const message = await this.replaceTags(schedule.message, schedule, contact);
 
     return {
       ...baseMessage,
       content: {
         type: EMessageType.image,
-        message: schedule.message,
+        message,
         image: {
           url: schedule.url,
-          caption: schedule.message,
+          caption: message,
           mimetype: schedule.mimetype ?? null,
           extension: null,
           size: null,
@@ -154,22 +251,25 @@ export class ScheduleSendService {
     };
   }
 
-  private createVideoMessage(
+  private async createVideoMessage(
     schedule: ISchedulePendingData,
-    baseMessage: IChatMessage
-  ): IChatMessage {
+    baseMessage: IChatMessage,
+    contact: IScheduleContactValidated
+  ): Promise<IChatMessage> {
     if (!schedule.url) {
       return baseMessage;
     }
+
+    const message = await this.replaceTags(schedule.message, schedule, contact);
 
     return {
       ...baseMessage,
       content: {
         type: EMessageType.video,
-        message: schedule.message,
+        message,
         video: {
           url: schedule.url,
-          caption: schedule.message,
+          caption: message,
           name: null,
           mimetype: schedule.mimetype ?? null,
           extension: null,
@@ -183,19 +283,22 @@ export class ScheduleSendService {
     };
   }
 
-  private createAudioMessage(
+  private async createAudioMessage(
     schedule: ISchedulePendingData,
-    baseMessage: IChatMessage
-  ): IChatMessage {
+    baseMessage: IChatMessage,
+    contact: IScheduleContactValidated
+  ): Promise<IChatMessage> {
     if (!schedule.url) {
       return baseMessage;
     }
+
+    const message = await this.replaceTags(schedule.message, schedule, contact);
 
     return {
       ...baseMessage,
       content: {
         type: EMessageType.audio,
-        message: schedule.message,
+        message,
         audio: {
           url: schedule.url,
           mimetype: schedule.mimetype ?? null,
@@ -249,27 +352,27 @@ export class ScheduleSendService {
     };
   }
 
-  private createChatMessage(
+  private async createChatMessage(
     schedule: ISchedulePendingData,
     contact: IScheduleContactValidated,
     jid: string
-  ): IChatMessage {
+  ): Promise<IChatMessage> {
     const baseMessage = this.createBaseMessage(schedule, contact, jid);
 
     if (schedule.type === EScheduleType.text) {
-      return this.createTextMessage(schedule, baseMessage);
+      return this.createTextMessage(schedule, baseMessage, contact);
     }
 
     if (schedule.type === EScheduleType.image) {
-      return this.createImageMessage(schedule, baseMessage);
+      return this.createImageMessage(schedule, baseMessage, contact);
     }
 
     if (schedule.type === EScheduleType.video) {
-      return this.createVideoMessage(schedule, baseMessage);
+      return this.createVideoMessage(schedule, baseMessage, contact);
     }
 
     if (schedule.type === EScheduleType.audio) {
-      return this.createAudioMessage(schedule, baseMessage);
+      return this.createAudioMessage(schedule, baseMessage, contact);
     }
 
     return baseMessage;
@@ -340,7 +443,7 @@ export class ScheduleSendService {
         name: schedule.worker_name,
       },
       type: schedule.type,
-      message: schedule.message,
+      message: message.content?.message || schedule.message,
       url: schedule.url,
       status,
       send_date: new Date(schedule.send_date).toISOString(),
@@ -432,7 +535,7 @@ export class ScheduleSendService {
       };
     }
 
-    const message = this.createChatMessage(schedule, contact, jid);
+    const message = await this.createChatMessage(schedule, contact, jid);
 
     try {
       await this.sendMessageToKafka(message, schedule.worker_id);

@@ -1843,6 +1843,16 @@
     "select_send_to": "Select who to send to",
     "schedule_messages": "Schedule Messages",
     "schedule_messages_list_error": "Error listing schedule messages. Please try again.",
-    "schedule_messages_list_successfully": "Schedule messages listed successfully!",
-    "schedule_messages_list_not_found": "No messages found for this schedule."
+    "available_tags": "Available Tags",
+    "tag_greeting_description": "Greeting based on time of day (Good morning, Good afternoon, Good evening)",
+    "tag_name_description": "Saved contact name or name from WhatsApp",
+    "tag_protocol_description": "Service protocol",
+    "tag_date_description": "Current formatted date",
+    "tag_time_description": "Current formatted time",
+    "tag_account_name_description": "Account/company name",
+    "tag_phone_description": "Contact WhatsApp number",
+    "tag_channel_name_description": "Channel name",
+    "good_morning": "Good morning",
+    "good_afternoon": "Good afternoon",
+    "good_evening": "Good evening"
 }

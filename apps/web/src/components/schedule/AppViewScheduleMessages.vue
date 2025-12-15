@@ -51,33 +51,63 @@ const getContactName = (item: ScheduleMessageResult): string => {
   return '-';
 };
 
+const formatPhoneNumber = (phone: string, ddi?: string | null): string => {
+  if (!phone) {
+    return '-';
+  }
+
+  const cleanPhone = phone.replaceAll(/\D/g, '');
+
+  if (ddi) {
+    const cleanDdi = ddi.replaceAll(/\D/g, '');
+    const fullPhone = `${cleanDdi}${cleanPhone}`;
+    const formatted = formatPhoneBR(fullPhone);
+
+    if (formatted !== fullPhone && formatted !== cleanPhone) {
+      return formatted;
+    }
+
+    if (cleanDdi === '55' && cleanPhone.length >= 10) {
+      const ddd = cleanPhone.slice(0, 2);
+      const number = cleanPhone.slice(2);
+
+      if (number.length === 8) {
+        return `+55 (${ddd}) ${number.slice(0, 4)}-${number.slice(4)}`;
+      }
+
+      if (number.length === 9) {
+        return `+55 (${ddd}) ${number.slice(0, 5)}-${number.slice(5)}`;
+      }
+    }
+
+    return `+${cleanDdi} ${cleanPhone}`;
+  }
+
+  if (cleanPhone.length >= 10) {
+    const formatted = formatPhoneBR(cleanPhone);
+
+    if (formatted !== cleanPhone) {
+      return formatted;
+    }
+
+    if (cleanPhone.length === 10) {
+      return `(${cleanPhone.slice(0, 2)}) ${cleanPhone.slice(2, 6)}-${cleanPhone.slice(6)}`;
+    }
+
+    if (cleanPhone.length === 11) {
+      return `(${cleanPhone.slice(0, 2)}) ${cleanPhone.slice(2, 7)}-${cleanPhone.slice(7)}`;
+    }
+  }
+
+  return phone;
+};
+
 const getContactPhone = (item: ScheduleMessageResult): string => {
   if (!item.contact?.phone) {
     return '-';
   }
 
-  if (item.contact.phone_ddi && item.contact.phone) {
-    const fullPhone = `${item.contact.phone_ddi}${item.contact.phone}`;
-    const formatted = formatPhoneBR(fullPhone);
-
-    if (formatted !== fullPhone) {
-      return formatted;
-    }
-
-    return `${item.contact.phone_ddi} ${item.contact.phone}`;
-  }
-
-  if (item.contact.phone) {
-    const formatted = formatPhoneBR(item.contact.phone);
-
-    if (formatted !== item.contact.phone) {
-      return formatted;
-    }
-
-    return item.contact.phone;
-  }
-
-  return '-';
+  return formatPhoneNumber(item.contact.phone, item.contact.phone_ddi);
 };
 
 const getWorkerName = (item: ScheduleMessageResult): string => {
