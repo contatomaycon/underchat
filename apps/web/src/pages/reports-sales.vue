@@ -5,7 +5,7 @@ import { useI18n } from 'vue-i18n';
 import { formatDateTime } from '@core/common/functions/formatDateTime';
 import { SortRequest } from '@core/schema/common/sortRequestSchema';
 import { DataTableHeader } from 'vuetify';
-import { usePlanStore } from '@/@webcore/stores/plan';
+import { useReportSalesStore } from '@/@webcore/stores/reportSales';
 import { ListPlanSalesResponse } from '@core/schema/plan/listPlanSales/response.schema';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import { EFinancialPermissions } from '@core/common/enums/EPermissions/financial';
@@ -23,8 +23,8 @@ definePage({
 });
 
 const { t } = useI18n();
-const planStore = usePlanStore();
-useSnackbarCleanup(planStore);
+const reportSalesStore = useReportSalesStore();
+useSnackbarCleanup(reportSalesStore);
 
 const itemsPerPage = ref([
   { value: 5, title: '5' },
@@ -82,10 +82,10 @@ const paymentTypes = ref<Array<{ id: string | null; text: string }>>([
 ]);
 
 onMounted(async () => {
-  await planStore.listPlanAll();
+  await reportSalesStore.listPlanAll();
   plans.value = [
     { id: null, text: t('all') },
-    ...planStore.listAll.map((plan) => ({
+    ...reportSalesStore.listAll.map((plan) => ({
       id: plan.plan_id,
       text: plan.name,
     })),
@@ -118,18 +118,18 @@ const query = computed(() => {
 });
 
 const totalSales = computed(() => {
-  return planStore.listSales.length;
+  return reportSalesStore.listSales.length;
 });
 
 const totalRevenue = computed(() => {
-  return planStore.listSales.reduce(
+  return reportSalesStore.listSales.reduce(
     (sum, item) => sum + Number(item.total_revenue),
     0
   );
 });
 
 const loadSales = async () => {
-  await planStore.listPlanSales(query.value);
+  await reportSalesStore.listPlanSales(query.value);
 };
 
 watch([selectedPlan, startDate, endDate, selectedPaymentType], () => {
@@ -308,9 +308,9 @@ const getPaymentBillingTypeLabel = (
             v-model:page="options.page"
             v-model:items-per-page="options.itemsPerPage"
             :headers="headers"
-            :items="planStore.listSales"
-            :items-length="planStore.listSales.length"
-            :loading="planStore.loading"
+            :items="reportSalesStore.listSales"
+            :items-length="reportSalesStore.listSales.length"
+            :loading="reportSalesStore.loading"
             :sort-by="options.sortBy"
             @update:options="handleTableChange"
             :loading-text="$t('loading_text')"
@@ -408,7 +408,7 @@ const getPaymentBillingTypeLabel = (
               <TablePagination
                 v-model:page="options.page"
                 :items-per-page="options.itemsPerPage"
-                :total-items="planStore.listSales.length"
+                :total-items="reportSalesStore.listSales.length"
               />
             </template>
           </VDataTableServer>

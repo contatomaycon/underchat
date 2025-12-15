@@ -224,7 +224,7 @@ export class ReportAttendanceListerUseCase {
     period: string
   ): string {
     const categoryMap: Record<ReportType, string | null> = {
-      queue: chat.sector?.name || 'Sem Fila',
+      queue: chat.sector?.name || 'Sem Setor',
       analyst: chat.user?.name || 'Sem Analista',
       general: null,
     };
@@ -336,7 +336,7 @@ export class ReportAttendanceListerUseCase {
     > = {
       queue: (r) => {
         r.queue = category || null;
-        r.categories = { [category || 'Sem Fila']: total };
+        r.categories = { [category || 'Sem Setor']: total };
       },
       analyst: (r) => {
         r.analyst = category || null;
