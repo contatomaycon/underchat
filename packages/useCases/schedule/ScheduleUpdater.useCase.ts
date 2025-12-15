@@ -127,6 +127,15 @@ export class ScheduleUpdaterUseCase {
     contactIds: string[],
     contactGroupIds: string[]
   ): IUpdateSchedule {
+    const sendDateISO = sendDate
+      ? (() => {
+          const sendDateMoment = moment(sendDate, 'YYYY-MM-DD HH:mm', true);
+          return sendDateMoment.isValid()
+            ? sendDateMoment.toISOString()
+            : sendDate;
+        })()
+      : undefined;
+
     return {
       schedule_id: scheduleId,
       worker_id: workerId ?? undefined,
@@ -138,7 +147,7 @@ export class ScheduleUpdaterUseCase {
       duration: attachment?.duration ?? undefined,
       width: attachment?.width ?? undefined,
       height: attachment?.height ?? undefined,
-      send_date: sendDate ?? undefined,
+      send_date: sendDateISO,
       contact_ids: contactIds.length > 0 ? contactIds : undefined,
       contact_group_ids:
         contactGroupIds.length > 0 ? contactGroupIds : undefined,

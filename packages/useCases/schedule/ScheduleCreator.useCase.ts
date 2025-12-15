@@ -365,6 +365,11 @@ export class ScheduleCreatorUseCase {
     contactIds: string[],
     contactGroupIds: string[]
   ) {
+    const sendDateMoment = moment(sendDate, 'YYYY-MM-DD HH:mm', true);
+    const sendDateISO = sendDateMoment.isValid()
+      ? sendDateMoment.toISOString()
+      : sendDate;
+
     return {
       account_id: accountId,
       worker_id: workerId,
@@ -376,7 +381,7 @@ export class ScheduleCreatorUseCase {
       duration: attachmentUrl?.duration ?? null,
       width: attachmentUrl?.width ?? null,
       height: attachmentUrl?.height ?? null,
-      send_date: sendDate,
+      send_date: sendDateISO,
       contact_ids: contactIds.length > 0 ? contactIds : undefined,
       contact_group_ids:
         contactGroupIds.length > 0 ? contactGroupIds : undefined,
