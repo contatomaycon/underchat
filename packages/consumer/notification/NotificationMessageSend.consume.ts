@@ -115,7 +115,9 @@ export class NotificationMessageSendConsume {
   ): Promise<void> {
     if (!data.message_whatsapp) return;
 
-    if (data.message_key.remote_jid) {
+    console.log('data.message_key', data.message_key);
+
+    if (data.message_key?.remote_jid) {
       await this.baileysMessageTextService.sendText(
         data.message_key.remote_jid,
         data.message_whatsapp
@@ -128,6 +130,8 @@ export class NotificationMessageSendConsume {
       data.message_key.phone_ddi,
       data.message_key.phone_number
     );
+
+    console.log('result', result);
 
     if (!result.valid || !result.jid) return;
 
