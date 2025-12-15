@@ -114,6 +114,30 @@ const getWorkerName = (item: ScheduleMessageResult): string => {
   return item.worker?.name || '-';
 };
 
+const getMessageTypeLabel = (type: string | null | undefined): string => {
+  if (!type) {
+    return '';
+  }
+
+  if (type === EScheduleType.text) {
+    return `[${t('message_type_text')}]`;
+  }
+
+  if (type === EScheduleType.image) {
+    return `[${t('message_type_image')}]`;
+  }
+
+  if (type === EScheduleType.video) {
+    return `[${t('message_type_video')}]`;
+  }
+
+  if (type === EScheduleType.audio) {
+    return `[${t('message_type_audio')}]`;
+  }
+
+  return '';
+};
+
 const getStatusLabel = (status: string): string => {
   if (status === 'sent') return t('sent');
   if (status === 'failed') return t('failed');
@@ -262,14 +286,9 @@ watch(
 
           <template #item.message="{ item }">
             <div class="d-flex align-center gap-2">
-              <span
-                v-if="item.message"
-                class="d-inline-block text-truncate"
-                style="max-width: 300px"
-              >
-                {{ item.message }}
+              <span class="text-medium-emphasis">
+                {{ getMessageTypeLabel(item.type) }}
               </span>
-              <span v-else class="text-medium-emphasis">-</span>
               <VBtn
                 v-if="item.url || item.message"
                 size="x-small"
@@ -279,7 +298,9 @@ watch(
                 @click="
                   openPreview(
                     item.url ?? null,
-                    item.message ?? null,
+                    item.type === EScheduleType.text
+                      ? null
+                      : (item.message ?? null),
                     item.type === EScheduleType.text
                       ? (item.message ?? null)
                       : null,
@@ -318,6 +339,17 @@ watch(
             />
           </template>
         </VDataTableServer>
+      </VCardText>
+
+      <VCardText class="d-flex justify-end flex-wrap gap-3">
+        <VBtn
+          variant="tonal"
+          color="secondary"
+          :disabled="isLoading"
+          @click="isVisible = false"
+        >
+          {{ $t('close') }}
+        </VBtn>
       </VCardText>
     </VCard>
 
@@ -365,7 +397,10 @@ watch(
             class="d-flex align-center justify-center pa-8"
             style="min-height: 200px"
           >
-            <p class="text-body-1 text-center">
+            <p
+              class="text-body-1 text-center"
+              style="white-space: pre-wrap; word-break: break-word"
+            >
               {{ previewDialog.text }}
             </p>
           </div>
@@ -374,6 +409,12 @@ watch(
               {{ previewDialog.caption }}
             </p>
           </div>
+        </VCardText>
+
+        <VCardText class="d-flex justify-end flex-wrap gap-3">
+          <VBtn variant="tonal" color="secondary" @click="closePreview">
+            {{ $t('close') }}
+          </VBtn>
         </VCardText>
       </VCard>
     </VDialog>
