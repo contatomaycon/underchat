@@ -1630,6 +1630,8 @@
     "checkout": "Checkout",
     "selected_plan": "Plano Selecionado",
     "addons": "Adicionais",
+    "addons_subtitle": "Selecione os adicionais",
+    "addons_description": "Escolha complementos para o plano selecionado",
     "subtotal": "Subtotal",
     "proceed_to_payment": "Prosseguir para Pagamento",
     "select_payment_method": "Selecione o método de pagamento",

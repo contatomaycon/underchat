@@ -80,11 +80,19 @@ const items = [
     icon: 'tabler-package',
   },
   {
+    title: t('addons'),
+    subtitle: t('addons_subtitle'),
+    icon: 'tabler-plus',
+  },
+  {
     title: t('payment'),
     subtitle: t('payment_subtitle'),
     icon: 'tabler-credit-card',
   },
 ];
+
+const ADDONS_STEP_INDEX = 4;
+const LAST_STEP_INDEX = items.length - 1;
 
 const name = ref<string | null>(null);
 const last_name = ref<string | null>(null);
@@ -132,7 +140,6 @@ const selectedAddons = ref<
 const selectedCrossSellByType = ref<Record<string, string | null>>({});
 const loadingPlans = ref(false);
 const loadingCrossSells = ref(false);
-const showAddons = ref(false);
 
 const showDDDField = computed(() => phone_ddi.value === '55');
 
@@ -197,6 +204,13 @@ const handleVerifyCode = async () => {
 };
 
 const canGoToStep = (step: number) => {
+  if (
+    step === ADDONS_STEP_INDEX &&
+    selectedPlanForCheckout.value &&
+    isTestPlan(selectedPlanForCheckout.value)
+  ) {
+    return false;
+  }
   return step <= maxStepReached.value;
 };
 
@@ -232,7 +246,10 @@ const handleNext = async () => {
     if (!validation?.valid) {
       return;
     }
-    maxStepReached.value = 3;
+    maxStepReached.value = Math.max(maxStepReached.value, 3);
+    const nextStep = Math.min(currentStep.value + 1, LAST_STEP_INDEX);
+    currentStep.value = nextStep;
+    return;
   }
 
   if (currentStep.value === 3) {
@@ -241,26 +258,25 @@ const handleNext = async () => {
     }
 
     if (isTestPlan(selectedPlanForCheckout.value)) {
-      maxStepReached.value = 4;
-      if (currentStep.value < items.length - 1) {
-        const nextStep = currentStep.value + 1;
-        currentStep.value = nextStep;
-      }
+      maxStepReached.value = LAST_STEP_INDEX;
+      currentStep.value = LAST_STEP_INDEX;
       return;
     }
 
-    if (!showAddons.value) {
-      showAddons.value = true;
+    maxStepReached.value = Math.max(maxStepReached.value, ADDONS_STEP_INDEX);
+    if (!loadingCrossSells.value) {
       await loadCrossSells();
-      return;
     }
-
-    maxStepReached.value = 4;
+    currentStep.value = ADDONS_STEP_INDEX;
+    return;
   }
 
-  if (currentStep.value < items.length - 1) {
-    const nextStep = currentStep.value + 1;
-    currentStep.value = nextStep;
+  if (currentStep.value === ADDONS_STEP_INDEX) {
+    maxStepReached.value = LAST_STEP_INDEX;
+  }
+
+  if (currentStep.value < LAST_STEP_INDEX) {
+    currentStep.value = currentStep.value + 1;
   }
 };
 
@@ -682,40 +698,18 @@ const filteredPlans = computed(() => {
 });
 
 const getColClasses = computed(() => {
-  const count = filteredPlans.value.length;
-
-  if (count === 1) {
-    return { cols: '12', sm: '12', md: '4', offset: '4' };
-  }
-
-  if (count === 2) {
-    return { cols: '12', sm: '6', md: '6', offset: '' };
-  }
-
-  if (count === 3) {
-    return { cols: '12', sm: '6', md: '4', offset: '' };
-  }
-
-  if (count === 4) {
-    return { cols: '12', sm: '6', md: '3', offset: '' };
-  }
-
-  if (count % 2 === 0) {
-    return { cols: '12', sm: '6', md: '6', offset: '' };
-  }
-
-  if (count === 5) {
-    return { cols: '12', sm: '6', md: '4', offset: '' };
-  }
-
-  return { cols: '12', sm: '6', md: '4', offset: '' };
+  return {
+    cols: '12',
+    sm: '6',
+    md: '4',
+  };
 });
 
 const selectPlan = (plan: ListRegisterPlanWithItemsResponse) => {
   selectedPlanForCheckout.value = plan;
-  showAddons.value = false;
   selectedAddons.value = [];
   selectedCrossSellByType.value = {};
+  availableCrossSells.value = [];
 };
 
 const loadPlans = async () => {
@@ -828,8 +822,12 @@ watch(currentStep, async (newStep) => {
   if (newStep === 3 && plans.value.length === 0) {
     await loadPlans();
   }
-  if (newStep !== 3) {
-    showAddons.value = false;
+  if (
+    newStep === ADDONS_STEP_INDEX &&
+    selectedPlanForCheckout.value &&
+    !isTestPlan(selectedPlanForCheckout.value)
+  ) {
+    await loadCrossSells();
   }
 });
 </script>
@@ -1388,7 +1386,6 @@ watch(currentStep, async (newStep) => {
                       :cols="getColClasses.cols"
                       :sm="getColClasses.sm"
                       :md="getColClasses.md"
-                      :offset-md="getColClasses.offset || undefined"
                       class="plan-col"
                     >
                       <VCard
@@ -1515,105 +1512,134 @@ watch(currentStep, async (newStep) => {
                       </p>
                     </VCol>
                   </VRow>
+                </div>
+              </div>
+            </VWindowItem>
+
+            <VWindowItem>
+              <div class="register-step-content">
+                <h5 class="text-h5 mb-1">{{ $t('addons') }}</h5>
+                <p class="text-sm mb-6">
+                  {{ $t('addons_description') }}
+                </p>
+
+                <div v-if="!selectedPlanForCheckout" class="text-center py-4">
+                  <p class="text-body-2 text-medium-emphasis">
+                    {{ $t('select_plan') }}
+                  </p>
+                </div>
+
+                <div
+                  v-if="
+                    selectedPlanForCheckout &&
+                    isTestPlan(selectedPlanForCheckout)
+                  "
+                  class="text-center py-4"
+                >
+                  <p class="text-body-2 text-medium-emphasis">
+                    {{ $t('no_addons_available') }}
+                  </p>
+                </div>
+
+                <div
+                  v-if="
+                    selectedPlanForCheckout &&
+                    !isTestPlan(selectedPlanForCheckout)
+                  "
+                >
+                  <div v-if="loadingCrossSells" class="text-center py-4">
+                    <VProgressCircular
+                      indeterminate
+                      color="primary"
+                      size="32"
+                    />
+                  </div>
 
                   <div
-                    v-if="showAddons && selectedPlanForCheckout"
-                    class="mt-8"
+                    v-if="!loadingCrossSells && groupedCrossSells.length > 0"
+                    class="d-flex flex-column gap-4"
                   >
-                    <VDivider class="mb-4" />
-                    <h6 class="text-h6 mb-4">{{ $t('addons') }}</h6>
-
-                    <div v-if="loadingCrossSells" class="text-center py-4">
-                      <VProgressCircular
-                        indeterminate
-                        color="primary"
-                        size="32"
-                      />
-                    </div>
-
-                    <div v-else-if="groupedCrossSells.length > 0">
-                      <VCard
-                        v-for="group in groupedCrossSells"
-                        :key="group.product_id"
-                        variant="outlined"
-                        class="mb-4"
-                        :class="{
-                          'border-primary': isAddonSelected(group.product_id),
-                        }"
-                      >
-                        <VCardText>
-                          <div class="d-flex flex-column gap-3">
-                            <div>
-                              <div class="font-weight-medium mb-1">
-                                {{ group.product_name }}
-                              </div>
-                              <div
-                                v-if="group.product_description"
-                                class="text-body-2 text-medium-emphasis"
-                              >
-                                {{ group.product_description }}
-                              </div>
+                    <VCard
+                      v-for="group in groupedCrossSells"
+                      :key="group.product_id"
+                      variant="outlined"
+                      :class="{
+                        'border-primary': isAddonSelected(group.product_id),
+                      }"
+                    >
+                      <VCardText>
+                        <div class="d-flex flex-column gap-3">
+                          <div>
+                            <div class="font-weight-medium mb-1">
+                              {{ group.product_name }}
                             </div>
-
                             <div
-                              v-if="isAddonSelected(group.product_id)"
-                              class="d-flex align-center justify-space-between"
+                              v-if="group.product_description"
+                              class="text-body-2 text-medium-emphasis"
                             >
-                              <VChip color="success" variant="tonal">
-                                {{ $t('added') }}
-                              </VChip>
-                              <VBtn
-                                color="error"
-                                variant="outlined"
-                                size="small"
-                                :disabled="isTestPlan(selectedPlanForCheckout)"
-                                @click="removeAddon(group.product_id)"
-                              >
-                                {{ $t('remove') }}
-                              </VBtn>
-                            </div>
-
-                            <div v-else class="d-flex align-center gap-2">
-                              <VSelect
-                                v-model="
-                                  selectedCrossSellByType[group.product_id]
-                                "
-                                :items="
-                                  group.options.map((opt) => ({
-                                    title: getCrossSellLabel(opt),
-                                    value: opt.plan_cross_sell_id,
-                                  }))
-                                "
-                                item-title="title"
-                                item-value="value"
-                                :label="`${$t('select')} ${group.product_name}`"
-                                variant="outlined"
-                                density="compact"
-                                class="flex-grow-1"
-                                :disabled="isTestPlan(selectedPlanForCheckout)"
-                              />
-                              <VBtn
-                                color="primary"
-                                variant="outlined"
-                                :disabled="
-                                  isTestPlan(selectedPlanForCheckout) ||
-                                  !canAddCrossSell(group.product_id)
-                                "
-                                @click="addAddon(group.product_id)"
-                              >
-                                {{ $t('add') }}
-                              </VBtn>
+                              {{ group.product_description }}
                             </div>
                           </div>
-                        </VCardText>
-                      </VCard>
-                    </div>
 
-                    <div v-else class="text-center py-4">
-                      <p class="text-body-2 text-medium-emphasis">
-                        {{ $t('no_addons_available') }}
-                      </p>
-                    </div>
+                          <div
+                            v-if="isAddonSelected(group.product_id)"
+                            class="d-flex align-center justify-space-between"
+                          >
+                            <VChip color="success" variant="tonal">
+                              {{ $t('added') }}
+                            </VChip>
+                            <VBtn
+                              color="error"
+                              variant="outlined"
+                              size="small"
+                              @click="removeAddon(group.product_id)"
+                            >
+                              {{ $t('remove') }}
+                            </VBtn>
+                          </div>
+
+                          <div
+                            v-if="!isAddonSelected(group.product_id)"
+                            class="d-flex align-center gap-2"
+                          >
+                            <VSelect
+                              v-model="
+                                selectedCrossSellByType[group.product_id]
+                              "
+                              :items="
+                                group.options.map((opt) => ({
+                                  title: getCrossSellLabel(opt),
+                                  value: opt.plan_cross_sell_id,
+                                }))
+                              "
+                              item-title="title"
+                              item-value="value"
+                              :label="`${$t('select')} ${group.product_name}`"
+                              variant="outlined"
+                              density="compact"
+                              class="flex-grow-1"
+                            />
+                            <VBtn
+                              color="primary"
+                              variant="outlined"
+                              :disabled="!canAddCrossSell(group.product_id)"
+                              @click="addAddon(group.product_id)"
+                            >
+                              {{ $t('add') }}
+                            </VBtn>
+                          </div>
+                        </div>
+                      </VCardText>
+                    </VCard>
+                  </div>
+
+                  <div
+                    v-if="!loadingCrossSells && groupedCrossSells.length === 0"
+                    class="text-center py-4"
+                  >
+                    <p class="text-body-2 text-medium-emphasis">
+                      {{ $t('no_addons_available') }}
+                    </p>
                   </div>
                 </div>
               </div>

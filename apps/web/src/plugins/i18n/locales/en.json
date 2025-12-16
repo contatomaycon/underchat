@@ -1628,6 +1628,8 @@
     "checkout": "Checkout",
     "selected_plan": "Selected Plan",
     "addons": "Add-ons",
+    "addons_subtitle": "Pick the add-ons",
+    "addons_description": "Choose extras for the selected plan",
     "subtotal": "Subtotal",
     "proceed_to_payment": "Proceed to Payment",
     "select_payment_method": "Select payment method",
