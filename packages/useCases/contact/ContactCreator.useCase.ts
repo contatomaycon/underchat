@@ -16,6 +16,7 @@ import {
   chatQueueAccountCentrifugo,
 } from '@core/common/functions/centrifugoQueue';
 import { IChat } from '@core/common/interfaces/IChat';
+import { PlanAccountService } from '@core/services/planAccount.service';
 
 type FieldValue = string | { value: string } | null;
 
@@ -28,7 +29,8 @@ export class ContactCreatorUseCase {
     private readonly encryptService: EncryptService,
     private readonly phoneValidationService: PhoneValidationService,
     private readonly chatService: ChatService,
-    private readonly centrifugoService: CentrifugoService
+    private readonly centrifugoService: CentrifugoService,
+    private readonly planAccountService: PlanAccountService
   ) {}
 
   private validateBirthDate(
@@ -235,6 +237,7 @@ export class ContactCreatorUseCase {
     }
 
     await this.validateAccountAndLabelTemplate(t, accountId, labelTemplateId);
+    await this.planAccountService.validateCanCreateContact(t, accountId);
 
     this.validateBirthdayIfPresent(t, birthday);
 

@@ -104,7 +104,7 @@ export class ContactGroupListerRepository {
             name: true,
           },
         },
-        cgaa: {
+        cgt: {
           with: {
             cga: {
               columns: {
@@ -147,7 +147,7 @@ export class ContactGroupListerRepository {
       },
       name: item.name,
       description: item.description,
-      contacts: item.cgaa.map((contactGroupAssignment) => ({
+      contacts: item.cgt.map((contactGroupAssignment) => ({
         contact_id: contactGroupAssignment.cga.contact_id,
         name: contactGroupAssignment.cga.name,
         phone_partial: contactGroupAssignment.cga.phone_partial,

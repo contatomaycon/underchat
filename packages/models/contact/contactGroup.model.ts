@@ -2,6 +2,7 @@ import { pgTable, uuid, timestamp, varchar, text } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 import { account } from '../account';
 import { contactGroupAssignment } from './contactGroupAssignment.model';
+import { scheduledContact } from '../schedule';
 
 export const contactGroup = pgTable('contact_group', {
   contact_group_id: uuid().primaryKey().notNull(),
@@ -28,6 +29,7 @@ export const contactGroupRelations = relations(
       fields: [contactGroup.account_id],
       references: [account.account_id],
     }),
-    cgaa: many(contactGroupAssignment),
+    cgt: many(contactGroupAssignment),
+    cgs: many(scheduledContact),
   })
 );

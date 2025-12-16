@@ -116,4 +116,5 @@ export interface IChatMessage {
   deleted?: boolean;
   has_quoted?: boolean;
   hash?: string | null;
+  send_delay_ms?: number | null;
 }

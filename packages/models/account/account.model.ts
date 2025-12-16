@@ -15,6 +15,7 @@ import {
   planAccount,
   accountPayment,
   reportConversationHistoryPdf,
+  schedule,
 } from '@core/models';
 
 export const account = pgTable('account', {
@@ -58,4 +59,5 @@ export const accountRelations = relations(account, ({ one, many }) => ({
   pca: many(planCrossSellAccount),
   apm: many(accountPayment),
   rch: many(reportConversationHistoryPdf),
+  sch: many(schedule),
 }));

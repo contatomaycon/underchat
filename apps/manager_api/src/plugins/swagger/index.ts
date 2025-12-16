@@ -131,6 +131,10 @@ const swaggerPlugin = async (fastify: FastifyInstance) => {
           name: ETagSwagger.dashboard,
           description: 'End-points relacionados ao dashboard',
         },
+        {
+          name: ETagSwagger.schedule,
+          description: 'End-points relacionados a agendamentos',
+        },
       ],
     },
   });

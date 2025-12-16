@@ -295,6 +295,13 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       | never
     >,
+    'schedule': RouteRecordInfo<
+      'schedule',
+      '/schedule',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
     'sector': RouteRecordInfo<
       'sector',
       '/sector',
@@ -563,6 +570,12 @@ declare module 'vue-router/auto-routes' {
     'src/pages/role.vue': {
       routes:
         | 'role'
+      views:
+        | never
+    }
+    'src/pages/schedule.vue': {
+      routes:
+        | 'schedule'
       views:
         | never
     }

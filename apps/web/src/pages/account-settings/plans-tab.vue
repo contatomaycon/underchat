@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { useAccountSettingsStore } from '@/@webcore/stores/accountSettings';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
+import VDialogHandler from '@/components/VDialogHandler.vue';
 import { ViewCurrentPlanInvoiceResponse } from '@core/schema/accountSettings/viewCurrentPlanInvoice/response.schema';
 import { ListUserCardResponse } from '@core/schema/plan/listUserCards/response.schema';
 import { ListAccountPlanProductsResponse } from '@core/schema/accountSettings/listAccountPlanProducts/response.schema';
@@ -622,6 +623,7 @@ const isCancelButtonDisabled = computed(() => {
 
 const isCancelling = ref(false);
 const isReactivating = ref(false);
+const isCancelSubscriptionDialogOpen = ref(false);
 
 const isInCancellationProcess = computed(() => {
   if (!planInvoice.value) return false;
@@ -670,7 +672,12 @@ const renewButtonText = computed(() => {
   return t('upgrade_plan');
 });
 
-const cancelSubscription = async () => {
+const cancelSubscription = () => {
+  if (isCancelling.value || isCancelButtonDisabled.value) return;
+  isCancelSubscriptionDialogOpen.value = true;
+};
+
+const confirmCancelSubscription = async () => {
   if (isCancelling.value || isCancelButtonDisabled.value) return;
 
   try {
@@ -1189,6 +1196,15 @@ onMounted(() => {
     >
       {{ accountSettingsStore.snackbar.message }}
     </VSnackbar>
+
+    <VDialogHandler
+      v-model="isCancelSubscriptionDialogOpen"
+      :title="$t('cancel_subscription')"
+      :message="$t('cancel_subscription_confirmation')"
+      :confirm-text="$t('confirm')"
+      :cancel-text="$t('cancel')"
+      @confirm="confirmCancelSubscription"
+    />
 
     <VDialog v-model="isDeleteDialogOpen" max-width="400">
       <VCard>

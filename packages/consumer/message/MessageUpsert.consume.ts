@@ -60,6 +60,7 @@ import { ViewContactResponse } from '@core/schema/contact/viewContact/response.s
 import { ChatMessageService } from '@core/services/chatMessage.service';
 import { ChatbotFlowRunnerService } from '@core/services/chatbotFlowRunner.service';
 import { WorkerConfigService } from '@core/services/workerConfig.service';
+import { PlanAccountService } from '@core/services/planAccount.service';
 
 @singleton()
 export class MessageUpsertConsume {
@@ -82,7 +83,8 @@ export class MessageUpsertConsume {
     private readonly automaticAttendanceService: AutomaticAttendanceService,
     private readonly chatMessageService: ChatMessageService,
     private readonly workerConfigService: WorkerConfigService,
-    private readonly chatbotFlowRunnerService: ChatbotFlowRunnerService
+    private readonly chatbotFlowRunnerService: ChatbotFlowRunnerService,
+    private readonly planAccountService: PlanAccountService
   ) {}
 
   private get consumerOrThrow(): Consumer {
@@ -1238,6 +1240,12 @@ export class MessageUpsertConsume {
     phoneAndDdi: { phone: string; phone_ddi: string | null },
     contactName: string
   ): Promise<ViewContactResponse | null> {
+    const canCreate =
+      await this.planAccountService.validateCanCreateContactReceived(
+        data.account_id
+      );
+    if (!canCreate) return null;
+
     const { name, last_name, nickname } = this.splitFullName(contactName);
 
     const contactToCreate = {
