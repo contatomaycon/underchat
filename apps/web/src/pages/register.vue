@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import { useGenerateImageVariant } from '@/@webcore/composable/useGenerateImageVariant';
 import type { CustomInputContent } from '@/@webcore/types';
+import { useCountryCodes } from '@/composables/useCountryCodes';
+import { useBrazilianDDDs } from '@/composables/useBrazilianDDDs';
+import { requiredValidator } from '@/@webcore/utils/validators';
+import { VForm } from 'vuetify/components/VForm';
 
 import registerMultistepIllustrationDark from '@images/illustrations/register-multi-step-illustration-dark.png';
 import registerMultistepIllustrationLight from '@images/illustrations/register-multi-step-illustration-light.png';
@@ -13,9 +17,27 @@ const registerMultistepBg = useGenerateImageVariant(
   registerMultistepBgDark
 );
 
-const currentStep = ref(0);
+const { t } = useI18n();
+const { items: countryCodes } = useCountryCodes();
+const { items: brazilianDDDs } = useBrazilianDDDs();
+
+const currentStepInternal = ref(0);
 const isPasswordVisible = ref(false);
 const isConfirmPasswordVisible = ref(false);
+
+const currentStep = computed({
+  get: () => currentStepInternal.value,
+  set: (value: number) => {
+    if (canGoToStep(value)) {
+      currentStepInternal.value = value;
+      if (value > maxStepReached.value) {
+        maxStepReached.value = value;
+      }
+    } else {
+      currentStepInternal.value = maxStepReached.value;
+    }
+  },
+});
 
 const registerMultistepIllustration = useGenerateImageVariant(
   registerMultistepIllustrationLight,
@@ -42,9 +64,9 @@ const radioContent: CustomInputContent[] = [
 
 const items = [
   {
-    title: 'Account',
-    subtitle: 'Account Details',
-    icon: 'tabler-smart-home',
+    title: t('validation'),
+    subtitle: t('validation_subtitle'),
+    icon: 'tabler-device-mobile',
   },
   {
     title: 'Personal',
@@ -57,6 +79,89 @@ const items = [
     icon: 'tabler-file-text',
   },
 ];
+
+const phone_ddi = ref<string | null>('55');
+const phone_ddd = ref<string | null>(null);
+const phone = ref<string | null>(null);
+
+const showDDDField = computed(() => phone_ddi.value === '55');
+
+const isValidationStepValid = computed(() => {
+  if (!phone_ddi.value) return false;
+  if (!phone.value || phone.value.trim().length === 0) return false;
+  if (showDDDField.value && !phone_ddd.value) return false;
+  return true;
+});
+
+const maxStepReached = ref(0);
+
+watch(phone_ddi, (newValue) => {
+  if (newValue !== '55') {
+    phone_ddd.value = null;
+  }
+});
+
+watch(isValidationStepValid, (isValid) => {
+  if (isValid && maxStepReached.value === 0) {
+    maxStepReached.value = 1;
+  }
+});
+
+const canGoToStep = (step: number) => {
+  return step <= maxStepReached.value;
+};
+
+const handleNext = () => {
+  if (currentStep.value === 0) {
+    if (isValidationStepValid.value) {
+      maxStepReached.value = 1;
+      currentStep.value = 1;
+    }
+    return;
+  }
+  if (currentStep.value < items.length - 1) {
+    const nextStep = currentStep.value + 1;
+    currentStep.value = nextStep;
+  }
+};
+
+function formatPhone(value: string | null | undefined): string {
+  if (!value) return '';
+
+  const numbers = value.replaceAll(/\D/g, '');
+  const isBrazil = phone_ddi.value === '55';
+
+  if (isBrazil) {
+    const maxLength = 9;
+    const digits = numbers.slice(0, maxLength);
+
+    if (digits.length <= 4) {
+      return digits;
+    }
+    if (digits.length <= 8) {
+      return `${digits.slice(0, 4)}-${digits.slice(4)}`;
+    }
+    return `${digits.slice(0, 5)}-${digits.slice(5)}`;
+  }
+
+  const maxLength = 15;
+  const digits = numbers.slice(0, maxLength);
+
+  if (digits.length <= 4) {
+    return digits;
+  }
+  if (digits.length <= 8) {
+    return `${digits.slice(0, 4)}-${digits.slice(4)}`;
+  }
+  return `${digits.slice(0, 5)}-${digits.slice(5)}`;
+}
+
+const phoneFormatted = computed({
+  get: () => formatPhone(phone.value),
+  set: (value: string) => {
+    phone.value = value.replaceAll(/\D/g, '');
+  },
+});
 
 const form = ref({
   username: '',
@@ -79,8 +184,9 @@ const form = ref({
   cvv: '',
 });
 
+const refFormValidation = ref<VForm>();
+
 const onSubmit = () => {
-  // eslint-disable-next-line no-alert
   alert('Submitted..!!');
 };
 </script>
@@ -110,6 +216,9 @@ const onSubmit = () => {
           :items="items"
           :direction="$vuetify.display.smAndUp ? 'horizontal' : 'vertical'"
           icon-size="24"
+          :is-active-step-valid="
+            currentStep === 0 ? isValidationStepValid : undefined
+          "
           class="stepper-icon-step-bg mb-8"
         />
 
@@ -118,51 +227,46 @@ const onSubmit = () => {
           class="disable-tab-transition"
           style="max-width: 681px"
         >
-          <VForm>
+          <VForm ref="refFormValidation">
             <VWindowItem>
-              <h5 class="text-h5 mb-1">Account Information</h5>
-              <p class="text-sm">Enter Your Account Details</p>
+              <h5 class="text-h5 mb-1">{{ $t('validation') }}</h5>
+              <p class="text-sm mb-6">{{ $t('validation_description') }}</p>
 
               <VRow>
                 <VCol cols="12" md="6">
-                  <AppTextField v-model="form.username" label="Username" />
-                </VCol>
-
-                <VCol cols="12" md="6">
-                  <AppTextField v-model="form.email" label="Email" />
-                </VCol>
-
-                <VCol cols="12" md="6">
-                  <AppTextField
-                    v-model="form.password"
-                    label="Password"
-                    :type="isPasswordVisible ? 'text' : 'password'"
-                    :append-inner-icon="
-                      isPasswordVisible ? 'tabler-eye-off' : 'tabler-eye'
-                    "
-                    @click:append-inner="isPasswordVisible = !isPasswordVisible"
+                  <VLabel class="text-body-2 mb-1"
+                    >{{ $t('phone_ddi') }}:</VLabel
+                  >
+                  <AppSelectSearch
+                    v-model="phone_ddi"
+                    :items="countryCodes"
+                    :placeholder="$t('select_phone_ddi')"
+                    item-value="value"
+                    item-title="title"
                   />
                 </VCol>
 
-                <VCol cols="12" md="6">
-                  <AppTextField
-                    v-model="form.confirmPassword"
-                    label="Confirm Password"
-                    :type="isConfirmPasswordVisible ? 'text' : 'password'"
-                    :append-inner-icon="
-                      isConfirmPasswordVisible ? 'tabler-eye-off' : 'tabler-eye'
-                    "
-                    @click:append-inner="
-                      isConfirmPasswordVisible = !isConfirmPasswordVisible
-                    "
+                <VCol v-if="showDDDField" cols="12" md="6">
+                  <VLabel class="text-body-2 mb-1"
+                    >{{ $t('phone_ddd') }}:</VLabel
+                  >
+                  <AppSelectSearch
+                    v-model="phone_ddd"
+                    :items="brazilianDDDs"
+                    :placeholder="$t('select_phone_ddd')"
+                    item-value="value"
+                    item-title="title"
                   />
                 </VCol>
 
-                <VCol cols="12">
+                <VCol cols="12" :md="showDDDField ? 12 : 6">
+                  <VLabel class="text-body-2 mb-1">{{ $t('phone') }}:</VLabel>
                   <AppTextField
-                    v-model="form.link"
-                    label="Profile Link"
-                    type="url"
+                    v-model="phoneFormatted"
+                    type="tel"
+                    :placeholder="$t('phone')"
+                    :maxlength="showDDDField ? 10 : 15"
+                    :rules="[requiredValidator(phone, $t('phone_required'))]"
                   />
                 </VCol>
               </VRow>
@@ -302,7 +406,11 @@ const onSubmit = () => {
             submit
           </VBtn>
 
-          <VBtn v-else @click="currentStep++">
+          <VBtn
+            v-else
+            :disabled="currentStep === 0 && !isValidationStepValid"
+            @click="handleNext"
+          >
             Next
 
             <VIcon icon="tabler-arrow-right" end class="flip-in-rtl" />
