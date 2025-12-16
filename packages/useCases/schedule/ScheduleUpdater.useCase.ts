@@ -110,8 +110,11 @@ export class ScheduleUpdaterUseCase {
   }
 
   private buildUpdateScheduleInput(
-    scheduleId: string,
-    workerId: string | null | undefined,
+    scheduleBasic: {
+      scheduleId: string;
+      workerId: string | null | undefined;
+      sendDate: string | null | undefined;
+    },
     type: string | null | undefined,
     sendToValue: string | null | undefined,
     messageValue: string | null | undefined,
@@ -123,22 +126,27 @@ export class ScheduleUpdaterUseCase {
           height?: number | null;
         })
       | null,
-    sendDate: string | null | undefined,
-    contactIds: string[],
-    contactGroupIds: string[]
+    recipients: {
+      contactIds: string[];
+      contactGroupIds: string[];
+    }
   ): IUpdateSchedule {
-    const sendDateISO = sendDate
+    const sendDateISO = scheduleBasic.sendDate
       ? (() => {
-          const sendDateMoment = moment(sendDate, 'YYYY-MM-DD HH:mm', true);
+          const sendDateMoment = moment(
+            scheduleBasic.sendDate,
+            'YYYY-MM-DD HH:mm',
+            true
+          );
           return sendDateMoment.isValid()
             ? sendDateMoment.toISOString()
-            : sendDate;
+            : scheduleBasic.sendDate;
         })()
       : undefined;
 
     return {
-      schedule_id: scheduleId,
-      worker_id: workerId ?? undefined,
+      schedule_id: scheduleBasic.scheduleId,
+      worker_id: scheduleBasic.workerId ?? undefined,
       type: type ?? undefined,
       send_to: sendToValue ?? undefined,
       message: messageValue ?? undefined,
@@ -148,9 +156,12 @@ export class ScheduleUpdaterUseCase {
       width: attachment?.width ?? undefined,
       height: attachment?.height ?? undefined,
       send_date: sendDateISO,
-      contact_ids: contactIds.length > 0 ? contactIds : undefined,
+      contact_ids:
+        recipients.contactIds.length > 0 ? recipients.contactIds : undefined,
       contact_group_ids:
-        contactGroupIds.length > 0 ? contactGroupIds : undefined,
+        recipients.contactGroupIds.length > 0
+          ? recipients.contactGroupIds
+          : undefined,
     };
   }
 
@@ -182,15 +193,19 @@ export class ScheduleUpdaterUseCase {
     this.validateRequiredFields(sendToValue, contactIds, contactGroupIds, t);
 
     const updateBody = this.buildUpdateScheduleInput(
-      scheduleId,
-      this.extractStringValue(body.worker_id),
+      {
+        scheduleId,
+        workerId: this.extractStringValue(body.worker_id),
+        sendDate,
+      },
       this.extractStringValue(body.type),
       sendToValue,
       messageValue,
       attachment,
-      sendDate,
-      contactIds,
-      contactGroupIds
+      {
+        contactIds,
+        contactGroupIds,
+      }
     );
 
     const scheduleUpdater = await this.scheduleService.updateScheduleById(

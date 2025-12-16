@@ -51,6 +51,65 @@ const getContactName = (item: ScheduleMessageResult): string => {
   return '-';
 };
 
+const formatBrazilianPhoneWithDdi = (
+  cleanPhone: string,
+  cleanDdi: string
+): string | null => {
+  if (cleanDdi !== '55' || cleanPhone.length < 10) {
+    return null;
+  }
+
+  const ddd = cleanPhone.slice(0, 2);
+  const number = cleanPhone.slice(2);
+
+  if (number.length === 8) {
+    return `+55 (${ddd}) ${number.slice(0, 4)}-${number.slice(4)}`;
+  }
+
+  if (number.length === 9) {
+    return `+55 (${ddd}) ${number.slice(0, 5)}-${number.slice(5)}`;
+  }
+
+  return null;
+};
+
+const formatPhoneWithDdi = (cleanPhone: string, cleanDdi: string): string => {
+  const fullPhone = `${cleanDdi}${cleanPhone}`;
+  const formatted = formatPhoneBR(fullPhone);
+
+  if (formatted !== fullPhone && formatted !== cleanPhone) {
+    return formatted;
+  }
+
+  const brazilianFormatted = formatBrazilianPhoneWithDdi(cleanPhone, cleanDdi);
+  if (brazilianFormatted) {
+    return brazilianFormatted;
+  }
+
+  return `+${cleanDdi} ${cleanPhone}`;
+};
+
+const formatPhoneWithoutDdi = (cleanPhone: string): string => {
+  if (cleanPhone.length < 10) {
+    return '';
+  }
+
+  const formatted = formatPhoneBR(cleanPhone);
+  if (formatted !== cleanPhone) {
+    return formatted;
+  }
+
+  if (cleanPhone.length === 10) {
+    return `(${cleanPhone.slice(0, 2)}) ${cleanPhone.slice(2, 6)}-${cleanPhone.slice(6)}`;
+  }
+
+  if (cleanPhone.length === 11) {
+    return `(${cleanPhone.slice(0, 2)}) ${cleanPhone.slice(2, 7)}-${cleanPhone.slice(7)}`;
+  }
+
+  return '';
+};
+
 const formatPhoneNumber = (phone: string, ddi?: string | null): string => {
   if (!phone) {
     return '-';
@@ -60,46 +119,11 @@ const formatPhoneNumber = (phone: string, ddi?: string | null): string => {
 
   if (ddi) {
     const cleanDdi = ddi.replaceAll(/\D/g, '');
-    const fullPhone = `${cleanDdi}${cleanPhone}`;
-    const formatted = formatPhoneBR(fullPhone);
-
-    if (formatted !== fullPhone && formatted !== cleanPhone) {
-      return formatted;
-    }
-
-    if (cleanDdi === '55' && cleanPhone.length >= 10) {
-      const ddd = cleanPhone.slice(0, 2);
-      const number = cleanPhone.slice(2);
-
-      if (number.length === 8) {
-        return `+55 (${ddd}) ${number.slice(0, 4)}-${number.slice(4)}`;
-      }
-
-      if (number.length === 9) {
-        return `+55 (${ddd}) ${number.slice(0, 5)}-${number.slice(5)}`;
-      }
-    }
-
-    return `+${cleanDdi} ${cleanPhone}`;
+    return formatPhoneWithDdi(cleanPhone, cleanDdi);
   }
 
-  if (cleanPhone.length >= 10) {
-    const formatted = formatPhoneBR(cleanPhone);
-
-    if (formatted !== cleanPhone) {
-      return formatted;
-    }
-
-    if (cleanPhone.length === 10) {
-      return `(${cleanPhone.slice(0, 2)}) ${cleanPhone.slice(2, 6)}-${cleanPhone.slice(6)}`;
-    }
-
-    if (cleanPhone.length === 11) {
-      return `(${cleanPhone.slice(0, 2)}) ${cleanPhone.slice(2, 7)}-${cleanPhone.slice(7)}`;
-    }
-  }
-
-  return phone;
+  const formatted = formatPhoneWithoutDdi(cleanPhone);
+  return formatted || phone;
 };
 
 const getContactPhone = (item: ScheduleMessageResult): string => {

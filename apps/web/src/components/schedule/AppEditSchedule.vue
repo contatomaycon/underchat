@@ -273,46 +273,88 @@ const onFileChange = (files: File[] | File | null) => {
   };
 };
 
+const validateRequiredFields = (): boolean => {
+  return !!(
+    scheduleId.value &&
+    workerId.value &&
+    sendTo.value &&
+    sendDate.value
+  );
+};
+
+const validateMessage = (): boolean => {
+  if (selectedType.value === EScheduleType.text) {
+    return !!message.value?.trim();
+  }
+  return true;
+};
+
+const validateFile = (): boolean => {
+  if (!showFileInput.value) {
+    return true;
+  }
+
+  const hasExisting = !!existingAttachmentUrl.value;
+  const hasNewValidFile =
+    hasNewFile.value && !!attachmentFile.value && !!filePreview.value;
+
+  return hasExisting || hasNewValidFile;
+};
+
+const validateRecipients = (): boolean => {
+  if (sendTo.value === EScheduleSendTo.contacts) {
+    return selectedContactIds.value.length > 0;
+  }
+
+  if (sendTo.value === EScheduleSendTo.contact_groups) {
+    return selectedContactGroupIds.value.length > 0;
+  }
+
+  return true;
+};
+
+const buildFormData = (): FormData => {
+  const form = new FormData();
+
+  if (workerId.value) {
+    form.append('worker_id', workerId.value);
+  }
+  if (selectedType.value) {
+    form.append('type', selectedType.value);
+  }
+  if (sendTo.value) {
+    form.append('send_to', sendTo.value);
+  }
+  if (sendDate.value) {
+    form.append('send_date', sendDate.value);
+  }
+  if (message.value !== null) {
+    form.append('message', message.value);
+  }
+  if (attachmentFile.value && hasNewFile.value) {
+    form.append('url', attachmentFile.value);
+  }
+  if (selectedContactIds.value.length > 0) {
+    form.append('contact_ids', JSON.stringify(selectedContactIds.value));
+  }
+  if (selectedContactGroupIds.value.length > 0) {
+    form.append(
+      'contact_group_ids',
+      JSON.stringify(selectedContactGroupIds.value)
+    );
+  }
+
+  return form;
+};
+
 const updateSchedule = async () => {
   const validateForm = await refFormEditSchedule?.value?.validate();
   if (!validateForm?.valid) return;
-
-  if (
-    !scheduleId.value ||
-    !workerId.value ||
-    !sendTo.value ||
-    !sendDate.value
-  ) {
-    return;
-  }
-
-  if (selectedType.value === EScheduleType.text && !message.value?.trim()) {
-    return;
-  }
-
-  if (showFileInput.value) {
-    const hasExisting = !!existingAttachmentUrl.value;
-    const hasNewValidFile =
-      hasNewFile.value && !!attachmentFile.value && !!filePreview.value;
-
-    if (!hasExisting && !hasNewValidFile) {
-      return;
-    }
-  }
-
-  if (
-    sendTo.value === EScheduleSendTo.contacts &&
-    selectedContactIds.value.length === 0
-  ) {
-    return;
-  }
-
-  if (
-    sendTo.value === EScheduleSendTo.contact_groups &&
-    selectedContactGroupIds.value.length === 0
-  ) {
-    return;
-  }
+  if (!validateRequiredFields()) return;
+  if (!validateMessage()) return;
+  if (!validateFile()) return;
+  if (!validateRecipients()) return;
+  if (!scheduleId.value) return;
 
   isLoading.value = true;
 
@@ -321,35 +363,7 @@ const updateSchedule = async () => {
       schedule_id: scheduleId.value,
     };
 
-    const form = new FormData();
-    if (workerId.value) {
-      form.append('worker_id', workerId.value);
-    }
-    if (selectedType.value) {
-      form.append('type', selectedType.value);
-    }
-    if (sendTo.value) {
-      form.append('send_to', sendTo.value);
-    }
-    if (sendDate.value) {
-      form.append('send_date', sendDate.value);
-    }
-    if (message.value !== null) {
-      form.append('message', message.value);
-    }
-    if (attachmentFile.value && hasNewFile.value) {
-      form.append('url', attachmentFile.value);
-    }
-    if (selectedContactIds.value.length > 0) {
-      form.append('contact_ids', JSON.stringify(selectedContactIds.value));
-    }
-    if (selectedContactGroupIds.value.length > 0) {
-      form.append(
-        'contact_group_ids',
-        JSON.stringify(selectedContactGroupIds.value)
-      );
-    }
-
+    const form = buildFormData();
     const result = await scheduleStore.updateSchedule(payload, form as any);
 
     if (result) {

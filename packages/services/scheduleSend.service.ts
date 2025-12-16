@@ -87,17 +87,17 @@ export class ScheduleSendService {
 
     let replaced = message;
 
-    replaced = replaced.replace(/\{\{ greeting \}\}/g, greeting);
-    replaced = replaced.replace(/\{\{ name \}\}/g, contact.name || '');
-    replaced = replaced.replace(/\{\{ protocol \}\}/g, protocol);
-    replaced = replaced.replace(/\{\{ date \}\}/g, date);
-    replaced = replaced.replace(/\{\{ time \}\}/g, time);
-    replaced = replaced.replace(
+    replaced = replaced.replaceAll(/\{\{ greeting \}\}/g, greeting);
+    replaced = replaced.replaceAll(/\{\{ name \}\}/g, contact.name || '');
+    replaced = replaced.replaceAll(/\{\{ protocol \}\}/g, protocol);
+    replaced = replaced.replaceAll(/\{\{ date \}\}/g, date);
+    replaced = replaced.replaceAll(/\{\{ time \}\}/g, time);
+    replaced = replaced.replaceAll(
       /\{\{ account_name \}\}/g,
       schedule.account_name
     );
-    replaced = replaced.replace(/\{\{ phone \}\}/g, phoneFormatted);
-    replaced = replaced.replace(
+    replaced = replaced.replaceAll(/\{\{ phone \}\}/g, phoneFormatted);
+    replaced = replaced.replaceAll(
       /\{\{ channel_name \}\}/g,
       schedule.worker_name
     );

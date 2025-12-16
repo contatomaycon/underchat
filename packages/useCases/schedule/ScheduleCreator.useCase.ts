@@ -348,8 +348,11 @@ export class ScheduleCreatorUseCase {
   }
 
   private buildCreateScheduleInput(
-    accountId: string,
-    workerId: string,
+    scheduleBasic: {
+      accountId: string;
+      workerId: string;
+      sendDate: string;
+    },
     messageType: EScheduleType,
     sendToValue: string,
     messageValue: string | null,
@@ -361,18 +364,23 @@ export class ScheduleCreatorUseCase {
           height?: number | null;
         })
       | null,
-    sendDate: string,
-    contactIds: string[],
-    contactGroupIds: string[]
+    recipients: {
+      contactIds: string[];
+      contactGroupIds: string[];
+    }
   ) {
-    const sendDateMoment = moment(sendDate, 'YYYY-MM-DD HH:mm', true);
+    const sendDateMoment = moment(
+      scheduleBasic.sendDate,
+      'YYYY-MM-DD HH:mm',
+      true
+    );
     const sendDateISO = sendDateMoment.isValid()
       ? sendDateMoment.toISOString()
-      : sendDate;
+      : scheduleBasic.sendDate;
 
     return {
-      account_id: accountId,
-      worker_id: workerId,
+      account_id: scheduleBasic.accountId,
+      worker_id: scheduleBasic.workerId,
       type: messageType,
       send_to: sendToValue,
       message: messageValue,
@@ -382,9 +390,12 @@ export class ScheduleCreatorUseCase {
       width: attachmentUrl?.width ?? null,
       height: attachmentUrl?.height ?? null,
       send_date: sendDateISO,
-      contact_ids: contactIds.length > 0 ? contactIds : undefined,
+      contact_ids:
+        recipients.contactIds.length > 0 ? recipients.contactIds : undefined,
       contact_group_ids:
-        contactGroupIds.length > 0 ? contactGroupIds : undefined,
+        recipients.contactGroupIds.length > 0
+          ? recipients.contactGroupIds
+          : undefined,
     };
   }
 
@@ -434,15 +445,19 @@ export class ScheduleCreatorUseCase {
     );
 
     const createScheduleInput = this.buildCreateScheduleInput(
-      accountId,
-      workerId,
+      {
+        accountId,
+        workerId,
+        sendDate,
+      },
       messageType,
       sendToValue ?? '',
       messageValue,
       attachmentUrl,
-      sendDate,
-      contactIds,
-      contactGroupIds
+      {
+        contactIds,
+        contactGroupIds,
+      }
     );
 
     const createSchedule =

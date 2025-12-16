@@ -94,6 +94,123 @@ const isValidDateValue = (
   );
 };
 
+const isValidTime = (hours: number, minutes: number): boolean => {
+  return hours >= 0 && hours < 24 && minutes >= 0 && minutes < 60;
+};
+
+const areAllNumbersValid = (
+  day: number,
+  month: number,
+  year: number,
+  hours?: number,
+  minutes?: number
+): boolean => {
+  if (Number.isNaN(day) || Number.isNaN(month) || Number.isNaN(year)) {
+    return false;
+  }
+
+  if (hours !== undefined && minutes !== undefined) {
+    if (Number.isNaN(hours) || Number.isNaN(minutes)) {
+      return false;
+    }
+    return isValidTime(hours, minutes);
+  }
+
+  return true;
+};
+
+const parseDateTimeWithSlash = (trimmed: string): Date | null => {
+  const dateTimeMatch = trimmed.match(
+    /^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2})$/
+  );
+
+  if (!dateTimeMatch) {
+    return null;
+  }
+
+  const day = Number.parseInt(dateTimeMatch[1], 10);
+  const month = Number.parseInt(dateTimeMatch[2], 10);
+  const year = Number.parseInt(dateTimeMatch[3], 10);
+  const hours = Number.parseInt(dateTimeMatch[4], 10);
+  const minutes = Number.parseInt(dateTimeMatch[5], 10);
+
+  if (
+    !areAllNumbersValid(day, month, year, hours, minutes) ||
+    !isValidDateValue(day, month, year)
+  ) {
+    return null;
+  }
+
+  return new Date(year, month - 1, day, hours, minutes);
+};
+
+const parseDateTimeWithDash = (trimmed: string): Date | null => {
+  const dateTimeDashMatch = trimmed.match(
+    /^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})$/
+  );
+
+  if (!dateTimeDashMatch) {
+    return null;
+  }
+
+  const year = Number.parseInt(dateTimeDashMatch[1], 10);
+  const month = Number.parseInt(dateTimeDashMatch[2], 10);
+  const day = Number.parseInt(dateTimeDashMatch[3], 10);
+  const hours = Number.parseInt(dateTimeDashMatch[4], 10);
+  const minutes = Number.parseInt(dateTimeDashMatch[5], 10);
+
+  if (
+    !areAllNumbersValid(day, month, year, hours, minutes) ||
+    !isValidDateValue(day, month, year)
+  ) {
+    return null;
+  }
+
+  return new Date(year, month - 1, day, hours, minutes);
+};
+
+const parseDateOnlyWithSlash = (trimmed: string): Date | null => {
+  const partsSlash = trimmed.split('/');
+
+  if (partsSlash.length !== 3) {
+    return null;
+  }
+
+  const day = Number.parseInt(partsSlash[0], 10);
+  const month = Number.parseInt(partsSlash[1], 10);
+  const year = Number.parseInt(partsSlash[2], 10);
+
+  if (
+    !areAllNumbersValid(day, month, year) ||
+    !isValidDateValue(day, month, year)
+  ) {
+    return null;
+  }
+
+  return new Date(year, month - 1, day);
+};
+
+const parseDateOnlyWithDash = (trimmed: string): Date | null => {
+  const partsDash = trimmed.split('-');
+
+  if (partsDash.length !== 3) {
+    return null;
+  }
+
+  const year = Number.parseInt(partsDash[0], 10);
+  const month = Number.parseInt(partsDash[1], 10);
+  const day = Number.parseInt(partsDash[2], 10);
+
+  if (
+    !areAllNumbersValid(day, month, year) ||
+    !isValidDateValue(day, month, year)
+  ) {
+    return null;
+  }
+
+  return new Date(year, month - 1, day);
+};
+
 const defaultConfig: FlatpickrOptions = {
   locale: Portuguese,
   dateFormat: 'Y-m-d',
@@ -156,85 +273,25 @@ const defaultConfig: FlatpickrOptions = {
       format.includes('H') || format.includes('h') || trimmed.includes(':');
 
     if (hasTime) {
-      const dateTimeMatch = trimmed.match(
-        /^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2})$/
-      );
-      if (dateTimeMatch) {
-        const day = Number.parseInt(dateTimeMatch[1], 10);
-        const month = Number.parseInt(dateTimeMatch[2], 10);
-        const year = Number.parseInt(dateTimeMatch[3], 10);
-        const hours = Number.parseInt(dateTimeMatch[4], 10);
-        const minutes = Number.parseInt(dateTimeMatch[5], 10);
-        if (
-          !Number.isNaN(day) &&
-          !Number.isNaN(month) &&
-          !Number.isNaN(year) &&
-          !Number.isNaN(hours) &&
-          !Number.isNaN(minutes) &&
-          isValidDateValue(day, month, year) &&
-          hours >= 0 &&
-          hours < 24 &&
-          minutes >= 0 &&
-          minutes < 60
-        ) {
-          return new Date(year, month - 1, day, hours, minutes);
-        }
+      const dateTimeWithSlash = parseDateTimeWithSlash(trimmed);
+      if (dateTimeWithSlash) {
+        return dateTimeWithSlash;
       }
 
-      const dateTimeDashMatch = trimmed.match(
-        /^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})$/
-      );
-      if (dateTimeDashMatch) {
-        const year = Number.parseInt(dateTimeDashMatch[1], 10);
-        const month = Number.parseInt(dateTimeDashMatch[2], 10);
-        const day = Number.parseInt(dateTimeDashMatch[3], 10);
-        const hours = Number.parseInt(dateTimeDashMatch[4], 10);
-        const minutes = Number.parseInt(dateTimeDashMatch[5], 10);
-        if (
-          !Number.isNaN(day) &&
-          !Number.isNaN(month) &&
-          !Number.isNaN(year) &&
-          !Number.isNaN(hours) &&
-          !Number.isNaN(minutes) &&
-          isValidDateValue(day, month, year) &&
-          hours >= 0 &&
-          hours < 24 &&
-          minutes >= 0 &&
-          minutes < 60
-        ) {
-          return new Date(year, month - 1, day, hours, minutes);
-        }
+      const dateTimeWithDash = parseDateTimeWithDash(trimmed);
+      if (dateTimeWithDash) {
+        return dateTimeWithDash;
       }
     }
 
-    const partsSlash = trimmed.split('/');
-    if (partsSlash.length === 3) {
-      const day = Number.parseInt(partsSlash[0], 10);
-      const month = Number.parseInt(partsSlash[1], 10);
-      const year = Number.parseInt(partsSlash[2], 10);
-      if (
-        !Number.isNaN(day) &&
-        !Number.isNaN(month) &&
-        !Number.isNaN(year) &&
-        isValidDateValue(day, month, year)
-      ) {
-        return new Date(year, month - 1, day);
-      }
+    const dateOnlyWithSlash = parseDateOnlyWithSlash(trimmed);
+    if (dateOnlyWithSlash) {
+      return dateOnlyWithSlash;
     }
 
-    const partsDash = trimmed.split('-');
-    if (partsDash.length === 3) {
-      const year = Number.parseInt(partsDash[0], 10);
-      const month = Number.parseInt(partsDash[1], 10);
-      const day = Number.parseInt(partsDash[2], 10);
-      if (
-        !Number.isNaN(day) &&
-        !Number.isNaN(month) &&
-        !Number.isNaN(year) &&
-        isValidDateValue(day, month, year)
-      ) {
-        return new Date(year, month - 1, day);
-      }
+    const dateOnlyWithDash = parseDateOnlyWithDash(trimmed);
+    if (dateOnlyWithDash) {
+      return dateOnlyWithDash;
     }
 
     return new Date();
