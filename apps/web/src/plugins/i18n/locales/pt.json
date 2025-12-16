@@ -436,6 +436,7 @@
     "state_required": "Estado é obrigatório",
     "district": "Bairro",
     "district_required": "Bairro é obrigatório",
+    "country_required": "País é obrigatório",
     "cpf_invalid": "CPF inválido",
     "cnpj_invalid": "CNPJ inválido",
     "document_type": "Tipo de Documento",

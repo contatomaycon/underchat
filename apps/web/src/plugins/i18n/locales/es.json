@@ -432,6 +432,7 @@
     "state_required": "Estado es obligatorio",
     "district": "Barrio",
     "district_required": "Barrio es obligatorio",
+    "country_required": "País es obligatorio",
     "cpf_invalid": "CPF inválido",
     "cnpj_invalid": "CNPJ inválido",
     "document_type": "Tipo de Documento",

@@ -132,6 +132,7 @@ const selectedAddons = ref<
 const selectedCrossSellByType = ref<Record<string, string | null>>({});
 const loadingPlans = ref(false);
 const loadingCrossSells = ref(false);
+const showAddons = ref(false);
 
 const showDDDField = computed(() => phone_ddi.value === '55');
 
@@ -220,11 +221,43 @@ const handleRegister = async () => {
   }
 };
 
-const handleNext = () => {
+const handleNext = async () => {
   if (currentStep.value === 0) {
     handleRegister();
     return;
   }
+
+  if (currentStep.value === 2) {
+    const validation = await refFormData.value?.validate();
+    if (!validation?.valid) {
+      return;
+    }
+    maxStepReached.value = 3;
+  }
+
+  if (currentStep.value === 3) {
+    if (!selectedPlanForCheckout.value) {
+      return;
+    }
+
+    if (isTestPlan(selectedPlanForCheckout.value)) {
+      maxStepReached.value = 4;
+      if (currentStep.value < items.length - 1) {
+        const nextStep = currentStep.value + 1;
+        currentStep.value = nextStep;
+      }
+      return;
+    }
+
+    if (!showAddons.value) {
+      showAddons.value = true;
+      await loadCrossSells();
+      return;
+    }
+
+    maxStepReached.value = 4;
+  }
+
   if (currentStep.value < items.length - 1) {
     const nextStep = currentStep.value + 1;
     currentStep.value = nextStep;
@@ -680,9 +713,9 @@ const getColClasses = computed(() => {
 
 const selectPlan = (plan: ListRegisterPlanWithItemsResponse) => {
   selectedPlanForCheckout.value = plan;
-  if (currentStep.value === 3) {
-    loadCrossSells();
-  }
+  showAddons.value = false;
+  selectedAddons.value = [];
+  selectedCrossSellByType.value = {};
 };
 
 const loadPlans = async () => {
@@ -795,8 +828,8 @@ watch(currentStep, async (newStep) => {
   if (newStep === 3 && plans.value.length === 0) {
     await loadPlans();
   }
-  if (newStep === 3 && selectedPlanForCheckout.value) {
-    await loadCrossSells();
+  if (newStep !== 3) {
+    showAddons.value = false;
   }
 });
 </script>
@@ -840,12 +873,12 @@ watch(currentStep, async (newStep) => {
           <VForm ref="refFormValidation">
             <VWindowItem>
               <div class="register-step-content">
-                <h5 class="text-h5 mb-1 text-center">{{ $t('validation') }}</h5>
-                <p class="text-sm mb-6 text-center">
+                <h5 class="text-h5 mb-1">{{ $t('validation') }}</h5>
+                <p class="text-sm mb-6">
                   {{ $t('validation_description') }}
                 </p>
 
-                <VRow class="justify-center">
+                <VRow>
                   <VCol cols="12" md="6">
                     <VLabel class="text-body-2 mb-1">{{ $t('name') }}:</VLabel>
                     <AppTextField
@@ -925,14 +958,14 @@ watch(currentStep, async (newStep) => {
 
             <VWindowItem>
               <div class="register-step-content">
-                <h5 class="text-h5 mb-1 text-center">
+                <h5 class="text-h5 mb-1">
                   {{ $t('verification_code') }}
                 </h5>
-                <p class="text-sm mb-6 text-center">
+                <p class="text-sm mb-6">
                   {{ $t('verification_code_description') }}
                 </p>
 
-                <VRow class="justify-center">
+                <VRow>
                   <VCol cols="12" class="d-flex flex-column align-center">
                     <VLabel class="text-body-2 mb-4 text-center">{{
                       $t('verification_code')
@@ -960,13 +993,13 @@ watch(currentStep, async (newStep) => {
 
             <VWindowItem>
               <div class="register-step-content">
-                <h5 class="text-h5 mb-1 text-center">{{ $t('data') }}</h5>
-                <p class="text-sm mb-6 text-center">
+                <h5 class="text-h5 mb-1">{{ $t('data') }}</h5>
+                <p class="text-sm mb-6">
                   {{ $t('data_description') }}
                 </p>
 
                 <VForm ref="refFormData">
-                  <VRow class="justify-center">
+                  <VRow>
                     <VCol cols="12">
                       <VLabel class="text-body-2 mb-1"
                         >{{ $t('account_name') }}:</VLabel
@@ -1102,6 +1135,12 @@ watch(currentStep, async (newStep) => {
                         :clearable="true"
                         item-value="value"
                         item-title="title"
+                        :rules="[
+                          requiredValidator(
+                            user_document_type_id,
+                            $t('user_document_type_id_required')
+                          ),
+                        ]"
                         @select="document = null"
                         @clear="document = null"
                       />
@@ -1149,6 +1188,9 @@ watch(currentStep, async (newStep) => {
                         :clearable="true"
                         item-value="value"
                         item-title="title"
+                        :rules="[
+                          requiredValidator(country_id, $t('country_required')),
+                        ]"
                         @select="
                           (item) => onCountryChange(item.value as number | null)
                         "
@@ -1158,7 +1200,7 @@ watch(currentStep, async (newStep) => {
                       />
                     </VCol>
 
-                    <VCol v-if="country_id" cols="12" md="6">
+                    <VCol cols="12" md="6">
                       <VLabel class="text-body-2 mb-1"
                         >{{ $t('zip_code') }}:</VLabel
                       >
@@ -1174,7 +1216,7 @@ watch(currentStep, async (newStep) => {
                       />
                     </VCol>
 
-                    <VCol v-if="country_id" cols="12" md="6">
+                    <VCol cols="12" md="6">
                       <VLabel class="text-body-2 mb-1"
                         >{{ $t('state') }}:</VLabel
                       >
@@ -1185,6 +1227,9 @@ watch(currentStep, async (newStep) => {
                         :disabled="!country_id"
                         item-value="value"
                         item-title="title"
+                        :rules="[
+                          requiredValidator(state_id, $t('state_required')),
+                        ]"
                         @select="
                           (item) => {
                             onStateChange(item.value as string | null);
@@ -1194,7 +1239,7 @@ watch(currentStep, async (newStep) => {
                       />
                     </VCol>
 
-                    <VCol v-if="country_id" cols="12" md="6">
+                    <VCol cols="12" md="6">
                       <VLabel class="text-body-2 mb-1"
                         >{{ $t('city') }}:</VLabel
                       >
@@ -1205,6 +1250,9 @@ watch(currentStep, async (newStep) => {
                         :disabled="!state_id || !country_id"
                         item-value="value"
                         item-title="title"
+                        :rules="[
+                          requiredValidator(city_id, $t('city_required')),
+                        ]"
                         @select="
                           (item) => {
                             city = item.title || '';
@@ -1213,7 +1261,7 @@ watch(currentStep, async (newStep) => {
                       />
                     </VCol>
 
-                    <VCol v-if="country_id" cols="12" md="6">
+                    <VCol cols="12" md="6">
                       <VLabel class="text-body-2 mb-1"
                         >{{ $t('address') }}:</VLabel
                       >
@@ -1227,7 +1275,7 @@ watch(currentStep, async (newStep) => {
                       />
                     </VCol>
 
-                    <VCol v-if="country_id" cols="12" md="6">
+                    <VCol cols="12" md="6">
                       <VLabel class="text-body-2 mb-1"
                         >{{ $t('address_secondary') }}:</VLabel
                       >
@@ -1238,7 +1286,7 @@ watch(currentStep, async (newStep) => {
                       />
                     </VCol>
 
-                    <VCol v-if="country_id" cols="12" md="6">
+                    <VCol cols="12" md="6">
                       <VLabel class="text-body-2 mb-1"
                         >{{ $t('district') }}:</VLabel
                       >
@@ -1257,9 +1305,9 @@ watch(currentStep, async (newStep) => {
             </VWindowItem>
 
             <VWindowItem>
-              <div class="register-step-content">
-                <h5 class="text-h5 mb-1 text-center">{{ $t('plans') }}</h5>
-                <p class="text-sm mb-6 text-center">
+              <div class="register-step-content register-step-plans">
+                <h5 class="text-h5 mb-1">{{ $t('plans') }}</h5>
+                <p class="text-sm mb-6">
                   {{ $t('plans_subtitle') }}
                 </p>
 
@@ -1340,7 +1388,18 @@ watch(currentStep, async (newStep) => {
                         @click="selectPlan(plan)"
                         style="cursor: pointer"
                       >
-                        <VCardText>
+                        <VCardText class="position-relative">
+                          <div
+                            v-if="
+                              selectedPlanForCheckout?.plan_id === plan.plan_id
+                            "
+                            class="plan-selected-badge"
+                          >
+                            <VChip color="primary" size="small" variant="flat">
+                              <VIcon icon="tabler-check" size="16" start />
+                              {{ $t('selected') }}
+                            </VChip>
+                          </div>
                           <div class="text-center mb-4">
                             <VAvatar
                               :color="
@@ -1434,7 +1493,10 @@ watch(currentStep, async (newStep) => {
                     </VCol>
                   </VRow>
 
-                  <div v-if="selectedPlanForCheckout" class="mt-8">
+                  <div
+                    v-if="showAddons && selectedPlanForCheckout"
+                    class="mt-8"
+                  >
                     <VDivider class="mb-4" />
                     <h6 class="text-h6 mb-4">{{ $t('addons') }}</h6>
 
@@ -1536,7 +1598,7 @@ watch(currentStep, async (newStep) => {
 
             <VWindowItem>
               <div class="register-step-content">
-                <h5 class="text-h5 mb-1 text-center">
+                <h5 class="text-h5 mb-1">
                   {{
                     selectedPlanForCheckout &&
                     isTestPlan(selectedPlanForCheckout)
@@ -1544,7 +1606,7 @@ watch(currentStep, async (newStep) => {
                       : $t('payment')
                   }}
                 </h5>
-                <p class="text-sm mb-6 text-center">
+                <p class="text-sm mb-6">
                   {{
                     selectedPlanForCheckout &&
                     isTestPlan(selectedPlanForCheckout)
@@ -1614,6 +1676,7 @@ watch(currentStep, async (newStep) => {
           <VBtn
             :disabled="
               (currentStep === 0 && !isValidationStepValid) ||
+              (currentStep === 3 && !selectedPlanForCheckout) ||
               registerStore.isLoading
             "
             :loading="registerStore.isLoading && currentStep === 0"
@@ -1653,8 +1716,49 @@ watch(currentStep, async (newStep) => {
 
 .register-step-content {
   max-width: 681px;
-  margin: 0 auto;
   width: 100%;
+}
+
+.register-step-plans {
+  max-width: 100%;
+}
+
+.plans-row {
+  margin-top: 16px;
+  justify-content: center;
+}
+
+.plan-col {
+  margin-bottom: 24px;
+  display: flex;
+}
+
+.plan-card {
+  height: 100%;
+  transition:
+    transform 0.2s ease-in-out,
+    box-shadow 0.2s ease-in-out;
+  overflow: visible;
+  position: relative;
+  width: 100%;
+
+  &:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
+  }
+}
+
+.plan-card-popular {
+  border: 2px solid rgb(var(--v-theme-primary));
+  position: relative;
+}
+
+.plan-selected-badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+  pointer-events: none;
 }
 
 .otp-input-wrapper {

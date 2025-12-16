@@ -431,6 +431,7 @@
     "state_required": "State is required",
     "district": "District",
     "district_required": "District is required",
+    "country_required": "Country is required",
     "cpf_invalid": "Invalid CPF",
     "cnpj_invalid": "Invalid CNPJ",
     "document_type": "Document Type",
