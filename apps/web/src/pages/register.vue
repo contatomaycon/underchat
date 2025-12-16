@@ -865,12 +865,8 @@ watch(currentStep, async (newStep) => {
           class="stepper-icon-step-bg mb-8"
         />
 
-        <VWindow
-          v-model="currentStep"
-          class="disable-tab-transition d-flex justify-center"
-          style="max-width: 681px; margin: 0 auto"
-        >
-          <VForm ref="refFormValidation">
+        <VWindow v-model="currentStep" class="disable-tab-transition w-100">
+          <VForm ref="refFormValidation" class="px-4">
             <VWindowItem>
               <div class="register-step-content">
                 <h5 class="text-h5 mb-1">{{ $t('validation') }}</h5>
@@ -903,19 +899,6 @@ watch(currentStep, async (newStep) => {
                     />
                   </VCol>
 
-                  <VCol cols="12">
-                    <VLabel class="text-body-2 mb-1">{{ $t('email') }}:</VLabel>
-                    <AppTextField
-                      v-model="email"
-                      type="email"
-                      :placeholder="$t('email')"
-                      :rules="[
-                        requiredValidator(email, $t('email_required')),
-                        emailValidator,
-                      ]"
-                    />
-                  </VCol>
-
                   <VCol cols="12" md="6">
                     <VLabel class="text-body-2 mb-1"
                       >{{ $t('phone_ddi') }}:</VLabel
@@ -942,7 +925,7 @@ watch(currentStep, async (newStep) => {
                     />
                   </VCol>
 
-                  <VCol cols="12" :md="showDDDField ? 12 : 6">
+                  <VCol cols="12" md="6">
                     <VLabel class="text-body-2 mb-1">{{ $t('phone') }}:</VLabel>
                     <AppTextField
                       v-model="phoneFormatted"
@@ -950,6 +933,19 @@ watch(currentStep, async (newStep) => {
                       :placeholder="$t('phone')"
                       :maxlength="showDDDField ? 10 : 15"
                       :rules="[requiredValidator(phone, $t('phone_required'))]"
+                    />
+                  </VCol>
+
+                  <VCol cols="12" md="6">
+                    <VLabel class="text-body-2 mb-1">{{ $t('email') }}:</VLabel>
+                    <AppTextField
+                      v-model="email"
+                      type="email"
+                      :placeholder="$t('email')"
+                      :rules="[
+                        requiredValidator(email, $t('email_required')),
+                        emailValidator,
+                      ]"
                     />
                   </VCol>
                 </VRow>
@@ -1662,7 +1658,7 @@ watch(currentStep, async (newStep) => {
           </VForm>
         </VWindow>
 
-        <div class="d-flex justify-space-between mt-8">
+        <div class="d-flex justify-space-between mt-8 px-4">
           <VBtn
             color="secondary"
             :disabled="currentStep === 0"
@@ -1715,8 +1711,8 @@ watch(currentStep, async (newStep) => {
 }
 
 .register-step-content {
-  max-width: 681px;
   width: 100%;
+  max-width: 100%;
 }
 
 .register-step-plans {
