@@ -7,6 +7,8 @@ import { ISnackbar } from '@core/common/interfaces/ISnackbar';
 import { AuthRegisterSendTwoFactorRequest } from '@core/schema/register/sendTwoFactor/request.schema';
 import { AuthRegisterVerifyCodeRequest } from '@core/schema/register/verifyCode/request.schema';
 import { AuthRegisterVerifyCodeResponse } from '@core/schema/register/verifyCode/response.schema';
+import { ViewZipcodeRequest } from '@core/schema/zipcode/viewZipcode/request.schema';
+import { ZipcodeResponseSchema } from '@core/schema/zipcode/viewZipcode/response.schema';
 import { useCookie } from '@/@webcore/composable/useCookie';
 
 export const useRegisterStore = defineStore('register', {
@@ -146,6 +148,46 @@ export const useRegisterStore = defineStore('register', {
         return false;
       } finally {
         this.isLoading = false;
+      }
+    },
+    async viewZipcode(
+      params: ViewZipcodeRequest
+    ): Promise<ZipcodeResponseSchema | null> {
+      const url = import.meta.env.VITE_BACKEND_URL;
+
+      if (!url) {
+        return null;
+      }
+
+      try {
+        const currentLocale = this.i18n.global.locale;
+        const tokenCookie = useCookie<string>('register_token');
+
+        if (!tokenCookie.value) {
+          return null;
+        }
+
+        const response = await axios.get<IApiResponse<ZipcodeResponseSchema>>(
+          `${url}/v1/register/view-zipcode`,
+          {
+            params,
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept-Language': currentLocale,
+              Authorization: `Bearer ${tokenCookie.value}`,
+            },
+          }
+        );
+
+        const responseData = response?.data;
+
+        if (!responseData?.status || !responseData?.data) {
+          return null;
+        }
+
+        return responseData.data;
+      } catch (error) {
+        return null;
       }
     },
   },
