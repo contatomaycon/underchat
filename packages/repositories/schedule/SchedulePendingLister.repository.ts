@@ -1,7 +1,7 @@
 import * as schema from '@core/models';
 import { schedule, account, worker } from '@core/models';
 import { EScheduleStatus } from '@core/common/enums/EScheduleStatus';
-import { and, eq, lte } from 'drizzle-orm';
+import { and, desc, eq, lte } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { ISchedulePendingData } from '@core/interfaces/repositories/schedule/ISchedulePendingData';
@@ -41,6 +41,7 @@ export class SchedulePendingListerRepository {
           lte(schedule.send_date, now)
         )
       )
+      .orderBy(desc(schedule.created_at))
       .execute();
 
     return result.map((item) => ({

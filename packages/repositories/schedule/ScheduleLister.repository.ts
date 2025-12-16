@@ -28,7 +28,7 @@ export class ScheduleListerRepository {
     const sort = query.sort_by;
 
     if (!sort?.length) {
-      orders.push(asc(schedule.created_at), desc(schedule.schedule_id));
+      orders.push(desc(schedule.created_at));
 
       return orders;
     }
