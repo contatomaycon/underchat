@@ -33,6 +33,7 @@ const chatbotsSchema = Type.Object({
 const schedulesSchema = Type.Object({
   sent: Type.Number(),
   allowed: Type.Number(),
+  renewal_day: Type.Union([Type.String(), Type.Null()]),
 });
 
 export const getDashboardAdditionalResponseSchema = Type.Object({

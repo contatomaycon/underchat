@@ -1,4 +1,5 @@
 import { injectable } from 'tsyringe';
+import { TFunction } from 'i18next';
 import { DashboardStatsRepository } from '@core/repositories/dashboard/DashboardStats.repository';
 import { DashboardConversationsRepository } from '@core/repositories/dashboard/DashboardConversations.repository';
 import { DashboardContactsRepository } from '@core/repositories/dashboard/DashboardContacts.repository';
@@ -96,7 +97,8 @@ export class DashboardService {
   };
 
   getDashboardAdditional = async (
-    accountId: string
+    accountId: string,
+    t: TFunction<'translation', undefined>
   ): Promise<GetDashboardAdditionalResponse> => {
     const [
       contactsGrowth,
@@ -108,6 +110,7 @@ export class DashboardService {
       chatbotsAllowed,
       schedulesSent,
       schedulesAllowed,
+      schedulesRenewalDate,
       contactGroupsTotal,
       messageTemplatesTotal,
       labelTemplatesTotal,
@@ -121,10 +124,19 @@ export class DashboardService {
       this.dashboardChatbotsRepository.getChatbotsAllowed(accountId),
       this.dashboardSchedulesRepository.getSchedulesSent(accountId),
       this.dashboardSchedulesRepository.getSchedulesAllowed(accountId),
+      this.dashboardSchedulesRepository.getSchedulesRenewalDate(accountId),
       this.dashboardTemplatesRepository.getContactGroupsTotal(accountId),
       this.dashboardTemplatesRepository.getMessageTemplatesTotal(accountId),
       this.dashboardTemplatesRepository.getLabelTemplatesTotal(accountId),
     ]);
+
+    const schedulesRenewalDay = schedulesRenewalDate
+      ? this.formatRenewalDate(
+          schedulesRenewalDate.day,
+          schedulesRenewalDate.month,
+          t
+        )
+      : null;
 
     return {
       contacts_growth: contactsGrowth,
@@ -148,10 +160,38 @@ export class DashboardService {
       schedules: {
         sent: schedulesSent,
         allowed: schedulesAllowed,
+        renewal_day: schedulesRenewalDay,
       },
       contact_groups: contactGroupsTotal,
       message_templates: messageTemplatesTotal,
       label_templates: labelTemplatesTotal,
     };
+  };
+
+  private readonly formatRenewalDate = (
+    day: number,
+    month: number,
+    t: TFunction<'translation', undefined>
+  ): string => {
+    const monthKeys = [
+      'month_january',
+      'month_february',
+      'month_march',
+      'month_april',
+      'month_may',
+      'month_june',
+      'month_july',
+      'month_august',
+      'month_september',
+      'month_october',
+      'month_november',
+      'month_december',
+    ];
+
+    const dayFormatted = String(day).padStart(2, '0');
+    const monthName = t(monthKeys[month]);
+    const of = t('of');
+
+    return `${dayFormatted} ${of} ${monthName}`;
   };
 }

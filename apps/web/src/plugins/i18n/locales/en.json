@@ -1771,6 +1771,7 @@
     "dashboard_avg_resolution_time": "Average Resolution Time",
     "dashboard_active_chatbots": "Active Chatbots",
     "dashboard_schedules": "Schedules",
+    "dashboard_renewal_day": "Renewal",
     "dashboard_contact_groups": "Contact Groups",
     "dashboard_message_templates": "Message Templates",
     "dashboard_label_templates": "Label",

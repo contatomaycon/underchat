@@ -72,6 +72,9 @@ const schedulesDisplay = computed(
   () =>
     `${schedulesSent.value.toLocaleString('pt-BR')} / ${schedulesAllowed.value.toLocaleString('pt-BR')}`
 );
+const schedulesRenewalDay = computed(
+  () => dashboardStore.additional?.schedules.renewal_day ?? null
+);
 const contactGroupsTotal = computed(
   () => dashboardStore.additional?.contact_groups ?? 0
 );
@@ -899,21 +902,25 @@ onMounted(async () => {
             >
               <VSkeletonLoader type="text, text, avatar" />
             </VCard>
-            <div
-              v-else
-              class="d-flex align-center justify-space-between flex-grow-1"
-            >
-              <div>
-                <p class="text-body-2 text-medium-emphasis mb-1">
-                  {{ t('dashboard_schedules') }}
-                </p>
-                <h3 class="text-h4 font-weight-bold">
-                  {{ schedulesDisplay }}
-                </h3>
+            <div v-else class="d-flex flex-column flex-grow-1">
+              <div class="d-flex align-center justify-space-between mb-2">
+                <div>
+                  <p class="text-body-2 text-medium-emphasis mb-1">
+                    {{ t('dashboard_schedules') }}
+                  </p>
+                  <h3 class="text-h4 font-weight-bold">
+                    {{ schedulesDisplay }}
+                  </h3>
+                </div>
+                <VAvatar color="info" variant="tonal" size="56">
+                  <VIcon icon="tabler-calendar" size="28" />
+                </VAvatar>
               </div>
-              <VAvatar color="info" variant="tonal" size="56">
-                <VIcon icon="tabler-calendar" size="28" />
-              </VAvatar>
+              <div v-if="schedulesRenewalDay" class="mt-auto">
+                <p class="text-caption text-medium-emphasis">
+                  {{ t('dashboard_renewal_day') }}: {{ schedulesRenewalDay }}
+                </p>
+              </div>
             </div>
           </VCardText>
         </VCard>

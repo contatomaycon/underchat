@@ -26,6 +26,33 @@ export class DashboardSchedulesRepository {
     );
   };
 
+  getSchedulesRenewalDate = async (
+    accountId: string
+  ): Promise<{ day: number; month: number } | null> => {
+    const planAccount =
+      await this.planAccountUpdaterRepository.findPlanAccountByAccountId(
+        accountId
+      );
+
+    if (!planAccount?.last_payment_date) {
+      return null;
+    }
+
+    const paymentDate = new Date(planAccount.last_payment_date);
+    const paymentDay = paymentDate.getDate();
+
+    const now = new Date();
+    const nextRenewalDate = new Date(now);
+    nextRenewalDate.setMonth(nextRenewalDate.getMonth() + 1);
+    nextRenewalDate.setDate(paymentDay);
+    nextRenewalDate.setHours(0, 0, 0, 0);
+
+    return {
+      day: nextRenewalDate.getDate(),
+      month: nextRenewalDate.getMonth(),
+    };
+  };
+
   private readonly calculateMonthlyPeriod = (
     lastPaymentDate: string | null
   ): { startDate: Date; endDate: Date } => {
