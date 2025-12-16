@@ -126,6 +126,11 @@ export class MessageSendConsume {
           }
 
           await this.enqueueByChatId(chatId, async () => {
+            const delay = data?.send_delay_ms;
+            if (delay && typeof delay === 'number' && delay > 0) {
+              await new Promise((resolve) => setTimeout(resolve, delay));
+            }
+
             await this.processMessage(data);
           });
         } catch {

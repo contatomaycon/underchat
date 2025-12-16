@@ -431,8 +431,14 @@ export class ScheduleSendService {
     message: IChatMessage,
     workerId: string
   ): Promise<void> {
+    const delay = this.getRandomDelay();
+    const messageWithDelay = {
+      ...message,
+      send_delay_ms: delay,
+    };
+
     const topic = this.kafkaBaileysQueueService.workerSendMessage(workerId);
-    await this.streamProducerService.send(topic, message);
+    await this.streamProducerService.send(topic, messageWithDelay);
   }
 
   private async validateContactPhone(
@@ -541,15 +547,9 @@ export class ScheduleSendService {
   ): Promise<IScheduleMessageResult[]> {
     const results: IScheduleMessageResult[] = [];
 
-    for (let i = 0; i < contacts.length; i++) {
-      const contact = contacts[i];
+    for (const contact of contacts) {
       const result = await this.sendScheduleMessage(schedule, contact);
       results.push(result);
-
-      if (i < contacts.length - 1) {
-        const delay = this.getRandomDelay();
-        await new Promise((resolve) => setTimeout(resolve, delay));
-      }
     }
 
     return results;
@@ -559,25 +559,11 @@ export class ScheduleSendService {
     schedule: ISchedulePendingData,
     contacts: IScheduleContactValidated[]
   ): Promise<IScheduleMessageResult[]> {
-    const batches: IScheduleContactValidated[][] = [];
-
-    for (let i = 0; i < contacts.length; i += this.BATCH_SIZE) {
-      batches.push(contacts.slice(i, i + this.BATCH_SIZE));
-    }
-
     const allResults: IScheduleMessageResult[] = [];
 
-    for (const batch of batches) {
-      const batchResults = await Promise.all(
-        batch.map((contact) => this.sendScheduleMessage(schedule, contact))
-      );
-
-      allResults.push(...batchResults);
-
-      if (batches.indexOf(batch) < batches.length - 1) {
-        const delay = this.getRandomDelay();
-        await new Promise((resolve) => setTimeout(resolve, delay));
-      }
+    for (const contact of contacts) {
+      const result = await this.sendScheduleMessage(schedule, contact);
+      allResults.push(result);
     }
 
     return allResults;
