@@ -350,7 +350,7 @@ const refFormValidation = ref<VForm>();
             @click="currentStep--"
           >
             <VIcon icon="tabler-arrow-left" start class="flip-in-rtl" />
-            Previous
+            {{ $t('previous') }}
           </VBtn>
 
           <VBtn
@@ -361,7 +361,7 @@ const refFormValidation = ref<VForm>();
             :loading="registerStore.isLoading && currentStep === 0"
             @click="handleNext"
           >
-            Next
+            {{ $t('next') }}
 
             <VIcon icon="tabler-arrow-right" end class="flip-in-rtl" />
           </VBtn>
