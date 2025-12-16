@@ -282,10 +282,20 @@ export class ScheduleStatusUpdateConsume {
 
     return result.hits.hits
       .filter((hit) => hit._source)
-      .map((hit) => ({
-        contact_id: hit._source!.contact.id,
-        message_id: hit._source!.id,
-      }));
+      .map((hit) => {
+        if (!hit._source) {
+          return null;
+        }
+
+        return {
+          contact_id: hit._source.contact.id,
+          message_id: hit._source.id,
+        };
+      })
+      .filter(
+        (item): item is { contact_id: string; message_id: string } =>
+          item !== null
+      );
   }
 
   private async checkAndFinalizeSchedule(
