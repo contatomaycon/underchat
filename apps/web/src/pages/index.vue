@@ -43,7 +43,8 @@ const contactsAllowed = computed(
   () => dashboardStore.stats?.contacts.allowed ?? 0
 );
 const contactsDisplay = computed(
-  () => `${contactsTotal.value.toLocaleString('pt-BR')} / ${contactsAllowed.value.toLocaleString('pt-BR')}`
+  () =>
+    `${contactsTotal.value.toLocaleString('pt-BR')} / ${contactsAllowed.value.toLocaleString('pt-BR')}`
 );
 const contactsGrowth = computed(
   () => dashboardStore.stats?.contacts.growth ?? 0
@@ -60,6 +61,16 @@ const chatbotsDisplay = computed(
 );
 const chatbotsTotal = computed(
   () => dashboardStore.additional?.chatbots.total ?? 0
+);
+const schedulesSent = computed(
+  () => dashboardStore.additional?.schedules.sent ?? 0
+);
+const schedulesAllowed = computed(
+  () => dashboardStore.additional?.schedules.allowed ?? 0
+);
+const schedulesDisplay = computed(
+  () =>
+    `${schedulesSent.value.toLocaleString('pt-BR')} / ${schedulesAllowed.value.toLocaleString('pt-BR')}`
 );
 const contactGroupsTotal = computed(
   () => dashboardStore.additional?.contact_groups ?? 0
@@ -875,8 +886,11 @@ onMounted(async () => {
     </VRow>
 
     <VRow class="dashboard-row">
-      <VCol cols="12" sm="6" md="3" class="d-flex">
-        <VCard class="flex-grow-1 d-flex flex-column">
+      <VCol cols="12" md="3" class="d-flex" style="align-self: stretch">
+        <VCard
+          class="flex-grow-1 d-flex flex-column w-100"
+          style="min-height: 100%"
+        >
           <VCardText class="flex-grow-1 d-flex flex-column">
             <VCard
               v-if="dashboardStore.loadingAdditional"
@@ -891,105 +905,140 @@ onMounted(async () => {
             >
               <div>
                 <p class="text-body-2 text-medium-emphasis mb-1">
-                  {{ t('dashboard_active_chatbots') }}
+                  {{ t('dashboard_schedules') }}
                 </p>
                 <h3 class="text-h4 font-weight-bold">
-                  {{ chatbotsDisplay }}
-                </h3>
-              </div>
-              <VAvatar color="success" variant="tonal" size="56">
-                <VIcon icon="tabler-robot" size="28" />
-              </VAvatar>
-            </div>
-          </VCardText>
-        </VCard>
-      </VCol>
-      <VCol cols="12" sm="6" md="3" class="d-flex">
-        <VCard class="flex-grow-1 d-flex flex-column">
-          <VCardText class="flex-grow-1 d-flex flex-column">
-            <VCard
-              v-if="dashboardStore.loadingAdditional"
-              flat
-              class="flex-grow-1 d-flex align-center justify-center"
-            >
-              <VSkeletonLoader type="text, text, avatar" />
-            </VCard>
-            <div
-              v-else
-              class="d-flex align-center justify-space-between flex-grow-1"
-            >
-              <div>
-                <p class="text-body-2 text-medium-emphasis mb-1">
-                  {{ t('dashboard_contact_groups') }}
-                </p>
-                <h3 class="text-h4 font-weight-bold">
-                  {{ contactGroupsTotal }}
+                  {{ schedulesDisplay }}
                 </h3>
               </div>
               <VAvatar color="info" variant="tonal" size="56">
-                <VIcon icon="tabler-users-group" size="28" />
+                <VIcon icon="tabler-calendar" size="28" />
               </VAvatar>
             </div>
           </VCardText>
         </VCard>
       </VCol>
-      <VCol cols="12" sm="6" md="3" class="d-flex">
-        <VCard class="flex-grow-1 d-flex flex-column">
-          <VCardText class="flex-grow-1 d-flex flex-column">
-            <VCard
-              v-if="dashboardStore.loadingAdditional"
-              flat
-              class="flex-grow-1 d-flex align-center justify-center"
-            >
-              <VSkeletonLoader type="text, text, avatar" />
+      <VCol cols="12" md="9">
+        <VRow>
+          <VCol cols="12" sm="6" class="d-flex">
+            <VCard class="flex-grow-1 d-flex flex-column w-100">
+              <VCardText class="flex-grow-1 d-flex flex-column">
+                <VCard
+                  v-if="dashboardStore.loadingAdditional"
+                  flat
+                  class="flex-grow-1 d-flex align-center justify-center"
+                >
+                  <VSkeletonLoader type="text, text, avatar" />
+                </VCard>
+                <div
+                  v-else
+                  class="d-flex align-center justify-space-between flex-grow-1"
+                >
+                  <div>
+                    <p class="text-body-2 text-medium-emphasis mb-1">
+                      {{ t('dashboard_active_chatbots') }}
+                    </p>
+                    <h3 class="text-h4 font-weight-bold">
+                      {{ chatbotsDisplay }}
+                    </h3>
+                  </div>
+                  <VAvatar color="success" variant="tonal" size="56">
+                    <VIcon icon="tabler-robot" size="28" />
+                  </VAvatar>
+                </div>
+              </VCardText>
             </VCard>
-            <div
-              v-else
-              class="d-flex align-center justify-space-between flex-grow-1"
-            >
-              <div>
-                <p class="text-body-2 text-medium-emphasis mb-1">
-                  {{ t('dashboard_message_templates') }}
-                </p>
-                <h3 class="text-h4 font-weight-bold">
-                  {{ messageTemplatesTotal }}
-                </h3>
-              </div>
-              <VAvatar color="warning" variant="tonal" size="56">
-                <VIcon icon="tabler-message" size="28" />
-              </VAvatar>
-            </div>
-          </VCardText>
-        </VCard>
-      </VCol>
-      <VCol cols="12" sm="6" md="3" class="d-flex">
-        <VCard class="flex-grow-1 d-flex flex-column">
-          <VCardText class="flex-grow-1 d-flex flex-column">
-            <VCard
-              v-if="dashboardStore.loadingAdditional"
-              flat
-              class="flex-grow-1 d-flex align-center justify-center"
-            >
-              <VSkeletonLoader type="text, text, avatar" />
+          </VCol>
+          <VCol cols="12" sm="6" class="d-flex">
+            <VCard class="flex-grow-1 d-flex flex-column w-100">
+              <VCardText class="flex-grow-1 d-flex flex-column">
+                <VCard
+                  v-if="dashboardStore.loadingAdditional"
+                  flat
+                  class="flex-grow-1 d-flex align-center justify-center"
+                >
+                  <VSkeletonLoader type="text, text, avatar" />
+                </VCard>
+                <div
+                  v-else
+                  class="d-flex align-center justify-space-between flex-grow-1"
+                >
+                  <div>
+                    <p class="text-body-2 text-medium-emphasis mb-1">
+                      {{ t('dashboard_contact_groups') }}
+                    </p>
+                    <h3 class="text-h4 font-weight-bold">
+                      {{ contactGroupsTotal }}
+                    </h3>
+                  </div>
+                  <VAvatar color="info" variant="tonal" size="56">
+                    <VIcon icon="tabler-users-group" size="28" />
+                  </VAvatar>
+                </div>
+              </VCardText>
             </VCard>
-            <div
-              v-else
-              class="d-flex align-center justify-space-between flex-grow-1"
-            >
-              <div>
-                <p class="text-body-2 text-medium-emphasis mb-1">
-                  {{ t('dashboard_label_templates') }}
-                </p>
-                <h3 class="text-h4 font-weight-bold">
-                  {{ labelTemplatesTotal }}
-                </h3>
-              </div>
-              <VAvatar color="purple" variant="tonal" size="56">
-                <VIcon icon="tabler-label" size="28" />
-              </VAvatar>
-            </div>
-          </VCardText>
-        </VCard>
+          </VCol>
+        </VRow>
+        <VRow>
+          <VCol cols="12" sm="6" class="d-flex">
+            <VCard class="flex-grow-1 d-flex flex-column w-100">
+              <VCardText class="flex-grow-1 d-flex flex-column">
+                <VCard
+                  v-if="dashboardStore.loadingAdditional"
+                  flat
+                  class="flex-grow-1 d-flex align-center justify-center"
+                >
+                  <VSkeletonLoader type="text, text, avatar" />
+                </VCard>
+                <div
+                  v-else
+                  class="d-flex align-center justify-space-between flex-grow-1"
+                >
+                  <div>
+                    <p class="text-body-2 text-medium-emphasis mb-1">
+                      {{ t('dashboard_message_templates') }}
+                    </p>
+                    <h3 class="text-h4 font-weight-bold">
+                      {{ messageTemplatesTotal }}
+                    </h3>
+                  </div>
+                  <VAvatar color="warning" variant="tonal" size="56">
+                    <VIcon icon="tabler-message" size="28" />
+                  </VAvatar>
+                </div>
+              </VCardText>
+            </VCard>
+          </VCol>
+          <VCol cols="12" sm="6" class="d-flex">
+            <VCard class="flex-grow-1 d-flex flex-column w-100">
+              <VCardText class="flex-grow-1 d-flex flex-column">
+                <VCard
+                  v-if="dashboardStore.loadingAdditional"
+                  flat
+                  class="flex-grow-1 d-flex align-center justify-center"
+                >
+                  <VSkeletonLoader type="text, text, avatar" />
+                </VCard>
+                <div
+                  v-else
+                  class="d-flex align-center justify-space-between flex-grow-1"
+                >
+                  <div>
+                    <p class="text-body-2 text-medium-emphasis mb-1">
+                      {{ t('dashboard_label_templates') }}
+                    </p>
+                    <h3 class="text-h4 font-weight-bold">
+                      {{ labelTemplatesTotal }}
+                    </h3>
+                  </div>
+                  <VAvatar color="purple" variant="tonal" size="56">
+                    <VIcon icon="tabler-label" size="28" />
+                  </VAvatar>
+                </div>
+              </VCardText>
+            </VCard>
+          </VCol>
+        </VRow>
       </VCol>
     </VRow>
 

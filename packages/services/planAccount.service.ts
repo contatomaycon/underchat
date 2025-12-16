@@ -10,10 +10,7 @@ import { EPlanProduct } from '@core/common/enums/EPlanProduct';
 import { TFunction } from 'i18next';
 import { DashboardChatbotsRepository } from '@core/repositories/dashboard/DashboardChatbots.repository';
 import { DashboardStatsRepository } from '@core/repositories/dashboard/DashboardStats.repository';
-import { ElasticDatabaseService } from './elasticDatabase.service';
-import { EElasticIndex } from '@core/common/enums/EElasticIndex';
-import { scheduleMappings } from '@core/mappings/schedule.mappings';
-import { EScheduleStatus } from '@core/common/enums/EScheduleStatus';
+import { DashboardSchedulesRepository } from '@core/repositories/dashboard/DashboardSchedules.repository';
 import Redis from 'ioredis';
 
 @injectable()
@@ -26,7 +23,7 @@ export class PlanAccountService {
     private readonly roleService: RoleService,
     private readonly dashboardChatbotsRepository: DashboardChatbotsRepository,
     private readonly dashboardStatsRepository: DashboardStatsRepository,
-    private readonly elasticDatabaseService: ElasticDatabaseService,
+    private readonly dashboardSchedulesRepository: DashboardSchedulesRepository,
     @inject('Redis') private readonly redis: Redis
   ) {}
 
@@ -222,50 +219,6 @@ export class PlanAccountService {
   }
 
   async getMassSendingTotal(accountId: string): Promise<number> {
-    await this.elasticDatabaseService.indices(
-      EElasticIndex.schedule,
-      scheduleMappings()
-    );
-
-    const query = {
-      size: 0,
-      query: {
-        bool: {
-          must: [
-            {
-              nested: {
-                path: 'account',
-                query: {
-                  term: {
-                    'account.id': accountId,
-                  },
-                },
-              },
-            },
-            {
-              term: {
-                status: EScheduleStatus.sent,
-              },
-            },
-          ],
-        },
-      },
-    };
-
-    const result = await this.elasticDatabaseService.select<{
-      hits: { total: { value: number } | number };
-    }>(EElasticIndex.schedule, query);
-
-    if (!result) {
-      return 0;
-    }
-
-    const total = result.hits.total as { value: number } | number;
-
-    if (typeof total === 'number') {
-      return total;
-    }
-
-    return total.value;
+    return this.dashboardSchedulesRepository.getSchedulesSentMonthly(accountId);
   }
 }

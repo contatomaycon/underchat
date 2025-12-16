@@ -1770,6 +1770,7 @@
     "dashboard_avg_response_time": "Tiempo Promedio de Respuesta",
     "dashboard_avg_resolution_time": "Tiempo Promedio de Resolución",
     "dashboard_active_chatbots": "Chatbots Activos",
+    "dashboard_schedules": "Programaciones",
     "dashboard_contact_groups": "Grupos de Contactos",
     "dashboard_message_templates": "Plantillas de Mensaje",
     "dashboard_label_templates": "Etiqueta",

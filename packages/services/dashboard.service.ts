@@ -5,6 +5,7 @@ import { DashboardContactsRepository } from '@core/repositories/dashboard/Dashbo
 import { DashboardAttendanceRepository } from '@core/repositories/dashboard/DashboardAttendance.repository';
 import { DashboardSectorsRepository } from '@core/repositories/dashboard/DashboardSectors.repository';
 import { DashboardChatbotsRepository } from '@core/repositories/dashboard/DashboardChatbots.repository';
+import { DashboardSchedulesRepository } from '@core/repositories/dashboard/DashboardSchedules.repository';
 import { DashboardTemplatesRepository } from '@core/repositories/dashboard/DashboardTemplates.repository';
 import { GetDashboardStatsResponse } from '@core/schema/dashboard/getDashboardStats/response.schema';
 import { GetDashboardConversationsResponse } from '@core/schema/dashboard/getDashboardConversations/response.schema';
@@ -19,6 +20,7 @@ export class DashboardService {
     private readonly dashboardAttendanceRepository: DashboardAttendanceRepository,
     private readonly dashboardSectorsRepository: DashboardSectorsRepository,
     private readonly dashboardChatbotsRepository: DashboardChatbotsRepository,
+    private readonly dashboardSchedulesRepository: DashboardSchedulesRepository,
     private readonly dashboardTemplatesRepository: DashboardTemplatesRepository
   ) {}
 
@@ -104,6 +106,8 @@ export class DashboardService {
       chatbotsTotal,
       chatbotsActive,
       chatbotsAllowed,
+      schedulesSent,
+      schedulesAllowed,
       contactGroupsTotal,
       messageTemplatesTotal,
       labelTemplatesTotal,
@@ -115,6 +119,8 @@ export class DashboardService {
       this.dashboardChatbotsRepository.getChatbotsTotal(accountId),
       this.dashboardChatbotsRepository.getChatbotsActive(accountId),
       this.dashboardChatbotsRepository.getChatbotsAllowed(accountId),
+      this.dashboardSchedulesRepository.getSchedulesSent(accountId),
+      this.dashboardSchedulesRepository.getSchedulesAllowed(accountId),
       this.dashboardTemplatesRepository.getContactGroupsTotal(accountId),
       this.dashboardTemplatesRepository.getMessageTemplatesTotal(accountId),
       this.dashboardTemplatesRepository.getLabelTemplatesTotal(accountId),
@@ -138,6 +144,10 @@ export class DashboardService {
         total: chatbotsTotal,
         active: chatbotsActive,
         allowed: chatbotsAllowed,
+      },
+      schedules: {
+        sent: schedulesSent,
+        allowed: schedulesAllowed,
       },
       contact_groups: contactGroupsTotal,
       message_templates: messageTemplatesTotal,

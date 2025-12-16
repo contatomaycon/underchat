@@ -30,12 +30,18 @@ const chatbotsSchema = Type.Object({
   allowed: Type.Number(),
 });
 
+const schedulesSchema = Type.Object({
+  sent: Type.Number(),
+  allowed: Type.Number(),
+});
+
 export const getDashboardAdditionalResponseSchema = Type.Object({
   contacts_growth: Type.Array(contactsGrowthMonthlySchema),
   attendance_performance: Type.Array(attendancePerformanceSchema),
   sectors_distribution: Type.Array(sectorDistributionSchema),
   attendance_metrics: attendanceMetricsSchema,
   chatbots: chatbotsSchema,
+  schedules: schedulesSchema,
   contact_groups: Type.Number(),
   message_templates: Type.Number(),
   label_templates: Type.Number(),

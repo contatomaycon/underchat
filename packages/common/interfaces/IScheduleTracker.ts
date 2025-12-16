@@ -6,4 +6,3 @@ export interface IScheduleTracker {
   lastUpdateTime: number;
   timeoutTimer: NodeJS.Timeout | null;
 }
-
