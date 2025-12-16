@@ -254,6 +254,7 @@ const getStatusLabel = (status: string): string => {
   if (status === EScheduleStatus.processing) return t('processing');
   if (status === EScheduleStatus.sent) return t('sent');
   if (status === EScheduleStatus.failed) return t('failed');
+  if (status === EScheduleStatus.limit_exhausted) return t('limit_exhausted');
   return status;
 };
 
@@ -262,6 +263,7 @@ const getStatusColor = (status: string): string => {
   if (status === EScheduleStatus.processing) return 'info';
   if (status === EScheduleStatus.sent) return 'success';
   if (status === EScheduleStatus.failed) return 'error';
+  if (status === EScheduleStatus.limit_exhausted) return 'error';
   return 'default';
 };
 

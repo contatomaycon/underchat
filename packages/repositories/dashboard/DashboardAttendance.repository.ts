@@ -1,69 +1,18 @@
 import * as schema from '@core/models';
-import {
-  contact,
-  chatbot,
-  contactGroup,
-  messageTemplate,
-  labelTemplate,
-  sector,
-} from '@core/models';
+import { user } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, count, eq, isNull, lt, asc } from 'drizzle-orm';
+import { and, count, eq, isNull } from 'drizzle-orm';
 import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
-import { ESectorStatus } from '@core/common/enums/ESectorStatus';
 
 @injectable()
-export class DashboardAdditionalRepository {
+export class DashboardAttendanceRepository {
   constructor(
     @inject('Database') private readonly db: NodePgDatabase<typeof schema>,
     private readonly elasticDatabaseService: ElasticDatabaseService
   ) {}
-
-  getContactsGrowthMonthly = async (
-    accountId: string
-  ): Promise<Array<{ month: string; total: number }>> => {
-    const currentMonth = new Date();
-    currentMonth.setDate(1);
-    currentMonth.setHours(0, 0, 0, 0);
-
-    const monthPromises = Array.from({ length: 12 }, async (_, index) => {
-      const i = 11 - index;
-      const monthStart = new Date(currentMonth);
-      monthStart.setMonth(monthStart.getMonth() - i);
-
-      const monthEnd = new Date(monthStart);
-      monthEnd.setMonth(monthEnd.getMonth() + 1);
-
-      const monthName = monthStart.toLocaleDateString('pt-BR', {
-        month: 'short',
-        year: 'numeric',
-      });
-
-      const cumulativeResult = await this.db
-        .select({
-          total: count(),
-        })
-        .from(contact)
-        .where(
-          and(
-            eq(contact.account_id, accountId),
-            isNull(contact.deleted_at),
-            lt(contact.created_at, monthEnd.toISOString())
-          )
-        )
-        .execute();
-
-      return {
-        month: monthName,
-        total: cumulativeResult[0]?.total ?? 0,
-      };
-    });
-
-    return Promise.all(monthPromises);
-  };
 
   getAttendancePerformance = async (
     accountId: string
@@ -287,140 +236,6 @@ export class DashboardAdditionalRepository {
     return Promise.all(dayPromises);
   };
 
-  getSectorsDistribution = async (
-    accountId: string
-  ): Promise<
-    Array<{ sectorId: string; sectorName: string; count: number }>
-  > => {
-    const allSectors = await this.db
-      .select({
-        sector_id: sector.sector_id,
-        name: sector.name,
-      })
-      .from(sector)
-      .where(
-        and(
-          eq(sector.account_id, accountId),
-          isNull(sector.deleted_at),
-          eq(sector.sector_status_id, ESectorStatus.active)
-        )
-      )
-      .orderBy(asc(sector.name))
-      .execute();
-
-    const sectorCountPromises = allSectors.map(async (sectorItem) => {
-      const queryElastic = {
-        size: 0,
-        query: {
-          bool: {
-            must: [
-              {
-                nested: {
-                  path: 'account',
-                  query: {
-                    term: {
-                      'account.id': accountId,
-                    },
-                  },
-                },
-              },
-              {
-                nested: {
-                  path: 'sector',
-                  query: {
-                    term: {
-                      'sector.id': sectorItem.sector_id,
-                    },
-                  },
-                },
-              },
-            ],
-            filter: [
-              {
-                term: {
-                  status: EChatStatus.closed,
-                },
-              },
-            ],
-          },
-        },
-      };
-
-      const result = await this.elasticDatabaseService.select(
-        EElasticIndex.chat,
-        queryElastic
-      );
-
-      const total = result?.hits?.total;
-      const count = typeof total === 'number' ? total : (total?.value ?? 0);
-
-      return {
-        sectorId: sectorItem.sector_id,
-        sectorName: sectorItem.name,
-        count,
-      };
-    });
-
-    const sectors = await Promise.all(sectorCountPromises);
-
-    const noSectorQuery = {
-      size: 0,
-      query: {
-        bool: {
-          must: [
-            {
-              nested: {
-                path: 'account',
-                query: {
-                  term: {
-                    'account.id': accountId,
-                  },
-                },
-              },
-            },
-          ],
-          filter: [
-            {
-              term: {
-                status: EChatStatus.closed,
-              },
-            },
-            {
-              bool: {
-                must_not: {
-                  exists: {
-                    field: 'sector',
-                  },
-                },
-              },
-            },
-          ],
-        },
-      },
-    };
-
-    const noSectorResult = await this.elasticDatabaseService.select(
-      EElasticIndex.chat,
-      noSectorQuery
-    );
-
-    const noSectorTotal = noSectorResult?.hits?.total;
-    const noSectorCount =
-      typeof noSectorTotal === 'number'
-        ? noSectorTotal
-        : (noSectorTotal?.value ?? 0);
-
-    if (noSectorCount > 0) {
-      sectors.push({
-        sectorId: 'no-sector',
-        sectorName: 'Sem Setor',
-        count: noSectorCount,
-      });
-    }
-
-    return sectors;
-  };
-
   private readonly formatTime = (seconds: number): string => {
     const minutes = Math.floor(seconds / 60);
     const secs = seconds % 60;
@@ -501,14 +316,80 @@ export class DashboardAdditionalRepository {
     return count > 0 ? Math.floor(total / count) : 0;
   };
 
-  private readonly calculateProductivity = (
-    totalAttendances: number
-  ): number => {
-    if (totalAttendances === 0) {
+  private readonly getAverageAttendancesPerUser = async (): Promise<number> => {
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    thirtyDaysAgo.setHours(0, 0, 0, 0);
+
+    const queryElastic = {
+      size: 0,
+      query: {
+        bool: {
+          filter: [
+            {
+              term: {
+                status: EChatStatus.closed,
+              },
+            },
+            {
+              range: {
+                closed_at: {
+                  gte: thirtyDaysAgo.toISOString(),
+                },
+              },
+            },
+          ],
+        },
+      },
+    };
+
+    const result = await this.elasticDatabaseService.select(
+      EElasticIndex.chat,
+      queryElastic
+    );
+
+    const total = result?.hits?.total;
+    const totalAttendancesAll =
+      typeof total === 'number' ? total : (total?.value ?? 0);
+
+    const usersResult = await this.db
+      .select({
+        total: count(),
+      })
+      .from(user)
+      .where(isNull(user.deleted_at))
+      .execute();
+
+    const totalUsersAll = usersResult[0]?.total ?? 0;
+
+    if (totalUsersAll === 0) {
       return 0;
     }
 
-    return Math.min(100, Math.floor((totalAttendances / 1500) * 100));
+    return totalAttendancesAll / totalUsersAll;
+  };
+
+  private readonly calculateProductivity = async (
+    totalAttendances: number,
+    totalUsers: number
+  ): Promise<number> => {
+    if (totalAttendances === 0 || totalUsers === 0) {
+      return 0;
+    }
+
+    const averagePerUser = await this.getAverageAttendancesPerUser();
+
+    if (averagePerUser === 0) {
+      return 0;
+    }
+
+    const expectedAttendances = totalUsers * averagePerUser;
+    const productivity = Math.min(
+      100,
+      Math.floor((totalAttendances / expectedAttendances) * 100)
+    );
+
+    return productivity;
   };
 
   getAttendanceMetrics = async (
@@ -582,7 +463,20 @@ export class DashboardAdditionalRepository {
     );
 
     const totalAttendances = chats.length;
-    const productivity = this.calculateProductivity(totalAttendances);
+
+    const usersResult = await this.db
+      .select({
+        total: count(),
+      })
+      .from(user)
+      .where(and(eq(user.account_id, accountId), isNull(user.deleted_at)))
+      .execute();
+
+    const totalUsers = usersResult[0]?.total ?? 0;
+    const productivity = await this.calculateProductivity(
+      totalAttendances,
+      totalUsers
+    );
 
     return {
       avgResponseTime: this.formatTime(avgResponseSeconds),
@@ -590,80 +484,5 @@ export class DashboardAdditionalRepository {
       totalAttendances,
       productivity,
     };
-  };
-
-  getChatbotsTotal = async (accountId: string): Promise<number> => {
-    const result = await this.db
-      .select({
-        total: count(),
-      })
-      .from(chatbot)
-      .where(eq(chatbot.account_id, accountId))
-      .execute();
-
-    return result[0]?.total ?? 0;
-  };
-
-  getChatbotsActive = async (accountId: string): Promise<number> => {
-    const result = await this.db
-      .select({
-        total: count(),
-      })
-      .from(chatbot)
-      .where(eq(chatbot.account_id, accountId))
-      .execute();
-
-    return result[0]?.total ?? 0;
-  };
-
-  getContactGroupsTotal = async (accountId: string): Promise<number> => {
-    const result = await this.db
-      .select({
-        total: count(),
-      })
-      .from(contactGroup)
-      .where(
-        and(
-          eq(contactGroup.account_id, accountId),
-          isNull(contactGroup.deleted_at)
-        )
-      )
-      .execute();
-
-    return result[0]?.total ?? 0;
-  };
-
-  getMessageTemplatesTotal = async (accountId: string): Promise<number> => {
-    const result = await this.db
-      .select({
-        total: count(),
-      })
-      .from(messageTemplate)
-      .where(
-        and(
-          eq(messageTemplate.account_id, accountId),
-          isNull(messageTemplate.deleted_at)
-        )
-      )
-      .execute();
-
-    return result[0]?.total ?? 0;
-  };
-
-  getLabelTemplatesTotal = async (accountId: string): Promise<number> => {
-    const result = await this.db
-      .select({
-        total: count(),
-      })
-      .from(labelTemplate)
-      .where(
-        and(
-          eq(labelTemplate.account_id, accountId),
-          isNull(labelTemplate.deleted_at)
-        )
-      )
-      .execute();
-
-    return result[0]?.total ?? 0;
   };
 }

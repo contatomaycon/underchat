@@ -27,6 +27,13 @@ const attendanceMetricsSchema = Type.Object({
 const chatbotsSchema = Type.Object({
   total: Type.Number(),
   active: Type.Number(),
+  allowed: Type.Number(),
+});
+
+const schedulesSchema = Type.Object({
+  sent: Type.Number(),
+  allowed: Type.Number(),
+  renewal_day: Type.Union([Type.String(), Type.Null()]),
 });
 
 export const getDashboardAdditionalResponseSchema = Type.Object({
@@ -35,6 +42,7 @@ export const getDashboardAdditionalResponseSchema = Type.Object({
   sectors_distribution: Type.Array(sectorDistributionSchema),
   attendance_metrics: attendanceMetricsSchema,
   chatbots: chatbotsSchema,
+  schedules: schedulesSchema,
   contact_groups: Type.Number(),
   message_templates: Type.Number(),
   label_templates: Type.Number(),

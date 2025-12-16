@@ -3,4 +3,5 @@ export enum EScheduleStatus {
   processing = 'processing',
   sent = 'sent',
   failed = 'failed',
+  limit_exhausted = 'limit_exhausted',
 }

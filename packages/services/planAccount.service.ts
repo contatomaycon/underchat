@@ -8,8 +8,9 @@ import { WorkerService } from './worker.service';
 import { RoleService } from './role.service';
 import { EPlanProduct } from '@core/common/enums/EPlanProduct';
 import { TFunction } from 'i18next';
-import { DashboardAdditionalRepository } from '@core/repositories/dashboard/DashboardAdditional.repository';
+import { DashboardChatbotsRepository } from '@core/repositories/dashboard/DashboardChatbots.repository';
 import { DashboardStatsRepository } from '@core/repositories/dashboard/DashboardStats.repository';
+import { DashboardSchedulesRepository } from '@core/repositories/dashboard/DashboardSchedules.repository';
 import Redis from 'ioredis';
 
 @injectable()
@@ -20,8 +21,9 @@ export class PlanAccountService {
     private readonly userService: UserService,
     private readonly workerService: WorkerService,
     private readonly roleService: RoleService,
-    private readonly dashboardAdditionalRepository: DashboardAdditionalRepository,
+    private readonly dashboardChatbotsRepository: DashboardChatbotsRepository,
     private readonly dashboardStatsRepository: DashboardStatsRepository,
+    private readonly dashboardSchedulesRepository: DashboardSchedulesRepository,
     @inject('Redis') private readonly redis: Redis
   ) {}
 
@@ -50,25 +52,31 @@ export class PlanAccountService {
     return result ?? false;
   };
 
+  async totalUserLimitByAccountId(accountId: string): Promise<number> {
+    const viewAccountQuantityProduct =
+      await this.accountService.viewAccountQuantityProduct(
+        accountId,
+        EPlanProduct.user
+      );
+
+    return viewAccountQuantityProduct + 1;
+  }
+
   async validateCanCreateUser(
     t: TFunction<'translation', undefined>,
     accountId: string
   ): Promise<void> {
     const [viewAccountQuantityProduct, totalUserByAccountId] =
       await Promise.all([
-        this.accountService.viewAccountQuantityProduct(
-          accountId,
-          EPlanProduct.user
-        ),
+        this.totalUserLimitByAccountId(accountId),
         this.userService.totalUserByAccount(accountId),
       ]);
 
-    const userLimit = viewAccountQuantityProduct + 1;
-    if (userLimit <= 0) {
+    if (viewAccountQuantityProduct <= 0) {
       throw new Error(t('user_not_available'));
     }
 
-    if (totalUserByAccountId >= userLimit) {
+    if (totalUserByAccountId >= viewAccountQuantityProduct) {
       throw new Error(t('user_not_available_additional'));
     }
   }
@@ -127,7 +135,7 @@ export class PlanAccountService {
           accountId,
           EPlanProduct.chatbot
         ),
-        this.dashboardAdditionalRepository.getChatbotsTotal(accountId),
+        this.dashboardChatbotsRepository.getChatbotsTotal(accountId),
       ]);
 
     if (viewAccountQuantityProduct <= 0) {
@@ -180,5 +188,37 @@ export class PlanAccountService {
     }
 
     return true;
+  }
+
+  async validateCanCreateMassSending(accountId: string): Promise<boolean> {
+    const [viewAccountQuantityProduct, totalMassSendingByAccountId] =
+      await Promise.all([
+        this.totalMassSendingLimitByAccountId(accountId),
+        this.getMassSendingTotal(accountId),
+      ]);
+
+    if (viewAccountQuantityProduct <= 0) {
+      return false;
+    }
+
+    if (totalMassSendingByAccountId >= viewAccountQuantityProduct) {
+      return false;
+    }
+
+    return true;
+  }
+
+  async totalMassSendingLimitByAccountId(accountId: string): Promise<number> {
+    const viewAccountQuantityProduct =
+      await this.accountService.viewAccountQuantityProduct(
+        accountId,
+        EPlanProduct.mass_sending
+      );
+
+    return viewAccountQuantityProduct;
+  }
+
+  async getMassSendingTotal(accountId: string): Promise<number> {
+    return this.dashboardSchedulesRepository.getSchedulesSentMonthly(accountId);
   }
 }

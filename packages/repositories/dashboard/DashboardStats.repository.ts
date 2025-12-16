@@ -22,7 +22,8 @@ export class DashboardStatsRepository {
       .where(and(eq(user.account_id, accountId), isNull(user.deleted_at)))
       .execute();
 
-    return result[0]?.total ?? 0;
+    const total = result[0]?.total ?? 0;
+    return total > 0 ? total - 1 : 0;
   };
 
   getUsersSparklineData = async (accountId: string): Promise<number[]> => {
@@ -193,6 +194,20 @@ export class DashboardStatsRepository {
     return this.accountQuantityProductViewerRepository.viewAccountQuantityProduct(
       accountId,
       EPlanProduct.worker
+    );
+  };
+
+  getUsersAllowed = async (accountId: string): Promise<number> => {
+    return this.accountQuantityProductViewerRepository.viewAccountQuantityProduct(
+      accountId,
+      EPlanProduct.user
+    );
+  };
+
+  getContactsAllowed = async (accountId: string): Promise<number> => {
+    return this.accountQuantityProductViewerRepository.viewAccountQuantityProduct(
+      accountId,
+      EPlanProduct.contact
     );
   };
 }

@@ -1,7 +1,13 @@
 import { injectable } from 'tsyringe';
+import { TFunction } from 'i18next';
 import { DashboardStatsRepository } from '@core/repositories/dashboard/DashboardStats.repository';
 import { DashboardConversationsRepository } from '@core/repositories/dashboard/DashboardConversations.repository';
-import { DashboardAdditionalRepository } from '@core/repositories/dashboard/DashboardAdditional.repository';
+import { DashboardContactsRepository } from '@core/repositories/dashboard/DashboardContacts.repository';
+import { DashboardAttendanceRepository } from '@core/repositories/dashboard/DashboardAttendance.repository';
+import { DashboardSectorsRepository } from '@core/repositories/dashboard/DashboardSectors.repository';
+import { DashboardChatbotsRepository } from '@core/repositories/dashboard/DashboardChatbots.repository';
+import { DashboardSchedulesRepository } from '@core/repositories/dashboard/DashboardSchedules.repository';
+import { DashboardTemplatesRepository } from '@core/repositories/dashboard/DashboardTemplates.repository';
 import { GetDashboardStatsResponse } from '@core/schema/dashboard/getDashboardStats/response.schema';
 import { GetDashboardConversationsResponse } from '@core/schema/dashboard/getDashboardConversations/response.schema';
 import { GetDashboardAdditionalResponse } from '@core/schema/dashboard/getDashboardAdditional/response.schema';
@@ -11,7 +17,12 @@ export class DashboardService {
   constructor(
     private readonly dashboardStatsRepository: DashboardStatsRepository,
     private readonly dashboardConversationsRepository: DashboardConversationsRepository,
-    private readonly dashboardAdditionalRepository: DashboardAdditionalRepository
+    private readonly dashboardContactsRepository: DashboardContactsRepository,
+    private readonly dashboardAttendanceRepository: DashboardAttendanceRepository,
+    private readonly dashboardSectorsRepository: DashboardSectorsRepository,
+    private readonly dashboardChatbotsRepository: DashboardChatbotsRepository,
+    private readonly dashboardSchedulesRepository: DashboardSchedulesRepository,
+    private readonly dashboardTemplatesRepository: DashboardTemplatesRepository
   ) {}
 
   getDashboardStats = async (
@@ -19,22 +30,26 @@ export class DashboardService {
   ): Promise<GetDashboardStatsResponse> => {
     const [
       usersTotal,
+      usersAllowed,
       usersSparkline,
       channelsTotal,
       channelsConnected,
       channelsAllowed,
       channelsSparkline,
       contactsTotal,
+      contactsAllowed,
       contactsGrowth,
       contactsSparkline,
     ] = await Promise.all([
       this.dashboardStatsRepository.getUsersTotal(accountId),
+      this.dashboardStatsRepository.getUsersAllowed(accountId),
       this.dashboardStatsRepository.getUsersSparklineData(accountId),
       this.dashboardStatsRepository.getChannelsTotal(accountId),
       this.dashboardStatsRepository.getChannelsConnected(accountId),
       this.dashboardStatsRepository.getChannelsAllowed(accountId),
       this.dashboardStatsRepository.getChannelsSparklineData(accountId),
       this.dashboardStatsRepository.getContactsTotal(accountId),
+      this.dashboardStatsRepository.getContactsAllowed(accountId),
       this.dashboardStatsRepository.getContactsGrowth(accountId),
       this.dashboardStatsRepository.getContactsSparklineData(accountId),
     ]);
@@ -42,6 +57,7 @@ export class DashboardService {
     return {
       users: {
         total: usersTotal,
+        allowed: usersAllowed,
         sparkline_data: usersSparkline,
       },
       channels: {
@@ -52,6 +68,7 @@ export class DashboardService {
       },
       contacts: {
         total: contactsTotal,
+        allowed: contactsAllowed,
         growth: contactsGrowth,
         sparkline_data: contactsSparkline,
       },
@@ -80,7 +97,8 @@ export class DashboardService {
   };
 
   getDashboardAdditional = async (
-    accountId: string
+    accountId: string,
+    t: TFunction<'translation', undefined>
   ): Promise<GetDashboardAdditionalResponse> => {
     const [
       contactsGrowth,
@@ -89,20 +107,36 @@ export class DashboardService {
       attendanceMetrics,
       chatbotsTotal,
       chatbotsActive,
+      chatbotsAllowed,
+      schedulesSent,
+      schedulesAllowed,
+      schedulesRenewalDate,
       contactGroupsTotal,
       messageTemplatesTotal,
       labelTemplatesTotal,
     ] = await Promise.all([
-      this.dashboardAdditionalRepository.getContactsGrowthMonthly(accountId),
-      this.dashboardAdditionalRepository.getAttendancePerformance(accountId),
-      this.dashboardAdditionalRepository.getSectorsDistribution(accountId),
-      this.dashboardAdditionalRepository.getAttendanceMetrics(accountId),
-      this.dashboardAdditionalRepository.getChatbotsTotal(accountId),
-      this.dashboardAdditionalRepository.getChatbotsActive(accountId),
-      this.dashboardAdditionalRepository.getContactGroupsTotal(accountId),
-      this.dashboardAdditionalRepository.getMessageTemplatesTotal(accountId),
-      this.dashboardAdditionalRepository.getLabelTemplatesTotal(accountId),
+      this.dashboardContactsRepository.getContactsGrowthMonthly(accountId),
+      this.dashboardAttendanceRepository.getAttendancePerformance(accountId),
+      this.dashboardSectorsRepository.getSectorsDistribution(accountId),
+      this.dashboardAttendanceRepository.getAttendanceMetrics(accountId),
+      this.dashboardChatbotsRepository.getChatbotsTotal(accountId),
+      this.dashboardChatbotsRepository.getChatbotsActive(accountId),
+      this.dashboardChatbotsRepository.getChatbotsAllowed(accountId),
+      this.dashboardSchedulesRepository.getSchedulesSent(accountId),
+      this.dashboardSchedulesRepository.getSchedulesAllowed(accountId),
+      this.dashboardSchedulesRepository.getSchedulesRenewalDate(accountId),
+      this.dashboardTemplatesRepository.getContactGroupsTotal(accountId),
+      this.dashboardTemplatesRepository.getMessageTemplatesTotal(accountId),
+      this.dashboardTemplatesRepository.getLabelTemplatesTotal(accountId),
     ]);
+
+    const schedulesRenewalDay = schedulesRenewalDate
+      ? this.formatRenewalDate(
+          schedulesRenewalDate.day,
+          schedulesRenewalDate.month,
+          t
+        )
+      : null;
 
     return {
       contacts_growth: contactsGrowth,
@@ -121,10 +155,43 @@ export class DashboardService {
       chatbots: {
         total: chatbotsTotal,
         active: chatbotsActive,
+        allowed: chatbotsAllowed,
+      },
+      schedules: {
+        sent: schedulesSent,
+        allowed: schedulesAllowed,
+        renewal_day: schedulesRenewalDay,
       },
       contact_groups: contactGroupsTotal,
       message_templates: messageTemplatesTotal,
       label_templates: labelTemplatesTotal,
     };
+  };
+
+  private readonly formatRenewalDate = (
+    day: number,
+    month: number,
+    t: TFunction<'translation', undefined>
+  ): string => {
+    const monthKeys = [
+      'month_january',
+      'month_february',
+      'month_march',
+      'month_april',
+      'month_may',
+      'month_june',
+      'month_july',
+      'month_august',
+      'month_september',
+      'month_october',
+      'month_november',
+      'month_december',
+    ];
+
+    const dayFormatted = String(day).padStart(2, '0');
+    const monthName = t(monthKeys[month]);
+    const of = t('of');
+
+    return `${dayFormatted} ${of} ${monthName}`;
   };
 }

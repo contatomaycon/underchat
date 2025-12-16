@@ -15,7 +15,8 @@ export const getDashboardAdditional = async (
 
   try {
     const response = await dashboardAdditionalViewerUseCase.execute(
-      tokenJwtData.account_id
+      tokenJwtData.account_id,
+      t
     );
 
     if (response) {
