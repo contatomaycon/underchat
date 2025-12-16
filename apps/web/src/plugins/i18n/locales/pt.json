@@ -398,6 +398,7 @@
     "verification_code": "Código de Verificação",
     "verification_code_subtitle": "Digite o código",
     "verification_code_description": "Digite o código de verificação enviado para seu WhatsApp",
+    "verification_code_sent_whatsapp": "Código enviado via WhatsApp",
     "verification_code_required": "Código de verificação é obrigatório",
     "additional_info": "Informações Adicionais",
     "phone_ddi_required": "DDI é obrigatório",

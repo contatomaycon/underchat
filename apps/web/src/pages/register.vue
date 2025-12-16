@@ -961,27 +961,54 @@ watch(currentStep, async (newStep) => {
                   {{ $t('verification_code_description') }}
                 </p>
 
-                <VRow>
-                  <VCol cols="12" class="d-flex flex-column align-center">
-                    <VLabel class="text-body-2 mb-4 text-center">{{
-                      $t('verification_code')
-                    }}</VLabel>
-                    <div class="otp-input-wrapper">
-                      <VOtpInput
-                        v-model="verificationCode"
-                        length="6"
-                        type="text"
-                        variant="outlined"
-                        density="comfortable"
-                        class="otp-input-custom"
-                        :rules="[
-                          requiredValidator(
-                            verificationCode,
-                            $t('verification_code_required')
-                          ),
-                        ]"
-                      />
-                    </div>
+                <VRow justify="center">
+                  <VCol cols="12" md="8">
+                    <VCard class="otp-card" variant="flat">
+                      <div class="otp-card__header">
+                        <div class="otp-card__badge">
+                          <VIcon icon="tabler-shield-lock" size="18" />
+                        </div>
+                        <div class="d-flex flex-column">
+                          <span class="text-body-1 font-weight-semibold">
+                            {{ $t('verification_code_sent_whatsapp') }}
+                          </span>
+                          <span class="text-caption text-medium-emphasis">
+                            {{ $t('verification_code_subtitle') }}
+                          </span>
+                        </div>
+                        <VChip
+                          color="primary"
+                          size="small"
+                          variant="tonal"
+                          class="ms-auto"
+                        >
+                          {{ $t('whatsapp') }}
+                        </VChip>
+                      </div>
+
+                      <VDivider class="my-4" />
+
+                      <div class="otp-input-wrapper">
+                        <VOtpInput
+                          v-model="verificationCode"
+                          length="6"
+                          type="text"
+                          variant="outlined"
+                          density="compact"
+                          class="otp-input-custom"
+                          :rules="[
+                            requiredValidator(
+                              verificationCode,
+                              $t('verification_code_required')
+                            ),
+                          ]"
+                        />
+                      </div>
+
+                      <p class="otp-hint text-caption text-medium-emphasis">
+                        {{ $t('verification_code_sent_whatsapp') }}
+                      </p>
+                    </VCard>
                   </VCol>
                 </VRow>
               </div>
@@ -1761,7 +1788,7 @@ watch(currentStep, async (newStep) => {
   width: 100%;
   display: flex;
   justify-content: center;
-  margin-bottom: 1rem;
+  margin-bottom: 1.25rem;
 }
 
 .otp-input-custom {
@@ -1770,26 +1797,91 @@ watch(currentStep, async (newStep) => {
   }
 
   .v-field {
-    border-radius: 8px;
-    font-size: 1.25rem;
+    border-radius: 12px;
+    font-size: 1.1rem;
     font-weight: 600;
     text-transform: uppercase;
-    letter-spacing: 0.1em;
+    letter-spacing: 0.08em;
     min-width: 56px;
     height: 64px;
+    background-color: rgb(var(--v-theme-surface));
+    border: 1px solid rgb(var(--v-theme-primary) / 0.18);
+    box-shadow: 0 10px 30px -18px rgb(var(--v-theme-on-surface) / 0.5);
+    transition:
+      transform 0.15s ease,
+      box-shadow 0.2s ease,
+      border-color 0.2s ease;
 
     .v-field__input {
       text-align: center;
       text-transform: uppercase;
+      padding-block: 10px;
     }
 
     &.v-field--focused {
+      transform: translateY(-2px);
+      box-shadow: 0 14px 40px -18px rgb(var(--v-theme-primary) / 0.6);
+      border-color: rgb(var(--v-theme-primary));
+
       .v-field__outline {
         border-width: 2px;
         border-color: rgb(var(--v-theme-primary)) !important;
       }
     }
   }
+}
+
+.otp-card {
+  padding: 20px;
+  background:
+    linear-gradient(135deg, rgb(var(--v-theme-primary) / 0.1), transparent 60%),
+    rgb(var(--v-theme-surface-variant));
+  border-radius: 16px;
+  border: 1px solid rgb(var(--v-theme-primary) / 0.14);
+  box-shadow: 0 18px 60px -26px rgb(var(--v-theme-on-surface) / 0.4);
+  position: relative;
+  overflow: hidden;
+
+  &::after {
+    content: '';
+    position: absolute;
+    inset-block-start: -40px;
+    inset-inline-end: -40px;
+    inline-size: 120px;
+    block-size: 120px;
+    background: radial-gradient(
+      circle,
+      rgb(var(--v-theme-primary) / 0.14),
+      transparent 60%
+    );
+    filter: blur(12px);
+    pointer-events: none;
+  }
+}
+
+.otp-card__header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  position: relative;
+  z-index: 1;
+}
+
+.otp-card__badge {
+  inline-size: 38px;
+  block-size: 38px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background-color: rgb(var(--v-theme-primary) / 0.12);
+  color: rgb(var(--v-theme-primary));
+}
+
+.otp-hint {
+  text-align: center;
+  margin: 0;
+  position: relative;
+  z-index: 1;
 }
 </style>
 
