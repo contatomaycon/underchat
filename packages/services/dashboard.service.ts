@@ -19,6 +19,7 @@ export class DashboardService {
   ): Promise<GetDashboardStatsResponse> => {
     const [
       usersTotal,
+      usersAllowed,
       usersSparkline,
       channelsTotal,
       channelsConnected,
@@ -29,6 +30,7 @@ export class DashboardService {
       contactsSparkline,
     ] = await Promise.all([
       this.dashboardStatsRepository.getUsersTotal(accountId),
+      this.dashboardStatsRepository.getUsersAllowed(accountId),
       this.dashboardStatsRepository.getUsersSparklineData(accountId),
       this.dashboardStatsRepository.getChannelsTotal(accountId),
       this.dashboardStatsRepository.getChannelsConnected(accountId),
@@ -42,6 +44,7 @@ export class DashboardService {
     return {
       users: {
         total: usersTotal,
+        allowed: usersAllowed,
         sparkline_data: usersSparkline,
       },
       channels: {

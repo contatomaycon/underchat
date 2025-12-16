@@ -2,6 +2,7 @@ import { Static, Type } from '@sinclair/typebox';
 
 const userStatsSchema = Type.Object({
   total: Type.Number(),
+  allowed: Type.Number(),
   sparkline_data: Type.Array(Type.Number()),
 });
 

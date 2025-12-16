@@ -27,6 +27,10 @@ const getThemeColor = (colorName: string): string => {
 };
 
 const usersTotal = computed(() => dashboardStore.stats?.users.total ?? 0);
+const usersAllowed = computed(() => dashboardStore.stats?.users.allowed ?? 0);
+const usersDisplay = computed(
+  () => `${usersTotal.value} / ${usersAllowed.value}`
+);
 const channelsTotal = computed(() => dashboardStore.stats?.channels.total ?? 0);
 const channelsConnected = computed(
   () => dashboardStore.stats?.channels.connected ?? 0
@@ -506,7 +510,7 @@ onMounted(async () => {
         <CardStatisticsVertical
           v-else
           :title="t('dashboard_users')"
-          :stats="usersTotal.toString()"
+          :stats="usersDisplay"
           icon="tabler-users"
           color="primary"
           :height="80"
@@ -523,7 +527,7 @@ onMounted(async () => {
         <CardStatisticsVertical
           v-else
           :title="t('dashboard_channels')"
-          :stats="`${channelsConnected}/${channelsAllowed}`"
+          :stats="`${channelsConnected} / ${channelsAllowed}`"
           icon="tabler-plug"
           color="info"
           :height="80"
