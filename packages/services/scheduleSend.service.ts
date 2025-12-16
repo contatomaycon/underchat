@@ -21,6 +21,7 @@ import { ISchedulePendingData } from '@core/interfaces/repositories/schedule/ISc
 import { IScheduleMessageResult } from '@core/common/interfaces/IScheduleMessageResult';
 import { IScheduleContactValidated } from '@core/common/interfaces/IScheduleContactValidated';
 import { IScheduleMessage } from '@core/common/interfaces/IScheduleMessage';
+import { PlanAccountService } from './planAccount.service';
 import moment from 'moment-timezone';
 import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
 import { generateProtocol } from '@core/common/functions/generateProtocol';
@@ -41,6 +42,7 @@ export class ScheduleSendService {
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
     private readonly streamProducerService: StreamProducerService,
     private readonly elasticDatabaseService: ElasticDatabaseService,
+    private readonly planAccountService: PlanAccountService,
     @inject('Redis') private readonly redis: Redis
   ) {}
 
@@ -452,6 +454,20 @@ export class ScheduleSendService {
     return jid;
   }
 
+  private async checkMassSendingLimit(
+    accountId: string,
+    currentSentCount: number
+  ): Promise<boolean> {
+    const [limit, totalSent] = await Promise.all([
+      this.planAccountService.totalMassSendingLimitByAccountId(accountId),
+      this.planAccountService.getMassSendingTotal(accountId),
+    ]);
+
+    const totalAfterSend = totalSent + currentSentCount;
+
+    return totalAfterSend < limit;
+  }
+
   private async sendScheduleMessage(
     schedule: ISchedulePendingData,
     contact: IScheduleContactValidated
@@ -506,6 +522,28 @@ export class ScheduleSendService {
     const message = await this.createChatMessage(schedule, contact, jid);
 
     try {
+      const hasLimit = await this.checkMassSendingLimit(schedule.account_id, 1);
+
+      if (!hasLimit) {
+        const saved = await this.saveToElasticsearch(
+          schedule,
+          contact,
+          message,
+          EScheduleStatus.limit_exhausted
+        );
+
+        if (!saved) {
+          console.error(
+            `Failed to save limit exhausted message to Elasticsearch for schedule ${schedule.schedule_id}, contact ${contact.contact_id}`
+          );
+        }
+
+        return {
+          success: false,
+          contactId: contact.contact_id,
+        };
+      }
+
       const saved = await this.saveToElasticsearch(
         schedule,
         contact,

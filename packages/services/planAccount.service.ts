@@ -10,6 +10,10 @@ import { EPlanProduct } from '@core/common/enums/EPlanProduct';
 import { TFunction } from 'i18next';
 import { DashboardAdditionalRepository } from '@core/repositories/dashboard/DashboardAdditional.repository';
 import { DashboardStatsRepository } from '@core/repositories/dashboard/DashboardStats.repository';
+import { ElasticDatabaseService } from './elasticDatabase.service';
+import { EElasticIndex } from '@core/common/enums/EElasticIndex';
+import { scheduleMappings } from '@core/mappings/schedule.mappings';
+import { EScheduleStatus } from '@core/common/enums/EScheduleStatus';
 import Redis from 'ioredis';
 
 @injectable()
@@ -22,6 +26,7 @@ export class PlanAccountService {
     private readonly roleService: RoleService,
     private readonly dashboardAdditionalRepository: DashboardAdditionalRepository,
     private readonly dashboardStatsRepository: DashboardStatsRepository,
+    private readonly elasticDatabaseService: ElasticDatabaseService,
     @inject('Redis') private readonly redis: Redis
   ) {}
 
@@ -50,25 +55,31 @@ export class PlanAccountService {
     return result ?? false;
   };
 
+  async totalUserLimitByAccountId(accountId: string): Promise<number> {
+    const viewAccountQuantityProduct =
+      await this.accountService.viewAccountQuantityProduct(
+        accountId,
+        EPlanProduct.user
+      );
+
+    return viewAccountQuantityProduct + 1;
+  }
+
   async validateCanCreateUser(
     t: TFunction<'translation', undefined>,
     accountId: string
   ): Promise<void> {
     const [viewAccountQuantityProduct, totalUserByAccountId] =
       await Promise.all([
-        this.accountService.viewAccountQuantityProduct(
-          accountId,
-          EPlanProduct.user
-        ),
+        this.totalUserLimitByAccountId(accountId),
         this.userService.totalUserByAccount(accountId),
       ]);
 
-    const userLimit = viewAccountQuantityProduct + 1;
-    if (userLimit <= 0) {
+    if (viewAccountQuantityProduct <= 0) {
       throw new Error(t('user_not_available'));
     }
 
-    if (totalUserByAccountId >= userLimit) {
+    if (totalUserByAccountId >= viewAccountQuantityProduct) {
       throw new Error(t('user_not_available_additional'));
     }
   }
@@ -180,5 +191,81 @@ export class PlanAccountService {
     }
 
     return true;
+  }
+
+  async validateCanCreateMassSending(accountId: string): Promise<boolean> {
+    const [viewAccountQuantityProduct, totalMassSendingByAccountId] =
+      await Promise.all([
+        this.totalMassSendingLimitByAccountId(accountId),
+        this.getMassSendingTotal(accountId),
+      ]);
+
+    if (viewAccountQuantityProduct <= 0) {
+      return false;
+    }
+
+    if (totalMassSendingByAccountId >= viewAccountQuantityProduct) {
+      return false;
+    }
+
+    return true;
+  }
+
+  async totalMassSendingLimitByAccountId(accountId: string): Promise<number> {
+    const viewAccountQuantityProduct =
+      await this.accountService.viewAccountQuantityProduct(
+        accountId,
+        EPlanProduct.mass_sending
+      );
+
+    return viewAccountQuantityProduct;
+  }
+
+  async getMassSendingTotal(accountId: string): Promise<number> {
+    await this.elasticDatabaseService.indices(
+      EElasticIndex.schedule,
+      scheduleMappings()
+    );
+
+    const query = {
+      size: 0,
+      query: {
+        bool: {
+          must: [
+            {
+              nested: {
+                path: 'account',
+                query: {
+                  term: {
+                    'account.id': accountId,
+                  },
+                },
+              },
+            },
+            {
+              term: {
+                status: EScheduleStatus.sent,
+              },
+            },
+          ],
+        },
+      },
+    };
+
+    const result = await this.elasticDatabaseService.select<{
+      hits: { total: { value: number } | number };
+    }>(EElasticIndex.schedule, query);
+
+    if (!result) {
+      return 0;
+    }
+
+    const total = result.hits.total as { value: number } | number;
+
+    if (typeof total === 'number') {
+      return total;
+    }
+
+    return total.value;
   }
 }

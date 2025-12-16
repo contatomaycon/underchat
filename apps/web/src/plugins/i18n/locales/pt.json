@@ -1831,6 +1831,7 @@
     "processing": "Em processamento",
     "sent": "Enviado",
     "failed": "Falhou",
+    "limit_exhausted": "Limite esgotado",
     "schedule_workers_list_error": "Erro ao listar canais. Por favor, tente novamente.",
     "schedule_contacts_list_error": "Erro ao listar contatos. Por favor, tente novamente.",
     "schedule_contact_groups_list_error": "Erro ao listar grupos de contatos. Por favor, tente novamente.",
