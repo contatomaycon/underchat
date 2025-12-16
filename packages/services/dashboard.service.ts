@@ -1,7 +1,11 @@
 import { injectable } from 'tsyringe';
 import { DashboardStatsRepository } from '@core/repositories/dashboard/DashboardStats.repository';
 import { DashboardConversationsRepository } from '@core/repositories/dashboard/DashboardConversations.repository';
-import { DashboardAdditionalRepository } from '@core/repositories/dashboard/DashboardAdditional.repository';
+import { DashboardContactsRepository } from '@core/repositories/dashboard/DashboardContacts.repository';
+import { DashboardAttendanceRepository } from '@core/repositories/dashboard/DashboardAttendance.repository';
+import { DashboardSectorsRepository } from '@core/repositories/dashboard/DashboardSectors.repository';
+import { DashboardChatbotsRepository } from '@core/repositories/dashboard/DashboardChatbots.repository';
+import { DashboardTemplatesRepository } from '@core/repositories/dashboard/DashboardTemplates.repository';
 import { GetDashboardStatsResponse } from '@core/schema/dashboard/getDashboardStats/response.schema';
 import { GetDashboardConversationsResponse } from '@core/schema/dashboard/getDashboardConversations/response.schema';
 import { GetDashboardAdditionalResponse } from '@core/schema/dashboard/getDashboardAdditional/response.schema';
@@ -11,7 +15,11 @@ export class DashboardService {
   constructor(
     private readonly dashboardStatsRepository: DashboardStatsRepository,
     private readonly dashboardConversationsRepository: DashboardConversationsRepository,
-    private readonly dashboardAdditionalRepository: DashboardAdditionalRepository
+    private readonly dashboardContactsRepository: DashboardContactsRepository,
+    private readonly dashboardAttendanceRepository: DashboardAttendanceRepository,
+    private readonly dashboardSectorsRepository: DashboardSectorsRepository,
+    private readonly dashboardChatbotsRepository: DashboardChatbotsRepository,
+    private readonly dashboardTemplatesRepository: DashboardTemplatesRepository
   ) {}
 
   getDashboardStats = async (
@@ -100,16 +108,16 @@ export class DashboardService {
       messageTemplatesTotal,
       labelTemplatesTotal,
     ] = await Promise.all([
-      this.dashboardAdditionalRepository.getContactsGrowthMonthly(accountId),
-      this.dashboardAdditionalRepository.getAttendancePerformance(accountId),
-      this.dashboardAdditionalRepository.getSectorsDistribution(accountId),
-      this.dashboardAdditionalRepository.getAttendanceMetrics(accountId),
-      this.dashboardAdditionalRepository.getChatbotsTotal(accountId),
-      this.dashboardAdditionalRepository.getChatbotsActive(accountId),
-      this.dashboardAdditionalRepository.getChatbotsAllowed(accountId),
-      this.dashboardAdditionalRepository.getContactGroupsTotal(accountId),
-      this.dashboardAdditionalRepository.getMessageTemplatesTotal(accountId),
-      this.dashboardAdditionalRepository.getLabelTemplatesTotal(accountId),
+      this.dashboardContactsRepository.getContactsGrowthMonthly(accountId),
+      this.dashboardAttendanceRepository.getAttendancePerformance(accountId),
+      this.dashboardSectorsRepository.getSectorsDistribution(accountId),
+      this.dashboardAttendanceRepository.getAttendanceMetrics(accountId),
+      this.dashboardChatbotsRepository.getChatbotsTotal(accountId),
+      this.dashboardChatbotsRepository.getChatbotsActive(accountId),
+      this.dashboardChatbotsRepository.getChatbotsAllowed(accountId),
+      this.dashboardTemplatesRepository.getContactGroupsTotal(accountId),
+      this.dashboardTemplatesRepository.getMessageTemplatesTotal(accountId),
+      this.dashboardTemplatesRepository.getLabelTemplatesTotal(accountId),
     ]);
 
     return {

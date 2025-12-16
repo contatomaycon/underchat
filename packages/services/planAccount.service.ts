@@ -8,7 +8,7 @@ import { WorkerService } from './worker.service';
 import { RoleService } from './role.service';
 import { EPlanProduct } from '@core/common/enums/EPlanProduct';
 import { TFunction } from 'i18next';
-import { DashboardAdditionalRepository } from '@core/repositories/dashboard/DashboardAdditional.repository';
+import { DashboardChatbotsRepository } from '@core/repositories/dashboard/DashboardChatbots.repository';
 import { DashboardStatsRepository } from '@core/repositories/dashboard/DashboardStats.repository';
 import { ElasticDatabaseService } from './elasticDatabase.service';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
@@ -24,7 +24,7 @@ export class PlanAccountService {
     private readonly userService: UserService,
     private readonly workerService: WorkerService,
     private readonly roleService: RoleService,
-    private readonly dashboardAdditionalRepository: DashboardAdditionalRepository,
+    private readonly dashboardChatbotsRepository: DashboardChatbotsRepository,
     private readonly dashboardStatsRepository: DashboardStatsRepository,
     private readonly elasticDatabaseService: ElasticDatabaseService,
     @inject('Redis') private readonly redis: Redis
@@ -138,7 +138,7 @@ export class PlanAccountService {
           accountId,
           EPlanProduct.chatbot
         ),
-        this.dashboardAdditionalRepository.getChatbotsTotal(accountId),
+        this.dashboardChatbotsRepository.getChatbotsTotal(accountId),
       ]);
 
     if (viewAccountQuantityProduct <= 0) {
