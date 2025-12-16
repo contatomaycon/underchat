@@ -1,13 +1,18 @@
 import { Type } from '@sinclair/typebox';
-import { registerZipcodeResponseSchema } from './response.schema';
+import { listRegisterStatesResponseSchema } from './response.schema';
 import { ELanguage } from '@core/common/enums/ELanguage';
 import { ETagSwagger } from '@core/common/enums/ETagSwagger';
-import { viewRegisterZipcodeRequestSchema } from './request.schema';
+import { listRegisterStatesRequestSchema } from './request.schema';
 
-export const getRegisterZipcodeSchema = {
-  description: 'Obtém o endereço completo a partir do CEP',
+export const listRegisterStatesSchema = {
+  description: 'Lista todos os estados',
   tags: [ETagSwagger.register],
   produces: ['application/json'],
+  security: [
+    {
+      authenticateRegisterJwt: [],
+    },
+  ],
   headers: Type.Object({
     'Accept-Language': Type.Optional(
       Type.String({
@@ -17,13 +22,13 @@ export const getRegisterZipcodeSchema = {
       })
     ),
   }),
-  querystring: viewRegisterZipcodeRequestSchema,
+  querystring: listRegisterStatesRequestSchema,
   response: {
     200: Type.Object(
       {
         status: Type.Boolean({ const: true }),
         message: Type.String(),
-        data: registerZipcodeResponseSchema,
+        data: listRegisterStatesResponseSchema,
       },
       { description: 'Successful' }
     ),
@@ -35,15 +40,6 @@ export const getRegisterZipcodeSchema = {
         data: Type.Null(),
       },
       { description: 'Unauthorized' }
-    ),
-    404: Type.Object(
-      {
-        id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
-        status: Type.Boolean({ default: false }),
-        message: Type.String(),
-        data: Type.Null(),
-      },
-      { description: 'Not Found' }
     ),
     500: Type.Object(
       {

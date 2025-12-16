@@ -2,32 +2,25 @@ import { EHTTPStatusCode } from '@core/common/enums/EHTTPStatusCode';
 import { sendResponse } from '@core/common/functions/sendResponse';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
-import { ViewRegisterZipcodeRequest } from '@core/schema/register/viewZipcode/request.schema';
-import { ZipcodeViewerUseCase } from '@core/useCases/zipcode/ZipcodeViewer.useCase';
+import { ListRegisterCitiesRequest } from '@core/schema/register/listCities/request.schema';
+import { ListCitiesUseCase } from '@core/useCases/zipcode/ListCities.useCase';
 
-export const viewZipcode = async (
+export const listCities = async (
   request: FastifyRequest<{
-    Querystring: ViewRegisterZipcodeRequest;
+    Querystring: ListRegisterCitiesRequest;
   }>,
   reply: FastifyReply
 ) => {
-  const zipcodeViewerUseCase = container.resolve(ZipcodeViewerUseCase);
+  const listCitiesUseCase = container.resolve(ListCitiesUseCase);
   const { t } = request;
 
   try {
-    const response = await zipcodeViewerUseCase.execute(request.query);
-
-    if (response) {
-      return sendResponse(reply, {
-        message: t('zipcode_view_successfully'),
-        httpStatusCode: EHTTPStatusCode.ok,
-        data: response,
-      });
-    }
+    const response = await listCitiesUseCase.execute(request.query);
 
     return sendResponse(reply, {
-      message: t('zipcode_not_found'),
-      httpStatusCode: EHTTPStatusCode.bad_request,
+      message: t('cities_listed_successfully'),
+      httpStatusCode: EHTTPStatusCode.ok,
+      data: response,
     });
   } catch (error) {
     console.error(error);

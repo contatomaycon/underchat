@@ -2,7 +2,7 @@
 import { useGenerateImageVariant } from '@/@webcore/composable/useGenerateImageVariant';
 import { useCountryCodes } from '@/composables/useCountryCodes';
 import { useBrazilianDDDs } from '@/composables/useBrazilianDDDs';
-import { useStatesAndCities } from '@/composables/useStatesAndCities';
+import { useRegisterStatesAndCities } from '@/composables/useRegisterStatesAndCities';
 import { usePasswordStrength } from '@/composables/usePasswordStrength';
 import { requiredValidator } from '@/@webcore/utils/validators';
 import { validatePassword } from '@/@webcore/utils/passwordStrength';
@@ -10,7 +10,7 @@ import { VForm } from 'vuetify/components/VForm';
 import { useRegisterStore } from '@/@webcore/stores/register';
 import { EUserDocumentType } from '@core/common/enums/EUserDocumentType';
 import { ECountry } from '@core/common/enums/ECountry';
-import { ViewZipcodeRequest } from '@core/schema/zipcode/viewZipcode/request.schema';
+import { ViewRegisterZipcodeRequest } from '@core/schema/register/viewZipcode/request.schema';
 import registerMultistepIllustrationDark from '@images/illustrations/register-multi-step-illustration-dark.png';
 import registerMultistepIllustrationLight from '@images/illustrations/register-multi-step-illustration-light.png';
 import registerMultistepBgDark from '@images/pages/register-multi-step-bg-dark.png';
@@ -32,7 +32,7 @@ const {
   loadStates,
   loadCities,
   clearCities,
-} = useStatesAndCities();
+} = useRegisterStatesAndCities();
 const registerStore = useRegisterStore();
 
 const currentStepInternal = ref(0);
@@ -462,7 +462,7 @@ const viewZipcode = async () => {
   isViewingZipcode.value = true;
 
   try {
-    const params: ViewZipcodeRequest = {
+    const params: ViewRegisterZipcodeRequest = {
       country_id: country_id.value,
       zipcode: zip_code.value,
     };

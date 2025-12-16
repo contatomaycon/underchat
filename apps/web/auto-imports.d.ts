@@ -312,6 +312,7 @@ declare global {
   const useProjection: typeof import('@vueuse/math').useProjection
   const useRafFn: typeof import('@vueuse/core').useRafFn
   const useRefHistory: typeof import('@vueuse/core').useRefHistory
+  const useRegisterStatesAndCities: typeof import('./src/composables/useRegisterStatesAndCities').useRegisterStatesAndCities
   const useResizeObserver: typeof import('@vueuse/core').useResizeObserver
   const useResponsiveLeftSidebar: typeof import('./src/@webcore/composable/useResponsiveSidebar').useResponsiveLeftSidebar
   const useRound: typeof import('@vueuse/math').useRound
@@ -706,6 +707,7 @@ declare module 'vue' {
     readonly useProjection: UnwrapRef<typeof import('@vueuse/math')['useProjection']>
     readonly useRafFn: UnwrapRef<typeof import('@vueuse/core')['useRafFn']>
     readonly useRefHistory: UnwrapRef<typeof import('@vueuse/core')['useRefHistory']>
+    readonly useRegisterStatesAndCities: UnwrapRef<typeof import('./src/composables/useRegisterStatesAndCities')['useRegisterStatesAndCities']>
     readonly useResizeObserver: UnwrapRef<typeof import('@vueuse/core')['useResizeObserver']>
     readonly useResponsiveLeftSidebar: UnwrapRef<typeof import('./src/@webcore/composable/useResponsiveSidebar')['useResponsiveLeftSidebar']>
     readonly useRound: UnwrapRef<typeof import('@vueuse/math')['useRound']>

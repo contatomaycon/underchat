@@ -7,9 +7,13 @@ import { ISnackbar } from '@core/common/interfaces/ISnackbar';
 import { AuthRegisterSendTwoFactorRequest } from '@core/schema/register/sendTwoFactor/request.schema';
 import { AuthRegisterVerifyCodeRequest } from '@core/schema/register/verifyCode/request.schema';
 import { AuthRegisterVerifyCodeResponse } from '@core/schema/register/verifyCode/response.schema';
-import { ViewZipcodeRequest } from '@core/schema/zipcode/viewZipcode/request.schema';
-import { ZipcodeResponseSchema } from '@core/schema/zipcode/viewZipcode/response.schema';
+import { ViewRegisterZipcodeRequest } from '@core/schema/register/viewZipcode/request.schema';
+import { RegisterZipcodeResponseSchema } from '@core/schema/register/viewZipcode/response.schema';
 import { useCookie } from '@/@webcore/composable/useCookie';
+import { ListRegisterStatesRequest } from '@core/schema/register/listStates/request.schema';
+import { RegisterStateListResponse } from '@core/schema/register/listStates/response.schema';
+import { ListRegisterCitiesRequest } from '@core/schema/register/listCities/request.schema';
+import { RegisterCityListResponse } from '@core/schema/register/listCities/response.schema';
 
 export const useRegisterStore = defineStore('register', {
   state: () => ({
@@ -151,8 +155,8 @@ export const useRegisterStore = defineStore('register', {
       }
     },
     async viewZipcode(
-      params: ViewZipcodeRequest
-    ): Promise<ZipcodeResponseSchema | null> {
+      params: ViewRegisterZipcodeRequest
+    ): Promise<RegisterZipcodeResponseSchema | null> {
       const url = import.meta.env.VITE_BACKEND_URL;
 
       if (!url) {
@@ -167,17 +171,94 @@ export const useRegisterStore = defineStore('register', {
           return null;
         }
 
-        const response = await axios.get<IApiResponse<ZipcodeResponseSchema>>(
-          `${url}/v1/register/view-zipcode`,
-          {
-            params,
-            headers: {
-              'Content-Type': 'application/json',
-              'Accept-Language': currentLocale,
-              Authorization: `Bearer ${tokenCookie.value}`,
-            },
-          }
-        );
+        const response = await axios.get<
+          IApiResponse<RegisterZipcodeResponseSchema>
+        >(`${url}/v1/register/view-zipcode`, {
+          params,
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept-Language': currentLocale,
+            Authorization: `Bearer ${tokenCookie.value}`,
+          },
+        });
+
+        const responseData = response?.data;
+
+        if (!responseData?.status || !responseData?.data) {
+          return null;
+        }
+
+        return responseData.data;
+      } catch (error) {
+        return null;
+      }
+    },
+    async listStates(
+      params?: ListRegisterStatesRequest
+    ): Promise<RegisterStateListResponse | null> {
+      const url = import.meta.env.VITE_BACKEND_URL;
+
+      if (!url) {
+        return null;
+      }
+
+      try {
+        const currentLocale = this.i18n.global.locale;
+        const tokenCookie = useCookie<string>('register_token');
+
+        if (!tokenCookie.value) {
+          return null;
+        }
+
+        const response = await axios.get<
+          IApiResponse<RegisterStateListResponse>
+        >(`${url}/v1/register/states`, {
+          params,
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept-Language': currentLocale,
+            Authorization: `Bearer ${tokenCookie.value}`,
+          },
+        });
+
+        const responseData = response?.data;
+
+        if (!responseData?.status || !responseData?.data) {
+          return null;
+        }
+
+        return responseData.data;
+      } catch (error) {
+        return null;
+      }
+    },
+    async listCities(
+      params: ListRegisterCitiesRequest
+    ): Promise<RegisterCityListResponse | null> {
+      const url = import.meta.env.VITE_BACKEND_URL;
+
+      if (!url) {
+        return null;
+      }
+
+      try {
+        const currentLocale = this.i18n.global.locale;
+        const tokenCookie = useCookie<string>('register_token');
+
+        if (!tokenCookie.value) {
+          return null;
+        }
+
+        const response = await axios.get<
+          IApiResponse<RegisterCityListResponse>
+        >(`${url}/v1/register/cities`, {
+          params,
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept-Language': currentLocale,
+            Authorization: `Bearer ${tokenCookie.value}`,
+          },
+        });
 
         const responseData = response?.data;
 

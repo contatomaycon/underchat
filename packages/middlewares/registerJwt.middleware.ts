@@ -48,13 +48,6 @@ async function authenticateRegisterJwt(
       });
     }
 
-    if (twoFactorData.deleted_at) {
-      return sendResponse(reply, {
-        message: t('register_token_invalid'),
-        httpStatusCode: EHTTPStatusCode.unauthorized,
-      });
-    }
-
     if (!twoFactorData.created_at) {
       return sendResponse(reply, {
         message: t('register_token_invalid'),
