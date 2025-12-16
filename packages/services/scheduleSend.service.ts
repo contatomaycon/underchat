@@ -3,7 +3,6 @@ import { SchedulePendingListerRepository } from '@core/repositories/schedule/Sch
 import { ScheduleContactsValidatedListerRepository } from '@core/repositories/schedule/ScheduleContactsValidatedLister.repository';
 import { ScheduleStatusUpdaterRepository } from '@core/repositories/schedule/ScheduleStatusUpdater.repository';
 import { ContactService } from './contact.service';
-import { ChatService } from './chat.service';
 import { normalizePhoneToJid } from '@core/common/functions/normalizePhoneToJid';
 import { KafkaBaileysQueueService } from './kafkaBaileysQueue.service';
 import { StreamProducerService } from './streamProducer.service';
@@ -38,7 +37,6 @@ export class ScheduleSendService {
     private readonly scheduleContactsValidatedListerRepository: ScheduleContactsValidatedListerRepository,
     private readonly scheduleStatusUpdaterRepository: ScheduleStatusUpdaterRepository,
     private readonly contactService: ContactService,
-    private readonly chatService: ChatService,
     private readonly kafkaBaileysQueueService: KafkaBaileysQueueService,
     private readonly streamProducerService: StreamProducerService,
     private readonly elasticDatabaseService: ElasticDatabaseService,
