@@ -91,7 +91,7 @@ const email = ref<string | null>(null);
 const phone_ddi = ref<string | null>('55');
 const phone_ddd = ref<string | null>(null);
 const phone = ref<string | null>(null);
-const verificationCode = ref<string | null>(null);
+const verificationCode = ref<string>('');
 const isLoading = ref(false);
 const snackbar = ref({
   show: false,
@@ -396,11 +396,10 @@ const onSubmit = () => {
                   <VLabel class="text-body-2 mb-1"
                     >{{ $t('verification_code') }}:</VLabel
                   >
-                  <AppTextField
+                  <VOtpInput
                     v-model="verificationCode"
+                    length="6"
                     type="text"
-                    :placeholder="$t('verification_code')"
-                    maxlength="6"
                     :rules="[
                       requiredValidator(
                         verificationCode,
