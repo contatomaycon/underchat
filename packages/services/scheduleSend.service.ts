@@ -44,9 +44,10 @@ export class ScheduleSendService {
   ) {}
 
   private getRandomDelay(): number {
+    const random = Math.random(); // NOSONAR: Math.random() is safe here as it's only used for non-security purposes (message timing)
+
     return Math.floor(
-      Math.random() * (this.DELAY_MAX_MS - this.DELAY_MIN_MS) +
-        this.DELAY_MIN_MS
+      random * (this.DELAY_MAX_MS - this.DELAY_MIN_MS) + this.DELAY_MIN_MS
     );
   }
 
