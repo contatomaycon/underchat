@@ -15,7 +15,7 @@ const props = withDefaults(defineProps<Props>(), {
   popperInlineEnd: false,
   tag: 'div',
   contentContainerTag: 'div',
-  isRTL: false,
+  isRtl: false,
 });
 
 const configStore = useLayoutConfigStore();
@@ -62,9 +62,6 @@ const updatePopper = async () => {
   }
 };
 
-await until(() => configStore.horizontalNavType).toMatch(
-  (type) => type === 'static'
-);
 useEventListener('scroll', updatePopper);
 
 const isContentShown = ref(false);
@@ -91,7 +88,8 @@ watch(() => route.fullPath, hideContent);
 </script>
 
 <template>
-  <div
+  <Component
+    :is="props.tag"
     class="nav-popper"
     :class="[
       {
@@ -111,15 +109,16 @@ watch(() => route.fullPath, hideContent);
 
     <template v-if="!themeConfig.horizontalNav.transition">
       <div
+        v-show="isContentShown"
         ref="refPopper"
         class="popper-content"
         :style="popperContentStyles"
         @mouseenter="showContent"
         @mouseleave="hideContent"
       >
-        <div>
+        <Component :is="props.contentContainerTag">
           <slot name="content" />
-        </div>
+        </Component>
       </div>
     </template>
 
@@ -135,9 +134,9 @@ watch(() => route.fullPath, hideContent);
           @mouseenter="showContent"
           @mouseleave="hideContent"
         >
-          <div>
+          <Component :is="props.contentContainerTag">
             <slot name="content" />
-          </div>
+          </Component>
         </div>
       </Transition>
     </template>
@@ -152,17 +151,18 @@ watch(() => route.fullPath, hideContent);
           @mouseenter="showContent"
           @mouseleave="hideContent"
         >
-          <div>
+          <Component :is="props.contentContainerTag">
             <slot name="content" />
-          </div>
+          </Component>
         </div>
       </Component>
     </template>
-  </div>
+  </Component>
 </template>
 
 <style lang="scss">
 .popper-content {
   position: absolute;
+  z-index: 1000;
 }
 </style>
