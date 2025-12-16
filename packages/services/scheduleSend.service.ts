@@ -439,16 +439,10 @@ export class ScheduleSendService {
     contact: IScheduleContactValidated
   ): Promise<string | null> {
     const phone = this.contactService.getContactPhoneDecrypted(contact.phone);
-
-    if (!phone) {
-      return null;
-    }
+    if (!phone) return null;
 
     const jid = normalizePhoneToJid(phone, contact.phone_ddi);
-
-    if (!jid) {
-      return null;
-    }
+    if (!jid) return null;
 
     return jid;
   }
