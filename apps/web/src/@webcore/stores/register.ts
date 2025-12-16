@@ -14,6 +14,8 @@ import { ListRegisterStatesRequest } from '@core/schema/register/listStates/requ
 import { RegisterStateListResponse } from '@core/schema/register/listStates/response.schema';
 import { ListRegisterCitiesRequest } from '@core/schema/register/listCities/request.schema';
 import { RegisterCityListResponse } from '@core/schema/register/listCities/response.schema';
+import { ListRegisterPlanWithItemsFinalResponse } from '@core/schema/register/listPlanWithItems/response.schema';
+import { ListRegisterAvailableCrossSellFinalResponse } from '@core/schema/register/listAvailableCrossSell/response.schema';
 
 export const useRegisterStore = defineStore('register', {
   state: () => ({
@@ -253,6 +255,78 @@ export const useRegisterStore = defineStore('register', {
           IApiResponse<RegisterCityListResponse>
         >(`${url}/v1/register/cities`, {
           params,
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept-Language': currentLocale,
+            Authorization: `Bearer ${tokenCookie.value}`,
+          },
+        });
+
+        const responseData = response?.data;
+
+        if (!responseData?.status || !responseData?.data) {
+          return null;
+        }
+
+        return responseData.data;
+      } catch (error) {
+        return null;
+      }
+    },
+    async listPlanWithItems(): Promise<ListRegisterPlanWithItemsFinalResponse | null> {
+      const url = import.meta.env.VITE_BACKEND_URL;
+
+      if (!url) {
+        return null;
+      }
+
+      try {
+        const currentLocale = this.i18n.global.locale;
+        const tokenCookie = useCookie<string>('register_token');
+
+        if (!tokenCookie.value) {
+          return null;
+        }
+
+        const response = await axios.get<
+          IApiResponse<ListRegisterPlanWithItemsFinalResponse>
+        >(`${url}/v1/register/plans/with-items`, {
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept-Language': currentLocale,
+            Authorization: `Bearer ${tokenCookie.value}`,
+          },
+        });
+
+        const responseData = response?.data;
+
+        if (!responseData?.status || !responseData?.data) {
+          return null;
+        }
+
+        return responseData.data;
+      } catch (error) {
+        return null;
+      }
+    },
+    async listAvailableCrossSell(): Promise<ListRegisterAvailableCrossSellFinalResponse | null> {
+      const url = import.meta.env.VITE_BACKEND_URL;
+
+      if (!url) {
+        return null;
+      }
+
+      try {
+        const currentLocale = this.i18n.global.locale;
+        const tokenCookie = useCookie<string>('register_token');
+
+        if (!tokenCookie.value) {
+          return null;
+        }
+
+        const response = await axios.get<
+          IApiResponse<ListRegisterAvailableCrossSellFinalResponse>
+        >(`${url}/v1/register/plans/cross-sell/available`, {
           headers: {
             'Content-Type': 'application/json',
             'Accept-Language': currentLocale,
