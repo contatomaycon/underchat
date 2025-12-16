@@ -39,12 +39,24 @@ const channelsAllowed = computed(
   () => dashboardStore.stats?.channels.allowed ?? 0
 );
 const contactsTotal = computed(() => dashboardStore.stats?.contacts.total ?? 0);
+const contactsAllowed = computed(
+  () => dashboardStore.stats?.contacts.allowed ?? 0
+);
+const contactsDisplay = computed(
+  () => `${contactsTotal.value.toLocaleString('pt-BR')} / ${contactsAllowed.value.toLocaleString('pt-BR')}`
+);
 const contactsGrowth = computed(
   () => dashboardStore.stats?.contacts.growth ?? 0
 );
 const chatsActive = computed(() => dashboardStore.conversations?.active ?? 0);
 const chatbotsActive = computed(
   () => dashboardStore.additional?.chatbots.active ?? 0
+);
+const chatbotsAllowed = computed(
+  () => dashboardStore.additional?.chatbots.allowed ?? 0
+);
+const chatbotsDisplay = computed(
+  () => `${chatbotsActive.value} / ${chatbotsAllowed.value}`
 );
 const chatbotsTotal = computed(
   () => dashboardStore.additional?.chatbots.total ?? 0
@@ -544,7 +556,7 @@ onMounted(async () => {
         <CardStatisticsVertical
           v-else
           :title="t('dashboard_contacts')"
-          :stats="contactsTotal.toLocaleString('pt-BR')"
+          :stats="contactsDisplay"
           icon="tabler-address-book"
           color="warning"
           :height="80"
@@ -882,7 +894,7 @@ onMounted(async () => {
                   {{ t('dashboard_active_chatbots') }}
                 </p>
                 <h3 class="text-h4 font-weight-bold">
-                  {{ chatbotsActive }}/{{ chatbotsTotal }}
+                  {{ chatbotsDisplay }}
                 </h3>
               </div>
               <VAvatar color="success" variant="tonal" size="56">

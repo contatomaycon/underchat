@@ -15,6 +15,7 @@ const channelStatsSchema = Type.Object({
 
 const contactStatsSchema = Type.Object({
   total: Type.Number(),
+  allowed: Type.Number(),
   growth: Type.Number(),
   sparkline_data: Type.Array(Type.Number()),
 });

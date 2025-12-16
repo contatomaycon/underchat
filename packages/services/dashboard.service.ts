@@ -26,6 +26,7 @@ export class DashboardService {
       channelsAllowed,
       channelsSparkline,
       contactsTotal,
+      contactsAllowed,
       contactsGrowth,
       contactsSparkline,
     ] = await Promise.all([
@@ -37,6 +38,7 @@ export class DashboardService {
       this.dashboardStatsRepository.getChannelsAllowed(accountId),
       this.dashboardStatsRepository.getChannelsSparklineData(accountId),
       this.dashboardStatsRepository.getContactsTotal(accountId),
+      this.dashboardStatsRepository.getContactsAllowed(accountId),
       this.dashboardStatsRepository.getContactsGrowth(accountId),
       this.dashboardStatsRepository.getContactsSparklineData(accountId),
     ]);
@@ -55,6 +57,7 @@ export class DashboardService {
       },
       contacts: {
         total: contactsTotal,
+        allowed: contactsAllowed,
         growth: contactsGrowth,
         sparkline_data: contactsSparkline,
       },
@@ -92,6 +95,7 @@ export class DashboardService {
       attendanceMetrics,
       chatbotsTotal,
       chatbotsActive,
+      chatbotsAllowed,
       contactGroupsTotal,
       messageTemplatesTotal,
       labelTemplatesTotal,
@@ -102,6 +106,7 @@ export class DashboardService {
       this.dashboardAdditionalRepository.getAttendanceMetrics(accountId),
       this.dashboardAdditionalRepository.getChatbotsTotal(accountId),
       this.dashboardAdditionalRepository.getChatbotsActive(accountId),
+      this.dashboardAdditionalRepository.getChatbotsAllowed(accountId),
       this.dashboardAdditionalRepository.getContactGroupsTotal(accountId),
       this.dashboardAdditionalRepository.getMessageTemplatesTotal(accountId),
       this.dashboardAdditionalRepository.getLabelTemplatesTotal(accountId),
@@ -124,6 +129,7 @@ export class DashboardService {
       chatbots: {
         total: chatbotsTotal,
         active: chatbotsActive,
+        allowed: chatbotsAllowed,
       },
       contact_groups: contactGroupsTotal,
       message_templates: messageTemplatesTotal,

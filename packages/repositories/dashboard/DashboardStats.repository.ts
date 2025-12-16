@@ -203,4 +203,11 @@ export class DashboardStatsRepository {
       EPlanProduct.user
     );
   };
+
+  getContactsAllowed = async (accountId: string): Promise<number> => {
+    return this.accountQuantityProductViewerRepository.viewAccountQuantityProduct(
+      accountId,
+      EPlanProduct.contact
+    );
+  };
 }

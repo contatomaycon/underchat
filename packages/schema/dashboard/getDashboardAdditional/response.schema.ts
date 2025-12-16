@@ -27,6 +27,7 @@ const attendanceMetricsSchema = Type.Object({
 const chatbotsSchema = Type.Object({
   total: Type.Number(),
   active: Type.Number(),
+  allowed: Type.Number(),
 });
 
 export const getDashboardAdditionalResponseSchema = Type.Object({

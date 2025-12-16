@@ -14,12 +14,15 @@ import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { ESectorStatus } from '@core/common/enums/ESectorStatus';
+import { AccountQuantityProductViewerRepository } from '@core/repositories/account/AccountQuantityProductViewer.repository';
+import { EPlanProduct } from '@core/common/enums/EPlanProduct';
 
 @injectable()
 export class DashboardAdditionalRepository {
   constructor(
     @inject('Database') private readonly db: NodePgDatabase<typeof schema>,
-    private readonly elasticDatabaseService: ElasticDatabaseService
+    private readonly elasticDatabaseService: ElasticDatabaseService,
+    private readonly accountQuantityProductViewerRepository: AccountQuantityProductViewerRepository
   ) {}
 
   getContactsGrowthMonthly = async (
@@ -614,6 +617,13 @@ export class DashboardAdditionalRepository {
       .execute();
 
     return result[0]?.total ?? 0;
+  };
+
+  getChatbotsAllowed = async (accountId: string): Promise<number> => {
+    return this.accountQuantityProductViewerRepository.viewAccountQuantityProduct(
+      accountId,
+      EPlanProduct.chatbot
+    );
   };
 
   getContactGroupsTotal = async (accountId: string): Promise<number> => {
