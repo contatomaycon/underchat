@@ -1,17 +1,12 @@
 <script setup lang="ts">
 import { useGenerateImageVariant } from '@/@webcore/composable/useGenerateImageVariant';
-import type { CustomInputContent } from '@/@webcore/types';
 import { useCountryCodes } from '@/composables/useCountryCodes';
 import { useBrazilianDDDs } from '@/composables/useBrazilianDDDs';
 import { requiredValidator } from '@/@webcore/utils/validators';
 import { VForm } from 'vuetify/components/VForm';
-import axios, { AxiosError } from 'axios';
-import { IApiResponse } from '@core/common/interfaces/IApiResponse';
-import { EColor } from '@core/common/enums/EColor';
-
+import { useRegisterStore } from '@/@webcore/stores/register';
 import registerMultistepIllustrationDark from '@images/illustrations/register-multi-step-illustration-dark.png';
 import registerMultistepIllustrationLight from '@images/illustrations/register-multi-step-illustration-light.png';
-
 import registerMultistepBgDark from '@images/pages/register-multi-step-bg-dark.png';
 import registerMultistepBgLight from '@images/pages/register-multi-step-bg-light.png';
 
@@ -23,6 +18,7 @@ const registerMultistepBg = useGenerateImageVariant(
 const { t } = useI18n();
 const { items: countryCodes } = useCountryCodes();
 const { items: brazilianDDDs } = useBrazilianDDDs();
+const registerStore = useRegisterStore();
 
 const currentStepInternal = ref(0);
 
@@ -45,24 +41,6 @@ const registerMultistepIllustration = useGenerateImageVariant(
   registerMultistepIllustrationDark
 );
 
-const radioContent: CustomInputContent[] = [
-  {
-    title: 'Starter',
-    desc: 'A simple start for everyone.',
-    value: '0',
-  },
-  {
-    title: 'Standard',
-    desc: 'For small to medium businesses.',
-    value: '99',
-  },
-  {
-    title: 'Enterprise',
-    desc: 'Solution for big organizations.',
-    value: '499',
-  },
-];
-
 const items = [
   {
     title: t('validation'),
@@ -74,16 +52,6 @@ const items = [
     subtitle: t('verification_code_subtitle'),
     icon: 'tabler-key',
   },
-  {
-    title: 'Personal',
-    subtitle: 'Enter Information',
-    icon: 'tabler-users',
-  },
-  {
-    title: 'Billing',
-    subtitle: 'Payment Details',
-    icon: 'tabler-file-text',
-  },
 ];
 
 const name = ref<string | null>(null);
@@ -92,12 +60,6 @@ const phone_ddi = ref<string | null>('55');
 const phone_ddd = ref<string | null>(null);
 const phone = ref<string | null>(null);
 const verificationCode = ref<string>('');
-const isLoading = ref(false);
-const snackbar = ref({
-  show: false,
-  message: '',
-  color: EColor.success,
-});
 
 const showDDDField = computed(() => phone_ddi.value === '55');
 
@@ -133,16 +95,34 @@ watch(isValidationStepValid, (isValid) => {
   }
 });
 
-const canGoToStep = (step: number) => {
-  return step <= maxStepReached.value;
+watch(verificationCode, (newValue) => {
+  if (newValue && newValue !== newValue.toUpperCase()) {
+    verificationCode.value = newValue.toUpperCase();
+  }
+
+  if (newValue && newValue.length === 6) {
+    handleVerifyCode();
+  }
+});
+
+const handleVerifyCode = async () => {
+  if (!verificationCode.value || verificationCode.value.length !== 6) {
+    return;
+  }
+
+  const success = await registerStore.verifyCode({
+    code: verificationCode.value,
+  });
+
+  if (success) {
+    maxStepReached.value = 1;
+  } else {
+    verificationCode.value = '';
+  }
 };
 
-const showSnackbar = (message: string, color: EColor = EColor.success) => {
-  snackbar.value = {
-    show: true,
-    message,
-    color,
-  };
+const canGoToStep = (step: number) => {
+  return step <= maxStepReached.value;
 };
 
 const handleRegister = async () => {
@@ -152,48 +132,17 @@ const handleRegister = async () => {
     return;
   }
 
-  isLoading.value = true;
+  const success = await registerStore.sendTwoFactor({
+    name: name.value?.trim() || '',
+    email: email.value?.trim() || '',
+    phone_ddi: phone_ddi.value || '',
+    phone_ddd: phone_ddd.value || undefined,
+    phone: phone.value?.replaceAll(/\D/g, '') || '',
+  });
 
-  try {
-    const url = import.meta.env.VITE_BACKEND_URL;
-    const currentLocale = useCookie('language').value || 'pt';
-
-    const response = await axios.post<
-      IApiResponse<{ success: boolean; message: string }>
-    >(
-      `${url}/v1/register/send-two-factor`,
-      {
-        name: name.value?.trim() || '',
-        email: email.value?.trim() || '',
-        phone_ddi: phone_ddi.value,
-        phone_ddd: phone_ddd.value,
-        phone: phone.value?.replaceAll(/\D/g, '') || '',
-      },
-      {
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept-Language': currentLocale,
-        },
-      }
-    );
-
-    const data = response?.data;
-
-    if (data?.status) {
-      showSnackbar(t('register_code_sent'), EColor.success);
-      maxStepReached.value = 1;
-      currentStep.value = 1;
-    } else {
-      showSnackbar(data?.message || t('register_error'), EColor.error);
-    }
-  } catch (error) {
-    let errorMessage = t('register_error');
-    if (error instanceof AxiosError) {
-      errorMessage = error?.response?.data?.message || errorMessage;
-    }
-    showSnackbar(errorMessage, EColor.error);
-  } finally {
-    isLoading.value = false;
+  if (success) {
+    maxStepReached.value = 1;
+    currentStep.value = 1;
   }
 };
 
@@ -253,32 +202,7 @@ const emailValidator = (v: string | null | undefined) => {
   return re.test(s) || t('email_invalid');
 };
 
-const form = ref({
-  username: '',
-  email: '',
-  password: '',
-  confirmPassword: '',
-  link: '',
-  firstName: '',
-  lastName: '',
-  mobile: '',
-  pincode: '',
-  address: '',
-  landmark: '',
-  city: '',
-  state: null,
-  selectedPlan: '0',
-  cardNumber: '',
-  cardName: '',
-  expiryDate: '',
-  cvv: '',
-});
-
 const refFormValidation = ref<VForm>();
-
-const onSubmit = () => {
-  alert('Submitted..!!');
-};
 </script>
 
 <template>
@@ -392,133 +316,26 @@ const onSubmit = () => {
               </p>
 
               <VRow>
-                <VCol cols="12">
-                  <VLabel class="text-body-2 mb-1"
-                    >{{ $t('verification_code') }}:</VLabel
-                  >
-                  <VOtpInput
-                    v-model="verificationCode"
-                    length="6"
-                    type="text"
-                    :rules="[
-                      requiredValidator(
-                        verificationCode,
-                        $t('verification_code_required')
-                      ),
-                    ]"
-                  />
-                </VCol>
-              </VRow>
-            </VWindowItem>
-
-            <VWindowItem>
-              <h5 class="text-h5 mb-1">Personal Information</h5>
-              <p class="text-sm">Enter Your Personal Information</p>
-
-              <VRow>
-                <VCol cols="12" md="6">
-                  <AppTextField v-model="form.firstName" label="First Name" />
-                </VCol>
-
-                <VCol cols="12" md="6">
-                  <AppTextField v-model="form.lastName" label="Last Name" />
-                </VCol>
-
-                <VCol cols="12" md="6">
-                  <AppTextField
-                    v-model="form.mobile"
-                    type="number"
-                    label="Mobile"
-                  />
-                </VCol>
-
-                <VCol cols="12" md="6">
-                  <AppTextField
-                    v-model="form.pincode"
-                    type="number"
-                    label="Pincode"
-                  />
-                </VCol>
-
-                <VCol cols="12">
-                  <AppTextField v-model="form.address" label="Address" />
-                </VCol>
-
-                <VCol cols="12">
-                  <AppTextField v-model="form.landmark" label="Landmark" />
-                </VCol>
-
-                <VCol cols="12" md="6">
-                  <AppTextField v-model="form.city" label="City" />
-                </VCol>
-
-                <VCol cols="12" md="6">
-                  <AppSelect
-                    v-model="form.state"
-                    label="State"
-                    :items="[
-                      'New York',
-                      'California',
-                      'Florida',
-                      'Washington',
-                      'Texas',
-                    ]"
-                  />
-                </VCol>
-              </VRow>
-            </VWindowItem>
-
-            <VWindowItem>
-              <h5 class="text-h5">Select Plan</h5>
-              <p class="text-sm">Select plan as per your requirement</p>
-
-              <CustomRadiosWithIcon
-                v-model:selected-radio="form.selectedPlan"
-                :radio-content="radioContent"
-                :grid-column="{ sm: '4', cols: '12' }"
-              >
-                <template #default="{ item }">
-                  <div class="text-center">
-                    <h5 class="text-h5">
-                      {{ item.title }}
-                    </h5>
-                    <p class="clamp-text">
-                      {{ item.desc }}
-                    </p>
-
-                    <div class="d-flex align-center justify-center">
-                      <span class="text-primary mb-2">$</span>
-                      <span class="text-h4 text-primary">
-                        {{ item.value }}
-                      </span>
-                      <span class="mt-2">/month</span>
-                    </div>
+                <VCol cols="12" class="d-flex flex-column align-center">
+                  <VLabel class="text-body-2 mb-4 text-center">{{
+                    $t('verification_code')
+                  }}</VLabel>
+                  <div class="otp-input-wrapper">
+                    <VOtpInput
+                      v-model="verificationCode"
+                      length="6"
+                      type="text"
+                      variant="outlined"
+                      density="comfortable"
+                      class="otp-input-custom"
+                      :rules="[
+                        requiredValidator(
+                          verificationCode,
+                          $t('verification_code_required')
+                        ),
+                      ]"
+                    />
                   </div>
-                </template>
-              </CustomRadiosWithIcon>
-
-              <h5 class="text-h5 mt-10">Payment Information</h5>
-              <p class="text-sm">Enter your card information</p>
-
-              <VRow>
-                <VCol cols="12">
-                  <AppTextField
-                    v-model="form.cardNumber"
-                    type="number"
-                    label="Card Number"
-                  />
-                </VCol>
-
-                <VCol cols="12" md="6">
-                  <AppTextField v-model="form.cardName" label="Name on Card" />
-                </VCol>
-
-                <VCol cols="6" md="3">
-                  <AppTextField v-model="form.expiryDate" label="Expiry" />
-                </VCol>
-
-                <VCol cols="6" md="3">
-                  <AppTextField v-model="form.cvv" type="number" label="CVV" />
                 </VCol>
               </VRow>
             </VWindowItem>
@@ -537,20 +354,11 @@ const onSubmit = () => {
           </VBtn>
 
           <VBtn
-            v-if="items.length - 1 === currentStep"
-            color="success"
-            append-icon="tabler-check"
-            @click="onSubmit"
-          >
-            submit
-          </VBtn>
-
-          <VBtn
-            v-else
             :disabled="
-              (currentStep === 0 && !isValidationStepValid) || isLoading
+              (currentStep === 0 && !isValidationStepValid) ||
+              registerStore.isLoading
             "
-            :loading="isLoading && currentStep === 0"
+            :loading="registerStore.isLoading && currentStep === 0"
             @click="handleNext"
           >
             Next
@@ -561,12 +369,13 @@ const onSubmit = () => {
       </VCard>
 
       <VSnackbar
-        v-model="snackbar.show"
-        :color="snackbar.color"
+        v-model="registerStore.snackbar.status"
+        :color="registerStore.snackbar.color"
         :timeout="5000"
         location="top"
+        @update:model-value="registerStore.hideSnackbar"
       >
-        {{ snackbar.message }}
+        {{ registerStore.snackbar.message }}
       </VSnackbar>
     </VCol>
   </VRow>
@@ -582,6 +391,41 @@ const onSubmit = () => {
 
 .bg-image {
   inset-block-end: 0;
+}
+
+.otp-input-wrapper {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  margin-bottom: 1rem;
+}
+
+.otp-input-custom {
+  .v-otp-input {
+    gap: 0.75rem;
+  }
+
+  .v-field {
+    border-radius: 8px;
+    font-size: 1.25rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    min-width: 56px;
+    height: 64px;
+
+    .v-field__input {
+      text-align: center;
+      text-transform: uppercase;
+    }
+
+    &.v-field--focused {
+      .v-field__outline {
+        border-width: 2px;
+        border-color: rgb(var(--v-theme-primary)) !important;
+      }
+    }
+  }
 }
 </style>
 

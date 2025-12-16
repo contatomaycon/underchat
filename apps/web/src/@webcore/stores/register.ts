@@ -1,0 +1,152 @@
+import { defineStore } from 'pinia';
+import axios, { AxiosError } from 'axios';
+import { IApiResponse } from '@core/common/interfaces/IApiResponse';
+import { getI18n } from '@/plugins/i18n';
+import { EColor } from '@core/common/enums/EColor';
+import { ISnackbar } from '@core/common/interfaces/ISnackbar';
+import { AuthRegisterSendTwoFactorRequest } from '@core/schema/register/sendTwoFactor/request.schema';
+import { AuthRegisterVerifyCodeRequest } from '@core/schema/register/verifyCode/request.schema';
+import { AuthRegisterVerifyCodeResponse } from '@core/schema/register/verifyCode/response.schema';
+import { useCookie } from '@/@webcore/composable/useCookie';
+
+export const useRegisterStore = defineStore('register', {
+  state: () => ({
+    snackbar: {
+      color: EColor.success,
+      message: '',
+      status: false,
+    } as ISnackbar,
+    i18n: getI18n(),
+    isLoading: false,
+    registerToken: null as string | null,
+  }),
+  actions: {
+    showSnackbar(message: string, color: EColor) {
+      this.snackbar.message = message;
+      this.snackbar.color = color;
+      this.snackbar.status = true;
+    },
+    hideSnackbar() {
+      this.snackbar.status = false;
+    },
+    async sendTwoFactor(
+      data: AuthRegisterSendTwoFactorRequest
+    ): Promise<boolean> {
+      const url = import.meta.env.VITE_BACKEND_URL;
+
+      if (!url) {
+        this.showSnackbar(
+          this.i18n.global.t('backend_url_not_configured') ||
+            'Backend URL não configurada. Verifique o arquivo .env',
+          EColor.error
+        );
+        return false;
+      }
+
+      this.isLoading = true;
+
+      try {
+        const currentLocale = this.i18n.global.locale;
+
+        const response = await axios.post<
+          IApiResponse<{ success: boolean; message: string }>
+        >(`${url}/v1/register/send-two-factor`, data, {
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept-Language': currentLocale,
+          },
+        });
+
+        const responseData = response?.data;
+
+        if (!responseData?.status) {
+          this.showSnackbar(
+            responseData?.message || this.i18n.global.t('register_error'),
+            EColor.error
+          );
+          return false;
+        }
+
+        this.showSnackbar(
+          this.i18n.global.t('register_code_sent'),
+          EColor.success
+        );
+        return true;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('register_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message || errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+        return false;
+      } finally {
+        this.isLoading = false;
+      }
+    },
+    async verifyCode(data: AuthRegisterVerifyCodeRequest): Promise<boolean> {
+      const url = import.meta.env.VITE_BACKEND_URL;
+
+      if (!url) {
+        this.showSnackbar(
+          this.i18n.global.t('backend_url_not_configured') ||
+            'Backend URL não configurada. Verifique o arquivo .env',
+          EColor.error
+        );
+        return false;
+      }
+
+      this.isLoading = true;
+
+      try {
+        const currentLocale = this.i18n.global.locale;
+
+        const response = await axios.post<
+          IApiResponse<AuthRegisterVerifyCodeResponse>
+        >(
+          `${url}/v1/register/verify-code`,
+          {
+            code: data.code.toUpperCase(),
+          },
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept-Language': currentLocale,
+            },
+          }
+        );
+
+        const responseData = response?.data;
+
+        if (!responseData?.status || !responseData?.data?.token) {
+          this.showSnackbar(
+            responseData?.message ||
+              this.i18n.global.t('register_code_invalid'),
+            EColor.error
+          );
+          return false;
+        }
+
+        const tokenCookie = useCookie<string>('register_token');
+        tokenCookie.value = responseData.data.token;
+        this.registerToken = responseData.data.token;
+
+        this.showSnackbar(
+          this.i18n.global.t('register_code_verified'),
+          EColor.success
+        );
+        return true;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('register_code_invalid');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message || errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+        return false;
+      } finally {
+        this.isLoading = false;
+      }
+    },
+  },
+});
