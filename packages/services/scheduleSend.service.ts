@@ -4,7 +4,7 @@ import { ScheduleContactsValidatedListerRepository } from '@core/repositories/sc
 import { ScheduleStatusUpdaterRepository } from '@core/repositories/schedule/ScheduleStatusUpdater.repository';
 import { ContactService } from './contact.service';
 import { normalizePhoneToJid } from '@core/common/functions/normalizePhoneToJid';
-import { KafkaBaileysQueueService } from './kafkaBaileysQueue.service';
+import { KafkaServiceQueueService } from './kafkaServiceQueue.service';
 import { StreamProducerService } from './streamProducer.service';
 import { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import { EMessageType } from '@core/common/enums/EMessageType';
@@ -20,6 +20,7 @@ import { withLock } from '@core/common/functions/withLock';
 import { ISchedulePendingData } from '@core/interfaces/repositories/schedule/ISchedulePendingData';
 import { IScheduleMessageResult } from '@core/common/interfaces/IScheduleMessageResult';
 import { IScheduleContactValidated } from '@core/common/interfaces/IScheduleContactValidated';
+import { IScheduleMessage } from '@core/common/interfaces/IScheduleMessage';
 import moment from 'moment-timezone';
 import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
 import { generateProtocol } from '@core/common/functions/generateProtocol';
@@ -37,7 +38,7 @@ export class ScheduleSendService {
     private readonly scheduleContactsValidatedListerRepository: ScheduleContactsValidatedListerRepository,
     private readonly scheduleStatusUpdaterRepository: ScheduleStatusUpdaterRepository,
     private readonly contactService: ContactService,
-    private readonly kafkaBaileysQueueService: KafkaBaileysQueueService,
+    private readonly kafkaServiceQueueService: KafkaServiceQueueService,
     private readonly streamProducerService: StreamProducerService,
     private readonly elasticDatabaseService: ElasticDatabaseService,
     @inject('Redis') private readonly redis: Redis
@@ -283,6 +284,7 @@ export class ScheduleSendService {
   ): IChatMessage {
     const phone = this.contactService.getContactPhoneDecrypted(contact.phone);
     const now = new Date().toISOString();
+    const delay = this.getRandomDelay();
 
     return {
       message_id: uuidv7(),
@@ -313,6 +315,7 @@ export class ScheduleSendService {
       has_quoted: false,
       date: now,
       hash: null,
+      send_delay_ms: delay,
     };
   }
 
@@ -375,7 +378,7 @@ export class ScheduleSendService {
     schedule: ISchedulePendingData,
     contact: IScheduleContactValidated,
     message: IChatMessage,
-    status: string
+    status: EScheduleStatus | string
   ): Promise<boolean> {
     await this.elasticDatabaseService.indices(
       EElasticIndex.schedule,
@@ -423,17 +426,18 @@ export class ScheduleSendService {
   }
 
   private async sendMessageToKafka(
-    message: IChatMessage,
-    workerId: string
+    schedule: ISchedulePendingData,
+    contact: IScheduleContactValidated,
+    message: IChatMessage
   ): Promise<void> {
-    const delay = this.getRandomDelay();
-    const messageWithDelay = {
-      ...message,
-      send_delay_ms: delay,
+    const scheduleMessage: IScheduleMessage = {
+      schedule_id: schedule.schedule_id,
+      contact_id: contact.contact_id,
+      message,
     };
 
-    const topic = this.kafkaBaileysQueueService.workerSendMessage(workerId);
-    await this.streamProducerService.send(topic, messageWithDelay);
+    const topic = this.kafkaServiceQueueService.scheduleMessage();
+    await this.streamProducerService.send(topic, scheduleMessage);
   }
 
   private async validateContactPhone(
@@ -484,7 +488,7 @@ export class ScheduleSendService {
         schedule,
         contact,
         failedMessage,
-        'failed'
+        EScheduleStatus.failed
       );
 
       if (!saved) {
@@ -502,23 +506,27 @@ export class ScheduleSendService {
     const message = await this.createChatMessage(schedule, contact, jid);
 
     try {
-      await this.sendMessageToKafka(message, schedule.worker_id);
-
       const saved = await this.saveToElasticsearch(
         schedule,
         contact,
         message,
-        'sent'
+        EScheduleStatus.processing
       );
 
       if (!saved) {
         console.error(
           `Failed to save message to Elasticsearch for schedule ${schedule.schedule_id}, contact ${contact.contact_id}`
         );
+        return {
+          success: false,
+          contactId: contact.contact_id,
+        };
       }
 
+      await this.sendMessageToKafka(schedule, contact, message);
+
       return {
-        success: saved,
+        success: true,
         contactId: contact.contact_id,
       };
     } catch (error) {
@@ -527,7 +535,12 @@ export class ScheduleSendService {
         error
       );
 
-      await this.saveToElasticsearch(schedule, contact, message, 'failed');
+      await this.saveToElasticsearch(
+        schedule,
+        contact,
+        message,
+        EScheduleStatus.failed
+      );
 
       return {
         success: false,
