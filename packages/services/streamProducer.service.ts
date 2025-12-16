@@ -51,7 +51,8 @@ export class StreamProducerService {
           error?.message?.includes('disconnected') ||
           error?.code === 'ECONNREFUSED' ||
           error?.message?.includes('The producer is disconnected') ||
-          error?.type === 'NOT_CONNECTED';
+          error?.type === 'NOT_CONNECTED' ||
+          error?.message?.includes('write after end');
 
         if (isDisconnectedError && attempt < maxRetries - 1) {
           await this.reconnectProducer();

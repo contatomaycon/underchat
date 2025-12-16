@@ -6,18 +6,24 @@ import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.service';
 import { notificationMappings } from '@core/mappings/notification.mappings';
-import { WorkerActiveByAccountViewerRepository } from '@core/repositories/worker/WorkerActiveByAccountViewer.repository';
 import { UserService } from './user.service';
 import { UserInfoViewerRepository } from '@core/repositories/user/UserInfoViewer.repository';
 import { WorkerNameViewerRepository } from '@core/repositories/worker/WorkerNameViewer.repository';
 import { INotificationMessage } from '@core/common/interfaces/INotificationMessage';
 import { PlanCurrentInvoiceViewerRepository } from '@core/repositories/plan/PlanCurrentInvoiceViewer.repository';
-import { ENotificationType } from '@core/common/enums/ENotificationType';
-import { webcrypto } from 'node:crypto';
+import {
+  ENotificationType,
+  ENotificationTypeId,
+} from '@core/common/enums/ENotificationType';
+import { webcrypto, randomUUID } from 'node:crypto';
 import { EmailService } from './email.service';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import Redis from 'ioredis';
 import { withLock } from '@core/common/functions/withLock';
+import { TwoFactorCreatorRepository } from '@core/repositories/auth/TwoFactorCreator.repository';
+import { PasswordEncryptorService } from './passwordEncryptor.service';
+import { EncryptService } from './encrypt.service';
+import { ETypeSanetize } from '@core/common/enums/ETypeSanetize';
 
 @injectable()
 export class NotificationMessageService {
@@ -27,13 +33,15 @@ export class NotificationMessageService {
     private readonly elasticDatabaseService: ElasticDatabaseService,
     private readonly streamProducerService: StreamProducerService,
     private readonly kafkaBaileysQueueService: KafkaBaileysQueueService,
-    private readonly workerActiveByAccountViewerRepository: WorkerActiveByAccountViewerRepository,
     private readonly userService: UserService,
     private readonly userInfoViewerRepository: UserInfoViewerRepository,
     private readonly workerNameViewerRepository: WorkerNameViewerRepository,
     private readonly planCurrentInvoiceViewerRepository: PlanCurrentInvoiceViewerRepository,
     private readonly emailService: EmailService,
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
+    private readonly twoFactorCreatorRepository: TwoFactorCreatorRepository,
+    private readonly passwordEncryptorService: PasswordEncryptorService,
+    private readonly encryptService: EncryptService,
     @inject('Redis') private readonly redis: Redis
   ) {}
 
@@ -185,13 +193,11 @@ export class NotificationMessageService {
     let workerName: string | null = null;
 
     if (notification.message_whatsapp) {
-      workerId =
-        notification.worker_id ||
-        (await this.getFirstActiveWorkerId(accountId));
-
-      if (!workerId) {
-        throw new Error('No active worker found for account');
+      if (!notification.worker_id) {
+        throw new Error('Worker ID not found in notification');
       }
+
+      workerId = notification.worker_id;
 
       workerName =
         await this.workerNameViewerRepository.findWorkerNameById(workerId);
@@ -257,24 +263,9 @@ export class NotificationMessageService {
     return true;
   }
 
-  private async getFirstActiveWorkerId(
-    accountId: string
-  ): Promise<string | null> {
-    const workers =
-      await this.workerActiveByAccountViewerRepository.viewWorkerActiveByAccount(
-        accountId
-      );
-
-    if (!workers || workers.length === 0) {
-      return null;
-    }
-
-    return workers[0].worker_id;
-  }
-
   private generateCode(): string {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    const randomArray = new Uint32Array(8);
+    const randomArray = new Uint32Array(6);
     webcrypto.getRandomValues(randomArray);
     return Array.from(randomArray, (value) => chars[value % chars.length]).join(
       ''
@@ -398,5 +389,110 @@ export class NotificationMessageService {
     ).catch((error) => {
       console.error('Erro ao enviar notificação de plano liberado:', error);
     });
+  }
+
+  async sendTwoFactorCodeByWhatsApp(
+    phone: string,
+    phoneDdi: string,
+    name: string | null = null,
+    email?: string | null
+  ): Promise<string> {
+    const notification =
+      await this.notificationMessageViewerRepository.findNotificationByTypeId(
+        ENotificationTypeId.two_factor
+      );
+
+    if (!notification) {
+      throw new Error('Two factor notification not found');
+    }
+
+    if (!notification.message_whatsapp) {
+      throw new Error('WhatsApp message template not found for two factor');
+    }
+
+    if (!notification.worker_id) {
+      throw new Error('Worker ID not found in notification');
+    }
+
+    const code = this.generateCode();
+    const token = randomUUID();
+    const notificationTypeName = notification.nnt?.name || '';
+
+    const whatsappMessage = notification.message_whatsapp
+      .replaceAll('{{code}}', code)
+      .replaceAll('{{name}}', name || '');
+
+    const phoneEncrypted = this.passwordEncryptorService.encrypt(phone);
+    const phoneC = this.encryptService.encrypt(phone);
+    const phonePartial =
+      this.encryptService.sanitize(phone, ETypeSanetize.phone)?.slice(0, 15) ||
+      null;
+
+    let emailEncrypted: string | null = null;
+    let emailC: string | null = null;
+    let emailPartial: string | null = null;
+
+    if (email) {
+      emailEncrypted = this.passwordEncryptorService.encrypt(email);
+      emailC = this.encryptService.encrypt(email);
+      emailPartial =
+        this.encryptService
+          .sanitize(email, ETypeSanetize.email)
+          ?.slice(0, 50) || null;
+    }
+
+    await this.twoFactorCreatorRepository.createTwoFactor({
+      userId: null,
+      phoneDdi: phoneDdi || null,
+      phone: phoneEncrypted,
+      phonePartial,
+      phoneC,
+      email: emailEncrypted,
+      emailPartial,
+      emailC,
+      code,
+      token,
+    });
+
+    const workerName = await this.workerNameViewerRepository.findWorkerNameById(
+      notification.worker_id
+    );
+
+    if (!workerName) {
+      throw new Error('Worker not found');
+    }
+
+    const notificationMessage: INotificationMessage = {
+      id: notification.notification_id,
+      notification_id: notification.notification_id,
+      message_key: {
+        phone_ddi: phoneDdi,
+        phone_number: phone.replaceAll(/\D/g, ''),
+      },
+      worker: {
+        id: notification.worker_id,
+        name: workerName,
+      },
+      notification_type: {
+        id: notification.notification_type_id,
+        name: notificationTypeName,
+      },
+      message_whatsapp: whatsappMessage,
+      message_email: null,
+      email_subject: null,
+      name: name || null,
+      phone: phone || null,
+      email: email || null,
+      date: new Date().toISOString(),
+    };
+
+    await this.sendWhatsAppNotification(
+      notification,
+      phone,
+      notification.worker_id,
+      notificationMessage
+    );
+
+    return code;
   }
 }

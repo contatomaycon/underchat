@@ -743,5 +743,11 @@
   "send_date_must_be_future": "A data de envio deve ser maior que a data atual!",
   "worker_id_required": "O canal é obrigatório!",
   "schedule_messages_list_successfully": "Mensagens do agendamento listadas com sucesso!",
-  "schedule_messages_list_not_found": "Nenhuma mensagem encontrada para este agendamento."
+  "schedule_messages_list_not_found": "Nenhuma mensagem encontrada para este agendamento.",
+  "register_code_sent": "Código de verificação enviado com sucesso!",
+  "register_error": "Erro ao processar registro!",
+  "register_phone_already_used_in_test": "Este telefone já foi utilizado em um teste anterior!",
+  "register_email_already_used_in_test": "Este email já foi utilizado em um teste anterior!",
+  "register_email_already_used": "Este email já está cadastrado!",
+  "register_phone_already_used": "Este telefone já está cadastrado!"
 }

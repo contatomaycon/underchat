@@ -5,6 +5,9 @@ import { useCountryCodes } from '@/composables/useCountryCodes';
 import { useBrazilianDDDs } from '@/composables/useBrazilianDDDs';
 import { requiredValidator } from '@/@webcore/utils/validators';
 import { VForm } from 'vuetify/components/VForm';
+import axios, { AxiosError } from 'axios';
+import { IApiResponse } from '@core/common/interfaces/IApiResponse';
+import { EColor } from '@core/common/enums/EColor';
 
 import registerMultistepIllustrationDark from '@images/illustrations/register-multi-step-illustration-dark.png';
 import registerMultistepIllustrationLight from '@images/illustrations/register-multi-step-illustration-light.png';
@@ -22,8 +25,6 @@ const { items: countryCodes } = useCountryCodes();
 const { items: brazilianDDDs } = useBrazilianDDDs();
 
 const currentStepInternal = ref(0);
-const isPasswordVisible = ref(false);
-const isConfirmPasswordVisible = ref(false);
 
 const currentStep = computed({
   get: () => currentStepInternal.value,
@@ -69,6 +70,11 @@ const items = [
     icon: 'tabler-device-mobile',
   },
   {
+    title: t('verification_code'),
+    subtitle: t('verification_code_subtitle'),
+    icon: 'tabler-key',
+  },
+  {
     title: 'Personal',
     subtitle: 'Enter Information',
     icon: 'tabler-users',
@@ -80,17 +86,37 @@ const items = [
   },
 ];
 
+const name = ref<string | null>(null);
+const email = ref<string | null>(null);
 const phone_ddi = ref<string | null>('55');
 const phone_ddd = ref<string | null>(null);
 const phone = ref<string | null>(null);
+const verificationCode = ref<string | null>(null);
+const isLoading = ref(false);
+const snackbar = ref({
+  show: false,
+  message: '',
+  color: EColor.success,
+});
 
 const showDDDField = computed(() => phone_ddi.value === '55');
 
+const hasTriedToValidate = ref(false);
+
 const isValidationStepValid = computed(() => {
+  if (!name.value || name.value.trim().length === 0) return false;
+  if (!email.value || email.value.trim().length === 0) return false;
   if (!phone_ddi.value) return false;
   if (!phone.value || phone.value.trim().length === 0) return false;
   if (showDDDField.value && !phone_ddd.value) return false;
+  const emailValidationResult = emailValidator(email.value);
+  if (emailValidationResult !== true) return false;
   return true;
+});
+
+const shouldShowValidationError = computed(() => {
+  if (!hasTriedToValidate.value) return undefined;
+  return isValidationStepValid.value;
 });
 
 const maxStepReached = ref(0);
@@ -111,12 +137,69 @@ const canGoToStep = (step: number) => {
   return step <= maxStepReached.value;
 };
 
-const handleNext = () => {
-  if (currentStep.value === 0) {
-    if (isValidationStepValid.value) {
+const showSnackbar = (message: string, color: EColor = EColor.success) => {
+  snackbar.value = {
+    show: true,
+    message,
+    color,
+  };
+};
+
+const handleRegister = async () => {
+  hasTriedToValidate.value = true;
+
+  if (!isValidationStepValid.value) {
+    return;
+  }
+
+  isLoading.value = true;
+
+  try {
+    const url = import.meta.env.VITE_BACKEND_URL;
+    const currentLocale = useCookie('language').value || 'pt';
+
+    const response = await axios.post<
+      IApiResponse<{ success: boolean; message: string }>
+    >(
+      `${url}/v1/register/send-two-factor`,
+      {
+        name: name.value?.trim() || '',
+        email: email.value?.trim() || '',
+        phone_ddi: phone_ddi.value,
+        phone_ddd: phone_ddd.value,
+        phone: phone.value?.replaceAll(/\D/g, '') || '',
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept-Language': currentLocale,
+        },
+      }
+    );
+
+    const data = response?.data;
+
+    if (data?.status) {
+      showSnackbar(t('register_code_sent'), EColor.success);
       maxStepReached.value = 1;
       currentStep.value = 1;
+    } else {
+      showSnackbar(data?.message || t('register_error'), EColor.error);
     }
+  } catch (error) {
+    let errorMessage = t('register_error');
+    if (error instanceof AxiosError) {
+      errorMessage = error?.response?.data?.message || errorMessage;
+    }
+    showSnackbar(errorMessage, EColor.error);
+  } finally {
+    isLoading.value = false;
+  }
+};
+
+const handleNext = () => {
+  if (currentStep.value === 0) {
+    handleRegister();
     return;
   }
   if (currentStep.value < items.length - 1) {
@@ -162,6 +245,13 @@ const phoneFormatted = computed({
     phone.value = value.replaceAll(/\D/g, '');
   },
 });
+
+const emailValidator = (v: string | null | undefined) => {
+  const s = (v ?? '').trim();
+  if (!s) return true;
+  const re = /^[^\s@]+@(?:[^\s@.]+\.)+[^\s@.]{2,}$/;
+  return re.test(s) || t('email_invalid');
+};
 
 const form = ref({
   username: '',
@@ -217,7 +307,7 @@ const onSubmit = () => {
           :direction="$vuetify.display.smAndUp ? 'horizontal' : 'vertical'"
           icon-size="24"
           :is-active-step-valid="
-            currentStep === 0 ? isValidationStepValid : undefined
+            currentStep === 0 ? shouldShowValidationError : undefined
           "
           class="stepper-icon-step-bg mb-8"
         />
@@ -233,6 +323,29 @@ const onSubmit = () => {
               <p class="text-sm mb-6">{{ $t('validation_description') }}</p>
 
               <VRow>
+                <VCol cols="12" md="6">
+                  <VLabel class="text-body-2 mb-1">{{ $t('name') }}:</VLabel>
+                  <AppTextField
+                    v-model="name"
+                    type="text"
+                    :placeholder="$t('name')"
+                    :rules="[requiredValidator(name, $t('name_required'))]"
+                  />
+                </VCol>
+
+                <VCol cols="12" md="6">
+                  <VLabel class="text-body-2 mb-1">{{ $t('email') }}:</VLabel>
+                  <AppTextField
+                    v-model="email"
+                    type="email"
+                    :placeholder="$t('email')"
+                    :rules="[
+                      requiredValidator(email, $t('email_required')),
+                      emailValidator,
+                    ]"
+                  />
+                </VCol>
+
                 <VCol cols="12" md="6">
                   <VLabel class="text-body-2 mb-1"
                     >{{ $t('phone_ddi') }}:</VLabel
@@ -267,6 +380,33 @@ const onSubmit = () => {
                     :placeholder="$t('phone')"
                     :maxlength="showDDDField ? 10 : 15"
                     :rules="[requiredValidator(phone, $t('phone_required'))]"
+                  />
+                </VCol>
+              </VRow>
+            </VWindowItem>
+
+            <VWindowItem>
+              <h5 class="text-h5 mb-1">{{ $t('verification_code') }}</h5>
+              <p class="text-sm mb-6">
+                {{ $t('verification_code_description') }}
+              </p>
+
+              <VRow>
+                <VCol cols="12">
+                  <VLabel class="text-body-2 mb-1"
+                    >{{ $t('verification_code') }}:</VLabel
+                  >
+                  <AppTextField
+                    v-model="verificationCode"
+                    type="text"
+                    :placeholder="$t('verification_code')"
+                    maxlength="6"
+                    :rules="[
+                      requiredValidator(
+                        verificationCode,
+                        $t('verification_code_required')
+                      ),
+                    ]"
                   />
                 </VCol>
               </VRow>
@@ -408,7 +548,10 @@ const onSubmit = () => {
 
           <VBtn
             v-else
-            :disabled="currentStep === 0 && !isValidationStepValid"
+            :disabled="
+              (currentStep === 0 && !isValidationStepValid) || isLoading
+            "
+            :loading="isLoading && currentStep === 0"
             @click="handleNext"
           >
             Next
@@ -417,6 +560,15 @@ const onSubmit = () => {
           </VBtn>
         </div>
       </VCard>
+
+      <VSnackbar
+        v-model="snackbar.show"
+        :color="snackbar.color"
+        :timeout="5000"
+        location="top"
+      >
+        {{ snackbar.message }}
+      </VSnackbar>
     </VCol>
   </VRow>
 </template>

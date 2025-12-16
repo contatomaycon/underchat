@@ -1,11 +1,11 @@
 -- Insert seed "notifications" table
 INSERT INTO "notifications" ("notification_id", "worker_id", "notification_type_id", "message_whatsapp", "message_email", "email_subject", "created_at", "updated_at") VALUES 
-  ('019af452-fbee-73bd-b907-8a0868804faa', NULL, '019a930d-c6f4-75ad-88ff-9a1b2c3d4e8e', 'Olá *{{name}}*, segue seu código de autenticação: *{{code}}*.', '<!DOCTYPE html>
+  ('019af452-fbee-73bd-b907-8a0868804faa', NULL, '019a930d-c6f4-75ad-88ff-9a1b2c3d4e8e', 'Olá *{{name}}*, segue seu código de verificação de dois fatores: *{{code}}*.', '<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Código de Autenticação - Underchat</title>
+    <title>Código de verificação de dois fatores - Underchat</title>
 </head>
 <body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, ''Segoe UI'', Roboto, ''Helvetica Neue'', Arial, sans-serif; background-color: #f5f5f5;">
     <table role="presentation" style="width: 100%; border-collapse: collapse; background-color: #f5f5f5;">
@@ -22,9 +22,9 @@ INSERT INTO "notifications" ("notification_id", "worker_id", "notification_type_
                     <tr>
                         <td style="padding: 40px;">
                             <h2 style="margin: 0 0 20px; color: #333333; font-size: 24px; font-weight: 600;">Olá, {{name}}!</h2>
-                            <p style="margin: 0 0 30px; color: #666666; font-size: 16px; line-height: 1.6;">Segue seu código de autenticação de dois fatores:</p>
+                            <p style="margin: 0 0 30px; color: #666666; font-size: 16px; line-height: 1.6;">Segue seu código de verificação de dois fatores:</p>
                             <div style="background-color: #f8f9fa; border: 2px dashed #667eea; border-radius: 8px; padding: 30px; text-align: center; margin: 30px 0;">
-                                <p style="margin: 0 0 10px; color: #666666; font-size: 14px; font-weight: 500; text-transform: uppercase; letter-spacing: 1px;">Código de Autenticação</p>
+                                <p style="margin: 0 0 10px; color: #666666; font-size: 14px; font-weight: 500; text-transform: uppercase; letter-spacing: 1px;">Código de verificação</p>
                                 <p style="margin: 0; color: #667eea; font-size: 36px; font-weight: 700; letter-spacing: 8px; font-family: ''Courier New'', monospace;">{{code}}</p>
                             </div>
                             <p style="margin: 30px 0 0; color: #999999; font-size: 14px; line-height: 1.6;">Este código é válido por alguns minutos. Não compartilhe este código com ninguém.</p>

@@ -1,5 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import authRoutes from '@/routes/auth.route';
+import regRoutes from '@/routes/register.route';
 import serverRoutes from '@/routes/server.route';
 import healthRoutes from '@/routes/health.route';
 import centrifugoRoutes from '@/routes/centrifugo.route';
@@ -63,4 +64,5 @@ export default function registerRoutes(server: FastifyInstance) {
   server.register(reportSalesRoutes);
   server.register(reportClientsRoutes);
   server.register(reportUsersRoutes);
+  server.register(regRoutes);
 }

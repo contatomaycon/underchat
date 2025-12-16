@@ -18,3 +18,4 @@ export * from './notifications';
 export * from './nfse';
 export * from './reportConversationHistory';
 export * from './schedule';
+export * from './twoFactor';

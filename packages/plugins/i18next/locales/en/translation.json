@@ -743,5 +743,11 @@
   "send_date_must_be_future": "Send date must be greater than current date!",
   "worker_id_required": "Channel is required!",
   "schedule_messages_list_successfully": "Schedule messages listed successfully!",
-  "schedule_messages_list_not_found": "No messages found for this schedule."
+  "schedule_messages_list_not_found": "No messages found for this schedule.",
+  "register_code_sent": "Verification code sent successfully!",
+  "register_error": "Error processing registration!",
+  "register_phone_already_used_in_test": "This phone number has already been used in a previous test!",
+  "register_email_already_used_in_test": "This email has already been used in a previous test!",
+  "register_email_already_used": "This email is already registered!",
+  "register_phone_already_used": "This phone number is already registered!"
 }
