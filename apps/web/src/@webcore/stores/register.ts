@@ -19,6 +19,7 @@ import { ListRegisterAvailableCrossSellFinalResponse } from '@core/schema/regist
 import { ListCreditCardFeeResponse } from '@core/schema/config/listCreditCardFee/response.schema';
 import { CreateRegisterOrderPaymentRequest } from '@core/schema/register/createOrderPayment/request.schema';
 import { CreateRegisterOrderPaymentResponse } from '@core/schema/register/createOrderPayment/response.schema';
+import { RegisterCentrifugoTokenResponse } from '@core/schema/register/centrifugoToken/response.schema';
 
 export const useRegisterStore = defineStore('register', {
   state: () => ({
@@ -454,6 +455,65 @@ export const useRegisterStore = defineStore('register', {
 
         this.showSnackbar(errorMessage, EColor.error);
         this.isLoading = false;
+        return null;
+      }
+    },
+    async generateCentrifugoToken(
+      accountId: string
+    ): Promise<RegisterCentrifugoTokenResponse | null> {
+      const url = import.meta.env.VITE_BACKEND_URL;
+      if (!url) {
+        this.showSnackbar(
+          this.i18n.global.t('backend_url_not_configured'),
+          EColor.error
+        );
+        return null;
+      }
+
+      const tokenCookie = useCookie<string>('register_token');
+      if (!tokenCookie.value) {
+        this.showSnackbar(
+          this.i18n.global.t('register_token_invalid'),
+          EColor.error
+        );
+        return null;
+      }
+
+      try {
+        const currentLocale = this.i18n.global.locale;
+        const response = await axios.post<
+          IApiResponse<RegisterCentrifugoTokenResponse>
+        >(
+          `${url}/v1/register/centrifugo/auth/token`,
+          { account_id: accountId },
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept-Language': currentLocale,
+              Authorization: `Bearer ${tokenCookie.value}`,
+            },
+          }
+        );
+
+        const responseData = response?.data;
+        if (!responseData?.status || !responseData?.data) {
+          const message =
+            responseData?.message ||
+            this.i18n.global.t('centrifugo_token_generation_failed');
+          this.showSnackbar(message, EColor.error);
+          return null;
+        }
+
+        return responseData.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t(
+          'centrifugo_token_generation_failed'
+        );
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message || errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
         return null;
       }
     },

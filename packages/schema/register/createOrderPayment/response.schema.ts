@@ -26,6 +26,10 @@ export const registerBoletoPaymentDataSchema = Type.Object({
 
 export const createRegisterOrderPaymentResponseSchema = Type.Object({
   order_id: Type.String({ format: 'uuid' }),
+  account_id: Type.String({
+    format: 'uuid',
+    description: 'ID da conta criada',
+  }),
   total_amount: Type.Number(),
   plan_price: Type.Number(),
   addons_total: Type.Number(),

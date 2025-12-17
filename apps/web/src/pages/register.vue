@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { watch, onBeforeUnmount } from 'vue';
 import { useGenerateImageVariant } from '@/@webcore/composable/useGenerateImageVariant';
 import { useCountryCodes } from '@/composables/useCountryCodes';
 import { useBrazilianDDDs } from '@/composables/useBrazilianDDDs';
@@ -11,6 +12,9 @@ import { useRegisterStore } from '@/@webcore/stores/register';
 import { useAuthStore } from '@/@webcore/stores/auth';
 import { useRouter } from 'vue-router';
 import DialogCloseBtn from '@/@webcore/components/DialogCloseBtn.vue';
+import { paymentAccountCentrifugo } from '@core/common/functions/centrifugoQueue';
+import { Centrifuge, Subscription, SubscriptionState, State } from 'centrifuge';
+import type { PublicationContext } from 'centrifuge';
 import { EUserDocumentType } from '@core/common/enums/EUserDocumentType';
 import { ECountry } from '@core/common/enums/ECountry';
 import { ViewRegisterZipcodeRequest } from '@core/schema/register/viewZipcode/request.schema';
@@ -34,6 +38,13 @@ import registerMultistepIllustrationDark from '@images/illustrations/register-mu
 import registerMultistepIllustrationLight from '@images/illustrations/register-multi-step-illustration-light.png';
 import registerMultistepBgDark from '@images/pages/register-multi-step-bg-dark.png';
 import registerMultistepBgLight from '@images/pages/register-multi-step-bg-light.png';
+
+interface IPaymentCentrifugoData {
+  payment_id: string;
+  status: string;
+  payment_date: string | null;
+  is_confirmed: boolean;
+}
 
 const registerMultistepBg = useGenerateImageVariant(
   registerMultistepBgLight,
@@ -142,6 +153,7 @@ const phone_ddd = ref<string | null>(null);
 const phone = ref<string | null>(null);
 const verificationCode = ref<string>('');
 const isVerificationValid = ref(false);
+const isVerifyingCode = ref(false);
 const account_name = ref<string | null>(null);
 const password = ref<string | null>(null);
 const confirmPassword = ref<string | null>(null);
@@ -218,6 +230,9 @@ const pixPaymentStatus = ref<
   'PENDING' | 'RECEIVED' | 'CONFIRMED' | 'OVERDUE' | 'REFUNDED' | null
 >(null);
 const pixPaymentConfirmed = ref(false);
+const paymentSubscription = ref<Subscription | null>(null);
+const accountIdForPayment = ref<string | null>(null);
+const registerCentrifugeClient = ref<Centrifuge | null>(null);
 const installments = ref<number>(1);
 const recurringPayment = ref(false);
 const nextButtonLabel = computed(() => {
@@ -296,39 +311,62 @@ watch(isValidationStepValid, (isValid) => {
   }
 });
 
-watch(verificationCode, (newValue) => {
-  isVerificationValid.value = false;
-  if (newValue && newValue !== newValue.toUpperCase()) {
-    verificationCode.value = newValue.toUpperCase();
+watch(verificationCode, (newValue, oldValue) => {
+  if (isVerifyingCode.value) {
+    return;
   }
 
-  if (newValue && newValue.length === 6) {
+  if (!newValue) {
+    isVerificationValid.value = false;
+    return;
+  }
+
+  if (newValue !== newValue.toUpperCase()) {
+    verificationCode.value = newValue.toUpperCase();
+    return;
+  }
+
+  if (newValue.length === 6 && oldValue !== newValue) {
+    isVerificationValid.value = false;
     handleVerifyCode();
+  } else if (newValue.length < 6) {
+    isVerificationValid.value = false;
   }
 });
 
 const handleVerifyCode = async (): Promise<boolean> => {
+  if (isVerifyingCode.value) {
+    return false;
+  }
+
   if (!verificationCode.value || verificationCode.value.length !== 6) {
     return false;
   }
 
-  const success =
-    (await registerStore
-      .verifyCode({
-        code: verificationCode.value,
-      })
-      .catch(() => false)) || false;
+  isVerifyingCode.value = true;
 
-  if (!success) {
+  try {
+    const success = await registerStore.verifyCode({
+      code: verificationCode.value,
+    });
+
+    if (!success) {
+      isVerificationValid.value = false;
+      verificationCode.value = '';
+      return false;
+    }
+
+    isVerificationValid.value = true;
+    maxStepReached.value = 2;
+    currentStep.value = 2;
+    return true;
+  } catch (error) {
     isVerificationValid.value = false;
     verificationCode.value = '';
     return false;
+  } finally {
+    isVerifyingCode.value = false;
   }
-
-  isVerificationValid.value = true;
-  maxStepReached.value = 2;
-  currentStep.value = 2;
-  return true;
 };
 
 const canGoToStep = (step: number) => {
@@ -512,12 +550,16 @@ const handleSubmitOrderPayment = async () => {
   pixPaymentStatus.value = null;
   pixPaymentConfirmed.value = false;
   pixPaymentInitiated.value = false;
+  accountIdForPayment.value = null;
   await openPaymentModal();
   const result = await registerStore.createOrderPayment(payload);
   paymentModalLoading.value = false;
   if (!result) {
     pixModalOpen.value = false;
     return;
+  }
+  if (result.account_id) {
+    accountIdForPayment.value = result.account_id;
   }
   if (result.pix_payment) {
     await processPixPayment(result.pix_payment);
@@ -549,8 +591,13 @@ const handleNext = async () => {
   }
 
   if (currentStep.value === 1) {
+    if (!verificationCode.value || verificationCode.value.length !== 6) {
+      return;
+    }
     const verified = await handleVerifyCode();
-    if (!verified) return;
+    if (!verified || !isVerificationValid.value) {
+      return;
+    }
     return;
   }
 
@@ -752,6 +799,7 @@ const processPixPayment = async (pixData: {
   pixPaymentStatus.value = 'PENDING';
   pixPaymentInitiated.value = true;
   await openPaymentModal();
+  await initPaymentSubscription();
 };
 
 const processBoletoPayment = async (boletoData: {
@@ -778,6 +826,7 @@ const processBoletoPayment = async (boletoData: {
   pixPaymentStatus.value = 'PENDING';
   pixPaymentInitiated.value = true;
   await openPaymentModal();
+  await initPaymentSubscription();
 };
 
 const processCreditCardPayment = async (creditCardData: {
@@ -798,6 +847,7 @@ const processCreditCardPayment = async (creditCardData: {
     pixPaymentConfirmed.value = true;
   }
   await openPaymentModal();
+  await initPaymentSubscription();
 };
 
 const getPixQrCodeImageSrc = (qrCode: string): string => {
@@ -852,6 +902,122 @@ const shouldShowCloseButton = computed(() => {
   return !pixPaymentConfirmed.value && !isPaymentReceived.value;
 });
 
+const initPaymentSubscription = async () => {
+  if (!accountIdForPayment.value || !pixPaymentId.value) {
+    return;
+  }
+
+  try {
+    const tokenData = await registerStore.generateCentrifugoToken(
+      accountIdForPayment.value
+    );
+
+    if (!tokenData) {
+      return;
+    }
+
+    if (!registerCentrifugeClient.value) {
+      registerCentrifugeClient.value = new Centrifuge(
+        `${tokenData.url}/connection/websocket`,
+        {
+          websocket: WebSocket,
+          token: tokenData.token,
+          getToken: async () => {
+            const newTokenData = await registerStore.generateCentrifugoToken(
+              accountIdForPayment.value!
+            );
+            return newTokenData?.token || '';
+          },
+          timeout: 30000,
+          maxServerPingDelay: 60000,
+        }
+      );
+
+      registerCentrifugeClient.value.connect();
+
+      await new Promise<void>((resolve) => {
+        if (registerCentrifugeClient.value?.state === State.Connected) {
+          resolve();
+          return;
+        }
+
+        const handler = () => {
+          registerCentrifugeClient.value?.off('connected', handler);
+          resolve();
+        };
+
+        registerCentrifugeClient.value?.on('connected', handler);
+      });
+    }
+
+    const channel = paymentAccountCentrifugo(accountIdForPayment.value);
+    const sub =
+      registerCentrifugeClient.value.getSubscription(channel) ??
+      registerCentrifugeClient.value.newSubscription(channel);
+
+    sub.on('publication', (ctx: PublicationContext) => {
+      const data = ctx.data as IPaymentCentrifugoData;
+      if (data?.payment_id === pixPaymentId.value) {
+        const validStatuses: Array<
+          'PENDING' | 'RECEIVED' | 'CONFIRMED' | 'OVERDUE' | 'REFUNDED'
+        > = ['PENDING', 'RECEIVED', 'CONFIRMED', 'OVERDUE', 'REFUNDED'];
+        pixPaymentStatus.value = validStatuses.includes(
+          data.status as
+            | 'PENDING'
+            | 'RECEIVED'
+            | 'CONFIRMED'
+            | 'OVERDUE'
+            | 'REFUNDED'
+        )
+          ? (data.status as
+              | 'PENDING'
+              | 'RECEIVED'
+              | 'CONFIRMED'
+              | 'OVERDUE'
+              | 'REFUNDED')
+          : null;
+        if (data.is_confirmed) {
+          pixPaymentConfirmed.value = true;
+
+          setTimeout(async () => {
+            await closePixModal();
+          }, 3000);
+        }
+      }
+    });
+
+    if (sub.state !== SubscriptionState.Subscribed) {
+      sub.subscribe();
+    }
+
+    paymentSubscription.value = sub;
+  } catch (error) {
+    console.error('Erro ao conectar ao Centrifugo:', error);
+  }
+};
+
+const cleanupPaymentSubscription = async () => {
+  if (paymentSubscription.value) {
+    try {
+      if (paymentSubscription.value.state !== SubscriptionState.Unsubscribed) {
+        paymentSubscription.value.unsubscribe();
+      }
+      paymentSubscription.value = null;
+    } catch (error) {
+      console.error('Erro ao desconectar do Centrifugo:', error);
+    }
+  }
+
+  if (registerCentrifugeClient.value) {
+    try {
+      registerCentrifugeClient.value.disconnect();
+      registerCentrifugeClient.value = null;
+    } catch (error) {
+      console.error('Erro ao desconectar cliente do Centrifugo:', error);
+    }
+  }
+};
+
 const copyPixCode = async () => {
   if (!pixPaymentData.value?.payload) return;
   try {
@@ -898,9 +1064,10 @@ const closePixModal = async () => {
     pixPaymentStatus.value === 'RECEIVED' ||
     pixPaymentStatus.value === 'CONFIRMED';
 
+  await cleanupPaymentSubscription();
   pixModalOpen.value = false;
 
-  if (isApproved) {
+  if (isApproved && pixPaymentInitiated.value) {
     const success = await authStore.login(
       email.value?.trim() || '',
       password.value || ''
@@ -912,6 +1079,26 @@ const closePixModal = async () => {
     router.push('/');
   }
 };
+
+watch(pixModalOpen, async (isOpen) => {
+  if (!isOpen) {
+    const isApproved =
+      pixPaymentConfirmed.value ||
+      pixPaymentStatus.value === 'RECEIVED' ||
+      pixPaymentStatus.value === 'CONFIRMED';
+
+    await cleanupPaymentSubscription();
+
+    if (!isApproved) {
+      pixPaymentStatus.value = null;
+      pixPaymentConfirmed.value = false;
+    }
+  }
+});
+
+onBeforeUnmount(async () => {
+  await cleanupPaymentSubscription();
+});
 
 const emailValidator = (v: string | null | undefined) => {
   const s = (v ?? '').trim();

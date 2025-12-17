@@ -10,6 +10,7 @@ import { listRegisterPlanWithItemsSchema } from '@core/schema/register/listPlanW
 import { listRegisterAvailableCrossSellSchema } from '@core/schema/register/listAvailableCrossSell';
 import { listRegisterCreditCardFeeSchema } from '@core/schema/register/listCreditCardFee';
 import { createRegisterOrderPaymentSchema } from '@core/schema/register/createOrderPayment';
+import { registerCentrifugoTokenSchema } from '@core/schema/register/centrifugoToken';
 
 export default function registerRoutes(server: FastifyInstance) {
   const registerController = container.resolve(RegisterController);
@@ -87,6 +88,16 @@ export default function registerRoutes(server: FastifyInstance) {
   server.post('/register/order/payment', {
     schema: createRegisterOrderPaymentSchema,
     handler: registerController.createOrderPayment,
+    preHandler: [
+      async (request: FastifyRequest, reply: FastifyReply) => {
+        await server.authenticateRegisterJwt(request, reply);
+      },
+    ],
+  });
+
+  server.post('/register/centrifugo/auth/token', {
+    schema: registerCentrifugoTokenSchema,
+    handler: registerController.centrifugoToken,
     preHandler: [
       async (request: FastifyRequest, reply: FastifyReply) => {
         await server.authenticateRegisterJwt(request, reply);

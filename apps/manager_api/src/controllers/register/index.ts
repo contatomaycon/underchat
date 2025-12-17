@@ -8,6 +8,7 @@ import { listPlanWithItems } from './methods/listPlanWithItems';
 import { listAvailableCrossSell } from './methods/listAvailableCrossSell';
 import { listCreditCardFee } from './methods/listCreditCardFee';
 import { createOrderPayment } from './methods/createOrderPayment';
+import { centrifugoToken } from './methods/centrifugoToken';
 
 @injectable()
 class RegisterController {
@@ -20,6 +21,7 @@ class RegisterController {
   public listAvailableCrossSell = listAvailableCrossSell;
   public listCreditCardFee = listCreditCardFee;
   public createOrderPayment = createOrderPayment;
+  public centrifugoToken = centrifugoToken;
 }
 
 export default RegisterController;

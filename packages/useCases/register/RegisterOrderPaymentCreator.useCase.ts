@@ -223,7 +223,10 @@ export class RegisterOrderPaymentCreatorUseCase {
         remoteIp
       );
 
-      return result;
+      return {
+        ...result,
+        account_id: accountId,
+      };
     } catch (error) {
       if (createdAccountId) {
         await this.accountService.deleteAccountById(createdAccountId);
