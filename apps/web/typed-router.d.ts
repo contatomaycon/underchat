@@ -37,9 +37,16 @@ declare module 'vue-router/auto-routes' {
       { error: ParamValue<false> },
       | never
     >,
-    'account': RouteRecordInfo<
-      'account',
-      '/account',
+    'account-cancelled': RouteRecordInfo<
+      'account-cancelled',
+      '/account-cancelled',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
+    'account-cancelling': RouteRecordInfo<
+      'account-cancelling',
+      '/account-cancelling',
       Record<never, never>,
       Record<never, never>,
       | never
@@ -86,6 +93,20 @@ declare module 'vue-router/auto-routes' {
     'account-settings-security-tab': RouteRecordInfo<
       'account-settings-security-tab',
       '/account-settings/security-tab',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
+    'account-subscribers': RouteRecordInfo<
+      'account-subscribers',
+      '/account-subscribers',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
+    'account-tests': RouteRecordInfo<
+      'account-tests',
+      '/account-tests',
       Record<never, never>,
       Record<never, never>,
       | never
@@ -363,9 +384,15 @@ declare module 'vue-router/auto-routes' {
       views:
         | never
     }
-    'src/pages/account.vue': {
+    'src/pages/account-cancelled.vue': {
       routes:
-        | 'account'
+        | 'account-cancelled'
+      views:
+        | never
+    }
+    'src/pages/account-cancelling.vue': {
+      routes:
+        | 'account-cancelling'
       views:
         | never
     }
@@ -407,6 +434,18 @@ declare module 'vue-router/auto-routes' {
     'src/pages/account-settings/security-tab.vue': {
       routes:
         | 'account-settings-security-tab'
+      views:
+        | never
+    }
+    'src/pages/account-subscribers.vue': {
+      routes:
+        | 'account-subscribers'
+      views:
+        | never
+    }
+    'src/pages/account-tests.vue': {
+      routes:
+        | 'account-tests'
       views:
         | never
     }

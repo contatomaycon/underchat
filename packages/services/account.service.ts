@@ -28,6 +28,18 @@ import { ListAccountSubscriptionsResponse } from '@core/schema/account/listAccou
 import { PlanAccountStatusViewerRepository } from '@core/repositories/planAccount/PlanAccountStatusViewer.repository';
 import { EAccountStatus } from '@core/common/enums/EAccountStatus';
 import { IPlanAccountStatus } from '@core/common/interfaces/IPlanAccountStatus';
+import { AccountSubscribersListerRepository } from '@core/repositories/account/AccountSubscribersLister.repository';
+import { ListAccountSubscribersRequest } from '@core/schema/account/listAccountSubscribers/request.schema';
+import { ListAccountSubscribersResponse } from '@core/schema/account/listAccountSubscribers/response.schema';
+import { AccountCancellingListerRepository } from '@core/repositories/account/AccountCancellingLister.repository';
+import { ListAccountCancellingRequest } from '@core/schema/account/listAccountCancelling/request.schema';
+import { ListAccountCancellingResponse } from '@core/schema/account/listAccountCancelling/response.schema';
+import { AccountCancelledListerRepository } from '@core/repositories/account/AccountCancelledLister.repository';
+import { ListAccountCancelledRequest } from '@core/schema/account/listAccountCancelled/request.schema';
+import { ListAccountCancelledResponse } from '@core/schema/account/listAccountCancelled/response.schema';
+import { AccountTestsListerRepository } from '@core/repositories/account/AccountTestsLister.repository';
+import { ListAccountTestsRequest } from '@core/schema/account/listAccountTests/request.schema';
+import { ListAccountTestsResponse } from '@core/schema/account/listAccountTests/response.schema';
 
 @injectable()
 export class AccountService {
@@ -47,7 +59,11 @@ export class AccountService {
     private readonly accountInfoByIdViewerExistsRepository: AccountInfoByIdViewerExistsRepository,
     private readonly accountAllListerRepository: AccountAllListerRepository,
     private readonly accountSubscriptionsListerRepository: AccountSubscriptionsListerRepository,
-    private readonly planAccountStatusViewerRepository: PlanAccountStatusViewerRepository
+    private readonly planAccountStatusViewerRepository: PlanAccountStatusViewerRepository,
+    private readonly accountSubscribersListerRepository: AccountSubscribersListerRepository,
+    private readonly accountCancellingListerRepository: AccountCancellingListerRepository,
+    private readonly accountCancelledListerRepository: AccountCancelledListerRepository,
+    private readonly accountTestsListerRepository: AccountTestsListerRepository
   ) {}
 
   viewAccountInfoByAccountId = async (
@@ -216,5 +232,73 @@ export class AccountService {
     return this.planAccountStatusViewerRepository.viewLatestByAccountId(
       accountId
     );
+  };
+
+  listAccountSubscribers = async (
+    perPage: number,
+    currentPage: number,
+    query: ListAccountSubscribersRequest
+  ): Promise<[ListAccountSubscribersResponse[], number]> => {
+    const [result, total] = await Promise.all([
+      this.accountSubscribersListerRepository.listAccounts(
+        perPage,
+        currentPage,
+        query
+      ),
+      this.accountSubscribersListerRepository.listAccountsTotal(query),
+    ]);
+
+    return [result, total];
+  };
+
+  listAccountCancelling = async (
+    perPage: number,
+    currentPage: number,
+    query: ListAccountCancellingRequest
+  ): Promise<[ListAccountCancellingResponse[], number]> => {
+    const [result, total] = await Promise.all([
+      this.accountCancellingListerRepository.listAccounts(
+        perPage,
+        currentPage,
+        query
+      ),
+      this.accountCancellingListerRepository.listAccountsTotal(query),
+    ]);
+
+    return [result, total];
+  };
+
+  listAccountCancelled = async (
+    perPage: number,
+    currentPage: number,
+    query: ListAccountCancelledRequest
+  ): Promise<[ListAccountCancelledResponse[], number]> => {
+    const [result, total] = await Promise.all([
+      this.accountCancelledListerRepository.listAccounts(
+        perPage,
+        currentPage,
+        query
+      ),
+      this.accountCancelledListerRepository.listAccountsTotal(query),
+    ]);
+
+    return [result, total];
+  };
+
+  listAccountTests = async (
+    perPage: number,
+    currentPage: number,
+    query: ListAccountTestsRequest
+  ): Promise<[ListAccountTestsResponse[], number]> => {
+    const [result, total] = await Promise.all([
+      this.accountTestsListerRepository.listAccounts(
+        perPage,
+        currentPage,
+        query
+      ),
+      this.accountTestsListerRepository.listAccountsTotal(query),
+    ]);
+
+    return [result, total];
   };
 }

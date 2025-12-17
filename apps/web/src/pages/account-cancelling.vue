@@ -173,7 +173,7 @@ const handleDelete = async () => {
 
   const result = await accountStore.deleteAccount(accountToDelete.value);
   if (result) {
-    await accountStore.listAccount(query.value);
+    await accountStore.listAccountCancelling(query.value);
   }
 
   accountToDelete.value = null;
@@ -200,7 +200,7 @@ const openSubscriptionsDialog = (id: string) => {
 watch(
   query,
   async (q) => {
-    await accountStore.listAccount(q);
+    await accountStore.listAccountCancelling(q);
   },
   { immediate: true, deep: true }
 );
@@ -208,7 +208,7 @@ watch(
 
 <template>
   <div>
-    <VCard :title="$t('accounts')" no-padding>
+    <VCard :title="$t('cancelling')" no-padding>
       <VCardText>
         <div class="d-flex justify-space-between flex-wrap gap-4">
           <div class="d-flex gap-4 align-center mt-5">
@@ -363,8 +363,7 @@ watch(
 
             <template #item.actions="{ item }">
               <div class="d-flex gap-1">
-                <IconBtn
-                  v-if="$canPermission(permissionsCustomize)"
+                <IconBtn v-if="$canPermission(permissionsCustomize)"
                   ><VTooltip
                     location="top"
                     transition="scale-transition"

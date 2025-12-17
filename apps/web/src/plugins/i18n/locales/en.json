@@ -514,6 +514,8 @@
     "document_label": "Document",
     "video_label": "Video",
     "accounts": "Accounts",
+    "subscribers": "Subscribers",
+    "tests": "Tests",
     "account_status": "Status",
     "plan": "Plan",
     "edit_account": "Edit Account",

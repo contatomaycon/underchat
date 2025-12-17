@@ -528,6 +528,8 @@
     "no_subscriptions_found": "Nenhuma assinatura encontrada.",
     "no_cross_sells_found": "Nenhum adicional encontrado.",
     "accounts": "Contas",
+    "subscribers": "Assinantes",
+    "tests": "Testes",
     "account_status": "Status",
     "plan": "Plano",
     "edit_account": "Editar Conta",

@@ -19,6 +19,10 @@ import { listAllAccountsSchema } from '@core/schema/account/listAllAccounts';
 import { listAccountSubscriptionsSchema } from '@core/schema/account/listAccountSubscriptions';
 import { updatePlanAccountSchema } from '@core/schema/planAccount/updatePlanAccount';
 import { viewPlanAccountSchema } from '@core/schema/planAccount/viewPlanAccount';
+import { listAccountSubscribersSchema } from '@core/schema/account/listAccountSubscribers';
+import { listAccountCancellingSchema } from '@core/schema/account/listAccountCancelling';
+import { listAccountCancelledSchema } from '@core/schema/account/listAccountCancelled';
+import { listAccountTestsSchema } from '@core/schema/account/listAccountTests';
 
 export default async function accountRoutes(server: FastifyInstance) {
   const accountController = container.resolve(AccountController);
@@ -128,6 +132,42 @@ export default async function accountRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, accountUpdatePermissions),
+    ],
+  });
+
+  server.get('/account/subscribers', {
+    schema: listAccountSubscribersSchema,
+    handler: accountController.listAccountSubscribers,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, accountViewPermissions),
+    ],
+  });
+
+  server.get('/account/cancelling', {
+    schema: listAccountCancellingSchema,
+    handler: accountController.listAccountCancelling,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, accountViewPermissions),
+    ],
+  });
+
+  server.get('/account/cancelled', {
+    schema: listAccountCancelledSchema,
+    handler: accountController.listAccountCancelled,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, accountViewPermissions),
+    ],
+  });
+
+  server.get('/account/tests', {
+    schema: listAccountTestsSchema,
+    handler: accountController.listAccountTests,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, accountViewPermissions),
     ],
   });
 }
