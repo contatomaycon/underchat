@@ -16,6 +16,7 @@ import { ListRegisterCitiesRequest } from '@core/schema/register/listCities/requ
 import { RegisterCityListResponse } from '@core/schema/register/listCities/response.schema';
 import { ListRegisterPlanWithItemsFinalResponse } from '@core/schema/register/listPlanWithItems/response.schema';
 import { ListRegisterAvailableCrossSellFinalResponse } from '@core/schema/register/listAvailableCrossSell/response.schema';
+import { ListCreditCardFeeResponse } from '@core/schema/config/listCreditCardFee/response.schema';
 
 export const useRegisterStore = defineStore('register', {
   state: () => ({
@@ -27,6 +28,7 @@ export const useRegisterStore = defineStore('register', {
     i18n: getI18n(),
     isLoading: false,
     registerToken: null as string | null,
+    creditCardFee: null as ListCreditCardFeeResponse | null,
   }),
   actions: {
     showSnackbar(message: string, color: EColor) {
@@ -342,6 +344,56 @@ export const useRegisterStore = defineStore('register', {
 
         return responseData.data;
       } catch (error) {
+        return null;
+      }
+    },
+
+    async getCreditCardFee(): Promise<ListCreditCardFeeResponse | null> {
+      const url = import.meta.env.VITE_BACKEND_URL;
+
+      if (!url) {
+        return null;
+      }
+
+      try {
+        const currentLocale = this.i18n.global.locale;
+        const tokenCookie = useCookie<string>('register_token');
+
+        if (!tokenCookie.value) {
+          return null;
+        }
+
+        const response = await axios.get<
+          IApiResponse<ListCreditCardFeeResponse>
+        >(`${url}/v1/register/credit-card-fee`, {
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept-Language': currentLocale,
+            Authorization: `Bearer ${tokenCookie.value}`,
+          },
+        });
+
+        const responseData = response?.data;
+
+        if (!responseData?.status || !responseData?.data) {
+          const message =
+            responseData?.message ??
+            this.i18n.global.t('credit_card_fee_not_found');
+
+          this.showSnackbar(message, EColor.error);
+          return null;
+        }
+
+        this.creditCardFee = responseData.data;
+        return responseData.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('credit_card_fee_update_error');
+
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
         return null;
       }
     },
