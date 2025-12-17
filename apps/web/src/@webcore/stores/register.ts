@@ -196,7 +196,7 @@ export const useRegisterStore = defineStore('register', {
         }
 
         return responseData.data;
-      } catch (error) {
+      } catch {
         return null;
       }
     },
@@ -235,7 +235,7 @@ export const useRegisterStore = defineStore('register', {
         }
 
         return responseData.data;
-      } catch (error) {
+      } catch {
         return null;
       }
     },
@@ -274,7 +274,7 @@ export const useRegisterStore = defineStore('register', {
         }
 
         return responseData.data;
-      } catch (error) {
+      } catch {
         return null;
       }
     },
@@ -310,7 +310,7 @@ export const useRegisterStore = defineStore('register', {
         }
 
         return responseData.data;
-      } catch (error) {
+      } catch {
         return null;
       }
     },
@@ -346,7 +346,7 @@ export const useRegisterStore = defineStore('register', {
         }
 
         return responseData.data;
-      } catch (error) {
+      } catch {
         return null;
       }
     },

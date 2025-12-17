@@ -74,7 +74,7 @@ async function authenticateRegisterJwt(
     };
 
     return;
-  } catch (error) {
+  } catch {
     return sendResponse(reply, {
       message: t('register_token_invalid'),
       httpStatusCode: EHTTPStatusCode.unauthorized,
