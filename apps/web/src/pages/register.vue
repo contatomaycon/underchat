@@ -10,6 +10,7 @@ import { VForm } from 'vuetify/components/VForm';
 import { useRegisterStore } from '@/@webcore/stores/register';
 import { useAuthStore } from '@/@webcore/stores/auth';
 import { useRouter } from 'vue-router';
+import DialogCloseBtn from '@/@webcore/components/DialogCloseBtn.vue';
 import { EUserDocumentType } from '@core/common/enums/EUserDocumentType';
 import { ECountry } from '@core/common/enums/ECountry';
 import { ViewRegisterZipcodeRequest } from '@core/schema/register/viewZipcode/request.schema';
@@ -799,12 +800,95 @@ const processCreditCardPayment = async (creditCardData: {
   await openPaymentModal();
 };
 
+const getPixQrCodeImageSrc = (qrCode: string): string => {
+  if (!qrCode) return '';
+  if (qrCode.startsWith('data:image')) {
+    return qrCode;
+  }
+  return `data:image/png;base64,${qrCode}`;
+};
+
+const getPaymentStatusText = (status: string | null): string => {
+  if (!status) return t('payment_status_pending');
+  const statusMap: Record<string, string> = {
+    PENDING: t('payment_status_pending'),
+    RECEIVED: t('payment_status_received'),
+    CONFIRMED: t('payment_status_confirmed'),
+    OVERDUE: t('payment_status_overdue'),
+    REFUNDED: t('payment_status_refunded'),
+  };
+  return statusMap[status] || status;
+};
+
+const getPaymentStatusColor = (status: string | null): string => {
+  if (!status) return 'info';
+  const colorMap: Record<string, string> = {
+    PENDING: 'info',
+    RECEIVED: 'success',
+    CONFIRMED: 'success',
+    OVERDUE: 'error',
+    REFUNDED: 'error',
+  };
+  return colorMap[status] || 'info';
+};
+
+const isPaymentReceived = computed(() => {
+  return pixPaymentStatus.value === 'RECEIVED';
+});
+
+const shouldShowCloseButton = computed(() => {
+  if (
+    pixPaymentConfirmed.value &&
+    selectedPaymentMethod.value === 'credit_card'
+  ) {
+    return true;
+  }
+  if (isPaymentReceived.value && selectedPaymentMethod.value === 'pix') {
+    return true;
+  }
+  if (isPaymentReceived.value && selectedPaymentMethod.value === 'boleto') {
+    return true;
+  }
+  return !pixPaymentConfirmed.value && !isPaymentReceived.value;
+});
+
 const copyPixCode = async () => {
   if (!pixPaymentData.value?.payload) return;
   try {
     await navigator.clipboard.writeText(pixPaymentData.value.payload);
+    registerStore.showSnackbar(t('pix_code_copied'), EColor.success);
   } catch (error) {
     console.error('Erro ao copiar código PIX:', error);
+  }
+};
+
+const copyBoletoCode = async () => {
+  if (boletoPaymentData.value?.identification_field) {
+    try {
+      await navigator.clipboard.writeText(
+        boletoPaymentData.value.identification_field
+      );
+      registerStore.showSnackbar(t('boleto_code_copied'), EColor.success);
+    } catch (error) {
+      console.error('Erro ao copiar código do boleto:', error);
+    }
+  }
+};
+
+const copyBoletoPixPayload = async () => {
+  if (boletoPaymentData.value?.payload) {
+    try {
+      await navigator.clipboard.writeText(boletoPaymentData.value.payload);
+      registerStore.showSnackbar(t('pix_code_copied'), EColor.success);
+    } catch (error) {
+      console.error('Erro ao copiar código PIX do boleto:', error);
+    }
+  }
+};
+
+const downloadBoleto = () => {
+  if (boletoPaymentData.value?.bank_slip_url) {
+    window.open(boletoPaymentData.value.bank_slip_url, '_blank');
   }
 };
 
@@ -3018,94 +3102,246 @@ watch(currentStep, async (newStep) => {
       </VCard>
 
       <VDialog v-model="pixModalOpen" max-width="500" persistent>
-        <VCard class="position-relative">
-          <DialogCloseBtn
-            class="dialog-close-btn-absolute"
-            @click="closePixModal"
-          />
+        <DialogCloseBtn v-if="shouldShowCloseButton" @click="closePixModal" />
+        <VCard>
           <VCardTitle>
-            {{ $t('payment') }}
+            <span>{{
+              selectedPaymentMethod === 'pix'
+                ? $t('pix_payment')
+                : selectedPaymentMethod === 'boleto'
+                  ? $t('boleto_payment')
+                  : $t('credit_card_payment')
+            }}</span>
           </VCardTitle>
           <VDivider />
-          <VCardText>
-            <VAlert
-              :type="paymentStatusAlert.type"
-              :icon="paymentStatusAlert.icon"
-              variant="tonal"
-              class="mb-4"
-            >
-              {{ paymentStatusAlert.message }}
-            </VAlert>
-
+          <VCardText class="d-flex flex-column align-center gap-4 pa-6">
             <div v-if="paymentModalLoading" class="d-flex justify-center my-4">
               <VProgressCircular indeterminate color="primary" size="48" />
             </div>
 
-            <div v-if="pixPaymentData && selectedPaymentMethod === 'pix'">
-              <div class="text-center mb-4">
-                <img
-                  :src="pixPaymentData.qr_code"
-                  alt="QR Code"
-                  class="pix-qr-code mb-2"
-                />
-                <div class="d-flex justify-center gap-2">
-                  <VBtn color="primary" variant="tonal" @click="copyPixCode">
-                    {{ $t('copy_pix_code') }}
-                  </VBtn>
-                </div>
-              </div>
-              <p class="text-body-2 text-medium-emphasis text-center">
-                {{ $t('pix_instructions') }}
-              </p>
+            <div v-else-if="pixPaymentConfirmed" class="text-center w-100">
+              <VIcon size="64" color="success" class="mb-4"
+                >tabler-circle-check</VIcon
+              >
+              <h3 class="text-h5 mb-2">{{ $t('payment_success_title') }}</h3>
+              <p class="text-body-1">{{ $t('payment_success_message') }}</p>
             </div>
-
-            <div v-if="boletoPaymentData && selectedPaymentMethod === 'boleto'">
-              <p class="text-body-1 font-weight-medium mb-2">
-                {{ $t('boleto') }}
-              </p>
-              <p class="text-body-2 text-medium-emphasis mb-1">
-                {{ boletoPaymentData.identification_field }}
-              </p>
-              <p class="text-body-2 text-medium-emphasis mb-2">
-                {{ boletoPaymentData.nosso_numero }}
-              </p>
-              <div class="d-flex gap-2">
-                <VBtn
-                  color="primary"
+            <div v-else-if="isPaymentReceived" class="text-center w-100">
+              <VIcon size="64" color="success" class="mb-4"
+                >tabler-circle-check</VIcon
+              >
+              <h3 class="text-h5 mb-2">{{ $t('payment_received_title') }}</h3>
+              <p class="text-body-1">{{ $t('payment_received_message') }}</p>
+            </div>
+            <div v-else class="text-center w-100">
+              <div v-if="pixPaymentStatus" class="mb-4">
+                <VChip
+                  :color="getPaymentStatusColor(pixPaymentStatus)"
                   variant="tonal"
-                  :href="boletoPaymentData.bank_slip_url"
-                  target="_blank"
+                  size="large"
                 >
-                  {{ $t('download') }}
-                </VBtn>
+                  {{ getPaymentStatusText(pixPaymentStatus) }}
+                </VChip>
               </div>
+              <p
+                v-if="selectedPaymentMethod === 'pix'"
+                class="text-body-1 mb-2"
+              >
+                {{ $t('pix_payment_instructions') }}
+              </p>
+              <p
+                v-else-if="selectedPaymentMethod === 'boleto'"
+                class="text-body-1 mb-2"
+              >
+                {{ $t('boleto_payment_instructions') }}
+              </p>
+              <p v-else class="text-body-1 mb-2">
+                {{ $t('credit_card_payment_processing') }}
+              </p>
+              <p
+                v-if="
+                  selectedPaymentMethod === 'pix' &&
+                  pixPaymentData?.expiration_date
+                "
+                class="text-caption text-medium-emphasis"
+              >
+                {{ $t('pix_expires_at') }}:
+                {{
+                  new Date(pixPaymentData.expiration_date).toLocaleString(
+                    locale
+                  )
+                }}
+              </p>
             </div>
 
             <div
               v-if="
-                pixPaymentInitiated && selectedPaymentMethod === 'credit_card'
+                pixPaymentData?.qr_code &&
+                !pixPaymentConfirmed &&
+                !isPaymentReceived &&
+                selectedPaymentMethod === 'pix'
               "
-              class="text-center"
+              class="d-flex justify-center align-center pa-4 bg-grey-lighten-4 rounded mt-n2"
             >
-              <VIcon
-                :icon="
-                  paymentStatusAlert.type === 'success'
-                    ? 'tabler-circle-check'
-                    : 'tabler-clock-hour-4'
+              <img
+                :src="getPixQrCodeImageSrc(pixPaymentData.qr_code)"
+                alt="QR Code PIX"
+                style="
+                  max-width: 300px;
+                  max-height: 300px;
+                  width: 100%;
+                  height: auto;
+                  object-fit: contain;
                 "
-                size="48"
-                :color="
-                  paymentStatusAlert.type === 'success' ? 'success' : 'info'
-                "
-                class="mb-2"
               />
-              <p class="text-body-2 text-medium-emphasis">
-                {{ paymentStatusAlert.message }}
-              </p>
+            </div>
+
+            <div
+              v-if="
+                selectedPaymentMethod === 'pix' &&
+                !pixPaymentConfirmed &&
+                !isPaymentReceived
+              "
+              class="w-100"
+            >
+              <VLabel class="mb-2">{{ $t('pix_copy_paste_code') }}</VLabel>
+              <VTextField
+                :model-value="pixPaymentData?.payload || ''"
+                readonly
+                variant="outlined"
+                density="compact"
+                class="mb-2"
+              >
+                <template #append-inner>
+                  <IconBtn
+                    size="small"
+                    variant="text"
+                    class="me-n2"
+                    @click="copyPixCode"
+                  >
+                    <VIcon size="20">tabler-copy</VIcon>
+                  </IconBtn>
+                </template>
+              </VTextField>
+            </div>
+
+            <VAlert
+              v-if="
+                selectedPaymentMethod === 'pix' &&
+                !pixPaymentConfirmed &&
+                !isPaymentReceived
+              "
+              type="info"
+              variant="tonal"
+              class="w-100"
+            >
+              {{ $t('pix_payment_warning') }}
+            </VAlert>
+
+            <!-- Boleto Content -->
+            <div
+              v-if="
+                selectedPaymentMethod === 'boleto' &&
+                boletoPaymentData &&
+                !pixPaymentConfirmed &&
+                !isPaymentReceived
+              "
+              class="w-100"
+            >
+              <div
+                v-if="boletoPaymentData.qr_code"
+                class="d-flex justify-center align-center pa-4 bg-grey-lighten-4 rounded mb-4"
+              >
+                <img
+                  :src="getPixQrCodeImageSrc(boletoPaymentData.qr_code)"
+                  alt="QR Code PIX"
+                  style="
+                    max-width: 300px;
+                    max-height: 300px;
+                    width: 100%;
+                    height: auto;
+                    object-fit: contain;
+                  "
+                />
+              </div>
+
+              <div v-if="boletoPaymentData.payload" class="mb-4">
+                <VLabel class="mb-2">{{ $t('pix_copy_paste_code') }}</VLabel>
+                <VTextField
+                  :model-value="boletoPaymentData.payload || ''"
+                  readonly
+                  variant="outlined"
+                  density="compact"
+                  class="mb-2"
+                >
+                  <template #append-inner>
+                    <IconBtn
+                      size="small"
+                      variant="text"
+                      class="me-n2"
+                      @click="copyBoletoPixPayload"
+                    >
+                      <VIcon size="20">tabler-copy</VIcon>
+                    </IconBtn>
+                  </template>
+                </VTextField>
+              </div>
+
+              <div class="mb-4">
+                <VLabel class="mb-2">{{
+                  $t('boleto_identification_field')
+                }}</VLabel>
+                <VTextField
+                  :model-value="boletoPaymentData.identification_field || ''"
+                  readonly
+                  variant="outlined"
+                  density="compact"
+                  class="mb-2"
+                >
+                  <template #append-inner>
+                    <IconBtn
+                      size="small"
+                      variant="text"
+                      class="me-n2"
+                      @click="copyBoletoCode"
+                    >
+                      <VIcon size="20">tabler-copy</VIcon>
+                    </IconBtn>
+                  </template>
+                </VTextField>
+              </div>
+
+              <div class="mb-4">
+                <VLabel class="mb-2">{{ $t('boleto_due_date') }}</VLabel>
+                <p class="text-body-1">
+                  {{
+                    new Date(boletoPaymentData.due_date).toLocaleDateString(
+                      locale,
+                      {
+                        day: '2-digit',
+                        month: '2-digit',
+                        year: 'numeric',
+                      }
+                    )
+                  }}
+                </p>
+              </div>
+
+              <VBtn
+                v-if="boletoPaymentData.bank_slip_url"
+                color="primary"
+                variant="elevated"
+                block
+                @click="downloadBoleto"
+              >
+                <VIcon start>tabler-download</VIcon>
+                {{ $t('download_boleto') }}
+              </VBtn>
             </div>
           </VCardText>
-          <VCardActions class="d-flex justify-end">
-            <VBtn color="primary" @click="closePixModal">
+          <VDivider />
+          <VCardActions v-if="shouldShowCloseButton" class="justify-end pa-4">
+            <VBtn variant="tonal" color="secondary" @click="closePixModal">
               {{ $t('close') }}
             </VBtn>
           </VCardActions>
@@ -3213,12 +3449,6 @@ watch(currentStep, async (newStep) => {
   height: 24px;
 }
 
-.dialog-close-btn-absolute {
-  position: absolute;
-  inset-block-start: 8px;
-  inset-inline-end: 8px;
-  z-index: 2;
-}
 .plans-row {
   margin-top: 16px;
   justify-content: center;
