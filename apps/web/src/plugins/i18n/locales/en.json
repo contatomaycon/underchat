@@ -1764,6 +1764,7 @@
     "nfse": "NFSe",
     "credit_card": "Credit Card",
     "credit_card_installment_rate": "Installment {number}x fee (%)",
+    "credit_card_installment_option": "{number}x (Installment: {installmentValue} - Total: {totalWithFee})",
     "credit_card_fee_viewed_successfully": "Credit card fees loaded successfully!",
     "credit_card_fee_updated_successfully": "Credit card fees updated successfully!",
     "credit_card_fee_not_found": "Credit card fees not found",

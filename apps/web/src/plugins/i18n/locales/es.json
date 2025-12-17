@@ -1766,6 +1766,7 @@
     "nfse": "NFSe",
     "credit_card": "Tarjeta de Crédito",
     "credit_card_installment_rate": "Tasa {number}x (%)",
+    "credit_card_installment_option": "{number}x (Cuota: {installmentValue} - Total: {totalWithFee})",
     "credit_card_fee_viewed_successfully": "¡Tasas de tarjeta de crédito cargadas con éxito!",
     "credit_card_fee_updated_successfully": "¡Tasas de tarjeta de crédito actualizadas con éxito!",
     "credit_card_fee_not_found": "Tasas de tarjeta de crédito no encontradas",

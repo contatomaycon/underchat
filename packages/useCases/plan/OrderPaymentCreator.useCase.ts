@@ -8,6 +8,7 @@ import { EPaymentBillingType } from '@core/common/enums/EPaymentBillingType';
 import { EPaymentStatus } from '@core/common/enums/EPaymentStatus';
 import { PlanReleaseService } from '@core/services/planRelease.service';
 import { AccountTestService } from '@core/services/accountTest.service';
+import { CreditCardFeeService } from '@core/services/creditCardFee.service';
 import { UserMasterViewerRepository } from '@core/repositories/user/UserMasterViewer.repository';
 import { UserService } from '@core/services/user.service';
 import { randomUUID } from 'node:crypto';
@@ -20,8 +21,48 @@ export class OrderPaymentCreatorUseCase {
     private readonly planReleaseService: PlanReleaseService,
     private readonly accountTestService: AccountTestService,
     private readonly userMasterViewerRepository: UserMasterViewerRepository,
-    private readonly userService: UserService
+    private readonly userService: UserService,
+    private readonly creditCardFeeService: CreditCardFeeService
   ) {}
+
+  private readonly applyCreditCardFee = (
+    totalAmount: number,
+    feeRate: number
+  ): number => {
+    if (!feeRate) {
+      return totalAmount;
+    }
+    const multiplier = 1 + feeRate / 100;
+    return Math.round(totalAmount * multiplier * 100) / 100;
+  };
+
+  private readonly getCreditCardFeeRate = async (
+    t: TFunction<'translation', undefined>,
+    installments?: number | null
+  ): Promise<number> => {
+    if (!installments) {
+      return 0;
+    }
+    const creditCardFee = await this.creditCardFeeService.viewCreditCardFee();
+    if (!creditCardFee) {
+      throw new Error(t('credit_card_fee_not_found'));
+    }
+    const rates: Record<number, number> = {
+      1: creditCardFee.installment_1_rate,
+      2: creditCardFee.installment_2_rate,
+      3: creditCardFee.installment_3_rate,
+      4: creditCardFee.installment_4_rate,
+      5: creditCardFee.installment_5_rate,
+      6: creditCardFee.installment_6_rate,
+      7: creditCardFee.installment_7_rate,
+      8: creditCardFee.installment_8_rate,
+      9: creditCardFee.installment_9_rate,
+      10: creditCardFee.installment_10_rate,
+      11: creditCardFee.installment_11_rate,
+      12: creditCardFee.installment_12_rate,
+    };
+    return rates[installments] ?? 0;
+  };
 
   private async processTestPlan(
     t: TFunction<'translation', undefined>,
@@ -106,8 +147,25 @@ export class OrderPaymentCreatorUseCase {
       throw new Error(t('customer_not_found_or_could_not_create'));
     }
 
-    const { planPrice, addonsTotal, discountAmount, totalAmount } =
-      await this.planService.calculateOrderPayment(accountId, input);
+    const orderCalculation = await this.planService.calculateOrderPayment(
+      accountId,
+      input
+    );
+
+    const planPrice = orderCalculation.planPrice;
+    const addonsTotal = orderCalculation.addonsTotal;
+    const discountAmount = orderCalculation.discountAmount;
+    let totalAmount = orderCalculation.totalAmount;
+
+    const shouldApplyCreditCardFee =
+      input.payment_method === 'credit_card' &&
+      input.billing_period === 'annual' &&
+      input.installments;
+
+    if (shouldApplyCreditCardFee) {
+      const feeRate = await this.getCreditCardFeeRate(t, input.installments);
+      totalAmount = this.applyCreditCardFee(totalAmount, feeRate);
+    }
 
     const orderId = randomUUID();
 
