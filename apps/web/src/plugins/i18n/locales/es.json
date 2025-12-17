@@ -711,6 +711,7 @@
     "contact_group_assignment_deleted_error": "Ocurrió un error al eliminar la asignación del grupo de contactos. Por favor, inténtalo de nuevo.",
     "contact_group_assignment_deleted_success": "¡Asignación del grupo de contactos eliminada con éxito!",
     "selected": "Seleccionado",
+    "select": "Seleccionar",
     "import_contacts": "Importar Contactos",
     "file": "Archivo",
     "select_file": "Seleccionar Archivo",

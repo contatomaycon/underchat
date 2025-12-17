@@ -58,8 +58,10 @@ const registerMultistepIllustration = useGenerateImageVariant(
   registerMultistepIllustrationDark
 );
 
-const items = computed(() => {
-  return [
+const stepConfig = computed(() => {
+  const hasAddons = !isTestPlan(selectedPlanForCheckout.value);
+
+  const steps = [
     {
       title: t('validation'),
       subtitle: t('validation_subtitle'),
@@ -80,27 +82,38 @@ const items = computed(() => {
       subtitle: t('plans_subtitle'),
       icon: 'tabler-package',
     },
-    {
+  ];
+
+  const addonsIndex = hasAddons ? steps.length : -1;
+
+  if (hasAddons) {
+    steps.push({
       title: t('addons'),
       subtitle: t('addons_subtitle'),
       icon: 'tabler-plus',
-    },
-    {
-      title: isTestPlan(selectedPlanForCheckout.value)
-        ? t('test')
-        : t('payment'),
-      subtitle: isTestPlan(selectedPlanForCheckout.value)
-        ? t('test_subtitle')
-        : t('payment_subtitle'),
-      icon: isTestPlan(selectedPlanForCheckout.value)
-        ? 'tabler-flask'
-        : 'tabler-credit-card',
-    },
-  ];
+    });
+  }
+
+  steps.push({
+    title: isTestPlan(selectedPlanForCheckout.value) ? t('test') : t('payment'),
+    subtitle: isTestPlan(selectedPlanForCheckout.value)
+      ? t('test_subtitle')
+      : t('payment_subtitle'),
+    icon: isTestPlan(selectedPlanForCheckout.value)
+      ? 'tabler-flask'
+      : 'tabler-credit-card',
+  });
+
+  return {
+    items: steps,
+    addonsIndex,
+    lastIndex: steps.length - 1,
+  };
 });
 
-const ADDONS_STEP_INDEX = 4;
-const LAST_STEP_INDEX = computed(() => items.value.length - 1);
+const items = computed(() => stepConfig.value.items);
+const ADDONS_STEP_INDEX = computed(() => stepConfig.value.addonsIndex);
+const LAST_STEP_INDEX = computed(() => stepConfig.value.lastIndex);
 
 const name = ref<string | null>(null);
 const last_name = ref<string | null>(null);
@@ -212,15 +225,27 @@ const handleVerifyCode = async () => {
 };
 
 const canGoToStep = (step: number) => {
-  if (
-    step === ADDONS_STEP_INDEX &&
-    selectedPlanForCheckout.value &&
-    isTestPlan(selectedPlanForCheckout.value)
-  ) {
+  if (step === ADDONS_STEP_INDEX.value && ADDONS_STEP_INDEX.value === -1) {
     return false;
   }
   return step <= maxStepReached.value;
 };
+
+watch(selectedPlanForCheckout, (plan) => {
+  if (plan && isTestPlan(plan)) {
+    selectedAddons.value = [];
+    selectedCrossSellByType.value = {};
+    availableCrossSells.value = [];
+
+    if (currentStep.value >= ADDONS_STEP_INDEX.value) {
+      currentStep.value = LAST_STEP_INDEX.value;
+    }
+
+    if (maxStepReached.value < currentStep.value) {
+      maxStepReached.value = currentStep.value;
+    }
+  }
+});
 
 const handleRegister = async () => {
   hasTriedToValidate.value = true;
@@ -271,15 +296,24 @@ const handleNext = async () => {
       return;
     }
 
-    maxStepReached.value = Math.max(maxStepReached.value, ADDONS_STEP_INDEX);
+    if (ADDONS_STEP_INDEX.value === -1) {
+      maxStepReached.value = LAST_STEP_INDEX.value;
+      currentStep.value = LAST_STEP_INDEX.value;
+      return;
+    }
+
+    maxStepReached.value = Math.max(
+      maxStepReached.value,
+      ADDONS_STEP_INDEX.value
+    );
     if (!loadingCrossSells.value) {
       await loadCrossSells();
     }
-    currentStep.value = ADDONS_STEP_INDEX;
+    currentStep.value = ADDONS_STEP_INDEX.value;
     return;
   }
 
-  if (currentStep.value === ADDONS_STEP_INDEX) {
+  if (currentStep.value === ADDONS_STEP_INDEX.value) {
     maxStepReached.value = LAST_STEP_INDEX.value;
   }
 
@@ -708,9 +742,10 @@ const filteredPlans = computed(() => {
 const getColClasses = computed(() => {
   return {
     cols: '12',
-    sm: '12',
-    md: '6',
+    sm: '6',
+    md: '4',
     lg: '4',
+    xl: '4',
   };
 });
 
@@ -832,7 +867,8 @@ watch(currentStep, async (newStep) => {
     await loadPlans();
   }
   if (
-    newStep === ADDONS_STEP_INDEX &&
+    newStep === ADDONS_STEP_INDEX.value &&
+    ADDONS_STEP_INDEX.value !== -1 &&
     selectedPlanForCheckout.value &&
     !isTestPlan(selectedPlanForCheckout.value)
   ) {
@@ -1538,24 +1574,7 @@ watch(currentStep, async (newStep) => {
                   </p>
                 </div>
 
-                <div
-                  v-if="
-                    selectedPlanForCheckout &&
-                    isTestPlan(selectedPlanForCheckout)
-                  "
-                  class="text-center py-4"
-                >
-                  <p class="text-body-2 text-medium-emphasis">
-                    {{ $t('no_addons_available') }}
-                  </p>
-                </div>
-
-                <div
-                  v-if="
-                    selectedPlanForCheckout &&
-                    !isTestPlan(selectedPlanForCheckout)
-                  "
-                >
+                <div v-if="selectedPlanForCheckout && ADDONS_STEP_INDEX !== -1">
                   <div v-if="loadingCrossSells" class="text-center py-4">
                     <VProgressCircular
                       indeterminate

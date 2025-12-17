@@ -710,6 +710,7 @@
     "contact_group_assignment_deleted_error": "An error occurred while deleting the contact group assignment. Please try again.",
     "contact_group_assignment_deleted_success": "Contact group assignment deleted successfully!",
     "selected": "Selected",
+    "select": "Select",
     "import_contacts": "Import Contacts",
     "file": "File",
     "select_file": "Select File",
