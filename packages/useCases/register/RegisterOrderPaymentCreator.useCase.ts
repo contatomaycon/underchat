@@ -172,7 +172,7 @@ export class RegisterOrderPaymentCreatorUseCase {
         input.user.phone
       );
 
-      if (input.account_name.length >= 10) {
+      if (input.account_name.length > 10) {
         throw new Error(t('account_name_cannot_exceed_10_characters'));
       }
 
