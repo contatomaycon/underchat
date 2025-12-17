@@ -322,4 +322,14 @@ export class AccountService {
 
     return [result, total];
   };
+
+  updateAccountStatusById = async (
+    accountId: string,
+    accountStatusId: string
+  ): Promise<boolean> => {
+    return this.accountUpdaterRepository.updateAccountStatusById(
+      accountId,
+      accountStatusId
+    );
+  };
 }

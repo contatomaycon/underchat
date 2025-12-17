@@ -24,6 +24,8 @@ import { listAccountCancellingSchema } from '@core/schema/account/listAccountCan
 import { listAccountCancelledSchema } from '@core/schema/account/listAccountCancelled';
 import { listAccountBlockedSchema } from '@core/schema/account/listAccountBlocked';
 import { listAccountTestsSchema } from '@core/schema/account/listAccountTests';
+import { blockAccountSchema } from '@core/schema/account/blockAccount';
+import { unblockAccountSchema } from '@core/schema/account/unblockAccount';
 
 export default async function accountRoutes(server: FastifyInstance) {
   const accountController = container.resolve(AccountController);
@@ -178,6 +180,24 @@ export default async function accountRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, accountViewPermissions),
+    ],
+  });
+
+  server.patch('/account/:account_id/block', {
+    schema: blockAccountSchema,
+    handler: accountController.blockAccount,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, accountUpdatePermissions),
+    ],
+  });
+
+  server.patch('/account/:account_id/unblock', {
+    schema: unblockAccountSchema,
+    handler: accountController.unblockAccount,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, accountUpdatePermissions),
     ],
   });
 }

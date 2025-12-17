@@ -16,6 +16,8 @@ import { listAccountCancelling } from './methods/listAccountCancelling';
 import { listAccountCancelled } from './methods/listAccountCancelled';
 import { listAccountBlocked } from './methods/listAccountBlocked';
 import { listAccountTests } from './methods/listAccountTests';
+import { blockAccount } from './methods/blockAccount';
+import { unblockAccount } from './methods/unblockAccount';
 
 @injectable()
 class AccountController {
@@ -36,6 +38,8 @@ class AccountController {
   public listAccountCancelled = listAccountCancelled;
   public listAccountBlocked = listAccountBlocked;
   public listAccountTests = listAccountTests;
+  public blockAccount = blockAccount;
+  public unblockAccount = unblockAccount;
 }
 
 export default AccountController;

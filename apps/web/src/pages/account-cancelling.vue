@@ -90,6 +90,12 @@ const resolvePlanVariant = (planName?: string | null) => {
 const isDialogDeleterShow = ref(false);
 const accountToDelete = ref<string | null>(null);
 
+const isDialogBlockShow = ref(false);
+const accountToBlock = ref<string | null>(null);
+
+const isDialogUnblockShow = ref(false);
+const accountToUnblock = ref<string | null>(null);
+
 const isDialogEditAccountShow = ref(false);
 const isAddAccountVisible = ref(false);
 const accountToEdit = ref<string | null>(null);
@@ -152,6 +158,38 @@ const handleDelete = async () => {
   }
 
   accountToDelete.value = null;
+};
+
+const blockAccount = (id: string) => {
+  accountToBlock.value = id;
+  isDialogBlockShow.value = true;
+};
+
+const handleBlock = async () => {
+  if (!accountToBlock.value) return;
+
+  const result = await accountStore.blockAccount(accountToBlock.value);
+  if (result) {
+    await accountStore.listAccountCancelling(query.value);
+  }
+
+  accountToBlock.value = null;
+};
+
+const unblockAccount = (id: string) => {
+  accountToUnblock.value = id;
+  isDialogUnblockShow.value = true;
+};
+
+const handleUnblock = async () => {
+  if (!accountToUnblock.value) return;
+
+  const result = await accountStore.unblockAccount(accountToUnblock.value);
+  if (result) {
+    await accountStore.listAccountCancelling(query.value);
+  }
+
+  accountToUnblock.value = null;
 };
 
 const openEditDialog = (id: string) => {
@@ -364,6 +402,42 @@ watch(
                 /></IconBtn>
 
                 <IconBtn
+                  v-if="
+                    $canPermission(permissionsEdit) &&
+                    item.account_id &&
+                    item.account_status?.account_status_id !==
+                      EAccountStatus.blocked
+                  "
+                  ><VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>{{ $t('block') }}</span> </VTooltip
+                  ><VIcon
+                    icon="tabler-lock"
+                    @click="blockAccount(item.account_id)"
+                /></IconBtn>
+
+                <IconBtn
+                  v-if="
+                    $canPermission(permissionsEdit) &&
+                    item.account_id &&
+                    item.account_status?.account_status_id ===
+                      EAccountStatus.blocked
+                  "
+                  ><VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>{{ $t('unblock') }}</span> </VTooltip
+                  ><VIcon
+                    icon="tabler-lock-open"
+                    @click="unblockAccount(item.account_id)"
+                /></IconBtn>
+
+                <IconBtn
                   v-if="$canPermission(permissionsDelete) && item.account_id"
                   ><VTooltip
                     location="top"
@@ -399,6 +473,22 @@ watch(
         :title="$t('delete_account')"
         :message="$t('delete_account_confirmation')"
         @confirm="handleDelete"
+      />
+
+      <VDialogHandler
+        v-if="isDialogBlockShow"
+        v-model="isDialogBlockShow"
+        :title="$t('block_account')"
+        :message="$t('block_account_confirmation')"
+        @confirm="handleBlock"
+      />
+
+      <VDialogHandler
+        v-if="isDialogUnblockShow"
+        v-model="isDialogUnblockShow"
+        :title="$t('unblock_account')"
+        :message="$t('unblock_account_confirmation')"
+        @confirm="handleUnblock"
       />
 
       <AppEditAccount
