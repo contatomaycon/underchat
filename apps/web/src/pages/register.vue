@@ -123,6 +123,7 @@ const phone_ddi = ref<string | null>('55');
 const phone_ddd = ref<string | null>(null);
 const phone = ref<string | null>(null);
 const verificationCode = ref<string>('');
+const isVerificationValid = ref(false);
 const account_name = ref<string | null>(null);
 const password = ref<string | null>(null);
 const confirmPassword = ref<string | null>(null);
@@ -223,6 +224,7 @@ watch(isValidationStepValid, (isValid) => {
 });
 
 watch(verificationCode, (newValue) => {
+  isVerificationValid.value = false;
   if (newValue && newValue !== newValue.toUpperCase()) {
     verificationCode.value = newValue.toUpperCase();
   }
@@ -232,21 +234,28 @@ watch(verificationCode, (newValue) => {
   }
 });
 
-const handleVerifyCode = async () => {
+const handleVerifyCode = async (): Promise<boolean> => {
   if (!verificationCode.value || verificationCode.value.length !== 6) {
-    return;
+    return false;
   }
 
-  const success = await registerStore.verifyCode({
-    code: verificationCode.value,
-  });
+  const success =
+    (await registerStore
+      .verifyCode({
+        code: verificationCode.value,
+      })
+      .catch(() => false)) || false;
 
-  if (success) {
-    maxStepReached.value = 2;
-    currentStep.value = 2;
-  } else {
+  if (!success) {
+    isVerificationValid.value = false;
     verificationCode.value = '';
+    return false;
   }
+
+  isVerificationValid.value = true;
+  maxStepReached.value = 2;
+  currentStep.value = 2;
+  return true;
 };
 
 const canGoToStep = (step: number) => {
@@ -316,6 +325,12 @@ const handleRegister = async () => {
 const handleNext = async () => {
   if (currentStep.value === 0) {
     handleRegister();
+    return;
+  }
+
+  if (currentStep.value === 1) {
+    const verified = await handleVerifyCode();
+    if (!verified) return;
     return;
   }
 
@@ -927,16 +942,19 @@ const removeAddon = (productId: string) => {
   );
 };
 
+const addonsTotal = computed(() => {
+  let total = 0;
+  for (const addon of selectedAddons.value) {
+    total += addon.price;
+  }
+  return total;
+});
+
 const totalPriceBase = computed(() => {
   if (!selectedPlanForCheckout.value) return 0;
 
   const planPrice = getPrice(selectedPlanForCheckout.value);
-  const addonsPrice = selectedAddons.value.reduce(
-    (sum, addon) => sum + addon.price,
-    0
-  );
-
-  const total = planPrice + addonsPrice;
+  const total = planPrice + addonsTotal.value;
   return Math.round(total * 100) / 100;
 });
 
@@ -1696,6 +1714,140 @@ watch(currentStep, async (newStep) => {
               </div>
             </VWindowItem>
 
+            <VWindowItem v-if="ADDONS_STEP_INDEX !== -1">
+              <div class="register-step-content">
+                <h5 class="text-h5 mb-1">{{ $t('addons') }}</h5>
+                <p class="text-sm mb-6">
+                  {{ $t('addons_description') }}
+                </p>
+
+                <div v-if="loadingCrossSells" class="text-center py-8">
+                  <VProgressCircular indeterminate color="primary" size="64" />
+                </div>
+
+                <div
+                  v-if="!loadingCrossSells && groupedCrossSells.length === 0"
+                  class="text-center py-8"
+                >
+                  <p class="text-body-1 text-medium-emphasis mb-0">
+                    {{ $t('unavailable') }}
+                  </p>
+                </div>
+
+                <div
+                  v-if="!loadingCrossSells && groupedCrossSells.length > 0"
+                  class="d-flex flex-column gap-6"
+                >
+                  <VRow>
+                    <VCol
+                      v-for="group in groupedCrossSells"
+                      :key="group.product_id"
+                      cols="12"
+                      md="6"
+                    >
+                      <VCard variant="outlined" class="h-100">
+                        <VCardText class="d-flex flex-column gap-4 h-100">
+                          <div class="d-flex align-center gap-3">
+                            <VAvatar color="primary" variant="tonal" size="36">
+                              <VIcon
+                                icon="tabler-plus"
+                                size="20"
+                                color="primary"
+                              />
+                            </VAvatar>
+                            <div>
+                              <h6 class="text-h6 mb-1">
+                                {{ group.product_name }}
+                              </h6>
+                              <p
+                                v-if="group.product_description"
+                                class="text-body-2 text-medium-emphasis mb-0"
+                              >
+                                {{ group.product_description }}
+                              </p>
+                            </div>
+                          </div>
+
+                          <VSelect
+                            v-model="selectedCrossSellByType[group.product_id]"
+                            :items="group.options"
+                            :label="$t('addons')"
+                            :item-title="getCrossSellLabel"
+                            item-value="plan_cross_sell_id"
+                            density="compact"
+                            variant="outlined"
+                          />
+
+                          <VBtn
+                            block
+                            color="primary"
+                            :disabled="
+                              !canAddCrossSell(group.product_id) ||
+                              isAddonSelected(group.product_id)
+                            "
+                            @click="addAddon(group.product_id)"
+                          >
+                            {{ $t('add') }}
+                          </VBtn>
+                        </VCardText>
+                      </VCard>
+                    </VCol>
+                  </VRow>
+
+                  <VCard variant="outlined">
+                    <VCardText class="d-flex flex-column gap-3">
+                      <div class="d-flex align-center justify-space-between">
+                        <h6 class="text-h6 mb-0">{{ $t('addons') }}</h6>
+                        <span class="text-body-1 font-weight-medium">
+                          {{ formatCurrency(addonsTotal) }}
+                        </span>
+                      </div>
+
+                      <div
+                        v-if="selectedAddons.length > 0"
+                        class="d-flex flex-column gap-2"
+                      >
+                        <div
+                          v-for="addon in selectedAddons"
+                          :key="addon.plan_cross_sell_id"
+                          class="d-flex justify-space-between align-center"
+                        >
+                          <div class="d-flex flex-column">
+                            <span class="text-body-1 font-weight-medium">
+                              {{ addon.name }}
+                            </span>
+                            <span class="text-caption text-medium-emphasis">
+                              x{{ addon.quantity }}
+                            </span>
+                          </div>
+                          <div class="d-flex align-center gap-3">
+                            <span class="text-body-1 font-weight-medium">
+                              {{ formatCurrency(addon.price) }}
+                            </span>
+                            <VBtn
+                              icon
+                              variant="text"
+                              color="error"
+                              @click="removeAddon(addon.plan_product_id)"
+                            >
+                              <VIcon icon="tabler-trash" size="18" />
+                            </VBtn>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div
+                        v-if="selectedAddons.length === 0"
+                        class="text-body-2 text-medium-emphasis text-center"
+                      >
+                        {{ $t('addons_subtitle') }}
+                      </div>
+                    </VCardText>
+                  </VCard>
+                </div>
+              </div>
+            </VWindowItem>
+
             <VWindowItem>
               <div class="register-step-content">
                 <h5 class="text-h5 mb-1">
@@ -1719,22 +1871,36 @@ watch(currentStep, async (newStep) => {
                   <div v-if="isTestPlan(selectedPlanForCheckout)">
                     <VCard variant="outlined">
                       <VCardText>
-                        <div
-                          class="d-flex align-center justify-space-between mb-4"
-                        >
-                          <span class="text-body-1 font-weight-medium">
-                            {{ selectedPlanForCheckout.name }}
-                          </span>
-                          <span class="text-h6 font-weight-bold text-primary">
-                            {{
-                              formatCurrency(getPrice(selectedPlanForCheckout))
-                            }}
-                          </span>
+                        <h4 class="text-h6 mb-4">
+                          {{ $t('selected_plan') }}
+                        </h4>
+
+                        <div class="d-flex align-center gap-3 mb-3">
+                          <VIcon
+                            :icon="
+                              selectedPlanForCheckout.icon || 'tabler-rocket'
+                            "
+                            size="32"
+                            color="primary"
+                          />
+                          <div>
+                            <h5 class="text-h6 mb-1">
+                              {{ selectedPlanForCheckout.name }}
+                            </h5>
+                            <p
+                              v-if="selectedPlanForCheckout.description"
+                              class="text-body-2 text-medium-emphasis mb-0"
+                            >
+                              {{ selectedPlanForCheckout.description }}
+                            </p>
+                          </div>
                         </div>
 
                         <VDivider class="my-4" />
 
-                        <div class="d-flex align-center justify-space-between">
+                        <div
+                          class="d-flex align-center justify-space-between mb-4"
+                        >
                           <span class="text-body-1 font-weight-medium">
                             {{ $t('subtotal') }}
                           </span>
