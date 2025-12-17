@@ -53,6 +53,8 @@ type PaymentStatus =
   | 'OVERDUE'
   | 'REFUNDED';
 
+type PaymentMethod = 'boleto' | 'credit_card' | 'pix';
+
 const registerMultistepBg = useGenerateImageVariant(
   registerMultistepBgLight,
   registerMultistepBgDark
@@ -203,9 +205,7 @@ const selectedCrossSellByType = ref<Record<string, string | null>>({});
 const loadingPlans = ref(false);
 const loadingCrossSells = ref(false);
 const creditCardFee = ref<ListCreditCardFeeResponse | null>(null);
-const selectedPaymentMethod = ref<'boleto' | 'credit_card' | 'pix'>(
-  'credit_card'
-);
+const selectedPaymentMethod = ref<PaymentMethod>('credit_card');
 const cardForm = ref({
   cardholder_name: '',
   card_number: '',
@@ -482,7 +482,7 @@ const buildAddons = () => {
   }));
 };
 
-const getPaymentMethod = (): 'boleto' | 'credit_card' | 'pix' | null => {
+const getPaymentMethod = (): PaymentMethod | null => {
   if (isTestPlan(selectedPlanForCheckout.value)) {
     return 'pix';
   }
@@ -499,7 +499,7 @@ const parseCardExpiry = (): { month: string; year: string } => {
 };
 
 const buildNewCard = (
-  paymentMethod: 'boleto' | 'credit_card' | 'pix'
+  paymentMethod: PaymentMethod
 ):
   | {
       number: string;
@@ -523,7 +523,7 @@ const buildNewCard = (
 };
 
 const validateCreditCard = (
-  paymentMethod: 'boleto' | 'credit_card' | 'pix',
+  paymentMethod: PaymentMethod,
   newCard: ReturnType<typeof buildNewCard>
 ): boolean => {
   if (paymentMethod !== 'credit_card') {
@@ -540,7 +540,7 @@ const validateCreditCard = (
 };
 
 const getInstallmentsValue = (
-  paymentMethod: 'boleto' | 'credit_card' | 'pix'
+  paymentMethod: PaymentMethod
 ): number | undefined => {
   if (paymentMethod === 'credit_card' && billingPeriod.value === 'annual') {
     return installments.value;
@@ -1065,23 +1065,17 @@ const initPaymentSubscription = async () => {
     sub.on('publication', (ctx: PublicationContext) => {
       const data = ctx.data as IPaymentCentrifugoData;
       if (data?.payment_id === pixPaymentId.value) {
-        const validStatuses: Array<
-          'PENDING' | 'RECEIVED' | 'CONFIRMED' | 'OVERDUE' | 'REFUNDED'
-        > = ['PENDING', 'RECEIVED', 'CONFIRMED', 'OVERDUE', 'REFUNDED'];
+        const validStatuses: Array<PaymentStatus> = [
+          'PENDING',
+          'RECEIVED',
+          'CONFIRMED',
+          'OVERDUE',
+          'REFUNDED',
+        ];
         pixPaymentStatus.value = validStatuses.includes(
-          data.status as
-            | 'PENDING'
-            | 'RECEIVED'
-            | 'CONFIRMED'
-            | 'OVERDUE'
-            | 'REFUNDED'
+          data.status as PaymentStatus
         )
-          ? (data.status as
-              | 'PENDING'
-              | 'RECEIVED'
-              | 'CONFIRMED'
-              | 'OVERDUE'
-              | 'REFUNDED')
+          ? (data.status as PaymentStatus)
           : null;
         if (data.is_confirmed) {
           pixPaymentConfirmed.value = true;
@@ -2963,14 +2957,14 @@ watch(currentStep, async (newStep) => {
                               v-model="cardForm.cardholder_name"
                               :label="$t('cardholder_name')"
                               variant="outlined"
-                              autocomplete="cc-name"
+                              :autocomplete="'cc-name'"
                             />
                             <VTextField
                               :model-value="cardForm.card_number"
                               :label="$t('card_number')"
                               variant="outlined"
                               maxlength="19"
-                              autocomplete="cc-number"
+                              :autocomplete="'cc-number'"
                               @input="onCardNumberInput"
                             >
                               <template #append-inner>
@@ -2993,7 +2987,7 @@ watch(currentStep, async (newStep) => {
                                 variant="outlined"
                                 maxlength="5"
                                 class="flex-grow-1"
-                                autocomplete="cc-exp"
+                                :autocomplete="'cc-exp'"
                                 @input="onExpiryInput"
                               />
                               <VTextField
@@ -3002,7 +2996,7 @@ watch(currentStep, async (newStep) => {
                                 variant="outlined"
                                 maxlength="4"
                                 class="flex-grow-1"
-                                autocomplete="cc-csc"
+                                :autocomplete="'cc-csc'"
                                 @input="onCvvInput"
                               />
                             </div>
