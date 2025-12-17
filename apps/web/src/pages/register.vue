@@ -46,6 +46,13 @@ interface IPaymentCentrifugoData {
   is_confirmed: boolean;
 }
 
+type PaymentStatus =
+  | 'PENDING'
+  | 'RECEIVED'
+  | 'CONFIRMED'
+  | 'OVERDUE'
+  | 'REFUNDED';
+
 const registerMultistepBg = useGenerateImageVariant(
   registerMultistepBgLight,
   registerMultistepBgDark
@@ -363,6 +370,7 @@ const handleVerifyCode = async (): Promise<boolean> => {
     currentStep.value = 2;
     return true;
   } catch (error) {
+    console.error('Erro ao verificar código:', error);
     isVerificationValid.value = false;
     verificationCode.value = '';
     return false;
@@ -451,87 +459,142 @@ const handleRegister = async () => {
   }
 };
 
+const validateRequiredFields = (): boolean => {
+  return !!(
+    selectedPlanForCheckout.value &&
+    account_name.value &&
+    password.value &&
+    user_document_type_id.value &&
+    document.value &&
+    country_id.value &&
+    zip_code.value &&
+    address1.value &&
+    district.value
+  );
+};
+
+const buildAddons = () => {
+  if (selectedAddons.value.length === 0) {
+    return undefined;
+  }
+  return selectedAddons.value.map((addon) => ({
+    plan_cross_sell_id: addon.plan_cross_sell_id,
+  }));
+};
+
+const getPaymentMethod = (): 'boleto' | 'credit_card' | 'pix' | null => {
+  if (isTestPlan(selectedPlanForCheckout.value)) {
+    return 'pix';
+  }
+  return selectedPaymentMethod.value || null;
+};
+
+const parseCardExpiry = (): { month: string; year: string } => {
+  const expiryClean = cardForm.value.expiry.replaceAll(/\s/g, '');
+  const expiryParts = expiryClean.split('/');
+  const expiryMonth = expiryParts[0] || '';
+  const expiryYear =
+    expiryParts.length > 1 ? expiryParts[1]?.slice(-2) || '' : '';
+  return { month: expiryMonth, year: expiryYear };
+};
+
+const buildNewCard = (
+  paymentMethod: 'boleto' | 'credit_card' | 'pix'
+):
+  | {
+      number: string;
+      holder_name: string;
+      expiry_month: string;
+      expiry_year: string;
+      cvv: string;
+    }
+  | undefined => {
+  if (paymentMethod !== 'credit_card' || !cardForm.value.card_number) {
+    return undefined;
+  }
+  const { month, year } = parseCardExpiry();
+  return {
+    number: cardForm.value.card_number.replaceAll(/\s/g, ''),
+    holder_name: cardForm.value.cardholder_name,
+    expiry_month: month,
+    expiry_year: year,
+    cvv: cardForm.value.cvv,
+  };
+};
+
+const validateCreditCard = (
+  paymentMethod: 'boleto' | 'credit_card' | 'pix',
+  newCard: ReturnType<typeof buildNewCard>
+): boolean => {
+  if (paymentMethod !== 'credit_card') {
+    return true;
+  }
+  return !!(
+    newCard &&
+    newCard.number &&
+    newCard.holder_name &&
+    newCard.expiry_month &&
+    newCard.expiry_year &&
+    newCard.cvv
+  );
+};
+
+const getInstallmentsValue = (
+  paymentMethod: 'boleto' | 'credit_card' | 'pix'
+): number | undefined => {
+  if (paymentMethod === 'credit_card' && billingPeriod.value === 'annual') {
+    return installments.value;
+  }
+  return undefined;
+};
+
+const buildUserData = () => {
+  return {
+    name: name.value?.trim() || '',
+    last_name: last_name.value?.trim() || '',
+    email: email.value?.trim() || '',
+    password: password.value || '',
+    phone_ddi: phone_ddi.value || '',
+    phone_ddd: phone_ddd.value || undefined,
+    phone: phone.value || '',
+    document_type_id: user_document_type_id.value!,
+    document: document.value?.trim() || '',
+    birth_date: birth_date.value || undefined,
+    country_id: country_id.value!,
+    zip_code: zip_code.value?.trim() || '',
+    address1: address1.value?.trim() || '',
+    address2: address2.value || undefined,
+    district: district.value?.trim() || '',
+    state_fiscal_code: state_fiscal_code.value || undefined,
+    city_fiscal_code: city_fiscal_code.value || undefined,
+  };
+};
+
 const buildRegisterPaymentData =
   (): CreateRegisterOrderPaymentRequest | null => {
-    if (!selectedPlanForCheckout.value) return null;
-    if (!account_name.value) return null;
-    if (!password.value) return null;
-    if (!user_document_type_id.value) return null;
-    if (!document.value) return null;
-    if (!country_id.value) return null;
-    if (!zip_code.value) return null;
-    if (!address1.value) return null;
-    if (!district.value) return null;
-
-    const addons =
-      selectedAddons.value.length > 0
-        ? selectedAddons.value.map((addon) => ({
-            plan_cross_sell_id: addon.plan_cross_sell_id,
-          }))
-        : undefined;
-
-    const paymentMethod = isTestPlan(selectedPlanForCheckout.value)
-      ? 'pix'
-      : selectedPaymentMethod.value;
-
-    if (!paymentMethod) return null;
-
-    const expiryClean = cardForm.value.expiry.replaceAll(/\s/g, '');
-    const expiryParts = expiryClean.split('/');
-    const expiryMonth = expiryParts[0] || '';
-    const expiryYear =
-      expiryParts.length > 1 ? expiryParts[1]?.slice(-2) || '' : '';
-
-    const newCard =
-      paymentMethod === 'credit_card' && cardForm.value.card_number
-        ? {
-            number: cardForm.value.card_number.replaceAll(/\s/g, ''),
-            holder_name: cardForm.value.cardholder_name,
-            expiry_month: expiryMonth,
-            expiry_year: expiryYear,
-            cvv: cardForm.value.cvv,
-          }
-        : undefined;
-
-    if (
-      paymentMethod === 'credit_card' &&
-      (!newCard ||
-        !newCard.number ||
-        !newCard.holder_name ||
-        !newCard.expiry_month ||
-        !newCard.expiry_year ||
-        !newCard.cvv)
-    ) {
+    if (!validateRequiredFields()) {
       return null;
     }
 
-    const installmentsValue =
-      paymentMethod === 'credit_card' && billingPeriod.value === 'annual'
-        ? installments.value
-        : undefined;
+    const addons = buildAddons();
+    const paymentMethod = getPaymentMethod();
+
+    if (!paymentMethod) {
+      return null;
+    }
+
+    const newCard = buildNewCard(paymentMethod);
+
+    if (!validateCreditCard(paymentMethod, newCard)) {
+      return null;
+    }
+
+    const installmentsValue = getInstallmentsValue(paymentMethod);
 
     return {
-      account_name: account_name.value.trim(),
-      user: {
-        name: name.value?.trim() || '',
-        last_name: last_name.value?.trim() || '',
-        email: email.value?.trim() || '',
-        password: password.value || '',
-        phone_ddi: phone_ddi.value || '',
-        phone_ddd: phone_ddd.value || undefined,
-        phone: phone.value || '',
-        document_type_id: user_document_type_id.value,
-        document: document.value?.trim() || '',
-        birth_date: birth_date.value || undefined,
-        country_id: country_id.value,
-        zip_code: zip_code.value?.trim() || '',
-        address1: address1.value?.trim() || '',
-        address2: address2.value || undefined,
-        district: district.value?.trim() || '',
-        state_fiscal_code: state_fiscal_code.value || undefined,
-        city_fiscal_code: city_fiscal_code.value || undefined,
-      },
-      plan_id: selectedPlanForCheckout.value.plan_id,
+      account_name: account_name.value!.trim(),
+      user: buildUserData(),
+      plan_id: selectedPlanForCheckout.value!.plan_id,
       billing_period: billingPeriod.value,
       addons,
       payment_method: paymentMethod,
@@ -601,6 +664,70 @@ const handleSubmitOrderPayment = async () => {
   );
 };
 
+const handleStep0 = () => {
+  handleRegister();
+};
+
+const handleStep1 = async (): Promise<boolean> => {
+  if (!verificationCode.value || verificationCode.value.length !== 6) {
+    return false;
+  }
+  const verified = await handleVerifyCode();
+  if (!verified || !isVerificationValid.value) {
+    return false;
+  }
+  return true;
+};
+
+const handleStep2 = async (): Promise<boolean> => {
+  const validation = await refFormData.value?.validate();
+  if (!validation?.valid) {
+    return false;
+  }
+  maxStepReached.value = Math.max(maxStepReached.value, 3);
+  const nextStep = Math.min(currentStep.value + 1, LAST_STEP_INDEX.value);
+  currentStep.value = nextStep;
+  return true;
+};
+
+const handleStep3 = async (): Promise<boolean> => {
+  if (!selectedPlanForCheckout.value) {
+    return false;
+  }
+
+  if (isTestPlan(selectedPlanForCheckout.value)) {
+    maxStepReached.value = LAST_STEP_INDEX.value;
+    currentStep.value = LAST_STEP_INDEX.value;
+    return true;
+  }
+
+  if (ADDONS_STEP_INDEX.value === -1) {
+    maxStepReached.value = LAST_STEP_INDEX.value;
+    currentStep.value = LAST_STEP_INDEX.value;
+    return true;
+  }
+
+  maxStepReached.value = Math.max(
+    maxStepReached.value,
+    ADDONS_STEP_INDEX.value
+  );
+  if (!loadingCrossSells.value) {
+    await loadCrossSells();
+  }
+  currentStep.value = ADDONS_STEP_INDEX.value;
+  return true;
+};
+
+const handleAddonsStep = () => {
+  maxStepReached.value = LAST_STEP_INDEX.value;
+};
+
+const handleDefaultStep = () => {
+  if (currentStep.value < LAST_STEP_INDEX.value) {
+    currentStep.value = currentStep.value + 1;
+  }
+};
+
 const handleNext = async () => {
   if (currentStep.value === LAST_STEP_INDEX.value) {
     await handleSubmitOrderPayment();
@@ -608,67 +735,30 @@ const handleNext = async () => {
   }
 
   if (currentStep.value === 0) {
-    handleRegister();
+    handleStep0();
     return;
   }
 
   if (currentStep.value === 1) {
-    if (!verificationCode.value || verificationCode.value.length !== 6) {
-      return;
-    }
-    const verified = await handleVerifyCode();
-    if (!verified || !isVerificationValid.value) {
-      return;
-    }
+    await handleStep1();
     return;
   }
 
   if (currentStep.value === 2) {
-    const validation = await refFormData.value?.validate();
-    if (!validation?.valid) {
-      return;
-    }
-    maxStepReached.value = Math.max(maxStepReached.value, 3);
-    const nextStep = Math.min(currentStep.value + 1, LAST_STEP_INDEX.value);
-    currentStep.value = nextStep;
+    await handleStep2();
     return;
   }
 
   if (currentStep.value === 3) {
-    if (!selectedPlanForCheckout.value) {
-      return;
-    }
-
-    if (isTestPlan(selectedPlanForCheckout.value)) {
-      maxStepReached.value = LAST_STEP_INDEX.value;
-      currentStep.value = LAST_STEP_INDEX.value;
-      return;
-    }
-
-    if (ADDONS_STEP_INDEX.value === -1) {
-      maxStepReached.value = LAST_STEP_INDEX.value;
-      currentStep.value = LAST_STEP_INDEX.value;
-      return;
-    }
-
-    maxStepReached.value = Math.max(
-      maxStepReached.value,
-      ADDONS_STEP_INDEX.value
-    );
-    if (!loadingCrossSells.value) {
-      await loadCrossSells();
-    }
-    currentStep.value = ADDONS_STEP_INDEX.value;
+    await handleStep3();
     return;
   }
 
   if (currentStep.value === ADDONS_STEP_INDEX.value) {
-    maxStepReached.value = LAST_STEP_INDEX.value;
+    handleAddonsStep();
   }
 
-  if (currentStep.value < LAST_STEP_INDEX.value) {
-    currentStep.value = currentStep.value + 1;
-  }
+  handleDefaultStep();
 };
 
 function formatPhone(value: string | null | undefined): string {
@@ -718,9 +808,9 @@ const detectCardBrand = (value: string | null): string | null => {
   if (cleaned.match(/^3(0[0-5]|[68])/)) return 'DINERS';
   if (cleaned.match(/^6(?:011|5)/)) return 'DISCOVER';
   if (cleaned.match(/^(636368|438935|504175|451416|636297)/)) return 'ELO';
-  if (cleaned.match(/^(352[8-9]|35[3-8][0-9])/)) return 'JCB';
+  if (cleaned.match(/^(352[8-9]|35[3-8]\d)/)) return 'JCB';
   if (cleaned.match(/^(50|56|57|58)/)) return 'MAESTRO';
-  if (cleaned.match(/^606282|^3841(?:[0|4|6]{1})0/)) return 'HIPERCARD';
+  if (cleaned.match(/^606282|^3841(?:[046])0/)) return 'HIPERCARD';
   if (cleaned.match(/^(5018|5020|5038|6304|6759|6761|6762|6763)/))
     return 'MELI';
   if (cleaned.match(/^(5090|5091|5092)/)) return 'REAL';
@@ -858,12 +948,7 @@ const processCreditCardPayment = async (creditCardData: {
 }) => {
   pixPaymentId.value = creditCardData.payment_id;
   pixPaymentStatus.value =
-    (creditCardData.status as
-      | 'PENDING'
-      | 'RECEIVED'
-      | 'CONFIRMED'
-      | 'OVERDUE'
-      | 'REFUNDED') || 'PENDING';
+    (creditCardData.status as PaymentStatus) || 'PENDING';
   pixPaymentInitiated.value = true;
   if (creditCardData.is_confirmed) {
     pixPaymentConfirmed.value = true;
@@ -3648,10 +3733,6 @@ watch(currentStep, async (newStep) => {
 
 .register-step-plans {
   max-width: 100%;
-}
-
-.credit-card-form {
-  animation: slideDown 0.3s ease-out;
 }
 
 .credit-card-preview {

@@ -21,7 +21,7 @@ export class RegisterOrderPaymentCreatorUseCase {
     private readonly encryptService: EncryptService
   ) {}
 
-  private sanitizePhone = (
+  private readonly sanitizePhone = (
     phoneDdd: string | undefined,
     phone: string
   ): string => {
@@ -30,11 +30,10 @@ export class RegisterOrderPaymentCreatorUseCase {
     return `${ddd}${phone}`.replaceAll(/\D/g, '');
   };
 
-  private validateRegisterContact = (
+  private readonly validateRegisterContact = (
     t: TFunction<'translation', undefined>,
     registerJwtData: IRegisterJwtPayload,
     email: string,
-    phoneDdi: string,
     phoneDdd: string | undefined,
     phone: string
   ) => {
@@ -51,7 +50,7 @@ export class RegisterOrderPaymentCreatorUseCase {
     }
   };
 
-  private buildAccountInput = (
+  private readonly buildAccountInput = (
     input: CreateRegisterOrderPaymentRequest
   ): CreateAccountRequest => {
     const name = input.account_name.trim();
@@ -64,7 +63,7 @@ export class RegisterOrderPaymentCreatorUseCase {
     };
   };
 
-  private buildUserInput = (
+  private readonly buildUserInput = (
     input: CreateRegisterOrderPaymentRequest
   ): CreateUserRequest => {
     const phone = this.sanitizePhone(input.user.phone_ddd, input.user.phone);
@@ -112,7 +111,7 @@ export class RegisterOrderPaymentCreatorUseCase {
     };
   };
 
-  private buildPaymentInput = (
+  private readonly buildPaymentInput = (
     input: CreateRegisterOrderPaymentRequest
   ): CreateRegisterOrderPaymentRequest => {
     const addons =
@@ -154,7 +153,7 @@ export class RegisterOrderPaymentCreatorUseCase {
     };
   };
 
-  execute = async (
+  readonly execute = async (
     t: TFunction<'translation', undefined>,
     registerJwtData: IRegisterJwtPayload,
     input: CreateRegisterOrderPaymentRequest,
@@ -167,7 +166,6 @@ export class RegisterOrderPaymentCreatorUseCase {
         t,
         registerJwtData,
         input.user.email,
-        input.user.phone_ddi,
         input.user.phone_ddd,
         input.user.phone
       );

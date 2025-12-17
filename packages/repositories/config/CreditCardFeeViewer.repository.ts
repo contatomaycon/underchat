@@ -39,7 +39,7 @@ export class CreditCardFeeViewerRepository {
     return this.buildResponse(feeRecord);
   };
 
-  private buildResponse = (
+  private readonly buildResponse = (
     record: typeof creditCardFee.$inferSelect
   ): ListCreditCardFeeResponse => {
     return {

@@ -18,7 +18,7 @@ export class AuthRegisterVerifyCodeUseCase {
       input.code.toUpperCase()
     );
 
-    if (!twoFactorData || !twoFactorData.created_at) {
+    if (!twoFactorData?.created_at) {
       throw new Error(t('register_code_invalid'));
     }
 

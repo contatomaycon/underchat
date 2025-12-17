@@ -14,16 +14,16 @@ async function authenticateRegisterJwt(
   const { t } = request;
 
   try {
-    const decoded = (await request.jwtVerify({
+    const decoded: IRegisterJwtPayload = await request.jwtVerify({
       verify: {
         key: generalEnvironment.jwtSecret,
       },
       decode: {
         complete: true,
       },
-    })) as IRegisterJwtPayload;
+    });
 
-    if (!decoded || !decoded.token || !decoded.email_c || !decoded.phone_c) {
+    if (!decoded?.token || !decoded?.email_c || !decoded?.phone_c) {
       return sendResponse(reply, {
         message: t('register_token_invalid'),
         httpStatusCode: EHTTPStatusCode.unauthorized,
