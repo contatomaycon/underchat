@@ -233,6 +233,8 @@ const pixPaymentConfirmed = ref(false);
 const paymentSubscription = ref<Subscription | null>(null);
 const accountIdForPayment = ref<string | null>(null);
 const registerCentrifugeClient = ref<Centrifuge | null>(null);
+const testPlanModalOpen = ref(false);
+const testPlanSuccess = ref(false);
 const installments = ref<number>(1);
 const recurringPayment = ref(false);
 const nextButtonLabel = computed(() => {
@@ -544,6 +546,26 @@ const buildRegisterPaymentData =
 const handleSubmitOrderPayment = async () => {
   const payload = buildRegisterPaymentData();
   if (!payload) return;
+
+  const isTest = isTestPlan(selectedPlanForCheckout.value);
+
+  if (isTest) {
+    paymentModalLoading.value = true;
+    testPlanModalOpen.value = true;
+    testPlanSuccess.value = false;
+
+    const result = await registerStore.createOrderPayment(payload);
+    paymentModalLoading.value = false;
+
+    if (!result) {
+      testPlanModalOpen.value = false;
+      return;
+    }
+
+    testPlanSuccess.value = true;
+    return;
+  }
+
   paymentModalLoading.value = true;
   pixPaymentData.value = null;
   boletoPaymentData.value = null;
@@ -1068,6 +1090,22 @@ const closePixModal = async () => {
   pixModalOpen.value = false;
 
   if (isApproved && pixPaymentInitiated.value) {
+    const success = await authStore.login(
+      email.value?.trim() || '',
+      password.value || ''
+    );
+    if (!success) {
+      registerStore.showSnackbar(t('login_invalid'), EColor.error);
+      return;
+    }
+    router.push('/');
+  }
+};
+
+const closeTestPlanModal = async () => {
+  testPlanModalOpen.value = false;
+
+  if (testPlanSuccess.value) {
     const success = await authStore.login(
       email.value?.trim() || '',
       password.value || ''
@@ -3529,6 +3567,49 @@ watch(currentStep, async (newStep) => {
           <VDivider />
           <VCardActions v-if="shouldShowCloseButton" class="justify-end pa-4">
             <VBtn variant="tonal" color="secondary" @click="closePixModal">
+              {{ $t('close') }}
+            </VBtn>
+          </VCardActions>
+        </VCard>
+      </VDialog>
+
+      <VDialog v-model="testPlanModalOpen" max-width="500" persistent>
+        <DialogCloseBtn @click="closeTestPlanModal" />
+        <VCard>
+          <VCardTitle>
+            <span>{{ $t('test_plan_activation') }}</span>
+          </VCardTitle>
+          <VDivider />
+          <VCardText class="d-flex flex-column align-center gap-4 pa-6">
+            <div v-if="paymentModalLoading" class="d-flex justify-center my-4">
+              <VProgressCircular indeterminate color="primary" size="48" />
+            </div>
+
+            <div v-else-if="testPlanSuccess" class="text-center w-100">
+              <VIcon size="64" color="success" class="mb-4"
+                >tabler-circle-check</VIcon
+              >
+              <h3 class="text-h5 mb-2">
+                {{ $t('test_plan_activated_title') }}
+              </h3>
+              <p class="text-body-1">{{ $t('test_plan_activated_message') }}</p>
+            </div>
+            <div v-else class="text-center w-100">
+              <VIcon size="64" color="error" class="mb-4"
+                >tabler-alert-circle</VIcon
+              >
+              <h3 class="text-h5 mb-2">
+                {{ $t('test_plan_activation_failed') }}
+              </h3>
+              <p class="text-body-1">{{ $t('test_plan_activation_error') }}</p>
+            </div>
+          </VCardText>
+          <VDivider />
+          <VCardActions
+            v-if="testPlanSuccess || !paymentModalLoading"
+            class="justify-end pa-4"
+          >
+            <VBtn variant="tonal" color="secondary" @click="closeTestPlanModal">
               {{ $t('close') }}
             </VBtn>
           </VCardActions>
