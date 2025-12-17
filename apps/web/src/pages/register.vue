@@ -1586,118 +1586,6 @@ watch(currentStep, async (newStep) => {
 
             <VWindowItem>
               <div class="register-step-content">
-                <h5 class="text-h5 mb-1">{{ $t('addons') }}</h5>
-                <p class="text-sm mb-6">
-                  {{ $t('addons_description') }}
-                </p>
-
-                <div v-if="!selectedPlanForCheckout" class="text-center py-4">
-                  <p class="text-body-2 text-medium-emphasis">
-                    {{ $t('select_plan') }}
-                  </p>
-                </div>
-
-                <div v-if="selectedPlanForCheckout && ADDONS_STEP_INDEX !== -1">
-                  <div v-if="loadingCrossSells" class="text-center py-4">
-                    <VProgressCircular
-                      indeterminate
-                      color="primary"
-                      size="32"
-                    />
-                  </div>
-
-                  <div
-                    v-if="!loadingCrossSells && groupedCrossSells.length > 0"
-                    class="d-flex flex-column gap-4"
-                  >
-                    <VCard
-                      v-for="group in groupedCrossSells"
-                      :key="group.product_id"
-                      variant="outlined"
-                      :class="{
-                        'border-primary': isAddonSelected(group.product_id),
-                      }"
-                    >
-                      <VCardText>
-                        <div class="d-flex flex-column gap-3">
-                          <div>
-                            <div class="font-weight-medium mb-1">
-                              {{ group.product_name }}
-                            </div>
-                            <div
-                              v-if="group.product_description"
-                              class="text-body-2 text-medium-emphasis"
-                            >
-                              {{ group.product_description }}
-                            </div>
-                          </div>
-
-                          <div
-                            v-if="isAddonSelected(group.product_id)"
-                            class="d-flex align-center justify-space-between"
-                          >
-                            <VChip color="success" variant="tonal">
-                              {{ $t('added') }}
-                            </VChip>
-                            <VBtn
-                              color="error"
-                              variant="outlined"
-                              size="small"
-                              @click="removeAddon(group.product_id)"
-                            >
-                              {{ $t('remove') }}
-                            </VBtn>
-                          </div>
-
-                          <div
-                            v-if="!isAddonSelected(group.product_id)"
-                            class="d-flex align-center gap-2"
-                          >
-                            <VSelect
-                              v-model="
-                                selectedCrossSellByType[group.product_id]
-                              "
-                              :items="
-                                group.options.map((opt) => ({
-                                  title: getCrossSellLabel(opt),
-                                  value: opt.plan_cross_sell_id,
-                                }))
-                              "
-                              item-title="title"
-                              item-value="value"
-                              :label="`${$t('select')} ${group.product_name}`"
-                              variant="outlined"
-                              density="compact"
-                              class="flex-grow-1"
-                            />
-                            <VBtn
-                              color="primary"
-                              variant="outlined"
-                              :disabled="!canAddCrossSell(group.product_id)"
-                              @click="addAddon(group.product_id)"
-                            >
-                              {{ $t('add') }}
-                            </VBtn>
-                          </div>
-                        </div>
-                      </VCardText>
-                    </VCard>
-                  </div>
-
-                  <div
-                    v-if="!loadingCrossSells && groupedCrossSells.length === 0"
-                    class="text-center py-4"
-                  >
-                    <p class="text-body-2 text-medium-emphasis">
-                      {{ $t('no_addons_available') }}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </VWindowItem>
-
-            <VWindowItem>
-              <div class="register-step-content">
                 <h5 class="text-h5 mb-1">
                   {{
                     selectedPlanForCheckout &&
@@ -1732,17 +1620,45 @@ watch(currentStep, async (newStep) => {
                           </span>
                         </div>
 
-                        <div
-                          v-for="addon in selectedAddons"
-                          :key="addon.plan_cross_sell_id"
-                          class="d-flex align-center justify-space-between mb-2"
-                        >
-                          <span class="text-body-2">
-                            {{ addon.name }} ({{ addon.quantity }}x)
+                        <VDivider class="my-4" />
+
+                        <div class="d-flex align-center justify-space-between">
+                          <span class="text-body-1 font-weight-medium">
+                            {{ $t('subtotal') }}
                           </span>
-                          <span class="text-body-2 font-weight-medium">
-                            {{ formatCurrency(addon.price) }}
+                          <span class="text-body-1 font-weight-medium">
+                            {{
+                              formatCurrency(getPrice(selectedPlanForCheckout))
+                            }}
                           </span>
+                        </div>
+
+                        <div class="mb-2">
+                          <div
+                            v-if="selectedAddons.length > 0"
+                            class="d-flex flex-column gap-2 mb-2"
+                          >
+                            <div
+                              v-for="addon in selectedAddons"
+                              :key="addon.plan_cross_sell_id"
+                              class="d-flex justify-space-between align-center"
+                            >
+                              <span class="text-body-2 text-medium-emphasis">
+                                {{ addon.name }} (x{{ addon.quantity }})
+                              </span>
+                              <span class="text-body-2 font-weight-medium">
+                                {{ formatCurrency(addon.price) }}
+                              </span>
+                            </div>
+                          </div>
+                          <div v-if="selectedAddons.length === 0">
+                            <span class="text-body-2 text-medium-emphasis">
+                              {{ $t('addons') }}:
+                            </span>
+                            <span class="text-body-2 font-weight-medium ml-2">
+                              {{ formatCurrency(0) }}
+                            </span>
+                          </div>
                         </div>
 
                         <VDivider class="my-4" />
