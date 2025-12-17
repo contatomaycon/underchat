@@ -43,6 +43,8 @@ import { ListAccountTestsResponse } from '@core/schema/account/listAccountTests/
 import { AccountBlockedListerRepository } from '@core/repositories/account/AccountBlockedLister.repository';
 import { ListAccountBlockedRequest } from '@core/schema/account/listAccountBlocked/request.schema';
 import { ListAccountBlockedResponse } from '@core/schema/account/listAccountBlocked/response.schema';
+import Redis from 'ioredis';
+import { inject } from 'tsyringe';
 
 @injectable()
 export class AccountService {
@@ -67,7 +69,8 @@ export class AccountService {
     private readonly accountCancellingListerRepository: AccountCancellingListerRepository,
     private readonly accountCancelledListerRepository: AccountCancelledListerRepository,
     private readonly accountBlockedListerRepository: AccountBlockedListerRepository,
-    private readonly accountTestsListerRepository: AccountTestsListerRepository
+    private readonly accountTestsListerRepository: AccountTestsListerRepository,
+    @inject('Redis') private readonly redis: Redis
   ) {}
 
   viewAccountInfoByAccountId = async (
@@ -340,5 +343,29 @@ export class AccountService {
       accountId,
       accountStatusId
     );
+  };
+
+  clearAllAccountSessions = async (accountId: string): Promise<void> => {
+    const pattern = `jwtSession:${accountId}:*`;
+    const stream = this.redis.scanStream({
+      match: pattern,
+      count: 100,
+    });
+
+    const keysToDelete: string[] = [];
+
+    stream.on('data', (keys: string[]) => {
+      keysToDelete.push(...keys);
+    });
+
+    await new Promise<void>((resolve) => {
+      stream.on('end', () => {
+        resolve();
+      });
+    });
+
+    if (keysToDelete.length > 0) {
+      await this.redis.del(...keysToDelete);
+    }
   };
 }

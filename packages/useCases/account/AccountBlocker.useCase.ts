@@ -7,9 +7,15 @@ export class AccountBlockerUseCase {
   constructor(private readonly accountService: AccountService) {}
 
   async execute(accountId: string): Promise<boolean> {
-    return this.accountService.updateAccountStatusById(
+    const result = await this.accountService.updateAccountStatusById(
       accountId,
       EAccountStatus.blocked
     );
+
+    if (result) {
+      await this.accountService.clearAllAccountSessions(accountId);
+    }
+
+    return result;
   }
 }
