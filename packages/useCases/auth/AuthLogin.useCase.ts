@@ -111,6 +111,14 @@ export class AuthLoginUseCase {
       throw new Error(t('login_invalid'));
     }
 
+    const isAccountBlocked = await this.accountService.isAccountBlocked(
+      result.account_id
+    );
+
+    if (isAccountBlocked) {
+      throw new Error(t('account_blocked_contact_support'));
+    }
+
     const hadDuplicateLogin = await this.handleDuplicateLogin(
       result.user_id,
       result.account_id

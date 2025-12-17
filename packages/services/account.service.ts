@@ -238,6 +238,15 @@ export class AccountService {
     );
   };
 
+  isAccountBlocked = async (accountId: string): Promise<boolean> => {
+    const planStatus = await this.viewPlanStatus(accountId);
+    if (!planStatus) {
+      return false;
+    }
+
+    return planStatus.account_status_id === EAccountStatus.blocked;
+  };
+
   listAccountSubscribers = async (
     perPage: number,
     currentPage: number,
