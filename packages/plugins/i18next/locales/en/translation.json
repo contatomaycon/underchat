@@ -3,6 +3,7 @@
   "login_error": "Login error!",
   "login_invalid": "Invalid login!",
   "login_success": "Login success!",
+  "account_blocked_contact_support": "Your account is blocked. Please contact support for more information.",
   "internal_server_error": "Internal server error!",
   "server_creator_success": "Server created successfully!",
   "server_creator_error": "Error creating server!",
