@@ -161,6 +161,17 @@ const selectedAddons = ref<
 const selectedCrossSellByType = ref<Record<string, string | null>>({});
 const loadingPlans = ref(false);
 const loadingCrossSells = ref(false);
+const selectedPaymentMethod = ref<'boleto' | 'credit_card' | 'pix'>(
+  'credit_card'
+);
+const cardForm = ref({
+  cardholder_name: '',
+  card_number: '',
+  expiry: '',
+  cvv: '',
+});
+const installments = ref<number>(1);
+const recurringPayment = ref(false);
 
 const showDDDField = computed(() => phone_ddi.value === '55');
 
@@ -1693,46 +1704,427 @@ watch(currentStep, async (newStep) => {
                 </p>
 
                 <div v-if="selectedPlanForCheckout">
-                  <VCard variant="outlined">
-                    <VCardText>
-                      <div
-                        class="d-flex align-center justify-space-between mb-4"
-                      >
-                        <span class="text-body-1 font-weight-medium">
-                          {{ selectedPlanForCheckout.name }}
-                        </span>
-                        <span class="text-h6 font-weight-bold text-primary">
-                          {{
-                            formatCurrency(getPrice(selectedPlanForCheckout))
-                          }}
-                        </span>
-                      </div>
+                  <div v-if="isTestPlan(selectedPlanForCheckout)">
+                    <VCard variant="outlined">
+                      <VCardText>
+                        <div
+                          class="d-flex align-center justify-space-between mb-4"
+                        >
+                          <span class="text-body-1 font-weight-medium">
+                            {{ selectedPlanForCheckout.name }}
+                          </span>
+                          <span class="text-h6 font-weight-bold text-primary">
+                            {{
+                              formatCurrency(getPrice(selectedPlanForCheckout))
+                            }}
+                          </span>
+                        </div>
 
-                      <div
-                        v-for="addon in selectedAddons"
-                        :key="addon.plan_cross_sell_id"
-                        class="d-flex align-center justify-space-between mb-2"
-                      >
-                        <span class="text-body-2">
-                          {{ addon.name }} ({{ addon.quantity }}x)
-                        </span>
-                        <span class="text-body-2 font-weight-medium">
-                          {{ formatCurrency(addon.price) }}
-                        </span>
-                      </div>
+                        <div
+                          v-for="addon in selectedAddons"
+                          :key="addon.plan_cross_sell_id"
+                          class="d-flex align-center justify-space-between mb-2"
+                        >
+                          <span class="text-body-2">
+                            {{ addon.name }} ({{ addon.quantity }}x)
+                          </span>
+                          <span class="text-body-2 font-weight-medium">
+                            {{ formatCurrency(addon.price) }}
+                          </span>
+                        </div>
 
-                      <VDivider class="my-4" />
+                        <VDivider class="my-4" />
 
-                      <div class="d-flex align-center justify-space-between">
-                        <span class="text-h6 font-weight-bold">
-                          {{ $t('total') }}:
-                        </span>
-                        <span class="text-h5 font-weight-bold text-primary">
-                          {{ formatCurrency(totalPrice) }}
-                        </span>
-                      </div>
-                    </VCardText>
-                  </VCard>
+                        <div class="d-flex align-center justify-space-between">
+                          <span class="text-h6 font-weight-bold">
+                            {{ $t('total') }}:
+                          </span>
+                          <span class="text-h5 font-weight-bold text-primary">
+                            {{ formatCurrency(totalPrice) }}
+                          </span>
+                        </div>
+                      </VCardText>
+                    </VCard>
+                  </div>
+
+                  <div v-if="!isTestPlan(selectedPlanForCheckout)">
+                    <h5 class="text-h6 mb-4">
+                      {{ $t('select_payment_method') }}
+                    </h5>
+
+                    <VRow>
+                      <VCol cols="12" md="4">
+                        <VCard
+                          :class="[
+                            'payment-method-card',
+                            selectedPaymentMethod === 'boleto'
+                              ? 'payment-method-selected'
+                              : '',
+                          ]"
+                          :variant="
+                            selectedPaymentMethod === 'boleto'
+                              ? 'elevated'
+                              : 'outlined'
+                          "
+                          :elevation="
+                            selectedPaymentMethod === 'boleto' ? 4 : 0
+                          "
+                          @click="selectedPaymentMethod = 'boleto'"
+                          style="cursor: pointer"
+                        >
+                          <VCardText class="text-center">
+                            <VIcon
+                              icon="tabler-receipt"
+                              size="48"
+                              color="primary"
+                              class="mb-3"
+                            />
+                            <h5 class="text-h6 mb-2">{{ $t('boleto') }}</h5>
+                            <p class="text-body-2 text-medium-emphasis">
+                              {{ $t('boleto_description') }}
+                            </p>
+                          </VCardText>
+                        </VCard>
+                      </VCol>
+
+                      <VCol cols="12" md="4">
+                        <VCard
+                          :class="[
+                            'payment-method-card',
+                            selectedPaymentMethod === 'credit_card'
+                              ? 'payment-method-selected'
+                              : '',
+                          ]"
+                          :variant="
+                            selectedPaymentMethod === 'credit_card'
+                              ? 'elevated'
+                              : 'outlined'
+                          "
+                          :elevation="
+                            selectedPaymentMethod === 'credit_card' ? 4 : 0
+                          "
+                          @click="selectedPaymentMethod = 'credit_card'"
+                          style="cursor: pointer"
+                        >
+                          <VCardText class="text-center">
+                            <VIcon
+                              icon="tabler-credit-card"
+                              size="48"
+                              color="primary"
+                              class="mb-3"
+                            />
+                            <h5 class="text-h6 mb-2">
+                              {{ $t('credit_card') }}
+                            </h5>
+                            <p class="text-body-2 text-medium-emphasis">
+                              {{ $t('credit_card_description') }}
+                            </p>
+                          </VCardText>
+                        </VCard>
+                      </VCol>
+
+                      <VCol cols="12" md="4">
+                        <VCard
+                          :class="[
+                            'payment-method-card',
+                            selectedPaymentMethod === 'pix'
+                              ? 'payment-method-selected'
+                              : '',
+                          ]"
+                          :variant="
+                            selectedPaymentMethod === 'pix'
+                              ? 'elevated'
+                              : 'outlined'
+                          "
+                          :elevation="selectedPaymentMethod === 'pix' ? 4 : 0"
+                          @click="selectedPaymentMethod = 'pix'"
+                          style="cursor: pointer"
+                        >
+                          <VCardText class="text-center">
+                            <VIcon
+                              icon="tabler-qrcode"
+                              size="48"
+                              color="primary"
+                              class="mb-3"
+                            />
+                            <h5 class="text-h6 mb-2">{{ $t('pix') }}</h5>
+                            <p class="text-body-2 text-medium-emphasis">
+                              {{ $t('pix_description') }}
+                            </p>
+                          </VCardText>
+                        </VCard>
+                      </VCol>
+                    </VRow>
+
+                    <VRow
+                      class="mt-6"
+                      v-if="selectedPaymentMethod === 'credit_card'"
+                    >
+                      <VCol cols="12" md="6">
+                        <VCard variant="outlined" class="credit-card-form">
+                          <VCardText class="d-flex flex-column gap-4">
+                            <AppTextField
+                              v-model="cardForm.cardholder_name"
+                              :label="$t('cardholder_name')"
+                              variant="outlined"
+                            />
+                            <AppTextField
+                              v-model="cardForm.card_number"
+                              :label="$t('card_number')"
+                              variant="outlined"
+                              maxlength="19"
+                            />
+                            <div class="d-flex gap-3">
+                              <AppTextField
+                                v-model="cardForm.expiry"
+                                :label="$t('expiry_date')"
+                                variant="outlined"
+                                maxlength="7"
+                                class="flex-grow-1"
+                              />
+                              <AppTextField
+                                v-model="cardForm.cvv"
+                                :label="$t('cvv')"
+                                variant="outlined"
+                                maxlength="4"
+                                class="flex-grow-1"
+                              />
+                            </div>
+
+                            <VCard variant="outlined">
+                              <VCardText class="d-flex flex-column gap-3">
+                                <div v-if="billingPeriod === 'annual'">
+                                  <VLabel class="text-body-2 mb-1">
+                                    {{ $t('select_installments') }}:
+                                  </VLabel>
+                                  <VSelect
+                                    v-model="installments"
+                                    :items="
+                                      Array.from({ length: 12 }, (_, i) => ({
+                                        title: `${i + 1}x`,
+                                        value: i + 1,
+                                      }))
+                                    "
+                                    variant="outlined"
+                                    density="compact"
+                                    item-title="title"
+                                    item-value="value"
+                                  />
+                                </div>
+
+                                <div>
+                                  <VCheckbox
+                                    v-model="recurringPayment"
+                                    :label="$t('recurring_payment')"
+                                    color="primary"
+                                    hide-details
+                                  />
+                                  <p
+                                    class="text-body-2 text-medium-emphasis mt-2"
+                                  >
+                                    {{ $t('recurring_payment_description') }}
+                                  </p>
+                                </div>
+                              </VCardText>
+                            </VCard>
+                          </VCardText>
+                        </VCard>
+                      </VCol>
+
+                      <VCol cols="12" md="6">
+                        <VCard variant="outlined">
+                          <VCardText>
+                            <h4 class="text-h6 mb-4">
+                              {{ $t('selected_plan') }}
+                            </h4>
+
+                            <div v-if="selectedPlanForCheckout" class="mb-4">
+                              <div class="d-flex align-center gap-3 mb-3">
+                                <VIcon
+                                  :icon="
+                                    selectedPlanForCheckout.icon ||
+                                    'tabler-rocket'
+                                  "
+                                  size="32"
+                                  color="primary"
+                                />
+                                <div>
+                                  <h5 class="text-h6 mb-1">
+                                    {{ selectedPlanForCheckout.name }}
+                                  </h5>
+                                  <p
+                                    v-if="selectedPlanForCheckout.description"
+                                    class="text-body-2 text-medium-emphasis mb-0"
+                                  >
+                                    {{ selectedPlanForCheckout.description }}
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+
+                            <VDivider class="my-4" />
+
+                            <div
+                              class="d-flex align-center justify-space-between mb-4"
+                            >
+                              <span class="text-body-1 font-weight-medium">
+                                {{ $t('subtotal') }}
+                              </span>
+                              <span class="text-body-1 font-weight-medium">
+                                {{
+                                  formatCurrency(
+                                    getPrice(selectedPlanForCheckout)
+                                  )
+                                }}
+                              </span>
+                            </div>
+
+                            <div class="mb-2">
+                              <div
+                                v-if="selectedAddons.length > 0"
+                                class="d-flex flex-column gap-2 mb-2"
+                              >
+                                <div
+                                  v-for="addon in selectedAddons"
+                                  :key="addon.plan_cross_sell_id"
+                                  class="d-flex justify-space-between align-center"
+                                >
+                                  <span
+                                    class="text-body-2 text-medium-emphasis"
+                                  >
+                                    {{ addon.name }} (x{{ addon.quantity }})
+                                  </span>
+                                  <span class="text-body-2 font-weight-medium">
+                                    {{ formatCurrency(addon.price) }}
+                                  </span>
+                                </div>
+                              </div>
+                              <div v-if="selectedAddons.length === 0">
+                                <span class="text-body-2 text-medium-emphasis">
+                                  {{ $t('addons') }}:
+                                </span>
+                                <span
+                                  class="text-body-2 font-weight-medium ml-2"
+                                >
+                                  {{ formatCurrency(0) }}
+                                </span>
+                              </div>
+                            </div>
+
+                            <VDivider class="my-4" />
+
+                            <div
+                              class="d-flex align-center justify-space-between"
+                            >
+                              <span class="text-h6 font-weight-bold">
+                                {{ $t('total') }}:
+                              </span>
+                              <span
+                                class="text-h5 font-weight-bold text-primary"
+                              >
+                                {{ formatCurrency(totalPrice) }}
+                              </span>
+                            </div>
+                          </VCardText>
+                        </VCard>
+                      </VCol>
+                    </VRow>
+
+                    <VRow
+                      class="mt-6"
+                      v-if="selectedPaymentMethod === 'boleto'"
+                    >
+                      <VCol cols="12" md="6">
+                        <VCard variant="outlined">
+                          <VCardText>
+                            <h5 class="text-h6 mb-2">
+                              {{ $t('boleto_summary') }}
+                            </h5>
+                            <p class="text-body-2 text-medium-emphasis">
+                              {{ $t('boleto_instructions') }}
+                            </p>
+                          </VCardText>
+                        </VCard>
+                      </VCol>
+                      <VCol cols="12" md="6">
+                        <VCard variant="outlined">
+                          <VCardText>
+                            <div
+                              class="d-flex align-center justify-space-between mb-2"
+                            >
+                              <span class="text-body-1 font-weight-medium">
+                                {{ $t('selected_plan') }}
+                              </span>
+                              <span class="text-body-1 font-weight-medium">
+                                {{
+                                  formatCurrency(
+                                    getPrice(selectedPlanForCheckout)
+                                  )
+                                }}
+                              </span>
+                            </div>
+                            <div
+                              class="d-flex align-center justify-space-between"
+                            >
+                              <span class="text-body-1 font-weight-medium">
+                                {{ $t('total') }}
+                              </span>
+                              <span
+                                class="text-h6 font-weight-bold text-primary"
+                              >
+                                {{ formatCurrency(totalPrice) }}
+                              </span>
+                            </div>
+                          </VCardText>
+                        </VCard>
+                      </VCol>
+                    </VRow>
+
+                    <VRow class="mt-6" v-if="selectedPaymentMethod === 'pix'">
+                      <VCol cols="12" md="6">
+                        <VCard variant="outlined">
+                          <VCardText>
+                            <h5 class="text-h6 mb-2">{{ $t('pix') }}</h5>
+                            <p class="text-body-2 text-medium-emphasis">
+                              {{ $t('pix_description') }}
+                            </p>
+                          </VCardText>
+                        </VCard>
+                      </VCol>
+                      <VCol cols="12" md="6">
+                        <VCard variant="outlined">
+                          <VCardText>
+                            <div
+                              class="d-flex align-center justify-space-between mb-2"
+                            >
+                              <span class="text-body-1 font-weight-medium">
+                                {{ $t('selected_plan') }}
+                              </span>
+                              <span class="text-body-1 font-weight-medium">
+                                {{
+                                  formatCurrency(
+                                    getPrice(selectedPlanForCheckout)
+                                  )
+                                }}
+                              </span>
+                            </div>
+                            <div
+                              class="d-flex align-center justify-space-between"
+                            >
+                              <span class="text-body-1 font-weight-medium">
+                                {{ $t('total') }}
+                              </span>
+                              <span
+                                class="text-h6 font-weight-bold text-primary"
+                              >
+                                {{ formatCurrency(totalPrice) }}
+                              </span>
+                            </div>
+                          </VCardText>
+                        </VCard>
+                      </VCol>
+                    </VRow>
+                  </div>
                 </div>
               </div>
             </VWindowItem>
@@ -1936,6 +2328,36 @@ watch(currentStep, async (newStep) => {
   margin: 0;
   position: relative;
   z-index: 1;
+}
+
+.payment-method-card {
+  transition:
+    transform 0.2s ease-in-out,
+    box-shadow 0.2s ease-in-out;
+
+  &:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  }
+}
+
+.payment-method-selected {
+  border: 2px solid rgb(var(--v-theme-primary));
+}
+
+.credit-card-form {
+  animation: slideDown 0.2s ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 </style>
 
