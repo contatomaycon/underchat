@@ -11,6 +11,8 @@ import { recreateChannel } from './methods/recreateChannel';
 import { deleteChannel } from './methods/deleteChannel';
 import { recreateChannelsAll } from './methods/recreateChannelsAll';
 import { channelsStatistics } from './methods/channelsStatistics';
+import { listCreditCardFee } from './methods/listCreditCardFee';
+import { updateCreditCardFee } from './methods/updateCreditCardFee';
 
 @injectable()
 class ConfigController {
@@ -26,6 +28,8 @@ class ConfigController {
   public deleteChannel = deleteChannel;
   public recreateChannelsAll = recreateChannelsAll;
   public channelsStatistics = channelsStatistics;
+  public listCreditCardFee = listCreditCardFee;
+  public updateCreditCardFee = updateCreditCardFee;
 }
 
 export default ConfigController;

@@ -146,7 +146,9 @@ export class NotificationMessageSendConsume {
       data.message_whatsapp
     );
 
-    await this.sendPhoneJidUpdateRequest(data.user_id, result.jid);
+    if (data?.user_id) {
+      await this.sendPhoneJidUpdateRequest(data.user_id, result.jid);
+    }
   }
 
   private async sendPhoneJidUpdateRequest(

@@ -595,6 +595,10 @@
   "nfse_updated_successfully": "Configuração de NFSe atualizada com sucesso!",
   "nfse_not_found": "Configuração de NFSe não encontrada",
   "nfse_update_error": "Erro ao atualizar configuração de NFSe",
+  "credit_card_fee_viewed_successfully": "Taxas de cartão de crédito visualizadas com sucesso!",
+  "credit_card_fee_updated_successfully": "Taxas de cartão de crédito atualizadas com sucesso!",
+  "credit_card_fee_not_found": "Taxas de cartão de crédito não encontradas",
+  "credit_card_fee_update_error": "Erro ao atualizar taxas de cartão de crédito",
   "plan_not_found_or_already_cancelled": "Plano não encontrado ou já cancelado",
   "plan_already_cancelling": "O plano já está em processo de cancelamento",
   "last_payment_date_not_found": "Data do último pagamento não encontrada",
@@ -743,5 +747,16 @@
   "send_date_must_be_future": "A data de envio deve ser maior que a data atual!",
   "worker_id_required": "O canal é obrigatório!",
   "schedule_messages_list_successfully": "Mensagens do agendamento listadas com sucesso!",
-  "schedule_messages_list_not_found": "Nenhuma mensagem encontrada para este agendamento."
+  "schedule_messages_list_not_found": "Nenhuma mensagem encontrada para este agendamento.",
+  "register_code_sent": "Código de verificação enviado com sucesso!",
+  "register_code_verified": "Código verificado com sucesso!",
+  "register_code_invalid": "Código de verificação inválido",
+  "register_code_expired": "Código de verificação expirado",
+  "register_token_invalid": "Token de registro inválido",
+  "register_token_expired": "Token de registro expirado",
+  "register_error": "Erro ao processar registro!",
+  "register_phone_already_used_in_test": "Este telefone já foi utilizado em um teste anterior!",
+  "register_email_already_used_in_test": "Este email já foi utilizado em um teste anterior!",
+  "register_email_already_used": "Este email já está cadastrado!",
+  "register_phone_already_used": "Este telefone já está cadastrado!"
 }

@@ -125,7 +125,7 @@ export default [
   },
   {
     title: 'roles',
-    to: { name: 'roles' as keyof RouteNamedMap },
+    to: { name: 'role' as keyof RouteNamedMap },
     icon: { icon: 'tabler-crosshair' },
     permissions: [
       EGeneralPermissions.full_access,

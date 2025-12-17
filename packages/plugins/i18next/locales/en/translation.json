@@ -596,6 +596,10 @@
   "nfse_updated_successfully": "NFSe configuration updated successfully!",
   "nfse_not_found": "NFSe configuration not found",
   "nfse_update_error": "Error updating NFSe configuration",
+  "credit_card_fee_viewed_successfully": "Credit card fees viewed successfully!",
+  "credit_card_fee_updated_successfully": "Credit card fees updated successfully!",
+  "credit_card_fee_not_found": "Credit card fees not found",
+  "credit_card_fee_update_error": "Error updating credit card fees",
   "plan_not_found_or_already_cancelled": "Plan not found or already cancelled",
   "plan_already_cancelling": "The plan is already in cancellation process",
   "last_payment_date_not_found": "Last payment date not found",
@@ -743,5 +747,16 @@
   "send_date_must_be_future": "Send date must be greater than current date!",
   "worker_id_required": "Channel is required!",
   "schedule_messages_list_successfully": "Schedule messages listed successfully!",
-  "schedule_messages_list_not_found": "No messages found for this schedule."
+  "schedule_messages_list_not_found": "No messages found for this schedule.",
+  "register_code_sent": "Verification code sent successfully!",
+  "register_code_verified": "Code verified successfully!",
+  "register_code_invalid": "Invalid verification code",
+  "register_code_expired": "Verification code expired",
+  "register_token_invalid": "Invalid registration token",
+  "register_token_expired": "Registration token expired",
+  "register_error": "Error processing registration!",
+  "register_phone_already_used_in_test": "This phone number has already been used in a previous test!",
+  "register_email_already_used_in_test": "This email has already been used in a previous test!",
+  "register_email_already_used": "This email is already registered!",
+  "register_phone_already_used": "This phone number is already registered!"
 }

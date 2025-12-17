@@ -16,6 +16,9 @@ import { ListChannelsRequest } from '@core/schema/config/listChannels/request.sc
 import { ListChannelsFinalResponse } from '@core/schema/config/listChannels/response.schema';
 import { ChannelsStatisticsResponse } from '@core/schema/config/channelsStatistics/response.schema';
 import { IAccountBasic } from '@core/common/interfaces/IAccountBasic';
+import { ListCreditCardFeeResponse } from '@core/schema/config/listCreditCardFee/response.schema';
+import { UpdateCreditCardFeeRequest } from '@core/schema/config/updateCreditCardFee/request.schema';
+import { UpdateCreditCardFeeResponse } from '@core/schema/config/updateCreditCardFee/response.schema';
 
 export const useSettingsStore = defineStore('settings', {
   state: () => ({
@@ -29,6 +32,7 @@ export const useSettingsStore = defineStore('settings', {
     notifications: null as ListNotificationsResponse | null,
     nfse: null as ListNfseResponse | null,
     channels: null as ListChannelsFinalResponse | null,
+    creditCardFee: null as ListCreditCardFeeResponse | null,
   }),
   actions: {
     showSnackbar(message: string, color: EColor) {
@@ -94,8 +98,13 @@ export const useSettingsStore = defineStore('settings', {
         this.notifications = {
           notification_id: data.data.notification_id,
           two_factor_notification: data.data.two_factor_notification,
-          plan_notification: data.data.plan_notification,
+          plan_new_notification: data.data.plan_new_notification,
+          plan_renewal_notification: data.data.plan_renewal_notification,
           plan_expiration_reminder: data.data.plan_expiration_reminder,
+          plan_cancellation_notification:
+            data.data.plan_cancellation_notification,
+          recurring_payment_failure_notification:
+            data.data.recurring_payment_failure_notification,
           created_at: data.data.created_at,
           updated_at: data.data.updated_at,
         };
@@ -193,6 +202,74 @@ export const useSettingsStore = defineStore('settings', {
       } catch (error) {
         this.loading = false;
         let errorMessage = this.i18n.global.t('nfse_update_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        return null;
+      }
+    },
+    async getCreditCardFee(): Promise<ListCreditCardFeeResponse | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.get<
+          IApiResponse<ListCreditCardFeeResponse>
+        >('/config/credit-card-fee');
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        this.creditCardFee = data.data;
+
+        return data.data;
+      } catch {
+        this.loading = false;
+        return null;
+      }
+    },
+    async updateCreditCardFee(
+      input: UpdateCreditCardFeeRequest
+    ): Promise<UpdateCreditCardFeeResponse | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.patch<
+          IApiResponse<UpdateCreditCardFeeResponse>
+        >('/config/credit-card-fee', input);
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const message =
+            data?.message ?? this.i18n.global.t('credit_card_fee_update_error');
+
+          this.showSnackbar(message, EColor.error);
+
+          return null;
+        }
+
+        this.showSnackbar(
+          data.message ??
+            this.i18n.global.t('credit_card_fee_updated_successfully'),
+          EColor.success
+        );
+
+        this.creditCardFee = data.data;
+
+        return data.data;
+      } catch (error) {
+        this.loading = false;
+        let errorMessage = this.i18n.global.t('credit_card_fee_update_error');
         if (error instanceof AxiosError) {
           errorMessage = error?.response?.data?.message ?? errorMessage;
         }

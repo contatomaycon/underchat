@@ -18,6 +18,7 @@ import { calculateUpgradeDiscount } from './methods/calculateUpgradeDiscount';
 import { createOrderPayment } from './methods/createOrderPayment';
 import { listAvailableCrossSell } from './methods/listAvailableCrossSell';
 import { checkTestPlanAlreadyUsed } from './methods/checkTestPlanAlreadyUsed';
+import { listCreditCardFee } from './methods/listCreditCardFee';
 
 @injectable()
 class PlanController {
@@ -40,6 +41,7 @@ class PlanController {
   public createOrderPayment = createOrderPayment;
   public listAvailableCrossSell = listAvailableCrossSell;
   public checkTestPlanAlreadyUsed = checkTestPlanAlreadyUsed;
+  public listCreditCardFee = listCreditCardFee;
 }
 
 export default PlanController;

@@ -131,12 +131,20 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       Record<never, never>,
       | 'config-channels-tab'
+      | 'config-creditcard-tab'
       | 'config-nfse-tab'
       | 'config-notifications-tab'
     >,
     'config-channels-tab': RouteRecordInfo<
       'config-channels-tab',
       '/config/channels-tab',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
+    'config-creditcard-tab': RouteRecordInfo<
+      'config-creditcard-tab',
+      '/config/creditcard-tab',
       Record<never, never>,
       Record<never, never>,
       | never
@@ -242,6 +250,13 @@ declare module 'vue-router/auto-routes' {
     'plans-checkout': RouteRecordInfo<
       'plans-checkout',
       '/plans-checkout',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
+    'register': RouteRecordInfo<
+      'register',
+      '/register',
       Record<never, never>,
       Record<never, never>,
       | never
@@ -430,6 +445,7 @@ declare module 'vue-router/auto-routes' {
       routes:
         | 'config'
         | 'config-channels-tab'
+        | 'config-creditcard-tab'
         | 'config-nfse-tab'
         | 'config-notifications-tab'
       views:
@@ -438,6 +454,12 @@ declare module 'vue-router/auto-routes' {
     'src/pages/config/channels-tab.vue': {
       routes:
         | 'config-channels-tab'
+      views:
+        | never
+    }
+    'src/pages/config/creditcard-tab.vue': {
+      routes:
+        | 'config-creditcard-tab'
       views:
         | never
     }
@@ -528,6 +550,12 @@ declare module 'vue-router/auto-routes' {
     'src/pages/plans-checkout.vue': {
       routes:
         | 'plans-checkout'
+      views:
+        | never
+    }
+    'src/pages/register.vue': {
+      routes:
+        | 'register'
       views:
         | never
     }

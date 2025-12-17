@@ -1,12 +1,5 @@
 <script setup lang="ts">
-import {
-  withDefaults,
-  defineProps,
-  defineEmits,
-  ref,
-  computed,
-  watchEffect,
-} from 'vue';
+import { ref, computed, watchEffect } from 'vue';
 
 interface Item {
   title: string;

@@ -39,12 +39,22 @@ const swaggerPlugin = async (fastify: FastifyInstance) => {
             name: 'Authorization',
             description: 'Token JWT para autenticação',
           },
+          authenticateRegisterJwt: {
+            type: 'apiKey',
+            in: 'header',
+            name: 'Authorization',
+            description: 'Token JWT para autenticação de registro',
+          },
         },
       },
       tags: [
         {
           name: ETagSwagger.auth,
           description: 'End-points relacionados à autenticação',
+        },
+        {
+          name: ETagSwagger.register,
+          description: 'End-points relacionados ao registro',
         },
         {
           name: ETagSwagger.centrifugo,

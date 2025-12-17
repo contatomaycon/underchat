@@ -5,6 +5,7 @@ import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import NotificationsTab from './config/notifications-tab.vue';
 import NfseTab from './config/nfse-tab.vue';
 import ChannelsTab from './config/channels-tab.vue';
+import CreditCardTab from './config/creditcard-tab.vue';
 
 definePage({
   meta: {
@@ -34,6 +35,9 @@ watch(tab, (v) => {
         <VTab value="nfse" prepend-icon="tabler-file-invoice">{{
           $t('nfse')
         }}</VTab>
+        <VTab value="creditcard" prepend-icon="tabler-credit-card">{{
+          $t('credit_card')
+        }}</VTab>
         <VTab value="channels" prepend-icon="tabler-message">{{
           $t('channels')
         }}</VTab>
@@ -47,6 +51,9 @@ watch(tab, (v) => {
         </VWindowItem>
         <VWindowItem value="nfse">
           <NfseTab />
+        </VWindowItem>
+        <VWindowItem value="creditcard">
+          <CreditCardTab />
         </VWindowItem>
         <VWindowItem value="channels">
           <ChannelsTab />

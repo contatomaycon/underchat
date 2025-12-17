@@ -279,26 +279,31 @@ export class PaymentService {
     province: string | undefined;
     postalCode: string | undefined;
   } => {
-    if (sensitiveData.address1) {
-      const addressParts = parseAddress(sensitiveData.address1);
+    const postalCode = userView.user_address?.zip_code || undefined;
+    const province = userView.user_address?.district || undefined;
 
+    if (!sensitiveData.address1) {
       return {
-        address: sensitiveData.address1 || addressParts.street,
-        addressNumber: sensitiveData.address2 || addressParts.number,
-        complement:
-          addressParts.complement ||
-          `${sensitiveData.address1} ${sensitiveData.address2}`,
-        province: userView.user_address?.district || undefined,
-        postalCode: userView.user_address?.zip_code || undefined,
+        address: undefined,
+        addressNumber: undefined,
+        complement: sensitiveData.address2 || undefined,
+        province,
+        postalCode,
       };
     }
 
+    const addressParts = parseAddress(sensitiveData.address1);
+    const address = sensitiveData.address1 || addressParts.street;
+    const addressNumber = addressParts.number || sensitiveData.address2 || '0';
+    const complement =
+      addressParts.complement || sensitiveData.address2 || undefined;
+
     return {
-      address: undefined,
-      addressNumber: undefined,
-      complement: sensitiveData.address2 || undefined,
-      province: userView.user_address?.district || undefined,
-      postalCode: userView.user_address?.zip_code || undefined,
+      address,
+      addressNumber,
+      complement,
+      province,
+      postalCode,
     };
   };
 

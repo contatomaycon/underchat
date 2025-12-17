@@ -596,6 +596,10 @@
   "nfse_updated_successfully": "¡Configuración de NFSe actualizada con éxito!",
   "nfse_not_found": "Configuración de NFSe no encontrada",
   "nfse_update_error": "Error al actualizar configuración de NFSe",
+  "credit_card_fee_viewed_successfully": "¡Tasas de tarjeta de crédito visualizadas con éxito!",
+  "credit_card_fee_updated_successfully": "¡Tasas de tarjeta de crédito actualizadas con éxito!",
+  "credit_card_fee_not_found": "Tasas de tarjeta de crédito no encontradas",
+  "credit_card_fee_update_error": "Error al actualizar tasas de tarjeta de crédito",
   "plan_not_found_or_already_cancelled": "Plan no encontrado o ya cancelado",
   "plan_already_cancelling": "El plan ya está en proceso de cancelación",
   "last_payment_date_not_found": "Fecha del último pago no encontrada",
@@ -743,5 +747,16 @@
   "send_date_must_be_future": "¡La fecha de envío debe ser mayor que la fecha actual!",
   "worker_id_required": "¡El canal es obligatorio!",
   "schedule_messages_list_successfully": "¡Mensajes del agendamiento listados con éxito!",
-  "schedule_messages_list_not_found": "No se encontraron mensajes para este agendamiento."
+  "schedule_messages_list_not_found": "No se encontraron mensajes para este agendamiento.",
+  "register_code_sent": "¡Código de verificación enviado con éxito!",
+  "register_code_verified": "¡Código verificado con éxito!",
+  "register_code_invalid": "Código de verificación inválido",
+  "register_code_expired": "Código de verificación expirado",
+  "register_token_invalid": "Token de registro inválido",
+  "register_token_expired": "Token de registro expirado",
+  "register_error": "¡Error al procesar el registro!",
+  "register_phone_already_used_in_test": "¡Este número de teléfono ya fue utilizado en una prueba anterior!",
+  "register_email_already_used_in_test": "¡Este correo electrónico ya fue utilizado en una prueba anterior!",
+  "register_email_already_used": "¡Este correo electrónico ya está registrado!",
+  "register_phone_already_used": "¡Este número de teléfono ya está registrado!"
 }
