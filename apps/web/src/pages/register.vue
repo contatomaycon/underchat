@@ -172,6 +172,18 @@ const cardForm = ref({
 });
 const installments = ref<number>(1);
 const recurringPayment = ref(false);
+const nextButtonLabel = computed(() => {
+  if (
+    selectedPlanForCheckout.value &&
+    isTestPlan(selectedPlanForCheckout.value)
+  ) {
+    if (currentStep.value === LAST_STEP_INDEX.value) return t('test_now');
+    return t('next');
+  }
+  if (currentStep.value === LAST_STEP_INDEX.value)
+    return t('finalize_purchase');
+  return t('next');
+});
 
 const showDDDField = computed(() => phone_ddi.value === '55');
 
@@ -2049,11 +2061,41 @@ watch(currentStep, async (newStep) => {
                       <VCol cols="12" md="6">
                         <VCard variant="outlined">
                           <VCardText>
+                            <h4 class="text-h6 mb-4">
+                              {{ $t('selected_plan') }}
+                            </h4>
+
+                            <div v-if="selectedPlanForCheckout" class="mb-4">
+                              <div class="d-flex align-center gap-3 mb-3">
+                                <VIcon
+                                  :icon="
+                                    selectedPlanForCheckout.icon ||
+                                    'tabler-rocket'
+                                  "
+                                  size="32"
+                                  color="primary"
+                                />
+                                <div>
+                                  <h5 class="text-h6 mb-1">
+                                    {{ selectedPlanForCheckout.name }}
+                                  </h5>
+                                  <p
+                                    v-if="selectedPlanForCheckout.description"
+                                    class="text-body-2 text-medium-emphasis mb-0"
+                                  >
+                                    {{ selectedPlanForCheckout.description }}
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+
+                            <VDivider class="my-4" />
+
                             <div
-                              class="d-flex align-center justify-space-between mb-2"
+                              class="d-flex align-center justify-space-between mb-4"
                             >
                               <span class="text-body-1 font-weight-medium">
-                                {{ $t('selected_plan') }}
+                                {{ $t('subtotal') }}
                               </span>
                               <span class="text-body-1 font-weight-medium">
                                 {{
@@ -2063,14 +2105,49 @@ watch(currentStep, async (newStep) => {
                                 }}
                               </span>
                             </div>
+
+                            <div class="mb-2">
+                              <div
+                                v-if="selectedAddons.length > 0"
+                                class="d-flex flex-column gap-2 mb-2"
+                              >
+                                <div
+                                  v-for="addon in selectedAddons"
+                                  :key="addon.plan_cross_sell_id"
+                                  class="d-flex justify-space-between align-center"
+                                >
+                                  <span
+                                    class="text-body-2 text-medium-emphasis"
+                                  >
+                                    {{ addon.name }} (x{{ addon.quantity }})
+                                  </span>
+                                  <span class="text-body-2 font-weight-medium">
+                                    {{ formatCurrency(addon.price) }}
+                                  </span>
+                                </div>
+                              </div>
+                              <div v-if="selectedAddons.length === 0">
+                                <span class="text-body-2 text-medium-emphasis">
+                                  {{ $t('addons') }}:
+                                </span>
+                                <span
+                                  class="text-body-2 font-weight-medium ml-2"
+                                >
+                                  {{ formatCurrency(0) }}
+                                </span>
+                              </div>
+                            </div>
+
+                            <VDivider class="my-4" />
+
                             <div
                               class="d-flex align-center justify-space-between"
                             >
-                              <span class="text-body-1 font-weight-medium">
-                                {{ $t('total') }}
+                              <span class="text-h6 font-weight-bold">
+                                {{ $t('total') }}:
                               </span>
                               <span
-                                class="text-h6 font-weight-bold text-primary"
+                                class="text-h5 font-weight-bold text-primary"
                               >
                                 {{ formatCurrency(totalPrice) }}
                               </span>
@@ -2094,11 +2171,41 @@ watch(currentStep, async (newStep) => {
                       <VCol cols="12" md="6">
                         <VCard variant="outlined">
                           <VCardText>
+                            <h4 class="text-h6 mb-4">
+                              {{ $t('selected_plan') }}
+                            </h4>
+
+                            <div v-if="selectedPlanForCheckout" class="mb-4">
+                              <div class="d-flex align-center gap-3 mb-3">
+                                <VIcon
+                                  :icon="
+                                    selectedPlanForCheckout.icon ||
+                                    'tabler-rocket'
+                                  "
+                                  size="32"
+                                  color="primary"
+                                />
+                                <div>
+                                  <h5 class="text-h6 mb-1">
+                                    {{ selectedPlanForCheckout.name }}
+                                  </h5>
+                                  <p
+                                    v-if="selectedPlanForCheckout.description"
+                                    class="text-body-2 text-medium-emphasis mb-0"
+                                  >
+                                    {{ selectedPlanForCheckout.description }}
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+
+                            <VDivider class="my-4" />
+
                             <div
-                              class="d-flex align-center justify-space-between mb-2"
+                              class="d-flex align-center justify-space-between mb-4"
                             >
                               <span class="text-body-1 font-weight-medium">
-                                {{ $t('selected_plan') }}
+                                {{ $t('subtotal') }}
                               </span>
                               <span class="text-body-1 font-weight-medium">
                                 {{
@@ -2108,14 +2215,49 @@ watch(currentStep, async (newStep) => {
                                 }}
                               </span>
                             </div>
+
+                            <div class="mb-2">
+                              <div
+                                v-if="selectedAddons.length > 0"
+                                class="d-flex flex-column gap-2 mb-2"
+                              >
+                                <div
+                                  v-for="addon in selectedAddons"
+                                  :key="addon.plan_cross_sell_id"
+                                  class="d-flex justify-space-between align-center"
+                                >
+                                  <span
+                                    class="text-body-2 text-medium-emphasis"
+                                  >
+                                    {{ addon.name }} (x{{ addon.quantity }})
+                                  </span>
+                                  <span class="text-body-2 font-weight-medium">
+                                    {{ formatCurrency(addon.price) }}
+                                  </span>
+                                </div>
+                              </div>
+                              <div v-if="selectedAddons.length === 0">
+                                <span class="text-body-2 text-medium-emphasis">
+                                  {{ $t('addons') }}:
+                                </span>
+                                <span
+                                  class="text-body-2 font-weight-medium ml-2"
+                                >
+                                  {{ formatCurrency(0) }}
+                                </span>
+                              </div>
+                            </div>
+
+                            <VDivider class="my-4" />
+
                             <div
                               class="d-flex align-center justify-space-between"
                             >
-                              <span class="text-body-1 font-weight-medium">
-                                {{ $t('total') }}
+                              <span class="text-h6 font-weight-bold">
+                                {{ $t('total') }}:
                               </span>
                               <span
-                                class="text-h6 font-weight-bold text-primary"
+                                class="text-h5 font-weight-bold text-primary"
                               >
                                 {{ formatCurrency(totalPrice) }}
                               </span>
@@ -2151,7 +2293,7 @@ watch(currentStep, async (newStep) => {
             :loading="registerStore.isLoading && currentStep === 0"
             @click="handleNext"
           >
-            {{ $t('next') }}
+            {{ nextButtonLabel }}
 
             <VIcon icon="tabler-arrow-right" end class="flip-in-rtl" />
           </VBtn>
