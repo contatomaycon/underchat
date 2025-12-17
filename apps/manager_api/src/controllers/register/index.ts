@@ -7,6 +7,7 @@ import { listCities } from './methods/listCities';
 import { listPlanWithItems } from './methods/listPlanWithItems';
 import { listAvailableCrossSell } from './methods/listAvailableCrossSell';
 import { listCreditCardFee } from './methods/listCreditCardFee';
+import { createOrderPayment } from './methods/createOrderPayment';
 
 @injectable()
 class RegisterController {
@@ -18,6 +19,7 @@ class RegisterController {
   public listPlanWithItems = listPlanWithItems;
   public listAvailableCrossSell = listAvailableCrossSell;
   public listCreditCardFee = listCreditCardFee;
+  public createOrderPayment = createOrderPayment;
 }
 
 export default RegisterController;

@@ -17,6 +17,8 @@ import { RegisterCityListResponse } from '@core/schema/register/listCities/respo
 import { ListRegisterPlanWithItemsFinalResponse } from '@core/schema/register/listPlanWithItems/response.schema';
 import { ListRegisterAvailableCrossSellFinalResponse } from '@core/schema/register/listAvailableCrossSell/response.schema';
 import { ListCreditCardFeeResponse } from '@core/schema/config/listCreditCardFee/response.schema';
+import { CreateRegisterOrderPaymentRequest } from '@core/schema/register/createOrderPayment/request.schema';
+import { CreateRegisterOrderPaymentResponse } from '@core/schema/register/createOrderPayment/response.schema';
 
 export const useRegisterStore = defineStore('register', {
   state: () => ({
@@ -394,6 +396,64 @@ export const useRegisterStore = defineStore('register', {
         }
 
         this.showSnackbar(errorMessage, EColor.error);
+        return null;
+      }
+    },
+    async createOrderPayment(
+      input: CreateRegisterOrderPaymentRequest
+    ): Promise<CreateRegisterOrderPaymentResponse | null> {
+      const url = import.meta.env.VITE_BACKEND_URL;
+      if (!url) {
+        this.showSnackbar(
+          this.i18n.global.t('backend_url_not_configured'),
+          EColor.error
+        );
+        return null;
+      }
+
+      const tokenCookie = useCookie<string>('register_token');
+      if (!tokenCookie.value) {
+        this.showSnackbar(
+          this.i18n.global.t('register_token_invalid'),
+          EColor.error
+        );
+        return null;
+      }
+
+      this.isLoading = true;
+
+      try {
+        const currentLocale = this.i18n.global.locale;
+        const response = await axios.post<
+          IApiResponse<CreateRegisterOrderPaymentResponse>
+        >(`${url}/v1/register/order/payment`, input, {
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept-Language': currentLocale,
+            Authorization: `Bearer ${tokenCookie.value}`,
+          },
+        });
+
+        this.isLoading = false;
+
+        const responseData = response?.data;
+        if (!responseData?.status || !responseData?.data) {
+          const message =
+            responseData?.message ||
+            this.i18n.global.t('order_payment_creation_failed');
+          this.showSnackbar(message, EColor.error);
+          return null;
+        }
+
+        return responseData.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('order_payment_creation_failed');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message || errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+        this.isLoading = false;
         return null;
       }
     },
