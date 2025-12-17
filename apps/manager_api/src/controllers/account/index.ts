@@ -14,6 +14,7 @@ import { viewPlanAccount } from './methods/viewPlanAccount';
 import { listAccountSubscribers } from './methods/listAccountSubscribers';
 import { listAccountCancelling } from './methods/listAccountCancelling';
 import { listAccountCancelled } from './methods/listAccountCancelled';
+import { listAccountBlocked } from './methods/listAccountBlocked';
 import { listAccountTests } from './methods/listAccountTests';
 
 @injectable()
@@ -33,6 +34,7 @@ class AccountController {
   public listAccountSubscribers = listAccountSubscribers;
   public listAccountCancelling = listAccountCancelling;
   public listAccountCancelled = listAccountCancelled;
+  public listAccountBlocked = listAccountBlocked;
   public listAccountTests = listAccountTests;
 }
 

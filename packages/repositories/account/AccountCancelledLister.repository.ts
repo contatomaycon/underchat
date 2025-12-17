@@ -50,10 +50,6 @@ export class AccountCancelledListerRepository {
       if (combined) filters.push(combined);
     }
 
-    if (query.account_status) {
-      filters.push(eq(account.account_status_id, query.account_status));
-    }
-
     return filters;
   };
 
@@ -68,10 +64,7 @@ export class AccountCancelledListerRepository {
     const result = await this.db.query.account.findMany({
       where: and(
         isNull(account.deleted_at),
-        or(
-          eq(account.account_status_id, EAccountStatus.inactive),
-          eq(account.account_status_id, EAccountStatus.blocked)
-        ),
+        eq(account.account_status_id, EAccountStatus.inactive),
         ...filtersAccount
       ),
       with: {
@@ -129,10 +122,7 @@ export class AccountCancelledListerRepository {
         const nextPaymentDate = new Date(pa.next_payment_date);
         const nowDate = new Date(now);
         if (nextPaymentDate >= nowDate) return false;
-        return (
-          item.aac?.account_status_id === EAccountStatus.inactive ||
-          item.aac?.account_status_id === EAccountStatus.blocked
-        );
+        return item.aac?.account_status_id === EAccountStatus.inactive;
       });
 
       if (!activePlanAccount) continue;
@@ -183,10 +173,7 @@ export class AccountCancelledListerRepository {
           isNull(account.deleted_at),
           isNotNull(planAccount.cancellation_date),
           lt(planAccount.next_payment_date, sql`NOW()`),
-          or(
-            eq(account.account_status_id, EAccountStatus.inactive),
-            eq(account.account_status_id, EAccountStatus.blocked)
-          ),
+          eq(account.account_status_id, EAccountStatus.inactive),
           eq(plan.is_test, false)
         )
       )

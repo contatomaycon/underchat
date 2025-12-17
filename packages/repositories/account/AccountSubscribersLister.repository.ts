@@ -49,10 +49,6 @@ export class AccountSubscribersListerRepository {
       if (combined) filters.push(combined);
     }
 
-    if (query.account_status) {
-      filters.push(eq(account.account_status_id, query.account_status));
-    }
-
     return filters;
   };
 
@@ -68,6 +64,7 @@ export class AccountSubscribersListerRepository {
       where: and(
         isNull(account.deleted_at),
         eq(account.account_status_id, EAccountStatus.active),
+        sql`${account.account_status_id} != ${EAccountStatus.blocked}`,
         ...filtersAccount
       ),
       with: {

@@ -13,18 +13,18 @@ import {
   sql,
   desc,
 } from 'drizzle-orm';
-import { ListAccountTestsRequest } from '@core/schema/account/listAccountTests/request.schema';
-import { ListAccountTestsResponse } from '@core/schema/account/listAccountTests/response.schema';
+import { ListAccountBlockedRequest } from '@core/schema/account/listAccountBlocked/request.schema';
+import { ListAccountBlockedResponse } from '@core/schema/account/listAccountBlocked/response.schema';
 import { EAccountStatus } from '@core/common/enums/EAccountStatus';
 
 @injectable()
-export class AccountTestsListerRepository {
+export class AccountBlockedListerRepository {
   constructor(
     @inject('Database') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   private readonly setFiltersAccount = (
-    query: ListAccountTestsRequest
+    query: ListAccountBlockedRequest
   ): SQLWrapper[] => {
     const filters: SQLWrapper[] = [];
 
@@ -54,14 +54,14 @@ export class AccountTestsListerRepository {
   listAccounts = async (
     perPage: number,
     currentPage: number,
-    query: ListAccountTestsRequest
-  ): Promise<ListAccountTestsResponse[]> => {
+    query: ListAccountBlockedRequest
+  ): Promise<ListAccountBlockedResponse[]> => {
     const filtersAccount = this.setFiltersAccount(query);
 
     const result = await this.db.query.account.findMany({
       where: and(
         isNull(account.deleted_at),
-        sql`${account.account_status_id} != ${EAccountStatus.blocked}`,
+        eq(account.account_status_id, EAccountStatus.blocked),
         ...filtersAccount
       ),
       with: {
@@ -109,15 +109,9 @@ export class AccountTestsListerRepository {
       return [];
     }
 
-    const filteredResults: ListAccountTestsResponse[] = [];
+    const filteredResults: ListAccountBlockedResponse[] = [];
 
     for (const item of result) {
-      const testPlanAccount = item.apc?.find((pa) => {
-        return pa.ppl?.is_test === true;
-      });
-
-      if (!testPlanAccount) continue;
-
       filteredResults.push({
         account_id: item.account_id,
         name: item.name,
@@ -127,15 +121,15 @@ export class AccountTestsListerRepository {
               name: item.aac.name,
             }
           : null,
-        plan: testPlanAccount.ppl
+        plan: item.apc?.[0]?.ppl
           ? {
-              plan_id: testPlanAccount.ppl.plan_id,
-              name: testPlanAccount.ppl.name,
-              recurring_payment: testPlanAccount.recurring_payment,
+              plan_id: item.apc[0].ppl.plan_id,
+              name: item.apc[0].ppl.name,
+              recurring_payment: item.apc[0].recurring_payment,
               billing_period:
-                testPlanAccount.bpl?.name === 'monthly' ||
-                testPlanAccount.bpl?.name === 'annual'
-                  ? testPlanAccount.bpl.name
+                item.apc[0].bpl?.name === 'monthly' ||
+                item.apc[0].bpl?.name === 'annual'
+                  ? item.apc[0].bpl.name
                   : null,
             }
           : null,
@@ -147,7 +141,7 @@ export class AccountTestsListerRepository {
   };
 
   listAccountsTotal = async (
-    query: ListAccountTestsRequest
+    query: ListAccountBlockedRequest
   ): Promise<number> => {
     const filtersAccount = this.setFiltersAccount(query);
 
@@ -156,13 +150,11 @@ export class AccountTestsListerRepository {
         count: count(),
       })
       .from(account)
-      .innerJoin(planAccount, eq(planAccount.account_id, account.account_id))
-      .innerJoin(plan, eq(plan.plan_id, planAccount.plan_id))
       .where(
         and(
           ...filtersAccount,
           isNull(account.deleted_at),
-          eq(plan.is_test, true)
+          eq(account.account_status_id, EAccountStatus.blocked)
         )
       )
       .execute();

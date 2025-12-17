@@ -68,29 +68,6 @@ const itemsPerPage = ref([
   { value: -1, title: 'All' },
 ]);
 
-const itemsStatus = ref([
-  { id: '', text: t('all') },
-  { id: EAccountStatus.active, text: t('active') },
-  { id: EAccountStatus.inactive, text: t('inactive') },
-  { id: EAccountStatus.blocked, text: t('blocked') },
-]);
-
-const resolveStatusText = (statusId?: string | null) => {
-  if (!statusId) {
-    return '-';
-  }
-
-  if (statusId === EAccountStatus.active) {
-    return t('active');
-  } else if (statusId === EAccountStatus.inactive) {
-    return t('inactive');
-  } else if (statusId === EAccountStatus.blocked) {
-    return t('blocked');
-  }
-
-  return '-';
-};
-
 const resolvePlanVariant = (planName?: string | null) => {
   if (!planName) {
     return { color: EColor.primary, text: t('unknown') };
@@ -135,7 +112,6 @@ const options = ref({
   page: 1,
   itemsPerPage: 10,
   sortBy: [] as SortRequest[],
-  account_status: null as string | null,
   search: null as string | null,
 });
 
@@ -148,7 +124,6 @@ const query = computed(() => ({
   page: options.value.page,
   per_page: options.value.itemsPerPage,
   sort_by: options.value.sortBy,
-  account_status: options.value.account_status,
   search: debouncedSearch.value,
 }));
 
@@ -232,18 +207,6 @@ watch(
             </VBtn>
           </div>
           <div class="d-flex align-center flex-wrap gap-4">
-            <div class="status-filter">
-              <VLabel class="text-body-2 mb-1">{{ $t('status') }}:</VLabel>
-              <AppSelectSearch
-                v-model="options.account_status"
-                :items="itemsStatus"
-                :placeholder="$t('select_state')"
-                :clearable="true"
-                item-value="id"
-                item-title="text"
-                @update:modelValue="options.page = 1"
-              />
-            </div>
             <div class="invoice-list-filter">
               <VLabel class="text-body-2 mb-1">{{ $t('search') }}:</VLabel>
               <AppTextField
@@ -479,10 +442,6 @@ watch(
 </template>
 
 <style lang="scss" scoped>
-.status-filter {
-  inline-size: 12rem;
-}
-
 .invoice-list-filter {
   inline-size: 20rem;
 }

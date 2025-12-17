@@ -37,6 +37,13 @@ declare module 'vue-router/auto-routes' {
       { error: ParamValue<false> },
       | never
     >,
+    'account-blocked': RouteRecordInfo<
+      'account-blocked',
+      '/account-blocked',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
     'account-cancelled': RouteRecordInfo<
       'account-cancelled',
       '/account-cancelled',
@@ -381,6 +388,12 @@ declare module 'vue-router/auto-routes' {
     'src/pages/[...error].vue': {
       routes:
         | '$error'
+      views:
+        | never
+    }
+    'src/pages/account-blocked.vue': {
+      routes:
+        | 'account-blocked'
       views:
         | never
     }

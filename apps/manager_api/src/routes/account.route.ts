@@ -22,6 +22,7 @@ import { viewPlanAccountSchema } from '@core/schema/planAccount/viewPlanAccount'
 import { listAccountSubscribersSchema } from '@core/schema/account/listAccountSubscribers';
 import { listAccountCancellingSchema } from '@core/schema/account/listAccountCancelling';
 import { listAccountCancelledSchema } from '@core/schema/account/listAccountCancelled';
+import { listAccountBlockedSchema } from '@core/schema/account/listAccountBlocked';
 import { listAccountTestsSchema } from '@core/schema/account/listAccountTests';
 
 export default async function accountRoutes(server: FastifyInstance) {
@@ -156,6 +157,15 @@ export default async function accountRoutes(server: FastifyInstance) {
   server.get('/account/cancelled', {
     schema: listAccountCancelledSchema,
     handler: accountController.listAccountCancelled,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, accountViewPermissions),
+    ],
+  });
+
+  server.get('/account/blocked', {
+    schema: listAccountBlockedSchema,
+    handler: accountController.listAccountBlocked,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, accountViewPermissions),

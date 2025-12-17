@@ -148,7 +148,7 @@ const handleDelete = async () => {
 
   const result = await accountStore.deleteAccount(accountToDelete.value);
   if (result) {
-    await accountStore.listAccountCancelling(query.value);
+    await accountStore.listAccountBlocked(query.value);
   }
 
   accountToDelete.value = null;
@@ -175,7 +175,7 @@ const openSubscriptionsDialog = (id: string) => {
 watch(
   query,
   async (q) => {
-    await accountStore.listAccountCancelling(q);
+    await accountStore.listAccountBlocked(q);
   },
   { immediate: true, deep: true }
 );
@@ -183,7 +183,7 @@ watch(
 
 <template>
   <div>
-    <VCard :title="$t('cancelling')" no-padding>
+    <VCard :title="$t('blocked')" no-padding>
       <VCardText>
         <div class="d-flex justify-space-between flex-wrap gap-4">
           <div class="d-flex gap-4 align-center mt-5">

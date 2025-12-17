@@ -40,6 +40,9 @@ import { ListAccountCancelledResponse } from '@core/schema/account/listAccountCa
 import { AccountTestsListerRepository } from '@core/repositories/account/AccountTestsLister.repository';
 import { ListAccountTestsRequest } from '@core/schema/account/listAccountTests/request.schema';
 import { ListAccountTestsResponse } from '@core/schema/account/listAccountTests/response.schema';
+import { AccountBlockedListerRepository } from '@core/repositories/account/AccountBlockedLister.repository';
+import { ListAccountBlockedRequest } from '@core/schema/account/listAccountBlocked/request.schema';
+import { ListAccountBlockedResponse } from '@core/schema/account/listAccountBlocked/response.schema';
 
 @injectable()
 export class AccountService {
@@ -63,6 +66,7 @@ export class AccountService {
     private readonly accountSubscribersListerRepository: AccountSubscribersListerRepository,
     private readonly accountCancellingListerRepository: AccountCancellingListerRepository,
     private readonly accountCancelledListerRepository: AccountCancelledListerRepository,
+    private readonly accountBlockedListerRepository: AccountBlockedListerRepository,
     private readonly accountTestsListerRepository: AccountTestsListerRepository
   ) {}
 
@@ -280,6 +284,23 @@ export class AccountService {
         query
       ),
       this.accountCancelledListerRepository.listAccountsTotal(query),
+    ]);
+
+    return [result, total];
+  };
+
+  listAccountBlocked = async (
+    perPage: number,
+    currentPage: number,
+    query: ListAccountBlockedRequest
+  ): Promise<[ListAccountBlockedResponse[], number]> => {
+    const [result, total] = await Promise.all([
+      this.accountBlockedListerRepository.listAccounts(
+        perPage,
+        currentPage,
+        query
+      ),
+      this.accountBlockedListerRepository.listAccountsTotal(query),
     ]);
 
     return [result, total];

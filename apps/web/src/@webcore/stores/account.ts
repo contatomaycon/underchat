@@ -64,7 +64,6 @@ export const useAccountStore = defineStore('account', {
               sort_by: input.sort_by,
               name: input.search,
               plan: input.search,
-              account_status: input.account_status,
             }
           : undefined;
 
@@ -118,7 +117,6 @@ export const useAccountStore = defineStore('account', {
               sort_by: input.sort_by,
               name: input.search,
               plan: input.search,
-              account_status: input.account_status,
             }
           : undefined;
 
@@ -172,7 +170,6 @@ export const useAccountStore = defineStore('account', {
               sort_by: input.sort_by,
               name: input.search,
               plan: input.search,
-              account_status: input.account_status,
             }
           : undefined;
 
@@ -226,7 +223,6 @@ export const useAccountStore = defineStore('account', {
               sort_by: input.sort_by,
               name: input.search,
               plan: input.search,
-              account_status: input.account_status,
             }
           : undefined;
 
@@ -280,13 +276,65 @@ export const useAccountStore = defineStore('account', {
               sort_by: input.sort_by,
               name: input.search,
               plan: input.search,
-              account_status: input.account_status,
             }
           : undefined;
 
         const response = await axios.get<
           IApiResponse<ListAccountFinalResponse>
         >(`/account/tests`, {
+          params: request,
+        });
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('account_list_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return null;
+        }
+
+        this.list = data.data.results;
+        this.pagings = data.data.pagings;
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('account_list_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return null;
+      }
+    },
+
+    async listAccountBlocked(
+      input?: IListAccounts
+    ): Promise<ListAccountFinalResponse | null> {
+      try {
+        this.loading = true;
+
+        const request: ListAccountRequest | undefined = input
+          ? {
+              current_page: input.page,
+              per_page: input.per_page,
+              sort_by: input.sort_by,
+              name: input.search,
+              plan: input.search,
+            }
+          : undefined;
+
+        const response = await axios.get<
+          IApiResponse<ListAccountFinalResponse>
+        >(`/account/blocked`, {
           params: request,
         });
 
