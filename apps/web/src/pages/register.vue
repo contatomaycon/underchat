@@ -8,6 +8,8 @@ import { requiredValidator } from '@/@webcore/utils/validators';
 import { validatePassword } from '@/@webcore/utils/passwordStrength';
 import { VForm } from 'vuetify/components/VForm';
 import { useRegisterStore } from '@/@webcore/stores/register';
+import { useAuthStore } from '@/@webcore/stores/auth';
+import { useRouter } from 'vue-router';
 import { EUserDocumentType } from '@core/common/enums/EUserDocumentType';
 import { ECountry } from '@core/common/enums/ECountry';
 import { ViewRegisterZipcodeRequest } from '@core/schema/register/viewZipcode/request.schema';
@@ -50,6 +52,8 @@ const {
   clearCities,
 } = useRegisterStatesAndCities();
 const registerStore = useRegisterStore();
+const authStore = useAuthStore();
+const router = useRouter();
 
 const currentStepInternal = ref(0);
 
@@ -805,7 +809,24 @@ const copyPixCode = async () => {
 };
 
 const closePixModal = async () => {
+  const isApproved =
+    pixPaymentConfirmed.value ||
+    pixPaymentStatus.value === 'RECEIVED' ||
+    pixPaymentStatus.value === 'CONFIRMED';
+
   pixModalOpen.value = false;
+
+  if (isApproved) {
+    const success = await authStore.login(
+      email.value?.trim() || '',
+      password.value || ''
+    );
+    if (!success) {
+      registerStore.showSnackbar(t('login_invalid'), EColor.error);
+      return;
+    }
+    router.push('/');
+  }
 };
 
 const emailValidator = (v: string | null | undefined) => {
