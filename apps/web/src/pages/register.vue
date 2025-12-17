@@ -903,7 +903,8 @@ const getCrossSellLabel = (
   crossSell: ListRegisterAvailableCrossSellResponse
 ): string => {
   const name = crossSell.plan_product?.name || '';
-  return `${name} - ${formatCurrency(crossSell.price)} (${crossSell.quantity}x)`;
+  const price = getAddonPriceValue(crossSell.price);
+  return `${name} - ${formatCurrency(price)} (${crossSell.quantity}x)`;
 };
 
 const isAddonSelected = (productId: string): boolean => {
@@ -942,10 +943,15 @@ const removeAddon = (productId: string) => {
   );
 };
 
+const getAddonPriceValue = (price: number): number => {
+  const factor = billingPeriod.value === 'annual' ? 12 : 1;
+  return price * factor;
+};
+
 const addonsTotal = computed(() => {
   let total = 0;
   for (const addon of selectedAddons.value) {
-    total += addon.price;
+    total += getAddonPriceValue(addon.price);
   }
   return total;
 });
@@ -1822,7 +1828,9 @@ watch(currentStep, async (newStep) => {
                           </div>
                           <div class="d-flex align-center gap-3">
                             <span class="text-body-1 font-weight-medium">
-                              {{ formatCurrency(addon.price) }}
+                              {{
+                                formatCurrency(getAddonPriceValue(addon.price))
+                              }}
                             </span>
                             <VBtn
                               icon
@@ -1925,7 +1933,11 @@ watch(currentStep, async (newStep) => {
                                 {{ addon.name }} (x{{ addon.quantity }})
                               </span>
                               <span class="text-body-2 font-weight-medium">
-                                {{ formatCurrency(addon.price) }}
+                                {{
+                                  formatCurrency(
+                                    getAddonPriceValue(addon.price)
+                                  )
+                                }}
                               </span>
                             </div>
                           </div>
@@ -2196,7 +2208,11 @@ watch(currentStep, async (newStep) => {
                                     {{ addon.name }} (x{{ addon.quantity }})
                                   </span>
                                   <span class="text-body-2 font-weight-medium">
-                                    {{ formatCurrency(addon.price) }}
+                                    {{
+                                      formatCurrency(
+                                        getAddonPriceValue(addon.price)
+                                      )
+                                    }}
                                   </span>
                                 </div>
                               </div>
@@ -2311,7 +2327,11 @@ watch(currentStep, async (newStep) => {
                                     {{ addon.name }} (x{{ addon.quantity }})
                                   </span>
                                   <span class="text-body-2 font-weight-medium">
-                                    {{ formatCurrency(addon.price) }}
+                                    {{
+                                      formatCurrency(
+                                        getAddonPriceValue(addon.price)
+                                      )
+                                    }}
                                   </span>
                                 </div>
                               </div>
@@ -2421,7 +2441,11 @@ watch(currentStep, async (newStep) => {
                                     {{ addon.name }} (x{{ addon.quantity }})
                                   </span>
                                   <span class="text-body-2 font-weight-medium">
-                                    {{ formatCurrency(addon.price) }}
+                                    {{
+                                      formatCurrency(
+                                        getAddonPriceValue(addon.price)
+                                      )
+                                    }}
                                   </span>
                                 </div>
                               </div>
