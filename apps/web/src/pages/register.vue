@@ -58,41 +58,49 @@ const registerMultistepIllustration = useGenerateImageVariant(
   registerMultistepIllustrationDark
 );
 
-const items = [
-  {
-    title: t('validation'),
-    subtitle: t('validation_subtitle'),
-    icon: 'tabler-device-mobile',
-  },
-  {
-    title: t('verification_code'),
-    subtitle: t('verification_code_subtitle'),
-    icon: 'tabler-key',
-  },
-  {
-    title: t('data'),
-    subtitle: t('data_subtitle'),
-    icon: 'tabler-user',
-  },
-  {
-    title: t('plans'),
-    subtitle: t('plans_subtitle'),
-    icon: 'tabler-package',
-  },
-  {
-    title: t('addons'),
-    subtitle: t('addons_subtitle'),
-    icon: 'tabler-plus',
-  },
-  {
-    title: t('payment'),
-    subtitle: t('payment_subtitle'),
-    icon: 'tabler-credit-card',
-  },
-];
+const items = computed(() => {
+  return [
+    {
+      title: t('validation'),
+      subtitle: t('validation_subtitle'),
+      icon: 'tabler-device-mobile',
+    },
+    {
+      title: t('verification_code'),
+      subtitle: t('verification_code_subtitle'),
+      icon: 'tabler-key',
+    },
+    {
+      title: t('data'),
+      subtitle: t('data_subtitle'),
+      icon: 'tabler-user',
+    },
+    {
+      title: t('plans'),
+      subtitle: t('plans_subtitle'),
+      icon: 'tabler-package',
+    },
+    {
+      title: t('addons'),
+      subtitle: t('addons_subtitle'),
+      icon: 'tabler-plus',
+    },
+    {
+      title: isTestPlan(selectedPlanForCheckout.value)
+        ? t('test')
+        : t('payment'),
+      subtitle: isTestPlan(selectedPlanForCheckout.value)
+        ? t('test_subtitle')
+        : t('payment_subtitle'),
+      icon: isTestPlan(selectedPlanForCheckout.value)
+        ? 'tabler-flask'
+        : 'tabler-credit-card',
+    },
+  ];
+});
 
 const ADDONS_STEP_INDEX = 4;
-const LAST_STEP_INDEX = items.length - 1;
+const LAST_STEP_INDEX = computed(() => items.value.length - 1);
 
 const name = ref<string | null>(null);
 const last_name = ref<string | null>(null);
@@ -247,7 +255,7 @@ const handleNext = async () => {
       return;
     }
     maxStepReached.value = Math.max(maxStepReached.value, 3);
-    const nextStep = Math.min(currentStep.value + 1, LAST_STEP_INDEX);
+    const nextStep = Math.min(currentStep.value + 1, LAST_STEP_INDEX.value);
     currentStep.value = nextStep;
     return;
   }
@@ -258,8 +266,8 @@ const handleNext = async () => {
     }
 
     if (isTestPlan(selectedPlanForCheckout.value)) {
-      maxStepReached.value = LAST_STEP_INDEX;
-      currentStep.value = LAST_STEP_INDEX;
+      maxStepReached.value = LAST_STEP_INDEX.value;
+      currentStep.value = LAST_STEP_INDEX.value;
       return;
     }
 
@@ -272,10 +280,10 @@ const handleNext = async () => {
   }
 
   if (currentStep.value === ADDONS_STEP_INDEX) {
-    maxStepReached.value = LAST_STEP_INDEX;
+    maxStepReached.value = LAST_STEP_INDEX.value;
   }
 
-  if (currentStep.value < LAST_STEP_INDEX) {
+  if (currentStep.value < LAST_STEP_INDEX.value) {
     currentStep.value = currentStep.value + 1;
   }
 };
@@ -700,8 +708,9 @@ const filteredPlans = computed(() => {
 const getColClasses = computed(() => {
   return {
     cols: '12',
-    sm: '6',
-    md: '4',
+    sm: '12',
+    md: '6',
+    lg: '4',
   };
 });
 
