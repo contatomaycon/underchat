@@ -13,6 +13,8 @@ import { recreateChannelSchema } from '@core/schema/config/recreateChannel';
 import { deleteChannelSchema } from '@core/schema/config/deleteChannel';
 import { recreateChannelsAllSchema } from '@core/schema/config/recreateChannelsAll';
 import { channelsStatisticsSchema } from '@core/schema/config/channelsStatistics';
+import { listCreditCardFeeSchema } from '@core/schema/config/listCreditCardFee';
+import { updateCreditCardFeeSchema } from '@core/schema/config/updateCreditCardFee';
 import { configPermissions } from '@/permissions';
 
 export default async function configRoutes(server: FastifyInstance) {
@@ -66,6 +68,24 @@ export default async function configRoutes(server: FastifyInstance) {
   server.patch('/config/nfse', {
     schema: updateNfseSchema,
     handler: configController.updateNfse,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, configPermissions),
+    ],
+  });
+
+  server.get('/config/credit-card-fee', {
+    schema: listCreditCardFeeSchema,
+    handler: configController.listCreditCardFee,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, configPermissions),
+    ],
+  });
+
+  server.patch('/config/credit-card-fee', {
+    schema: updateCreditCardFeeSchema,
+    handler: configController.updateCreditCardFee,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, configPermissions),
