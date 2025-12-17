@@ -191,6 +191,7 @@ const cardForm = ref({
 const detectedBrand = ref<string | null>(null);
 const pixModalOpen = ref(false);
 const pixPaymentInitiated = ref(false);
+const paymentModalLoading = ref(false);
 const pixPaymentData = ref<{
   payment_id: string;
   qr_code: string;
@@ -500,8 +501,19 @@ const buildRegisterPaymentData =
 const handleSubmitOrderPayment = async () => {
   const payload = buildRegisterPaymentData();
   if (!payload) return;
+  paymentModalLoading.value = true;
+  pixPaymentData.value = null;
+  boletoPaymentData.value = null;
+  pixPaymentStatus.value = null;
+  pixPaymentConfirmed.value = false;
+  pixPaymentInitiated.value = false;
+  await openPaymentModal();
   const result = await registerStore.createOrderPayment(payload);
-  if (!result) return;
+  paymentModalLoading.value = false;
+  if (!result) {
+    pixModalOpen.value = false;
+    return;
+  }
   if (result.pix_payment) {
     await processPixPayment(result.pix_payment);
     return;
@@ -2985,13 +2997,15 @@ watch(currentStep, async (newStep) => {
       </VCard>
 
       <VDialog v-model="pixModalOpen" max-width="500" persistent>
-        <VCard>
-          <VCardTitle class="d-flex align-center justify-space-between">
-            <span>{{ $t('payment') }}</span>
-            <VBtn icon variant="text" @click="closePixModal">
-              <VIcon icon="tabler-x" />
-            </VBtn>
+        <VCard class="position-relative">
+          <DialogCloseBtn
+            class="dialog-close-btn-absolute"
+            @click="closePixModal"
+          />
+          <VCardTitle>
+            {{ $t('payment') }}
           </VCardTitle>
+          <VDivider />
           <VCardText>
             <VAlert
               :type="paymentStatusAlert.type"
@@ -3001,6 +3015,10 @@ watch(currentStep, async (newStep) => {
             >
               {{ paymentStatusAlert.message }}
             </VAlert>
+
+            <div v-if="paymentModalLoading" class="d-flex justify-center my-4">
+              <VProgressCircular indeterminate color="primary" size="48" />
+            </div>
 
             <div v-if="pixPaymentData && selectedPaymentMethod === 'pix'">
               <div class="text-center mb-4">
@@ -3172,6 +3190,13 @@ watch(currentStep, async (newStep) => {
   justify-content: center;
   width: 40px;
   height: 24px;
+}
+
+.dialog-close-btn-absolute {
+  position: absolute;
+  inset-block-start: 8px;
+  inset-inline-end: 8px;
+  z-index: 2;
 }
 .plans-row {
   margin-top: 16px;
