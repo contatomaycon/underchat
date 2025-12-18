@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { AccountInfoViewerRepository } from '@core/repositories/account/AccountInfoViewer.repository';
 import { AccountInfoResponse } from '@core/schema/auth/login/response.schema';
 import { AccountQuantityProductViewerRepository } from '@core/repositories/account/AccountQuantityProductViewer.repository';
@@ -44,7 +44,6 @@ import { AccountBlockedListerRepository } from '@core/repositories/account/Accou
 import { ListAccountBlockedRequest } from '@core/schema/account/listAccountBlocked/request.schema';
 import { ListAccountBlockedResponse } from '@core/schema/account/listAccountBlocked/response.schema';
 import Redis from 'ioredis';
-import { inject } from 'tsyringe';
 
 @injectable()
 export class AccountService {

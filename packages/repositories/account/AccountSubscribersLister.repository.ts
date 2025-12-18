@@ -158,7 +158,6 @@ export class AccountSubscribersListerRepository {
     query: ListAccountSubscribersRequest
   ): Promise<number> => {
     const filtersAccount = this.setFiltersAccount(query);
-    const now = new Date().toISOString();
 
     const result = await this.db
       .select({
