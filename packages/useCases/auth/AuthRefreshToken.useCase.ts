@@ -76,6 +76,13 @@ export class AuthRefreshTokenUseCase {
       throw new Error(t('invalid_token'));
     }
 
+    const isAccountBlocked =
+      await this.accountService.isAccountBlocked(accountId);
+
+    if (isAccountBlocked) {
+      throw new Error(t('account_blocked_contact_support'));
+    }
+
     const payload = {
       user_id: decodeToken.user_id,
       module: request.module,

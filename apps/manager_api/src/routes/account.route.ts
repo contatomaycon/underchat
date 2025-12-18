@@ -19,6 +19,13 @@ import { listAllAccountsSchema } from '@core/schema/account/listAllAccounts';
 import { listAccountSubscriptionsSchema } from '@core/schema/account/listAccountSubscriptions';
 import { updatePlanAccountSchema } from '@core/schema/planAccount/updatePlanAccount';
 import { viewPlanAccountSchema } from '@core/schema/planAccount/viewPlanAccount';
+import { listAccountSubscribersSchema } from '@core/schema/account/listAccountSubscribers';
+import { listAccountCancellingSchema } from '@core/schema/account/listAccountCancelling';
+import { listAccountCancelledSchema } from '@core/schema/account/listAccountCancelled';
+import { listAccountBlockedSchema } from '@core/schema/account/listAccountBlocked';
+import { listAccountTestsSchema } from '@core/schema/account/listAccountTests';
+import { blockAccountSchema } from '@core/schema/account/blockAccount';
+import { unblockAccountSchema } from '@core/schema/account/unblockAccount';
 
 export default async function accountRoutes(server: FastifyInstance) {
   const accountController = container.resolve(AccountController);
@@ -125,6 +132,69 @@ export default async function accountRoutes(server: FastifyInstance) {
   server.patch('/account/:account_id/plan-account', {
     schema: updatePlanAccountSchema,
     handler: accountController.updatePlanAccount,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, accountUpdatePermissions),
+    ],
+  });
+
+  server.get('/account/subscribers', {
+    schema: listAccountSubscribersSchema,
+    handler: accountController.listAccountSubscribers,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, accountViewPermissions),
+    ],
+  });
+
+  server.get('/account/cancelling', {
+    schema: listAccountCancellingSchema,
+    handler: accountController.listAccountCancelling,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, accountViewPermissions),
+    ],
+  });
+
+  server.get('/account/cancelled', {
+    schema: listAccountCancelledSchema,
+    handler: accountController.listAccountCancelled,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, accountViewPermissions),
+    ],
+  });
+
+  server.get('/account/blocked', {
+    schema: listAccountBlockedSchema,
+    handler: accountController.listAccountBlocked,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, accountViewPermissions),
+    ],
+  });
+
+  server.get('/account/tests', {
+    schema: listAccountTestsSchema,
+    handler: accountController.listAccountTests,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, accountViewPermissions),
+    ],
+  });
+
+  server.patch('/account/:account_id/block', {
+    schema: blockAccountSchema,
+    handler: accountController.blockAccount,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, accountUpdatePermissions),
+    ],
+  });
+
+  server.patch('/account/:account_id/unblock', {
+    schema: unblockAccountSchema,
+    handler: accountController.unblockAccount,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, accountUpdatePermissions),
