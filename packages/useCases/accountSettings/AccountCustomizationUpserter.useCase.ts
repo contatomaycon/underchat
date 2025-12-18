@@ -4,19 +4,32 @@ import { StorageService } from '@core/services/storage.service';
 import { EditAccountInfoRequest } from '@core/schema/account/editAccountInfo/request.schema';
 import { UpsertAccountCustomizationRequest } from '@core/schema/accountSettings/upsertAccountCustomization/request.schema';
 import { AccountInfoUpserterTransactionRepository } from '@core/repositories/account/AccountInfoUpserterTransaction.repository';
+import { PlanAccountService } from '@core/services/planAccount.service';
+import { TFunction } from 'i18next';
 
 @injectable()
 export class AccountCustomizationUpserterUseCase {
   constructor(
     private readonly accountService: AccountService,
     private readonly storageService: StorageService,
-    private readonly accountInfoUpserterTransactionRepository: AccountInfoUpserterTransactionRepository
+    private readonly accountInfoUpserterTransactionRepository: AccountInfoUpserterTransactionRepository,
+    private readonly planAccountService: PlanAccountService
   ) {}
 
   async execute(
+    t: TFunction<'translation', undefined>,
     accountId: string,
     body: UpsertAccountCustomizationRequest
   ): Promise<{ created: boolean }> {
+    const canEdit =
+      await this.planAccountService.validateCanCreatePersonalization(
+        t,
+        accountId
+      );
+
+    if (!canEdit) {
+      throw new Error(t('personalization_not_available'));
+    }
     const payload: EditAccountInfoRequest = {
       ...body,
       account_id: { value: accountId },

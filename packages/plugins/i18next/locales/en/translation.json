@@ -763,5 +763,6 @@
   "register_phone_already_used_in_test": "This phone number has already been used in a previous test!",
   "register_email_already_used_in_test": "This email has already been used in a previous test!",
   "register_email_already_used": "This email is already registered!",
-  "register_phone_already_used": "This phone number is already registered!"
+  "register_phone_already_used": "This phone number is already registered!",
+  "personalization_not_available": "Personalization is not available!"
 }
