@@ -59,6 +59,13 @@ export class AccountCustomizationUpserterUseCase {
         urlLogo
       );
 
+    if (body.name?.value && body.name.value.trim().length > 0) {
+      await this.accountService.updateAccountById(
+        { name: body.name.value.trim() },
+        accountId
+      );
+    }
+
     return { created };
   }
 }
