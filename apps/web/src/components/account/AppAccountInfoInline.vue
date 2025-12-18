@@ -835,10 +835,6 @@ watch(
         <VDivider />
         <VCardText>
           <VRow>
-            <VCol cols="12">
-              <h3 class="text-h6 mb-4">{{ $t('account_name') }}</h3>
-            </VCol>
-
             <VCol cols="12" md="6">
               <AppTextField
                 v-model="accountName"
