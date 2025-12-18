@@ -5,5 +5,5 @@ export enum EPlanProduct {
   chatbot = '019b1eb0-9c11-7737-be50-9cfc91ff74bf',
   contact = '019b1eb0-ca29-7cc4-9d29-896f9685cbb6',
   mass_sending = '019b1eb0-e975-7785-b3a5-a5788319846a',
-  personalization = '019a930d-c6f4-75ad-88ff-9a1b2c3d4e5f',
+  personalization = '019b32e5-6c1a-77aa-aabe-19b07d87ee1e',
 }

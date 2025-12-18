@@ -222,10 +222,7 @@ export class PlanAccountService {
     return this.dashboardSchedulesRepository.getSchedulesSentMonthly(accountId);
   }
 
-  async validateCanCreatePersonalization(
-    t: TFunction<'translation', undefined>,
-    accountId: string
-  ): Promise<boolean> {
+  async validateCanCreatePersonalization(accountId: string): Promise<boolean> {
     const viewAccountQuantityProduct =
       await this.accountService.viewAccountQuantityProduct(
         accountId,

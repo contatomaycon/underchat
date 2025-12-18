@@ -30,10 +30,7 @@ export class AccountCustomizationViewerUseCase {
     }
 
     const canEdit =
-      await this.planAccountService.validateCanCreatePersonalization(
-        t,
-        accountId
-      );
+      await this.planAccountService.validateCanCreatePersonalization(accountId);
 
     return {
       ...accountInfo,

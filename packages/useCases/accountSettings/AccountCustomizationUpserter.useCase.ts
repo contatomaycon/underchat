@@ -22,10 +22,7 @@ export class AccountCustomizationUpserterUseCase {
     body: UpsertAccountCustomizationRequest
   ): Promise<{ created: boolean }> {
     const canEdit =
-      await this.planAccountService.validateCanCreatePersonalization(
-        t,
-        accountId
-      );
+      await this.planAccountService.validateCanCreatePersonalization(accountId);
 
     if (!canEdit) {
       throw new Error(t('personalization_not_available'));
