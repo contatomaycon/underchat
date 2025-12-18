@@ -43,6 +43,9 @@ import { ListAccountTestsResponse } from '@core/schema/account/listAccountTests/
 import { AccountBlockedListerRepository } from '@core/repositories/account/AccountBlockedLister.repository';
 import { ListAccountBlockedRequest } from '@core/schema/account/listAccountBlocked/request.schema';
 import { ListAccountBlockedResponse } from '@core/schema/account/listAccountBlocked/response.schema';
+import { AccountExpiredListerRepository } from '@core/repositories/account/AccountExpiredLister.repository';
+import { ListAccountExpiredRequest } from '@core/schema/account/listAccountExpired/request.schema';
+import { ListAccountExpiredResponse } from '@core/schema/account/listAccountExpired/response.schema';
 import Redis from 'ioredis';
 
 @injectable()
@@ -69,6 +72,7 @@ export class AccountService {
     private readonly accountCancelledListerRepository: AccountCancelledListerRepository,
     private readonly accountBlockedListerRepository: AccountBlockedListerRepository,
     private readonly accountTestsListerRepository: AccountTestsListerRepository,
+    private readonly accountExpiredListerRepository: AccountExpiredListerRepository,
     @inject('Redis') private readonly redis: Redis
   ) {}
 
@@ -329,6 +333,23 @@ export class AccountService {
         query
       ),
       this.accountTestsListerRepository.listAccountsTotal(query),
+    ]);
+
+    return [result, total];
+  };
+
+  listAccountExpired = async (
+    perPage: number,
+    currentPage: number,
+    query: ListAccountExpiredRequest
+  ): Promise<[ListAccountExpiredResponse[], number]> => {
+    const [result, total] = await Promise.all([
+      this.accountExpiredListerRepository.listAccounts(
+        perPage,
+        currentPage,
+        query
+      ),
+      this.accountExpiredListerRepository.listAccountsTotal(query),
     ]);
 
     return [result, total];

@@ -58,6 +58,13 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       | never
     >,
+    'account-expired': RouteRecordInfo<
+      'account-expired',
+      '/account-expired',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
     'account-settings': RouteRecordInfo<
       'account-settings',
       '/account-settings',
@@ -406,6 +413,12 @@ declare module 'vue-router/auto-routes' {
     'src/pages/account-cancelling.vue': {
       routes:
         | 'account-cancelling'
+      views:
+        | never
+    }
+    'src/pages/account-expired.vue': {
+      routes:
+        | 'account-expired'
       views:
         | never
     }

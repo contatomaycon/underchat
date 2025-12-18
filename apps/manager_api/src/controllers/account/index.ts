@@ -16,6 +16,7 @@ import { listAccountCancelling } from './methods/listAccountCancelling';
 import { listAccountCancelled } from './methods/listAccountCancelled';
 import { listAccountBlocked } from './methods/listAccountBlocked';
 import { listAccountTests } from './methods/listAccountTests';
+import { listAccountExpired } from './methods/listAccountExpired';
 import { blockAccount } from './methods/blockAccount';
 import { unblockAccount } from './methods/unblockAccount';
 
@@ -38,6 +39,7 @@ class AccountController {
   public listAccountCancelled = listAccountCancelled;
   public listAccountBlocked = listAccountBlocked;
   public listAccountTests = listAccountTests;
+  public listAccountExpired = listAccountExpired;
   public blockAccount = blockAccount;
   public unblockAccount = unblockAccount;
 }
