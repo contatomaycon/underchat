@@ -164,6 +164,12 @@ export class AccountService {
     );
   };
 
+  totalAccountInfoByAccountId = async (accountId: string): Promise<number> => {
+    return this.accountInfoViewerExistsRepository.totalAccountInfoByAccountId(
+      accountId
+    );
+  };
+
   createAccountInfo = async (
     input: CreateAccountInfoRequest,
     urlLogo: string | null

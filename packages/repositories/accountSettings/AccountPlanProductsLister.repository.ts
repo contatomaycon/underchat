@@ -10,6 +10,7 @@ import { RoleTotalViewerRepository } from '@core/repositories/role/RoleTotalView
 import { DashboardStatsRepository } from '@core/repositories/dashboard/DashboardStats.repository';
 import { DashboardSchedulesRepository } from '@core/repositories/dashboard/DashboardSchedules.repository';
 import { DashboardChatbotsRepository } from '@core/repositories/dashboard/DashboardChatbots.repository';
+import { AccountInfoViewerExistsRepository } from '@core/repositories/account/AccountInfoViewerExists.repository';
 import { EPlanProduct } from '@core/common/enums/EPlanProduct';
 
 @injectable()
@@ -21,7 +22,8 @@ export class AccountPlanProductsListerRepository {
     private readonly roleTotalViewerRepository: RoleTotalViewerRepository,
     private readonly dashboardStatsRepository: DashboardStatsRepository,
     private readonly dashboardSchedulesRepository: DashboardSchedulesRepository,
-    private readonly dashboardChatbotsRepository: DashboardChatbotsRepository
+    private readonly dashboardChatbotsRepository: DashboardChatbotsRepository,
+    private readonly accountInfoViewerExistsRepository: AccountInfoViewerExistsRepository
   ) {}
 
   private readonly getQuantityUsed = async (
@@ -47,6 +49,11 @@ export class AccountPlanProductsListerRepository {
     }
     if (planProductId === EPlanProduct.chatbot) {
       return this.dashboardChatbotsRepository.getChatbotsTotal(accountId);
+    }
+    if (planProductId === EPlanProduct.personalization) {
+      return this.accountInfoViewerExistsRepository.totalAccountInfoByAccountId(
+        accountId
+      );
     }
     return 0;
   };
