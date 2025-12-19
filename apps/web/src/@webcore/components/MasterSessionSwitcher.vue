@@ -116,7 +116,12 @@ watch(isModalOpen, (newValue) => {
 </script>
 
 <template>
-  <IconBtn v-if="hasFullAccess" @click="openModal" :title="t('switch_account')">
+  <IconBtn
+    v-if="hasFullAccess"
+    class="me-2"
+    @click="openModal"
+    :title="t('switch_account')"
+  >
     <VIcon icon="tabler-switch-horizontal" />
   </IconBtn>
 

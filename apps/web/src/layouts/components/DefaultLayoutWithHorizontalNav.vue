@@ -34,14 +34,13 @@ const computedNavItems = computed(() => {
       </RouterLink>
       <VSpacer />
 
+      <MasterSessionSwitcher />
       <NavBarI18n
         v-if="
           themeConfig.app.i18n.enable && themeConfig.app.i18n.langConfig?.length
         "
         :languages="themeConfig.app.i18n.langConfig"
       />
-
-      <MasterSessionSwitcher />
       <NavbarThemeSwitcher class="me-2" />
       <UserProfile />
     </template>

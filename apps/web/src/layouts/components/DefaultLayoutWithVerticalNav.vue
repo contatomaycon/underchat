@@ -33,6 +33,7 @@ const computedNavItems = computed(() => {
 
         <VSpacer />
 
+        <MasterSessionSwitcher />
         <NavBarI18n
           v-if="
             themeConfig.app.i18n.enable &&
@@ -40,7 +41,6 @@ const computedNavItems = computed(() => {
           "
           :languages="themeConfig.app.i18n.langConfig"
         />
-        <MasterSessionSwitcher />
         <UserProfile />
       </div>
     </template>
