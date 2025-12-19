@@ -97,8 +97,11 @@ const handleSwitchAccount = async () => {
       }
 
       await nextTick();
-      router.replace('/');
       closeModal();
+
+      setTimeout(() => {
+        window.location.reload();
+      }, 100);
     }
   } catch (error) {
     console.error('Error switching account', error);
