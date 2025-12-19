@@ -22,6 +22,7 @@ import { AccountInfoByIdViewerExistsRepository } from '@core/repositories/accoun
 import { CreateAccountInfoRequest } from '@core/schema/account/createAccountInfo/request.schema';
 import { EditAccountInfoRequest } from '@core/schema/account/editAccountInfo/request.schema';
 import { AccountAllListerRepository } from '@core/repositories/account/AccountAllLister.repository';
+import { AccountMasterAccessibleListerRepository } from '@core/repositories/account/AccountMasterAccessibleLister.repository';
 import { IAccountBasic } from '@core/common/interfaces/IAccountBasic';
 import { AccountSubscriptionsListerRepository } from '@core/repositories/account/AccountSubscriptionsLister.repository';
 import { ListAccountSubscriptionsResponse } from '@core/schema/account/listAccountSubscriptions/response.schema';
@@ -65,6 +66,7 @@ export class AccountService {
     private readonly accountInfoUpdaterRepository: AccountInfoUpdaterRepository,
     private readonly accountInfoByIdViewerExistsRepository: AccountInfoByIdViewerExistsRepository,
     private readonly accountAllListerRepository: AccountAllListerRepository,
+    private readonly accountMasterAccessibleListerRepository: AccountMasterAccessibleListerRepository,
     private readonly accountSubscriptionsListerRepository: AccountSubscriptionsListerRepository,
     private readonly planAccountStatusViewerRepository: PlanAccountStatusViewerRepository,
     private readonly accountSubscribersListerRepository: AccountSubscribersListerRepository,
@@ -127,6 +129,14 @@ export class AccountService {
 
   listAllAccounts = async (): Promise<IAccountBasic[]> => {
     return this.accountAllListerRepository.listAllAccounts();
+  };
+
+  listMasterAccessibleAccounts = async (
+    excludeAccountId: string
+  ): Promise<IAccountBasic[]> => {
+    return this.accountMasterAccessibleListerRepository.listMasterAccessibleAccounts(
+      excludeAccountId
+    );
   };
 
   createAccount = async (

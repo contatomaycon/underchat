@@ -1913,5 +1913,8 @@
     "tag_channel_name_description": "Channel name",
     "good_morning": "Good morning",
     "good_afternoon": "Good afternoon",
-    "good_evening": "Good evening"
+    "good_evening": "Good evening",
+    "switch_account": "Switch Account",
+    "enter": "Enter",
+    "master_accounts_list_error": "An error occurred while listing accessible accounts. Please try again."
 }

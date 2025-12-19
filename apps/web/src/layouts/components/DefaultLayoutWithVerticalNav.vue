@@ -5,6 +5,7 @@ import Footer from '@/layouts/components/Footer.vue';
 import NavbarThemeSwitcher from '@/layouts/components/NavbarThemeSwitcher.vue';
 import UserProfile from '@/layouts/components/UserProfile.vue';
 import NavBarI18n from '@webcore/components/I18n.vue';
+import MasterSessionSwitcher from '@webcore/components/MasterSessionSwitcher.vue';
 import { VerticalNavLayout } from '@layouts';
 import { useAuthStore } from '@/@webcore/stores/auth';
 import { filterNavItemsByPlan } from '@/navigation/filterByPlan';
@@ -39,6 +40,7 @@ const computedNavItems = computed(() => {
           "
           :languages="themeConfig.app.i18n.langConfig"
         />
+        <MasterSessionSwitcher />
         <UserProfile />
       </div>
     </template>

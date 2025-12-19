@@ -6,6 +6,7 @@ import Footer from '@/layouts/components/Footer.vue';
 import NavbarThemeSwitcher from '@/layouts/components/NavbarThemeSwitcher.vue';
 import UserProfile from '@/layouts/components/UserProfile.vue';
 import NavBarI18n from '@webcore/components/I18n.vue';
+import MasterSessionSwitcher from '@webcore/components/MasterSessionSwitcher.vue';
 import { HorizontalNavLayout } from '@layouts';
 import { VNodeRenderer } from '@layouts/components/VNodeRenderer';
 import { useLayoutConfigStore } from '@layouts/stores/config';
@@ -40,6 +41,7 @@ const computedNavItems = computed(() => {
         :languages="themeConfig.app.i18n.langConfig"
       />
 
+      <MasterSessionSwitcher />
       <NavbarThemeSwitcher class="me-2" />
       <UserProfile />
     </template>

@@ -1915,5 +1915,8 @@
     "tag_channel_name_description": "Nombre del canal",
     "good_morning": "Buenos días",
     "good_afternoon": "Buenas tardes",
-    "good_evening": "Buenas noches"
+    "good_evening": "Buenas noches",
+    "switch_account": "Cambiar Cuenta",
+    "enter": "Entrar",
+    "master_accounts_list_error": "Ocurrió un error al listar las cuentas accesibles. Por favor, inténtalo de nuevo."
 }

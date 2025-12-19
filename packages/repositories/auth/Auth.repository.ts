@@ -119,4 +119,188 @@ export class AuthRepository {
 
     return result[0] as AuthUserResponse;
   };
+
+  findUserById = async (userId: string): Promise<AuthUserResponse | null> => {
+    const result = await this.db
+      .select({
+        user_id: user.user_id,
+        account_id: user.account_id,
+        email_partial: user.email_partial,
+        status: {
+          status_id: userStatus.user_status_id,
+          name: userStatus.name,
+        },
+        info: {
+          user_info_id: userInfo.user_info_id,
+          name: userInfo.name,
+          last_name: userInfo.last_name,
+          phone_partial: userInfo.phone_partial,
+          photo: userInfo.photo,
+          birth_date: userInfo.birth_date,
+        },
+        type: {
+          user_type_id: permissionRole.permission_role_id,
+          name: permissionRole.name,
+        },
+        document: {
+          user_document_id: userDocument.user_document_id,
+          document_partial: userDocument.document_partial,
+          document_type: userDocumentType.name,
+        },
+        address: {
+          user_address_id: userAddress.user_address_id,
+          zip_code: userAddress.zip_code,
+          address1_partial: userAddress.address1_partial,
+          address2_partial: userAddress.address2_partial,
+          city: zipcodeCity.city,
+          state: zipcodeState.state,
+          state_abbreviation: zipcodeState.abbreviation,
+          district: userAddress.district,
+        },
+        chat_user: {
+          chat_user_id: chatUser.chat_user_id,
+          status: chatUser.status,
+          about: chatUser.about,
+          notifications: chatUser.notifications,
+        },
+      })
+      .from(user)
+      .innerJoin(userStatus, eq(userStatus.user_status_id, user.user_status_id))
+      .innerJoin(userInfo, eq(userInfo.user_id, user.user_id))
+      .innerJoin(
+        permissionAssignment,
+        eq(permissionAssignment.user_id, user.user_id)
+      )
+      .innerJoin(
+        permissionRole,
+        eq(
+          permissionRole.permission_role_id,
+          permissionAssignment.permission_role_id
+        )
+      )
+      .innerJoin(userDocument, eq(userDocument.user_id, user.user_id))
+      .innerJoin(
+        userDocumentType,
+        eq(
+          userDocumentType.user_document_type_id,
+          userDocument.user_document_type_id
+        )
+      )
+      .leftJoin(userAddress, eq(userAddress.user_id, user.user_id))
+      .leftJoin(
+        zipcodeCity,
+        eq(userAddress.city_fiscal_code, zipcodeCity.fiscal_code)
+      )
+      .leftJoin(
+        zipcodeState,
+        eq(userAddress.state_fiscal_code, zipcodeState.fiscal_code)
+      )
+      .leftJoin(chatUser, eq(chatUser.user_id, user.user_id))
+      .where(and(eq(user.user_id, userId), isNull(user.deleted_at)))
+      .limit(1)
+      .execute();
+
+    if (!result.length) {
+      return null;
+    }
+
+    return result[0] as AuthUserResponse;
+  };
+
+  authenticateByUserId = async (
+    userId: string,
+    accountId: string
+  ): Promise<AuthUserResponse | null> => {
+    const result = await this.db
+      .select({
+        user_id: user.user_id,
+        account_id: user.account_id,
+        email_partial: user.email_partial,
+        status: {
+          status_id: userStatus.user_status_id,
+          name: userStatus.name,
+        },
+        info: {
+          user_info_id: userInfo.user_info_id,
+          name: userInfo.name,
+          last_name: userInfo.last_name,
+          phone_partial: userInfo.phone_partial,
+          photo: userInfo.photo,
+          birth_date: userInfo.birth_date,
+        },
+        type: {
+          user_type_id: permissionRole.permission_role_id,
+          name: permissionRole.name,
+        },
+        document: {
+          user_document_id: userDocument.user_document_id,
+          document_partial: userDocument.document_partial,
+          document_type: userDocumentType.name,
+        },
+        address: {
+          user_address_id: userAddress.user_address_id,
+          zip_code: userAddress.zip_code,
+          address1_partial: userAddress.address1_partial,
+          address2_partial: userAddress.address2_partial,
+          city: zipcodeCity.city,
+          state: zipcodeState.state,
+          state_abbreviation: zipcodeState.abbreviation,
+          district: userAddress.district,
+        },
+        chat_user: {
+          chat_user_id: chatUser.chat_user_id,
+          status: chatUser.status,
+          about: chatUser.about,
+          notifications: chatUser.notifications,
+        },
+      })
+      .from(user)
+      .innerJoin(userStatus, eq(userStatus.user_status_id, user.user_status_id))
+      .innerJoin(userInfo, eq(userInfo.user_id, user.user_id))
+      .innerJoin(
+        permissionAssignment,
+        eq(permissionAssignment.user_id, user.user_id)
+      )
+      .innerJoin(
+        permissionRole,
+        eq(
+          permissionRole.permission_role_id,
+          permissionAssignment.permission_role_id
+        )
+      )
+      .innerJoin(userDocument, eq(userDocument.user_id, user.user_id))
+      .innerJoin(
+        userDocumentType,
+        eq(
+          userDocumentType.user_document_type_id,
+          userDocument.user_document_type_id
+        )
+      )
+      .leftJoin(userAddress, eq(userAddress.user_id, user.user_id))
+      .leftJoin(
+        zipcodeCity,
+        eq(userAddress.city_fiscal_code, zipcodeCity.fiscal_code)
+      )
+      .leftJoin(
+        zipcodeState,
+        eq(userAddress.state_fiscal_code, zipcodeState.fiscal_code)
+      )
+      .leftJoin(chatUser, eq(chatUser.user_id, user.user_id))
+      .where(
+        and(
+          eq(user.user_id, userId),
+          eq(user.account_id, accountId),
+          eq(user.user_status_id, EUserStatus.active),
+          isNull(user.deleted_at)
+        )
+      )
+      .limit(1)
+      .execute();
+
+    if (!result.length) {
+      return null;
+    }
+
+    return result[0] as AuthUserResponse;
+  };
 }

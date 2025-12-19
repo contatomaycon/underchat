@@ -890,5 +890,41 @@ export const useAccountStore = defineStore('account', {
         return false;
       }
     },
+
+    async listMasterAccessibleAccounts(): Promise<IAccountBasic[]> {
+      try {
+        this.loading = true;
+
+        const response = await axios.get<IApiResponse<IAccountBasic[]>>(
+          `/master-session/accounts`
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('master_accounts_list_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return [];
+        }
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('master_accounts_list_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return [];
+      }
+    },
   },
 });
