@@ -18,6 +18,7 @@ export const upsertAccountCustomization = async (
 
   try {
     const response = await accountCustomizationUpserterUseCase.execute(
+      t,
       tokenJwtData.account_id,
       request.body
     );

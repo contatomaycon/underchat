@@ -40,6 +40,7 @@ function appendIfDefined(fd: FormData, key: string, value: unknown) {
 function buildAccountInfoForm(opts: {
   logo?: File | null;
   shouldDeleteLogo?: boolean;
+  name?: string | null;
   content_width: EContentWidth | null;
   content_layout_nav: EContentLayoutNav | null;
   default_locale: ELanguage | null;
@@ -62,6 +63,8 @@ function buildAccountInfoForm(opts: {
   if (!opts.shouldDeleteLogo && opts.logo instanceof File) {
     fd.append('logo', opts.logo);
   }
+
+  appendIfDefined(fd, 'name', opts.name);
 
   appendIfDefined(fd, 'content_width', opts.content_width);
   appendIfDefined(fd, 'content_layout_nav', opts.content_layout_nav);
@@ -120,6 +123,9 @@ const itemsFooter = ref([
 const accountId = toRef(props, 'accountId');
 const accountInfoId = ref<string | null>(null);
 
+const canEdit = ref<boolean>(true);
+
+const accountName = ref<string>('');
 const logoFile = ref<File | null>(null);
 const logoUrl = ref<string | null>(null);
 const shouldDeleteLogo = ref<boolean>(false);
@@ -698,7 +704,19 @@ const updateAccountInfo = async () => {
   if (!validateForm?.valid) return;
   if (!accountId.value) return;
 
+  if (accountName.value && accountName.value.length > 10) {
+    accountSettingsStore.showSnackbar(
+      t('account_name_max_length'),
+      EColor.error
+    );
+    return;
+  }
+
   const body = buildAccountInfoForm({
+    name:
+      accountName.value && accountName.value.trim().length > 0
+        ? accountName.value.trim()
+        : null,
     logo: logoFile.value ?? null,
     shouldDeleteLogo: shouldDeleteLogo.value,
     content_width: contentWidth.value as EContentWidth,
@@ -731,7 +749,19 @@ const addAccountInfo = async () => {
 
   if (!accountId.value) return;
 
+  if (accountName.value && accountName.value.length > 10) {
+    accountSettingsStore.showSnackbar(
+      t('account_name_max_length'),
+      EColor.error
+    );
+    return;
+  }
+
   const payload = buildAccountInfoForm({
+    name:
+      accountName.value && accountName.value.trim().length > 0
+        ? accountName.value.trim()
+        : null,
     logo: logoFile.value ?? null,
     shouldDeleteLogo: false,
     content_width: contentWidth.value as EContentWidth,
@@ -766,6 +796,8 @@ watch(
     const account = await accountSettingsStore.getAccountInfoById();
     if (account) {
       accountInfoId.value = account.account_info_id;
+      canEdit.value = account.can_edit ?? true;
+      accountName.value = account.name ?? '';
       logoUrl.value = account.logo ?? null;
       shouldDeleteLogo.value = false;
       logoFile.value = null;
@@ -806,7 +838,24 @@ watch(
         <VDivider />
         <VCardText>
           <VRow>
+            <VCol cols="12" md="6">
+              <AppTextField
+                v-model="accountName"
+                :label="$t('account_name')"
+                :rules="[
+                  (v: string) =>
+                    !v || v.length <= 10 || $t('account_name_max_length'),
+                ]"
+                :maxlength="10"
+                :disabled="!canEdit"
+                counter
+                variant="outlined"
+                dense
+              />
+            </VCol>
+
             <VCol cols="12">
+              <VDivider class="my-4" />
               <h3 class="text-h6 mb-4">{{ $t('logo') }}</h3>
             </VCol>
 
@@ -831,6 +880,7 @@ watch(
                 <VBtn
                   color="primary"
                   variant="outlined"
+                  :disabled="!canEdit"
                   @click="openFileSelector"
                 >
                   <VIcon icon="tabler-upload" class="me-2" />
@@ -840,6 +890,7 @@ watch(
                   v-if="previewSrc && !shouldDeleteLogo"
                   color="error"
                   variant="outlined"
+                  :disabled="!canEdit"
                   @click="deleteLogo"
                 >
                   <VIcon icon="tabler-trash" class="me-2" />
@@ -866,6 +917,7 @@ watch(
                 item-title="value"
                 item-value="value"
                 v-model="contentWidth"
+                :disabled="!canEdit"
                 dense
                 variant="outlined"
                 hide-details
@@ -885,6 +937,7 @@ watch(
                 item-title="value"
                 item-value="value"
                 v-model="contentLayoutNav"
+                :disabled="!canEdit"
                 dense
                 variant="outlined"
                 hide-details
@@ -904,6 +957,7 @@ watch(
                 item-title="title"
                 item-value="value"
                 v-model="defaultLocale"
+                :disabled="!canEdit"
                 dense
                 variant="outlined"
                 hide-details
@@ -923,6 +977,7 @@ watch(
                 item-title="value"
                 item-value="value"
                 v-model="skin"
+                :disabled="!canEdit"
                 dense
                 variant="outlined"
                 hide-details
@@ -942,6 +997,7 @@ watch(
                 item-title="value"
                 item-value="value"
                 v-model="navbar"
+                :disabled="!canEdit"
                 dense
                 variant="outlined"
                 hide-details
@@ -961,6 +1017,7 @@ watch(
                 item-title="value"
                 item-value="value"
                 v-model="footer"
+                :disabled="!canEdit"
                 dense
                 variant="outlined"
                 hide-details
@@ -988,6 +1045,7 @@ watch(
                     id="light-primary-color"
                     type="color"
                     v-model="lightPrimaryColor"
+                    :disabled="!canEdit"
                     class="color-input"
                     aria-label="seletor de cor"
                   />
@@ -1016,6 +1074,7 @@ watch(
                     id="light-secondary-color"
                     type="color"
                     v-model="lightSecondaryColor"
+                    :disabled="!canEdit"
                     class="color-input"
                     aria-label="seletor de cor"
                   />
@@ -1044,6 +1103,7 @@ watch(
                     id="dark-primary-color"
                     type="color"
                     v-model="darkPrimaryColor"
+                    :disabled="!canEdit"
                     class="color-input"
                     aria-label="seletor de cor"
                   />
@@ -1072,6 +1132,7 @@ watch(
                     id="dark-secondary-color"
                     type="color"
                     v-model="darkSecondaryColor"
+                    :disabled="!canEdit"
                     class="color-input"
                     aria-label="seletor de cor"
                   />
@@ -1093,6 +1154,7 @@ watch(
               <VCheckbox
                 v-model="isVerticalNavCollapsed"
                 :label="t('is_vertical_nav_collapsed')"
+                :disabled="!canEdit"
               />
             </VCol>
 
@@ -1100,6 +1162,7 @@ watch(
               <VCheckbox
                 v-model="isVerticalNavSemiDark"
                 :label="t('is_vertical_nav_semi_dark')"
+                :disabled="!canEdit"
               />
             </VCol>
           </VRow>
@@ -1109,13 +1172,13 @@ watch(
 
         <VCardText class="d-flex justify-end flex-wrap gap-3">
           <template v-if="hasAccountInfo">
-            <VBtn color="primary" @click="updateAccountInfo">
+            <VBtn color="primary" :disabled="!canEdit" @click="updateAccountInfo">
               {{ $t('update') }}
             </VBtn>
           </template>
 
           <template v-else>
-            <VBtn color="primary" @click="addAccountInfo">
+            <VBtn color="primary" :disabled="!canEdit" @click="addAccountInfo">
               {{ $t('add') }}
             </VBtn>
           </template>

@@ -262,6 +262,7 @@
   "test_plan_required_fields": "Documento, teléfono y correo electrónico son obligatorios para el plan de prueba",
   "test_plan_already_used": "Ya has realizado una prueba anteriormente. No se permite más de una prueba por documento, teléfono o correo electrónico.",
   "master_user_not_found": "Usuario master no encontrado para esta cuenta",
+  "account_access_denied": "¡Acceso a la cuenta denegado!",
   "user_sensitive_data_not_found": "Datos sensibles del usuario no encontrados",
   "customer_not_found_or_could_not_create": "Cliente no encontrado o no se pudo crear",
   "active_plan_not_found": "Plan activo no encontrado",
@@ -763,5 +764,6 @@
   "register_phone_already_used_in_test": "¡Este número de teléfono ya fue utilizado en una prueba anterior!",
   "register_email_already_used_in_test": "¡Este correo electrónico ya fue utilizado en una prueba anterior!",
   "register_email_already_used": "¡Este correo electrónico ya está registrado!",
-  "register_phone_already_used": "¡Este número de teléfono ya está registrado!"
+  "register_phone_already_used": "¡Este número de teléfono ya está registrado!",
+  "personalization_not_available": "¡Personalización no disponible!"
 }

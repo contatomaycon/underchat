@@ -201,6 +201,7 @@
   "zipcode_not_found": "Código postal não encontrado!",
   "username_already_exists": "Nome de usuário já existe!",
   "account_list_successfully": "Lista de contas obtida com sucesso!",
+  "account_access_denied": "Acesso à conta negado!",
   "account_list_not_found": "Nenhuma conta encontrada!",
   "account_list_error": "Erro ao carregar lista de contas!",
   "account_all_list_success": "Lista de todas as contas obtida com sucesso!",
@@ -763,5 +764,6 @@
   "register_phone_already_used_in_test": "Este telefone já foi utilizado em um teste anterior!",
   "register_email_already_used_in_test": "Este email já foi utilizado em um teste anterior!",
   "register_email_already_used": "Este email já está cadastrado!",
-  "register_phone_already_used": "Este telefone já está cadastrado!"
+  "register_phone_already_used": "Este telefone já está cadastrado!",
+  "personalization_not_available": "Personalização não disponível!"
 }

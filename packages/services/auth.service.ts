@@ -2,6 +2,7 @@ import { AuthRepository } from '@core/repositories/auth/Auth.repository';
 import { injectable } from 'tsyringe';
 import { EncryptService } from './encrypt.service';
 import { IAuthenticate } from '@core/common/interfaces/IAuthenticate';
+import { AuthUserResponse } from '@core/schema/auth/login/response.schema';
 
 @injectable()
 export class AuthService {
@@ -20,5 +21,12 @@ export class AuthService {
     };
 
     return this.authRepository.authenticate(input);
+  };
+
+  authenticateByUserId = async (
+    userId: string,
+    accountId: string
+  ): Promise<AuthUserResponse | null> => {
+    return this.authRepository.authenticateByUserId(userId, accountId);
   };
 }

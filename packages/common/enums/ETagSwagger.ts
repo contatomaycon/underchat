@@ -31,4 +31,5 @@ export enum ETagSwagger {
   config = 'Configurações',
   dashboard = 'Dashboard',
   schedule = 'Agendamentos',
+  masterSession = 'Sessão Master',
 }

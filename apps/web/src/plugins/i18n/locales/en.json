@@ -515,6 +515,7 @@
     "cancelling": "Cancelling",
     "cancelled": "Cancelled",
     "blocked": "Blocked",
+    "expired": "Expired",
     "tests": "Tests",
     "account_status": "Status",
     "plan": "Plan",
@@ -539,6 +540,8 @@
     "account_info_add_success": "Account info added successfully.",
     "account_info_edit_error": "An error occurred while editing the account info. Please try again.",
     "account_info_edit_success": "Account info edited successfully.",
+    "account_info_update_error": "An error occurred while updating the account info. Please try again.",
+    "account_info_update_successfully": "Account info updated successfully.",
     "account_info_deleted_error": "An error occurred while deleting the account info. Please try again.",
     "account_info_deleted_success": "Account info deleted successfully.",
     "account_info": "Account Customization",
@@ -1193,6 +1196,7 @@
     "quantity_sold": "Quantity Sold",
     "total_revenue": "Total Revenue",
     "account_name": "Account Name",
+    "account_name_max_length": "Account name must be at most 10 characters",
     "summary": "Summary",
     "total_sales": "Total Sales",
     "sales_details": "Sales Details",
@@ -1535,7 +1539,7 @@
     "days": "days",
     "of": "of",
     "days_remaining_until_update": "{days} days left until your plan needs to be updated.",
-    "expired": "Expired",
+    "expired_status": "Expired",
     "plan_expired": "Plan expired",
     "plan_expired_description": "Your plan has expired. Renew to keep using all features.",
     "plan_expired_cta": "Renew plan",
@@ -1909,5 +1913,8 @@
     "tag_channel_name_description": "Channel name",
     "good_morning": "Good morning",
     "good_afternoon": "Good afternoon",
-    "good_evening": "Good evening"
+    "good_evening": "Good evening",
+    "switch_account": "Switch Account",
+    "enter": "Enter",
+    "master_accounts_list_error": "An error occurred while listing accessible accounts. Please try again."
 }

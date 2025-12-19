@@ -40,6 +40,7 @@ import { UserTotalViewerRepository } from '@core/repositories/user/UserTotalView
 import { UserSectorsListerRepository } from '@core/repositories/user/UserSectorsLister.repository';
 import { UserOnlineListerRepository } from '@core/repositories/user/UserOnlineLister.repository';
 import { UserTransferListerRepository } from '@core/repositories/user/UserTransferLister.repository';
+import { UserMasterViewerRepository } from '@core/repositories/user/UserMasterViewer.repository';
 import { EncryptService } from './encrypt.service';
 import { IUserSensitiveDataDecrypted } from '@core/common/interfaces/IUserSensitiveDataDecrypted';
 import { StorageService } from '@core/services/storage.service';
@@ -86,7 +87,8 @@ export class UserService {
     private readonly storageService: StorageService,
     private readonly elasticDatabaseService: ElasticDatabaseService,
     private readonly accountSettingsAdditionalInfoViewerRepository: AccountSettingsAdditionalInfoViewerRepository,
-    private readonly userPasswordViewerRepository: UserPasswordViewerRepository
+    private readonly userPasswordViewerRepository: UserPasswordViewerRepository,
+    private readonly userMasterViewerRepository: UserMasterViewerRepository
   ) {}
 
   listUsers = async (
@@ -755,5 +757,16 @@ export class UserService {
       userId,
       phoneJidEncrypted
     );
+  };
+
+  findMasterUserByAccountId = async (
+    accountId: string
+  ): Promise<{
+    user_id: string;
+    email: string;
+    account_id: string;
+    account_name: string | null;
+  } | null> => {
+    return this.userMasterViewerRepository.findMasterUserByAccountId(accountId);
   };
 }

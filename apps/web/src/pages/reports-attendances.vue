@@ -528,10 +528,10 @@ onMounted(() => {
             <VBtn
               color="primary"
               variant="outlined"
-              prepend-icon="tabler-file-pdf"
               @click="downloadPdf"
               :disabled="!startDate || !endDate || loading"
             >
+              <VIcon start size="18" icon="tabler-file-type-pdf" />
               {{ $t('download_pdf') }}
             </VBtn>
           </VCardTitle>

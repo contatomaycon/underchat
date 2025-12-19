@@ -22,6 +22,7 @@ import { AccountInfoByIdViewerExistsRepository } from '@core/repositories/accoun
 import { CreateAccountInfoRequest } from '@core/schema/account/createAccountInfo/request.schema';
 import { EditAccountInfoRequest } from '@core/schema/account/editAccountInfo/request.schema';
 import { AccountAllListerRepository } from '@core/repositories/account/AccountAllLister.repository';
+import { AccountMasterAccessibleListerRepository } from '@core/repositories/account/AccountMasterAccessibleLister.repository';
 import { IAccountBasic } from '@core/common/interfaces/IAccountBasic';
 import { AccountSubscriptionsListerRepository } from '@core/repositories/account/AccountSubscriptionsLister.repository';
 import { ListAccountSubscriptionsResponse } from '@core/schema/account/listAccountSubscriptions/response.schema';
@@ -43,6 +44,9 @@ import { ListAccountTestsResponse } from '@core/schema/account/listAccountTests/
 import { AccountBlockedListerRepository } from '@core/repositories/account/AccountBlockedLister.repository';
 import { ListAccountBlockedRequest } from '@core/schema/account/listAccountBlocked/request.schema';
 import { ListAccountBlockedResponse } from '@core/schema/account/listAccountBlocked/response.schema';
+import { AccountExpiredListerRepository } from '@core/repositories/account/AccountExpiredLister.repository';
+import { ListAccountExpiredRequest } from '@core/schema/account/listAccountExpired/request.schema';
+import { ListAccountExpiredResponse } from '@core/schema/account/listAccountExpired/response.schema';
 import Redis from 'ioredis';
 
 @injectable()
@@ -62,6 +66,7 @@ export class AccountService {
     private readonly accountInfoUpdaterRepository: AccountInfoUpdaterRepository,
     private readonly accountInfoByIdViewerExistsRepository: AccountInfoByIdViewerExistsRepository,
     private readonly accountAllListerRepository: AccountAllListerRepository,
+    private readonly accountMasterAccessibleListerRepository: AccountMasterAccessibleListerRepository,
     private readonly accountSubscriptionsListerRepository: AccountSubscriptionsListerRepository,
     private readonly planAccountStatusViewerRepository: PlanAccountStatusViewerRepository,
     private readonly accountSubscribersListerRepository: AccountSubscribersListerRepository,
@@ -69,6 +74,7 @@ export class AccountService {
     private readonly accountCancelledListerRepository: AccountCancelledListerRepository,
     private readonly accountBlockedListerRepository: AccountBlockedListerRepository,
     private readonly accountTestsListerRepository: AccountTestsListerRepository,
+    private readonly accountExpiredListerRepository: AccountExpiredListerRepository,
     @inject('Redis') private readonly redis: Redis
   ) {}
 
@@ -125,6 +131,14 @@ export class AccountService {
     return this.accountAllListerRepository.listAllAccounts();
   };
 
+  listMasterAccessibleAccounts = async (
+    excludeAccountId: string
+  ): Promise<IAccountBasic[]> => {
+    return this.accountMasterAccessibleListerRepository.listMasterAccessibleAccounts(
+      excludeAccountId
+    );
+  };
+
   createAccount = async (
     input: CreateAccountRequest
   ): Promise<string | null> => {
@@ -156,6 +170,12 @@ export class AccountService {
 
   existsAccountInfoById = async (accountId: string): Promise<boolean> => {
     return this.accountInfoViewerExistsRepository.existsAccountInfoById(
+      accountId
+    );
+  };
+
+  totalAccountInfoByAccountId = async (accountId: string): Promise<number> => {
+    return this.accountInfoViewerExistsRepository.totalAccountInfoByAccountId(
       accountId
     );
   };
@@ -329,6 +349,23 @@ export class AccountService {
         query
       ),
       this.accountTestsListerRepository.listAccountsTotal(query),
+    ]);
+
+    return [result, total];
+  };
+
+  listAccountExpired = async (
+    perPage: number,
+    currentPage: number,
+    query: ListAccountExpiredRequest
+  ): Promise<[ListAccountExpiredResponse[], number]> => {
+    const [result, total] = await Promise.all([
+      this.accountExpiredListerRepository.listAccounts(
+        perPage,
+        currentPage,
+        query
+      ),
+      this.accountExpiredListerRepository.listAccountsTotal(query),
     ]);
 
     return [result, total];

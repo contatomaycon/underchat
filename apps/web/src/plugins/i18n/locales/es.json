@@ -516,6 +516,7 @@
     "cancelling": "En cancelación",
     "cancelled": "Cancelados",
     "blocked": "Bloqueados",
+    "expired": "Vencidos",
     "tests": "Pruebas",
     "account_status": "Estado",
     "plan": "Plan",
@@ -540,6 +541,8 @@
     "account_info_add_success": "Información de la cuenta agregada con éxito.",
     "account_info_edit_error": "Ocurrió un error al editar la información de la cuenta. Por favor, inténtalo de nuevo.",
     "account_info_edit_success": "Información de la cuenta editada con éxito.",
+    "account_info_update_error": "Ocurrió un error al actualizar la información de la cuenta. Por favor, inténtalo de nuevo.",
+    "account_info_update_successfully": "Información de la cuenta actualizada con éxito.",
     "account_info_deleted_error": "Ocurrió un error al eliminar la información de la cuenta. Por favor, inténtalo de nuevo.",
     "account_info_deleted_success": "Información de la cuenta eliminada con éxito.",
     "account_info": "Personalización de la Cuenta",
@@ -1194,6 +1197,7 @@
     "quantity_sold": "Cantidad Vendida",
     "total_revenue": "Ingresos Totales",
     "account_name": "Nombre de la Cuenta",
+    "account_name_max_length": "El nombre de la cuenta debe tener como máximo 10 caracteres",
     "summary": "Resumen",
     "total_sales": "Total de Ventas",
     "sales_details": "Detalles de las Ventas",
@@ -1537,7 +1541,7 @@
     "days": "días",
     "of": "de",
     "days_remaining_until_update": "Faltan {days} días para que su plan necesite ser actualizado.",
-    "expired": "Agotado",
+    "expired_status": "Agotado",
     "plan_expired": "Plan vencido",
     "plan_expired_description": "Su plan está vencido. Renueve para seguir utilizando todas las funcionalidades.",
     "plan_expired_cta": "Renovar plan",
@@ -1911,5 +1915,8 @@
     "tag_channel_name_description": "Nombre del canal",
     "good_morning": "Buenos días",
     "good_afternoon": "Buenas tardes",
-    "good_evening": "Buenas noches"
+    "good_evening": "Buenas noches",
+    "switch_account": "Cambiar Cuenta",
+    "enter": "Entrar",
+    "master_accounts_list_error": "Ocurrió un error al listar las cuentas accesibles. Por favor, inténtalo de nuevo."
 }

@@ -226,6 +226,20 @@ export default [
         ],
       },
       {
+        title: 'expired',
+        to: { name: 'account-expired' as keyof RouteNamedMap },
+        icon: { icon: 'tabler-clock-hour-4' },
+        permissions: [
+          EGeneralPermissions.full_access,
+          EGeneralPermissions.full_access_group,
+          EAccountPermissions.account_group,
+          EAccountPermissions.account_view,
+          EAccountPermissions.account_create,
+          EAccountPermissions.account_update,
+          EAccountPermissions.account_delete,
+        ],
+      },
+      {
         title: 'tests',
         to: { name: 'account-tests' as keyof RouteNamedMap },
         icon: { icon: 'tabler-flask' },

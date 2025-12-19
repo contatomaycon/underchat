@@ -529,6 +529,7 @@
     "cancelling": "Em cancelamento",
     "cancelled": "Cancelados",
     "blocked": "Bloqueados",
+    "expired": "Vencidos",
     "tests": "Testes",
     "account_status": "Status",
     "plan": "Plano",
@@ -553,6 +554,8 @@
     "account_info_add_success": "Informações da conta adicionadas com sucesso.",
     "account_info_edit_error": "Ocorreu um erro ao editar as informações da conta. Por favor, tente novamente.",
     "account_info_edit_success": "Informações da conta editadas com sucesso.",
+    "account_info_update_error": "Ocorreu um erro ao atualizar as informações da conta. Por favor, tente novamente.",
+    "account_info_update_successfully": "Informações da conta atualizadas com sucesso.",
     "account_info_deleted_error": "Ocorreu um erro ao excluir as informações da conta. Por favor, tente novamente.",
     "account_info_deleted_success": "Informações da conta excluídas com sucesso.",
     "account_info": "Personalização da Conta",
@@ -1139,6 +1142,7 @@
     "quantity_sold": "Quantidade Vendida",
     "total_revenue": "Receita Total",
     "account_name": "Nome da Conta",
+    "account_name_max_length": "O nome da conta deve ter no máximo 10 caracteres",
     "summary": "Resumo",
     "total_sales": "Total de Vendas",
     "sales_details": "Detalhes das Vendas",
@@ -1537,7 +1541,7 @@
     "days": "dias",
     "of": "de",
     "days_remaining_until_update": "Faltam {days} dias para que seu plano precise ser atualizado.",
-    "expired": "Esgotado",
+    "expired_status": "Esgotado",
     "plan_expired": "Plano vencido",
     "last_payment_date": "Última data de pagamento",
     "next_payment_date": "Próxima data de renovação",
@@ -1911,5 +1915,8 @@
     "tag_channel_name_description": "Nome do canal",
     "good_morning": "Bom dia",
     "good_afternoon": "Boa tarde",
-    "good_evening": "Boa noite"
+    "good_evening": "Boa noite",
+    "switch_account": "Alternar Conta",
+    "enter": "Entrar",
+    "master_accounts_list_error": "Ocorreu um erro ao listar as contas acessíveis. Por favor, tente novamente."
 }

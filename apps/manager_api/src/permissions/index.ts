@@ -17,3 +17,4 @@ export * from './config.permissions';
 export * from './schedule.permissions';
 export * from './sales.permissions';
 export * from './clients.permissions';
+export * from './masterSession.permissions';

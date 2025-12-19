@@ -262,6 +262,7 @@
   "test_plan_required_fields": "Document, phone and email are required for test plan",
   "test_plan_already_used": "You have already taken a test previously. Only one test per document, phone or email is allowed.",
   "master_user_not_found": "Master user not found for this account",
+  "account_access_denied": "Account access denied!",
   "user_sensitive_data_not_found": "User sensitive data not found",
   "customer_not_found_or_could_not_create": "Customer not found or could not be created",
   "active_plan_not_found": "Active plan not found",
@@ -763,5 +764,6 @@
   "register_phone_already_used_in_test": "This phone number has already been used in a previous test!",
   "register_email_already_used_in_test": "This email has already been used in a previous test!",
   "register_email_already_used": "This email is already registered!",
-  "register_phone_already_used": "This phone number is already registered!"
+  "register_phone_already_used": "This phone number is already registered!",
+  "personalization_not_available": "Personalization is not available!"
 }

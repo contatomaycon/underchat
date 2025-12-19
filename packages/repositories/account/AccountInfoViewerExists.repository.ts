@@ -30,4 +30,21 @@ export class AccountInfoViewerExistsRepository {
 
     return result[0].total > 0;
   };
+
+  totalAccountInfoByAccountId = async (accountId: string): Promise<number> => {
+    const result = await this.db
+      .select({
+        total: count(),
+      })
+      .from(accountInfo)
+      .where(
+        and(
+          eq(accountInfo.account_id, accountId),
+          isNull(accountInfo.deleted_at)
+        )
+      )
+      .execute();
+
+    return result[0]?.total ?? 0;
+  };
 }

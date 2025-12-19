@@ -8,6 +8,11 @@ export const upsertAccountCustomizationRequestSchema = Type.Object({
       value: Type.Union([Type.Boolean(), Type.Null()]),
     })
   ),
+  name: Type.Optional(
+    Type.Object({
+      value: Type.Union([Type.String(), Type.Null()]),
+    })
+  ),
   content_width: Type.Object({
     value: Type.Union([Type.String(), Type.Null()]),
   }),

@@ -1068,7 +1068,7 @@ onMounted(() => {
                     {{ $t('days') }}
                   </template>
                   <template v-else>
-                    {{ $t('expired') }}
+                    {{ $t('expired_status') }}
                   </template>
                 </span>
               </div>

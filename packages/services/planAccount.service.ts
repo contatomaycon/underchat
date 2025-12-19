@@ -221,4 +221,18 @@ export class PlanAccountService {
   async getMassSendingTotal(accountId: string): Promise<number> {
     return this.dashboardSchedulesRepository.getSchedulesSentMonthly(accountId);
   }
+
+  async validateCanCreatePersonalization(accountId: string): Promise<boolean> {
+    const viewAccountQuantityProduct =
+      await this.accountService.viewAccountQuantityProduct(
+        accountId,
+        EPlanProduct.personalization
+      );
+
+    if (viewAccountQuantityProduct <= 0) {
+      return false;
+    }
+
+    return true;
+  }
 }
