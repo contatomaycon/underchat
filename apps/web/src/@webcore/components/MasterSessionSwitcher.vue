@@ -1,7 +1,6 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, nextTick } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { useRouter } from 'vue-router';
 import { useAuthStore } from '@/@webcore/stores/auth';
 import { useAccountStore } from '@/@webcore/stores/account';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
@@ -14,10 +13,8 @@ import { useTheme } from 'vuetify';
 import { resetConnection } from '@/@webcore/centrifugo';
 import { resetPresencePermissionError } from '@/@webcore/presence';
 import { useChatStore } from '@/@webcore/stores/chat';
-import { nextTick } from 'vue';
 
 const { t } = useI18n();
-const router = useRouter();
 const authStore = useAuthStore();
 const accountStore = useAccountStore();
 const configStore = useConfigStore();
@@ -100,7 +97,7 @@ const handleSwitchAccount = async () => {
       closeModal();
 
       setTimeout(() => {
-        window.location.reload();
+        globalThis.location.reload();
       }, 100);
     }
   } catch (error) {
