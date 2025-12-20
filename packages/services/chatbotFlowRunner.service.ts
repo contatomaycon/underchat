@@ -1987,7 +1987,7 @@ export class ChatbotFlowRunnerService {
 
       const inactivityAlert = configurations?.configurations?.inactivity_alert;
 
-      if (!inactivityAlert || inactivityAlert.status !== 'active') {
+      if (inactivityAlert?.status !== 'active') {
         await this.cancelInactivityCheck({
           account: { id: inactivityData.accountId },
           worker: { id: inactivityData.workerId },
@@ -2062,8 +2062,7 @@ export class ChatbotFlowRunnerService {
     const customMessages = options?.customMessages;
 
     if (
-      inactivityAlert &&
-      inactivityAlert.status === 'active' &&
+      inactivityAlert?.status === 'active' &&
       createChat.status === EChatStatus.ura
     ) {
       const timeMinutes = inactivityAlert.time ?? 5;
