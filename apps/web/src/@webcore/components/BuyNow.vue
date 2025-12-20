@@ -36,7 +36,7 @@ const openBuyNow = () =>
   appearance: none;
   background: linear-gradient(-45deg, #d97706, #c2185b, #1565c0, #00897b);
   background-size: 600%;
-  color: #ffffff; // NOSONAR
+  color: #ffffff;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
   cursor: pointer;
   font-size: 0.9375rem;
@@ -50,6 +50,8 @@ const openBuyNow = () =>
   text-decoration: none;
   text-transform: none;
   vertical-align: middle;
+  position: relative;
+  z-index: 1;
 }
 
 .buy-now-button {
@@ -57,6 +59,17 @@ const openBuyNow = () =>
   z-index: 999;
   inset-block-end: 5%;
   inset-inline-end: 87px;
+  position: relative;
+  overflow: hidden;
+}
+
+.buy-now-button::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.3);
+  z-index: 0;
+  pointer-events: none;
 }
 
 .buy-now-button:hover {
