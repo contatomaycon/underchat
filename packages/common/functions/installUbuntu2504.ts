@@ -14,29 +14,6 @@ export async function installUbuntu2504(
   const patchEnv = path.join(__dirname, '../../../.env');
   const envContent = await readEnvFile(patchEnv);
 
-  const patchSshKey = path.join(__dirname, '../../../infra/ssh/docker_key');
-  let sshKeyContent = '';
-  try {
-    sshKeyContent = await fs.readFile(patchSshKey, 'utf-8');
-    sshKeyContent = sshKeyContent
-      .split('\n')
-      .map((line) => line.replaceAll(/(["`\\$])/g, String.raw`\$1`))
-      .join(String.raw`\n`);
-  } catch {}
-
-  const patchKnownHosts = path.join(
-    __dirname,
-    '../../../infra/ssh/known_hosts'
-  );
-  let knownHostsContent = '';
-  try {
-    knownHostsContent = await fs.readFile(patchKnownHosts, 'utf-8');
-    knownHostsContent = knownHostsContent
-      .split('\n')
-      .map((line) => line.replaceAll(/(["`\\$])/g, String.raw`\$1`))
-      .join(String.raw`\n`);
-  } catch {}
-
   return [
     'dpkg --configure -a',
     'apt-get update',
@@ -103,25 +80,9 @@ export async function installUbuntu2504(
       sleep 3 && \
       hash -r"`,
 
-    sshKeyContent
-      ? (() => {
-          const knownHostsCmd = knownHostsContent
-            ? `printf '%b' '${knownHostsContent}' > ~/.ssh/known_hosts && `
-            : '';
-          return `bash -c "mkdir -p ~/.ssh && \
-          printf '%b' '${sshKeyContent}' > ~/.ssh/id_rsa && \
-          chmod 600 ~/.ssh/id_rsa && \
-          ${knownHostsCmd}chmod 644 ~/.ssh/known_hosts && \
-          eval \\$(ssh-agent -s) > /dev/null && \
-          ssh-add ~/.ssh/id_rsa 2>/dev/null || true && \
-          git config --global url.\\"git@gitea.devunder.com:32222/\\".insteadOf \\"https://gitea.devunder.com:32222/\\" || true && \
-          git config --global url.\\"git@gitea.devunder.com:32222/\\".insteadOf \\"ssh://git@gitea.devunder.com:32222/\\" || true"`;
-        })()
-      : 'echo "SSH key not found, skipping SSH configuration"',
-
     `bash -c "mkdir -p /home/app && \
       chown $USER:$USER /home/app && \
-      git clone --single-branch --branch ${generalEnvironment.gitBranch} git@gitea.devunder.com:32222/${generalEnvironment.gitRepo}.git /home/app"`,
+      git clone --single-branch --branch ${generalEnvironment.gitBranch} https://${generalEnvironment.gitToken}@gitea.devunder.com/${generalEnvironment.gitRepo}.git /home/app"`,
 
     `bash -c "printf '%b' '${envContent}' > /home/app/.env && chown $USER:$USER /home/app/.env"`,
 

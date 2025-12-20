@@ -120,6 +120,15 @@ export class GeneralEnvironment {
     return repo;
   }
 
+  public get gitToken(): string {
+    const token = process.env.GIT_TOKEN;
+    if (!token) {
+      throw new InvalidConfigurationError('GIT_TOKEN is not defined.');
+    }
+
+    return token;
+  }
+
   public get gitBranch(): string {
     const branch = process.env.GIT_BRANCH;
     if (!branch) {

@@ -13,31 +13,10 @@ RUN pnpm dlx turbo@latest prune public --docker
 
 FROM pruned AS deps
 
-RUN apk update && \
-    apk add --no-cache openssh-client
-
 WORKDIR /app
 COPY --from=pruned /app/out/json/ .
-COPY --from=pruned /app/infra/ssh/docker_key /tmp/docker_key
-COPY --from=pruned /app/infra/ssh/known_hosts /tmp/known_hosts
-
-RUN mkdir -p ~/.ssh && \
-    cp /tmp/docker_key ~/.ssh/id_rsa && \
-    chmod 600 ~/.ssh/id_rsa && \
-    cp /tmp/known_hosts ~/.ssh/known_hosts && \
-    chmod 644 ~/.ssh/known_hosts && \
-    echo -e "Host gitea.devunder.com\n  HostName gitea.devunder.com\n  Port 32222\n  User git\n  StrictHostKeyChecking accept-new\n  UserKnownHostsFile ~/.ssh/known_hosts" > ~/.ssh/config && \
-    chmod 600 ~/.ssh/config && \
-    eval "$(ssh-agent -s)" > /dev/null && \
-    ssh-add ~/.ssh/id_rsa 2>/dev/null || true && \
-    git config --global url."git@gitea.devunder.com:".insteadOf "https://gitea.devunder.com:32222/" || true && \
-    git config --global url."git@gitea.devunder.com:".insteadOf "ssh://git@gitea.devunder.com:32222/" || true && \
-    git config --global url."git@gitea.devunder.com:".insteadOf "git+ssh://git@gitea.devunder.com:32222/" || true
 
 RUN pnpm install --frozen-lockfile --ignore-scripts
-
-RUN rm -rf ~/.ssh/id_rsa ~/.ssh/known_hosts ~/.ssh/config /tmp/docker_key && \
-    ssh-add -D 2>/dev/null || true
 
 FROM deps AS builder
 WORKDIR /app
