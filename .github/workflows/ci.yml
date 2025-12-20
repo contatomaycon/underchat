@@ -33,13 +33,16 @@ jobs:
       - name: Setup pnpm/yarn caches
         shell: bash
         run: |
-          mkdir -p /root/.pnpm-store /root/.yarn-cache /tmp
+          mkdir -p /root/.pnpm-store /root/.yarn-cache /tmp/pnpm-tmp
+          echo "TMPDIR=/tmp/pnpm-tmp" >> $GITHUB_ENV
+          echo "YARN_CACHE_FOLDER=/root/.yarn-cache" >> $GITHUB_ENV
+
           corepack enable
           corepack prepare pnpm@10.14.0 --activate
           corepack prepare yarn@4.9.2 --activate
+
           pnpm config set store-dir /root/.pnpm-store
           pnpm config set verify-store-integrity false
-          echo "YARN_CACHE_FOLDER=/root/.yarn-cache" >> $GITHUB_ENV
 
       - name: Setup Java
         uses: actions/setup-java@v4
