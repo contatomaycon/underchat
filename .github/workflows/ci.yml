@@ -107,6 +107,7 @@ jobs:
           export NPM_CONFIG_TMP="${RUNNER_TEMP}/pnpm-tmp"
           mkdir -p "$YARN_CACHE_FOLDER" "$PNPM_STORE_DIR" "$NPM_CONFIG_TMP"
           chmod -R 755 "$YARN_CACHE_FOLDER" "$PNPM_STORE_DIR" "$NPM_CONFIG_TMP" || true
+          pnpm config set store-dir "$PNPM_STORE_DIR"
           echo "TMPDIR=${TMPDIR}" >> $GITHUB_ENV
           echo "YARN_CACHE_FOLDER=${YARN_CACHE_FOLDER}" >> $GITHUB_ENV
           echo "YARN_ENABLE_IMMUTABLE_INSTALLS=false" >> $GITHUB_ENV
@@ -120,7 +121,7 @@ jobs:
           YARN_ENABLE_IMMUTABLE_INSTALLS: false
           PNPM_STORE_DIR: ${{ env.PNPM_STORE_DIR }}
           NPM_CONFIG_TMP: ${{ env.NPM_CONFIG_TMP || '/tmp' }}
-        run: pnpm install
+        run: pnpm install --store-dir "${PNPM_STORE_DIR}"
 
       - name: Run Lint
         run: pnpm run lint
