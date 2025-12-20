@@ -85,8 +85,9 @@ jobs:
           eval "$(ssh-agent -s)"
           ssh-add ~/.ssh/id_rsa
 
-          git config --global url."git@gitea.devunder.com:32222/".insteadOf "https://gitea.devunder.com:32222/" || true
-          git config --global url."git@gitea.devunder.com:32222/".insteadOf "ssh://git@gitea.devunder.com:32222/" || true
+          git config --global url."git@gitea.devunder.com:".insteadOf "https://gitea.devunder.com:32222/" || true
+          git config --global url."git@gitea.devunder.com:".insteadOf "ssh://git@gitea.devunder.com:32222/" || true
+          git config --global url."git@gitea.devunder.com:".insteadOf "git+ssh://git@gitea.devunder.com:32222/" || true
 
           ssh -T git@gitea.devunder.com || true
 
