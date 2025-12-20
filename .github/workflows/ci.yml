@@ -30,34 +30,22 @@ jobs:
         with:
           node-version: ${{ env.VERSION_NODE }}
 
-      - name: Setup pnpm/yarn dirs
+      - name: Setup pnpm/yarn caches
         shell: bash
         run: |
-          mkdir -p "$HOME/.pnpm-store" "$HOME/.yarn-cache" "$HOME/.tmp"
-          echo "PNPM_STORE_PATH=$HOME/.pnpm-store" >> $GITHUB_ENV
-          echo "YARN_CACHE_FOLDER=$HOME/.yarn-cache" >> $GITHUB_ENV
-          echo "TMPDIR=$HOME/.tmp" >> $GITHUB_ENV
-
+          mkdir -p /root/.pnpm-store /root/.yarn-cache /tmp
           corepack enable
           corepack prepare pnpm@10.14.0 --activate
           corepack prepare yarn@4.9.2 --activate
-
-          pnpm config set store-dir "$HOME/.pnpm-store"
+          pnpm config set store-dir /root/.pnpm-store
           pnpm config set verify-store-integrity false
+          echo "YARN_CACHE_FOLDER=/root/.yarn-cache" >> $GITHUB_ENV
 
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           java-version: ${{ env.VERSION_JAVA }}
           distribution: 'temurin'
-
-      - name: Cache pnpm/yarn stores
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.pnpm-store
-            ~/.yarn-cache
-          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
 
       - name: Install JQ
         run: |
