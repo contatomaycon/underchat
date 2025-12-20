@@ -30,15 +30,20 @@ jobs:
         with:
           node-version: ${{ env.VERSION_NODE }}
 
-      - name: Activate package managers
+      - name: Setup pnpm/yarn dirs
         shell: bash
         run: |
+          mkdir -p "$HOME/.pnpm-store" "$HOME/.yarn-cache" "$HOME/.tmp"
+          echo "PNPM_STORE_PATH=$HOME/.pnpm-store" >> $GITHUB_ENV
+          echo "YARN_CACHE_FOLDER=$HOME/.yarn-cache" >> $GITHUB_ENV
+          echo "TMPDIR=$HOME/.tmp" >> $GITHUB_ENV
+
           corepack enable
           corepack prepare pnpm@10.14.0 --activate
           corepack prepare yarn@4.9.2 --activate
-          pnpm -v
-          TMP_DIR=$(mktemp -d)
-          (cd "$TMP_DIR" && yarn -v)
+
+          pnpm config set store-dir "$HOME/.pnpm-store"
+          pnpm config set verify-store-integrity false
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -46,19 +51,18 @@ jobs:
           java-version: ${{ env.VERSION_JAVA }}
           distribution: 'temurin'
 
-      - name: Cache pnpm modules
+      - name: Cache pnpm/yarn stores
         uses: actions/cache@v4
         with:
           path: |
-            ~/.local/share/pnpm/store
             ~/.pnpm-store
-            **/node_modules
+            ~/.yarn-cache
           key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
 
-      - name: Install JQ and netcat
+      - name: Install JQ
         run: |
           sudo apt-get update
-          sudo apt-get install -y jq netcat-openbsd
+          sudo apt-get install -y jq
 
       - name: Configure SSH for Gitea
         run: |
@@ -69,10 +73,6 @@ jobs:
           if [ -f infra/ssh/known_hosts ]; then
             cat infra/ssh/known_hosts >> ~/.ssh/known_hosts
           fi
-
-          echo "Testing connectivity to Gitea..."
-          timeout 10 bash -c 'until nc -z gitea.devunder.com 32222; do sleep 1; done' 2>/dev/null || echo "Warning: Cannot reach gitea.devunder.com:32222 - server may be in private network"
-
           ssh-keyscan -p 32222 gitea.devunder.com >> ~/.ssh/known_hosts 2>/dev/null || true
           chmod 644 ~/.ssh/known_hosts
 
@@ -83,9 +83,6 @@ jobs:
             User git
             StrictHostKeyChecking accept-new
             UserKnownHostsFile ~/.ssh/known_hosts
-            ConnectTimeout 10
-            ServerAliveInterval 60
-            ServerAliveCountMax 3
           EOF
           chmod 600 ~/.ssh/config
 
@@ -96,35 +93,10 @@ jobs:
           git config --global url."git@gitea.devunder.com:".insteadOf "ssh://git@gitea.devunder.com:32222/" || true
           git config --global url."git@gitea.devunder.com:".insteadOf "git+ssh://git@gitea.devunder.com:32222/" || true
 
-          echo "Testing SSH connection..."
-          ssh -T -o ConnectTimeout=10 git@gitea.devunder.com 2>&1 || echo "Warning: SSH test failed - this may be expected if server is in private network"
-
-      - name: Configure environment for package installation
-        run: |
-          export TMPDIR="${RUNNER_TEMP:-/tmp}"
-          export YARN_CACHE_FOLDER="${RUNNER_TEMP}/yarn-cache"
-          export PNPM_STORE_DIR="${RUNNER_TEMP}/pnpm-store"
-          export NPM_CONFIG_TMP="${RUNNER_TEMP}/pnpm-tmp"
-          export PNPM_TMPDIR="${RUNNER_TEMP}/pnpm-tmp"
-          mkdir -p "$YARN_CACHE_FOLDER" "$PNPM_STORE_DIR" "$NPM_CONFIG_TMP" "$PNPM_TMPDIR"
-          chmod -R 755 "$YARN_CACHE_FOLDER" "$PNPM_STORE_DIR" "$NPM_CONFIG_TMP" "$PNPM_TMPDIR" || true
-          pnpm config set store-dir "$PNPM_STORE_DIR"
-          echo "TMPDIR=${TMPDIR}" >> $GITHUB_ENV
-          echo "YARN_CACHE_FOLDER=${YARN_CACHE_FOLDER}" >> $GITHUB_ENV
-          echo "YARN_ENABLE_IMMUTABLE_INSTALLS=false" >> $GITHUB_ENV
-          echo "PNPM_STORE_DIR=${PNPM_STORE_DIR}" >> $GITHUB_ENV
-          echo "NPM_CONFIG_TMP=${NPM_CONFIG_TMP}" >> $GITHUB_ENV
-          echo "PNPM_TMPDIR=${PNPM_TMPDIR}" >> $GITHUB_ENV
+          ssh -T git@gitea.devunder.com || true
 
       - name: Install Dependencies
-        env:
-          TMPDIR: ${{ env.TMPDIR || '/tmp' }}
-          YARN_CACHE_FOLDER: ${{ env.YARN_CACHE_FOLDER || '/tmp/yarn-cache' }}
-          YARN_ENABLE_IMMUTABLE_INSTALLS: false
-          PNPM_STORE_DIR: ${{ env.PNPM_STORE_DIR }}
-          NPM_CONFIG_TMP: ${{ env.NPM_CONFIG_TMP || '/tmp' }}
-          PNPM_TMPDIR: ${{ env.PNPM_TMPDIR || '/tmp' }}
-        run: pnpm install --store-dir "${PNPM_STORE_DIR}"
+        run: pnpm install
 
       - name: Run Lint
         run: pnpm run lint
