@@ -11,7 +11,6 @@ import swaggerPlugin from '@/plugins/swagger';
 import corsPlugin from '@core/plugins/cors';
 import jwtPlugin from '@core/plugins/jwt';
 import databaseElasticPlugin from '@core/plugins/dbElastic';
-import elasticLogsPlugin from '@core/plugins/elasticLogs';
 import centrifugoPlugin from '@core/plugins/centrifugo';
 import kafkaStreamsPlugin from '@core/plugins/kafkaStreams';
 import redisPlugin from '@core/plugins/redis';
@@ -54,10 +53,6 @@ server.register(safePlugin(multipartFile, 'multipartFile'), {
 });
 
 server.register(safePlugin(databaseElasticPlugin, 'databaseElastic'), {
-  prefix: ERouteModule.balancer,
-});
-
-server.register(safePlugin(elasticLogsPlugin, 'elasticLogs'), {
   prefix: ERouteModule.balancer,
 });
 
