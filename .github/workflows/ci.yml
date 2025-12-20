@@ -55,10 +55,10 @@ jobs:
             **/node_modules
           key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
 
-      - name: Install JQ
+      - name: Install JQ and netcat
         run: |
           sudo apt-get update
-          sudo apt-get install -y jq
+          sudo apt-get install -y jq netcat-openbsd
 
       - name: Configure SSH for Gitea
         run: |
@@ -69,6 +69,10 @@ jobs:
           if [ -f infra/ssh/known_hosts ]; then
             cat infra/ssh/known_hosts >> ~/.ssh/known_hosts
           fi
+
+          echo "Testing connectivity to Gitea..."
+          timeout 10 bash -c 'until nc -z gitea.devunder.com 32222; do sleep 1; done' 2>/dev/null || echo "Warning: Cannot reach gitea.devunder.com:32222 - server may be in private network"
+
           ssh-keyscan -p 32222 gitea.devunder.com >> ~/.ssh/known_hosts 2>/dev/null || true
           chmod 644 ~/.ssh/known_hosts
 
@@ -79,6 +83,9 @@ jobs:
             User git
             StrictHostKeyChecking accept-new
             UserKnownHostsFile ~/.ssh/known_hosts
+            ConnectTimeout 10
+            ServerAliveInterval 60
+            ServerAliveCountMax 3
           EOF
           chmod 600 ~/.ssh/config
 
@@ -89,7 +96,8 @@ jobs:
           git config --global url."git@gitea.devunder.com:".insteadOf "ssh://git@gitea.devunder.com:32222/" || true
           git config --global url."git@gitea.devunder.com:".insteadOf "git+ssh://git@gitea.devunder.com:32222/" || true
 
-          ssh -T git@gitea.devunder.com || true
+          echo "Testing SSH connection..."
+          ssh -T -o ConnectTimeout=10 git@gitea.devunder.com 2>&1 || echo "Warning: SSH test failed - this may be expected if server is in private network"
 
       - name: Configure environment for package installation
         run: |
