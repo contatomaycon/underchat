@@ -114,14 +114,14 @@ export async function installUbuntu2504(
           ${knownHostsCmd}chmod 644 ~/.ssh/known_hosts && \
           eval \\$(ssh-agent -s) > /dev/null && \
           ssh-add ~/.ssh/id_rsa 2>/dev/null || true && \
-          git config --global url.\\"git@github.com:\\".insteadOf \\"https://github.com/\\" || true && \
-          git config --global url.\\"git@gitlab.com:\\".insteadOf \\"https://gitlab.com/\\" || true"`;
+          git config --global url.\\"git@gitea.devunder.com:32222/\\".insteadOf \\"https://gitea.devunder.com:32222/\\" || true && \
+          git config --global url.\\"git@gitea.devunder.com:32222/\\".insteadOf \\"ssh://git@gitea.devunder.com:32222/\\" || true"`;
         })()
       : 'echo "SSH key not found, skipping SSH configuration"',
 
     `bash -c "mkdir -p /home/app && \
       chown $USER:$USER /home/app && \
-      git clone --single-branch --branch ${generalEnvironment.gitBranch} git@github.com:${generalEnvironment.gitRepo}.git /home/app"`,
+      git clone --single-branch --branch ${generalEnvironment.gitBranch} git@gitea.devunder.com:32222/${generalEnvironment.gitRepo}.git /home/app"`,
 
     `bash -c "printf '%b' '${envContent}' > /home/app/.env && chown $USER:$USER /home/app/.env"`,
 

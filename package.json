@@ -117,7 +117,7 @@
     "@types/mime-types": "^3.0.1",
     "@types/pdfkit": "^0.17.4",
     "@types/uuid": "^11.0.0",
-    "@whiskeysockets/baileys": "github:contatomaycon/baileys",
+    "@whiskeysockets/baileys": "git+ssh://git@gitea.devunder.com:32222/underchat/baileys.git",
     "audio-decode": "^2.2.3",
     "axios": "^1.13.2",
     "centrifuge": "^5.5.2",
