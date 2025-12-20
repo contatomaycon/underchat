@@ -2,6 +2,7 @@ export enum ETagSwagger {
   health = 'Saúde da Aplicação',
   server = 'Servidor',
   auth = 'Autenticação',
+  register = 'Registro',
   metrics = 'Métricas',
   centrifugo = 'Centrifugo',
   role = 'Funções',
@@ -29,4 +30,6 @@ export enum ETagSwagger {
   webhook = 'Webhook',
   config = 'Configurações',
   dashboard = 'Dashboard',
+  schedule = 'Agendamentos',
+  masterSession = 'Sessão Master',
 }

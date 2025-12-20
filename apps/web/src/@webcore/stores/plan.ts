@@ -32,6 +32,7 @@ import { ListPlanSalesRequest } from '@core/schema/plan/listPlanSales/request.sc
 import { IListPlanSales } from '../interfaces/IListPlanSales';
 import { ListPlanWithItemsResponse } from '@core/schema/plan/listPlanWithItems/response.schema';
 import { ListAvailableCrossSellResponse } from '@core/schema/plan/listAvailableCrossSell/response.schema';
+import { ListCreditCardFeeResponse } from '@core/schema/config/listCreditCardFee/response.schema';
 
 export const usePlanStore = defineStore('plan', {
   state: () => ({
@@ -50,6 +51,7 @@ export const usePlanStore = defineStore('plan', {
     listSales: [] as ListPlanSalesResponse[],
     listWithItems: [] as ListPlanWithItemsResponse[],
     availableCrossSells: [] as ListAvailableCrossSellResponse[],
+    creditCardFee: null as ListCreditCardFeeResponse | null,
     pagings: {
       current_page: 1 as number,
       total_pages: 1 as number,
@@ -762,6 +764,44 @@ export const usePlanStore = defineStore('plan', {
         return data.data || null;
       } catch (error) {
         let errorMessage = this.i18n.global.t('order_payment_creation_failed');
+
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+        this.loading = false;
+
+        return null;
+      }
+    },
+
+    async getCreditCardFee(): Promise<ListCreditCardFeeResponse | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.get<
+          IApiResponse<ListCreditCardFeeResponse>
+        >('/plan/credit-card-fee');
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const message =
+            data?.message ?? this.i18n.global.t('credit_card_fee_not_found');
+
+          this.showSnackbar(message, EColor.error);
+
+          return null;
+        }
+
+        this.creditCardFee = data.data;
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('credit_card_fee_update_error');
 
         if (error instanceof AxiosError) {
           errorMessage = error?.response?.data?.message ?? errorMessage;

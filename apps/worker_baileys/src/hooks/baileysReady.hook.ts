@@ -4,14 +4,11 @@ import { container } from 'tsyringe';
 import { BaileysService } from '@core/services/baileys';
 import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
 import { baileysEnvironment } from '@core/config/environments';
-import { CentrifugoService } from '@core/services/centrifugo.service';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { ECodeMessage } from '@core/common/enums/ECodeMessage';
-import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
-import { WorkerService } from '@core/services/worker.service';
 
 const RETRY_DELAY = 10000;
 let mismatchedStatusSent = false;
@@ -25,26 +22,6 @@ const updateWorkerMismatchedStatus = async (
   }
 
   try {
-    const workerService = container.resolve(WorkerService);
-    const viewWorkerType = await workerService.viewWorkerType(
-      accountId,
-      workerId
-    );
-
-    if (!viewWorkerType) {
-      return;
-    }
-
-    const viewWorker = await workerService.viewWorker(accountId, workerId);
-
-    if (
-      viewWorker?.status?.id === EWorkerStatus.new ||
-      viewWorker?.status?.id === EWorkerStatus.creating
-    ) {
-      return;
-    }
-
-    const centrifugoService = container.resolve(CentrifugoService);
     const streamProducerService = container.resolve(StreamProducerService);
     const kafkaServiceQueueService = container.resolve(
       KafkaServiceQueueService
@@ -57,9 +34,6 @@ const updateWorkerMismatchedStatus = async (
       account_id: accountId,
       worker_status_id: EWorkerStatus.mismatched,
     };
-
-    const channel = workerCentrifugoQueue(accountId);
-    await centrifugoService.publishSub(channel, dataPublish);
 
     await streamProducerService.send(
       kafkaServiceQueueService.workerStatus(),

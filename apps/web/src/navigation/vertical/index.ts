@@ -10,6 +10,7 @@ import { EAccountPermissions } from '@core/common/enums/EPermissions/account';
 import { EMessageTemplatePermissions } from '@core/common/enums/EPermissions/messageTemplate';
 import { ELabelTemplatePermissions } from '@core/common/enums/EPermissions/labelTemplate';
 import { EContactPermissions } from '@core/common/enums/EPermissions/contact';
+import { ESchedulePermissions } from '@core/common/enums/EPermissions/schedule';
 import { EChatbotPermissions } from '@core/common/enums/EPermissions/chatbot';
 import { EPlanPermissions } from '@core/common/enums/EPermissions/plan';
 import { EFinancialPermissions } from '@core/common/enums/EPermissions/financial';
@@ -92,6 +93,20 @@ export default [
           EMessageTemplatePermissions.message_delete,
         ],
       },
+      {
+        title: 'schedules',
+        to: { name: 'schedule' as keyof RouteNamedMap },
+        icon: { icon: 'tabler-calendar-time' },
+        permissions: [
+          EGeneralPermissions.full_access,
+          EGeneralPermissions.full_access_group,
+          ESchedulePermissions.schedule_group,
+          ESchedulePermissions.schedule_view,
+          ESchedulePermissions.schedule_create,
+          ESchedulePermissions.schedule_update,
+          ESchedulePermissions.schedule_delete,
+        ],
+      },
     ],
   },
   {
@@ -152,16 +167,92 @@ export default [
   },
   {
     title: 'accounts',
-    to: { name: 'account' as keyof RouteNamedMap },
     icon: { icon: 'tabler-user' },
-    permissions: [
-      EGeneralPermissions.full_access,
-      EGeneralPermissions.full_access_group,
-      EAccountPermissions.account_group,
-      EAccountPermissions.account_view,
-      EAccountPermissions.account_create,
-      EAccountPermissions.account_update,
-      EAccountPermissions.account_delete,
+    children: [
+      {
+        title: 'subscribers',
+        to: { name: 'account-subscribers' as keyof RouteNamedMap },
+        icon: { icon: 'tabler-user-check' },
+        permissions: [
+          EGeneralPermissions.full_access,
+          EGeneralPermissions.full_access_group,
+          EAccountPermissions.account_group,
+          EAccountPermissions.account_view,
+          EAccountPermissions.account_create,
+          EAccountPermissions.account_update,
+          EAccountPermissions.account_delete,
+        ],
+      },
+      {
+        title: 'cancelling',
+        to: { name: 'account-cancelling' as keyof RouteNamedMap },
+        icon: { icon: 'tabler-user-x' },
+        permissions: [
+          EGeneralPermissions.full_access,
+          EGeneralPermissions.full_access_group,
+          EAccountPermissions.account_group,
+          EAccountPermissions.account_view,
+          EAccountPermissions.account_create,
+          EAccountPermissions.account_update,
+          EAccountPermissions.account_delete,
+        ],
+      },
+      {
+        title: 'cancelled',
+        to: { name: 'account-cancelled' as keyof RouteNamedMap },
+        icon: { icon: 'tabler-user-off' },
+        permissions: [
+          EGeneralPermissions.full_access,
+          EGeneralPermissions.full_access_group,
+          EAccountPermissions.account_group,
+          EAccountPermissions.account_view,
+          EAccountPermissions.account_create,
+          EAccountPermissions.account_update,
+          EAccountPermissions.account_delete,
+        ],
+      },
+      {
+        title: 'blocked',
+        to: { name: 'account-blocked' as keyof RouteNamedMap },
+        icon: { icon: 'tabler-user-minus' },
+        permissions: [
+          EGeneralPermissions.full_access,
+          EGeneralPermissions.full_access_group,
+          EAccountPermissions.account_group,
+          EAccountPermissions.account_view,
+          EAccountPermissions.account_create,
+          EAccountPermissions.account_update,
+          EAccountPermissions.account_delete,
+        ],
+      },
+      {
+        title: 'expired',
+        to: { name: 'account-expired' as keyof RouteNamedMap },
+        icon: { icon: 'tabler-clock-hour-4' },
+        permissions: [
+          EGeneralPermissions.full_access,
+          EGeneralPermissions.full_access_group,
+          EAccountPermissions.account_group,
+          EAccountPermissions.account_view,
+          EAccountPermissions.account_create,
+          EAccountPermissions.account_update,
+          EAccountPermissions.account_delete,
+        ],
+      },
+      {
+        title: 'tests',
+        to: { name: 'account-tests' as keyof RouteNamedMap },
+        icon: { icon: 'tabler-flask' },
+        permissions: [
+          EGeneralPermissions.full_access,
+          EGeneralPermissions.full_access_group,
+          EAccountPermissions.account_group,
+          EAccountPermissions.account_view,
+          EAccountPermissions.account_create,
+          EAccountPermissions.account_update,
+          EAccountPermissions.account_delete,
+        ],
+      },
     ],
   },
   {

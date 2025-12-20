@@ -1,5 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import authRoutes from '@/routes/auth.route';
+import regRoutes from '@/routes/register.route';
 import serverRoutes from '@/routes/server.route';
 import healthRoutes from '@/routes/health.route';
 import centrifugoRoutes from '@/routes/centrifugo.route';
@@ -26,9 +27,11 @@ import reportAttendanceRoutes from './reportAttendance.route';
 import configRoutes from './config.route';
 import webhookRoutes from './webhook.route';
 import dashboardRoutes from './dashboard.route';
+import scheduleRoutes from './schedule.route';
 import reportSalesRoutes from './reportSales.route';
 import reportClientsRoutes from './reportClients.route';
 import reportUsersRoutes from './reportUsers.route';
+import masterSessionRoutes from './masterSession.route';
 
 export default function registerRoutes(server: FastifyInstance) {
   server.register(authRoutes);
@@ -58,7 +61,10 @@ export default function registerRoutes(server: FastifyInstance) {
   server.register(configRoutes);
   server.register(webhookRoutes);
   server.register(dashboardRoutes);
+  server.register(scheduleRoutes);
   server.register(reportSalesRoutes);
   server.register(reportClientsRoutes);
   server.register(reportUsersRoutes);
+  server.register(masterSessionRoutes);
+  server.register(regRoutes);
 }

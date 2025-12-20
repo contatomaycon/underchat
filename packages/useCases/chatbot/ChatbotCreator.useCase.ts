@@ -4,12 +4,14 @@ import { AccountService } from '@core/services/account.service';
 import { CreateChatbotRequest } from '@core/schema/chatbot/createChatbot/request.schema';
 import { CreateChatbotResponse } from '@core/schema/chatbot/createChatbot/response.schema';
 import { ChatbotService } from '@core/services/chatbot.service';
+import { PlanAccountService } from '@core/services/planAccount.service';
 
 @injectable()
 export class ChatbotCreatorUseCase {
   constructor(
     private readonly chatbotService: ChatbotService,
-    private readonly accountService: AccountService
+    private readonly accountService: AccountService,
+    private readonly planAccountService: PlanAccountService
   ) {}
 
   async validate(
@@ -38,6 +40,7 @@ export class ChatbotCreatorUseCase {
     accountId: string
   ): Promise<CreateChatbotResponse | null> {
     await this.validate(t, input, accountId);
+    await this.planAccountService.validateCanCreateChatbot(t, accountId);
 
     const chatbotCreator = await this.chatbotService.createChatbot(
       input,

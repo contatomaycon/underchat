@@ -27,6 +27,7 @@ import { calculateUpgradeDiscountSchema } from '@core/schema/plan/calculateUpgra
 import { createOrderPaymentSchema } from '@core/schema/plan/createOrderPayment';
 import { listAvailableCrossSellSchema } from '@core/schema/plan/listAvailableCrossSell';
 import { checkTestPlanAlreadyUsedSchema } from '@core/schema/plan/checkTestPlanAlreadyUsed';
+import { listPlanCreditCardFeeSchema } from '@core/schema/plan/listCreditCardFee';
 import { planStatus } from '@/plugins/planStatus';
 
 export default function planRoutes(server: FastifyInstance) {
@@ -185,6 +186,16 @@ export default function planRoutes(server: FastifyInstance) {
   server.get('/plan/upgrade-discount', {
     schema: calculateUpgradeDiscountSchema,
     handler: planController.calculateUpgradeDiscount,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, planInvoicePermissions),
+      planStatus,
+    ],
+  });
+
+  server.get('/plan/credit-card-fee', {
+    schema: listPlanCreditCardFeeSchema,
+    handler: planController.listCreditCardFee,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, planInvoicePermissions),

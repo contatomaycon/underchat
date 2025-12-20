@@ -7,6 +7,10 @@ import { ListAccountPlanProductsResponse } from '@core/schema/accountSettings/li
 import { WorkerTotalViewerRepository } from '@core/repositories/worker/WorkerTotalViewer.repository';
 import { UserTotalViewerRepository } from '@core/repositories/user/UserTotalViewer.repository';
 import { RoleTotalViewerRepository } from '@core/repositories/role/RoleTotalViewer.repository';
+import { DashboardStatsRepository } from '@core/repositories/dashboard/DashboardStats.repository';
+import { DashboardSchedulesRepository } from '@core/repositories/dashboard/DashboardSchedules.repository';
+import { DashboardChatbotsRepository } from '@core/repositories/dashboard/DashboardChatbots.repository';
+import { AccountInfoViewerExistsRepository } from '@core/repositories/account/AccountInfoViewerExists.repository';
 import { EPlanProduct } from '@core/common/enums/EPlanProduct';
 
 @injectable()
@@ -15,7 +19,11 @@ export class AccountPlanProductsListerRepository {
     @inject('Database') private readonly db: NodePgDatabase<typeof schema>,
     private readonly workerTotalViewerRepository: WorkerTotalViewerRepository,
     private readonly userTotalViewerRepository: UserTotalViewerRepository,
-    private readonly roleTotalViewerRepository: RoleTotalViewerRepository
+    private readonly roleTotalViewerRepository: RoleTotalViewerRepository,
+    private readonly dashboardStatsRepository: DashboardStatsRepository,
+    private readonly dashboardSchedulesRepository: DashboardSchedulesRepository,
+    private readonly dashboardChatbotsRepository: DashboardChatbotsRepository,
+    private readonly accountInfoViewerExistsRepository: AccountInfoViewerExistsRepository
   ) {}
 
   private readonly getQuantityUsed = async (
@@ -26,10 +34,26 @@ export class AccountPlanProductsListerRepository {
       return this.workerTotalViewerRepository.totalWorkerByAccountId(accountId);
     }
     if (planProductId === EPlanProduct.user) {
-      return this.userTotalViewerRepository.totalUserByAccount(accountId);
+      const total =
+        await this.userTotalViewerRepository.totalUserByAccount(accountId);
+      return total > 0 ? total - 1 : 0;
     }
     if (planProductId === EPlanProduct.role) {
       return this.roleTotalViewerRepository.totalRoleByAccount(accountId);
+    }
+    if (planProductId === EPlanProduct.contact) {
+      return this.dashboardStatsRepository.getContactsTotal(accountId);
+    }
+    if (planProductId === EPlanProduct.mass_sending) {
+      return this.dashboardSchedulesRepository.getSchedulesSent(accountId);
+    }
+    if (planProductId === EPlanProduct.chatbot) {
+      return this.dashboardChatbotsRepository.getChatbotsTotal(accountId);
+    }
+    if (planProductId === EPlanProduct.personalization) {
+      return this.accountInfoViewerExistsRepository.totalAccountInfoByAccountId(
+        accountId
+      );
     }
     return 0;
   };

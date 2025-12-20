@@ -37,9 +37,30 @@ declare module 'vue-router/auto-routes' {
       { error: ParamValue<false> },
       | never
     >,
-    'account': RouteRecordInfo<
-      'account',
-      '/account',
+    'account-blocked': RouteRecordInfo<
+      'account-blocked',
+      '/account-blocked',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
+    'account-cancelled': RouteRecordInfo<
+      'account-cancelled',
+      '/account-cancelled',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
+    'account-cancelling': RouteRecordInfo<
+      'account-cancelling',
+      '/account-cancelling',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
+    'account-expired': RouteRecordInfo<
+      'account-expired',
+      '/account-expired',
       Record<never, never>,
       Record<never, never>,
       | never
@@ -90,6 +111,20 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       | never
     >,
+    'account-subscribers': RouteRecordInfo<
+      'account-subscribers',
+      '/account-subscribers',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
+    'account-tests': RouteRecordInfo<
+      'account-tests',
+      '/account-tests',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
     'channels': RouteRecordInfo<
       'channels',
       '/channels',
@@ -131,12 +166,20 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       Record<never, never>,
       | 'config-channels-tab'
+      | 'config-creditcard-tab'
       | 'config-nfse-tab'
       | 'config-notifications-tab'
     >,
     'config-channels-tab': RouteRecordInfo<
       'config-channels-tab',
       '/config/channels-tab',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
+    'config-creditcard-tab': RouteRecordInfo<
+      'config-creditcard-tab',
+      '/config/creditcard-tab',
       Record<never, never>,
       Record<never, never>,
       | never
@@ -246,6 +289,13 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       | never
     >,
+    'register': RouteRecordInfo<
+      'register',
+      '/register',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
     'reports-attendances': RouteRecordInfo<
       'reports-attendances',
       '/reports-attendances',
@@ -291,6 +341,13 @@ declare module 'vue-router/auto-routes' {
     'role': RouteRecordInfo<
       'role',
       '/role',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
+    'schedule': RouteRecordInfo<
+      'schedule',
+      '/schedule',
       Record<never, never>,
       Record<never, never>,
       | never
@@ -341,9 +398,27 @@ declare module 'vue-router/auto-routes' {
       views:
         | never
     }
-    'src/pages/account.vue': {
+    'src/pages/account-blocked.vue': {
       routes:
-        | 'account'
+        | 'account-blocked'
+      views:
+        | never
+    }
+    'src/pages/account-cancelled.vue': {
+      routes:
+        | 'account-cancelled'
+      views:
+        | never
+    }
+    'src/pages/account-cancelling.vue': {
+      routes:
+        | 'account-cancelling'
+      views:
+        | never
+    }
+    'src/pages/account-expired.vue': {
+      routes:
+        | 'account-expired'
       views:
         | never
     }
@@ -388,6 +463,18 @@ declare module 'vue-router/auto-routes' {
       views:
         | never
     }
+    'src/pages/account-subscribers.vue': {
+      routes:
+        | 'account-subscribers'
+      views:
+        | never
+    }
+    'src/pages/account-tests.vue': {
+      routes:
+        | 'account-tests'
+      views:
+        | never
+    }
     'src/pages/channels.vue': {
       routes:
         | 'channels'
@@ -423,6 +510,7 @@ declare module 'vue-router/auto-routes' {
       routes:
         | 'config'
         | 'config-channels-tab'
+        | 'config-creditcard-tab'
         | 'config-nfse-tab'
         | 'config-notifications-tab'
       views:
@@ -431,6 +519,12 @@ declare module 'vue-router/auto-routes' {
     'src/pages/config/channels-tab.vue': {
       routes:
         | 'config-channels-tab'
+      views:
+        | never
+    }
+    'src/pages/config/creditcard-tab.vue': {
+      routes:
+        | 'config-creditcard-tab'
       views:
         | never
     }
@@ -524,6 +618,12 @@ declare module 'vue-router/auto-routes' {
       views:
         | never
     }
+    'src/pages/register.vue': {
+      routes:
+        | 'register'
+      views:
+        | never
+    }
     'src/pages/reports-attendances.vue': {
       routes:
         | 'reports-attendances'
@@ -563,6 +663,12 @@ declare module 'vue-router/auto-routes' {
     'src/pages/role.vue': {
       routes:
         | 'role'
+      views:
+        | never
+    }
+    'src/pages/schedule.vue': {
+      routes:
+        | 'schedule'
       views:
         | never
     }

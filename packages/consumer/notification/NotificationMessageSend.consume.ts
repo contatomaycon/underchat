@@ -8,6 +8,7 @@ import { createConsumer } from '@core/common/functions/createConsumer';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 import { INotificationMessage } from '@core/common/interfaces/INotificationMessage';
 import { BaileysPhoneValidationService } from '@core/services/baileys/methods/phoneValidation.service';
+import { StreamProducerService } from '@core/services/streamProducer.service';
 
 @singleton()
 export class NotificationMessageSendConsume {
@@ -17,7 +18,8 @@ export class NotificationMessageSendConsume {
     @inject('Kafka') private readonly kafka: Kafka,
     private readonly kafkaBaileysQueueService: KafkaBaileysQueueService,
     private readonly baileysMessageTextService: BaileysMessageTextService,
-    private readonly baileysPhoneValidationService: BaileysPhoneValidationService
+    private readonly baileysPhoneValidationService: BaileysPhoneValidationService,
+    private readonly streamProducerService: StreamProducerService
   ) {}
 
   private get consumerOrThrow(): Consumer {
@@ -31,45 +33,51 @@ export class NotificationMessageSendConsume {
   public async execute(): Promise<void> {
     if (this.consumer) return;
 
-    this.consumer = createConsumer(
-      this.kafka,
-      `group-underchat-baileys-notification-send-${baileysEnvironment.baileysWorkerId}`
-    );
+    try {
+      const workerId = baileysEnvironment.baileysWorkerId;
+      const groupId = `group-underchat-baileys-notification-send-${workerId}`;
+      const topic =
+        this.kafkaBaileysQueueService.workerNotificationMessage(workerId);
 
-    const topic = this.kafkaBaileysQueueService.workerNotificationMessage(
-      baileysEnvironment.baileysWorkerId
-    );
+      this.consumer = createConsumer(this.kafka, groupId);
 
-    await ensureKafkaTopic(this.kafka, topic);
-    await this.consumer.connect();
-    await this.consumer.subscribe({ topic, fromBeginning: true });
+      await ensureKafkaTopic(this.kafka, topic);
+      await this.consumer.connect();
+      await this.consumer.subscribe({ topic, fromBeginning: true });
 
-    await this.consumer.run({
-      autoCommit: false,
-      partitionsConsumedConcurrently: 1,
-      eachMessage: async ({ topic, partition, message, heartbeat }) => {
-        const data = this.parseNotificationMessage(message.value);
+      await this.consumer.run({
+        autoCommit: false,
+        partitionsConsumedConcurrently: 1,
+        eachMessage: async ({ topic, partition, message, heartbeat }) => {
+          const data = this.parseNotificationMessage(message.value);
 
-        if (!data) {
-          await this.commitNext(topic, partition, message.offset);
-          return;
-        }
+          if (!data) {
+            await this.commitNext(topic, partition, message.offset);
 
-        const stop = startHeartbeat(heartbeat);
-        try {
-          await this.processNotificationMessage(data);
-        } catch {
+            return;
+          }
+
+          const stop = startHeartbeat(heartbeat);
+          try {
+            await this.processNotificationMessage(data);
+          } catch (error) {
+            console.error('Erro ao processar mensagem:', error);
+            stop();
+            await this.commitNext(topic, partition, message.offset);
+            return;
+          } finally {
+            stop();
+          }
+
           stop();
           await this.commitNext(topic, partition, message.offset);
-          return;
-        } finally {
-          stop();
-        }
-
-        stop();
-        await this.commitNext(topic, partition, message.offset);
-      },
-    });
+        },
+      });
+    } catch (error) {
+      console.error('Erro ao executar NotificationMessageSendConsume:', error);
+      this.consumer = null;
+      throw error;
+    }
   }
 
   public async close(): Promise<void> {
@@ -84,28 +92,30 @@ export class NotificationMessageSendConsume {
   private parseNotificationMessage(
     value: Buffer | null
   ): INotificationMessage | null {
-    if (!value) {
-      return null;
-    }
+    if (!value) return null;
 
     const raw = value.toString('utf8').trim();
-    if (!raw) {
-      return null;
-    }
+    if (!raw) return null;
 
     try {
       const parsed = JSON.parse(raw) as INotificationMessage;
+
       if (
         parsed &&
         'notification_id' in parsed &&
         'message_key' in parsed &&
         'message_whatsapp' in parsed &&
-        parsed.message_key?.remote_jid
+        parsed.message_whatsapp &&
+        (parsed.message_key?.remote_jid ||
+          (parsed.message_key?.phone_ddi && parsed.message_key?.phone_number))
       ) {
         return parsed;
       }
+
       return null;
-    } catch {
+    } catch (error) {
+      console.error('parseNotificationMessage: erro ao fazer parse:', error);
+
       return null;
     }
   }
@@ -115,7 +125,7 @@ export class NotificationMessageSendConsume {
   ): Promise<void> {
     if (!data.message_whatsapp) return;
 
-    if (data.message_key.remote_jid) {
+    if (data.message_key?.remote_jid) {
       await this.baileysMessageTextService.sendText(
         data.message_key.remote_jid,
         data.message_whatsapp
@@ -136,7 +146,9 @@ export class NotificationMessageSendConsume {
       data.message_whatsapp
     );
 
-    await this.sendPhoneJidUpdateRequest(data.user_id, result.jid);
+    if (data?.user_id) {
+      await this.sendPhoneJidUpdateRequest(data.user_id, result.jid);
+    }
   }
 
   private async sendPhoneJidUpdateRequest(
@@ -146,16 +158,9 @@ export class NotificationMessageSendConsume {
     try {
       const topic = this.kafkaBaileysQueueService.userPhoneJidUpdate();
 
-      await this.kafka.producer().send({
-        topic,
-        messages: [
-          {
-            value: JSON.stringify({
-              user_id: userId,
-              phone_jid: phoneJid,
-            }),
-          },
-        ],
+      await this.streamProducerService.send(topic, {
+        user_id: userId,
+        phone_jid: phoneJid,
       });
     } catch (error) {
       console.error('Erro ao enviar atualização de phone_jid:', error);

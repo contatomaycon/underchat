@@ -12,6 +12,7 @@ import { ITokenKeyData } from '../interfaces/ITokenKeyData';
 import { Centrifuge } from 'centrifuge';
 import { Kafka } from 'kafkajs';
 import Redis from 'ioredis';
+import { IRegisterJwtData } from '../interfaces/IRegisterJwtData';
 
 declare module 'fastify' {
   export interface FastifyRequest {
@@ -35,6 +36,10 @@ declare module 'fastify' {
       reply: FastifyReply,
       permissions: EPermissionsRoles[] | null
     ) => void;
+    authenticateRegisterJwt: (
+      request: FastifyRequest,
+      reply: FastifyReply
+    ) => Promise<void>;
     verifyToken: (token: string) => Promise<null | string | object>;
     decodeToken: (token: string) => Promise<null | string | object>;
     i18n: TFunction<'translation', undefined>;
@@ -48,6 +53,7 @@ declare module 'fastify' {
   export interface FastifyRequest {
     tokenJwtData: ITokenJwtData;
     tokenKeyData: ITokenKeyData;
+    registerJwtData: IRegisterJwtData;
     permissionsRoute: EPermissionsRoles[] | null;
     module: ERouteModule;
     languageData: {

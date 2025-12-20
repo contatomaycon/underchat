@@ -29,6 +29,18 @@ export class AccountTestService {
     });
   };
 
+  checkExistingTestByPhone = async (phone: string): Promise<boolean> => {
+    const phoneC = this.encryptService.encrypt(phone);
+
+    return this.accountTestRepository.findExistingTestByPhone(phoneC);
+  };
+
+  checkExistingTestByEmail = async (email: string): Promise<boolean> => {
+    const emailC = this.encryptService.encrypt(email);
+
+    return this.accountTestRepository.findExistingTestByEmail(emailC);
+  };
+
   createTestPlan = async (data: {
     accountId: string;
     planId: string;

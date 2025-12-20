@@ -27,6 +27,22 @@ export class AccountTestRepository {
     return !!existing;
   };
 
+  findExistingTestByPhone = async (phoneC: string): Promise<boolean> => {
+    const existing = await this.db.query.accountTest.findFirst({
+      where: eq(accountTest.phone_c, phoneC),
+    });
+
+    return !!existing;
+  };
+
+  findExistingTestByEmail = async (emailC: string): Promise<boolean> => {
+    const existing = await this.db.query.accountTest.findFirst({
+      where: eq(accountTest.email_c, emailC),
+    });
+
+    return !!existing;
+  };
+
   createAccountTest = async (data: {
     document: string;
     documentC: string;

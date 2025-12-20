@@ -17,3 +17,6 @@ export * from './expenditure';
 export * from './notifications';
 export * from './nfse';
 export * from './reportConversationHistory';
+export * from './schedule';
+export * from './twoFactor';
+export * from './creditcard';

@@ -4,9 +4,9 @@ import { AccountService } from '@core/services/account.service';
 import { CreateUserRequest } from '@core/schema/user/createUser/request.schema';
 import { UserService } from '@core/services/user.service';
 import { CountryService } from '@core/services/country.service';
-import { EPlanProduct } from '@core/common/enums/EPlanProduct';
 import { StorageService } from '@core/services/storage.service';
 import { validatePassword } from '@core/common/utils/passwordValidator';
+import { PlanAccountService } from '@core/services/planAccount.service';
 
 @injectable()
 export class UserCreatorUseCase {
@@ -14,7 +14,8 @@ export class UserCreatorUseCase {
     private readonly userService: UserService,
     private readonly accountService: AccountService,
     private readonly countryService: CountryService,
-    private readonly storageService: StorageService
+    private readonly storageService: StorageService,
+    private readonly planAccountService: PlanAccountService
   ) {}
 
   async validate(
@@ -75,23 +76,7 @@ export class UserCreatorUseCase {
       throw new Error(errorMessages.join(', '));
     }
 
-    const [viewAccountQuantityProduct, totalUserByAccountId] =
-      await Promise.all([
-        this.accountService.viewAccountQuantityProduct(
-          accountId,
-          EPlanProduct.user
-        ),
-        this.userService.totalUserByAccount(accountId),
-      ]);
-
-    const userLimit = viewAccountQuantityProduct + 1;
-    if (userLimit <= 0) {
-      throw new Error(t('user_not_available'));
-    }
-
-    if (totalUserByAccountId >= userLimit) {
-      throw new Error(t('user_not_available_additional'));
-    }
+    await this.planAccountService.validateCanCreateUser(t, accountId);
   }
 
   async execute(

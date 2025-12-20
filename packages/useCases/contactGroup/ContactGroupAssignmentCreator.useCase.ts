@@ -9,13 +9,15 @@ import { buildCandidatesWithDdi } from '@core/common/functions/buildCandidatesBR
 import { EncryptService } from '@core/services/encrypt.service';
 import { onlyDigits } from '@core/common/functions/onlyDigits';
 import { extractPhoneAndDdi } from '@core/common/functions/extractPhoneAndDdi';
+import { PlanAccountService } from '@core/services/planAccount.service';
 
 @injectable()
 export class ContactGroupAssignmentCreatorUseCase {
   constructor(
     private readonly csvFileReaderService: CsvFileReaderService,
     private readonly contactService: ContactService,
-    private readonly encryptService: EncryptService
+    private readonly encryptService: EncryptService,
+    private readonly planAccountService: PlanAccountService
   ) {}
 
   private buildCompletePhone(
@@ -106,6 +108,8 @@ export class ContactGroupAssignmentCreatorUseCase {
         t('contact_already_exists_phone')
       );
     }
+
+    await this.planAccountService.validateCanCreateContact(t, accountId);
 
     const { phone: phoneToSave, phoneDdi: phoneDdiToSave } =
       this.normalizePhoneFromValidation(contact.phone, contact.phone_ddi);

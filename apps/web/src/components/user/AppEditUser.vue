@@ -2580,6 +2580,7 @@ watch(
                   </VCol>
 
                   <VCol v-if="isCPF || isCNPJ" cols="12" md="6">
+                    <VLabel class="text-body-2 mb-1">{{ docLabel }}:</VLabel>
                     <AppTextField
                       v-if="isDocumentDecrypted"
                       v-model="document"

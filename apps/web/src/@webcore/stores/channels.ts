@@ -482,15 +482,17 @@ export const useChannelsStore = defineStore('channels', {
       }
 
       if (visibilityData.contact_group_ids?.length) {
-        for (const id of visibilityData.contact_group_ids) {
-          formData.append('contact_group_ids', id);
-        }
+        formData.append(
+          'contact_group_ids',
+          JSON.stringify(visibilityData.contact_group_ids)
+        );
       }
 
       if (visibilityData.contact_ids?.length) {
-        for (const id of visibilityData.contact_ids) {
-          formData.append('contact_ids', id);
-        }
+        formData.append(
+          'contact_ids',
+          JSON.stringify(visibilityData.contact_ids)
+        );
       }
 
       return formData;

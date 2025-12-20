@@ -41,7 +41,7 @@ import { ViewAccountPaymentNfseResponse } from '@core/schema/accountSettings/vie
 import { CancelPlanAccountResponse } from '@core/schema/accountSettings/cancelPlanAccount/response.schema';
 import { ReactivatePlanAccountResponse } from '@core/schema/accountSettings/reactivatePlanAccount/response.schema';
 import { getUser } from '@/@webcore/localStorage/user';
-import { ViewAccountInfoResponse } from '@core/schema/account/viewAccountInfo/response.schema';
+import { ViewAccountCustomizationResponse } from '@core/schema/accountSettings/viewAccountCustomization/response.schema';
 
 export const useAccountSettingsStore = defineStore('accountSettings', {
   state: () => ({
@@ -246,13 +246,13 @@ export const useAccountSettingsStore = defineStore('accountSettings', {
         return null;
       }
     },
-    async getAccountInfoById(): Promise<ViewAccountInfoResponse | null> {
+    async getAccountInfoById(): Promise<ViewAccountCustomizationResponse | null> {
       try {
         this.loading = true;
 
-        const response = await axios.get<IApiResponse<ViewAccountInfoResponse>>(
-          '/account-settings/account-info'
-        );
+        const response = await axios.get<
+          IApiResponse<ViewAccountCustomizationResponse>
+        >('/account-settings/account-info');
 
         this.loading = false;
 

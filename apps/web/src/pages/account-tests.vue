@@ -68,29 +68,6 @@ const itemsPerPage = ref([
   { value: -1, title: 'All' },
 ]);
 
-const itemsStatus = ref([
-  { id: '', text: t('all') },
-  { id: EAccountStatus.active, text: t('active') },
-  { id: EAccountStatus.inactive, text: t('inactive') },
-  { id: EAccountStatus.blocked, text: t('blocked') },
-]);
-
-const resolveStatusText = (statusId?: string | null) => {
-  if (!statusId) {
-    return '-';
-  }
-
-  if (statusId === EAccountStatus.active) {
-    return t('active');
-  } else if (statusId === EAccountStatus.inactive) {
-    return t('inactive');
-  } else if (statusId === EAccountStatus.blocked) {
-    return t('blocked');
-  }
-
-  return '-';
-};
-
 const resolvePlanVariant = (planName?: string | null) => {
   if (!planName) {
     return { color: EColor.primary, text: t('unknown') };
@@ -112,6 +89,12 @@ const resolvePlanVariant = (planName?: string | null) => {
 
 const isDialogDeleterShow = ref(false);
 const accountToDelete = ref<string | null>(null);
+
+const isDialogBlockShow = ref(false);
+const accountToBlock = ref<string | null>(null);
+
+const isDialogUnblockShow = ref(false);
+const accountToUnblock = ref<string | null>(null);
 
 const isDialogEditAccountShow = ref(false);
 const isAddAccountVisible = ref(false);
@@ -135,7 +118,6 @@ const options = ref({
   page: 1,
   itemsPerPage: 10,
   sortBy: [] as SortRequest[],
-  account_status: null as string | null,
   search: null as string | null,
 });
 
@@ -148,7 +130,6 @@ const query = computed(() => ({
   page: options.value.page,
   per_page: options.value.itemsPerPage,
   sort_by: options.value.sortBy,
-  account_status: options.value.account_status,
   search: debouncedSearch.value,
 }));
 
@@ -173,10 +154,42 @@ const handleDelete = async () => {
 
   const result = await accountStore.deleteAccount(accountToDelete.value);
   if (result) {
-    await accountStore.listAccount(query.value);
+    await accountStore.listAccountTests(query.value);
   }
 
   accountToDelete.value = null;
+};
+
+const blockAccount = (id: string) => {
+  accountToBlock.value = id;
+  isDialogBlockShow.value = true;
+};
+
+const handleBlock = async () => {
+  if (!accountToBlock.value) return;
+
+  const result = await accountStore.blockAccount(accountToBlock.value);
+  if (result) {
+    await accountStore.listAccountTests(query.value);
+  }
+
+  accountToBlock.value = null;
+};
+
+const unblockAccount = (id: string) => {
+  accountToUnblock.value = id;
+  isDialogUnblockShow.value = true;
+};
+
+const handleUnblock = async () => {
+  if (!accountToUnblock.value) return;
+
+  const result = await accountStore.unblockAccount(accountToUnblock.value);
+  if (result) {
+    await accountStore.listAccountTests(query.value);
+  }
+
+  accountToUnblock.value = null;
 };
 
 const openEditDialog = (id: string) => {
@@ -200,7 +213,7 @@ const openSubscriptionsDialog = (id: string) => {
 watch(
   query,
   async (q) => {
-    await accountStore.listAccount(q);
+    await accountStore.listAccountTests(q);
   },
   { immediate: true, deep: true }
 );
@@ -208,7 +221,7 @@ watch(
 
 <template>
   <div>
-    <VCard :title="$t('accounts')" no-padding>
+    <VCard :title="$t('tests')" no-padding>
       <VCardText>
         <div class="d-flex justify-space-between flex-wrap gap-4">
           <div class="d-flex gap-4 align-center mt-5">
@@ -232,18 +245,6 @@ watch(
             </VBtn>
           </div>
           <div class="d-flex align-center flex-wrap gap-4">
-            <div class="status-filter">
-              <VLabel class="text-body-2 mb-1">{{ $t('status') }}:</VLabel>
-              <AppSelectSearch
-                v-model="options.account_status"
-                :items="itemsStatus"
-                :placeholder="$t('select_state')"
-                :clearable="true"
-                item-value="id"
-                item-title="text"
-                @update:modelValue="options.page = 1"
-              />
-            </div>
             <div class="invoice-list-filter">
               <VLabel class="text-body-2 mb-1">{{ $t('search') }}:</VLabel>
               <AppTextField
@@ -363,8 +364,7 @@ watch(
 
             <template #item.actions="{ item }">
               <div class="d-flex gap-1">
-                <IconBtn
-                  v-if="$canPermission(permissionsCustomize)"
+                <IconBtn v-if="$canPermission(permissionsCustomize)"
                   ><VTooltip
                     location="top"
                     transition="scale-transition"
@@ -399,6 +399,42 @@ watch(
                   ><VIcon
                     icon="tabler-edit"
                     @click="openEditDialog(item.account_id)"
+                /></IconBtn>
+
+                <IconBtn
+                  v-if="
+                    $canPermission(permissionsEdit) &&
+                    item.account_id &&
+                    item.account_status?.account_status_id !==
+                      EAccountStatus.blocked
+                  "
+                  ><VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>{{ $t('block') }}</span> </VTooltip
+                  ><VIcon
+                    icon="tabler-lock"
+                    @click="blockAccount(item.account_id)"
+                /></IconBtn>
+
+                <IconBtn
+                  v-if="
+                    $canPermission(permissionsEdit) &&
+                    item.account_id &&
+                    item.account_status?.account_status_id ===
+                      EAccountStatus.blocked
+                  "
+                  ><VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>{{ $t('unblock') }}</span> </VTooltip
+                  ><VIcon
+                    icon="tabler-lock-open"
+                    @click="unblockAccount(item.account_id)"
                 /></IconBtn>
 
                 <IconBtn
@@ -437,6 +473,22 @@ watch(
         :title="$t('delete_account')"
         :message="$t('delete_account_confirmation')"
         @confirm="handleDelete"
+      />
+
+      <VDialogHandler
+        v-if="isDialogBlockShow"
+        v-model="isDialogBlockShow"
+        :title="$t('block_account')"
+        :message="$t('block_account_confirmation')"
+        @confirm="handleBlock"
+      />
+
+      <VDialogHandler
+        v-if="isDialogUnblockShow"
+        v-model="isDialogUnblockShow"
+        :title="$t('unblock_account')"
+        :message="$t('unblock_account_confirmation')"
+        @confirm="handleUnblock"
       />
 
       <AppEditAccount
@@ -480,10 +532,6 @@ watch(
 </template>
 
 <style lang="scss" scoped>
-.status-filter {
-  inline-size: 12rem;
-}
-
 .invoice-list-filter {
   inline-size: 20rem;
 }

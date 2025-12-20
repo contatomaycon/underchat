@@ -22,6 +22,7 @@ export const viewAccountCustomizationResponseSchema = Type.Object({
   light_secondary_color: Type.Union([Type.String(), Type.Null()]),
   dark_primary_color: Type.Union([Type.String(), Type.Null()]),
   dark_secondary_color: Type.Union([Type.String(), Type.Null()]),
+  can_edit: Type.Boolean(),
 });
 
 export type ViewAccountCustomizationResponse = Static<

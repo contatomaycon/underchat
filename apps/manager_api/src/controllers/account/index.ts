@@ -11,6 +11,14 @@ import { listAllAccounts } from './methods/listAllAccounts';
 import { listAccountSubscriptions } from './methods/listAccountSubscriptions';
 import { updatePlanAccount } from './methods/updatePlanAccount';
 import { viewPlanAccount } from './methods/viewPlanAccount';
+import { listAccountSubscribers } from './methods/listAccountSubscribers';
+import { listAccountCancelling } from './methods/listAccountCancelling';
+import { listAccountCancelled } from './methods/listAccountCancelled';
+import { listAccountBlocked } from './methods/listAccountBlocked';
+import { listAccountTests } from './methods/listAccountTests';
+import { listAccountExpired } from './methods/listAccountExpired';
+import { blockAccount } from './methods/blockAccount';
+import { unblockAccount } from './methods/unblockAccount';
 
 @injectable()
 class AccountController {
@@ -26,6 +34,14 @@ class AccountController {
   public listAccountSubscriptions = listAccountSubscriptions;
   public updatePlanAccount = updatePlanAccount;
   public viewPlanAccount = viewPlanAccount;
+  public listAccountSubscribers = listAccountSubscribers;
+  public listAccountCancelling = listAccountCancelling;
+  public listAccountCancelled = listAccountCancelled;
+  public listAccountBlocked = listAccountBlocked;
+  public listAccountTests = listAccountTests;
+  public listAccountExpired = listAccountExpired;
+  public blockAccount = blockAccount;
+  public unblockAccount = unblockAccount;
 }
 
 export default AccountController;

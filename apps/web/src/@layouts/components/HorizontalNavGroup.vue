@@ -103,7 +103,7 @@ watch(
     }
 
     .popper-content {
-      z-index: 1;
+      z-index: 1000;
 
       > div {
         overflow: hidden auto;

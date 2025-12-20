@@ -35,6 +35,7 @@ import { CalculateUpgradeDiscountResponse } from '@core/schema/plan/calculateUpg
 import { CreateOrderPaymentRequest } from '@core/schema/plan/createOrderPayment/request.schema';
 import { CreateOrderPaymentResponse } from '@core/schema/plan/createOrderPayment/response.schema';
 import { ViewCurrentPlanInvoiceResponse } from '@core/schema/accountSettings/viewCurrentPlanInvoice/response.schema';
+import { ListCreditCardFeeResponse } from '@core/schema/config/listCreditCardFee/response.schema';
 import creditCardType from 'credit-card-type';
 import DialogCloseBtn from '@/@webcore/components/DialogCloseBtn.vue';
 import { onMessage, unsubscribe } from '@/@webcore/centrifugo';
@@ -82,6 +83,7 @@ const selectedAddons = ref<
 >([]);
 const selectedCrossSellByType = ref<Record<string, string | null>>({});
 const loadingProducts = ref(false);
+const creditCardFee = ref<ListCreditCardFeeResponse | null>(null);
 const currentUser = ref<ViewUserInfoResponse | null>(null);
 const loadingUser = ref(false);
 const userCards = ref<ListUserCardResponse[]>([]);
@@ -153,6 +155,32 @@ const formatCurrency = (value: number | null | undefined): string => {
     style: 'currency',
     currency: config.currency,
   }).format(value);
+};
+
+const applyCreditCardFee = (value: number, feeRate: number): number => {
+  if (!value) return 0;
+  if (!feeRate) return Math.round(value * 100) / 100;
+  const multiplier = 1 + feeRate / 100;
+  return Math.round(value * multiplier * 100) / 100;
+};
+
+const getCreditCardFeeRate = (installment: number): number => {
+  if (!creditCardFee.value) return 0;
+  const rates: Record<number, number> = {
+    1: creditCardFee.value.installment_1_rate,
+    2: creditCardFee.value.installment_2_rate,
+    3: creditCardFee.value.installment_3_rate,
+    4: creditCardFee.value.installment_4_rate,
+    5: creditCardFee.value.installment_5_rate,
+    6: creditCardFee.value.installment_6_rate,
+    7: creditCardFee.value.installment_7_rate,
+    8: creditCardFee.value.installment_8_rate,
+    9: creditCardFee.value.installment_9_rate,
+    10: creditCardFee.value.installment_10_rate,
+    11: creditCardFee.value.installment_11_rate,
+    12: creditCardFee.value.installment_12_rate,
+  };
+  return rates[installment] ?? 0;
 };
 
 const getAnnualPriceWithoutDiscount = (
@@ -317,10 +345,22 @@ const loadStep3 = async () => {
   step3Loaded.value = true;
 };
 
+const loadCreditCardFee = async () => {
+  if (creditCardFee.value) return;
+  const result = await planStore.getCreditCardFee();
+  if (result) {
+    creditCardFee.value = result;
+  }
+};
+
 const loadStep4 = async () => {
   if (step4Loaded.value) return;
 
-  await Promise.all([loadUserCards(), loadUpgradeDiscount()]);
+  await Promise.all([
+    loadUserCards(),
+    loadUpgradeDiscount(),
+    loadCreditCardFee(),
+  ]);
   step4Loaded.value = true;
 };
 
@@ -687,13 +727,69 @@ const getAddonsTotal = computed(() => {
   }, 0);
 });
 
-const getCheckoutTotal = computed(() => {
+const getCheckoutTotalBase = computed(() => {
   if (!selectedPlanForCheckout.value) return 0;
-
   const planPrice = getPrice(selectedPlanForCheckout.value);
   const addonsTotal = getAddonsTotal.value;
   const discount = upgradeDiscount.value?.discount || 0;
-  return Math.max(0, planPrice + addonsTotal - discount);
+  const total = Math.max(0, planPrice + addonsTotal - discount);
+  return Math.round(total * 100) / 100;
+});
+
+const shouldApplyCreditCardFee = computed(() => {
+  return (
+    selectedPaymentMethod.value === 'credit_card' &&
+    billingPeriod.value === 'annual'
+  );
+});
+
+const selectedInstallmentFeeRate = computed(() => {
+  if (!shouldApplyCreditCardFee.value) return 0;
+  return getCreditCardFeeRate(installments.value);
+});
+
+const getCheckoutTotal = computed(() => {
+  const baseTotal = getCheckoutTotalBase.value;
+  if (!shouldApplyCreditCardFee.value) return baseTotal;
+  const feeRate = selectedInstallmentFeeRate.value;
+  return applyCreditCardFee(baseTotal, feeRate);
+});
+
+const installmentOptions = computed(() => {
+  const options: Array<{ title: string; value: number }> = [];
+  if (billingPeriod.value !== 'annual') return options;
+  if (!selectedPlanForCheckout.value) return options;
+  if (!creditCardFee.value) return options;
+  const baseTotal = getCheckoutTotalBase.value;
+  const rates = [
+    creditCardFee.value.installment_1_rate,
+    creditCardFee.value.installment_2_rate,
+    creditCardFee.value.installment_3_rate,
+    creditCardFee.value.installment_4_rate,
+    creditCardFee.value.installment_5_rate,
+    creditCardFee.value.installment_6_rate,
+    creditCardFee.value.installment_7_rate,
+    creditCardFee.value.installment_8_rate,
+    creditCardFee.value.installment_9_rate,
+    creditCardFee.value.installment_10_rate,
+    creditCardFee.value.installment_11_rate,
+    creditCardFee.value.installment_12_rate,
+  ];
+
+  for (let i = 0; i < rates.length; i += 1) {
+    const installmentNumber = i + 1;
+    const rate = rates[i] || 0;
+    const totalWithFee = applyCreditCardFee(baseTotal, rate);
+    const installmentValue = totalWithFee / installmentNumber;
+    const title = t('credit_card_installment_option', {
+      number: installmentNumber,
+      installmentValue: formatCurrency(installmentValue),
+      totalWithFee: formatCurrency(totalWithFee),
+    });
+    options.push({ title, value: installmentNumber });
+  }
+
+  return options;
 });
 
 const isDiscountGreaterThanTotal = computed(() => {
@@ -1365,6 +1461,18 @@ watch(selectedPlanForCheckout, (plan) => {
 watch(selectedPaymentMethod, (newMethod) => {
   if (newMethod !== 'credit_card' && showAddCardModal.value) {
     showAddCardModal.value = false;
+  }
+  if (newMethod === 'credit_card' && billingPeriod.value === 'annual') {
+    loadCreditCardFee();
+  }
+});
+
+watch(billingPeriod, (newBilling) => {
+  if (
+    newBilling === 'annual' &&
+    selectedPaymentMethod.value === 'credit_card'
+  ) {
+    loadCreditCardFee();
   }
 });
 
@@ -2603,12 +2711,7 @@ onMounted(async () => {
                             >
                             <VSelect
                               v-model="installments"
-                              :items="
-                                Array.from({ length: 12 }, (_, i) => ({
-                                  title: `${i + 1}x`,
-                                  value: i + 1,
-                                }))
-                              "
+                              :items="installmentOptions"
                               variant="outlined"
                               density="compact"
                               item-title="title"
@@ -2779,12 +2882,7 @@ onMounted(async () => {
                             >
                             <VSelect
                               v-model="installments"
-                              :items="
-                                Array.from({ length: 12 }, (_, i) => ({
-                                  title: `${i + 1}x`,
-                                  value: i + 1,
-                                }))
-                              "
+                              :items="installmentOptions"
                               variant="outlined"
                               density="compact"
                               item-title="title"

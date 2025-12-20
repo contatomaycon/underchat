@@ -30,7 +30,11 @@ export const resolveNavLinkRouteName = (link: NavLink, router: Router) => {
 
   if (typeof link.to === 'string') return link.to;
 
-  return router.resolve(link.to).name;
+  try {
+    return router.resolve(link.to).name;
+  } catch {
+    return null;
+  }
 };
 
 export const isNavLinkActive = (link: NavLink, router: Router) => {

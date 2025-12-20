@@ -64,13 +64,330 @@ export const useAccountStore = defineStore('account', {
               sort_by: input.sort_by,
               name: input.search,
               plan: input.search,
-              account_status: input.account_status,
             }
           : undefined;
 
         const response = await axios.get<
           IApiResponse<ListAccountFinalResponse>
         >(`/account`, {
+          params: request,
+        });
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('account_list_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return null;
+        }
+
+        this.list = data.data.results;
+        this.pagings = data.data.pagings;
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('account_list_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return null;
+      }
+    },
+
+    async listAccountSubscribers(
+      input?: IListAccounts
+    ): Promise<ListAccountFinalResponse | null> {
+      try {
+        this.loading = true;
+
+        const request: ListAccountRequest | undefined = input
+          ? {
+              current_page: input.page,
+              per_page: input.per_page,
+              sort_by: input.sort_by,
+              name: input.search,
+              plan: input.search,
+            }
+          : undefined;
+
+        const response = await axios.get<
+          IApiResponse<ListAccountFinalResponse>
+        >(`/account/subscribers`, {
+          params: request,
+        });
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('account_list_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return null;
+        }
+
+        this.list = data.data.results;
+        this.pagings = data.data.pagings;
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('account_list_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return null;
+      }
+    },
+
+    async listAccountCancelling(
+      input?: IListAccounts
+    ): Promise<ListAccountFinalResponse | null> {
+      try {
+        this.loading = true;
+
+        const request: ListAccountRequest | undefined = input
+          ? {
+              current_page: input.page,
+              per_page: input.per_page,
+              sort_by: input.sort_by,
+              name: input.search,
+              plan: input.search,
+            }
+          : undefined;
+
+        const response = await axios.get<
+          IApiResponse<ListAccountFinalResponse>
+        >(`/account/cancelling`, {
+          params: request,
+        });
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('account_list_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return null;
+        }
+
+        this.list = data.data.results;
+        this.pagings = data.data.pagings;
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('account_list_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return null;
+      }
+    },
+
+    async listAccountCancelled(
+      input?: IListAccounts
+    ): Promise<ListAccountFinalResponse | null> {
+      try {
+        this.loading = true;
+
+        const request: ListAccountRequest | undefined = input
+          ? {
+              current_page: input.page,
+              per_page: input.per_page,
+              sort_by: input.sort_by,
+              name: input.search,
+              plan: input.search,
+            }
+          : undefined;
+
+        const response = await axios.get<
+          IApiResponse<ListAccountFinalResponse>
+        >(`/account/cancelled`, {
+          params: request,
+        });
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('account_list_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return null;
+        }
+
+        this.list = data.data.results;
+        this.pagings = data.data.pagings;
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('account_list_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return null;
+      }
+    },
+
+    async listAccountTests(
+      input?: IListAccounts
+    ): Promise<ListAccountFinalResponse | null> {
+      try {
+        this.loading = true;
+
+        const request: ListAccountRequest | undefined = input
+          ? {
+              current_page: input.page,
+              per_page: input.per_page,
+              sort_by: input.sort_by,
+              name: input.search,
+              plan: input.search,
+            }
+          : undefined;
+
+        const response = await axios.get<
+          IApiResponse<ListAccountFinalResponse>
+        >(`/account/tests`, {
+          params: request,
+        });
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('account_list_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return null;
+        }
+
+        this.list = data.data.results;
+        this.pagings = data.data.pagings;
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('account_list_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return null;
+      }
+    },
+
+    async listAccountBlocked(
+      input?: IListAccounts
+    ): Promise<ListAccountFinalResponse | null> {
+      try {
+        this.loading = true;
+
+        const request: ListAccountRequest | undefined = input
+          ? {
+              current_page: input.page,
+              per_page: input.per_page,
+              sort_by: input.sort_by,
+              name: input.search,
+              plan: input.search,
+            }
+          : undefined;
+
+        const response = await axios.get<
+          IApiResponse<ListAccountFinalResponse>
+        >(`/account/blocked`, {
+          params: request,
+        });
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('account_list_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return null;
+        }
+
+        this.list = data.data.results;
+        this.pagings = data.data.pagings;
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('account_list_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return null;
+      }
+    },
+
+    async listAccountExpired(
+      input?: IListAccounts
+    ): Promise<ListAccountFinalResponse | null> {
+      try {
+        this.loading = true;
+
+        const request: ListAccountRequest | undefined = input
+          ? {
+              current_page: input.page,
+              per_page: input.per_page,
+              sort_by: input.sort_by,
+              name: input.search,
+              plan: input.search,
+            }
+          : undefined;
+
+        const response = await axios.get<
+          IApiResponse<ListAccountFinalResponse>
+        >(`/account/expired`, {
           params: request,
         });
 
@@ -253,6 +570,88 @@ export const useAccountStore = defineStore('account', {
         return true;
       } catch (error) {
         let errorMessage = this.i18n.global.t('account_edit_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return false;
+      }
+    },
+
+    async blockAccount(accountId: string): Promise<boolean> {
+      try {
+        this.loading = true;
+
+        const response = await axios.patch<IApiResponse<boolean>>(
+          `/account/${accountId}/block`
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('account_block_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return false;
+        }
+
+        this.showSnackbar(
+          this.i18n.global.t('account_blocked_successfully'),
+          EColor.success
+        );
+
+        return true;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('account_block_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return false;
+      }
+    },
+
+    async unblockAccount(accountId: string): Promise<boolean> {
+      try {
+        this.loading = true;
+
+        const response = await axios.patch<IApiResponse<boolean>>(
+          `/account/${accountId}/unblock`
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('account_unblock_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return false;
+        }
+
+        this.showSnackbar(
+          this.i18n.global.t('account_unblocked_successfully'),
+          EColor.success
+        );
+
+        return true;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('account_unblock_error');
         if (error instanceof AxiosError) {
           errorMessage = error?.response?.data?.message ?? errorMessage;
         }
@@ -489,6 +888,42 @@ export const useAccountStore = defineStore('account', {
         this.loading = false;
 
         return false;
+      }
+    },
+
+    async listMasterAccessibleAccounts(): Promise<IAccountBasic[]> {
+      try {
+        this.loading = true;
+
+        const response = await axios.get<IApiResponse<IAccountBasic[]>>(
+          `/master-session/accounts`
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('master_accounts_list_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return [];
+        }
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('master_accounts_list_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return [];
       }
     },
   },

@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { AccountInfoViewerRepository } from '@core/repositories/account/AccountInfoViewer.repository';
 import { AccountInfoResponse } from '@core/schema/auth/login/response.schema';
 import { AccountQuantityProductViewerRepository } from '@core/repositories/account/AccountQuantityProductViewer.repository';
@@ -22,12 +22,32 @@ import { AccountInfoByIdViewerExistsRepository } from '@core/repositories/accoun
 import { CreateAccountInfoRequest } from '@core/schema/account/createAccountInfo/request.schema';
 import { EditAccountInfoRequest } from '@core/schema/account/editAccountInfo/request.schema';
 import { AccountAllListerRepository } from '@core/repositories/account/AccountAllLister.repository';
+import { AccountMasterAccessibleListerRepository } from '@core/repositories/account/AccountMasterAccessibleLister.repository';
 import { IAccountBasic } from '@core/common/interfaces/IAccountBasic';
 import { AccountSubscriptionsListerRepository } from '@core/repositories/account/AccountSubscriptionsLister.repository';
 import { ListAccountSubscriptionsResponse } from '@core/schema/account/listAccountSubscriptions/response.schema';
 import { PlanAccountStatusViewerRepository } from '@core/repositories/planAccount/PlanAccountStatusViewer.repository';
 import { EAccountStatus } from '@core/common/enums/EAccountStatus';
 import { IPlanAccountStatus } from '@core/common/interfaces/IPlanAccountStatus';
+import { AccountSubscribersListerRepository } from '@core/repositories/account/AccountSubscribersLister.repository';
+import { ListAccountSubscribersRequest } from '@core/schema/account/listAccountSubscribers/request.schema';
+import { ListAccountSubscribersResponse } from '@core/schema/account/listAccountSubscribers/response.schema';
+import { AccountCancellingListerRepository } from '@core/repositories/account/AccountCancellingLister.repository';
+import { ListAccountCancellingRequest } from '@core/schema/account/listAccountCancelling/request.schema';
+import { ListAccountCancellingResponse } from '@core/schema/account/listAccountCancelling/response.schema';
+import { AccountCancelledListerRepository } from '@core/repositories/account/AccountCancelledLister.repository';
+import { ListAccountCancelledRequest } from '@core/schema/account/listAccountCancelled/request.schema';
+import { ListAccountCancelledResponse } from '@core/schema/account/listAccountCancelled/response.schema';
+import { AccountTestsListerRepository } from '@core/repositories/account/AccountTestsLister.repository';
+import { ListAccountTestsRequest } from '@core/schema/account/listAccountTests/request.schema';
+import { ListAccountTestsResponse } from '@core/schema/account/listAccountTests/response.schema';
+import { AccountBlockedListerRepository } from '@core/repositories/account/AccountBlockedLister.repository';
+import { ListAccountBlockedRequest } from '@core/schema/account/listAccountBlocked/request.schema';
+import { ListAccountBlockedResponse } from '@core/schema/account/listAccountBlocked/response.schema';
+import { AccountExpiredListerRepository } from '@core/repositories/account/AccountExpiredLister.repository';
+import { ListAccountExpiredRequest } from '@core/schema/account/listAccountExpired/request.schema';
+import { ListAccountExpiredResponse } from '@core/schema/account/listAccountExpired/response.schema';
+import Redis from 'ioredis';
 
 @injectable()
 export class AccountService {
@@ -46,8 +66,16 @@ export class AccountService {
     private readonly accountInfoUpdaterRepository: AccountInfoUpdaterRepository,
     private readonly accountInfoByIdViewerExistsRepository: AccountInfoByIdViewerExistsRepository,
     private readonly accountAllListerRepository: AccountAllListerRepository,
+    private readonly accountMasterAccessibleListerRepository: AccountMasterAccessibleListerRepository,
     private readonly accountSubscriptionsListerRepository: AccountSubscriptionsListerRepository,
-    private readonly planAccountStatusViewerRepository: PlanAccountStatusViewerRepository
+    private readonly planAccountStatusViewerRepository: PlanAccountStatusViewerRepository,
+    private readonly accountSubscribersListerRepository: AccountSubscribersListerRepository,
+    private readonly accountCancellingListerRepository: AccountCancellingListerRepository,
+    private readonly accountCancelledListerRepository: AccountCancelledListerRepository,
+    private readonly accountBlockedListerRepository: AccountBlockedListerRepository,
+    private readonly accountTestsListerRepository: AccountTestsListerRepository,
+    private readonly accountExpiredListerRepository: AccountExpiredListerRepository,
+    @inject('Redis') private readonly redis: Redis
   ) {}
 
   viewAccountInfoByAccountId = async (
@@ -103,6 +131,14 @@ export class AccountService {
     return this.accountAllListerRepository.listAllAccounts();
   };
 
+  listMasterAccessibleAccounts = async (
+    excludeAccountId: string
+  ): Promise<IAccountBasic[]> => {
+    return this.accountMasterAccessibleListerRepository.listMasterAccessibleAccounts(
+      excludeAccountId
+    );
+  };
+
   createAccount = async (
     input: CreateAccountRequest
   ): Promise<string | null> => {
@@ -134,6 +170,12 @@ export class AccountService {
 
   existsAccountInfoById = async (accountId: string): Promise<boolean> => {
     return this.accountInfoViewerExistsRepository.existsAccountInfoById(
+      accountId
+    );
+  };
+
+  totalAccountInfoByAccountId = async (accountId: string): Promise<number> => {
+    return this.accountInfoViewerExistsRepository.totalAccountInfoByAccountId(
       accountId
     );
   };
@@ -216,5 +258,150 @@ export class AccountService {
     return this.planAccountStatusViewerRepository.viewLatestByAccountId(
       accountId
     );
+  };
+
+  isAccountBlocked = async (accountId: string): Promise<boolean> => {
+    const planStatus = await this.viewPlanStatus(accountId);
+    if (!planStatus) {
+      return false;
+    }
+
+    return planStatus.account_status_id === EAccountStatus.blocked;
+  };
+
+  listAccountSubscribers = async (
+    perPage: number,
+    currentPage: number,
+    query: ListAccountSubscribersRequest
+  ): Promise<[ListAccountSubscribersResponse[], number]> => {
+    const [result, total] = await Promise.all([
+      this.accountSubscribersListerRepository.listAccounts(
+        perPage,
+        currentPage,
+        query
+      ),
+      this.accountSubscribersListerRepository.listAccountsTotal(query),
+    ]);
+
+    return [result, total];
+  };
+
+  listAccountCancelling = async (
+    perPage: number,
+    currentPage: number,
+    query: ListAccountCancellingRequest
+  ): Promise<[ListAccountCancellingResponse[], number]> => {
+    const [result, total] = await Promise.all([
+      this.accountCancellingListerRepository.listAccounts(
+        perPage,
+        currentPage,
+        query
+      ),
+      this.accountCancellingListerRepository.listAccountsTotal(query),
+    ]);
+
+    return [result, total];
+  };
+
+  listAccountCancelled = async (
+    perPage: number,
+    currentPage: number,
+    query: ListAccountCancelledRequest
+  ): Promise<[ListAccountCancelledResponse[], number]> => {
+    const [result, total] = await Promise.all([
+      this.accountCancelledListerRepository.listAccounts(
+        perPage,
+        currentPage,
+        query
+      ),
+      this.accountCancelledListerRepository.listAccountsTotal(query),
+    ]);
+
+    return [result, total];
+  };
+
+  listAccountBlocked = async (
+    perPage: number,
+    currentPage: number,
+    query: ListAccountBlockedRequest
+  ): Promise<[ListAccountBlockedResponse[], number]> => {
+    const [result, total] = await Promise.all([
+      this.accountBlockedListerRepository.listAccounts(
+        perPage,
+        currentPage,
+        query
+      ),
+      this.accountBlockedListerRepository.listAccountsTotal(query),
+    ]);
+
+    return [result, total];
+  };
+
+  listAccountTests = async (
+    perPage: number,
+    currentPage: number,
+    query: ListAccountTestsRequest
+  ): Promise<[ListAccountTestsResponse[], number]> => {
+    const [result, total] = await Promise.all([
+      this.accountTestsListerRepository.listAccounts(
+        perPage,
+        currentPage,
+        query
+      ),
+      this.accountTestsListerRepository.listAccountsTotal(query),
+    ]);
+
+    return [result, total];
+  };
+
+  listAccountExpired = async (
+    perPage: number,
+    currentPage: number,
+    query: ListAccountExpiredRequest
+  ): Promise<[ListAccountExpiredResponse[], number]> => {
+    const [result, total] = await Promise.all([
+      this.accountExpiredListerRepository.listAccounts(
+        perPage,
+        currentPage,
+        query
+      ),
+      this.accountExpiredListerRepository.listAccountsTotal(query),
+    ]);
+
+    return [result, total];
+  };
+
+  updateAccountStatusById = async (
+    accountId: string,
+    accountStatusId: string
+  ): Promise<boolean> => {
+    return this.accountUpdaterRepository.updateAccountStatusById(
+      accountId,
+      accountStatusId
+    );
+  };
+
+  clearAllAccountSessions = async (accountId: string): Promise<void> => {
+    const pattern = `jwtSession:${accountId}:*`;
+    const stream = this.redis.scanStream({
+      match: pattern,
+      count: 100,
+    });
+
+    const keysToDelete: string[] = [];
+
+    stream.on('data', (keys: string[]) => {
+      keysToDelete.push(...keys);
+    });
+
+    await new Promise<void>((resolve) => {
+      stream.on('end', () => {
+        resolve();
+      });
+    });
+
+    if (keysToDelete.length > 0) {
+      await this.redis.del(...keysToDelete);
+    }
   };
 }

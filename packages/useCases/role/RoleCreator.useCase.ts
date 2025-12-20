@@ -2,14 +2,13 @@ import { injectable } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { RoleService } from '@core/services/role.service';
 import { CreateRoleResponse } from '@core/schema/role/createRole/response.schema';
-import { AccountService } from '@core/services/account.service';
-import { EPlanProduct } from '@core/common/enums/EPlanProduct';
+import { PlanAccountService } from '@core/services/planAccount.service';
 
 @injectable()
 export class RoleCreatorUseCase {
   constructor(
     private readonly roleService: RoleService,
-    private readonly accountService: AccountService
+    private readonly planAccountService: PlanAccountService
   ) {}
 
   async validate(
@@ -26,22 +25,7 @@ export class RoleCreatorUseCase {
       throw new Error(t('role_already_exists'));
     }
 
-    const [viewAccountQuantityProduct, totalRoleByAccountId] =
-      await Promise.all([
-        this.accountService.viewAccountQuantityProduct(
-          accountId,
-          EPlanProduct.role
-        ),
-        this.roleService.totalRoleByAccount(accountId),
-      ]);
-
-    if (viewAccountQuantityProduct <= 0) {
-      throw new Error(t('role_not_available'));
-    }
-
-    if (totalRoleByAccountId >= viewAccountQuantityProduct) {
-      throw new Error(t('role_not_available_additional'));
-    }
+    await this.planAccountService.validateCanCreateRole(t, accountId);
   }
 
   async execute(

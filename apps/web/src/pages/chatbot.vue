@@ -234,6 +234,15 @@ onMounted(async () => {
       :message="$t('delete_chatbot_confirmation')"
       @confirm="handleDelete"
     />
+
+    <VSnackbar
+      v-model="chatbotStore.snackbar.status"
+      transition="scroll-y-reverse-transition"
+      location="top end"
+      :color="chatbotStore.snackbar.color"
+    >
+      {{ chatbotStore.snackbar.message }}
+    </VSnackbar>
   </div>
 </template>
 

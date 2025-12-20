@@ -1,13 +1,13 @@
 export interface INotificationMessage {
   id: string;
-  user_id: string;
+  user_id?: string;
   notification_id: string;
   message_key: {
-    remote_jid: string | null;
+    remote_jid?: string | null;
     phone_ddi: string;
     phone_number: string;
   };
-  account: {
+  account?: {
     id: string;
     name: string | null;
   };
