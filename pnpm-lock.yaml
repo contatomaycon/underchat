@@ -88,8 +88,8 @@ importers:
         specifier: ^11.0.0
         version: 11.0.0
       '@whiskeysockets/baileys':
-        specifier: 7.0.0-rc.9
-        version: 7.0.0-rc.9(audio-decode@2.2.3)(link-preview-js@3.2.0)(sharp@0.34.5)
+        specifier: 20.12.2025
+        version: 20.12.2025(audio-decode@2.2.3)(link-preview-js@3.2.0)(sharp@0.34.5)
       audio-decode:
         specifier: ^2.2.3
         version: 2.2.3
@@ -3931,8 +3931,8 @@ packages:
   '@webassemblyjs/wast-printer@1.14.1':
     resolution: {integrity: sha512-kPSSXE6De1XOR820C90RIo2ogvZG+c3KiHzqUoO/F34Y2shGzesfqv7o57xrxovZJH/MetF5UjroJ/R/3isoiw==}
 
-  '@whiskeysockets/baileys@7.0.0-rc.9':
-    resolution: {integrity: sha512-MXbhjzVk6Z0DzzGz/ACuu/6dDaNcoagArfK8EQhiet4xVQl4v74cjv2EHI7daW+Rq1jl9TINBMGkbqTNi7O8eQ==, tarball: https://gitea.devunder.com/api/packages/underchat/npm/%40whiskeysockets%2Fbaileys/-/7.0.0-rc.9/baileys-7.0.0-rc.9.tgz}
+  '@whiskeysockets/baileys@20.12.2025':
+    resolution: {integrity: sha512-ucalPhezeBvA0OKj54LCPLYLdmWvrEn8CnVOCgW10vuEX1A7zzH0HCIlQVRHmEXSiR71dY0Fw7YAyhCdbhxXOQ==, tarball: https://gitea.devunder.com/api/packages/underchat/npm/%40whiskeysockets%2Fbaileys/-/20.12.2025/baileys-20.12.2025.tgz}
     peerDependencies:
       audio-decode: ^2.1.3
       jimp: ^1.6.0
@@ -13737,7 +13737,7 @@ snapshots:
       '@webassemblyjs/ast': 1.14.1
       '@xtuc/long': 4.2.2
 
-  '@whiskeysockets/baileys@7.0.0-rc.9(audio-decode@2.2.3)(link-preview-js@3.2.0)(sharp@0.34.5)':
+  '@whiskeysockets/baileys@20.12.2025(audio-decode@2.2.3)(link-preview-js@3.2.0)(sharp@0.34.5)':
     dependencies:
       '@cacheable/node-cache': 1.7.6
       '@hapi/boom': 9.1.4
