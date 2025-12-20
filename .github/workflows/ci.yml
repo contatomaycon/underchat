@@ -105,14 +105,16 @@ jobs:
           export YARN_CACHE_FOLDER="${RUNNER_TEMP}/yarn-cache"
           export PNPM_STORE_DIR="${RUNNER_TEMP}/pnpm-store"
           export NPM_CONFIG_TMP="${RUNNER_TEMP}/pnpm-tmp"
-          mkdir -p "$YARN_CACHE_FOLDER" "$PNPM_STORE_DIR" "$NPM_CONFIG_TMP"
-          chmod -R 755 "$YARN_CACHE_FOLDER" "$PNPM_STORE_DIR" "$NPM_CONFIG_TMP" || true
+          export PNPM_TMPDIR="${RUNNER_TEMP}/pnpm-tmp"
+          mkdir -p "$YARN_CACHE_FOLDER" "$PNPM_STORE_DIR" "$NPM_CONFIG_TMP" "$PNPM_TMPDIR"
+          chmod -R 755 "$YARN_CACHE_FOLDER" "$PNPM_STORE_DIR" "$NPM_CONFIG_TMP" "$PNPM_TMPDIR" || true
           pnpm config set store-dir "$PNPM_STORE_DIR"
           echo "TMPDIR=${TMPDIR}" >> $GITHUB_ENV
           echo "YARN_CACHE_FOLDER=${YARN_CACHE_FOLDER}" >> $GITHUB_ENV
           echo "YARN_ENABLE_IMMUTABLE_INSTALLS=false" >> $GITHUB_ENV
           echo "PNPM_STORE_DIR=${PNPM_STORE_DIR}" >> $GITHUB_ENV
           echo "NPM_CONFIG_TMP=${NPM_CONFIG_TMP}" >> $GITHUB_ENV
+          echo "PNPM_TMPDIR=${PNPM_TMPDIR}" >> $GITHUB_ENV
 
       - name: Install Dependencies
         env:
@@ -121,7 +123,8 @@ jobs:
           YARN_ENABLE_IMMUTABLE_INSTALLS: false
           PNPM_STORE_DIR: ${{ env.PNPM_STORE_DIR }}
           NPM_CONFIG_TMP: ${{ env.NPM_CONFIG_TMP || '/tmp' }}
-        run: pnpm install --store-dir "${PNPM_STORE_DIR}"
+          PNPM_TMPDIR: ${{ env.PNPM_TMPDIR || '/tmp' }}
+        run: pnpm install --store-dir "${PNPM_STORE_DIR}" --tmp-dir "${PNPM_TMPDIR}"
 
       - name: Run Lint
         run: pnpm run lint
