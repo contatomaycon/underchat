@@ -66,8 +66,21 @@ jobs:
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
 
-          ssh-keyscan -p 32222 gitea.devunder.com >> ~/.ssh/known_hosts
+          if [ -f infra/ssh/known_hosts ]; then
+            cat infra/ssh/known_hosts >> ~/.ssh/known_hosts
+          fi
+          ssh-keyscan -p 32222 gitea.devunder.com >> ~/.ssh/known_hosts 2>/dev/null || true
           chmod 644 ~/.ssh/known_hosts
+
+          cat > ~/.ssh/config << 'EOF'
+          Host gitea.devunder.com
+            HostName gitea.devunder.com
+            Port 32222
+            User git
+            StrictHostKeyChecking accept-new
+            UserKnownHostsFile ~/.ssh/known_hosts
+          EOF
+          chmod 600 ~/.ssh/config
 
           eval "$(ssh-agent -s)"
           ssh-add ~/.ssh/id_rsa
@@ -75,7 +88,7 @@ jobs:
           git config --global url."git@gitea.devunder.com:32222/".insteadOf "https://gitea.devunder.com:32222/" || true
           git config --global url."git@gitea.devunder.com:32222/".insteadOf "ssh://git@gitea.devunder.com:32222/" || true
 
-          ssh -T -p 32222 git@gitea.devunder.com || true
+          ssh -T git@gitea.devunder.com || true
 
       - name: Install Dependencies
         run: pnpm install
