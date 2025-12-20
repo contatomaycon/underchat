@@ -37,6 +37,7 @@ const openBuyNow = () =>
   background: linear-gradient(-45deg, #ffa63d, #ff3d77, #338aff, #3cf0c5);
   background-size: 600%;
   color: #ffffff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
   cursor: pointer;
   font-size: 0.9375rem;
   font-weight: 500;

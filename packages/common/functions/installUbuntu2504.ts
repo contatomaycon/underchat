@@ -1,5 +1,4 @@
 import path from 'node:path';
-import { promises as fs } from 'node:fs';
 import { getPackageNodeVersion } from './getPackageNodeVersion';
 import { generalEnvironment } from '@core/config/environments';
 import { readEnvFile } from './readEnvFile';
