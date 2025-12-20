@@ -88,8 +88,8 @@ importers:
         specifier: ^11.0.0
         version: 11.0.0
       '@whiskeysockets/baileys':
-        specifier: git+ssh://git@gitea.devunder.com:32222/underchat/baileys.git
-        version: baileys@git+ssh://git@gitea.devunder.com:32222/underchat/baileys.git#085d9c37ff1afc37386b9f2f04833a2622d9bacc(audio-decode@2.2.3)(link-preview-js@3.2.0)(sharp@0.34.5)
+        specifier: 7.0.0-rc.9
+        version: 7.0.0-rc.9(audio-decode@2.2.3)(link-preview-js@3.2.0)(sharp@0.34.5)
       audio-decode:
         specifier: ^2.2.3
         version: 2.2.3
@@ -3931,6 +3931,21 @@ packages:
   '@webassemblyjs/wast-printer@1.14.1':
     resolution: {integrity: sha512-kPSSXE6De1XOR820C90RIo2ogvZG+c3KiHzqUoO/F34Y2shGzesfqv7o57xrxovZJH/MetF5UjroJ/R/3isoiw==}
 
+  '@whiskeysockets/baileys@7.0.0-rc.9':
+    resolution: {integrity: sha512-MXbhjzVk6Z0DzzGz/ACuu/6dDaNcoagArfK8EQhiet4xVQl4v74cjv2EHI7daW+Rq1jl9TINBMGkbqTNi7O8eQ==, tarball: https://gitea.devunder.com/api/packages/underchat/npm/%40whiskeysockets%2Fbaileys/-/7.0.0-rc.9/baileys-7.0.0-rc.9.tgz}
+    peerDependencies:
+      audio-decode: ^2.1.3
+      jimp: ^1.6.0
+      link-preview-js: ^3.0.0
+      sharp: '*'
+    peerDependenciesMeta:
+      audio-decode:
+        optional: true
+      jimp:
+        optional: true
+      link-preview-js:
+        optional: true
+
   '@whiskeysockets/libsignal-node@https://codeload.github.com/whiskeysockets/libsignal-node/tar.gz/1c30d7d7e76a3b0aa120b04dc6a26f5a12dccf67':
     resolution: {tarball: https://codeload.github.com/whiskeysockets/libsignal-node/tar.gz/1c30d7d7e76a3b0aa120b04dc6a26f5a12dccf67}
     version: 2.0.1
@@ -4233,23 +4248,6 @@ packages:
     engines: {node: ^18.14.0 || ^20.0.0 || ^22.0.0 || >=24.0.0}
     peerDependencies:
       '@babel/core': ^7.11.0 || ^8.0.0-beta.1
-
-  baileys@git+ssh://git@gitea.devunder.com:32222/underchat/baileys.git#085d9c37ff1afc37386b9f2f04833a2622d9bacc:
-    resolution: {commit: 085d9c37ff1afc37386b9f2f04833a2622d9bacc, repo: ssh://git@gitea.devunder.com:32222/underchat/baileys.git, type: git}
-    version: 7.0.0-rc.9
-    engines: {node: '>=20.0.0'}
-    peerDependencies:
-      audio-decode: ^2.1.3
-      jimp: ^1.6.0
-      link-preview-js: ^3.0.0
-      sharp: '*'
-    peerDependenciesMeta:
-      audio-decode:
-        optional: true
-      jimp:
-        optional: true
-      link-preview-js:
-        optional: true
 
   balanced-match@1.0.2:
     resolution: {integrity: sha512-3oSeUO0TMV67hN1AmbXsK4yaqU7tjiHlbxRDZOpH0KW9+CeX4bRAaX0Anxt0tx2MrpRpWwQaPwIlISEJhYU5Pw==}
@@ -13739,6 +13737,27 @@ snapshots:
       '@webassemblyjs/ast': 1.14.1
       '@xtuc/long': 4.2.2
 
+  '@whiskeysockets/baileys@7.0.0-rc.9(audio-decode@2.2.3)(link-preview-js@3.2.0)(sharp@0.34.5)':
+    dependencies:
+      '@cacheable/node-cache': 1.7.6
+      '@hapi/boom': 9.1.4
+      async-mutex: 0.5.0
+      libsignal: '@whiskeysockets/libsignal-node@https://codeload.github.com/whiskeysockets/libsignal-node/tar.gz/1c30d7d7e76a3b0aa120b04dc6a26f5a12dccf67'
+      lru-cache: 11.2.4
+      music-metadata: 11.10.3
+      p-queue: 9.0.1
+      pino: 9.14.0
+      protobufjs: 7.5.4
+      sharp: 0.34.5
+      ws: 8.18.3
+    optionalDependencies:
+      audio-decode: 2.2.3
+      link-preview-js: 3.2.0
+    transitivePeerDependencies:
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+
   '@whiskeysockets/libsignal-node@https://codeload.github.com/whiskeysockets/libsignal-node/tar.gz/1c30d7d7e76a3b0aa120b04dc6a26f5a12dccf67':
     dependencies:
       curve25519-js: 0.0.4
@@ -14082,27 +14101,6 @@ snapshots:
       '@babel/core': 7.28.5
       babel-plugin-jest-hoist: 30.2.0
       babel-preset-current-node-syntax: 1.2.0(@babel/core@7.28.5)
-
-  baileys@git+ssh://git@gitea.devunder.com:32222/underchat/baileys.git#085d9c37ff1afc37386b9f2f04833a2622d9bacc(audio-decode@2.2.3)(link-preview-js@3.2.0)(sharp@0.34.5):
-    dependencies:
-      '@cacheable/node-cache': 1.7.6
-      '@hapi/boom': 9.1.4
-      async-mutex: 0.5.0
-      libsignal: '@whiskeysockets/libsignal-node@https://codeload.github.com/whiskeysockets/libsignal-node/tar.gz/1c30d7d7e76a3b0aa120b04dc6a26f5a12dccf67'
-      lru-cache: 11.2.4
-      music-metadata: 11.10.3
-      p-queue: 9.0.1
-      pino: 9.14.0
-      protobufjs: 7.5.4
-      sharp: 0.34.5
-      ws: 8.18.3
-    optionalDependencies:
-      audio-decode: 2.2.3
-      link-preview-js: 3.2.0
-    transitivePeerDependencies:
-      - bufferutil
-      - supports-color
-      - utf-8-validate
 
   balanced-match@1.0.2: {}
 

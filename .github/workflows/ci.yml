@@ -55,36 +55,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y jq
 
-      - name: Configure SSH for Gitea
+      - name: Configure npm registry (Gitea Packages)
         run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-
-          if [ -f infra/ssh/known_hosts ]; then
-            cat infra/ssh/known_hosts >> ~/.ssh/known_hosts
-          fi
-          ssh-keyscan -p 32222 gitea.devunder.com >> ~/.ssh/known_hosts 2>/dev/null || true
-          chmod 644 ~/.ssh/known_hosts
-
-          cat > ~/.ssh/config << 'EOF'
-          Host gitea.devunder.com
-            HostName gitea.devunder.com
-            Port 32222
-            User git
-            StrictHostKeyChecking accept-new
-            UserKnownHostsFile ~/.ssh/known_hosts
+          cat > ~/.npmrc << 'EOF'
+          @underchat:registry=https://gitea.devunder.com/api/packages/underchat/npm/
+          //gitea.devunder.com/api/packages/underchat/npm/:_authToken=${{ secrets.NPM_TOKEN }}
           EOF
-          chmod 600 ~/.ssh/config
-
-          eval "$(ssh-agent -s)"
-          ssh-add ~/.ssh/id_rsa
-
-          git config --global url."git@gitea.devunder.com:".insteadOf "https://gitea.devunder.com:32222/" || true
-          git config --global url."git@gitea.devunder.com:".insteadOf "ssh://git@gitea.devunder.com:32222/" || true
-          git config --global url."git@gitea.devunder.com:".insteadOf "git+ssh://git@gitea.devunder.com:32222/" || true
-
-          ssh -T git@gitea.devunder.com || true
 
       - name: Install Dependencies
         run: pnpm install
