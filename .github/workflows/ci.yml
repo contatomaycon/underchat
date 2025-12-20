@@ -60,19 +60,22 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y jq
 
-      - name: Configure SSH for GitHub
+      - name: Configure SSH for Gitea
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
 
-          ssh-keyscan github.com >> ~/.ssh/known_hosts
+          ssh-keyscan -p 32222 gitea.devunder.com >> ~/.ssh/known_hosts
           chmod 644 ~/.ssh/known_hosts
 
           eval "$(ssh-agent -s)"
           ssh-add ~/.ssh/id_rsa
 
-          ssh -T git@github.com || true
+          git config --global url."git@gitea.devunder.com:32222/".insteadOf "https://gitea.devunder.com:32222/" || true
+          git config --global url."git@gitea.devunder.com:32222/".insteadOf "ssh://git@gitea.devunder.com:32222/" || true
+
+          ssh -T -p 32222 git@gitea.devunder.com || true
 
       - name: Install Dependencies
         run: pnpm install
