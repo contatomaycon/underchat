@@ -34,7 +34,7 @@ const openBuyNow = () =>
   margin: 0;
   animation: anime 12s linear infinite;
   appearance: none;
-  background: linear-gradient(-45deg, #ffa63d, #ff3d77, #338aff, #3cf0c5);
+  background: linear-gradient(-45deg, #d97706, #c2185b, #1565c0, #00897b);
   background-size: 600%;
   color: #ffffff;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
