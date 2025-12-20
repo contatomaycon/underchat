@@ -124,7 +124,7 @@ jobs:
           PNPM_STORE_DIR: ${{ env.PNPM_STORE_DIR }}
           NPM_CONFIG_TMP: ${{ env.NPM_CONFIG_TMP || '/tmp' }}
           PNPM_TMPDIR: ${{ env.PNPM_TMPDIR || '/tmp' }}
-        run: pnpm install --store-dir "${PNPM_STORE_DIR}" --tmp-dir "${PNPM_TMPDIR}"
+        run: pnpm install --store-dir "${PNPM_STORE_DIR}"
 
       - name: Run Lint
         run: pnpm run lint
