@@ -30,15 +30,19 @@ jobs:
         with:
           node-version: ${{ env.VERSION_NODE }}
 
-      - name: Activate package managers
+      - name: Setup pnpm/yarn caches
         shell: bash
         run: |
+          mkdir -p /root/.pnpm-store /root/.yarn-cache /tmp/pnpm-tmp
+          echo "TMPDIR=/tmp/pnpm-tmp" >> $GITHUB_ENV
+          echo "YARN_CACHE_FOLDER=/root/.yarn-cache" >> $GITHUB_ENV
+
           corepack enable
           corepack prepare pnpm@10.14.0 --activate
           corepack prepare yarn@4.9.2 --activate
-          pnpm -v
-          TMP_DIR=$(mktemp -d)
-          (cd "$TMP_DIR" && yarn -v)
+
+          pnpm config set store-dir /root/.pnpm-store
+          pnpm config set verify-store-integrity false
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -46,33 +50,17 @@ jobs:
           java-version: ${{ env.VERSION_JAVA }}
           distribution: 'temurin'
 
-      - name: Cache pnpm modules
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.local/share/pnpm/store
-            ~/.pnpm-store
-            **/node_modules
-          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
-
       - name: Install JQ
         run: |
           sudo apt-get update
           sudo apt-get install -y jq
 
-      - name: Configure SSH for GitHub
+      - name: Configure npm registry (Gitea Packages)
         run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-
-          ssh-keyscan github.com >> ~/.ssh/known_hosts
-          chmod 644 ~/.ssh/known_hosts
-
-          eval "$(ssh-agent -s)"
-          ssh-add ~/.ssh/id_rsa
-
-          ssh -T git@github.com || true
+          cat > ~/.npmrc << 'EOF'
+          @underchat:registry=https://gitea.devunder.com/api/packages/underchat/npm/
+          //gitea.devunder.com/api/packages/underchat/npm/:_authToken=${{ secrets.NPM_TOKEN }}
+          EOF
 
       - name: Install Dependencies
         run: pnpm install

@@ -117,7 +117,7 @@
     "@types/mime-types": "^3.0.1",
     "@types/pdfkit": "^0.17.4",
     "@types/uuid": "^11.0.0",
-    "@whiskeysockets/baileys": "git+ssh://git@gitea.devunder.com:32222/underchat/baileys.git",
+    "@whiskeysockets/baileys": "20.12.2025",
     "audio-decode": "^2.2.3",
     "axios": "^1.13.2",
     "centrifuge": "^5.5.2",
@@ -161,7 +161,7 @@
     "strip-ansi": "^7.1.2",
     "systeminformation": "^5.27.11",
     "tsyringe": "^4.10.0",
-    "typescript-eslint": "^8.46.4",
+    "typescript-eslint": "^8.50.0",
     "uuid": "^13.0.0",
     "ws": "^8.18.3"
   },

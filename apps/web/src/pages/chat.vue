@@ -5468,7 +5468,7 @@ $chat-app-header-height: 76px;
   .chat-message-input {
     .v-field__input {
       font-size: 0.9375rem !important;
-      line-height: 1.375rem !important;
+      line-height: 1.375rem;
       padding-block: 0.6rem 0.5rem;
       white-space: pre-wrap;
     }

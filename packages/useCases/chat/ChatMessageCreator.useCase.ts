@@ -990,7 +990,7 @@ export class ChatMessageCreatorUseCase {
       quickMessageTemplateId
     );
 
-    if (!template || template.account.account_id !== accountId) {
+    if (template?.account?.account_id !== accountId) {
       throw new Error(t('message_template_not_found'));
     }
 
