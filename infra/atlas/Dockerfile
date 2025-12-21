@@ -1,12 +1,15 @@
-FROM node:22.18.0-alpine
+FROM node:22.18.0-bookworm-slim
 
 WORKDIR /app
 
-RUN apk update && \
-    apk add --no-cache \
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
       bash \
       git \
-      curl
+      curl \
+      ca-certificates && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
 RUN mkdir -p /.cache/node/corepack && \
     chmod -R 777 /.cache

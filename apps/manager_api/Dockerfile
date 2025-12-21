@@ -1,21 +1,22 @@
-FROM node:22.18.0-alpine AS base
+FROM node:22.18.0-bookworm-slim AS base
 
 FROM base AS turbo
 
-RUN apk update && \
-    apk add --no-cache \
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
       bash \
       git \
       g++ \
-      libc6-compat \
       make \
-      musl-dev \
       python3 \
-      pkgconf \
-      openssl-dev \
-      cyrus-sasl-dev \
-      zstd-dev \
-      curl
+      pkg-config \
+      libssl-dev \
+      libsasl2-dev \
+      zstd \
+      curl \
+      ca-certificates && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
 RUN corepack enable && \
     corepack prepare pnpm@10.14.0 --activate && \
@@ -52,7 +53,7 @@ RUN mkdir -p /build_locales
 
 COPY packages/plugins/i18next/locales /build_locales
 
-FROM node:22.18.0-alpine
+FROM node:22.18.0-bookworm-slim
 
 WORKDIR /app
 
@@ -62,10 +63,12 @@ COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/apps/manager_api/package*.json ./apps/manager_api
 COPY --from=builder /build_locales ./packages/plugins/i18next/locales
 
-RUN apk update && \
-    apk add --no-cache \
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
       ffmpeg \
-      curl
+      curl && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
 EXPOSE 3002
 
