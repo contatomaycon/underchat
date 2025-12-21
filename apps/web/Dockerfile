@@ -1,6 +1,9 @@
-FROM node:22.18.0-bookworm-slim as builder
+FROM node:22.18.0-bookworm-slim AS builder
 
 WORKDIR /app
+
+RUN corepack enable && \
+    corepack prepare pnpm@10.14.0 --activate
 
 COPY package.json yarn.lock* package-lock.json* pnpm-lock.yaml* ./
 COPY . .
@@ -8,21 +11,21 @@ COPY . .
 RUN \
   if [ -f yarn.lock ]; then yarn --frozen-lockfile; \
   elif [ -f package-lock.json ]; then npm i; \
-  elif [ -f pnpm-lock.yaml ]; then yarn global add pnpm && pnpm i --frozen-lockfile; \
+  elif [ -f pnpm-lock.yaml ]; then pnpm i --frozen-lockfile; \
   else echo "Lockfile not found." && exit 1; \
   fi
 
 RUN \
-  if [ -f yarn.lock ]; then yarn build; \
-  elif [ -f package-lock.json ]; then npm run build; \
-  elif [ -f pnpm-lock.yaml ]; then pnpm run build; \
-  else yarn build; \
+  if [ -f yarn.lock ]; then yarn build --filter=web; \
+  elif [ -f package-lock.json ]; then npm run build --workspace=apps/web; \
+  elif [ -f pnpm-lock.yaml ]; then pnpm --filter web build; \
+  else yarn build --filter=web; \
   fi
 
 FROM nginx:stable-alpine
 
-COPY nginx.conf /etc/nginx/conf.d/default.conf
-COPY --from=builder /app/dist /usr/share/nginx/html
+COPY apps/web/nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=builder /app/apps/web/dist /usr/share/nginx/html
 
 EXPOSE 80
 
