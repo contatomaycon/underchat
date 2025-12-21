@@ -2,6 +2,9 @@
 
 set -e
 
+mkdir -p /.cache/node/corepack
+chmod -R 777 /.cache 2>/dev/null || true
+
 if [ -z "$DB_ATLAS" ]; then
   echo "Aviso: DB_ATLAS não está definido, pulando migrações"
   tail -f /dev/null
