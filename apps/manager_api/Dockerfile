@@ -67,11 +67,6 @@ RUN apk update && \
       ffmpeg \
       curl
 
-RUN corepack enable && \
-    corepack prepare pnpm@10.14.0 --activate
-
-RUN curl -sSf https://atlasgo.sh | sh
-
 EXPOSE 3002
 
 WORKDIR /app/apps/manager_api
