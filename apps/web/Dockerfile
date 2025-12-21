@@ -15,12 +15,12 @@ RUN \
   else echo "Lockfile not found." && exit 1; \
   fi
 
-RUN \
+RUN bash -c "ulimit -n 65536 && \
   if [ -f yarn.lock ]; then yarn build --filter=web; \
   elif [ -f package-lock.json ]; then npm run build --workspace=apps/web; \
   elif [ -f pnpm-lock.yaml ]; then pnpm --filter web build; \
   else yarn build --filter=web; \
-  fi
+  fi"
 
 FROM nginx:stable-alpine
 
