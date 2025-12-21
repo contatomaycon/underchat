@@ -65,7 +65,8 @@ COPY --from=builder /build_locales ./packages/plugins/i18next/locales
 RUN apk update && \
     apk add --no-cache \
       ffmpeg \
-      curl
+      curl \
+      libc6-compat
 
 EXPOSE 3004
 
