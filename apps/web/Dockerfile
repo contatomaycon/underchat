@@ -2,32 +2,39 @@ FROM node:22.18.0-bookworm-slim AS builder
 
 WORKDIR /app
 
+SHELL ["/bin/bash", "-lc"]
+
 RUN corepack enable && \
     corepack prepare pnpm@10.14.0 --activate
 
 ENV CI=true
+ENV NODE_ENV=production
 ENV CHOKIDAR_USEPOLLING=true
 ENV CHOKIDAR_INTERVAL=250
 ENV WATCHPACK_POLLING=true
+ENV WATCHPACK_POLLING_INTERVAL=250
+ENV VITE_FORCE_POLLING=true
+ENV VITE_CJS_TRACE=false
 
 COPY package.json yarn.lock* package-lock.json* pnpm-lock.yaml* ./
 COPY . .
 
-RUN bash -lc "\
-  ulimit -n 65536 || true; \
+RUN \
+  ulimit -n 65536 || true && \
   if [ -f yarn.lock ]; then yarn --frozen-lockfile; \
   elif [ -f package-lock.json ]; then npm i; \
   elif [ -f pnpm-lock.yaml ]; then pnpm i --frozen-lockfile; \
-  else echo \"Lockfile not found.\" && exit 1; \
-  fi"
+  else echo "Lockfile not found." && exit 1; \
+  fi
 
-RUN bash -lc "\
-  ulimit -n 65536 || true; \
+RUN \
+  ulimit -n 65536 || true && \
+  echo "CI=$CI NODE_ENV=$NODE_ENV CHOKIDAR_USEPOLLING=$CHOKIDAR_USEPOLLING CHOKIDAR_INTERVAL=$CHOKIDAR_INTERVAL WATCHPACK_POLLING=$WATCHPACK_POLLING" && \
   if [ -f yarn.lock ]; then yarn build --filter=web; \
   elif [ -f package-lock.json ]; then npm run build --workspace=apps/web; \
   elif [ -f pnpm-lock.yaml ]; then pnpm --filter web build; \
   else yarn build --filter=web; \
-  fi"
+  fi
 
 FROM nginx:stable-alpine
 
