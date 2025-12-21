@@ -67,9 +67,10 @@ RUN apk update && \
       ffmpeg \
       curl
 
+RUN curl -sSf https://atlasgo.sh | sh
+
 EXPOSE 3002
 
 WORKDIR /app/apps/manager_api
 
 CMD ["node", "src/index.js"]
-
