@@ -35,21 +35,17 @@ RUN \
 
 FROM nginx:stable-alpine
 
-RUN mkdir -p /var/cache/nginx/client_temp \
-  /var/cache/nginx/proxy_temp \
-  /var/cache/nginx/fastcgi_temp \
-  /var/cache/nginx/uwsgi_temp \
-  /var/cache/nginx/scgi_temp \
-  /var/run/nginx \
-  /var/log/nginx && \
-  chown -R 101:101 /var/cache/nginx /var/run/nginx /var/log/nginx /usr/share/nginx && \
-  chmod -R 755 /var/cache/nginx /var/run/nginx /var/log/nginx
+RUN mkdir -p /tmp/nginx/client_temp \
+  /tmp/nginx/proxy_temp \
+  /tmp/nginx/fastcgi_temp \
+  /tmp/nginx/uwsgi_temp \
+  /tmp/nginx/scgi_temp && \
+  chmod -R 777 /tmp/nginx && \
+  chmod 777 /tmp
 
 COPY apps/web/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=builder /app/apps/web/dist /usr/share/nginx/html
 
-USER 101
-
 EXPOSE 8080
 
-CMD ["nginx", "-g", "daemon off;"]
+CMD ["nginx", "-g", "daemon off; pid /tmp/nginx.pid;"]
