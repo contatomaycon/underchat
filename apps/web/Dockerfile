@@ -5,22 +5,29 @@ WORKDIR /app
 RUN corepack enable && \
     corepack prepare pnpm@10.14.0 --activate
 
+ENV CI=true
+ENV CHOKIDAR_USEPOLLING=true
+ENV CHOKIDAR_INTERVAL=250
+ENV WATCHPACK_POLLING=true
+
 COPY package.json yarn.lock* package-lock.json* pnpm-lock.yaml* ./
 COPY . .
 
-RUN \
+RUN bash -lc "\
+  ulimit -n 65536 || true; \
   if [ -f yarn.lock ]; then yarn --frozen-lockfile; \
   elif [ -f package-lock.json ]; then npm i; \
   elif [ -f pnpm-lock.yaml ]; then pnpm i --frozen-lockfile; \
-  else echo "Lockfile not found." && exit 1; \
-  fi
+  else echo \"Lockfile not found.\" && exit 1; \
+  fi"
 
-RUN \
+RUN bash -lc "\
+  ulimit -n 65536 || true; \
   if [ -f yarn.lock ]; then yarn build --filter=web; \
   elif [ -f package-lock.json ]; then npm run build --workspace=apps/web; \
   elif [ -f pnpm-lock.yaml ]; then pnpm --filter web build; \
   else yarn build --filter=web; \
-  fi
+  fi"
 
 FROM nginx:stable-alpine
 
