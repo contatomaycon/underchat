@@ -13,8 +13,6 @@ ENV CHOKIDAR_USEPOLLING=true
 ENV CHOKIDAR_INTERVAL=250
 ENV WATCHPACK_POLLING=true
 ENV WATCHPACK_POLLING_INTERVAL=250
-ENV VITE_FORCE_POLLING=true
-ENV VITE_CJS_TRACE=false
 
 COPY package.json yarn.lock* package-lock.json* pnpm-lock.yaml* ./
 COPY . .
@@ -29,7 +27,6 @@ RUN \
 
 RUN \
   ulimit -n 65536 || true && \
-  echo "CI=$CI NODE_ENV=$NODE_ENV CHOKIDAR_USEPOLLING=$CHOKIDAR_USEPOLLING CHOKIDAR_INTERVAL=$CHOKIDAR_INTERVAL WATCHPACK_POLLING=$WATCHPACK_POLLING" && \
   if [ -f yarn.lock ]; then yarn build --filter=web; \
   elif [ -f package-lock.json ]; then npm run build --workspace=apps/web; \
   elif [ -f pnpm-lock.yaml ]; then pnpm --filter web build; \
@@ -38,17 +35,21 @@ RUN \
 
 FROM nginx:stable-alpine
 
-RUN mkdir -p /var/cache/nginx/client_temp && \
-    mkdir -p /var/cache/nginx/proxy_temp && \
-    mkdir -p /var/cache/nginx/fastcgi_temp && \
-    mkdir -p /var/cache/nginx/uwsgi_temp && \
-    mkdir -p /var/cache/nginx/scgi_temp && \
-    chown -R nginx:nginx /var/cache/nginx && \
-    chmod -R 755 /var/cache/nginx
+RUN mkdir -p /var/cache/nginx/client_temp \
+  /var/cache/nginx/proxy_temp \
+  /var/cache/nginx/fastcgi_temp \
+  /var/cache/nginx/uwsgi_temp \
+  /var/cache/nginx/scgi_temp \
+  /var/run/nginx \
+  /var/log/nginx && \
+  chown -R 101:101 /var/cache/nginx /var/run/nginx /var/log/nginx /usr/share/nginx && \
+  chmod -R 755 /var/cache/nginx /var/run/nginx /var/log/nginx
 
 COPY apps/web/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=builder /app/apps/web/dist /usr/share/nginx/html
 
-EXPOSE 80
+USER 101
+
+EXPOSE 8080
 
 CMD ["nginx", "-g", "daemon off;"]
