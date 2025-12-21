@@ -12,7 +12,6 @@ import jwtPlugin from '@core/plugins/jwt';
 import multipartFile from '@fastify/multipart';
 import { generalEnvironment } from '@core/config/environments';
 import databaseElasticPlugin from '@core/plugins/dbElastic';
-import elasticLogsPlugin from '@core/plugins/elasticLogs';
 import redisPlugin from '@core/plugins/redis';
 import fastifyQs from 'fastify-qs';
 import routes from '@/routes';
@@ -38,10 +37,6 @@ server.register(safePlugin(i18nextPlugin, 'i18next'));
 server.register(safePlugin(jwtPlugin, 'jwt'));
 server.register(safePlugin(corsPlugin, 'cors'));
 server.register(safePlugin(databaseElasticPlugin, 'databaseElastic'), {
-  prefix: ERouteModule.public,
-});
-
-server.register(safePlugin(elasticLogsPlugin, 'elasticLogs'), {
   prefix: ERouteModule.public,
 });
 

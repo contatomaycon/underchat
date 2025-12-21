@@ -511,7 +511,7 @@ export class WorkerMonitorService {
     serverId: string,
     sshConfig: ConnectConfig
   ): Promise<boolean> => {
-    const command = `bash -c "docker exec ${workerId} sh -c 'curl -s -o /dev/null -w \\"%{http_code}\\" http://127.0.0.1:3005/v1/health/check'"`;
+    const command = String.raw`bash -c "docker exec ${workerId} sh -c 'curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3005/v1/health/check'"`;
 
     const outputs = await this.sshService.runCommands(
       serverId,
@@ -530,7 +530,7 @@ export class WorkerMonitorService {
     serverId: string,
     sshConfig: ConnectConfig
   ): Promise<boolean> => {
-    const command = `bash -c "docker exec ${workerId} sh -c 'curl -s -o /dev/null -w \\"%{http_code}\\" http://127.0.0.1:3005/v1/connection/health/check'"`;
+    const command = String.raw`bash -c "docker exec ${workerId} sh -c 'curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3005/v1/connection/health/check'"`;
 
     try {
       const outputs = await this.sshService.runCommands(
