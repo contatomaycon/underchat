@@ -56,8 +56,6 @@ FROM node:22.18.0-alpine
 
 WORKDIR /app
 
-COPY .env ./
-
 COPY --from=builder /app/apps/manager_api/dist ./
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package*.json ./
