@@ -8,7 +8,6 @@ import { v7 } from 'uuid';
 import swaggerPlugin from '@/plugins/swagger';
 import corsPlugin from '@core/plugins/cors';
 import databaseElasticPlugin from '@core/plugins/dbElastic';
-import elasticLogsPlugin from '@core/plugins/elasticLogs';
 import authenticateKeyApi from '@core/middlewares/keyapi.middleware';
 import consumerPlugin from './consumer';
 import temporalConsumerPlugin from './temporal';
@@ -42,10 +41,6 @@ server.register(safePlugin(kafkaStreamsPlugin, 'kafkaStreams'), {
 });
 
 server.register(safePlugin(databaseElasticPlugin, 'databaseElastic'), {
-  prefix: ERouteModule.service,
-});
-
-server.register(safePlugin(elasticLogsPlugin, 'elasticLogs'), {
   prefix: ERouteModule.service,
 });
 

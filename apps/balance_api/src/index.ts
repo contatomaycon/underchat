@@ -7,7 +7,6 @@ import { ERouteModule } from '@core/common/enums/ERouteModule';
 import { v7 } from 'uuid';
 import swaggerPlugin from '@/plugins/swagger';
 import corsPlugin from '@core/plugins/cors';
-import elasticLogsPlugin from '@core/plugins/elasticLogs';
 import authenticateKeyApi from '@core/middlewares/keyapi.middleware';
 import kafkaStreamsPlugin from '@core/plugins/kafkaStreams';
 import centrifugoPlugin from '@core/plugins/centrifugo';
@@ -37,10 +36,6 @@ server.register(safePlugin(corsPlugin, 'cors'));
 
 server.register(safePlugin(kafkaStreamsPlugin, 'kafkaStreams'), {
   module: ERouteModule.balancer,
-});
-
-server.register(safePlugin(elasticLogsPlugin, 'elasticLogs'), {
-  prefix: ERouteModule.balancer,
 });
 
 server.register(safePlugin(swaggerPlugin, 'swagger'));
