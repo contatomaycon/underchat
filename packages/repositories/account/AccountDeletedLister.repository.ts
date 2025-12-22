@@ -5,7 +5,6 @@ import { inject, injectable } from 'tsyringe';
 import {
   and,
   count,
-  eq,
   isNotNull,
   SQLWrapper,
   or,

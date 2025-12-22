@@ -120,8 +120,10 @@ export class PlanService {
     return this.planSalesListerRepository.listPlanSales(query);
   };
 
-  listPlanWithItems = async (): Promise<ListPlanWithItemsResponse[]> => {
-    return this.planWithItemsListerRepository.listPlanWithItems();
+  listPlanWithItems = async (
+    accountId: string | null
+  ): Promise<ListPlanWithItemsResponse[]> => {
+    return this.planWithItemsListerRepository.listPlanWithItems(accountId);
   };
 
   listUserCards = async (userId: string): Promise<ListUserCardResponse[]> => {
