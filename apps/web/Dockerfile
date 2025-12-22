@@ -49,12 +49,13 @@ FROM deps AS builder
 
 WORKDIR /app
 
-COPY --from=deps /app/node_modules ./node_modules
 COPY --from=pruned /app/out/full/ .
 
 ARG VITE_BACKEND_URL
 ENV VITE_BACKEND_URL=${VITE_BACKEND_URL} \
-    CI=true
+    CI=true \
+    CHOKIDAR_USEPOLLING=1 \
+    CHOKIDAR_INTERVAL=200
 
 WORKDIR /app/apps/web
 
