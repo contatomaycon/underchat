@@ -50,6 +50,13 @@ import { ListAccountExpiredResponse } from '@core/schema/account/listAccountExpi
 import { AccountDeletedListerRepository } from '@core/repositories/account/AccountDeletedLister.repository';
 import { ListAccountDeletedRequest } from '@core/schema/account/listAccountDeleted/request.schema';
 import { ListAccountDeletedResponse } from '@core/schema/account/listAccountDeleted/response.schema';
+import { PlanAccountExclusiveListerRepository } from '@core/repositories/planAccountExclusive/PlanAccountExclusiveLister.repository';
+import { ListPlanAccountExclusivesResponse } from '@core/schema/planAccountExclusive/listPlanAccountExclusive/response.schema';
+import { PlanAccountExclusiveCreatorRepository } from '@core/repositories/planAccountExclusive/PlanAccountExclusiveCreator.repository';
+import { CreatePlanAccountExclusiveRequest } from '@core/schema/planAccountExclusive/createPlanAccountExclusive/request.schema';
+import { PlanAccountExclusiveDeleterRepository } from '@core/repositories/planAccountExclusive/PlanAccountExclusiveDeleter.repository';
+import { ExclusivePlansListerRepository } from '@core/repositories/planAccountExclusive/ExclusivePlansLister.repository';
+import { ListExclusivePlansResponseArray } from '@core/schema/planAccountExclusive/listExclusivePlans/response.schema';
 import Redis from 'ioredis';
 
 @injectable()
@@ -79,6 +86,10 @@ export class AccountService {
     private readonly accountTestsListerRepository: AccountTestsListerRepository,
     private readonly accountExpiredListerRepository: AccountExpiredListerRepository,
     private readonly accountDeletedListerRepository: AccountDeletedListerRepository,
+    private readonly planAccountExclusiveListerRepository: PlanAccountExclusiveListerRepository,
+    private readonly planAccountExclusiveCreatorRepository: PlanAccountExclusiveCreatorRepository,
+    private readonly planAccountExclusiveDeleterRepository: PlanAccountExclusiveDeleterRepository,
+    private readonly exclusivePlansListerRepository: ExclusivePlansListerRepository,
     @inject('Redis') private readonly redis: Redis
   ) {}
 
@@ -390,6 +401,36 @@ export class AccountService {
     ]);
 
     return [result, total];
+  };
+
+  listPlanAccountExclusives = async (
+    accountId: string
+  ): Promise<ListPlanAccountExclusivesResponse> => {
+    return this.planAccountExclusiveListerRepository.listPlanAccountExclusives(
+      accountId
+    );
+  };
+
+  createPlanAccountExclusive = async (
+    input: CreatePlanAccountExclusiveRequest
+  ): Promise<string | null> => {
+    return this.planAccountExclusiveCreatorRepository.createPlanAccountExclusive(
+      input
+    );
+  };
+
+  deletePlanAccountExclusive = async (
+    planAccountExclusiveId: string
+  ): Promise<boolean> => {
+    return this.planAccountExclusiveDeleterRepository.deletePlanAccountExclusiveById(
+      planAccountExclusiveId
+    );
+  };
+
+  listExclusivePlans = async (
+    accountId: string
+  ): Promise<ListExclusivePlansResponseArray> => {
+    return this.exclusivePlansListerRepository.listExclusivePlans(accountId);
   };
 
   updateAccountStatusById = async (

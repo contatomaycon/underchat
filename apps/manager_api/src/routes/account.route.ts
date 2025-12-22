@@ -26,6 +26,10 @@ import { listAccountBlockedSchema } from '@core/schema/account/listAccountBlocke
 import { listAccountTestsSchema } from '@core/schema/account/listAccountTests';
 import { listAccountExpiredSchema } from '@core/schema/account/listAccountExpired';
 import { listAccountDeletedSchema } from '@core/schema/account/listAccountDeleted';
+import { listPlanAccountExclusiveSchema } from '@core/schema/planAccountExclusive/listPlanAccountExclusive';
+import { createPlanAccountExclusiveSchema } from '@core/schema/planAccountExclusive/createPlanAccountExclusive';
+import { deletePlanAccountExclusiveSchema } from '@core/schema/planAccountExclusive/deletePlanAccountExclusive';
+import { listExclusivePlansSchema } from '@core/schema/planAccountExclusive/listExclusivePlans';
 import { blockAccountSchema } from '@core/schema/account/blockAccount';
 import { unblockAccountSchema } from '@core/schema/account/unblockAccount';
 
@@ -200,6 +204,42 @@ export default async function accountRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, accountViewPermissions),
+    ],
+  });
+
+  server.get('/account/:account_id/exclusive-plans', {
+    schema: listPlanAccountExclusiveSchema,
+    handler: accountController.listPlanAccountExclusive,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, accountViewPermissions),
+    ],
+  });
+
+  server.get('/account/:account_id/exclusive-plans/available', {
+    schema: listExclusivePlansSchema,
+    handler: accountController.listExclusivePlans,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, accountViewPermissions),
+    ],
+  });
+
+  server.post('/account/exclusive-plan', {
+    schema: createPlanAccountExclusiveSchema,
+    handler: accountController.createPlanAccountExclusive,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, accountUpdatePermissions),
+    ],
+  });
+
+  server.delete('/account/exclusive-plan/:plan_account_exclusive_id', {
+    schema: deletePlanAccountExclusiveSchema,
+    handler: accountController.deletePlanAccountExclusive,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, accountUpdatePermissions),
     ],
   });
 

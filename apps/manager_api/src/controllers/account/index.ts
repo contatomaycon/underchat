@@ -18,6 +18,10 @@ import { listAccountBlocked } from './methods/listAccountBlocked';
 import { listAccountTests } from './methods/listAccountTests';
 import { listAccountExpired } from './methods/listAccountExpired';
 import { listAccountDeleted } from './methods/listAccountDeleted';
+import { listPlanAccountExclusive } from './methods/listPlanAccountExclusive';
+import { createPlanAccountExclusive } from './methods/createPlanAccountExclusive';
+import { deletePlanAccountExclusive } from './methods/deletePlanAccountExclusive';
+import { listExclusivePlans } from './methods/listExclusivePlans';
 import { blockAccount } from './methods/blockAccount';
 import { unblockAccount } from './methods/unblockAccount';
 
@@ -42,6 +46,10 @@ class AccountController {
   public listAccountTests = listAccountTests;
   public listAccountExpired = listAccountExpired;
   public listAccountDeleted = listAccountDeleted;
+  public listPlanAccountExclusive = listPlanAccountExclusive;
+  public createPlanAccountExclusive = createPlanAccountExclusive;
+  public deletePlanAccountExclusive = deletePlanAccountExclusive;
+  public listExclusivePlans = listExclusivePlans;
   public blockAccount = blockAccount;
   public unblockAccount = unblockAccount;
 }

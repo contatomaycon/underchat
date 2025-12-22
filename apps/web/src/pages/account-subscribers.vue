@@ -13,6 +13,7 @@ import { EAccountStatus } from '@core/common/enums/EAccountStatus';
 import { ListAccountResponse } from '@core/schema/account/listAccount/response.schema';
 import { EColor } from '@core/common/enums/EColor';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
+import AppAccountExclusivePlans from '@/components/account/AppAccountExclusivePlans.vue';
 
 definePage({
   meta: {
@@ -103,6 +104,8 @@ const accountInfo = ref<string | null>(null);
 const isDialogAccountInfoShow = ref(false);
 const accountSubscriptions = ref<string | null>(null);
 const isDialogAccountSubscriptionsShow = ref(false);
+const accountExclusivePlans = ref<string | null>(null);
+const isDialogAccountExclusivePlansShow = ref(false);
 
 const headers: DataTableHeader<ListAccountResponse>[] = [
   { title: t('name'), key: 'name' },
@@ -208,6 +211,12 @@ const openSubscriptionsDialog = (id: string) => {
   accountSubscriptions.value = id;
 
   isDialogAccountSubscriptionsShow.value = true;
+};
+
+const openExclusivePlansDialog = (id: string) => {
+  accountExclusivePlans.value = id;
+
+  isDialogAccountExclusivePlansShow.value = true;
 };
 
 watch(
@@ -389,6 +398,18 @@ watch(
                 /></IconBtn>
 
                 <IconBtn
+                  ><VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>{{ $t('exclusive_plans') }}</span> </VTooltip
+                  ><VIcon
+                    icon="tabler-star"
+                    @click="openExclusivePlansDialog(item.account_id)"
+                /></IconBtn>
+
+                <IconBtn
                   v-if="$canPermission(permissionsEdit) && item?.account_id"
                   ><VTooltip
                     location="top"
@@ -507,6 +528,12 @@ watch(
         v-if="isDialogAccountSubscriptionsShow"
         v-model="isDialogAccountSubscriptionsShow"
         :account-id="accountSubscriptions"
+      />
+
+      <AppAccountExclusivePlans
+        v-if="isDialogAccountExclusivePlansShow"
+        v-model="isDialogAccountExclusivePlansShow"
+        :account-id="accountExclusivePlans"
       />
 
       <AppAddAccount v-if="isAddAccountVisible" v-model="isAddAccountVisible" />
