@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { Worker } from '@temporalio/worker';
 import { container } from 'tsyringe';
 import { WorkerCreationActivity } from '@core/temporal/activities/workerCreation.activities';
+import '@core/temporal/workflows/workerCreation.workflow';
 
 export const workerCreationWorker = async (fastify: FastifyInstance) => {
   const activity = container.resolve(WorkerCreationActivity);
