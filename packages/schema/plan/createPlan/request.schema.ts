@@ -1,4 +1,5 @@
 import { Static, Type } from '@sinclair/typebox';
+import { EPlanStatus } from '@core/common/enums/EPlanStatus';
 
 export const createPlanRequestSchema = Type.Object({
   name: Type.String(),
@@ -11,6 +12,8 @@ export const createPlanRequestSchema = Type.Object({
   days_trial: Type.Optional(
     Type.Union([Type.Number({ minimum: 1 }), Type.Null()])
   ),
+  is_exclusive: Type.Optional(Type.Boolean()),
+  status: Type.Optional(Type.Enum(EPlanStatus)),
 });
 
 export type CreatePlanRequest = Static<typeof createPlanRequestSchema>;

@@ -1,5 +1,6 @@
 import { Static, Type } from '@sinclair/typebox';
 import { listPlanItemResponseSchema } from '../listPlanItems/response.schema';
+import { EPlanStatus } from '@core/common/enums/EPlanStatus';
 
 export const listPlanWithItemsResponseSchema = Type.Object({
   plan_id: Type.String({ format: 'uuid' }),
@@ -11,6 +12,8 @@ export const listPlanWithItemsResponseSchema = Type.Object({
   icon: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   is_test: Type.Boolean(),
   days_trial: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
+  is_exclusive: Type.Boolean(),
+  status: Type.Enum(EPlanStatus),
   created_at: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   plan_items: Type.Array(listPlanItemResponseSchema),
 });

@@ -738,6 +738,7 @@
     "add_plan": "Add Plan",
     "edit_plan": "Edit Plan",
     "is_test_plan": "Is test plan",
+    "is_exclusive_plan": "Is exclusive plan",
     "trial_days": "Trial days",
     "trial_days_required": "Trial days is required when the plan is a test plan",
     "delete_plan": "Delete Plan",

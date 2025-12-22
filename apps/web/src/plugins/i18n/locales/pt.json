@@ -742,6 +742,7 @@
     "add_plan": "Adicionar Plano",
     "edit_plan": "Editar Plano",
     "is_test_plan": "É plano de teste",
+    "is_exclusive_plan": "É plano exclusivo",
     "trial_days": "Dias de teste",
     "trial_days_required": "Dias de teste é obrigatório quando o plano é de teste",
     "delete_plan": "Excluir Plano",

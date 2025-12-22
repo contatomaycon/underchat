@@ -43,6 +43,8 @@ export class PlanWithItemsListerRepository {
         icon: plan.icon,
         is_test: plan.is_test,
         days_trial: plan.days_trial,
+        is_exclusive: plan.is_exclusive,
+        status: plan.status,
         created_at: plan.created_at,
       })
       .from(plan)
@@ -124,6 +126,8 @@ export class PlanWithItemsListerRepository {
       icon: p.icon ?? null,
       is_test: p.is_test,
       days_trial: p.days_trial ? Number(p.days_trial) : null,
+      is_exclusive: p.is_exclusive,
+      status: p.status,
       created_at: p.created_at,
       plan_items: itemsByPlanId.get(p.plan_id) ?? [],
     }));

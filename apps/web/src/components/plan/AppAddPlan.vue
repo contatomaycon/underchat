@@ -3,6 +3,7 @@ import { usePlanStore } from '@/@webcore/stores/plan';
 import { VForm } from 'vuetify/components/VForm';
 import { CreatePlanRequest } from '@core/schema/plan/createPlan/request.schema';
 import { EColor } from '@core/common/enums/EColor';
+import { EPlanStatus } from '@core/common/enums/EPlanStatus';
 
 const planStore = usePlanStore();
 const { t } = useI18n();
@@ -26,10 +27,22 @@ const annual_discount = ref<number | null>(null);
 const icon = ref<string | null>(null);
 const is_test = ref<boolean>(false);
 const days_trial = ref<number | null>(null);
+const is_exclusive = ref<boolean>(false);
+const status = ref<EPlanStatus>(EPlanStatus.active);
 
 const testOptions = computed(() => [
   { title: t('no'), value: false },
   { title: t('yes'), value: true },
+]);
+
+const exclusiveOptions = computed(() => [
+  { title: t('no'), value: false },
+  { title: t('yes'), value: true },
+]);
+
+const statusOptions = computed(() => [
+  { title: t('active'), value: EPlanStatus.active },
+  { title: t('inactive'), value: EPlanStatus.inactive },
 ]);
 
 const refFormAddPlan = ref<VForm>();
@@ -233,6 +246,8 @@ const addPlan = async () => {
     icon: icon.value ?? undefined,
     is_test: is_test.value || undefined,
     days_trial: is_test.value ? (days_trial.value ?? undefined) : undefined,
+    is_exclusive: is_exclusive.value,
+    status: status.value,
   };
 
   const result = await planStore.createPlan(payload);
@@ -253,6 +268,8 @@ const resetForm = () => {
   icon.value = null;
   is_test.value = false;
   days_trial.value = null;
+  is_exclusive.value = false;
+  status.value = EPlanStatus.active;
   refFormAddPlan.value?.resetValidation();
 };
 
@@ -370,6 +387,30 @@ onMounted(resetForm);
                     $t('trial_days_required'),
                 ]"
                 :min="1"
+              />
+            </VCol>
+            <VCol cols="12" sm="6">
+              <VLabel class="text-body-2 mb-1"
+                >{{ $t('is_exclusive_plan') }}:</VLabel
+              >
+              <AppSelectSearch
+                v-model="is_exclusive"
+                :items="exclusiveOptions"
+                :placeholder="$t('is_exclusive_plan')"
+                :clearable="true"
+                item-value="value"
+                item-title="title"
+              />
+            </VCol>
+            <VCol cols="12" sm="6">
+              <VLabel class="text-body-2 mb-1">{{ $t('status') }}:</VLabel>
+              <AppSelectSearch
+                v-model="status"
+                :items="statusOptions"
+                :placeholder="$t('status')"
+                :clearable="true"
+                item-value="value"
+                item-title="title"
               />
             </VCol>
           </VRow>
