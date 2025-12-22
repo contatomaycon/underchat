@@ -8,7 +8,7 @@ import {
   integer,
 } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
-import { planItems, planAccount } from '@core/models';
+import { planItems, planAccount, planAccountExclusive } from '@core/models';
 import { EPlanStatus } from '@core/common/enums/EPlanStatus';
 
 export const plan = pgTable('plan', {
@@ -40,4 +40,5 @@ export const plan = pgTable('plan', {
 export const planRelations = relations(plan, ({ many }) => ({
   ppi: many(planItems),
   pac: many(planAccount),
+  pae: many(planAccountExclusive),
 }));
