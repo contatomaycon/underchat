@@ -1918,5 +1918,6 @@
     "good_evening": "Buenas noches",
     "switch_account": "Cambiar Cuenta",
     "enter": "Entrar",
-    "master_accounts_list_error": "Ocurrió un error al listar las cuentas accesibles. Por favor, inténtalo de nuevo."
+    "master_accounts_list_error": "Ocurrió un error al listar las cuentas accesibles. Por favor, inténtalo de nuevo.",
+    "backend_url_not_configured": "URL del backend no configurada. Verifique el archivo .env"
 }

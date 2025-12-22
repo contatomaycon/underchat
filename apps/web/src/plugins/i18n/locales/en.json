@@ -1916,5 +1916,6 @@
     "good_evening": "Good evening",
     "switch_account": "Switch Account",
     "enter": "Enter",
-    "master_accounts_list_error": "An error occurred while listing accessible accounts. Please try again."
+    "master_accounts_list_error": "An error occurred while listing accessible accounts. Please try again.",
+    "backend_url_not_configured": "Backend URL not configured. Check the .env file"
 }
