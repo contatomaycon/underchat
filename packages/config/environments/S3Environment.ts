@@ -19,14 +19,6 @@ export class S3Environment {
     return process.env.S3_SECRET_ACCESS_KEY;
   }
 
-  public get s3BucketName(): string {
-    if (!process.env.S3_BUCKET_NAME) {
-      throw new InvalidConfigurationError('S3_BUCKET_NAME is not defined.');
-    }
-
-    return process.env.S3_BUCKET_NAME;
-  }
-
   public get s3Region(): string {
     if (!process.env.S3_REGION) {
       throw new InvalidConfigurationError('S3_REGION is not defined.');
