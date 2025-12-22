@@ -62,7 +62,7 @@ RUN ulimit -n 1048576 || true && \
     pnpm run msw:init
 
 RUN ulimit -n 1048576 || true && \
-    pnpm run build:web
+    pnpm run build
 
 FROM nginx:1.27-alpine AS runner
 
