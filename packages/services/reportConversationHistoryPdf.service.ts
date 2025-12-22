@@ -1,7 +1,5 @@
 import { injectable } from 'tsyringe';
 import { StorageService } from './storage.service';
-import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
-import { s3Environment } from '@core/config/environments';
 import puppeteer, { Page, ElementHandle } from 'puppeteer';
 import {
   ListMessageResult,
@@ -231,21 +229,13 @@ export class ReportConversationHistoryPdfService {
 
       await browser.close();
 
-      const key = `${accountId}/report-conversation-history/${chatId}/history.pdf`;
+      const key = `report-conversation-history/${chatId}/history.pdf`;
 
-      const s3Client = (this.storageService as unknown as { client: S3Client })
-        .client;
-
-      await s3Client.send(
-        new PutObjectCommand({
-          Bucket: s3Environment.s3BucketName,
-          Key: key,
-          Body: pdfBuffer,
-          ContentType: 'application/pdf',
-        })
+      const url = await this.storageService.uploadPdf(
+        pdfBuffer,
+        accountId,
+        key
       );
-
-      const url = this.storageService.createUrl(key);
 
       return url;
     } catch (error) {
