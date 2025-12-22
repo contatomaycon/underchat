@@ -37,25 +37,34 @@ WORKDIR /app
 
 COPY --from=pruned /app/out/json/ .
 
-ENV npm_config_build_from_source=true \
+ENV CI=true \
+    npm_config_build_from_source=true \
     npm_config_loglevel=verbose
-RUN pnpm install --frozen-lockfile --ignore-scripts --unsafe-perm
+
+RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
+    ulimit -n 1048576 || true && \
+    pnpm install --frozen-lockfile --ignore-scripts --unsafe-perm
 
 FROM deps AS builder
 
 WORKDIR /app
 
-COPY --from=deps /app/node_modules/ .
+COPY --from=deps /app/node_modules ./node_modules
 COPY --from=pruned /app/out/full/ .
 
 ARG VITE_BACKEND_URL
-ENV VITE_BACKEND_URL=${VITE_BACKEND_URL}
+ENV VITE_BACKEND_URL=${VITE_BACKEND_URL} \
+    CI=true \
+    CHOKIDAR_USEPOLLING=true \
+    CHOKIDAR_INTERVAL=100
 
-RUN cd apps/web && \
+RUN ulimit -n 1048576 || true && \
+    cd apps/web && \
     pnpm run build:icons && \
     pnpm run msw:init
 
-RUN pnpm build:web
+RUN ulimit -n 1048576 || true && \
+    pnpm build:web
 
 FROM nginx:1.27-alpine AS runner
 
@@ -86,4 +95,3 @@ RUN echo 'server {' > /etc/nginx/conf.d/default.conf && \
 EXPOSE 8080
 
 CMD ["nginx", "-g", "daemon off;"]
-
