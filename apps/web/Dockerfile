@@ -54,17 +54,16 @@ COPY --from=pruned /app/out/full/ .
 
 ARG VITE_BACKEND_URL
 ENV VITE_BACKEND_URL=${VITE_BACKEND_URL} \
-    CI=true \
-    CHOKIDAR_USEPOLLING=1 \
-    CHOKIDAR_INTERVAL=200
+    CI=true
+
+WORKDIR /app/apps/web
 
 RUN ulimit -n 1048576 || true && \
-    cd apps/web && \
     pnpm run build:icons && \
     pnpm run msw:init
 
 RUN ulimit -n 1048576 || true && \
-    pnpm build:web
+    pnpm run build:web
 
 FROM nginx:1.27-alpine AS runner
 
