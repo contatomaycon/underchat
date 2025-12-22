@@ -46,7 +46,8 @@ LABEL maintainer="underchat"
 LABEL app="web"
 LABEL component="frontend"
 
-RUN mkdir -p /tmp/nginx/client_temp \
+RUN apk add --no-cache wget && \
+    mkdir -p /tmp/nginx/client_temp \
              /tmp/nginx/proxy_temp \
              /tmp/nginx/fastcgi_temp \
              /tmp/nginx/uwsgi_temp \
@@ -55,19 +56,22 @@ RUN mkdir -p /tmp/nginx/client_temp \
              /var/cache/nginx/proxy_temp \
              /var/cache/nginx/fastcgi_temp \
              /var/cache/nginx/uwsgi_temp \
-             /var/cache/nginx/scgi_temp && \
+             /var/cache/nginx/scgi_temp \
+             /run \
+             /var/run && \
     chown -R nginx:nginx /var/cache/nginx \
                          /var/log/nginx \
                          /tmp/nginx \
                          /usr/share/nginx/html \
-                         /etc/nginx/conf.d && \
+                         /etc/nginx/conf.d \
+                         /run \
+                         /var/run && \
     chmod -R 755 /var/cache/nginx \
                  /var/log/nginx \
                  /tmp/nginx && \
     touch /var/run/nginx.pid && \
     chown nginx:nginx /var/run/nginx.pid
 
-COPY apps/web/nginx-main.conf /etc/nginx/nginx.conf
 COPY apps/web/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=builder --chown=nginx:nginx /app/apps/web/dist /usr/share/nginx/html
 
@@ -76,8 +80,6 @@ USER nginx
 EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD test -f /usr/share/nginx/html/index.html && \
-        test -f /var/run/nginx.pid && \
-        kill -0 $(cat /var/run/nginx.pid) 2>/dev/null || exit 1
+    CMD wget -q -O- http://127.0.0.1:8080/healthz || exit 1
 
 CMD ["nginx", "-g", "daemon off;"]
