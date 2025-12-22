@@ -2,7 +2,10 @@ import { injectable } from 'tsyringe';
 import { Client, ConnectConfig } from 'ssh2';
 import { IDistroInfo } from '@core/common/interfaces/IDistroInfo';
 import { EAllowedDistroVersion } from '@core/common/enums/EAllowedDistroVersion';
+import { installUbuntu2510 } from '@core/common/functions/installUbuntu2510';
 import { installUbuntu2504 } from '@core/common/functions/installUbuntu2504';
+import { installUbuntu2410 } from '@core/common/functions/installUbuntu2410';
+import { installUbuntu2404 } from '@core/common/functions/installUbuntu2404';
 import { CentrifugoService } from './centrifugo.service';
 import { IServerSshCentrifugo } from '@core/common/interfaces/IServerSshCentrifugo';
 import { IViewServerWebById } from '@core/common/interfaces/IViewServerWebById';
@@ -185,9 +188,10 @@ export class SshService {
     const key = `${info.distro}:${info.version}` as EAllowedDistroVersion;
 
     const commandsMap: Record<EAllowedDistroVersion, string[]> = {
+      [EAllowedDistroVersion.Ubuntu_25_10]: await installUbuntu2510(webView),
       [EAllowedDistroVersion.Ubuntu_25_04]: await installUbuntu2504(webView),
-      [EAllowedDistroVersion.Ubuntu_24_10]: ['sudo apt-get update'],
-      [EAllowedDistroVersion.Ubuntu_24_04]: ['sudo apt-get update'],
+      [EAllowedDistroVersion.Ubuntu_24_10]: await installUbuntu2410(webView),
+      [EAllowedDistroVersion.Ubuntu_24_04]: await installUbuntu2404(webView),
     };
 
     return commandsMap[key] ?? [];
@@ -197,6 +201,9 @@ export class SshService {
     const key = `${info.distro}:${info.version}` as EAllowedDistroVersion;
 
     const commandsMap: Record<EAllowedDistroVersion, string[]> = {
+      [EAllowedDistroVersion.Ubuntu_25_10]: [
+        `bash -c "curl -s -o /dev/null -w "%{http_code}" http://${ip}:${port}/v1/health/check"`,
+      ],
       [EAllowedDistroVersion.Ubuntu_25_04]: [
         `bash -c "curl -s -o /dev/null -w "%{http_code}" http://${ip}:${port}/v1/health/check"`,
       ],
@@ -215,6 +222,9 @@ export class SshService {
     const key = `${info.distro}:${info.version}` as EAllowedDistroVersion;
 
     const commandsMap: Record<EAllowedDistroVersion, string[]> = {
+      [EAllowedDistroVersion.Ubuntu_25_10]: [
+        `bash -c "if docker image inspect ${EWorkerImage.baileys} > /dev/null 2>&1; then   echo true; else   echo false; fi"`,
+      ],
       [EAllowedDistroVersion.Ubuntu_25_04]: [
         `bash -c "if docker image inspect ${EWorkerImage.baileys} > /dev/null 2>&1; then   echo true; else   echo false; fi"`,
       ],

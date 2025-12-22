@@ -4,12 +4,14 @@ import {
   planItems,
   planProduct,
   planProductDescription,
+  planAccountExclusive,
 } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { eq, isNull, asc } from 'drizzle-orm';
+import { eq, isNull, asc, and, or, inArray } from 'drizzle-orm';
 import { ListPlanWithItemsResponse } from '@core/schema/plan/listPlanWithItems/response.schema';
 import { ListPlanItemResponse } from '@core/schema/plan/listPlanItems/response.schema';
+import { EPlanStatus } from '@core/common/enums/EPlanStatus';
 
 @injectable()
 export class PlanWithItemsListerRepository {
@@ -17,8 +19,10 @@ export class PlanWithItemsListerRepository {
     @inject('Database') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
-  listPlanWithItems = async (): Promise<ListPlanWithItemsResponse[]> => {
-    const plans = await this.listAllPlans();
+  listPlanWithItems = async (
+    accountId: string | null
+  ): Promise<ListPlanWithItemsResponse[]> => {
+    const plans = await this.listAllPlans(accountId || '');
 
     if (!plans.length) {
       return [];
@@ -31,7 +35,15 @@ export class PlanWithItemsListerRepository {
     return result;
   };
 
-  private readonly listAllPlans = async () => {
+  private readonly listAllPlans = async (accountId: string) => {
+    const exclusivePlanIds = await this.getExclusivePlanIds(accountId);
+
+    const whereConditions = [
+      isNull(plan.deleted_at),
+      eq(plan.status, EPlanStatus.active),
+      this.buildExclusivePlanFilter(exclusivePlanIds),
+    ];
+
     return this.db
       .select({
         plan_id: plan.plan_id,
@@ -43,12 +55,49 @@ export class PlanWithItemsListerRepository {
         icon: plan.icon,
         is_test: plan.is_test,
         days_trial: plan.days_trial,
+        is_exclusive: plan.is_exclusive,
+        status: plan.status,
         created_at: plan.created_at,
       })
       .from(plan)
-      .where(isNull(plan.deleted_at))
+      .where(and(...whereConditions))
       .orderBy(asc(plan.price))
       .execute();
+  };
+
+  private readonly buildExclusivePlanFilter = (exclusivePlanIds: string[]) => {
+    if (exclusivePlanIds.length === 0) {
+      return eq(plan.is_exclusive, false);
+    }
+
+    const exclusiveCondition = or(
+      eq(plan.is_exclusive, false),
+      and(eq(plan.is_exclusive, true), inArray(plan.plan_id, exclusivePlanIds))
+    );
+
+    if (exclusiveCondition) {
+      return exclusiveCondition;
+    }
+
+    return eq(plan.is_exclusive, false);
+  };
+
+  private readonly getExclusivePlanIds = async (
+    accountId: string
+  ): Promise<string[]> => {
+    if (!accountId) {
+      return [];
+    }
+
+    const result = await this.db
+      .select({
+        plan_id: planAccountExclusive.plan_id,
+      })
+      .from(planAccountExclusive)
+      .where(eq(planAccountExclusive.account_id, accountId))
+      .execute();
+
+    return result.map((item) => item.plan_id);
   };
 
   private readonly listAllPlanItems = async () => {
@@ -124,6 +173,8 @@ export class PlanWithItemsListerRepository {
       icon: p.icon ?? null,
       is_test: p.is_test,
       days_trial: p.days_trial ? Number(p.days_trial) : null,
+      is_exclusive: p.is_exclusive,
+      status: p.status,
       created_at: p.created_at,
       plan_items: itemsByPlanId.get(p.plan_id) ?? [],
     }));

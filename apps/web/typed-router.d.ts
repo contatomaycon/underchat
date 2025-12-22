@@ -37,6 +37,13 @@ declare module 'vue-router/auto-routes' {
       { error: ParamValue<false> },
       | never
     >,
+    'account-all': RouteRecordInfo<
+      'account-all',
+      '/account-all',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
     'account-blocked': RouteRecordInfo<
       'account-blocked',
       '/account-blocked',
@@ -54,6 +61,13 @@ declare module 'vue-router/auto-routes' {
     'account-cancelling': RouteRecordInfo<
       'account-cancelling',
       '/account-cancelling',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
+    'account-deleted': RouteRecordInfo<
+      'account-deleted',
+      '/account-deleted',
       Record<never, never>,
       Record<never, never>,
       | never
@@ -398,6 +412,12 @@ declare module 'vue-router/auto-routes' {
       views:
         | never
     }
+    'src/pages/account-all.vue': {
+      routes:
+        | 'account-all'
+      views:
+        | never
+    }
     'src/pages/account-blocked.vue': {
       routes:
         | 'account-blocked'
@@ -413,6 +433,12 @@ declare module 'vue-router/auto-routes' {
     'src/pages/account-cancelling.vue': {
       routes:
         | 'account-cancelling'
+      views:
+        | never
+    }
+    'src/pages/account-deleted.vue': {
+      routes:
+        | 'account-deleted'
       views:
         | never
     }

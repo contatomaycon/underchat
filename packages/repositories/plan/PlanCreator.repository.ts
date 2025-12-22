@@ -4,6 +4,7 @@ import { CreatePlanRequest } from '@core/schema/plan/createPlan/request.schema';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { v7 as uuidv7 } from 'uuid';
+import { EPlanStatus } from '@core/common/enums/EPlanStatus';
 
 @injectable()
 export class PlanCreatorRepository {
@@ -26,6 +27,8 @@ export class PlanCreatorRepository {
         icon: input.icon ?? null,
         is_test: input.is_test ?? false,
         days_trial: input.days_trial ?? null,
+        is_exclusive: input.is_exclusive ?? false,
+        status: input.status ?? EPlanStatus.active,
       })
       .execute();
 

@@ -67,6 +67,8 @@ export class PlanListerRepository {
         icon: plan.icon,
         is_test: plan.is_test,
         days_trial: plan.days_trial,
+        is_exclusive: plan.is_exclusive,
+        status: plan.status,
         created_at: plan.created_at,
       })
       .from(plan)
@@ -89,6 +91,8 @@ export class PlanListerRepository {
       icon: item.icon ?? null,
       is_test: item.is_test,
       days_trial: item.days_trial ?? null,
+      is_exclusive: item.is_exclusive,
+      status: item.status,
       created_at: item.created_at,
     }));
 

@@ -10,6 +10,7 @@ import { EPlanPermissions } from '@core/common/enums/EPermissions/plan';
 import { usePlanStore } from '@/@webcore/stores/plan';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import { ListPlanResponse } from '@core/schema/plan/listPlan/response.schema';
+import { EPlanStatus } from '@core/common/enums/EPlanStatus';
 
 definePage({
   meta: {
@@ -68,6 +69,8 @@ const headers: DataTableHeader<ListPlanResponse>[] = [
   { title: t('name'), key: 'name' },
   { title: t('price'), key: 'price' },
   { title: t('price_old'), key: 'price_old' },
+  { title: t('status'), key: 'status' },
+  { title: t('is_exclusive_plan'), key: 'is_exclusive' },
   { title: t('created_at'), key: 'created_at' },
   { title: t('actions'), key: 'actions', sortable: false },
 ];
@@ -215,6 +218,32 @@ watch(
                   currency: 'BRL',
                 }).format(item.price_old ?? 0)
               }}</s>
+            </template>
+
+            <template #item.status="{ item }">
+              <VChip
+                :color="
+                  item.status === EPlanStatus.active ? 'success' : 'error'
+                "
+                size="small"
+                variant="tonal"
+              >
+                {{
+                  item.status === EPlanStatus.active
+                    ? $t('active')
+                    : $t('inactive')
+                }}
+              </VChip>
+            </template>
+
+            <template #item.is_exclusive="{ item }">
+              <VChip
+                :color="item.is_exclusive ? 'success' : 'default'"
+                size="small"
+                variant="tonal"
+              >
+                {{ item.is_exclusive ? $t('yes') : $t('no') }}
+              </VChip>
             </template>
 
             <template #item.created_at="{ item }">

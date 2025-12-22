@@ -22,6 +22,8 @@ import { ViewAccountInfoResponse } from '@core/schema/account/viewAccountInfo/re
 import { IAccountBasic } from '@core/common/interfaces/IAccountBasic';
 import { ListAccountSubscriptionsResponse } from '@core/schema/account/listAccountSubscriptions/response.schema';
 import { ViewPlanAccountResponse } from '@core/schema/planAccount/viewPlanAccount/response.schema';
+import { ListPlanAccountExclusivesResponse } from '@core/schema/planAccountExclusive/listPlanAccountExclusive/response.schema';
+import { ListExclusivePlansResponseArray } from '@core/schema/planAccountExclusive/listExclusivePlans/response.schema';
 
 export const useAccountStore = defineStore('account', {
   state: () => ({
@@ -70,6 +72,59 @@ export const useAccountStore = defineStore('account', {
         const response = await axios.get<
           IApiResponse<ListAccountFinalResponse>
         >(`/account`, {
+          params: request,
+        });
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('account_list_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return null;
+        }
+
+        this.list = data.data.results;
+        this.pagings = data.data.pagings;
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('account_list_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return null;
+      }
+    },
+
+    async listAllAccountsWithDetails(
+      input?: IListAccounts
+    ): Promise<ListAccountFinalResponse | null> {
+      try {
+        this.loading = true;
+
+        const request: ListAccountRequest | undefined = input
+          ? {
+              current_page: input.page,
+              per_page: input.per_page,
+              sort_by: input.sort_by,
+              name: input.search,
+              plan: input.search,
+            }
+          : undefined;
+
+        const response = await axios.get<
+          IApiResponse<ListAccountFinalResponse>
+        >(`/account/all-with-details`, {
           params: request,
         });
 
@@ -388,6 +443,59 @@ export const useAccountStore = defineStore('account', {
         const response = await axios.get<
           IApiResponse<ListAccountFinalResponse>
         >(`/account/expired`, {
+          params: request,
+        });
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('account_list_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return null;
+        }
+
+        this.list = data.data.results;
+        this.pagings = data.data.pagings;
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('account_list_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return null;
+      }
+    },
+
+    async listAccountDeleted(
+      input?: IListAccounts
+    ): Promise<ListAccountFinalResponse | null> {
+      try {
+        this.loading = true;
+
+        const request: ListAccountRequest | undefined = input
+          ? {
+              current_page: input.page,
+              per_page: input.per_page,
+              sort_by: input.sort_by,
+              name: input.search,
+              plan: input.search,
+            }
+          : undefined;
+
+        const response = await axios.get<
+          IApiResponse<ListAccountFinalResponse>
+        >(`/account/deleted`, {
           params: request,
         });
 
@@ -821,6 +929,178 @@ export const useAccountStore = defineStore('account', {
         this.loading = false;
 
         return null;
+      }
+    },
+
+    async getPlanAccountExclusives(
+      accountId: string
+    ): Promise<ListPlanAccountExclusivesResponse> {
+      try {
+        this.loading = true;
+
+        const response = await axios.get<
+          IApiResponse<ListPlanAccountExclusivesResponse>
+        >(`/account/${accountId}/exclusive-plans`);
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const mensage =
+            data?.message ??
+            this.i18n.global.t('plan_account_exclusive_list_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return [];
+        }
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t(
+          'plan_account_exclusive_list_error'
+        );
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return [];
+      }
+    },
+
+    async getExclusivePlans(
+      accountId: string
+    ): Promise<ListExclusivePlansResponseArray> {
+      try {
+        this.loading = true;
+
+        const response = await axios.get<
+          IApiResponse<ListExclusivePlansResponseArray>
+        >(`/account/${accountId}/exclusive-plans/available`);
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('exclusive_plans_list_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return [];
+        }
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('exclusive_plans_list_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return [];
+      }
+    },
+
+    async createPlanAccountExclusive(input: {
+      account_id: string;
+      plan_id: string;
+    }): Promise<boolean> {
+      try {
+        this.loading = true;
+
+        const response = await axios.post<
+          IApiResponse<{ plan_account_exclusive_id: string }>
+        >(`/account/exclusive-plan`, input);
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          const mensage =
+            data?.message ??
+            this.i18n.global.t('plan_account_exclusive_creation_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return false;
+        }
+
+        this.showSnackbar(
+          this.i18n.global.t('plan_account_exclusive_created_successfully'),
+          EColor.success
+        );
+
+        return true;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t(
+          'plan_account_exclusive_creation_error'
+        );
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return false;
+      }
+    },
+
+    async deletePlanAccountExclusive(
+      planAccountExclusiveId: string
+    ): Promise<boolean> {
+      try {
+        this.loading = true;
+
+        const response = await axios.delete<IApiResponse<null>>(
+          `/account/exclusive-plan/${planAccountExclusiveId}`
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          const mensage =
+            data?.message ??
+            this.i18n.global.t('plan_account_exclusive_delete_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return false;
+        }
+
+        this.showSnackbar(
+          this.i18n.global.t('plan_account_exclusive_deleted_successfully'),
+          EColor.success
+        );
+
+        return true;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t(
+          'plan_account_exclusive_delete_error'
+        );
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return false;
       }
     },
 

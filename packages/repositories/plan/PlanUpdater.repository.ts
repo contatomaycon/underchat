@@ -4,6 +4,7 @@ import { UpdatePlanRequest } from '@core/schema/plan/updatePlan/request.schema';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { eq } from 'drizzle-orm';
+import { EPlanStatus } from '@core/common/enums/EPlanStatus';
 
 @injectable()
 export class PlanUpdaterRepository {
@@ -24,6 +25,8 @@ export class PlanUpdaterRepository {
       icon?: string | null;
       is_test?: boolean;
       days_trial?: number | null;
+      is_exclusive?: boolean;
+      status?: EPlanStatus;
     } = {};
 
     if (input.name !== null && input.name !== undefined) {
@@ -56,6 +59,14 @@ export class PlanUpdaterRepository {
 
     if (input.days_trial !== undefined) {
       updateData.days_trial = input.days_trial;
+    }
+
+    if (input.is_exclusive !== undefined) {
+      updateData.is_exclusive = input.is_exclusive ?? false;
+    }
+
+    if (input.status !== undefined && input.status !== null) {
+      updateData.status = input.status;
     }
 
     const result = await this.db

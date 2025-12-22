@@ -8,7 +8,8 @@ import {
   integer,
 } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
-import { planItems, planAccount } from '@core/models';
+import { planItems, planAccount, planAccountExclusive } from '@core/models';
+import { EPlanStatus } from '@core/common/enums/EPlanStatus';
 
 export const plan = pgTable('plan', {
   plan_id: uuid().primaryKey().notNull(),
@@ -20,6 +21,11 @@ export const plan = pgTable('plan', {
   icon: varchar({ length: 100 }),
   is_test: boolean().notNull().default(false),
   days_trial: integer(),
+  status: varchar({ length: 20 })
+    .notNull()
+    .$type<EPlanStatus>()
+    .default(EPlanStatus.active),
+  is_exclusive: boolean().notNull().default(false),
   created_at: timestamp('created_at', {
     mode: 'string',
     withTimezone: true,
@@ -34,4 +40,5 @@ export const plan = pgTable('plan', {
 export const planRelations = relations(plan, ({ many }) => ({
   ppi: many(planItems),
   pac: many(planAccount),
+  pae: many(planAccountExclusive),
 }));
