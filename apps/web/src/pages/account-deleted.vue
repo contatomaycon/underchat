@@ -28,31 +28,6 @@ definePage({
   },
 });
 
-const permissionsEdit = [
-  EGeneralPermissions.full_access,
-  EGeneralPermissions.full_access_group,
-  EAccountPermissions.account_group,
-  EAccountPermissions.account_update,
-];
-const permissionsDelete = [
-  EGeneralPermissions.full_access,
-  EGeneralPermissions.full_access_group,
-  EAccountPermissions.account_group,
-  EAccountPermissions.account_delete,
-];
-const permissionsCreate = [
-  EGeneralPermissions.full_access,
-  EGeneralPermissions.full_access_group,
-  EAccountPermissions.account_group,
-  EAccountPermissions.account_create,
-];
-const permissionsCustomize = [
-  EGeneralPermissions.full_access,
-  EGeneralPermissions.full_access_group,
-  EAccountPermissions.account_group,
-  EAccountPermissions.account_customize,
-];
-
 const { t } = useI18n();
 const accountStore = useAccountStore();
 const accountSettingsStore = useAccountSettingsStore();
@@ -87,25 +62,6 @@ const resolvePlanVariant = (planName?: string | null) => {
   }
 };
 
-const isDialogDeleterShow = ref(false);
-const accountToDelete = ref<string | null>(null);
-
-const isDialogBlockShow = ref(false);
-const accountToBlock = ref<string | null>(null);
-
-const isDialogUnblockShow = ref(false);
-const accountToUnblock = ref<string | null>(null);
-
-const isDialogEditAccountShow = ref(false);
-const isAddAccountVisible = ref(false);
-const accountToEdit = ref<string | null>(null);
-const accountInfo = ref<string | null>(null);
-const isDialogAccountInfoShow = ref(false);
-const accountSubscriptions = ref<string | null>(null);
-const isDialogAccountSubscriptionsShow = ref(false);
-const accountExclusivePlans = ref<string | null>(null);
-const isDialogAccountExclusivePlansShow = ref(false);
-
 const headers: DataTableHeader<ListAccountResponse>[] = [
   { title: t('name'), key: 'name' },
   { title: t('account_status'), key: 'account_status' },
@@ -114,7 +70,6 @@ const headers: DataTableHeader<ListAccountResponse>[] = [
   { title: t('billing_period'), key: 'billing_period' },
   { title: t('created_at'), key: 'created_at' },
   { title: t('deleted_at'), key: 'deleted_at' },
-  { title: t('actions'), key: 'actions', sortable: false },
 ];
 
 const options = ref({
@@ -146,79 +101,6 @@ const handleTableChange = (o: {
   options.value.sortBy = o.sortBy;
 };
 
-const deleteAccount = async (id: string) => {
-  accountToDelete.value = id;
-
-  isDialogDeleterShow.value = true;
-};
-
-const handleDelete = async () => {
-  if (!accountToDelete.value) return;
-
-  const result = await accountStore.deleteAccount(accountToDelete.value);
-  if (result) {
-    await accountStore.listAccountDeleted(query.value);
-  }
-
-  accountToDelete.value = null;
-};
-
-const blockAccount = (id: string) => {
-  accountToBlock.value = id;
-  isDialogBlockShow.value = true;
-};
-
-const handleBlock = async () => {
-  if (!accountToBlock.value) return;
-
-  const result = await accountStore.blockAccount(accountToBlock.value);
-  if (result) {
-    await accountStore.listAccountDeleted(query.value);
-  }
-
-  accountToBlock.value = null;
-};
-
-const unblockAccount = (id: string) => {
-  accountToUnblock.value = id;
-  isDialogUnblockShow.value = true;
-};
-
-const handleUnblock = async () => {
-  if (!accountToUnblock.value) return;
-
-  const result = await accountStore.unblockAccount(accountToUnblock.value);
-  if (result) {
-    await accountStore.listAccountDeleted(query.value);
-  }
-
-  accountToUnblock.value = null;
-};
-
-const openEditDialog = (id: string) => {
-  accountToEdit.value = id;
-
-  isDialogEditAccountShow.value = true;
-};
-
-const openAddRoleDialog = (id: string) => {
-  accountInfo.value = id;
-
-  isDialogAccountInfoShow.value = true;
-};
-
-const openSubscriptionsDialog = (id: string) => {
-  accountSubscriptions.value = id;
-
-  isDialogAccountSubscriptionsShow.value = true;
-};
-
-const openExclusivePlansDialog = (id: string) => {
-  accountExclusivePlans.value = id;
-
-  isDialogAccountExclusivePlansShow.value = true;
-};
-
 watch(
   query,
   async (q) => {
@@ -244,14 +126,6 @@ watch(
                 "
               />
             </div>
-
-            <VBtn
-              v-if="$canPermission(permissionsCreate)"
-              prepend-icon="tabler-plus"
-              @click="isAddAccountVisible = true"
-            >
-              {{ $t('add') }}
-            </VBtn>
           </div>
           <div class="d-flex align-center flex-wrap gap-4">
             <div class="invoice-list-filter">
@@ -377,72 +251,6 @@ watch(
               }}</span>
             </template>
 
-            <template #item.actions="{ item }">
-              <div class="d-flex gap-1">
-                <IconBtn v-if="$canPermission(permissionsCustomize)"
-                  ><VTooltip
-                    location="top"
-                    transition="scale-transition"
-                    activator="parent"
-                  >
-                    <span>{{ $t('account_info') }}</span> </VTooltip
-                  ><VIcon
-                    icon="tabler-settings"
-                    @click="openAddRoleDialog(item.account_id)"
-                /></IconBtn>
-
-                <IconBtn
-                  ><VTooltip
-                    location="top"
-                    transition="scale-transition"
-                    activator="parent"
-                  >
-                    <span>{{ $t('plan') }}</span> </VTooltip
-                  ><VIcon
-                    icon="tabler-credit-card"
-                    @click="openSubscriptionsDialog(item.account_id)"
-                /></IconBtn>
-
-                <IconBtn
-                  ><VTooltip
-                    location="top"
-                    transition="scale-transition"
-                    activator="parent"
-                  >
-                    <span>{{ $t('exclusive_plans') }}</span> </VTooltip
-                  ><VIcon
-                    icon="tabler-star"
-                    @click="openExclusivePlansDialog(item.account_id)"
-                /></IconBtn>
-
-                <IconBtn
-                  v-if="$canPermission(permissionsEdit) && item?.account_id"
-                  ><VTooltip
-                    location="top"
-                    transition="scale-transition"
-                    activator="parent"
-                  >
-                    <span>{{ $t('edit_account') }}</span> </VTooltip
-                  ><VIcon
-                    icon="tabler-edit"
-                    @click="openEditDialog(item.account_id)"
-                /></IconBtn>
-
-                <IconBtn
-                  v-if="$canPermission(permissionsDelete) && item.account_id"
-                  ><VTooltip
-                    location="top"
-                    transition="scale-transition"
-                    activator="parent"
-                  >
-                    <span>{{ $t('delete_account') }}</span> </VTooltip
-                  ><VIcon
-                    icon="tabler-trash"
-                    @click="deleteAccount(item.account_id)"
-                /></IconBtn>
-              </div>
-            </template>
-
             <template #no-data>
               {{ $t('no_data_available') }}
             </template>
@@ -457,56 +265,6 @@ watch(
           </VDataTableServer>
         </div>
       </VCardText>
-
-      <VDialogHandler
-        v-if="isDialogDeleterShow"
-        v-model="isDialogDeleterShow"
-        :title="$t('delete_account')"
-        :message="$t('delete_account_confirmation')"
-        @confirm="handleDelete"
-      />
-
-      <VDialogHandler
-        v-if="isDialogBlockShow"
-        v-model="isDialogBlockShow"
-        :title="$t('block_account')"
-        :message="$t('block_account_confirmation')"
-        @confirm="handleBlock"
-      />
-
-      <VDialogHandler
-        v-if="isDialogUnblockShow"
-        v-model="isDialogUnblockShow"
-        :title="$t('unblock_account')"
-        :message="$t('unblock_account_confirmation')"
-        @confirm="handleUnblock"
-      />
-
-      <AppEditAccount
-        v-if="isDialogEditAccountShow"
-        v-model="isDialogEditAccountShow"
-        :account-id="accountToEdit"
-      />
-
-      <AppAccountInfo
-        v-if="isDialogAccountInfoShow"
-        v-model="isDialogAccountInfoShow"
-        :account-id="accountInfo"
-      />
-
-      <AppAccountSubscriptions
-        v-if="isDialogAccountSubscriptionsShow"
-        v-model="isDialogAccountSubscriptionsShow"
-        :account-id="accountSubscriptions"
-      />
-
-      <AppAccountExclusivePlans
-        v-if="isDialogAccountExclusivePlansShow"
-        v-model="isDialogAccountExclusivePlansShow"
-        :account-id="accountExclusivePlans"
-      />
-
-      <AppAddAccount v-if="isAddAccountVisible" v-model="isAddAccountVisible" />
     </VCard>
 
     <VSnackbar
