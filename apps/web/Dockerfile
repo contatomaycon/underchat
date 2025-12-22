@@ -11,32 +11,33 @@ RUN corepack enable && \
     corepack prepare pnpm@10.14.0 --activate
 
 ENV CI=true \
-    NODE_ENV=production \
-    CHOKIDAR_USEPOLLING=true \
-    CHOKIDAR_INTERVAL=250 \
-    WATCHPACK_POLLING=true \
-    WATCHPACK_POLLING_INTERVAL=250
+    NODE_ENV=production
 
 COPY package.json yarn.lock* package-lock.json* pnpm-lock.yaml* ./
 COPY pnpm-workspace.yaml turbo.json ./
-COPY apps/web/package.json ./apps/web/
-COPY packages ./packages
-
-RUN ulimit -n 65536 || true && \
-    if [ -f yarn.lock ]; then yarn --frozen-lockfile; \
-    elif [ -f package-lock.json ]; then npm ci; \
-    elif [ -f pnpm-lock.yaml ]; then pnpm i --frozen-lockfile; \
-    else echo "Lockfile not found." && exit 1; \
-    fi
-
 COPY . .
 
-RUN ulimit -n 65536 || true && \
-    if [ -f yarn.lock ]; then yarn build --filter=web; \
-    elif [ -f package-lock.json ]; then npm run build --workspace=apps/web; \
-    elif [ -f pnpm-lock.yaml ]; then pnpm --filter web build; \
-    else yarn build --filter=web; \
-    fi && \
+RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
+    ulimit -n 65536 || true && \
+    has_yarn=false && has_npm=false && has_pnpm=false && \
+    [ -f yarn.lock ] && has_yarn=true || true && \
+    [ -f package-lock.json ] && has_npm=true || true && \
+    [ -f pnpm-lock.yaml ] && has_pnpm=true || true && \
+    if $has_yarn; then yarn --frozen-lockfile; fi && \
+    if $has_npm && ! $has_yarn; then npm ci; fi && \
+    if $has_pnpm && ! $has_yarn && ! $has_npm; then pnpm i --frozen-lockfile; fi && \
+    if ! $has_yarn && ! $has_npm && ! $has_pnpm; then echo "Lockfile not found." && exit 1; fi
+
+RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
+    ulimit -n 65536 || true && \
+    has_yarn=false && has_npm=false && has_pnpm=false && \
+    [ -f yarn.lock ] && has_yarn=true || true && \
+    [ -f package-lock.json ] && has_npm=true || true && \
+    [ -f pnpm-lock.yaml ] && has_pnpm=true || true && \
+    if $has_yarn; then yarn build --filter=web; fi && \
+    if $has_npm && ! $has_yarn; then npm run build --workspace=apps/web; fi && \
+    if $has_pnpm && ! $has_yarn && ! $has_npm; then pnpm --filter web build; fi && \
+    if ! $has_yarn && ! $has_npm && ! $has_pnpm; then echo "Lockfile not found." && exit 1; fi && \
     rm -rf node_modules packages apps/*/node_modules
 
 FROM nginx:stable-alpine
