@@ -55,8 +55,8 @@ COPY --from=pruned /app/out/full/ .
 ARG VITE_BACKEND_URL
 ENV VITE_BACKEND_URL=${VITE_BACKEND_URL} \
     CI=true \
-    CHOKIDAR_USEPOLLING=true \
-    CHOKIDAR_INTERVAL=100
+    CHOKIDAR_USEPOLLING=1 \
+    CHOKIDAR_INTERVAL=200
 
 RUN ulimit -n 1048576 || true && \
     cd apps/web && \
@@ -70,27 +70,62 @@ FROM nginx:1.27-alpine AS runner
 
 WORKDIR /usr/share/nginx/html
 
-RUN rm -rf ./*
+RUN rm -rf ./* && \
+    rm -rf /docker-entrypoint.d/* && \
+    cat > /etc/nginx/nginx.conf <<'NGINX'
+worker_processes auto;
+error_log /dev/stderr warn;
+pid /tmp/nginx.pid;
 
-COPY --from=builder /app/apps/web/dist .
+events { worker_connections 1024; }
 
-RUN echo 'server {' > /etc/nginx/conf.d/default.conf && \
-    echo '    listen 8080;' >> /etc/nginx/conf.d/default.conf && \
-    echo '    server_name _;' >> /etc/nginx/conf.d/default.conf && \
-    echo '    root /usr/share/nginx/html;' >> /etc/nginx/conf.d/default.conf && \
-    echo '    index index.html;' >> /etc/nginx/conf.d/default.conf && \
-    echo '    gzip on;' >> /etc/nginx/conf.d/default.conf && \
-    echo '    gzip_vary on;' >> /etc/nginx/conf.d/default.conf && \
-    echo '    gzip_min_length 1024;' >> /etc/nginx/conf.d/default.conf && \
-    echo '    gzip_types text/plain text/css text/xml text/javascript application/x-javascript application/xml+rss application/javascript application/json;' >> /etc/nginx/conf.d/default.conf && \
-    echo '    location / {' >> /etc/nginx/conf.d/default.conf && \
-    echo '        try_files $uri $uri/ /index.html;' >> /etc/nginx/conf.d/default.conf && \
-    echo '    }' >> /etc/nginx/conf.d/default.conf && \
-    echo '    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {' >> /etc/nginx/conf.d/default.conf && \
-    echo '        expires 1y;' >> /etc/nginx/conf.d/default.conf && \
-    echo '        add_header Cache-Control "public, immutable";' >> /etc/nginx/conf.d/default.conf && \
-    echo '    }' >> /etc/nginx/conf.d/default.conf && \
-    echo '}' >> /etc/nginx/conf.d/default.conf
+http {
+  include /etc/nginx/mime.types;
+  default_type application/octet-stream;
+
+  access_log /dev/stdout;
+
+  sendfile on;
+  keepalive_timeout 65;
+
+  client_body_temp_path /tmp/client_temp;
+  proxy_temp_path /tmp/proxy_temp;
+  fastcgi_temp_path /tmp/fastcgi_temp;
+  uwsgi_temp_path /tmp/uwsgi_temp;
+  scgi_temp_path /tmp/scgi_temp;
+
+  gzip on;
+  gzip_vary on;
+  gzip_min_length 1024;
+  gzip_types text/plain text/css text/xml text/javascript application/x-javascript application/xml+rss application/javascript application/json;
+
+  include /etc/nginx/conf.d/*.conf;
+}
+NGINX
+
+RUN cat > /etc/nginx/conf.d/default.conf <<'CONF'
+server {
+  listen 8080;
+  server_name _;
+  root /usr/share/nginx/html;
+  index index.html;
+
+  location / {
+    try_files $uri $uri/ /index.html;
+  }
+
+  location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+    expires 1y;
+    add_header Cache-Control "public, immutable";
+  }
+}
+CONF
+
+COPY --from=builder /app/apps/web/dist/ .
+
+RUN chown -R 101:101 /usr/share/nginx/html /etc/nginx
+
+USER 101
 
 EXPOSE 8080
 
