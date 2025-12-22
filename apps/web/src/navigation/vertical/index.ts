@@ -170,6 +170,20 @@ export default [
     icon: { icon: 'tabler-user' },
     children: [
       {
+        title: 'all',
+        to: { name: 'account-all' as keyof RouteNamedMap },
+        icon: { icon: 'tabler-users' },
+        permissions: [
+          EGeneralPermissions.full_access,
+          EGeneralPermissions.full_access_group,
+          EAccountPermissions.account_group,
+          EAccountPermissions.account_view,
+          EAccountPermissions.account_create,
+          EAccountPermissions.account_update,
+          EAccountPermissions.account_delete,
+        ],
+      },
+      {
         title: 'subscribers',
         to: { name: 'account-subscribers' as keyof RouteNamedMap },
         icon: { icon: 'tabler-user-check' },

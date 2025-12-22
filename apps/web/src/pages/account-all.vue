@@ -13,6 +13,7 @@ import { EAccountStatus } from '@core/common/enums/EAccountStatus';
 import { ListAccountResponse } from '@core/schema/account/listAccount/response.schema';
 import { EColor } from '@core/common/enums/EColor';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
+import AppAccountExclusivePlans from '@/components/account/AppAccountExclusivePlans.vue';
 
 definePage({
   meta: {
@@ -97,6 +98,7 @@ const isDialogUnblockShow = ref(false);
 const accountToUnblock = ref<string | null>(null);
 
 const isDialogEditAccountShow = ref(false);
+const isAddAccountVisible = ref(false);
 const accountToEdit = ref<string | null>(null);
 const accountInfo = ref<string | null>(null);
 const isDialogAccountInfoShow = ref(false);
@@ -155,7 +157,7 @@ const handleDelete = async () => {
 
   const result = await accountStore.deleteAccount(accountToDelete.value);
   if (result) {
-    await accountStore.listAccountExpired(query.value);
+    await accountStore.listAllAccountsWithDetails(query.value);
   }
 
   accountToDelete.value = null;
@@ -171,7 +173,7 @@ const handleBlock = async () => {
 
   const result = await accountStore.blockAccount(accountToBlock.value);
   if (result) {
-    await accountStore.listAccountExpired(query.value);
+    await accountStore.listAllAccountsWithDetails(query.value);
   }
 
   accountToBlock.value = null;
@@ -187,7 +189,7 @@ const handleUnblock = async () => {
 
   const result = await accountStore.unblockAccount(accountToUnblock.value);
   if (result) {
-    await accountStore.listAccountExpired(query.value);
+    await accountStore.listAllAccountsWithDetails(query.value);
   }
 
   accountToUnblock.value = null;
@@ -220,7 +222,7 @@ const openExclusivePlansDialog = (id: string) => {
 watch(
   query,
   async (q) => {
-    await accountStore.listAccountExpired(q);
+    await accountStore.listAllAccountsWithDetails(q);
   },
   { immediate: true, deep: true }
 );
@@ -228,7 +230,7 @@ watch(
 
 <template>
   <div>
-    <VCard :title="$t('expired')" no-padding>
+    <VCard :title="$t('all')" no-padding>
       <VCardText>
         <div class="d-flex justify-space-between flex-wrap gap-4">
           <div class="d-flex gap-4 align-center mt-5">
@@ -242,6 +244,14 @@ watch(
                 "
               />
             </div>
+
+            <VBtn
+              v-if="$canPermission(permissionsCreate)"
+              prepend-icon="tabler-plus"
+              @click="isAddAccountVisible = true"
+            >
+              {{ $t('add') }}
+            </VBtn>
           </div>
           <div class="d-flex align-center flex-wrap gap-4">
             <div class="invoice-list-filter">
@@ -525,6 +535,8 @@ watch(
         v-model="isDialogAccountExclusivePlansShow"
         :account-id="accountExclusivePlans"
       />
+
+      <AppAddAccount v-if="isAddAccountVisible" v-model="isAddAccountVisible" />
     </VCard>
 
     <VSnackbar

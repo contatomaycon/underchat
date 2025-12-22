@@ -50,6 +50,7 @@ import { ListAccountExpiredResponse } from '@core/schema/account/listAccountExpi
 import { AccountDeletedListerRepository } from '@core/repositories/account/AccountDeletedLister.repository';
 import { ListAccountDeletedRequest } from '@core/schema/account/listAccountDeleted/request.schema';
 import { ListAccountDeletedResponse } from '@core/schema/account/listAccountDeleted/response.schema';
+import { AccountAllListerWithDetailsRepository } from '@core/repositories/account/AccountAllListerWithDetails.repository';
 import { PlanAccountExclusiveListerRepository } from '@core/repositories/planAccountExclusive/PlanAccountExclusiveLister.repository';
 import { ListPlanAccountExclusivesResponse } from '@core/schema/planAccountExclusive/listPlanAccountExclusive/response.schema';
 import { PlanAccountExclusiveCreatorRepository } from '@core/repositories/planAccountExclusive/PlanAccountExclusiveCreator.repository';
@@ -86,6 +87,7 @@ export class AccountService {
     private readonly accountTestsListerRepository: AccountTestsListerRepository,
     private readonly accountExpiredListerRepository: AccountExpiredListerRepository,
     private readonly accountDeletedListerRepository: AccountDeletedListerRepository,
+    private readonly accountAllListerWithDetailsRepository: AccountAllListerWithDetailsRepository,
     private readonly planAccountExclusiveListerRepository: PlanAccountExclusiveListerRepository,
     private readonly planAccountExclusiveCreatorRepository: PlanAccountExclusiveCreatorRepository,
     private readonly planAccountExclusiveDeleterRepository: PlanAccountExclusiveDeleterRepository,
@@ -398,6 +400,23 @@ export class AccountService {
         query
       ),
       this.accountDeletedListerRepository.listAccountsTotal(query),
+    ]);
+
+    return [result, total];
+  };
+
+  listAllAccountsWithDetails = async (
+    perPage: number,
+    currentPage: number,
+    query: ListAccountRequest
+  ): Promise<[ListAccountResponse[], number]> => {
+    const [result, total] = await Promise.all([
+      this.accountAllListerWithDetailsRepository.listAccounts(
+        perPage,
+        currentPage,
+        query
+      ),
+      this.accountAllListerWithDetailsRepository.listAccountsTotal(query),
     ]);
 
     return [result, total];

@@ -22,6 +22,7 @@ import { listPlanAccountExclusive } from './methods/listPlanAccountExclusive';
 import { createPlanAccountExclusive } from './methods/createPlanAccountExclusive';
 import { deletePlanAccountExclusive } from './methods/deletePlanAccountExclusive';
 import { listExclusivePlans } from './methods/listExclusivePlans';
+import { listAllAccountsWithDetails } from './methods/listAllAccountsWithDetails';
 import { blockAccount } from './methods/blockAccount';
 import { unblockAccount } from './methods/unblockAccount';
 
@@ -50,6 +51,7 @@ class AccountController {
   public createPlanAccountExclusive = createPlanAccountExclusive;
   public deletePlanAccountExclusive = deletePlanAccountExclusive;
   public listExclusivePlans = listExclusivePlans;
+  public listAllAccountsWithDetails = listAllAccountsWithDetails;
   public blockAccount = blockAccount;
   public unblockAccount = unblockAccount;
 }

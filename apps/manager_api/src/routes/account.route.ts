@@ -45,6 +45,15 @@ export default async function accountRoutes(server: FastifyInstance) {
     ],
   });
 
+  server.get('/account/all-with-details', {
+    schema: listAccountSchema,
+    handler: accountController.listAllAccountsWithDetails,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, accountViewPermissions),
+    ],
+  });
+
   server.get('/account', {
     schema: listAccountSchema,
     handler: accountController.listAccount,

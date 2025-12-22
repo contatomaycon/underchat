@@ -97,7 +97,6 @@ const isDialogUnblockShow = ref(false);
 const accountToUnblock = ref<string | null>(null);
 
 const isDialogEditAccountShow = ref(false);
-const isAddAccountVisible = ref(false);
 const accountToEdit = ref<string | null>(null);
 const accountInfo = ref<string | null>(null);
 const isDialogAccountInfoShow = ref(false);
@@ -243,14 +242,6 @@ watch(
                 "
               />
             </div>
-
-            <VBtn
-              v-if="$canPermission(permissionsCreate)"
-              prepend-icon="tabler-plus"
-              @click="isAddAccountVisible = true"
-            >
-              {{ $t('add') }}
-            </VBtn>
           </div>
           <div class="d-flex align-center flex-wrap gap-4">
             <div class="invoice-list-filter">
@@ -534,8 +525,6 @@ watch(
         v-model="isDialogAccountExclusivePlansShow"
         :account-id="accountExclusivePlans"
       />
-
-      <AppAddAccount v-if="isAddAccountVisible" v-model="isAddAccountVisible" />
     </VCard>
 
     <VSnackbar
