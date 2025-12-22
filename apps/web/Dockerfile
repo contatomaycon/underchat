@@ -1,7 +1,6 @@
 FROM node:22.18.0-bookworm-slim AS builder
 
 WORKDIR /app
-
 SHELL ["/bin/bash", "-lc"]
 
 RUN corepack enable && \
@@ -43,9 +42,10 @@ RUN mkdir -p /tmp/nginx/client_temp \
   chmod -R 777 /tmp/nginx && \
   chmod 777 /tmp
 
+COPY apps/web/nginx-main.conf /etc/nginx/nginx.conf
 COPY apps/web/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=builder /app/apps/web/dist /usr/share/nginx/html
 
 EXPOSE 8080
 
-CMD ["nginx", "-g", "daemon off; pid /tmp/nginx.pid;"]
+CMD ["nginx", "-g", "daemon off;"]
