@@ -47,6 +47,9 @@ import { ListAccountBlockedResponse } from '@core/schema/account/listAccountBloc
 import { AccountExpiredListerRepository } from '@core/repositories/account/AccountExpiredLister.repository';
 import { ListAccountExpiredRequest } from '@core/schema/account/listAccountExpired/request.schema';
 import { ListAccountExpiredResponse } from '@core/schema/account/listAccountExpired/response.schema';
+import { AccountDeletedListerRepository } from '@core/repositories/account/AccountDeletedLister.repository';
+import { ListAccountDeletedRequest } from '@core/schema/account/listAccountDeleted/request.schema';
+import { ListAccountDeletedResponse } from '@core/schema/account/listAccountDeleted/response.schema';
 import Redis from 'ioredis';
 
 @injectable()
@@ -75,6 +78,7 @@ export class AccountService {
     private readonly accountBlockedListerRepository: AccountBlockedListerRepository,
     private readonly accountTestsListerRepository: AccountTestsListerRepository,
     private readonly accountExpiredListerRepository: AccountExpiredListerRepository,
+    private readonly accountDeletedListerRepository: AccountDeletedListerRepository,
     @inject('Redis') private readonly redis: Redis
   ) {}
 
@@ -366,6 +370,23 @@ export class AccountService {
         query
       ),
       this.accountExpiredListerRepository.listAccountsTotal(query),
+    ]);
+
+    return [result, total];
+  };
+
+  listAccountDeleted = async (
+    perPage: number,
+    currentPage: number,
+    query: ListAccountDeletedRequest
+  ): Promise<[ListAccountDeletedResponse[], number]> => {
+    const [result, total] = await Promise.all([
+      this.accountDeletedListerRepository.listAccounts(
+        perPage,
+        currentPage,
+        query
+      ),
+      this.accountDeletedListerRepository.listAccountsTotal(query),
     ]);
 
     return [result, total];

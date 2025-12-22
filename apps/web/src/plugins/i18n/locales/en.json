@@ -517,6 +517,8 @@
     "blocked": "Blocked",
     "expired": "Expired",
     "tests": "Tests",
+    "deleted": "Deleted",
+    "deleted_at": "Deleted At",
     "account_status": "Status",
     "plan": "Plan",
     "edit_account": "Edit Account",

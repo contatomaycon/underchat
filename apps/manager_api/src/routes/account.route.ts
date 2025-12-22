@@ -25,6 +25,7 @@ import { listAccountCancelledSchema } from '@core/schema/account/listAccountCanc
 import { listAccountBlockedSchema } from '@core/schema/account/listAccountBlocked';
 import { listAccountTestsSchema } from '@core/schema/account/listAccountTests';
 import { listAccountExpiredSchema } from '@core/schema/account/listAccountExpired';
+import { listAccountDeletedSchema } from '@core/schema/account/listAccountDeleted';
 import { blockAccountSchema } from '@core/schema/account/blockAccount';
 import { unblockAccountSchema } from '@core/schema/account/unblockAccount';
 
@@ -187,6 +188,15 @@ export default async function accountRoutes(server: FastifyInstance) {
   server.get('/account/expired', {
     schema: listAccountExpiredSchema,
     handler: accountController.listAccountExpired,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, accountViewPermissions),
+    ],
+  });
+
+  server.get('/account/deleted', {
+    schema: listAccountDeletedSchema,
+    handler: accountController.listAccountDeleted,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, accountViewPermissions),

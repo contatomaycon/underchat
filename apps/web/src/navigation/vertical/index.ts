@@ -253,6 +253,20 @@ export default [
           EAccountPermissions.account_delete,
         ],
       },
+      {
+        title: 'deleted',
+        to: { name: 'account-deleted' as keyof RouteNamedMap },
+        icon: { icon: 'tabler-user-minus' },
+        permissions: [
+          EGeneralPermissions.full_access,
+          EGeneralPermissions.full_access_group,
+          EAccountPermissions.account_group,
+          EAccountPermissions.account_view,
+          EAccountPermissions.account_create,
+          EAccountPermissions.account_update,
+          EAccountPermissions.account_delete,
+        ],
+      },
     ],
   },
   {

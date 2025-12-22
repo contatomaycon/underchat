@@ -518,6 +518,8 @@
     "blocked": "Bloqueados",
     "expired": "Vencidos",
     "tests": "Pruebas",
+    "deleted": "Eliminados",
+    "deleted_at": "Fecha de Eliminación",
     "account_status": "Estado",
     "plan": "Plan",
     "edit_account": "Editar Cuenta",
