@@ -4,6 +4,7 @@ import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { eq } from 'drizzle-orm';
 import { currentTime } from '@core/common/functions/currentTime';
+import { EAccountStatus } from '@core/common/enums/EAccountStatus';
 
 @injectable()
 export class AccountDeleterRepository {
@@ -18,6 +19,8 @@ export class AccountDeleterRepository {
       .update(account)
       .set({
         deleted_at: date,
+        account_status_id: EAccountStatus.inactive,
+        updated_at: date,
       })
       .where(eq(account.account_id, accountId))
       .execute();

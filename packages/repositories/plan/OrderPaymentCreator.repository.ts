@@ -4,6 +4,7 @@ import {
   planCrossSell,
   accountPayment,
   accountPaymentCrossSell,
+  planAccountExclusive,
 } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
@@ -12,6 +13,7 @@ import { CreateOrderPaymentRequest } from '@core/schema/plan/createOrderPayment/
 import { UpgradeDiscountCalculatorRepository } from './UpgradeDiscountCalculator.repository';
 import { randomUUID } from 'node:crypto';
 import { EBillingPeriod } from '@core/common/enums/EBillingPeriod';
+import { EPlanStatus } from '@core/common/enums/EPlanStatus';
 
 @injectable()
 export class OrderPaymentCreatorRepository {
@@ -33,6 +35,20 @@ export class OrderPaymentCreatorRepository {
     const newPlan = await this.getPlan(input.plan_id);
     if (!newPlan) {
       throw new Error('Plano não encontrado');
+    }
+
+    if (newPlan.status !== EPlanStatus.active) {
+      throw new Error('Plano não está disponível');
+    }
+
+    if (newPlan.is_exclusive) {
+      const hasExclusiveAccess = await this.checkExclusivePlanAccess(
+        accountId,
+        input.plan_id
+      );
+      if (!hasExclusiveAccess) {
+        throw new Error('Plano exclusivo não disponível para esta conta');
+      }
     }
 
     const planPrice = this.calculatePlanPrice(
@@ -188,6 +204,8 @@ export class OrderPaymentCreatorRepository {
         annual_discount: true,
         is_test: true,
         days_trial: true,
+        status: true,
+        is_exclusive: true,
       },
     });
   };
@@ -249,5 +267,26 @@ export class OrderPaymentCreatorRepository {
     };
 
     return billingPeriodMap[billingPeriod] || null;
+  };
+
+  private readonly checkExclusivePlanAccess = async (
+    accountId: string,
+    planId: string
+  ): Promise<boolean> => {
+    const result = await this.db
+      .select({
+        plan_account_exclusive_id:
+          planAccountExclusive.plan_account_exclusive_id,
+      })
+      .from(planAccountExclusive)
+      .where(
+        and(
+          eq(planAccountExclusive.account_id, accountId),
+          eq(planAccountExclusive.plan_id, planId)
+        )
+      )
+      .execute();
+
+    return result.length > 0;
   };
 }

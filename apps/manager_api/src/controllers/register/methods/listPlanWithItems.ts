@@ -14,7 +14,7 @@ export const listPlanWithItems = async (
   const { t } = request;
 
   try {
-    const response = await planWithItemsListerUseCase.execute();
+    const response = await planWithItemsListerUseCase.execute(null);
 
     if (response) {
       return sendResponse(reply, {

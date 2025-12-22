@@ -13,6 +13,7 @@ import { EAccountStatus } from '@core/common/enums/EAccountStatus';
 import { ListAccountResponse } from '@core/schema/account/listAccount/response.schema';
 import { EColor } from '@core/common/enums/EColor';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
+import AppAccountExclusivePlans from '@/components/account/AppAccountExclusivePlans.vue';
 
 definePage({
   meta: {
@@ -97,12 +98,13 @@ const isDialogUnblockShow = ref(false);
 const accountToUnblock = ref<string | null>(null);
 
 const isDialogEditAccountShow = ref(false);
-const isAddAccountVisible = ref(false);
 const accountToEdit = ref<string | null>(null);
 const accountInfo = ref<string | null>(null);
 const isDialogAccountInfoShow = ref(false);
 const accountSubscriptions = ref<string | null>(null);
 const isDialogAccountSubscriptionsShow = ref(false);
+const accountExclusivePlans = ref<string | null>(null);
+const isDialogAccountExclusivePlansShow = ref(false);
 
 const headers: DataTableHeader<ListAccountResponse>[] = [
   { title: t('name'), key: 'name' },
@@ -210,6 +212,12 @@ const openSubscriptionsDialog = (id: string) => {
   isDialogAccountSubscriptionsShow.value = true;
 };
 
+const openExclusivePlansDialog = (id: string) => {
+  accountExclusivePlans.value = id;
+
+  isDialogAccountExclusivePlansShow.value = true;
+};
+
 watch(
   query,
   async (q) => {
@@ -235,14 +243,6 @@ watch(
                 "
               />
             </div>
-
-            <VBtn
-              v-if="$canPermission(permissionsCreate)"
-              prepend-icon="tabler-plus"
-              @click="isAddAccountVisible = true"
-            >
-              {{ $t('add') }}
-            </VBtn>
           </div>
           <div class="d-flex align-center flex-wrap gap-4">
             <div class="invoice-list-filter">
@@ -389,6 +389,18 @@ watch(
                 /></IconBtn>
 
                 <IconBtn
+                  ><VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>{{ $t('exclusive_plans') }}</span> </VTooltip
+                  ><VIcon
+                    icon="tabler-star"
+                    @click="openExclusivePlansDialog(item.account_id)"
+                /></IconBtn>
+
+                <IconBtn
                   v-if="$canPermission(permissionsEdit) && item?.account_id"
                   ><VTooltip
                     location="top"
@@ -509,7 +521,11 @@ watch(
         :account-id="accountSubscriptions"
       />
 
-      <AppAddAccount v-if="isAddAccountVisible" v-model="isAddAccountVisible" />
+      <AppAccountExclusivePlans
+        v-if="isDialogAccountExclusivePlansShow"
+        v-model="isDialogAccountExclusivePlansShow"
+        :account-id="accountExclusivePlans"
+      />
     </VCard>
 
     <VSnackbar

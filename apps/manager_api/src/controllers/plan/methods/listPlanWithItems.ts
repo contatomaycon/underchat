@@ -11,10 +11,12 @@ export const listPlanWithItems = async (
   const planWithItemsListerUseCase = container.resolve(
     PlanWithItemsListerUseCase
   );
-  const { t } = request;
+  const { t, tokenJwtData } = request;
 
   try {
-    const response = await planWithItemsListerUseCase.execute();
+    const response = await planWithItemsListerUseCase.execute(
+      tokenJwtData?.account_id || null
+    );
 
     if (response) {
       return sendResponse(reply, {

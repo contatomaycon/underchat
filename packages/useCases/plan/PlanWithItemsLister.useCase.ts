@@ -6,7 +6,9 @@ import { ListPlanWithItemsResponse } from '@core/schema/plan/listPlanWithItems/r
 export class PlanWithItemsListerUseCase {
   constructor(private readonly planService: PlanService) {}
 
-  async execute(): Promise<ListPlanWithItemsResponse[]> {
-    return this.planService.listPlanWithItems();
+  async execute(
+    accountId: string | null
+  ): Promise<ListPlanWithItemsResponse[]> {
+    return this.planService.listPlanWithItems(accountId);
   }
 }
