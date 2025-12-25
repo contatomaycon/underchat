@@ -25,7 +25,7 @@ export class KafkaService {
         { timeout: 5000 },
         (err: LibrdKafkaError | null, data: ITopicMetadata) => {
           if (err) {
-            reject(err);
+            reject(err instanceof Error ? err : new Error(String(err)));
             return;
           }
           resolve(data);
@@ -56,7 +56,7 @@ export class KafkaService {
               return;
             }
 
-            reject(err);
+            reject(err instanceof Error ? err : new Error(String(err)));
             return;
           }
           resolve();
@@ -123,7 +123,7 @@ export class KafkaService {
               return;
             }
 
-            reject(err);
+            reject(err instanceof Error ? err : new Error(String(err)));
             return;
           }
           resolve();

@@ -15,22 +15,18 @@ async function getMetadata(
   admin: AdminClient,
   timeout = 5000
 ): Promise<ITopicMetadata | null> {
-  try {
-    return new Promise<ITopicMetadata>((resolve, reject) => {
-      (admin as any).getMetadata(
-        { timeout },
-        (err: LibrdKafkaError | null, data: ITopicMetadata) => {
-          if (err) {
-            reject(err);
-            return;
-          }
-          resolve(data);
+  return new Promise<ITopicMetadata>((resolve, reject) => {
+    (admin as any).getMetadata(
+      { timeout },
+      (err: LibrdKafkaError | null, data: ITopicMetadata) => {
+        if (err) {
+          reject(err instanceof Error ? err : new Error(String(err)));
+          return;
         }
-      );
-    });
-  } catch {
-    return null;
-  }
+        resolve(data);
+      }
+    );
+  }).catch(() => null);
 }
 
 function topicExists(
@@ -90,7 +86,7 @@ async function createTopic(
             return;
           }
 
-          reject(err);
+          reject(err instanceof Error ? err : new Error(String(err)));
           return;
         }
         resolve();

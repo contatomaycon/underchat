@@ -134,7 +134,7 @@ export class PhoneValidationConsume {
       }
       consumer.connect({}, (err) => {
         if (err) {
-          reject(err);
+          reject(err instanceof Error ? err : new Error(String(err)));
           return;
         }
         consumer.consume();

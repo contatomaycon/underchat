@@ -26,7 +26,7 @@ export class StreamProducerService {
       await new Promise<void>((resolve, reject) => {
         producer.connect({}, (err) => {
           if (err) {
-            reject(err);
+            reject(err instanceof Error ? err : new Error(String(err)));
             return;
           }
           resolve();
@@ -84,7 +84,7 @@ export class StreamProducerService {
         Date.now(),
         (err: LibrdKafkaError | null) => {
           if (err) {
-            reject(err);
+            reject(err instanceof Error ? err : new Error(String(err)));
             return;
           }
           resolve();

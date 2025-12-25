@@ -42,8 +42,11 @@ COPY --from=pruned /app/out/json/ .
 
 ENV npm_config_build_from_source=true \
     npm_config_loglevel=verbose
-RUN pnpm install --unsafe-perm && \
-    pnpm rebuild node-rdkafka
+RUN pnpm install --unsafe-perm
+RUN RDKAFKA_PATH=$(find node_modules/.pnpm/node-rdkafka@* -type d -name "node-rdkafka" -path "*/node_modules/node-rdkafka" | head -1) && \
+    if [ -n "$RDKAFKA_PATH" ] && [ ! -f "$RDKAFKA_PATH/build/Release/node-librdkafka.node" ]; then \
+      cd "$RDKAFKA_PATH" && npm run install; \
+    fi
 
 FROM deps AS builder
 
