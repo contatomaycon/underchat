@@ -33,7 +33,8 @@ COPY . .
 ENV npm_config_build_from_source=true \
     npm_config_loglevel=verbose
 
-RUN pnpm install --unsafe-perm
+RUN pnpm install --unsafe-perm && \
+    pnpm rebuild node-rdkafka
 
 COPY infra/atlas/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
