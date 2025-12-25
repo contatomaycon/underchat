@@ -26,7 +26,4 @@ ENV npm_config_build_from_source=true \
 
 RUN pnpm install --unsafe-perm
 
-COPY infra/atlas/entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
-
 WORKDIR /app
