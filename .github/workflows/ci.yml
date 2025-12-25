@@ -109,13 +109,13 @@ jobs:
         with:
           projectBaseDir: .
           args: >
-            -D"sonar.projectKey=${{ env.SONAR_BACKEND_PROJECT_KEY }}"
-            -D"sonar.exclusions=**/node_modules/**,**/*.spec.ts,**/**/Dockerfile"
-            -D"sonar.coverage.exclusions=**"
-            -D"sonar.cpd.exclusions=**"
-            -D"sonar.branch.name=${{ github.head_ref }}"
-            -D"sonar.scanner.force-deprecated-java-version=true"
-            ${{ steps.changed_files.outputs.sonar_inclusions != '' && format('-D"sonar.inclusions={0}"', steps.changed_files.outputs.sonar_inclusions) || '-D"sonar.inclusions="' }}
+            -Dsonar.projectKey=${{ env.SONAR_BACKEND_PROJECT_KEY }}
+            -Dsonar.exclusions=**/node_modules/**,**/*.spec.ts,**/**/Dockerfile
+            -Dsonar.coverage.exclusions=**
+            -Dsonar.cpd.exclusions=**
+            -Dsonar.branch.name=${{ github.head_ref }}
+            -Dsonar.scanner.force-deprecated-java-version=true
+            ${{ steps.changed_files.outputs.sonar_inclusions != '' && format('-Dsonar.inclusions={0}', steps.changed_files.outputs.sonar_inclusions) || '' }}
 
       - name: Wait for analysis processing
         run: |
