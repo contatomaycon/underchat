@@ -113,7 +113,6 @@ jobs:
             -Dsonar.exclusions=**/node_modules/**,**/*.spec.ts,**/**/Dockerfile
             -Dsonar.coverage.exclusions=**
             -Dsonar.cpd.exclusions=**
-            -Dsonar.branch.name=${{ github.head_ref }}
             -Dsonar.scanner.force-deprecated-java-version=true
             ${{ steps.changed_files.outputs.sonar_inclusions != '' && format('-Dsonar.inclusions={0}', steps.changed_files.outputs.sonar_inclusions) || '' }}
 
@@ -122,8 +121,8 @@ jobs:
           echo "⏳ Waiting ${TIME_AWAIT}s for SonarQube to process the analysis..."
           sleep ${{ env.TIME_AWAIT }}
 
-      - name: Verify Branch Analysis and Get Correct URL
-        id: verify_branch
+      - name: Verify Analysis and Get Correct URL
+        id: verify_analysis
         run: |
           set -e
           ENCODED_TOKEN=$(echo -n '${{ env.SHARED_USER_TOKEN }}:' | base64)
@@ -132,43 +131,40 @@ jobs:
           PROJECT_KEY="${{ env.SONAR_BACKEND_PROJECT_KEY }}"
           SONAR_URL="${{ env.SONAR_HOST_URL }}"
 
-          echo "🔍 Verifying if branch analysis exists..."
+          echo "🔍 Verifying if project analysis exists..."
 
           MAX_ATTEMPTS=12
           ATTEMPT=0
-          BRANCH_AVAILABLE=false
+          ANALYSIS_AVAILABLE=false
 
-          if [[ -n "$BRANCH_NAME" ]]; then
-            while [[ $ATTEMPT -lt $MAX_ATTEMPTS ]]; do
-              ATTEMPT=$((ATTEMPT + 1))
-              
-              BRANCH_API_URL="${SONAR_URL}api/qualitygates/project_status?projectKey=${PROJECT_KEY}&branch=${BRANCH_NAME}"
-              response=$(wget --header="Authorization: Basic $ENCODED_TOKEN" -q -O - "$BRANCH_API_URL" 2>&1 || echo '')
-              
-              if echo "$response" | jq -e '.projectStatus' > /dev/null 2>&1; then
-                echo "✅ Branch analysis found!"
-                ANALYSIS_URL="${SONAR_URL}dashboard?id=${PROJECT_KEY}&branch=${BRANCH_NAME}"
-                echo "analysis_url=$ANALYSIS_URL" >> $GITHUB_OUTPUT
-                echo "branch_available=true" >> $GITHUB_OUTPUT
-                BRANCH_AVAILABLE=true
-                break
-              fi
-              
-              if [[ $ATTEMPT -lt $MAX_ATTEMPTS ]]; then
-                echo "⏳ Attempt $ATTEMPT/$MAX_ATTEMPTS - Branch analysis not yet available, waiting 5s..."
-                sleep 5
-              fi
-            done
-          fi
+          while [[ $ATTEMPT -lt $MAX_ATTEMPTS ]]; do
+            ATTEMPT=$((ATTEMPT + 1))
+            
+            API_URL="${SONAR_URL}api/qualitygates/project_status?projectKey=${PROJECT_KEY}"
+            response=$(wget --header="Authorization: Basic $ENCODED_TOKEN" -q -O - "$API_URL" 2>&1 || echo '')
+            
+            if echo "$response" | jq -e '.projectStatus' > /dev/null 2>&1; then
+              echo "✅ Project analysis found!"
+              ANALYSIS_URL="${SONAR_URL}dashboard?id=${PROJECT_KEY}"
+              echo "analysis_url=$ANALYSIS_URL" >> $GITHUB_OUTPUT
+              ANALYSIS_AVAILABLE=true
+              break
+            fi
+            
+            if [[ $ATTEMPT -lt $MAX_ATTEMPTS ]]; then
+              echo "⏳ Attempt $ATTEMPT/$MAX_ATTEMPTS - Analysis not yet available, waiting 5s..."
+              sleep 5
+            fi
+          done
 
-          if [[ "$BRANCH_AVAILABLE" != "true" ]]; then
-            echo "⚠️  Branch analysis not found. Using project dashboard."
+          if [[ "$ANALYSIS_AVAILABLE" != "true" ]]; then
+            echo "⚠️  Analysis not found. Using project dashboard."
             ANALYSIS_URL="${SONAR_URL}dashboard?id=${PROJECT_KEY}"
             echo "analysis_url=$ANALYSIS_URL" >> $GITHUB_OUTPUT
-            echo "branch_available=false" >> $GITHUB_OUTPUT
           fi
 
           echo "📊 Analysis URL: $ANALYSIS_URL"
+          echo "ℹ️  Note: SonarQube Community Edition does not support branch analysis"
 
       - name: Check Quality Gate
         id: quality_gate
@@ -180,16 +176,10 @@ jobs:
           BASE_BRANCH="${{ github.base_ref }}"
           PROJECT_KEY="${{ env.SONAR_BACKEND_PROJECT_KEY }}"
           SONAR_URL="${{ env.SONAR_HOST_URL }}"
-          ANALYSIS_URL="${{ steps.verify_branch.outputs.analysis_url }}"
-          BRANCH_AVAILABLE="${{ steps.verify_branch.outputs.branch_available }}"
+          ANALYSIS_URL="${{ steps.verify_analysis.outputs.analysis_url }}"
 
-          if [[ "$BRANCH_AVAILABLE" == "true" ]] && [[ -n "$BRANCH_NAME" ]]; then
-            echo "🌿 Using branch analysis: $BRANCH_NAME"
-            API_URL="${SONAR_URL}api/qualitygates/project_status?projectKey=${PROJECT_KEY}&branch=${BRANCH_NAME}"
-          else
-            echo "📊 Using project analysis"
-            API_URL="${SONAR_URL}api/qualitygates/project_status?projectKey=${PROJECT_KEY}"
-          fi
+          echo "📊 Using project analysis (Community Edition)"
+          API_URL="${SONAR_URL}api/qualitygates/project_status?projectKey=${PROJECT_KEY}"
 
           echo "🔍 Checking Quality Gate..."
           echo "API URL: $API_URL"
@@ -258,14 +248,10 @@ jobs:
           BRANCH_NAME="${{ github.head_ref }}"
           PROJECT_KEY="${{ env.SONAR_BACKEND_PROJECT_KEY }}"
           SONAR_URL="${{ env.SONAR_HOST_URL }}"
-          ANALYSIS_URL="${{ steps.verify_branch.outputs.analysis_url }}"
-          BRANCH_AVAILABLE="${{ steps.verify_branch.outputs.branch_available }}"
+          ANALYSIS_URL="${{ steps.verify_analysis.outputs.analysis_url }}"
 
-          if [[ "$BRANCH_AVAILABLE" == "true" ]] && [[ -n "$BRANCH_NAME" ]]; then
-            API_URL="${SONAR_URL}api/measures/component?component=${PROJECT_KEY}&branch=${BRANCH_NAME}&metricKeys=sqale_index"
-          else
-            API_URL="${SONAR_URL}api/measures/component?component=${PROJECT_KEY}&metricKeys=sqale_index"
-          fi
+          echo "📊 Using project analysis (Community Edition)"
+          API_URL="${SONAR_URL}api/measures/component?component=${PROJECT_KEY}&metricKeys=sqale_index"
 
           echo "🔍 Checking Technical Debt..."
           response=$(wget --header="Authorization: Basic $ENCODED_TOKEN" -q -O - "$API_URL" 2>&1 || echo '{"component":{"measures":[]}}')
@@ -279,11 +265,7 @@ jobs:
             echo "❌ Technical debt is not zero, it's $debt_value minutes. Failing the build."
             echo "📊 View full analysis report: $ANALYSIS_URL"
             
-            if [[ "$BRANCH_AVAILABLE" == "true" ]] && [[ -n "$BRANCH_NAME" ]]; then
-              ISSUES_URL="${SONAR_URL}api/issues/search?componentKeys=${PROJECT_KEY}&branch=${BRANCH_NAME}"
-            else
-              ISSUES_URL="${SONAR_URL}api/issues/search?componentKeys=${PROJECT_KEY}"
-            fi
+            ISSUES_URL="${SONAR_URL}api/issues/search?componentKeys=${PROJECT_KEY}"
             
             issues_response=$(wget --header="Authorization: Basic $ENCODED_TOKEN" -q -O - "$ISSUES_URL" 2>&1 || echo '{"issues":[]}')
             echo "Issues details:"
@@ -303,16 +285,11 @@ jobs:
           BRANCH_NAME="${{ github.head_ref }}"
           PROJECT_KEY="${{ env.SONAR_BACKEND_PROJECT_KEY }}"
           SONAR_URL="${{ env.SONAR_HOST_URL }}"
-          ANALYSIS_URL="${{ steps.verify_branch.outputs.analysis_url }}"
-          BRANCH_AVAILABLE="${{ steps.verify_branch.outputs.branch_available }}"
+          ANALYSIS_URL="${{ steps.verify_analysis.outputs.analysis_url }}"
 
-          if [[ "$BRANCH_AVAILABLE" == "true" ]] && [[ -n "$BRANCH_NAME" ]]; then
-            API_URL="${SONAR_URL}api/measures/component?component=${PROJECT_KEY}&branch=${BRANCH_NAME}&metricKeys=security_hotspots_reviewed"
-            HOTSPOTS_URL="${SONAR_URL}api/hotspots/search?projectKey=${PROJECT_KEY}&branch=${BRANCH_NAME}&statuses=TO_REVIEW"
-          else
-            API_URL="${SONAR_URL}api/measures/component?component=${PROJECT_KEY}&metricKeys=security_hotspots_reviewed"
-            HOTSPOTS_URL="${SONAR_URL}api/hotspots/search?projectKey=${PROJECT_KEY}&statuses=TO_REVIEW"
-          fi
+          echo "📊 Using project analysis (Community Edition)"
+          API_URL="${SONAR_URL}api/measures/component?component=${PROJECT_KEY}&metricKeys=security_hotspots_reviewed"
+          HOTSPOTS_URL="${SONAR_URL}api/hotspots/search?projectKey=${PROJECT_KEY}&statuses=TO_REVIEW"
 
           echo "🔍 Checking Security Hotspots..."
           response=$(wget --header="Authorization: Basic $ENCODED_TOKEN" -q -O - "$API_URL" 2>&1 || echo '{"component":{"measures":[]}}')
@@ -342,8 +319,7 @@ jobs:
           PR_NUMBER="${{ github.event.pull_request.number }}"
           BRANCH_NAME="${{ github.head_ref }}"
           BASE_BRANCH="${{ github.base_ref }}"
-          ANALYSIS_URL="${{ steps.verify_branch.outputs.analysis_url }}"
-          BRANCH_AVAILABLE="${{ steps.verify_branch.outputs.branch_available }}"
+          ANALYSIS_URL="${{ steps.verify_analysis.outputs.analysis_url }}"
 
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo "📊 SonarQube Analysis Report"
@@ -354,8 +330,6 @@ jobs:
           fi
           if [[ -n "$BRANCH_NAME" ]] && [[ -n "$BASE_BRANCH" ]]; then
             echo "🌿 Branch: $BRANCH_NAME → $BASE_BRANCH"
-            if [[ "$BRANCH_AVAILABLE" == "true" ]]; then
-              echo "ℹ️  Using branch analysis (SonarQube Community Edition)"
-            fi
           fi
+          echo "ℹ️  Using project analysis (SonarQube Community Edition)"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
