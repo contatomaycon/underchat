@@ -9,7 +9,7 @@ env:
   SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
   SONAR_TOKEN_BACKEND: ${{ vars.SONAR_TOKEN_BACKEND }}
   SONAR_BACKEND_PROJECT_KEY: ${{ vars.SONAR_BACKEND_PROJECT_KEY }}
-  TIME_AWAIT: 30s
+  TIME_AWAIT: 30
   VERSION_NODE: 22.18.0
   VERSION_JAVA: 17
 
@@ -84,9 +84,7 @@ jobs:
             -D"sonar.cpd.exclusions=**"
 
       - name: Wait for analysis completion
-        uses: jakejarvis/wait-action@master
-        with:
-          time: ${{ env.TIME_AWAIT }}
+        run: sleep ${{ env.TIME_AWAIT }}
 
       - name: Check Quality Gate
         run: |
