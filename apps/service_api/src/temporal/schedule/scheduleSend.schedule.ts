@@ -15,7 +15,16 @@ export const scheduleSendSchedule = async (fastify: FastifyInstance) => {
     `temporal-schedule-${scheduleId}`,
     async () => {
       const handleSchedule = clientTemporal.schedule.getHandle(scheduleId);
-      const statusSchedule = await getHandleSchedule(handleSchedule);
+      let statusSchedule: boolean;
+      try {
+        statusSchedule = await getHandleSchedule(handleSchedule);
+      } catch (err) {
+        fastify.log.error(
+          err,
+          `Error describing schedule "${scheduleId}", skipping creation`
+        );
+        return;
+      }
 
       if (!statusSchedule) {
         try {

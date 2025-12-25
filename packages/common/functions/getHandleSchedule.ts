@@ -1,6 +1,13 @@
 import { ScheduleHandle, ScheduleNotFoundError } from '@temporalio/client';
 import { delay } from './delay';
 
+export class ScheduleDescribeFailedError extends Error {
+  constructor(message: string, public readonly cause: unknown) {
+    super(message);
+    this.name = 'ScheduleDescribeFailedError';
+  }
+}
+
 function isDeadlineExceededError(err: unknown): boolean {
   if (err && typeof err === 'object' && 'cause' in err) {
     const cause = err.cause;
@@ -16,12 +23,16 @@ export async function getHandleSchedule(
   handleWorkflow: ScheduleHandle,
   maxRetries = 3
 ): Promise<boolean> {
+  let lastError: unknown;
+
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
       await handleWorkflow.describe();
 
       return true;
     } catch (err) {
+      lastError = err;
+
       if (err instanceof ScheduleNotFoundError) {
         return false;
       }
@@ -34,13 +45,12 @@ export async function getHandleSchedule(
         continue;
       }
 
-      if (attempt === maxRetries - 1) {
-        console.error('Error getting schedule handle after retries:', err);
-      }
-
-      return false;
+      break;
     }
   }
 
-  return false;
+  throw new ScheduleDescribeFailedError(
+    'Error getting schedule handle after retries',
+    lastError
+  );
 }
