@@ -100,26 +100,6 @@ jobs:
             echo "sonar_inclusions=$INCLUSIONS" >> $GITHUB_OUTPUT
           fi
 
-      - name: Prepare SonarQube Args
-        id: sonar_args
-        run: |
-          SONAR_ARGS="-D\"sonar.projectKey=${{ env.SONAR_BACKEND_PROJECT_KEY }}\""
-          SONAR_ARGS="$SONAR_ARGS -D\"sonar.exclusions=**/node_modules/**,**/*.spec.ts,**/**/Dockerfile\""
-          SONAR_ARGS="$SONAR_ARGS -D\"sonar.coverage.exclusions=**\""
-          SONAR_ARGS="$SONAR_ARGS -D\"sonar.cpd.exclusions=**\""
-          SONAR_ARGS="$SONAR_ARGS -D\"sonar.branch.name=${{ github.head_ref }}\""
-          SONAR_ARGS="$SONAR_ARGS -D\"sonar.scanner.force-deprecated-java-version=true\""
-
-          INCLUSIONS="${{ steps.changed_files.outputs.sonar_inclusions }}"
-          if [[ -n "$INCLUSIONS" ]]; then
-            SONAR_ARGS="$SONAR_ARGS -D\"sonar.inclusions=$INCLUSIONS\""
-            echo "📝 Analyzing only changed files: $INCLUSIONS"
-          else
-            echo "📝 Analyzing all files"
-          fi
-
-          echo "sonar_args=$SONAR_ARGS" >> $GITHUB_OUTPUT
-
       - name: SonarQube Scan
         id: sonar_scan
         uses: SonarSource/sonarqube-scan-action@master
@@ -128,7 +108,14 @@ jobs:
           SONAR_HOST_URL: ${{ env.SONAR_HOST_URL }}
         with:
           projectBaseDir: .
-          args: ${{ steps.sonar_args.outputs.sonar_args }}
+          args: >
+            -D"sonar.projectKey=${{ env.SONAR_BACKEND_PROJECT_KEY }}"
+            -D"sonar.exclusions=**/node_modules/**,**/*.spec.ts,**/**/Dockerfile"
+            -D"sonar.coverage.exclusions=**"
+            -D"sonar.cpd.exclusions=**"
+            -D"sonar.branch.name=${{ github.head_ref }}"
+            -D"sonar.scanner.force-deprecated-java-version=true"
+            ${{ steps.changed_files.outputs.sonar_inclusions != '' && format('-D"sonar.inclusions={0}"', steps.changed_files.outputs.sonar_inclusions) || '-D"sonar.inclusions="' }}
 
       - name: Wait for analysis processing
         run: |
