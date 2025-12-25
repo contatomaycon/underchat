@@ -4,6 +4,10 @@ import {
   PutObjectCommand,
   DeleteObjectCommand,
   S3Client,
+  HeadBucketCommand,
+  CreateBucketCommand,
+  PutBucketPolicyCommand,
+  DeletePublicAccessBlockCommand,
 } from '@aws-sdk/client-s3';
 import { UploadFileResponse } from '@core/schema/upload/response.schema';
 import { UploadFileRequest } from '@core/schema/upload/request.schema';
@@ -31,6 +35,57 @@ export class StorageService {
       endpoint: s3Environment.s3Endpoint,
       forcePathStyle: true,
     });
+  }
+
+  private async ensurePublicBucket(accountId: string): Promise<void> {
+    try {
+      await this.client.send(new HeadBucketCommand({ Bucket: accountId }));
+    } catch (error: any) {
+      if (
+        error.name === 'NotFound' ||
+        error.$metadata?.httpStatusCode === 404
+      ) {
+        await this.client.send(
+          new CreateBucketCommand({
+            Bucket: accountId,
+          })
+        );
+      } else {
+        throw error;
+      }
+    }
+
+    try {
+      await this.client.send(
+        new DeletePublicAccessBlockCommand({
+          Bucket: accountId,
+        })
+      );
+    } catch (error: any) {
+      if (error.name !== 'NoSuchPublicAccessBlockConfiguration') {
+        throw error;
+      }
+    }
+
+    const publicReadPolicy = {
+      Version: '2012-10-17',
+      Statement: [
+        {
+          Sid: 'PublicReadGetObject',
+          Effect: 'Allow',
+          Principal: '*',
+          Action: 's3:GetObject',
+          Resource: `arn:aws:s3:::${accountId}/*`,
+        },
+      ],
+    };
+
+    await this.client.send(
+      new PutBucketPolicyCommand({
+        Bucket: accountId,
+        Policy: JSON.stringify(publicReadPolicy),
+      })
+    );
   }
 
   private converterFilename(filename: string): string {
@@ -90,9 +145,8 @@ export class StorageService {
       throw new Error('IMAGE_SIZE_LIMIT_EXCEEDED');
     }
 
-    // Gerar nome do arquivo usando UUID v7, mantendo a extensão original
     const generatedFilename = `${uuidv7()}.${extension}`;
-    const path = `${accountId}/${generatedFilename}`;
+    const path = `${generatedFilename}`;
 
     let width: number | null = null;
     let height: number | null = null;
@@ -112,8 +166,10 @@ export class StorageService {
       height = null;
     }
 
+    await this.ensurePublicBucket(accountId);
+
     const command = new PutObjectCommand({
-      Bucket: s3Environment.s3BucketName,
+      Bucket: accountId,
       Key: path,
       Body: buffer,
       ContentType: mimetype ?? file.mimetype,
@@ -122,7 +178,7 @@ export class StorageService {
     await this.client.send(command);
 
     return {
-      url: this.createUrl(path),
+      url: this.createUrl(path, accountId),
       name: generatedFilename,
       extension,
       size: buffer.byteLength,
@@ -149,12 +205,14 @@ export class StorageService {
     const normalizedName = initialExtension
       ? file.filename
       : `${file.filename}.${extension}`;
-    const key = `${accountId}/${this.converterFilename(normalizedName)}`;
+    const key = `${this.converterFilename(normalizedName)}`;
     const mimetype = file.mimetype ?? 'application/octet-stream';
+
+    await this.ensurePublicBucket(accountId);
 
     await this.client.send(
       new PutObjectCommand({
-        Bucket: s3Environment.s3BucketName,
+        Bucket: accountId,
         Key: key,
         Body: buffer,
         ContentType: mimetype,
@@ -162,7 +220,7 @@ export class StorageService {
     );
 
     return {
-      url: this.createUrl(key),
+      url: this.createUrl(key, accountId),
       name: normalizedName,
       extension,
       size: buffer.byteLength,
@@ -210,12 +268,14 @@ export class StorageService {
     const normalizedName = initialExtension
       ? file.filename
       : `${file.filename}.${extension}`;
-    const key = `${accountId}/${this.converterFilename(normalizedName)}`;
+    const key = `${this.converterFilename(normalizedName)}`;
     const mimetype = file.mimetype ?? 'video/mp4';
+
+    await this.ensurePublicBucket(accountId);
 
     await this.client.send(
       new PutObjectCommand({
-        Bucket: s3Environment.s3BucketName,
+        Bucket: accountId,
         Key: key,
         Body: buffer,
         ContentType: mimetype,
@@ -223,7 +283,7 @@ export class StorageService {
     );
 
     return {
-      url: this.createUrl(key),
+      url: this.createUrl(key, accountId),
       name: normalizedName,
       extension,
       size: buffer.byteLength,
@@ -250,11 +310,13 @@ export class StorageService {
     const normalizedName = filename.endsWith(`.${extension}`)
       ? filename
       : `${filename}.${extension}`;
-    const key = `${accountId}/${this.converterFilename(normalizedName)}`;
+    const key = `${this.converterFilename(normalizedName)}`;
+
+    await this.ensurePublicBucket(accountId);
 
     await this.client.send(
       new PutObjectCommand({
-        Bucket: s3Environment.s3BucketName,
+        Bucket: accountId,
         Key: key,
         Body: buffer,
         ContentType: mimetype,
@@ -262,7 +324,7 @@ export class StorageService {
     );
 
     return {
-      url: this.createUrl(key),
+      url: this.createUrl(key, accountId),
       name: normalizedName,
       extension,
       size: buffer.byteLength,
@@ -289,12 +351,14 @@ export class StorageService {
     const normalizedName = initialExtension
       ? file.filename
       : `${file.filename}.${extension}`;
-    const key = `${accountId}/${this.converterFilename(normalizedName)}`;
+    const key = `${this.converterFilename(normalizedName)}`;
     const mimetype = file.mimetype ?? 'audio/ogg; codecs=opus';
+
+    await this.ensurePublicBucket(accountId);
 
     await this.client.send(
       new PutObjectCommand({
-        Bucket: s3Environment.s3BucketName,
+        Bucket: accountId,
         Key: key,
         Body: buffer,
         ContentType: mimetype,
@@ -302,7 +366,7 @@ export class StorageService {
     );
 
     return {
-      url: this.createUrl(key),
+      url: this.createUrl(key, accountId),
       name: normalizedName,
       extension,
       size: buffer.byteLength,
@@ -327,11 +391,13 @@ export class StorageService {
     const normalizedName = filename.endsWith(`.${extension}`)
       ? filename
       : `${filename}.${extension}`;
-    const key = `${accountId}/${this.converterFilename(normalizedName)}`;
+    const key = `${this.converterFilename(normalizedName)}`;
+
+    await this.ensurePublicBucket(accountId);
 
     await this.client.send(
       new PutObjectCommand({
-        Bucket: s3Environment.s3BucketName,
+        Bucket: accountId,
         Key: key,
         Body: buffer,
         ContentType: mimetype,
@@ -339,7 +405,7 @@ export class StorageService {
     );
 
     return {
-      url: this.createUrl(key),
+      url: this.createUrl(key, accountId),
       name: normalizedName,
       extension,
       size: buffer.byteLength,
@@ -402,7 +468,7 @@ export class StorageService {
     const baseName = this.getFileExtension(guessedName)
       ? guessedName
       : `${guessedName}.${finalExt}`;
-    const key = `${accountId}/${this.converterFilename(baseName)}`;
+    const key = `${this.converterFilename(baseName)}`;
     const mimeToStore = sniffedMime ?? contentTypeHeader;
 
     let width: number | null = null;
@@ -424,9 +490,11 @@ export class StorageService {
       }
     }
 
+    await this.ensurePublicBucket(accountId);
+
     await this.client.send(
       new PutObjectCommand({
-        Bucket: s3Environment.s3BucketName,
+        Bucket: accountId,
         Key: key,
         Body: buffer,
         ContentType: mimeToStore,
@@ -434,7 +502,7 @@ export class StorageService {
     );
 
     return {
-      url: this.createUrl(key),
+      url: this.createUrl(key, accountId),
       name: baseName,
       extension: finalExt,
       size: buffer.byteLength,
@@ -466,11 +534,13 @@ export class StorageService {
       ext,
       accountId
     );
-    const key = `${accountId}/${this.converterFilename(baseName)}`;
+    const key = `${this.converterFilename(baseName)}`;
+
+    await this.ensurePublicBucket(accountId);
 
     await this.client.send(
       new PutObjectCommand({
-        Bucket: s3Environment.s3BucketName,
+        Bucket: accountId,
         Key: key,
         Body: buffer,
         ContentType: mime,
@@ -478,7 +548,7 @@ export class StorageService {
     );
 
     return {
-      url: this.createUrl(key),
+      url: this.createUrl(key, accountId),
       name: baseName,
       extension: ext,
       size: buffer.byteLength,
@@ -513,23 +583,46 @@ export class StorageService {
     return (mimeToExt(clean) as string) ?? null;
   }
 
-  public createUrl = (path: string) =>
-    `${s3Environment.s3Endpoint}/${s3Environment.s3BucketName}/${path}`;
+  public createUrl = (path: string, accountId: string) =>
+    `${s3Environment.s3Endpoint}/${accountId}/${path}`;
+
+  public async uploadPdf(
+    buffer: Buffer | Uint8Array,
+    accountId: string,
+    key: string
+  ): Promise<string> {
+    const pdfBuffer = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
+
+    await this.ensurePublicBucket(accountId);
+
+    await this.client.send(
+      new PutObjectCommand({
+        Bucket: accountId,
+        Key: key,
+        Body: pdfBuffer,
+        ContentType: 'application/pdf',
+      })
+    );
+
+    return this.createUrl(key, accountId);
+  }
 
   public deleteImage = async (url: string): Promise<boolean> => {
     try {
       const urlObj = new URL(url);
-      const pathParts = urlObj.pathname.split('/');
-      const bucketIndex = pathParts.indexOf(s3Environment.s3BucketName);
+      const pathParts = urlObj.pathname
+        .split('/')
+        .filter((part) => part !== '');
 
-      if (bucketIndex === -1 || bucketIndex === pathParts.length - 1) {
+      if (pathParts.length < 2) {
         return false;
       }
 
-      const key = pathParts.slice(bucketIndex + 1).join('/');
+      const accountId = pathParts[0];
+      const key = pathParts.slice(1).join('/');
 
       const command = new DeleteObjectCommand({
-        Bucket: s3Environment.s3BucketName,
+        Bucket: accountId,
         Key: key,
       });
 
