@@ -3,7 +3,7 @@ import { delay } from './delay';
 
 function isDeadlineExceededError(err: unknown): boolean {
   if (err && typeof err === 'object' && 'cause' in err) {
-    const cause = err.cause as unknown;
+    const cause = err.cause;
     if (cause && typeof cause === 'object' && 'code' in cause) {
       return cause.code === 4;
     }
