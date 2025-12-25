@@ -83,10 +83,10 @@ jobs:
             -D"sonar.coverage.exclusions=**"
             -D"sonar.cpd.exclusions=**"
 
-      - name: Wait for ${{ env.TIME_AWAIT }}
+      - name: Wait for analysis completion
         uses: jakejarvis/wait-action@master
         with:
-          time: '${{ env.TIME_AWAIT }}'
+          time: ${{ env.TIME_AWAIT }}
 
       - name: Check Quality Gate
         run: |
