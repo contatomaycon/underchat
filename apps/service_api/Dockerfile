@@ -12,6 +12,9 @@ RUN apt-get update && \
       pkg-config \
       libssl-dev \
       libsasl2-dev \
+      librdkafka-dev \
+      zlib1g-dev \
+      libzstd-dev \
       zstd \
       curl \
       ca-certificates && \
@@ -66,6 +69,7 @@ COPY --from=builder /build_locales ./packages/plugins/i18next/locales
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
       ffmpeg \
+      librdkafka1 \
       curl && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*

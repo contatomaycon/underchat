@@ -6,6 +6,15 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends \
       bash \
       git \
+      g++ \
+      make \
+      python3 \
+      pkg-config \
+      libssl-dev \
+      libsasl2-dev \
+      librdkafka-dev \
+      zlib1g-dev \
+      libzstd-dev \
       curl \
       ca-certificates && \
     apt-get clean && \

@@ -12,6 +12,9 @@ RUN apt-get update && \
       pkg-config \
       libssl-dev \
       libsasl2-dev \
+      librdkafka-dev \
+      zlib1g-dev \
+      libzstd-dev \
       zstd \
       curl \
       ca-certificates && \
@@ -64,6 +67,13 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/apps/balance_api/package*.json ./apps/balance_api
 COPY --from=builder /build_locales ./packages/plugins/i18next/locales
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      librdkafka1 \
+      curl && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
 EXPOSE 3003
 

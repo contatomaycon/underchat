@@ -3,7 +3,53 @@ import fp from 'fastify-plugin';
 import { ERouteModule } from '@core/common/enums/ERouteModule';
 import { container } from 'tsyringe';
 import { kafkaEnvironment } from '@core/config/environments';
-import { Kafka } from 'kafkajs';
+import { KafkaConsumer, Producer } from 'node-rdkafka';
+
+export interface KafkaClient {
+  createConsumer: (groupId: string) => KafkaConsumer;
+  createProducer: () => Producer;
+  getBroker: () => string;
+}
+
+class KafkaStreamsClient implements KafkaClient {
+  private readonly broker: string;
+  private readonly clientId: string;
+
+  constructor(broker: string, clientId: string) {
+    this.broker = broker;
+    this.clientId = clientId;
+  }
+
+  getBroker(): string {
+    return this.broker;
+  }
+
+  createConsumer(groupId: string): KafkaConsumer {
+    return new KafkaConsumer(
+      {
+        'group.id': groupId,
+        'metadata.broker.list': this.broker,
+        'enable.auto.commit': false,
+        'session.timeout.ms': 60000,
+        'heartbeat.interval.ms': 10000,
+      },
+      {}
+    );
+  }
+
+  createProducer(): Producer {
+    return new Producer(
+      {
+        'metadata.broker.list': this.broker,
+        'client.id': this.clientId,
+        'retry.backoff.ms': 300,
+        'message.send.max.retries': 8,
+        dr_cb: true,
+      },
+      {}
+    );
+  }
+}
 
 interface KafkaPluginOptions {
   module: ERouteModule;
@@ -15,13 +61,12 @@ const kafkaPlugin: FastifyPluginAsync<KafkaPluginOptions> = async (
 ) => {
   const module = opts.module;
 
-  const kafka = new Kafka({
-    clientId: `client-${module}`,
-    brokers: [kafkaEnvironment.kafkaBroker],
-    retry: { initialRetryTime: 300, retries: 8 },
-  });
+  const kafka = new KafkaStreamsClient(
+    kafkaEnvironment.kafkaBroker,
+    `client-${module}`
+  );
 
-  container.register<Kafka>('Kafka', { useValue: kafka });
+  container.register('Kafka', { useValue: kafka });
 
   fastify.decorate('kafka', kafka);
 };

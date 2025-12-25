@@ -1,5 +1,6 @@
 import { singleton, inject } from 'tsyringe';
-import { Kafka, Consumer } from 'kafkajs';
+import { KafkaConsumer } from 'node-rdkafka';
+import { KafkaClient } from '@core/plugins/kafkaStreams';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { IUpdateMessage } from '@core/common/interfaces/IUpdateMessage';
 import { IChat } from '@core/common/interfaces/IChat';
@@ -15,17 +16,18 @@ import { WAMessageKey } from '@whiskeysockets/baileys';
 
 @singleton()
 export class MessageUpdateConsume {
-  private consumer: Consumer | null = null;
+  private consumer: KafkaConsumer | null = null;
+  private isRunning = false;
   private processingChain: Promise<void> = Promise.resolve();
 
   constructor(
     @inject('Redis') private readonly redis: Redis,
-    @inject('Kafka') private readonly kafka: Kafka,
+    @inject('Kafka') private readonly kafka: KafkaClient,
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
     private readonly elasticDatabaseService: ElasticDatabaseService
   ) {}
 
-  private get consumerOrThrow(): Consumer {
+  private get consumerOrThrow(): KafkaConsumer {
     if (!this.consumer) {
       throw new Error('Consumer not initialized');
     }
@@ -112,7 +114,7 @@ export class MessageUpdateConsume {
   }
 
   public async execute(): Promise<void> {
-    if (this.consumer) return;
+    if (this.consumer && this.isRunning) return;
 
     this.consumer = createConsumer(
       this.kafka,
@@ -122,37 +124,57 @@ export class MessageUpdateConsume {
     const topic = this.kafkaServiceQueueService.updateMessage();
 
     await ensureKafkaTopic(this.kafka, topic);
-    await this.consumer.connect();
-    await this.consumer.subscribe({ topic, fromBeginning: true });
 
-    await this.consumer.run({
-      autoCommit: false,
-      partitionsConsumedConcurrently: 1,
-      eachMessage: async ({ topic, partition, message, heartbeat }) => {
-        const data = this.parseMessage(message.value);
+    this.consumer.on('data', async (message) => {
+      const data = this.parseMessage(message.value);
 
-        if (!data) {
-          await this.commitNext(topic, partition, message.offset);
+      if (!data) {
+        await this.commitNext(topic, message.partition, message.offset);
+        return;
+      }
 
-          return;
+      const offset = message.offset;
+
+      this.processingChain = this.processingChain.then(async () => {
+        const heartbeat = async () => {
+          this.consumer?.commit();
+        };
+
+        const stop = startHeartbeat(heartbeat);
+
+        try {
+          await this.handleMessage(data);
+        } catch {
+          await this.commitNext(topic, message.partition, message.offset);
+        } finally {
+          stop();
         }
 
-        const offset = message.offset;
+        await this.commitNext(topic, message.partition, offset);
+      });
+    });
 
-        this.processingChain = this.processingChain.then(async () => {
-          const stop = startHeartbeat(heartbeat);
+    this.consumer.on('event.error', (err) => {
+      console.error('Consumer error:', err);
+    });
 
-          try {
-            await this.handleMessage(data);
-          } catch {
-            await this.commitNext(topic, partition, message.offset);
-          } finally {
-            stop();
-          }
+    this.consumer.subscribe([topic]);
 
-          await this.commitNext(topic, partition, offset);
-        });
-      },
+    await new Promise<void>((resolve, reject) => {
+      const consumer = this.consumer;
+      if (!consumer) {
+        reject(new Error('Consumer not initialized'));
+        return;
+      }
+      consumer.connect({}, (err) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+        consumer.consume();
+        this.isRunning = true;
+        resolve();
+      });
     });
   }
 
@@ -164,9 +186,17 @@ export class MessageUpdateConsume {
     }
 
     try {
-      await this.consumer.stop();
+      this.isRunning = false;
+      await new Promise<void>((resolve) => {
+        const consumer = this.consumer;
+        if (!consumer) {
+          resolve();
+          return;
+        }
+        consumer.unsubscribe();
+        consumer.disconnect(resolve);
+      });
     } finally {
-      await this.consumer.disconnect();
       this.consumer = null;
     }
   }
@@ -174,12 +204,14 @@ export class MessageUpdateConsume {
   private async commitNext(
     topic: string,
     partition: number,
-    offset: string
+    offset: number
   ): Promise<void> {
-    const next = (BigInt(offset) + 1n).toString();
-
-    await this.consumerOrThrow.commitOffsets([
-      { topic, partition, offset: next },
+    this.consumerOrThrow.commitSync([
+      {
+        topic,
+        partition,
+        offset: offset + 1,
+      },
     ]);
   }
 }

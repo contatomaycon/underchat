@@ -1,21 +1,37 @@
 import { injectable, inject } from 'tsyringe';
-import { Kafka, Producer, Partitioners } from 'kafkajs';
+import { Producer, LibrdKafkaError } from 'node-rdkafka';
+import { KafkaClient } from '@core/plugins/kafkaStreams';
 
 @injectable()
 export class StreamProducerService {
   private producer: Producer | null = null;
+  private static readonly MAX_RETRIES = 3;
+  private static readonly INITIAL_BACKOFF_MS = 100;
 
-  constructor(@inject('Kafka') private readonly kafka: Kafka) {}
+  constructor(@inject('Kafka') private readonly kafka: KafkaClient) {}
 
   private async ensureProducer(): Promise<Producer> {
     if (!this.producer) {
-      this.producer = this.kafka.producer({
-        retry: { retries: 8, initialRetryTime: 300 },
-        allowAutoTopicCreation: true,
-        createPartitioner: Partitioners.LegacyPartitioner,
+      this.producer = this.kafka.createProducer();
+
+      this.producer.on('event.error', (err: LibrdKafkaError) => {
+        console.error('Kafka producer error:', err);
       });
 
-      await this.producer.connect();
+      const producer = this.producer;
+      if (!producer) {
+        throw new Error('Producer not initialized');
+      }
+
+      await new Promise<void>((resolve, reject) => {
+        producer.connect({}, (err) => {
+          if (err) {
+            reject(err);
+            return;
+          }
+          resolve();
+        });
+      });
     }
 
     return this.producer;
@@ -24,7 +40,12 @@ export class StreamProducerService {
   private async reconnectProducer(): Promise<Producer> {
     if (this.producer) {
       try {
-        await this.producer.disconnect();
+        const producer = this.producer;
+        if (producer) {
+          await new Promise<void>((resolve) => {
+            producer.disconnect(resolve);
+          });
+        }
       } catch {}
       this.producer = null;
     }
@@ -32,43 +53,92 @@ export class StreamProducerService {
     return this.ensureProducer();
   }
 
-  async send(topic: string, payload: unknown, key?: string): Promise<void> {
-    const value = JSON.stringify(payload);
-    const messages = key === undefined ? [{ value }] : [{ key, value }];
-
-    const maxRetries = 3;
-    let lastError: any;
-
-    for (let attempt = 0; attempt < maxRetries; attempt++) {
-      try {
-        let producer = await this.ensureProducer();
-        await producer.send({ topic, messages });
-        return;
-      } catch (error: any) {
-        lastError = error;
-
-        const isDisconnectedError =
-          error?.message?.includes('disconnected') ||
-          error?.code === 'ECONNREFUSED' ||
-          error?.message?.includes('The producer is disconnected') ||
-          error?.type === 'NOT_CONNECTED' ||
-          error?.message?.includes('write after end');
-
-        if (isDisconnectedError && attempt < maxRetries - 1) {
-          await this.reconnectProducer();
-          await new Promise((resolve) =>
-            setTimeout(resolve, 100 * (attempt + 1))
-          );
-          continue;
-        }
-
-        if (!isDisconnectedError) {
-          throw error;
-        }
-      }
+  private isDisconnectedError(error: unknown): boolean {
+    if (!error || typeof error !== 'object') {
+      return false;
     }
 
-    throw lastError;
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorCode = 'code' in error ? error.code : null;
+
+    return (
+      errorMessage.includes('disconnected') ||
+      errorCode === 'ECONNREFUSED' ||
+      errorMessage.includes('NOT_CONNECTED') ||
+      errorMessage.includes('write after end')
+    );
+  }
+
+  private async produceMessage(
+    producer: Producer,
+    topic: string,
+    value: Buffer,
+    keyBuffer: Buffer | undefined
+  ): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      producer.produce(
+        topic,
+        null,
+        value,
+        keyBuffer,
+        Date.now(),
+        (err: LibrdKafkaError | null) => {
+          if (err) {
+            reject(err);
+            return;
+          }
+          resolve();
+        }
+      );
+    });
+  }
+
+  private calculateBackoff(attempt: number): number {
+    return StreamProducerService.INITIAL_BACKOFF_MS * (attempt + 1);
+  }
+
+  private async delay(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private async sendWithRetry(
+    topic: string,
+    value: Buffer,
+    keyBuffer: Buffer | undefined,
+    attempt = 0
+  ): Promise<void> {
+    if (attempt >= StreamProducerService.MAX_RETRIES) {
+      throw new Error(
+        `Failed to send message after ${StreamProducerService.MAX_RETRIES} attempts`
+      );
+    }
+
+    try {
+      const producer = await this.ensureProducer();
+      await this.produceMessage(producer, topic, value, keyBuffer);
+    } catch (error) {
+      const isDisconnected = this.isDisconnectedError(error);
+
+      if (!isDisconnected) {
+        throw error;
+      }
+
+      if (attempt < StreamProducerService.MAX_RETRIES - 1) {
+        await this.reconnectProducer();
+        const backoffMs = this.calculateBackoff(attempt);
+        await this.delay(backoffMs);
+        return this.sendWithRetry(topic, value, keyBuffer, attempt + 1);
+      }
+
+      throw error;
+    }
+  }
+
+  async send(topic: string, payload: unknown, key?: string): Promise<void> {
+    const value = Buffer.from(JSON.stringify(payload));
+    const keyBuffer = key ? Buffer.from(key) : undefined;
+
+    await this.sendWithRetry(topic, value, keyBuffer);
   }
 
   async close(): Promise<boolean[]> {
@@ -77,7 +147,14 @@ export class StreamProducerService {
     }
 
     try {
-      await this.producer.disconnect();
+      const producer = this.producer;
+      if (!producer) {
+        return [];
+      }
+
+      await new Promise<void>((resolve) => {
+        producer.disconnect(resolve);
+      });
 
       return [true];
     } finally {
