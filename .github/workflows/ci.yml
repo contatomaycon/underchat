@@ -208,6 +208,25 @@ jobs:
 
           if [[ "$status" == "OK" ]]; then
             echo "✅ Quality Gate passed. View analysis: $ANALYSIS_URL"
+            echo ""
+            echo "🔍 Checking for issues in analyzed files..."
+            CHANGED_FILES="${{ steps.changed_files.outputs.changed_files }}"
+            if [[ -n "$CHANGED_FILES" ]]; then
+              echo "Files analyzed:"
+              echo "$CHANGED_FILES"
+              echo ""
+              ISSUES_URL="${SONAR_URL}api/issues/search?projectKey=${PROJECT_KEY}&resolved=false"
+              issues_response=$(wget --header="Authorization: Basic $ENCODED_TOKEN" -q -O - "$ISSUES_URL" 2>&1 || echo '{"issues":[]}')
+              issues_count=$(echo "$issues_response" | jq '.issues | length')
+              if [[ "$issues_count" -gt 0 ]]; then
+                echo "📋 Found $issues_count issue(s) in the project:"
+                echo "$issues_response" | jq '.issues[]? | {severity, message, component, line, rule}'
+                echo ""
+                echo "💡 To view issues for specific files, check: ${ANALYSIS_URL}#component=underchat%3Aapps%2Fservice_api%2Fsrc%2Fteste.ts"
+              else
+                echo "✅ No issues found in the analyzed files."
+              fi
+            fi
           elif [[ "$status" == "ERROR" ]] || [[ "$status" == "PENDING" ]]; then
             echo "❌ Could not retrieve Quality Gate status or analysis still processing."
             echo "📊 View analysis report: $ANALYSIS_URL"
@@ -320,11 +339,27 @@ jobs:
           BRANCH_NAME="${{ github.head_ref }}"
           BASE_BRANCH="${{ github.base_ref }}"
           ANALYSIS_URL="${{ steps.verify_analysis.outputs.analysis_url }}"
+          SONAR_URL="${{ env.SONAR_HOST_URL }}"
+          PROJECT_KEY="${{ env.SONAR_BACKEND_PROJECT_KEY }}"
+          CHANGED_FILES="${{ steps.changed_files.outputs.changed_files }}"
 
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo "📊 SonarQube Analysis Report"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "🔗 Analysis URL: $ANALYSIS_URL"
+          echo "🔗 Project Dashboard: $ANALYSIS_URL"
+          if [[ -n "$CHANGED_FILES" ]]; then
+            echo ""
+            echo "📁 Analyzed Files:"
+            echo "$CHANGED_FILES" | while read file; do
+              if [[ -n "$file" ]]; then
+                ENCODED_FILE=$(echo "$file" | sed 's|/|%2F|g' | sed 's|:|%3A|g')
+                FILE_URL="${SONAR_URL}component?id=${PROJECT_KEY}%3A${ENCODED_FILE}"
+                echo "  📄 $file"
+                echo "     🔗 $FILE_URL"
+              fi
+            done
+          fi
+          echo ""
           if [[ -n "$PR_NUMBER" ]]; then
             echo "📝 Pull Request: #$PR_NUMBER"
           fi
