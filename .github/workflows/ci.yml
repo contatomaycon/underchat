@@ -71,6 +71,55 @@ jobs:
       - name: Run Build
         run: pnpm run build
 
+      - name: Get Changed Files
+        id: changed_files
+        run: |
+          BASE_BRANCH="${{ github.base_ref }}"
+          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+
+          if [[ -n "$BASE_SHA" ]] && [[ -n "$HEAD_SHA" ]]; then
+            echo "Comparing $BASE_SHA..$HEAD_SHA"
+            CHANGED_FILES=$(git diff --name-only ${BASE_SHA}..${HEAD_SHA} | grep -E '\.(ts|tsx|js|jsx|vue)$' | grep -v '\.spec\.' | grep -v 'node_modules' || true)
+          elif [[ -n "$BASE_BRANCH" ]]; then
+            echo "Comparing origin/${BASE_BRANCH}..HEAD"
+            git fetch origin ${BASE_BRANCH} || true
+            CHANGED_FILES=$(git diff --name-only origin/${BASE_BRANCH}...HEAD | grep -E '\.(ts|tsx|js|jsx|vue)$' | grep -v '\.spec\.' | grep -v 'node_modules' || true)
+          else
+            echo "Comparing HEAD~1..HEAD"
+            CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD | grep -E '\.(ts|tsx|js|jsx|vue)$' | grep -v '\.spec\.' | grep -v 'node_modules' || true)
+          fi
+
+          if [[ -z "$CHANGED_FILES" ]]; then
+            echo "No changed files found, analyzing all files"
+            echo "sonar_inclusions=" >> $GITHUB_OUTPUT
+          else
+            INCLUSIONS=$(echo "$CHANGED_FILES" | tr '\n' ',' | sed 's/,$//')
+            echo "Changed files:"
+            echo "$CHANGED_FILES"
+            echo "sonar_inclusions=$INCLUSIONS" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Prepare SonarQube Args
+        id: sonar_args
+        run: |
+          SONAR_ARGS="-D\"sonar.projectKey=${{ env.SONAR_BACKEND_PROJECT_KEY }}\""
+          SONAR_ARGS="$SONAR_ARGS -D\"sonar.exclusions=**/node_modules/**,**/*.spec.ts,**/**/Dockerfile\""
+          SONAR_ARGS="$SONAR_ARGS -D\"sonar.coverage.exclusions=**\""
+          SONAR_ARGS="$SONAR_ARGS -D\"sonar.cpd.exclusions=**\""
+          SONAR_ARGS="$SONAR_ARGS -D\"sonar.branch.name=${{ github.head_ref }}\""
+          SONAR_ARGS="$SONAR_ARGS -D\"sonar.scanner.force-deprecated-java-version=true\""
+
+          INCLUSIONS="${{ steps.changed_files.outputs.sonar_inclusions }}"
+          if [[ -n "$INCLUSIONS" ]]; then
+            SONAR_ARGS="$SONAR_ARGS -D\"sonar.inclusions=$INCLUSIONS\""
+            echo "📝 Analyzing only changed files: $INCLUSIONS"
+          else
+            echo "📝 Analyzing all files"
+          fi
+
+          echo "sonar_args=$SONAR_ARGS" >> $GITHUB_OUTPUT
+
       - name: SonarQube Scan
         id: sonar_scan
         uses: SonarSource/sonarqube-scan-action@master
@@ -79,13 +128,7 @@ jobs:
           SONAR_HOST_URL: ${{ env.SONAR_HOST_URL }}
         with:
           projectBaseDir: .
-          args: >
-            -D"sonar.projectKey=${{ env.SONAR_BACKEND_PROJECT_KEY }}"
-            -D"sonar.exclusions=**/node_modules/**,**/*.spec.ts,**/**/Dockerfile"
-            -D"sonar.coverage.exclusions=**"
-            -D"sonar.cpd.exclusions=**"
-            -D"sonar.branch.name=${{ github.head_ref }}"
-            -D"sonar.scanner.force-deprecated-java-version=true"
+          args: ${{ steps.sonar_args.outputs.sonar_args }}
 
       - name: Wait for analysis processing
         run: |
@@ -189,10 +232,20 @@ jobs:
           if [[ "$status" == "OK" ]]; then
             echo "✅ Quality Gate passed. View analysis: $ANALYSIS_URL"
           elif [[ "$status" == "ERROR" ]] || [[ "$status" == "PENDING" ]]; then
-            echo "⚠️  Could not retrieve Quality Gate status or analysis still processing."
+            echo "❌ Could not retrieve Quality Gate status or analysis still processing."
             echo "📊 View analysis report: $ANALYSIS_URL"
-            echo "ℹ️  Note: PR analysis may take a few minutes to be available. Check the dashboard for latest status."
-            set +e
+            echo "ℹ️  Note: Analysis may take a few minutes to be available. Check the dashboard for latest status."
+            echo ""
+            echo "🔍 Checking for issues in changed files..."
+            ISSUES_URL="${SONAR_URL}api/issues/search?projectKey=${PROJECT_KEY}&branch=${BRANCH_NAME}&resolved=false"
+            issues_response=$(wget --header="Authorization: Basic $ENCODED_TOKEN" -q -O - "$ISSUES_URL" 2>&1 || echo '{"issues":[]}')
+            issues_count=$(echo "$issues_response" | jq '.issues | length')
+            if [[ "$issues_count" -gt 0 ]]; then
+              echo "❌ Found $issues_count issues. Please fix them before merging."
+              echo "$issues_response" | jq '.issues[]? | {severity, message, component, line}'
+              exit 1
+            fi
+            exit 1
           else
             echo "❌ Quality Gate Status is not OK: $status"
             echo "📊 View full analysis report: $ANALYSIS_URL"
@@ -200,6 +253,11 @@ jobs:
             echo "Failed Quality Gate Conditions Details:"
             conditions_response=$(echo "$response" | jq '.projectStatus.conditions[]? | select(.status != "OK") | {metricKey, comparator, errorThreshold, actualValue}')
             echo "$conditions_response"
+            echo ""
+            echo "🔍 Issues found:"
+            ISSUES_URL="${SONAR_URL}api/issues/search?projectKey=${PROJECT_KEY}&branch=${BRANCH_NAME}&resolved=false"
+            issues_response=$(wget --header="Authorization: Basic $ENCODED_TOKEN" -q -O - "$ISSUES_URL" 2>&1 || echo '{"issues":[]}')
+            echo "$issues_response" | jq '.issues[]? | {severity, message, component, line}'
             echo ""
             echo "🔗 Full Analysis Report: $ANALYSIS_URL"
             exit 1
