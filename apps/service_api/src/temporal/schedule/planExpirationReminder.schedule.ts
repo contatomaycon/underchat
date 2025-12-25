@@ -34,11 +34,13 @@ export const planExpirationReminderSchedule = async (
             },
           });
 
-          fastify.log.info('Schedule "plan-expiration-reminder-schedule" created');
+          fastify.log.info(
+            'Schedule "plan-expiration-reminder-schedule" created'
+          );
         } catch (err) {
           fastify.log.error(
-            'Error creating plan expiration reminder schedule:',
-            err instanceof Error ? err.message : String(err)
+            err,
+            'Error creating plan expiration reminder schedule'
           );
         }
       }

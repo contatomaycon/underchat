@@ -34,11 +34,13 @@ export const profileStatusRenewalSchedule = async (
             },
           });
 
-          fastify.log.info('Schedule "profile-status-renewal-schedule" created');
+          fastify.log.info(
+            'Schedule "profile-status-renewal-schedule" created'
+          );
         } catch (err) {
           fastify.log.error(
-            'Error creating profile status renewal schedule:',
-            err instanceof Error ? err.message : String(err)
+            err,
+            'Error creating profile status renewal schedule'
           );
         }
       }

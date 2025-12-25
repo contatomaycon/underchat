@@ -37,10 +37,7 @@ export const workerMonitorSchedule = async (fastify: FastifyInstance) => {
 
         fastify.log.info('Schedule "worker-monitor-schedule" created');
       } catch (err) {
-        fastify.log.error(
-          'Error creating worker monitor schedule:',
-          err instanceof Error ? err.message : String(err)
-        );
+        fastify.log.error(err, 'Error creating worker monitor schedule');
       }
     },
     {

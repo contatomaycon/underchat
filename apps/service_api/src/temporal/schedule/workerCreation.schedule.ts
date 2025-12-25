@@ -34,10 +34,7 @@ export const workerCreationSchedule = async (fastify: FastifyInstance) => {
 
           fastify.log.info('Schedule "worker-creation-schedule" created');
         } catch (err) {
-          fastify.log.error(
-            'Error creating worker creation schedule:',
-            err instanceof Error ? err.message : String(err)
-          );
+          fastify.log.error(err, 'Error creating worker creation schedule');
         }
       }
     },

@@ -34,10 +34,7 @@ export const chatbotInactivitySchedule = async (fastify: FastifyInstance) => {
 
           fastify.log.info('Schedule "chatbot-inactivity-schedule" created');
         } catch (err) {
-          fastify.log.error(
-            'Error creating chatbot inactivity schedule:',
-            err instanceof Error ? err.message : String(err)
-          );
+          fastify.log.error(err, 'Error creating chatbot inactivity schedule');
         }
       }
     },

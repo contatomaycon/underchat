@@ -34,10 +34,7 @@ export const scheduleSendSchedule = async (fastify: FastifyInstance) => {
 
           fastify.log.info('Schedule "schedule-send-schedule" created');
         } catch (err) {
-          fastify.log.error(
-            'Error creating schedule send schedule:',
-            err instanceof Error ? err.message : String(err)
-          );
+          fastify.log.error(err, 'Error creating schedule send schedule');
         }
       }
     },

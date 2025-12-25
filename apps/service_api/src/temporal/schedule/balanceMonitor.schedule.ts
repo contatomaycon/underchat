@@ -37,10 +37,7 @@ export const balanceMonitorSchedule = async (fastify: FastifyInstance) => {
 
         fastify.log.info('Schedule "balance-monitor-schedule" created');
       } catch (err) {
-        fastify.log.error(
-          'Error creating balance monitor schedule:',
-          err instanceof Error ? err.message : String(err)
-        );
+        fastify.log.error(err, 'Error creating balance monitor schedule');
       }
     },
     {
