@@ -30,12 +30,12 @@ declare module 'fastify' {
       request: FastifyRequest,
       reply: FastifyReply,
       permissions?: EPermissionsRoles[] | null
-    ) => void;
+    ) => Promise<void>;
     authenticateKeyApi: (
       request: FastifyRequest,
       reply: FastifyReply,
       permissions: EPermissionsRoles[] | null
-    ) => void;
+    ) => Promise<void>;
     authenticateRegisterJwt: (
       request: FastifyRequest,
       reply: FastifyReply
