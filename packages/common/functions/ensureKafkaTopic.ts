@@ -81,8 +81,13 @@ async function createTopic(
       (err: LibrdKafkaError | null) => {
         if (err) {
           const errorMessage = getErrorMessage(err);
+          const errorCode = (err as any).code ?? (err as any).errno;
 
-          if (errorMessage.includes('Topic already exists')) {
+          if (
+            errorCode === 36 ||
+            errorMessage.includes('Topic already exists') ||
+            errorMessage.includes('already exists')
+          ) {
             resolve();
             return;
           }
