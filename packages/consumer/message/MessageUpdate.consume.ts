@@ -12,6 +12,7 @@ import { remoteJid } from '@core/common/functions/remoteJid';
 import { startHeartbeat } from '@core/common/functions/startHeartbeat';
 import { createConsumer } from '@core/common/functions/createConsumer';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
+import { toError } from '@core/common/functions/toError';
 import { WAMessageKey } from '@whiskeysockets/baileys';
 
 @singleton()
@@ -168,7 +169,7 @@ export class MessageUpdateConsume {
       }
       consumer.connect({}, (err) => {
         if (err) {
-          reject(err instanceof Error ? err : new Error(String(err)));
+          reject(toError(err));
           return;
         }
         consumer.consume();

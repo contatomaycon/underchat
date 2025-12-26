@@ -7,6 +7,7 @@ import { CentrifugoService } from '@core/services/centrifugo.service';
 import { startHeartbeat } from '@core/common/functions/startHeartbeat';
 import { createConsumer } from '@core/common/functions/createConsumer';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
+import { toError } from '@core/common/functions/toError';
 import { chatAccountCentrifugo } from '@core/common/functions/centrifugoQueue';
 import { IClearChatSummaryMessage } from '@core/common/interfaces/IClearChatSummaryMessage';
 
@@ -124,7 +125,7 @@ export class ChatSummaryClearConsume {
       }
       consumer.connect({}, (err) => {
         if (err) {
-          reject(err instanceof Error ? err : new Error(String(err)));
+          reject(toError(err));
           return;
         }
         consumer.consume();

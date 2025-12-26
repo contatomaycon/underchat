@@ -1,6 +1,7 @@
 import { injectable, inject } from 'tsyringe';
 import { Producer, LibrdKafkaError } from 'node-rdkafka';
 import { KafkaClient } from '@core/plugins/kafkaStreams';
+import { toError, getErrorMessage } from '@core/common/functions/toError';
 
 @injectable()
 export class StreamProducerService {
@@ -26,7 +27,7 @@ export class StreamProducerService {
       await new Promise<void>((resolve, reject) => {
         producer.connect({}, (err) => {
           if (err) {
-            reject(err instanceof Error ? err : new Error(String(err)));
+            reject(toError(err));
             return;
           }
           resolve();
@@ -58,7 +59,7 @@ export class StreamProducerService {
       return false;
     }
 
-    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorMessage = getErrorMessage(error);
     const errorCode = 'code' in error ? error.code : null;
 
     return (
@@ -84,7 +85,7 @@ export class StreamProducerService {
         Date.now(),
         (err: LibrdKafkaError | null) => {
           if (err) {
-            reject(err instanceof Error ? err : new Error(String(err)));
+            reject(toError(err));
             return;
           }
           resolve();

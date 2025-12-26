@@ -6,6 +6,7 @@ import { AsaasNfseWebhookRequest } from '@core/schema/nfse/Webhook/request.schem
 import { createConsumer } from '@core/common/functions/createConsumer';
 import { startHeartbeat } from '@core/common/functions/startHeartbeat';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
+import { toError } from '@core/common/functions/toError';
 import { FastifyInstance } from 'fastify';
 import { NfseProcessorService } from '@core/services/nfseProcessor.service';
 
@@ -81,7 +82,7 @@ export class AsaasNfseWebhookConsume {
       }
       consumer.connect({}, (err) => {
         if (err) {
-          reject(err instanceof Error ? err : new Error(String(err)));
+          reject(toError(err));
           return;
         }
         consumer.consume();

@@ -35,6 +35,7 @@ import { buildQuotedTextFromExtended } from '@core/common/functions/buildQuotedT
 import { startHeartbeat } from '@core/common/functions/startHeartbeat';
 import { createConsumer } from '@core/common/functions/createConsumer';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
+import { toError } from '@core/common/functions/toError';
 import { remoteJidAlt } from '@core/common/functions/remoteJidAlt';
 import { convertWaveformToBase64 } from '@core/common/functions/convertWaveform';
 import Redis from 'ioredis';
@@ -1916,7 +1917,7 @@ export class MessageUpsertConsume {
       }
       consumer.connect({}, (err) => {
         if (err) {
-          reject(err instanceof Error ? err : new Error(String(err)));
+          reject(toError(err));
           return;
         }
         consumer.consume();

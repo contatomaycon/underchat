@@ -7,6 +7,7 @@ import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.servi
 import { startHeartbeat } from '@core/common/functions/startHeartbeat';
 import { createConsumer } from '@core/common/functions/createConsumer';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
+import { toError } from '@core/common/functions/toError';
 
 @singleton()
 export class WorkerConnectionConsume {
@@ -76,7 +77,7 @@ export class WorkerConnectionConsume {
       }
       consumer.connect({}, (err) => {
         if (err) {
-          reject(err instanceof Error ? err : new Error(String(err)));
+          reject(toError(err));
           return;
         }
         consumer.consume();

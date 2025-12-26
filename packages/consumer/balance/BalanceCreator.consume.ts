@@ -16,6 +16,7 @@ import { delay } from '@core/common/functions/delay';
 import { createConsumer } from '@core/common/functions/createConsumer';
 import { startHeartbeat } from '@core/common/functions/startHeartbeat';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
+import { toError, getErrorMessage } from '@core/common/functions/toError';
 
 @singleton()
 export class BalanceCreatorConsume {
@@ -87,7 +88,7 @@ export class BalanceCreatorConsume {
       }
       consumer.connect({}, (err) => {
         if (err) {
-          reject(err instanceof Error ? err : new Error(String(err)));
+          reject(toError(err));
           return;
         }
         consumer.consume();
@@ -199,7 +200,7 @@ export class BalanceCreatorConsume {
 
       await this.serverService.updateServerStatusById(serverId, finalStatus);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = getErrorMessage(err);
       server.log.warn(`Skipping server ${serverId ?? 'unknown'}: ${msg}`);
 
       if (serverId) {

@@ -7,6 +7,7 @@ import { KafkaClient } from '@core/plugins/kafkaStreams';
 import { startHeartbeat } from '@core/common/functions/startHeartbeat';
 import { createConsumer } from '@core/common/functions/createConsumer';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
+import { toError } from '@core/common/functions/toError';
 import { INotificationMessage } from '@core/common/interfaces/INotificationMessage';
 import { BaileysPhoneValidationService } from '@core/services/baileys/methods/phoneValidation.service';
 import { StreamProducerService } from '@core/services/streamProducer.service';
@@ -87,7 +88,7 @@ export class NotificationMessageSendConsume {
         }
         consumer.connect({}, (err) => {
           if (err) {
-            reject(err instanceof Error ? err : new Error(String(err)));
+            reject(toError(err));
             return;
           }
           consumer.consume();

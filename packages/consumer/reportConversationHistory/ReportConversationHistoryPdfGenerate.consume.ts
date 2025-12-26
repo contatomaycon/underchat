@@ -8,6 +8,7 @@ import { EReportConversationHistoryPdfStatus } from '@core/common/enums/EReportC
 import { startHeartbeat } from '@core/common/functions/startHeartbeat';
 import { createConsumer } from '@core/common/functions/createConsumer';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
+import { toError } from '@core/common/functions/toError';
 import { IReportConversationHistoryPdfGeneratePayload } from '@core/common/interfaces/IReportConversationHistoryPdfGeneratePayload';
 import { IReportConversationHistoryPdfNotification } from '@core/common/interfaces/IReportConversationHistoryPdfNotification';
 import { reportConversationHistoryPdfAccountCentrifugo } from '@core/common/functions/centrifugoQueue';
@@ -92,7 +93,7 @@ export class ReportConversationHistoryPdfGenerateConsume {
       }
       consumer.connect({}, (err) => {
         if (err) {
-          reject(err instanceof Error ? err : new Error(String(err)));
+          reject(toError(err));
           return;
         }
         consumer.consume();

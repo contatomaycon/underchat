@@ -25,6 +25,7 @@ import { KafkaClient } from '@core/plugins/kafkaStreams';
 import { startHeartbeat } from '@core/common/functions/startHeartbeat';
 import { createConsumer } from '@core/common/functions/createConsumer';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
+import { toError } from '@core/common/functions/toError';
 import { selectJidChat } from '@core/common/functions/selectJidChat';
 import { convertWaveformBase64ToUint8Array } from '@core/common/functions/convertWaveform';
 import { webcrypto } from 'node:crypto';
@@ -154,7 +155,7 @@ export class MessageSendConsume {
       }
       consumer.connect({}, (err) => {
         if (err) {
-          reject(err instanceof Error ? err : new Error(String(err)));
+          reject(toError(err));
           return;
         }
         consumer.consume();

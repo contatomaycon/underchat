@@ -2,6 +2,7 @@ import { injectable, inject } from 'tsyringe';
 import { AdminClient, LibrdKafkaError } from 'node-rdkafka';
 import { KafkaClient } from '@core/plugins/kafkaStreams';
 import { ITopicMetadata } from '@core/common/interfaces/ITopicMetadata';
+import { toError, getErrorMessage } from '@core/common/functions/toError';
 
 @injectable()
 export class KafkaService {
@@ -25,7 +26,7 @@ export class KafkaService {
         { timeout: 5000 },
         (err: LibrdKafkaError | null, data: ITopicMetadata) => {
           if (err) {
-            reject(err instanceof Error ? err : new Error(String(err)));
+            reject(toError(err));
             return;
           }
           resolve(data);
@@ -48,15 +49,14 @@ export class KafkaService {
         },
         (err: LibrdKafkaError | null) => {
           if (err) {
-            const errorMessage =
-              err instanceof Error ? err.message : String(err);
+            const errorMessage = getErrorMessage(err);
 
             if (errorMessage.includes('Topic already exists')) {
               resolve();
               return;
             }
 
-            reject(err instanceof Error ? err : new Error(String(err)));
+            reject(toError(err));
             return;
           }
           resolve();
@@ -110,8 +110,7 @@ export class KafkaService {
         5000,
         (err: LibrdKafkaError | null) => {
           if (err) {
-            const errorMessage =
-              err instanceof Error ? err.message : String(err);
+            const errorMessage = getErrorMessage(err);
 
             if (
               errorMessage.includes(
@@ -123,7 +122,7 @@ export class KafkaService {
               return;
             }
 
-            reject(err instanceof Error ? err : new Error(String(err)));
+            reject(toError(err));
             return;
           }
           resolve();

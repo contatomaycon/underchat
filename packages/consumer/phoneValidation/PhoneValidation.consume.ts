@@ -3,6 +3,7 @@ import { KafkaConsumer } from 'node-rdkafka';
 import { KafkaClient } from '@core/plugins/kafkaStreams';
 import { createConsumer } from '@core/common/functions/createConsumer';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
+import { toError } from '@core/common/functions/toError';
 import { baileysEnvironment } from '@core/config/environments';
 import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.service';
 import { IPhoneValidationRequest } from '@core/common/interfaces/IPhoneValidationRequest';
@@ -134,7 +135,7 @@ export class PhoneValidationConsume {
       }
       consumer.connect({}, (err) => {
         if (err) {
-          reject(err instanceof Error ? err : new Error(String(err)));
+          reject(toError(err));
           return;
         }
         consumer.consume();

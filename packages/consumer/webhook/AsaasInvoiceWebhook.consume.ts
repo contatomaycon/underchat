@@ -6,6 +6,7 @@ import { AsaasInvoiceWebhookRequest } from '@core/schema/payment/Webhook/request
 import { createConsumer } from '@core/common/functions/createConsumer';
 import { startHeartbeat } from '@core/common/functions/startHeartbeat';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
+import { toError } from '@core/common/functions/toError';
 import { FastifyInstance } from 'fastify';
 import { PlanReleaseService } from '@core/services/planRelease.service';
 
@@ -81,7 +82,7 @@ export class AsaasInvoiceWebhookConsume {
       }
       consumer.connect({}, (err) => {
         if (err) {
-          reject(err instanceof Error ? err : new Error(String(err)));
+          reject(toError(err));
           return;
         }
         consumer.consume();

@@ -10,6 +10,7 @@ import { KafkaClient } from '@core/plugins/kafkaStreams';
 import { startHeartbeat } from '@core/common/functions/startHeartbeat';
 import { createConsumer } from '@core/common/functions/createConsumer';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
+import { toError } from '@core/common/functions/toError';
 
 @singleton()
 export class WorkerConnectionStatusConsume {
@@ -80,7 +81,7 @@ export class WorkerConnectionStatusConsume {
       }
       consumer.connect({}, (err) => {
         if (err) {
-          reject(err instanceof Error ? err : new Error(String(err)));
+          reject(toError(err));
           return;
         }
         consumer.consume();

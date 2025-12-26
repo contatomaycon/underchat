@@ -3,6 +3,7 @@ import { KafkaClient } from '@core/plugins/kafkaStreams';
 import { wait } from './wait';
 import { ITopicMetadata } from '@core/common/interfaces/ITopicMetadata';
 import { ITopicInfo } from '@core/common/interfaces/ITopicInfo';
+import { toError, getErrorMessage } from './toError';
 
 function createAdminClient(kafka: KafkaClient): AdminClient {
   return AdminClient.create({
@@ -20,7 +21,7 @@ async function getMetadata(
       { timeout },
       (err: LibrdKafkaError | null, data: ITopicMetadata) => {
         if (err) {
-          reject(err instanceof Error ? err : new Error(String(err)));
+          reject(toError(err));
           return;
         }
         resolve(data);
@@ -51,7 +52,7 @@ function getTopicInfo(
   }
 
   const topic = metadata.topics.find((t) => t.name === topicName);
-  if (!topic || !topic.partitions) {
+  if (!topic?.partitions) {
     return null;
   }
 
@@ -79,14 +80,14 @@ async function createTopic(
       },
       (err: LibrdKafkaError | null) => {
         if (err) {
-          const errorMessage = err instanceof Error ? err.message : String(err);
+          const errorMessage = getErrorMessage(err);
 
           if (errorMessage.includes('Topic already exists')) {
             resolve();
             return;
           }
 
-          reject(err instanceof Error ? err : new Error(String(err)));
+          reject(toError(err));
           return;
         }
         resolve();

@@ -8,6 +8,7 @@ import { baileysEnvironment } from '@core/config/environments';
 import { startHeartbeat } from '@core/common/functions/startHeartbeat';
 import { createConsumer } from '@core/common/functions/createConsumer';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
+import { toError } from '@core/common/functions/toError';
 import { MessageStatusService } from '@core/services/messageStatus.service';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { IMessageStatusUpdate } from '@core/common/interfaces/IMessageStatusUpdate';
@@ -139,7 +140,7 @@ export class MessageMarkReadConsume {
       }
       consumer.connect({}, (err) => {
         if (err) {
-          reject(err instanceof Error ? err : new Error(String(err)));
+          reject(toError(err));
           return;
         }
         consumer.consume();

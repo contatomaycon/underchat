@@ -3,6 +3,7 @@ import { KafkaConsumer } from 'node-rdkafka';
 import { KafkaClient } from '@core/plugins/kafkaStreams';
 import { createConsumer } from '@core/common/functions/createConsumer';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
+import { toError } from '@core/common/functions/toError';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { IPhoneValidationResponse } from '@core/common/interfaces/IPhoneValidationResponse';
 import Redis from 'ioredis';
@@ -91,7 +92,7 @@ export class PhoneValidationResponseConsume {
       }
       consumer.connect({}, (err) => {
         if (err) {
-          reject(err instanceof Error ? err : new Error(String(err)));
+          reject(toError(err));
           return;
         }
         consumer.consume();
