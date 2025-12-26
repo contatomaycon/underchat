@@ -9,13 +9,16 @@ function extractMessageFromObject(value: object): string | null {
 function extractStringFromObject(value: object): string | null {
   if ('toString' in value && typeof value.toString === 'function') {
     try {
-      const stringValue = value.toString();
-      if (
-        typeof stringValue === 'string' &&
-        stringValue.length > 0 &&
-        stringValue !== '[object Object]'
-      ) {
-        return stringValue;
+      const toStringMethod = value.toString;
+      if (toStringMethod !== Object.prototype.toString) {
+        const stringValue = toStringMethod.call(value);
+        if (
+          typeof stringValue === 'string' &&
+          stringValue.length > 0 &&
+          stringValue !== '[object Object]'
+        ) {
+          return stringValue;
+        }
       }
     } catch {}
   }
