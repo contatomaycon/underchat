@@ -1,27 +1,57 @@
+function extractMessageFromObject(value: object): string | null {
+  if ('message' in value && typeof value.message === 'string') {
+    return value.message;
+  }
+
+  return null;
+}
+
+function extractStringFromObject(value: object): string | null {
+  if ('toString' in value && typeof value.toString === 'function') {
+    try {
+      const stringValue = value.toString();
+      if (
+        typeof stringValue === 'string' &&
+        stringValue.length > 0 &&
+        stringValue !== '[object Object]'
+      ) {
+        return stringValue;
+      }
+    } catch {}
+  }
+
+  return null;
+}
+
+function extractJsonFromObject(value: object): string | null {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return null;
+  }
+}
+
+function extractErrorMessageFromObject(value: object): string | null {
+  const message = extractMessageFromObject(value);
+  if (message) {
+    return message;
+  }
+
+  const stringValue = extractStringFromObject(value);
+  if (stringValue) {
+    return stringValue;
+  }
+
+  return extractJsonFromObject(value);
+}
+
 function extractErrorMessage(value: unknown): string | null {
   if (value instanceof Error) {
     return value.message;
   }
 
   if (value && typeof value === 'object') {
-    if ('message' in value && typeof value.message === 'string') {
-      return value.message;
-    }
-
-    if ('toString' in value && typeof value.toString === 'function') {
-      try {
-        const stringValue = value.toString();
-        if (stringValue && stringValue !== '[object Object]') {
-          return stringValue;
-        }
-      } catch {}
-    }
-
-    try {
-      return JSON.stringify(value);
-    } catch {
-      return null;
-    }
+    return extractErrorMessageFromObject(value);
   }
 
   if (typeof value === 'string') {
