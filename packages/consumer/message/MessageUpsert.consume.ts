@@ -1,5 +1,6 @@
 import { singleton, inject } from 'tsyringe';
-import { Kafka, Consumer } from 'kafkajs';
+import { KafkaConsumer } from 'node-rdkafka';
+import { KafkaClient } from '@core/plugins/kafkaStreams';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
 import { IUpsertMessage } from '@core/common/interfaces/IUpsertMessage';
@@ -34,6 +35,7 @@ import { buildQuotedTextFromExtended } from '@core/common/functions/buildQuotedT
 import { startHeartbeat } from '@core/common/functions/startHeartbeat';
 import { createConsumer } from '@core/common/functions/createConsumer';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
+import { toError } from '@core/common/functions/toError';
 import { remoteJidAlt } from '@core/common/functions/remoteJidAlt';
 import { convertWaveformToBase64 } from '@core/common/functions/convertWaveform';
 import Redis from 'ioredis';
@@ -64,12 +66,13 @@ import { PlanAccountService } from '@core/services/planAccount.service';
 
 @singleton()
 export class MessageUpsertConsume {
-  private consumer: Consumer | null = null;
+  private consumer: KafkaConsumer | null = null;
+  private isRunning = false;
   private processingChain: Promise<void> = Promise.resolve();
 
   constructor(
     @inject('Redis') private readonly redis: Redis,
-    @inject('Kafka') private readonly kafka: Kafka,
+    @inject('Kafka') private readonly kafka: KafkaClient,
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
     private readonly elasticDatabaseService: ElasticDatabaseService,
     private readonly accountService: AccountService,
@@ -87,7 +90,7 @@ export class MessageUpsertConsume {
     private readonly planAccountService: PlanAccountService
   ) {}
 
-  private get consumerOrThrow(): Consumer {
+  private get consumerOrThrow(): KafkaConsumer {
     if (!this.consumer) {
       throw new Error('Consumer not initialized');
     }
@@ -490,8 +493,8 @@ export class MessageUpsertConsume {
     }
 
     const newText =
-      editedContent.conversation ||
-      editedContent.extendedTextMessage?.text ||
+      editedContent.conversation ??
+      editedContent.extendedTextMessage?.text ??
       '';
 
     if (!newText) {
@@ -1092,7 +1095,7 @@ export class MessageUpsertConsume {
     }
 
     const contactMsg = data.message.message.contactMessage;
-    const vcard = contactMsg.vcard || '';
+    const vcard = contactMsg.vcard ?? '';
     const parsed = this.parseVCard(vcard);
 
     const phoneAndDdi = extractPhoneAndDdiFromContactMessage(contactMsg);
@@ -1118,8 +1121,8 @@ export class MessageUpsertConsume {
     );
 
     let existingContactName =
-      parsed.name || contactMsg.displayName || 'Contato';
-    let existingContactLastName = parsed.last_name || null;
+      parsed.name ?? contactMsg.displayName ?? 'Contato';
+    let existingContactLastName = parsed.last_name ?? null;
     if (existingContact) {
       existingContactId = existingContact.contact_id;
       existingContactPhoto = existingContact.photo ?? null;
@@ -1134,7 +1137,7 @@ export class MessageUpsertConsume {
       phone: phoneAndDdi.phone,
       phone_partial: phonePartial,
       phone_ddi: phoneAndDdi.phone_ddi,
-      email: parsed.email || null,
+      email: parsed.email ?? null,
       email_partial: emailPartial,
       photo: existingContactPhoto,
     };
@@ -1172,7 +1175,7 @@ export class MessageUpsertConsume {
     const createdContact = await this.createContactAutomatically(
       data,
       phoneAndDdi,
-      name || phone
+      name ?? phone
     );
 
     if (createdContact) {
@@ -1831,7 +1834,7 @@ export class MessageUpsertConsume {
   }
 
   public async execute(t: TFunction<'translation', undefined>): Promise<void> {
-    if (this.consumer) return;
+    if (this.consumer && this.isRunning) return;
 
     this.consumer = createConsumer(
       this.kafka,
@@ -1841,66 +1844,86 @@ export class MessageUpsertConsume {
     const topic = this.kafkaServiceQueueService.upsertMessage();
 
     await ensureKafkaTopic(this.kafka, topic);
-    await this.consumer.connect();
-    await this.consumer.subscribe({ topic, fromBeginning: true });
 
-    await this.consumer.run({
-      autoCommit: false,
-      partitionsConsumedConcurrently: 1,
-      eachMessage: async ({ topic, partition, message, heartbeat }) => {
-        const data = this.parseMessage(message.value);
-        if (!data) {
-          await this.commitNext(topic, partition, message.offset);
+    this.consumer.on('data', async (message) => {
+      const data = this.parseMessage(message.value);
+      if (!data) {
+        await this.commitNext(topic, message.partition, message.offset);
+        return;
+      }
 
-          return;
-        }
+      const offset = message.offset;
 
-        const offset = message.offset;
+      this.processingChain = this.processingChain.then(async () => {
+        const heartbeat = async () => {
+          this.consumer?.commit();
+        };
 
-        this.processingChain = this.processingChain.then(async () => {
-          const stop = startHeartbeat(heartbeat);
-          try {
-            if (data.is_call_event) {
-              await this.handleCallEvent(t, data);
-              await this.commitNext(topic, partition, offset);
-              return;
-            }
-
-            const messageId = data.message?.key?.id;
-            if (messageId) {
-              const exists = await this.messageIdExists(
-                data.account_id,
-                data.worker_id,
-                messageId
-              );
-
-              if (exists) {
-                await this.commitNext(topic, partition, offset);
-                return;
-              }
-            }
-
-            const jid = remoteJid(data.message?.key);
-            const jidAlt = remoteJidAlt(data.message?.key);
-
-            if (!jid && !jidAlt) {
-              throw new Error('Received message without remoteJid');
-            }
-
-            const phone = getPhoneFromJid(jid, jidAlt);
-            if (!phone) {
-              throw new Error('Received message without valid phone');
-            }
-            await this.createOrUpdateChat(t, data, phone, jid, jidAlt);
-          } catch {
-            await this.commitNext(topic, partition, message.offset);
-          } finally {
-            stop();
+        const stop = startHeartbeat(heartbeat);
+        try {
+          if (data.is_call_event) {
+            await this.handleCallEvent(t, data);
+            await this.commitNext(topic, message.partition, offset);
+            return;
           }
 
-          await this.commitNext(topic, partition, offset);
-        });
-      },
+          const messageId = data.message?.key?.id;
+          if (messageId) {
+            const exists = await this.messageIdExists(
+              data.account_id,
+              data.worker_id,
+              messageId
+            );
+
+            if (exists) {
+              await this.commitNext(topic, message.partition, offset);
+              return;
+            }
+          }
+
+          const jid = remoteJid(data.message?.key);
+          const jidAlt = remoteJidAlt(data.message?.key);
+
+          if (!jid && !jidAlt) {
+            throw new Error('Received message without remoteJid');
+          }
+
+          const phone = getPhoneFromJid(jid, jidAlt);
+          if (!phone) {
+            throw new Error('Received message without valid phone');
+          }
+          await this.createOrUpdateChat(t, data, phone, jid, jidAlt);
+        } catch {
+          await this.commitNext(topic, message.partition, message.offset);
+        } finally {
+          stop();
+        }
+
+        await this.commitNext(topic, message.partition, offset);
+      });
+    });
+
+    this.consumer.on('event.error', (err) => {
+      console.error('Consumer error:', err);
+    });
+
+    this.consumer.subscribe([topic]);
+
+    await new Promise<void>((resolve, reject) => {
+      const consumer = this.consumer;
+      if (!consumer) {
+        reject(new Error('Consumer not initialized'));
+        return;
+      }
+      consumer.connect({}, (err) => {
+        if (err) {
+          reject(toError(err));
+          return;
+        }
+        consumer.consume();
+        this.isRunning = true;
+        resolve();
+      });
     });
   }
 
@@ -1912,9 +1935,17 @@ export class MessageUpsertConsume {
     }
 
     try {
-      await this.consumer.stop();
+      this.isRunning = false;
+      await new Promise<void>((resolve) => {
+        const consumer = this.consumer;
+        if (!consumer) {
+          resolve();
+          return;
+        }
+        consumer.unsubscribe();
+        consumer.disconnect(resolve);
+      });
     } finally {
-      await this.consumer.disconnect();
       this.consumer = null;
     }
   }
@@ -1922,12 +1953,14 @@ export class MessageUpsertConsume {
   private async commitNext(
     topic: string,
     partition: number,
-    offset: string
+    offset: number
   ): Promise<void> {
-    const next = (BigInt(offset) + 1n).toString();
-
-    await this.consumerOrThrow.commitOffsets([
-      { topic, partition, offset: next },
+    this.consumerOrThrow.commitSync([
+      {
+        topic,
+        partition,
+        offset: offset + 1,
+      },
     ]);
   }
 

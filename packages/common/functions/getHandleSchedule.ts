@@ -2,7 +2,10 @@ import { ScheduleHandle, ScheduleNotFoundError } from '@temporalio/client';
 import { delay } from './delay';
 
 export class ScheduleDescribeFailedError extends Error {
-  constructor(message: string, public readonly cause: unknown) {
+  constructor(
+    message: string,
+    public readonly cause: unknown
+  ) {
     super(message);
     this.name = 'ScheduleDescribeFailedError';
   }

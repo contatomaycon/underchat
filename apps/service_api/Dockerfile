@@ -12,6 +12,9 @@ RUN apt-get update && \
       pkg-config \
       libssl-dev \
       libsasl2-dev \
+      librdkafka-dev \
+      zlib1g-dev \
+      libzstd-dev \
       zstd \
       curl \
       ca-certificates && \
@@ -31,7 +34,7 @@ COPY . .
 
 RUN turbo prune service --docker
 
-FROM pruned AS deps
+FROM turbo AS deps
 
 WORKDIR /app
 
@@ -40,6 +43,10 @@ COPY --from=pruned /app/out/json/ .
 ENV npm_config_build_from_source=true \
     npm_config_loglevel=verbose
 RUN pnpm install --unsafe-perm
+RUN RDKAFKA_PATH=$(find node_modules/.pnpm/node-rdkafka@* -type d -name "node-rdkafka" -path "*/node_modules/node-rdkafka" | head -1) && \
+    if [ -n "$RDKAFKA_PATH" ] && [ ! -f "$RDKAFKA_PATH/build/Release/node-librdkafka.node" ]; then \
+      cd "$RDKAFKA_PATH" && npm run install; \
+    fi
 
 FROM deps AS builder
 
@@ -66,6 +73,7 @@ COPY --from=builder /build_locales ./packages/plugins/i18next/locales
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
       ffmpeg \
+      librdkafka1 \
       curl && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*

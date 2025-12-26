@@ -1,24 +1,27 @@
 import { singleton, inject } from 'tsyringe';
-import { Kafka, Consumer } from 'kafkajs';
+import { KafkaConsumer } from 'node-rdkafka';
+import { KafkaClient } from '@core/plugins/kafkaStreams';
 import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.service';
 import { IUserPhoneJidUpdate } from '@core/common/interfaces/IUserPhoneJidUpdate';
 import { UserService } from '@core/services/user.service';
 import { startHeartbeat } from '@core/common/functions/startHeartbeat';
 import { createConsumer } from '@core/common/functions/createConsumer';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
+import { toError } from '@core/common/functions/toError';
 
 @singleton()
 export class UserPhoneJidUpdateConsume {
-  private consumer: Consumer | null = null;
+  private consumer: KafkaConsumer | null = null;
+  private isRunning = false;
   private processingChain: Promise<void> = Promise.resolve();
 
   constructor(
-    @inject('Kafka') private readonly kafka: Kafka,
+    @inject('Kafka') private readonly kafka: KafkaClient,
     private readonly kafkaBaileysQueueService: KafkaBaileysQueueService,
     private readonly userService: UserService
   ) {}
 
-  private get consumerOrThrow(): Consumer {
+  private get consumerOrThrow(): KafkaConsumer {
     if (!this.consumer) {
       throw new Error('Consumer not initialized');
     }
@@ -52,7 +55,7 @@ export class UserPhoneJidUpdateConsume {
   }
 
   public async execute(): Promise<void> {
-    if (this.consumer) return;
+    if (this.consumer && this.isRunning) return;
 
     this.consumer = createConsumer(
       this.kafka,
@@ -62,50 +65,71 @@ export class UserPhoneJidUpdateConsume {
     const topic = this.kafkaBaileysQueueService.userPhoneJidUpdate();
 
     await ensureKafkaTopic(this.kafka, topic);
-    await this.consumer.connect();
-    await this.consumer.subscribe({ topic, fromBeginning: true });
 
-    await this.consumer.run({
-      autoCommit: false,
-      partitionsConsumedConcurrently: 1,
-      eachMessage: async ({ topic, partition, message, heartbeat }) => {
-        const data = this.parseMessage(message.value);
+    this.consumer.on('data', async (message) => {
+      const data = this.parseMessage(message.value);
 
-        if (!data) {
-          await this.commitNext(topic, partition, message.offset);
-          return;
+      if (!data) {
+        await this.commitNext(topic, message.partition, message.offset);
+        return;
+      }
+
+      const offset = message.offset;
+
+      this.processingChain = this.processingChain.then(async () => {
+        const heartbeat = async () => {
+          this.consumer?.commit();
+        };
+
+        const stop = startHeartbeat(heartbeat);
+
+        try {
+          await this.processUpdate(data);
+        } catch (error) {
+          console.error('Erro ao atualizar phone_jid:', error);
+          await this.commitNext(topic, message.partition, message.offset);
+        } finally {
+          stop();
         }
 
-        const offset = message.offset;
+        await this.commitNext(topic, message.partition, offset);
+      });
+    });
 
-        this.processingChain = this.processingChain.then(async () => {
-          const stop = startHeartbeat(heartbeat);
+    this.consumer.on('event.error', (err) => {
+      console.error('Consumer error:', err);
+    });
 
-          try {
-            await this.processUpdate(data);
-          } catch (error) {
-            console.error('Erro ao atualizar phone_jid:', error);
-            await this.commitNext(topic, partition, message.offset);
-          } finally {
-            stop();
-          }
+    this.consumer.subscribe([topic]);
 
-          await this.commitNext(topic, partition, offset);
-        });
-      },
+    await new Promise<void>((resolve, reject) => {
+      const consumer = this.consumer;
+      if (!consumer) {
+        reject(new Error('Consumer not initialized'));
+        return;
+      }
+      consumer.connect({}, (err) => {
+        if (err) {
+          reject(toError(err));
+          return;
+        }
+        consumer.consume();
+        this.isRunning = true;
+        resolve();
+      });
     });
   }
 
   private async commitNext(
     topic: string,
     partition: number,
-    offset: string
+    offset: number
   ): Promise<void> {
-    await this.consumerOrThrow.commitOffsets([
+    this.consumerOrThrow.commitSync([
       {
         topic,
         partition,
-        offset: (BigInt(offset) + BigInt(1)).toString(),
+        offset: offset + 1,
       },
     ]);
   }
@@ -117,7 +141,19 @@ export class UserPhoneJidUpdateConsume {
       return;
     }
 
-    await this.consumer.disconnect();
-    this.consumer = null;
+    try {
+      this.isRunning = false;
+      await new Promise<void>((resolve) => {
+        const consumer = this.consumer;
+        if (!consumer) {
+          resolve();
+          return;
+        }
+        consumer.unsubscribe();
+        consumer.disconnect(resolve);
+      });
+    } finally {
+      this.consumer = null;
+    }
   }
 }

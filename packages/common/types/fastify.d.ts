@@ -10,7 +10,7 @@ import { ELanguage } from '../enums/ELanguage';
 import { Client as ClientElastic } from '@elastic/elasticsearch';
 import { ITokenKeyData } from '../interfaces/ITokenKeyData';
 import { Centrifuge } from 'centrifuge';
-import { Kafka } from 'kafkajs';
+import { KafkaClient } from '@core/plugins/kafkaStreams';
 import Redis from 'ioredis';
 import { IRegisterJwtData } from '../interfaces/IRegisterJwtData';
 
@@ -24,7 +24,7 @@ declare module 'fastify' {
     DatabaseElasticClient: ClientElastic;
     ElasticLogsClient: ClientElastic;
     Centrifuge: Centrifuge;
-    Kafka: Kafka;
+    Kafka: KafkaClient;
     Redis: Redis;
     authenticateJwt: (
       request: FastifyRequest,

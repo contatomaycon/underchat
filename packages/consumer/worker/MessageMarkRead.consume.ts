@@ -1,5 +1,6 @@
 import { singleton, inject } from 'tsyringe';
-import { Kafka, Consumer } from 'kafkajs';
+import { KafkaConsumer } from 'node-rdkafka';
+import { KafkaClient } from '@core/plugins/kafkaStreams';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { IMessageMarkRead } from '@core/common/interfaces/IMessageMarkRead';
 import { BaileysIncomingMessageService } from '@core/services/baileys/methods/incoming.service';
@@ -7,24 +8,26 @@ import { baileysEnvironment } from '@core/config/environments';
 import { startHeartbeat } from '@core/common/functions/startHeartbeat';
 import { createConsumer } from '@core/common/functions/createConsumer';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
+import { toError } from '@core/common/functions/toError';
 import { MessageStatusService } from '@core/services/messageStatus.service';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { IMessageStatusUpdate } from '@core/common/interfaces/IMessageStatusUpdate';
 
 @singleton()
 export class MessageMarkReadConsume {
-  private consumer: Consumer | null = null;
+  private consumer: KafkaConsumer | null = null;
+  private isRunning = false;
   private processingChain: Promise<void> = Promise.resolve();
 
   constructor(
-    @inject('Kafka') private readonly kafka: Kafka,
+    @inject('Kafka') private readonly kafka: KafkaClient,
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
     private readonly baileysIncomingMessageService: BaileysIncomingMessageService,
     private readonly messageStatusService: MessageStatusService,
     private readonly streamProducerService: StreamProducerService
   ) {}
 
-  private get consumerOrThrow(): Consumer {
+  private get consumerOrThrow(): KafkaConsumer {
     if (!this.consumer) {
       throw new Error('Consumer not initialized');
     }
@@ -52,7 +55,7 @@ export class MessageMarkReadConsume {
   }
 
   public async execute(): Promise<void> {
-    if (this.consumer) return;
+    if (this.consumer && this.isRunning) return;
 
     this.consumer = createConsumer(
       this.kafka,
@@ -62,67 +65,88 @@ export class MessageMarkReadConsume {
     const topic = this.kafkaServiceQueueService.markMessageRead();
 
     await ensureKafkaTopic(this.kafka, topic);
-    await this.consumer.connect();
-    await this.consumer.subscribe({ topic, fromBeginning: true });
 
-    await this.consumer.run({
-      autoCommit: false,
-      partitionsConsumedConcurrently: 1,
-      eachMessage: async ({ topic, partition, message, heartbeat }) => {
-        const data = this.parseMessage(message.value);
+    this.consumer.on('data', async (message) => {
+      const data = this.parseMessage(message.value);
 
-        if (!data) {
-          await this.commitNext(topic, partition, message.offset);
+      if (!data) {
+        await this.commitNext(topic, message.partition, message.offset);
 
-          return;
+        return;
+      }
+
+      if (data.worker_id !== baileysEnvironment.baileysWorkerId) {
+        await this.commitNext(topic, message.partition, message.offset);
+
+        return;
+      }
+
+      const offset = message.offset;
+
+      this.processingChain = this.processingChain.then(async () => {
+        const heartbeat = async () => {
+          this.consumer?.commit();
+        };
+
+        const stop = startHeartbeat(heartbeat);
+
+        try {
+          await this.baileysIncomingMessageService.markRead(data.keys);
+
+          await Promise.all(
+            data.keys.map(async (key) => {
+              if (!key.id) return;
+
+              const statusUpdate: IMessageStatusUpdate = {
+                account_id: data.account_id,
+                message_id: key.id,
+                patch: { is_seen: true },
+                key,
+              };
+
+              await this.streamProducerService.send(
+                this.kafkaServiceQueueService.updateMessageStatus(),
+                statusUpdate
+              );
+            })
+          );
+        } catch (error) {
+          console.error('Error marking message as read', {
+            accountId: data.account_id,
+            workerId: data.worker_id,
+            keysCount: data.keys.length,
+            error,
+          });
+          await this.commitNext(topic, message.partition, message.offset);
+        } finally {
+          stop();
         }
 
-        if (data.worker_id !== baileysEnvironment.baileysWorkerId) {
-          await this.commitNext(topic, partition, message.offset);
+        await this.commitNext(topic, message.partition, offset);
+      });
+    });
 
+    this.consumer.on('event.error', (err) => {
+      console.error('Consumer error:', err);
+    });
+
+    this.consumer.subscribe([topic]);
+
+    await new Promise<void>((resolve, reject) => {
+      const consumer = this.consumer;
+      if (!consumer) {
+        reject(new Error('Consumer not initialized'));
+        return;
+      }
+      consumer.connect({}, (err) => {
+        if (err) {
+          reject(toError(err));
           return;
         }
-
-        const offset = message.offset;
-
-        this.processingChain = this.processingChain.then(async () => {
-          const stop = startHeartbeat(heartbeat);
-
-          try {
-            await this.baileysIncomingMessageService.markRead(data.keys);
-
-            await Promise.all(
-              data.keys.map(async (key) => {
-                if (!key.id) return;
-
-                const statusUpdate: IMessageStatusUpdate = {
-                  account_id: data.account_id,
-                  message_id: key.id,
-                  patch: { is_seen: true },
-                  key,
-                };
-
-                await this.streamProducerService.send(
-                  this.kafkaServiceQueueService.updateMessageStatus(),
-                  statusUpdate
-                );
-              })
-            );
-          } catch (error) {
-            console.error('Error marking message as read', {
-              accountId: data.account_id,
-              workerId: data.worker_id,
-              keysCount: data.keys.length,
-              error,
-            });
-            await this.commitNext(topic, partition, message.offset);
-          } finally {
-            stop();
-          }
-
-          await this.commitNext(topic, partition, offset);
-        });
-      },
+        consumer.consume();
+        this.isRunning = true;
+        resolve();
+      });
     });
   }
 
@@ -134,9 +158,17 @@ export class MessageMarkReadConsume {
     }
 
     try {
-      await this.consumer.stop();
+      this.isRunning = false;
+      await new Promise<void>((resolve) => {
+        const consumer = this.consumer;
+        if (!consumer) {
+          resolve();
+          return;
+        }
+        consumer.unsubscribe();
+        consumer.disconnect(resolve);
+      });
     } finally {
-      await this.consumer.disconnect();
       this.consumer = null;
     }
   }
@@ -144,12 +176,14 @@ export class MessageMarkReadConsume {
   private async commitNext(
     topic: string,
     partition: number,
-    offset: string
+    offset: number
   ): Promise<void> {
-    const next = (BigInt(offset) + 1n).toString();
-
-    await this.consumerOrThrow.commitOffsets([
-      { topic, partition, offset: next },
+    this.consumerOrThrow.commitSync([
+      {
+        topic,
+        partition,
+        offset: offset + 1,
+      },
     ]);
   }
 }
