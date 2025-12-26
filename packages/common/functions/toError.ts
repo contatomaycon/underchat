@@ -9,10 +9,12 @@ export function toError(value: unknown): Error {
     }
 
     if ('toString' in value && typeof value.toString === 'function') {
-      const stringValue = value.toString();
-      if (stringValue !== '[object Object]') {
-        return new Error(stringValue);
-      }
+      try {
+        const stringValue = value.toString();
+        if (stringValue && stringValue !== '[object Object]') {
+          return new Error(stringValue);
+        }
+      } catch {}
     }
 
     try {
@@ -40,10 +42,12 @@ export function getErrorMessage(value: unknown): string {
     }
 
     if ('toString' in value && typeof value.toString === 'function') {
-      const stringValue = value.toString();
-      if (stringValue !== '[object Object]') {
-        return stringValue;
-      }
+      try {
+        const stringValue = value.toString();
+        if (stringValue && stringValue !== '[object Object]') {
+          return stringValue;
+        }
+      } catch {}
     }
 
     try {

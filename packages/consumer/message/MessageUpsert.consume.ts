@@ -493,8 +493,8 @@ export class MessageUpsertConsume {
     }
 
     const newText =
-      editedContent.conversation ||
-      editedContent.extendedTextMessage?.text ||
+      editedContent.conversation ??
+      editedContent.extendedTextMessage?.text ??
       '';
 
     if (!newText) {
@@ -1095,7 +1095,7 @@ export class MessageUpsertConsume {
     }
 
     const contactMsg = data.message.message.contactMessage;
-    const vcard = contactMsg.vcard || '';
+    const vcard = contactMsg.vcard ?? '';
     const parsed = this.parseVCard(vcard);
 
     const phoneAndDdi = extractPhoneAndDdiFromContactMessage(contactMsg);
@@ -1121,8 +1121,8 @@ export class MessageUpsertConsume {
     );
 
     let existingContactName =
-      parsed.name || contactMsg.displayName || 'Contato';
-    let existingContactLastName = parsed.last_name || null;
+      parsed.name ?? contactMsg.displayName ?? 'Contato';
+    let existingContactLastName = parsed.last_name ?? null;
     if (existingContact) {
       existingContactId = existingContact.contact_id;
       existingContactPhoto = existingContact.photo ?? null;
@@ -1137,7 +1137,7 @@ export class MessageUpsertConsume {
       phone: phoneAndDdi.phone,
       phone_partial: phonePartial,
       phone_ddi: phoneAndDdi.phone_ddi,
-      email: parsed.email || null,
+      email: parsed.email ?? null,
       email_partial: emailPartial,
       photo: existingContactPhoto,
     };
@@ -1175,7 +1175,7 @@ export class MessageUpsertConsume {
     const createdContact = await this.createContactAutomatically(
       data,
       phoneAndDdi,
-      name || phone
+      name ?? phone
     );
 
     if (createdContact) {

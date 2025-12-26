@@ -62,8 +62,8 @@ export class PhoneValidationConsume {
         account_id: data.account_id,
         worker_id: data.worker_id,
         valid: result.valid,
-        jid: result.jid || null,
-        phone: result.phone || null,
+        jid: result.jid ?? null,
+        phone: result.phone ?? null,
       };
 
       const responseTopic =

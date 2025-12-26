@@ -783,7 +783,7 @@ export class MessageSendConsume {
     const vcard = this.generateVCard(contactData);
 
     const displayName =
-      `${contactData.name} ${contactData.last_name || ''}`.trim() || 'Contato';
+      `${contactData.name} ${contactData.last_name ?? ''}`.trim() || 'Contato';
 
     const result =
       await this.baileysMessageLocationContactService.sendContactCard(
