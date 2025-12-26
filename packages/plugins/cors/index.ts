@@ -7,7 +7,19 @@ export default fp(
     fastify.register(cors, {
       origin: true,
       methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
-      allowedHeaders: '*',
+      allowedHeaders: [
+        'Authorization',
+        'Content-Type',
+        'Accept',
+        'Accept-Language',
+        'X-Requested-With',
+        'X-Forwarded-For',
+        'X-Real-IP',
+        'Origin',
+        'Referer',
+        'User-Agent',
+      ],
+      exposedHeaders: ['x-plan-active'],
       credentials: true,
       preflight: true,
     });
