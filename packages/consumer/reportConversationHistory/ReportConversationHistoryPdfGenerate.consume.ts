@@ -1,5 +1,6 @@
 import { singleton, inject } from 'tsyringe';
-import { Kafka, Consumer } from 'kafkajs';
+import { KafkaConsumer } from 'node-rdkafka';
+import { KafkaClient } from '@core/plugins/kafkaStreams';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { ReportConversationHistoryPdfService } from '@core/services/reportConversationHistoryPdf.service';
 import { CentrifugoService } from '@core/services/centrifugo.service';
@@ -7,6 +8,7 @@ import { EReportConversationHistoryPdfStatus } from '@core/common/enums/EReportC
 import { startHeartbeat } from '@core/common/functions/startHeartbeat';
 import { createConsumer } from '@core/common/functions/createConsumer';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
+import { toError } from '@core/common/functions/toError';
 import { IReportConversationHistoryPdfGeneratePayload } from '@core/common/interfaces/IReportConversationHistoryPdfGeneratePayload';
 import { IReportConversationHistoryPdfNotification } from '@core/common/interfaces/IReportConversationHistoryPdfNotification';
 import { reportConversationHistoryPdfAccountCentrifugo } from '@core/common/functions/centrifugoQueue';
@@ -14,16 +16,17 @@ import { createI18nInstance } from '@core/common/functions/createI18nInstance';
 
 @singleton()
 export class ReportConversationHistoryPdfGenerateConsume {
-  private consumer: Consumer | null = null;
+  private consumer: KafkaConsumer | null = null;
+  private isRunning = false;
 
   constructor(
-    @inject('Kafka') private readonly kafka: Kafka,
+    @inject('Kafka') private readonly kafka: KafkaClient,
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
     private readonly pdfService: ReportConversationHistoryPdfService,
     private readonly centrifugoService: CentrifugoService
   ) {}
 
-  private get consumerOrThrow(): Consumer {
+  private get consumerOrThrow(): KafkaConsumer {
     if (!this.consumer) {
       throw new Error('Consumer not initialized');
     }
@@ -32,7 +35,7 @@ export class ReportConversationHistoryPdfGenerateConsume {
   }
 
   public async execute(): Promise<void> {
-    if (this.consumer) return;
+    if (this.consumer && this.isRunning) return;
 
     this.consumer = createConsumer(
       this.kafka,
@@ -43,39 +46,60 @@ export class ReportConversationHistoryPdfGenerateConsume {
       this.kafkaServiceQueueService.reportConversationHistoryPdfGenerate();
 
     await ensureKafkaTopic(this.kafka, topic);
-    await this.consumer.connect();
-    await this.consumer.subscribe({ topic, fromBeginning: true });
 
-    await this.consumer.run({
-      autoCommit: false,
-      partitionsConsumedConcurrently: 1,
-      eachMessage: async ({ topic, partition, message, heartbeat }) => {
-        const data = this.parseMessage(message.value);
+    this.consumer.on('data', async (message) => {
+      const data = this.parseMessage(message.value);
 
-        if (!data) {
-          await this.commitNext(topic, partition, message.offset);
+      if (!data) {
+        await this.commitNext(topic, message.partition, message.offset);
+        return;
+      }
+
+      const heartbeat = async () => {
+        this.consumer?.commit();
+      };
+
+      const stop = startHeartbeat(heartbeat);
+      try {
+        await this.handleMessage(data);
+      } catch (error) {
+        console.error('Error processing PDF generation:', error);
+        await this.pdfService.updateStatus(
+          data.pdf_record_id,
+          EReportConversationHistoryPdfStatus.failed
+        );
+        await this.notifyPdfStatus(
+          data,
+          EReportConversationHistoryPdfStatus.failed
+        );
+      } finally {
+        stop();
+      }
+
+      await this.commitNext(topic, message.partition, message.offset);
+    });
+
+    this.consumer.on('event.error', (err) => {
+      console.error('Consumer error:', err);
+    });
+
+    this.consumer.subscribe([topic]);
+
+    await new Promise<void>((resolve, reject) => {
+      const consumer = this.consumer;
+      if (!consumer) {
+        reject(new Error('Consumer not initialized'));
+        return;
+      }
+      consumer.connect({}, (err) => {
+        if (err) {
+          reject(toError(err));
           return;
         }
-
-        const stop = startHeartbeat(heartbeat);
-        try {
-          await this.handleMessage(data);
-        } catch (error) {
-          console.error('Error processing PDF generation:', error);
-          await this.pdfService.updateStatus(
-            data.pdf_record_id,
-            EReportConversationHistoryPdfStatus.failed
-          );
-          await this.notifyPdfStatus(
-            data,
-            EReportConversationHistoryPdfStatus.failed
-          );
-        } finally {
-          stop();
-        }
-
-        await this.commitNext(topic, partition, message.offset);
-      },
+        consumer.consume();
+        this.isRunning = true;
+        resolve();
+      });
     });
   }
 
@@ -84,8 +108,20 @@ export class ReportConversationHistoryPdfGenerateConsume {
       return;
     }
 
-    await this.consumer.disconnect();
-    this.consumer = null;
+    try {
+      this.isRunning = false;
+      await new Promise<void>((resolve) => {
+        const consumer = this.consumer;
+        if (!consumer) {
+          resolve();
+          return;
+        }
+        consumer.unsubscribe();
+        consumer.disconnect(resolve);
+      });
+    } finally {
+      this.consumer = null;
+    }
   }
 
   private parseMessage(
@@ -107,13 +143,13 @@ export class ReportConversationHistoryPdfGenerateConsume {
   private async commitNext(
     topic: string,
     partition: number,
-    offset: string
+    offset: number
   ): Promise<void> {
-    await this.consumerOrThrow.commitOffsets([
+    this.consumerOrThrow.commitSync([
       {
         topic,
         partition,
-        offset: (BigInt(offset) + BigInt(1)).toString(),
+        offset: offset + 1,
       },
     ]);
   }

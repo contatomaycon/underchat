@@ -20,10 +20,12 @@ import { IUpdateMessage } from '@core/common/interfaces/IUpdateMessage';
 import { proto, WAMessage, WAUrlInfo } from '@whiskeysockets/baileys';
 import { Buffer } from 'node:buffer';
 import { KeyedSequencerService } from '@core/services/keyedSequencer.service';
-import { Kafka, Consumer } from 'kafkajs';
+import { KafkaConsumer } from 'node-rdkafka';
+import { KafkaClient } from '@core/plugins/kafkaStreams';
 import { startHeartbeat } from '@core/common/functions/startHeartbeat';
 import { createConsumer } from '@core/common/functions/createConsumer';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
+import { toError } from '@core/common/functions/toError';
 import { selectJidChat } from '@core/common/functions/selectJidChat';
 import { convertWaveformBase64ToUint8Array } from '@core/common/functions/convertWaveform';
 import { webcrypto } from 'node:crypto';
@@ -31,12 +33,13 @@ import { EWorkerProfileStatusType } from '@core/common/enums/EWorkerProfileStatu
 
 @singleton()
 export class MessageSendConsume {
-  private consumer: Consumer | null = null;
+  private consumer: KafkaConsumer | null = null;
+  private isRunning = false;
   private readonly lastMessageTypeByChatId: Map<string, EMessageType> =
     new Map();
 
   constructor(
-    @inject('Kafka') private readonly kafka: Kafka,
+    @inject('Kafka') private readonly kafka: KafkaClient,
     private readonly kafkaBaileysQueueService: KafkaBaileysQueueService,
     private readonly baileysMessageTextService: BaileysMessageTextService,
     private readonly baileysMessageMediaService: BaileysMessageMediaService,
@@ -50,7 +53,7 @@ export class MessageSendConsume {
     private readonly keyedSequencerService: KeyedSequencerService
   ) {}
 
-  private get consumerOrThrow(): Consumer {
+  private get consumerOrThrow(): KafkaConsumer {
     if (!this.consumer) {
       throw new Error('Consumer not initialized');
     }
@@ -59,7 +62,7 @@ export class MessageSendConsume {
   }
 
   public async execute(): Promise<void> {
-    if (this.consumer) return;
+    if (this.consumer && this.isRunning) return;
 
     this.consumer = createConsumer(
       this.kafka,
@@ -71,74 +74,94 @@ export class MessageSendConsume {
     );
 
     await ensureKafkaTopic(this.kafka, topic);
-    await this.consumer.connect();
-    await this.consumer.subscribe({ topic, fromBeginning: true });
 
-    await this.consumer.run({
-      autoCommit: false,
-      partitionsConsumedConcurrently: 1,
-      eachMessage: async ({ topic, partition, message, heartbeat }) => {
-        const data = this.parseMessage(message.value);
-        const statusData = this.parseStatusMessage(message.value);
-        const deleteStatusData = this.parseDeleteStatusMessage(message.value);
-        const profileInfoData = this.parseProfileInfoMessage(message.value);
+    this.consumer.on('data', async (message) => {
+      const data = this.parseMessage(message.value);
+      const statusData = this.parseStatusMessage(message.value);
+      const deleteStatusData = this.parseDeleteStatusMessage(message.value);
+      const profileInfoData = this.parseProfileInfoMessage(message.value);
 
-        if (!data && !statusData && !deleteStatusData && !profileInfoData) {
-          await this.commitNext(topic, partition, message.offset);
+      if (!data && !statusData && !deleteStatusData && !profileInfoData) {
+        await this.commitNext(topic, message.partition, message.offset);
+        return;
+      }
 
+      const heartbeat = async () => {
+        this.consumer?.commit();
+      };
+
+      const stop = startHeartbeat(heartbeat);
+      try {
+        if (deleteStatusData) {
+          await this.processDeleteStatus(deleteStatusData);
+          stop();
+          await this.commitNext(topic, message.partition, message.offset);
           return;
         }
 
-        const stop = startHeartbeat(heartbeat);
-        try {
-          if (deleteStatusData) {
-            await this.processDeleteStatus(deleteStatusData);
-            stop();
-            await this.commitNext(topic, partition, message.offset);
-            return;
-          }
-
-          if (statusData) {
-            await this.processProfileStatus(statusData);
-            stop();
-            await this.commitNext(topic, partition, message.offset);
-            return;
-          }
-
-          if (profileInfoData) {
-            await this.processProfileInfo(profileInfoData);
-            stop();
-            await this.commitNext(topic, partition, message.offset);
-            return;
-          }
-
-          if (!data) {
-            stop();
-            await this.commitNext(topic, partition, message.offset);
-            return;
-          }
-
-          const chatId = this.resolveChatId(data);
-          if (!chatId) {
-            stop();
-            await this.commitNext(topic, partition, message.offset);
-            return;
-          }
-
-          await this.enqueueByChatId(chatId, async () => {
-            await this.processMessage(data);
-          });
-        } catch {
+        if (statusData) {
+          await this.processProfileStatus(statusData);
           stop();
-          await this.commitNext(topic, partition, message.offset);
+          await this.commitNext(topic, message.partition, message.offset);
           return;
-        } finally {
-          stop();
         }
 
+        if (profileInfoData) {
+          await this.processProfileInfo(profileInfoData);
+          stop();
+          await this.commitNext(topic, message.partition, message.offset);
+          return;
+        }
+
+        if (!data) {
+          stop();
+          await this.commitNext(topic, message.partition, message.offset);
+          return;
+        }
+
+        const chatId = this.resolveChatId(data);
+        if (!chatId) {
+          stop();
+          await this.commitNext(topic, message.partition, message.offset);
+          return;
+        }
+
+        await this.enqueueByChatId(chatId, async () => {
+          await this.processMessage(data);
+        });
+      } catch {
         stop();
-        await this.commitNext(topic, partition, message.offset);
-      },
+        await this.commitNext(topic, message.partition, message.offset);
+        return;
+      } finally {
+        stop();
+      }
+
+      stop();
+      await this.commitNext(topic, message.partition, message.offset);
+    });
+
+    this.consumer.on('event.error', (err) => {
+      console.error('Consumer error:', err);
+    });
+
+    this.consumer.subscribe([topic]);
+
+    await new Promise<void>((resolve, reject) => {
+      const consumer = this.consumer;
+      if (!consumer) {
+        reject(new Error('Consumer not initialized'));
+        return;
+      }
+      consumer.connect({}, (err) => {
+        if (err) {
+          reject(toError(err));
+          return;
+        }
+        consumer.consume();
+        this.isRunning = true;
+        resolve();
+      });
     });
   }
 
@@ -150,10 +173,17 @@ export class MessageSendConsume {
     }
 
     try {
-      await this.consumer.stop();
+      this.isRunning = false;
+      await new Promise<void>((resolve) => {
+        const consumer = this.consumer;
+        if (!consumer) {
+          resolve();
+          return;
+        }
+        consumer.unsubscribe();
+        consumer.disconnect(resolve);
+      });
     } finally {
-      await this.consumer.disconnect();
-
       this.consumer = null;
     }
   }
@@ -161,12 +191,14 @@ export class MessageSendConsume {
   private async commitNext(
     topic: string,
     partition: number,
-    offset: string
+    offset: number
   ): Promise<void> {
-    const next = (BigInt(offset) + 1n).toString();
-
-    await this.consumerOrThrow.commitOffsets([
-      { topic, partition, offset: next },
+    this.consumerOrThrow.commitSync([
+      {
+        topic,
+        partition,
+        offset: offset + 1,
+      },
     ]);
   }
 
@@ -751,7 +783,7 @@ export class MessageSendConsume {
     const vcard = this.generateVCard(contactData);
 
     const displayName =
-      `${contactData.name} ${contactData.last_name || ''}`.trim() || 'Contato';
+      `${contactData.name} ${contactData.last_name ?? ''}`.trim() || 'Contato';
 
     const result =
       await this.baileysMessageLocationContactService.sendContactCard(

@@ -1,31 +1,34 @@
 import { singleton, inject } from 'tsyringe';
-import { Kafka, Consumer } from 'kafkajs';
+import { KafkaConsumer } from 'node-rdkafka';
+import { KafkaClient } from '@core/plugins/kafkaStreams';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { AsaasNfseWebhookRequest } from '@core/schema/nfse/Webhook/request.schema';
 import { createConsumer } from '@core/common/functions/createConsumer';
 import { startHeartbeat } from '@core/common/functions/startHeartbeat';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
+import { toError } from '@core/common/functions/toError';
 import { FastifyInstance } from 'fastify';
 import { NfseProcessorService } from '@core/services/nfseProcessor.service';
 
 @singleton()
 export class AsaasNfseWebhookConsume {
-  private consumer: Consumer | null = null;
+  private consumer: KafkaConsumer | null = null;
+  private isRunning = false;
 
   constructor(
-    @inject('Kafka') private readonly kafka: Kafka,
+    @inject('Kafka') private readonly kafka: KafkaClient,
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
     private readonly nfseProcessorService: NfseProcessorService
   ) {}
 
-  private get consumerOrThrow(): Consumer {
+  private get consumerOrThrow(): KafkaConsumer {
     if (!this.consumer) throw new Error('Consumer not initialized');
 
     return this.consumer;
   }
 
   async execute(server: FastifyInstance): Promise<void> {
-    if (this.consumer) return;
+    if (this.consumer && this.isRunning) return;
 
     this.consumer = createConsumer(
       this.kafka,
@@ -35,35 +38,57 @@ export class AsaasNfseWebhookConsume {
     const topic = this.kafkaServiceQueueService.asaasNfseWebhook();
 
     await ensureKafkaTopic(this.kafka, topic);
-    await this.consumer.connect();
-    await this.consumer.subscribe({ topic, fromBeginning: true });
 
-    await this.consumer.run({
-      autoCommit: false,
-      eachMessage: async ({ topic, partition, message, heartbeat }) => {
-        const data = this.parseMessage(message.value);
+    this.consumer.on('data', async (message) => {
+      const data = this.parseMessage(message.value);
 
-        if (!data) {
-          server.log.warn('Skipping message without value or invalid JSON');
-          await this.commitNext(topic, partition, message.offset);
+      if (!data) {
+        server.log.warn('Skipping message without value or invalid JSON');
+        await this.commitNext(topic, message.partition, message.offset);
 
+        return;
+      }
+
+      const heartbeat = async () => {
+        this.consumer?.commit();
+      };
+
+      const stop = startHeartbeat(heartbeat);
+      try {
+        await this.handleWebhookEvent(data);
+      } catch (error) {
+        server.log.error(
+          error,
+          `Error processing nfse webhook event: ${data.event}`
+        );
+      } finally {
+        stop();
+      }
+
+      await this.commitNext(topic, message.partition, message.offset);
+    });
+
+    this.consumer.on('event.error', (err) => {
+      console.error('Consumer error:', err);
+    });
+
+    this.consumer.subscribe([topic]);
+
+    await new Promise<void>((resolve, reject) => {
+      const consumer = this.consumer;
+      if (!consumer) {
+        reject(new Error('Consumer not initialized'));
+        return;
+      }
+      consumer.connect({}, (err) => {
+        if (err) {
+          reject(toError(err));
           return;
         }
-
-        const stop = startHeartbeat(heartbeat);
-        try {
-          await this.handleWebhookEvent(data);
-        } catch (error) {
-          server.log.error(
-            error,
-            `Error processing nfse webhook event: ${data.event}`
-          );
-        } finally {
-          stop();
-        }
-
-        await this.commitNext(topic, partition, message.offset);
-      },
+        consumer.consume();
+        this.isRunning = true;
+        resolve();
+      });
     });
   }
 
@@ -71,9 +96,17 @@ export class AsaasNfseWebhookConsume {
     if (!this.consumer) return;
 
     try {
-      await this.consumer.stop();
+      this.isRunning = false;
+      await new Promise<void>((resolve) => {
+        const consumer = this.consumer;
+        if (!consumer) {
+          resolve();
+          return;
+        }
+        consumer.unsubscribe();
+        consumer.disconnect(resolve);
+      });
     } finally {
-      await this.consumer.disconnect();
       this.consumer = null;
     }
   }
@@ -81,12 +114,14 @@ export class AsaasNfseWebhookConsume {
   private async commitNext(
     topic: string,
     partition: number,
-    offset: string
+    offset: number
   ): Promise<void> {
-    const next = (BigInt(offset) + 1n).toString();
-
-    await this.consumerOrThrow.commitOffsets([
-      { topic, partition, offset: next },
+    this.consumerOrThrow.commitSync([
+      {
+        topic,
+        partition,
+        offset: offset + 1,
+      },
     ]);
   }
 
