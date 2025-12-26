@@ -3,6 +3,7 @@ import { AdminClient, LibrdKafkaError } from 'node-rdkafka';
 import { KafkaClient } from '@core/plugins/kafkaStreams';
 import { ITopicMetadata } from '@core/common/interfaces/ITopicMetadata';
 import { toError, getErrorMessage } from '@core/common/functions/toError';
+import { wait } from '@core/common/functions/wait';
 
 @injectable()
 export class KafkaService {
@@ -20,10 +21,14 @@ export class KafkaService {
     return metadata.topics.map((t) => t.name);
   }
 
-  private async getMetadata(): Promise<ITopicMetadata> {
+  private async getMetadata(
+    timeout = 5000,
+    topic?: string
+  ): Promise<ITopicMetadata> {
     return new Promise<ITopicMetadata>((resolve, reject) => {
+      const options = topic ? { timeout, topic } : { timeout };
       (this.admin as any).getMetadata(
-        { timeout: 5000 },
+        options,
         (err: LibrdKafkaError | null, data: ITopicMetadata) => {
           if (err) {
             reject(toError(err));
@@ -35,12 +40,82 @@ export class KafkaService {
     });
   }
 
+  private getTopicState(
+    metadata: ITopicMetadata | null,
+    topicName: string
+  ): { exists: boolean; totalPartitions: number; readyPartitions: number } {
+    if (!metadata?.topics) {
+      return { exists: false, totalPartitions: 0, readyPartitions: 0 };
+    }
+
+    const topic = metadata.topics.find((t) => t.name === topicName);
+    if (!topic) {
+      return { exists: false, totalPartitions: 0, readyPartitions: 0 };
+    }
+
+    const totalPartitions = topic.partitions?.length ?? 0;
+    const readyPartitions =
+      topic.partitions?.filter(
+        (p) => typeof p.leader === 'number' && p.leader >= 0
+      ).length ?? 0;
+
+    return { exists: true, totalPartitions, readyPartitions };
+  }
+
+  private async waitForTopicReady(
+    topic: string,
+    numPartitions: number,
+    timeoutMs: number
+  ): Promise<void> {
+    const start = Date.now();
+    let lastError: Error | null = null;
+    let lastState: {
+      exists: boolean;
+      totalPartitions: number;
+      readyPartitions: number;
+    } | null = null;
+
+    while (true) {
+      let metadata: ITopicMetadata | null = null;
+
+      try {
+        metadata = await this.getMetadata(5000, topic);
+        lastState = this.getTopicState(metadata, topic);
+      } catch (error) {
+        lastError = toError(error);
+      }
+
+      if (metadata && lastState && lastState.readyPartitions >= numPartitions) {
+        return;
+      }
+
+      if (Date.now() - start > timeoutMs) {
+        const stateHint = lastState
+          ? lastState.exists
+            ? ` (ready partitions: ${lastState.readyPartitions}/${Math.max(
+                lastState.totalPartitions,
+                numPartitions
+              )})`
+            : ' (topic not visible in metadata yet)'
+          : '';
+        const errorHint = lastError
+          ? ` (last metadata error: ${lastError.message})`
+          : '';
+
+        throw new Error(`Topic not ready: ${topic}${stateHint}${errorHint}`);
+      }
+
+      await wait(500);
+    }
+  }
+
   private async createSingleTopic(
     topic: string,
     numPartitions: number,
-    replicationFactor: number
+    replicationFactor: number,
+    timeoutMs: number
   ): Promise<void> {
-    return new Promise<void>((resolve, reject) => {
+    await new Promise<void>((resolve, reject) => {
       (this.admin as any).createTopic(
         {
           topic,
@@ -68,12 +143,15 @@ export class KafkaService {
         }
       );
     });
+
+    await this.waitForTopicReady(topic, numPartitions, timeoutMs);
   }
 
   async createTopics(
     topics: string[],
     numPartitions = 1,
-    replicationFactor = 1
+    replicationFactor = 1,
+    timeoutMs = 60000
   ): Promise<void> {
     if (topics.length === 0) {
       return;
@@ -90,7 +168,12 @@ export class KafkaService {
 
     await Promise.all(
       topicsToCreate.map((topic) =>
-        this.createSingleTopic(topic, numPartitions, replicationFactor)
+        this.createSingleTopic(
+          topic,
+          numPartitions,
+          replicationFactor,
+          timeoutMs
+        )
       )
     );
   }

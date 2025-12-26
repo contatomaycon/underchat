@@ -14,11 +14,13 @@ function createAdminClient(kafka: KafkaClient): AdminClient {
 
 async function getMetadata(
   admin: AdminClient,
-  timeout = 5000
-): Promise<ITopicMetadata | null> {
+  timeout = 5000,
+  topic?: string
+): Promise<ITopicMetadata> {
   return new Promise<ITopicMetadata>((resolve, reject) => {
+    const options = topic ? { timeout, topic } : { timeout };
     (admin as any).getMetadata(
-      { timeout },
+      options,
       (err: LibrdKafkaError | null, data: ITopicMetadata) => {
         if (err) {
           reject(toError(err));
@@ -27,7 +29,7 @@ async function getMetadata(
         resolve(data);
       }
     );
-  }).catch(() => null);
+  });
 }
 
 function topicExists(
@@ -38,9 +40,7 @@ function topicExists(
     return false;
   }
 
-  return metadata.topics.some(
-    (t) => t.name === topicName && t.partitions && t.partitions.length > 0
-  );
+  return metadata.topics.some((t) => t.name === topicName);
 }
 
 function getTopicInfo(
@@ -63,6 +63,28 @@ function getTopicInfo(
         typeof p.leader === 'number' && p.leader >= 0
     ),
   };
+}
+
+function getTopicState(
+  metadata: ITopicMetadata | null,
+  topicName: string
+): { exists: boolean; totalPartitions: number; readyPartitions: number } {
+  if (!metadata?.topics) {
+    return { exists: false, totalPartitions: 0, readyPartitions: 0 };
+  }
+
+  const topic = metadata.topics.find((t) => t.name === topicName);
+  if (!topic) {
+    return { exists: false, totalPartitions: 0, readyPartitions: 0 };
+  }
+
+  const totalPartitions = topic.partitions?.length ?? 0;
+  const readyPartitions =
+    topic.partitions?.filter(
+      (p) => typeof p.leader === 'number' && p.leader >= 0
+    ).length ?? 0;
+
+  return { exists: true, totalPartitions, readyPartitions };
 }
 
 async function createTopic(
@@ -122,17 +144,44 @@ async function waitForTopicReady(
   timeoutMs: number
 ): Promise<void> {
   const start = Date.now();
+  let lastError: Error | null = null;
+  let lastState: {
+    exists: boolean;
+    totalPartitions: number;
+    readyPartitions: number;
+  } | null = null;
 
   while (true) {
-    const metadata = await getMetadata(admin);
-    const topicInfo = getTopicInfo(metadata, topic);
+    let metadata: ITopicMetadata | null = null;
 
-    if (isTopicReady(topicInfo, numPartitions)) {
-      return;
+    try {
+      metadata = await getMetadata(admin, 5000, topic);
+      lastState = getTopicState(metadata, topic);
+    } catch (error) {
+      lastError = toError(error);
+    }
+
+    if (metadata) {
+      const topicInfo = getTopicInfo(metadata, topic);
+      if (isTopicReady(topicInfo, numPartitions)) {
+        return;
+      }
     }
 
     if (Date.now() - start > timeoutMs) {
-      throw new Error(`Topic not ready: ${topic}`);
+      const stateHint = lastState
+        ? lastState.exists
+          ? ` (ready partitions: ${lastState.readyPartitions}/${Math.max(
+              lastState.totalPartitions,
+              numPartitions
+            )})`
+          : ' (topic not visible in metadata yet)'
+        : '';
+      const errorHint = lastError
+        ? ` (last metadata error: ${lastError.message})`
+        : '';
+
+      throw new Error(`Topic not ready: ${topic}${stateHint}${errorHint}`);
     }
 
     await wait(500);
@@ -144,12 +193,19 @@ export async function ensureKafkaTopic(
   topic: string,
   numPartitions = 1,
   replicationFactor = 1,
-  timeoutMs = 30000
+  timeoutMs = 60000
 ): Promise<void> {
   const admin = createAdminClient(kafka);
 
   try {
-    const metadata = await getMetadata(admin);
+    let metadata: ITopicMetadata | null = null;
+
+    try {
+      metadata = await getMetadata(admin, 5000, topic);
+    } catch {
+      metadata = null;
+    }
+
     const exists = topicExists(metadata, topic);
 
     if (!exists) {
