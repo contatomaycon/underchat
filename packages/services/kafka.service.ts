@@ -21,14 +21,10 @@ export class KafkaService {
     return metadata.topics.map((t) => t.name);
   }
 
-  private async getMetadata(
-    timeout = 5000,
-    topic?: string
-  ): Promise<ITopicMetadata> {
+  private async getMetadata(timeout = 5000): Promise<ITopicMetadata> {
     return new Promise<ITopicMetadata>((resolve, reject) => {
-      const options = topic ? { timeout, topic } : { timeout };
       (this.admin as any).getMetadata(
-        options,
+        { timeout },
         (err: LibrdKafkaError | null, data: ITopicMetadata) => {
           if (err) {
             reject(toError(err));
@@ -79,7 +75,7 @@ export class KafkaService {
       let metadata: ITopicMetadata | null = null;
 
       try {
-        metadata = await this.getMetadata(5000, topic);
+        metadata = await this.getMetadata(5000);
         lastState = this.getTopicState(metadata, topic);
       } catch (error) {
         lastError = toError(error);

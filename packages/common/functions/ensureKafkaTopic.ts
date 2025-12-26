@@ -14,13 +14,11 @@ function createAdminClient(kafka: KafkaClient): AdminClient {
 
 async function getMetadata(
   admin: AdminClient,
-  timeout = 5000,
-  topic?: string
+  timeout = 5000
 ): Promise<ITopicMetadata> {
   return new Promise<ITopicMetadata>((resolve, reject) => {
-    const options = topic ? { timeout, topic } : { timeout };
     (admin as any).getMetadata(
-      options,
+      { timeout },
       (err: LibrdKafkaError | null, data: ITopicMetadata) => {
         if (err) {
           reject(toError(err));
@@ -155,7 +153,7 @@ async function waitForTopicReady(
     let metadata: ITopicMetadata | null = null;
 
     try {
-      metadata = await getMetadata(admin, 5000, topic);
+      metadata = await getMetadata(admin, 5000);
       lastState = getTopicState(metadata, topic);
     } catch (error) {
       lastError = toError(error);
@@ -201,7 +199,7 @@ export async function ensureKafkaTopic(
     let metadata: ITopicMetadata | null = null;
 
     try {
-      metadata = await getMetadata(admin, 5000, topic);
+      metadata = await getMetadata(admin, 5000);
     } catch {
       metadata = null;
     }
