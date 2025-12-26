@@ -16,7 +16,8 @@ RUN apt-get update && \
       zlib1g-dev \
       libzstd-dev \
       curl \
-      ca-certificates && \
+      ca-certificates \
+      procps && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
