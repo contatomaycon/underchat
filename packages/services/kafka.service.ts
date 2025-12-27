@@ -17,23 +17,42 @@ export class KafkaService {
   }
 
   private async getExistingTopics(): Promise<string[]> {
-    const metadata = await this.getMetadata();
+    const metadata = await this.getMetadata(5000, 3);
+    if (!metadata) {
+      return [];
+    }
     return metadata.topics.map((t) => t.name);
   }
 
-  private async getMetadata(timeout = 5000): Promise<ITopicMetadata> {
-    return new Promise<ITopicMetadata>((resolve, reject) => {
-      (this.admin as any).getMetadata(
-        { timeout },
-        (err: LibrdKafkaError | null, data: ITopicMetadata) => {
-          if (err) {
-            reject(toError(err));
-            return;
-          }
-          resolve(data);
+  private async getMetadata(
+    timeout = 5000,
+    retries = 3
+  ): Promise<ITopicMetadata | null> {
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt < retries; attempt++) {
+      try {
+        return await new Promise<ITopicMetadata>((resolve, reject) => {
+          (this.admin as any).getMetadata(
+            { timeout },
+            (err: LibrdKafkaError | null, data: ITopicMetadata) => {
+              if (err) {
+                reject(toError(err));
+                return;
+              }
+              resolve(data);
+            }
+          );
+        });
+      } catch (error) {
+        lastError = toError(error);
+        if (attempt < retries - 1) {
+          await wait(200 * (attempt + 1));
         }
-      );
-    });
+      }
+    }
+
+    return null;
   }
 
   private getTopicState(
@@ -70,22 +89,49 @@ export class KafkaService {
       totalPartitions: number;
       readyPartitions: number;
     } | null = null;
+    let consecutiveErrors = 0;
+    let consecutiveNotFound = 0;
+    const maxConsecutiveErrors = 5;
+    const maxConsecutiveNotFound = 10;
+    let waitTime = 200;
 
     while (true) {
-      let metadata: ITopicMetadata | null = null;
+      const metadata = await this.getMetadata(5000, 2);
 
-      try {
-        metadata = await this.getMetadata(5000);
+      if (metadata) {
+        consecutiveErrors = 0;
         lastState = this.getTopicState(metadata, topic);
-      } catch (error) {
-        lastError = toError(error);
+
+        if (lastState.exists) {
+          consecutiveNotFound = 0;
+
+          if (lastState.readyPartitions >= numPartitions) {
+            return;
+          }
+
+          if (lastState.readyPartitions > 0) {
+            waitTime = Math.min(waitTime * 1.2, 2000);
+          }
+        } else {
+          consecutiveNotFound++;
+          if (consecutiveNotFound > maxConsecutiveNotFound) {
+            waitTime = Math.min(waitTime * 1.5, 3000);
+          }
+        }
+      } else {
+        consecutiveErrors++;
+        consecutiveNotFound++;
+
+        if (consecutiveErrors > maxConsecutiveErrors) {
+          lastError = new Error(
+            'Failed to get metadata after multiple attempts'
+          );
+          waitTime = Math.min(waitTime * 2, 5000);
+        }
       }
 
-      if (metadata && lastState && lastState.readyPartitions >= numPartitions) {
-        return;
-      }
-
-      if (Date.now() - start > timeoutMs) {
+      const elapsed = Date.now() - start;
+      if (elapsed > timeoutMs) {
         const stateHint = lastState
           ? lastState.exists
             ? ` (ready partitions: ${lastState.readyPartitions}/${Math.max(
@@ -98,10 +144,14 @@ export class KafkaService {
           ? ` (last metadata error: ${lastError.message})`
           : '';
 
+        if (lastState?.exists && lastState.readyPartitions > 0) {
+          return;
+        }
+
         throw new Error(`Topic not ready: ${topic}${stateHint}${errorHint}`);
       }
 
-      await wait(500);
+      await wait(waitTime);
     }
   }
 
@@ -111,43 +161,101 @@ export class KafkaService {
     replicationFactor: number,
     timeoutMs: number
   ): Promise<void> {
-    await new Promise<void>((resolve, reject) => {
-      (this.admin as any).createTopic(
-        {
-          topic,
-          num_partitions: numPartitions,
-          replication_factor: replicationFactor,
-        },
-        (err: LibrdKafkaError | null) => {
-          if (err) {
-            const errorMessage = getErrorMessage(err);
-            const errorCode = (err as any).code ?? (err as any).errno;
+    const retries = 3;
+    let lastError: Error | null = null;
 
-            if (
-              errorCode === 36 ||
-              errorMessage.includes('Topic already exists') ||
-              errorMessage.includes('already exists')
-            ) {
+    for (let attempt = 0; attempt < retries; attempt++) {
+      try {
+        await new Promise<void>((resolve, reject) => {
+          (this.admin as any).createTopic(
+            {
+              topic,
+              num_partitions: numPartitions,
+              replication_factor: replicationFactor,
+            },
+            (err: LibrdKafkaError | null) => {
+              if (err) {
+                const errorMessage = getErrorMessage(err);
+                const errorCode = (err as any).code ?? (err as any).errno;
+
+                if (
+                  errorCode === 36 ||
+                  errorMessage.includes('Topic already exists') ||
+                  errorMessage.includes('already exists') ||
+                  (errorMessage.toLowerCase().includes('topic') &&
+                    errorMessage.toLowerCase().includes('exists'))
+                ) {
+                  resolve();
+                  return;
+                }
+
+                reject(toError(err));
+                return;
+              }
               resolve();
-              return;
             }
+          );
+        });
 
-            reject(toError(err));
-            return;
+        await wait(500);
+
+        for (let i = 0; i < 5; i++) {
+          const metadata = await this.getMetadata(5000, 2);
+          const exists = metadata
+            ? metadata.topics.some((t) => t.name === topic)
+            : false;
+
+          if (exists) {
+            break;
           }
-          resolve();
-        }
-      );
-    });
 
-    await this.waitForTopicReady(topic, numPartitions, timeoutMs);
+          await wait(300 * (i + 1));
+        }
+
+        await this.waitForTopicReady(topic, numPartitions, timeoutMs);
+        return;
+      } catch (error) {
+        lastError = toError(error);
+        const errorMessage = getErrorMessage(error);
+        const errorCode = (error as any)?.code ?? (error as any)?.errno;
+
+        if (
+          errorCode === 36 ||
+          errorMessage.includes('Topic already exists') ||
+          errorMessage.includes('already exists')
+        ) {
+          await this.waitForTopicReady(topic, numPartitions, timeoutMs);
+          return;
+        }
+
+        if (attempt < retries - 1) {
+          await wait(300 * (attempt + 1));
+        }
+      }
+    }
+
+    if (lastError) {
+      const errorMessage = getErrorMessage(lastError);
+      const errorCode = (lastError as any)?.code ?? (lastError as any)?.errno;
+
+      if (
+        errorCode === 36 ||
+        errorMessage.includes('Topic already exists') ||
+        errorMessage.includes('already exists')
+      ) {
+        await this.waitForTopicReady(topic, numPartitions, timeoutMs);
+        return;
+      }
+
+      throw lastError;
+    }
   }
 
   async createTopics(
     topics: string[],
     numPartitions = 1,
     replicationFactor = 1,
-    timeoutMs = 60000
+    timeoutMs = 90000
   ): Promise<void> {
     if (topics.length === 0) {
       return;
