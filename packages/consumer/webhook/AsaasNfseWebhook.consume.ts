@@ -5,8 +5,8 @@ import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.servi
 import { AsaasNfseWebhookRequest } from '@core/schema/nfse/Webhook/request.schema';
 import { createConsumer } from '@core/common/functions/createConsumer';
 import { startHeartbeat } from '@core/common/functions/startHeartbeat';
-import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
-import { toError } from '@core/common/functions/toError';
+import { connectConsumer } from '@core/common/functions/connectConsumer';
+import { handleConsumerError } from '@core/common/functions/handleConsumerError';
 import { FastifyInstance } from 'fastify';
 import { NfseProcessorService } from '@core/services/nfseProcessor.service';
 
@@ -36,8 +36,6 @@ export class AsaasNfseWebhookConsume {
     );
 
     const topic = this.kafkaServiceQueueService.asaasNfseWebhook();
-
-    await ensureKafkaTopic(this.kafka, topic);
 
     this.consumer.on('data', async (message) => {
       const data = this.parseMessage(message.value);
@@ -69,26 +67,16 @@ export class AsaasNfseWebhookConsume {
     });
 
     this.consumer.on('event.error', (err) => {
-      console.error('Consumer error:', err);
+      handleConsumerError(err, topic);
     });
 
-    this.consumer.subscribe([topic]);
+    const consumer = this.consumer;
+    if (!consumer) {
+      throw new Error('Consumer not initialized');
+    }
 
-    await new Promise<void>((resolve, reject) => {
-      const consumer = this.consumer;
-      if (!consumer) {
-        reject(new Error('Consumer not initialized'));
-        return;
-      }
-      consumer.connect({}, (err) => {
-        if (err) {
-          reject(toError(err));
-          return;
-        }
-        consumer.consume();
-        this.isRunning = true;
-        resolve();
-      });
+    connectConsumer(consumer, topic, () => {
+      this.isRunning = true;
     });
   }
 

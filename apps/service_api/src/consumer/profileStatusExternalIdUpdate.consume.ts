@@ -1,21 +1,20 @@
 import { FastifyInstance } from 'fastify';
-import fp from 'fastify-plugin';
 import { container } from 'tsyringe';
 import { ProfileStatusExternalIdUpdateConsume } from '@core/consumer/worker/ProfileStatusExternalIdUpdate.consume';
 
-export default fp(
-  async (fastify: FastifyInstance) => {
-    const profileStatusExternalIdUpdateConsume = container.resolve(
-      ProfileStatusExternalIdUpdateConsume
+export function startProfileStatusExternalIdUpdateConsume(
+  server: FastifyInstance
+): ProfileStatusExternalIdUpdateConsume {
+  const profileStatusExternalIdUpdateConsume = container.resolve(
+    ProfileStatusExternalIdUpdateConsume
+  );
+
+  profileStatusExternalIdUpdateConsume.execute().catch((error: unknown) => {
+    server.log.error(
+      { err: error },
+      'Error starting profile status external id update consume'
     );
+  });
 
-    profileStatusExternalIdUpdateConsume.execute().catch((error) => {
-      throw error;
-    });
-
-    fastify.addHook('onClose', async () => {
-      await profileStatusExternalIdUpdateConsume.close();
-    });
-  },
-  { name: 'profile-status-external-id-update-consume' }
-);
+  return profileStatusExternalIdUpdateConsume;
+}

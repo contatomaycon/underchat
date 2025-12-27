@@ -1,21 +1,20 @@
 import { FastifyInstance } from 'fastify';
-import fp from 'fastify-plugin';
 import { container } from 'tsyringe';
 import { ScheduleStatusUpdateConsume } from '@core/consumer/schedule/ScheduleStatusUpdate.consume';
 
-export default fp(
-  async (fastify: FastifyInstance) => {
-    const scheduleStatusUpdateConsume = container.resolve(
-      ScheduleStatusUpdateConsume
+export function startScheduleStatusUpdateConsume(
+  server: FastifyInstance
+): ScheduleStatusUpdateConsume {
+  const scheduleStatusUpdateConsume = container.resolve(
+    ScheduleStatusUpdateConsume
+  );
+
+  scheduleStatusUpdateConsume.execute().catch((error: unknown) => {
+    server.log.error(
+      { err: error },
+      'Error starting schedule status update consume'
     );
+  });
 
-    scheduleStatusUpdateConsume.execute().catch((error) => {
-      throw error;
-    });
-
-    fastify.addHook('onClose', async () => {
-      await scheduleStatusUpdateConsume.close();
-    });
-  },
-  { name: 'schedule-status-update-consume' }
-);
+  return scheduleStatusUpdateConsume;
+}

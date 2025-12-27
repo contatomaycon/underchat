@@ -1,19 +1,15 @@
 import { FastifyInstance } from 'fastify';
-import fp from 'fastify-plugin';
 import { container } from 'tsyringe';
 import { PhoneValidationConsume } from '@core/consumer/phoneValidation/PhoneValidation.consume';
 
-export default fp(
-  async (fastify: FastifyInstance) => {
-    const phoneValidationConsume = container.resolve(PhoneValidationConsume);
+export function startPhoneValidationConsume(
+  server: FastifyInstance
+): PhoneValidationConsume {
+  const phoneValidationConsume = container.resolve(PhoneValidationConsume);
 
-    phoneValidationConsume.execute().catch((error) => {
-      throw error;
-    });
+  phoneValidationConsume.execute().catch((error: unknown) => {
+    server.log.error({ err: error }, 'Error starting phone validation consume');
+  });
 
-    fastify.addHook('onClose', async () => {
-      await phoneValidationConsume.close();
-    });
-  },
-  { name: 'phone-validation-consume' }
-);
+  return phoneValidationConsume;
+}

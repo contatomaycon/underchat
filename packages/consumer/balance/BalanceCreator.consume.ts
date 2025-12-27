@@ -15,8 +15,9 @@ import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.servi
 import { delay } from '@core/common/functions/delay';
 import { createConsumer } from '@core/common/functions/createConsumer';
 import { startHeartbeat } from '@core/common/functions/startHeartbeat';
-import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
-import { toError, getErrorMessage } from '@core/common/functions/toError';
+import { connectConsumer } from '@core/common/functions/connectConsumer';
+import { handleConsumerError } from '@core/common/functions/handleConsumerError';
+import { getErrorMessage } from '@core/common/functions/toError';
 
 @singleton()
 export class BalanceCreatorConsume {
@@ -47,8 +48,6 @@ export class BalanceCreatorConsume {
 
     const topic = this.kafkaServiceQueueService.createServer();
 
-    await ensureKafkaTopic(this.kafka, topic);
-
     this.consumer.on('data', async (message) => {
       const data = this.parseMessage(message.value);
 
@@ -75,26 +74,16 @@ export class BalanceCreatorConsume {
     });
 
     this.consumer.on('event.error', (err) => {
-      console.error('Consumer error:', err);
+      handleConsumerError(err, topic);
     });
 
-    this.consumer.subscribe([topic]);
+    const consumer = this.consumer;
+    if (!consumer) {
+      throw new Error('Consumer not initialized');
+    }
 
-    await new Promise<void>((resolve, reject) => {
-      const consumer = this.consumer;
-      if (!consumer) {
-        reject(new Error('Consumer not initialized'));
-        return;
-      }
-      consumer.connect({}, (err) => {
-        if (err) {
-          reject(toError(err));
-          return;
-        }
-        consumer.consume();
-        this.isRunning = true;
-        resolve();
-      });
+    connectConsumer(consumer, topic, () => {
+      this.isRunning = true;
     });
   }
 

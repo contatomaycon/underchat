@@ -1,19 +1,18 @@
 import { FastifyInstance } from 'fastify';
-import fp from 'fastify-plugin';
 import { container } from 'tsyringe';
 import { WorkerConnectionConsume } from '@core/consumer/worker/WorkerConnection.consume';
 
-export default fp(
-  async (fastify: FastifyInstance) => {
-    const workerConnectionConsume = container.resolve(WorkerConnectionConsume);
+export function startWorkerConsume(
+  server: FastifyInstance
+): WorkerConnectionConsume {
+  const workerConnectionConsume = container.resolve(WorkerConnectionConsume);
 
-    workerConnectionConsume.execute().catch((error) => {
-      throw error;
-    });
+  workerConnectionConsume.execute().catch((error: unknown) => {
+    server.log.error(
+      { err: error },
+      'Error starting worker connection consume'
+    );
+  });
 
-    fastify.addHook('onClose', async () => {
-      await workerConnectionConsume.close();
-    });
-  },
-  { name: 'worker-connection-consume' }
-);
+  return workerConnectionConsume;
+}

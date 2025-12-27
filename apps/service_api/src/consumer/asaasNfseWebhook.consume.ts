@@ -1,19 +1,18 @@
 import { FastifyInstance } from 'fastify';
-import fp from 'fastify-plugin';
 import { container } from 'tsyringe';
 import { AsaasNfseWebhookConsume } from '@core/consumer/webhook/AsaasNfseWebhook.consume';
 
-export default fp(
-  async (fastify: FastifyInstance) => {
-    const asaasNfseWebhookConsume = container.resolve(AsaasNfseWebhookConsume);
+export function startAsaasNfseWebhookConsume(
+  server: FastifyInstance
+): AsaasNfseWebhookConsume {
+  const asaasNfseWebhookConsume = container.resolve(AsaasNfseWebhookConsume);
 
-    asaasNfseWebhookConsume.execute(fastify).catch((error) => {
-      throw error;
-    });
+  asaasNfseWebhookConsume.execute(server).catch((error: unknown) => {
+    server.log.error(
+      { err: error },
+      'Error starting asaas nfse webhook consume'
+    );
+  });
 
-    fastify.addHook('onClose', async () => {
-      await asaasNfseWebhookConsume.close();
-    });
-  },
-  { name: 'asaas-nfse-webhook-consume' }
-);
+  return asaasNfseWebhookConsume;
+}

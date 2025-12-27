@@ -25,8 +25,8 @@ import {
 } from '@core/common/functions/centrifugoQueue';
 import { startHeartbeat } from '@core/common/functions/startHeartbeat';
 import { createConsumer } from '@core/common/functions/createConsumer';
-import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
-import { toError } from '@core/common/functions/toError';
+import { connectConsumer } from '@core/common/functions/connectConsumer';
+import { handleConsumerError } from '@core/common/functions/handleConsumerError';
 
 @singleton()
 export class WorkerConsume {
@@ -61,8 +61,6 @@ export class WorkerConsume {
 
     const topic = this.getTopic();
 
-    await ensureKafkaTopic(this.kafka, topic);
-
     this.consumer.on('data', async (message) => {
       const data = this.parseMessage(message.value);
 
@@ -88,26 +86,16 @@ export class WorkerConsume {
     });
 
     this.consumer.on('event.error', (err) => {
-      console.error('Consumer error:', err);
+      handleConsumerError(err, topic);
     });
 
-    this.consumer.subscribe([topic]);
+    const consumer = this.consumer;
+    if (!consumer) {
+      throw new Error('Consumer not initialized');
+    }
 
-    await new Promise<void>((resolve, reject) => {
-      const consumer = this.consumer;
-      if (!consumer) {
-        reject(new Error('Consumer not initialized'));
-        return;
-      }
-      consumer.connect({}, (err) => {
-        if (err) {
-          reject(toError(err));
-          return;
-        }
-        consumer.consume();
-        this.isRunning = true;
-        resolve();
-      });
+    connectConsumer(consumer, topic, () => {
+      this.isRunning = true;
     });
   }
 

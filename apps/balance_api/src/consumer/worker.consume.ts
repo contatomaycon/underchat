@@ -1,19 +1,22 @@
 import { FastifyInstance } from 'fastify';
 import fp from 'fastify-plugin';
 import { container } from 'tsyringe';
-import { WorkerConsume } from '@core/consumer/worker/Worker.consume';
+import { WorkerConsume } from '@core/consumer/webhook/WorkerConsume';
 
 export default fp(
   async (fastify: FastifyInstance) => {
-    const workerConsume = container.resolve(WorkerConsume);
+    const workerconsume = container.resolve(WorkerConsume);
 
-    workerConsume.execute().catch((error) => {
-      throw error;
+    // Execute in background - don't block startup
+    setImmediate(() => {
+      workerconsume.execute().catch((error) => {
+        console.error('Error starting workerconsume:', error);
+      });
     });
 
     fastify.addHook('onClose', async () => {
-      await workerConsume.close();
+      await workerconsume.close();
     });
   },
-  { name: 'worker-consume' }
+  { name: 'workerconsume-consume' }
 );

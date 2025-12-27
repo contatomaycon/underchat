@@ -32,6 +32,11 @@ class KafkaStreamsClient implements KafkaClient {
         'enable.auto.commit': false,
         'session.timeout.ms': 60000,
         'heartbeat.interval.ms': 10000,
+        'socket.timeout.ms': 30000,
+        'socket.keepalive.enable': true,
+        'api.version.request': true,
+        'api.version.request.timeout.ms': 10000,
+        'metadata.max.age.ms': 300000,
       },
       {}
     );

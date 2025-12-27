@@ -1,16 +1,30 @@
 import { FastifyInstance } from 'fastify';
-import connectionConsume from './connection.consume';
-import sendMessageConsume from './sendMessage.consume';
-import markMessageReadConsume from './markMessageRead.consume';
-import phoneValidationConsume from './phoneValidation.consume';
-import notificationMessageSendConsume from './notificationMessageSend.consume';
-import scheduleMessageConsume from './scheduleMessage.consume';
+import { startConnectionConsume } from './connection.consume';
+import { startSendMessageConsume } from './sendMessage.consume';
+import { startMarkMessageReadConsume } from './markMessageRead.consume';
+import { startPhoneValidationConsume } from './phoneValidation.consume';
+import { startNotificationMessageSendConsume } from './notificationMessageSend.consume';
+import { startScheduleMessageConsume } from './scheduleMessage.consume';
 
-export default async function registerConsumers(server: FastifyInstance) {
-  await server.register(connectionConsume);
-  await server.register(sendMessageConsume);
-  await server.register(markMessageReadConsume);
-  await server.register(phoneValidationConsume);
-  await server.register(notificationMessageSendConsume);
-  await server.register(scheduleMessageConsume);
+const consumers: Array<{ close?: () => Promise<void> }> = [];
+
+export function registerConsumersCloseHook(server: FastifyInstance): void {
+  server.addHook('onClose', async () => {
+    await Promise.allSettled(
+      consumers.map((consumer) => consumer?.close?.() ?? Promise.resolve())
+    );
+  });
+}
+
+export function startConsumers(server: FastifyInstance): void {
+  setImmediate(() => {
+    consumers.push(
+      startConnectionConsume(server),
+      startSendMessageConsume(server),
+      startMarkMessageReadConsume(server),
+      startPhoneValidationConsume(server),
+      startNotificationMessageSendConsume(server),
+      startScheduleMessageConsume(server)
+    );
+  });
 }

@@ -56,6 +56,15 @@ export class GeneralEnvironment {
     return serviceUrl;
   }
 
+  public get appUrlSchedule(): string {
+    const scheduleUrl = process.env.APP_URL_SCHEDULE;
+    if (!scheduleUrl) {
+      throw new InvalidConfigurationError('APP_URL_SCHEDULE is not defined.');
+    }
+
+    return scheduleUrl;
+  }
+
   public get jwtSecret(): string {
     const secret = process.env.JWT_SECRET;
     if (!secret) {

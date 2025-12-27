@@ -1,21 +1,20 @@
 import { FastifyInstance } from 'fastify';
-import fp from 'fastify-plugin';
 import { container } from 'tsyringe';
 import { NotificationMessageConsume } from '@core/consumer/notification/NotificationMessage.consume';
 
-export default fp(
-  async (fastify: FastifyInstance) => {
-    const notificationMessageConsume = container.resolve(
-      NotificationMessageConsume
+export function startNotificationMessageConsume(
+  server: FastifyInstance
+): NotificationMessageConsume {
+  const notificationMessageConsume = container.resolve(
+    NotificationMessageConsume
+  );
+
+  notificationMessageConsume.execute().catch((error: unknown) => {
+    server.log.error(
+      { err: error },
+      'Error starting notification message consume'
     );
+  });
 
-    notificationMessageConsume.execute().catch((error) => {
-      throw error;
-    });
-
-    fastify.addHook('onClose', async () => {
-      await notificationMessageConsume.close();
-    });
-  },
-  { name: 'notification-message-consume' }
-);
+  return notificationMessageConsume;
+}

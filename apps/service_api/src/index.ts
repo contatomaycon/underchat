@@ -9,11 +9,9 @@ import swaggerPlugin from '@/plugins/swagger';
 import corsPlugin from '@core/plugins/cors';
 import databaseElasticPlugin from '@core/plugins/dbElastic';
 import authenticateKeyApi from '@core/middlewares/keyapi.middleware';
-import consumerPlugin from './consumer';
-import temporalConsumerPlugin from './temporal';
+import { startConsumers, registerConsumersCloseHook } from './consumer';
 import centrifugoPlugin from '@core/plugins/centrifugo';
 import kafkaStreamsPlugin from '@core/plugins/kafkaStreams';
-import temporalPlugin from '@core/plugins/temporal';
 import redisPlugin from '@core/plugins/redis';
 import fastifyQs from 'fastify-qs';
 import routes from '@/routes';
@@ -44,22 +42,21 @@ server.register(safePlugin(databaseElasticPlugin, 'databaseElastic'), {
   prefix: ERouteModule.service,
 });
 
-server.register(safePlugin(consumerPlugin, 'consumer'));
-
 server.register(safePlugin(swaggerPlugin, 'swagger'));
 server.register(safePlugin(routes, 'routes', true), {
   prefix: EPrefixRoutes.v1,
 });
 server.register(safePlugin(fastifyQs, 'fastifyQs'));
 
-server.register(safePlugin(temporalPlugin, 'temporal'));
-server.register(safePlugin(temporalConsumerPlugin, 'temporalConsumer'));
+registerConsumersCloseHook(server);
 
 const start = async () => {
   try {
     await server.listen({ port: 3004, host: '0.0.0.0' });
 
     console.log('Server running');
+
+    startConsumers(server);
   } catch (err) {
     console.log(err);
 

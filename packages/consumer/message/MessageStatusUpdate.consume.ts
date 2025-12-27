@@ -6,8 +6,8 @@ import { IMessageStatusUpdate } from '@core/common/interfaces/IMessageStatusUpda
 import { MessageStatusService } from '@core/services/messageStatus.service';
 import { startHeartbeat } from '@core/common/functions/startHeartbeat';
 import { createConsumer } from '@core/common/functions/createConsumer';
-import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
-import { toError } from '@core/common/functions/toError';
+import { connectConsumer } from '@core/common/functions/connectConsumer';
+import { handleConsumerError } from '@core/common/functions/handleConsumerError';
 
 @singleton()
 export class MessageStatusUpdateConsume {
@@ -58,8 +58,6 @@ export class MessageStatusUpdateConsume {
 
     const topic = this.kafkaServiceQueueService.updateMessageStatus();
 
-    await ensureKafkaTopic(this.kafka, topic);
-
     this.consumer.on('data', async (message) => {
       const data = this.parseMessage(message.value);
 
@@ -94,26 +92,16 @@ export class MessageStatusUpdateConsume {
     });
 
     this.consumer.on('event.error', (err) => {
-      console.error('Consumer error:', err);
+      handleConsumerError(err, topic);
     });
 
-    this.consumer.subscribe([topic]);
+    const consumer = this.consumer;
+    if (!consumer) {
+      throw new Error('Consumer not initialized');
+    }
 
-    await new Promise<void>((resolve, reject) => {
-      const consumer = this.consumer;
-      if (!consumer) {
-        reject(new Error('Consumer not initialized'));
-        return;
-      }
-      consumer.connect({}, (err) => {
-        if (err) {
-          reject(toError(err));
-          return;
-        }
-        consumer.consume();
-        this.isRunning = true;
-        resolve();
-      });
+    connectConsumer(consumer, topic, () => {
+      this.isRunning = true;
     });
   }
 

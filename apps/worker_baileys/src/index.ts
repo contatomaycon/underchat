@@ -5,7 +5,7 @@ import { ERouteModule } from '@core/common/enums/ERouteModule';
 import { v7 } from 'uuid';
 import swaggerPlugin from '@/plugins/swagger';
 import corsPlugin from '@core/plugins/cors';
-import consumerPlugin from './consumer';
+import { startConsumers, registerConsumersCloseHook } from './consumer';
 import centrifugoPlugin from '@core/plugins/centrifugo';
 import databaseElasticPlugin from '@core/plugins/dbElastic';
 import kafkaStreamsPlugin from '@core/plugins/kafkaStreams';
@@ -41,12 +41,18 @@ server.register(safePlugin(kafkaStreamsPlugin, 'kafkaStreams'), {
 server.register(safePlugin(centrifugoPlugin, 'centrifugo'), {
   module: ERouteModule.worker_baileys,
 });
-server.register(safePlugin(consumerPlugin, 'consumer'));
+
+registerConsumersCloseHook(server);
+
 server.register(safePlugin(baileysReadyHook, 'baileysReady'));
 
 const start = async () => {
   try {
     await server.listen({ port: 3005, host: '0.0.0.0' });
+
+    console.log('Server running');
+
+    startConsumers(server);
   } catch (error) {
     console.error('Error:', error);
 

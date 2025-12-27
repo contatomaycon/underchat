@@ -1,19 +1,15 @@
 import { FastifyInstance } from 'fastify';
-import fp from 'fastify-plugin';
 import { container } from 'tsyringe';
 import { BalanceCreatorConsume } from '@core/consumer/balance/BalanceCreator.consume';
 
-export default fp(
-  async (fastify: FastifyInstance) => {
-    const balanceCreatorConsume = container.resolve(BalanceCreatorConsume);
+export function startBalanceConsume(
+  server: FastifyInstance
+): BalanceCreatorConsume {
+  const balanceCreatorConsume = container.resolve(BalanceCreatorConsume);
 
-    balanceCreatorConsume.execute(fastify).catch((error) => {
-      throw error;
-    });
+  balanceCreatorConsume.execute(server).catch((error: unknown) => {
+    server.log.error({ err: error }, 'Error starting balance creator consume');
+  });
 
-    fastify.addHook('onClose', async () => {
-      await balanceCreatorConsume.close();
-    });
-  },
-  { name: 'balance-creator-consume' }
-);
+  return balanceCreatorConsume;
+}

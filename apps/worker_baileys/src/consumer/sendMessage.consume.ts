@@ -1,19 +1,15 @@
 import { FastifyInstance } from 'fastify';
-import fp from 'fastify-plugin';
 import { container } from 'tsyringe';
 import { MessageSendConsume } from '@core/consumer/message/MessageSend.consume';
 
-export default fp(
-  async (fastify: FastifyInstance) => {
-    const messageSendConsume = container.resolve(MessageSendConsume);
+export function startSendMessageConsume(
+  server: FastifyInstance
+): MessageSendConsume {
+  const messageSendConsume = container.resolve(MessageSendConsume);
 
-    messageSendConsume.execute().catch((error) => {
-      throw error;
-    });
+  messageSendConsume.execute().catch((error: unknown) => {
+    server.log.error({ err: error }, 'Error starting message send consume');
+  });
 
-    fastify.addHook('onClose', async () => {
-      await messageSendConsume.close();
-    });
-  },
-  { name: 'send-message-consume' }
-);
+  return messageSendConsume;
+}
