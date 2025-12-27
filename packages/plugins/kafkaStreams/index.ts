@@ -3,7 +3,12 @@ import fp from 'fastify-plugin';
 import { ERouteModule } from '@core/common/enums/ERouteModule';
 import { container } from 'tsyringe';
 import { kafkaEnvironment } from '@core/config/environments';
-import { KafkaConsumer, Producer } from 'node-rdkafka';
+import {
+  KafkaConsumer,
+  Producer,
+  ConsumerGlobalConfig,
+  ConsumerTopicConfig,
+} from 'node-rdkafka';
 
 export interface KafkaClient {
   createConsumer: (groupId: string) => KafkaConsumer;
@@ -25,21 +30,30 @@ class KafkaStreamsClient implements KafkaClient {
   }
 
   createConsumer(groupId: string): KafkaConsumer {
-    return new KafkaConsumer(
-      {
-        'group.id': groupId,
-        'metadata.broker.list': this.broker,
-        'enable.auto.commit': false,
-        'session.timeout.ms': 60000,
-        'heartbeat.interval.ms': 10000,
-        'socket.timeout.ms': 30000,
-        'socket.keepalive.enable': true,
-        'api.version.request': true,
-        'api.version.request.timeout.ms': 10000,
-        'metadata.max.age.ms': 300000,
-      },
-      {}
-    );
+    const baseConfig: ConsumerGlobalConfig = {
+      'group.id': groupId,
+      'metadata.broker.list': this.broker,
+      'enable.auto.commit': false,
+      'session.timeout.ms': 60000,
+      'heartbeat.interval.ms': 10000,
+      'socket.timeout.ms': 30000,
+      'socket.keepalive.enable': true,
+      'api.version.request': true,
+      'api.version.request.timeout.ms': 10000,
+      'metadata.max.age.ms': 300000,
+    };
+
+    const consumerConfig: ConsumerGlobalConfig = {
+      ...baseConfig,
+      'group.id': groupId,
+      'metadata.broker.list': this.broker,
+    };
+
+    const opicConf: ConsumerTopicConfig = {
+      'auto.offset.reset': 'earliest',
+    };
+
+    return new KafkaConsumer(consumerConfig, opicConf);
   }
 
   createProducer(): Producer {
@@ -49,6 +63,12 @@ class KafkaStreamsClient implements KafkaClient {
         'client.id': this.clientId,
         'retry.backoff.ms': 300,
         'message.send.max.retries': 8,
+        'socket.timeout.ms': 10000,
+        'socket.keepalive.enable': true,
+        'api.version.request': true,
+        'api.version.request.timeout.ms': 10000,
+        'metadata.max.age.ms': 300000,
+        'socket.connection.setup.timeout.ms': 10000,
         dr_cb: true,
       },
       {}

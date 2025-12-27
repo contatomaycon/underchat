@@ -63,6 +63,7 @@ import { ChatMessageService } from '@core/services/chatMessage.service';
 import { ChatbotFlowRunnerService } from '@core/services/chatbotFlowRunner.service';
 import { WorkerConfigService } from '@core/services/workerConfig.service';
 import { PlanAccountService } from '@core/services/planAccount.service';
+import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 
 @singleton()
 export class MessageUpsertConsume {
@@ -1836,12 +1837,14 @@ export class MessageUpsertConsume {
   public async execute(t: TFunction<'translation', undefined>): Promise<void> {
     if (this.consumer && this.isRunning) return;
 
+    const topic = this.kafkaServiceQueueService.upsertMessage();
+
+    await ensureKafkaTopic(this.kafka, topic);
+
     this.consumer = createConsumer(
       this.kafka,
       'group-underchat-message-upsert'
     );
-
-    const topic = this.kafkaServiceQueueService.upsertMessage();
 
     this.consumer.on('data', async (message) => {
       const data = this.parseMessage(message.value);

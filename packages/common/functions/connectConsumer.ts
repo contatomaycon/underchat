@@ -101,15 +101,22 @@ function createReadyHandler(
   onConnected: () => void,
   cleanup: () => void,
   timeout: NodeJS.Timeout,
-  isResolved: { value: boolean }
+  isResolved: { value: boolean },
+  consumer: KafkaConsumer
 ) {
   return (): void => {
     if (isResolved.value) {
       return;
     }
 
-    console.log(`Kafka consumer connected to topic: ${topic}`);
-    onConnected();
+    try {
+      consumer.subscribe([topic]);
+      consumer.consume();
+      console.log(`Kafka consumer connected to topic: ${topic}`);
+      onConnected();
+    } catch (error) {
+      console.error(`Error subscribing to topic ${topic}:`, error);
+    }
 
     if (isResolved.value) {
       return;
@@ -309,7 +316,8 @@ function connectInBackground(
     onConnected,
     cleanup,
     timeout,
-    isResolved
+    isResolved,
+    consumer
   );
 
   setupEventListeners(consumer, readyHandler, errorHandler);

@@ -11,6 +11,7 @@ import { startHeartbeat } from '@core/common/functions/startHeartbeat';
 import { createConsumer } from '@core/common/functions/createConsumer';
 import { connectConsumer } from '@core/common/functions/connectConsumer';
 import { handleConsumerError } from '@core/common/functions/handleConsumerError';
+import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 
 @singleton()
 export class WorkerConnectionStatusConsume {
@@ -34,12 +35,14 @@ export class WorkerConnectionStatusConsume {
   public async execute(): Promise<void> {
     if (this.consumer && this.isRunning) return;
 
+    const topic = this.getWorkerConnectionTopic();
+
+    await ensureKafkaTopic(this.kafka, topic);
+
     this.consumer = createConsumer(
       this.kafka,
       `group-underchat-worker-connection-status-${baileysEnvironment.baileysWorkerId}`
     );
-
-    const topic = this.getWorkerConnectionTopic();
 
     this.consumer.on('data', async (message) => {
       const data = this.parseMessage(message.value);

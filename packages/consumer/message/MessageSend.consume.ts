@@ -30,6 +30,7 @@ import { selectJidChat } from '@core/common/functions/selectJidChat';
 import { convertWaveformBase64ToUint8Array } from '@core/common/functions/convertWaveform';
 import { webcrypto } from 'node:crypto';
 import { EWorkerProfileStatusType } from '@core/common/enums/EWorkerProfileStatusType';
+import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 
 @singleton()
 export class MessageSendConsume {
@@ -64,13 +65,15 @@ export class MessageSendConsume {
   public async execute(): Promise<void> {
     if (this.consumer && this.isRunning) return;
 
+    const topic = this.kafkaBaileysQueueService.workerSendMessage(
+      baileysEnvironment.baileysWorkerId
+    );
+
+    await ensureKafkaTopic(this.kafka, topic);
+
     this.consumer = createConsumer(
       this.kafka,
       `group-underchat-baileys-send-${baileysEnvironment.baileysWorkerId}`
-    );
-
-    const topic = this.kafkaBaileysQueueService.workerSendMessage(
-      baileysEnvironment.baileysWorkerId
     );
 
     this.consumer.on('data', async (message) => {

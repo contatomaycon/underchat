@@ -13,6 +13,7 @@ import { IReportConversationHistoryPdfGeneratePayload } from '@core/common/inter
 import { IReportConversationHistoryPdfNotification } from '@core/common/interfaces/IReportConversationHistoryPdfNotification';
 import { reportConversationHistoryPdfAccountCentrifugo } from '@core/common/functions/centrifugoQueue';
 import { createI18nInstance } from '@core/common/functions/createI18nInstance';
+import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 
 @singleton()
 export class ReportConversationHistoryPdfGenerateConsume {
@@ -37,13 +38,15 @@ export class ReportConversationHistoryPdfGenerateConsume {
   public async execute(): Promise<void> {
     if (this.consumer && this.isRunning) return;
 
+    const topic =
+      this.kafkaServiceQueueService.reportConversationHistoryPdfGenerate();
+
+    await ensureKafkaTopic(this.kafka, topic);
+
     this.consumer = createConsumer(
       this.kafka,
       'group-underchat-report-conversation-history-pdf-generate'
     );
-
-    const topic =
-      this.kafkaServiceQueueService.reportConversationHistoryPdfGenerate();
 
     this.consumer.on('data', async (message) => {
       const data = this.parseMessage(message.value);

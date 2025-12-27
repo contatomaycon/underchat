@@ -12,6 +12,7 @@ import { handleConsumerError } from '@core/common/functions/handleConsumerError'
 import { MessageStatusService } from '@core/services/messageStatus.service';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { IMessageStatusUpdate } from '@core/common/interfaces/IMessageStatusUpdate';
+import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 
 @singleton()
 export class MessageMarkReadConsume {
@@ -57,12 +58,14 @@ export class MessageMarkReadConsume {
   public async execute(): Promise<void> {
     if (this.consumer && this.isRunning) return;
 
+    const topic = this.kafkaServiceQueueService.markMessageRead();
+
+    await ensureKafkaTopic(this.kafka, topic);
+
     this.consumer = createConsumer(
       this.kafka,
       `group-underchat-mark-read-${baileysEnvironment.baileysWorkerId}`
     );
-
-    const topic = this.kafkaServiceQueueService.markMessageRead();
 
     this.consumer.on('data', async (message) => {
       const data = this.parseMessage(message.value);

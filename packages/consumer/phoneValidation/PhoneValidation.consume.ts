@@ -12,6 +12,7 @@ import { BaileysService } from '@core/services/baileys';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { startHeartbeat } from '@core/common/functions/startHeartbeat';
+import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 
 @singleton()
 export class PhoneValidationConsume {
@@ -87,13 +88,15 @@ export class PhoneValidationConsume {
   public async execute(): Promise<void> {
     if (this.consumer && this.isRunning) return;
 
+    const topic = this.kafkaBaileysQueueService.workerValidatePhone(
+      baileysEnvironment.baileysWorkerId
+    );
+
+    await ensureKafkaTopic(this.kafka, topic);
+
     this.consumer = createConsumer(
       this.kafka,
       `group-underchat-baileys-validate-phone-${baileysEnvironment.baileysWorkerId}`
-    );
-
-    const topic = this.kafkaBaileysQueueService.workerValidatePhone(
-      baileysEnvironment.baileysWorkerId
     );
 
     this.consumer.on('data', async (message) => {

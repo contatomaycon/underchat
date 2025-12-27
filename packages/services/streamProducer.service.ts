@@ -15,27 +15,77 @@ export class StreamProducerService {
     if (!this.producer) {
       this.producer = this.kafka.createProducer();
 
-      this.producer.on('event.error', (err: LibrdKafkaError) => {
-        console.error('Kafka producer error:', err);
-      });
-
       const producer = this.producer;
       if (!producer) {
         throw new Error('Producer not initialized');
       }
 
       await new Promise<void>((resolve, reject) => {
+        let isResolved = false;
+        const timeout = setTimeout(() => {
+          if (!isResolved) {
+            isResolved = true;
+            this.producer = null;
+            reject(new Error('Kafka producer connection timeout'));
+          }
+        }, 15000);
+
+        const errorHandler = (err: LibrdKafkaError) => {
+          if (!isResolved) {
+            isResolved = true;
+            clearTimeout(timeout);
+            producer.removeAllListeners('ready');
+            producer.removeAllListeners('event.error');
+            this.producer = null;
+            reject(toError(err));
+          }
+        };
+
+        const readyHandler = () => {
+          if (!isResolved) {
+            isResolved = true;
+            clearTimeout(timeout);
+            producer.removeAllListeners('ready');
+            producer.removeAllListeners('event.error');
+            resolve();
+          }
+        };
+
+        producer.once('ready', readyHandler);
+        producer.once('event.error', errorHandler);
+
+        producer.on('event.error', (err: LibrdKafkaError) => {
+          console.error('Kafka producer error:', err);
+        });
+
         producer.connect({}, (err) => {
           if (err) {
-            reject(toError(err));
+            if (!isResolved) {
+              isResolved = true;
+              clearTimeout(timeout);
+              producer.removeAllListeners('ready');
+              producer.removeAllListeners('event.error');
+              this.producer = null;
+              reject(toError(err));
+            }
             return;
           }
-          resolve();
         });
       });
     }
 
     return this.producer;
+  }
+
+  private invalidateProducer(): void {
+    if (this.producer) {
+      try {
+        const producer = this.producer;
+        producer.removeAllListeners();
+        producer.disconnect(() => {});
+      } catch {}
+      this.producer = null;
+    }
   }
 
   private async reconnectProducer(): Promise<Producer> {
@@ -66,7 +116,10 @@ export class StreamProducerService {
       errorMessage.includes('disconnected') ||
       errorCode === 'ECONNREFUSED' ||
       errorMessage.includes('NOT_CONNECTED') ||
-      errorMessage.includes('write after end')
+      errorMessage.includes('write after end') ||
+      errorMessage.includes('broker transport failure') ||
+      errorMessage.includes('all broker connections are down') ||
+      errorMessage.includes('Flush timeout')
     );
   }
 
@@ -77,20 +130,137 @@ export class StreamProducerService {
     keyBuffer: Buffer | undefined
   ): Promise<void> {
     return new Promise<void>((resolve, reject) => {
-      producer.produce(
+      let isResolved = false;
+      let lastError: LibrdKafkaError | null = null;
+
+      const errorHandler = (err: LibrdKafkaError) => {
+        lastError = err;
+        const errorMessage = err.message || 'Unknown Kafka error';
+
+        if (
+          errorMessage.includes('broker transport failure') ||
+          errorMessage.includes('all broker connections are down')
+        ) {
+          if (!isResolved) {
+            isResolved = true;
+            clearTimeout(timeout);
+            this.invalidateProducer();
+            reject(new Error(`Kafka connection error: ${errorMessage}`));
+          }
+        }
+      };
+
+      producer.once('event.error', errorHandler);
+
+      const produceError = producer.produce(
         topic,
         null,
         value,
         keyBuffer,
         Date.now(),
         (err: LibrdKafkaError | null) => {
+          if (isResolved) {
+            return;
+          }
+
           if (err) {
+            isResolved = true;
+            clearTimeout(timeout);
+            producer.removeListener('event.error', errorHandler);
+            const errorMessage = err.message || '';
+            if (
+              errorMessage.includes('broker transport failure') ||
+              errorMessage.includes('all broker connections are down')
+            ) {
+              this.invalidateProducer();
+            }
             reject(toError(err));
             return;
           }
-          resolve();
         }
       );
+
+      if (produceError !== null && produceError !== undefined) {
+        if (typeof produceError === 'number' && produceError < 0) {
+          producer.removeListener('event.error', errorHandler);
+          const error = new Error(
+            `Failed to produce message: librdkafka error code ${produceError}`
+          );
+          reject(error);
+          return;
+        }
+
+        if (produceError instanceof Error) {
+          producer.removeListener('event.error', errorHandler);
+          reject(produceError);
+          return;
+        }
+
+        if (typeof produceError === 'string') {
+          producer.removeListener('event.error', errorHandler);
+          reject(new Error(produceError));
+          return;
+        }
+
+        if (typeof produceError === 'number' && produceError >= 0) {
+          return;
+        }
+      }
+
+      producer.poll();
+
+      const timeout = setTimeout(() => {
+        if (!isResolved) {
+          isResolved = true;
+          producer.removeListener('event.error', errorHandler);
+
+          if (lastError) {
+            reject(
+              new Error(
+                `Flush timeout: ${lastError.message || 'Kafka connection error'}`
+              )
+            );
+            return;
+          }
+
+          reject(new Error('Flush timeout: message not sent within 5 seconds'));
+        }
+      }, 5000);
+
+      producer.flush(5000, (err) => {
+        clearTimeout(timeout);
+        producer.removeListener('event.error', errorHandler);
+
+        if (isResolved) {
+          return;
+        }
+
+        isResolved = true;
+
+        if (err) {
+          const errorMessage =
+            err instanceof Error
+              ? err.message
+              : typeof err === 'string'
+                ? err
+                : typeof err === 'number'
+                  ? `Flush error code: ${err}`
+                  : `Flush error: ${JSON.stringify(err)}`;
+
+          if (
+            errorMessage.includes('broker transport failure') ||
+            errorMessage.includes('all broker connections are down') ||
+            errorMessage.includes('timed out')
+          ) {
+            this.invalidateProducer();
+          }
+
+          reject(new Error(errorMessage));
+          return;
+        }
+
+        resolve();
+      });
     });
   }
 

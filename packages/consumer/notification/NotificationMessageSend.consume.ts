@@ -11,6 +11,7 @@ import { handleConsumerError } from '@core/common/functions/handleConsumerError'
 import { INotificationMessage } from '@core/common/interfaces/INotificationMessage';
 import { BaileysPhoneValidationService } from '@core/services/baileys/methods/phoneValidation.service';
 import { StreamProducerService } from '@core/services/streamProducer.service';
+import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 
 @singleton()
 export class NotificationMessageSendConsume {
@@ -41,6 +42,8 @@ export class NotificationMessageSendConsume {
       const groupId = `group-underchat-baileys-notification-send-${workerId}`;
       const topic =
         this.kafkaBaileysQueueService.workerNotificationMessage(workerId);
+
+      await ensureKafkaTopic(this.kafka, topic);
 
       this.consumer = createConsumer(this.kafka, groupId);
 

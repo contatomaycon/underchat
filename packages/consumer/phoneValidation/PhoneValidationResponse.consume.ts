@@ -8,6 +8,7 @@ import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.servi
 import { IPhoneValidationResponse } from '@core/common/interfaces/IPhoneValidationResponse';
 import Redis from 'ioredis';
 import { startHeartbeat } from '@core/common/functions/startHeartbeat';
+import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 
 @singleton()
 export class PhoneValidationResponseConsume {
@@ -46,12 +47,14 @@ export class PhoneValidationResponseConsume {
   public async execute(): Promise<void> {
     if (this.consumer && this.isRunning) return;
 
+    const topic = this.kafkaServiceQueueService.phoneValidationResponse();
+
+    await ensureKafkaTopic(this.kafka, topic);
+
     this.consumer = createConsumer(
       this.kafka,
       'group-underchat-phone-validation-response'
     );
-
-    const topic = this.kafkaServiceQueueService.phoneValidationResponse();
 
     this.consumer.on('data', async (message) => {
       const data = this.parseMessage(message.value);

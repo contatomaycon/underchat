@@ -8,6 +8,7 @@ import { connectConsumer } from '@core/common/functions/connectConsumer';
 import { handleConsumerError } from '@core/common/functions/handleConsumerError';
 import { NotificationMessageService } from '@core/services/notificationMessage.service';
 import { INotificationMessageRequest } from '@core/common/interfaces/INotificationMessageRequest';
+import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 
 @singleton()
 export class NotificationMessageConsume {
@@ -31,12 +32,14 @@ export class NotificationMessageConsume {
   public async execute(): Promise<void> {
     if (this.consumer && this.isRunning) return;
 
+    const topic = this.kafkaServiceQueueService.notificationMessage();
+
+    await ensureKafkaTopic(this.kafka, topic);
+
     this.consumer = createConsumer(
       this.kafka,
       'group-underchat-notification-message'
     );
-
-    const topic = this.kafkaServiceQueueService.notificationMessage();
 
     this.consumer.on('data', async (message) => {
       const data = this.parseNotificationMessageRequest(message.value);

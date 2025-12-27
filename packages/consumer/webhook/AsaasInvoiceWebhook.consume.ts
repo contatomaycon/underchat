@@ -9,6 +9,7 @@ import { connectConsumer } from '@core/common/functions/connectConsumer';
 import { handleConsumerError } from '@core/common/functions/handleConsumerError';
 import { FastifyInstance } from 'fastify';
 import { PlanReleaseService } from '@core/services/planRelease.service';
+import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 
 @singleton()
 export class AsaasInvoiceWebhookConsume {
@@ -30,12 +31,14 @@ export class AsaasInvoiceWebhookConsume {
   async execute(server: FastifyInstance): Promise<void> {
     if (this.consumer && this.isRunning) return;
 
+    const topic = this.kafkaServiceQueueService.asaasInvoiceWebhook();
+
+    await ensureKafkaTopic(this.kafka, topic);
+
     this.consumer = createConsumer(
       this.kafka,
       'group-underchat-asaas-invoice-webhook'
     );
-
-    const topic = this.kafkaServiceQueueService.asaasInvoiceWebhook();
 
     this.consumer.on('data', async (message) => {
       const data = this.parseMessage(message.value);

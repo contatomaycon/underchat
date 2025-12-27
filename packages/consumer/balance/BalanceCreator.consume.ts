@@ -18,6 +18,7 @@ import { startHeartbeat } from '@core/common/functions/startHeartbeat';
 import { connectConsumer } from '@core/common/functions/connectConsumer';
 import { handleConsumerError } from '@core/common/functions/handleConsumerError';
 import { getErrorMessage } from '@core/common/functions/toError';
+import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 
 @singleton()
 export class BalanceCreatorConsume {
@@ -41,14 +42,18 @@ export class BalanceCreatorConsume {
   async execute(server: FastifyInstance): Promise<void> {
     if (this.consumer && this.isRunning) return;
 
+    const topic = this.kafkaServiceQueueService.createServer();
+
+    await ensureKafkaTopic(this.kafka, topic);
+
     this.consumer = createConsumer(
       this.kafka,
       'group-underchat-balance-creator'
     );
 
-    const topic = this.kafkaServiceQueueService.createServer();
-
     this.consumer.on('data', async (message) => {
+      console.log('message', message);
+
       const data = this.parseMessage(message.value);
 
       if (!data) {

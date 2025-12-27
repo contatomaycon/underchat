@@ -10,6 +10,7 @@ import { connectConsumer } from '@core/common/functions/connectConsumer';
 import { handleConsumerError } from '@core/common/functions/handleConsumerError';
 import { chatAccountCentrifugo } from '@core/common/functions/centrifugoQueue';
 import { IClearChatSummaryMessage } from '@core/common/interfaces/IClearChatSummaryMessage';
+import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 
 @singleton()
 export class ChatSummaryClearConsume {
@@ -73,12 +74,14 @@ export class ChatSummaryClearConsume {
   public async execute(): Promise<void> {
     if (this.consumer && this.isRunning) return;
 
+    const topic = this.kafkaServiceQueueService.clearChatSummary();
+
+    await ensureKafkaTopic(this.kafka, topic);
+
     this.consumer = createConsumer(
       this.kafka,
       'group-underchat-chat-summary-clear'
     );
-
-    const topic = this.kafkaServiceQueueService.clearChatSummary();
 
     this.consumer.on('data', async (message) => {
       const data = this.parseMessage(message.value);

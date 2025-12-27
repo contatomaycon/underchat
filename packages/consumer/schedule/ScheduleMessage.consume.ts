@@ -15,6 +15,7 @@ import { BaileysMessageMediaService } from '@core/services/baileys/methods/messa
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { selectJidChat } from '@core/common/functions/selectJidChat';
 import { IUpdateMessage } from '@core/common/interfaces/IUpdateMessage';
+import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 
 @singleton()
 export class ScheduleMessageConsume {
@@ -40,12 +41,14 @@ export class ScheduleMessageConsume {
   public async execute(): Promise<void> {
     if (this.consumer && this.isRunning) return;
 
+    const topic = this.kafkaServiceQueueService.scheduleMessage();
+
+    await ensureKafkaTopic(this.kafka, topic);
+
     this.consumer = createConsumer(
       this.kafka,
       'group-underchat-schedule-message'
     );
-
-    const topic = this.kafkaServiceQueueService.scheduleMessage();
 
     this.consumer.on('data', async (message) => {
       const data = this.parseMessage(message.value);
