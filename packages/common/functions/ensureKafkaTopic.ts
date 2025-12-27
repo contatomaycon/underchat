@@ -1,14 +1,26 @@
 import { AdminClient, LibrdKafkaError } from 'node-rdkafka';
 import { KafkaClient } from '@core/plugins/kafkaStreams';
+import { kafkaEnvironment } from '@core/config/environments';
 import { toError, getErrorMessage } from './toError';
 
 function createAdminClient(kafka: KafkaClient): AdminClient {
-  return AdminClient.create({
+  const protocol = kafkaEnvironment.securityProtocol.toLowerCase();
+
+  const config: Record<string, string | boolean> = {
     'client.id': 'kafka-admin',
     'metadata.broker.list': kafka.getBroker(),
-  });
-}
+    'security.protocol': protocol,
+    'sasl.mechanism': kafkaEnvironment.saslMechanism,
+    'sasl.username': kafkaEnvironment.kafkaUsername,
+    'sasl.password': kafkaEnvironment.kafkaPassword,
+  };
 
+  if (protocol === 'sasl_ssl' || protocol === 'ssl') {
+    config['enable.ssl.certificate.verification'] = false;
+  }
+
+  return AdminClient.create(config);
+}
 
 async function createTopic(
   admin: AdminClient,
@@ -58,7 +70,13 @@ export async function ensureKafkaTopic(
   const admin = createAdminClient(kafka);
 
   try {
-    await createTopic(admin, topic, numPartitions, replicationFactor, timeoutMs);
+    await createTopic(
+      admin,
+      topic,
+      numPartitions,
+      replicationFactor,
+      timeoutMs
+    );
   } finally {
     (admin as any).disconnect();
   }

@@ -19,17 +19,51 @@ export interface KafkaClient {
 class KafkaStreamsClient implements KafkaClient {
   private readonly broker: string;
   private readonly clientId: string;
+  private readonly username: string;
+  private readonly password: string;
+  private readonly securityProtocol: string;
+  private readonly saslMechanism: string;
 
-  constructor(broker: string, clientId: string) {
+  constructor(
+    broker: string,
+    clientId: string,
+    username: string,
+    password: string,
+    securityProtocol: string,
+    saslMechanism: string
+  ) {
     this.broker = broker;
     this.clientId = clientId;
+    this.username = username;
+    this.password = password;
+    this.securityProtocol = securityProtocol;
+    this.saslMechanism = saslMechanism;
   }
 
   getBroker(): string {
     return this.broker;
   }
 
+  private getSecurityConfig(): Record<string, string | boolean> {
+    const protocol = this.securityProtocol.toLowerCase();
+
+    const config: Record<string, string | boolean> = {
+      'security.protocol': protocol,
+      'sasl.mechanism': this.saslMechanism,
+      'sasl.username': this.username,
+      'sasl.password': this.password,
+    };
+
+    if (protocol === 'sasl_ssl' || protocol === 'ssl') {
+      config['enable.ssl.certificate.verification'] = false;
+    }
+
+    return config;
+  }
+
   createConsumer(groupId: string): KafkaConsumer {
+    const securityConfig = this.getSecurityConfig();
+
     const baseConfig: ConsumerGlobalConfig = {
       'group.id': groupId,
       'metadata.broker.list': this.broker,
@@ -41,6 +75,7 @@ class KafkaStreamsClient implements KafkaClient {
       'api.version.request': true,
       'api.version.request.timeout.ms': 10000,
       'metadata.max.age.ms': 300000,
+      ...securityConfig,
     };
 
     const consumerConfig: ConsumerGlobalConfig = {
@@ -57,6 +92,8 @@ class KafkaStreamsClient implements KafkaClient {
   }
 
   createProducer(): Producer {
+    const securityConfig = this.getSecurityConfig();
+
     return new Producer(
       {
         'metadata.broker.list': this.broker,
@@ -69,6 +106,7 @@ class KafkaStreamsClient implements KafkaClient {
         'api.version.request.timeout.ms': 10000,
         'metadata.max.age.ms': 300000,
         'socket.connection.setup.timeout.ms': 10000,
+        ...securityConfig,
         dr_cb: true,
       },
       {}
@@ -88,7 +126,11 @@ const kafkaPlugin: FastifyPluginAsync<KafkaPluginOptions> = async (
 
   const kafka = new KafkaStreamsClient(
     kafkaEnvironment.kafkaBroker,
-    `client-${module}`
+    `client-${module}`,
+    kafkaEnvironment.kafkaUsername,
+    kafkaEnvironment.kafkaPassword,
+    kafkaEnvironment.securityProtocol,
+    kafkaEnvironment.saslMechanism
   );
 
   container.register('Kafka', { useValue: kafka });

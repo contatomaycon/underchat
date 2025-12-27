@@ -1,6 +1,7 @@
 import { injectable, inject } from 'tsyringe';
 import { AdminClient, LibrdKafkaError } from 'node-rdkafka';
 import { KafkaClient } from '@core/plugins/kafkaStreams';
+import { kafkaEnvironment } from '@core/config/environments';
 import { toError, getErrorMessage } from '@core/common/functions/toError';
 
 @injectable()
@@ -8,12 +9,23 @@ export class KafkaService {
   private readonly admin: AdminClient;
 
   constructor(@inject('Kafka') private readonly kafka: KafkaClient) {
-    this.admin = AdminClient.create({
+    const protocol = kafkaEnvironment.securityProtocol.toLowerCase();
+
+    const config: Record<string, string | boolean> = {
       'client.id': 'kafka-admin',
       'metadata.broker.list': this.kafka.getBroker(),
-    });
-  }
+      'security.protocol': protocol,
+      'sasl.mechanism': kafkaEnvironment.saslMechanism,
+      'sasl.username': kafkaEnvironment.kafkaUsername,
+      'sasl.password': kafkaEnvironment.kafkaPassword,
+    };
 
+    if (protocol === 'sasl_ssl' || protocol === 'ssl') {
+      config['enable.ssl.certificate.verification'] = false;
+    }
+
+    this.admin = AdminClient.create(config);
+  }
 
   private async createSingleTopic(
     topic: string,
@@ -64,7 +76,6 @@ export class KafkaService {
         throw error;
       }
     }
-
   }
 
   private async deleteSingleTopic(
