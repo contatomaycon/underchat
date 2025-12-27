@@ -32,7 +32,7 @@ WORKDIR /app
 
 COPY . .
 
-RUN turbo prune service --docker
+RUN turbo prune schedule --docker
 
 FROM turbo AS deps
 
@@ -56,7 +56,7 @@ COPY --from=deps /app/node_modules/ .
 COPY --from=pruned /app/out/full/ .
 COPY packages ./packages
 
-RUN pnpm build:service
+RUN pnpm build:schedule
 RUN mkdir -p /build_locales
 
 COPY packages/plugins/i18next/locales /build_locales
