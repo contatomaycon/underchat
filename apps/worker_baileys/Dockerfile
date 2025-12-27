@@ -54,6 +54,7 @@ WORKDIR /app
 
 COPY --from=deps /app/node_modules/ .
 COPY --from=pruned /app/out/full/ .
+COPY packages ./packages
 
 RUN pnpm build:worker_baileys
 
