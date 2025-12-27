@@ -7,7 +7,7 @@ import { ERouteModule } from '@core/common/enums/ERouteModule';
 import { v7 } from 'uuid';
 import swaggerPlugin from '@/plugins/swagger';
 import databaseElasticPlugin from '@core/plugins/dbElastic';
-import temporalConsumerPlugin from './temporal';
+import { startTemporalWorkers, startTemporalSchedules } from './temporal';
 import centrifugoPlugin from '@core/plugins/centrifugo';
 import kafkaStreamsPlugin from '@core/plugins/kafkaStreams';
 import temporalPlugin from '@core/plugins/temporal';
@@ -43,13 +43,15 @@ server.register(safePlugin(routes, 'routes', true), {
 });
 server.register(safePlugin(fastifyQs, 'fastifyQs'));
 server.register(safePlugin(temporalPlugin, 'temporal'));
-server.register(safePlugin(temporalConsumerPlugin, 'temporalConsumer'));
 
 const start = async () => {
   try {
     await server.listen({ port: 3005, host: '0.0.0.0' });
 
     console.log('Server running');
+
+    startTemporalWorkers(server);
+    startTemporalSchedules(server);
   } catch (err) {
     console.log(err);
 

@@ -16,21 +16,44 @@ import { planExpirationReminderWorker } from './worker/planExpirationReminder.wo
 import { workerMonitorWorker } from './worker/workerMonitor.worker';
 import { scheduleSendWorker } from './worker/scheduleSend.worker';
 
-export default async function registerTemporal(server: FastifyInstance) {
-  await server.register(profileStatusRenewalSchedule);
-  await server.register(balanceMonitorSchedule);
-  await server.register(chatbotInactivitySchedule);
-  await server.register(workerCreationSchedule);
-  await server.register(planRenewalSchedule);
-  await server.register(planExpirationReminderSchedule);
-  await server.register(workerMonitorSchedule);
-  await server.register(scheduleSendSchedule);
-  await server.register(profileStatusRenewalWorker);
-  await server.register(balanceMonitorWorker);
-  await server.register(chatbotInactivityWorker);
-  await server.register(workerCreationWorker);
-  await server.register(planRenewalWorker);
-  await server.register(planExpirationReminderWorker);
-  await server.register(workerMonitorWorker);
-  await server.register(scheduleSendWorker);
+export function startTemporalSchedules(server: FastifyInstance): void {
+  setImmediate(() => {
+    const schedules = [
+      { name: 'profileStatusRenewal', fn: profileStatusRenewalSchedule },
+      { name: 'balanceMonitor', fn: balanceMonitorSchedule },
+      { name: 'chatbotInactivity', fn: chatbotInactivitySchedule },
+      { name: 'workerCreation', fn: workerCreationSchedule },
+      { name: 'planRenewal', fn: planRenewalSchedule },
+      { name: 'planExpirationReminder', fn: planExpirationReminderSchedule },
+      { name: 'workerMonitor', fn: workerMonitorSchedule },
+      { name: 'scheduleSend', fn: scheduleSendSchedule },
+    ];
+
+    for (const { name, fn } of schedules) {
+      fn(server).catch((err) => {
+        server.log.error(err, `Error initializing schedule: ${name}`);
+      });
+    }
+  });
+}
+
+export function startTemporalWorkers(server: FastifyInstance): void {
+  setImmediate(() => {
+    const workers = [
+      { name: 'profileStatusRenewal', fn: profileStatusRenewalWorker },
+      { name: 'balanceMonitor', fn: balanceMonitorWorker },
+      { name: 'chatbotInactivity', fn: chatbotInactivityWorker },
+      { name: 'workerCreation', fn: workerCreationWorker },
+      { name: 'planRenewal', fn: planRenewalWorker },
+      { name: 'planExpirationReminder', fn: planExpirationReminderWorker },
+      { name: 'workerMonitor', fn: workerMonitorWorker },
+      { name: 'scheduleSend', fn: scheduleSendWorker },
+    ];
+
+    for (const { name, fn } of workers) {
+      fn(server).catch((err) => {
+        server.log.error(err, `Error initializing worker: ${name}`);
+      });
+    }
+  });
 }
