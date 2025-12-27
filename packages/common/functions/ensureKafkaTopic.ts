@@ -14,34 +14,56 @@ function createAdminClient(kafka: KafkaClient): AdminClient {
 
 async function getMetadata(
   admin: AdminClient,
-  timeout = 5000,
-  retries = 3
+  timeout = 3000
 ): Promise<ITopicMetadata | null> {
-  let lastError: Error | null = null;
-
-  for (let attempt = 0; attempt < retries; attempt++) {
-    try {
-      return await new Promise<ITopicMetadata>((resolve, reject) => {
-        (admin as any).getMetadata(
-          { timeout },
-          (err: LibrdKafkaError | null, data: ITopicMetadata) => {
-            if (err) {
-              reject(toError(err));
+  try {
+    return await new Promise<ITopicMetadata | null>((resolve, reject) => {
+      (admin as any).getMetadata(
+        { timeout },
+        (err: LibrdKafkaError | null, data: ITopicMetadata) => {
+          if (err) {
+            const errorCode = (err as any).code ?? (err as any).errno;
+            if (errorCode === -185) {
+              resolve(null);
               return;
             }
-            resolve(data);
+            reject(toError(err));
+            return;
           }
-        );
-      });
-    } catch (error) {
-      lastError = toError(error);
-      if (attempt < retries - 1) {
-        await wait(200 * (attempt + 1));
-      }
+          resolve(data);
+        }
+      );
+    });
+  } catch (error) {
+    const errorCode = (error as any)?.code ?? (error as any)?.errno;
+    if (errorCode === -185) {
+      return null;
     }
+    return null;
   }
+}
 
-  return null;
+async function waitForMetadataReady(
+  admin: AdminClient,
+  timeoutMs: number,
+  pollIntervalMs = 300
+): Promise<ITopicMetadata> {
+  const start = Date.now();
+
+  while (true) {
+    const metadata = await getMetadata(admin, 3000);
+    if (metadata) {
+      return metadata;
+    }
+
+    if (Date.now() - start > timeoutMs) {
+      throw new Error(
+        `Kafka metadata request timed out after ${timeoutMs}ms`
+      );
+    }
+
+    await wait(pollIntervalMs);
+  }
 }
 
 function topicExists(
@@ -104,79 +126,37 @@ async function createTopic(
   topic: string,
   numPartitions: number,
   replicationFactor: number,
-  retries = 3
-): Promise<boolean> {
-  let lastError: Error | null = null;
+  timeoutMs: number
+): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    (admin as any).createTopic(
+      {
+        topic,
+        num_partitions: numPartitions,
+        replication_factor: replicationFactor,
+      },
+      timeoutMs,
+      (err: LibrdKafkaError | null) => {
+        if (err) {
+          const errorMessage = getErrorMessage(err);
+          const errorCode = (err as any).code ?? (err as any).errno;
 
-  for (let attempt = 0; attempt < retries; attempt++) {
-    try {
-      await new Promise<void>((resolve, reject) => {
-        (admin as any).createTopic(
-          {
-            topic,
-            num_partitions: numPartitions,
-            replication_factor: replicationFactor,
-          },
-          (err: LibrdKafkaError | null) => {
-            if (err) {
-              const errorMessage = getErrorMessage(err);
-              const errorCode = (err as any).code ?? (err as any).errno;
-
-              const lowerMessage = errorMessage.toLowerCase();
-              if (
-                errorCode === 36 ||
-                errorMessage.includes('Topic already exists') ||
-                errorMessage.includes('already exists') ||
-                (lowerMessage.includes('topic') &&
-                  lowerMessage.includes('exists'))
-              ) {
-                resolve();
-                return;
-              }
-
-              reject(toError(err));
-              return;
-            }
+          if (
+            errorCode === 36 ||
+            errorMessage.includes('Topic already exists') ||
+            errorMessage.includes('already exists')
+          ) {
             resolve();
+            return;
           }
-        );
-      });
-      return true;
-    } catch (error) {
-      lastError = toError(error);
-      const errorMessage = getErrorMessage(error);
-      const errorCode = (error as any)?.code ?? (error as any)?.errno;
 
-      if (
-        errorCode === 36 ||
-        errorMessage.includes('Topic already exists') ||
-        errorMessage.includes('already exists')
-      ) {
-        return false;
+          reject(toError(err));
+          return;
+        }
+        resolve();
       }
-
-      if (attempt < retries - 1) {
-        await wait(300 * (attempt + 1));
-      }
-    }
-  }
-
-  if (lastError) {
-    const errorMessage = getErrorMessage(lastError);
-    const errorCode = (lastError as any)?.code ?? (lastError as any)?.errno;
-
-    if (
-      errorCode === 36 ||
-      errorMessage.includes('Topic already exists') ||
-      errorMessage.includes('already exists')
-    ) {
-      return false;
-    }
-
-    throw lastError;
-  }
-
-  return true;
+    );
+  });
 }
 
 function isTopicReady(
@@ -200,74 +180,43 @@ async function waitForTopicReady(
   timeoutMs: number
 ): Promise<void> {
   const start = Date.now();
-  let lastError: Error | null = null;
   let lastState: {
     exists: boolean;
     totalPartitions: number;
     readyPartitions: number;
   } | null = null;
-  let consecutiveErrors = 0;
-  let consecutiveNotFound = 0;
-  const maxConsecutiveErrors = 5;
-  const maxConsecutiveNotFound = 10;
-  let waitTime = 200;
 
   while (true) {
-    const metadata = await getMetadata(admin, 5000, 2);
+    const metadata = await getMetadata(admin, 3000);
 
     if (metadata) {
-      consecutiveErrors = 0;
       lastState = getTopicState(metadata, topic);
 
       if (lastState.exists) {
-        consecutiveNotFound = 0;
         const topicInfo = getTopicInfo(metadata, topic);
 
         if (isTopicReady(topicInfo, numPartitions)) {
           return;
         }
-
-        if (lastState.readyPartitions > 0) {
-          waitTime = Math.min(waitTime * 1.2, 2000);
-        }
-      } else {
-        consecutiveNotFound++;
-        if (consecutiveNotFound > maxConsecutiveNotFound) {
-          waitTime = Math.min(waitTime * 1.5, 3000);
-        }
-      }
-    } else {
-      consecutiveErrors++;
-      consecutiveNotFound++;
-
-      if (consecutiveErrors > maxConsecutiveErrors) {
-        lastError = new Error('Failed to get metadata after multiple attempts');
-        waitTime = Math.min(waitTime * 2, 5000);
       }
     }
 
     const elapsed = Date.now() - start;
     if (elapsed > timeoutMs) {
-      const stateHint = lastState
-        ? lastState.exists
-          ? ` (ready partitions: ${lastState.readyPartitions}/${Math.max(
-              lastState.totalPartitions,
-              numPartitions
-            )})`
-          : ' (topic not visible in metadata yet)'
-        : '';
-      const errorHint = lastError
-        ? ` (last metadata error: ${lastError.message})`
-        : '';
-
       if (lastState?.exists && lastState.readyPartitions > 0) {
         return;
       }
 
-      throw new Error(`Topic not ready: ${topic}${stateHint}${errorHint}`);
+      const stateHint = lastState
+        ? lastState.exists
+          ? ` (ready partitions: ${lastState.readyPartitions}/${numPartitions})`
+          : ' (topic not visible in metadata)'
+        : ' (metadata unavailable)';
+
+      throw new Error(`Topic not ready: ${topic}${stateHint}`);
     }
 
-    await wait(waitTime);
+    await wait(300);
   }
 }
 
@@ -276,37 +225,23 @@ export async function ensureKafkaTopic(
   topic: string,
   numPartitions = 1,
   replicationFactor = 1,
-  timeoutMs = 90000
+  timeoutMs = 30000
 ): Promise<void> {
   const admin = createAdminClient(kafka);
 
   try {
-    let metadata = await getMetadata(admin, 5000, 3);
-    let exists = topicExists(metadata, topic);
+    const metadata = await waitForMetadataReady(admin, timeoutMs);
+    const exists = topicExists(metadata, topic);
 
     if (!exists) {
-      const created = await createTopic(
+      await createTopic(
         admin,
         topic,
         numPartitions,
         replicationFactor,
-        3
+        timeoutMs
       );
-
-      if (created) {
-        await wait(500);
-      }
-
-      for (let i = 0; i < 5; i++) {
-        metadata = await getMetadata(admin, 5000, 2);
-        exists = topicExists(metadata, topic);
-
-        if (exists) {
-          break;
-        }
-
-        await wait(300 * (i + 1));
-      }
+      await wait(200);
     }
 
     await waitForTopicReady(admin, topic, numPartitions, timeoutMs);
