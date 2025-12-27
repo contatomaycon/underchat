@@ -22,6 +22,18 @@ function isDeadlineExceededError(err: unknown): boolean {
   return false;
 }
 
+export function isScheduleTimeoutError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') {
+    return false;
+  }
+
+  if (err instanceof ScheduleDescribeFailedError && err.cause) {
+    return isDeadlineExceededError(err);
+  }
+
+  return isDeadlineExceededError(err);
+}
+
 export async function getHandleSchedule(
   handleWorkflow: ScheduleHandle,
   maxRetries = 3

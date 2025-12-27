@@ -1,5 +1,8 @@
 import { FastifyInstance } from 'fastify';
-import { getHandleSchedule } from '@core/common/functions/getHandleSchedule';
+import {
+  getHandleSchedule,
+  isScheduleTimeoutError,
+} from '@core/common/functions/getHandleSchedule';
 import { container } from 'tsyringe';
 import { Client } from '@temporalio/client';
 import Redis from 'ioredis';
@@ -19,6 +22,13 @@ export const chatbotInactivitySchedule = async (fastify: FastifyInstance) => {
       try {
         statusSchedule = await getHandleSchedule(handleSchedule);
       } catch (err) {
+        if (isScheduleTimeoutError(err)) {
+          fastify.log.warn(
+            `Timeout describing schedule "${scheduleId}", skipping creation`
+          );
+          return;
+        }
+
         fastify.log.error(
           err,
           `Error describing schedule "${scheduleId}", skipping creation`
