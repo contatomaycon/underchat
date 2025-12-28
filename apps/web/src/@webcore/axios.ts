@@ -20,7 +20,7 @@ const createAxiosInstance = () => {
   const baseUrl = normalizeBaseUrl(import.meta.env.VITE_BACKEND_URL);
   return axios.create({
     baseURL: `${baseUrl}/v1`,
-    timeout: 20000,
+    timeout: 600000,
   });
 };
 
