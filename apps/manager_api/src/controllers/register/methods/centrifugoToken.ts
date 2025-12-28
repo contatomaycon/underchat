@@ -7,7 +7,7 @@ import jwt from 'jsonwebtoken';
 import { RegisterCentrifugoTokenRequest } from '@core/schema/register/centrifugoToken/request.schema';
 
 const generateToken = async (accountId: string): Promise<string> => {
-  const exp = Math.floor(Date.now() / 1000) + 60 * 60;
+  const exp = Math.floor(Date.now() / 1000) + 24 * 60 * 60;
   return jwt.sign(
     {
       sub: accountId,

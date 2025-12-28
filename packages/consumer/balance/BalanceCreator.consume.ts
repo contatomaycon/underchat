@@ -52,8 +52,6 @@ export class BalanceCreatorConsume {
     );
 
     this.consumer.on('data', async (message) => {
-      console.log('message', message);
-
       const data = this.parseMessage(message.value);
 
       if (!data) {

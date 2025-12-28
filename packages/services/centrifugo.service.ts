@@ -41,7 +41,7 @@ export class CentrifugoService {
   }
 
   private generateSubToken(subId: string): string {
-    const exp = Math.floor(Date.now() / 1000) + 5;
+    const exp = Math.floor(Date.now() / 1000) * 60 * 60 * 24;
 
     return jwt.sign(
       { sub: subId, exp },

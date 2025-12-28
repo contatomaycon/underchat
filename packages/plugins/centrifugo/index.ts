@@ -18,7 +18,7 @@ const centrifugoPlugin: FastifyPluginAsync<CentrifugoPluginOptions> = async (
   const module = opts.module;
 
   const generateToken = async (): Promise<string> => {
-    const exp = Math.floor(Date.now() / 1000) + 60 * 60;
+    const exp = Math.floor(Date.now() / 1000) + 60 * 60 * 24;
     return jwt.sign(
       { sub: module, exp },
       centrifugoEnvironment.centrifugoHmacSecretKey,
@@ -36,10 +36,16 @@ const centrifugoPlugin: FastifyPluginAsync<CentrifugoPluginOptions> = async (
 
   const token = await generateToken();
 
+  const createWebSocket = (url: string): WebSocket => {
+    return new WebSocket(url, {
+      rejectUnauthorized: false,
+    });
+  };
+
   const client = new Centrifuge(
     `${centrifugoEnvironment.centrifugoWsUrl}/connection/websocket`,
     {
-      websocket: WebSocket,
+      websocket: createWebSocket,
       token: token,
       getToken,
       timeout: 30_000,
