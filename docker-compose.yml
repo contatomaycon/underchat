@@ -97,7 +97,7 @@ services:
       retries: 10
 
   under-temporal:
-    image: temporalio/auto-setup:latest
+    image: temporalio/auto-setup:1.29.1
     container_name: under-temporal
     ports:
       - '7233:7233'

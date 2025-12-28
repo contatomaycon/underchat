@@ -10,10 +10,19 @@ function createAdminClient(kafka: KafkaClient): AdminClient {
     'client.id': 'kafka-admin',
     'metadata.broker.list': kafka.getBroker(),
     'security.protocol': protocol,
-    'sasl.mechanism': kafkaEnvironment.saslMechanism,
-    'sasl.username': kafkaEnvironment.kafkaUsername,
-    'sasl.password': kafkaEnvironment.kafkaPassword,
   };
+
+  if (protocol !== 'plaintext') {
+    const saslMechanism = kafkaEnvironment.saslMechanism;
+    const username = kafkaEnvironment.kafkaUsername;
+    const password = kafkaEnvironment.kafkaPassword;
+
+    if (saslMechanism && username && password) {
+      config['sasl.mechanism'] = saslMechanism;
+      config['sasl.username'] = username;
+      config['sasl.password'] = password;
+    }
+  }
 
   if (protocol === 'sasl_ssl' || protocol === 'ssl') {
     config['enable.ssl.certificate.verification'] = false;

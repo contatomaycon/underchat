@@ -10,24 +10,6 @@ export class KafkaEnvironment {
     return broker;
   }
 
-  public get kafkaUsername(): string {
-    const username = process.env.KAFKA_USERNAME;
-    if (!username) {
-      throw new InvalidConfigurationError('KAFKA_USERNAME is not defined.');
-    }
-
-    return username;
-  }
-
-  public get kafkaPassword(): string {
-    const password = process.env.KAFKA_PASSWORD;
-    if (!password) {
-      throw new InvalidConfigurationError('KAFKA_PASSWORD is not defined.');
-    }
-
-    return password;
-  }
-
   public get securityProtocol(): string {
     const securityProtocol = process.env.SECURITY_PROTOCOL;
     if (!securityProtocol) {
@@ -37,7 +19,40 @@ export class KafkaEnvironment {
     return securityProtocol.toLowerCase();
   }
 
-  public get saslMechanism(): string {
+  public get kafkaUsername(): string | undefined {
+    const protocol = this.securityProtocol;
+    if (protocol === 'plaintext') {
+      return undefined;
+    }
+
+    const username = process.env.KAFKA_USERNAME;
+    if (!username) {
+      throw new InvalidConfigurationError('KAFKA_USERNAME is not defined.');
+    }
+
+    return username;
+  }
+
+  public get kafkaPassword(): string | undefined {
+    const protocol = this.securityProtocol;
+    if (protocol === 'plaintext') {
+      return undefined;
+    }
+
+    const password = process.env.KAFKA_PASSWORD;
+    if (!password) {
+      throw new InvalidConfigurationError('KAFKA_PASSWORD is not defined.');
+    }
+
+    return password;
+  }
+
+  public get saslMechanism(): string | undefined {
+    const protocol = this.securityProtocol;
+    if (protocol === 'plaintext') {
+      return undefined;
+    }
+
     const saslMechanism = process.env.SASL_MECHANISM;
     if (!saslMechanism) {
       throw new InvalidConfigurationError('SASL_MECHANISM is not defined.');

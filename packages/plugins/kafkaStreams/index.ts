@@ -19,18 +19,18 @@ export interface KafkaClient {
 class KafkaStreamsClient implements KafkaClient {
   private readonly broker: string;
   private readonly clientId: string;
-  private readonly username: string;
-  private readonly password: string;
+  private readonly username: string | undefined;
+  private readonly password: string | undefined;
   private readonly securityProtocol: string;
-  private readonly saslMechanism: string;
+  private readonly saslMechanism: string | undefined;
 
   constructor(
     broker: string,
     clientId: string,
-    username: string,
-    password: string,
+    username: string | undefined,
+    password: string | undefined,
     securityProtocol: string,
-    saslMechanism: string
+    saslMechanism: string | undefined
   ) {
     this.broker = broker;
     this.clientId = clientId;
@@ -49,10 +49,18 @@ class KafkaStreamsClient implements KafkaClient {
 
     const config: Record<string, string | boolean> = {
       'security.protocol': protocol,
-      'sasl.mechanism': this.saslMechanism,
-      'sasl.username': this.username,
-      'sasl.password': this.password,
     };
+
+    if (
+      protocol !== 'plaintext' &&
+      this.saslMechanism &&
+      this.username &&
+      this.password
+    ) {
+      config['sasl.mechanism'] = this.saslMechanism;
+      config['sasl.username'] = this.username;
+      config['sasl.password'] = this.password;
+    }
 
     if (protocol === 'sasl_ssl' || protocol === 'ssl') {
       config['enable.ssl.certificate.verification'] = false;
