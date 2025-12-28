@@ -4,7 +4,6 @@ import {
   PutObjectCommand,
   DeleteObjectCommand,
   S3Client,
-  HeadBucketCommand,
   CreateBucketCommand,
   PutBucketPolicyCommand,
   DeletePublicAccessBlockCommand,
@@ -24,6 +23,7 @@ const MAX_AUDIO_UPLOAD_BYTES = 16 * 1024 * 1024;
 @injectable()
 export class StorageService {
   private readonly client: S3Client;
+  private readonly verifiedBuckets = new Set<string>();
 
   constructor() {
     this.client = new S3Client({
@@ -38,20 +38,26 @@ export class StorageService {
   }
 
   private async ensurePublicBucket(accountId: string): Promise<void> {
+    if (this.verifiedBuckets.has(accountId)) {
+      return;
+    }
+
     try {
-      await this.client.send(new HeadBucketCommand({ Bucket: accountId }));
-    } catch (error: any) {
+      await this.client.send(
+        new CreateBucketCommand({
+          Bucket: accountId,
+        })
+      );
+    } catch (createError: any) {
       if (
-        error.name === 'NotFound' ||
-        error.$metadata?.httpStatusCode === 404
+        createError.name === 'BucketAlreadyOwnedByYou' ||
+        createError.name === 'BucketAlreadyExists' ||
+        createError.Code === 'BucketAlreadyOwnedByYou' ||
+        createError.Code === 'BucketAlreadyExists'
       ) {
-        await this.client.send(
-          new CreateBucketCommand({
-            Bucket: accountId,
-          })
-        );
+        this.verifiedBuckets.add(accountId);
       } else {
-        throw error;
+        throw createError;
       }
     }
 
@@ -80,12 +86,48 @@ export class StorageService {
       ],
     };
 
-    await this.client.send(
-      new PutBucketPolicyCommand({
-        Bucket: accountId,
-        Policy: JSON.stringify(publicReadPolicy),
-      })
-    );
+    try {
+      await this.client.send(
+        new PutBucketPolicyCommand({
+          Bucket: accountId,
+          Policy: JSON.stringify(publicReadPolicy),
+        })
+      );
+    } catch (error: any) {
+      if (
+        error.name === 'NoSuchBucket' ||
+        error.Code === 'NoSuchBucket' ||
+        error.$metadata?.httpStatusCode === 404
+      ) {
+        try {
+          await this.client.send(
+            new CreateBucketCommand({
+              Bucket: accountId,
+            })
+          );
+        } catch (retryError: any) {
+          if (
+            retryError.name !== 'BucketAlreadyOwnedByYou' &&
+            retryError.name !== 'BucketAlreadyExists' &&
+            retryError.Code !== 'BucketAlreadyOwnedByYou' &&
+            retryError.Code !== 'BucketAlreadyExists'
+          ) {
+            throw retryError;
+          }
+        }
+
+        await this.client.send(
+          new PutBucketPolicyCommand({
+            Bucket: accountId,
+            Policy: JSON.stringify(publicReadPolicy),
+          })
+        );
+      } else {
+        throw error;
+      }
+    }
+
+    this.verifiedBuckets.add(accountId);
   }
 
   private converterFilename(filename: string): string {
@@ -620,6 +662,8 @@ export class StorageService {
 
       const accountId = pathParts[0];
       const key = pathParts.slice(1).join('/');
+
+      await this.ensurePublicBucket(accountId);
 
       const command = new DeleteObjectCommand({
         Bucket: accountId,
