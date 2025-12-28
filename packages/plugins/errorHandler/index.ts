@@ -24,14 +24,16 @@ async function errorHandlerPlugin(fastify: FastifyInstance) {
 
       if (isPostgreSQLError(error)) {
         const pgError = error as any;
+        const originalError = pgError.cause || pgError;
         const errorMessage = getPostgreSQLErrorMessage(pgError);
 
         fastify.log.error({
           error: {
             message: errorMessage,
-            code: pgError.code,
-            detail: pgError.detail,
-            hint: pgError.hint,
+            code: originalError.code || pgError.code,
+            detail: originalError.detail || pgError.detail,
+            hint: originalError.hint || pgError.hint,
+            originalMessage: pgError.message,
           },
           request: {
             id: request.id,
@@ -41,7 +43,7 @@ async function errorHandlerPlugin(fastify: FastifyInstance) {
         });
 
         return sendResponse(reply, {
-          message: t('database_query_error'),
+          message: t('internal_server_error'),
           httpStatusCode: EHTTPStatusCode.internal_server_error,
         });
       }
