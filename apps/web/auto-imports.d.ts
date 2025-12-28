@@ -100,6 +100,7 @@ declare global {
   const markRaw: typeof import('vue').markRaw
   const maxLengthValidator: typeof import('./src/@webcore/utils/validators').maxLengthValidator
   const nextTick: typeof import('vue').nextTick
+  const normalizeBaseUrl: typeof import('./src/@webcore/utils/helpers').normalizeBaseUrl
   const onActivated: typeof import('vue').onActivated
   const onBeforeMount: typeof import('vue').onBeforeMount
   const onBeforeRouteLeave: typeof import('vue-router').onBeforeRouteLeave
@@ -500,6 +501,7 @@ declare module 'vue' {
     readonly markRaw: UnwrapRef<typeof import('vue')['markRaw']>
     readonly maxLengthValidator: UnwrapRef<typeof import('./src/@webcore/utils/validators')['maxLengthValidator']>
     readonly nextTick: UnwrapRef<typeof import('vue')['nextTick']>
+    readonly normalizeBaseUrl: UnwrapRef<typeof import('./src/@webcore/utils/helpers')['normalizeBaseUrl']>
     readonly onActivated: UnwrapRef<typeof import('vue')['onActivated']>
     readonly onBeforeMount: UnwrapRef<typeof import('vue')['onBeforeMount']>
     readonly onBeforeRouteLeave: UnwrapRef<typeof import('vue-router')['onBeforeRouteLeave']>

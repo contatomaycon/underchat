@@ -20,6 +20,7 @@ import { ListCreditCardFeeResponse } from '@core/schema/config/listCreditCardFee
 import { CreateRegisterOrderPaymentRequest } from '@core/schema/register/createOrderPayment/request.schema';
 import { CreateRegisterOrderPaymentResponse } from '@core/schema/register/createOrderPayment/response.schema';
 import { RegisterCentrifugoTokenResponse } from '@core/schema/register/centrifugoToken/response.schema';
+import { normalizeBaseUrl } from '../utils/helpers';
 
 export const useRegisterStore = defineStore('register', {
   state: () => ({
@@ -45,7 +46,7 @@ export const useRegisterStore = defineStore('register', {
     async sendTwoFactor(
       data: AuthRegisterSendTwoFactorRequest
     ): Promise<boolean> {
-      const url = import.meta.env.VITE_BACKEND_URL;
+      const url = normalizeBaseUrl(import.meta.env.VITE_BACKEND_URL);
 
       if (!url) {
         this.showSnackbar(
@@ -98,7 +99,7 @@ export const useRegisterStore = defineStore('register', {
       }
     },
     async verifyCode(data: AuthRegisterVerifyCodeRequest): Promise<boolean> {
-      const url = import.meta.env.VITE_BACKEND_URL;
+      const url = normalizeBaseUrl(import.meta.env.VITE_BACKEND_URL);
 
       if (!url) {
         this.showSnackbar(
@@ -164,7 +165,7 @@ export const useRegisterStore = defineStore('register', {
     async viewZipcode(
       params: ViewRegisterZipcodeRequest
     ): Promise<RegisterZipcodeResponseSchema | null> {
-      const url = import.meta.env.VITE_BACKEND_URL;
+      const url = normalizeBaseUrl(import.meta.env.VITE_BACKEND_URL);
 
       if (!url) {
         return null;
@@ -203,7 +204,7 @@ export const useRegisterStore = defineStore('register', {
     async listStates(
       params?: ListRegisterStatesRequest
     ): Promise<RegisterStateListResponse | null> {
-      const url = import.meta.env.VITE_BACKEND_URL;
+      const url = normalizeBaseUrl(import.meta.env.VITE_BACKEND_URL);
 
       if (!url) {
         return null;
@@ -242,7 +243,7 @@ export const useRegisterStore = defineStore('register', {
     async listCities(
       params: ListRegisterCitiesRequest
     ): Promise<RegisterCityListResponse | null> {
-      const url = import.meta.env.VITE_BACKEND_URL;
+      const url = normalizeBaseUrl(import.meta.env.VITE_BACKEND_URL);
 
       if (!url) {
         return null;
@@ -279,7 +280,7 @@ export const useRegisterStore = defineStore('register', {
       }
     },
     async listPlanWithItems(): Promise<ListRegisterPlanWithItemsFinalResponse | null> {
-      const url = import.meta.env.VITE_BACKEND_URL;
+      const url = normalizeBaseUrl(import.meta.env.VITE_BACKEND_URL);
 
       if (!url) {
         return null;
@@ -315,7 +316,7 @@ export const useRegisterStore = defineStore('register', {
       }
     },
     async listAvailableCrossSell(): Promise<ListRegisterAvailableCrossSellFinalResponse | null> {
-      const url = import.meta.env.VITE_BACKEND_URL;
+      const url = normalizeBaseUrl(import.meta.env.VITE_BACKEND_URL);
 
       if (!url) {
         return null;
@@ -352,7 +353,7 @@ export const useRegisterStore = defineStore('register', {
     },
 
     async getCreditCardFee(): Promise<ListCreditCardFeeResponse | null> {
-      const url = import.meta.env.VITE_BACKEND_URL;
+      const url = normalizeBaseUrl(import.meta.env.VITE_BACKEND_URL);
 
       if (!url) {
         return null;
@@ -403,7 +404,7 @@ export const useRegisterStore = defineStore('register', {
     async createOrderPayment(
       input: CreateRegisterOrderPaymentRequest
     ): Promise<CreateRegisterOrderPaymentResponse | null> {
-      const url = import.meta.env.VITE_BACKEND_URL;
+      const url = normalizeBaseUrl(import.meta.env.VITE_BACKEND_URL);
       if (!url) {
         this.showSnackbar(
           this.i18n.global.t('backend_url_not_configured'),
@@ -461,7 +462,7 @@ export const useRegisterStore = defineStore('register', {
     async generateCentrifugoToken(
       accountId: string
     ): Promise<RegisterCentrifugoTokenResponse | null> {
-      const url = import.meta.env.VITE_BACKEND_URL;
+      const url = normalizeBaseUrl(import.meta.env.VITE_BACKEND_URL);
       if (!url) {
         this.showSnackbar(
           this.i18n.global.t('backend_url_not_configured'),

@@ -49,10 +49,7 @@ export class WorkerCreatorUseCase {
         this.kafkaBalanceQueueService.worker(payload.server_id),
         payload
       );
-
-      console.log('onWorkerCreated success');
-    } catch (error) {
-      console.error('onWorkerCreated error', error);
+    } catch {
       throw new Error(t('kafka_error'));
     }
   }
@@ -67,29 +64,18 @@ export class WorkerCreatorUseCase {
     const viewWorkerServer =
       await this.workerService.viewWorkerServer(accountId);
 
-    console.log('viewWorkerServer', viewWorkerServer);
-
     if (!viewWorkerServer) {
       throw new Error(t('worker_server_not_disponible'));
     }
-
-    console.log('viewWorkerServer.server_id', viewWorkerServer.server_id);
 
     if (!viewWorkerServer.server_id) {
       throw new Error(t('worker_server_not_disponible'));
     }
 
-    console.log('input.worker_type', input.worker_type);
-
     const workerType = input.worker_type as EWorkerType;
-
-    console.log('workerType', workerType);
-
     if (!workerType || !Object.values(EWorkerType).includes(workerType)) {
       throw new Error(t('worker_type_invalid'));
     }
-
-    console.log('input.name', input.name);
 
     if (!input.name || input.name.trim().length === 0) {
       throw new Error(t('worker_name_required'));
@@ -109,8 +95,6 @@ export class WorkerCreatorUseCase {
     const isCreated =
       await this.workerService.createWorker(createWorkerPayload);
 
-    console.log('isCreated', isCreated);
-
     if (!isCreated) {
       throw new Error(t('worker_creation_failed'));
     }
@@ -125,18 +109,12 @@ export class WorkerCreatorUseCase {
       name: input.name.trim(),
     };
 
-    console.log('payloadCreate', payloadCreate);
-
     await this.centrifugoService.publishSub(
       workerCentrifugoQueue(payloadCreate.account_id),
       payloadCreate
     );
 
-    console.log('centrifugoService.publishSub');
-
     await this.onWorkerCreated(t, payloadCreate);
-
-    console.log('onWorkerCreated');
 
     return isCreated;
   }

@@ -14,12 +14,15 @@ import { router } from '@/plugins/1.router';
 import { getI18n } from '@/plugins/i18n';
 import { IApiResponse } from '@core/common/interfaces/IApiResponse';
 import { RefreshTokenResponse } from '@core/schema/auth/refrehToken/response.schema';
+import { normalizeBaseUrl } from './utils/helpers';
 
-const createAxiosInstance = () =>
-  axios.create({
-    baseURL: `${import.meta.env.VITE_BACKEND_URL}/v1`,
+const createAxiosInstance = () => {
+  const baseUrl = normalizeBaseUrl(import.meta.env.VITE_BACKEND_URL);
+  return axios.create({
+    baseURL: `${baseUrl}/v1`,
     timeout: 20000,
   });
+};
 
 const axiosAuth = createAxiosInstance();
 
@@ -45,7 +48,7 @@ const refreshSession = async (): Promise<string | null> => {
   const token = getToken();
   if (!token) return null;
 
-  const url = import.meta.env.VITE_BACKEND_URL;
+  const url = normalizeBaseUrl(import.meta.env.VITE_BACKEND_URL);
   if (!url) return null;
 
   try {

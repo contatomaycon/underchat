@@ -26,3 +26,8 @@ export const isToday = (date: Date) => {
     date.getFullYear() === today.getFullYear()
   );
 };
+
+export const normalizeBaseUrl = (url: string | undefined): string => {
+  if (!url) return '';
+  return url.replace(/\/+$/, '');
+};

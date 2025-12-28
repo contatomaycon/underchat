@@ -21,6 +21,7 @@ import {
   persistPlanStatus,
 } from '../localStorage/user';
 import { updateAbilityPermissions } from '@/plugins/casl/ability';
+import { normalizeBaseUrl } from '../utils/helpers';
 
 export const useAuthStore = defineStore('auth', {
   state: () => ({
@@ -50,7 +51,7 @@ export const useAuthStore = defineStore('auth', {
       persistPlanStatus(isActive);
     },
     async login(login: string, password: string): Promise<boolean> {
-      const url = import.meta.env.VITE_BACKEND_URL;
+      const url = normalizeBaseUrl(import.meta.env.VITE_BACKEND_URL);
 
       if (!url) {
         this.showSnackbar(
