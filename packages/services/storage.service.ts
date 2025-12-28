@@ -1,29 +1,24 @@
 import { injectable } from 'tsyringe';
 import { s3Environment } from '@core/config/environments';
-import {
-  PutObjectCommand,
-  DeleteObjectCommand,
-  S3Client,
-  CreateBucketCommand,
-  PutBucketPolicyCommand,
-  DeletePublicAccessBlockCommand,
-} from '@aws-sdk/client-s3';
+import { S3Client } from '@aws-sdk/client-s3';
 import { UploadFileResponse } from '@core/schema/upload/response.schema';
 import { UploadFileRequest } from '@core/schema/upload/request.schema';
-import { extension as mimeToExt } from 'mime-types';
-import { fileTypeFromBuffer } from 'file-type';
-import sharp from 'sharp';
-import { v7 as uuidv7 } from 'uuid';
-
-const MAX_IMAGE_UPLOAD_BYTES = 16 * 1024 * 1024;
-const MAX_DOCUMENT_UPLOAD_BYTES = 100 * 1024 * 1024;
-const MAX_VIDEO_UPLOAD_BYTES = 100 * 1024 * 1024;
-const MAX_AUDIO_UPLOAD_BYTES = 16 * 1024 * 1024;
+import { BucketManager } from './storage/BucketManager';
+import { FileValidator } from './storage/FileValidator';
+import { FileProcessor } from './storage/FileProcessor';
+import { S3Uploader } from './storage/S3Uploader';
+import { S3Deleter } from './storage/S3Deleter';
+import { S3UrlParser } from './storage/S3UrlParser';
 
 @injectable()
 export class StorageService {
   private readonly client: S3Client;
-  private readonly verifiedBuckets = new Set<string>();
+  private readonly bucketManager: BucketManager;
+  private readonly fileValidator: FileValidator;
+  private readonly fileProcessor: FileProcessor;
+  private readonly uploader: S3Uploader;
+  private readonly deleter: S3Deleter;
+  private readonly urlParser: S3UrlParser;
 
   constructor() {
     this.client = new S3Client({
@@ -35,189 +30,65 @@ export class StorageService {
       endpoint: s3Environment.s3Endpoint,
       forcePathStyle: true,
     });
+
+    this.bucketManager = new BucketManager(this.client);
+    this.fileValidator = new FileValidator();
+    this.fileProcessor = new FileProcessor();
+    this.uploader = new S3Uploader(this.client);
+    this.deleter = new S3Deleter(this.client);
+    this.urlParser = new S3UrlParser();
   }
 
-  private async ensurePublicBucket(accountId: string): Promise<void> {
-    if (this.verifiedBuckets.has(accountId)) {
+  private async ensureBucket(accountId: string): Promise<void> {
+    if (this.bucketManager.isBucketVerified(accountId)) {
       return;
     }
 
-    try {
-      await this.client.send(
-        new CreateBucketCommand({
-          Bucket: accountId,
-        })
-      );
-    } catch (createError: any) {
-      if (
-        createError.name === 'BucketAlreadyOwnedByYou' ||
-        createError.name === 'BucketAlreadyExists' ||
-        createError.Code === 'BucketAlreadyOwnedByYou' ||
-        createError.Code === 'BucketAlreadyExists'
-      ) {
-        this.verifiedBuckets.add(accountId);
-      } else {
-        throw createError;
-      }
-    }
-
-    try {
-      await this.client.send(
-        new DeletePublicAccessBlockCommand({
-          Bucket: accountId,
-        })
-      );
-    } catch (error: any) {
-      if (error.name !== 'NoSuchPublicAccessBlockConfiguration') {
-        throw error;
-      }
-    }
-
-    const publicReadPolicy = {
-      Version: '2012-10-17',
-      Statement: [
-        {
-          Sid: 'PublicReadGetObject',
-          Effect: 'Allow',
-          Principal: '*',
-          Action: 's3:GetObject',
-          Resource: `arn:aws:s3:::${accountId}/*`,
-        },
-      ],
-    };
-
-    try {
-      await this.client.send(
-        new PutBucketPolicyCommand({
-          Bucket: accountId,
-          Policy: JSON.stringify(publicReadPolicy),
-        })
-      );
-    } catch (error: any) {
-      if (
-        error.name === 'NoSuchBucket' ||
-        error.Code === 'NoSuchBucket' ||
-        error.$metadata?.httpStatusCode === 404
-      ) {
-        try {
-          await this.client.send(
-            new CreateBucketCommand({
-              Bucket: accountId,
-            })
-          );
-        } catch (retryError: any) {
-          if (
-            retryError.name !== 'BucketAlreadyOwnedByYou' &&
-            retryError.name !== 'BucketAlreadyExists' &&
-            retryError.Code !== 'BucketAlreadyOwnedByYou' &&
-            retryError.Code !== 'BucketAlreadyExists'
-          ) {
-            throw retryError;
-          }
-        }
-
-        await this.client.send(
-          new PutBucketPolicyCommand({
-            Bucket: accountId,
-            Policy: JSON.stringify(publicReadPolicy),
-          })
-        );
-      } else {
-        throw error;
-      }
-    }
-
-    this.verifiedBuckets.add(accountId);
+    await this.bucketManager.ensurePublicBucket(accountId);
   }
 
-  private converterFilename(filename: string): string {
-    return filename.replaceAll(' ', '_');
-  }
-
-  private determineBaseName(
-    providedName: string | null | undefined,
-    providedExt: string | null | undefined,
-    ext: string,
-    accountId: string
-  ): string {
-    if (!providedName) {
-      return `${accountId}-${Date.now()}.${ext}`;
-    }
-
-    if (providedExt) {
-      return providedName;
-    }
-
-    return `${providedName}.${ext}`;
+  private createUrl(path: string, accountId: string): string {
+    return `${s3Environment.s3Endpoint}/${accountId}/${path}`;
   }
 
   public async uploadImage(
     file: UploadFileRequest,
     accountId: string
   ): Promise<UploadFileResponse | null> {
-    const extension = this.getFileExtension(file.filename);
+    const extension = this.fileProcessor.getFileExtension(file.filename);
 
     if (!extension) {
       return null;
     }
 
-    const allowedExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
-    const allowedMimetypes = [
-      'image/jpeg',
-      'image/jpg',
-      'image/png',
-      'image/gif',
-      'image/webp',
-    ];
-
-    if (!allowedExtensions.includes(extension.toLowerCase())) {
-      throw new Error('INVALID_IMAGE_FORMAT');
-    }
-
-    if (
-      file.mimetype &&
-      !allowedMimetypes.includes(file.mimetype.toLowerCase())
-    ) {
-      throw new Error('INVALID_IMAGE_FORMAT');
-    }
+    this.fileValidator.validateImageFormat(extension, file.mimetype);
 
     const buffer = await file.toBuffer();
+    this.fileValidator.validateImageSize(buffer.byteLength);
 
-    if (buffer.byteLength > MAX_IMAGE_UPLOAD_BYTES) {
-      throw new Error('IMAGE_SIZE_LIMIT_EXCEEDED');
-    }
-
-    const generatedFilename = `${uuidv7()}.${extension}`;
-    const path = `${generatedFilename}`;
+    const generatedFilename =
+      this.fileProcessor.generateUniqueFilename(extension);
+    const path = this.fileProcessor.normalizeFilename(generatedFilename);
 
     let width: number | null = null;
     let height: number | null = null;
     let mimetype: string | null = file.mimetype ?? null;
 
-    try {
-      const metadata = await sharp(buffer).metadata();
-
-      width = metadata.width ?? null;
-      height = metadata.height ?? null;
-
-      if (!mimetype && metadata.format) {
-        mimetype = `image/${metadata.format}`;
-      }
-    } catch {
-      width = null;
-      height = null;
+    const metadata = await this.fileProcessor.extractImageMetadata(buffer);
+    width = metadata.width;
+    height = metadata.height;
+    if (metadata.mimetype) {
+      mimetype = metadata.mimetype;
     }
 
-    await this.ensurePublicBucket(accountId);
+    await this.ensureBucket(accountId);
 
-    const command = new PutObjectCommand({
-      Bucket: accountId,
-      Key: path,
-      Body: buffer,
-      ContentType: mimetype ?? file.mimetype,
+    await this.uploader.uploadWithRetry({
+      bucket: accountId,
+      key: path,
+      body: buffer,
+      contentType: mimetype ?? 'image/jpeg',
     });
-
-    await this.client.send(command);
 
     return {
       url: this.createUrl(path, accountId),
@@ -235,31 +106,27 @@ export class StorageService {
     accountId: string
   ): Promise<UploadFileResponse | null> {
     const buffer = await file.toBuffer();
+    this.fileValidator.validateDocumentSize(buffer.byteLength);
 
-    if (buffer.byteLength > MAX_DOCUMENT_UPLOAD_BYTES) {
-      throw new Error('DOCUMENT_SIZE_LIMIT_EXCEEDED');
-    }
-
-    const initialExtension = this.getFileExtension(file.filename);
-    const fallbackExtension = this.extFromMime(file.mimetype ?? '') ?? 'bin';
+    const initialExtension = this.fileProcessor.getFileExtension(file.filename);
+    const fallbackExtension =
+      this.fileProcessor.extFromMime(file.mimetype ?? '') ?? 'bin';
     const extension = initialExtension || fallbackExtension;
 
     const normalizedName = initialExtension
       ? file.filename
       : `${file.filename}.${extension}`;
-    const key = `${this.converterFilename(normalizedName)}`;
+    const key = this.fileProcessor.normalizeFilename(normalizedName);
     const mimetype = file.mimetype ?? 'application/octet-stream';
 
-    await this.ensurePublicBucket(accountId);
+    await this.ensureBucket(accountId);
 
-    await this.client.send(
-      new PutObjectCommand({
-        Bucket: accountId,
-        Key: key,
-        Body: buffer,
-        ContentType: mimetype,
-      })
-    );
+    await this.uploader.uploadWithRetry({
+      bucket: accountId,
+      key,
+      body: buffer,
+      contentType: mimetype,
+    });
 
     return {
       url: this.createUrl(key, accountId),
@@ -276,53 +143,30 @@ export class StorageService {
     file: UploadFileRequest,
     accountId: string
   ): Promise<UploadFileResponse | null> {
-    const initialExtension = this.getFileExtension(file.filename);
-    const fallbackExtension = this.extFromMime(file.mimetype ?? '') ?? 'mp4';
+    const initialExtension = this.fileProcessor.getFileExtension(file.filename);
+    const fallbackExtension =
+      this.fileProcessor.extFromMime(file.mimetype ?? '') ?? 'mp4';
     const extension = initialExtension || fallbackExtension;
 
-    const allowedExtensions = ['mp4', 'avi', 'flv', 'mkv', 'mov', '3gp'];
-    const allowedMimetypes = [
-      'video/mp4',
-      'video/avi',
-      'video/x-flv',
-      'video/x-matroska',
-      'video/quicktime',
-      'video/3gpp',
-    ];
-
-    if (!allowedExtensions.includes(extension.toLowerCase())) {
-      throw new Error('INVALID_VIDEO_FORMAT');
-    }
-
-    if (
-      file.mimetype &&
-      !allowedMimetypes.includes(file.mimetype.toLowerCase())
-    ) {
-      throw new Error('INVALID_VIDEO_FORMAT');
-    }
+    this.fileValidator.validateVideoFormat(extension, file.mimetype);
 
     const buffer = await file.toBuffer();
-
-    if (buffer.byteLength > MAX_VIDEO_UPLOAD_BYTES) {
-      throw new Error('VIDEO_SIZE_LIMIT_EXCEEDED');
-    }
+    this.fileValidator.validateVideoSize(buffer.byteLength);
 
     const normalizedName = initialExtension
       ? file.filename
       : `${file.filename}.${extension}`;
-    const key = `${this.converterFilename(normalizedName)}`;
+    const key = this.fileProcessor.normalizeFilename(normalizedName);
     const mimetype = file.mimetype ?? 'video/mp4';
 
-    await this.ensurePublicBucket(accountId);
+    await this.ensureBucket(accountId);
 
-    await this.client.send(
-      new PutObjectCommand({
-        Bucket: accountId,
-        Key: key,
-        Body: buffer,
-        ContentType: mimetype,
-      })
-    );
+    await this.uploader.uploadWithRetry({
+      bucket: accountId,
+      key,
+      body: buffer,
+      contentType: mimetype,
+    });
 
     return {
       url: this.createUrl(key, accountId),
@@ -343,27 +187,26 @@ export class StorageService {
     width?: number,
     height?: number
   ): Promise<UploadFileResponse | null> {
-    if (buffer.byteLength > MAX_VIDEO_UPLOAD_BYTES) {
-      throw new Error('VIDEO_SIZE_LIMIT_EXCEEDED');
-    }
+    this.fileValidator.validateVideoSize(buffer.byteLength);
 
     const extension =
-      this.getFileExtension(filename) || this.extFromMime(mimetype) || 'mp4';
-    const normalizedName = filename.endsWith(`.${extension}`)
-      ? filename
-      : `${filename}.${extension}`;
-    const key = `${this.converterFilename(normalizedName)}`;
-
-    await this.ensurePublicBucket(accountId);
-
-    await this.client.send(
-      new PutObjectCommand({
-        Bucket: accountId,
-        Key: key,
-        Body: buffer,
-        ContentType: mimetype,
-      })
+      this.fileProcessor.getFileExtension(filename) ||
+      this.fileProcessor.extFromMime(mimetype) ||
+      'mp4';
+    const normalizedName = this.fileProcessor.normalizeFileNameWithExtension(
+      filename,
+      extension
     );
+    const key = this.fileProcessor.normalizeFilename(normalizedName);
+
+    await this.ensureBucket(accountId);
+
+    await this.uploader.uploadWithRetry({
+      bucket: accountId,
+      key,
+      body: buffer,
+      contentType: mimetype,
+    });
 
     return {
       url: this.createUrl(key, accountId),
@@ -381,31 +224,27 @@ export class StorageService {
     accountId: string
   ): Promise<UploadFileResponse | null> {
     const buffer = await file.toBuffer();
+    this.fileValidator.validateAudioSize(buffer.byteLength);
 
-    if (buffer.byteLength > MAX_AUDIO_UPLOAD_BYTES) {
-      throw new Error('AUDIO_SIZE_LIMIT_EXCEEDED');
-    }
-
-    const initialExtension = this.getFileExtension(file.filename);
-    const fallbackExtension = this.extFromMime(file.mimetype ?? '') ?? 'opus';
+    const initialExtension = this.fileProcessor.getFileExtension(file.filename);
+    const fallbackExtension =
+      this.fileProcessor.extFromMime(file.mimetype ?? '') ?? 'opus';
     const extension = initialExtension || fallbackExtension;
 
     const normalizedName = initialExtension
       ? file.filename
       : `${file.filename}.${extension}`;
-    const key = `${this.converterFilename(normalizedName)}`;
+    const key = this.fileProcessor.normalizeFilename(normalizedName);
     const mimetype = file.mimetype ?? 'audio/ogg; codecs=opus';
 
-    await this.ensurePublicBucket(accountId);
+    await this.ensureBucket(accountId);
 
-    await this.client.send(
-      new PutObjectCommand({
-        Bucket: accountId,
-        Key: key,
-        Body: buffer,
-        ContentType: mimetype,
-      })
-    );
+    await this.uploader.uploadWithRetry({
+      bucket: accountId,
+      key,
+      body: buffer,
+      contentType: mimetype,
+    });
 
     return {
       url: this.createUrl(key, accountId),
@@ -424,27 +263,26 @@ export class StorageService {
     mimetype: string,
     accountId: string
   ): Promise<UploadFileResponse | null> {
-    if (buffer.byteLength > MAX_AUDIO_UPLOAD_BYTES) {
-      throw new Error('AUDIO_SIZE_LIMIT_EXCEEDED');
-    }
+    this.fileValidator.validateAudioSize(buffer.byteLength);
 
     const extension =
-      this.getFileExtension(filename) || this.extFromMime(mimetype) || 'opus';
-    const normalizedName = filename.endsWith(`.${extension}`)
-      ? filename
-      : `${filename}.${extension}`;
-    const key = `${this.converterFilename(normalizedName)}`;
-
-    await this.ensurePublicBucket(accountId);
-
-    await this.client.send(
-      new PutObjectCommand({
-        Bucket: accountId,
-        Key: key,
-        Body: buffer,
-        ContentType: mimetype,
-      })
+      this.fileProcessor.getFileExtension(filename) ||
+      this.fileProcessor.extFromMime(mimetype) ||
+      'opus';
+    const normalizedName = this.fileProcessor.normalizeFileNameWithExtension(
+      filename,
+      extension
     );
+    const key = this.fileProcessor.normalizeFilename(normalizedName);
+
+    await this.ensureBucket(accountId);
+
+    await this.uploader.uploadWithRetry({
+      bucket: accountId,
+      key,
+      body: buffer,
+      contentType: mimetype,
+    });
 
     return {
       url: this.createUrl(key, accountId),
@@ -463,30 +301,19 @@ export class StorageService {
     filenameHint?: string
   ): Promise<UploadFileResponse | null> {
     const res = await fetch(url);
-    if (!res.ok)
+    if (!res.ok) {
       throw new Error(`Failed to fetch: ${res.status} ${res.statusText}`);
+    }
 
     const contentTypeHeader =
       res.headers.get('content-type') ?? 'application/octet-stream';
     const contentType = contentTypeHeader.split(';')[0].trim();
 
-    const dispoName = this.parseDispositionFilename(
+    const dispoName = this.fileProcessor.parseDispositionFilename(
       res.headers.get('content-disposition')
     );
 
-    const urlName = (() => {
-      const u = new URL(url);
-      let p = u.pathname;
-
-      while (p.endsWith('/')) p = p.slice(0, -1);
-
-      const last = p.slice(p.lastIndexOf('/') + 1);
-      try {
-        return decodeURIComponent(last);
-      } catch {
-        return last;
-      }
-    })();
+    const urlName = this.fileProcessor.extractFilenameFromUrl(url);
 
     const guessedName =
       filenameHint ?? dispoName ?? urlName ?? `file-${Date.now()}`;
@@ -495,22 +322,23 @@ export class StorageService {
     const buffer = Buffer.from(arrayBuf);
 
     let ext =
-      this.getFileExtension(guessedName) ?? this.extFromMime(contentType);
+      this.fileProcessor.getFileExtension(guessedName) ??
+      this.fileProcessor.extFromMime(contentType);
 
     let sniffedMime: string | undefined;
     if (!ext) {
-      const ft = await fileTypeFromBuffer(buffer).catch(() => null);
-      if (ft?.ext) {
-        ext = ft.ext;
-        sniffedMime = ft.mime;
+      const fileType = await this.fileProcessor.detectFileType(buffer);
+      if (fileType.ext) {
+        ext = fileType.ext;
+        sniffedMime = fileType.mime;
       }
     }
 
     const finalExt = ext ?? 'bin';
-    const baseName = this.getFileExtension(guessedName)
+    const baseName = this.fileProcessor.getFileExtension(guessedName)
       ? guessedName
       : `${guessedName}.${finalExt}`;
-    const key = `${this.converterFilename(baseName)}`;
+    const key = this.fileProcessor.normalizeFilename(baseName);
     const mimeToStore = sniffedMime ?? contentTypeHeader;
 
     let width: number | null = null;
@@ -519,29 +347,22 @@ export class StorageService {
 
     const isImage = mimeToStore.startsWith('image/');
     if (isImage) {
-      try {
-        const metadata = await sharp(buffer).metadata();
-        width = metadata.width ?? null;
-        height = metadata.height ?? null;
-        if (!mimetype && metadata.format) {
-          mimetype = `image/${metadata.format}`;
-        }
-      } catch {
-        width = null;
-        height = null;
+      const metadata = await this.fileProcessor.extractImageMetadata(buffer);
+      width = metadata.width;
+      height = metadata.height;
+      if (metadata.mimetype) {
+        mimetype = metadata.mimetype;
       }
     }
 
-    await this.ensurePublicBucket(accountId);
+    await this.ensureBucket(accountId);
 
-    await this.client.send(
-      new PutObjectCommand({
-        Bucket: accountId,
-        Key: key,
-        Body: buffer,
-        ContentType: mimeToStore,
-      })
-    );
+    await this.uploader.uploadWithRetry({
+      bucket: accountId,
+      key,
+      body: buffer,
+      contentType: mimeToStore,
+    });
 
     return {
       url: this.createUrl(key, accountId),
@@ -562,32 +383,32 @@ export class StorageService {
       mimetype?: string;
     }
   ): Promise<UploadFileResponse | null> {
-    const ft = await fileTypeFromBuffer(buffer).catch(() => null);
+    const fileType = await this.fileProcessor.detectFileType(buffer);
     const providedName = options?.fileName;
-    const providedExt = providedName ? this.getFileExtension(providedName) : '';
-    const detectedExt = ft?.ext;
+    const providedExt = providedName
+      ? this.fileProcessor.getFileExtension(providedName)
+      : '';
+    const detectedExt = fileType.ext;
     const ext = providedExt || detectedExt || 'bin';
-    const detectedMime = ft?.mime ?? 'application/octet-stream';
+    const detectedMime = fileType.mime ?? 'application/octet-stream';
     const mime = options?.mimetype ?? detectedMime;
 
-    const baseName = this.determineBaseName(
+    const baseName = this.fileProcessor.determineBaseName(
       providedName,
       providedExt,
       ext,
       accountId
     );
-    const key = `${this.converterFilename(baseName)}`;
+    const key = this.fileProcessor.normalizeFilename(baseName);
 
-    await this.ensurePublicBucket(accountId);
+    await this.ensureBucket(accountId);
 
-    await this.client.send(
-      new PutObjectCommand({
-        Bucket: accountId,
-        Key: key,
-        Body: buffer,
-        ContentType: mime,
-      })
-    );
+    await this.uploader.uploadWithRetry({
+      bucket: accountId,
+      key,
+      body: buffer,
+      contentType: mime,
+    });
 
     return {
       url: this.createUrl(key, accountId),
@@ -600,34 +421,6 @@ export class StorageService {
     };
   }
 
-  private parseDispositionFilename(disposition?: string | null) {
-    if (!disposition) return '';
-
-    const utf8Match = /filename\*\s*=\s*UTF-8''([^;]+)/i.exec(disposition);
-    if (utf8Match?.[1]) return decodeURIComponent(utf8Match[1]);
-
-    const quotedMatch = /filename\s*=\s*"([^"]+)"/i.exec(disposition);
-    const simpleMatch = /filename\s*=\s*([^;]+)/i.exec(disposition);
-    const simple = quotedMatch?.[1] ?? simpleMatch?.[1];
-
-    return simple?.trim() ?? '';
-  }
-
-  private getFileExtension(name: string) {
-    const m = /\.([^./\\]+)$/.exec(name);
-
-    return m ? m[1].toLowerCase() : '';
-  }
-
-  private extFromMime(m: string): string | null {
-    const clean = (m ?? '').toLowerCase().split(';')[0].trim();
-
-    return (mimeToExt(clean) as string) ?? null;
-  }
-
-  public createUrl = (path: string, accountId: string) =>
-    `${s3Environment.s3Endpoint}/${accountId}/${path}`;
-
   public async uploadPdf(
     buffer: Buffer | Uint8Array,
     accountId: string,
@@ -635,46 +428,39 @@ export class StorageService {
   ): Promise<string> {
     const pdfBuffer = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
 
-    await this.ensurePublicBucket(accountId);
+    await this.ensureBucket(accountId);
 
-    await this.client.send(
-      new PutObjectCommand({
-        Bucket: accountId,
-        Key: key,
-        Body: pdfBuffer,
-        ContentType: 'application/pdf',
-      })
-    );
+    await this.uploader.uploadWithRetry({
+      bucket: accountId,
+      key,
+      body: pdfBuffer,
+      contentType: 'application/pdf',
+    });
 
     return this.createUrl(key, accountId);
   }
 
-  public deleteImage = async (url: string): Promise<boolean> => {
-    try {
-      const urlObj = new URL(url);
-      const pathParts = urlObj.pathname
-        .split('/')
-        .filter((part) => part !== '');
+  public async deleteImage(url: string): Promise<boolean> {
+    const parsed = this.urlParser.parse(url);
 
-      if (pathParts.length < 2) {
-        return false;
-      }
-
-      const accountId = pathParts[0];
-      const key = pathParts.slice(1).join('/');
-
-      await this.ensurePublicBucket(accountId);
-
-      const command = new DeleteObjectCommand({
-        Bucket: accountId,
-        Key: key,
-      });
-
-      await this.client.send(command);
-
-      return true;
-    } catch {
+    if (!parsed) {
       return false;
     }
-  };
+
+    const { accountId, key } = parsed;
+
+    try {
+      const result = await this.deleter.deleteObject(accountId, key);
+      return result;
+    } catch (error: any) {
+      if (
+        error.name === 'NoSuchBucket' ||
+        error.Code === 'NoSuchBucket' ||
+        error.$metadata?.httpStatusCode === 404
+      ) {
+        return false;
+      }
+      throw error;
+    }
+  }
 }
