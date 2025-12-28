@@ -16,7 +16,9 @@ import { safePlugin } from '@core/common/functions/safePlugin';
 import baileysReadyHook from './hooks/baileysReady.hook';
 
 const server = fastify({
-  pluginTimeout: 120000,
+  pluginTimeout: 600000,
+  connectionTimeout: 600000,
+  keepAliveTimeout: 600000,
   genReqId: () => v7(),
   logger: true,
 });

@@ -22,9 +22,12 @@ import fastifyQs from 'fastify-qs';
 import routes from '@/routes';
 import { EPrefixRoutes } from '@core/common/enums/EPrefixRoutes';
 import { safePlugin } from '@core/common/functions/safePlugin';
+import errorHandlerPlugin from '@core/plugins/errorHandler';
 
 const server = fastify({
-  pluginTimeout: 120000,
+  pluginTimeout: 600000,
+  connectionTimeout: 600000,
+  keepAliveTimeout: 600000,
   genReqId: () => v7(),
   logger: true,
 });
@@ -41,6 +44,7 @@ server.register(safePlugin(presenceCentrifugoPlugin, 'presenceCentrifugo'));
 server.register(safePlugin(authenticateJwt, 'authenticateJwt'));
 server.register(safePlugin(authenticateRegisterJwt, 'authenticateRegisterJwt'));
 server.register(safePlugin(i18nextPlugin, 'i18next'));
+server.register(safePlugin(errorHandlerPlugin, 'errorHandler'));
 server.register(safePlugin(jwtPlugin, 'jwt'));
 server.register(safePlugin(corsPlugin, 'cors'));
 server.register(safePlugin(kafkaStreamsPlugin, 'kafkaStreams'), {

@@ -5,6 +5,7 @@
   "login_success": "Login success!",
   "account_blocked_contact_support": "Your account is blocked. Please contact support for more information.",
   "internal_server_error": "Internal server error!",
+  "database_query_error": "Error processing database query",
   "server_creator_success": "Server created successfully!",
   "server_creator_error": "Error creating server!",
   "server_already_exists": "Server already exists!",
