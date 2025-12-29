@@ -150,7 +150,7 @@ export const maxDigitsValidator = (
 ): boolean | string => {
   if (isEmpty(value)) return true;
 
-  const valueAsString = String(value).replace(/[^0-9]/g, '');
+  const valueAsString = String(value).replace(/\D/g, '');
   return valueAsString.length <= maxDigits || message;
 };
 

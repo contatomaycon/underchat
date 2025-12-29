@@ -497,7 +497,7 @@ const loadWorkerConfigForSelectedWorker = async () => {
 };
 
 watch(selectedWorkerId, () => {
-  void loadWorkerConfigForSelectedWorker();
+  loadWorkerConfigForSelectedWorker().catch(() => {});
 });
 
 const userStatus = computed(
@@ -622,7 +622,7 @@ watch(
       if (oldStatus === EChatStatus.ura && activeFilter.value === 'chatbot') {
         activeFilter.value = 'in_chat';
         expandedFilter.value = 'in_chat';
-        void loadChatsByFilter();
+        loadChatsByFilter().catch(() => {});
       } else if (
         oldStatus === EChatStatus.queue &&
         (activeFilter.value === 'queue' || activeFilter.value === 'all')
@@ -631,7 +631,7 @@ watch(
           activeFilter.value = 'in_chat';
           expandedFilter.value = 'in_chat';
         }
-        void loadChatsByFilter();
+        loadChatsByFilter().catch(() => {});
       }
     }
   }

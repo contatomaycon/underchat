@@ -277,7 +277,7 @@ const loadWorkerConfigForChat = async () => {
 watch(
   () => chatStore.activeChat?.worker?.id,
   () => {
-    void loadWorkerConfigForChat();
+    loadWorkerConfigForChat().catch(() => {});
   },
   { immediate: true }
 );
@@ -2269,10 +2269,10 @@ const stopAudioRecordingInternal = (
 
   if (mediaRecorderRef.value) {
     mediaRecorderRef.value.onstop = (_ev: Event) => {
-      void handleRecorderStop(
+      handleRecorderStop(
         savedMessageTextForRecording,
         savedReplyForRecording
-      );
+      ).catch(() => {});
     };
     if (mediaRecorderRef.value.state !== 'inactive') {
       mediaRecorderRef.value.stop();
@@ -2280,7 +2280,10 @@ const stopAudioRecordingInternal = (
     }
   }
 
-  void handleRecorderStop(savedMessageTextForRecording, savedReplyForRecording);
+  handleRecorderStop(
+    savedMessageTextForRecording,
+    savedReplyForRecording
+  ).catch(() => {});
 };
 
 const cancelAudioRecording = () => {
@@ -2330,7 +2333,7 @@ const finalizeAudioRecording = () => {
 
   shouldPersistRecording.value = true;
   audioPendingViewOnce.value = audioViewOnce.value;
-  void stopAudioRecordingInternal(savedMsg, savedReply);
+  stopAudioRecordingInternal(savedMsg, savedReply);
 };
 
 const togglePauseAudioRecording = async () => {
@@ -2418,10 +2421,10 @@ const startAudioRecording = async () => {
       }
     };
     mediaRecorder.onstop = (_ev: Event) => {
-      void handleRecorderStop(
+      handleRecorderStop(
         savedMessageTextForRecording,
         savedReplyForRecording
-      );
+      ).catch(() => {});
     };
 
     const audioCtx = new AudioContext();
@@ -3343,7 +3346,7 @@ const focusComposer = () => {
 
 const onScrollToMessageEvt = (e: Event) => {
   const id = (e as CustomEvent<string>).detail;
-  if (id) void highlightAndScrollToMessage(id);
+  if (id) highlightAndScrollToMessage(id).catch(() => {});
 };
 
 const retryTextMessage = async (

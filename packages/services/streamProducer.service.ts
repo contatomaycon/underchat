@@ -68,7 +68,6 @@ export class StreamProducerService {
               this.producer = null;
               reject(toError(err));
             }
-            return;
           }
         });
       });
@@ -121,6 +120,22 @@ export class StreamProducerService {
       errorMessage.includes('all broker connections are down') ||
       errorMessage.includes('Flush timeout')
     );
+  }
+
+  private getErrorMessage(err: unknown): string {
+    if (err instanceof Error) {
+      return err.message;
+    }
+
+    if (typeof err === 'string') {
+      return err;
+    }
+
+    if (typeof err === 'number') {
+      return `Flush error code: ${err}`;
+    }
+
+    return `Flush error: ${JSON.stringify(err)}`;
   }
 
   private async produceMessage(
@@ -180,7 +195,6 @@ export class StreamProducerService {
               this.invalidateProducer();
             }
             reject(toError(err));
-            return;
           }
         }
       );
@@ -245,14 +259,7 @@ export class StreamProducerService {
         isResolved = true;
 
         if (err) {
-          const errorMessage =
-            err instanceof Error
-              ? err.message
-              : typeof err === 'string'
-                ? err
-                : typeof err === 'number'
-                  ? `Flush error code: ${err}`
-                  : `Flush error: ${JSON.stringify(err)}`;
+          const errorMessage = this.getErrorMessage(err);
 
           if (
             errorMessage.includes('broker transport failure') ||

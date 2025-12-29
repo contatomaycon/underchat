@@ -818,9 +818,9 @@ export const useChatStore = defineStore('chat', {
         const response = await axios.post<
           IApiResponse<{ chat_id: string; status: boolean }>
         >(`/chat/${chatId}/transfer`, {
-          user_id: userId || undefined,
-          sector_id: sectorId || undefined,
-          annotation: annotation?.trim() || undefined,
+          user_id: userId ?? undefined,
+          sector_id: sectorId ?? undefined,
+          annotation: annotation?.trim() ?? undefined,
         });
 
         this.loading = false;
@@ -1586,7 +1586,7 @@ export const useChatStore = defineStore('chat', {
     ): Promise<ListQuickMessageTemplatesResponse[]> {
       try {
         const request: ListQuickMessageTemplatesRequest = {
-          command: command || null,
+          command: command ?? null,
         };
 
         const response = await axios.get<
@@ -2090,7 +2090,7 @@ export const useChatStore = defineStore('chat', {
         const response = await axios.patch<IApiResponse<{ success: boolean }>>(
           `/chat/${chatId}/label`,
           {
-            label_template_id: labelTemplateId || null,
+            label_template_id: labelTemplateId ?? null,
           }
         );
 

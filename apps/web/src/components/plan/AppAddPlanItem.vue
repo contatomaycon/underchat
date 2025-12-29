@@ -7,7 +7,6 @@ import { ListPlanItemResponse } from '@core/schema/plan/listPlanItems/response.s
 import {
   requiredValidator,
   maxNumberValidator,
-  maxDigitsValidator,
 } from '@/@webcore/utils/validators';
 
 const planStore = usePlanStore();
@@ -110,7 +109,7 @@ const handleQuantityInput = (event: Event) => {
   const target = event.target as HTMLInputElement;
   let value = target.value;
 
-  const numericValue = value.replace(/[^0-9]/g, '');
+  const numericValue = value.replace(/\D/g, '');
 
   if (numericValue.length > 10) {
     const limitedValue = numericValue.slice(0, 10);

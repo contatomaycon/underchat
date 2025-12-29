@@ -216,7 +216,7 @@ export class BaileysIncomingMessageService {
     }
 
     const callId =
-      (callEvent as { id?: string })?.id ||
+      (callEvent as { id?: string })?.id ??
       (callEvent as { callId?: string })?.callId;
     if (callId && jid) {
       try {
@@ -244,13 +244,13 @@ export class BaileysIncomingMessageService {
       account_id: baileysEnvironment.baileysAccountId,
       type: EMessageType.system,
       message: {} as WAMessage,
-      photo: senderPic || null,
+      photo: senderPic ?? null,
       has_quoted: false,
       is_call_event: true,
       call_phone: phone,
       call_jid: jid,
       call_jid_alt: jidAlt,
-      call_name: callEvent.pushName || null,
+      call_name: callEvent.pushName ?? null,
     };
 
     await this.streamProducerService.send(
