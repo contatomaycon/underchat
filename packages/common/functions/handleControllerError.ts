@@ -11,20 +11,20 @@ export function handleControllerError(
 ): void {
   console.error(error);
 
-  if (error instanceof Error) {
+  if (error instanceof DrizzleQueryError) {
     sendResponse(reply, {
-      message: error.message,
+      message: t
+        ? t('internal_database_error')
+        : 'Error 1064: An internal error occurred, please contact support.',
       httpStatusCode: EHTTPStatusCode.internal_server_error,
     });
 
     return;
   }
 
-  if (error instanceof DrizzleQueryError) {
+  if (error instanceof Error) {
     sendResponse(reply, {
-      message: t
-        ? t('internal_database_error')
-        : 'Error 01: An internal error occurred, please contact support.',
+      message: error.message,
       httpStatusCode: EHTTPStatusCode.internal_server_error,
     });
 

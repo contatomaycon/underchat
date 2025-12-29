@@ -777,5 +777,5 @@
   "register_email_already_used": "Este email já está cadastrado!",
   "register_phone_already_used": "Este telefone já está cadastrado!",
   "personalization_not_available": "Personalização não disponível!",
-  "internal_database_error": "Erro 01: Ocorreu um erro interno, entre em contato com o suporte."
+  "internal_database_error": "Erro 1064: Ocorreu um erro interno, entre em contato com o suporte."
 }
