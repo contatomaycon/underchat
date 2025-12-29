@@ -87,7 +87,7 @@ export class ReportConversationHistoryPdfService {
     const pdfBuffer = await this.generatePdfFromHtml(html, executablePath);
     const key = `report-conversation-history/${chatId}/history.pdf`;
 
-    return await this.storageService.uploadPdf(pdfBuffer, accountId, key);
+    return this.storageService.uploadPdf(pdfBuffer, accountId, key);
   }
 
   private async loadContactPhones(
