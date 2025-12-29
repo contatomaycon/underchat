@@ -142,6 +142,14 @@ const myChatsCount = computed(() => {
 });
 
 const chatbotCount = computed(() => {
+  if (activeFilter.value === 'chatbot' && chatbotPagings.value.total > 0) {
+    return chatbotPagings.value.total;
+  }
+
+  if (chatbotPagings.value.total > 0) {
+    return chatbotPagings.value.total;
+  }
+
   return chatStore.listChatbot.length;
 });
 
@@ -290,7 +298,10 @@ const loadChatbotChats = async () => {
       status: EChatStatus.ura,
     };
 
-    await chatStore.listChatbotChats(request);
+    const result = await chatStore.listChatbotChats(request);
+    if (result) {
+      chatbotPagings.value = result.pagings;
+    }
   } finally {
     isLoadingChatbot.value = false;
   }
@@ -576,8 +587,36 @@ const handleCancelSelectChannelSector = () => {
   selectedSectorId.value = null;
 };
 
+const loadChatbotCount = async () => {
+  if (!canViewChatbotTab.value) return;
+
+  try {
+    const request: ListChatsQuery = {
+      current_page: 1,
+      per_page: 1,
+      status: EChatStatus.ura,
+    };
+
+    const result = await chatStore.listChatbotChats(request);
+    if (result) {
+      chatbotPagings.value.total = result.pagings.total;
+    }
+  } catch {
+    chatbotPagings.value.total = 0;
+  }
+};
+
+watch(
+  () => chatStore.listChatbot.length,
+  (newLength, oldLength) => {
+    if (chatbotPagings.value.total > 0 && newLength < oldLength) {
+      chatbotPagings.value.total = Math.max(0, chatbotPagings.value.total - 1);
+    }
+  }
+);
+
 onMounted(async () => {
-  await loadChatsByFilter();
+  await Promise.all([loadChatsByFilter(), loadChatbotCount()]);
 });
 </script>
 
@@ -928,12 +967,27 @@ onMounted(async () => {
           >
             <VSkeletonLoader type="avatar" width="40" height="40" />
             <div class="flex-grow-1 ms-4 overflow-hidden min-w-0">
-              <VSkeletonLoader type="text" width="60%" height="20" class="mb-1" />
-              <VSkeletonLoader type="text" width="40%" height="16" class="mb-1" />
+              <VSkeletonLoader
+                type="text"
+                width="60%"
+                height="20"
+                class="mb-1"
+              />
+              <VSkeletonLoader
+                type="text"
+                width="40%"
+                height="16"
+                class="mb-1"
+              />
               <VSkeletonLoader type="text" width="50%" height="16" />
             </div>
             <div class="d-flex flex-column align-self-start">
-              <VSkeletonLoader type="text" width="50" height="16" class="mb-1" />
+              <VSkeletonLoader
+                type="text"
+                width="50"
+                height="16"
+                class="mb-1"
+              />
               <VSkeletonLoader type="text" width="20" height="16" />
             </div>
           </li>
@@ -969,12 +1023,27 @@ onMounted(async () => {
           >
             <VSkeletonLoader type="avatar" width="40" height="40" />
             <div class="flex-grow-1 ms-4 overflow-hidden min-w-0">
-              <VSkeletonLoader type="text" width="60%" height="20" class="mb-1" />
-              <VSkeletonLoader type="text" width="40%" height="16" class="mb-1" />
+              <VSkeletonLoader
+                type="text"
+                width="60%"
+                height="20"
+                class="mb-1"
+              />
+              <VSkeletonLoader
+                type="text"
+                width="40%"
+                height="16"
+                class="mb-1"
+              />
               <VSkeletonLoader type="text" width="50%" height="16" />
             </div>
             <div class="d-flex flex-column align-self-start">
-              <VSkeletonLoader type="text" width="50" height="16" class="mb-1" />
+              <VSkeletonLoader
+                type="text"
+                width="50"
+                height="16"
+                class="mb-1"
+              />
               <VSkeletonLoader type="text" width="20" height="16" />
             </div>
           </li>

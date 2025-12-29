@@ -549,7 +549,9 @@ export const useChatStore = defineStore('chat', {
       }
     },
 
-    async listChatbotChats(input: ListChatsQuery): Promise<ListChatsResult[]> {
+    async listChatbotChats(
+      input: ListChatsQuery
+    ): Promise<ListChatsResponse | null> {
       try {
         this.loading = true;
 
@@ -573,16 +575,16 @@ export const useChatStore = defineStore('chat', {
         if (!data?.status || !data?.data) {
           this.listChatbot = [];
 
-          return [] as ListChatsResult[];
+          return null;
         }
 
         this.listChatbot = data.data.results;
 
-        return data.data.results;
+        return data.data;
       } catch {
         this.listChatbot = [];
 
-        return [] as ListChatsResult[];
+        return null;
       }
     },
 

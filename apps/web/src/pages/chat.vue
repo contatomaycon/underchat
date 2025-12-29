@@ -205,6 +205,13 @@ const isUraStatus = computed(
   () => chatStore.activeChat?.status === EChatStatus.ura
 );
 
+const isQueueOrUraStatus = computed(() => {
+  return (
+    chatStore.activeChat?.status === EChatStatus.queue ||
+    chatStore.activeChat?.status === EChatStatus.ura
+  );
+});
+
 const workerConfigForChat = ref<ViewWorkerConfigForChatResponse>(null);
 
 const getStatusColor = (status: EChatUserStatus): string => {
@@ -227,14 +234,14 @@ const userStatus = computed(
 );
 
 const cannotAttendDueToStatus = computed(() => {
-  if (!isQueueStatus.value) return false;
+  if (!isQueueOrUraStatus.value) return false;
   if (!workerConfigForChat.value?.allow_attendance_only_online) return false;
   return userStatus.value !== EChatUserStatus.online;
 });
 
 const cannotAttendDueToLimit = computed(() => {
-  if (!isQueueStatus.value) return false;
-  if (cannotAttendDueToStatus.value) return false; // Prioriza mensagem de status
+  if (!isQueueOrUraStatus.value) return false;
+  if (cannotAttendDueToStatus.value) return false;
   if (!workerConfigForChat.value?.simultaneous_attendance) return false;
   if (!chatStore.activeChat?.worker?.id || !chatStore.user?.user_id)
     return false;
@@ -250,7 +257,7 @@ const cannotAttendDueToLimit = computed(() => {
 });
 
 const canAttendChat = computed(() => {
-  if (!isQueueStatus.value) return false;
+  if (!isQueueOrUraStatus.value) return false;
   if (cannotAttendDueToStatus.value) return false;
   if (cannotAttendDueToLimit.value) return false;
   return true;
@@ -3148,7 +3155,7 @@ const createQuickMessageFormData = (
 const sendQuickMessage = async () => {
   if (!selectedQuickMessage.value) return;
   if (!hasActiveChat()) return;
-  if (isQueueStatus.value) return;
+  if (isQueueOrUraStatus.value) return;
 
   const template = selectedQuickMessage.value;
 
@@ -4667,7 +4674,7 @@ onBeforeUnmount(() => {
           </div>
 
           <ChatQueueStatusBanner
-            :is-queue-status="isQueueStatus"
+            :is-queue-status="isQueueOrUraStatus"
             :can-attend-chat="canAttendChat"
             :cannot-attend-due-to-status="cannotAttendDueToStatus"
             :cannot-attend-due-to-limit="cannotAttendDueToLimit"

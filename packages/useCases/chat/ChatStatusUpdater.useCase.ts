@@ -251,7 +251,7 @@ export class ChatStatusUpdaterUseCase {
 
     if (
       status === EChatStatus.in_chat &&
-      chat.status === EChatStatus.queue &&
+      (chat.status === EChatStatus.queue || chat.status === EChatStatus.ura) &&
       !chat.started_at
     ) {
       startedAt = currentDate;
