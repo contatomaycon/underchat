@@ -2,7 +2,7 @@ import * as schema from '@core/models';
 import { worker } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { IUpdateWorker } from '@core/common/interfaces/IUpdateWorker';
 
 @injectable()
@@ -13,8 +13,9 @@ export class WorkerUpdaterRepository {
 
   private updateInput(
     input: IUpdateWorker
-  ): Partial<typeof worker.$inferInsert> {
-    const inputUpdate: Partial<typeof worker.$inferInsert> = {};
+  ): Partial<typeof worker.$inferInsert> & Record<string, unknown> {
+    const inputUpdate: Partial<typeof worker.$inferInsert> &
+      Record<string, unknown> = {};
 
     if (input.worker_status_id) {
       inputUpdate.worker_status_id = input.worker_status_id;
@@ -28,15 +29,15 @@ export class WorkerUpdaterRepository {
       inputUpdate.name = input.name;
     }
 
-    if (input.number) {
+    if ('number' in input) {
       inputUpdate.number = input.number;
     }
 
-    if (input.container_id) {
+    if ('container_id' in input) {
       inputUpdate.container_id = input.container_id;
     }
 
-    if (input.connection_date) {
+    if ('connection_date' in input) {
       inputUpdate.connection_date = input.connection_date;
     }
 

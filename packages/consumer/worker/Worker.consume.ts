@@ -19,6 +19,7 @@ import { StreamProducerService } from '@core/services/streamProducer.service';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
+import { EBaileysConnectionType } from '@core/common/enums/EBaileysConnectionType';
 import {
   workerCentrifugoQueue,
   channelsConfigCentrifugo,
@@ -361,6 +362,28 @@ export class WorkerConsume {
 
       throw new Error('Worker not found');
     }
+
+    const inputUpdate: IUpdateWorker = {
+      worker_id: data.worker_id,
+      worker_status_id: EWorkerStatus.disponible,
+      number: null,
+      container_id: null,
+      connection_date: null,
+    };
+
+    await this.workerService.updateWorkerById(data.account_id, inputUpdate);
+
+    const payload: StatusConnectionWorkerRequest = {
+      worker_id: data.worker_id,
+      status: EWorkerStatus.disponible,
+      type: EBaileysConnectionType.qrcode,
+    };
+
+    await this.streamProducerService.send(
+      this.kafkaBaileysQueueService.workerConnection(data.worker_id),
+      payload,
+      data.worker_id
+    );
 
     const containerId = await this.workerService.removeContainerWorker(
       data.worker_id

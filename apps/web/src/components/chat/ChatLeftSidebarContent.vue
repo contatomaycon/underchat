@@ -717,7 +717,15 @@ onMounted(async () => {
           >
             <VIcon size="24">tabler-list</VIcon>
           </VBtn>
-          <span v-if="allChatsCount > 0" class="chat-filter-count-badge">
+          <span
+            v-if="allChatsCount > 0"
+            class="chat-filter-count-badge"
+            :class="{
+              'badge-single-digit': allChatsCount.toString().length === 1,
+              'badge-double-digit': allChatsCount.toString().length === 2,
+              'badge-triple-digit': allChatsCount.toString().length >= 3,
+            }"
+          >
             {{ allChatsCount }}
           </span>
         </div>
@@ -732,7 +740,15 @@ onMounted(async () => {
           >
             <VIcon size="24">tabler-message-circle</VIcon>
           </VBtn>
-          <span v-if="inChatCount > 0" class="chat-filter-count-badge">
+          <span
+            v-if="inChatCount > 0"
+            class="chat-filter-count-badge"
+            :class="{
+              'badge-single-digit': inChatCount.toString().length === 1,
+              'badge-double-digit': inChatCount.toString().length === 2,
+              'badge-triple-digit': inChatCount.toString().length >= 3,
+            }"
+          >
             {{ inChatCount }}
           </span>
         </div>
@@ -747,7 +763,15 @@ onMounted(async () => {
           >
             <VIcon size="24">tabler-message-circle-user</VIcon>
           </VBtn>
-          <span v-if="myChatsCount > 0" class="chat-filter-count-badge">
+          <span
+            v-if="myChatsCount > 0"
+            class="chat-filter-count-badge"
+            :class="{
+              'badge-single-digit': myChatsCount.toString().length === 1,
+              'badge-double-digit': myChatsCount.toString().length === 2,
+              'badge-triple-digit': myChatsCount.toString().length >= 3,
+            }"
+          >
             {{ myChatsCount }}
           </span>
         </div>
@@ -762,7 +786,15 @@ onMounted(async () => {
           >
             <VIcon size="24">tabler-clock</VIcon>
           </VBtn>
-          <span v-if="queueCount > 0" class="chat-filter-count-badge">
+          <span
+            v-if="queueCount > 0"
+            class="chat-filter-count-badge"
+            :class="{
+              'badge-single-digit': queueCount.toString().length === 1,
+              'badge-double-digit': queueCount.toString().length === 2,
+              'badge-triple-digit': queueCount.toString().length >= 3,
+            }"
+          >
             {{ queueCount }}
           </span>
         </div>
@@ -777,7 +809,15 @@ onMounted(async () => {
           >
             <VIcon size="24">tabler-robot</VIcon>
           </VBtn>
-          <span v-if="chatbotCount > 0" class="chat-filter-count-badge">
+          <span
+            v-if="chatbotCount > 0"
+            class="chat-filter-count-badge"
+            :class="{
+              'badge-single-digit': chatbotCount.toString().length === 1,
+              'badge-double-digit': chatbotCount.toString().length === 2,
+              'badge-triple-digit': chatbotCount.toString().length >= 3,
+            }"
+          >
             {{ chatbotCount }}
           </span>
         </div>
@@ -1430,17 +1470,33 @@ onMounted(async () => {
     right: 4px;
     font-size: 0.65rem;
     height: 16px;
-    min-width: 16px;
-    padding: 0 4px;
     font-weight: 600;
     line-height: 16px;
-    border-radius: 8px;
     background-color: rgb(var(--v-theme-primary));
     color: rgb(var(--v-theme-on-primary));
     display: inline-flex;
     align-items: center;
     justify-content: center;
     z-index: 1;
+
+    &.badge-single-digit {
+      width: 16px;
+      min-width: 16px;
+      padding: 0;
+      border-radius: 50%;
+    }
+
+    &.badge-double-digit {
+      min-width: 20px;
+      padding: 0 5px;
+      border-radius: 8px;
+    }
+
+    &.badge-triple-digit {
+      min-width: 24px;
+      padding: 0 6px;
+      border-radius: 8px;
+    }
   }
 
   .chat-filter-expanded-full {
