@@ -1,6 +1,6 @@
 import { injectable } from 'tsyringe';
 import { StorageService } from './storage.service';
-import puppeteer, { Page, ElementHandle } from 'puppeteer';
+import puppeteer, { Page, ElementHandle, Browser } from 'puppeteer';
 import {
   ListMessageResult,
   LocationMessageChat,
@@ -152,13 +152,27 @@ export class ReportConversationHistoryPdfService {
     html: string,
     executablePath: string | undefined
   ): Promise<Buffer> {
-    const browser = await puppeteer.launch({
-      headless: true,
-      ...(executablePath && { executablePath }),
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
-    });
+    const fs = await import('fs/promises');
+    const os = await import('os');
+    const path = await import('path');
+    const userDataDir = await fs.mkdtemp(
+      path.join(os.tmpdir(), 'puppeteer-')
+    );
+    let browser: Browser | null = null;
 
     try {
+      browser = await puppeteer.launch({
+        headless: true,
+        ...(executablePath && { executablePath }),
+        userDataDir,
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-crash-reporter',
+        ],
+      });
+
       const page = await browser.newPage();
       await page.setContent(html, { waitUntil: 'networkidle0' });
       await page.setViewport({ width: 1200, height: 800 });
@@ -181,11 +195,12 @@ export class ReportConversationHistoryPdfService {
         },
       });
 
-      await browser.close();
       return Buffer.from(pdfBuffer);
-    } catch (error) {
-      await browser.close();
-      throw error;
+    } finally {
+      if (browser) {
+        await browser.close();
+      }
+      await fs.rm(userDataDir, { recursive: true, force: true });
     }
   }
 
