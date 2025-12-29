@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick } from 'vue';
 import type { NodeProps } from '@vue-flow/core';
-import { Handle, Position } from '@vue-flow/core';
+import { Handle, Position, useVueFlow } from '@vue-flow/core';
 import { Picker, EmojiIndex } from 'emoji-mart-vue-fast/src';
 import data from 'emoji-mart-vue-fast/data/all.json';
 import 'emoji-mart-vue-fast/css/emoji-mart.css';
@@ -22,6 +22,7 @@ interface MenuData {
 
 const props = defineProps<NodeProps>();
 const { t } = useI18n();
+const { updateNodeInternals } = useVueFlow();
 
 const getInitialData = (): MenuData => {
   const data = props.data as MenuData | undefined;
@@ -212,6 +213,7 @@ const handleDrop = (event: DragEvent, dropIndex: number) => {
 
   menuData.value.options = options;
   updateNodeData();
+  nextTick(() => updateNodeInternals([props.id]));
 
   draggedOptionIndex.value = null;
   dragOverOptionIndex.value = null;
