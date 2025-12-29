@@ -98,7 +98,9 @@ declare global {
   const mapStores: typeof import('pinia').mapStores
   const mapWritableState: typeof import('pinia').mapWritableState
   const markRaw: typeof import('vue').markRaw
+  const maxDigitsValidator: typeof import('./src/@webcore/utils/validators').maxDigitsValidator
   const maxLengthValidator: typeof import('./src/@webcore/utils/validators').maxLengthValidator
+  const maxNumberValidator: typeof import('./src/@webcore/utils/validators').maxNumberValidator
   const nextTick: typeof import('vue').nextTick
   const normalizeBaseUrl: typeof import('./src/@webcore/utils/helpers').normalizeBaseUrl
   const onActivated: typeof import('vue').onActivated
@@ -499,7 +501,9 @@ declare module 'vue' {
     readonly mapStores: UnwrapRef<typeof import('pinia')['mapStores']>
     readonly mapWritableState: UnwrapRef<typeof import('pinia')['mapWritableState']>
     readonly markRaw: UnwrapRef<typeof import('vue')['markRaw']>
+    readonly maxDigitsValidator: UnwrapRef<typeof import('./src/@webcore/utils/validators')['maxDigitsValidator']>
     readonly maxLengthValidator: UnwrapRef<typeof import('./src/@webcore/utils/validators')['maxLengthValidator']>
+    readonly maxNumberValidator: UnwrapRef<typeof import('./src/@webcore/utils/validators')['maxNumberValidator']>
     readonly nextTick: UnwrapRef<typeof import('vue')['nextTick']>
     readonly normalizeBaseUrl: UnwrapRef<typeof import('./src/@webcore/utils/helpers')['normalizeBaseUrl']>
     readonly onActivated: UnwrapRef<typeof import('vue')['onActivated']>

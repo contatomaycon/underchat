@@ -4,6 +4,11 @@ import { VForm } from 'vuetify/components/VForm';
 import { EColor } from '@core/common/enums/EColor';
 import { CreatePlanItemRequest } from '@core/schema/plan/createPlanItem/request.schema';
 import { ListPlanItemResponse } from '@core/schema/plan/listPlanItems/response.schema';
+import {
+  requiredValidator,
+  maxNumberValidator,
+  maxDigitsValidator,
+} from '@/@webcore/utils/validators';
 
 const planStore = usePlanStore();
 const { t, locale } = useI18n();
@@ -99,6 +104,39 @@ const resetForm = () => {
   plan_product_id.value = null;
   quantity.value = null;
   refFormAddPlanItem.value?.resetValidation();
+};
+
+const handleQuantityInput = (event: Event) => {
+  const target = event.target as HTMLInputElement;
+  let value = target.value;
+
+  const numericValue = value.replace(/[^0-9]/g, '');
+
+  if (numericValue.length > 10) {
+    const limitedValue = numericValue.slice(0, 10);
+    quantity.value = Number(limitedValue);
+
+    nextTick(() => {
+      if (target) {
+        target.value = limitedValue;
+      }
+    });
+  } else if (numericValue) {
+    const numValue = Number(numericValue);
+
+    if (numValue > 9999999999) {
+      quantity.value = 9999999999;
+      nextTick(() => {
+        if (target) {
+          target.value = '9999999999';
+        }
+      });
+    } else {
+      quantity.value = numValue;
+    }
+  } else {
+    quantity.value = null;
+  }
 };
 
 const getProductName = (item: ListPlanItemResponse) => {
@@ -299,7 +337,17 @@ onMounted(async () => {
                 v-model="quantity"
                 :placeholder="$t('quantity')"
                 type="number"
-                :rules="[requiredValidator(quantity, $t('quantity_required'))]"
+                :min="1"
+                :max="9999999999"
+                :rules="[
+                  requiredValidator(quantity, $t('quantity_required')),
+                  maxNumberValidator(
+                    quantity,
+                    9999999999,
+                    $t('quantity_max_digits', { max: 10 })
+                  ),
+                ]"
+                @input="handleQuantityInput"
               />
             </VCol>
           </VRow>

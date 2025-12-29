@@ -142,3 +142,27 @@ export const maxLengthValidator = (
 
   return String(value).length <= max || message;
 };
+
+export const maxDigitsValidator = (
+  value: unknown,
+  maxDigits: number,
+  message: string
+): boolean | string => {
+  if (isEmpty(value)) return true;
+
+  const valueAsString = String(value).replace(/[^0-9]/g, '');
+  return valueAsString.length <= maxDigits || message;
+};
+
+export const maxNumberValidator = (
+  value: unknown,
+  max: number,
+  message: string
+): boolean | string => {
+  if (isEmpty(value)) return true;
+
+  const valueAsNumber = Number(value);
+  if (isNaN(valueAsNumber)) return message;
+
+  return valueAsNumber <= max || message;
+};
