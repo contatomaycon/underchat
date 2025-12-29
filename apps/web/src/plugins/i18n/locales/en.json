@@ -767,7 +767,7 @@
     "select_plan_product": "Select plan product",
     "plan_product_required": "Plan product is required",
     "quantity_required": "Quantity is required",
-    "quantity_max_digits": "Quantity must have a maximum of {{max}} digits!",
+    "quantity_max_digits": "Quantity must have a maximum of {max} digits!",
     "product": "Product",
     "price_required": "Price is required",
     "plan_created_successfully": "Plan created successfully!",

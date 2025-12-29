@@ -772,7 +772,7 @@
     "plan_product_required": "Produto do plano é obrigatório",
     "quantity": "Quantidade",
     "quantity_required": "Quantidade é obrigatória",
-    "quantity_max_digits": "A quantidade deve ter no máximo {{max}} dígitos!",
+    "quantity_max_digits": "A quantidade deve ter no máximo {max} dígitos!",
     "product": "Produto",
     "plan_created_successfully": "Plano criado com sucesso!",
     "plan_updated_successfully": "Plano atualizado com sucesso!",

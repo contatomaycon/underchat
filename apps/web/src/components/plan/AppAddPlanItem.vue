@@ -1,4 +1,6 @@
 <script lang="ts" setup>
+import { ref, computed, watch, onMounted, nextTick, toRef } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { usePlanStore } from '@/@webcore/stores/plan';
 import { VForm } from 'vuetify/components/VForm';
 import { EColor } from '@core/common/enums/EColor';
@@ -184,6 +186,14 @@ const getPlanData = computed(() => {
   return null;
 });
 
+const quantityMaxDigitsMessage = computed(() => {
+  return t('quantity_max_digits', { max: 10 });
+});
+
+const quantityRequiredMessage = computed(() => {
+  return t('quantity_required');
+});
+
 const loadPlanProducts = async () => {
   const products = await planStore.listPlanProductAll();
   if (products) {
@@ -339,11 +349,11 @@ onMounted(async () => {
                 :min="1"
                 :max="9999999999"
                 :rules="[
-                  requiredValidator(quantity, $t('quantity_required')),
+                  requiredValidator(quantity, quantityRequiredMessage),
                   maxNumberValidator(
                     quantity,
                     9999999999,
-                    $t('quantity_max_digits', { max: 10 })
+                    quantityMaxDigitsMessage
                   ),
                 ]"
                 @input="handleQuantityInput"
