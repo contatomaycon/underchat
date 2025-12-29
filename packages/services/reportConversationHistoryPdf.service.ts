@@ -169,7 +169,8 @@ export class ReportConversationHistoryPdfService {
           '--no-sandbox',
           '--disable-setuid-sandbox',
           '--disable-dev-shm-usage',
-          '--disable-crash-reporter',
+          '--disable-crashpad-for-testing',
+          '--disable-breakpad',
         ],
       });
 
