@@ -39,6 +39,7 @@ const messageEmojiPickerOpen = ref(false);
 const draggedOptionIndex = ref<number | null>(null);
 const dragOverOptionIndex = ref<number | null>(null);
 const isDraggingOption = ref(false);
+const lastOptionPointerDown = ref<HTMLElement | null>(null);
 
 const messageLength = computed(() => satisfactionData.value.message.length);
 const maxMessageLength = 500;
@@ -144,13 +145,16 @@ const handleDragStart = (event: DragEvent, index: number) => {
   event.stopPropagation();
   event.stopImmediatePropagation();
 
-  const target = event.target as HTMLElement;
+  const pointerTarget = lastOptionPointerDown.value;
+  const target = pointerTarget || (event.target as HTMLElement | null);
+  lastOptionPointerDown.value = null;
+
   if (
-    target.closest('input') ||
-    target.closest('button') ||
-    target.closest('.v-menu') ||
-    target.closest('.vue-flow__handle') ||
-    target.closest('.option-handle')
+    target?.closest('input') ||
+    target?.closest('button') ||
+    target?.closest('.v-menu') ||
+    target?.closest('.vue-flow__handle') ||
+    target?.closest('.option-handle')
   ) {
     event.preventDefault();
     return;
@@ -215,6 +219,10 @@ const handleDragEnd = () => {
 const handleMouseDown = (event: MouseEvent) => {
   event.stopPropagation();
   event.stopImmediatePropagation();
+};
+
+const handleOptionPointerDown = (event: MouseEvent | TouchEvent) => {
+  lastOptionPointerDown.value = event.target as HTMLElement | null;
 };
 
 watch(
@@ -337,6 +345,8 @@ watch(
               'drag-over': dragOverOptionIndex === index,
             }"
             draggable="true"
+            @mousedown.capture="handleOptionPointerDown"
+            @touchstart.capture="handleOptionPointerDown"
             @dragstart.stop="handleDragStart($event, index)"
             @dragover.stop="handleDragOver($event, index)"
             @dragleave.stop="handleDragLeave"
@@ -401,6 +411,8 @@ watch(
               type="source"
               :position="Position.Right"
               class="option-handle handle-source"
+              @mousedown.stop
+              @touchstart.stop
             />
             <div class="option-drag-handle" @mousedown.stop="handleMouseDown">
               <VIcon icon="tabler-grip-vertical" size="18" color="primary" />
