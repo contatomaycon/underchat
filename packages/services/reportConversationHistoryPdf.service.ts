@@ -108,8 +108,34 @@ export class ReportConversationHistoryPdfService {
 
     this.contactPhoneCache.clear();
 
+    const fs = await import('fs');
+    const chromiumPaths = [
+      '/usr/bin/chromium',
+      '/usr/bin/chromium-browser',
+      '/snap/bin/chromium',
+    ];
+
+    let executablePath: string | undefined;
+    for (const path of chromiumPaths) {
+      try {
+        if (fs.existsSync(path)) {
+          const stat = fs.statSync(path);
+          if (
+            stat.isFile() ||
+            (stat.isSymbolicLink() && path.includes('snap'))
+          ) {
+            executablePath = path;
+            break;
+          }
+        }
+      } catch {
+        continue;
+      }
+    }
+
     const browser = await puppeteer.launch({
       headless: true,
+      ...(executablePath && { executablePath }),
       args: ['--no-sandbox', '--disable-setuid-sandbox'],
     });
 
