@@ -2523,6 +2523,7 @@ onUnmounted(() => {
   border: 4px solid white;
   border-radius: 50%;
   background-color: #b1b1b7;
+  z-index: 10;
 }
 
 :deep(.vue-flow__handle.connectable) {
