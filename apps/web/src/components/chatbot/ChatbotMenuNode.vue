@@ -17,6 +17,7 @@ interface MenuData {
   message: string;
   options: MenuOption[];
   onRemove?: () => void;
+  onRemoveOption?: (optionId: string) => void;
 }
 
 const props = defineProps<NodeProps>();
@@ -75,6 +76,18 @@ const addOption = () => {
 
 const updateOption = (index: number, text: string) => {
   menuData.value.options[index].text = text;
+  updateNodeData();
+};
+
+const removeOption = (index: number) => {
+  const option = menuData.value.options[index];
+  const data = props.data as MenuData;
+
+  if (data?.onRemoveOption && option) {
+    data.onRemoveOption(option.id);
+  }
+
+  menuData.value.options.splice(index, 1);
   updateNodeData();
 };
 
@@ -142,7 +155,9 @@ const handleDragStart = (event: DragEvent, index: number) => {
   if (
     target.closest('input') ||
     target.closest('button') ||
-    target.closest('.v-menu')
+    target.closest('.v-menu') ||
+    target.closest('.vue-flow__handle') ||
+    target.closest('.option-handle')
   ) {
     event.preventDefault();
     return;
@@ -334,7 +349,14 @@ watch(
           >
             <div class="option-number-wrapper">
               <div class="option-number">
-                {{ index + 1 }}
+                <span class="option-number-text">{{ index + 1 }}</span>
+                <VIcon
+                  icon="tabler-x"
+                  size="16"
+                  color="error"
+                  class="option-remove-icon"
+                  @click.stop="removeOption(index)"
+                />
               </div>
             </div>
             <VMenu
@@ -452,6 +474,28 @@ watch(
   font-size: 12px;
   font-weight: 500;
   color: rgb(var(--v-theme-on-surface));
+  position: relative;
+}
+
+.option-number-text {
+  transition: opacity 0.2s;
+}
+
+.option-remove-icon {
+  position: absolute;
+  opacity: 0;
+  transition: opacity 0.2s;
+  cursor: pointer;
+  pointer-events: none;
+}
+
+.option-item:hover .option-number-text {
+  opacity: 0;
+}
+
+.option-item:hover .option-remove-icon {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .option-text-field {

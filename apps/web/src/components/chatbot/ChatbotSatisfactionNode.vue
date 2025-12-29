@@ -17,6 +17,7 @@ interface SatisfactionData {
   message: string;
   options: SatisfactionOption[];
   onRemove?: () => void;
+  onRemoveOption?: (optionId: string) => void;
 }
 
 const props = defineProps<NodeProps>();
@@ -35,6 +36,9 @@ const satisfactionData = ref<SatisfactionData>(getInitialData());
 const emojiIndex = new EmojiIndex(data);
 const emojiPickerOpen = ref<Record<string, boolean>>({});
 const messageEmojiPickerOpen = ref(false);
+const draggedOptionIndex = ref<number | null>(null);
+const dragOverOptionIndex = ref<number | null>(null);
+const isDraggingOption = ref(false);
 
 const messageLength = computed(() => satisfactionData.value.message.length);
 const maxMessageLength = 500;
@@ -62,6 +66,13 @@ const addOption = () => {
 };
 
 const removeOption = (index: number) => {
+  const option = satisfactionData.value.options[index];
+  const data = props.data as SatisfactionData;
+
+  if (data?.onRemoveOption && option) {
+    data.onRemoveOption(option.id);
+  }
+
   satisfactionData.value.options.splice(index, 1);
   updateNodeData();
 };
@@ -127,6 +138,83 @@ const handleRemove = () => {
   if (data?.onRemove) {
     data.onRemove();
   }
+};
+
+const handleDragStart = (event: DragEvent, index: number) => {
+  event.stopPropagation();
+  event.stopImmediatePropagation();
+
+  const target = event.target as HTMLElement;
+  if (
+    target.closest('input') ||
+    target.closest('button') ||
+    target.closest('.v-menu') ||
+    target.closest('.vue-flow__handle') ||
+    target.closest('.option-handle')
+  ) {
+    event.preventDefault();
+    return;
+  }
+
+  isDraggingOption.value = true;
+  draggedOptionIndex.value = index;
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', index.toString());
+  }
+};
+
+const handleDragOver = (event: DragEvent, index: number) => {
+  event.preventDefault();
+  event.stopPropagation();
+
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = 'move';
+  }
+  if (draggedOptionIndex.value !== null && draggedOptionIndex.value !== index) {
+    dragOverOptionIndex.value = index;
+  }
+};
+
+const handleDragLeave = () => {
+  dragOverOptionIndex.value = null;
+};
+
+const handleDrop = (event: DragEvent, dropIndex: number) => {
+  event.preventDefault();
+  event.stopPropagation();
+
+  if (
+    draggedOptionIndex.value === null ||
+    draggedOptionIndex.value === dropIndex
+  ) {
+    draggedOptionIndex.value = null;
+    dragOverOptionIndex.value = null;
+    return;
+  }
+
+  const options = [...satisfactionData.value.options];
+  const draggedOption = options[draggedOptionIndex.value];
+
+  options.splice(draggedOptionIndex.value, 1);
+  options.splice(dropIndex, 0, draggedOption);
+
+  satisfactionData.value.options = options;
+  updateNodeData();
+
+  draggedOptionIndex.value = null;
+  dragOverOptionIndex.value = null;
+};
+
+const handleDragEnd = () => {
+  draggedOptionIndex.value = null;
+  dragOverOptionIndex.value = null;
+  isDraggingOption.value = false;
+};
+
+const handleMouseDown = (event: MouseEvent) => {
+  event.stopPropagation();
+  event.stopImmediatePropagation();
 };
 
 watch(
@@ -236,15 +324,35 @@ watch(
           {{ t('chatbot_add_option') }}
         </VBtn>
 
-        <div v-if="satisfactionData.options.length > 0" class="options-list">
+        <div
+          v-if="satisfactionData.options.length > 0"
+          class="options-list nodrag"
+        >
           <div
             v-for="(option, index) in satisfactionData.options"
             :key="option.id"
-            class="option-item"
+            class="option-item nodrag"
+            :class="{
+              dragging: draggedOptionIndex === index,
+              'drag-over': dragOverOptionIndex === index,
+            }"
+            draggable="true"
+            @dragstart.stop="handleDragStart($event, index)"
+            @dragover.stop="handleDragOver($event, index)"
+            @dragleave.stop="handleDragLeave"
+            @drop.stop="handleDrop($event, index)"
+            @dragend.stop="handleDragEnd"
           >
             <div class="option-number-wrapper">
               <div class="option-number">
-                {{ index + 1 }}
+                <span class="option-number-text">{{ index + 1 }}</span>
+                <VIcon
+                  icon="tabler-x"
+                  size="16"
+                  color="error"
+                  class="option-remove-icon"
+                  @click.stop="removeOption(index)"
+                />
               </div>
             </div>
             <VMenu
@@ -294,7 +402,7 @@ watch(
               :position="Position.Right"
               class="option-handle handle-source"
             />
-            <div class="option-drag-handle">
+            <div class="option-drag-handle" @mousedown.stop="handleMouseDown">
               <VIcon icon="tabler-grip-vertical" size="18" color="primary" />
             </div>
           </div>
@@ -321,6 +429,26 @@ watch(
   gap: 8px;
   margin-bottom: 8px;
   position: relative;
+  transition:
+    opacity 0.2s,
+    transform 0.2s;
+  cursor: grab;
+  user-select: none;
+}
+
+.option-item:active {
+  cursor: grabbing;
+}
+
+.option-item.dragging {
+  opacity: 0.5;
+  cursor: grabbing;
+}
+
+.option-item.drag-over {
+  transform: translateY(4px);
+  border-top: 2px solid rgb(var(--v-theme-primary));
+  padding-top: 2px;
 }
 
 .option-number-wrapper {
@@ -342,6 +470,28 @@ watch(
   font-size: 12px;
   font-weight: 500;
   color: rgb(var(--v-theme-on-surface));
+  position: relative;
+}
+
+.option-number-text {
+  transition: opacity 0.2s;
+}
+
+.option-remove-icon {
+  position: absolute;
+  opacity: 0;
+  transition: opacity 0.2s;
+  cursor: pointer;
+  pointer-events: none;
+}
+
+.option-item:hover .option-number-text {
+  opacity: 0;
+}
+
+.option-item:hover .option-remove-icon {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .option-text-field {
@@ -354,7 +504,7 @@ watch(
   display: flex;
   align-items: center;
   padding: 4px;
-  margin-right: 5px;
+  margin-right: 20px;
   cursor: grab;
 }
 

@@ -620,6 +620,13 @@ const handleDeleteKey = (event: KeyboardEvent) => {
   }
 };
 
+const removeOptionEdge = (nodeId: string, optionId: string) => {
+  const sourceHandle = `option-${optionId}-source`;
+  edges.value = edges.value.filter(
+    (e) => !(e.source === nodeId && e.sourceHandle === sourceHandle)
+  );
+};
+
 const addMenuNode = (position?: { x: number; y: number }) => {
   const nodeId = `menu-${nodeIdCounter++}`;
   const newNode: Node = {
@@ -634,6 +641,7 @@ const addMenuNode = (position?: { x: number; y: number }) => {
       message: '',
       options: [],
       onRemove: () => removeNode(nodeId),
+      onRemoveOption: (optionId: string) => removeOptionEdge(nodeId, optionId),
     },
   };
   nodes.value.push(newNode as Node);
@@ -653,6 +661,7 @@ const addSatisfactionNode = (position?: { x: number; y: number }) => {
       message: '',
       options: [],
       onRemove: () => removeNode(nodeId),
+      onRemoveOption: (optionId: string) => removeOptionEdge(nodeId, optionId),
     },
   };
   nodes.value.push(newNode as Node);
@@ -1107,6 +1116,11 @@ const processLoadedNode = (node: Node): Node => {
       node.data = {};
     }
     node.data.onRemove = () => removeNode(node.id);
+
+    if (node.type === 'menu' || node.type === 'satisfaction') {
+      node.data.onRemoveOption = (optionId: string) =>
+        removeOptionEdge(node.id, optionId);
+    }
   }
 
   processNodeDataByType(node);
