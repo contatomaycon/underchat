@@ -615,6 +615,28 @@ watch(
   }
 );
 
+watch(
+  () => chatStore.activeChat?.status,
+  (newStatus, oldStatus) => {
+    if (newStatus === EChatStatus.in_chat) {
+      if (oldStatus === EChatStatus.ura && activeFilter.value === 'chatbot') {
+        activeFilter.value = 'in_chat';
+        expandedFilter.value = 'in_chat';
+        void loadChatsByFilter();
+      } else if (
+        oldStatus === EChatStatus.queue &&
+        (activeFilter.value === 'queue' || activeFilter.value === 'all')
+      ) {
+        if (activeFilter.value === 'queue') {
+          activeFilter.value = 'in_chat';
+          expandedFilter.value = 'in_chat';
+        }
+        void loadChatsByFilter();
+      }
+    }
+  }
+);
+
 onMounted(async () => {
   await Promise.all([loadChatsByFilter(), loadChatbotCount()]);
 });
