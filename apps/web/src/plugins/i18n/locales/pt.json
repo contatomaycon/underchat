@@ -4,6 +4,7 @@
     "password": "Senha",
     "forgot_password": "Esqueceu sua senha?",
     "login": "Entrar",
+    "logging_out": "Saindo",
     "login_error": "Ocorreu um erro ao fazer login. Por favor, tente novamente.",
     "login_invalid": "Credenciais de login inválidas. Verifique seu e-mail/usuário e senha.",
     "login_success": "Login realizado com sucesso!",

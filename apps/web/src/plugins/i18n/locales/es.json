@@ -4,6 +4,7 @@
     "password": "Contraseña",
     "forgot_password": "¿Olvidaste tu contraseña?",
     "login": "Iniciar sesión",
+    "logging_out": "Cerrando sesión",
     "login_error": "Ocurrió un error al iniciar sesión. Por favor, inténtalo de nuevo.",
     "login_invalid": "Credenciales de inicio de sesión inválidas. Por favor, verifica tu correo electrónico/usuario y contraseña.",
     "login_success": "¡Inicio de sesión exitoso!",

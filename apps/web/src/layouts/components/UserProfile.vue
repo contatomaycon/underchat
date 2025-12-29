@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { removeUserData } from '@/@webcore/localStorage/user';
+import { clearAllData } from '@/@webcore/utils/clearAllData';
 import { presenceOffline } from '@/@webcore/presence';
 import { initUserPresenceSubscription } from '@/@webcore/presenceCentrifugo';
 import { useChatStore } from '@/@webcore/stores/chat';
@@ -616,18 +616,23 @@ const removePhoto = async () => {
   isUploadingPhoto.value = false;
 };
 
+const isLoggingOut = ref(false);
+
 const logout = async () => {
-  await presenceOffline().catch(() => {});
+  isLoggingOut.value = true;
 
-  chatStore.clearUser();
-  const result = removeUserData();
+  try {
+    await presenceOffline().catch(() => {});
 
-  if (result) {
+    clearAllData();
+
     await nextTick(() => {
       router.replace({
         name: 'login',
       });
     });
+  } finally {
+    isLoggingOut.value = false;
   }
 };
 
@@ -766,12 +771,15 @@ onMounted(() => {
 
           <VDivider class="my-2" />
 
-          <VListItem @click="logout" link>
+          <VListItem @click="logout" link :disabled="isLoggingOut">
             <template #prepend>
               <VIcon class="me-2" icon="tabler-logout" size="22" />
             </template>
 
-            <VListItemTitle>Logout</VListItemTitle>
+            <VListItemTitle>
+              <span v-if="isLoggingOut">{{ $t('logging_out') }}...</span>
+              <span v-else>Logout</span>
+            </VListItemTitle>
           </VListItem>
         </VList>
       </VMenu>

@@ -46,6 +46,7 @@ const form = ref({
 });
 
 const isPasswordVisible = ref(false);
+const isLoggingIn = ref(false);
 
 const authThemeImg = useGenerateImageVariant(
   authV2LoginIllustrationLight,
@@ -61,38 +62,44 @@ const handleLogin = async () => {
   const validateForm = await refFormLogin?.value?.validate();
   if (!validateForm?.valid) return;
 
-  const result = await authStore.login(form.value.login, form.value.password);
+  isLoggingIn.value = true;
 
-  if (result) {
-    try {
-      applyLayoutTheme(authStore.layout, {
-        configStore,
-        layoutStore,
-        vuetifyTheme,
-      });
-    } catch (error) {
-      console.error('Failed to apply layout/theme after login', error);
+  try {
+    const result = await authStore.login(form.value.login, form.value.password);
+
+    if (result) {
+      try {
+        applyLayoutTheme(authStore.layout, {
+          configStore,
+          layoutStore,
+          vuetifyTheme,
+        });
+      } catch (error) {
+        console.error('Failed to apply layout/theme after login', error);
+      }
+
+      resetConnection();
+      resetPresencePermissionError();
+
+      chatStore.updateUser();
+      const permissions = authStore.permissions;
+
+      const userAbilityRules = permissions.map((permission) => ({
+        action: permission,
+        subject: permission,
+      }));
+
+      try {
+        ability.update(userAbilityRules);
+      } catch (error) {
+        console.error('Failed to update permissions after login', error);
+      }
+
+      await nextTick();
+      router.replace(route.query.to ? String(route.query.to) : '/');
     }
-
-    resetConnection();
-    resetPresencePermissionError();
-
-    chatStore.updateUser();
-    const permissions = authStore.permissions;
-
-    const userAbilityRules = permissions.map((permission) => ({
-      action: permission,
-      subject: permission,
-    }));
-
-    try {
-      ability.update(userAbilityRules);
-    } catch (error) {
-      console.error('Failed to update permissions after login', error);
-    }
-
-    await nextTick();
-    router.replace(route.query.to ? String(route.query.to) : '/');
+  } finally {
+    isLoggingIn.value = false;
   }
 };
 </script>
@@ -193,7 +200,13 @@ const handleLogin = async () => {
                   </a>
                 </div>
 
-                <VBtn block type="submit" @click="handleLogin">
+                <VBtn
+                  block
+                  type="submit"
+                  @click="handleLogin"
+                  :loading="isLoggingIn"
+                  :disabled="isLoggingIn"
+                >
                   {{ $t('login') }}
                 </VBtn>
               </VCol>
