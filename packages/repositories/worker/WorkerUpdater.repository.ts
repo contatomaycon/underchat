@@ -2,7 +2,7 @@ import * as schema from '@core/models';
 import { worker } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { IUpdateWorker } from '@core/common/interfaces/IUpdateWorker';
 
 @injectable()

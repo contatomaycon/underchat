@@ -17,7 +17,6 @@ import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.servi
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
-import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 
 @singleton()
 export class WorkerConnectionStatusConsume {
