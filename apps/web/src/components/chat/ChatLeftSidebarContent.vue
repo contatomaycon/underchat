@@ -121,6 +121,30 @@ const filteredMyChats = computed(() => {
   return [];
 });
 
+const allChatsCount = computed(() => {
+  return chatStore.listInChat.length + chatStore.listQueue.length;
+});
+
+const inChatCount = computed(() => {
+  return chatStore.listInChat.length;
+});
+
+const queueCount = computed(() => {
+  return chatStore.listQueue.length;
+});
+
+const myChatsCount = computed(() => {
+  const userId = chatStore.user?.user_id;
+  if (!userId) return 0;
+
+  const allChats = [...chatStore.listInChat, ...chatStore.listQueue];
+  return allChats.filter((chat) => chat.user?.id === userId).length;
+});
+
+const chatbotCount = computed(() => {
+  return chatStore.listChatbot.length;
+});
+
 const showInChatTitle = computed(() => {
   return activeFilter.value === 'all';
 });
@@ -623,54 +647,79 @@ onMounted(async () => {
         </VBtn>
       </div>
       <div class="chat-filter-item flex-grow-1">
-        <VBtn
-          :variant="activeFilter === 'all' ? 'flat' : 'text'"
-          :color="activeFilter === 'all' ? 'primary' : undefined"
-          class="chat-filter-btn w-100"
-          @click="handleFilterClick('all')"
-        >
-          <VIcon size="24">tabler-list</VIcon>
-        </VBtn>
+        <div class="chat-filter-btn-wrapper">
+          <VBtn
+            :variant="activeFilter === 'all' ? 'flat' : 'text'"
+            :color="activeFilter === 'all' ? 'primary' : undefined"
+            class="chat-filter-btn w-100"
+            @click="handleFilterClick('all')"
+          >
+            <VIcon size="24">tabler-list</VIcon>
+          </VBtn>
+          <span v-if="allChatsCount > 0" class="chat-filter-count-badge">
+            {{ allChatsCount }}
+          </span>
+        </div>
       </div>
       <div class="chat-filter-item flex-grow-1">
-        <VBtn
-          :variant="activeFilter === 'in_chat' ? 'flat' : 'text'"
-          :color="activeFilter === 'in_chat' ? 'primary' : undefined"
-          class="chat-filter-btn w-100"
-          @click="handleFilterClick('in_chat')"
-        >
-          <VIcon size="24">tabler-message-circle</VIcon>
-        </VBtn>
+        <div class="chat-filter-btn-wrapper">
+          <VBtn
+            :variant="activeFilter === 'in_chat' ? 'flat' : 'text'"
+            :color="activeFilter === 'in_chat' ? 'primary' : undefined"
+            class="chat-filter-btn w-100"
+            @click="handleFilterClick('in_chat')"
+          >
+            <VIcon size="24">tabler-message-circle</VIcon>
+          </VBtn>
+          <span v-if="inChatCount > 0" class="chat-filter-count-badge">
+            {{ inChatCount }}
+          </span>
+        </div>
       </div>
       <div class="chat-filter-item flex-grow-1">
-        <VBtn
-          :variant="activeFilter === 'my_chats' ? 'flat' : 'text'"
-          :color="activeFilter === 'my_chats' ? 'primary' : undefined"
-          class="chat-filter-btn w-100"
-          @click="handleFilterClick('my_chats')"
-        >
-          <VIcon size="24">tabler-message-circle-user</VIcon>
-        </VBtn>
+        <div class="chat-filter-btn-wrapper">
+          <VBtn
+            :variant="activeFilter === 'my_chats' ? 'flat' : 'text'"
+            :color="activeFilter === 'my_chats' ? 'primary' : undefined"
+            class="chat-filter-btn w-100"
+            @click="handleFilterClick('my_chats')"
+          >
+            <VIcon size="24">tabler-message-circle-user</VIcon>
+          </VBtn>
+          <span v-if="myChatsCount > 0" class="chat-filter-count-badge">
+            {{ myChatsCount }}
+          </span>
+        </div>
       </div>
       <div class="chat-filter-item flex-grow-1">
-        <VBtn
-          :variant="activeFilter === 'queue' ? 'flat' : 'text'"
-          :color="activeFilter === 'queue' ? 'primary' : undefined"
-          class="chat-filter-btn w-100"
-          @click="handleFilterClick('queue')"
-        >
-          <VIcon size="24">tabler-clock</VIcon>
-        </VBtn>
+        <div class="chat-filter-btn-wrapper">
+          <VBtn
+            :variant="activeFilter === 'queue' ? 'flat' : 'text'"
+            :color="activeFilter === 'queue' ? 'primary' : undefined"
+            class="chat-filter-btn w-100"
+            @click="handleFilterClick('queue')"
+          >
+            <VIcon size="24">tabler-clock</VIcon>
+          </VBtn>
+          <span v-if="queueCount > 0" class="chat-filter-count-badge">
+            {{ queueCount }}
+          </span>
+        </div>
       </div>
       <div v-if="canViewChatbotTab" class="chat-filter-item flex-grow-1">
-        <VBtn
-          :variant="activeFilter === 'chatbot' ? 'flat' : 'text'"
-          :color="activeFilter === 'chatbot' ? 'primary' : undefined"
-          class="chat-filter-btn w-100"
-          @click="handleFilterClick('chatbot')"
-        >
-          <VIcon size="24">tabler-robot</VIcon>
-        </VBtn>
+        <div class="chat-filter-btn-wrapper">
+          <VBtn
+            :variant="activeFilter === 'chatbot' ? 'flat' : 'text'"
+            :color="activeFilter === 'chatbot' ? 'primary' : undefined"
+            class="chat-filter-btn w-100"
+            @click="handleFilterClick('chatbot')"
+          >
+            <VIcon size="24">tabler-robot</VIcon>
+          </VBtn>
+          <span v-if="chatbotCount > 0" class="chat-filter-count-badge">
+            {{ chatbotCount }}
+          </span>
+        </div>
       </div>
     </div>
     <Transition name="expand">
@@ -1222,6 +1271,30 @@ onMounted(async () => {
       align-items: center;
       justify-content: center;
     }
+  }
+
+  .chat-filter-btn-wrapper {
+    position: relative;
+    width: 100%;
+  }
+
+  .chat-filter-count-badge {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    font-size: 0.65rem;
+    height: 16px;
+    min-width: 16px;
+    padding: 0 4px;
+    font-weight: 600;
+    line-height: 16px;
+    border-radius: 8px;
+    background-color: rgb(var(--v-theme-primary));
+    color: rgb(var(--v-theme-on-primary));
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1;
   }
 
   .chat-filter-expanded-full {
