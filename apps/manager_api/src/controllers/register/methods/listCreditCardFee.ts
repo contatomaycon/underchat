@@ -1,5 +1,6 @@
 import { EHTTPStatusCode } from '@core/common/enums/EHTTPStatusCode';
 import { sendResponse } from '@core/common/functions/sendResponse';
+import { handleControllerError } from '@core/common/functions/handleControllerError';
 import { CreditCardFeeViewerUseCase } from '@core/useCases/config/CreditCardFeeViewer.useCase';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
@@ -22,23 +23,6 @@ export const listCreditCardFee = async (
       data: response,
     });
   } catch (error) {
-    console.error(error);
-
-    if (error instanceof Error) {
-      const notFoundMessage = t('credit_card_fee_not_found');
-      const isNotFound = error.message === notFoundMessage;
-
-      return sendResponse(reply, {
-        message: error.message,
-        httpStatusCode: isNotFound
-          ? EHTTPStatusCode.not_found
-          : EHTTPStatusCode.internal_server_error,
-      });
-    }
-
-    return sendResponse(reply, {
-      message: t('internal_server_error'),
-      httpStatusCode: EHTTPStatusCode.internal_server_error,
-    });
+    handleControllerError(error, reply, t);
   }
 };

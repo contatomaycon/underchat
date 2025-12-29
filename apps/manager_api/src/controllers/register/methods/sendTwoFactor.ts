@@ -1,5 +1,6 @@
 import { EHTTPStatusCode } from '@core/common/enums/EHTTPStatusCode';
 import { sendResponse } from '@core/common/functions/sendResponse';
+import { handleControllerError } from '@core/common/functions/handleControllerError';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
 import { AuthRegisterSendTwoFactorRequest } from '@core/schema/register/sendTwoFactor/request.schema';
@@ -28,18 +29,6 @@ export const sendTwoFactor = async (
       },
     });
   } catch (error) {
-    console.error(error);
-
-    if (error instanceof Error) {
-      return sendResponse(reply, {
-        message: error.message,
-        httpStatusCode: EHTTPStatusCode.bad_request,
-      });
-    }
-
-    return sendResponse(reply, {
-      message: t('register_error'),
-      httpStatusCode: EHTTPStatusCode.internal_server_error,
-    });
+    handleControllerError(error, reply, t);
   }
 };

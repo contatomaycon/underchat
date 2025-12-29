@@ -1,5 +1,6 @@
 import { EHTTPStatusCode } from '@core/common/enums/EHTTPStatusCode';
 import { sendResponse } from '@core/common/functions/sendResponse';
+import { handleControllerError } from '@core/common/functions/handleControllerError';
 import { centrifugoEnvironment } from '@core/config/environments';
 import { UnauthorizedError } from 'centrifuge';
 import { FastifyReply, FastifyRequest } from 'fastify';
@@ -50,25 +51,6 @@ export const centrifugoToken = async (
       httpStatusCode: EHTTPStatusCode.bad_request,
     });
   } catch (error) {
-    console.error(error);
-
-    if (error instanceof Error) {
-      return sendResponse(reply, {
-        message: error.message,
-        httpStatusCode: EHTTPStatusCode.internal_server_error,
-      });
-    }
-
-    if (error instanceof UnauthorizedError) {
-      return sendResponse(reply, {
-        message: error.message,
-        httpStatusCode: EHTTPStatusCode.unauthorized,
-      });
-    }
-
-    return sendResponse(reply, {
-      message: t('internal_server_error'),
-      httpStatusCode: EHTTPStatusCode.internal_server_error,
-    });
+    handleControllerError(error, reply, t);
   }
 };

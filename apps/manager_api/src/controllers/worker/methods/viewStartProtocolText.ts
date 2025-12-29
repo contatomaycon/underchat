@@ -1,5 +1,6 @@
 import { EHTTPStatusCode } from '@core/common/enums/EHTTPStatusCode';
 import { sendResponse } from '@core/common/functions/sendResponse';
+import { handleControllerError } from '@core/common/functions/handleControllerError';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
 import { ViewStartProtocolTextUseCase } from '@core/useCases/worker/ViewStartProtocolText.useCase';
@@ -29,18 +30,6 @@ export const viewStartProtocolText = async (
       data: response,
     });
   } catch (error) {
-    console.error(error);
-
-    if (error instanceof Error) {
-      return sendResponse(reply, {
-        message: error.message,
-        httpStatusCode: EHTTPStatusCode.internal_server_error,
-      });
-    }
-
-    return sendResponse(reply, {
-      message: t('internal_server_error'),
-      httpStatusCode: EHTTPStatusCode.internal_server_error,
-    });
+    handleControllerError(error, reply, t);
   }
 };
