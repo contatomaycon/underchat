@@ -325,6 +325,16 @@ export class ContactService {
     return this.contactUpdaterRepository.validateContact(contactId, payload);
   };
 
+  updateContactIsValided = async (
+    contactId: string,
+    isValided: boolean
+  ): Promise<boolean> => {
+    return this.contactUpdaterRepository.updateContactIsValided(
+      contactId,
+      isValided
+    );
+  };
+
   deleteContactById = async (contactId: string): Promise<boolean> => {
     return this.contactDeleterRepository.deleteContactById(contactId);
   };

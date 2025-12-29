@@ -215,6 +215,17 @@ export class BaileysIncomingMessageService {
       return;
     }
 
+    const callId =
+      (callEvent as { id?: string })?.id ||
+      (callEvent as { callId?: string })?.callId;
+    if (callId && jid) {
+      try {
+        await socket.rejectCall(callId, jid);
+      } catch (error) {
+        console.error('Error rejecting call:', error);
+      }
+    }
+
     const phone = getPhoneFromJid(jid, jidAlt);
     if (!phone) {
       return;
