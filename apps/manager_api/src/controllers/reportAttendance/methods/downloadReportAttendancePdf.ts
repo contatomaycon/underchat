@@ -1,4 +1,5 @@
 import { EHTTPStatusCode } from '@core/common/enums/EHTTPStatusCode';
+import { handleControllerError } from '@core/common/functions/handleControllerError';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
 import { ListReportAttendanceRequest } from '@core/schema/reportAttendance/listReportAttendance/request.schema';
@@ -30,16 +31,6 @@ export const downloadReportAttendancePdf = async (
       .header('Content-Disposition', `attachment; filename="${filename}"`)
       .send(pdfBuffer);
   } catch (error) {
-    console.error(error);
-
-    if (error instanceof Error) {
-      return reply.code(EHTTPStatusCode.internal_server_error).send({
-        message: error.message,
-      });
-    }
-
-    return reply.code(EHTTPStatusCode.internal_server_error).send({
-      message: t('internal_server_error'),
-    });
+    handleControllerError(error, reply, t);
   }
 };

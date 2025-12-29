@@ -9,6 +9,8 @@ import { createConsumer } from '@core/common/functions/createConsumer';
 import { connectConsumer } from '@core/common/functions/connectConsumer';
 import { handleConsumerError } from '@core/common/functions/handleConsumerError';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
+import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
+import { IUpdateWorker } from '@core/common/interfaces/IUpdateWorker';
 
 @singleton()
 export class WorkerConnectionConsume {
@@ -122,6 +124,24 @@ export class WorkerConnectionConsume {
   }
 
   private async handleMessage(data: IBaileysConnectionState): Promise<void> {
+    const isDisponibleWithDisconnectedUser =
+      data.worker_status_id === EWorkerStatus.disponible &&
+      data.disconnected_user === true;
+
+    if (isDisponibleWithDisconnectedUser) {
+      const inputUpdate: IUpdateWorker = {
+        worker_id: data.worker_id,
+        worker_status_id: EWorkerStatus.disponible,
+        number: null,
+        container_id: null,
+        connection_date: null,
+      };
+
+      await this.workerService.updateWorkerById(data.account_id, inputUpdate);
+
+      return;
+    }
+
     const view = await this.workerService.viewWorkerPhoneConnectionDate(
       data.worker_id
     );

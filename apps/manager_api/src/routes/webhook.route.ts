@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { container } from 'tsyringe';
-import WebhookController from '@/controllers/Webhook';
+import WebhookController from '@/controllers/webhook';
 import { asaasInvoiceWebhookSchema } from '@core/schema/payment/Webhook';
 import { asaasNfseWebhookSchema } from '@core/schema/nfse/Webhook';
 

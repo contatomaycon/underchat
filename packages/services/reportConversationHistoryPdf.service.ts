@@ -68,11 +68,33 @@ export class ReportConversationHistoryPdfService {
       this.messagesListerUseCase.execute(accountId, chatId),
     ]);
 
-    const clientName = chat?.name || chat?.contact?.name || t('client');
-    const clientPhoto = chat?.photo || chat?.contact?.photo || null;
+    const clientName = chat?.name ?? chat?.contact?.name ?? t('client');
+    const clientPhoto = chat?.photo ?? chat?.contact?.photo ?? null;
 
+    await this.loadContactPhones(messagesResult.messages);
+
+    const html = this.generateHtmlFromMessages(
+      messagesResult.messages,
+      clientName,
+      clientPhoto,
+      chat,
+      t
+    );
+
+    this.contactPhoneCache.clear();
+
+    const executablePath = await this.findChromiumExecutable();
+    const pdfBuffer = await this.generatePdfFromHtml(html, executablePath);
+    const key = `report-conversation-history/${chatId}/history.pdf`;
+
+    return this.storageService.uploadPdf(pdfBuffer, accountId, key);
+  }
+
+  private async loadContactPhones(
+    messages: ListMessageResult[]
+  ): Promise<void> {
     const uniqueContactIds = new Set<string>();
-    for (const msg of messagesResult.messages) {
+    for (const msg of messages) {
       const contactId = msg.content?.contact?.contact_id;
       if (contactId && typeof contactId === 'string') {
         uniqueContactIds.add(contactId);
@@ -97,19 +119,42 @@ export class ReportConversationHistoryPdfService {
     for (const { contactId, phone } of phoneResults) {
       this.contactPhoneCache.set(contactId, phone);
     }
+  }
 
-    const html = this.generateHtmlFromMessages(
-      messagesResult.messages,
-      clientName,
-      clientPhoto,
-      chat,
-      t
-    );
+  private async findChromiumExecutable(): Promise<string | undefined> {
+    const fs = await import('fs');
+    const chromiumPaths = [
+      '/usr/bin/chromium',
+      '/usr/bin/chromium-browser',
+      '/snap/bin/chromium',
+    ];
 
-    this.contactPhoneCache.clear();
+    for (const path of chromiumPaths) {
+      try {
+        if (fs.existsSync(path)) {
+          const stat = fs.statSync(path);
+          if (
+            stat.isFile() ||
+            (stat.isSymbolicLink() && path.includes('snap'))
+          ) {
+            return path;
+          }
+        }
+      } catch {
+        continue;
+      }
+    }
 
+    return undefined;
+  }
+
+  private async generatePdfFromHtml(
+    html: string,
+    executablePath: string | undefined
+  ): Promise<Buffer> {
     const browser = await puppeteer.launch({
       headless: true,
+      ...(executablePath && { executablePath }),
       args: ['--no-sandbox', '--disable-setuid-sandbox'],
     });
 
@@ -118,98 +163,7 @@ export class ReportConversationHistoryPdfService {
       await page.setContent(html, { waitUntil: 'networkidle0' });
       await page.setViewport({ width: 1200, height: 800 });
 
-      // @ts-ignore - Código executado no navegador, não no Node.js
-      await page.evaluate(() => {
-        // @ts-ignore
-        return new Promise<void>((resolve: () => void) => {
-          const doc = (globalThis as any).document;
-          if (!doc) {
-            resolve();
-            return;
-          }
-
-          const mapContainers = doc.querySelectorAll('[id^="map-"]');
-          if (mapContainers.length === 0) {
-            resolve();
-            return;
-          }
-
-          let loadedCount = 0;
-          const totalMaps = mapContainers.length;
-          let allMapsResolved = false;
-
-          const isMapContainerLoaded = (container: any): boolean => {
-            // @ts-ignore - HTMLCanvasElement existe no navegador
-            const canvas = container.querySelector(
-              '[class*="maplibregl-canvas"]'
-            );
-            const isLoaded = container.dataset.mapLoaded === 'true';
-
-            const hasValidCanvas =
-              canvas &&
-              canvas.width > 0 &&
-              canvas.height > 0 &&
-              canvas.getContext;
-
-            return hasValidCanvas || isLoaded;
-          };
-
-          const checkMapLoaded = (container: any): boolean => {
-            if (allMapsResolved) return false;
-
-            return isMapContainerLoaded(container);
-          };
-
-          const scheduleResolve = (resolveFn: () => void): void => {
-            setTimeout(resolveFn, 3000);
-          };
-
-          const handleAllMapsLoaded = (): void => {
-            scheduleResolve(resolve);
-          };
-
-          const handleMapCheck = (checkInterval: NodeJS.Timeout): void => {
-            if (allMapsResolved) {
-              clearInterval(checkInterval);
-              return;
-            }
-
-            for (const container of mapContainers) {
-              if (checkMapLoaded(container)) {
-                loadedCount++;
-              }
-            }
-
-            if (loadedCount === totalMaps && !allMapsResolved) {
-              allMapsResolved = true;
-              clearInterval(checkInterval);
-              handleAllMapsLoaded();
-            }
-          };
-
-          const handleTimeout = (checkInterval: NodeJS.Timeout): void => {
-            clearInterval(checkInterval);
-            if (!allMapsResolved) {
-              allMapsResolved = true;
-              resolve();
-            }
-          };
-
-          const scheduleTimeout = (
-            timeoutFn: () => void,
-            delay: number
-          ): void => {
-            setTimeout(timeoutFn, delay);
-          };
-
-          const checkInterval = setInterval(
-            () => handleMapCheck(checkInterval),
-            500
-          );
-
-          scheduleTimeout(() => handleTimeout(checkInterval), 25000);
-        });
-      });
+      await this.waitForMapsToLoad(page);
 
       const mapContainers = await page.$$('[id^="map-"]');
       for (const container of mapContainers) {
@@ -228,20 +182,91 @@ export class ReportConversationHistoryPdfService {
       });
 
       await browser.close();
-
-      const key = `report-conversation-history/${chatId}/history.pdf`;
-
-      const url = await this.storageService.uploadPdf(
-        pdfBuffer,
-        accountId,
-        key
-      );
-
-      return url;
+      return Buffer.from(pdfBuffer);
     } catch (error) {
       await browser.close();
       throw error;
     }
+  }
+
+  private async waitForMapsToLoad(page: Page): Promise<void> {
+    await page.evaluate(() => {
+      return new Promise<void>((resolve: () => void) => {
+        const doc = (globalThis as any).document;
+        if (!doc) {
+          resolve();
+          return;
+        }
+
+        const mapContainers = doc.querySelectorAll('[id^="map-"]');
+        if (mapContainers.length === 0) {
+          resolve();
+          return;
+        }
+
+        let loadedCount = 0;
+        const totalMaps = mapContainers.length;
+        let allMapsResolved = false;
+
+        const isMapContainerLoaded = (container: any): boolean => {
+          const canvas = container.querySelector(
+            '[class*="maplibregl-canvas"]'
+          );
+          const isLoaded = container.dataset.mapLoaded === 'true';
+
+          const hasValidCanvas =
+            canvas &&
+            canvas.width > 0 &&
+            canvas.height > 0 &&
+            canvas.getContext;
+
+          return hasValidCanvas || isLoaded;
+        };
+
+        const checkMapLoaded = (container: any): boolean => {
+          if (allMapsResolved) return false;
+          return isMapContainerLoaded(container);
+        };
+
+        const handleAllMapsLoaded = (): void => {
+          setTimeout(resolve, 3000);
+        };
+
+        const handleMapCheck = (checkInterval: NodeJS.Timeout): void => {
+          if (allMapsResolved) {
+            clearInterval(checkInterval);
+            return;
+          }
+
+          for (const container of mapContainers) {
+            if (checkMapLoaded(container)) {
+              loadedCount++;
+            }
+          }
+
+          if (loadedCount === totalMaps && !allMapsResolved) {
+            allMapsResolved = true;
+            clearInterval(checkInterval);
+            handleAllMapsLoaded();
+          }
+        };
+
+        const handleTimeout = (checkInterval: NodeJS.Timeout): void => {
+          clearInterval(checkInterval);
+          if (!allMapsResolved) {
+            allMapsResolved = true;
+            resolve();
+          }
+        };
+
+        const checkInterval = setInterval(
+          () => handleMapCheck(checkInterval),
+          500
+        );
+
+        setTimeout(() => handleTimeout(checkInterval), 25000);
+      });
+    });
   }
 
   private async processMapContainer(
@@ -319,7 +344,7 @@ export class ReportConversationHistoryPdfService {
     );
 
     const hit = result?.hits?.hits?.[0];
-    return (hit?._source as IChat) || null;
+    return (hit?._source as IChat) ?? null;
   }
 
   private calculateReactionStyles(reactionsCount: number): {
@@ -476,7 +501,7 @@ export class ReportConversationHistoryPdfService {
     let lastDate: string | null = null;
 
     for (const msg of messages) {
-      const messageDate = msg.date || '';
+      const messageDate = msg.date ?? '';
 
       if (!lastDate || !this.isSameDay(messageDate, lastDate)) {
         const separatorLabel = this.formatDateSeparator(messageDate, t);
@@ -496,7 +521,7 @@ export class ReportConversationHistoryPdfService {
       const content = msg.content
         ? this.formatMessageContent(msg.content, msg, t)
         : '';
-      const contentType = msg.content?.type || '';
+      const contentType = msg.content?.type ?? '';
       const isSystem = contentType === EMessageType.system;
       let alignmentClass = 'right';
       if (isSystem) {
@@ -504,7 +529,7 @@ export class ReportConversationHistoryPdfService {
       } else if (isUser) {
         alignmentClass = 'left';
       }
-      const timeOnly = this.formatTimeOnly(msg.date || '');
+      const timeOnly = this.formatTimeOnly(msg.date ?? '');
 
       const reactionsHtml = this.formatReactions(
         msg,
@@ -761,7 +786,7 @@ export class ReportConversationHistoryPdfService {
       return this.getFirstName(clientName, t);
     }
 
-    const operatorName = msg.user?.name || t('operator');
+    const operatorName = msg.user?.name ?? t('operator');
     return this.getFirstName(operatorName, t);
   }
 
@@ -789,10 +814,10 @@ export class ReportConversationHistoryPdfService {
     clientPhoto: string | null
   ): string {
     if (isUser) {
-      return clientPhoto || this.getDefaultAvatar();
+      return clientPhoto ?? this.getDefaultAvatar();
     }
 
-    return msg.user?.photo || this.getDefaultAvatar();
+    return msg.user?.photo ?? this.getDefaultAvatar();
   }
 
   private getDefaultAvatar(): string {
@@ -835,7 +860,7 @@ export class ReportConversationHistoryPdfService {
     const parts: string[] = [];
 
     if (content.version && content.version.length > 0) {
-      const currentText = (content.message || '').replaceAll('\n', '<br>');
+      const currentText = (content.message ?? '').replaceAll('\n', '<br>');
       parts.push(
         `<div class="message-current-version"><strong>${currentText}</strong></div>`
       );
@@ -846,7 +871,7 @@ export class ReportConversationHistoryPdfService {
 
       for (let i = 0; i < sortedVersions.length; i++) {
         const version = sortedVersions[i];
-        const versionText = (version.message || '').replaceAll('\n', '<br>');
+        const versionText = (version.message ?? '').replaceAll('\n', '<br>');
         const versionNumber = i + 1;
         parts.push(
           `<div class="message-version">${t('version')} ${versionNumber}: ${versionText}</div>`
@@ -873,8 +898,8 @@ export class ReportConversationHistoryPdfService {
       return '';
     }
 
-    const imageUrl = content.image?.url || '';
-    const caption = content.image?.caption || '';
+    const imageUrl = content.image?.url ?? '';
+    const caption = content.image?.caption ?? '';
     const parts: string[] = [];
 
     if (imageUrl) {
@@ -900,7 +925,7 @@ export class ReportConversationHistoryPdfService {
       return '';
     }
 
-    const stickerUrl = content.sticker?.url || '';
+    const stickerUrl = content.sticker?.url ?? '';
     const parts: string[] = [];
 
     if (stickerUrl) {
@@ -922,13 +947,13 @@ export class ReportConversationHistoryPdfService {
       return '';
     }
 
-    const videoUrl = content.video?.url || '';
-    const caption = content.video?.caption || '';
+    const videoUrl = content.video?.url ?? '';
+    const caption = content.video?.caption ?? '';
     const parts: string[] = [];
 
     if (videoUrl) {
       const escapedUrl = this.escapeHtml(videoUrl);
-      const extension = content.video?.extension?.toUpperCase() || 'VIDEO';
+      const extension = content.video?.extension?.toUpperCase() ?? 'VIDEO';
       const size = content.video?.size
         ? this.formatDocumentSize(content.video.size)
         : null;
@@ -972,7 +997,7 @@ export class ReportConversationHistoryPdfService {
       return '';
     }
 
-    const audioUrl = content.audio?.url || '';
+    const audioUrl = content.audio?.url ?? '';
     const parts: string[] = [];
 
     if (audioUrl) {
@@ -1009,13 +1034,13 @@ export class ReportConversationHistoryPdfService {
       return '';
     }
 
-    const documentUrl = content.document?.url || '';
+    const documentUrl = content.document?.url ?? '';
     const parts: string[] = [];
 
     if (documentUrl) {
       const escapedUrl = this.escapeHtml(documentUrl);
-      const name = content.document?.name || t('document');
-      const extension = content.document?.extension?.toUpperCase() || 'FILE';
+      const name = content.document?.name ?? t('document');
+      const extension = content.document?.extension?.toUpperCase() ?? 'FILE';
       const size = content.document?.size
         ? this.formatDocumentSize(content.document.size)
         : null;
@@ -1181,8 +1206,8 @@ export class ReportConversationHistoryPdfService {
   }
 
   private generateLocationInfoHtml(location: LocationMessageChat): string {
-    const locationName = location.name || '';
-    const locationAddress = location.address || '';
+    const locationName = location.name ?? '';
+    const locationAddress = location.address ?? '';
     const marginBottom = locationAddress ? '4px' : '0';
     return `
       <div class="location-info" style="
@@ -1353,8 +1378,8 @@ export class ReportConversationHistoryPdfService {
     const previewImage = this.resolvePreviewImage(linkPreview);
     const previewUrl = this.resolvePreviewUrl(linkPreview);
     const domain = this.domainFromUrl(previewUrl);
-    const title = linkPreview.title || '';
-    const description = linkPreview.description || '';
+    const title = linkPreview.title ?? '';
+    const description = linkPreview.description ?? '';
 
     const backgroundColor = isUser
       ? 'rgb(243, 244, 246)'
@@ -1475,7 +1500,7 @@ export class ReportConversationHistoryPdfService {
       return '';
     }
 
-    return linkPreview['canonical-url'] || linkPreview['matched-text'] || '';
+    return linkPreview['canonical-url'] ?? linkPreview['matched-text'] ?? '';
   }
 
   private domainFromUrl(url: string): string {
@@ -1571,15 +1596,15 @@ export class ReportConversationHistoryPdfService {
 
   private getContactPhoneDisplay(contact: IContactMessage): string {
     if (!contact.contact_id) {
-      return contact.phone_partial || '';
+      return contact.phone_partial ?? '';
     }
 
     const phone = this.contactPhoneCache.get(contact.contact_id);
     if (!phone) {
-      return contact.phone_partial || '';
+      return contact.phone_partial ?? '';
     }
 
-    const phoneDdi = contact.phone_ddi || null;
+    const phoneDdi = contact.phone_ddi ?? null;
     if (phoneDdi) {
       const phoneDigits = phone.replaceAll(/\D/g, '');
       const fullPhone = `${phoneDdi}${phoneDigits}`;
@@ -1675,8 +1700,8 @@ export class ReportConversationHistoryPdfService {
     const hasPhoto = !!contact.photo;
     const contactPhoto =
       hasPhoto && contact.photo ? contact.photo : this.getDefaultAvatar();
-    const contactName = contact.name || '';
-    const contactLastName = contact.last_name || '';
+    const contactName = contact.name ?? '';
+    const contactLastName = contact.last_name ?? '';
     const fullName = contactLastName
       ? `${contactName} ${contactLastName}`
       : contactName;
@@ -1732,17 +1757,17 @@ export class ReportConversationHistoryPdfService {
       return '';
     }
 
-    const name = chat.name || chat.contact?.name || '-';
-    const phone = chat.phone || '';
-    const phoneDdi = chat.contact?.phone_ddi || null;
+    const name = chat.name ?? chat.contact?.name ?? '-';
+    const phone = chat.phone ?? '';
+    const phoneDdi = chat.contact?.phone_ddi ?? null;
     const formattedPhone = phone ? this.formatPhone(phone, phoneDdi) : '-';
-    const sector = chat.sector?.name || '-';
+    const sector = chat.sector?.name ?? '-';
 
     const firstMessage = messages.length > 0 ? messages[0] : null;
     const lastMessage = messages.length > 0 ? (messages.at(-1) ?? null) : null;
 
-    const firstMessageDate = firstMessage?.date || null;
-    const lastMessageDate = lastMessage?.date || null;
+    const firstMessageDate = firstMessage?.date ?? null;
+    const lastMessageDate = lastMessage?.date ?? null;
 
     const attendanceDate = firstMessageDate
       ? this.formatFullDateTime(firstMessageDate, t)
@@ -1911,8 +1936,8 @@ export class ReportConversationHistoryPdfService {
         continue;
       }
 
-      const currentDate = new Date(currentMsg.date || '');
-      const nextDate = new Date(nextMsg.date || '');
+      const currentDate = new Date(currentMsg.date ?? '');
+      const nextDate = new Date(nextMsg.date ?? '');
 
       if (
         Number.isNaN(currentDate.getTime()) ||
@@ -2098,7 +2123,7 @@ export class ReportConversationHistoryPdfService {
     const videoMeta = this.resolveQuotedVideoMeta(quoted);
 
     const videoThumbHtml = videoUrl
-      ? `<img src="${this.escapeHtml(videoPoster || videoUrl)}" alt="${t('video')}" class="quoted-video-thumb" />
+      ? `<img src="${this.escapeHtml(videoPoster ?? videoUrl)}" alt="${t('video')}" class="quoted-video-thumb" />
                <div class="quoted-video-overlay">
                  <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="width: 16px; height: 16px; fill: white;">
                    <path d="M8 5v14l11-7z"/>
@@ -2204,7 +2229,7 @@ export class ReportConversationHistoryPdfService {
     const isUser = msg.type_user === ETypeUserChat.client;
     const isRight = !isUser;
     const quotedName = this.resolveQuotedName(quoted, clientName, t);
-    const quotedType = quoted.type || '';
+    const quotedType = quoted.type ?? '';
 
     const parts: string[] = [];
 
@@ -2276,7 +2301,7 @@ export class ReportConversationHistoryPdfService {
     }
 
     if (quotedType === EMessageType.image || quoted.image) {
-      return quoted.image?.caption || t('photo');
+      return quoted.image?.caption ?? t('photo');
     }
 
     if (quotedType === EMessageType.document && quoted.document) {
@@ -2284,7 +2309,7 @@ export class ReportConversationHistoryPdfService {
     }
 
     if (quotedType === EMessageType.video) {
-      return quoted.video?.caption || '';
+      return quoted.video?.caption ?? '';
     }
 
     if (quotedType === EMessageType.audio) {
@@ -2296,7 +2321,7 @@ export class ReportConversationHistoryPdfService {
     }
 
     if (quotedType === EMessageType.location) {
-      return quoted.location?.name || quoted.location?.address || t('location');
+      return quoted.location?.name ?? quoted.location?.address ?? t('location');
     }
 
     return quoted.message ?? '';
@@ -2305,13 +2330,13 @@ export class ReportConversationHistoryPdfService {
   private resolveQuotedImageSrc(quoted: QuotedMessageType): string {
     const image = quoted?.image;
     if (!image) return '';
-    return image.url || image.thumbnail || '';
+    return image.url ?? image.thumbnail ?? '';
   }
 
   private hasQuotedImage(quoted: QuotedMessageType): boolean {
     const image = quoted?.image;
     if (!image) return false;
-    return !!(image.url || image.thumbnail);
+    return !!(image.url ?? image.thumbnail);
   }
 
   private hasQuotedVideo(quoted: QuotedMessageType): boolean {
@@ -2384,7 +2409,7 @@ export class ReportConversationHistoryPdfService {
       file: '<path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/>',
     };
 
-    return icons[iconType] || icons.file;
+    return icons[iconType] ?? icons.file;
   }
 
   private resolveQuotedDocumentName(
@@ -2454,6 +2479,6 @@ export class ReportConversationHistoryPdfService {
   }
 
   private resolveQuotedStickerSrc(quoted: QuotedMessageType): string {
-    return quoted?.sticker?.url || '';
+    return quoted?.sticker?.url ?? '';
   }
 }

@@ -1158,6 +1158,13 @@ export class MessageUpsertConsume {
     );
 
     if (existingContact) {
+      if (existingContact.is_valided === false) {
+        await this.contactService.updateContactIsValided(
+          existingContact.contact_id,
+          true
+        );
+      }
+
       inputChatMessage.contact = {
         id: existingContact.contact_id,
         name: existingContact.name,

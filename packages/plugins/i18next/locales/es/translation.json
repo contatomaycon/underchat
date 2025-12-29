@@ -776,5 +776,6 @@
   "register_email_already_used_in_test": "¡Este correo electrónico ya fue utilizado en una prueba anterior!",
   "register_email_already_used": "¡Este correo electrónico ya está registrado!",
   "register_phone_already_used": "¡Este número de teléfono ya está registrado!",
-  "personalization_not_available": "¡Personalización no disponible!"
+  "personalization_not_available": "¡Personalización no disponible!",
+  "internal_database_error": "Error 1064: Ocurrió un error interno, por favor, contacte con el soporte."
 }

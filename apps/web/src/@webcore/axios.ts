@@ -4,12 +4,8 @@ import axios, {
   type AxiosResponse,
   type AxiosRequestHeaders,
 } from 'axios';
-import {
-  getToken,
-  removeUserData,
-  setToken,
-  persistPlanStatus,
-} from './localStorage/user';
+import { getToken, setToken, persistPlanStatus } from './localStorage/user';
+import { clearAllData } from './utils/clearAllData';
 import { router } from '@/plugins/1.router';
 import { getI18n } from '@/plugins/i18n';
 import { IApiResponse } from '@core/common/interfaces/IApiResponse';
@@ -82,10 +78,7 @@ const refreshSession = async (): Promise<string | null> => {
 };
 
 const logoutAndRedirect = async () => {
-  const { useChatStore } = await import('@webcore/stores/chat');
-  const chatStore = useChatStore();
-  chatStore.clearUser();
-  removeUserData();
+  clearAllData();
   router.push({ name: 'login' });
 };
 

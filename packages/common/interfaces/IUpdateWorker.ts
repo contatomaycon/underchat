@@ -6,8 +6,8 @@ export interface IUpdateWorker {
   worker_status_id?: EWorkerStatus;
   worker_type_id?: EWorkerType;
   name?: string;
-  number?: string;
-  container_id?: string;
-  connection_date?: string;
+  number?: string | null;
+  container_id?: string | null;
+  connection_date?: string | null;
   deleted_at?: string;
 }

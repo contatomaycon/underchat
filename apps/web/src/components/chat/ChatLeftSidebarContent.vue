@@ -121,6 +121,38 @@ const filteredMyChats = computed(() => {
   return [];
 });
 
+const allChatsCount = computed(() => {
+  return chatStore.listInChat.length + chatStore.listQueue.length;
+});
+
+const inChatCount = computed(() => {
+  return chatStore.listInChat.length;
+});
+
+const queueCount = computed(() => {
+  return chatStore.listQueue.length;
+});
+
+const myChatsCount = computed(() => {
+  const userId = chatStore.user?.user_id;
+  if (!userId) return 0;
+
+  const allChats = [...chatStore.listInChat, ...chatStore.listQueue];
+  return allChats.filter((chat) => chat.user?.id === userId).length;
+});
+
+const chatbotCount = computed(() => {
+  if (activeFilter.value === 'chatbot' && chatbotPagings.value.total > 0) {
+    return chatbotPagings.value.total;
+  }
+
+  if (chatbotPagings.value.total > 0) {
+    return chatbotPagings.value.total;
+  }
+
+  return chatStore.listChatbot.length;
+});
+
 const showInChatTitle = computed(() => {
   return activeFilter.value === 'all';
 });
@@ -266,7 +298,10 @@ const loadChatbotChats = async () => {
       status: EChatStatus.ura,
     };
 
-    await chatStore.listChatbotChats(request);
+    const result = await chatStore.listChatbotChats(request);
+    if (result) {
+      chatbotPagings.value = result.pagings;
+    }
   } finally {
     isLoadingChatbot.value = false;
   }
@@ -462,7 +497,7 @@ const loadWorkerConfigForSelectedWorker = async () => {
 };
 
 watch(selectedWorkerId, () => {
-  void loadWorkerConfigForSelectedWorker();
+  loadWorkerConfigForSelectedWorker().catch(() => {});
 });
 
 const userStatus = computed(
@@ -552,8 +587,58 @@ const handleCancelSelectChannelSector = () => {
   selectedSectorId.value = null;
 };
 
+const loadChatbotCount = async () => {
+  if (!canViewChatbotTab.value) return;
+
+  try {
+    const request: ListChatsQuery = {
+      current_page: 1,
+      per_page: 1,
+      status: EChatStatus.ura,
+    };
+
+    const result = await chatStore.listChatbotChats(request);
+    if (result) {
+      chatbotPagings.value.total = result.pagings.total;
+    }
+  } catch {
+    chatbotPagings.value.total = 0;
+  }
+};
+
+watch(
+  () => chatStore.listChatbot.length,
+  (newLength, oldLength) => {
+    if (chatbotPagings.value.total > 0 && newLength < oldLength) {
+      chatbotPagings.value.total = Math.max(0, chatbotPagings.value.total - 1);
+    }
+  }
+);
+
+watch(
+  () => chatStore.activeChat?.status,
+  (newStatus, oldStatus) => {
+    if (newStatus === EChatStatus.in_chat) {
+      if (oldStatus === EChatStatus.ura && activeFilter.value === 'chatbot') {
+        activeFilter.value = 'in_chat';
+        expandedFilter.value = 'in_chat';
+        loadChatsByFilter().catch(() => {});
+      } else if (
+        oldStatus === EChatStatus.queue &&
+        (activeFilter.value === 'queue' || activeFilter.value === 'all')
+      ) {
+        if (activeFilter.value === 'queue') {
+          activeFilter.value = 'in_chat';
+          expandedFilter.value = 'in_chat';
+        }
+        loadChatsByFilter().catch(() => {});
+      }
+    }
+  }
+);
+
 onMounted(async () => {
-  await loadChatsByFilter();
+  await Promise.all([loadChatsByFilter(), loadChatbotCount()]);
 });
 </script>
 
@@ -623,54 +708,119 @@ onMounted(async () => {
         </VBtn>
       </div>
       <div class="chat-filter-item flex-grow-1">
-        <VBtn
-          :variant="activeFilter === 'all' ? 'flat' : 'text'"
-          :color="activeFilter === 'all' ? 'primary' : undefined"
-          class="chat-filter-btn w-100"
-          @click="handleFilterClick('all')"
-        >
-          <VIcon size="24">tabler-list</VIcon>
-        </VBtn>
+        <div class="chat-filter-btn-wrapper">
+          <VBtn
+            :variant="activeFilter === 'all' ? 'flat' : 'text'"
+            :color="activeFilter === 'all' ? 'primary' : undefined"
+            class="chat-filter-btn w-100"
+            @click="handleFilterClick('all')"
+          >
+            <VIcon size="24">tabler-list</VIcon>
+          </VBtn>
+          <span
+            v-if="allChatsCount > 0"
+            class="chat-filter-count-badge"
+            :class="{
+              'badge-single-digit': allChatsCount.toString().length === 1,
+              'badge-double-digit': allChatsCount.toString().length === 2,
+              'badge-triple-digit': allChatsCount.toString().length >= 3,
+            }"
+          >
+            {{ allChatsCount }}
+          </span>
+        </div>
       </div>
       <div class="chat-filter-item flex-grow-1">
-        <VBtn
-          :variant="activeFilter === 'in_chat' ? 'flat' : 'text'"
-          :color="activeFilter === 'in_chat' ? 'primary' : undefined"
-          class="chat-filter-btn w-100"
-          @click="handleFilterClick('in_chat')"
-        >
-          <VIcon size="24">tabler-message-circle</VIcon>
-        </VBtn>
+        <div class="chat-filter-btn-wrapper">
+          <VBtn
+            :variant="activeFilter === 'in_chat' ? 'flat' : 'text'"
+            :color="activeFilter === 'in_chat' ? 'primary' : undefined"
+            class="chat-filter-btn w-100"
+            @click="handleFilterClick('in_chat')"
+          >
+            <VIcon size="24">tabler-message-circle</VIcon>
+          </VBtn>
+          <span
+            v-if="inChatCount > 0"
+            class="chat-filter-count-badge"
+            :class="{
+              'badge-single-digit': inChatCount.toString().length === 1,
+              'badge-double-digit': inChatCount.toString().length === 2,
+              'badge-triple-digit': inChatCount.toString().length >= 3,
+            }"
+          >
+            {{ inChatCount }}
+          </span>
+        </div>
       </div>
       <div class="chat-filter-item flex-grow-1">
-        <VBtn
-          :variant="activeFilter === 'my_chats' ? 'flat' : 'text'"
-          :color="activeFilter === 'my_chats' ? 'primary' : undefined"
-          class="chat-filter-btn w-100"
-          @click="handleFilterClick('my_chats')"
-        >
-          <VIcon size="24">tabler-message-circle-user</VIcon>
-        </VBtn>
+        <div class="chat-filter-btn-wrapper">
+          <VBtn
+            :variant="activeFilter === 'my_chats' ? 'flat' : 'text'"
+            :color="activeFilter === 'my_chats' ? 'primary' : undefined"
+            class="chat-filter-btn w-100"
+            @click="handleFilterClick('my_chats')"
+          >
+            <VIcon size="24">tabler-message-circle-user</VIcon>
+          </VBtn>
+          <span
+            v-if="myChatsCount > 0"
+            class="chat-filter-count-badge"
+            :class="{
+              'badge-single-digit': myChatsCount.toString().length === 1,
+              'badge-double-digit': myChatsCount.toString().length === 2,
+              'badge-triple-digit': myChatsCount.toString().length >= 3,
+            }"
+          >
+            {{ myChatsCount }}
+          </span>
+        </div>
       </div>
       <div class="chat-filter-item flex-grow-1">
-        <VBtn
-          :variant="activeFilter === 'queue' ? 'flat' : 'text'"
-          :color="activeFilter === 'queue' ? 'primary' : undefined"
-          class="chat-filter-btn w-100"
-          @click="handleFilterClick('queue')"
-        >
-          <VIcon size="24">tabler-clock</VIcon>
-        </VBtn>
+        <div class="chat-filter-btn-wrapper">
+          <VBtn
+            :variant="activeFilter === 'queue' ? 'flat' : 'text'"
+            :color="activeFilter === 'queue' ? 'primary' : undefined"
+            class="chat-filter-btn w-100"
+            @click="handleFilterClick('queue')"
+          >
+            <VIcon size="24">tabler-clock</VIcon>
+          </VBtn>
+          <span
+            v-if="queueCount > 0"
+            class="chat-filter-count-badge"
+            :class="{
+              'badge-single-digit': queueCount.toString().length === 1,
+              'badge-double-digit': queueCount.toString().length === 2,
+              'badge-triple-digit': queueCount.toString().length >= 3,
+            }"
+          >
+            {{ queueCount }}
+          </span>
+        </div>
       </div>
       <div v-if="canViewChatbotTab" class="chat-filter-item flex-grow-1">
-        <VBtn
-          :variant="activeFilter === 'chatbot' ? 'flat' : 'text'"
-          :color="activeFilter === 'chatbot' ? 'primary' : undefined"
-          class="chat-filter-btn w-100"
-          @click="handleFilterClick('chatbot')"
-        >
-          <VIcon size="24">tabler-robot</VIcon>
-        </VBtn>
+        <div class="chat-filter-btn-wrapper">
+          <VBtn
+            :variant="activeFilter === 'chatbot' ? 'flat' : 'text'"
+            :color="activeFilter === 'chatbot' ? 'primary' : undefined"
+            class="chat-filter-btn w-100"
+            @click="handleFilterClick('chatbot')"
+          >
+            <VIcon size="24">tabler-robot</VIcon>
+          </VBtn>
+          <span
+            v-if="chatbotCount > 0"
+            class="chat-filter-count-badge"
+            :class="{
+              'badge-single-digit': chatbotCount.toString().length === 1,
+              'badge-double-digit': chatbotCount.toString().length === 2,
+              'badge-triple-digit': chatbotCount.toString().length >= 3,
+            }"
+          >
+            {{ chatbotCount }}
+          </span>
+        </div>
       </div>
     </div>
     <Transition name="expand">
@@ -871,23 +1021,55 @@ onMounted(async () => {
   <template v-else-if="activeFilter === 'chatbot'">
     <PerfectScrollbar :options="{ wheelPropagation: false }">
       <ul class="d-flex flex-column gap-y-1 chat-list px-3 py-2 list-none">
-        <ChatQueue
-          v-for="chat in chatStore.listChatbot"
-          :key="`chatbot-${chat.chat_id}`"
-          :user="chat"
-          @click="$emit('openChat', chat.chat_id)"
-        />
+        <template v-if="isLoadingChatbot">
+          <li
+            v-for="i in 5"
+            :key="`skeleton-chatbot-${i}`"
+            class="chat d-flex align-center"
+          >
+            <VSkeletonLoader type="avatar" width="40" height="40" />
+            <div class="flex-grow-1 ms-4 overflow-hidden min-w-0">
+              <VSkeletonLoader
+                type="text"
+                width="60%"
+                height="20"
+                class="mb-1"
+              />
+              <VSkeletonLoader
+                type="text"
+                width="40%"
+                height="16"
+                class="mb-1"
+              />
+              <VSkeletonLoader type="text" width="50%" height="16" />
+            </div>
+            <div class="d-flex flex-column align-self-start">
+              <VSkeletonLoader
+                type="text"
+                width="50"
+                height="16"
+                class="mb-1"
+              />
+              <VSkeletonLoader type="text" width="20" height="16" />
+            </div>
+          </li>
+        </template>
 
-        <li
-          v-if="!chatStore.listChatbot.length && !isLoadingChatbot"
-          class="no-chat-items-text text-disabled"
-        >
-          {{ $t('no_chat_in_ura') }}
-        </li>
+        <template v-else>
+          <ChatQueue
+            v-for="chat in chatStore.listChatbot"
+            :key="`chatbot-${chat.chat_id}`"
+            :user="chat"
+            @click="$emit('openChat', chat.chat_id)"
+          />
 
-        <li v-if="isLoadingChatbot" class="d-flex justify-center pa-4">
-          <VProgressCircular indeterminate color="primary" size="32" />
-        </li>
+          <li
+            v-if="!chatStore.listChatbot.length"
+            class="no-chat-items-text text-disabled"
+          >
+            {{ $t('no_chat_in_ura') }}
+          </li>
+        </template>
       </ul>
     </PerfectScrollbar>
   </template>
@@ -895,75 +1077,128 @@ onMounted(async () => {
   <template v-else-if="activeFilter === 'my_chats'">
     <PerfectScrollbar :options="{ wheelPropagation: false }">
       <ul class="d-flex flex-column gap-y-1 chat-list px-3 py-2 list-none">
-        <ChatQueue
-          v-for="chat in filteredMyChats"
-          :key="`my-chat-${chat.chat_id}`"
-          :user="chat"
-          @click="$emit('openChat', chat.chat_id)"
-        />
+        <template v-if="chatStore.loading">
+          <li
+            v-for="i in 5"
+            :key="`skeleton-my-chat-${i}`"
+            class="chat d-flex align-center"
+          >
+            <VSkeletonLoader type="avatar" width="40" height="40" />
+            <div class="flex-grow-1 ms-4 overflow-hidden min-w-0">
+              <VSkeletonLoader
+                type="text"
+                width="60%"
+                height="20"
+                class="mb-1"
+              />
+              <VSkeletonLoader
+                type="text"
+                width="40%"
+                height="16"
+                class="mb-1"
+              />
+              <VSkeletonLoader type="text" width="50%" height="16" />
+            </div>
+            <div class="d-flex flex-column align-self-start">
+              <VSkeletonLoader
+                type="text"
+                width="50"
+                height="16"
+                class="mb-1"
+              />
+              <VSkeletonLoader type="text" width="20" height="16" />
+            </div>
+          </li>
+        </template>
 
-        <li
-          v-if="!filteredMyChats.length && !chatStore.loading"
-          class="no-chat-items-text text-disabled"
-        >
-          {{ $t('no_my_chats', 'Nenhum atendimento encontrado') }}
-        </li>
+        <template v-else>
+          <ChatQueue
+            v-for="chat in filteredMyChats"
+            :key="`my-chat-${chat.chat_id}`"
+            :user="chat"
+            @click="$emit('openChat', chat.chat_id)"
+          />
 
-        <li v-if="chatStore.loading" class="d-flex justify-center pa-4">
-          <VProgressCircular indeterminate color="primary" size="32" />
-        </li>
+          <li
+            v-if="!filteredMyChats.length"
+            class="no-chat-items-text text-disabled"
+          >
+            {{ $t('no_my_chats', 'Nenhum atendimento encontrado') }}
+          </li>
+        </template>
       </ul>
     </PerfectScrollbar>
   </template>
 
   <PerfectScrollbar v-else :options="{ wheelPropagation: false }">
     <ul class="d-flex flex-column gap-y-1 chat-list px-3 py-2 list-none">
-      <li v-if="showInChatTitle" class="list-none">
-        <h5 class="chat-header text-primary text-h5">
-          {{ $t('in_service') }}
-        </h5>
-      </li>
+      <template v-if="chatStore.loading">
+        <li
+          v-for="i in 5"
+          :key="`skeleton-${i}`"
+          class="chat d-flex align-center"
+        >
+          <VSkeletonLoader type="avatar" width="40" height="40" />
+          <div class="flex-grow-1 ms-4 overflow-hidden min-w-0">
+            <VSkeletonLoader type="text" width="60%" height="20" class="mb-1" />
+            <VSkeletonLoader type="text" width="40%" height="16" class="mb-1" />
+            <VSkeletonLoader type="text" width="50%" height="16" />
+          </div>
+          <div class="d-flex flex-column align-self-start">
+            <VSkeletonLoader type="text" width="50" height="16" class="mb-1" />
+            <VSkeletonLoader type="text" width="20" height="16" />
+          </div>
+        </li>
+      </template>
 
-      <ChatQueue
-        v-for="inChat in filteredInChat"
-        :key="`chat-${inChat.chat_id}`"
-        :user="inChat"
-        @click="$emit('openChat', inChat.chat_id)"
-      />
+      <template v-else>
+        <li v-if="showInChatTitle" class="list-none">
+          <h5 class="chat-header text-primary text-h5">
+            {{ $t('in_service') }}
+          </h5>
+        </li>
 
-      <li
-        v-if="
-          !filteredInChat.length &&
-          (activeFilter === 'all' || activeFilter === 'in_chat')
-        "
-        class="no-chat-items-text text-disabled"
-      >
-        {{ $t('no_chat_in_service') }}
-      </li>
+        <ChatQueue
+          v-for="inChat in filteredInChat"
+          :key="`chat-${inChat.chat_id}`"
+          :user="inChat"
+          @click="$emit('openChat', inChat.chat_id)"
+        />
 
-      <li v-if="showQueueTitle" class="list-none pt-2">
-        <h5 class="chat-header text-primary text-h5">
-          {{ $t('waiting_for_service') }}
-        </h5>
-      </li>
+        <li
+          v-if="
+            !filteredInChat.length &&
+            (activeFilter === 'all' || activeFilter === 'in_chat')
+          "
+          class="no-chat-items-text text-disabled"
+        >
+          {{ $t('no_chat_in_service') }}
+        </li>
 
-      <ChatQueue
-        v-for="(queue, index) in filteredQueue"
-        :key="`chat-${queue.chat_id}`"
-        :user="queue"
-        :disabled="!isQueueChatSelectable(index)"
-        @click="handleQueueClick(queue.chat_id, index)"
-      />
+        <li v-if="showQueueTitle" class="list-none pt-2">
+          <h5 class="chat-header text-primary text-h5">
+            {{ $t('waiting_for_service') }}
+          </h5>
+        </li>
 
-      <li
-        v-if="
-          !filteredQueue.length &&
-          (activeFilter === 'all' || activeFilter === 'queue')
-        "
-        class="no-chat-items-text text-disabled"
-      >
-        {{ $t('no_chat_in_queue') }}
-      </li>
+        <ChatQueue
+          v-for="(queue, index) in filteredQueue"
+          :key="`chat-${queue.chat_id}`"
+          :user="queue"
+          :disabled="!isQueueChatSelectable(index)"
+          @click="handleQueueClick(queue.chat_id, index)"
+        />
+
+        <li
+          v-if="
+            !filteredQueue.length &&
+            (activeFilter === 'all' || activeFilter === 'queue')
+          "
+          class="no-chat-items-text text-disabled"
+        >
+          {{ $t('no_chat_in_queue') }}
+        </li>
+      </template>
     </ul>
   </PerfectScrollbar>
 
@@ -1221,6 +1456,46 @@ onMounted(async () => {
       display: flex;
       align-items: center;
       justify-content: center;
+    }
+  }
+
+  .chat-filter-btn-wrapper {
+    position: relative;
+    width: 100%;
+  }
+
+  .chat-filter-count-badge {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    font-size: 0.65rem;
+    height: 16px;
+    font-weight: 600;
+    line-height: 16px;
+    background-color: rgb(var(--v-theme-primary));
+    color: rgb(var(--v-theme-on-primary));
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1;
+
+    &.badge-single-digit {
+      width: 16px;
+      min-width: 16px;
+      padding: 0;
+      border-radius: 50%;
+    }
+
+    &.badge-double-digit {
+      min-width: 20px;
+      padding: 0 5px;
+      border-radius: 8px;
+    }
+
+    &.badge-triple-digit {
+      min-width: 24px;
+      padding: 0 6px;
+      border-radius: 8px;
     }
   }
 

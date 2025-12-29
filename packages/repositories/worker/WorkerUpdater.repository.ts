@@ -13,8 +13,9 @@ export class WorkerUpdaterRepository {
 
   private updateInput(
     input: IUpdateWorker
-  ): Partial<typeof worker.$inferInsert> {
-    const inputUpdate: Partial<typeof worker.$inferInsert> = {};
+  ): Partial<typeof worker.$inferInsert> & Record<string, unknown> {
+    const inputUpdate: Partial<typeof worker.$inferInsert> &
+      Record<string, unknown> = {};
 
     if (input.worker_status_id) {
       inputUpdate.worker_status_id = input.worker_status_id;
@@ -28,15 +29,15 @@ export class WorkerUpdaterRepository {
       inputUpdate.name = input.name;
     }
 
-    if (input.number) {
+    if ('number' in input) {
       inputUpdate.number = input.number;
     }
 
-    if (input.container_id) {
+    if ('container_id' in input) {
       inputUpdate.container_id = input.container_id;
     }
 
-    if (input.connection_date) {
+    if ('connection_date' in input) {
       inputUpdate.connection_date = input.connection_date;
     }
 

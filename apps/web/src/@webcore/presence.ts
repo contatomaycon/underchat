@@ -56,6 +56,12 @@ const resolveUserStatus = (): EChatUserStatus | null => {
 
 const resolveRoutePath = (): string => router.currentRoute.value?.path ?? '';
 
+const isChatRoute = (path: string): boolean => {
+  if (!path) return false;
+
+  return /^\/chat(\/|$)/.test(path);
+};
+
 const resolveTargetMode = (): PresenceMode => {
   if (!isLoggedIn()) return EChatUserStatus.offline;
 
@@ -68,7 +74,7 @@ const resolveTargetMode = (): PresenceMode => {
   }
 
   const path = resolveRoutePath();
-  if (path.startsWith('/chat')) {
+  if (isChatRoute(path)) {
     return EChatUserStatus.online;
   }
 
@@ -125,7 +131,8 @@ async function applyMode(mode: PresenceMode, force = false): Promise<void> {
     return;
   }
 
-  const sameMode = currentMode === mode;
+  const localStatus = resolveUserStatus();
+  const sameMode = currentMode === mode && localStatus === mode;
   currentMode = mode;
 
   if (!sameMode || force) {
@@ -133,8 +140,8 @@ async function applyMode(mode: PresenceMode, force = false): Promise<void> {
   }
 
   if (!sameMode || force) {
-    await sendPresence(mode, false).catch(() => {});
     updateLocalPresenceStatus(mode);
+    await sendPresence(mode, false).catch(() => {});
   }
 
   stopHeartbeatLoop();

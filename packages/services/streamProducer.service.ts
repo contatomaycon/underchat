@@ -68,7 +68,6 @@ export class StreamProducerService {
               this.producer = null;
               reject(toError(err));
             }
-            return;
           }
         });
       });
@@ -123,6 +122,22 @@ export class StreamProducerService {
     );
   }
 
+  private getErrorMessage(err: unknown): string {
+    if (err instanceof Error) {
+      return err.message;
+    }
+
+    if (typeof err === 'string') {
+      return err;
+    }
+
+    if (typeof err === 'number') {
+      return `Flush error code: ${err}`;
+    }
+
+    return `Flush error: ${JSON.stringify(err)}`;
+  }
+
   private async produceMessage(
     producer: Producer,
     topic: string,
@@ -132,6 +147,7 @@ export class StreamProducerService {
     return new Promise<void>((resolve, reject) => {
       let isResolved = false;
       let lastError: LibrdKafkaError | null = null;
+      let timeout: NodeJS.Timeout | null = null;
 
       const errorHandler = (err: LibrdKafkaError) => {
         lastError = err;
@@ -143,7 +159,9 @@ export class StreamProducerService {
         ) {
           if (!isResolved) {
             isResolved = true;
-            clearTimeout(timeout);
+            if (timeout) {
+              clearTimeout(timeout);
+            }
             this.invalidateProducer();
             reject(new Error(`Kafka connection error: ${errorMessage}`));
           }
@@ -165,7 +183,9 @@ export class StreamProducerService {
 
           if (err) {
             isResolved = true;
-            clearTimeout(timeout);
+            if (timeout) {
+              clearTimeout(timeout);
+            }
             producer.removeListener('event.error', errorHandler);
             const errorMessage = err.message || '';
             if (
@@ -175,7 +195,6 @@ export class StreamProducerService {
               this.invalidateProducer();
             }
             reject(toError(err));
-            return;
           }
         }
       );
@@ -209,7 +228,7 @@ export class StreamProducerService {
 
       producer.poll();
 
-      const timeout = setTimeout(() => {
+      timeout = setTimeout(() => {
         if (!isResolved) {
           isResolved = true;
           producer.removeListener('event.error', errorHandler);
@@ -228,7 +247,9 @@ export class StreamProducerService {
       }, 5000);
 
       producer.flush(5000, (err) => {
-        clearTimeout(timeout);
+        if (timeout) {
+          clearTimeout(timeout);
+        }
         producer.removeListener('event.error', errorHandler);
 
         if (isResolved) {
@@ -238,14 +259,7 @@ export class StreamProducerService {
         isResolved = true;
 
         if (err) {
-          const errorMessage =
-            err instanceof Error
-              ? err.message
-              : typeof err === 'string'
-                ? err
-                : typeof err === 'number'
-                  ? `Flush error code: ${err}`
-                  : `Flush error: ${JSON.stringify(err)}`;
+          const errorMessage = this.getErrorMessage(err);
 
           if (
             errorMessage.includes('broker transport failure') ||

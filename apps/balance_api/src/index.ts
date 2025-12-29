@@ -16,7 +16,6 @@ import fastifyQs from 'fastify-qs';
 import routes from '@/routes';
 import { EPrefixRoutes } from '@core/common/enums/EPrefixRoutes';
 import { safePlugin } from '@core/common/functions/safePlugin';
-import errorHandlerPlugin from '@core/plugins/errorHandler';
 
 const server = fastify({
   pluginTimeout: 600000,
@@ -35,7 +34,6 @@ server.register(safePlugin(dbConnector, 'database'));
 server.register(safePlugin(redisPlugin, 'redis'));
 server.register(safePlugin(authenticateKeyApi, 'authenticateKeyApi'));
 server.register(safePlugin(i18nextPlugin, 'i18next'));
-server.register(safePlugin(errorHandlerPlugin, 'errorHandler'));
 server.register(safePlugin(corsPlugin, 'cors'));
 
 server.register(safePlugin(kafkaStreamsPlugin, 'kafkaStreams'), {

@@ -12,6 +12,11 @@ import { createConsumer } from '@core/common/functions/createConsumer';
 import { connectConsumer } from '@core/common/functions/connectConsumer';
 import { handleConsumerError } from '@core/common/functions/handleConsumerError';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
+import { StreamProducerService } from '@core/services/streamProducer.service';
+import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
+import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
+import { ECodeMessage } from '@core/common/enums/ECodeMessage';
+import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
 
 @singleton()
 export class WorkerConnectionStatusConsume {
@@ -21,7 +26,9 @@ export class WorkerConnectionStatusConsume {
   constructor(
     @inject('Kafka') private readonly kafka: KafkaClient,
     private readonly baileysService: BaileysService,
-    private readonly kafkaBaileysQueueService: KafkaBaileysQueueService
+    private readonly kafkaBaileysQueueService: KafkaBaileysQueueService,
+    private readonly streamProducerService: StreamProducerService,
+    private readonly kafkaServiceQueueService: KafkaServiceQueueService
   ) {}
 
   private get consumerOrThrow(): KafkaConsumer {
@@ -147,7 +154,7 @@ export class WorkerConnectionStatusConsume {
     }
 
     if (data.status === EWorkerStatus.disponible) {
-      this.handleDisponible();
+      await this.handleDisponible();
     }
   }
 
@@ -165,11 +172,29 @@ export class WorkerConnectionStatusConsume {
     this.baileysService.reconnect({ initial_connection: true });
   }
 
-  private handleDisponible(): void {
+  private async handleDisponible(): Promise<void> {
     this.baileysService.disconnect({
       initial_connection: true,
       disconnected_user: true,
     });
+
+    const workerId = baileysEnvironment.baileysWorkerId;
+    const accountId = baileysEnvironment.baileysAccountId;
+
+    const payload: IBaileysConnectionState = {
+      status: EBaileysConnectionStatus.disconnected,
+      worker_id: workerId,
+      account_id: accountId,
+      code: ECodeMessage.connectionClosed,
+      disconnected_user: true,
+      worker_status_id: EWorkerStatus.disponible,
+    };
+
+    await this.streamProducerService.send(
+      this.kafkaServiceQueueService.workerStatus(),
+      payload,
+      workerId
+    );
   }
 
   private async commitNext(

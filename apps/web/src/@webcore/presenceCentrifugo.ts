@@ -81,7 +81,7 @@ export const initUserPresenceSubscription = async (
 
     const { router } = await import('@/plugins/1.router');
     const { useAuthStore } = await import('@webcore/stores/auth');
-    const { removeUserData } = await import('./localStorage/user');
+    const { clearAllData } = await import('./utils/clearAllData');
     const { presenceOffline } = await import('./presence');
     const { getI18n } = await import('@/plugins/i18n');
     const { EColor } = await import('@core/common/enums/EColor');
@@ -93,8 +93,7 @@ export const initUserPresenceSubscription = async (
 
     authStore.showSnackbar(i18n.global.t('session_ended'), EColor.warning);
 
-    chatStore.clearUser();
-    removeUserData();
+    clearAllData();
 
     setTimeout(() => {
       router.replace({ name: 'login' }).catch(() => {});

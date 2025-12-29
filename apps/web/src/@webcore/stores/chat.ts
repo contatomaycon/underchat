@@ -549,7 +549,9 @@ export const useChatStore = defineStore('chat', {
       }
     },
 
-    async listChatbotChats(input: ListChatsQuery): Promise<ListChatsResult[]> {
+    async listChatbotChats(
+      input: ListChatsQuery
+    ): Promise<ListChatsResponse | null> {
       try {
         this.loading = true;
 
@@ -573,16 +575,16 @@ export const useChatStore = defineStore('chat', {
         if (!data?.status || !data?.data) {
           this.listChatbot = [];
 
-          return [] as ListChatsResult[];
+          return null;
         }
 
         this.listChatbot = data.data.results;
 
-        return data.data.results;
+        return data.data;
       } catch {
         this.listChatbot = [];
 
-        return [] as ListChatsResult[];
+        return null;
       }
     },
 
@@ -816,9 +818,9 @@ export const useChatStore = defineStore('chat', {
         const response = await axios.post<
           IApiResponse<{ chat_id: string; status: boolean }>
         >(`/chat/${chatId}/transfer`, {
-          user_id: userId || undefined,
-          sector_id: sectorId || undefined,
-          annotation: annotation?.trim() || undefined,
+          user_id: userId ?? undefined,
+          sector_id: sectorId ?? undefined,
+          annotation: annotation?.trim() ?? undefined,
         });
 
         this.loading = false;
@@ -1584,7 +1586,7 @@ export const useChatStore = defineStore('chat', {
     ): Promise<ListQuickMessageTemplatesResponse[]> {
       try {
         const request: ListQuickMessageTemplatesRequest = {
-          command: command || null,
+          command: command ?? null,
         };
 
         const response = await axios.get<
@@ -2088,7 +2090,7 @@ export const useChatStore = defineStore('chat', {
         const response = await axios.patch<IApiResponse<{ success: boolean }>>(
           `/chat/${chatId}/label`,
           {
-            label_template_id: labelTemplateId || null,
+            label_template_id: labelTemplateId ?? null,
           }
         );
 

@@ -101,4 +101,17 @@ export class ContactUpdaterRepository {
 
     return result.rowCount === 1;
   };
+
+  updateContactIsValided = async (
+    contactId: string,
+    isValided: boolean
+  ): Promise<boolean> => {
+    const result = await this.db
+      .update(contact)
+      .set({ is_valided: isValided })
+      .where(eq(contact.contact_id, contactId))
+      .execute();
+
+    return result.rowCount === 1;
+  };
 }
