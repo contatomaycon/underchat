@@ -1,5 +1,13 @@
 <script setup lang="ts">
-import { ref, markRaw, computed, onMounted, watch } from 'vue';
+import {
+  ref,
+  markRaw,
+  computed,
+  onMounted,
+  onUnmounted,
+  watch,
+  nextTick,
+} from 'vue';
 import { VueFlow } from '@vue-flow/core';
 import type { Node, Edge, Connection, NodeChange } from '@vue-flow/core';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
@@ -433,6 +441,12 @@ const initialEdges: Edge[] = [];
 const nodes = ref<Node[]>(initialNodes);
 const edges = ref<Edge[]>(initialEdges);
 
+const selectedEdgeId = ref<string | null>(null);
+const contextMenuPosition = ref<{ x: number; y: number } | null>(null);
+const isContextMenuOpen = ref(false);
+const contextMenuEdgeId = ref<string | null>(null);
+const contextMenuCard = ref<HTMLElement | null>(null);
+
 let nodeIdCounter = 2;
 const optionNodeTypes = new Set(['menu', 'satisfaction']);
 
@@ -522,6 +536,88 @@ const removeNode = (nodeId: string) => {
   edges.value = edges.value.filter(
     (e) => e.source !== nodeId && e.target !== nodeId
   );
+};
+
+const removeEdge = (edgeId: string) => {
+  const edgeIndex = edges.value.findIndex((e) => e.id === edgeId);
+  if (edgeIndex > -1) {
+    edges.value.splice(edgeIndex, 1);
+  }
+  selectedEdgeId.value = null;
+};
+
+const handleRemoveEdge = (event?: MouseEvent | KeyboardEvent) => {
+  if (event) {
+    event.stopPropagation();
+    event.preventDefault();
+  }
+
+  const edgeIdToRemove = contextMenuEdgeId.value || selectedEdgeId.value;
+
+  if (!edgeIdToRemove) {
+    isContextMenuOpen.value = false;
+    contextMenuPosition.value = null;
+    return;
+  }
+
+  const edgeIndex = edges.value.findIndex((e) => e.id === edgeIdToRemove);
+  if (edgeIndex > -1) {
+    edges.value.splice(edgeIndex, 1);
+  }
+
+  selectedEdgeId.value = null;
+  contextMenuEdgeId.value = null;
+  isContextMenuOpen.value = false;
+  contextMenuPosition.value = null;
+};
+
+const onEdgeClick = (event: { edge: Edge }) => {
+  for (const edge of edges.value) {
+    (edge as any).selected = edge.id === event.edge.id;
+  }
+  selectedEdgeId.value = event.edge.id;
+};
+
+const onEdgeContextMenu = (event: any) => {
+  const mouseEvent = event.event as MouseEvent;
+  mouseEvent.preventDefault();
+  mouseEvent.stopPropagation();
+  for (const edge of edges.value) {
+    (edge as any).selected = edge.id === event.edge.id;
+  }
+  selectedEdgeId.value = event.edge.id;
+  contextMenuEdgeId.value = event.edge.id;
+  contextMenuPosition.value = {
+    x: mouseEvent.clientX,
+    y: mouseEvent.clientY,
+  };
+  nextTick(() => {
+    isContextMenuOpen.value = true;
+  });
+};
+
+watch(isContextMenuOpen, (newValue) => {
+  if (!newValue) {
+    contextMenuPosition.value = null;
+    contextMenuEdgeId.value = null;
+  }
+});
+
+const onPaneClick = () => {
+  for (const edge of edges.value) {
+    (edge as any).selected = false;
+  }
+  selectedEdgeId.value = null;
+  isContextMenuOpen.value = false;
+};
+
+const handleDeleteKey = (event: KeyboardEvent) => {
+  if (event.key === 'Delete' || event.key === 'Backspace') {
+    if (selectedEdgeId.value) {
+      removeEdge(selectedEdgeId.value);
+      event.preventDefault();
+    }
+  }
 };
 
 const addMenuNode = (position?: { x: number; y: number }) => {
@@ -695,6 +791,7 @@ const onConnect = (connection: Connection) => {
       stroke: '#1a192b',
       strokeWidth: 2,
     },
+    class: '',
   });
 
   edges.value.push(newEdge);
@@ -1059,7 +1156,8 @@ const processLoadedEdges = (loadedEdges: Edge[]): void => {
         stroke: '#1a192b',
         strokeWidth: 2,
       },
-    };
+      class: edge.class || '',
+    } as any;
 
     return normalizeEdge(baseEdge);
   });
@@ -1337,8 +1435,36 @@ const handleCancel = () => {
   router.push('/chatbot');
 };
 
+const handleDocumentClick = (event: MouseEvent) => {
+  if (!isContextMenuOpen.value) {
+    return;
+  }
+
+  const target = event.target as HTMLElement;
+  const isClickInsideCard =
+    contextMenuCard.value && contextMenuCard.value.contains(target);
+  const isClickOnEdge = target.closest('.vue-flow__edge');
+  const isClickOnListItem = target.closest('.v-list-item');
+
+  if (isClickInsideCard || isClickOnListItem) {
+    return;
+  }
+
+  if (!isClickOnEdge) {
+    isContextMenuOpen.value = false;
+    contextMenuPosition.value = null;
+  }
+};
+
 onMounted(() => {
   loadChatbotFlow();
+  window.addEventListener('keydown', handleDeleteKey);
+  document.addEventListener('click', handleDocumentClick, true);
+});
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleDeleteKey);
+  document.removeEventListener('click', handleDocumentClick, true);
 });
 </script>
 
@@ -1538,6 +1664,9 @@ onMounted(() => {
               @nodes-change="onNodesChange"
               @drop="onDrop"
               @dragover.prevent
+              @edge-click="onEdgeClick"
+              @edge-context-menu="onEdgeContextMenu"
+              @pane-click="onPaneClick"
             />
           </div>
         </div>
@@ -2328,6 +2457,30 @@ onMounted(() => {
       </VCard>
     </VDialog>
 
+    <Teleport to="body">
+      <VCard
+        v-if="isContextMenuOpen && contextMenuPosition"
+        ref="contextMenuCard"
+        :style="{
+          position: 'fixed',
+          left: `${contextMenuPosition.x}px`,
+          top: `${contextMenuPosition.y}px`,
+          zIndex: 2000,
+          pointerEvents: 'auto',
+        }"
+        min-width="180"
+      >
+        <VList density="compact">
+          <VListItem @click="handleRemoveEdge" class="cursor-pointer">
+            <template #prepend>
+              <VIcon icon="tabler-trash" />
+            </template>
+            <VListItemTitle>{{ t('remove') }}</VListItemTitle>
+          </VListItem>
+        </VList>
+      </VCard>
+    </Teleport>
+
     <VSnackbar
       v-model="chatbotStore.snackbar.status"
       transition="scroll-y-reverse-transition"
@@ -2420,5 +2573,19 @@ onMounted(() => {
 
 .cursor-pointer {
   cursor: pointer;
+}
+
+:deep(.vue-flow__edge.selected) {
+  stroke: #1976d2 !important;
+  stroke-width: 3 !important;
+}
+
+:deep(.vue-flow__edge.selected .vue-flow__edge-path) {
+  stroke: #1976d2 !important;
+  stroke-width: 3 !important;
+}
+
+:deep(.vue-flow__edge.selected .vue-flow__edge-marker) {
+  fill: #1976d2 !important;
 }
 </style>
