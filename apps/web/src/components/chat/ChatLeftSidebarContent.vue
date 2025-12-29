@@ -920,23 +920,40 @@ onMounted(async () => {
   <template v-else-if="activeFilter === 'chatbot'">
     <PerfectScrollbar :options="{ wheelPropagation: false }">
       <ul class="d-flex flex-column gap-y-1 chat-list px-3 py-2 list-none">
-        <ChatQueue
-          v-for="chat in chatStore.listChatbot"
-          :key="`chatbot-${chat.chat_id}`"
-          :user="chat"
-          @click="$emit('openChat', chat.chat_id)"
-        />
+        <template v-if="isLoadingChatbot">
+          <li
+            v-for="i in 5"
+            :key="`skeleton-chatbot-${i}`"
+            class="chat d-flex align-center"
+          >
+            <VSkeletonLoader type="avatar" width="40" height="40" />
+            <div class="flex-grow-1 ms-4 overflow-hidden min-w-0">
+              <VSkeletonLoader type="text" width="60%" height="20" class="mb-1" />
+              <VSkeletonLoader type="text" width="40%" height="16" class="mb-1" />
+              <VSkeletonLoader type="text" width="50%" height="16" />
+            </div>
+            <div class="d-flex flex-column align-self-start">
+              <VSkeletonLoader type="text" width="50" height="16" class="mb-1" />
+              <VSkeletonLoader type="text" width="20" height="16" />
+            </div>
+          </li>
+        </template>
 
-        <li
-          v-if="!chatStore.listChatbot.length && !isLoadingChatbot"
-          class="no-chat-items-text text-disabled"
-        >
-          {{ $t('no_chat_in_ura') }}
-        </li>
+        <template v-else>
+          <ChatQueue
+            v-for="chat in chatStore.listChatbot"
+            :key="`chatbot-${chat.chat_id}`"
+            :user="chat"
+            @click="$emit('openChat', chat.chat_id)"
+          />
 
-        <li v-if="isLoadingChatbot" class="d-flex justify-center pa-4">
-          <VProgressCircular indeterminate color="primary" size="32" />
-        </li>
+          <li
+            v-if="!chatStore.listChatbot.length"
+            class="no-chat-items-text text-disabled"
+          >
+            {{ $t('no_chat_in_ura') }}
+          </li>
+        </template>
       </ul>
     </PerfectScrollbar>
   </template>
@@ -944,75 +961,113 @@ onMounted(async () => {
   <template v-else-if="activeFilter === 'my_chats'">
     <PerfectScrollbar :options="{ wheelPropagation: false }">
       <ul class="d-flex flex-column gap-y-1 chat-list px-3 py-2 list-none">
-        <ChatQueue
-          v-for="chat in filteredMyChats"
-          :key="`my-chat-${chat.chat_id}`"
-          :user="chat"
-          @click="$emit('openChat', chat.chat_id)"
-        />
+        <template v-if="chatStore.loading">
+          <li
+            v-for="i in 5"
+            :key="`skeleton-my-chat-${i}`"
+            class="chat d-flex align-center"
+          >
+            <VSkeletonLoader type="avatar" width="40" height="40" />
+            <div class="flex-grow-1 ms-4 overflow-hidden min-w-0">
+              <VSkeletonLoader type="text" width="60%" height="20" class="mb-1" />
+              <VSkeletonLoader type="text" width="40%" height="16" class="mb-1" />
+              <VSkeletonLoader type="text" width="50%" height="16" />
+            </div>
+            <div class="d-flex flex-column align-self-start">
+              <VSkeletonLoader type="text" width="50" height="16" class="mb-1" />
+              <VSkeletonLoader type="text" width="20" height="16" />
+            </div>
+          </li>
+        </template>
 
-        <li
-          v-if="!filteredMyChats.length && !chatStore.loading"
-          class="no-chat-items-text text-disabled"
-        >
-          {{ $t('no_my_chats', 'Nenhum atendimento encontrado') }}
-        </li>
+        <template v-else>
+          <ChatQueue
+            v-for="chat in filteredMyChats"
+            :key="`my-chat-${chat.chat_id}`"
+            :user="chat"
+            @click="$emit('openChat', chat.chat_id)"
+          />
 
-        <li v-if="chatStore.loading" class="d-flex justify-center pa-4">
-          <VProgressCircular indeterminate color="primary" size="32" />
-        </li>
+          <li
+            v-if="!filteredMyChats.length"
+            class="no-chat-items-text text-disabled"
+          >
+            {{ $t('no_my_chats', 'Nenhum atendimento encontrado') }}
+          </li>
+        </template>
       </ul>
     </PerfectScrollbar>
   </template>
 
   <PerfectScrollbar v-else :options="{ wheelPropagation: false }">
     <ul class="d-flex flex-column gap-y-1 chat-list px-3 py-2 list-none">
-      <li v-if="showInChatTitle" class="list-none">
-        <h5 class="chat-header text-primary text-h5">
-          {{ $t('in_service') }}
-        </h5>
-      </li>
+      <template v-if="chatStore.loading">
+        <li
+          v-for="i in 5"
+          :key="`skeleton-${i}`"
+          class="chat d-flex align-center"
+        >
+          <VSkeletonLoader type="avatar" width="40" height="40" />
+          <div class="flex-grow-1 ms-4 overflow-hidden min-w-0">
+            <VSkeletonLoader type="text" width="60%" height="20" class="mb-1" />
+            <VSkeletonLoader type="text" width="40%" height="16" class="mb-1" />
+            <VSkeletonLoader type="text" width="50%" height="16" />
+          </div>
+          <div class="d-flex flex-column align-self-start">
+            <VSkeletonLoader type="text" width="50" height="16" class="mb-1" />
+            <VSkeletonLoader type="text" width="20" height="16" />
+          </div>
+        </li>
+      </template>
 
-      <ChatQueue
-        v-for="inChat in filteredInChat"
-        :key="`chat-${inChat.chat_id}`"
-        :user="inChat"
-        @click="$emit('openChat', inChat.chat_id)"
-      />
+      <template v-else>
+        <li v-if="showInChatTitle" class="list-none">
+          <h5 class="chat-header text-primary text-h5">
+            {{ $t('in_service') }}
+          </h5>
+        </li>
 
-      <li
-        v-if="
-          !filteredInChat.length &&
-          (activeFilter === 'all' || activeFilter === 'in_chat')
-        "
-        class="no-chat-items-text text-disabled"
-      >
-        {{ $t('no_chat_in_service') }}
-      </li>
+        <ChatQueue
+          v-for="inChat in filteredInChat"
+          :key="`chat-${inChat.chat_id}`"
+          :user="inChat"
+          @click="$emit('openChat', inChat.chat_id)"
+        />
 
-      <li v-if="showQueueTitle" class="list-none pt-2">
-        <h5 class="chat-header text-primary text-h5">
-          {{ $t('waiting_for_service') }}
-        </h5>
-      </li>
+        <li
+          v-if="
+            !filteredInChat.length &&
+            (activeFilter === 'all' || activeFilter === 'in_chat')
+          "
+          class="no-chat-items-text text-disabled"
+        >
+          {{ $t('no_chat_in_service') }}
+        </li>
 
-      <ChatQueue
-        v-for="(queue, index) in filteredQueue"
-        :key="`chat-${queue.chat_id}`"
-        :user="queue"
-        :disabled="!isQueueChatSelectable(index)"
-        @click="handleQueueClick(queue.chat_id, index)"
-      />
+        <li v-if="showQueueTitle" class="list-none pt-2">
+          <h5 class="chat-header text-primary text-h5">
+            {{ $t('waiting_for_service') }}
+          </h5>
+        </li>
 
-      <li
-        v-if="
-          !filteredQueue.length &&
-          (activeFilter === 'all' || activeFilter === 'queue')
-        "
-        class="no-chat-items-text text-disabled"
-      >
-        {{ $t('no_chat_in_queue') }}
-      </li>
+        <ChatQueue
+          v-for="(queue, index) in filteredQueue"
+          :key="`chat-${queue.chat_id}`"
+          :user="queue"
+          :disabled="!isQueueChatSelectable(index)"
+          @click="handleQueueClick(queue.chat_id, index)"
+        />
+
+        <li
+          v-if="
+            !filteredQueue.length &&
+            (activeFilter === 'all' || activeFilter === 'queue')
+          "
+          class="no-chat-items-text text-disabled"
+        >
+          {{ $t('no_chat_in_queue') }}
+        </li>
+      </template>
     </ul>
   </PerfectScrollbar>
 
