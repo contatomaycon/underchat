@@ -2504,9 +2504,9 @@ onUnmounted(() => {
 }
 
 :deep(.vue-flow__handle) {
-  width: 16px;
-  height: 16px;
-  border: 3px solid white;
+  width: 24px;
+  height: 24px;
+  border: 4px solid white;
   border-radius: 50%;
   background-color: #b1b1b7;
 }
