@@ -1,0 +1,16 @@
+---
+name: underchat
+description: This is a new rule
+---
+
+# Overview
+
+Sempre verificar se o que foi criado no front-end estão no i18n do front-end e o que foi criado no back-end estão no i18n do back-end, são arquivos diferentes
+Mover interface sempre para commom interfaces
+Utilizar for em vez de forEach
+Apenas service pode chamar repository
+Não utilizar await dentro laço
+Sempre utilizar clean code e deixar o código mais limpo e legível possível
+Sempre separar a responsabilidade e aplicar SOLID
+Não utilizar else
+Não utilizar comentário no código
