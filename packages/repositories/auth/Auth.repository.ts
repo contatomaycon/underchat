@@ -22,7 +22,7 @@ import { inject, injectable } from 'tsyringe';
 @injectable()
 export class AuthRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   authenticate = async (

@@ -8,7 +8,7 @@ import { ListNfseResponse } from '@core/schema/config/listNfse/response.schema';
 @injectable()
 export class NfseViewerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   viewNfse = async (): Promise<ListNfseResponse | null> => {

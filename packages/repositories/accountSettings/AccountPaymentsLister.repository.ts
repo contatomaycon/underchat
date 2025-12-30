@@ -8,7 +8,7 @@ import { ListAccountPaymentsResponse } from '@core/schema/accountSettings/listAc
 @injectable()
 export class AccountPaymentsListerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   listAccountPayments = async (

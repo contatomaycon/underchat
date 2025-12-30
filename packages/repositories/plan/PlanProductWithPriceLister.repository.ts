@@ -12,7 +12,7 @@ import { eq, isNull } from 'drizzle-orm';
 @injectable()
 export class PlanProductWithPriceListerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   listPlanProductWithPrice = async (): Promise<

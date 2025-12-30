@@ -8,7 +8,7 @@ import { and, eq, isNull, desc } from 'drizzle-orm';
 @injectable()
 export class UserCardsListerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   getUserCardById = async (

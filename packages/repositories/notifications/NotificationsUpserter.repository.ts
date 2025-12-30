@@ -15,7 +15,7 @@ import { ENotificationType } from '@core/common/enums/ENotificationType';
 @injectable()
 export class NotificationsUpserterRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   upsertNotifications = async (

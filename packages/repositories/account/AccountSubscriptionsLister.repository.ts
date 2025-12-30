@@ -8,7 +8,7 @@ import { ListAccountSubscriptionsResponse } from '@core/schema/account/listAccou
 @injectable()
 export class AccountSubscriptionsListerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   listAccountSubscriptions = async (

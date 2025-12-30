@@ -7,7 +7,7 @@ import { and, count, eq, isNull } from 'drizzle-orm';
 @injectable()
 export class SectorByIdExistsRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   sectorByIdExists = async (

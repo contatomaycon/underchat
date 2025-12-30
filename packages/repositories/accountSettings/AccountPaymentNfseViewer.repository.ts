@@ -7,7 +7,7 @@ import { ViewAccountPaymentNfseResponse } from '@core/schema/accountSettings/vie
 @injectable()
 export class AccountPaymentNfseViewerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   viewAccountPaymentNfse = async (

@@ -7,7 +7,7 @@ import { eq } from 'drizzle-orm';
 @injectable()
 export class PermissionAssignmentViewerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   getUserRole = async (userId: string): Promise<string | null> => {

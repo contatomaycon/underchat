@@ -8,7 +8,7 @@ import { ListChatContactsResponse } from '@core/schema/chat/listContacts/respons
 @injectable()
 export class ChatContactListerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   listChatContacts = async (

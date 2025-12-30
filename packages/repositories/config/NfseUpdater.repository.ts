@@ -15,7 +15,7 @@ import { UpdateNfseResponse } from '@core/schema/config/updateNfse/response.sche
 @injectable()
 export class NfseUpdaterRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   upsertNfse = async (

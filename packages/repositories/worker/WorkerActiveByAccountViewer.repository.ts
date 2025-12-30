@@ -10,7 +10,7 @@ import { IWorkerActiveByAccount } from '@core/common/interfaces/IWorkerActiveByA
 @injectable()
 export class WorkerActiveByAccountViewerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   viewWorkerActiveByAccount = async (

@@ -13,7 +13,7 @@ import { IVisibilityData } from '@core/common/interfaces/IVisibilityData';
 @injectable()
 export class WorkerProfileStatusCreatorTransactionRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>,
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>,
     private readonly workerProfileStatusCreatorRepository: WorkerProfileStatusCreatorRepository,
     private readonly workerProfileStatusContactCreatorRepository: WorkerProfileStatusContactCreatorRepository,
     private readonly workerProfileStatusContactDeleterRepository: WorkerProfileStatusContactDeleterRepository,

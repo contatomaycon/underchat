@@ -8,7 +8,7 @@ import { CreateSectorRoleRequest } from '@core/schema/sector/createSectorRole/re
 @injectable()
 export class PermissionRoleCountSectorViewerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   countRolesSector = async (

@@ -18,7 +18,7 @@ import { ListAccountDeletedResponse } from '@core/schema/account/listAccountDele
 @injectable()
 export class AccountDeletedListerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   private readonly setFiltersAccount = (

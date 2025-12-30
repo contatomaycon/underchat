@@ -28,7 +28,7 @@ import { ListContactGroupResponse } from '@core/schema/contactGroup/listContactG
 @injectable()
 export class ContactGroupListerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   private readonly setOrders = (query: ListContactGroupRequest): SQL[] => {

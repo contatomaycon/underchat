@@ -7,7 +7,7 @@ import { and, eq, isNull } from 'drizzle-orm';
 @injectable()
 export class UserInfoViewerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   findUserInfoByUserId = async (userId: string) => {

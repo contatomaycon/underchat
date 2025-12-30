@@ -23,7 +23,7 @@ import { ListAvailableCrossSellResponse } from '@core/schema/plan/listAvailableC
 @injectable()
 export class CrossSellListerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   private readonly setFiltersCrossSell = (

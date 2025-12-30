@@ -9,7 +9,7 @@ import { EPlanProduct } from '@core/common/enums/EPlanProduct';
 @injectable()
 export class DashboardStatsRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>,
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>,
     private readonly accountQuantityProductViewerRepository: AccountQuantityProductViewerRepository
   ) {}
 

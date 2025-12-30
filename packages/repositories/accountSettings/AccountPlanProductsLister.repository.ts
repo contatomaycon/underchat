@@ -16,7 +16,7 @@ import { EPlanProduct } from '@core/common/enums/EPlanProduct';
 @injectable()
 export class AccountPlanProductsListerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>,
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>,
     private readonly workerTotalViewerRepository: WorkerTotalViewerRepository,
     private readonly userTotalViewerRepository: UserTotalViewerRepository,
     private readonly roleTotalViewerRepository: RoleTotalViewerRepository,

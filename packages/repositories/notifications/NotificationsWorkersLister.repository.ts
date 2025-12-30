@@ -8,7 +8,7 @@ import { ListWorkersResponse } from '@core/schema/notifications/listWorkers/resp
 @injectable()
 export class NotificationsWorkersListerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   listWorkersByAccount = async (

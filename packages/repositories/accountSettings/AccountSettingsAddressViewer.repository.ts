@@ -7,7 +7,7 @@ import { and, eq, isNull } from 'drizzle-orm';
 @injectable()
 export class AccountSettingsAddressViewerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   viewAddressByUserId = async (userId: string) => {

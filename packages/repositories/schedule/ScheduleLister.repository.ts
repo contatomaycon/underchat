@@ -20,7 +20,7 @@ import { ListScheduleRequest } from '@core/schema/schedule/listSchedule/request.
 @injectable()
 export class ScheduleListerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   private readonly setOrders = (query: ListScheduleRequest): SQL[] => {

@@ -8,7 +8,7 @@ import { IViewServerSshById } from '@core/common/interfaces/IViewServerSshById';
 @injectable()
 export class ServerSshViewerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   viewServerSshById = async (

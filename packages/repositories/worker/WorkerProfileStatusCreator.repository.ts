@@ -13,7 +13,7 @@ import { ICreateWorkerProfileStatus } from '@core/common/interfaces/ICreateWorke
 @injectable()
 export class WorkerProfileStatusCreatorRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   createWorkerProfileStatus = async (

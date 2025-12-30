@@ -9,7 +9,7 @@ import { ISchedulePendingData } from '@core/interfaces/repositories/schedule/ISc
 @injectable()
 export class SchedulePendingListerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   listPendingSchedules = async (): Promise<ISchedulePendingData[]> => {

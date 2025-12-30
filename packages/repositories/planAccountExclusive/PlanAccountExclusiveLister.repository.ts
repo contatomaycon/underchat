@@ -8,7 +8,7 @@ import { ListPlanAccountExclusiveResponse } from '@core/schema/planAccountExclus
 @injectable()
 export class PlanAccountExclusiveListerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   listPlanAccountExclusives = async (

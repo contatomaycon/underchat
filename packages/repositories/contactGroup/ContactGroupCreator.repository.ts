@@ -13,7 +13,7 @@ import { ExtractTablesWithRelations } from 'drizzle-orm';
 @injectable()
 export class ContactGroupCreatorRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   createContactGroup = async (

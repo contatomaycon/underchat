@@ -16,7 +16,7 @@ import { ICreateServerWeb } from '@core/common/interfaces/ICreateServerWeb';
 @injectable()
 export class ServerCreatorRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   private readonly createServer = async (

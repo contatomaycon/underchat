@@ -7,7 +7,7 @@ import { and, count, eq, inArray, isNull, ne, or } from 'drizzle-orm';
 @injectable()
 export class ContactExistsByEmailAndPhoneRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   existsContactByEmailAndPhone = async (

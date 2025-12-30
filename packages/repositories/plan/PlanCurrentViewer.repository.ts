@@ -8,7 +8,7 @@ import { ViewCurrentPlanResponse } from '@core/schema/plan/viewCurrentPlan/respo
 @injectable()
 export class PlanCurrentViewerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   viewCurrentPlan = async (

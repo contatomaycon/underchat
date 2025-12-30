@@ -14,7 +14,7 @@ import { EScheduleSendTo } from '@core/common/enums/EScheduleSendTo';
 @injectable()
 export class ScheduleContactsValidatedListerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   private async getScheduledContacts(

@@ -22,7 +22,7 @@ import { ESortBySector } from '@core/common/enums/ESortBySector';
 @injectable()
 export class SectorListerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   private readonly setOrders = (query: ListSectorRequest): SQL[] => {

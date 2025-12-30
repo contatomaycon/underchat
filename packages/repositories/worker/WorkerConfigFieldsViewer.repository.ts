@@ -8,7 +8,7 @@ import { IWorkerConfigFields } from '@core/common/interfaces/IWorkerConfigFields
 @injectable()
 export class WorkerConfigFieldsViewerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   viewWorkerConfigFieldsByWorkerId = async (

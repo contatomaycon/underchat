@@ -9,7 +9,7 @@ import { CreateSectorRoleRequest } from '@core/schema/sector/createSectorRole/re
 @injectable()
 export class SectorRoleTransactionCreatorRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>,
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>,
     private readonly sectorRoleDeleterRepository: SectorRoleDeleterRepository,
     private readonly sectorRoleCreatorRepository: SectorRoleCreatorRepository
   ) {}

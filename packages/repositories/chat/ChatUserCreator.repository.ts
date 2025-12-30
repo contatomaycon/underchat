@@ -13,7 +13,7 @@ import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 @injectable()
 export class ChatUserCreatorRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   createChatUser = async (

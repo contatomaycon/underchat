@@ -7,7 +7,7 @@ import { and, eq, isNull } from 'drizzle-orm';
 @injectable()
 export class NotificationMessageViewerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   findNotificationById = async (notificationId: string) => {

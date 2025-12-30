@@ -8,7 +8,7 @@ import { v7 as uuidv7 } from 'uuid';
 @injectable()
 export class CrossSellAccountCreatorRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   createCrossSellAccount = async (

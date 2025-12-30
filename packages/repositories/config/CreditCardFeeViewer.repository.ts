@@ -7,7 +7,7 @@ import { ListCreditCardFeeResponse } from '@core/schema/config/listCreditCardFee
 @injectable()
 export class CreditCardFeeViewerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   viewCreditCardFee = async (): Promise<ListCreditCardFeeResponse | null> => {

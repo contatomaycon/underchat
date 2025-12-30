@@ -8,7 +8,7 @@ import { IViewAccountName } from '@core/common/interfaces/IViewAccountName';
 @injectable()
 export class AccountNameViewerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   viewAccountName = async (

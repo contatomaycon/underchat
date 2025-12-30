@@ -7,7 +7,7 @@ import { eq, sql } from 'drizzle-orm';
 @injectable()
 export class WorkerProfileStatusUpdatedAtUpdaterRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   updateUpdatedAt = async (workerProfileStatusId: string): Promise<boolean> => {

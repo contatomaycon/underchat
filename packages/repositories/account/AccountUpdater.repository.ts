@@ -9,7 +9,7 @@ import { currentTime } from '@core/common/functions/currentTime';
 @injectable()
 export class AccountUpdaterRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   private updateInput(

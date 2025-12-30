@@ -9,7 +9,7 @@ import { calculateBillingPeriodByDates } from '@core/common/functions/calculateB
 @injectable()
 export class PlanCurrentInvoiceViewerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   viewCurrentPlanInvoice = async (

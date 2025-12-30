@@ -7,7 +7,7 @@ import { and, count, eq, isNull } from 'drizzle-orm';
 @injectable()
 export class AccountViewerExistsRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   existsAccountById = async (accountId: string): Promise<boolean> => {

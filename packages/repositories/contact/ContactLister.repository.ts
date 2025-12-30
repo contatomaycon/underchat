@@ -25,7 +25,7 @@ import { isDefinedFilter } from '@core/common/functions/isDefinedFilter';
 @injectable()
 export class ContactListerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   private readonly setOrders = (query: ListContactRequest): SQL[] => {

@@ -8,7 +8,7 @@ import { IUpdateWorkerPhoneConnection } from '@core/common/interfaces/IUpdateWor
 @injectable()
 export class WorkerPhoneConnectionUpdaterRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   updateWorkerPhoneConnection = async (

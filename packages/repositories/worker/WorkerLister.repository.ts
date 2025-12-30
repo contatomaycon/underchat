@@ -28,7 +28,7 @@ import { ESortOrder } from '@core/common/enums/ESortOrder';
 @injectable()
 export class WorkerListerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   private readonly setOrders = (query: ListWorkerRequest): SQL[] => {

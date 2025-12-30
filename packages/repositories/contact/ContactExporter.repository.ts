@@ -9,7 +9,7 @@ import { isDefinedFilter } from '@core/common/functions/isDefinedFilter';
 @injectable()
 export class ContactExporterRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   exportContacts = async (

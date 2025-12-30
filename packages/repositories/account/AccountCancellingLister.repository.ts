@@ -22,7 +22,7 @@ import { EAccountStatus } from '@core/common/enums/EAccountStatus';
 @injectable()
 export class AccountCancellingListerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   private readonly setFiltersAccount = (

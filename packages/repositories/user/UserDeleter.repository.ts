@@ -8,7 +8,7 @@ import { currentTime } from '@core/common/functions/currentTime';
 @injectable()
 export class UserDeleterRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   deleteUserById = async (

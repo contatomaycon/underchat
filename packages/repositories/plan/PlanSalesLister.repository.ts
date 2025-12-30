@@ -28,7 +28,7 @@ import { EPaymentStatus } from '@core/common/enums/EPaymentStatus';
 @injectable()
 export class PlanSalesListerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   private readonly setFilters = (query: ListPlanSalesRequest): SQLWrapper[] => {

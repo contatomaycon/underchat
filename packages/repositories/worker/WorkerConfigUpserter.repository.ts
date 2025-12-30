@@ -13,7 +13,7 @@ import { IUpdateWorkerConfig } from '@core/common/interfaces/IUpdateWorkerConfig
 @injectable()
 export class WorkerConfigUpserterRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   upsertWorkerConfig = async (

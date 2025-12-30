@@ -8,7 +8,7 @@ import { ListAllUsersResponse } from '@core/schema/user/listAllUsers/response.sc
 @injectable()
 export class UserAllListerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   listAllUsers = async (accountId: string): Promise<ListAllUsersResponse[]> => {

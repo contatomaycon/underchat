@@ -9,7 +9,7 @@ import { ELabelStatus } from '@core/common/enums/ELabelStatus';
 @injectable()
 export class ChatbotChatTagsListerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   listChatbotChatTags = async (

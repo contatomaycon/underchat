@@ -9,7 +9,7 @@ import { nullIfEmpty } from '@core/common/functions/nullIfEmpty';
 @injectable()
 export class ContactUpdaterRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   private updateInput(

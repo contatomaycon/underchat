@@ -29,7 +29,7 @@ import { ListUserRequest } from '@core/schema/user/listUser/request.schema';
 @injectable()
 export class UserListerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   private readonly setFiltersUser = (

@@ -8,7 +8,7 @@ import { EditAccountInfoRequest } from '@core/schema/account/editAccountInfo/req
 @injectable()
 export class AccountInfoUpdaterRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   private updateInput(

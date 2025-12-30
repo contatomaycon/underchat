@@ -22,7 +22,7 @@ import { ESortByMessage } from '@core/common/enums/ESortByMessage';
 @injectable()
 export class MessageTemplateListerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   private readonly setOrders = (query: ListMessageTemplateRequest): SQL[] => {

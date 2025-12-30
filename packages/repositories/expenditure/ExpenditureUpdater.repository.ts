@@ -8,7 +8,7 @@ import { UpdateExpenditureRequest } from '@core/schema/expenditure/editExpenditu
 @injectable()
 export class ExpenditureUpdaterRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   private updateInput(

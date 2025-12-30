@@ -13,7 +13,7 @@ import { inject, injectable } from 'tsyringe';
 @injectable()
 export class AccountQuantityProductViewerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   viewPlanQuantity = async (

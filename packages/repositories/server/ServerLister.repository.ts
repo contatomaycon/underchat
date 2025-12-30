@@ -22,7 +22,7 @@ import { ESortByServer } from '@core/common/enums/ESortByServer';
 @injectable()
 export class ServerListerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   private readonly setOrders = (query: ListServerRequest): SQL[] => {

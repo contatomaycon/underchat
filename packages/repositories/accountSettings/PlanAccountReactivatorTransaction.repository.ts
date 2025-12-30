@@ -14,7 +14,7 @@ import { TFunction } from 'i18next';
 @injectable()
 export class PlanAccountReactivatorTransactionRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   private readonly reactivatePlanAccount = async (

@@ -7,7 +7,7 @@ import { WorkerProfileStatusDeleterRepository } from './WorkerProfileStatusDelet
 @injectable()
 export class WorkerProfileStatusDeleterTransactionRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>,
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>,
     private readonly workerProfileStatusContactDeleterRepository: WorkerProfileStatusContactDeleterRepository,
     private readonly workerProfileStatusDeleterRepository: WorkerProfileStatusDeleterRepository
   ) {}

@@ -8,7 +8,7 @@ import { IStatusCount } from '@core/common/interfaces/IStatusCount';
 @injectable()
 export class ChannelsStatisticsRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   getChannelsStatistics = async (): Promise<{

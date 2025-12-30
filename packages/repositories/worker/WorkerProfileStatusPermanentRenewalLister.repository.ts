@@ -8,7 +8,7 @@ import { IPermanentStatusToRenew } from '@core/common/interfaces/IPermanentStatu
 @injectable()
 export class WorkerProfileStatusPermanentRenewalListerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   listPermanentStatusToRenew = async (): Promise<IPermanentStatusToRenew[]> => {

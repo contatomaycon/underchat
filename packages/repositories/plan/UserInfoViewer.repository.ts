@@ -8,7 +8,7 @@ import { ViewUserInfoResponse } from '@core/schema/plan/viewUserInfo/response.sc
 @injectable()
 export class UserInfoViewerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   viewUserInfo = async (

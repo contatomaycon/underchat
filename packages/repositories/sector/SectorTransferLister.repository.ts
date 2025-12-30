@@ -8,7 +8,7 @@ import { TransferSectorResponse } from '@core/schema/chat/listTransferSectors/re
 @injectable()
 export class SectorTransferListerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   listSectorsForTransfer = async (

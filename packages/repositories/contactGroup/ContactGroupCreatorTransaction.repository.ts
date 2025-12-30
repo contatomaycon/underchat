@@ -9,7 +9,7 @@ import { CreateContactGroupRequest } from '@core/schema/contactGroup/createConta
 @injectable()
 export class ContactGroupCreatorTransactionRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>,
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>,
     private readonly contactGroupCreatorRepository: ContactGroupCreatorRepository,
     private readonly contactGroupAssignmentCreatorRepository: ContactGroupAssignmentCreatorRepository
   ) {}

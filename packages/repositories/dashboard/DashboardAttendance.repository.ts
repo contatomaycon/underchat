@@ -10,7 +10,7 @@ import { EChatStatus } from '@core/common/enums/EChatStatus';
 @injectable()
 export class DashboardAttendanceRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>,
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>,
     private readonly elasticDatabaseService: ElasticDatabaseService
   ) {}
 

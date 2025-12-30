@@ -12,7 +12,7 @@ import { PgTransaction } from 'drizzle-orm/pg-core';
 @injectable()
 export class PlanItemsDeleterRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   deletePlanItemsByPlanId = async (

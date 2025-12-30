@@ -8,7 +8,7 @@ import { IUpdateUserInfo } from '@core/common/interfaces/IUpdateUserInfo';
 @injectable()
 export class UserInfoUpdaterRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   private updateInput(

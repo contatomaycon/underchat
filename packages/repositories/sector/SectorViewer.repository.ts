@@ -8,7 +8,7 @@ import { ViewSectorResponse } from '@core/schema/sector/viewSector/response.sche
 @injectable()
 export class SectorViewerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   viewSectorById = async (

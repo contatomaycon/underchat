@@ -8,7 +8,7 @@ import { IPlanAccountStatus } from '@core/common/interfaces/IPlanAccountStatus';
 @injectable()
 export class PlanAccountStatusViewerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   viewLatestByAccountId = async (

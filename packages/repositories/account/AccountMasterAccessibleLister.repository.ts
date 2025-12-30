@@ -8,7 +8,7 @@ import { IAccountBasic } from '@core/common/interfaces/IAccountBasic';
 @injectable()
 export class AccountMasterAccessibleListerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   listMasterAccessibleAccounts = async (

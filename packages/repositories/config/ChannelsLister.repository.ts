@@ -25,7 +25,7 @@ import { ListChannelsResponse } from '@core/schema/config/listChannels/response.
 @injectable()
 export class ChannelsListerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   private readonly setOrders = (query: ListChannelsRequest): SQL[] => {

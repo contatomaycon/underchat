@@ -9,7 +9,7 @@ import { IListWorkerActivities } from '@core/common/interfaces/IListWorkerActivi
 @injectable()
 export class WorkerNewStatusListerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   listWorkerNewStatus = async (): Promise<IListWorkerActivities[]> => {

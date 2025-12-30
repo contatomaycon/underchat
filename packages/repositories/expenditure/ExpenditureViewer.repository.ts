@@ -8,7 +8,7 @@ import { ViewExpenditureResponse } from '@core/schema/expenditure/viewExpenditur
 @injectable()
 export class ExpenditureViewerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   viewExpenditure = async (

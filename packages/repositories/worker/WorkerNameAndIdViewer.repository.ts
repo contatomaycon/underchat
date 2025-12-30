@@ -8,7 +8,7 @@ import { IViewWorkerNameAndId } from '@core/common/interfaces/IViewWorkerNameAnd
 @injectable()
 export class WorkerNameAndIdViewerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   viewWorkerNameAndId = async (

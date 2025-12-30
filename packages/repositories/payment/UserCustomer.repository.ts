@@ -8,7 +8,7 @@ import { randomUUID } from 'node:crypto';
 @injectable()
 export class UserCustomerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   getUserCustomerByUserId = async (

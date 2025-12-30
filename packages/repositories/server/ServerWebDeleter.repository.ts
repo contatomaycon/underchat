@@ -8,7 +8,7 @@ import { currentTime } from '@core/common/functions/currentTime';
 @injectable()
 export class ServerWebDeleterRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   deleteServerWebById = async (serverId: string): Promise<boolean> => {

@@ -8,7 +8,7 @@ import { ViewWorkerConfigForChatResponse } from '@core/schema/chat/viewWorkerCon
 @injectable()
 export class WorkerConfigForChatViewerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   viewWorkerConfigForChatByWorkerId = async (

@@ -15,7 +15,7 @@ import { UpdateCreditCardFeeResponse } from '@core/schema/config/updateCreditCar
 @injectable()
 export class CreditCardFeeUpdaterRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   upsertCreditCardFee = async (

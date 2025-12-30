@@ -8,7 +8,7 @@ import { IViewServerWebById } from '@core/common/interfaces/IViewServerWebById';
 @injectable()
 export class ServerWebViewerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   viewServerWebById = async (

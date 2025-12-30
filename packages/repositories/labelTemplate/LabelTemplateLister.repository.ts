@@ -22,7 +22,7 @@ import { ESortByLabel } from '@core/common/enums/ESortByLabel';
 @injectable()
 export class LabelTemplateListerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   private readonly setOrders = (query: ListLabelTemplateRequest): SQL[] => {

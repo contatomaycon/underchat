@@ -10,7 +10,7 @@ import { EAccountStatus } from '@core/common/enums/EAccountStatus';
 @injectable()
 export class PlanAccountCancellerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   findPlanAccountWithPayment = async (accountId: string) => {

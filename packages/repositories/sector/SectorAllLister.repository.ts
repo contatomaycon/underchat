@@ -9,7 +9,7 @@ import { ESectorStatus } from '@core/common/enums/ESectorStatus';
 @injectable()
 export class SectorAllListerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   listAllSectors = async (accountId: string): Promise<TransferSector[]> => {

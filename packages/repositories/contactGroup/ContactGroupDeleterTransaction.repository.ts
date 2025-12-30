@@ -9,7 +9,7 @@ import { ContactGroupDeleterRepository } from './ContactGroupDeleter.repository'
 @injectable()
 export class ContactGroupDeleterTransactionRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>,
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>,
     private readonly contactGroupAssignmentDeleterRepository: ContactGroupAssignmentDeleterRepository,
     private readonly contactGroupDeleterRepository: ContactGroupDeleterRepository,
     private readonly contactGroupAssignmentViewerExistsRepository: ContactGroupAssignmentViewerExistsRepository

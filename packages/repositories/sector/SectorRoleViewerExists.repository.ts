@@ -7,7 +7,7 @@ import { count, eq } from 'drizzle-orm';
 @injectable()
 export class SectorRoleViewerExistsRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   existsSectorRoleById = async (sectorId: string): Promise<boolean> => {

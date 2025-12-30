@@ -9,7 +9,7 @@ import { inject, injectable } from 'tsyringe';
 @injectable()
 export class ZipcodeCityViewRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   async listCities(request: ListCitiesRequest): Promise<CityListResponse> {

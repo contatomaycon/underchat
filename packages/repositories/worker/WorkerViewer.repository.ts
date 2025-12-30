@@ -14,7 +14,7 @@ import { ViewWorkerResponse } from '@core/schema/worker/viewWorker/response.sche
 @injectable()
 export class WorkerViewerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   viewWorker = async (

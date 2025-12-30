@@ -7,7 +7,7 @@ import { and, count, eq, isNull, lt } from 'drizzle-orm';
 @injectable()
 export class DashboardContactsRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   getContactsGrowthMonthly = async (

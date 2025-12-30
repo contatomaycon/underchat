@@ -9,7 +9,7 @@ import { IBalanceMonitorServer } from '@core/common/interfaces/IBalanceMonitorSe
 @injectable()
 export class ServerBalanceMonitorViewerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   listEligible = async (): Promise<IBalanceMonitorServer[]> => {

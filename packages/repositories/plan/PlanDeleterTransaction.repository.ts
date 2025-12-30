@@ -9,7 +9,7 @@ import { PlanDeleterRepository } from './PlanDeleter.repository';
 @injectable()
 export class PlanDeleterTransactionRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>,
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>,
     private readonly planItemsDeleterRepository: PlanItemsDeleterRepository,
     private readonly planDeleterRepository: PlanDeleterRepository,
     private readonly planItemsViewerExistsRepository: PlanItemsViewerExistsRepository

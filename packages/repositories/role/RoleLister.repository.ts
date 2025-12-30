@@ -22,7 +22,7 @@ import { ESortByRole } from '@core/common/enums/ESortByRole';
 @injectable()
 export class RoleListerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   private readonly setOrders = (query: ListRoleRequest): SQL[] => {

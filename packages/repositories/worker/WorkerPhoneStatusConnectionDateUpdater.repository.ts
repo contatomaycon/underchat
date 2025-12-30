@@ -10,7 +10,7 @@ import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 @injectable()
 export class WorkerPhoneStatusConnectionDateUpdaterRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   private readonly connectionDate = (

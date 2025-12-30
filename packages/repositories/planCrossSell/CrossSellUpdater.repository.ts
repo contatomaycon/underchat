@@ -8,7 +8,7 @@ import { eq } from 'drizzle-orm';
 @injectable()
 export class CrossSellUpdaterRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   updateCrossSell = async (

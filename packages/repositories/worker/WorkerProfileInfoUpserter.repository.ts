@@ -9,7 +9,7 @@ import { IUpdateWorkerProfileInfo } from '@core/common/interfaces/IUpdateWorkerP
 @injectable()
 export class WorkerProfileInfoUpserterRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   upsertWorkerProfileInfo = async (

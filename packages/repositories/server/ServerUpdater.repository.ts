@@ -15,7 +15,7 @@ import { IUpdateServerWebById } from '@core/common/interfaces/IUpdateServerWebBy
 @injectable()
 export class ServerUpdaterRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   private readonly updateServerById = async (

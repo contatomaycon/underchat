@@ -8,7 +8,7 @@ import { EditSectorParamsBody } from '@core/schema/sector/editSector/request.sch
 @injectable()
 export class SectorUpdaterRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   private updateInput(

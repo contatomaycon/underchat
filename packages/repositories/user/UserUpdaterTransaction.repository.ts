@@ -9,7 +9,7 @@ import { IUpdateUser } from '@core/common/interfaces/IUpdateUser';
 @injectable()
 export class UserUpdaterTransactionRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>,
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>,
     private readonly userUpdaterRepository: UserUpdaterRepository,
     private readonly permissionAssignmentDeleterRepository: PermissionAssignmentDeleterRepository
   ) {}

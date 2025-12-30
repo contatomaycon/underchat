@@ -7,7 +7,7 @@ import { inject, injectable } from 'tsyringe';
 @injectable()
 export class ContactSensitiveDataRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   getContactSensitiveDataById = async (

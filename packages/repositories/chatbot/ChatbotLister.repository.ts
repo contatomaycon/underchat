@@ -8,7 +8,7 @@ import { eq, asc } from 'drizzle-orm';
 @injectable()
 export class ChatbotListerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   listChatbots = async (accountId: string): Promise<ListChatbotResponse[]> => {

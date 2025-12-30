@@ -7,7 +7,7 @@ import { inject, injectable } from 'tsyringe';
 @injectable()
 export class RoleTotalViewerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   totalRoleByAccount = async (accountId: string): Promise<number> => {

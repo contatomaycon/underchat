@@ -16,7 +16,7 @@ import { TFunction } from 'i18next';
 @injectable()
 export class ContactCreatorRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>,
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>,
     private readonly contactGroupAssignmentCreatorRepository: ContactGroupAssignmentCreatorRepository
   ) {}
 

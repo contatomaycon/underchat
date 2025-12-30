@@ -7,7 +7,7 @@ import { eq } from 'drizzle-orm';
 @injectable()
 export class TwoFactorUpdaterRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   updateDeletedAt = async (

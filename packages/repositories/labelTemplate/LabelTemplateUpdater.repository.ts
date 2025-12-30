@@ -8,7 +8,7 @@ import { UpdateLabelTemplateRequest } from '@core/schema/labelTemplate/editLabel
 @injectable()
 export class LabelTemplateUpdaterRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   private updateInput(

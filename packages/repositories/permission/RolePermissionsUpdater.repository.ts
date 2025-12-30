@@ -19,7 +19,7 @@ import { IPermissionToInsert } from '@core/common/interfaces/IPermissionToInsert
 @injectable()
 export class RolePermissionsUpdaterRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   private readonly deleteAllRolePermissions = async (

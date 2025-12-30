@@ -9,7 +9,7 @@ import { ERouteModule } from '@core/common/enums/ERouteModule';
 @injectable()
 export class PermissionGroupsListerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   listPermissionGroupsByPermissionRoleId = async (

@@ -8,8 +8,16 @@ import { container } from 'tsyringe';
 import { FastifyInstance } from 'fastify';
 
 async function dbConnector(fastify: FastifyInstance) {
-  const pool = new Pool({
-    host: databaseEnvironment.dbHost,
+  const poolRw = new Pool({
+    host: databaseEnvironment.dbHostRw,
+    port: databaseEnvironment.dbPort,
+    user: databaseEnvironment.dbUser,
+    password: databaseEnvironment.dbPassword,
+    database: databaseEnvironment.dbDatabase,
+  });
+
+  const poolRo = new Pool({
+    host: databaseEnvironment.dbHostRo,
     port: databaseEnvironment.dbPort,
     user: databaseEnvironment.dbUser,
     password: databaseEnvironment.dbPassword,
@@ -17,24 +25,38 @@ async function dbConnector(fastify: FastifyInstance) {
   });
 
   if (databaseEnvironment.dbSslMode) {
-    pool.options.ssl = {
+    poolRw.options.ssl = {
+      rejectUnauthorized: false,
+    };
+    poolRo.options.ssl = {
       rejectUnauthorized: false,
     };
   }
 
-  const connection = drizzle(pool, { schema });
+  const connectionRw = drizzle(poolRw, { schema });
+  const connectionRo = drizzle(poolRo, { schema });
 
-  if (!connection) {
+  if (!connectionRw) {
     throw new DatabaseConnectionError(
       'Não foi possível conectar ao banco de dados'
     );
   }
 
-  container.register<NodePgDatabase<typeof schema>>('Database', {
-    useValue: connection,
+  if (!connectionRo) {
+    throw new DatabaseConnectionError(
+      'Não foi possível conectar ao banco de dados'
+    );
+  }
+
+  container.register<NodePgDatabase<typeof schema>>('DatabaseRw', {
+    useValue: connectionRw,
+  });
+  container.register<NodePgDatabase<typeof schema>>('DatabaseRo', {
+    useValue: connectionRo,
   });
 
-  fastify.decorate('Database', connection);
+  fastify.decorate('DatabaseRw', connectionRw);
+  fastify.decorate('DatabaseRo', connectionRo);
 }
 
 export default fp(dbConnector, { name: 'db-connector' });

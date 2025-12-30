@@ -11,7 +11,7 @@ import { PgTransaction } from 'drizzle-orm/pg-core';
 @injectable()
 export class ContactGroupAssignmentDeleterRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   deleteContactGroupAssignmentById = async (

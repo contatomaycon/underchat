@@ -8,7 +8,7 @@ import { ListCrossSellAccountResponse } from '@core/schema/planCrossSell/listCro
 @injectable()
 export class CrossSellAccountListerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   listCrossSellAccounts = async (

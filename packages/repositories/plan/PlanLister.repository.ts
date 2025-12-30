@@ -18,7 +18,7 @@ import { ListPlanResponse } from '@core/schema/plan/listPlan/response.schema';
 @injectable()
 export class PlanListerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   private readonly setFiltersPlan = (query: ListPlanRequest): SQLWrapper[] => {

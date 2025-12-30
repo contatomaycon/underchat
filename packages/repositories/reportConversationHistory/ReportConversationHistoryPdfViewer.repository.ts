@@ -8,7 +8,7 @@ import { IReportConversationHistoryPdfView } from '@core/common/interfaces/IRepo
 @injectable()
 export class ReportConversationHistoryPdfViewerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   viewPdfByAccountAndChat = async (

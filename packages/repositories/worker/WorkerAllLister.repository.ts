@@ -9,7 +9,7 @@ import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 @injectable()
 export class WorkerAllListerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   listAllWorkers = async (accountId: string): Promise<TransferWorker[]> => {

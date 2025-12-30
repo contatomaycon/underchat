@@ -8,7 +8,7 @@ import { ViewAccountResponse } from '@core/schema/account/viewAccount/response.s
 @injectable()
 export class AccountViewerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   viewAccounts = async (

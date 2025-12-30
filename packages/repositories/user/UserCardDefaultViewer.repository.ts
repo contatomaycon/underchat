@@ -8,7 +8,7 @@ import { IUserCardDefault } from '@core/common/interfaces/IUserCardDefault';
 @injectable()
 export class UserCardDefaultViewerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   findDefaultUserCardByUserId = async (

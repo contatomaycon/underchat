@@ -8,7 +8,7 @@ import { IViewWorkerType } from '@core/common/interfaces/IViewWorkerType';
 @injectable()
 export class WorkerTypeViewerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   viewWorkerType = async (

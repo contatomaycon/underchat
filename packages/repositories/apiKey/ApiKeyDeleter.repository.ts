@@ -8,7 +8,7 @@ import { currentTime } from '@core/common/functions/currentTime';
 @injectable()
 export class ApiKeyDeleterRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   deleteApiKeyById = async (accountId: string): Promise<boolean> => {

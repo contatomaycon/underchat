@@ -8,7 +8,7 @@ import { ListRoleAccountResponse } from '@core/schema/sector/listSectorRoleAccou
 @injectable()
 export class PermissionRoleAccountListerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   listPermissionRoleAccountById = async (

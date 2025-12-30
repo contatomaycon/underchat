@@ -8,7 +8,7 @@ import { eq } from 'drizzle-orm';
 @injectable()
 export class WorkerMonitorViewerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   listWorkers = async (): Promise<IWorkerMonitor[]> => {

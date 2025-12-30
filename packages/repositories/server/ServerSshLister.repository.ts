@@ -9,7 +9,7 @@ import { EServerStatus } from '@core/common/enums/EServerStatus';
 @injectable()
 export class ServerSshListerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   listServerSsh = async (): Promise<IListerServerSsh[]> => {

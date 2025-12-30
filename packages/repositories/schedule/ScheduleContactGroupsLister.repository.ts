@@ -8,7 +8,7 @@ import { inject, injectable } from 'tsyringe';
 @injectable()
 export class ScheduleContactGroupsListerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   listScheduleContactGroups = async (

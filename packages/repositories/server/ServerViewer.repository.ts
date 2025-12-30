@@ -8,7 +8,7 @@ import { ViewServerResponse } from '@core/schema/server/viewServer/response.sche
 @injectable()
 export class ServerViewerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   viewServerById = async (

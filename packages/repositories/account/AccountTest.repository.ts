@@ -8,7 +8,7 @@ import { randomUUID } from 'node:crypto';
 @injectable()
 export class AccountTestRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   findExistingTest = async (data: {

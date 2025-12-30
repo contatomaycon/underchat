@@ -10,7 +10,7 @@ import { ListQuickMessageTemplatesRequest } from '@core/schema/chat/listQuickMes
 @injectable()
 export class ChatQuickMessageTemplatesListerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   listQuickMessageTemplates = async (

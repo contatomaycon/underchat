@@ -13,7 +13,7 @@ import { ICalculatedPlanAccountData } from '@core/common/interfaces/IPlanAccount
 @injectable()
 export class PlanAccountUpdaterRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   findPlanAccountByAccountId = async (accountId: string) => {

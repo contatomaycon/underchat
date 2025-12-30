@@ -8,7 +8,7 @@ import { ViewUserResponse } from '@core/schema/user/viewUser/response.schema';
 @injectable()
 export class UserViewerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   viewUserById = async (

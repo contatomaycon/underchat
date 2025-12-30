@@ -7,7 +7,7 @@ import { eq } from 'drizzle-orm';
 @injectable()
 export class ScheduleViewerExistsRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   existsScheduleById = async (scheduleId: string): Promise<boolean> => {

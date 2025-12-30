@@ -9,7 +9,7 @@ import { CreateAccountInfoRequest } from '@core/schema/account/createAccountInfo
 @injectable()
 export class AccountInfoCreatorRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   private createInput(

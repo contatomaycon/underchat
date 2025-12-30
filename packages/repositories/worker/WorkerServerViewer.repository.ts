@@ -9,7 +9,7 @@ import { IViewWorkerServer } from '@core/common/interfaces/IViewWorkerServer';
 @injectable()
 export class WorkerServerViewerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   viewWorkerServer = async (

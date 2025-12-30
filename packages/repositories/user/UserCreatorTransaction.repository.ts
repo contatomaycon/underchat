@@ -22,7 +22,7 @@ import { PermissionAssignmentCreatorRepository } from '../permission/PermissionA
 @injectable()
 export class UserTransactionCreatorRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>,
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>,
     private readonly encryptService: EncryptService,
     private readonly passwordEncryptorService: PasswordEncryptorService,
     private readonly userCreatorRepository: UserCreatorRepository,

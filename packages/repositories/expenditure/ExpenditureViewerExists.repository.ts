@@ -7,7 +7,7 @@ import { and, eq, isNull, count } from 'drizzle-orm';
 @injectable()
 export class ExpenditureViewerExistsRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   existsExpenditureById = async (expenditureId: string): Promise<boolean> => {

@@ -18,7 +18,7 @@ import { EPlanStatus } from '@core/common/enums/EPlanStatus';
 @injectable()
 export class OrderPaymentCreatorRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>,
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>,
     @inject(UpgradeDiscountCalculatorRepository)
     private readonly upgradeDiscountCalculator: UpgradeDiscountCalculatorRepository
   ) {}

@@ -8,7 +8,7 @@ import { ProfileStatus } from '@core/schema/worker/listProfileStatus/response.sc
 @injectable()
 export class WorkerProfileStatusListerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   listWorkerProfileStatus = async (

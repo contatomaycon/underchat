@@ -12,7 +12,7 @@ import { PgTransaction } from 'drizzle-orm/pg-core';
 @injectable()
 export class CrossSellAccountDeleterRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   deleteCrossSellAccountsByCrossSellId = async (

@@ -8,7 +8,7 @@ import { ViewRoleResponse } from '@core/schema/role/viewRole/response.schema';
 @injectable()
 export class RoleViewerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   viewRoleById = async (

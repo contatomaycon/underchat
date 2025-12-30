@@ -9,7 +9,7 @@ import { ListExpenditureResponse } from '@core/schema/expenditure/listExpenditur
 @injectable()
 export class ExpenditureListerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   private readonly setFiltersExpenditure = (

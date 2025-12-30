@@ -9,7 +9,7 @@ import { ENotificationType } from '@core/common/enums/ENotificationType';
 @injectable()
 export class NotificationsViewerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   viewNotifications = async (): Promise<ListNotificationsResponse> => {

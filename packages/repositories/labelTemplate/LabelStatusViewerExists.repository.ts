@@ -7,7 +7,7 @@ import { and, count, eq } from 'drizzle-orm';
 @injectable()
 export class LabelStatusViewerExistsRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   existsLabelStatusById = async (labelStatusId: string): Promise<boolean> => {

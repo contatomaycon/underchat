@@ -1,10 +1,19 @@
 import InvalidConfigurationError from '@core/common/exceptions/InvalidConfigurationError';
 
 export class DatabaseEnvironment {
-  public get dbHost(): string {
-    const host = process.env.DB_HOST;
+  public get dbHostRw(): string {
+    const host = process.env.DB_HOST_RW;
     if (!host) {
-      throw new InvalidConfigurationError('DB_HOST is not defined.');
+      throw new InvalidConfigurationError('DB_HOST_RW is not defined.');
+    }
+
+    return host;
+  }
+
+  public get dbHostRo(): string {
+    const host = process.env.DB_HOST_RO;
+    if (!host) {
+      throw new InvalidConfigurationError('DB_HOST_RO is not defined.');
     }
 
     return host;

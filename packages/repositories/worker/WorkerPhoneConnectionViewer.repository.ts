@@ -8,7 +8,7 @@ import { IViewWorkerPhoneConnection } from '@core/common/interfaces/IViewWorkerP
 @injectable()
 export class WorkerPhoneConnectionViewerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   viewWorkerPhoneConnection = async (

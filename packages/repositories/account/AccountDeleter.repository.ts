@@ -9,7 +9,7 @@ import { EAccountStatus } from '@core/common/enums/EAccountStatus';
 @injectable()
 export class AccountDeleterRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   deleteAccountById = async (accountId: string): Promise<boolean> => {

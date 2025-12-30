@@ -18,7 +18,7 @@ import { EFooter } from '@core/common/enums/EFooter';
 @injectable()
 export class AccountCreatorRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   createAccount = async (

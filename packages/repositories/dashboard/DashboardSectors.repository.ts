@@ -11,7 +11,7 @@ import { ESectorStatus } from '@core/common/enums/ESectorStatus';
 @injectable()
 export class DashboardSectorsRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>,
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>,
     private readonly elasticDatabaseService: ElasticDatabaseService
   ) {}
 

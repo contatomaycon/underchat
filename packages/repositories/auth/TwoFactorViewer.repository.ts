@@ -10,7 +10,7 @@ import { IFindTwoFactorByTokenAndEmailPhone } from '@core/common/interfaces/IFin
 @injectable()
 export class TwoFactorViewerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   findTwoFactorByCodeAndEmailPhone = async (

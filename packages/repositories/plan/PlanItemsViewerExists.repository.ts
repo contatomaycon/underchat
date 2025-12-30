@@ -17,7 +17,7 @@ import { PgTransaction } from 'drizzle-orm/pg-core';
 @injectable()
 export class PlanItemsViewerExistsRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   existsPlanItemsByPlanId = async (

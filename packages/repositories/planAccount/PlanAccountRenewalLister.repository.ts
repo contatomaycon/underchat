@@ -9,7 +9,7 @@ import { EAccountStatus } from '@core/common/enums/EAccountStatus';
 @injectable()
 export class PlanAccountRenewalListerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   findPlanAccountsForRenewal = async (): Promise<IPlanAccountRenewal[]> => {

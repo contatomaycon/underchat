@@ -10,7 +10,7 @@ import { EUserStatus } from '@core/common/enums/EUserStatus';
 @injectable()
 export class UserOnlineListerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   listOnlineUsersByAccount = async (

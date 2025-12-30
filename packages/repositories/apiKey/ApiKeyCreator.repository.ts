@@ -8,7 +8,7 @@ import { randomBytes } from 'node:crypto';
 @injectable()
 export class ApiKeyCreatorRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   createApiKey = async (

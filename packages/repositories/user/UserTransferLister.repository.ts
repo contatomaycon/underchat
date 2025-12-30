@@ -8,7 +8,7 @@ import { TransferUserResponse } from '@core/schema/chat/listTransferUsers/respon
 @injectable()
 export class UserTransferListerRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   listUsersForTransfer = async (

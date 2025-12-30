@@ -13,7 +13,7 @@ import { ExtractTablesWithRelations } from 'drizzle-orm';
 @injectable()
 export class ScheduleCreatorRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   private readonly createScheduledContactsForContacts = async (

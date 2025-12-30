@@ -8,7 +8,7 @@ import { IUpdateWorker } from '@core/common/interfaces/IUpdateWorker';
 @injectable()
 export class WorkerUpdaterRepository {
   constructor(
-    @inject('Database') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
   ) {}
 
   private updateInput(
