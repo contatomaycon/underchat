@@ -132,12 +132,14 @@ RUN apt-get update && \
 
 RUN mkdir -p /home/pptruser/Downloads \
     /home/pptruser/.local/share/applications \
-    /home/pptruser/.local/share \
+    /home/pptruser/.local/share/mime \
     /home/pptruser/.config \
     /home/pptruser/.cache \
     /tmp/.chrome-user-data \
+    /tmp/.chrome-crashpad \
     /app && \
-    chown -R pptruser:pptruser /home/pptruser /tmp/.chrome-user-data /app
+    chown -R pptruser:pptruser /home/pptruser /tmp/.chrome-user-data /tmp/.chrome-crashpad /app && \
+    chmod -R 755 /home/pptruser/.local/share
 
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
     PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome-stable \
@@ -147,7 +149,9 @@ ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
     XDG_CONFIG_HOME=/home/pptruser/.config \
     XDG_CACHE_HOME=/home/pptruser/.cache \
     XDG_DATA_HOME=/home/pptruser/.local/share \
-    TMPDIR=/tmp
+    XDG_RUNTIME_DIR=/tmp \
+    TMPDIR=/tmp \
+    CHROME_CRASHPAD_DATABASE_PATH=/tmp/.chrome-crashpad
 
 USER pptruser
 
