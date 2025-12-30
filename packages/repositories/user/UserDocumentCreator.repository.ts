@@ -13,7 +13,7 @@ import { v7 as uuidv7 } from 'uuid';
 @injectable()
 export class UserDocumentCreatorRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
 
   createUserDocument = async (

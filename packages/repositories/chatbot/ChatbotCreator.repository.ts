@@ -9,7 +9,7 @@ import { v7 as uuidv7 } from 'uuid';
 @injectable()
 export class ChatbotCreatorRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
 
   createChatbot = async (
@@ -18,7 +18,7 @@ export class ChatbotCreatorRepository {
   ): Promise<CreateChatbotResponse | null> => {
     const chatbotId = uuidv7();
 
-    const result = await this.db
+    const result = await this.dbRw
       .insert(chatbot)
       .values({
         chatbot_id: chatbotId,

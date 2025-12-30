@@ -10,7 +10,7 @@ import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 @injectable()
 export class WorkerPhoneStatusConnectionDateUpdaterRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
 
   private readonly connectionDate = (
@@ -52,7 +52,7 @@ export class WorkerPhoneStatusConnectionDateUpdaterRepository {
       return false;
     }
 
-    const result = await this.db
+    const result = await this.dbRw
       .update(worker)
       .set(updateData)
       .where(and(eq(worker.worker_id, input.worker_id)))

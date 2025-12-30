@@ -8,13 +8,13 @@ import { v7 as uuidv7 } from 'uuid';
 @injectable()
 export class WorkerPhoneConnectionCreatorRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
 
   createWorkerPhoneConnection = async (
     input: ICreateWorkerPhoneConnection
   ): Promise<boolean> => {
-    const result = await this.db
+    const result = await this.dbRw
       .insert(workerPhoneConnection)
       .values({
         worker_phone_connection_id: uuidv7(),

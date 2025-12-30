@@ -8,7 +8,7 @@ import { v7 as uuidv7 } from 'uuid';
 @injectable()
 export class PlanAccountExclusiveCreatorRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
 
   createPlanAccountExclusive = async (
@@ -16,7 +16,7 @@ export class PlanAccountExclusiveCreatorRepository {
   ): Promise<string | null> => {
     const planAccountExclusiveId = uuidv7();
 
-    const result = await this.db
+    const result = await this.dbRw
       .insert(planAccountExclusive)
       .values({
         plan_account_exclusive_id: planAccountExclusiveId,

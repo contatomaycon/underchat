@@ -9,7 +9,7 @@ import { nullIfEmpty } from '@core/common/functions/nullIfEmpty';
 @injectable()
 export class ContactUpdaterRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
 
   private updateInput(
@@ -72,7 +72,7 @@ export class ContactUpdaterRepository {
   ): Promise<boolean> => {
     const updateInput = this.updateInput(input);
 
-    const result = await this.db
+    const result = await this.dbRw
       .update(contact)
       .set(updateInput)
       .where(eq(contact.contact_id, contactId))
@@ -93,7 +93,7 @@ export class ContactUpdaterRepository {
       is_valided: true,
     };
 
-    const result = await this.db
+    const result = await this.dbRw
       .update(contact)
       .set(updateInput)
       .where(eq(contact.contact_id, contactId))
@@ -106,7 +106,7 @@ export class ContactUpdaterRepository {
     contactId: string,
     isValided: boolean
   ): Promise<boolean> => {
-    const result = await this.db
+    const result = await this.dbRw
       .update(contact)
       .set({ is_valided: isValided })
       .where(eq(contact.contact_id, contactId))

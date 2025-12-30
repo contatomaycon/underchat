@@ -8,14 +8,14 @@ import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 @injectable()
 export class WorkerStatusUpdaterRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
 
   updateStatusWorker = async (
     workerId: string,
     workerStatusId: EWorkerStatus
   ): Promise<boolean> => {
-    const result = await this.db
+    const result = await this.dbRw
       .update(worker)
       .set({
         worker_status_id: workerStatusId,

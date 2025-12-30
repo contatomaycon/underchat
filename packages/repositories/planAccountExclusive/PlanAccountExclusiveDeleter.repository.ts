@@ -7,13 +7,13 @@ import { eq } from 'drizzle-orm';
 @injectable()
 export class PlanAccountExclusiveDeleterRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
 
   deletePlanAccountExclusiveById = async (
     planAccountExclusiveId: string
   ): Promise<boolean> => {
-    const result = await this.db
+    const result = await this.dbRw
       .delete(planAccountExclusive)
       .where(
         eq(

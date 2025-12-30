@@ -9,7 +9,7 @@ import { currentTime } from '@core/common/functions/currentTime';
 @injectable()
 export class ServerStatusUpdaterRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
 
   updateServerStatusById = async (
@@ -18,7 +18,7 @@ export class ServerStatusUpdaterRepository {
   ): Promise<boolean> => {
     const date = currentTime();
 
-    const result = await this.db
+    const result = await this.dbRw
       .update(server)
       .set({
         server_status_id: status,

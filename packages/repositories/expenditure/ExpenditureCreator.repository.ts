@@ -8,7 +8,7 @@ import { v7 as uuidv7 } from 'uuid';
 @injectable()
 export class ExpenditureCreatorRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
 
   createExpenditure = async (
@@ -16,7 +16,7 @@ export class ExpenditureCreatorRepository {
   ): Promise<string | null> => {
     const expenditureId = uuidv7();
 
-    const result = await this.db
+    const result = await this.dbRw
       .insert(expenditure)
       .values({
         expenditure_id: expenditureId,

@@ -7,14 +7,14 @@ import { eq } from 'drizzle-orm';
 @injectable()
 export class WorkerProfileStatusExternalIdUpdaterRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
 
   updateExternalId = async (
     workerProfileStatusId: string,
     externalId: string
   ): Promise<boolean> => {
-    const result = await this.db
+    const result = await this.dbRw
       .update(workerProfileStatus)
       .set({
         external_id: externalId,

@@ -8,7 +8,7 @@ import { IUpdateMessageTemplate } from '@core/interfaces/repositories/messageTem
 @injectable()
 export class MessageTemplateUpdaterRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
 
   private updateInput(
@@ -63,7 +63,7 @@ export class MessageTemplateUpdaterRepository {
   ): Promise<boolean> => {
     const updateInput = this.updateInput(input);
 
-    const result = await this.db
+    const result = await this.dbRw
       .update(messageTemplate)
       .set(updateInput)
       .where(eq(messageTemplate.message_template_id, input.message_template_id))

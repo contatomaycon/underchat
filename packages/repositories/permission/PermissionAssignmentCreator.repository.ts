@@ -12,7 +12,7 @@ import { PgTransaction } from 'drizzle-orm/pg-core';
 @injectable()
 export class PermissionAssignmentCreatorRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
 
   createPermissionAssignment = async (
@@ -21,7 +21,7 @@ export class PermissionAssignmentCreatorRepository {
   ): Promise<string | null> => {
     const permissionAssignmentId = uuidv7();
 
-    const result = await this.db
+    const result = await this.dbRw
       .insert(permissionAssignment)
       .values({
         permission_assignment_id: permissionAssignmentId,

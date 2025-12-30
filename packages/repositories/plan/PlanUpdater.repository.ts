@@ -9,7 +9,7 @@ import { EPlanStatus } from '@core/common/enums/EPlanStatus';
 @injectable()
 export class PlanUpdaterRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
 
   updatePlan = async (
@@ -69,7 +69,7 @@ export class PlanUpdaterRepository {
       updateData.status = input.status;
     }
 
-    const result = await this.db
+    const result = await this.dbRw
       .update(plan)
       .set(updateData)
       .where(eq(plan.plan_id, planId))

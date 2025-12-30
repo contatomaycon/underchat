@@ -9,7 +9,7 @@ import { IUpdateWorkerProfileInfo } from '@core/common/interfaces/IUpdateWorkerP
 @injectable()
 export class WorkerProfileInfoUpserterRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
 
   upsertWorkerProfileInfo = async (
@@ -27,7 +27,7 @@ export class WorkerProfileInfoUpserterRepository {
   };
 
   private async findExistingProfileInfo(workerId: string): Promise<boolean> {
-    const result = await this.db
+    const result = await this.dbRw
       .select({
         total: count(),
       })
@@ -71,7 +71,7 @@ export class WorkerProfileInfoUpserterRepository {
     const updateData = this.buildUpdateData(input);
 
     if (Object.keys(updateData).length > 1) {
-      await this.db
+      await this.dbRw
         .update(workerProfileInfo)
         .set(updateData)
         .where(eq(workerProfileInfo.worker_id, workerId))
@@ -85,7 +85,7 @@ export class WorkerProfileInfoUpserterRepository {
   ): Promise<void> {
     const workerProfileInfoId = this.generateProfileInfoId();
 
-    await this.db
+    await this.dbRw
       .insert(workerProfileInfo)
       .values({
         worker_profile_info_id: workerProfileInfoId,

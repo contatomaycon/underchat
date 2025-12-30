@@ -9,14 +9,14 @@ import { eq } from 'drizzle-orm';
 @injectable()
 export class ChatbotUpdaterRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
 
   updateChatbot = async (
     chatbotId: string,
     input: UpdateChatbotRequest
   ): Promise<UpdateChatbotResponse | null> => {
-    const result = await this.db
+    const result = await this.dbRw
       .update(chatbot)
       .set({
         name: input.name,

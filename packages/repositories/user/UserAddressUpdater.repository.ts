@@ -8,7 +8,7 @@ import { IUpdateUserAddress } from '@core/common/interfaces/IUpdateUserAddress';
 @injectable()
 export class UserAddressUpdaterRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
 
   private updateInput(
@@ -69,7 +69,7 @@ export class UserAddressUpdaterRepository {
   ): Promise<boolean> => {
     const updateInput = this.updateInput(input);
 
-    const result = await this.db
+    const result = await this.dbRw
       .update(userAddress)
       .set(updateInput)
       .where(eq(userAddress.user_id, userId))

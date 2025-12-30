@@ -7,14 +7,14 @@ import { eq } from 'drizzle-orm';
 @injectable()
 export class PermissionAssignmentUpdaterRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
 
   updatePermissionAssignment = async (
     userId: string,
     permissionRoleId: string
   ): Promise<boolean> => {
-    const result = await this.db
+    const result = await this.dbRw
       .update(permissionAssignment)
       .set({
         permission_role_id: permissionRoleId,

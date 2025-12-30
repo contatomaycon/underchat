@@ -8,7 +8,7 @@ import { currentTime } from '@core/common/functions/currentTime';
 @injectable()
 export class LabelTemplateDeleterRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
 
   deleteLabelTemplateById = async (
@@ -16,7 +16,7 @@ export class LabelTemplateDeleterRepository {
   ): Promise<boolean> => {
     const date = currentTime();
 
-    const result = await this.db
+    const result = await this.dbRw
       .update(labelTemplate)
       .set({
         deleted_at: date,

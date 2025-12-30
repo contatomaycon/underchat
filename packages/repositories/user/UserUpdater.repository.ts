@@ -12,7 +12,7 @@ import { PgTransaction } from 'drizzle-orm/pg-core';
 @injectable()
 export class UserUpdaterRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
 
   private updateInput(input: IUpdateUser): Partial<typeof user.$inferInsert> {
@@ -57,7 +57,7 @@ export class UserUpdaterRepository {
       eq(user.account_id, accountId)
     );
 
-    const result = await this.db
+    const result = await this.dbRw
       .update(user)
       .set(updateInput)
       .where(whereCondition)

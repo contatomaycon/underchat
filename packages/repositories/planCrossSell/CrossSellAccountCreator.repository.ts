@@ -8,7 +8,7 @@ import { v7 as uuidv7 } from 'uuid';
 @injectable()
 export class CrossSellAccountCreatorRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
 
   createCrossSellAccount = async (
@@ -16,7 +16,7 @@ export class CrossSellAccountCreatorRepository {
   ): Promise<string | null> => {
     const crossSellAccountId = uuidv7();
 
-    const result = await this.db
+    const result = await this.dbRw
       .insert(planCrossSellAccount)
       .values({
         plan_cross_sell_account_id: crossSellAccountId,

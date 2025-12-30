@@ -7,14 +7,14 @@ import { eq } from 'drizzle-orm';
 @injectable()
 export class TwoFactorUpdaterRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
 
   updateDeletedAt = async (
     twoFactorId: string,
     deletedAt: string
   ): Promise<void> => {
-    await this.db
+    await this.dbRw
       .update(twoFactor)
       .set({
         deleted_at: deletedAt,

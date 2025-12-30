@@ -7,7 +7,7 @@ import { and, eq } from 'drizzle-orm';
 @injectable()
 export class RoleUpdaterRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
 
   updateRoleById = async (
@@ -16,7 +16,7 @@ export class RoleUpdaterRepository {
     accountId: string,
     description: string | null | undefined
   ): Promise<string | null> => {
-    const result = await this.db
+    const result = await this.dbRw
       .update(permissionRole)
       .set({
         name: roleName,

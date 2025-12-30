@@ -9,13 +9,13 @@ import { EPlanStatus } from '@core/common/enums/EPlanStatus';
 @injectable()
 export class PlanCreatorRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
 
   createPlan = async (input: CreatePlanRequest): Promise<string | null> => {
     const planId = uuidv7();
 
-    const result = await this.db
+    const result = await this.dbRw
       .insert(plan)
       .values({
         plan_id: planId,

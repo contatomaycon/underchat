@@ -8,7 +8,7 @@ import { v7 as uuidv7 } from 'uuid';
 @injectable()
 export class MessageTemplateCreatorRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
 
   createMessageTemplate = async (
@@ -16,7 +16,7 @@ export class MessageTemplateCreatorRepository {
   ): Promise<string | null> => {
     const messageTemplateId = uuidv7();
 
-    const result = await this.db
+    const result = await this.dbRw
       .insert(messageTemplate)
       .values({
         message_template_id: messageTemplateId,

@@ -8,7 +8,7 @@ import { UpdateExpenditureRequest } from '@core/schema/expenditure/editExpenditu
 @injectable()
 export class ExpenditureUpdaterRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
 
   private updateInput(
@@ -38,7 +38,7 @@ export class ExpenditureUpdaterRepository {
   ): Promise<boolean> => {
     const updateInput = this.updateInput(input);
 
-    const result = await this.db
+    const result = await this.dbRw
       .update(expenditure)
       .set(updateInput)
       .where(eq(expenditure.expenditure_id, expenditureId))

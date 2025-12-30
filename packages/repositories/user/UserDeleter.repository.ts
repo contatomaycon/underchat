@@ -8,7 +8,7 @@ import { currentTime } from '@core/common/functions/currentTime';
 @injectable()
 export class UserDeleterRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
 
   deleteUserById = async (
@@ -17,7 +17,7 @@ export class UserDeleterRepository {
   ): Promise<boolean> => {
     const date = currentTime();
 
-    const result = await this.db
+    const result = await this.dbRw
       .update(user)
       .set({
         deleted_at: date,

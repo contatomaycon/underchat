@@ -8,7 +8,7 @@ import { EditAccountInfoRequest } from '@core/schema/account/editAccountInfo/req
 @injectable()
 export class AccountInfoUpdaterRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
 
   private updateInput(
@@ -81,7 +81,7 @@ export class AccountInfoUpdaterRepository {
   ): Promise<boolean> => {
     const updateInput = this.updateInput(input, urlLogo);
 
-    const result = await this.db
+    const result = await this.dbRw
       .update(accountInfo)
       .set(updateInput)
       .where(eq(accountInfo.account_info_id, accountInfoId))

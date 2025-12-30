@@ -8,7 +8,7 @@ import { EditSectorParamsBody } from '@core/schema/sector/editSector/request.sch
 @injectable()
 export class SectorUpdaterRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
 
   private updateInput(
@@ -41,7 +41,7 @@ export class SectorUpdaterRepository {
       return null;
     }
 
-    const result = await this.db
+    const result = await this.dbRw
       .update(sector)
       .set(updateInput)
       .where(

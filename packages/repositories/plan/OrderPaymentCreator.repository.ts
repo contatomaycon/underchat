@@ -19,6 +19,7 @@ import { EPlanStatus } from '@core/common/enums/EPlanStatus';
 export class OrderPaymentCreatorRepository {
   constructor(
     @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>,
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>,
     @inject(UpgradeDiscountCalculatorRepository)
     private readonly upgradeDiscountCalculator: UpgradeDiscountCalculatorRepository
   ) {}
@@ -196,7 +197,7 @@ export class OrderPaymentCreatorRepository {
   };
 
   getPlan = async (planId: string) => {
-    return this.dbRw.query.plan.findFirst({
+    return this.dbRo.query.plan.findFirst({
       where: and(eq(plan.plan_id, planId), isNull(plan.deleted_at)),
       columns: {
         plan_id: true,

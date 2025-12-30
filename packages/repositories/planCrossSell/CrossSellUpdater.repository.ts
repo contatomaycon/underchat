@@ -8,14 +8,14 @@ import { eq } from 'drizzle-orm';
 @injectable()
 export class CrossSellUpdaterRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
 
   updateCrossSell = async (
     crossSellId: string,
     input: UpdateCrossSellRequest
   ): Promise<boolean> => {
-    const result = await this.db
+    const result = await this.dbRw
       .update(planCrossSell)
       .set({
         plan_product_id: input.plan_product_id ?? undefined,

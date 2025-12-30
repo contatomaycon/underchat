@@ -7,11 +7,11 @@ import { eq } from 'drizzle-orm';
 @injectable()
 export class ChatbotDeleterRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
 
   clearChatbotFromWorkerConfigs = async (chatbotId: string): Promise<void> => {
-    await this.db
+    await this.dbRw
       .update(workerConfig)
       .set({
         chatbot_id: null,
@@ -22,7 +22,7 @@ export class ChatbotDeleterRepository {
   };
 
   deleteChatbotById = async (chatbotId: string): Promise<boolean> => {
-    const result = await this.db
+    const result = await this.dbRw
       .delete(chatbot)
       .where(eq(chatbot.chatbot_id, chatbotId))
       .execute();

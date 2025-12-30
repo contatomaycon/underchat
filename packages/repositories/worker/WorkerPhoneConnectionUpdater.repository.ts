@@ -8,13 +8,13 @@ import { IUpdateWorkerPhoneConnection } from '@core/common/interfaces/IUpdateWor
 @injectable()
 export class WorkerPhoneConnectionUpdaterRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
 
   updateWorkerPhoneConnection = async (
     input: IUpdateWorkerPhoneConnection
   ): Promise<boolean> => {
-    const result = await this.db
+    const result = await this.dbRw
       .update(workerPhoneConnection)
       .set({
         worker_id: input.worker_id,

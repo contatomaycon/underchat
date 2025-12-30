@@ -9,7 +9,7 @@ import { CreateAccountInfoRequest } from '@core/schema/account/createAccountInfo
 @injectable()
 export class AccountInfoCreatorRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
 
   private createInput(
@@ -83,7 +83,7 @@ export class AccountInfoCreatorRepository {
     const accountInfoId = uuidv7();
     const dataNow = currentTime();
 
-    const result = await this.db
+    const result = await this.dbRw
       .insert(accountInfo)
       .values({
         ...createInput,

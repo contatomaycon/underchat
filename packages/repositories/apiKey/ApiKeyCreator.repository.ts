@@ -8,7 +8,7 @@ import { randomBytes } from 'node:crypto';
 @injectable()
 export class ApiKeyCreatorRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
 
   createApiKey = async (
@@ -18,7 +18,7 @@ export class ApiKeyCreatorRepository {
     const apiKeyId = uuidv7();
     const key = randomBytes(16).toString('hex');
 
-    const result = await this.db
+    const result = await this.dbRw
       .insert(apiKey)
       .values({
         api_key_id: apiKeyId,

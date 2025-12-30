@@ -8,7 +8,7 @@ import { IUpdateUserInfo } from '@core/common/interfaces/IUpdateUserInfo';
 @injectable()
 export class UserInfoUpdaterRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
 
   private updateInput(
@@ -57,7 +57,7 @@ export class UserInfoUpdaterRepository {
   ): Promise<boolean> => {
     const updateInput = this.updateInput(input);
 
-    const result = await this.db
+    const result = await this.dbRw
       .update(userInfo)
       .set(updateInput)
       .where(eq(userInfo.user_id, userId))
@@ -70,7 +70,7 @@ export class UserInfoUpdaterRepository {
     userId: string,
     phoneJid: string
   ): Promise<boolean> => {
-    const result = await this.db
+    const result = await this.dbRw
       .update(userInfo)
       .set({ phone_jid: phoneJid })
       .where(eq(userInfo.user_id, userId))

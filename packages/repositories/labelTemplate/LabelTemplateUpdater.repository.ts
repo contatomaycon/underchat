@@ -8,7 +8,7 @@ import { UpdateLabelTemplateRequest } from '@core/schema/labelTemplate/editLabel
 @injectable()
 export class LabelTemplateUpdaterRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
 
   private updateInput(
@@ -37,7 +37,7 @@ export class LabelTemplateUpdaterRepository {
   ): Promise<boolean> => {
     const updateInput = this.updateInput(input);
 
-    const result = await this.db
+    const result = await this.dbRw
       .update(labelTemplate)
       .set(updateInput)
       .where(eq(labelTemplate.label_template_id, labelTemplateId))

@@ -8,14 +8,14 @@ import { EReportConversationHistoryPdfStatus } from '@core/common/enums/EReportC
 @injectable()
 export class ReportConversationHistoryPdfUpdaterRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
 
   updateStatus = async (
     pdfId: string,
     status: EReportConversationHistoryPdfStatus
   ): Promise<void> => {
-    await this.db
+    await this.dbRw
       .update(reportConversationHistoryPdf)
       .set({
         status,
@@ -30,7 +30,7 @@ export class ReportConversationHistoryPdfUpdaterRepository {
     url: string,
     status: EReportConversationHistoryPdfStatus
   ): Promise<void> => {
-    await this.db
+    await this.dbRw
       .update(reportConversationHistoryPdf)
       .set({
         url_pdf: url,

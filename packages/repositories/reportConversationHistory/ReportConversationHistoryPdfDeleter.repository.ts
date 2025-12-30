@@ -7,14 +7,14 @@ import { inject, injectable } from 'tsyringe';
 @injectable()
 export class ReportConversationHistoryPdfDeleterRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
 
   deletePdfByAccountAndChat = async (
     accountId: string,
     chatId: string
   ): Promise<boolean> => {
-    const result = await this.db
+    const result = await this.dbRw
       .delete(reportConversationHistoryPdf)
       .where(
         and(

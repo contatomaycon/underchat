@@ -15,7 +15,7 @@ export class PlanAccountCancellerRepository {
   ) {}
 
   findPlanAccountWithPayment = async (accountId: string) => {
-    return this.dbRw.query.planAccount.findFirst({
+    return this.dbRo.query.planAccount.findFirst({
       where: and(
         eq(planAccount.account_id, accountId),
         isNull(planAccount.cancellation_date)
@@ -68,7 +68,7 @@ export class PlanAccountCancellerRepository {
   };
 
   findPlanAccountById = async (planAccountId: string) => {
-    return this.dbRw.query.planAccount.findFirst({
+    return this.dbRo.query.planAccount.findFirst({
       where: and(
         eq(planAccount.plan_account_id, planAccountId),
         isNull(planAccount.cancellation_date)

@@ -7,11 +7,11 @@ import { inject, injectable } from 'tsyringe';
 @injectable()
 export class WorkerCreatorRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
 
   createWorker = async (input: ICreateWorker): Promise<boolean> => {
-    const result = await this.db
+    const result = await this.dbRw
       .insert(worker)
       .values({
         worker_id: input.worker_id,

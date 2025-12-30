@@ -9,7 +9,7 @@ import { currentTime } from '@core/common/functions/currentTime';
 @injectable()
 export class AccountUpdaterRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
 
   private updateInput(
@@ -34,7 +34,7 @@ export class AccountUpdaterRepository {
   ): Promise<boolean> => {
     const updateInput = this.updateInput(input);
 
-    const result = await this.db
+    const result = await this.dbRw
       .update(account)
       .set(updateInput)
       .where(eq(account.account_id, accountId))
@@ -47,7 +47,7 @@ export class AccountUpdaterRepository {
     accountId: string,
     accountStatusId: string
   ): Promise<boolean> => {
-    const result = await this.db
+    const result = await this.dbRw
       .update(account)
       .set({
         account_status_id: accountStatusId,

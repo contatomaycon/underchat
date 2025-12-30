@@ -9,14 +9,14 @@ import { currentTime } from '@core/common/functions/currentTime';
 @injectable()
 export class ScheduleStatusUpdaterRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
 
   updateScheduleStatus = async (
     scheduleId: string,
     status: EScheduleStatus
   ): Promise<boolean> => {
-    const result = await this.db
+    const result = await this.dbRw
       .update(schedule)
       .set({
         status,

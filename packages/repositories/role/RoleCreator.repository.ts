@@ -8,7 +8,7 @@ import { v7 as uuidv7 } from 'uuid';
 @injectable()
 export class RoleCreatorRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
 
   createRole = async (
@@ -18,7 +18,7 @@ export class RoleCreatorRepository {
   ): Promise<CreateRoleResponse | null> => {
     const permissionRoleId = uuidv7();
 
-    const result = await this.db
+    const result = await this.dbRw
       .insert(permissionRole)
       .values({
         permission_role_id: permissionRoleId,
