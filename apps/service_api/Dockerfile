@@ -1,4 +1,4 @@
-FROM node:22.18.0-bookworm-slim AS base
+FROM node:24.12.0-bookworm-slim AS base
 
 FROM base AS turbo
 
@@ -61,7 +61,7 @@ RUN mkdir -p /build_locales
 
 COPY packages/plugins/i18next/locales /build_locales
 
-FROM node:22.18.0-bookworm-slim
+FROM node:24.12.0-bookworm-slim
 
 WORKDIR /app
 
@@ -71,9 +71,7 @@ COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/apps/service_api/package*.json ./apps/service_api
 COPY --from=builder /build_locales ./packages/plugins/i18next/locales
 
-RUN groupadd -r pptruser && useradd -r -g pptruser -G audio,video pptruser && \
-    mkdir -p /home/pptruser/Downloads /app && \
-    chown -R pptruser:pptruser /home/pptruser /app
+RUN groupadd -r pptruser && useradd -r -g pptruser -G audio,video pptruser
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
@@ -130,8 +128,16 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/* && \
     ln -sf /usr/bin/google-chrome-stable /usr/bin/chrome && \
     ln -sf /usr/bin/google-chrome-stable /usr/bin/google-chrome && \
-    fc-cache -f -v && \
-    chown -R pptruser:pptruser /app
+    fc-cache -f -v
+
+RUN mkdir -p /home/pptruser/Downloads \
+    /home/pptruser/.local/share/applications \
+    /home/pptruser/.local/share \
+    /home/pptruser/.config \
+    /home/pptruser/.cache \
+    /tmp/.chrome-user-data \
+    /app && \
+    chown -R pptruser:pptruser /home/pptruser /tmp/.chrome-user-data /app
 
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
     PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome-stable \
@@ -139,7 +145,9 @@ ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
     CHROME_PATH=/usr/bin/google-chrome-stable \
     HOME=/home/pptruser \
     XDG_CONFIG_HOME=/home/pptruser/.config \
-    XDG_CACHE_HOME=/home/pptruser/.cache
+    XDG_CACHE_HOME=/home/pptruser/.cache \
+    XDG_DATA_HOME=/home/pptruser/.local/share \
+    TMPDIR=/tmp
 
 USER pptruser
 

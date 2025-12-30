@@ -1,4 +1,4 @@
-FROM node:22.18.0-bookworm-slim AS base
+FROM node:24.12.0-bookworm-slim AS base
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
@@ -32,7 +32,7 @@ RUN pnpm build:public
 RUN mkdir -p /build_locales
 COPY packages/plugins/i18next/locales /build_locales
 
-FROM node:22.18.0-bookworm-slim AS release
+FROM node:24.12.0-bookworm-slim AS release
 WORKDIR /app
 ARG ATLASGO_SHA256
 RUN apt-get update && \

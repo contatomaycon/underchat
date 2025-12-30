@@ -1,4 +1,4 @@
-FROM node:22.18.0-bookworm-slim AS base
+FROM node:24.12.0-bookworm-slim AS base
 
 FROM base AS turbo
 
@@ -61,7 +61,7 @@ RUN mkdir -p /build_locales
 
 COPY packages/plugins/i18next/locales /build_locales
 
-FROM node:22.18.0-bookworm-slim
+FROM node:24.12.0-bookworm-slim
 
 WORKDIR /app
 

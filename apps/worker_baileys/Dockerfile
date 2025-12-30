@@ -1,4 +1,4 @@
-FROM node:22.18.0-bookworm-slim AS base
+FROM node:24.12.0-bookworm-slim AS base
 
 FROM base AS turbo
 
@@ -58,7 +58,7 @@ COPY packages ./packages
 
 RUN pnpm build:worker_baileys
 
-FROM node:22.18.0-bookworm-slim
+FROM node:24.12.0-bookworm-slim
 
 WORKDIR /app
 
