@@ -15,13 +15,13 @@ import { ENotificationType } from '@core/common/enums/ENotificationType';
 @injectable()
 export class NotificationsUpserterRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
 
   upsertNotifications = async (
     input: UpdateNotificationsRequest
   ): Promise<UpdateNotificationsResponse> => {
-    return this.db.transaction(async (tx) => {
+    return this.dbRw.transaction(async (tx) => {
       const twoFactorTypeId = await this.findNotificationTypeIdByName(
         tx,
         ENotificationType.two_factor

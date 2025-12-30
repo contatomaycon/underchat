@@ -16,7 +16,7 @@ import { ICreateServerWeb } from '@core/common/interfaces/ICreateServerWeb';
 @injectable()
 export class ServerCreatorRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
 
   private readonly createServer = async (
@@ -111,7 +111,7 @@ export class ServerCreatorRepository {
     inputServerSsh: ICreateServerSsh,
     inputServerWeb: ICreateServerWeb
   ): Promise<string> => {
-    return this.db.transaction(async (tx) => {
+    return this.dbRw.transaction(async (tx) => {
       const serverId = await this.createServer(tx, inputServer);
       if (!serverId) {
         throw new Error(t('server_create_error'));

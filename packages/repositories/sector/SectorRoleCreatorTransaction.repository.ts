@@ -9,7 +9,7 @@ import { CreateSectorRoleRequest } from '@core/schema/sector/createSectorRole/re
 @injectable()
 export class SectorRoleTransactionCreatorRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>,
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>,
     private readonly sectorRoleDeleterRepository: SectorRoleDeleterRepository,
     private readonly sectorRoleCreatorRepository: SectorRoleCreatorRepository
   ) {}
@@ -19,7 +19,7 @@ export class SectorRoleTransactionCreatorRepository {
     sectorId: string,
     input: CreateSectorRoleRequest
   ): Promise<boolean> => {
-    await this.db.transaction(async (tx) => {
+    await this.dbRw.transaction(async (tx) => {
       const deleteSectorRole =
         await this.sectorRoleDeleterRepository.deleteSectorRoleById(
           tx,

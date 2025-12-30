@@ -18,7 +18,7 @@ import { EPlanStatus } from '@core/common/enums/EPlanStatus';
 @injectable()
 export class OrderPaymentCreatorRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>,
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>,
     @inject(UpgradeDiscountCalculatorRepository)
     private readonly upgradeDiscountCalculator: UpgradeDiscountCalculatorRepository
   ) {}
@@ -108,7 +108,7 @@ export class OrderPaymentCreatorRepository {
   }): Promise<string> => {
     const accountPaymentId = randomUUID();
 
-    await this.db.insert(accountPayment).values({
+    await this.dbRw.insert(accountPayment).values({
       account_payment_id: accountPaymentId,
       account_id: data.accountId,
       user_customer_id: data.userCustomerId,
@@ -143,7 +143,7 @@ export class OrderPaymentCreatorRepository {
 
     const crossSellIds = data.addons.map((a) => a.plan_cross_sell_id);
 
-    const crossSells = await this.db
+    const crossSells = await this.dbRw
       .select({
         plan_cross_sell_id: planCrossSell.plan_cross_sell_id,
         quantity: planCrossSell.quantity,
@@ -191,12 +191,12 @@ export class OrderPaymentCreatorRepository {
     }
 
     if (crossSellRecords.length > 0) {
-      await this.db.insert(accountPaymentCrossSell).values(crossSellRecords);
+      await this.dbRw.insert(accountPaymentCrossSell).values(crossSellRecords);
     }
   };
 
   getPlan = async (planId: string) => {
-    return this.db.query.plan.findFirst({
+    return this.dbRw.query.plan.findFirst({
       where: and(eq(plan.plan_id, planId), isNull(plan.deleted_at)),
       columns: {
         plan_id: true,
@@ -237,7 +237,7 @@ export class OrderPaymentCreatorRepository {
       return 0;
     }
 
-    const crossSells = await this.db
+    const crossSells = await this.dbRw
       .select({
         plan_cross_sell_id: planCrossSell.plan_cross_sell_id,
         quantity: planCrossSell.quantity,
@@ -273,7 +273,7 @@ export class OrderPaymentCreatorRepository {
     accountId: string,
     planId: string
   ): Promise<boolean> => {
-    const result = await this.db
+    const result = await this.dbRw
       .select({
         plan_account_exclusive_id:
           planAccountExclusive.plan_account_exclusive_id,

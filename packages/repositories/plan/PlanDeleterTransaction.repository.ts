@@ -9,7 +9,7 @@ import { PlanDeleterRepository } from './PlanDeleter.repository';
 @injectable()
 export class PlanDeleterTransactionRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>,
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>,
     private readonly planItemsDeleterRepository: PlanItemsDeleterRepository,
     private readonly planDeleterRepository: PlanDeleterRepository,
     private readonly planItemsViewerExistsRepository: PlanItemsViewerExistsRepository
@@ -19,7 +19,7 @@ export class PlanDeleterTransactionRepository {
     t: TFunction<'translation', undefined>,
     planId: string
   ): Promise<boolean> => {
-    await this.db.transaction(async (tx) => {
+    await this.dbRw.transaction(async (tx) => {
       const existsPlanItems =
         await this.planItemsViewerExistsRepository.existsPlanItemsByPlanId(
           tx,

@@ -15,14 +15,14 @@ import { UpdateCreditCardFeeResponse } from '@core/schema/config/updateCreditCar
 @injectable()
 export class CreditCardFeeUpdaterRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
 
   upsertCreditCardFee = async (
     t: TFunction<'translation', undefined>,
     input: UpdateCreditCardFeeRequest
   ): Promise<UpdateCreditCardFeeResponse> => {
-    return this.db.transaction(async (tx) => {
+    return this.dbRw.transaction(async (tx) => {
       const existing = await this.findExistingCreditCardFeeTx(tx);
       if (existing) {
         return this.updateCreditCardFeeTx(

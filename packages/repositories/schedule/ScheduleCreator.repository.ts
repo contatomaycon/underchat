@@ -13,7 +13,7 @@ import { ExtractTablesWithRelations } from 'drizzle-orm';
 @injectable()
 export class ScheduleCreatorRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
 
   private readonly createScheduledContactsForContacts = async (
@@ -125,7 +125,7 @@ export class ScheduleCreatorRepository {
     contact_ids?: string[];
     contact_group_ids?: string[];
   }): Promise<string | null> => {
-    return this.db.transaction(async (tx) => {
+    return this.dbRw.transaction(async (tx) => {
       const scheduleId = uuidv7();
 
       const success = await this.insertSchedule(tx, scheduleId, {

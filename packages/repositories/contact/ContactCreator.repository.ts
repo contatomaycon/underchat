@@ -16,7 +16,7 @@ import { TFunction } from 'i18next';
 @injectable()
 export class ContactCreatorRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>,
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>,
     private readonly contactGroupAssignmentCreatorRepository: ContactGroupAssignmentCreatorRepository
   ) {}
 
@@ -30,7 +30,7 @@ export class ContactCreatorRepository {
   ): Promise<string | null> => {
     const contactId = uuidv7();
 
-    const dbOrTx = tx || this.db;
+    const dbOrTx = tx || this.dbRw;
 
     const result = await dbOrTx
       .insert(contact)
@@ -65,7 +65,7 @@ export class ContactCreatorRepository {
     input: ICreateContact,
     contactGroupId: string
   ): Promise<boolean | null> => {
-    return this.db.transaction(async (tx) => {
+    return this.dbRw.transaction(async (tx) => {
       const contactId = await this.createContact(input, tx);
 
       if (!contactId) {

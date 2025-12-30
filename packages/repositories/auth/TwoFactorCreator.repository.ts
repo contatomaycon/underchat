@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto';
 @injectable()
 export class TwoFactorCreatorRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
 
   createTwoFactor = async (data: {
@@ -25,7 +25,7 @@ export class TwoFactorCreatorRepository {
     const twoFactorId = randomUUID();
     const now = new Date().toISOString();
 
-    await this.db.insert(twoFactor).values({
+    await this.dbRw.insert(twoFactor).values({
       two_factor_id: twoFactorId,
       user_id: data.userId || null,
       phone_ddi: data.phoneDdi || null,

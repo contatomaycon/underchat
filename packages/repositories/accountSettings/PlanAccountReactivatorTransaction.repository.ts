@@ -14,7 +14,7 @@ import { TFunction } from 'i18next';
 @injectable()
 export class PlanAccountReactivatorTransactionRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
 
   private readonly reactivatePlanAccount = async (
@@ -61,7 +61,7 @@ export class PlanAccountReactivatorTransactionRepository {
     t: TFunction<'translation', undefined>,
     accountId: string
   ): Promise<void> => {
-    await this.db.transaction(async (tx) => {
+    await this.dbRw.transaction(async (tx) => {
       const planReactivated = await this.reactivatePlanAccount(tx, accountId);
 
       if (!planReactivated) {

@@ -11,7 +11,7 @@ import { PgTransaction } from 'drizzle-orm/pg-core';
 @injectable()
 export class ScheduleDeleterRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
 
   private readonly deleteScheduledContacts = async (
@@ -45,7 +45,7 @@ export class ScheduleDeleterRepository {
   };
 
   deleteScheduleById = async (scheduleId: string): Promise<boolean> => {
-    return this.db.transaction(async (tx) => {
+    return this.dbRw.transaction(async (tx) => {
       await this.deleteScheduledContacts(tx, scheduleId);
 
       const scheduleDeleted = await this.deleteSchedule(tx, scheduleId);

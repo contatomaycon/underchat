@@ -14,7 +14,7 @@ import { PgTransaction } from 'drizzle-orm/pg-core';
 @injectable()
 export class AccountInfoUpserterTransactionRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
 
   private buildUpdateInput(
@@ -169,7 +169,7 @@ export class AccountInfoUpserterTransactionRepository {
     input: EditAccountInfoRequest,
     urlLogo: string | null | undefined
   ): Promise<{ accountInfoId: string; created: boolean }> => {
-    return this.db.transaction(async (tx) => {
+    return this.dbRw.transaction(async (tx) => {
       const existingAccountInfo = await this.findExistingAccountInfo(
         tx,
         accountId

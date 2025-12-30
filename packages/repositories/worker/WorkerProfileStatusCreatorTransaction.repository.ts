@@ -13,7 +13,7 @@ import { IVisibilityData } from '@core/common/interfaces/IVisibilityData';
 @injectable()
 export class WorkerProfileStatusCreatorTransactionRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>,
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>,
     private readonly workerProfileStatusCreatorRepository: WorkerProfileStatusCreatorRepository,
     private readonly workerProfileStatusContactCreatorRepository: WorkerProfileStatusContactCreatorRepository,
     private readonly workerProfileStatusContactDeleterRepository: WorkerProfileStatusContactDeleterRepository,
@@ -27,7 +27,7 @@ export class WorkerProfileStatusCreatorTransactionRepository {
     input: ICreateWorkerProfileStatus,
     visibilityData: IVisibilityData
   ): Promise<string> => {
-    return this.db.transaction(async (tx) => {
+    return this.dbRw.transaction(async (tx) => {
       const workerProfileStatusId =
         await this.workerProfileStatusCreatorRepository.createWorkerProfileStatus(
           tx,

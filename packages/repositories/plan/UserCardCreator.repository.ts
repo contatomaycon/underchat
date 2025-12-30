@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto';
 @injectable()
 export class UserCardCreatorRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
 
   createUserCard = async (data: {
@@ -20,7 +20,7 @@ export class UserCardCreatorRepository {
   }): Promise<string> => {
     const userCardId = randomUUID();
 
-    await this.db.insert(userCard).values({
+    await this.dbRw.insert(userCard).values({
       user_card_id: userCardId,
       user_id: data.userId,
       token: data.token,

@@ -17,13 +17,14 @@ import { randomUUID } from 'node:crypto';
 @injectable()
 export class AccountPaymentNfSeUpserterRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>,
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   findAccountPaymentByBilling = async (
     billing: string
   ): Promise<{ account_payment_id: string } | null> => {
-    const payment = await this.db.query.accountPayment.findFirst({
+    const payment = await this.dbRo.query.accountPayment.findFirst({
       where: eq(schema.accountPayment.billing, billing),
       columns: {
         account_payment_id: true,
@@ -36,7 +37,7 @@ export class AccountPaymentNfSeUpserterRepository {
   findStatusByName = async (
     name: string
   ): Promise<{ account_payment_nfse_status_id: string } | null> => {
-    const status = await this.db.query.accountPaymentNfSeStatus.findFirst({
+    const status = await this.dbRo.query.accountPaymentNfSeStatus.findFirst({
       where: eq(accountPaymentNfSeStatus.name, name),
       columns: {
         account_payment_nfse_status_id: true,
@@ -49,7 +50,7 @@ export class AccountPaymentNfSeUpserterRepository {
   findNfSeByReference = async (
     reference: string
   ): Promise<{ account_payment_nfse_id: string } | null> => {
-    const nfse = await this.db.query.accountPaymentNfSe.findFirst({
+    const nfse = await this.dbRo.query.accountPaymentNfSe.findFirst({
       where: eq(accountPaymentNfSe.reference, reference),
       columns: {
         account_payment_nfse_id: true,
@@ -63,7 +64,7 @@ export class AccountPaymentNfSeUpserterRepository {
     accountPaymentId: string,
     invoiceData: IGetAsaasInvoiceResponse
   ): Promise<void> => {
-    await this.db.transaction(async (tx) => {
+    await this.dbRw.transaction(async (tx) => {
       const status = await this.findStatusByNameTx(tx, invoiceData.status);
 
       if (!status) {
@@ -223,7 +224,7 @@ export class AccountPaymentNfSeUpserterRepository {
     reference: string,
     statusName: string
   ): Promise<void> => {
-    await this.db.transaction(async (tx) => {
+    await this.dbRw.transaction(async (tx) => {
       const status = await this.findStatusByNameTx(tx, statusName);
 
       if (!status) {

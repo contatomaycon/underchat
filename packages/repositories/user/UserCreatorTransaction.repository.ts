@@ -22,7 +22,7 @@ import { PermissionAssignmentCreatorRepository } from '../permission/PermissionA
 @injectable()
 export class UserTransactionCreatorRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>,
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>,
     private readonly encryptService: EncryptService,
     private readonly passwordEncryptorService: PasswordEncryptorService,
     private readonly userCreatorRepository: UserCreatorRepository,
@@ -63,7 +63,7 @@ export class UserTransactionCreatorRepository {
     input: CreateUserRequest,
     photoUrl?: string | null
   ): Promise<boolean> => {
-    await this.db.transaction(async (tx) => {
+    await this.dbRw.transaction(async (tx) => {
       if (!input.email?.value || !input.password?.value) {
         throw new Error(t('email_required'));
       }

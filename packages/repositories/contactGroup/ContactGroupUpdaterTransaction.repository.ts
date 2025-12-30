@@ -11,7 +11,7 @@ import { ContactGroupUpdaterRepository } from './ContactGroupUpdater.repository'
 @injectable()
 export class ContactGroupUpdaterTransactionRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>,
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>,
     private readonly contactGroupAssignmentDeleterRepository: ContactGroupAssignmentDeleterRepository,
     private readonly contactGroupAssignmentCreatorRepository: ContactGroupAssignmentCreatorRepository,
     private readonly contactGroupAssignmentViewerExistsRepository: ContactGroupAssignmentViewerExistsRepository,
@@ -23,7 +23,7 @@ export class ContactGroupUpdaterTransactionRepository {
     contactGroupId: string,
     input: UpdateContactGroupRequest
   ): Promise<boolean> => {
-    await this.db.transaction(async (tx) => {
+    await this.dbRw.transaction(async (tx) => {
       const existsContactGroupAssignment =
         await this.contactGroupAssignmentViewerExistsRepository.existsContactGroupAssignmentById(
           tx,

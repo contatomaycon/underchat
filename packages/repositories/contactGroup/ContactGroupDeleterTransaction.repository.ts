@@ -9,7 +9,7 @@ import { ContactGroupDeleterRepository } from './ContactGroupDeleter.repository'
 @injectable()
 export class ContactGroupDeleterTransactionRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>,
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>,
     private readonly contactGroupAssignmentDeleterRepository: ContactGroupAssignmentDeleterRepository,
     private readonly contactGroupDeleterRepository: ContactGroupDeleterRepository,
     private readonly contactGroupAssignmentViewerExistsRepository: ContactGroupAssignmentViewerExistsRepository
@@ -19,7 +19,7 @@ export class ContactGroupDeleterTransactionRepository {
     t: TFunction<'translation', undefined>,
     contactGroupId: string
   ): Promise<boolean> => {
-    await this.db.transaction(async (tx) => {
+    await this.dbRw.transaction(async (tx) => {
       const existsContactGroupAssignment =
         await this.contactGroupAssignmentViewerExistsRepository.existsContactGroupAssignmentById(
           tx,

@@ -8,7 +8,8 @@ import { randomUUID } from 'node:crypto';
 @injectable()
 export class AccountTestRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>,
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   findExistingTest = async (data: {
@@ -16,7 +17,7 @@ export class AccountTestRepository {
     phoneC: string;
     emailC: string;
   }): Promise<boolean> => {
-    const existing = await this.db.query.accountTest.findFirst({
+    const existing = await this.dbRo.query.accountTest.findFirst({
       where: or(
         eq(accountTest.document_c, data.documentC),
         eq(accountTest.phone_c, data.phoneC),
@@ -28,7 +29,7 @@ export class AccountTestRepository {
   };
 
   findExistingTestByPhone = async (phoneC: string): Promise<boolean> => {
-    const existing = await this.db.query.accountTest.findFirst({
+    const existing = await this.dbRo.query.accountTest.findFirst({
       where: eq(accountTest.phone_c, phoneC),
     });
 
@@ -36,7 +37,7 @@ export class AccountTestRepository {
   };
 
   findExistingTestByEmail = async (emailC: string): Promise<boolean> => {
-    const existing = await this.db.query.accountTest.findFirst({
+    const existing = await this.dbRo.query.accountTest.findFirst({
       where: eq(accountTest.email_c, emailC),
     });
 
@@ -54,7 +55,7 @@ export class AccountTestRepository {
     const accountTestId = randomUUID();
     const now = new Date().toISOString();
 
-    await this.db.insert(accountTest).values({
+    await this.dbRw.insert(accountTest).values({
       account_test_id: accountTestId,
       document: data.document,
       document_c: data.documentC,

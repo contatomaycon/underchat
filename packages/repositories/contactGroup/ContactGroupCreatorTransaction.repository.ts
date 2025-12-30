@@ -9,7 +9,7 @@ import { CreateContactGroupRequest } from '@core/schema/contactGroup/createConta
 @injectable()
 export class ContactGroupCreatorTransactionRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>,
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>,
     private readonly contactGroupCreatorRepository: ContactGroupCreatorRepository,
     private readonly contactGroupAssignmentCreatorRepository: ContactGroupAssignmentCreatorRepository
   ) {}
@@ -19,7 +19,7 @@ export class ContactGroupCreatorTransactionRepository {
     accountId: string,
     input: CreateContactGroupRequest
   ): Promise<boolean> => {
-    await this.db.transaction(async (tx) => {
+    await this.dbRw.transaction(async (tx) => {
       const contactGroupId =
         await this.contactGroupCreatorRepository.createContactGroup(
           tx,

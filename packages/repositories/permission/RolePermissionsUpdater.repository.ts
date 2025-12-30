@@ -19,7 +19,7 @@ import { IPermissionToInsert } from '@core/common/interfaces/IPermissionToInsert
 @injectable()
 export class RolePermissionsUpdaterRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
 
   private readonly deleteAllRolePermissions = async (
@@ -96,7 +96,7 @@ export class RolePermissionsUpdaterRepository {
     permissionRoleId: string,
     groups: PermissionGroupRequest[]
   ): Promise<void> => {
-    await this.db.transaction(async (tx) => {
+    await this.dbRw.transaction(async (tx) => {
       await this.deleteAllRolePermissions(tx, permissionRoleId);
 
       const permissionsToInsert: IPermissionToInsert[] = [];

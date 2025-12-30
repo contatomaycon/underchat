@@ -8,7 +8,7 @@ import { currentTime } from '@core/common/functions/currentTime';
 @injectable()
 export class UserCardDefaultUpdaterRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
 
   updateUserCardDefault = async (
@@ -17,7 +17,7 @@ export class UserCardDefaultUpdaterRepository {
   ): Promise<boolean> => {
     const date = currentTime();
 
-    await this.db.transaction(async (tx) => {
+    await this.dbRw.transaction(async (tx) => {
       await tx
         .update(userCard)
         .set({
@@ -46,7 +46,7 @@ export class UserCardDefaultUpdaterRepository {
   };
 
   setFirstCardAsDefault = async (userId: string): Promise<boolean> => {
-    const firstCard = await this.db
+    const firstCard = await this.dbRw
       .select({
         user_card_id: userCard.user_card_id,
       })
@@ -62,7 +62,7 @@ export class UserCardDefaultUpdaterRepository {
 
     const date = currentTime();
 
-    await this.db
+    await this.dbRw
       .update(userCard)
       .set({
         default: true,

@@ -7,7 +7,7 @@ import { WorkerProfileStatusDeleterRepository } from './WorkerProfileStatusDelet
 @injectable()
 export class WorkerProfileStatusDeleterTransactionRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>,
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>,
     private readonly workerProfileStatusContactDeleterRepository: WorkerProfileStatusContactDeleterRepository,
     private readonly workerProfileStatusDeleterRepository: WorkerProfileStatusDeleterRepository
   ) {}
@@ -15,7 +15,7 @@ export class WorkerProfileStatusDeleterTransactionRepository {
   deleteWorkerProfileStatus = async (
     workerProfileStatusId: string
   ): Promise<boolean> => {
-    return this.db.transaction(async (tx) => {
+    return this.dbRw.transaction(async (tx) => {
       await this.workerProfileStatusContactDeleterRepository.deleteWorkerProfileStatusContactByStatusId(
         tx,
         workerProfileStatusId

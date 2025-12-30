@@ -9,7 +9,7 @@ import { CrossSellDeleterRepository } from './CrossSellDeleter.repository';
 @injectable()
 export class CrossSellDeleterTransactionRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>,
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>,
     private readonly crossSellAccountDeleterRepository: CrossSellAccountDeleterRepository,
     private readonly crossSellDeleterRepository: CrossSellDeleterRepository,
     private readonly crossSellAccountViewerExistsRepository: CrossSellAccountViewerExistsRepository
@@ -19,7 +19,7 @@ export class CrossSellDeleterTransactionRepository {
     t: TFunction<'translation', undefined>,
     crossSellId: string
   ): Promise<boolean> => {
-    await this.db.transaction(async (tx) => {
+    await this.dbRw.transaction(async (tx) => {
       const existsCrossSellAccounts =
         await this.crossSellAccountViewerExistsRepository.existsCrossSellAccountsByCrossSellId(
           tx,

@@ -13,11 +13,11 @@ import { ICalculatedPlanAccountData } from '@core/common/interfaces/IPlanAccount
 @injectable()
 export class PlanAccountUpdaterRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
 
   findPlanAccountByAccountId = async (accountId: string) => {
-    return this.db.query.planAccount.findFirst({
+    return this.dbRw.query.planAccount.findFirst({
       where: eq(planAccount.account_id, accountId),
       columns: {
         plan_account_id: true,
@@ -37,7 +37,7 @@ export class PlanAccountUpdaterRepository {
     accountId: string,
     input: UpdatePlanAccountRequest
   ): Promise<boolean> => {
-    return this.db.transaction(async (tx) => {
+    return this.dbRw.transaction(async (tx) => {
       const existingPlanAccount = await this.findExistingPlanAccount(
         tx,
         accountId

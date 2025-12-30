@@ -13,14 +13,15 @@ import { IUpdateWorkerConfig } from '@core/common/interfaces/IUpdateWorkerConfig
 @injectable()
 export class WorkerConfigUpserterRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>,
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   upsertWorkerConfig = async (
     workerId: string,
     input: IUpdateWorkerConfig
   ): Promise<void> => {
-    await this.db.transaction(async (tx) => {
+    await this.dbRw.transaction(async (tx) => {
       await this.ensureSingleConfigPerWorker(tx, workerId);
 
       const existingConfig = await this.findExistingConfigTx(tx, workerId);
@@ -160,7 +161,7 @@ export class WorkerConfigUpserterRepository {
     workerId: string,
     text: string | null
   ): Promise<string | null> => {
-    await this.db.transaction(async (tx) => {
+    await this.dbRw.transaction(async (tx) => {
       await this.ensureSingleConfigPerWorker(tx, workerId);
 
       const existingConfig = await this.findExistingConfigTx(tx, workerId);
@@ -222,7 +223,7 @@ export class WorkerConfigUpserterRepository {
   private async getTransferProtocolText(
     workerId: string
   ): Promise<string | null> {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         generate_protocol_at_transfer:
           workerConfig.generate_protocol_at_transfer,
@@ -239,7 +240,7 @@ export class WorkerConfigUpserterRepository {
     workerId: string,
     text: string | null
   ): Promise<string | null> => {
-    await this.db.transaction(async (tx) => {
+    await this.dbRw.transaction(async (tx) => {
       await this.ensureSingleConfigPerWorker(tx, workerId);
 
       const existingConfig = await this.findExistingConfigTx(tx, workerId);
@@ -299,7 +300,7 @@ export class WorkerConfigUpserterRepository {
   }
 
   private async getStartProtocolText(workerId: string): Promise<string | null> {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         generate_protocol_at_start: workerConfig.generate_protocol_at_start,
       })
@@ -315,7 +316,7 @@ export class WorkerConfigUpserterRepository {
     workerId: string,
     quantity: number | null
   ): Promise<number | null> => {
-    await this.db.transaction(async (tx) => {
+    await this.dbRw.transaction(async (tx) => {
       await this.ensureSingleConfigPerWorker(tx, workerId);
 
       const existingConfig = await this.findExistingConfigTx(tx, workerId);
@@ -377,7 +378,7 @@ export class WorkerConfigUpserterRepository {
   private async getSimultaneousAttendance(
     workerId: string
   ): Promise<number | null> {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         simultaneous_attendance: workerConfig.simultaneous_attendance,
       })
@@ -393,7 +394,7 @@ export class WorkerConfigUpserterRepository {
     workerId: string,
     text: string | null
   ): Promise<string | null> => {
-    await this.db.transaction(async (tx) => {
+    await this.dbRw.transaction(async (tx) => {
       await this.ensureSingleConfigPerWorker(tx, workerId);
 
       const existingConfig = await this.findExistingConfigTx(tx, workerId);
@@ -453,7 +454,7 @@ export class WorkerConfigUpserterRepository {
   }
 
   private async getShowMessageOnCall(workerId: string): Promise<string | null> {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         show_message_on_call: workerConfig.show_message_on_call,
       })
@@ -469,7 +470,7 @@ export class WorkerConfigUpserterRepository {
     workerId: string,
     chatbotId: string | null
   ): Promise<string | null> => {
-    await this.db.transaction(async (tx) => {
+    await this.dbRw.transaction(async (tx) => {
       await this.ensureSingleConfigPerWorker(tx, workerId);
 
       const existingConfig = await this.findExistingConfigTx(tx, workerId);
@@ -529,7 +530,7 @@ export class WorkerConfigUpserterRepository {
   }
 
   private async getChatbot(workerId: string): Promise<string | null> {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         chatbot_id: workerConfig.chatbot_id,
       })

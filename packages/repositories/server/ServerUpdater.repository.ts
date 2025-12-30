@@ -15,7 +15,7 @@ import { IUpdateServerWebById } from '@core/common/interfaces/IUpdateServerWebBy
 @injectable()
 export class ServerUpdaterRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
 
   private readonly updateServerById = async (
@@ -99,7 +99,7 @@ export class ServerUpdaterRepository {
     inputServerSsh: IUpdateServerSshById,
     inputServerWeb: IUpdateServerWebById
   ): Promise<boolean> => {
-    return this.db.transaction(async (tx) => {
+    return this.dbRw.transaction(async (tx) => {
       const updateServerResult = await this.updateServerById(tx, inputServer);
       if (!updateServerResult) {
         throw new Error(t('server_update_error'));

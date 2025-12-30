@@ -10,11 +10,12 @@ import { EAccountStatus } from '@core/common/enums/EAccountStatus';
 @injectable()
 export class PlanAccountCancellerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>,
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   findPlanAccountWithPayment = async (accountId: string) => {
-    return this.db.query.planAccount.findFirst({
+    return this.dbRw.query.planAccount.findFirst({
       where: and(
         eq(planAccount.account_id, accountId),
         isNull(planAccount.cancellation_date)
@@ -41,7 +42,7 @@ export class PlanAccountCancellerRepository {
   findPlanAccountWithCancellation = async (
     accountId: string
   ): Promise<IPlanAccountWithCancellation | null> => {
-    const result = await this.db
+    const result = await this.dbRw
       .select({
         plan_account_id: planAccount.plan_account_id,
         cancellation_date: planAccount.cancellation_date,
@@ -67,7 +68,7 @@ export class PlanAccountCancellerRepository {
   };
 
   findPlanAccountById = async (planAccountId: string) => {
-    return this.db.query.planAccount.findFirst({
+    return this.dbRw.query.planAccount.findFirst({
       where: and(
         eq(planAccount.plan_account_id, planAccountId),
         isNull(planAccount.cancellation_date)
@@ -112,7 +113,7 @@ export class PlanAccountCancellerRepository {
       updateData.next_payment_date = null;
     }
 
-    const result = await this.db
+    const result = await this.dbRw
       .update(planAccount)
       .set(updateData)
       .where(
@@ -127,7 +128,7 @@ export class PlanAccountCancellerRepository {
   };
 
   findWorkersByAccountId = async (accountId: string): Promise<string[]> => {
-    const result = await this.db
+    const result = await this.dbRw
       .select({
         worker_id: worker.worker_id,
       })
@@ -141,7 +142,7 @@ export class PlanAccountCancellerRepository {
   findInvoiceIdByAccountPaymentId = async (
     accountPaymentId: string
   ): Promise<string | null> => {
-    const nfseData = await this.db.query.accountPaymentNfSe.findFirst({
+    const nfseData = await this.dbRo.query.accountPaymentNfSe.findFirst({
       where: eq(accountPaymentNfSe.account_payment_id, accountPaymentId),
       columns: {
         reference: true,
@@ -171,7 +172,7 @@ export class PlanAccountCancellerRepository {
       updateData.next_payment_date = null;
     }
 
-    const result = await this.db
+    const result = await this.dbRw
       .update(planAccount)
       .set(updateData)
       .where(
@@ -186,7 +187,7 @@ export class PlanAccountCancellerRepository {
   };
 
   findCancelledPlanAccount = async (accountId: string) => {
-    const result = await this.db
+    const result = await this.dbRw
       .select({
         plan_account_id: planAccount.plan_account_id,
         account_id: planAccount.account_id,

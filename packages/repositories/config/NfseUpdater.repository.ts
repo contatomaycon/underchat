@@ -15,14 +15,14 @@ import { UpdateNfseResponse } from '@core/schema/config/updateNfse/response.sche
 @injectable()
 export class NfseUpdaterRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
 
   upsertNfse = async (
     t: TFunction<'translation', undefined>,
     input: UpdateNfseRequest
   ): Promise<UpdateNfseResponse> => {
-    return this.db.transaction(async (tx) => {
+    return this.dbRw.transaction(async (tx) => {
       const existing = await this.findExistingNfseTx(tx);
 
       if (existing) {

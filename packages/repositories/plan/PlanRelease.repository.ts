@@ -19,7 +19,8 @@ import { currentTime } from '@core/common/functions/currentTime';
 @injectable()
 export class PlanReleaseRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>,
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   findAccountPaymentByBilling = async (
@@ -34,7 +35,7 @@ export class PlanReleaseRepository {
     payment_date: string | null;
     payment_status_id: string;
   } | null> => {
-    const payment = await this.db.query.accountPayment.findFirst({
+    const payment = await this.dbRo.query.accountPayment.findFirst({
       where: eq(accountPayment.billing, billing),
       columns: {
         account_payment_id: true,
@@ -64,7 +65,7 @@ export class PlanReleaseRepository {
     payment_status_id: string;
     billing: string;
   } | null> => {
-    const payment = await this.db.query.accountPayment.findFirst({
+    const payment = await this.dbRo.query.accountPayment.findFirst({
       where: eq(accountPayment.account_payment_id, accountPaymentId),
       columns: {
         account_payment_id: true,
@@ -124,7 +125,7 @@ export class PlanReleaseRepository {
     last_payment_date: string | null;
     cancellation_date: string | null;
   } | null> => {
-    const planAcc = await this.db.query.planAccount.findFirst({
+    const planAcc = await this.dbRo.query.planAccount.findFirst({
       where: eq(planAccount.account_id, accountId),
       columns: {
         plan_account_id: true,
@@ -149,7 +150,7 @@ export class PlanReleaseRepository {
     plan_id: string;
     next_payment_date: string | null;
   } | null> => {
-    const planAcc = await this.db.query.planAccount.findFirst({
+    const planAcc = await this.dbRo.query.planAccount.findFirst({
       where: eq(planAccount.account_payment_id, accountPaymentId),
       columns: {
         plan_account_id: true,
@@ -334,7 +335,7 @@ export class PlanReleaseRepository {
     value: string;
     shouldReleasePlan: boolean;
   }): Promise<void> => {
-    await this.db.transaction(async (tx) => {
+    await this.dbRw.transaction(async (tx) => {
       await this.updateAccountPaymentStatus(
         tx,
         data.accountPaymentId,
@@ -611,7 +612,7 @@ export class PlanReleaseRepository {
   findPlanById = async (
     planId: string
   ): Promise<{ name: string; description: string | null } | null> => {
-    const planData = await this.db.query.plan.findFirst({
+    const planData = await this.dbRo.query.plan.findFirst({
       where: eq(plan.plan_id, planId),
       columns: {
         name: true,
@@ -686,7 +687,7 @@ export class PlanReleaseRepository {
     planId: string;
     daysTrial: number;
   }): Promise<void> => {
-    await this.db.transaction(async (tx) => {
+    await this.dbRw.transaction(async (tx) => {
       const now = new Date();
       const nextPaymentDate = new Date(now);
       nextPaymentDate.setDate(nextPaymentDate.getDate() + data.daysTrial);
@@ -726,7 +727,7 @@ export class PlanReleaseRepository {
   findUserCustomerByAccountPaymentId = async (
     accountPaymentId: string
   ): Promise<{ user_customer: string } | null> => {
-    const payment = await this.db.query.accountPayment.findFirst({
+    const payment = await this.dbRo.query.accountPayment.findFirst({
       where: eq(accountPayment.account_payment_id, accountPaymentId),
       columns: {
         user_customer_id: true,
@@ -752,7 +753,7 @@ export class PlanReleaseRepository {
   findNfSeByAccountPaymentId = async (
     accountPaymentId: string
   ): Promise<{ account_payment_nfse_id: string } | null> => {
-    const nfseRecord = await this.db.query.accountPaymentNfSe.findFirst({
+    const nfseRecord = await this.dbRo.query.accountPaymentNfSe.findFirst({
       where: eq(schema.accountPaymentNfSe.account_payment_id, accountPaymentId),
       columns: {
         account_payment_nfse_id: true,
@@ -777,7 +778,7 @@ export class PlanReleaseRepository {
     pis_value: string | null;
     deductions: string | null;
   } | null> => {
-    const nfseRecord = await this.db.query.nfse.findFirst({
+    const nfseRecord = await this.dbRo.query.nfse.findFirst({
       where: eq(nfse.default_product, true),
       columns: {
         nfse_id: true,

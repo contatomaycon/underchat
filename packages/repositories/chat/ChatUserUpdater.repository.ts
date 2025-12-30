@@ -14,7 +14,7 @@ import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 @injectable()
 export class ChatUserUpdaterRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
 
   private updateInput(
@@ -108,7 +108,7 @@ export class ChatUserUpdaterRepository {
     userId: string,
     input: UpdateChatsUserRequest
   ): Promise<boolean> => {
-    return this.db.transaction(async (tx) => {
+    return this.dbRw.transaction(async (tx) => {
       const exists = await this.checkExistsUserByid(tx, userId);
 
       if (exists) {
@@ -123,7 +123,7 @@ export class ChatUserUpdaterRepository {
     userId: string,
     newStatus: EChatUserStatus
   ): Promise<boolean> => {
-    const result = await this.db
+    const result = await this.dbRw
       .update(chatUser)
       .set({ status: newStatus })
       .where(and(eq(chatUser.user_id, userId), ne(chatUser.status, newStatus)))

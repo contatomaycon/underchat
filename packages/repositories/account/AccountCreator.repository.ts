@@ -18,7 +18,7 @@ import { EFooter } from '@core/common/enums/EFooter';
 @injectable()
 export class AccountCreatorRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
 
   createAccount = async (
@@ -26,7 +26,7 @@ export class AccountCreatorRepository {
   ): Promise<string | null> => {
     const accountId = uuidv7();
 
-    const result = await this.db
+    const result = await this.dbRw
       .insert(account)
       .values({
         account_id: accountId,
@@ -45,7 +45,7 @@ export class AccountCreatorRepository {
   createAccountWithPlanAndApiKey = async (
     input: CreateAccountRequest
   ): Promise<string | null> => {
-    return this.db.transaction(async (tx) => {
+    return this.dbRw.transaction(async (tx) => {
       const accountId = uuidv7();
 
       await tx.insert(account).values({
