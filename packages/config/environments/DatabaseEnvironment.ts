@@ -19,10 +19,19 @@ export class DatabaseEnvironment {
     return host;
   }
 
-  public get dbPort(): number {
-    const port = process.env.DB_PORT && Number(process.env.DB_PORT);
+  public get dbPortRw(): number {
+    const port = process.env.DB_PORT_RW && Number(process.env.DB_PORT_RW);
     if (!port) {
-      throw new InvalidConfigurationError('DB_PORT is not defined.');
+      throw new InvalidConfigurationError('DB_PORT_RW is not defined.');
+    }
+
+    return port;
+  }
+
+  public get dbPortRo(): number {
+    const port = process.env.DB_PORT_RO && Number(process.env.DB_PORT_RO);
+    if (!port) {
+      throw new InvalidConfigurationError('DB_PORT_RO is not defined.');
     }
 
     return port;

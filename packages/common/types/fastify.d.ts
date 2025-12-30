@@ -20,7 +20,8 @@ declare module 'fastify' {
   }
 
   export interface FastifyInstance {
-    Database: NodePgDatabase<typeof schema>;
+    DatabaseRw: NodePgDatabase<typeof schema>;
+    DatabaseRo: NodePgDatabase<typeof schema>;
     DatabaseElasticClient: ClientElastic;
     ElasticLogsClient: ClientElastic;
     Centrifuge: Centrifuge;

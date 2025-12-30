@@ -10,7 +10,7 @@ import { FastifyInstance } from 'fastify';
 async function dbConnector(fastify: FastifyInstance) {
   const poolRw = new Pool({
     host: databaseEnvironment.dbHostRw,
-    port: databaseEnvironment.dbPort,
+    port: databaseEnvironment.dbPortRw,
     user: databaseEnvironment.dbUser,
     password: databaseEnvironment.dbPassword,
     database: databaseEnvironment.dbDatabase,
@@ -18,7 +18,7 @@ async function dbConnector(fastify: FastifyInstance) {
 
   const poolRo = new Pool({
     host: databaseEnvironment.dbHostRo,
-    port: databaseEnvironment.dbPort,
+    port: databaseEnvironment.dbPortRo,
     user: databaseEnvironment.dbUser,
     password: databaseEnvironment.dbPassword,
     database: databaseEnvironment.dbDatabase,
