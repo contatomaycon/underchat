@@ -25,7 +25,7 @@ import { isDefinedFilter } from '@core/common/functions/isDefinedFilter';
 @injectable()
 export class ContactListerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   private readonly setOrders = (query: ListContactRequest): SQL[] => {
@@ -68,7 +68,7 @@ export class ContactListerRepository {
       searchTerm
         ? inArray(
             labelTemplate.label_template_id,
-            this.db
+            this.dbRo
               .select({ label_template_id: labelTemplate.label_template_id })
               .from(labelTemplate)
               .where(ilike(labelTemplate.label, `%${searchTerm}%`))
@@ -102,7 +102,7 @@ export class ContactListerRepository {
       ...filters,
     ].filter(isDefinedFilter);
 
-    const queryBuilder = this.db
+    const queryBuilder = this.dbRo
       .select({
         contact_id: contact.contact_id,
         account: {
@@ -189,7 +189,7 @@ export class ContactListerRepository {
       ...filters,
     ].filter(isDefinedFilter);
 
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         count: count(),
       })

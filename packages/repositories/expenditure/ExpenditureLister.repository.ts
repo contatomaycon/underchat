@@ -9,7 +9,7 @@ import { ListExpenditureResponse } from '@core/schema/expenditure/listExpenditur
 @injectable()
 export class ExpenditureListerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   private readonly setFiltersExpenditure = (
@@ -51,7 +51,7 @@ export class ExpenditureListerRepository {
   ): Promise<ListExpenditureResponse[]> => {
     const filtersExpenditure = this.setFiltersExpenditure(query);
 
-    const result = await this.db.query.expenditure.findMany({
+    const result = await this.dbRo.query.expenditure.findMany({
       where: and(isNull(expenditure.deleted_at), ...filtersExpenditure),
       columns: {
         expenditure_id: true,
@@ -82,7 +82,7 @@ export class ExpenditureListerRepository {
   ): Promise<number> => {
     const filtersExpenditure = this.setFiltersExpenditure(query);
 
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         count: count(),
       })

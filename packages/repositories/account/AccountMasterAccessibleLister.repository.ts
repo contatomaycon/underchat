@@ -8,13 +8,13 @@ import { IAccountBasic } from '@core/common/interfaces/IAccountBasic';
 @injectable()
 export class AccountMasterAccessibleListerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   listMasterAccessibleAccounts = async (
     excludeAccountId: string
   ): Promise<IAccountBasic[]> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         account_id: account.account_id,
         name: account.name,

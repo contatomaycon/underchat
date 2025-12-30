@@ -14,7 +14,7 @@ import { EPaymentStatus } from '@core/common/enums/EPaymentStatus';
 @injectable()
 export class FinancialReportListerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   private readonly setFilters = (
@@ -288,7 +288,7 @@ export class FinancialReportListerRepository {
   }> => {
     const filters = this.setFilters(query);
 
-    const paymentsResult = await this.db
+    const paymentsResult = await this.dbRo
       .select({
         value: accountPayment.value,
         created_at: accountPayment.created_at,
@@ -358,7 +358,7 @@ export class FinancialReportListerRepository {
   }> => {
     const filters = this.setExpenditureFilters(query);
 
-    const expendituresResult = await this.db
+    const expendituresResult = await this.dbRo
       .select({
         price: expenditure.price,
         created_at: expenditure.created_at,

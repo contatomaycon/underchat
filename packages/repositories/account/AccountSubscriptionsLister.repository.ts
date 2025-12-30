@@ -8,7 +8,7 @@ import { ListAccountSubscriptionsResponse } from '@core/schema/account/listAccou
 @injectable()
 export class AccountSubscriptionsListerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   listAccountSubscriptions = async (
@@ -30,7 +30,7 @@ export class AccountSubscriptionsListerRepository {
   };
 
   private readonly findAccountWithSubscriptions = async (accountId: string) => {
-    return this.db.query.account.findFirst({
+    return this.dbRo.query.account.findFirst({
       where: and(eq(account.account_id, accountId), isNull(account.deleted_at)),
       with: {
         apc: {

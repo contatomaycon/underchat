@@ -8,7 +8,7 @@ import { ListChatContactsResponse } from '@core/schema/chat/listContacts/respons
 @injectable()
 export class ChatContactListerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   listChatContacts = async (
@@ -34,7 +34,7 @@ export class ChatContactListerRepository {
       whereConditions.push(or(...searchConditions) as SQL);
     }
 
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         contact_id: contact.contact_id,
         name: contact.name,
@@ -103,7 +103,7 @@ export class ChatContactListerRepository {
       whereConditions.push(or(...searchConditions) as SQL);
     }
 
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         count: count(),
       })

@@ -8,11 +8,11 @@ import { ListPlanItemResponse } from '@core/schema/plan/listPlanItems/response.s
 @injectable()
 export class PlanItemsListerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   listPlanItems = async (planId: string): Promise<ListPlanItemResponse[]> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         plan_item_id: planItems.plan_item_id,
         plan_id: planItems.plan_id,

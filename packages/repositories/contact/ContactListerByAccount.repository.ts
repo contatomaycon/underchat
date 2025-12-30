@@ -7,11 +7,11 @@ import { and, eq, isNull } from 'drizzle-orm';
 @injectable()
 export class ContactListerByAccountRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   listContactsByAccountId = async (accountId: string): Promise<string[]> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         contact_id: contact.contact_id,
       })

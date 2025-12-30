@@ -9,7 +9,7 @@ import { calculateBillingPeriodByDates } from '@core/common/functions/calculateB
 @injectable()
 export class UpgradeDiscountCalculatorRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   calculateUpgradeDiscount = async (
@@ -126,7 +126,7 @@ export class UpgradeDiscountCalculatorRepository {
   };
 
   private readonly getNewPlan = async (newPlanId: string) => {
-    return this.db.query.plan.findFirst({
+    return this.dbRo.query.plan.findFirst({
       where: and(
         eq(schema.plan.plan_id, newPlanId),
         isNull(schema.plan.deleted_at)
@@ -238,7 +238,7 @@ export class UpgradeDiscountCalculatorRepository {
   };
 
   private readonly findAccountWithPlanAccounts = async (accountId: string) => {
-    return this.db.query.account.findFirst({
+    return this.dbRo.query.account.findFirst({
       where: and(eq(account.account_id, accountId), isNull(account.deleted_at)),
       with: {
         apc: {

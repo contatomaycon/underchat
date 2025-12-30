@@ -8,14 +8,14 @@ import { and, eq, isNull, desc } from 'drizzle-orm';
 @injectable()
 export class UserCardsListerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   getUserCardById = async (
     userCardId: string,
     userId: string
   ): Promise<{ user_card_id: string; token: string } | null> => {
-    const result = await this.db.query.userCard.findFirst({
+    const result = await this.dbRo.query.userCard.findFirst({
       where: and(
         eq(userCard.user_card_id, userCardId),
         eq(userCard.user_id, userId),
@@ -34,7 +34,7 @@ export class UserCardsListerRepository {
     userId: string,
     token: string
   ): Promise<{ user_card_id: string; token: string } | null> => {
-    const result = await this.db.query.userCard.findFirst({
+    const result = await this.dbRo.query.userCard.findFirst({
       where: and(
         eq(userCard.user_id, userId),
         eq(userCard.token, token),
@@ -50,7 +50,7 @@ export class UserCardsListerRepository {
   };
 
   getUserCardsCount = async (userId: string): Promise<number> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select()
       .from(userCard)
       .where(and(eq(userCard.user_id, userId), isNull(userCard.deleted_at)))
@@ -60,7 +60,7 @@ export class UserCardsListerRepository {
   };
 
   listUserCards = async (userId: string): Promise<ListUserCardResponse[]> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         user_card_id: userCard.user_card_id,
         holder_name: userCard.holder_name,

@@ -9,7 +9,7 @@ import { isDefinedFilter } from '@core/common/functions/isDefinedFilter';
 @injectable()
 export class ContactExporterRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   exportContacts = async (
@@ -20,7 +20,7 @@ export class ContactExporterRepository {
       isNull(contact.deleted_at),
     ].filter(isDefinedFilter);
 
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         contact_id: contact.contact_id,
         name: contact.name,

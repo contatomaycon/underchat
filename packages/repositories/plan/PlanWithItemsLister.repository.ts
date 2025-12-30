@@ -16,7 +16,7 @@ import { EPlanStatus } from '@core/common/enums/EPlanStatus';
 @injectable()
 export class PlanWithItemsListerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   listPlanWithItems = async (
@@ -44,7 +44,7 @@ export class PlanWithItemsListerRepository {
       this.buildExclusivePlanFilter(exclusivePlanIds),
     ];
 
-    return this.db
+    return this.dbRo
       .select({
         plan_id: plan.plan_id,
         name: plan.name,
@@ -89,7 +89,7 @@ export class PlanWithItemsListerRepository {
       return [];
     }
 
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         plan_id: planAccountExclusive.plan_id,
       })
@@ -101,7 +101,7 @@ export class PlanWithItemsListerRepository {
   };
 
   private readonly listAllPlanItems = async () => {
-    return this.db
+    return this.dbRo
       .select({
         plan_item_id: planItems.plan_item_id,
         plan_id: planItems.plan_id,

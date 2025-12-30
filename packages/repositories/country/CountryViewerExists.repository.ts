@@ -7,11 +7,11 @@ import { count, eq } from 'drizzle-orm';
 @injectable()
 export class CountryViewerExistsRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   existsCountryById = async (countryId: number): Promise<boolean> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         total: count(),
       })

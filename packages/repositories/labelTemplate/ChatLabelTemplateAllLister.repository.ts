@@ -8,13 +8,13 @@ import { inject, injectable } from 'tsyringe';
 @injectable()
 export class ChatLabelTemplateAllListerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   listChatLabelTemplateAll = async (
     accountId: string
   ): Promise<ListChatLabelTemplatesResponse[]> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         label_template_id: labelTemplate.label_template_id,
         label: labelTemplate.label,

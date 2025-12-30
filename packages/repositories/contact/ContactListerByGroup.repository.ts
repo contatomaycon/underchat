@@ -7,7 +7,7 @@ import { and, eq, inArray, isNull } from 'drizzle-orm';
 @injectable()
 export class ContactListerByGroupRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   listContactsByGroupIds = async (
@@ -18,7 +18,7 @@ export class ContactListerByGroupRepository {
       return [];
     }
 
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         contact_id: contact.contact_id,
       })

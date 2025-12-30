@@ -7,11 +7,11 @@ import { and, eq, isNull } from 'drizzle-orm';
 @injectable()
 export class NotificationMessageViewerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   findNotificationById = async (notificationId: string) => {
-    return this.db.query.notifications.findFirst({
+    return this.dbRo.query.notifications.findFirst({
       where: and(
         eq(notifications.notification_id, notificationId),
         isNull(notifications.deleted_at)
@@ -44,7 +44,7 @@ export class NotificationMessageViewerRepository {
   };
 
   findNotificationByTypeId = async (notificationTypeId: string) => {
-    return this.db.query.notifications.findFirst({
+    return this.dbRo.query.notifications.findFirst({
       where: and(
         eq(notifications.notification_type_id, notificationTypeId),
         isNull(notifications.deleted_at)

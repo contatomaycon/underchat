@@ -9,7 +9,7 @@ import { EAccountStatus } from '@core/common/enums/EAccountStatus';
 @injectable()
 export class PlanExpirationReminderRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   findPlansExpiringInDays = async (
@@ -25,7 +25,7 @@ export class PlanExpirationReminderRepository {
     const endOfDay = new Date(targetDate);
     endOfDay.setHours(23, 59, 59, 999);
 
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         plan_account_id: planAccount.plan_account_id,
         account_id: planAccount.account_id,

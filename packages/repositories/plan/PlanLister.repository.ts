@@ -18,7 +18,7 @@ import { ListPlanResponse } from '@core/schema/plan/listPlan/response.schema';
 @injectable()
 export class PlanListerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   private readonly setFiltersPlan = (query: ListPlanRequest): SQLWrapper[] => {
@@ -56,7 +56,7 @@ export class PlanListerRepository {
   ): Promise<ListPlanResponse[]> => {
     const filtersPlan = this.setFiltersPlan(query);
 
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         plan_id: plan.plan_id,
         name: plan.name,
@@ -102,7 +102,7 @@ export class PlanListerRepository {
   listPlansTotal = async (query: ListPlanRequest): Promise<number> => {
     const filtersPlan = this.setFiltersPlan(query);
 
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         count: count(),
       })

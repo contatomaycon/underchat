@@ -22,7 +22,7 @@ import { ESortByServer } from '@core/common/enums/ESortByServer';
 @injectable()
 export class ServerListerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   private readonly setOrders = (query: ListServerRequest): SQL[] => {
@@ -99,7 +99,7 @@ export class ServerListerRepository {
     const filters = this.setFilters(query);
     const orders = this.setOrders(query);
 
-    const queryBuilder = this.db
+    const queryBuilder = this.dbRo
       .select({
         id: server.server_id,
         name: server.name,
@@ -149,7 +149,7 @@ export class ServerListerRepository {
   listServersTotal = async (query: ListServerRequest): Promise<number> => {
     const filters = this.setFilters(query);
 
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         count: count(),
       })

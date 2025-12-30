@@ -8,11 +8,11 @@ import { inject, injectable } from 'tsyringe';
 @injectable()
 export class PlanAllListerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   listPlanAll = async (): Promise<ListPlanAllResponse[]> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         plan_id: plan.plan_id,
         name: plan.name,

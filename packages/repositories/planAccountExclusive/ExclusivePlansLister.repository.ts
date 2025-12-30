@@ -8,13 +8,13 @@ import { ListExclusivePlansResponse } from '@core/schema/planAccountExclusive/li
 @injectable()
 export class ExclusivePlansListerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   listExclusivePlans = async (
     accountId: string
   ): Promise<ListExclusivePlansResponse[]> => {
-    const existingExclusivePlanIds = await this.db
+    const existingExclusivePlanIds = await this.dbRo
       .select({
         plan_id: planAccountExclusive.plan_id,
       })
@@ -33,7 +33,7 @@ export class ExclusivePlansListerRepository {
       whereConditions.push(notInArray(plan.plan_id, existingPlanIds));
     }
 
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         plan_id: plan.plan_id,
         name: plan.name,

@@ -25,7 +25,7 @@ import { ListChannelsResponse } from '@core/schema/config/listChannels/response.
 @injectable()
 export class ChannelsListerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   private readonly setOrders = (query: ListChannelsRequest): SQL[] => {
@@ -91,7 +91,7 @@ export class ChannelsListerRepository {
     const orders = this.setOrders(query);
     const filters = this.setFilters(query);
 
-    const queryBuilder = this.db
+    const queryBuilder = this.dbRo
       .select({
         id: worker.worker_id,
         name: worker.name,
@@ -161,7 +161,7 @@ export class ChannelsListerRepository {
   listChannelsTotal = async (query: ListChannelsRequest): Promise<number> => {
     const filters = this.setFilters(query);
 
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         count: count(),
       })
@@ -185,7 +185,7 @@ export class ChannelsListerRepository {
   };
 
   listAllNonDeletedChannelIds = async (): Promise<string[]> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         worker_id: worker.worker_id,
       })

@@ -12,7 +12,7 @@ import { EPlanProduct } from '@core/common/enums/EPlanProduct';
 @injectable()
 export class AccountAddonsListerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>,
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>,
     private readonly workerTotalViewerRepository: WorkerTotalViewerRepository,
     private readonly userTotalViewerRepository: UserTotalViewerRepository,
     private readonly roleTotalViewerRepository: RoleTotalViewerRepository
@@ -38,7 +38,7 @@ export class AccountAddonsListerRepository {
     accountId: string,
     planProductId: string
   ): Promise<number> => {
-    const planResult = await this.db
+    const planResult = await this.dbRo
       .select({
         quantity: planItems.quantity,
       })
@@ -64,7 +64,7 @@ export class AccountAddonsListerRepository {
   listAccountAddons = async (
     accountId: string
   ): Promise<ListAccountAddonsResponse[]> => {
-    const crossSells = await this.db.query.planCrossSellAccount.findMany({
+    const crossSells = await this.dbRo.query.planCrossSellAccount.findMany({
       where: and(
         eq(planCrossSellAccount.account_id, accountId),
         isNull(planCrossSellAccount.deleted_at)

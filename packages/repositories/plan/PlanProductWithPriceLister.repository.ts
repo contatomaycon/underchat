@@ -12,7 +12,7 @@ import { eq, isNull } from 'drizzle-orm';
 @injectable()
 export class PlanProductWithPriceListerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   listPlanProductWithPrice = async (): Promise<
@@ -30,7 +30,7 @@ export class PlanProductWithPriceListerRepository {
   };
 
   private readonly listAllProducts = async () => {
-    return this.db
+    return this.dbRo
       .select({
         plan_product_id: planProduct.plan_product_id,
         name: planProductDescription.name,
@@ -45,7 +45,7 @@ export class PlanProductWithPriceListerRepository {
   };
 
   private readonly buildPriceMap = async (): Promise<Map<string, number>> => {
-    const crossSells = await this.db
+    const crossSells = await this.dbRo
       .select({
         plan_product_id: planCrossSell.plan_product_id,
         price: planCrossSell.price,

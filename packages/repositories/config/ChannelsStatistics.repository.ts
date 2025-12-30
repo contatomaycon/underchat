@@ -8,7 +8,7 @@ import { IStatusCount } from '@core/common/interfaces/IStatusCount';
 @injectable()
 export class ChannelsStatisticsRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   getChannelsStatistics = async (): Promise<{
@@ -27,7 +27,7 @@ export class ChannelsStatisticsRepository {
   };
 
   private readonly getStatusCounts = async (): Promise<IStatusCount[]> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         status_id: worker.worker_status_id,
         count: count(),
@@ -45,7 +45,7 @@ export class ChannelsStatisticsRepository {
   };
 
   private readonly getTotalCount = async (): Promise<number> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         count: count(),
       })

@@ -7,11 +7,11 @@ import { ListCreditCardFeeResponse } from '@core/schema/config/listCreditCardFee
 @injectable()
 export class CreditCardFeeViewerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   viewCreditCardFee = async (): Promise<ListCreditCardFeeResponse | null> => {
-    const feeRecord = await this.db.query.creditCardFee.findFirst({
+    const feeRecord = await this.dbRo.query.creditCardFee.findFirst({
       columns: {
         credit_card_fee_id: true,
         installment_1_rate: true,

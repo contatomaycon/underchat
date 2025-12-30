@@ -11,7 +11,7 @@ import { ESectorStatus } from '@core/common/enums/ESectorStatus';
 @injectable()
 export class DashboardSectorsRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>,
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>,
     private readonly elasticDatabaseService: ElasticDatabaseService
   ) {}
 
@@ -20,7 +20,7 @@ export class DashboardSectorsRepository {
   ): Promise<
     Array<{ sectorId: string; sectorName: string; count: number }>
   > => {
-    const allSectors = await this.db
+    const allSectors = await this.dbRo
       .select({
         sector_id: sector.sector_id,
         name: sector.name,

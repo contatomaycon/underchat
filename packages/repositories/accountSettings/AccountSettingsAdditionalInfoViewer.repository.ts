@@ -7,11 +7,11 @@ import { and, eq, isNull } from 'drizzle-orm';
 @injectable()
 export class AccountSettingsAdditionalInfoViewerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   viewAdditionalInfoByUserId = async (userId: string) => {
-    const userInfoResult = await this.db.query.userInfo.findFirst({
+    const userInfoResult = await this.dbRo.query.userInfo.findFirst({
       where: and(eq(userInfo.user_id, userId), isNull(userInfo.deleted_at)),
       columns: {
         phone_ddi: true,
@@ -23,7 +23,7 @@ export class AccountSettingsAdditionalInfoViewerRepository {
       },
     });
 
-    const userDocumentResult = await this.db.query.userDocument.findFirst({
+    const userDocumentResult = await this.dbRo.query.userDocument.findFirst({
       where: eq(userDocument.user_id, userId),
       with: {
         udt: {

@@ -7,13 +7,13 @@ import { inject, injectable } from 'tsyringe';
 @injectable()
 export class ContactSensitiveDataRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   getContactSensitiveDataById = async (
     contactId: string
   ): Promise<{ phone: string | null; email: string | null } | null> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         phone: contact.phone,
         email: contact.email,

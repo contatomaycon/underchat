@@ -8,13 +8,13 @@ import { ListPlanAccountExclusiveResponse } from '@core/schema/planAccountExclus
 @injectable()
 export class PlanAccountExclusiveListerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   listPlanAccountExclusives = async (
     accountId: string
   ): Promise<ListPlanAccountExclusiveResponse[]> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         plan_account_exclusive_id:
           planAccountExclusive.plan_account_exclusive_id,

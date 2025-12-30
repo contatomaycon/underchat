@@ -23,7 +23,7 @@ import { ListAvailableCrossSellResponse } from '@core/schema/plan/listAvailableC
 @injectable()
 export class CrossSellListerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   private readonly setFiltersCrossSell = (
@@ -61,7 +61,7 @@ export class CrossSellListerRepository {
   ): Promise<ListCrossSellResponse[]> => {
     const filtersCrossSell = this.setFiltersCrossSell(query);
 
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         plan_cross_sell_id: planCrossSell.plan_cross_sell_id,
         plan_product_id: planCrossSell.plan_product_id,
@@ -120,7 +120,7 @@ export class CrossSellListerRepository {
   ): Promise<number> => {
     const filtersCrossSell = this.setFiltersCrossSell(query);
 
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         count: count(),
       })
@@ -151,7 +151,7 @@ export class CrossSellListerRepository {
   listAvailableCrossSells = async (): Promise<
     ListAvailableCrossSellResponse[]
   > => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         plan_cross_sell_id: planCrossSell.plan_cross_sell_id,
         plan_product_id: planCrossSell.plan_product_id,

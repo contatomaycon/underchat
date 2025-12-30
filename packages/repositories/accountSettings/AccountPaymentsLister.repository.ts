@@ -8,7 +8,7 @@ import { ListAccountPaymentsResponse } from '@core/schema/accountSettings/listAc
 @injectable()
 export class AccountPaymentsListerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   listAccountPayments = async (
@@ -16,7 +16,7 @@ export class AccountPaymentsListerRepository {
     perPage: number,
     currentPage: number
   ): Promise<ListAccountPaymentsResponse[]> => {
-    const payments = await this.db.query.accountPayment.findMany({
+    const payments = await this.dbRo.query.accountPayment.findMany({
       where: eq(accountPayment.account_id, accountId),
       columns: {
         account_payment_id: true,
@@ -122,7 +122,7 @@ export class AccountPaymentsListerRepository {
   };
 
   listAccountPaymentsTotal = async (accountId: string): Promise<number> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         count: count(),
       })

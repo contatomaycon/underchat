@@ -8,13 +8,13 @@ import { ListWorkersResponse } from '@core/schema/notifications/listWorkers/resp
 @injectable()
 export class NotificationsWorkersListerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   listWorkersByAccount = async (
     accountId: string
   ): Promise<ListWorkersResponse> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         id: worker.worker_id,
         name: worker.name,

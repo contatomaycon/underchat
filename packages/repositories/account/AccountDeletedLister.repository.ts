@@ -18,7 +18,7 @@ import { ListAccountDeletedResponse } from '@core/schema/account/listAccountDele
 @injectable()
 export class AccountDeletedListerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   private readonly setFiltersAccount = (
@@ -56,7 +56,7 @@ export class AccountDeletedListerRepository {
   ): Promise<ListAccountDeletedResponse[]> => {
     const filtersAccount = this.setFiltersAccount(query);
 
-    const result = await this.db.query.account.findMany({
+    const result = await this.dbRo.query.account.findMany({
       where: and(isNotNull(account.deleted_at), ...filtersAccount),
       with: {
         aac: {
@@ -141,7 +141,7 @@ export class AccountDeletedListerRepository {
   ): Promise<number> => {
     const filtersAccount = this.setFiltersAccount(query);
 
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         count: count(),
       })

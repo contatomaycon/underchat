@@ -8,13 +8,13 @@ import { ViewWorkerConfigForChatResponse } from '@core/schema/chat/viewWorkerCon
 @injectable()
 export class WorkerConfigForChatViewerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   viewWorkerConfigForChatByWorkerId = async (
     workerId: string
   ): Promise<ViewWorkerConfigForChatResponse> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         show_worker_name: workerConfig.show_worker_name,
         show_attendee_name: workerConfig.show_attendee_name,

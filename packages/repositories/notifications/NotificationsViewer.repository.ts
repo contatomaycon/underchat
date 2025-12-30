@@ -9,7 +9,7 @@ import { ENotificationType } from '@core/common/enums/ENotificationType';
 @injectable()
 export class NotificationsViewerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   viewNotifications = async (): Promise<ListNotificationsResponse> => {
@@ -154,7 +154,7 @@ export class NotificationsViewerRepository {
   };
 
   private async findNotificationTypeIdByName(name: string): Promise<string> {
-    const result = await this.db
+    const result = await this.dbRo
       .select({ notification_type_id: notificationType.notification_type_id })
       .from(notificationType)
       .where(eq(notificationType.name, name))
@@ -169,7 +169,7 @@ export class NotificationsViewerRepository {
   }
 
   private async findNotificationByType(notificationTypeId: string) {
-    return this.db.query.notifications.findFirst({
+    return this.dbRo.query.notifications.findFirst({
       where: and(
         eq(notifications.notification_type_id, notificationTypeId),
         isNull(notifications.deleted_at)

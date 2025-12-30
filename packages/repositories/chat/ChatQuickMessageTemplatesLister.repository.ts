@@ -10,7 +10,7 @@ import { ListQuickMessageTemplatesRequest } from '@core/schema/chat/listQuickMes
 @injectable()
 export class ChatQuickMessageTemplatesListerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   listQuickMessageTemplates = async (
@@ -27,7 +27,7 @@ export class ChatQuickMessageTemplatesListerRepository {
       filters.push(ilike(messageTemplate.command, `${query.command}%`));
     }
 
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         message_template_id: messageTemplate.message_template_id,
         command: messageTemplate.command,

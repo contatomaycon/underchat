@@ -8,13 +8,13 @@ import { ListCrossSellAccountResponse } from '@core/schema/planCrossSell/listCro
 @injectable()
 export class CrossSellAccountListerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   listCrossSellAccounts = async (
     crossSellId: string
   ): Promise<ListCrossSellAccountResponse[]> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         plan_cross_sell_account_id:
           planCrossSellAccount.plan_cross_sell_account_id,

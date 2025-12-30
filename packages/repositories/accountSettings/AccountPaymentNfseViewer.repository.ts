@@ -7,14 +7,14 @@ import { ViewAccountPaymentNfseResponse } from '@core/schema/accountSettings/vie
 @injectable()
 export class AccountPaymentNfseViewerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   viewAccountPaymentNfse = async (
     accountId: string,
     accountPaymentId: string
   ): Promise<ViewAccountPaymentNfseResponse | null> => {
-    const payment = await this.db.query.accountPayment.findFirst({
+    const payment = await this.dbRo.query.accountPayment.findFirst({
       where: and(
         eq(schema.accountPayment.account_payment_id, accountPaymentId),
         eq(schema.accountPayment.account_id, accountId)

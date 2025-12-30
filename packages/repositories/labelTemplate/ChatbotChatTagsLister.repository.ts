@@ -9,13 +9,13 @@ import { ELabelStatus } from '@core/common/enums/ELabelStatus';
 @injectable()
 export class ChatbotChatTagsListerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   listChatbotChatTags = async (
     accountId: string
   ): Promise<ChatbotChatTagResponse[]> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         label_template_id: labelTemplate.label_template_id,
         label: labelTemplate.label,

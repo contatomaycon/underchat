@@ -8,13 +8,13 @@ import { IViewWorkerServer } from '@core/common/interfaces/IViewWorkerServer';
 @injectable()
 export class ChannelViewerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   viewChannelBalancer = async (
     channelId: string
   ): Promise<IViewWorkerServer | null> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         server_id: server.server_id,
         key: schema.apiKey.key,

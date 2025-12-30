@@ -8,14 +8,14 @@ import { IReportConversationHistoryPdfView } from '@core/common/interfaces/IRepo
 @injectable()
 export class ReportConversationHistoryPdfViewerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   viewPdfByAccountAndChat = async (
     accountId: string,
     chatId: string
   ): Promise<IReportConversationHistoryPdfView | null> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         id: reportConversationHistoryPdf.id,
         url_pdf: reportConversationHistoryPdf.url_pdf,
@@ -48,7 +48,7 @@ export class ReportConversationHistoryPdfViewerRepository {
       return new Map();
     }
 
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         chat_id: reportConversationHistoryPdf.chat_id,
         status: reportConversationHistoryPdf.status,

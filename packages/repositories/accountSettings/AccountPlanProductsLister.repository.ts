@@ -16,7 +16,7 @@ import { EPlanProduct } from '@core/common/enums/EPlanProduct';
 @injectable()
 export class AccountPlanProductsListerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>,
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>,
     private readonly workerTotalViewerRepository: WorkerTotalViewerRepository,
     private readonly userTotalViewerRepository: UserTotalViewerRepository,
     private readonly roleTotalViewerRepository: RoleTotalViewerRepository,
@@ -59,7 +59,7 @@ export class AccountPlanProductsListerRepository {
   };
 
   private readonly fetchPlanItems = async (accountId: string) => {
-    const planAccountResult = await this.db.query.planAccount.findFirst({
+    const planAccountResult = await this.dbRo.query.planAccount.findFirst({
       where: and(
         eq(planAccount.account_id, accountId),
         gt(planAccount.next_payment_date, sql`NOW()`),
@@ -110,7 +110,7 @@ export class AccountPlanProductsListerRepository {
   };
 
   private readonly fetchCrossSells = async (accountId: string) => {
-    return this.db.query.planCrossSellAccount.findMany({
+    return this.dbRo.query.planCrossSellAccount.findMany({
       where: and(
         eq(planCrossSellAccount.account_id, accountId),
         isNull(planCrossSellAccount.deleted_at)

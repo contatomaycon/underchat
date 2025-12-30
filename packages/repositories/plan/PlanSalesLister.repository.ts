@@ -28,7 +28,7 @@ import { EPaymentStatus } from '@core/common/enums/EPaymentStatus';
 @injectable()
 export class PlanSalesListerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   private readonly setFilters = (query: ListPlanSalesRequest): SQLWrapper[] => {
@@ -93,7 +93,7 @@ export class PlanSalesListerRepository {
   };
 
   private readonly getPayments = async (filters: SQLWrapper[]) => {
-    return this.db
+    return this.dbRo
       .select({
         account_payment_id: accountPayment.account_payment_id,
         plan_id: plan.plan_id,
@@ -125,7 +125,7 @@ export class PlanSalesListerRepository {
   };
 
   private readonly getCrossSellsForPayment = async (paymentId: string) => {
-    return this.db
+    return this.dbRo
       .select({
         plan_cross_sell_id: planCrossSell.plan_cross_sell_id,
         plan_product_name: planProductDescription.name,

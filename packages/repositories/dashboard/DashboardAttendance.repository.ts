@@ -10,7 +10,7 @@ import { EChatStatus } from '@core/common/enums/EChatStatus';
 @injectable()
 export class DashboardAttendanceRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>,
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>,
     private readonly elasticDatabaseService: ElasticDatabaseService
   ) {}
 
@@ -352,7 +352,7 @@ export class DashboardAttendanceRepository {
     const totalAttendancesAll =
       typeof total === 'number' ? total : (total?.value ?? 0);
 
-    const usersResult = await this.db
+    const usersResult = await this.dbRo
       .select({
         total: count(),
       })
@@ -464,7 +464,7 @@ export class DashboardAttendanceRepository {
 
     const totalAttendances = chats.length;
 
-    const usersResult = await this.db
+    const usersResult = await this.dbRo
       .select({
         total: count(),
       })

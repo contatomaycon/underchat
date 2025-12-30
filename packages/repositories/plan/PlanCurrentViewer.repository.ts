@@ -8,13 +8,13 @@ import { ViewCurrentPlanResponse } from '@core/schema/plan/viewCurrentPlan/respo
 @injectable()
 export class PlanCurrentViewerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   viewCurrentPlan = async (
     accountId: string
   ): Promise<ViewCurrentPlanResponse> => {
-    const accountResult = await this.db.query.account.findFirst({
+    const accountResult = await this.dbRo.query.account.findFirst({
       where: and(eq(account.account_id, accountId), isNull(account.deleted_at)),
       with: {
         apc: {

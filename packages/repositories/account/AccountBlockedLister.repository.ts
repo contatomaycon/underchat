@@ -20,7 +20,7 @@ import { EAccountStatus } from '@core/common/enums/EAccountStatus';
 @injectable()
 export class AccountBlockedListerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   private readonly setFiltersAccount = (
@@ -58,7 +58,7 @@ export class AccountBlockedListerRepository {
   ): Promise<ListAccountBlockedResponse[]> => {
     const filtersAccount = this.setFiltersAccount(query);
 
-    const result = await this.db.query.account.findMany({
+    const result = await this.dbRo.query.account.findMany({
       where: and(
         isNull(account.deleted_at),
         eq(account.account_status_id, EAccountStatus.blocked),
@@ -145,7 +145,7 @@ export class AccountBlockedListerRepository {
   ): Promise<number> => {
     const filtersAccount = this.setFiltersAccount(query);
 
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         count: count(),
       })

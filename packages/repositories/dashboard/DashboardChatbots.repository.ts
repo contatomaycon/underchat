@@ -9,12 +9,12 @@ import { EPlanProduct } from '@core/common/enums/EPlanProduct';
 @injectable()
 export class DashboardChatbotsRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>,
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>,
     private readonly accountQuantityProductViewerRepository: AccountQuantityProductViewerRepository
   ) {}
 
   getChatbotsTotal = async (accountId: string): Promise<number> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         total: count(),
       })
@@ -26,7 +26,7 @@ export class DashboardChatbotsRepository {
   };
 
   getChatbotsActive = async (accountId: string): Promise<number> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         total: count(),
       })

@@ -7,7 +7,7 @@ import { and, count, eq, isNull, lt } from 'drizzle-orm';
 @injectable()
 export class DashboardContactsRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   getContactsGrowthMonthly = async (
@@ -30,7 +30,7 @@ export class DashboardContactsRepository {
         year: 'numeric',
       });
 
-      const cumulativeResult = await this.db
+      const cumulativeResult = await this.dbRo
         .select({
           total: count(),
         })

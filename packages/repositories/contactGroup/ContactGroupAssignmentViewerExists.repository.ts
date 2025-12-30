@@ -11,7 +11,7 @@ import { PgTransaction } from 'drizzle-orm/pg-core';
 @injectable()
 export class ContactGroupAssignmentViewerExistsRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   existsContactGroupAssignmentById = async (

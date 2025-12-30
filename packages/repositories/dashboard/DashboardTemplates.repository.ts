@@ -7,11 +7,11 @@ import { and, count, eq, isNull } from 'drizzle-orm';
 @injectable()
 export class DashboardTemplatesRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   getContactGroupsTotal = async (accountId: string): Promise<number> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         total: count(),
       })
@@ -28,7 +28,7 @@ export class DashboardTemplatesRepository {
   };
 
   getMessageTemplatesTotal = async (accountId: string): Promise<number> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         total: count(),
       })
@@ -45,7 +45,7 @@ export class DashboardTemplatesRepository {
   };
 
   getLabelTemplatesTotal = async (accountId: string): Promise<number> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         total: count(),
       })
