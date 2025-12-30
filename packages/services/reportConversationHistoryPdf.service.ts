@@ -138,10 +138,14 @@ export class ReportConversationHistoryPdfService {
     this.contactPhoneCache.clear();
 
     const executablePath = await this.findChromeExecutable();
+    const userDataDir =
+      process.env.PUPPETEER_USER_DATA_DIR || '/tmp/.chrome-user-data';
     const browser = await puppeteer.launch({
       headless: true,
       ...(executablePath && { executablePath }),
+      userDataDir,
       args: [
+        `--user-data-dir=${userDataDir}`,
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',

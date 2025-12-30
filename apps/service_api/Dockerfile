@@ -137,21 +137,28 @@ RUN mkdir -p /home/pptruser/Downloads \
     /home/pptruser/.cache \
     /tmp/.chrome-user-data \
     /tmp/.chrome-crashpad \
+    /tmp/.config \
+    /tmp/.cache \
+    /tmp/.local/share/applications \
+    /tmp/.local/share/mime \
     /app && \
     chown -R pptruser:pptruser /home/pptruser /tmp/.chrome-user-data /tmp/.chrome-crashpad /app && \
+    chmod -R 1777 /tmp/.chrome-user-data /tmp/.chrome-crashpad /tmp/.config /tmp/.cache /tmp/.local && \
     chmod -R 755 /home/pptruser/.local/share
 
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
     PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome-stable \
     CHROME_BIN=/usr/bin/google-chrome-stable \
     CHROME_PATH=/usr/bin/google-chrome-stable \
+    PUPPETEER_USER_DATA_DIR=/tmp/.chrome-user-data \
     HOME=/home/pptruser \
-    XDG_CONFIG_HOME=/home/pptruser/.config \
-    XDG_CACHE_HOME=/home/pptruser/.cache \
-    XDG_DATA_HOME=/home/pptruser/.local/share \
+    XDG_CONFIG_HOME=/tmp/.config \
+    XDG_CACHE_HOME=/tmp/.cache \
+    XDG_DATA_HOME=/tmp/.local/share \
     XDG_RUNTIME_DIR=/tmp \
     TMPDIR=/tmp \
-    CHROME_CRASHPAD_DATABASE_PATH=/tmp/.chrome-crashpad
+    CHROME_CRASHPAD_DATABASE_PATH=/tmp/.chrome-crashpad \
+    CRASH_REPORTER_DISABLE=1
 
 USER pptruser
 
