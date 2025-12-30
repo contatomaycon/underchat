@@ -71,6 +71,10 @@ COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/apps/service_api/package*.json ./apps/service_api
 COPY --from=builder /build_locales ./packages/plugins/i18next/locales
 
+RUN groupadd -r pptruser && useradd -r -g pptruser -G audio,video pptruser && \
+    mkdir -p /home/pptruser/Downloads /app && \
+    chown -R pptruser:pptruser /home/pptruser /app
+
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
       ffmpeg \
@@ -126,10 +130,18 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/* && \
     ln -sf /usr/bin/google-chrome-stable /usr/bin/chrome && \
     ln -sf /usr/bin/google-chrome-stable /usr/bin/google-chrome && \
-    fc-cache -f -v
+    fc-cache -f -v && \
+    chown -R pptruser:pptruser /app
 
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
-    PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome-stable
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome-stable \
+    CHROME_BIN=/usr/bin/google-chrome-stable \
+    CHROME_PATH=/usr/bin/google-chrome-stable \
+    HOME=/home/pptruser \
+    XDG_CONFIG_HOME=/home/pptruser/.config \
+    XDG_CACHE_HOME=/home/pptruser/.cache
+
+USER pptruser
 
 EXPOSE 3004
 

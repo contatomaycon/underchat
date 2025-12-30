@@ -58,6 +58,35 @@ export class ReportConversationHistoryPdfService {
     await this.pdfUpdaterRepository.updatePdfUrl(pdfId, url, status);
   }
 
+  private async findChromeExecutable(): Promise<string | undefined> {
+    const fs = await import('fs');
+    const chromePaths = [
+      '/usr/bin/google-chrome-stable',
+      '/usr/bin/google-chrome',
+      '/usr/bin/chrome',
+      '/opt/google/chrome/chrome',
+      '/snap/bin/chrome',
+    ];
+
+    for (const path of chromePaths) {
+      try {
+        if (fs.existsSync(path)) {
+          const stat = fs.statSync(path);
+          if (
+            stat.isFile() ||
+            (stat.isSymbolicLink() && path.includes('snap'))
+          ) {
+            return path;
+          }
+        }
+      } catch {
+        continue;
+      }
+    }
+
+    return undefined;
+  }
+
   async generatePdf(
     accountId: string,
     chatId: string,
@@ -108,108 +137,120 @@ export class ReportConversationHistoryPdfService {
 
     this.contactPhoneCache.clear();
 
+    const executablePath = await this.findChromeExecutable();
     const browser = await puppeteer.launch({
       headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
+      ...(executablePath && { executablePath }),
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
+        '--no-first-run',
+        '--no-zygote',
+        '--disable-gpu',
+        '--disable-crashpad',
+        '--disable-breakpad',
+        '--disable-background-timer-throttling',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-renderer-backgrounding',
+        '--disable-features=TranslateUI',
+        '--disable-ipc-flooding-protection',
+        '--single-process',
+      ],
     });
 
     try {
       const page = await browser.newPage();
-      await page.setContent(html, { waitUntil: 'networkidle0' });
+      page.setDefaultNavigationTimeout(600000);
+      page.setDefaultTimeout(600000);
       await page.setViewport({ width: 1200, height: 800 });
+      await page.setContent(html, {
+        waitUntil: 'domcontentloaded',
+        timeout: 600000,
+      });
 
-      // @ts-ignore - Código executado no navegador, não no Node.js
-      await page.evaluate(() => {
-        // @ts-ignore
-        return new Promise<void>((resolve: () => void) => {
-          const doc = (globalThis as any).document;
-          if (!doc) {
-            resolve();
-            return;
-          }
-
-          const mapContainers = doc.querySelectorAll('[id^="map-"]');
-          if (mapContainers.length === 0) {
-            resolve();
-            return;
-          }
-
-          let loadedCount = 0;
-          const totalMaps = mapContainers.length;
-          let allMapsResolved = false;
-
-          const isMapContainerLoaded = (container: any): boolean => {
-            // @ts-ignore - HTMLCanvasElement existe no navegador
-            const canvas = container.querySelector(
-              '[class*="maplibregl-canvas"]'
-            );
-            const isLoaded = container.dataset.mapLoaded === 'true';
-
-            const hasValidCanvas =
-              canvas &&
-              canvas.width > 0 &&
-              canvas.height > 0 &&
-              canvas.getContext;
-
-            return hasValidCanvas || isLoaded;
-          };
-
-          const checkMapLoaded = (container: any): boolean => {
-            if (allMapsResolved) return false;
-
-            return isMapContainerLoaded(container);
-          };
-
-          const scheduleResolve = (resolveFn: () => void): void => {
-            setTimeout(resolveFn, 3000);
-          };
-
-          const handleAllMapsLoaded = (): void => {
-            scheduleResolve(resolve);
-          };
-
-          const handleMapCheck = (checkInterval: NodeJS.Timeout): void => {
-            if (allMapsResolved) {
-              clearInterval(checkInterval);
+      await Promise.race([
+        page.evaluate(() => {
+          return new Promise<void>((resolve: () => void) => {
+            const doc = (globalThis as any).document;
+            if (!doc) {
+              resolve();
               return;
             }
 
-            for (const container of mapContainers) {
-              if (checkMapLoaded(container)) {
-                loadedCount++;
-              }
-            }
-
-            if (loadedCount === totalMaps && !allMapsResolved) {
-              allMapsResolved = true;
-              clearInterval(checkInterval);
-              handleAllMapsLoaded();
-            }
-          };
-
-          const handleTimeout = (checkInterval: NodeJS.Timeout): void => {
-            clearInterval(checkInterval);
-            if (!allMapsResolved) {
-              allMapsResolved = true;
+            const mapContainers = doc.querySelectorAll('[id^="map-"]');
+            if (mapContainers.length === 0) {
               resolve();
+              return;
             }
-          };
 
-          const scheduleTimeout = (
-            timeoutFn: () => void,
-            delay: number
-          ): void => {
-            setTimeout(timeoutFn, delay);
-          };
+            let loadedCount = 0;
+            const totalMaps = mapContainers.length;
+            let allMapsResolved = false;
 
-          const checkInterval = setInterval(
-            () => handleMapCheck(checkInterval),
-            500
-          );
+            const isMapContainerLoaded = (container: any): boolean => {
+              const canvas = container.querySelector(
+                '[class*="maplibregl-canvas"]'
+              );
+              const isLoaded = container.dataset.mapLoaded === 'true';
 
-          scheduleTimeout(() => handleTimeout(checkInterval), 25000);
-        });
-      });
+              const hasValidCanvas =
+                canvas &&
+                canvas.width > 0 &&
+                canvas.height > 0 &&
+                canvas.getContext;
+
+              return hasValidCanvas || isLoaded;
+            };
+
+            const checkMapLoaded = (container: any): boolean => {
+              if (allMapsResolved) return false;
+              return isMapContainerLoaded(container);
+            };
+
+            const handleAllMapsLoaded = (): void => {
+              setTimeout(resolve, 3000);
+            };
+
+            const handleMapCheck = (checkInterval: NodeJS.Timeout): void => {
+              if (allMapsResolved) {
+                clearInterval(checkInterval);
+                return;
+              }
+
+              loadedCount = 0;
+              for (const container of mapContainers) {
+                if (checkMapLoaded(container)) {
+                  loadedCount++;
+                }
+              }
+
+              if (loadedCount === totalMaps && !allMapsResolved) {
+                allMapsResolved = true;
+                clearInterval(checkInterval);
+                handleAllMapsLoaded();
+              }
+            };
+
+            const handleTimeout = (checkInterval: NodeJS.Timeout): void => {
+              clearInterval(checkInterval);
+              if (!allMapsResolved) {
+                allMapsResolved = true;
+                resolve();
+              }
+            };
+
+            const checkInterval = setInterval(
+              () => handleMapCheck(checkInterval),
+              500
+            );
+
+            setTimeout(() => handleTimeout(checkInterval), 600000);
+          });
+        }),
+        new Promise((resolve) => setTimeout(resolve, 600000)),
+      ]);
 
       const mapContainers = await page.$$('[id^="map-"]');
       for (const container of mapContainers) {
