@@ -8,11 +8,11 @@ import { IAccountBasic } from '@core/common/interfaces/IAccountBasic';
 @injectable()
 export class AccountAllListerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   listAllAccounts = async (): Promise<IAccountBasic[]> => {
-    const result = await this.db.query.account.findMany({
+    const result = await this.dbRo.query.account.findMany({
       where: isNull(account.deleted_at),
       columns: {
         account_id: true,

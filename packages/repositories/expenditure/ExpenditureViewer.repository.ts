@@ -8,13 +8,13 @@ import { ViewExpenditureResponse } from '@core/schema/expenditure/viewExpenditur
 @injectable()
 export class ExpenditureViewerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   viewExpenditure = async (
     expenditureId: string
   ): Promise<ViewExpenditureResponse | null> => {
-    const result = await this.db.query.expenditure.findMany({
+    const result = await this.dbRo.query.expenditure.findMany({
       where: and(
         eq(expenditure.expenditure_id, expenditureId),
         isNull(expenditure.deleted_at)

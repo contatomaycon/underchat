@@ -8,13 +8,13 @@ import { IUserCardDefault } from '@core/common/interfaces/IUserCardDefault';
 @injectable()
 export class UserCardDefaultViewerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   findDefaultUserCardByUserId = async (
     userId: string
   ): Promise<IUserCardDefault | null> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         user_card_id: userCard.user_card_id,
         token: userCard.token,

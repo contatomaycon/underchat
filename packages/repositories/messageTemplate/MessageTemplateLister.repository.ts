@@ -22,7 +22,7 @@ import { ESortByMessage } from '@core/common/enums/ESortByMessage';
 @injectable()
 export class MessageTemplateListerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   private readonly setOrders = (query: ListMessageTemplateRequest): SQL[] => {
@@ -83,7 +83,7 @@ export class MessageTemplateListerRepository {
     const filters = this.setFilters(query);
     const orders = this.setOrders(query);
 
-    const queryBuilder = this.db
+    const queryBuilder = this.dbRo
       .select({
         message_template_id: messageTemplate.message_template_id,
         message: messageTemplate.message,
@@ -153,7 +153,7 @@ export class MessageTemplateListerRepository {
   ): Promise<number> => {
     const filters = this.setFilters(query);
 
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         count: count(),
       })

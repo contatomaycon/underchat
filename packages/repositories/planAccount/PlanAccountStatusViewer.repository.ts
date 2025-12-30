@@ -8,13 +8,13 @@ import { IPlanAccountStatus } from '@core/common/interfaces/IPlanAccountStatus';
 @injectable()
 export class PlanAccountStatusViewerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   viewLatestByAccountId = async (
     accountId: string
   ): Promise<IPlanAccountStatus | null> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         account_status_id: account.account_status_id,
         next_payment_date: planAccount.next_payment_date,

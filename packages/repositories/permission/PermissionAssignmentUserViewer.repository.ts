@@ -6,7 +6,7 @@ import { inject, injectable } from 'tsyringe';
 @injectable()
 export class PermissionAssignmentUserViewerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   viewPermissionByUserId = async (
@@ -34,7 +34,7 @@ export class PermissionAssignmentUserViewerRepository {
       FROM UserPermissions;
     `;
 
-    const result = await this.db.execute(query);
+    const result = await this.dbRo.execute(query);
 
     if (result?.rowCount === 0) {
       return [] as IViewPermissionByUserId[];

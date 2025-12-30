@@ -15,14 +15,14 @@ import { inject, injectable } from 'tsyringe';
 @injectable()
 export class SectorUsersListerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   listSectorUsers = async (
     accountId: string,
     sectorId: string
   ): Promise<ListSectorUsersResponse[]> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         user_id: user.user_id,
         email_partial: user.email_partial,

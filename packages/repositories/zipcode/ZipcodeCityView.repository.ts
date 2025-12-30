@@ -9,11 +9,11 @@ import { inject, injectable } from 'tsyringe';
 @injectable()
 export class ZipcodeCityViewRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   async listCities(request: ListCitiesRequest): Promise<CityListResponse> {
-    const results = await this.db
+    const results = await this.dbRo
       .select({
         id_zipcode_city: zipcodeCity.id_zipcode_city,
         city: zipcodeCity.city,

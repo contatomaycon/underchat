@@ -14,13 +14,13 @@ import { EScheduleSendTo } from '@core/common/enums/EScheduleSendTo';
 @injectable()
 export class ScheduleContactsValidatedListerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   private async getScheduledContacts(
     scheduleId: string
   ): Promise<IScheduledContactData[]> {
-    return this.db
+    return this.dbRo
       .select({
         contact_id: scheduledContact.contact_id,
         contact_group_id: scheduledContact.contact_group_id,
@@ -55,7 +55,7 @@ export class ScheduleContactsValidatedListerRepository {
       return [];
     }
 
-    const groupContacts = await this.db
+    const groupContacts = await this.dbRo
       .select({
         contact_id: contactGroupAssignment.contact_id,
       })
@@ -89,7 +89,7 @@ export class ScheduleContactsValidatedListerRepository {
       conditions.push(inArray(contact.contact_id, contactIds));
     }
 
-    const contacts = await this.db
+    const contacts = await this.dbRo
       .select({
         contact_id: contact.contact_id,
         name: contact.name,

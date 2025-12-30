@@ -8,14 +8,14 @@ import { ViewRoleResponse } from '@core/schema/role/viewRole/response.schema';
 @injectable()
 export class RoleViewerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   viewRoleById = async (
     roleId: string,
     accountId: string
   ): Promise<ViewRoleResponse | null> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         permission_role_id: permissionRole.permission_role_id,
         name: permissionRole.name,

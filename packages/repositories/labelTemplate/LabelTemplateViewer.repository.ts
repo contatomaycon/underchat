@@ -8,7 +8,7 @@ import { inject, injectable } from 'tsyringe';
 @injectable()
 export class LabelTemplateViewerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   viewLabelTemplateById = async (
@@ -24,7 +24,7 @@ export class LabelTemplateViewerRepository {
       conditions.push(eq(labelTemplate.account_id, accountId));
     }
 
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         label_template_id: labelTemplate.label_template_id,
         account: {

@@ -9,13 +9,13 @@ import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 @injectable()
 export class ChatUserViewerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   viewChatUser = async (
     userId: string
   ): Promise<ListChatsUserResponse | null> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         chat_user_id: chatUser.chat_user_id,
         about: chatUser.about,
@@ -36,7 +36,7 @@ export class ChatUserViewerRepository {
   findStatusByUserId = async (
     userId: string
   ): Promise<EChatUserStatus | null> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         status: chatUser.status,
       })
@@ -58,7 +58,7 @@ export class ChatUserViewerRepository {
       return [];
     }
 
-    const result = await this.db
+    const result = await this.dbRo
       .select({ user_id: chatUser.user_id })
       .from(chatUser)
       .where(inArray(chatUser.status, statuses))

@@ -28,7 +28,7 @@ import { ESortOrder } from '@core/common/enums/ESortOrder';
 @injectable()
 export class WorkerListerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   private readonly setOrders = (query: ListWorkerRequest): SQL[] => {
@@ -89,7 +89,7 @@ export class WorkerListerRepository {
     const orders = this.setOrders(query);
     const filters = this.setFilters(query);
 
-    const queryBuilder = this.db
+    const queryBuilder = this.dbRo
       .select({
         id: worker.worker_id,
         name: worker.name,
@@ -166,7 +166,7 @@ export class WorkerListerRepository {
   ): Promise<number> => {
     const filters = this.setFilters(query);
 
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         count: count(),
       })

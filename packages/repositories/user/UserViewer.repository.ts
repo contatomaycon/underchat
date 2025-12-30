@@ -8,14 +8,14 @@ import { ViewUserResponse } from '@core/schema/user/viewUser/response.schema';
 @injectable()
 export class UserViewerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   viewUserById = async (
     userId: string,
     accountId: string
   ): Promise<ViewUserResponse | null> => {
-    const result = await this.db.query.user.findFirst({
+    const result = await this.dbRo.query.user.findFirst({
       where: and(
         eq(user.account_id, accountId),
         isNull(user.deleted_at),

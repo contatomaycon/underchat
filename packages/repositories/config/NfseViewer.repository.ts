@@ -8,11 +8,11 @@ import { ListNfseResponse } from '@core/schema/config/listNfse/response.schema';
 @injectable()
 export class NfseViewerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   viewNfse = async (): Promise<ListNfseResponse | null> => {
-    const nfseRecord = await this.db.query.nfse.findFirst({
+    const nfseRecord = await this.dbRo.query.nfse.findFirst({
       where: eq(nfse.default_product, true),
       columns: {
         nfse_id: true,

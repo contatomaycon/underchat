@@ -28,7 +28,7 @@ import { ListContactGroupResponse } from '@core/schema/contactGroup/listContactG
 @injectable()
 export class ContactGroupListerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   private readonly setOrders = (query: ListContactGroupRequest): SQL[] => {
@@ -91,7 +91,7 @@ export class ContactGroupListerRepository {
   ): Promise<ListContactGroupResponse[]> => {
     const filters = this.setFilters(query);
 
-    const result = await this.db.query.contactGroup.findMany({
+    const result = await this.dbRo.query.contactGroup.findMany({
       where: and(
         eq(contactGroup.account_id, accountId),
         isNull(contactGroup.deleted_at),
@@ -170,7 +170,7 @@ export class ContactGroupListerRepository {
   ): Promise<number> => {
     const filters = this.setFilters(query);
 
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         count: count(),
       })

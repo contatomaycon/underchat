@@ -8,14 +8,14 @@ import { IViewWorkerNameAndId } from '@core/common/interfaces/IViewWorkerNameAnd
 @injectable()
 export class WorkerNameAndIdViewerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   viewWorkerNameAndId = async (
     accountId: string,
     workerId: string
   ): Promise<IViewWorkerNameAndId | null> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         id: worker.worker_id,
         name: worker.name,

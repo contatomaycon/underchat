@@ -7,14 +7,14 @@ import { and, count, eq, isNull } from 'drizzle-orm';
 @injectable()
 export class WorkerViewerExistsRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   existsWorkerById = async (
     accountId: string,
     workerId: string
   ): Promise<boolean> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         total: count(),
       })

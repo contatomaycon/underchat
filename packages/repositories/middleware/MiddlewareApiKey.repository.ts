@@ -8,7 +8,7 @@ import { EAccountStatus } from '@core/common/enums/EAccountStatus';
 @injectable()
 export class MiddlewareApiKeyRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   async find(
@@ -60,7 +60,7 @@ export class MiddlewareApiKeyRepository {
       WHERE (module_name = '${routeModule}' OR module_name = '${module}');
     `;
 
-    const result = await this.db.execute(query);
+    const result = await this.dbRo.execute(query);
 
     if (result?.rowCount === 0) {
       return [] as IApiKeyGroupHierarchy[];

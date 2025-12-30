@@ -14,13 +14,13 @@ import { inject, injectable } from 'tsyringe';
 @injectable()
 export class ContactGroupViewerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   viewContactGroupById = async (
     contactGroupId: string
   ): Promise<ViewContactGroupResponse | null> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         contact_group_id: contactGroup.contact_group_id,
         name: contactGroup.name,

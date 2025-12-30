@@ -8,13 +8,13 @@ import { inject, injectable } from 'tsyringe';
 @injectable()
 export class AccountInfoViewerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   viewAccountInfoByAccountId = async (
     accountId: string
   ): Promise<AccountInfoResponse | null> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         account_info_id: accountInfo.account_info_id,
         name: account.name,
@@ -53,7 +53,7 @@ export class AccountInfoViewerRepository {
   viewLogoByAccountInfoId = async (
     accountInfoId: string
   ): Promise<string | null> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         logo: accountInfo.logo,
       })

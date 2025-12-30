@@ -8,14 +8,14 @@ import { IViewWorkerType } from '@core/common/interfaces/IViewWorkerType';
 @injectable()
 export class WorkerTypeViewerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   viewWorkerType = async (
     accountId: string,
     workerId: string
   ): Promise<IViewWorkerType | null> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         worker_id: worker.worker_id,
         worker_type_id: worker.worker_type_id,

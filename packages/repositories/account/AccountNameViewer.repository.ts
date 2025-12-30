@@ -8,13 +8,13 @@ import { IViewAccountName } from '@core/common/interfaces/IViewAccountName';
 @injectable()
 export class AccountNameViewerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   viewAccountName = async (
     accountId: string
   ): Promise<IViewAccountName | null> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         id: account.account_id,
         name: account.name,

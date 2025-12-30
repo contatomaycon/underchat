@@ -9,13 +9,13 @@ import { ISchedulePendingData } from '@core/interfaces/repositories/schedule/ISc
 @injectable()
 export class SchedulePendingListerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   listPendingSchedules = async (): Promise<ISchedulePendingData[]> => {
     const now = new Date().toISOString();
 
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         schedule_id: schedule.schedule_id,
         account_id: schedule.account_id,

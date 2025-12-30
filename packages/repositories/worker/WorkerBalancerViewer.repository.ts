@@ -8,14 +8,14 @@ import { IViewWorkerServer } from '@core/common/interfaces/IViewWorkerServer';
 @injectable()
 export class WorkerBalancerViewerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   viewWorkerBalancer = async (
     accountId: string,
     workerId: string
   ): Promise<IViewWorkerServer | null> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         server_id: server.server_id,
         key: apiKey.key,

@@ -8,13 +8,13 @@ import { IViewWorkerPhoneConnectionDate } from '@core/common/interfaces/IViewWor
 @injectable()
 export class WorkerPhoneConnectionDateViewerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   viewWorkerPhoneConnectionDate = async (
     workerId: string
   ): Promise<IViewWorkerPhoneConnectionDate | null> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         id: worker.worker_id,
         number: worker.number,

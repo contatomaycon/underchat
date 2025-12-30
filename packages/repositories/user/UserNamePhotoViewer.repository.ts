@@ -8,13 +8,13 @@ import { inject, injectable } from 'tsyringe';
 @injectable()
 export class UserNamePhotoViewerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   viewUserNamePhoto = async (
     userId: string
   ): Promise<IViewUserNamePhoto | null> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         id: userInfo.user_id,
         name: userInfo.name,

@@ -8,13 +8,13 @@ import { inject, injectable } from 'tsyringe';
 @injectable()
 export class UserSensitiveDataRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   getUserSensitiveDataById = async (
     userId: string
   ): Promise<IUserSensitiveDataDecrypted | null> => {
-    const userResult = await this.db
+    const userResult = await this.dbRo
       .select({
         email: user.email,
       })
@@ -28,7 +28,7 @@ export class UserSensitiveDataRepository {
 
     const [userInfoResult, userDocumentResult, userAddressResult] =
       await Promise.all([
-        this.db
+        this.dbRo
           .select({
             phone: userInfo.phone,
           })
@@ -36,7 +36,7 @@ export class UserSensitiveDataRepository {
           .where(eq(userInfo.user_id, userId))
           .execute(),
 
-        this.db
+        this.dbRo
           .select({
             document: userDocument.document,
           })
@@ -44,7 +44,7 @@ export class UserSensitiveDataRepository {
           .where(eq(userDocument.user_id, userId))
           .execute(),
 
-        this.db
+        this.dbRo
           .select({
             address1: userAddress.address1,
             address2: userAddress.address2,

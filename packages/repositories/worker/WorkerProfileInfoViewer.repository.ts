@@ -7,13 +7,13 @@ import { eq } from 'drizzle-orm';
 @injectable()
 export class WorkerProfileInfoViewerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   viewWorkerProfileInfoByWorkerId = async (
     workerId: string
   ): Promise<typeof workerProfileInfo.$inferSelect | null> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         worker_profile_info_id: workerProfileInfo.worker_profile_info_id,
         worker_id: workerProfileInfo.worker_id,

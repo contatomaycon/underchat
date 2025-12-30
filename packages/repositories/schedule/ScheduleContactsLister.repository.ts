@@ -21,7 +21,7 @@ import { ListScheduleContactsRequest } from '@core/schema/schedule/listScheduleC
 @injectable()
 export class ScheduleContactsListerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   private readonly setOrders = (query: ListScheduleContactsRequest): SQL[] => {
@@ -79,7 +79,7 @@ export class ScheduleContactsListerRepository {
     const filters = this.setFilters(query, accountId);
     const orders = this.setOrders(query);
 
-    const queryBuilder = this.db
+    const queryBuilder = this.dbRo
       .select({
         contact_id: contact.contact_id,
         name: contact.name,
@@ -116,7 +116,7 @@ export class ScheduleContactsListerRepository {
   ): Promise<number> => {
     const filters = this.setFilters(query, accountId);
 
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         count: count(),
       })

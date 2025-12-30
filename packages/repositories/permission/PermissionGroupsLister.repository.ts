@@ -9,7 +9,7 @@ import { ERouteModule } from '@core/common/enums/ERouteModule';
 @injectable()
 export class PermissionGroupsListerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   listPermissionGroupsByPermissionRoleId = async (
@@ -188,7 +188,7 @@ export class PermissionGroupsListerRepository {
       ORDER BY gp.group_name, gp.name;
     `;
 
-    const result = await this.db.execute(query);
+    const result = await this.dbRo.execute(query);
 
     if (result?.rowCount === 0) {
       return [];

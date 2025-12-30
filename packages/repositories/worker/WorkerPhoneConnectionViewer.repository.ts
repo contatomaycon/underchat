@@ -8,13 +8,13 @@ import { IViewWorkerPhoneConnection } from '@core/common/interfaces/IViewWorkerP
 @injectable()
 export class WorkerPhoneConnectionViewerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   viewWorkerPhoneConnection = async (
     number: string
   ): Promise<IViewWorkerPhoneConnection | null> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         worker_phone_connection_id:
           workerPhoneConnection.worker_phone_connection_id,
@@ -35,7 +35,7 @@ export class WorkerPhoneConnectionViewerRepository {
   };
 
   totalWorkerPhoneConnection = async (number: string): Promise<number> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         total: count(),
       })

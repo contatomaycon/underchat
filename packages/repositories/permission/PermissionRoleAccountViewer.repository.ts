@@ -7,13 +7,13 @@ import { and, eq, isNull } from 'drizzle-orm';
 @injectable()
 export class PermissionRoleAccountViewerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   getPermissionRoleAccountId = async (
     permissionRoleId: string
   ): Promise<string | null> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         account_id: permissionRole.account_id,
       })

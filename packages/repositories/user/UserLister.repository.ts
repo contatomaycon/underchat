@@ -29,7 +29,7 @@ import { ListUserRequest } from '@core/schema/user/listUser/request.schema';
 @injectable()
 export class UserListerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   private readonly setFiltersUser = (
@@ -46,7 +46,7 @@ export class UserListerRepository {
       searchTerm
         ? inArray(
             user.user_id,
-            this.db
+            this.dbRo
               .select({ user_id: userInfo.user_id })
               .from(userInfo)
               .where(ilike(userInfo.phone_partial, `%${searchTerm}%`))
@@ -55,7 +55,7 @@ export class UserListerRepository {
       searchTerm
         ? inArray(
             user.user_id,
-            this.db
+            this.dbRo
               .select({ user_id: userDocument.user_id })
               .from(userDocument)
               .where(ilike(userDocument.document_partial, `%${searchTerm}%`))
@@ -64,7 +64,7 @@ export class UserListerRepository {
       searchTerm
         ? inArray(
             user.account_id,
-            this.db
+            this.dbRo
               .select({ account_id: account.account_id })
               .from(account)
               .where(ilike(account.name, `%${searchTerm}%`))
@@ -74,7 +74,7 @@ export class UserListerRepository {
       searchHashes
         ? inArray(
             user.user_id,
-            this.db
+            this.dbRo
               .select({ user_id: userInfo.user_id })
               .from(userInfo)
               .where(eq(userInfo.phone_c, searchHashes))
@@ -83,7 +83,7 @@ export class UserListerRepository {
       searchHashes
         ? inArray(
             user.user_id,
-            this.db
+            this.dbRo
               .select({ user_id: userDocument.user_id })
               .from(userDocument)
               .where(eq(userDocument.document_c, searchHashes))
@@ -134,7 +134,7 @@ export class UserListerRepository {
     const whereClause =
       whereConditions.length > 0 ? and(...whereConditions) : undefined;
 
-    const result = await this.db.query.user.findMany({
+    const result = await this.dbRo.query.user.findMany({
       where: whereClause,
       with: {
         uac: {
@@ -322,7 +322,7 @@ export class UserListerRepository {
     const whereClause =
       whereConditions.length > 0 ? and(...whereConditions) : undefined;
 
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         count: count(),
       })

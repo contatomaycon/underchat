@@ -8,13 +8,13 @@ import { ViewAccountResponse } from '@core/schema/account/viewAccount/response.s
 @injectable()
 export class AccountViewerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   viewAccounts = async (
     accountId: string
   ): Promise<ViewAccountResponse | null> => {
-    const result = await this.db.query.account.findMany({
+    const result = await this.dbRo.query.account.findMany({
       where: and(eq(account.account_id, accountId), isNull(account.deleted_at)),
       with: {
         aac: {

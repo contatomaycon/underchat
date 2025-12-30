@@ -8,14 +8,14 @@ import { ViewSectorResponse } from '@core/schema/sector/viewSector/response.sche
 @injectable()
 export class SectorViewerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   viewSectorById = async (
     sectorId: string,
     accountId: string
   ): Promise<ViewSectorResponse | null> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         sector_id: sector.sector_id,
         name: sector.name,

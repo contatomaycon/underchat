@@ -22,13 +22,13 @@ import { inject, injectable } from 'tsyringe';
 @injectable()
 export class AuthRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   authenticate = async (
     input: IAuthenticate
   ): Promise<AuthUserResponse | null> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         user_id: user.user_id,
         account_id: user.account_id,
@@ -121,7 +121,7 @@ export class AuthRepository {
   };
 
   findUserById = async (userId: string): Promise<AuthUserResponse | null> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         user_id: user.user_id,
         account_id: user.account_id,
@@ -211,7 +211,7 @@ export class AuthRepository {
     userId: string,
     accountId: string
   ): Promise<AuthUserResponse | null> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         user_id: user.user_id,
         account_id: user.account_id,

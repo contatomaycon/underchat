@@ -8,13 +8,13 @@ import { IViewServerWebById } from '@core/common/interfaces/IViewServerWebById';
 @injectable()
 export class ServerWebViewerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   viewServerWebById = async (
     serverId: string
   ): Promise<IViewServerWebById | null> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         server_id: server.server_id,
         server_status_id: server.server_status_id,

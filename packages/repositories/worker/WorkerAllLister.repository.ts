@@ -9,11 +9,11 @@ import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 @injectable()
 export class WorkerAllListerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   listAllWorkers = async (accountId: string): Promise<TransferWorker[]> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         id: worker.worker_id,
         name: worker.name,

@@ -8,14 +8,14 @@ import { TransferUserResponse } from '@core/schema/chat/listTransferUsers/respon
 @injectable()
 export class UserTransferListerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   listUsersForTransfer = async (
     accountId: string,
     excludeUserId: string
   ): Promise<TransferUserResponse[]> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         id: user.user_id,
         name: userInfo.name,

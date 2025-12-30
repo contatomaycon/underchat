@@ -7,11 +7,11 @@ import { inject, injectable } from 'tsyringe';
 @injectable()
 export class UserTotalViewerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   totalUserByAccount = async (accountId: string): Promise<number> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         total: count(),
       })

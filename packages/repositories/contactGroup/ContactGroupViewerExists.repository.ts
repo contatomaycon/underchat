@@ -7,11 +7,11 @@ import { and, count, eq, isNull } from 'drizzle-orm';
 @injectable()
 export class ContactGroupViewerExistsRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   existsContactGroupById = async (contactGroupId: string): Promise<boolean> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         total: count(),
       })

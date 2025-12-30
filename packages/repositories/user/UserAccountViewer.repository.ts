@@ -7,11 +7,11 @@ import { and, eq, isNull } from 'drizzle-orm';
 @injectable()
 export class UserAccountViewerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   getUserAccountId = async (userId: string): Promise<string | null> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         account_id: user.account_id,
       })

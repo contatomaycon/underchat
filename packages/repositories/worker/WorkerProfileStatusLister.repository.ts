@@ -8,13 +8,13 @@ import { ProfileStatus } from '@core/schema/worker/listProfileStatus/response.sc
 @injectable()
 export class WorkerProfileStatusListerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   listWorkerProfileStatus = async (
     workerId: string
   ): Promise<ProfileStatus[]> => {
-    const results = await this.db
+    const results = await this.dbRo
       .select({
         worker_profile_status_id: workerProfileStatus.worker_profile_status_id,
         worker_id: workerProfileStatus.worker_id,

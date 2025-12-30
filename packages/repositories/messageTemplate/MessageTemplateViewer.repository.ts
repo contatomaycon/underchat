@@ -8,13 +8,13 @@ import { inject, injectable } from 'tsyringe';
 @injectable()
 export class MessageTemplateViewerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   viewMessageTemplateById = async (
     messageTemplateId: string
   ): Promise<ViewMessageTemplateResponse | null> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         message_template_id: messageTemplate.message_template_id,
         account: {

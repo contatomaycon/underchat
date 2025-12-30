@@ -22,7 +22,7 @@ import { ESortByLabel } from '@core/common/enums/ESortByLabel';
 @injectable()
 export class LabelTemplateListerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   private readonly setOrders = (query: ListLabelTemplateRequest): SQL[] => {
@@ -83,7 +83,7 @@ export class LabelTemplateListerRepository {
     const filters = this.setFilters(query);
     const orders = this.setOrders(query);
 
-    const queryBuilder = this.db
+    const queryBuilder = this.dbRo
       .select({
         label_template_id: labelTemplate.label_template_id,
         label: labelTemplate.label,
@@ -149,7 +149,7 @@ export class LabelTemplateListerRepository {
   ): Promise<number> => {
     const filters = this.setFilters(query);
 
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         count: count(),
       })

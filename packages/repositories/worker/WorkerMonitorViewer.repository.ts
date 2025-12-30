@@ -8,11 +8,11 @@ import { eq } from 'drizzle-orm';
 @injectable()
 export class WorkerMonitorViewerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   listWorkers = async (): Promise<IWorkerMonitor[]> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         worker_id: worker.worker_id,
         account_id: worker.account_id,
@@ -34,7 +34,7 @@ export class WorkerMonitorViewerRepository {
   };
 
   viewWorker = async (workerId: string): Promise<IWorkerMonitor | null> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         worker_id: worker.worker_id,
         account_id: worker.account_id,

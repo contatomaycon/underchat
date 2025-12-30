@@ -8,7 +8,7 @@ import { inject, injectable } from 'tsyringe';
 @injectable()
 export class ContactViewerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   viewContactById = async (
@@ -24,7 +24,7 @@ export class ContactViewerRepository {
       conditions.push(eq(contact.account_id, accountId));
     }
 
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         contact_id: contact.contact_id,
         account: {
@@ -79,7 +79,7 @@ export class ContactViewerRepository {
       eq(contact.phone_ddi, phoneDdi),
     ];
 
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         contact_id: contact.contact_id,
         account: {

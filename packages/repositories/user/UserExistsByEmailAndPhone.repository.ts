@@ -7,7 +7,7 @@ import { and, count, eq, inArray, isNull, ne } from 'drizzle-orm';
 @injectable()
 export class UserExistsByEmailAndPhoneRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   existsUserByEmail = async (
@@ -20,7 +20,7 @@ export class UserExistsByEmailAndPhoneRepository {
       conditions.push(ne(user.user_id, excludeUserId));
     }
 
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         total: count(),
       })
@@ -43,7 +43,7 @@ export class UserExistsByEmailAndPhoneRepository {
       isNull(user.deleted_at),
       inArray(
         user.user_id,
-        this.db
+        this.dbRo
           .select({ user_id: userInfo.user_id })
           .from(userInfo)
           .where(eq(userInfo.phone_c, phoneC))
@@ -54,7 +54,7 @@ export class UserExistsByEmailAndPhoneRepository {
       conditions.push(ne(user.user_id, excludeUserId));
     }
 
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         total: count(),
       })

@@ -8,14 +8,14 @@ import { CreateSectorRoleRequest } from '@core/schema/sector/createSectorRole/re
 @injectable()
 export class PermissionRoleCountSectorViewerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   countRolesSector = async (
     accountId: string,
     rolesId: CreateSectorRoleRequest
   ): Promise<boolean> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         total: count(),
       })

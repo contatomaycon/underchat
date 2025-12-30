@@ -8,13 +8,13 @@ import { ViewServerResponse } from '@core/schema/server/viewServer/response.sche
 @injectable()
 export class ServerViewerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   viewServerById = async (
     serverId: string
   ): Promise<ViewServerResponse | null> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         name: server.name,
         quantity_workers: server.quantity_workers,

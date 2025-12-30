@@ -9,11 +9,11 @@ import { EServerStatus } from '@core/common/enums/EServerStatus';
 @injectable()
 export class ServerSshListerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   listServerSsh = async (): Promise<IListerServerSsh[]> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         server_id: serverSsh.server_id,
         ssh_ip: serverSsh.ssh_ip,

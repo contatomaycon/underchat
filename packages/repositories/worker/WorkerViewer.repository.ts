@@ -14,14 +14,14 @@ import { ViewWorkerResponse } from '@core/schema/worker/viewWorker/response.sche
 @injectable()
 export class WorkerViewerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   viewWorker = async (
     accountId: string,
     workerId: string
   ): Promise<ViewWorkerResponse | null> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         id: worker.worker_id,
         name: worker.name,

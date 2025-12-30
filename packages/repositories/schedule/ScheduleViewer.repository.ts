@@ -15,11 +15,11 @@ import { inject, injectable } from 'tsyringe';
 @injectable()
 export class ScheduleViewerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   private readonly getScheduleData = async (scheduleId: string) => {
-    const scheduleResult = await this.db
+    const scheduleResult = await this.dbRo
       .select({
         schedule_id: schedule.schedule_id,
         account: {
@@ -52,7 +52,7 @@ export class ScheduleViewerRepository {
   };
 
   private readonly getScheduledContactsData = async (scheduleId: string) => {
-    return this.db
+    return this.dbRo
       .select({
         contact_id: contact.contact_id,
         contact_name: contact.name,

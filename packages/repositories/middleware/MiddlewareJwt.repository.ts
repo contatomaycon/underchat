@@ -10,7 +10,7 @@ import { EAccountStatus } from '@core/common/enums/EAccountStatus';
 @injectable()
 export class MiddlewareJwtRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   async find(
@@ -105,7 +105,7 @@ export class MiddlewareJwtRepository {
       WHERE (module_name = '${routeModule}' OR module_name = '${module}');
     `;
 
-    const result = await this.db.execute(query);
+    const result = await this.dbRo.execute(query);
 
     const rows = result?.rows ?? [];
     const typedRows = rows.map(

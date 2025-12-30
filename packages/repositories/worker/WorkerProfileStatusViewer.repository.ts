@@ -7,7 +7,7 @@ import { eq } from 'drizzle-orm';
 @injectable()
 export class WorkerProfileStatusViewerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   viewWorkerProfileStatusById = async (
@@ -18,7 +18,7 @@ export class WorkerProfileStatusViewerRepository {
     external_id: string | null;
     worker_id: string;
   } | null> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         value: workerProfileStatus.value,
         worker_profile_status_type_id:

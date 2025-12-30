@@ -13,14 +13,14 @@ import { inject, injectable } from 'tsyringe';
 @injectable()
 export class AccountQuantityProductViewerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   viewPlanQuantity = async (
     accountId: string,
     planProductId: string
   ): Promise<number> => {
-    const planResult = await this.db
+    const planResult = await this.dbRo
       .select({
         quantity: planItems.quantity,
       })
@@ -49,7 +49,7 @@ export class AccountQuantityProductViewerRepository {
     accountId: string,
     planProductId: string
   ): Promise<number> => {
-    const planCrossSellResult = await this.db
+    const planCrossSellResult = await this.dbRo
       .select({
         quantity: planCrossSell.quantity,
       })

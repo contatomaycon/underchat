@@ -10,11 +10,11 @@ import { IListWorkerActivities } from '@core/common/interfaces/IListWorkerActivi
 @injectable()
 export class WorkerBaileysActivitiesListerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   listWorkerBaileysActivities = async (): Promise<IListWorkerActivities[]> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         worker_id: worker.worker_id,
         server_id: worker.server_id,

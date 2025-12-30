@@ -8,11 +8,11 @@ import { ListAllUsersResponse } from '@core/schema/user/listAllUsers/response.sc
 @injectable()
 export class UserAllListerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   listAllUsers = async (accountId: string): Promise<ListAllUsersResponse[]> => {
-    const result = await this.db.query.user.findMany({
+    const result = await this.dbRo.query.user.findMany({
       where: and(eq(user.account_id, accountId), isNull(user.deleted_at)),
       with: {
         uac: {

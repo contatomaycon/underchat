@@ -10,13 +10,13 @@ import { EUserStatus } from '@core/common/enums/EUserStatus';
 @injectable()
 export class UserOnlineListerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   listOnlineUsersByAccount = async (
     accountId: string
   ): Promise<IViewUserNamePhoto[]> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         id: user.user_id,
         name: userInfo.name,

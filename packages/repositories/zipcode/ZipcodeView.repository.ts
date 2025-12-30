@@ -9,13 +9,13 @@ import { inject, injectable } from 'tsyringe';
 @injectable()
 export class ZipcodeViewRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   async zipcodeView(
     request: ViewZipcodeRequest
   ): Promise<ZipcodeResponseSchema | null> {
-    const result = await this.db.query.zipcode.findFirst({
+    const result = await this.dbRo.query.zipcode.findFirst({
       where: and(
         eq(zipcode.zipcode, request.zipcode),
         eq(zipcode.id_country, request.country_id)

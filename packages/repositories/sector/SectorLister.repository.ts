@@ -22,7 +22,7 @@ import { ESortBySector } from '@core/common/enums/ESortBySector';
 @injectable()
 export class SectorListerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   private readonly setOrders = (query: ListSectorRequest): SQL[] => {
@@ -76,7 +76,7 @@ export class SectorListerRepository {
     const filters = this.setFilters(query);
     const orders = this.setOrders(query);
 
-    const queryBuilder = this.db
+    const queryBuilder = this.dbRo
       .select({
         sector_id: sector.sector_id,
         name: sector.name,
@@ -134,7 +134,7 @@ export class SectorListerRepository {
   ): Promise<number> => {
     const filters = this.setFilters(query);
 
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         count: count(),
       })

@@ -9,7 +9,7 @@ import { EAccountStatus } from '@core/common/enums/EAccountStatus';
 @injectable()
 export class PlanAccountRenewalListerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   findPlanAccountsForRenewal = async (): Promise<IPlanAccountRenewal[]> => {
@@ -18,7 +18,7 @@ export class PlanAccountRenewalListerRepository {
     threeHoursLater.setHours(threeHoursLater.getHours() + 3);
     const threeHoursLaterISO = threeHoursLater.toISOString();
 
-    const result = await this.db.query.planAccount.findMany({
+    const result = await this.dbRo.query.planAccount.findMany({
       where: and(
         eq(planAccount.recurring_payment, true),
         isNull(planAccount.cancellation_date),

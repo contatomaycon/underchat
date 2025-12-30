@@ -7,11 +7,11 @@ import { and, eq, isNull } from 'drizzle-orm';
 @injectable()
 export class UserInfoViewerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   findUserInfoByUserId = async (userId: string) => {
-    return this.db.query.userInfo.findFirst({
+    return this.dbRo.query.userInfo.findFirst({
       where: and(eq(userInfo.user_id, userId), isNull(userInfo.deleted_at)),
       columns: {
         phone: true,

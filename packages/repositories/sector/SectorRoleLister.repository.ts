@@ -8,14 +8,14 @@ import { ListSectorRoleAccountSectorResponse } from '@core/schema/sector/viewSec
 @injectable()
 export class SectorRoleListerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   listSectorRoleAccountSectorById = async (
     accountId: string,
     sectorId: string
   ): Promise<ListSectorRoleAccountSectorResponse[]> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         id: sectorRole.permission_role_id,
         name: permissionRole.name,

@@ -9,12 +9,12 @@ import { EPlanProduct } from '@core/common/enums/EPlanProduct';
 @injectable()
 export class DashboardStatsRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>,
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>,
     private readonly accountQuantityProductViewerRepository: AccountQuantityProductViewerRepository
   ) {}
 
   getUsersTotal = async (accountId: string): Promise<number> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         total: count(),
       })
@@ -38,7 +38,7 @@ export class DashboardStatsRepository {
         const nextDate = new Date(date);
         nextDate.setDate(nextDate.getDate() + 1);
 
-        const result = await this.db
+        const result = await this.dbRo
           .select({
             total: count(),
           })
@@ -60,7 +60,7 @@ export class DashboardStatsRepository {
   };
 
   getChannelsTotal = async (accountId: string): Promise<number> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         total: count(),
       })
@@ -72,7 +72,7 @@ export class DashboardStatsRepository {
   };
 
   getChannelsConnected = async (accountId: string): Promise<number> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         total: count(),
       })
@@ -101,7 +101,7 @@ export class DashboardStatsRepository {
         const nextDate = new Date(date);
         nextDate.setDate(nextDate.getDate() + 1);
 
-        const result = await this.db
+        const result = await this.dbRo
           .select({
             total: count(),
           })
@@ -124,7 +124,7 @@ export class DashboardStatsRepository {
   };
 
   getContactsTotal = async (accountId: string): Promise<number> => {
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         total: count(),
       })
@@ -140,7 +140,7 @@ export class DashboardStatsRepository {
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
     thirtyDaysAgo.setHours(0, 0, 0, 0);
 
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         total: count(),
       })
@@ -169,7 +169,7 @@ export class DashboardStatsRepository {
         const nextDate = new Date(date);
         nextDate.setDate(nextDate.getDate() + 1);
 
-        const result = await this.db
+        const result = await this.dbRo
           .select({
             total: count(),
           })

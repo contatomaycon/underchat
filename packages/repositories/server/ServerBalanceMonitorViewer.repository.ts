@@ -9,7 +9,7 @@ import { IBalanceMonitorServer } from '@core/common/interfaces/IBalanceMonitorSe
 @injectable()
 export class ServerBalanceMonitorViewerRepository {
   constructor(
-    @inject('DatabaseRw') private readonly db: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
   listEligible = async (): Promise<IBalanceMonitorServer[]> => {
@@ -19,7 +19,7 @@ export class ServerBalanceMonitorViewerRepository {
       EServerStatus.error,
     ];
 
-    const result = await this.db
+    const result = await this.dbRo
       .select({
         server_id: server.server_id,
         server_status_id: server.server_status_id,
