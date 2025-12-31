@@ -45,6 +45,7 @@ const showSkeleton = computed(
 );
 const reactionEmojiIndex = new EmojiIndex(data);
 const showScrollToBottom = ref(false);
+const shouldAutoScrollOnNewMessage = ref(true);
 const scrollElementRef = ref<HTMLElement | null>(null);
 
 const viewerOpen = ref(false);
@@ -1403,10 +1404,10 @@ const downloadViewerMedia = () => {
   downloadImage(viewerSrc.value, viewerDownloadName.value);
 };
 
-const checkIfShouldShowScrollButton = (target: HTMLElement) => {
+const checkIfShouldShowScrollButton = (target: HTMLElement): boolean => {
   if (!target) {
     showScrollToBottom.value = false;
-    return;
+    return false;
   }
 
   const scrollTop = target.scrollTop;
@@ -1418,13 +1419,15 @@ const checkIfShouldShowScrollButton = (target: HTMLElement) => {
   const isAtBottom = distanceFromBottom <= threshold;
 
   showScrollToBottom.value = !isAtBottom;
+  return isAtBottom;
 };
 
 const handleScroll = async (e: Event) => {
   const target = e.target as HTMLElement;
   if (!target) return;
 
-  checkIfShouldShowScrollButton(target);
+  const isAtBottom = checkIfShouldShowScrollButton(target);
+  shouldAutoScrollOnNewMessage.value = isAtBottom;
 
   const scrollTop = target.scrollTop;
   const threshold = 200;
@@ -1450,6 +1453,8 @@ const handleScroll = async (e: Event) => {
 };
 
 const scrollToBottom = async () => {
+  shouldAutoScrollOnNewMessage.value = true;
+
   const scrollElement = scrollElementRef.value;
   if (!scrollElement) {
     const psContainer = chatLogContainer.value?.closest('.ps') as HTMLElement;
@@ -1521,6 +1526,18 @@ watch(
         checkIfShouldShowScrollButton(scrollElementRef.value);
       }
     });
+  }
+);
+
+watch(
+  () => chatStore.listMessages.length,
+  async (length, previousLength) => {
+    if (previousLength === undefined) return;
+    if (length <= previousLength) return;
+    if (!shouldAutoScrollOnNewMessage.value) return;
+
+    await nextTick();
+    scrollToBottom();
   }
 );
 
