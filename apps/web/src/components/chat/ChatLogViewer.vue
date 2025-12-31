@@ -2074,6 +2074,7 @@ const handleContactClick = (message: ListMessageResult) => {
     position: relative;
     display: inline-flex;
     max-width: 100%;
+    min-width: 0;
     overflow: visible !important;
   }
 
@@ -2085,8 +2086,10 @@ const handleContactClick = (message: ListMessageResult) => {
     padding-bottom: 1.4rem !important;
     word-wrap: break-word;
     word-break: break-word;
+    overflow-wrap: anywhere;
     position: relative;
     max-width: 100%;
+    min-width: 0;
     min-height: 40px;
     overflow: visible !important;
 
@@ -2174,8 +2177,10 @@ const handleContactClick = (message: ListMessageResult) => {
   .message-text {
     white-space: pre-line;
     word-break: break-word;
+    overflow-wrap: anywhere;
     line-height: 1.5;
     margin: 0;
+    max-width: 100%;
   }
 
   .message-meta {
@@ -2345,6 +2350,14 @@ const handleContactClick = (message: ListMessageResult) => {
       font-size: 0.8rem;
       font-weight: 600;
       color: rgb(var(--v-theme-primary));
+    }
+
+    .quoted-text {
+      word-wrap: break-word;
+      word-break: break-word;
+      overflow-wrap: anywhere;
+      white-space: pre-wrap;
+      max-width: 100%;
     }
   }
 

@@ -3365,6 +3365,8 @@ onUnmounted(() => {
     .chat-content-wrapper {
       position: relative;
       display: inline-flex;
+      max-width: 100%;
+      min-width: 0;
       overflow: visible !important;
     }
 
@@ -3374,6 +3376,9 @@ onUnmounted(() => {
 
     .message-text {
       white-space: pre-line;
+      word-break: break-word;
+      overflow-wrap: anywhere;
+      max-width: 100%;
     }
 
     .chat-content {
@@ -3382,6 +3387,11 @@ onUnmounted(() => {
       border-end-start-radius: 6px;
       padding-right: 1.8rem !important;
       padding-bottom: 1.4rem !important;
+      word-wrap: break-word;
+      word-break: break-word;
+      overflow-wrap: anywhere;
+      max-width: 100%;
+      min-width: 0;
 
       p {
         overflow-wrap: anywhere;
