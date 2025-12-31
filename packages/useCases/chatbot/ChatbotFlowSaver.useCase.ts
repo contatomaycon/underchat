@@ -250,10 +250,25 @@ export class ChatbotFlowSaverUseCase {
     }
 
     const data = node.data;
-    if (!data.dataType) {
+
+    if (!data) {
       errors.push(
         t('chatbot_flow_validation_data_type_required', {
-          nodeLabel: node.data?.title || node.label || node.id,
+          nodeLabel: node.label || node.id,
+        })
+      );
+      return;
+    }
+
+    const dataType = data.dataType;
+    if (
+      dataType === null ||
+      dataType === undefined ||
+      (typeof dataType === 'string' && dataType.trim() === '')
+    ) {
+      errors.push(
+        t('chatbot_flow_validation_data_type_required', {
+          nodeLabel: data.title || node.label || node.id,
         })
       );
     }

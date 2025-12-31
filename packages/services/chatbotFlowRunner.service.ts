@@ -1286,6 +1286,7 @@ export class ChatbotFlowRunnerService {
     createChat: IChat,
     chatbotFlow: ListChatbotFlowResponse,
     currentFlowId: string,
+    currentNode: ListChatbotFlowResponse['nodes'][number],
     userText: string,
     customMessage?: string,
     customMessages?: {
@@ -1302,6 +1303,8 @@ export class ChatbotFlowRunnerService {
   ): Promise<boolean> {
     if (!this.isValidEmail(userText)) {
       await this.sendInvalidEmailMessage(t, createChat, customMessage);
+      // Reenviar a pergunta do nó de dados após a mensagem de erro
+      await this.processDataNodeQuestion(t, createChat, currentNode);
       return false;
     }
 
@@ -1319,6 +1322,7 @@ export class ChatbotFlowRunnerService {
     createChat: IChat,
     chatbotFlow: ListChatbotFlowResponse,
     currentFlowId: string,
+    currentNode: ListChatbotFlowResponse['nodes'][number],
     userText: string,
     customMessage?: string,
     customMessages?: {
@@ -1335,6 +1339,8 @@ export class ChatbotFlowRunnerService {
   ): Promise<boolean> {
     if (!this.isValidCPF(userText)) {
       await this.sendInvalidCpfMessage(t, createChat, customMessage);
+      // Reenviar a pergunta do nó de dados após a mensagem de erro
+      await this.processDataNodeQuestion(t, createChat, currentNode);
       return false;
     }
 
@@ -1352,6 +1358,7 @@ export class ChatbotFlowRunnerService {
     createChat: IChat,
     chatbotFlow: ListChatbotFlowResponse,
     currentFlowId: string,
+    currentNode: ListChatbotFlowResponse['nodes'][number],
     userText: string,
     customMessage?: string,
     customMessages?: {
@@ -1368,6 +1375,8 @@ export class ChatbotFlowRunnerService {
   ): Promise<boolean> {
     if (!this.isValidCNPJ(userText)) {
       await this.sendInvalidCnpjMessage(t, createChat, customMessage);
+      // Reenviar a pergunta do nó de dados após a mensagem de erro
+      await this.processDataNodeQuestion(t, createChat, currentNode);
       return false;
     }
 
@@ -1427,6 +1436,7 @@ export class ChatbotFlowRunnerService {
         createChat,
         chatbotFlow,
         currentFlowId,
+        currentNode,
         userText,
         customMessages?.invalid_email_message,
         customMessages
@@ -1439,6 +1449,7 @@ export class ChatbotFlowRunnerService {
         createChat,
         chatbotFlow,
         currentFlowId,
+        currentNode,
         userText,
         customMessages?.invalid_cpf_message,
         customMessages
@@ -1451,6 +1462,7 @@ export class ChatbotFlowRunnerService {
         createChat,
         chatbotFlow,
         currentFlowId,
+        currentNode,
         userText,
         customMessages?.invalid_cnpj_message,
         customMessages
@@ -1494,6 +1506,7 @@ export class ChatbotFlowRunnerService {
       return this.handleInvalidMenuAttempt(
         t,
         createChat,
+        currentNode,
         options?.customMessage,
         options?.redirectFailedAttempts,
         options?.customMessages
@@ -1511,6 +1524,7 @@ export class ChatbotFlowRunnerService {
       return this.handleInvalidMenuAttempt(
         t,
         createChat,
+        currentNode,
         options?.customMessage,
         options?.redirectFailedAttempts,
         options?.customMessages
@@ -1523,6 +1537,7 @@ export class ChatbotFlowRunnerService {
       return this.handleInvalidMenuAttempt(
         t,
         createChat,
+        currentNode,
         options?.customMessage,
         options?.redirectFailedAttempts,
         options?.customMessages
@@ -1839,6 +1854,7 @@ export class ChatbotFlowRunnerService {
   private async handleInvalidMenuAttempt(
     t: TFunction<'translation', undefined>,
     createChat: IChat,
+    currentNode: ListChatbotFlowResponse['nodes'][number],
     customMessage?: string,
     redirectFailedAttempts?: {
       status?: string;
@@ -1855,6 +1871,9 @@ export class ChatbotFlowRunnerService {
     }
   ): Promise<boolean> {
     await this.sendTextOptionInvalidMessage(t, createChat, customMessage);
+
+    // Reenviar o menu/satisfaction após a mensagem de erro
+    await this.sendBuildMenuMessage(t, createChat, currentNode);
 
     if (
       !this.shouldRedirectOnFailedAttempt(redirectFailedAttempts, createChat)

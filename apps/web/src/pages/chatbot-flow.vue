@@ -928,6 +928,12 @@ const prepareNodesForSave = (
     if (nodeData && 'onRemove' in nodeData) {
       delete nodeData.onRemove;
     }
+    if (
+      node.type === 'data' &&
+      (nodeData.dataType === null || nodeData.dataType === undefined)
+    ) {
+      delete nodeData.dataType;
+    }
     return {
       id: node.id,
       type: node.type || '',
@@ -946,6 +952,37 @@ const handleSave = async () => {
   if (!chatbotId.value) {
     chatbotStore.showSnackbar(
       t('chatbot_flow_validation_chatbot_id_required'),
+      EColor.error
+    );
+    return;
+  }
+
+  const dataNodesWithoutType: Node[] = [];
+  for (const node of nodes.value) {
+    if (node.type !== 'data') {
+      continue;
+    }
+    const dataType = node.data?.dataType;
+    if (
+      !dataType ||
+      dataType === null ||
+      dataType === undefined ||
+      (typeof dataType === 'string' && dataType.trim() === '')
+    ) {
+      dataNodesWithoutType.push(node);
+    }
+  }
+
+  if (dataNodesWithoutType.length > 0) {
+    const nodeLabels: string[] = [];
+    for (const node of dataNodesWithoutType) {
+      const label = node.data?.title || node.label || node.id;
+      nodeLabels.push(label);
+    }
+    chatbotStore.showSnackbar(
+      t('chatbot_flow_validation_data_type_required', {
+        nodeLabel: nodeLabels.join(', '),
+      }),
       EColor.error
     );
     return;
@@ -976,8 +1013,10 @@ const handleSave = async () => {
     const formData = new FormData();
     formData.append('request', JSON.stringify(requestData));
 
-    const messageNodes = nodes.value.filter((node) => node.type === 'message');
-    for (const node of messageNodes) {
+    for (const node of nodes.value) {
+      if (node.type !== 'message') {
+        continue;
+      }
       const data = node.data as any;
       const messageType = data.messageType;
       const attachmentFile = data.attachmentFile as File | null;
@@ -988,10 +1027,12 @@ const handleSave = async () => {
 
       if (messageType === 'image') {
         formData.append(`image_${node.id}`, attachmentFile);
+        continue;
       }
 
       if (messageType === 'video') {
         formData.append(`video_${node.id}`, attachmentFile);
+        continue;
       }
 
       if (messageType === 'audio') {
@@ -1066,7 +1107,6 @@ const processMessageNodeData = (nodeData: any): void => {
 };
 
 const processDataNodeData = (nodeData: any): void => {
-  if (nodeData.dataType === undefined) nodeData.dataType = null;
   if (nodeData.firstName === undefined)
     nodeData.firstName = t('chatbot_data_default_name_question');
   if (nodeData.email === undefined)
