@@ -167,8 +167,17 @@ export class WorkerConsume {
     }
 
     if (data.action === EWorkerAction.recreate) {
-      await this.kafkaBaileysQueueService.delete(data.worker_id);
-      await this.recreateWorker(data);
+      try {
+        await this.kafkaBaileysQueueService.delete(data.worker_id);
+      } catch (error) {
+        console.error('Error deleting Kafka Baileys queue', error);
+      }
+
+      try {
+        await this.recreateWorker(data);
+      } catch (error) {
+        console.error('Error recreating worker', error);
+      }
     }
   }
 
@@ -233,6 +242,7 @@ export class WorkerConsume {
       data.account_id,
       data.worker_id
     );
+    console.log('viewWorkerType', viewWorkerType);
 
     if (!viewWorkerType) {
       await this.updateWorkerErrorStatus(
@@ -249,6 +259,8 @@ export class WorkerConsume {
       data.worker_id,
       false
     );
+
+    console.log('removed', removed);
 
     if (!removed) {
       await this.updateWorkerErrorStatus(
@@ -271,6 +283,8 @@ export class WorkerConsume {
       false
     );
 
+    console.log('containerId', containerId);
+
     if (!containerId) {
       await this.updateWorkerErrorStatus(
         data.worker_id,
@@ -284,6 +298,8 @@ export class WorkerConsume {
 
     const healthy =
       await this.containerHealthService.isServiceHealthy(containerId);
+
+    console.log('healthy', healthy);
 
     if (!healthy) {
       await this.updateWorkerErrorStatus(
