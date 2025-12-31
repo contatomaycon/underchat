@@ -694,7 +694,18 @@ export class ChatbotFlowRunnerService {
     t: TFunction<'translation', undefined>,
     createChat: IChat,
     chatbotFlow: ListChatbotFlowResponse,
-    nextFlowId: string
+    nextFlowId: string,
+    customMessages?: {
+      service_finished_message?: string;
+      invalid_menu_option_message?: string;
+      invalid_satisfaction_option_message?: string;
+      invalid_cpf_message?: string;
+      invalid_cnpj_message?: string;
+      invalid_email_message?: string;
+      transfer_message_user?: string;
+      transfer_message_sector?: string;
+      transfer_message_sector_user?: string;
+    }
   ): Promise<boolean> {
     const nextFlowNode = this.getFlowNodeById(chatbotFlow, nextFlowId);
 
@@ -709,11 +720,23 @@ export class ChatbotFlowRunnerService {
     }
 
     if (nextFlowNode.type === 'message') {
-      return this.processMessageNode(t, createChat, nextFlowNode, chatbotFlow);
+      return this.processMessageNode(
+        t,
+        createChat,
+        nextFlowNode,
+        chatbotFlow,
+        customMessages
+      );
     }
 
     if (nextFlowNode.type === 'tag') {
-      return this.processTagNode(t, createChat, chatbotFlow, nextFlowId);
+      return this.processTagNode(
+        t,
+        createChat,
+        chatbotFlow,
+        nextFlowId,
+        customMessages
+      );
     }
 
     if (nextFlowNode.type === 'redirect') {
@@ -726,7 +749,11 @@ export class ChatbotFlowRunnerService {
     }
 
     if (nextFlowNode.type === 'finish') {
-      await this.sendFinishMessage(t, createChat);
+      await this.sendFinishMessage(
+        t,
+        createChat,
+        customMessages?.service_finished_message
+      );
       return true;
     }
 
@@ -737,7 +764,18 @@ export class ChatbotFlowRunnerService {
     t: TFunction<'translation', undefined>,
     createChat: IChat,
     node: ListChatbotFlowResponse['nodes'][number],
-    chatbotFlow: ListChatbotFlowResponse
+    chatbotFlow: ListChatbotFlowResponse,
+    customMessages?: {
+      service_finished_message?: string;
+      invalid_menu_option_message?: string;
+      invalid_satisfaction_option_message?: string;
+      invalid_cpf_message?: string;
+      invalid_cnpj_message?: string;
+      invalid_email_message?: string;
+      transfer_message_user?: string;
+      transfer_message_sector?: string;
+      transfer_message_sector_user?: string;
+    }
   ): Promise<boolean> {
     const continueType = node.data?.continueType;
 
@@ -747,7 +785,13 @@ export class ChatbotFlowRunnerService {
       const nextFlowId = this.getNextFlowId(chatbotFlow, node.id);
       if (nextFlowId) {
         await this.updateCache(createChat, nextFlowId);
-        return this.processNextNode(t, createChat, chatbotFlow, nextFlowId);
+        return this.processNextNode(
+          t,
+          createChat,
+          chatbotFlow,
+          nextFlowId,
+          customMessages
+        );
       }
 
       return true;
@@ -772,7 +816,18 @@ export class ChatbotFlowRunnerService {
     createChat: IChat,
     chatbotFlow: ListChatbotFlowResponse,
     currentNode: ListChatbotFlowResponse['nodes'][number],
-    currentFlowId: string
+    currentFlowId: string,
+    customMessages?: {
+      service_finished_message?: string;
+      invalid_menu_option_message?: string;
+      invalid_satisfaction_option_message?: string;
+      invalid_cpf_message?: string;
+      invalid_cnpj_message?: string;
+      invalid_email_message?: string;
+      transfer_message_user?: string;
+      transfer_message_sector?: string;
+      transfer_message_sector_user?: string;
+    }
   ): Promise<boolean> {
     const continueType = currentNode.data?.continueType;
 
@@ -782,7 +837,13 @@ export class ChatbotFlowRunnerService {
       const nextFlowId = this.getNextFlowId(chatbotFlow, currentFlowId);
       if (nextFlowId) {
         await this.updateCache(createChat, nextFlowId);
-        return this.processNextNode(t, createChat, chatbotFlow, nextFlowId);
+        return this.processNextNode(
+          t,
+          createChat,
+          chatbotFlow,
+          nextFlowId,
+          customMessages
+        );
       }
 
       return true;
@@ -896,7 +957,18 @@ export class ChatbotFlowRunnerService {
     t: TFunction<'translation', undefined>,
     createChat: IChat,
     chatbotFlow: ListChatbotFlowResponse,
-    currentFlowId: string
+    currentFlowId: string,
+    customMessages?: {
+      service_finished_message?: string;
+      invalid_menu_option_message?: string;
+      invalid_satisfaction_option_message?: string;
+      invalid_cpf_message?: string;
+      invalid_cnpj_message?: string;
+      invalid_email_message?: string;
+      transfer_message_user?: string;
+      transfer_message_sector?: string;
+      transfer_message_sector_user?: string;
+    }
   ): Promise<boolean> {
     const currentNode = this.getFlowNodeById(chatbotFlow, currentFlowId);
 
@@ -924,7 +996,13 @@ export class ChatbotFlowRunnerService {
       return true;
     }
 
-    return this.processNextNode(t, createChat, chatbotFlow, nextFlowId);
+    return this.processNextNode(
+      t,
+      createChat,
+      chatbotFlow,
+      nextFlowId,
+      customMessages
+    );
   }
 
   private async processUserRedirect(
@@ -1051,6 +1129,7 @@ export class ChatbotFlowRunnerService {
     chatbotFlow: ListChatbotFlowResponse,
     currentFlowId: string,
     customMessages?: {
+      service_finished_message?: string;
       transfer_message_user?: string;
       transfer_message_sector?: string;
       transfer_message_sector_user?: string;
@@ -1136,19 +1215,42 @@ export class ChatbotFlowRunnerService {
       return true;
     }
 
-    return this.processNextNode(t, updatedChat, chatbotFlow, nextFlowId);
+    return this.processNextNode(
+      t,
+      updatedChat,
+      chatbotFlow,
+      nextFlowId,
+      customMessages
+    );
   }
 
   private async processNextNodeAfterValidation(
     t: TFunction<'translation', undefined>,
     createChat: IChat,
     chatbotFlow: ListChatbotFlowResponse,
-    currentFlowId: string
+    currentFlowId: string,
+    customMessages?: {
+      service_finished_message?: string;
+      invalid_menu_option_message?: string;
+      invalid_satisfaction_option_message?: string;
+      invalid_cpf_message?: string;
+      invalid_cnpj_message?: string;
+      invalid_email_message?: string;
+      transfer_message_user?: string;
+      transfer_message_sector?: string;
+      transfer_message_sector_user?: string;
+    }
   ): Promise<boolean> {
     const nextFlowId = this.getNextFlowId(chatbotFlow, currentFlowId);
     if (nextFlowId) {
       await this.updateCache(createChat, nextFlowId);
-      return this.processNextNode(t, createChat, chatbotFlow, nextFlowId);
+      return this.processNextNode(
+        t,
+        createChat,
+        chatbotFlow,
+        nextFlowId,
+        customMessages
+      );
     }
     return true;
   }
@@ -1157,13 +1259,25 @@ export class ChatbotFlowRunnerService {
     t: TFunction<'translation', undefined>,
     createChat: IChat,
     chatbotFlow: ListChatbotFlowResponse,
-    currentFlowId: string
+    currentFlowId: string,
+    customMessages?: {
+      service_finished_message?: string;
+      invalid_menu_option_message?: string;
+      invalid_satisfaction_option_message?: string;
+      invalid_cpf_message?: string;
+      invalid_cnpj_message?: string;
+      invalid_email_message?: string;
+      transfer_message_user?: string;
+      transfer_message_sector?: string;
+      transfer_message_sector_user?: string;
+    }
   ): Promise<boolean> {
     return this.processNextNodeAfterValidation(
       t,
       createChat,
       chatbotFlow,
-      currentFlowId
+      currentFlowId,
+      customMessages
     );
   }
 
@@ -1173,7 +1287,18 @@ export class ChatbotFlowRunnerService {
     chatbotFlow: ListChatbotFlowResponse,
     currentFlowId: string,
     userText: string,
-    customMessage?: string
+    customMessage?: string,
+    customMessages?: {
+      service_finished_message?: string;
+      invalid_menu_option_message?: string;
+      invalid_satisfaction_option_message?: string;
+      invalid_cpf_message?: string;
+      invalid_cnpj_message?: string;
+      invalid_email_message?: string;
+      transfer_message_user?: string;
+      transfer_message_sector?: string;
+      transfer_message_sector_user?: string;
+    }
   ): Promise<boolean> {
     if (!this.isValidEmail(userText)) {
       await this.sendInvalidEmailMessage(t, createChat, customMessage);
@@ -1184,7 +1309,8 @@ export class ChatbotFlowRunnerService {
       t,
       createChat,
       chatbotFlow,
-      currentFlowId
+      currentFlowId,
+      customMessages
     );
   }
 
@@ -1194,7 +1320,18 @@ export class ChatbotFlowRunnerService {
     chatbotFlow: ListChatbotFlowResponse,
     currentFlowId: string,
     userText: string,
-    customMessage?: string
+    customMessage?: string,
+    customMessages?: {
+      service_finished_message?: string;
+      invalid_menu_option_message?: string;
+      invalid_satisfaction_option_message?: string;
+      invalid_cpf_message?: string;
+      invalid_cnpj_message?: string;
+      invalid_email_message?: string;
+      transfer_message_user?: string;
+      transfer_message_sector?: string;
+      transfer_message_sector_user?: string;
+    }
   ): Promise<boolean> {
     if (!this.isValidCPF(userText)) {
       await this.sendInvalidCpfMessage(t, createChat, customMessage);
@@ -1205,7 +1342,8 @@ export class ChatbotFlowRunnerService {
       t,
       createChat,
       chatbotFlow,
-      currentFlowId
+      currentFlowId,
+      customMessages
     );
   }
 
@@ -1215,7 +1353,18 @@ export class ChatbotFlowRunnerService {
     chatbotFlow: ListChatbotFlowResponse,
     currentFlowId: string,
     userText: string,
-    customMessage?: string
+    customMessage?: string,
+    customMessages?: {
+      service_finished_message?: string;
+      invalid_menu_option_message?: string;
+      invalid_satisfaction_option_message?: string;
+      invalid_cpf_message?: string;
+      invalid_cnpj_message?: string;
+      invalid_email_message?: string;
+      transfer_message_user?: string;
+      transfer_message_sector?: string;
+      transfer_message_sector_user?: string;
+    }
   ): Promise<boolean> {
     if (!this.isValidCNPJ(userText)) {
       await this.sendInvalidCnpjMessage(t, createChat, customMessage);
@@ -1226,7 +1375,8 @@ export class ChatbotFlowRunnerService {
       t,
       createChat,
       chatbotFlow,
-      currentFlowId
+      currentFlowId,
+      customMessages
     );
   }
 
@@ -1237,9 +1387,15 @@ export class ChatbotFlowRunnerService {
     chatbotFlow: ListChatbotFlowResponse,
     currentFlowId: string,
     customMessages?: {
+      service_finished_message?: string;
+      invalid_menu_option_message?: string;
+      invalid_satisfaction_option_message?: string;
       invalid_cpf_message?: string;
       invalid_cnpj_message?: string;
       invalid_email_message?: string;
+      transfer_message_user?: string;
+      transfer_message_sector?: string;
+      transfer_message_sector_user?: string;
     }
   ): Promise<boolean> {
     const currentNode = this.getFlowNodeById(chatbotFlow, currentFlowId);
@@ -1260,7 +1416,8 @@ export class ChatbotFlowRunnerService {
         t,
         createChat,
         chatbotFlow,
-        currentFlowId
+        currentFlowId,
+        customMessages
       );
     }
 
@@ -1271,7 +1428,8 @@ export class ChatbotFlowRunnerService {
         chatbotFlow,
         currentFlowId,
         userText,
-        customMessages?.invalid_email_message
+        customMessages?.invalid_email_message,
+        customMessages
       );
     }
 
@@ -1282,7 +1440,8 @@ export class ChatbotFlowRunnerService {
         chatbotFlow,
         currentFlowId,
         userText,
-        customMessages?.invalid_cpf_message
+        customMessages?.invalid_cpf_message,
+        customMessages
       );
     }
 
@@ -1293,7 +1452,8 @@ export class ChatbotFlowRunnerService {
         chatbotFlow,
         currentFlowId,
         userText,
-        customMessages?.invalid_cnpj_message
+        customMessages?.invalid_cnpj_message,
+        customMessages
       );
     }
 
@@ -1317,6 +1477,7 @@ export class ChatbotFlowRunnerService {
         selected_sector_user?: string;
       };
       customMessages?: {
+        service_finished_message?: string;
         transfer_message_user?: string;
         transfer_message_sector?: string;
         transfer_message_sector_user?: string;
@@ -1380,7 +1541,13 @@ export class ChatbotFlowRunnerService {
 
     await this.resetFailedAttempts(createChat);
 
-    return this.processNextNode(t, createChat, chatbotFlow, nextFlowId);
+    return this.processNextNode(
+      t,
+      createChat,
+      chatbotFlow,
+      nextFlowId,
+      options?.customMessages
+    );
   }
 
   private async scheduleInactivityCheck(
@@ -2037,7 +2204,18 @@ export class ChatbotFlowRunnerService {
     t: TFunction<'translation', undefined>,
     createChat: IChat,
     chatbotFlow: ListChatbotFlowResponse,
-    currentFlowId: string
+    currentFlowId: string,
+    customMessages?: {
+      service_finished_message?: string;
+      invalid_menu_option_message?: string;
+      invalid_satisfaction_option_message?: string;
+      invalid_cpf_message?: string;
+      invalid_cnpj_message?: string;
+      invalid_email_message?: string;
+      transfer_message_user?: string;
+      transfer_message_sector?: string;
+      transfer_message_sector_user?: string;
+    }
   ): Promise<boolean> {
     const nextFlowId = this.getNextFlowId(chatbotFlow, currentFlowId);
 
@@ -2045,7 +2223,13 @@ export class ChatbotFlowRunnerService {
       throw new Error(t('chatbot_flow_not_found'));
     }
 
-    return this.processNextNode(t, createChat, chatbotFlow, nextFlowId);
+    return this.processNextNode(
+      t,
+      createChat,
+      chatbotFlow,
+      nextFlowId,
+      customMessages
+    );
   }
 
   private async processFlowNode(
@@ -2077,7 +2261,13 @@ export class ChatbotFlowRunnerService {
     }
 
     if (currentNode.type === 'start') {
-      return this.processStartNode(t, createChat, chatbotFlow, currentFlowId);
+      return this.processStartNode(
+        t,
+        createChat,
+        chatbotFlow,
+        currentFlowId,
+        customMessages
+      );
     }
 
     if (currentNode.type === 'menu' || currentNode.type === 'satisfaction') {
@@ -2105,12 +2295,19 @@ export class ChatbotFlowRunnerService {
         createChat,
         chatbotFlow,
         currentNode,
-        currentFlowId
+        currentFlowId,
+        customMessages
       );
     }
 
     if (currentNode.type === 'tag') {
-      return this.processTagNode(t, createChat, chatbotFlow, currentFlowId);
+      return this.processTagNode(
+        t,
+        createChat,
+        chatbotFlow,
+        currentFlowId,
+        customMessages
+      );
     }
 
     if (currentNode.type === 'redirect') {
