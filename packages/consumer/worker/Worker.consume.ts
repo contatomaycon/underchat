@@ -67,9 +67,6 @@ export class WorkerConsume {
 
     this.consumer.on('data', async (message) => {
       const data = this.parseMessage(message.value);
-
-      console.log('data', data);
-
       if (!data) {
         await this.commitNext(topic, message.partition, message.offset);
         return;
