@@ -98,12 +98,15 @@ export class KafkaService {
         (err: LibrdKafkaError | null) => {
           if (err) {
             const errorMessage = getErrorMessage(err);
+            const errorCode = (err as any).code ?? (err as any).errno;
 
             if (
+              errorCode === 3 ||
               errorMessage.includes(
                 'This server does not host this topic-partition'
               ) ||
-              errorMessage.includes('UNKNOWN_TOPIC_OR_PART')
+              errorMessage.includes('UNKNOWN_TOPIC_OR_PART') ||
+              errorMessage.includes('Unknown topic or partition')
             ) {
               resolve();
               return;
