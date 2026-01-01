@@ -57,11 +57,35 @@ export class ContactListerRepository {
     const searchTerm = query.search;
     if (!searchTerm) return filters;
 
+    const searchWords = searchTerm
+      .trim()
+      .split(/\s+/)
+      .filter((word) => word.length > 0);
+    const hasMultipleWords = searchWords.length > 1;
+
     const rawConditions: Array<SQLWrapper | undefined> = [
       searchTerm ? ilike(contact.name, `%${searchTerm}%`) : undefined,
+      searchTerm ? ilike(contact.last_name, `%${searchTerm}%`) : undefined,
+      hasMultipleWords
+        ? and(
+            ilike(contact.name, `%${searchWords[0]}%`),
+            ilike(contact.last_name, `%${searchWords[1]}%`)
+          )
+        : undefined,
+      hasMultipleWords
+        ? and(
+            ilike(contact.name, `%${searchWords[1]}%`),
+            ilike(contact.last_name, `%${searchWords[0]}%`)
+          )
+        : undefined,
+      searchTerm
+        ? ilike(
+            sql`CONCAT(COALESCE(${contact.name}, ''), ' ', COALESCE(${contact.last_name}, ''))`,
+            `%${searchTerm}%`
+          )
+        : undefined,
       searchTerm ? ilike(contact.nickname, `%${searchTerm}%`) : undefined,
       searchTerm ? ilike(contact.email_partial, `%${searchTerm}%`) : undefined,
-      searchTerm ? ilike(contact.phone_partial, `%${searchTerm}%`) : undefined,
       searchTerm ? ilike(contact.phone_partial, `%${searchTerm}%`) : undefined,
       searchHashes ? eq(contact.email_c, searchHashes) : undefined,
       searchHashes ? eq(contact.phone_c, searchHashes) : undefined,
