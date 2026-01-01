@@ -357,11 +357,15 @@ watch(
     <DialogCloseBtn @click="isVisible = false" />
 
     <VCard :title="$t('permissions')">
-      <VCardText class="position-relative">
+      <VCardText
+        class="position-relative"
+        :style="{ minHeight: isLoading ? '400px' : 'auto' }"
+      >
         <VOverlay
           :model-value="isLoading"
           class="align-center justify-center"
           contained
+          scrim="rgba(var(--v-theme-surface), 0.8)"
         >
           <VProgressCircular indeterminate color="primary" size="64" />
         </VOverlay>
