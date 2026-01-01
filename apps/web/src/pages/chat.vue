@@ -37,6 +37,7 @@ import { useChannelsStore } from '@/@webcore/stores/channels';
 import { ViewWorkerConfigForChatResponse } from '@core/schema/chat/viewWorkerConfigForChat/response.schema';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
+import { generateProtocol } from '@core/common/functions/generateProtocol';
 import { ViewChatContactResponse } from '@core/schema/chat/viewContact/response.schema';
 import { CreateContactRequest } from '@core/schema/contact/createContact/request.schema';
 import { ListMessageChatsQuery } from '@core/schema/chat/listMessageChats/request.schema';
@@ -3126,6 +3127,73 @@ watch(msg, async (val) => {
   }
 });
 
+const getGreeting = (): string => {
+  const hour = new Date().getHours();
+  if (hour >= 5 && hour < 12) {
+    return t('good_morning');
+  }
+  if (hour >= 12 && hour < 18) {
+    return t('good_afternoon');
+  }
+  return t('good_evening');
+};
+
+const getCurrentProtocol = (): string => {
+  const activeChat = chatStore.activeChat;
+  if (!activeChat) {
+    return generateProtocol();
+  }
+
+  if (activeChat.protocol_start && activeChat.protocol_start.length > 0) {
+    return activeChat.protocol_start[activeChat.protocol_start.length - 1];
+  }
+  if (activeChat.protocol_transfer && activeChat.protocol_transfer.length > 0) {
+    return activeChat.protocol_transfer[
+      activeChat.protocol_transfer.length - 1
+    ];
+  }
+  if (activeChat.protocol_ura && activeChat.protocol_ura.length > 0) {
+    return activeChat.protocol_ura[activeChat.protocol_ura.length - 1];
+  }
+
+  return generateProtocol();
+};
+
+const replaceTagsInMessage = (message: string | null): string => {
+  if (!message) return '';
+
+  const activeChat = chatStore.activeChat;
+  const contactName = activeChat?.name || '';
+  const protocol = getCurrentProtocol();
+  const now = new Date();
+  const date = now.toLocaleDateString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  });
+  const time = now.toLocaleTimeString('pt-BR', {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+  const greeting = getGreeting();
+  const accountName = activeChat?.account?.name || '';
+  const phone = activeChat?.phone ? formatPhoneBR(activeChat.phone) : '';
+  const channelName = activeChat?.worker?.name || '';
+
+  let replaced = message;
+
+  replaced = replaced.replaceAll('{{ greeting }}', greeting);
+  replaced = replaced.replaceAll('{{ name }}', contactName);
+  replaced = replaced.replaceAll('{{ protocol }}', protocol);
+  replaced = replaced.replaceAll('{{ date }}', date);
+  replaced = replaced.replaceAll('{{ time }}', time);
+  replaced = replaced.replaceAll('{{ account_name }}', accountName);
+  replaced = replaced.replaceAll('{{ phone }}', phone);
+  replaced = replaced.replaceAll('{{ channel_name }}', channelName);
+
+  return replaced;
+};
+
 const selectQuickMessage = (
   template: import('@core/schema/chat/listQuickMessageTemplates/response.schema').ListQuickMessageTemplatesResponse
 ) => {
@@ -3166,7 +3234,7 @@ const sendQuickMessage = async () => {
   showQuickMessageList.value = false;
 
   if (template.type === 'text') {
-    msg.value = template.message;
+    msg.value = replaceTagsInMessage(template.message);
     await nextTick();
     onSendText();
     return;
@@ -3177,7 +3245,7 @@ const sendQuickMessage = async () => {
   }
 
   const hash = createMessageHash();
-  const messageValue = template.message || null;
+  const messageValue = replaceTagsInMessage(template.message) || null;
 
   const content: ContentMessageChat = {
     type: template.type as EMessageType,

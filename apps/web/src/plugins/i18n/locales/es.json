@@ -590,7 +590,7 @@
     "message_template_edit_success": "¡Plantilla de mensaje editada con éxito!",
     "message_template_deleted_error": "Ocurrió un error al eliminar la plantilla de mensaje. Por favor, inténtalo de nuevo.",
     "message_template_deleted_success": "¡Plantilla de mensaje eliminada con éxito!",
-    "messages_template": "Plantillas de Mensaje",
+    "messages_template": "Mensajes Rápidos",
     "command": "Comando",
     "message": "Mensaje",
     "message_status": "Estado del Mensaje",

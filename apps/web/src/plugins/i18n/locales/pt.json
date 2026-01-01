@@ -603,7 +603,7 @@
     "message_template_edit_success": "Modelo de mensagem editado com sucesso.",
     "message_template_deleted_error": "Ocorreu um erro ao excluir o modelo de mensagem. Por favor, tente novamente.",
     "message_template_deleted_success": "Modelo de mensagem excluído com sucesso.",
-    "messages_template": "Modelos de Mensagem",
+    "messages_template": "Mensagens Rápidas",
     "message": "Mensagem",
     "annotation": "Anotação",
     "write_your_annotation": "Digite sua anotação...",

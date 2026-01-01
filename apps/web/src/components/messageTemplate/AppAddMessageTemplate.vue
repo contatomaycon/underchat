@@ -340,6 +340,41 @@ const noSlashRule = (value: string) => {
   return true;
 };
 
+const availableTags = computed(() => [
+  {
+    tag: '{{ greeting }}',
+    description: t('tag_greeting_description'),
+  },
+  {
+    tag: '{{ name }}',
+    description: t('tag_name_description'),
+  },
+  {
+    tag: '{{ protocol }}',
+    description: t('tag_protocol_description'),
+  },
+  {
+    tag: '{{ date }}',
+    description: t('tag_date_description'),
+  },
+  {
+    tag: '{{ time }}',
+    description: t('tag_time_description'),
+  },
+  {
+    tag: '{{ account_name }}',
+    description: t('tag_account_name_description'),
+  },
+  {
+    tag: '{{ phone }}',
+    description: t('tag_phone_description'),
+  },
+  {
+    tag: '{{ channel_name }}',
+    description: t('tag_channel_name_description'),
+  },
+]);
+
 const resetForm = () => {
   selectedType.value = EMessageType.text;
   message.value = null;
@@ -430,6 +465,25 @@ onBeforeUnmount(() => {
                 "
                 rows="4"
               />
+              <VExpansionPanels variant="accordion" class="mt-2">
+                <VExpansionPanel>
+                  <VExpansionPanelTitle>
+                    <span class="text-caption">{{ $t('available_tags') }}</span>
+                  </VExpansionPanelTitle>
+                  <VExpansionPanelText>
+                    <div class="d-flex flex-column gap-1">
+                      <div
+                        v-for="tag in availableTags"
+                        :key="tag.tag"
+                        class="text-caption"
+                      >
+                        <code>{{ tag.tag }}</code
+                        >: {{ tag.description }}
+                      </div>
+                    </div>
+                  </VExpansionPanelText>
+                </VExpansionPanel>
+              </VExpansionPanels>
             </VCol>
 
             <template v-if="showFileInput">
@@ -485,6 +539,27 @@ onBeforeUnmount(() => {
                   :rules="[]"
                   rows="3"
                 />
+                <VExpansionPanels variant="accordion" class="mt-2">
+                  <VExpansionPanel>
+                    <VExpansionPanelTitle>
+                      <span class="text-caption">{{
+                        $t('available_tags')
+                      }}</span>
+                    </VExpansionPanelTitle>
+                    <VExpansionPanelText>
+                      <div class="d-flex flex-column gap-1">
+                        <div
+                          v-for="tag in availableTags"
+                          :key="tag.tag"
+                          class="text-caption"
+                        >
+                          <code>{{ tag.tag }}</code
+                          >: {{ tag.description }}
+                        </div>
+                      </div>
+                    </VExpansionPanelText>
+                  </VExpansionPanel>
+                </VExpansionPanels>
               </VCol>
 
               <VCol v-if="filePreview" cols="12">

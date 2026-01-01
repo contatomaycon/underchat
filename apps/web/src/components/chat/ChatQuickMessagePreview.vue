@@ -2,6 +2,9 @@
 import { computed, ref, onUnmounted } from 'vue';
 import { useChatStore } from '@/@webcore/stores/chat';
 import { formatDate } from '@/@webcore/utils/formatters';
+import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
+import { generateProtocol } from '@core/common/functions/generateProtocol';
+import { useI18n } from 'vue-i18n';
 import type { ListQuickMessageTemplatesResponse } from '@core/schema/chat/listQuickMessageTemplates/response.schema';
 
 const props = defineProps<{
@@ -13,6 +16,7 @@ const emit = defineEmits<{
 }>();
 
 const chatStore = useChatStore();
+const { t } = useI18n();
 
 const viewerOpen = ref(false);
 const viewerKind = ref<'image' | 'video'>('image');
@@ -28,7 +32,7 @@ const openImage = () => {
   if (!props.template.attachment_url) return;
   viewerKind.value = 'image';
   viewerSrc.value = props.template.attachment_url;
-  viewerCaption.value = props.template.message || '';
+  viewerCaption.value = replacedMessage.value || '';
   viewerOpen.value = true;
 };
 
@@ -36,7 +40,7 @@ const openVideo = () => {
   if (!props.template.attachment_url) return;
   viewerKind.value = 'video';
   viewerSrc.value = props.template.attachment_url;
-  viewerCaption.value = props.template.message || '';
+  viewerCaption.value = replacedMessage.value || '';
   viewerOpen.value = true;
 };
 
@@ -85,6 +89,77 @@ onUnmounted(() => {
   }
 });
 
+const getGreeting = (): string => {
+  const hour = new Date().getHours();
+  if (hour >= 5 && hour < 12) {
+    return t('good_morning');
+  }
+  if (hour >= 12 && hour < 18) {
+    return t('good_afternoon');
+  }
+  return t('good_evening');
+};
+
+const getCurrentProtocol = (): string => {
+  const activeChat = chatStore.activeChat;
+  if (!activeChat) {
+    return generateProtocol();
+  }
+
+  if (activeChat.protocol_start && activeChat.protocol_start.length > 0) {
+    return activeChat.protocol_start[activeChat.protocol_start.length - 1];
+  }
+  if (activeChat.protocol_transfer && activeChat.protocol_transfer.length > 0) {
+    return activeChat.protocol_transfer[
+      activeChat.protocol_transfer.length - 1
+    ];
+  }
+  if (activeChat.protocol_ura && activeChat.protocol_ura.length > 0) {
+    return activeChat.protocol_ura[activeChat.protocol_ura.length - 1];
+  }
+
+  return generateProtocol();
+};
+
+const replaceTagsInMessage = (message: string | null): string => {
+  if (!message) return '';
+
+  const activeChat = chatStore.activeChat;
+  const contactName = activeChat?.name || '';
+  const protocol = getCurrentProtocol();
+  const now = new Date();
+  const date = now.toLocaleDateString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  });
+  const time = now.toLocaleTimeString('pt-BR', {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+  const greeting = getGreeting();
+  const accountName = activeChat?.account?.name || '';
+  const phone = activeChat?.phone ? formatPhoneBR(activeChat.phone) : '';
+  const channelName = activeChat?.worker?.name || '';
+
+  let replaced = message;
+
+  replaced = replaced.replaceAll('{{ greeting }}', greeting);
+  replaced = replaced.replaceAll('{{ name }}', contactName);
+  replaced = replaced.replaceAll('{{ protocol }}', protocol);
+  replaced = replaced.replaceAll('{{ date }}', date);
+  replaced = replaced.replaceAll('{{ time }}', time);
+  replaced = replaced.replaceAll('{{ account_name }}', accountName);
+  replaced = replaced.replaceAll('{{ phone }}', phone);
+  replaced = replaced.replaceAll('{{ channel_name }}', channelName);
+
+  return replaced;
+};
+
+const replacedMessage = computed(() => {
+  return replaceTagsInMessage(props.template.message);
+});
+
 const formatWhatsAppText = (text: string): string => {
   if (!text) return '';
 
@@ -126,7 +201,7 @@ const hasPhoto = computed(() => {
 
 <template>
   <div
-    class="chat-group d-flex align-start position-relative mb-6"
+    class="chat-group d-flex align-start position-relative mb-6 mr-6"
     :class="{
       'flex-row-reverse': true,
     }"
@@ -148,13 +223,13 @@ const hasPhoto = computed(() => {
           }"
         >
           <div class="message-block">
-            <div v-if="template.type === 'text' && template.message">
+            <div v-if="template.type === 'text' && replacedMessage">
               <p
                 class="mr-6 text-base message-text mb-2"
                 :style="{
                   color: 'rgb(var(--v-theme-on-surface))',
                 }"
-                v-html="formatWhatsAppText(template.message)"
+                v-html="formatWhatsAppText(replacedMessage)"
               ></p>
             </div>
 
@@ -170,13 +245,13 @@ const hasPhoto = computed(() => {
                 cover
               />
               <p
-                v-if="template.message"
+                v-if="replacedMessage"
                 class="image-caption mt-2"
                 :style="{
                   color: 'rgb(var(--v-theme-on-surface))',
                 }"
               >
-                <span v-html="formatWhatsAppText(template.message)"></span>
+                <span v-html="formatWhatsAppText(replacedMessage)"></span>
               </p>
             </div>
 
@@ -200,13 +275,13 @@ const hasPhoto = computed(() => {
                 </div>
               </div>
               <p
-                v-if="template.message"
+                v-if="replacedMessage"
                 class="video-caption mt-2"
                 :style="{
                   color: 'rgb(var(--v-theme-on-surface))',
                 }"
               >
-                <span v-html="formatWhatsAppText(template.message)"></span>
+                <span v-html="formatWhatsAppText(replacedMessage)"></span>
               </p>
             </div>
 
@@ -241,13 +316,13 @@ const hasPhoto = computed(() => {
                 </div>
               </div>
               <p
-                v-if="template.message"
+                v-if="replacedMessage"
                 class="audio-caption mt-2"
                 :style="{
                   color: 'rgb(var(--v-theme-on-surface))',
                 }"
               >
-                <span v-html="formatWhatsAppText(template.message)"></span>
+                <span v-html="formatWhatsAppText(replacedMessage)"></span>
               </p>
             </div>
           </div>

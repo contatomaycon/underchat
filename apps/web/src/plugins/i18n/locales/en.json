@@ -589,7 +589,7 @@
     "message_template_edit_success": "Message template edited successfully!",
     "message_template_deleted_error": "An error occurred while deleting the message template. Please try again.",
     "message_template_deleted_success": "Message template deleted successfully!",
-    "messages_template": "Message Templates",
+    "messages_template": "Quick Messages",
     "command": "Command",
     "message": "Message",
     "message_status": "Message Status",
