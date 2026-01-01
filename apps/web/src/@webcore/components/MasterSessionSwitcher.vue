@@ -87,7 +87,7 @@ const handleSwitchAccount = async () => {
 
       try {
         const { ability: abilityInstance } =
-          await import('@/plugins/casl/ability');
+          await import('@/plugins/0.casl/ability');
         abilityInstance.update(userAbilityRules);
       } catch (error) {
         console.error('Failed to update permissions after login', error);

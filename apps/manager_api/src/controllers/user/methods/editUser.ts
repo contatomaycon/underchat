@@ -23,7 +23,11 @@ export const editUser = async (
   const canOperateOnOthers = canOperateOnOtherAccounts(tokenJwtData.actions);
 
   try {
-    if (request.body.account_id?.value && !canOperateOnOthers) {
+    if (
+      request.body.account_id?.value &&
+      request.body.account_id?.value !== tokenJwtData.account_id &&
+      !canOperateOnOthers
+    ) {
       return sendResponse(reply, {
         message: t('permission_denied'),
         httpStatusCode: EHTTPStatusCode.forbidden,

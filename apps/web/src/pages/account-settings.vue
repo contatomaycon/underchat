@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EAccountPermissions } from '@core/common/enums/EPermissions/account';
 import { EPlanPermissions } from '@core/common/enums/EPermissions/plan';
-import { useAbility } from '@/plugins/casl/composables/useAbility';
+import { useAbility } from '@/plugins/0.casl/composables/useAbility';
 import AccountTab from './account-settings/account-tab.vue';
 import SecurityTab from './account-settings/security-tab.vue';
 import PlansTab from './account-settings/plans-tab.vue';

@@ -19,21 +19,20 @@ export const createUser = async (
   const canOperateOnOthers = canOperateOnOtherAccounts(tokenJwtData.actions);
 
   try {
-    let accountIdToUse = tokenJwtData.account_id;
-
     if (
       request.body.account_id?.value &&
-      request.body.account_id?.value !== tokenJwtData.account_id
+      request.body.account_id?.value !== tokenJwtData.account_id &&
+      !canOperateOnOthers
     ) {
-      if (!canOperateOnOthers) {
-        return sendResponse(reply, {
-          message: t('permission_denied'),
-          httpStatusCode: EHTTPStatusCode.forbidden,
-        });
-      }
-
-      accountIdToUse = request.body.account_id.value;
+      return sendResponse(reply, {
+        message: t('permission_denied'),
+        httpStatusCode: EHTTPStatusCode.forbidden,
+      });
     }
+
+    const accountIdToUse = request.body.account_id?.value
+      ? request.body.account_id.value
+      : tokenJwtData.account_id;
 
     const response = await userCreatorUseCase.execute(
       t,

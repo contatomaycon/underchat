@@ -10,7 +10,7 @@ import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EPlanPermissions } from '@core/common/enums/EPermissions/plan';
 import { EAccountPermissions } from '@core/common/enums/EPermissions/account';
 import { useTheme } from 'vuetify';
-import { useAbility } from '@/plugins/casl/composables/useAbility';
+import { useAbility } from '@/plugins/0.casl/composables/useAbility';
 
 const router = useRouter();
 const chatStore = useChatStore();

@@ -20,7 +20,7 @@ import {
   initializePlanStatus,
   persistPlanStatus,
 } from '../localStorage/user';
-import { updateAbilityPermissions } from '@/plugins/casl/ability';
+import { updateAbilityPermissions } from '@/plugins/0.casl/ability';
 import { normalizeBaseUrl } from '../utils/helpers';
 
 export const useAuthStore = defineStore('auth', {
