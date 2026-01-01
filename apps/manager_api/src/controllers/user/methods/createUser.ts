@@ -15,12 +15,16 @@ export const createUser = async (
 ) => {
   const userCreatorUseCase = container.resolve(UserCreatorUseCase);
   const { t, tokenJwtData } = request;
+
   const canOperateOnOthers = canOperateOnOtherAccounts(tokenJwtData.actions);
 
   try {
     let accountIdToUse = tokenJwtData.account_id;
 
-    if (request.body.account_id?.value) {
+    if (
+      request.body.account_id?.value &&
+      request.body.account_id?.value !== tokenJwtData.account_id
+    ) {
       if (!canOperateOnOthers) {
         return sendResponse(reply, {
           message: t('permission_denied'),
