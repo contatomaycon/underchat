@@ -32,13 +32,17 @@ export class ContactUpdaterUseCase {
   private handlePhoneValidationError(
     t: TFunction<'translation', undefined>,
     error: unknown
-  ): never {
+  ): { shouldSkipValidation: boolean } | never {
     if (error instanceof Error) {
-      if (error.message.includes('timeout')) {
+      const errorMessage = error.message.toLowerCase();
+      if (errorMessage.includes('timeout')) {
         throw new Error(t('phone_validation_timeout'));
       }
-      if (error.message.includes('No active worker')) {
-        throw new Error(t('no_active_worker_for_validation'));
+      if (
+        errorMessage.includes('no active worker') ||
+        errorMessage.includes('no active worker found')
+      ) {
+        return { shouldSkipValidation: true };
       }
     }
 
@@ -50,7 +54,7 @@ export class ContactUpdaterUseCase {
     accountId: string,
     phone: string,
     phoneDdi?: string | null
-  ): Promise<{ phone: string; phoneDdi: string | null }> {
+  ): Promise<{ phone: string; phoneDdi: string | null; isValidated: boolean }> {
     try {
       const validationResult = await this.phoneValidationService.validatePhone(
         accountId,
@@ -63,7 +67,7 @@ export class ContactUpdaterUseCase {
       }
 
       if (!validationResult.phone) {
-        return { phone, phoneDdi: phoneDdi ?? null };
+        return { phone, phoneDdi: phoneDdi ?? null, isValidated: true };
       }
 
       const normalizedPhone = extractPhoneAndDdi(validationResult.phone);
@@ -71,12 +75,18 @@ export class ContactUpdaterUseCase {
         return {
           phone: normalizedPhone.phone,
           phoneDdi: normalizedPhone.phone_ddi,
+          isValidated: true,
         };
       }
 
-      return { phone, phoneDdi: phoneDdi ?? null };
+      return { phone, phoneDdi: phoneDdi ?? null, isValidated: true };
     } catch (error) {
-      this.handlePhoneValidationError(t, error);
+      const validationResult = this.handlePhoneValidationError(t, error);
+      if (validationResult.shouldSkipValidation) {
+        return { phone, phoneDdi: phoneDdi ?? null, isValidated: false };
+      }
+
+      throw error;
     }
   }
 
@@ -86,7 +96,9 @@ export class ContactUpdaterUseCase {
     contactId: string,
     phone?: string | null,
     phoneDdi?: string | null
-  ): Promise<{ phone: string; phoneDdi: string | null } | undefined> {
+  ): Promise<
+    { phone: string; phoneDdi: string | null; isValidated: boolean } | undefined
+  > {
     if (!phone && !phoneDdi) return;
 
     if (!phoneDdi) {
@@ -117,6 +129,7 @@ export class ContactUpdaterUseCase {
       return {
         phone: currentPhoneDecrypted,
         phoneDdi: phoneDdi,
+        isValidated: currentContact.is_valided ?? false,
       };
     }
 
@@ -141,14 +154,30 @@ export class ContactUpdaterUseCase {
 
     await this.validatePhoneDuplicateContact(t, phonesC, accountId, contactId);
 
-    const normalized = await this.validateAndNormalizePhone(
-      t,
-      accountId,
-      phoneToValidate,
-      phoneDdi
-    );
+    try {
+      const normalized = await this.validateAndNormalizePhone(
+        t,
+        accountId,
+        phoneToValidate,
+        phoneDdi
+      );
 
-    return normalized;
+      return {
+        ...normalized,
+        isValidated: true,
+      };
+    } catch (error) {
+      const validationResult = this.handlePhoneValidationError(t, error);
+      if (validationResult.shouldSkipValidation) {
+        return {
+          phone: phoneToValidate,
+          phoneDdi: phoneDdi,
+          isValidated: false,
+        };
+      }
+
+      throw error;
+    }
   }
 
   private async validateEmail(
@@ -309,6 +338,11 @@ export class ContactUpdaterUseCase {
 
     if (!contactUpdater) {
       throw new Error(t('contact_update_error'));
+    }
+
+    // Se a validação foi pulada (sem worker ativo), marcar como não validado
+    if (normalizedPhone && normalizedPhone.isValidated === false) {
+      await this.contactService.updateContactIsValided(contactId, false);
     }
 
     const chatId = this.extractFieldValue(body.chat_id as FieldValue);

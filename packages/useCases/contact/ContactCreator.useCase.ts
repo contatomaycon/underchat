@@ -141,13 +141,17 @@ export class ContactCreatorUseCase {
   private handlePhoneValidationError(
     t: TFunction<'translation', undefined>,
     error: unknown
-  ): never {
+  ): { shouldSkipValidation: boolean } | never {
     if (error instanceof Error) {
-      if (error.message.includes('timeout')) {
+      const errorMessage = error.message.toLowerCase();
+      if (errorMessage.includes('timeout')) {
         throw new Error(t('phone_validation_timeout'));
       }
-      if (error.message.includes('No active worker')) {
-        throw new Error(t('no_active_worker_for_validation'));
+      if (
+        errorMessage.includes('no active worker') ||
+        errorMessage.includes('no active worker found')
+      ) {
+        return { shouldSkipValidation: true };
       }
     }
 
@@ -159,7 +163,7 @@ export class ContactCreatorUseCase {
     accountId: string,
     phone: string,
     phoneDdi?: string | null
-  ): Promise<{ phone: string; phoneDdi: string | null }> {
+  ): Promise<{ phone: string; phoneDdi: string | null; isValidated: boolean }> {
     try {
       const validationResult = await this.phoneValidationService.validatePhone(
         accountId,
@@ -172,7 +176,7 @@ export class ContactCreatorUseCase {
       }
 
       if (!validationResult.phone) {
-        return { phone, phoneDdi: phoneDdi ?? null };
+        return { phone, phoneDdi: phoneDdi ?? null, isValidated: true };
       }
 
       const normalizedPhone = extractPhoneAndDdi(validationResult.phone);
@@ -180,12 +184,18 @@ export class ContactCreatorUseCase {
         return {
           phone: normalizedPhone.phone,
           phoneDdi: normalizedPhone.phone_ddi,
+          isValidated: true,
         };
       }
 
-      return { phone, phoneDdi: phoneDdi ?? null };
+      return { phone, phoneDdi: phoneDdi ?? null, isValidated: true };
     } catch (error) {
-      this.handlePhoneValidationError(t, error);
+      const validationResult = this.handlePhoneValidationError(t, error);
+      if (validationResult.shouldSkipValidation) {
+        return { phone, phoneDdi: phoneDdi ?? null, isValidated: false };
+      }
+
+      throw error;
     }
   }
 
@@ -253,6 +263,7 @@ export class ContactCreatorUseCase {
 
     let phoneToSave = phone;
     let phoneDdiToSave = phoneDdi;
+    let isValidated = true;
 
     if (phone) {
       const normalized = await this.validateAndNormalizePhone(
@@ -264,6 +275,7 @@ export class ContactCreatorUseCase {
 
       phoneToSave = normalized.phone;
       phoneDdiToSave = normalized.phoneDdi ?? '55';
+      isValidated = normalized.isValidated;
     }
 
     const contactToCreate: CreateContactRequest = {
@@ -283,7 +295,7 @@ export class ContactCreatorUseCase {
     const contactId = await this.contactService.createContact(
       contactToCreate,
       accountId,
-      true
+      isValidated
     );
 
     if (!contactId) {
