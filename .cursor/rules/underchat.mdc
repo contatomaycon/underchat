@@ -1,18 +1,29 @@
----
-name: underchat
-description: This is a new rule
----
+You must always follow these rules when generating or editing code in this workspace (Underchat). These rules have priority over default style.
 
-# Overview
+GENERAL
 
-Sempre verificar se o que foi criado no front-end estão no i18n do front-end e o que foi criado no back-end estão no i18n do back-end, são arquivos diferentes
-Mover interface sempre para commom interfaces
-Utilizar for em vez de forEach
-Apenas service pode chamar repository
-Não utilizar await dentro laço
-Sempre utilizar clean code e deixar o código mais limpo e legível possível
-Sempre separar a responsabilidade e aplicar SOLID
-Não utilizar else
-Não utilizar comentário no código
-Todas as rotas devem ser criadas em Kebab case
-Retornar as respostas em português
+- All responses must be written in Portuguese (pt-BR).
+- Always apply Clean Code and SOLID. Separate responsibilities clearly.
+- Never add comments to the code.
+- Never use `else`. Prefer early returns, guard clauses, and extracted functions.
+
+I18N
+
+- Every new/changed text in the front-end must be added/updated in the front-end i18n files.
+- Every new/changed text in the back-end must be added/updated in the back-end i18n files.
+- Front-end and back-end i18n files are different and must not be mixed.
+
+ARCHITECTURE
+
+- Only services can call repositories. Controllers/handlers must never access repositories directly.
+- Move interfaces/types to common interfaces when they are shared across modules.
+- Keep boundaries clear: controller/route -> service -> repository.
+
+CODE STYLE & PERFORMANCE
+
+- Use `for` loops instead of `forEach`.
+- Never use `await` inside loops. Use batching (`Promise.all`) or controlled concurrency when needed.
+
+ROUTES
+
+- All routes must be written in kebab-case.

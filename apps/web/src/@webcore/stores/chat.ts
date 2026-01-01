@@ -89,6 +89,7 @@ export const useChatStore = defineStore('chat', {
     } as ISnackbar,
     i18n: getI18n(),
     loading: false,
+    loadingChats: false,
     loadingMoreMessages: false,
     activeChat: null as ListChatsResult | null,
     listMessages: [] as ListMessageResult[],
@@ -478,6 +479,7 @@ export const useChatStore = defineStore('chat', {
     async listQueueChats(input: ListChatsQuery): Promise<ListChatsResult[]> {
       try {
         this.loading = true;
+        this.loadingChats = true;
 
         const request: ListChatsQuery = {
           current_page: input.current_page,
@@ -493,6 +495,7 @@ export const useChatStore = defineStore('chat', {
         );
 
         this.loading = false;
+        this.loadingChats = false;
 
         const data = response?.data;
 
@@ -507,6 +510,8 @@ export const useChatStore = defineStore('chat', {
         return data.data.results;
       } catch {
         this.listQueue = [];
+        this.loading = false;
+        this.loadingChats = false;
 
         return [] as ListChatsResult[];
       }
@@ -515,6 +520,7 @@ export const useChatStore = defineStore('chat', {
     async listInChatChats(input: ListChatsQuery): Promise<ListChatsResult[]> {
       try {
         this.loading = true;
+        this.loadingChats = true;
 
         const request: ListChatsQuery = {
           current_page: input.current_page,
@@ -530,6 +536,7 @@ export const useChatStore = defineStore('chat', {
         );
 
         this.loading = false;
+        this.loadingChats = false;
 
         const data = response?.data;
 
@@ -544,6 +551,8 @@ export const useChatStore = defineStore('chat', {
         return data.data.results;
       } catch {
         this.listInChat = [];
+        this.loading = false;
+        this.loadingChats = false;
 
         return [] as ListChatsResult[];
       }

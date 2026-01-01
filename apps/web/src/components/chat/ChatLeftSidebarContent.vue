@@ -1077,7 +1077,7 @@ onMounted(async () => {
   <template v-else-if="activeFilter === 'my_chats'">
     <PerfectScrollbar :options="{ wheelPropagation: false }">
       <ul class="d-flex flex-column gap-y-1 chat-list px-3 py-2 list-none">
-        <template v-if="chatStore.loading">
+        <template v-if="chatStore.loadingChats">
           <li
             v-for="i in 5"
             :key="`skeleton-my-chat-${i}`"
@@ -1132,7 +1132,7 @@ onMounted(async () => {
 
   <PerfectScrollbar v-else :options="{ wheelPropagation: false }">
     <ul class="d-flex flex-column gap-y-1 chat-list px-3 py-2 list-none">
-      <template v-if="chatStore.loading">
+      <template v-if="chatStore.loadingChats">
         <li
           v-for="i in 5"
           :key="`skeleton-${i}`"
