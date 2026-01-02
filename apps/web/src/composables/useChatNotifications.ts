@@ -1,4 +1,4 @@
-import { watch } from 'vue';
+import { ref, watch, onMounted, onUnmounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { useChatStore } from '@/@webcore/stores/chat';
@@ -7,6 +7,7 @@ import { EMessageType } from '@core/common/enums/EMessageType';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 import { extractMessageTextFromContent } from '@core/common/functions/extractMessageTextFromContent';
+import { useChatNotificationToast } from './useChatNotificationToast';
 
 const MAX_LINE_LENGTH = 70;
 
@@ -152,6 +153,8 @@ export const useChatNotifications = () => {
   const router = useRouter();
   const chatStore = useChatStore();
   const { t } = useI18n();
+  const { showToast } = useChatNotificationToast();
+  const isPageVisible = ref(true);
 
   async function requestNotificationPermission(): Promise<boolean> {
     if (!('Notification' in window)) {
@@ -239,11 +242,28 @@ export const useChatNotifications = () => {
 
     playAlertSound();
 
+    if (isPageVisible.value) {
+      showToast(message);
+    }
+
     const hasPermission = await requestNotificationPermission();
     if (hasPermission) {
       await showNotification(message);
     }
   }
+
+  function handleVisibilityChange() {
+    isPageVisible.value = !document.hidden;
+  }
+
+  onMounted(() => {
+    isPageVisible.value = !document.hidden;
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+  });
+
+  onUnmounted(() => {
+    document.removeEventListener('visibilitychange', handleVisibilityChange);
+  });
 
   watch(
     () => chatStore.user?.chat_user?.notifications,

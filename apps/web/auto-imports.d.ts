@@ -216,6 +216,7 @@ declare global {
   const useBrowserLocation: typeof import('@vueuse/core').useBrowserLocation
   const useCached: typeof import('@vueuse/core').useCached
   const useCeil: typeof import('@vueuse/math').useCeil
+  const useChatNotificationToast: typeof import('./src/composables/useChatNotificationToast').useChatNotificationToast
   const useChatNotifications: typeof import('./src/composables/useChatNotifications').useChatNotifications
   const useChatSocket: typeof import('./src/composables/useChatSocket').useChatSocket
   const useClamp: typeof import('@vueuse/math').useClamp
@@ -620,6 +621,7 @@ declare module 'vue' {
     readonly useBrowserLocation: UnwrapRef<typeof import('@vueuse/core')['useBrowserLocation']>
     readonly useCached: UnwrapRef<typeof import('@vueuse/core')['useCached']>
     readonly useCeil: UnwrapRef<typeof import('@vueuse/math')['useCeil']>
+    readonly useChatNotificationToast: UnwrapRef<typeof import('./src/composables/useChatNotificationToast')['useChatNotificationToast']>
     readonly useChatNotifications: UnwrapRef<typeof import('./src/composables/useChatNotifications')['useChatNotifications']>
     readonly useChatSocket: UnwrapRef<typeof import('./src/composables/useChatSocket')['useChatSocket']>
     readonly useClamp: UnwrapRef<typeof import('@vueuse/math')['useClamp']>
