@@ -2357,10 +2357,7 @@ watch(
                           item-title="text"
                         />
                       </VCol>
-                      <VCol
-                        :cols="hasFullAccess ? 12 : 12"
-                        :md="hasFullAccess ? 6 : 12"
-                      >
+                      <VCol cols="12" md="6">
                         <VLabel class="text-body-2 mb-1"
                           >{{ $t('role') }}:</VLabel
                         >
