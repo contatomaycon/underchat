@@ -2,8 +2,20 @@ import * as schema from '@core/models';
 import { contact, labelTemplate } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, asc, count, eq, ilike, isNull, or, SQL } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  count,
+  eq,
+  ilike,
+  isNull,
+  or,
+  SQLWrapper,
+  sql,
+  inArray,
+} from 'drizzle-orm';
 import { ListChatContactsResponse } from '@core/schema/chat/listContacts/response.schema';
+import { isDefinedFilter } from '@core/common/functions/isDefinedFilter';
 
 @injectable()
 export class ChatContactListerRepository {
@@ -11,27 +23,69 @@ export class ChatContactListerRepository {
     @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
+  private readonly buildSearchConditions = (
+    searchTerm: string
+  ): SQLWrapper[] => {
+    const searchWords = searchTerm
+      .trim()
+      .split(/\s+/)
+      .filter((word) => word.length > 0);
+    const hasMultipleWords = searchWords.length > 1;
+
+    const rawConditions: Array<SQLWrapper | undefined> = [
+      searchTerm ? ilike(contact.name, `%${searchTerm}%`) : undefined,
+      searchTerm ? ilike(contact.last_name, `%${searchTerm}%`) : undefined,
+      hasMultipleWords
+        ? and(
+            ilike(contact.name, `%${searchWords[0]}%`),
+            ilike(contact.last_name, `%${searchWords[1]}%`)
+          )
+        : undefined,
+      hasMultipleWords
+        ? and(
+            ilike(contact.name, `%${searchWords[1]}%`),
+            ilike(contact.last_name, `%${searchWords[0]}%`)
+          )
+        : undefined,
+      searchTerm
+        ? ilike(
+            sql`CONCAT(COALESCE(${contact.name}, ''), ' ', COALESCE(${contact.last_name}, ''))`,
+            `%${searchTerm}%`
+          )
+        : undefined,
+      searchTerm ? ilike(contact.nickname, `%${searchTerm}%`) : undefined,
+      searchTerm ? ilike(contact.email_partial, `%${searchTerm}%`) : undefined,
+      searchTerm ? ilike(contact.phone_partial, `%${searchTerm}%`) : undefined,
+      searchTerm
+        ? inArray(
+            labelTemplate.label_template_id,
+            this.dbRo
+              .select({ label_template_id: labelTemplate.label_template_id })
+              .from(labelTemplate)
+              .where(ilike(labelTemplate.label, `%${searchTerm}%`))
+          )
+        : undefined,
+    ];
+
+    const conditions = rawConditions.filter(isDefinedFilter);
+
+    return conditions.length > 0 ? [or(...conditions) as SQLWrapper] : [];
+  };
+
   listChatContacts = async (
     perPage: number,
     currentPage: number,
     accountId: string,
     search?: string
   ): Promise<ListChatContactsResponse[]> => {
-    const whereConditions = [
+    const whereConditions: SQLWrapper[] = [
       eq(contact.account_id, accountId),
       isNull(contact.deleted_at),
     ];
 
     if (search) {
-      const searchConditions = [
-        ilike(contact.name, `%${search}%`),
-        ilike(contact.last_name, `%${search}%`),
-        ilike(contact.nickname, `%${search}%`),
-        ilike(contact.email_partial, `%${search}%`),
-        ilike(contact.phone_partial, `%${search}%`),
-        ilike(labelTemplate.label, `%${search}%`),
-      ];
-      whereConditions.push(or(...searchConditions) as SQL);
+      const searchConditions = this.buildSearchConditions(search);
+      whereConditions.push(...searchConditions);
     }
 
     const result = await this.dbRo
@@ -86,21 +140,14 @@ export class ChatContactListerRepository {
     accountId: string,
     search?: string
   ): Promise<number> => {
-    const whereConditions = [
+    const whereConditions: SQLWrapper[] = [
       eq(contact.account_id, accountId),
       isNull(contact.deleted_at),
     ];
 
     if (search) {
-      const searchConditions = [
-        ilike(contact.name, `%${search}%`),
-        ilike(contact.last_name, `%${search}%`),
-        ilike(contact.nickname, `%${search}%`),
-        ilike(contact.email_partial, `%${search}%`),
-        ilike(contact.phone_partial, `%${search}%`),
-        ilike(labelTemplate.label, `%${search}%`),
-      ];
-      whereConditions.push(or(...searchConditions) as SQL);
+      const searchConditions = this.buildSearchConditions(search);
+      whereConditions.push(...searchConditions);
     }
 
     const result = await this.dbRo
