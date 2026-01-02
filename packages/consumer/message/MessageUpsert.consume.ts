@@ -1363,8 +1363,9 @@ export class MessageUpsertConsume {
       worker: viewWorkerNameAndId,
       name: data.call_name ?? null,
       phone,
-      status: EChatStatus.queue,
+      status: EChatStatus.closed,
       date: messageDate,
+      closed_at: messageDate,
       summary: {
         last_message: null,
         last_date: messageDate,

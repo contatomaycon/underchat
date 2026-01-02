@@ -35,6 +35,7 @@ import { EMessageType } from '@core/common/enums/EMessageType';
 export class BaileysIncomingMessageService {
   private currentSocket?: WASocket;
   private readonly processedMessages = new Set<string>();
+  private readonly processedCalls = new Set<string>();
   private cleanupInterval?: NodeJS.Timeout;
 
   constructor(
@@ -65,6 +66,9 @@ export class BaileysIncomingMessageService {
     this.cleanupInterval = setInterval(() => {
       if (this.processedMessages.size > 10000) {
         this.processedMessages.clear();
+      }
+      if (this.processedCalls.size > 10000) {
+        this.processedCalls.clear();
       }
     }, 300000);
   }
@@ -196,6 +200,18 @@ export class BaileysIncomingMessageService {
     });
   }
 
+  private getCallKey(callEvent: WACallEvent): string | null {
+    const jid = callEvent.remoteJid || callEvent.from;
+    if (!jid) return null;
+
+    const callId =
+      (callEvent as { id?: string })?.id ??
+      (callEvent as { callId?: string })?.callId ??
+      Date.now().toString();
+
+    return `${jid}:${callId}:${callEvent.status}`;
+  }
+
   private async processCallEvent(
     socket: WASocket,
     callEvent: WACallEvent | null
@@ -215,19 +231,20 @@ export class BaileysIncomingMessageService {
       return;
     }
 
-    const callId =
-      (callEvent as { id?: string })?.id ??
-      (callEvent as { callId?: string })?.callId;
-    if (callId && jid) {
-      try {
-        await socket.rejectCall(callId, jid);
-      } catch (error) {
-        console.error('Error rejecting call:', error);
-      }
+    const callKey = this.getCallKey(callEvent);
+    if (!callKey) {
+      return;
     }
+
+    if (this.processedCalls.has(callKey)) {
+      return;
+    }
+
+    this.processedCalls.add(callKey);
 
     const phone = getPhoneFromJid(jid, jidAlt);
     if (!phone) {
+      this.processedCalls.delete(callKey);
       return;
     }
 
@@ -253,10 +270,27 @@ export class BaileysIncomingMessageService {
       call_name: callEvent.pushName ?? null,
     };
 
-    await this.streamProducerService.send(
-      this.kafkaServiceQueueService.upsertMessage(),
-      callUpsert
-    );
+    try {
+      await this.streamProducerService.send(
+        this.kafkaServiceQueueService.upsertMessage(),
+        callUpsert
+      );
+    } catch (error) {
+      console.error('Error sending call event message:', error);
+      this.processedCalls.delete(callKey);
+      throw error;
+    }
+
+    const callId =
+      (callEvent as { id?: string })?.id ??
+      (callEvent as { callId?: string })?.callId;
+    if (callId && jid) {
+      try {
+        await socket.rejectCall(callId, jid);
+      } catch (error) {
+        console.error('Error rejecting call:', error);
+      }
+    }
   }
 
   private async handleMessagesUpdate(events: WAMessageUpdate[]) {
@@ -369,6 +403,7 @@ export class BaileysIncomingMessageService {
   destroy() {
     this.stopCleanupInterval();
     this.processedMessages.clear();
+    this.processedCalls.clear();
     this.unbind();
   }
 
