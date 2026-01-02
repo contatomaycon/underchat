@@ -5,6 +5,7 @@ import { useChatStore } from '@/@webcore/stores/chat';
 import type { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
+import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 import { extractMessageTextFromContent } from '@core/common/functions/extractMessageTextFromContent';
 
 const MAX_LINE_LENGTH = 70;
@@ -223,6 +224,10 @@ export const useChatNotifications = () => {
     const isFromMe = message.message_key?.from_me === true;
 
     if (isFromMe) {
+      return;
+    }
+
+    if (message.type_user === ETypeUserChat.operator) {
       return;
     }
 
