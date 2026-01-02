@@ -18,6 +18,7 @@ import { resetConnection } from '@webcore/centrifugo';
 import { resetPresencePermissionError } from '@webcore/presence';
 import { VForm } from 'vuetify/components/VForm';
 import { useTheme } from 'vuetify';
+import { ability } from '@/plugins/0.casl/ability';
 
 const authStore = useAuthStore();
 const chatStore = useChatStore();
@@ -28,7 +29,6 @@ useSnackbarCleanup(authStore);
 useSnackbarCleanup(chatStore);
 const route = useRoute();
 const router = useRouter();
-const ability = useAbility();
 
 definePage({
   meta: {

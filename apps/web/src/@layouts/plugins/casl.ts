@@ -1,11 +1,10 @@
 import type { RouteLocationNormalized } from 'vue-router';
 import type { NavGroup } from '@layouts/types';
 import { EPermissionsRoles } from '@core/common/enums/EPermissions';
-import { useAbility } from '@/plugins/0.casl/composables/useAbility';
+import { ability } from '@/plugins/0.casl/ability';
 
 export const can = (permissions?: EPermissionsRoles[]): boolean => {
   if (!permissions?.length) return true;
-  const ability = useAbility();
 
   for (const perm of permissions) {
     const can = ability.can(perm, perm);
@@ -27,8 +26,6 @@ export const canViewNavMenuGroup = (item: NavGroup): boolean => {
 };
 
 export const canNavigate = (to: RouteLocationNormalized): boolean => {
-  const ability = useAbility();
-
   const hasPermission = (perms?: EPermissionsRoles[]): boolean => {
     if (perms === undefined) {
       return true;
