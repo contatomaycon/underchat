@@ -22,6 +22,7 @@ export class KafkaServiceQueueService {
       this.reportConversationHistoryPdfGenerate();
     const scheduleMessage = this.scheduleMessage();
     const scheduleStatusUpdate = this.scheduleStatusUpdate();
+    const workerConfigUpdate = this.workerConfigUpdate();
 
     return [
       createServer,
@@ -39,6 +40,7 @@ export class KafkaServiceQueueService {
       reportConversationHistoryPdfGenerate,
       scheduleMessage,
       scheduleStatusUpdate,
+      workerConfigUpdate,
     ];
   };
 
@@ -110,5 +112,9 @@ export class KafkaServiceQueueService {
 
   scheduleStatusUpdate = () => {
     return `schedule.status.update`;
+  };
+
+  workerConfigUpdate = () => {
+    return `worker.config.update`;
   };
 }

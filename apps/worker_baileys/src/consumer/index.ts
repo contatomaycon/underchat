@@ -5,6 +5,7 @@ import { startMarkMessageReadConsume } from './markMessageRead.consume';
 import { startPhoneValidationConsume } from './phoneValidation.consume';
 import { startNotificationMessageSendConsume } from './notificationMessageSend.consume';
 import { startScheduleMessageConsume } from './scheduleMessage.consume';
+import { startWorkerConfigUpdateConsume } from './workerConfigUpdate.consume';
 
 const consumers: Array<{ close?: () => Promise<void> }> = [];
 
@@ -24,7 +25,8 @@ export function startConsumers(server: FastifyInstance): void {
       startMarkMessageReadConsume(server),
       startPhoneValidationConsume(server),
       startNotificationMessageSendConsume(server),
-      startScheduleMessageConsume(server)
+      startScheduleMessageConsume(server),
+      startWorkerConfigUpdateConsume(server)
     );
   });
 }

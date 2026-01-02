@@ -37,6 +37,7 @@ export class BaileysIncomingMessageService {
   private readonly processedMessages = new Set<string>();
   private readonly processedCalls = new Set<string>();
   private cleanupInterval?: NodeJS.Timeout;
+  private rejectCallConfig: boolean = false;
 
   constructor(
     private readonly streamProducerService: StreamProducerService,
@@ -281,6 +282,10 @@ export class BaileysIncomingMessageService {
       throw error;
     }
 
+    if (!this.rejectCallConfig) {
+      return;
+    }
+
     const callId =
       (callEvent as { id?: string })?.id ??
       (callEvent as { callId?: string })?.callId;
@@ -437,5 +442,9 @@ export class BaileysIncomingMessageService {
     }
 
     return this.currentSocket.sendMessage(jid, content, { quoted });
+  }
+
+  updateRejectCallConfig(rejectCall: boolean): void {
+    this.rejectCallConfig = rejectCall;
   }
 }

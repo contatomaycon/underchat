@@ -7,13 +7,18 @@ import { IUpdateWorkerConfig } from '@core/common/interfaces/IUpdateWorkerConfig
 import { ViewWorkerConfigResponse } from '@core/schema/worker/viewWorkerConfig/response.schema';
 import { WorkerConfig } from '@core/schema/worker/updateWorkerConfig/response.schema';
 import Redis from 'ioredis';
+import { StreamProducerService } from './streamProducer.service';
+import { KafkaServiceQueueService } from './kafkaServiceQueue.service';
+import { IWorkerConfigUpdateEvent } from '@core/common/interfaces/IWorkerConfigUpdateEvent';
 
 @injectable()
 export class WorkerConfigService {
   constructor(
     private readonly workerConfigViewerRepository: WorkerConfigViewerRepository,
     private readonly workerConfigUpserterRepository: WorkerConfigUpserterRepository,
-    @inject('Redis') private readonly redis: Redis
+    @inject('Redis') private readonly redis: Redis,
+    private readonly streamProducerService: StreamProducerService,
+    private readonly kafkaServiceQueueService: KafkaServiceQueueService
   ) {}
 
   async viewWorkerConfig(workerId: string): Promise<ViewWorkerConfigResponse> {
@@ -48,6 +53,22 @@ export class WorkerConfigService {
 
     if (!result) {
       throw new Error(t('worker_config_not_found'));
+    }
+
+    if (input.reject_call !== undefined) {
+      const updateEvent: IWorkerConfigUpdateEvent = {
+        worker_id: workerId,
+        reject_call: input.reject_call,
+      };
+
+      try {
+        await this.streamProducerService.send(
+          this.kafkaServiceQueueService.workerConfigUpdate(),
+          updateEvent
+        );
+      } catch (error) {
+        console.error('Error sending worker config update event:', error);
+      }
     }
 
     return this.mapToWorkerConfig(result);
