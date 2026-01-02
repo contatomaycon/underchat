@@ -262,6 +262,7 @@
     "invoices_settings_coming_soon": "Invoices coming soon",
     "worker_view_error": "An error occurred while viewing the worker. Please try again.",
     "cargos": "Roles",
+    "cargo": "Role",
     "role_list_error": "An error occurred while listing roles. Please try again.",
     "role_add_error": "An error occurred while adding the role. Please try again.",
     "role_add_success": "Role added successfully!",

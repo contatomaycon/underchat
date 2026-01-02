@@ -148,16 +148,31 @@ const resolvePresenceLabel = (status?: EChatUserStatus | null): string => {
   return t(status);
 };
 
-const headers: DataTableHeader<ListUserResponse>[] = [
-  { title: '', key: 'photo', sortable: false, width: '80px' },
-  { title: t('account'), key: 'account' },
-  { title: t('status'), key: 'status' },
-  { title: t('email'), key: 'email_partial' },
-  { title: t('phone'), key: 'phone_partial' },
-  { title: t('document'), key: 'document_partial' },
-  { title: t('created_at'), key: 'created_at' },
-  { title: t('actions'), key: 'actions', sortable: false },
-];
+const headers = computed<DataTableHeader<ListUserResponse>[]>(() => {
+  const baseHeaders: DataTableHeader<ListUserResponse>[] = [
+    { title: '', key: 'photo', sortable: false, width: '80px' },
+  ];
+
+  if (hasFullAccess.value) {
+    baseHeaders.push({ title: t('account'), key: 'account' });
+  } else {
+    baseHeaders.push(
+      { title: t('name'), key: 'name' },
+      { title: t('cargo'), key: 'permission_role' }
+    );
+  }
+
+  baseHeaders.push(
+    { title: t('status'), key: 'status' },
+    { title: t('email'), key: 'email_partial' },
+    { title: t('phone'), key: 'phone_partial' },
+    { title: t('document'), key: 'document_partial' },
+    { title: t('created_at'), key: 'created_at' },
+    { title: t('actions'), key: 'actions', sortable: false }
+  );
+
+  return baseHeaders;
+});
 
 const options = ref({
   page: 1,
@@ -432,6 +447,18 @@ watch(
 
             <template #item.account="{ item }">
               {{ item.account?.name }}
+            </template>
+
+            <template #item.name="{ item }">
+              {{
+                item.user_info?.name
+                  ? `${item.user_info.name} ${item.user_info.last_name || ''}`.trim()
+                  : '-'
+              }}
+            </template>
+
+            <template #item.permission_role="{ item }">
+              {{ item.permission_role?.name || '-' }}
             </template>
 
             <template #item.status="{ item }">

@@ -211,6 +211,20 @@ export class UserListerRepository {
             status: true,
           },
         },
+        upa: {
+          columns: {
+            permission_assignment_id: true,
+            permission_role_id: true,
+          },
+          with: {
+            ppr: {
+              columns: {
+                permission_role_id: true,
+                name: true,
+              },
+            },
+          },
+        },
       },
       columns: {
         user_id: true,
@@ -293,6 +307,12 @@ export class UserListerRepository {
         ? {
             chat_user_id: user.ucu.chat_user_id,
             status: user.ucu.status,
+          }
+        : null,
+      permission_role: user.upa?.ppr
+        ? {
+            permission_role_id: user.upa.ppr.permission_role_id,
+            name: user.upa.ppr.name,
           }
         : null,
       created_at: user.created_at,

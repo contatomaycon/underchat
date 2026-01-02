@@ -141,7 +141,7 @@ onMounted(async () => {
         <VCardText>
           <VRow>
             <VCol cols="12">
-              <VLabel class="text-body-2 mb-1">{{ $t('cargos') }}:</VLabel>
+              <VLabel class="text-body-2 mb-1">{{ $t('cargo') }}:</VLabel>
               <AppSelectSearch
                 v-model="permissionRoleId"
                 :items="roleOptions"

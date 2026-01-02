@@ -12,6 +12,11 @@ const accountSchema = Type.Object({
   name: Type.String(),
 });
 
+const permissionRoleSchema = Type.Object({
+  permission_role_id: Type.String({ format: 'uuid' }),
+  name: Type.String(),
+});
+
 const userInfoSchema = Type.Object({
   user_info_id: Type.String({ format: 'uuid' }),
   phone_ddi: Type.Union([Type.String(), Type.Null()]),
@@ -60,6 +65,9 @@ const userAddressSchema = Type.Object({
 export const listUserResponseSchema = Type.Object({
   user_id: Type.String({ format: 'uuid' }),
   account: Type.Union([accountSchema, Type.Null()]),
+  permission_role: Type.Optional(
+    Type.Union([permissionRoleSchema, Type.Null()])
+  ),
   email_partial: Type.String(),
   user_status: Type.Optional(Type.Union([userStatusSchema, Type.Null()])),
   user_info: Type.Optional(Type.Union([userInfoSchema, Type.Null()])),
