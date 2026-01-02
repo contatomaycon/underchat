@@ -371,6 +371,19 @@ const shouldUseDocMask = computed(
 
 const country_id = ref<number | null>(null);
 const zip_code = ref<string | null>(null);
+const zip_codeFormatted = computed({
+  get: () => {
+    if (!zip_code.value) return '';
+    const digits = zip_code.value.replaceAll(/\D/g, '');
+    if (digits.length <= 5) return digits;
+    return `${digits.slice(0, 5)}-${digits.slice(5, 8)}`;
+  },
+  set: (value: string) => {
+    const digits = value.replaceAll(/\D/g, '').slice(0, 8);
+    zip_code.value = digits || null;
+  },
+});
+const isViewingZipcode = ref(false);
 const address1 = ref<string | null>(null);
 const address1Partial = ref<string | null>(null);
 const isAddress1Decrypted = ref(false);
@@ -837,7 +850,8 @@ const onCountryChange = async (val: number | null) => {
     await loadStates(country_id.value);
   }
 
-  if (country_id.value && zip_code.value) {
+  const zipCodeDigits = zip_code.value?.replaceAll(/\D/g, '') || '';
+  if (country_id.value && zipCodeDigits && zipCodeDigits.length === 8) {
     await viewZipcode();
   }
 };
@@ -918,18 +932,27 @@ const updateAddressFields = async (response: {
 };
 
 const viewZipcode = async () => {
-  if (!country_id.value || !zip_code.value) {
+  if (isViewingZipcode.value) return;
+
+  const zipCodeDigits = zip_code.value?.replaceAll(/\D/g, '') || '';
+  if (!country_id.value || !zipCodeDigits || zipCodeDigits.length !== 8) {
     return;
   }
 
-  const params: ViewZipcodeRequest = {
-    country_id: country_id.value,
-    zipcode: zip_code.value,
-  };
+  isViewingZipcode.value = true;
 
-  const response = await userStore.viewZipcode(params);
-  if (response) {
-    await updateAddressFields(response);
+  try {
+    const params: ViewZipcodeRequest = {
+      country_id: country_id.value,
+      zipcode: zipCodeDigits,
+    };
+
+    const response = await userStore.viewZipcode(params);
+    if (response) {
+      await updateAddressFields(response);
+    }
+  } finally {
+    isViewingZipcode.value = false;
   }
 };
 
@@ -1078,13 +1101,19 @@ onMounted(async () => {
 let timer: number | null = null;
 watch(zip_code, () => {
   if (isInitializing.value) return;
+  if (isViewingZipcode.value) return;
 
-  if (!country_id.value || !zip_code.value || zip_code.value.length < 8) return;
+  const zipCodeDigits = zip_code.value?.replaceAll(/\D/g, '') || '';
+  if (!country_id.value || !zipCodeDigits || zipCodeDigits.length !== 8) return;
 
-  if (timer) (globalThis as Window & typeof globalThis).clearTimeout(timer);
+  if (timer) {
+    (globalThis as Window & typeof globalThis).clearTimeout(timer);
+    timer = null;
+  }
 
   timer = (globalThis as Window & typeof globalThis).setTimeout(() => {
     viewZipcode();
+    timer = null;
   }, 400);
 });
 </script>
@@ -1295,12 +1324,15 @@ watch(zip_code, () => {
               <VLabel class="text-body-2 mb-1">{{ $t('zip_code') }}:</VLabel>
               <AppTextField
                 ref="zipInputRef"
-                v-model="zip_code"
+                v-model="zip_codeFormatted"
                 :placeholder="$t('zip_code')"
                 :disabled="!country_id"
+                :loading="isViewingZipcode"
+                v-maska="'#####-###'"
+                inputmode="numeric"
                 @blur="viewZipcode"
                 @keydown.enter.prevent="viewZipcode"
-                maxlength="8"
+                maxlength="9"
               />
             </VCol>
             <VCol cols="12" md="6">

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { watch, onBeforeUnmount } from 'vue';
+import { watch, onBeforeUnmount, computed } from 'vue';
 import { useGenerateImageVariant } from '@/@webcore/composable/useGenerateImageVariant';
 import { useCountryCodes } from '@/composables/useCountryCodes';
 import { useBrazilianDDDs } from '@/composables/useBrazilianDDDs';
@@ -171,6 +171,18 @@ const document = ref<string | null>(null);
 const birth_date = ref<string | null>(null);
 const country_id = ref<number | null>(null);
 const zip_code = ref<string | null>(null);
+const zip_codeFormatted = computed({
+  get: () => {
+    if (!zip_code.value) return '';
+    const digits = zip_code.value.replaceAll(/\D/g, '');
+    if (digits.length <= 5) return digits;
+    return `${digits.slice(0, 5)}-${digits.slice(5, 8)}`;
+  },
+  set: (value: string) => {
+    const digits = value.replaceAll(/\D/g, '').slice(0, 8);
+    zip_code.value = digits || null;
+  },
+});
 const address1 = ref<string | null>(null);
 const address2 = ref<string | null>(null);
 const city = ref<string | null>(null);
@@ -1430,7 +1442,8 @@ const updateAddressFields = async (response: {
 const viewZipcode = async () => {
   if (isViewingZipcode.value) return;
 
-  if (!country_id.value || !zip_code.value) {
+  const zipCodeDigits = zip_code.value?.replaceAll(/\D/g, '') || '';
+  if (!country_id.value || !zipCodeDigits || zipCodeDigits.length !== 8) {
     return;
   }
 
@@ -1444,7 +1457,7 @@ const viewZipcode = async () => {
   try {
     const params: ViewRegisterZipcodeRequest = {
       country_id: country_id.value,
-      zipcode: zip_code.value,
+      zipcode: zipCodeDigits,
     };
 
     const response = await registerStore.viewZipcode(params);
@@ -1477,7 +1490,8 @@ const onCountryChange = async (val: number | null) => {
     await loadStates(country_id.value);
   }
 
-  if (country_id.value && zip_code.value) {
+  const zipCodeDigits = zip_code.value?.replaceAll(/\D/g, '') || '';
+  if (country_id.value && zipCodeDigits && zipCodeDigits.length === 8) {
     await viewZipcode();
   }
 };
@@ -1496,15 +1510,20 @@ const onStateChange = async (stateId: string | null) => {
 };
 
 watch(zip_code, () => {
-  if (!country_id.value || !zip_code.value || zip_code.value.length < 8) return;
+  if (isViewingZipcode.value) return;
+
+  const zipCodeDigits = zip_code.value?.replaceAll(/\D/g, '') || '';
+  if (!country_id.value || !zipCodeDigits || zipCodeDigits.length !== 8) return;
 
   if (country_id.value === ECountry.Brasil) {
     if (timer) {
       (globalThis as Window & typeof globalThis).clearTimeout(timer);
+      timer = null;
     }
 
     timer = (globalThis as Window & typeof globalThis).setTimeout(() => {
       viewZipcode();
+      timer = null;
     }, 400);
   }
 });
@@ -2233,14 +2252,17 @@ watch(currentStep, async (newStep) => {
                         >{{ $t('zip_code') }}:</VLabel
                       >
                       <AppTextField
-                        v-model="zip_code"
+                        v-model="zip_codeFormatted"
                         :placeholder="$t('zip_code')"
                         :rules="[
                           requiredValidator(zip_code, $t('zip_code_required')),
                         ]"
                         :disabled="!country_id"
+                        :loading="isViewingZipcode"
+                        v-maska="'#####-###'"
+                        inputmode="numeric"
                         @keydown.enter.prevent="viewZipcode"
-                        maxlength="8"
+                        maxlength="9"
                       />
                     </VCol>
 

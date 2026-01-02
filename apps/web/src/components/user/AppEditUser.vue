@@ -184,6 +184,18 @@ const isDocumentDecrypted = ref(false);
 const isLoadingDocument = ref(false);
 const country_id = ref<number | null>(null);
 const zip_code = ref<string | null>(null);
+const zip_codeFormatted = computed({
+  get: () => {
+    if (!zip_code.value) return '';
+    const digits = zip_code.value.replaceAll(/\D/g, '');
+    if (digits.length <= 5) return digits;
+    return `${digits.slice(0, 5)}-${digits.slice(5, 8)}`;
+  },
+  set: (value: string) => {
+    const digits = value.replaceAll(/\D/g, '').slice(0, 8);
+    zip_code.value = digits || null;
+  },
+});
 const address1 = ref<string | null>(null);
 const address1PartialOriginal = ref<string | null>(null);
 const isAddress1Decrypted = ref(false);
@@ -1803,7 +1815,8 @@ const viewZipcode = async () => {
   if (isInitializing.value) return;
   if (isViewingZipcode.value) return;
 
-  if (!country_id.value || !zip_code.value) {
+  const zipCodeDigits = zip_code.value?.replaceAll(/\D/g, '') || '';
+  if (!country_id.value || !zipCodeDigits || zipCodeDigits.length !== 8) {
     return;
   }
 
@@ -1817,7 +1830,7 @@ const viewZipcode = async () => {
   try {
     const params: ViewZipcodeRequest = {
       country_id: country_id.value,
-      zipcode: zip_code.value,
+      zipcode: zipCodeDigits,
     };
 
     const response = await userStore.viewZipcode(params);
@@ -2198,7 +2211,8 @@ watch(
 
     if (newValue === initialZipCode.value) return;
 
-    if (!country_id.value || !zip_code.value || zip_code.value.length < 8)
+    const zipCodeDigits = zip_code.value?.replaceAll(/\D/g, '') || '';
+    if (!country_id.value || !zipCodeDigits || zipCodeDigits.length !== 8)
       return;
 
     if (timer) {
@@ -2663,14 +2677,17 @@ watch(
                     >
                     <AppTextField
                       ref="zipInputRef"
-                      v-model="zip_code"
+                      v-model="zip_codeFormatted"
                       :placeholder="$t('zip_code')"
                       :rules="[
                         requiredValidator(zip_code, $t('zip_code_required')),
                       ]"
                       :disabled="!country_id"
+                      :loading="isViewingZipcode"
+                      v-maska="'#####-###'"
+                      inputmode="numeric"
                       @keydown.enter.prevent="viewZipcode"
-                      maxlength="8"
+                      maxlength="9"
                     />
                   </VCol>
                   <VCol cols="12" md="6">
