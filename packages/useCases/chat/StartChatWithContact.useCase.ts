@@ -1,4 +1,5 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
+import Redis from 'ioredis';
 import { v7 as uuidv7 } from 'uuid';
 import { TFunction } from 'i18next';
 import { ChatService } from '@core/services/chat.service';
@@ -53,7 +54,8 @@ export class StartChatWithContactUseCase {
     private readonly contactService: ContactService,
     private readonly sectorService: SectorService,
     private readonly encryptService: EncryptService,
-    private readonly chatUserViewerRepository: ChatUserViewerRepository
+    private readonly chatUserViewerRepository: ChatUserViewerRepository,
+    @inject('Redis') private readonly redis: Redis
   ) {}
 
   async execute(
@@ -96,6 +98,13 @@ export class StartChatWithContactUseCase {
 
     if (existingChat) {
       if (existingChat.status === EChatStatus.in_chat) {
+        const sectorName = existingChat.sector?.name;
+        if (sectorName) {
+          throw new Error(
+            t('chat_already_in_service_with_sector', { sector: sectorName })
+          );
+        }
+
         throw new Error(t('chat_already_in_service'));
       }
 
@@ -238,6 +247,8 @@ export class StartChatWithContactUseCase {
       );
     }
 
+    const wasUraStatus = existingChat.status === EChatStatus.ura;
+
     const updatedChat = this.buildUpdatedChat(
       existingChat,
       contactData,
@@ -268,9 +279,40 @@ export class StartChatWithContactUseCase {
       throw new Error(t('chat_update_failed'));
     }
 
+    if (wasUraStatus) {
+      await this.invalidateChatbotFlow(updatedChat);
+    }
+
     await this.publishChatUpdate(updatedChat);
 
     return updatedChat;
+  }
+
+  private async invalidateChatbotFlow(chat: IChat): Promise<void> {
+    const accountId = chat.account?.id;
+    const workerId = chat.worker?.id;
+    const chatId = chat.chat_id;
+    const phone = chat.phone;
+
+    if (!accountId || !workerId || !chatId) {
+      return;
+    }
+
+    const chatbotFlowCacheKey = `underchat:chatbot-flow:${accountId}:${workerId}:${chatId}`;
+    const inactivityCacheKey = `underchat:chatbot-inactivity:${accountId}:${workerId}:${chatId}`;
+    const inactivityScheduleKey = 'underchat:chatbot-inactivity-schedule';
+    const failedAttemptsCacheKey = `underchat:chatbot-failed-attempts:${accountId}:${workerId}:${chatId}`;
+    const chatCacheKey = `underchat:chat:${accountId}:${workerId}:${phone}`;
+    const chatCacheKeyById = `chat:${accountId}:${chatId}`;
+
+    await Promise.all([
+      this.redis.del(chatbotFlowCacheKey),
+      this.redis.del(inactivityCacheKey),
+      this.redis.zrem(inactivityScheduleKey, inactivityCacheKey),
+      this.redis.del(failedAttemptsCacheKey),
+      this.redis.del(chatCacheKey),
+      this.redis.del(chatCacheKeyById),
+    ]);
   }
 
   private buildUpdatedChat(

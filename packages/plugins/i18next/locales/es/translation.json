@@ -182,6 +182,7 @@
   "chat_create_success": "¡Chat creado con éxito!",
   "chat_create_not_found": "¡Chat no encontrado para crear!",
   "chat_already_in_service": "¡Ya existe un servicio en curso para este número!",
+  "chat_already_in_service_with_sector": "¡Ya existe un servicio en curso para este número con el sector {{sector}}!",
   "chat_not_found": "¡Chat no encontrado!",
   "chat_access_denied": "¡Acceso denegado al chat!",
   "messages_search_success": "¡Mensajes encontrados con éxito!",

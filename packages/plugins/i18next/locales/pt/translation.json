@@ -181,6 +181,7 @@
   "chat_create_success": "Chat criado com sucesso!",
   "chat_create_not_found": "Chat não encontrado para criação!",
   "chat_already_in_service": "Já existe um atendimento em andamento para este número!",
+  "chat_already_in_service_with_sector": "Já existe um atendimento em andamento para este número com o setor {{sector}}!",
   "chat_not_found": "Chat não encontrado!",
   "chat_access_denied": "Acesso negado ao chat!",
   "messages_search_success": "Mensagens encontradas com sucesso!",
