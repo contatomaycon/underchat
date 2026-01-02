@@ -293,6 +293,7 @@
     "connection_timeout": "Tiempo de conexión agotado. Por favor, inténtalo de nuevo.",
     "connection_removed_in_phone": "Conexión eliminada en el teléfono, por favor reconecta.",
     "connection_date": "Fecha de conexión",
+    "updated_date": "Fecha de actualización",
     "role": "Rol",
     "roles": "Roles",
     "sector": "Sector",

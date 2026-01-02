@@ -159,6 +159,7 @@ const headers: DataTableHeader<ListWorkerResponse>[] = [
   { title: t('status'), key: 'status' },
   { title: t('type'), key: 'type' },
   { title: t('connection_date'), key: 'connection_date' },
+  { title: t('updated_date'), key: 'updated_at' },
   { title: t('created_at'), key: 'created_at' },
   { title: t('actions'), key: 'actions', sortable: false },
 ];
@@ -415,6 +416,14 @@ onUnmounted(async () => {
               <span>{{
                 item.connection_date
                   ? formatDateTime(item.connection_date)
+                  : '-'
+              }}</span>
+            </template>
+
+            <template #item.updated_at="{ item }">
+              <span>{{
+                item.updated_at
+                  ? formatDateTime(item.updated_at)
                   : '-'
               }}</span>
             </template>

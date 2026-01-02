@@ -4,6 +4,7 @@ import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { and, eq } from 'drizzle-orm';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
+import { currentTime } from '@core/common/functions/currentTime';
 
 @injectable()
 export class WorkerStatusUpdaterRepository {
@@ -19,6 +20,7 @@ export class WorkerStatusUpdaterRepository {
       .update(worker)
       .set({
         worker_status_id: workerStatusId,
+        updated_at: currentTime(),
       })
       .where(and(eq(worker.worker_id, workerId)))
       .execute();

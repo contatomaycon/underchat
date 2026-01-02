@@ -52,6 +52,8 @@ export class WorkerPhoneStatusConnectionDateUpdaterRepository {
       return false;
     }
 
+    updateData.updated_at = currentTime();
+
     const result = await this.dbRw
       .update(worker)
       .set(updateData)

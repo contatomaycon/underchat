@@ -4,6 +4,7 @@ import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { and, eq } from 'drizzle-orm';
 import { IUpdateWorker } from '@core/common/interfaces/IUpdateWorker';
+import { currentTime } from '@core/common/functions/currentTime';
 
 @injectable()
 export class WorkerUpdaterRepository {
@@ -57,6 +58,8 @@ export class WorkerUpdaterRepository {
     if (Object.keys(updateInput).length === 0) {
       return false;
     }
+
+    updateInput.updated_at = currentTime();
 
     const result = await this.dbRw
       .update(worker)

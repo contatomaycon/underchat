@@ -116,6 +116,7 @@ const headers: DataTableHeader<ListChannelsResponse>[] = [
   { title: t('account'), key: 'account' },
   { title: t('server'), key: 'server' },
   { title: t('connection_date'), key: 'connection_date' },
+  { title: t('updated_date'), key: 'updated_at' },
   { title: t('created_at'), key: 'created_at' },
   { title: t('actions'), key: 'actions', sortable: false },
 ];
@@ -525,6 +526,13 @@ onUnmounted(async () => {
             <template #item.connection_date="{ item }">
               <span v-if="item.connection_date">
                 {{ formatDateTime(item.connection_date) }}
+              </span>
+              <span v-else>-</span>
+            </template>
+
+            <template #item.updated_at="{ item }">
+              <span v-if="item.updated_at">
+                {{ formatDateTime(item.updated_at) }}
               </span>
               <span v-else>-</span>
             </template>

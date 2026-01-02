@@ -293,6 +293,7 @@
     "connection_timeout": "Tempo de conexão esgotado. Por favor, tente novamente.",
     "connection_removed_in_phone": "Conexão removida no celular, por favor, reconecte.",
     "connection_date": "Data de Conexão",
+    "updated_date": "Data de Atualização",
     "role": "Cargo",
     "roles": "Cargos",
     "sector": "Setor",
