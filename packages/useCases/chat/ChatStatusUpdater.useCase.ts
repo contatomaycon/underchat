@@ -92,6 +92,33 @@ export class ChatStatusUpdaterUseCase {
     return null;
   }
 
+  private async handleClosedStatus(
+    t: TFunction<'translation', undefined>,
+    accountId: string,
+    chatId: string,
+    chat: IChat
+  ): Promise<void> {
+    const workerConfigFields =
+      await this.workerService.viewWorkerConfigFieldsByWorkerId(chat.worker.id);
+
+    if (!workerConfigFields?.send_message_on_finish_attendance) {
+      return;
+    }
+
+    const chatData = await this.chatService.findChatByChatId(accountId, chatId);
+    if (!chatData) {
+      return;
+    }
+
+    await this.chatMessageService.sendMessage(t, {
+      chat: chatData,
+      accountId,
+      type: EMessageType.text,
+      message: workerConfigFields.send_message_on_finish_attendance,
+      typeUser: ETypeUserChat.system,
+    });
+  }
+
   private async invalidateChatCache(chat: IChat): Promise<void> {
     const cacheKey = `underchat:chat:${chat.account.id}:${chat.worker.id}:${chat.phone}`;
     const cacheKeyChat = `chat:${chat.account.id}:${chat.chat_id}`;
@@ -305,14 +332,17 @@ export class ChatStatusUpdaterUseCase {
     await this.publishChatUpdate(chatWithProtocol, accountId);
 
     if (status === EChatStatus.closed) {
-      await this.automaticAttendanceService.handleAutomaticAttendance(
-        t,
-        accountId,
-        chat.worker.id,
-        userId,
-        userSectors,
-        params.chat_id
-      );
+      await Promise.all([
+        this.handleClosedStatus(t, accountId, params.chat_id, chat),
+        this.automaticAttendanceService.handleAutomaticAttendance(
+          t,
+          accountId,
+          chat.worker.id,
+          userId,
+          userSectors,
+          params.chat_id
+        ),
+      ]);
     }
 
     return chatWithProtocol;
