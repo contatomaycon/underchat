@@ -24,34 +24,21 @@ const { t } = useI18n();
 const timer = ref<ReturnType<typeof setTimeout> | null>(null);
 
 const senderName = computed(() => {
-  if (props.message.user?.name) {
-    return props.message.user.name;
-  }
-  if (props.message.phone) {
-    return props.message.phone;
-  }
-  return '';
-});
-
-const senderIcon = computed(() => {
-  if (props.message.user?.photo) {
-    return props.message.user.photo;
-  }
-
   const chat =
     chatStore.listQueue.find((c) => c.chat_id === props.message.chat_id) ||
     chatStore.listInChat.find((c) => c.chat_id === props.message.chat_id) ||
     chatStore.listChatbot.find((c) => c.chat_id === props.message.chat_id);
 
-  if (chat?.contact?.photo) {
-    return chat.contact.photo;
-  }
+  return chat?.name || '';
+});
 
-  if (chat?.photo) {
-    return chat.photo;
-  }
+const senderIcon = computed(() => {
+  const chat =
+    chatStore.listQueue.find((c) => c.chat_id === props.message.chat_id) ||
+    chatStore.listInChat.find((c) => c.chat_id === props.message.chat_id) ||
+    chatStore.listChatbot.find((c) => c.chat_id === props.message.chat_id);
 
-  return '/images/svg/avatar-default.svg';
+  return chat?.photo || '/images/svg/avatar-default.svg';
 });
 
 function getMessagePreview(message: IChatMessage): string {

@@ -86,19 +86,6 @@ function playAlertSound(): void {
   }
 }
 
-function getSenderName(
-  message: IChatMessage,
-  t: ReturnType<typeof useI18n>['t']
-): string {
-  if (message.user?.name) {
-    return message.user.name;
-  }
-  if (message.phone) {
-    return message.phone;
-  }
-  return t('unknown');
-}
-
 function getChatFromStore(
   message: IChatMessage,
   chatStore: ReturnType<typeof useChatStore>
@@ -111,20 +98,23 @@ function getChatFromStore(
   );
 }
 
+function getSenderName(
+  message: IChatMessage,
+  chatStore: ReturnType<typeof useChatStore>,
+  t: ReturnType<typeof useI18n>['t']
+): string {
+  const chat = getChatFromStore(message, chatStore);
+  if (chat?.name) {
+    return chat.name;
+  }
+  return t('unknown');
+}
+
 function getSenderIcon(
   message: IChatMessage,
   chatStore: ReturnType<typeof useChatStore>
 ): string {
-  if (message.user?.photo) {
-    return message.user.photo;
-  }
-
   const chat = getChatFromStore(message, chatStore);
-
-  if (chat?.contact?.photo) {
-    return chat.contact.photo;
-  }
-
   if (chat?.photo) {
     return chat.photo;
   }
@@ -132,19 +122,47 @@ function getSenderIcon(
   return '/images/svg/avatar-default.svg';
 }
 
-async function preloadImage(url: string): Promise<string> {
+async function preloadImage(url: string): Promise<string | undefined> {
   return new Promise((resolve) => {
-    if (!url || url.startsWith('data:')) {
+    if (!url) {
+      resolve(undefined);
+      return;
+    }
+
+    if (url.startsWith('data:') || url.startsWith('blob:')) {
       resolve(url);
       return;
     }
 
-    const img = new Image();
-    img.onload = () => resolve(url);
-    img.onerror = () => resolve(url);
-    img.src = url;
+    let finalUrl = url;
+    if (!finalUrl.startsWith('http://') && !finalUrl.startsWith('https://')) {
+      if (finalUrl.startsWith('/')) {
+        const baseUrl = window.location.origin;
+        finalUrl = `${baseUrl}${finalUrl}`;
+      } else {
+        resolve(undefined);
+        return;
+      }
+    }
 
-    setTimeout(() => resolve(url), 2000);
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+
+    const timeout = setTimeout(() => {
+      resolve(undefined);
+    }, 3000);
+
+    img.onload = () => {
+      clearTimeout(timeout);
+      resolve(finalUrl);
+    };
+
+    img.onerror = () => {
+      clearTimeout(timeout);
+      resolve(undefined);
+    };
+
+    img.src = finalUrl;
   });
 }
 
@@ -155,6 +173,7 @@ export const useChatNotifications = () => {
   const { t } = useI18n();
   const { showToast } = useChatNotificationToast();
   const isPageVisible = ref(true);
+  const processingMessages = ref(new Set<string>());
 
   async function requestNotificationPermission(): Promise<boolean> {
     if (!('Notification' in window)) {
@@ -186,20 +205,27 @@ export const useChatNotifications = () => {
       return;
     }
 
-    const title = getSenderName(message, t);
+    const tag = `chat-${message.chat_id}-${message.message_id}`;
+
+    const title = getSenderName(message, chatStore, t);
     const preview = getMessagePreview(message, t);
     const body = formatNotificationBody(preview);
     const iconUrl = getSenderIcon(message, chatStore);
 
     const icon = await preloadImage(iconUrl);
 
-    const notification = new Notification(title, {
+    const notificationOptions: NotificationOptions = {
       body,
-      icon,
-      badge: icon,
-      tag: `chat-${message.chat_id}-${message.message_id}`,
+      tag,
       requireInteraction: false,
-    });
+    };
+
+    if (icon) {
+      notificationOptions.icon = icon;
+      notificationOptions.badge = icon;
+    }
+
+    const notification = new Notification(title, notificationOptions);
 
     notification.onclick = () => {
       window.focus();
@@ -240,6 +266,13 @@ export const useChatNotifications = () => {
       return;
     }
 
+    const messageKey = `${message.chat_id}-${message.message_id}`;
+    if (processingMessages.value.has(messageKey)) {
+      return;
+    }
+
+    processingMessages.value.add(messageKey);
+
     playAlertSound();
 
     if (isPageVisible.value) {
@@ -250,6 +283,10 @@ export const useChatNotifications = () => {
     if (hasPermission) {
       await showNotification(message);
     }
+
+    setTimeout(() => {
+      processingMessages.value.delete(messageKey);
+    }, 5000);
   }
 
   function handleVisibilityChange() {
