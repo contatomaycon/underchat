@@ -71,8 +71,7 @@ const loadAccounts = async () => {
         text: acc.name,
       }));
     }
-  } catch (error) {
-    console.error('Erro ao carregar accounts:', error);
+  } catch {
   } finally {
     accountsLoading.value = false;
   }
@@ -185,6 +184,14 @@ watch(
 
 const channelToDelete = ref<string | null>(null);
 const isDialogDeleterShow = ref(false);
+const openConversationsCount = ref<number | null>(null);
+
+watch(isDialogDeleterShow, (isOpen) => {
+  if (!isOpen) {
+    openConversationsCount.value = null;
+    channelToDelete.value = null;
+  }
+});
 const channelToRecreate = ref<string | null>(null);
 const isDialogRecreatorShow = ref(false);
 const isDialogRecreateAllShow = ref(false);
@@ -199,6 +206,7 @@ const handleDelete = async () => {
   }
 
   channelToDelete.value = null;
+  openConversationsCount.value = null;
 };
 
 const recreateChannel = (id: string) => {
@@ -227,9 +235,25 @@ const handleRecreateAll = async () => {
   isDialogRecreateAllShow.value = false;
 };
 
-const deleteChannel = (id: string) => {
-  channelToDelete.value = id;
-  isDialogDeleterShow.value = true;
+const deleteChannel = async (id: string) => {
+  try {
+    const count = await settingsStore.checkChannelOpenConversations(id);
+
+    if (count !== null && count > 0) {
+      openConversationsCount.value = count;
+      channelToDelete.value = id;
+      isDialogDeleterShow.value = true;
+      return;
+    }
+
+    openConversationsCount.value = null;
+    channelToDelete.value = id;
+    isDialogDeleterShow.value = true;
+  } catch {
+    openConversationsCount.value = null;
+    channelToDelete.value = id;
+    isDialogDeleterShow.value = true;
+  }
 };
 
 const updateChannelFromCentrifugo = (
@@ -528,7 +552,7 @@ onUnmounted(async () => {
                   />
                 </IconBtn>
 
-                <IconBtn>
+                <IconBtn @click.stop="deleteChannel(item.id)">
                   <VTooltip
                     location="top"
                     transition="scale-transition"
@@ -536,7 +560,7 @@ onUnmounted(async () => {
                   >
                     <span>{{ $t('delete') }}</span>
                   </VTooltip>
-                  <VIcon icon="tabler-trash" @click="deleteChannel(item.id)" />
+                  <VIcon icon="tabler-trash" />
                 </IconBtn>
               </div>
             </template>
@@ -566,7 +590,16 @@ onUnmounted(async () => {
     <VDialogHandler
       v-model="isDialogDeleterShow"
       :title="$t('delete') + ' ' + $t('channel')"
-      :message="$t('delete_channel_confirmation')"
+      :message="
+        openConversationsCount && openConversationsCount > 0
+          ? $t('channel_delete_has_open_conversations', {
+              count: openConversationsCount,
+            })
+          : $t('delete_channel_confirmation')
+      "
+      :disable-confirm="
+        openConversationsCount !== null && openConversationsCount > 0
+      "
       @confirm="handleDelete"
     />
 

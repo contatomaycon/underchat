@@ -9,6 +9,7 @@ import { IWorkerPayload } from '@core/common/interfaces/IWorkerPayload';
 import { EWorkerAction } from '@core/common/enums/EWorkerAction';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { KafkaBalanceQueueService } from '@core/services/kafkaBalanceQueue.service';
+import { ChatService } from '@core/services/chat.service';
 import {
   workerCentrifugoQueue,
   channelsConfigCentrifugo,
@@ -21,7 +22,8 @@ export class ChannelDeleterUseCase {
     private readonly configService: ConfigService,
     private readonly streamProducerService: StreamProducerService,
     private readonly centrifugoService: CentrifugoService,
-    private readonly kafkaBalanceQueueService: KafkaBalanceQueueService
+    private readonly kafkaBalanceQueueService: KafkaBalanceQueueService,
+    private readonly chatService: ChatService
   ) {}
 
   private async validate(
@@ -33,6 +35,19 @@ export class ChannelDeleterUseCase {
 
     if (!viewWorkerBalancer) {
       throw new Error(t('worker_not_found'));
+    }
+
+    const openChatsCount = await this.chatService.countOpenChatsByWorkerId(
+      viewWorkerBalancer.account_id,
+      channelId
+    );
+
+    if (openChatsCount > 0) {
+      throw new Error(
+        t('channel_delete_has_open_conversations', {
+          count: openChatsCount,
+        })
+      );
     }
   }
 

@@ -1,5 +1,5 @@
 import * as schema from '@core/models';
-import { server, serverWeb, worker, account } from '@core/models';
+import { server, serverWeb, worker, account, apiKey } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { and, eq, isNull } from 'drizzle-orm';
@@ -17,14 +17,14 @@ export class ChannelViewerRepository {
     const result = await this.dbRo
       .select({
         server_id: server.server_id,
-        key: schema.apiKey.key,
+        key: apiKey.key,
         web_domain: serverWeb.web_domain,
         web_port: serverWeb.web_port,
         web_protocol: serverWeb.web_protocol,
         account_id: worker.account_id,
       })
       .from(worker)
-      .innerJoin(schema.apiKey, eq(schema.apiKey.account_id, worker.account_id))
+      .innerJoin(apiKey, eq(apiKey.account_id, worker.account_id))
       .innerJoin(serverWeb, eq(serverWeb.server_id, worker.server_id))
       .innerJoin(server, eq(server.server_id, worker.server_id))
       .innerJoin(account, eq(account.account_id, worker.account_id))

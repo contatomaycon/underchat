@@ -239,6 +239,7 @@
     "select_type": "Selecciona el tipo",
     "delete_channel": "Eliminar canal?",
     "delete_channel_confirmation": "¿Estás seguro de que deseas eliminar este canal?",
+    "channel_delete_has_open_conversations": "No se puede eliminar el canal. Hay {count} conversación(es) abierta(s) que deben cerrarse antes de eliminar el canal.",
     "edit_channel": "Editar canal",
     "type_required": "Se requiere el tipo",
     "channel_edit_error": "Ocurrió un error al editar el canal. Por favor, inténtalo de nuevo.",

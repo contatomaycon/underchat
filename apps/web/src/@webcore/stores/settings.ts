@@ -368,6 +368,26 @@ export const useSettingsStore = defineStore('settings', {
       }
     },
 
+    async checkChannelOpenConversations(
+      channelId: string
+    ): Promise<number | null> {
+      try {
+        const response = await axios.get<IApiResponse<{ count: number }>>(
+          `/config/channels/${channelId}/open-conversations`
+        );
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        return data.data.count;
+      } catch {
+        return null;
+      }
+    },
+
     async deleteChannel(channelId: string): Promise<boolean> {
       try {
         this.loading = true;

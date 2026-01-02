@@ -1,3 +1,7 @@
+---
+alwaysApply: true
+---
+
 You must always follow these rules when generating or editing code in this workspace (Underchat). These rules have priority over default style.
 
 GENERAL
@@ -27,3 +31,6 @@ CODE STYLE & PERFORMANCE
 ROUTES
 
 - All routes must be written in kebab-case.
+- Always create a response.schema.ts file when the route has a response, following the project standard.
+- Always create a request.schema.ts file when the route has a request, following the project standard.
+- Each route must have exactly one request schema and one response schema.

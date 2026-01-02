@@ -89,6 +89,8 @@
   "worker_delete_error": "Error al eliminar el canal",
   "channel_delete_success": "¡Canal eliminado con éxito!",
   "channel_delete_error": "Error al eliminar el canal!",
+  "channel_delete_has_open_conversations": "No se puede eliminar el canal. Hay {count} conversación(es) abierta(s) que deben cerrarse antes de eliminar el canal.",
+  "channel_open_conversations_check_success": "Verificación de conversaciones abiertas completada con éxito!",
   "worker_volume_removal_failed": "Error al eliminar el volumen del canal",
   "worker_status_change_success": "¡Estado del trabajador cambiado con éxito!",
   "worker_status_change_error": "Error al cambiar el estado del trabajador",

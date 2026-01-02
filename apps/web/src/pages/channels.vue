@@ -102,6 +102,7 @@ const itemsType = ref([
 
 const isDialogDeleterShow = ref(false);
 const channelToDelete = ref<string | null>(null);
+const openConversationsCount = ref<number | null>(null);
 
 const isDialogRecreatorShow = ref(false);
 const channelToRecreate = ref<string | null>(null);
@@ -196,6 +197,16 @@ const handleTableChange = (o: {
 };
 
 const deleteChannel = async (id: string) => {
+  const count = await channelsStore.checkChannelOpenConversations(id);
+
+  if (count !== null && count > 0) {
+    openConversationsCount.value = count;
+    channelToDelete.value = id;
+    isDialogDeleterShow.value = true;
+    return;
+  }
+
+  openConversationsCount.value = null;
   channelToDelete.value = id;
   isDialogDeleterShow.value = true;
 };
@@ -234,6 +245,7 @@ const handleDelete = async () => {
   }
 
   channelToDelete.value = null;
+  openConversationsCount.value = null;
 };
 
 const handleRecreate = async () => {
@@ -251,6 +263,13 @@ watch(
   },
   { immediate: true, deep: true }
 );
+
+watch(isDialogDeleterShow, (isOpen) => {
+  if (!isOpen) {
+    openConversationsCount.value = null;
+    channelToDelete.value = null;
+  }
+});
 
 onMounted(async () => {
   if (user?.account_id) {
@@ -501,7 +520,16 @@ onUnmounted(async () => {
         v-if="isDialogDeleterShow"
         v-model="isDialogDeleterShow"
         :title="$t('delete_channel')"
-        :message="$t('delete_channel_confirmation')"
+        :message="
+          openConversationsCount && openConversationsCount > 0
+            ? $t('channel_delete_has_open_conversations', {
+                count: openConversationsCount,
+              })
+            : $t('delete_channel_confirmation')
+        "
+        :disable-confirm="
+          openConversationsCount !== null && openConversationsCount > 0
+        "
         @confirm="handleDelete"
       />
 

@@ -15,6 +15,7 @@ import { recreateChannelsAllSchema } from '@core/schema/config/recreateChannelsA
 import { channelsStatisticsSchema } from '@core/schema/config/channelsStatistics';
 import { listCreditCardFeeSchema } from '@core/schema/config/listCreditCardFee';
 import { updateCreditCardFeeSchema } from '@core/schema/config/updateCreditCardFee';
+import { checkChannelOpenConversationsSchema } from '@core/schema/config/checkChannelOpenConversations';
 import { configPermissions } from '@/permissions';
 
 export default async function configRoutes(server: FastifyInstance) {
@@ -113,6 +114,15 @@ export default async function configRoutes(server: FastifyInstance) {
   server.patch('/config/channels/:channel_id/recreate', {
     schema: recreateChannelSchema,
     handler: configController.recreateChannel,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, configPermissions),
+    ],
+  });
+
+  server.get('/config/channels/:channel_id/open-conversations', {
+    schema: checkChannelOpenConversationsSchema,
+    handler: configController.checkChannelOpenConversations,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, configPermissions),

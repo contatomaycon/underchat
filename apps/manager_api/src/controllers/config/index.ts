@@ -13,6 +13,7 @@ import { recreateChannelsAll } from './methods/recreateChannelsAll';
 import { channelsStatistics } from './methods/channelsStatistics';
 import { listCreditCardFee } from './methods/listCreditCardFee';
 import { updateCreditCardFee } from './methods/updateCreditCardFee';
+import { checkChannelOpenConversations } from './methods/checkChannelOpenConversations';
 
 @injectable()
 class ConfigController {
@@ -30,6 +31,7 @@ class ConfigController {
   public channelsStatistics = channelsStatistics;
   public listCreditCardFee = listCreditCardFee;
   public updateCreditCardFee = updateCreditCardFee;
+  public checkChannelOpenConversations = checkChannelOpenConversations;
 }
 
 export default ConfigController;

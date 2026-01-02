@@ -9,6 +9,7 @@ const props = defineProps<{
   message: string;
   confirmText?: string;
   cancelText?: string;
+  disableConfirm?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -49,7 +50,7 @@ function onCancel() {
         <VBtn color="secondary" variant="tonal" @click="onCancel">
           {{ cancelText }}
         </VBtn>
-        <VBtn @click="onConfirm">
+        <VBtn v-if="!disableConfirm" @click="onConfirm">
           {{ confirmText }}
         </VBtn>
       </VCardText>
