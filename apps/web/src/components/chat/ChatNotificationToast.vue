@@ -1,6 +1,6 @@
 <script lang="ts" setup>
 import { ref, computed, watch, onUnmounted } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRouter, useRoute } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { useChatStore } from '@/@webcore/stores/chat';
 import type { IChatMessage } from '@core/common/interfaces/IChatMessage';
@@ -19,9 +19,14 @@ const emit = defineEmits<{
 }>();
 
 const router = useRouter();
+const route = useRoute();
 const chatStore = useChatStore();
 const { t } = useI18n();
 const timer = ref<ReturnType<typeof setTimeout> | null>(null);
+
+const isChatRoute = computed(() => route.name === 'chat');
+
+const shouldShow = computed(() => props.visible && !isChatRoute.value);
 
 const senderName = computed(() => {
   const chat =
@@ -93,21 +98,34 @@ function handleClose() {
   emit('close');
 }
 
+function startTimer() {
+  if (timer.value) {
+    clearTimeout(timer.value);
+    timer.value = null;
+  }
+
+  if (shouldShow.value) {
+    timer.value = setTimeout(() => {
+      handleClose();
+    }, 5000);
+  }
+}
+
 watch(
   () => props.visible,
-  (visible) => {
-    if (timer.value) {
-      clearTimeout(timer.value);
-      timer.value = null;
-    }
-
-    if (visible) {
-      timer.value = setTimeout(() => {
-        handleClose();
-      }, 5000);
-    }
-  }
+  () => {
+    startTimer();
+  },
+  { immediate: true }
 );
+
+watch(isChatRoute, () => {
+  if (isChatRoute.value && props.visible) {
+    handleClose();
+    return;
+  }
+  startTimer();
+});
 
 onUnmounted(() => {
   if (timer.value) {
@@ -119,7 +137,7 @@ onUnmounted(() => {
 <template>
   <Transition name="notification-toast">
     <VCard
-      v-if="visible"
+      v-if="shouldShow"
       class="chat-notification-toast"
       elevation="8"
       @click="handleClick"

@@ -2,10 +2,15 @@ import { ref, watch, onMounted, onUnmounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { useChatStore } from '@/@webcore/stores/chat';
+import { getPermissions, getSectors } from '@/@webcore/localStorage/user';
 import type { IChatMessage } from '@core/common/interfaces/IChatMessage';
+import type { IChat } from '@core/common/interfaces/IChat';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
+import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
+import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
+import { EPermissionsRoles } from '@core/common/enums/EPermissions';
 import { extractMessageTextFromContent } from '@core/common/functions/extractMessageTextFromContent';
 import { useChatNotificationToast } from './useChatNotificationToast';
 
@@ -98,6 +103,58 @@ function getChatFromStore(
   );
 }
 
+function canReceiveMessageNotification(
+  chat: IChat,
+  chatStore: ReturnType<typeof useChatStore>
+): boolean {
+  if (!chatStore.user?.account_id) {
+    return false;
+  }
+
+  const permissions = getPermissions();
+  const canListAllChatsWithoutSectorLimit = permissions.some(
+    (perm: EPermissionsRoles) =>
+      perm === EGeneralPermissions.full_access ||
+      perm === EGeneralPermissions.full_access_group ||
+      perm === EChatPermissions.chat_group ||
+      perm === EChatPermissions.list_all_chats_without_sector_limit
+  );
+
+  const userSectors: string[] = canListAllChatsWithoutSectorLimit
+    ? []
+    : getSectors();
+
+  if (canListAllChatsWithoutSectorLimit) {
+    return true;
+  }
+
+  const chatExistsInList =
+    chatStore.listQueue.some((c) => c.chat_id === chat.chat_id) ||
+    chatStore.listInChat.some((c) => c.chat_id === chat.chat_id);
+
+  if (chatExistsInList) {
+    return true;
+  }
+
+  if (chat.user?.id === chatStore.user?.user_id) {
+    return true;
+  }
+
+  if (chat.status === EChatStatus.queue && !chat.sector?.id && !chat.user?.id) {
+    return true;
+  }
+
+  if (userSectors.length === 0) {
+    return !chat.sector?.id;
+  }
+
+  if (!chat.sector?.id) {
+    return false;
+  }
+
+  return userSectors.includes(chat.sector.id);
+}
+
 function getSenderName(
   message: IChatMessage,
   chatStore: ReturnType<typeof useChatStore>,
@@ -174,6 +231,7 @@ export const useChatNotifications = () => {
   const { showToast } = useChatNotificationToast();
   const isPageVisible = ref(true);
   const processingMessages = ref(new Set<string>());
+  const notifiedQueueChats = ref(new Set<string>());
 
   async function requestNotificationPermission(): Promise<boolean> {
     if (!('Notification' in window)) {
@@ -262,8 +320,30 @@ export const useChatNotifications = () => {
 
     const chat = getChatFromStore(message, chatStore);
 
-    if (!chat || chat.status !== EChatStatus.in_chat) {
+    if (!chat) {
       return;
+    }
+
+    if (
+      chat.status !== EChatStatus.in_chat &&
+      chat.status !== EChatStatus.queue
+    ) {
+      return;
+    }
+
+    if (!canReceiveMessageNotification(chat as IChat, chatStore)) {
+      return;
+    }
+
+    if (chat.status === EChatStatus.in_chat) {
+      notifiedQueueChats.value.delete(message.chat_id);
+    }
+
+    if (chat.status === EChatStatus.queue) {
+      if (notifiedQueueChats.value.has(message.chat_id)) {
+        return;
+      }
+      notifiedQueueChats.value.add(message.chat_id);
     }
 
     const messageKey = `${message.chat_id}-${message.message_id}`;
