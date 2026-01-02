@@ -58,6 +58,7 @@ declare global {
   const extendRef: typeof import('@vueuse/core').extendRef
   const formatDate: typeof import('./src/@webcore/utils/formatters').formatDate
   const formatDateToMonthShort: typeof import('./src/@webcore/utils/formatters').formatDateToMonthShort
+  const formatNotificationBody: typeof import('./src/composables/useChatNotifications').formatNotificationBody
   const getActivePinia: typeof import('pinia').getActivePinia
   const getCurrentInstance: typeof import('vue').getCurrentInstance
   const getCurrentScope: typeof import('vue').getCurrentScope
@@ -215,6 +216,7 @@ declare global {
   const useBrowserLocation: typeof import('@vueuse/core').useBrowserLocation
   const useCached: typeof import('@vueuse/core').useCached
   const useCeil: typeof import('@vueuse/math').useCeil
+  const useChatNotifications: typeof import('./src/composables/useChatNotifications').useChatNotifications
   const useChatSocket: typeof import('./src/composables/useChatSocket').useChatSocket
   const useClamp: typeof import('@vueuse/math').useClamp
   const useClipboard: typeof import('@vueuse/core').useClipboard
@@ -467,6 +469,7 @@ declare module 'vue' {
     readonly extendRef: UnwrapRef<typeof import('@vueuse/core')['extendRef']>
     readonly formatDate: UnwrapRef<typeof import('./src/@webcore/utils/formatters')['formatDate']>
     readonly formatDateToMonthShort: UnwrapRef<typeof import('./src/@webcore/utils/formatters')['formatDateToMonthShort']>
+    readonly formatNotificationBody: UnwrapRef<typeof import('./src/composables/useChatNotifications')['formatNotificationBody']>
     readonly getActivePinia: UnwrapRef<typeof import('pinia')['getActivePinia']>
     readonly getCurrentInstance: UnwrapRef<typeof import('vue')['getCurrentInstance']>
     readonly getCurrentScope: UnwrapRef<typeof import('vue')['getCurrentScope']>
@@ -617,6 +620,7 @@ declare module 'vue' {
     readonly useBrowserLocation: UnwrapRef<typeof import('@vueuse/core')['useBrowserLocation']>
     readonly useCached: UnwrapRef<typeof import('@vueuse/core')['useCached']>
     readonly useCeil: UnwrapRef<typeof import('@vueuse/math')['useCeil']>
+    readonly useChatNotifications: UnwrapRef<typeof import('./src/composables/useChatNotifications')['useChatNotifications']>
     readonly useChatSocket: UnwrapRef<typeof import('./src/composables/useChatSocket')['useChatSocket']>
     readonly useClamp: UnwrapRef<typeof import('@vueuse/math')['useClamp']>
     readonly useClipboard: UnwrapRef<typeof import('@vueuse/core')['useClipboard']>

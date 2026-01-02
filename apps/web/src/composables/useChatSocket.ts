@@ -15,6 +15,7 @@ import type { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import type { IChat } from '@core/common/interfaces/IChat';
 import type { IChatTyping } from '@core/common/interfaces/IChatTyping';
 import { ListMessageChatsQuery } from '@core/schema/chat/listMessageChats/request.schema';
+import { useChatNotifications } from '@/composables/useChatNotifications';
 
 let isInitialized = false;
 let subscriptions: Array<{
@@ -27,6 +28,7 @@ const pendingChatUpdates = ref<Map<string, IChat[]>>(new Map());
 export const useChatSocket = () => {
   const chatStore = useChatStore();
   const route = useRoute();
+  const { handleNewMessage } = useChatNotifications();
 
   const isChatRoute = () => {
     return route.name === 'chat';
@@ -83,16 +85,19 @@ export const useChatSocket = () => {
     return userSectors.includes(chat.sector.id);
   };
 
-  const handleMessageEvent = (messageData: IChatMessage): void => {
-    if (
-      isChatRoute() &&
-      chatStore.activeChat?.chat_id === messageData.chat_id
-    ) {
+  const handleMessageEvent = async (
+    messageData: IChatMessage
+  ): Promise<void> => {
+    const isActiveChat =
+      isChatRoute() && chatStore.activeChat?.chat_id === messageData.chat_id;
+
+    if (isActiveChat) {
       chatStore.addMessageActiveChat(messageData);
       globalThis.dispatchEvent(
         new CustomEvent('chat-message', { detail: messageData })
       );
-      return;
+    } else {
+      await handleNewMessage(messageData);
     }
 
     const chatId = messageData.chat_id;
