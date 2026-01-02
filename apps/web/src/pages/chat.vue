@@ -9,6 +9,7 @@ import {
   ref,
 } from 'vue';
 import { PerfectScrollbar } from 'vue3-perfect-scrollbar';
+import { useRoute } from 'vue-router';
 import { useDisplay, useTheme } from 'vuetify';
 import { themes } from '@/plugins/vuetify/theme';
 import ChatActiveChatUserProfileSidebarContent from '@/components/chat/ChatActiveChatUserProfileSidebarContent.vue';
@@ -98,6 +99,7 @@ definePage({
   },
 });
 
+const route = useRoute();
 const chatStore = useChatStore();
 const channelStore = useChannelsStore();
 useSnackbarCleanup(chatStore);
@@ -115,6 +117,7 @@ const chatLogPS = ref();
 const resizeHandler = ref<(() => void) | null>(null);
 const q = ref('');
 const msg = ref('');
+const pendingNotificationChatId = ref<string | null>(null);
 const quickMessageTemplates = ref<
   import('@core/schema/chat/listQuickMessageTemplates/response.schema').ListQuickMessageTemplatesResponse[]
 >([]);
@@ -1723,6 +1726,17 @@ const sendMessage = async () => {
   await sendTextMessage(savedMsg, savedLinkPreview, savedReply || undefined);
 
   finalizeSend();
+};
+
+const findChatById = (
+  chatId: ListChatsResult['chat_id']
+): ListChatsResult | null => {
+  return (
+    chatStore.listInChat.find((c) => c.chat_id === chatId) ??
+    chatStore.listQueue.find((c) => c.chat_id === chatId) ??
+    chatStore.listChatbot.find((c) => c.chat_id === chatId) ??
+    null
+  );
 };
 
 const openChat = async (chatId: ListChatsResult['chat_id']) => {
@@ -3884,6 +3898,66 @@ onMounted(async () => {
         });
       }
     };
+
+    const resolvePendingNotificationChatId = (): string | null => {
+      const routeChatId = route.query.chat_id;
+      const fromRoute =
+        typeof routeChatId === 'string'
+          ? routeChatId
+          : Array.isArray(routeChatId)
+            ? routeChatId[0]
+            : null;
+
+      if (fromRoute) {
+        return fromRoute;
+      }
+
+      if (typeof sessionStorage !== 'undefined') {
+        const storedChatId = sessionStorage.getItem('pending-chat-id');
+        if (storedChatId) {
+          sessionStorage.removeItem('pending-chat-id');
+          return storedChatId;
+        }
+      }
+
+      return null;
+    };
+
+    const tryOpenPendingChat = async (): Promise<void> => {
+      if (!pendingNotificationChatId.value) return;
+
+      const pendingChat = findChatById(pendingNotificationChatId.value);
+      if (!pendingChat) return;
+
+      await handleActiveChatSwitch({
+        ...pendingChat,
+        status: pendingChat.status as EChatStatus,
+      });
+      pendingNotificationChatId.value = null;
+    };
+
+    pendingNotificationChatId.value = resolvePendingNotificationChatId();
+
+    watch(
+      () => route.query.chat_id,
+      () => {
+        pendingNotificationChatId.value = resolvePendingNotificationChatId();
+        void tryOpenPendingChat();
+      }
+    );
+
+    watch(
+      () => [
+        chatStore.listInChat.length,
+        chatStore.listQueue.length,
+        chatStore.listChatbot.length,
+        pendingNotificationChatId.value,
+      ],
+      () => {
+        void tryOpenPendingChat();
+      },
+      { immediate: true }
+    );
 
     const handleChatUpdateEvent = async (chatData: IChat): Promise<void> => {
       if (!canReceiveChatNotification(chatData)) {

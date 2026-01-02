@@ -2,6 +2,7 @@
 import { clearAllData } from '@/@webcore/utils/clearAllData';
 import { presenceOffline } from '@/@webcore/presence';
 import { initUserPresenceSubscription } from '@/@webcore/presenceCentrifugo';
+import { initMessageNotificationsSubscription } from '@/@webcore/messageNotificationsCentrifugo';
 import { useChatStore } from '@/@webcore/stores/chat';
 import { useProfileStore } from '@/@webcore/stores/profile';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
@@ -639,6 +640,9 @@ const logout = async () => {
 onMounted(() => {
   if (chatStore.user?.account_id) {
     initUserPresenceSubscription(chatStore.user.account_id).catch(() => {});
+    initMessageNotificationsSubscription(chatStore.user.account_id).catch(
+      () => {}
+    );
   }
 });
 </script>

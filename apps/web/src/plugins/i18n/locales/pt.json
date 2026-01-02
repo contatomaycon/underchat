@@ -1933,7 +1933,19 @@
     "good_afternoon": "Boa tarde",
     "good_evening": "Boa noite",
     "switch_account": "Alternar Conta",
-    "enter": "Entrar",
-    "master_accounts_list_error": "Ocorreu um erro ao listar as contas acessíveis. Por favor, tente novamente.",
-    "backend_url_not_configured": "Backend URL não configurada. Verifique o arquivo .env"
+  "enter": "Entrar",
+  "master_accounts_list_error": "Ocorreu um erro ao listar as contas acessíveis. Por favor, tente novamente.",
+  "message_notification": {
+    "preview_default": "Nova mensagem",
+    "quoted_prefix": "Resposta a",
+    "title_fallback": "Mensagem",
+    "image": "Imagem",
+    "video": "Vídeo",
+    "audio": "Áudio",
+    "document": "Documento",
+    "location": "Localização",
+    "contact": "Contato",
+    "sticker": "Sticker"
+  },
+  "backend_url_not_configured": "Backend URL não configurada. Verifique o arquivo .env"
 }

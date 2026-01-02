@@ -1929,9 +1929,21 @@
     "tag_channel_name_description": "Channel name",
     "good_morning": "Good morning",
     "good_afternoon": "Good afternoon",
-    "good_evening": "Good evening",
-    "switch_account": "Switch Account",
-    "enter": "Enter",
-    "master_accounts_list_error": "An error occurred while listing accessible accounts. Please try again.",
-    "backend_url_not_configured": "Backend URL not configured. Check the .env file"
+  "good_evening": "Good evening",
+  "switch_account": "Switch Account",
+  "enter": "Enter",
+  "master_accounts_list_error": "An error occurred while listing accessible accounts. Please try again.",
+  "message_notification": {
+    "preview_default": "New message",
+    "quoted_prefix": "Reply to",
+    "title_fallback": "Message",
+    "image": "Image",
+    "video": "Video",
+    "audio": "Audio",
+    "document": "Document",
+    "location": "Location",
+    "contact": "Contact",
+    "sticker": "Sticker"
+  },
+  "backend_url_not_configured": "Backend URL not configured. Check the .env file"
 }

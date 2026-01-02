@@ -1931,9 +1931,21 @@
     "tag_channel_name_description": "Nombre del canal",
     "good_morning": "Buenos días",
     "good_afternoon": "Buenas tardes",
-    "good_evening": "Buenas noches",
-    "switch_account": "Cambiar Cuenta",
-    "enter": "Entrar",
-    "master_accounts_list_error": "Ocurrió un error al listar las cuentas accesibles. Por favor, inténtalo de nuevo.",
-    "backend_url_not_configured": "URL del backend no configurada. Verifique el archivo .env"
+  "good_evening": "Buenas noches",
+  "switch_account": "Cambiar Cuenta",
+  "enter": "Entrar",
+  "master_accounts_list_error": "Ocurrió un error al listar las cuentas accesibles. Por favor, inténtalo de nuevo.",
+  "message_notification": {
+    "preview_default": "Nuevo mensaje",
+    "quoted_prefix": "Respuesta a",
+    "title_fallback": "Mensaje",
+    "image": "Imagen",
+    "video": "Vídeo",
+    "audio": "Audio",
+    "document": "Documento",
+    "location": "Ubicación",
+    "contact": "Contacto",
+    "sticker": "Sticker"
+  },
+  "backend_url_not_configured": "URL del backend no configurada. Verifique el archivo .env"
 }
