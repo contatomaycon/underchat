@@ -225,6 +225,8 @@ const isSavingTransferProtocol = ref(false);
 const startProtocolText = ref<string>('');
 const startProtocolModalOpen = ref(false);
 const isSavingStartProtocol = ref(false);
+
+const protocolTag = '{{protocolo}}';
 const simultaneousAttendance = ref<number | null>(null);
 const simultaneousAttendanceModalOpen = ref(false);
 const isSavingSimultaneousAttendance = ref(false);
@@ -2941,7 +2943,9 @@ onMounted(async () => {
           {{ $t('transfer_protocol_text_hint') }}
         </div>
         <div class="text-caption text-medium-emphasis">
-          {{ $t('transfer_protocol_tag_hint') }}
+          {{ $t('transfer_protocol_tag_hint_prefix') }}
+          <code>{{ protocolTag }}</code>
+          {{ $t('transfer_protocol_tag_hint_suffix') }}
         </div>
       </VCardText>
       <VCardText class="d-flex justify-end flex-wrap gap-3">
@@ -3000,7 +3004,9 @@ onMounted(async () => {
           {{ $t('start_protocol_text_hint') }}
         </div>
         <div class="text-caption text-medium-emphasis">
-          {{ $t('start_protocol_tag_hint') }}
+          {{ $t('start_protocol_tag_hint_prefix') }}
+          <code>{{ protocolTag }}</code>
+          {{ $t('start_protocol_tag_hint_suffix') }}
         </div>
       </VCardText>
       <VCardText class="d-flex justify-end flex-wrap gap-3">
