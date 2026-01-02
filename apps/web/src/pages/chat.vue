@@ -8,6 +8,7 @@ import {
   onBeforeUnmount,
   ref,
 } from 'vue';
+import { useRoute } from 'vue-router';
 import { PerfectScrollbar } from 'vue3-perfect-scrollbar';
 import { useDisplay, useTheme } from 'vuetify';
 import { themes } from '@/plugins/vuetify/theme';
@@ -45,11 +46,7 @@ import {
   ContentMessageChat,
   ListMessageResult,
 } from '@core/schema/chat/listMessageChats/response.schema';
-import { onMessage, unsubscribe } from '@/@webcore/centrifugo';
-import {
-  chatAccountCentrifugo,
-  chatQueueAccountCentrifugo,
-} from '@core/common/functions/centrifugoQueue';
+import { useChatSocket } from '@/composables/useChatSocket';
 import { CreateMessageChatsBody } from '@core/schema/chat/createMessageChats/request.schema';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
@@ -100,6 +97,8 @@ definePage({
 
 const chatStore = useChatStore();
 const channelStore = useChannelsStore();
+const chatSocket = useChatSocket();
+const route = useRoute();
 useSnackbarCleanup(chatStore);
 const { name, global } = useTheme();
 const vuetifyDisplays = useDisplay();
@@ -281,6 +280,23 @@ watch(
     loadWorkerConfigForChat().catch(() => {});
   },
   { immediate: true }
+);
+
+watch(
+  () => route.name,
+  async (newRouteName, oldRouteName) => {
+    if (
+      newRouteName === 'chat' &&
+      oldRouteName !== 'chat' &&
+      chatStore.activeChat?.chat_id
+    ) {
+      await chatSocket.refreshActiveChat();
+      await nextTick();
+      requestAnimationFrame(() => {
+        scrollToBottomInChatLog();
+      });
+    }
+  }
 );
 
 const handleAttendChat = async () => {
@@ -3789,171 +3805,149 @@ const debouncedClearChatSummary = useDebounceFn(async (chatId: string) => {
   await chatStore.clearChatSummary(chatId);
 }, 10000);
 
-onMounted(async () => {
-  if (chatStore.user?.account_id) {
-    const accountId = chatStore.user.account_id;
-
-    const permissions = getPermissions();
-    const canListAllChatsWithoutSectorLimit = permissions.some(
-      (perm: EPermissionsRoles) =>
-        perm === EGeneralPermissions.full_access ||
-        perm === EGeneralPermissions.full_access_group ||
-        perm === EChatPermissions.chat_group ||
-        perm === EChatPermissions.list_all_chats_without_sector_limit
-    );
-
-    const userSectors: string[] = canListAllChatsWithoutSectorLimit
-      ? []
-      : getSectors();
-
-    const canReceiveChatNotification = (chat: IChat): boolean => {
-      if (canListAllChatsWithoutSectorLimit) {
-        return true;
-      }
-
-      const chatExistsInList =
-        chatStore.listQueue.some((c) => c.chat_id === chat.chat_id) ||
-        chatStore.listInChat.some((c) => c.chat_id === chat.chat_id);
-
-      if (chatExistsInList) {
-        return true;
-      }
-
-      if (chat.user?.id === chatStore.user?.user_id) {
-        return true;
-      }
-
-      if (
-        chat.status === EChatStatus.queue &&
-        !chat.sector?.id &&
-        !chat.user?.id
-      ) {
-        return true;
-      }
-
-      if (userSectors.length === 0) {
-        return !chat.sector?.id;
-      }
-
-      if (!chat.sector?.id) {
-        return false;
-      }
-
-      return userSectors.includes(chat.sector.id);
-    };
-
-    const handleMessageEvent = (messageData: IChatMessage): void => {
-      if (chatStore.activeChat?.chat_id !== messageData.chat_id) {
-        return;
-      }
-
-      handleTypingEvent(messageData);
-
-      const changeType = chatStore.addMessageActiveChat(messageData);
-
-      if (changeType === 'created') {
-        nextTick(async () => {
-          await scrollToBottomInChatLog();
-        });
-        globalThis.dispatchEvent(new CustomEvent('focus-composer'));
-      }
-    };
-
-    const handleActiveChatSwitch = async (chatData: IChat): Promise<void> => {
-      const previousActiveChatId = chatStore.activeChat?.chat_id;
-
-      if (previousActiveChatId !== chatData.chat_id) {
-        chatStore.listMessages = [];
-        chatStore.currentPage = 1;
-        chatStore.totalPages = 1;
-        currentPage.value = 1;
-      }
-
-      chatStore.setActiveChat(chatData.chat_id);
-
-      if (chatStore.activeChat?.chat_id === chatData.chat_id) {
-        const requestQueue: ListMessageChatsQuery = {
-          current_page: 1,
-          per_page: perPage.value,
-        };
-        await chatStore.getChatById(requestQueue);
-
-        await nextTick();
-        requestAnimationFrame(() => {
-          scrollToBottomInChatLog();
-        });
-      }
-    };
-
-    const handleChatUpdateEvent = async (chatData: IChat): Promise<void> => {
-      if (!canReceiveChatNotification(chatData)) {
-        return;
-      }
-
-      chatStore.addChat(chatData);
-
-      const isActiveChatForUser =
-        (chatData as any)._active &&
-        chatData.user?.id === chatStore.user?.user_id;
-
-      if (isActiveChatForUser) {
-        await handleActiveChatSwitch(chatData);
-      }
-    };
-
-    await onMessage(
-      chatAccountCentrifugo(accountId),
-      async (data: IChatMessage | IChatTyping | IChat | any) => {
-        if ('type' in data && data.type === 'typing') {
-          handleTypingEvent(data as IChatTyping);
-          return;
-        }
-
-        if ('message_id' in data) {
-          handleMessageEvent(data as IChatMessage);
-          return;
-        }
-
-        if ('chat_id' in data && !('message_id' in data)) {
-          await handleChatUpdateEvent(data as IChat);
-        }
-      }
-    );
-
-    await onMessage(chatQueueAccountCentrifugo(accountId), (data: IChat) => {
-      if (!canReceiveChatNotification(data)) {
-        return;
-      }
-
-      chatStore.addChat(data);
-
-      if (
-        chatStore.user?.account_id &&
-        chatStore.activeChat?.chat_id === data.chat_id &&
-        data.status === EChatStatus.in_chat
-      ) {
-        debouncedClearChatSummary(data.chat_id);
-      }
-    });
-
-    globalThis.addEventListener('focus-composer', focusComposer);
-    globalThis.addEventListener(
-      'scroll-to-message',
-      onScrollToMessageEvt as EventListener
-    );
-    globalThis.addEventListener(
-      'retry-message',
-      onRetryMessage as EventListener
-    );
-    globalThis.addEventListener(
-      'open-add-contact-modal',
-      onOpenAddContactModal as EventListener
-    );
-    globalThis.addEventListener(
-      'open-edit-contact-modal',
-      onOpenEditContactModal as EventListener
-    );
+const handleGlobalMessage = (e: Event) => {
+  const messageData = (e as CustomEvent<IChatMessage>).detail;
+  if (chatStore.activeChat?.chat_id !== messageData.chat_id) {
+    return;
   }
+
+  handleTypingEvent(messageData);
+
+  const changeType = chatStore.addMessageActiveChat(messageData);
+
+  if (changeType === 'created') {
+    nextTick(async () => {
+      await scrollToBottomInChatLog();
+    });
+    globalThis.dispatchEvent(new CustomEvent('focus-composer'));
+  }
+};
+
+const handleGlobalTyping = (e: Event) => {
+  const typingData = (e as CustomEvent<IChatTyping>).detail;
+  handleTypingEvent(typingData);
+};
+
+const handleGlobalChatUpdate = async (e: Event) => {
+  const chatData = (e as CustomEvent<IChat>).detail;
+  const permissions = getPermissions();
+  const canListAllChatsWithoutSectorLimit = permissions.some(
+    (perm: EPermissionsRoles) =>
+      perm === EGeneralPermissions.full_access ||
+      perm === EGeneralPermissions.full_access_group ||
+      perm === EChatPermissions.chat_group ||
+      perm === EChatPermissions.list_all_chats_without_sector_limit
+  );
+
+  const userSectors: string[] = canListAllChatsWithoutSectorLimit
+    ? []
+    : getSectors();
+
+  const canReceiveChatNotification = (chat: IChat): boolean => {
+    if (canListAllChatsWithoutSectorLimit) {
+      return true;
+    }
+
+    const chatExistsInList =
+      chatStore.listQueue.some((c) => c.chat_id === chat.chat_id) ||
+      chatStore.listInChat.some((c) => c.chat_id === chat.chat_id);
+
+    if (chatExistsInList) {
+      return true;
+    }
+
+    if (chat.user?.id === chatStore.user?.user_id) {
+      return true;
+    }
+
+    if (
+      chat.status === EChatStatus.queue &&
+      !chat.sector?.id &&
+      !chat.user?.id
+    ) {
+      return true;
+    }
+
+    if (userSectors.length === 0) {
+      return !chat.sector?.id;
+    }
+
+    if (!chat.sector?.id) {
+      return false;
+    }
+
+    return userSectors.includes(chat.sector.id);
+  };
+
+  if (!canReceiveChatNotification(chatData)) {
+    return;
+  }
+
+  chatStore.addChat(chatData);
+
+  const isActiveChatForUser =
+    (chatData as any)._active && chatData.user?.id === chatStore.user?.user_id;
+
+  if (isActiveChatForUser) {
+    const previousActiveChatId = chatStore.activeChat?.chat_id;
+
+    if (previousActiveChatId !== chatData.chat_id) {
+      chatStore.listMessages = [];
+      chatStore.currentPage = 1;
+      chatStore.totalPages = 1;
+      currentPage.value = 1;
+    }
+
+    chatStore.setActiveChat(chatData.chat_id);
+
+    if (chatStore.activeChat?.chat_id === chatData.chat_id) {
+      const requestQueue: ListMessageChatsQuery = {
+        current_page: 1,
+        per_page: perPage.value,
+      };
+      await chatStore.getChatById(requestQueue);
+
+      await nextTick();
+      requestAnimationFrame(() => {
+        scrollToBottomInChatLog();
+      });
+    }
+  }
+};
+
+const handleGlobalQueueUpdate = (e: Event) => {
+  const chatData = (e as CustomEvent<IChat>).detail;
+  if (
+    chatStore.user?.account_id &&
+    chatStore.activeChat?.chat_id === chatData.chat_id &&
+    chatData.status === EChatStatus.in_chat
+  ) {
+    debouncedClearChatSummary(chatData.chat_id);
+  }
+};
+
+onMounted(async () => {
+  await chatSocket.refreshActiveChat();
+
+  globalThis.addEventListener('chat-message', handleGlobalMessage);
+  globalThis.addEventListener('chat-typing', handleGlobalTyping);
+  globalThis.addEventListener('chat-update', handleGlobalChatUpdate);
+  globalThis.addEventListener('chat-queue-update', handleGlobalQueueUpdate);
+
+  globalThis.addEventListener('focus-composer', focusComposer);
+  globalThis.addEventListener(
+    'scroll-to-message',
+    onScrollToMessageEvt as EventListener
+  );
+  globalThis.addEventListener('retry-message', onRetryMessage as EventListener);
+  globalThis.addEventListener(
+    'open-add-contact-modal',
+    onOpenAddContactModal as EventListener
+  );
+  globalThis.addEventListener(
+    'open-edit-contact-modal',
+    onOpenEditContactModal as EventListener
+  );
 
   const handleResize = () => {
     requestAnimationFrame(() => {
@@ -3968,29 +3962,28 @@ onUnmounted(async () => {
   clearTypingTimeout();
   isTyping.value = false;
 
-  if (chatStore.user?.account_id) {
-    const accountId = chatStore.user.account_id;
-    await unsubscribe(chatAccountCentrifugo(accountId));
-    await unsubscribe(chatQueueAccountCentrifugo(accountId));
+  globalThis.removeEventListener('chat-message', handleGlobalMessage);
+  globalThis.removeEventListener('chat-typing', handleGlobalTyping);
+  globalThis.removeEventListener('chat-update', handleGlobalChatUpdate);
+  globalThis.removeEventListener('chat-queue-update', handleGlobalQueueUpdate);
 
-    globalThis.removeEventListener('focus-composer', focusComposer);
-    globalThis.removeEventListener(
-      'scroll-to-message',
-      onScrollToMessageEvt as EventListener
-    );
-    globalThis.removeEventListener(
-      'retry-message',
-      onRetryMessage as EventListener
-    );
-    globalThis.removeEventListener(
-      'open-add-contact-modal',
-      onOpenAddContactModal as EventListener
-    );
-    globalThis.removeEventListener(
-      'open-edit-contact-modal',
-      onOpenEditContactModal as EventListener
-    );
-  }
+  globalThis.removeEventListener('focus-composer', focusComposer);
+  globalThis.removeEventListener(
+    'scroll-to-message',
+    onScrollToMessageEvt as EventListener
+  );
+  globalThis.removeEventListener(
+    'retry-message',
+    onRetryMessage as EventListener
+  );
+  globalThis.removeEventListener(
+    'open-add-contact-modal',
+    onOpenAddContactModal as EventListener
+  );
+  globalThis.removeEventListener(
+    'open-edit-contact-modal',
+    onOpenEditContactModal as EventListener
+  );
 
   if (resizeHandler.value) {
     window.removeEventListener('resize', resizeHandler.value);
