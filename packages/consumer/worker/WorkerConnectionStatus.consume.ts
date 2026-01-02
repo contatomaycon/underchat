@@ -173,7 +173,7 @@ export class WorkerConnectionStatusConsume {
   }
 
   private async handleDisponible(): Promise<void> {
-    this.baileysService.disconnect({
+    await this.baileysService.disconnect({
       initial_connection: true,
       disconnected_user: true,
     });

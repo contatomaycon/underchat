@@ -22,8 +22,8 @@ export class BaileysService {
     return this.connection.reconnect(input);
   }
 
-  disconnect(input: IBaileysConnection): void {
-    this.connection.disconnect(input);
+  disconnect(input: IBaileysConnection): Promise<void> {
+    return this.connection.disconnect(input);
   }
 
   isConnected(): boolean {

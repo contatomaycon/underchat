@@ -218,7 +218,7 @@ export class BaileysConnectionService {
     return this.currentPromise;
   }
 
-  disconnect(input: IBaileysConnection): void {
+  async disconnect(input: IBaileysConnection): Promise<void> {
     const {
       initial_connection: initialConnection = false,
       disconnected_user: disconnectedUser = false,
@@ -227,8 +227,8 @@ export class BaileysConnectionService {
     this.initialConnection = initialConnection;
     this.connectionEstablished = false;
 
-    this.cancelAttempt();
-    this.safeLogout(true);
+    await this.safeLogout(true);
+    this.cancelAttempt(false);
     this.clearFolder();
 
     this.saveLogWppConnection({
@@ -634,9 +634,12 @@ export class BaileysConnectionService {
     }
   }
 
-  private safeLogout(forceLogout = false): void {
+  private async safeLogout(forceLogout = false): Promise<void> {
     if (forceLogout && this.socket?.user) {
-      void this.socket.logout().catch(() => {
+      try {
+        await this.socket.logout();
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      } catch {
         this.saveLogWppConnection({
           worker_id: WORKER,
           status: Status.disconnected,
@@ -644,7 +647,11 @@ export class BaileysConnectionService {
           message: 'Error during logout',
           date: new Date(),
         });
-      });
+      }
+
+      this.socket = undefined;
+      this.setStatus(Status.disconnected, ECodeMessage.loggedOut);
+      return;
     }
 
     try {
@@ -680,7 +687,7 @@ export class BaileysConnectionService {
     this.setStatus(Status.disconnected, ECodeMessage.loggedOut);
   }
 
-  private cancelAttempt() {
+  private cancelAttempt(skipWebSocketClose = false) {
     try {
       this.socket?.ev.removeAllListeners('connection.update');
     } catch {
@@ -694,33 +701,36 @@ export class BaileysConnectionService {
     }
 
     this.baileysIncomingMessageService.unbind();
-    try {
-      const ws = this.resolveWebSocket();
-      if (!ws) {
-        this.socket = undefined;
 
-        return;
+    if (!skipWebSocketClose) {
+      try {
+        const ws = this.resolveWebSocket();
+        if (!ws) {
+          this.socket = undefined;
+
+          return;
+        }
+
+        const readyState = ws.readyState;
+        if (readyState === 1) {
+          ws.close(1000, 'reconnect');
+
+          return;
+        }
+
+        const isConnectingOrClosing = readyState === 0 || readyState === 2;
+        if (isConnectingOrClosing) {
+          ws.terminate?.();
+        }
+      } catch {
+        this.saveLogWppConnection({
+          worker_id: WORKER,
+          status: Status.disconnected,
+          code: ECodeMessage.connectionLost,
+          message: 'Error closing websocket during cancel attempt',
+          date: new Date(),
+        });
       }
-
-      const readyState = ws.readyState;
-      if (readyState === 1) {
-        ws.close(1000, 'reconnect');
-
-        return;
-      }
-
-      const isConnectingOrClosing = readyState === 0 || readyState === 2;
-      if (isConnectingOrClosing) {
-        ws.terminate?.();
-      }
-    } catch {
-      this.saveLogWppConnection({
-        worker_id: WORKER,
-        status: Status.disconnected,
-        code: ECodeMessage.connectionLost,
-        message: 'Error closing websocket during cancel attempt',
-        date: new Date(),
-      });
     }
 
     this.pendingResolve?.(this.state());
@@ -730,7 +740,10 @@ export class BaileysConnectionService {
     this.connecting = false;
     this.awaitingNewLogin = false;
     this.connectionEstablished = false;
-    this.socket = undefined;
+
+    if (!skipWebSocketClose) {
+      this.socket = undefined;
+    }
   }
 
   private reportConnected(): IBaileysConnectionState {
