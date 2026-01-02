@@ -194,7 +194,7 @@ export const useChatNotifications = () => {
       body,
       icon,
       badge: icon,
-      tag: `chat-${message.chat_id}`,
+      tag: `chat-${message.chat_id}-${message.message_id}`,
       requireInteraction: false,
     });
 
