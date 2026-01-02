@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n';
 import { useChatStore } from '@/@webcore/stores/chat';
 import type { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import { EMessageType } from '@core/common/enums/EMessageType';
+import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { extractMessageTextFromContent } from '@core/common/functions/extractMessageTextFromContent';
 
 const MAX_LINE_LENGTH = 70;
@@ -96,6 +97,18 @@ function getSenderName(
   return t('unknown');
 }
 
+function getChatFromStore(
+  message: IChatMessage,
+  chatStore: ReturnType<typeof useChatStore>
+) {
+  return (
+    chatStore.listQueue.find((c) => c.chat_id === message.chat_id) ||
+    chatStore.listInChat.find((c) => c.chat_id === message.chat_id) ||
+    chatStore.listChatbot.find((c) => c.chat_id === message.chat_id) ||
+    null
+  );
+}
+
 function getSenderIcon(
   message: IChatMessage,
   chatStore: ReturnType<typeof useChatStore>
@@ -104,10 +117,7 @@ function getSenderIcon(
     return message.user.photo;
   }
 
-  const chat =
-    chatStore.listQueue.find((c) => c.chat_id === message.chat_id) ||
-    chatStore.listInChat.find((c) => c.chat_id === message.chat_id) ||
-    chatStore.listChatbot.find((c) => c.chat_id === message.chat_id);
+  const chat = getChatFromStore(message, chatStore);
 
   if (chat?.contact?.photo) {
     return chat.contact.photo;
@@ -118,6 +128,22 @@ function getSenderIcon(
   }
 
   return '/images/svg/avatar-default.svg';
+}
+
+async function preloadImage(url: string): Promise<string> {
+  return new Promise((resolve) => {
+    if (!url || url.startsWith('data:')) {
+      resolve(url);
+      return;
+    }
+
+    const img = new Image();
+    img.onload = () => resolve(url);
+    img.onerror = () => resolve(url);
+    img.src = url;
+
+    setTimeout(() => resolve(url), 2000);
+  });
 }
 
 export const useChatNotifications = () => {
@@ -147,7 +173,7 @@ export const useChatNotifications = () => {
     return false;
   }
 
-  function showNotification(message: IChatMessage): void {
+  async function showNotification(message: IChatMessage): Promise<void> {
     if (!('Notification' in window)) {
       return;
     }
@@ -159,7 +185,9 @@ export const useChatNotifications = () => {
     const title = getSenderName(message, t);
     const preview = getMessagePreview(message, t);
     const body = formatNotificationBody(preview);
-    const icon = getSenderIcon(message, chatStore);
+    const iconUrl = getSenderIcon(message, chatStore);
+
+    const icon = await preloadImage(iconUrl);
 
     const notification = new Notification(title, {
       body,
@@ -198,11 +226,17 @@ export const useChatNotifications = () => {
       return;
     }
 
+    const chat = getChatFromStore(message, chatStore);
+
+    if (!chat || chat.status !== EChatStatus.in_chat) {
+      return;
+    }
+
     playAlertSound();
 
     const hasPermission = await requestNotificationPermission();
     if (hasPermission) {
-      showNotification(message);
+      await showNotification(message);
     }
   }
 
