@@ -22,6 +22,8 @@ export const workerConfig = pgTable('worker_config', {
   generate_protocol_at_start: varchar({ length: 2000 }),
   generate_protocol_at_transfer: varchar({ length: 2000 }),
   show_message_on_call: varchar({ length: 2000 }),
+  send_message_on_finish_attendance: varchar({ length: 2000 }),
+  reject_call: boolean().default(false),
   auto_save_contacts: boolean().default(false),
   chatbot_id: uuid().references(() => chatbot.chatbot_id),
   created_at: timestamp({

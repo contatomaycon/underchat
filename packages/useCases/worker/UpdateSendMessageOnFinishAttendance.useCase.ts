@@ -1,0 +1,40 @@
+import { injectable } from 'tsyringe';
+import { TFunction } from 'i18next';
+import { WorkerConfigService } from '@core/services/workerConfig.service';
+import { WorkerService } from '@core/services/worker.service';
+import { UpdateSendMessageOnFinishAttendanceRequest } from '@core/schema/worker/updateSendMessageOnFinishAttendance/request.schema';
+
+@injectable()
+export class UpdateSendMessageOnFinishAttendanceUseCase {
+  constructor(
+    private readonly workerConfigService: WorkerConfigService,
+    private readonly workerService: WorkerService
+  ) {}
+
+  async execute(
+    t: TFunction<'translation', undefined>,
+    accountId: string,
+    workerId: string,
+    body: UpdateSendMessageOnFinishAttendanceRequest
+  ): Promise<{ send_message_on_finish_attendance: string | null }> {
+    const existsWorkerById = await this.workerService.existsWorkerById(
+      accountId,
+      workerId
+    );
+
+    if (!existsWorkerById) {
+      throw new Error(t('worker_not_found'));
+    }
+
+    const text = body.text?.trim() || null;
+    const result =
+      await this.workerConfigService.updateSendMessageOnFinishAttendance(
+        workerId,
+        text
+      );
+
+    return {
+      send_message_on_finish_attendance: result,
+    };
+  }
+}

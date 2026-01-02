@@ -1256,6 +1256,78 @@ export const useChannelsStore = defineStore('channels', {
       }
     },
 
+    async fetchSendMessageOnFinishAttendance(
+      workerId: string
+    ): Promise<string | null> {
+      if (!workerId) return null;
+
+      try {
+        const response = await axios.get<
+          IApiResponse<{
+            send_message_on_finish_attendance: string | null;
+          }>
+        >(`/worker/${workerId}/config/send-message-on-finish-attendance`);
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        return data.data.send_message_on_finish_attendance;
+      } catch {
+        return null;
+      }
+    },
+
+    async updateSendMessageOnFinishAttendance(
+      workerId: string,
+      text: string | null
+    ): Promise<string | null> {
+      if (!workerId) return null;
+
+      try {
+        const response = await axios.patch<
+          IApiResponse<{ send_message_on_finish_attendance: string | null }>
+        >(`/worker/${workerId}/config/send-message-on-finish-attendance`, {
+          text: text || null,
+        });
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const message =
+            data?.message ??
+            this.i18n.global.t(
+              'send_message_on_finish_attendance_update_error'
+            );
+          this.showSnackbar(message, EColor.error);
+
+          return null;
+        }
+
+        this.showSnackbar(
+          this.i18n.global.t(
+            'send_message_on_finish_attendance_update_success'
+          ),
+          EColor.success
+        );
+
+        return data.data.send_message_on_finish_attendance;
+      } catch (error) {
+        let message = this.i18n.global.t(
+          'send_message_on_finish_attendance_update_error'
+        );
+        if (error instanceof AxiosError) {
+          message = error?.response?.data?.message ?? message;
+        }
+
+        this.showSnackbar(message, EColor.error);
+
+        return null;
+      }
+    },
+
     updateStatusChannel(input: IBaileysConnectionState): void {
       const index = this.list.findIndex(
         (c) => c.account?.id === input.account_id && c.id === input.worker_id

@@ -24,6 +24,9 @@ export class WorkerConfigFieldsViewerRepository {
         generate_protocol_at_transfer:
           workerConfig.generate_protocol_at_transfer,
         show_message_on_call: workerConfig.show_message_on_call,
+        send_message_on_finish_attendance:
+          workerConfig.send_message_on_finish_attendance,
+        reject_call: workerConfig.reject_call,
         auto_save_contacts: workerConfig.auto_save_contacts,
         simultaneous_attendance: workerConfig.simultaneous_attendance,
       })
@@ -32,6 +35,6 @@ export class WorkerConfigFieldsViewerRepository {
       .limit(1)
       .execute();
 
-    return result[0] || null;
+    return (result[0] as IWorkerConfigFields) || null;
   };
 }

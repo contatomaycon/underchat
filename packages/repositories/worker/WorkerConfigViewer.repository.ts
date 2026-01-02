@@ -26,6 +26,9 @@ export class WorkerConfigViewerRepository {
         generate_protocol_at_transfer:
           workerConfig.generate_protocol_at_transfer,
         show_message_on_call: workerConfig.show_message_on_call,
+        send_message_on_finish_attendance:
+          workerConfig.send_message_on_finish_attendance,
+        reject_call: workerConfig.reject_call,
         auto_save_contacts: workerConfig.auto_save_contacts,
         chatbot_id: workerConfig.chatbot_id,
         created_at: workerConfig.created_at,

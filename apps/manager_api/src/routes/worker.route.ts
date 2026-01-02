@@ -35,6 +35,8 @@ import { updateSimultaneousAttendanceSchema } from '@core/schema/worker/updateSi
 import { viewSimultaneousAttendanceSchema } from '@core/schema/worker/viewSimultaneousAttendance';
 import { updateShowMessageOnCallSchema } from '@core/schema/worker/updateShowMessageOnCall';
 import { viewShowMessageOnCallSchema } from '@core/schema/worker/viewShowMessageOnCall';
+import { updateSendMessageOnFinishAttendanceSchema } from '@core/schema/worker/updateSendMessageOnFinishAttendance';
+import { viewSendMessageOnFinishAttendanceSchema } from '@core/schema/worker/viewSendMessageOnFinishAttendance';
 import { updateChatbotSchema } from '@core/schema/worker/updateChatbot';
 import { viewChatbotSchema } from '@core/schema/worker/viewChatbot';
 import { planGuard } from '@/plugins/planGuard';
@@ -299,6 +301,28 @@ export default function workerRoutes(server: FastifyInstance) {
   server.patch('/worker/:worker_id/config/show-message-on-call', {
     schema: updateShowMessageOnCallSchema,
     handler: workerController.updateShowMessageOnCall,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, workerEditPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.get('/worker/:worker_id/config/send-message-on-finish-attendance', {
+    schema: viewSendMessageOnFinishAttendanceSchema,
+    handler: workerController.viewSendMessageOnFinishAttendance,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, workerViewPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.patch('/worker/:worker_id/config/send-message-on-finish-attendance', {
+    schema: updateSendMessageOnFinishAttendanceSchema,
+    handler: workerController.updateSendMessageOnFinishAttendance,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, workerEditPermissions),

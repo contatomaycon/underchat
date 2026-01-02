@@ -104,6 +104,10 @@ export class WorkerConfigUpserterRepository {
         input.allow_attendance_only_online;
     }
 
+    if (input.reject_call !== undefined) {
+      updateData.reject_call = input.reject_call;
+    }
+
     if (input.auto_save_contacts !== undefined) {
       updateData.auto_save_contacts = input.auto_save_contacts;
     }
@@ -152,6 +156,7 @@ export class WorkerConfigUpserterRepository {
         show_worker_name: input.show_worker_name ?? false,
         allow_attendance_only_online:
           input.allow_attendance_only_online ?? false,
+        reject_call: input.reject_call ?? false,
         auto_save_contacts: input.auto_save_contacts ?? false,
       })
       .execute();
@@ -464,6 +469,85 @@ export class WorkerConfigUpserterRepository {
       .execute();
 
     return result[0]?.show_message_on_call || null;
+  }
+
+  updateSendMessageOnFinishAttendance = async (
+    workerId: string,
+    text: string | null
+  ): Promise<string | null> => {
+    await this.dbRw.transaction(async (tx) => {
+      await this.ensureSingleConfigPerWorker(tx, workerId);
+
+      const existingConfig = await this.findExistingConfigTx(tx, workerId);
+
+      if (existingConfig) {
+        await this.updateSendMessageOnFinishAttendanceTx(tx, workerId, text);
+        return;
+      }
+
+      await this.createSendMessageOnFinishAttendanceTx(tx, workerId, text);
+    });
+
+    return this.getSendMessageOnFinishAttendance(workerId);
+  };
+
+  private async updateSendMessageOnFinishAttendanceTx(
+    tx: PgTransaction<
+      NodePgQueryResultHKT,
+      typeof schema,
+      ExtractTablesWithRelations<typeof schema>
+    >,
+    workerId: string,
+    text: string | null
+  ): Promise<void> {
+    await tx
+      .update(workerConfig)
+      .set({
+        send_message_on_finish_attendance: text || null,
+        updated_at: new Date().toISOString(),
+      })
+      .where(eq(workerConfig.worker_id, workerId))
+      .execute();
+  }
+
+  private async createSendMessageOnFinishAttendanceTx(
+    tx: PgTransaction<
+      NodePgQueryResultHKT,
+      typeof schema,
+      ExtractTablesWithRelations<typeof schema>
+    >,
+    workerId: string,
+    text: string | null
+  ): Promise<void> {
+    await tx
+      .insert(workerConfig)
+      .values({
+        worker_config_id: uuidv7(),
+        worker_id: workerId,
+        is_automatic_attendance: false,
+        show_attendee_name: false,
+        show_worker_name: false,
+        allow_attendance_only_online: false,
+        auto_save_contacts: false,
+        send_message_on_finish_attendance: text || null,
+      })
+      .execute();
+  }
+
+  private async getSendMessageOnFinishAttendance(
+    workerId: string
+  ): Promise<string | null> {
+    const result = await this.dbRo
+      .select({
+        send_message_on_finish_attendance:
+          workerConfig.send_message_on_finish_attendance,
+      })
+      .from(workerConfig)
+      .where(eq(workerConfig.worker_id, workerId))
+      .limit(1)
+      .execute();
+
+    return result[0]?.send_message_on_finish_attendance || null;
   }
 
   updateChatbot = async (

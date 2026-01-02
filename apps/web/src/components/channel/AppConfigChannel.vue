@@ -196,6 +196,8 @@ type WorkerConfigForm = {
   generate_protocol_at_start: boolean;
   generate_protocol_at_transfer: boolean;
   show_message_on_call: boolean;
+  send_message_on_finish_attendance: boolean;
+  reject_call: boolean;
   auto_save_contacts: boolean;
   chatbot: boolean;
 };
@@ -209,6 +211,8 @@ const createDefaultWorkerConfig = (): WorkerConfigForm => ({
   generate_protocol_at_start: false,
   generate_protocol_at_transfer: false,
   show_message_on_call: false,
+  send_message_on_finish_attendance: false,
+  reject_call: false,
   auto_save_contacts: false,
   chatbot: false,
 });
@@ -234,6 +238,10 @@ const simultaneousAttendanceInput = ref<string>('');
 const showMessageOnCallText = ref<string>('');
 const showMessageOnCallModalOpen = ref(false);
 const isSavingShowMessageOnCall = ref(false);
+const showMessageOnCallRejectCall = ref<boolean>(false);
+const sendMessageOnFinishAttendanceText = ref<string>('');
+const sendMessageOnFinishAttendanceModalOpen = ref(false);
+const isSavingSendMessageOnFinishAttendance = ref(false);
 const chatbotId = ref<string | null>(null);
 const chatbotModalOpen = ref(false);
 const isSavingChatbot = ref(false);
@@ -412,6 +420,10 @@ const applyWorkerConfig = (config?: ViewWorkerConfigResponse | null) => {
       config.generate_protocol_at_transfer
     );
     nextState.show_message_on_call = Boolean(config.show_message_on_call);
+    nextState.send_message_on_finish_attendance = Boolean(
+      config.send_message_on_finish_attendance
+    );
+    nextState.reject_call = config.reject_call ?? false;
     nextState.auto_save_contacts = config.auto_save_contacts;
   }
 
@@ -439,12 +451,14 @@ const loadWorkerConfig = async (force = false) => {
       protocolStartText,
       simultaneousAttendanceValue,
       showMessageOnCallValue,
+      sendMessageOnFinishAttendanceValue,
       chatbotValue,
     ] = await Promise.all([
       channelStore.fetchTransferProtocolText(channelId.value),
       channelStore.fetchStartProtocolText(channelId.value),
       channelStore.fetchSimultaneousAttendance(channelId.value),
       channelStore.fetchShowMessageOnCall(channelId.value),
+      channelStore.fetchSendMessageOnFinishAttendance(channelId.value),
       channelStore.fetchChatbot(channelId.value),
     ]);
 
@@ -476,6 +490,15 @@ const loadWorkerConfig = async (force = false) => {
       ? showMessageOnCallValue
       : '';
     workerConfigForm.show_message_on_call = hasShowMessageOnCall;
+
+    const hasSendMessageOnFinishAttendance =
+      sendMessageOnFinishAttendanceValue !== null &&
+      sendMessageOnFinishAttendanceValue.trim().length > 0;
+    sendMessageOnFinishAttendanceText.value = hasSendMessageOnFinishAttendance
+      ? sendMessageOnFinishAttendanceValue
+      : '';
+    workerConfigForm.send_message_on_finish_attendance =
+      hasSendMessageOnFinishAttendance;
 
     chatbotId.value = chatbotValue;
     workerConfigForm.chatbot = chatbotValue !== null && chatbotValue !== '';
@@ -684,10 +707,12 @@ const deleteSimultaneousAttendance = async () => {
 const openShowMessageOnCallModal = async () => {
   if (!channelId.value) return;
 
-  const messageText = await channelStore.fetchShowMessageOnCall(
-    channelId.value
-  );
+  const [messageText, config] = await Promise.all([
+    channelStore.fetchShowMessageOnCall(channelId.value),
+    channelStore.fetchWorkerConfig(channelId.value, false),
+  ]);
   showMessageOnCallText.value = messageText || '';
+  showMessageOnCallRejectCall.value = config?.reject_call ?? false;
   showMessageOnCallModalOpen.value = true;
 };
 
@@ -701,13 +726,16 @@ const saveShowMessageOnCallText = async () => {
   try {
     isSavingShowMessageOnCall.value = true;
     const text = showMessageOnCallText.value.trim() || null;
-    const result = await channelStore.updateShowMessageOnCall(
-      channelId.value,
-      text
-    );
+    const [result] = await Promise.all([
+      channelStore.updateShowMessageOnCall(channelId.value, text),
+      channelStore.updateWorkerConfig(channelId.value, {
+        reject_call: showMessageOnCallRejectCall.value,
+      }),
+    ]);
 
     const hasText = result !== null && result.trim().length > 0;
     workerConfigForm.show_message_on_call = hasText;
+    workerConfigForm.reject_call = showMessageOnCallRejectCall.value;
     showMessageOnCallText.value = result || '';
 
     closeShowMessageOnCallModal();
@@ -721,13 +749,73 @@ const deleteShowMessageOnCallText = async () => {
 
   try {
     isSavingShowMessageOnCall.value = true;
-    await channelStore.updateShowMessageOnCall(channelId.value, null);
+    await Promise.all([
+      channelStore.updateShowMessageOnCall(channelId.value, null),
+      channelStore.updateWorkerConfig(channelId.value, {
+        reject_call: false,
+      }),
+    ]);
 
     workerConfigForm.show_message_on_call = false;
+    workerConfigForm.reject_call = false;
     showMessageOnCallText.value = '';
+    showMessageOnCallRejectCall.value = false;
     closeShowMessageOnCallModal();
   } finally {
     isSavingShowMessageOnCall.value = false;
+  }
+};
+
+const openSendMessageOnFinishAttendanceModal = async () => {
+  if (!channelId.value) return;
+
+  const messageText = await channelStore.fetchSendMessageOnFinishAttendance(
+    channelId.value
+  );
+  sendMessageOnFinishAttendanceText.value = messageText || '';
+  sendMessageOnFinishAttendanceModalOpen.value = true;
+};
+
+const closeSendMessageOnFinishAttendanceModal = () => {
+  sendMessageOnFinishAttendanceModalOpen.value = false;
+};
+
+const saveSendMessageOnFinishAttendanceText = async () => {
+  if (!channelId.value) return;
+
+  try {
+    isSavingSendMessageOnFinishAttendance.value = true;
+    const text = sendMessageOnFinishAttendanceText.value.trim() || null;
+    const result = await channelStore.updateSendMessageOnFinishAttendance(
+      channelId.value,
+      text
+    );
+
+    const hasText = result !== null && result.trim().length > 0;
+    workerConfigForm.send_message_on_finish_attendance = hasText;
+    sendMessageOnFinishAttendanceText.value = result || '';
+
+    closeSendMessageOnFinishAttendanceModal();
+  } finally {
+    isSavingSendMessageOnFinishAttendance.value = false;
+  }
+};
+
+const deleteSendMessageOnFinishAttendanceText = async () => {
+  if (!channelId.value) return;
+
+  try {
+    isSavingSendMessageOnFinishAttendance.value = true;
+    await channelStore.updateSendMessageOnFinishAttendance(
+      channelId.value,
+      null
+    );
+
+    workerConfigForm.send_message_on_finish_attendance = false;
+    sendMessageOnFinishAttendanceText.value = '';
+    closeSendMessageOnFinishAttendanceModal();
+  } finally {
+    isSavingSendMessageOnFinishAttendance.value = false;
   }
 };
 
@@ -830,6 +918,13 @@ const workerConfigOptions = computed(() => [
     key: 'show_message_on_call' as WorkerConfigField,
     title: t('channel_general_config_show_message_on_call_title'),
     description: t('channel_general_config_show_message_on_call_description'),
+  },
+  {
+    key: 'send_message_on_finish_attendance' as WorkerConfigField,
+    title: t('channel_general_config_send_message_on_finish_attendance_title'),
+    description: t(
+      'channel_general_config_send_message_on_finish_attendance_description'
+    ),
   },
   {
     key: 'auto_save_contacts' as WorkerConfigField,
@@ -2061,6 +2156,7 @@ onMounted(async () => {
                           option.key !== 'generate_protocol_at_start' &&
                           option.key !== 'simultaneous_attendance' &&
                           option.key !== 'show_message_on_call' &&
+                          option.key !== 'send_message_on_finish_attendance' &&
                           option.key !== 'chatbot'
                         "
                         :model-value="workerConfigForm[option.key]"
@@ -2117,6 +2213,22 @@ onMounted(async () => {
                           isSavingWorkerConfig || isSavingShowMessageOnCall
                         "
                         @click.stop.prevent="openShowMessageOnCallModal"
+                      />
+                      <VCheckbox
+                        v-else-if="
+                          option.key === 'send_message_on_finish_attendance'
+                        "
+                        :model-value="workerConfigForm[option.key]"
+                        :label="option.title"
+                        color="primary"
+                        hide-details
+                        :disabled="
+                          isSavingWorkerConfig ||
+                          isSavingSendMessageOnFinishAttendance
+                        "
+                        @click.stop.prevent="
+                          openSendMessageOnFinishAttendanceModal
+                        "
                       />
                       <VCheckbox
                         v-else-if="option.key === 'chatbot'"
@@ -3133,6 +3245,23 @@ onMounted(async () => {
         <div class="text-caption text-medium-emphasis mt-2">
           {{ $t('show_message_on_call_text_hint') }}
         </div>
+        <VDivider class="my-4" />
+        <div class="d-flex flex-column" style="gap: 4px">
+          <VCheckbox
+            v-model="showMessageOnCallRejectCall"
+            :label="$t('channel_general_config_reject_call_title')"
+            color="primary"
+            hide-details
+            :disabled="isSavingShowMessageOnCall"
+            class="mb-0"
+          />
+          <p
+            class="text-body-2 text-medium-emphasis mb-0"
+            style="padding-left: 36px; margin-top: -4px"
+          >
+            {{ $t('channel_general_config_reject_call_description') }}
+          </p>
+        </div>
       </VCardText>
       <VCardText class="d-flex justify-end flex-wrap gap-3">
         <VBtn
@@ -3157,6 +3286,68 @@ onMounted(async () => {
           :loading="isSavingShowMessageOnCall"
           :disabled="isSavingShowMessageOnCall"
           @click="saveShowMessageOnCallText"
+        >
+          {{ $t('save') }}
+        </VBtn>
+      </VCardText>
+    </VCard>
+  </VDialog>
+
+  <VDialog
+    v-model="sendMessageOnFinishAttendanceModalOpen"
+    max-width="600"
+    persistent
+  >
+    <VCard>
+      <VCardTitle class="d-flex justify-space-between align-center">
+        <span>{{
+          $t('channel_general_config_send_message_on_finish_attendance_title')
+        }}</span>
+        <IconBtn @click="closeSendMessageOnFinishAttendanceModal">
+          <VIcon icon="tabler-x" />
+        </IconBtn>
+      </VCardTitle>
+      <VCardText>
+        <VLabel class="text-body-2 mb-1"
+          >{{ $t('send_message_on_finish_attendance_text_label') }}:</VLabel
+        >
+        <VTextarea
+          v-model="sendMessageOnFinishAttendanceText"
+          :placeholder="
+            $t('send_message_on_finish_attendance_text_placeholder')
+          "
+          :maxlength="2000"
+          rows="8"
+          counter
+          auto-grow
+        />
+        <div class="text-caption text-medium-emphasis mt-2">
+          {{ $t('send_message_on_finish_attendance_text_hint') }}
+        </div>
+      </VCardText>
+      <VCardText class="d-flex justify-end flex-wrap gap-3">
+        <VBtn
+          variant="tonal"
+          color="secondary"
+          :disabled="isSavingSendMessageOnFinishAttendance"
+          @click="closeSendMessageOnFinishAttendanceModal"
+        >
+          {{ $t('close') }}
+        </VBtn>
+        <VBtn
+          color="error"
+          variant="tonal"
+          :loading="isSavingSendMessageOnFinishAttendance"
+          :disabled="isSavingSendMessageOnFinishAttendance"
+          @click="deleteSendMessageOnFinishAttendanceText"
+        >
+          {{ $t('delete') }}
+        </VBtn>
+        <VBtn
+          color="primary"
+          :loading="isSavingSendMessageOnFinishAttendance"
+          :disabled="isSavingSendMessageOnFinishAttendance"
+          @click="saveSendMessageOnFinishAttendanceText"
         >
           {{ $t('save') }}
         </VBtn>

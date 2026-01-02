@@ -11,6 +11,8 @@ export const workerConfigSchema = Type.Object({
   generate_protocol_at_start: Type.Union([Type.String(), Type.Null()]),
   generate_protocol_at_transfer: Type.Union([Type.String(), Type.Null()]),
   show_message_on_call: Type.Union([Type.String(), Type.Null()]),
+  send_message_on_finish_attendance: Type.Union([Type.String(), Type.Null()]),
+  reject_call: Type.Boolean(),
   auto_save_contacts: Type.Boolean(),
   chatbot_id: Type.Union([Type.String(), Type.Null()]),
   created_at: Type.Union([Type.String(), Type.Null()]),

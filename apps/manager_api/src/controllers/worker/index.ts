@@ -23,6 +23,8 @@ import { updateSimultaneousAttendance } from './methods/updateSimultaneousAttend
 import { viewSimultaneousAttendance } from './methods/viewSimultaneousAttendance';
 import { updateShowMessageOnCall } from './methods/updateShowMessageOnCall';
 import { viewShowMessageOnCall } from './methods/viewShowMessageOnCall';
+import { updateSendMessageOnFinishAttendance } from './methods/updateSendMessageOnFinishAttendance';
+import { viewSendMessageOnFinishAttendance } from './methods/viewSendMessageOnFinishAttendance';
 import { updateChatbot } from './methods/updateChatbot';
 import { viewChatbot } from './methods/viewChatbot';
 
@@ -52,6 +54,9 @@ class WorkerController {
   public viewSimultaneousAttendance = viewSimultaneousAttendance;
   public updateShowMessageOnCall = updateShowMessageOnCall;
   public viewShowMessageOnCall = viewShowMessageOnCall;
+  public updateSendMessageOnFinishAttendance =
+    updateSendMessageOnFinishAttendance;
+  public viewSendMessageOnFinishAttendance = viewSendMessageOnFinishAttendance;
   public updateChatbot = updateChatbot;
   public viewChatbot = viewChatbot;
 }

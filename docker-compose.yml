@@ -157,7 +157,7 @@ services:
   under-atlas:
     build:
       context: .
-      dockerfile: ./infra/atlas/Dockerfile
+      dockerfile: ./infra/atlas/dev/Dockerfile
     container_name: under-atlas
     user: '1000:1000'
     env_file:

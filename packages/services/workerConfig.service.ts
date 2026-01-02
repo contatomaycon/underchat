@@ -68,6 +68,9 @@ export class WorkerConfigService {
       generate_protocol_at_start: result.generate_protocol_at_start,
       generate_protocol_at_transfer: result.generate_protocol_at_transfer,
       show_message_on_call: result.show_message_on_call,
+      send_message_on_finish_attendance:
+        result.send_message_on_finish_attendance,
+      reject_call: result.reject_call ?? false,
       auto_save_contacts: result.auto_save_contacts ?? false,
       chatbot_id: result.chatbot_id ?? null,
       created_at: result.created_at ?? null,
@@ -185,6 +188,36 @@ export class WorkerConfigService {
     }
 
     return result.show_message_on_call || null;
+  }
+
+  async updateSendMessageOnFinishAttendance(
+    workerId: string,
+    text: string | null
+  ): Promise<string | null> {
+    const [result] = await Promise.all([
+      this.workerConfigUpserterRepository.updateSendMessageOnFinishAttendance(
+        workerId,
+        text
+      ),
+      this.invalidateWorkerConfigCache(workerId),
+    ]);
+
+    return result;
+  }
+
+  async viewSendMessageOnFinishAttendance(
+    workerId: string
+  ): Promise<string | null> {
+    const result =
+      await this.workerConfigViewerRepository.viewWorkerConfigByWorkerId(
+        workerId
+      );
+
+    if (!result) {
+      return null;
+    }
+
+    return result.send_message_on_finish_attendance || null;
   }
 
   async updateChatbot(
