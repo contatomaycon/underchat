@@ -227,7 +227,7 @@ const hasPhoto = computed(() => {
               <p
                 class="mr-6 text-base message-text mb-2"
                 :style="{
-                  color: 'rgb(var(--v-theme-on-surface))',
+                  color: 'rgb(var(--v-theme-title))',
                 }"
                 v-html="formatWhatsAppText(replacedMessage)"
               ></p>
@@ -248,7 +248,7 @@ const hasPhoto = computed(() => {
                 v-if="replacedMessage"
                 class="image-caption mt-2"
                 :style="{
-                  color: 'rgb(var(--v-theme-on-surface))',
+                  color: 'rgb(var(--v-theme-title))',
                 }"
               >
                 <span v-html="formatWhatsAppText(replacedMessage)"></span>
@@ -278,7 +278,7 @@ const hasPhoto = computed(() => {
                 v-if="replacedMessage"
                 class="video-caption mt-2"
                 :style="{
-                  color: 'rgb(var(--v-theme-on-surface))',
+                  color: 'rgb(var(--v-theme-title))',
                 }"
               >
                 <span v-html="formatWhatsAppText(replacedMessage)"></span>
@@ -319,7 +319,7 @@ const hasPhoto = computed(() => {
                 v-if="replacedMessage"
                 class="audio-caption mt-2"
                 :style="{
-                  color: 'rgb(var(--v-theme-on-surface))',
+                  color: 'rgb(var(--v-theme-title))',
                 }"
               >
                 <span v-html="formatWhatsAppText(replacedMessage)"></span>
