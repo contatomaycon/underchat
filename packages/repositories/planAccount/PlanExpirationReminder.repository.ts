@@ -29,6 +29,7 @@ export class PlanExpirationReminderRepository {
       .select({
         plan_account_id: planAccount.plan_account_id,
         account_id: planAccount.account_id,
+        plan_id: planAccount.plan_id,
         next_payment_date: planAccount.next_payment_date,
         days_until_expiration: sql<number>`${days}`.as('days_until_expiration'),
       })

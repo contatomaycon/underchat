@@ -276,9 +276,14 @@ export class PlanReleaseService {
 
     if (data.shouldSendNotification !== false) {
       const isRenewal = await this.checkIfPlanAccountIsActive(data.accountId);
-      const notificationTypeId = isRenewal
-        ? ENotificationTypeId.plan_renewal
-        : ENotificationTypeId.plan_new;
+      const isTestPlan = await this.planReleaseRepository.findPlanIsTestById(
+        data.planId
+      );
+
+      const notificationTypeId = this.getNotificationTypeId(
+        isRenewal,
+        isTestPlan
+      );
 
       await this.notificationMessageService.sendPlanNotification(
         data.accountId,
@@ -334,9 +339,14 @@ export class PlanReleaseService {
       const isRenewal = await this.checkIfPlanAccountIsActive(
         accountPaymentData.account_id
       );
-      const notificationTypeId = isRenewal
-        ? ENotificationTypeId.plan_renewal
-        : ENotificationTypeId.plan_new;
+      const isTestPlan = await this.planReleaseRepository.findPlanIsTestById(
+        accountPaymentData.plan_id
+      );
+
+      const notificationTypeId = this.getNotificationTypeId(
+        isRenewal,
+        isTestPlan
+      );
 
       await this.notificationMessageService.sendPlanNotification(
         accountPaymentData.account_id,
@@ -509,9 +519,14 @@ export class PlanReleaseService {
       );
 
       const isRenewal = await this.checkIfPlanAccountIsActive(data.accountId);
-      const notificationTypeId = isRenewal
-        ? ENotificationTypeId.plan_renewal
-        : ENotificationTypeId.plan_new;
+      const isTestPlan = await this.planReleaseRepository.findPlanIsTestById(
+        data.planId
+      );
+
+      const notificationTypeId = this.getNotificationTypeId(
+        isRenewal,
+        isTestPlan
+      );
 
       await this.notificationMessageService.sendPlanNotification(
         data.accountId,
@@ -665,5 +680,20 @@ export class PlanReleaseService {
     }
 
     return false;
+  };
+
+  private readonly getNotificationTypeId = (
+    isRenewal: boolean,
+    isTestPlan: boolean
+  ): string => {
+    if (isRenewal) {
+      return ENotificationTypeId.plan_renewal;
+    }
+
+    if (isTestPlan) {
+      return ENotificationTypeId.test_plan_new;
+    }
+
+    return ENotificationTypeId.plan_new;
   };
 }

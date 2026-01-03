@@ -2,6 +2,7 @@ import { injectable, inject } from 'tsyringe';
 import { PlanExpirationReminderRepository } from '@core/repositories/planAccount/PlanExpirationReminder.repository';
 import { NotificationMessageService } from '@core/services/notificationMessage.service';
 import { ENotificationTypeId } from '@core/common/enums/ENotificationType';
+import { PlanReleaseRepository } from '@core/repositories/plan/PlanRelease.repository';
 import Redis from 'ioredis';
 
 @injectable()
@@ -9,6 +10,7 @@ export class PlanExpirationReminderService {
   constructor(
     private readonly planExpirationReminderRepository: PlanExpirationReminderRepository,
     private readonly notificationMessageService: NotificationMessageService,
+    private readonly planReleaseRepository: PlanReleaseRepository,
     @inject('Redis') private readonly redis: Redis
   ) {}
 
@@ -43,6 +45,7 @@ export class PlanExpirationReminderService {
   private async sendReminderNotification(
     accountId: string,
     planAccountId: string,
+    planId: string,
     days: number
   ): Promise<void> {
     const alreadySent = await this.hasNotificationBeenSent(
@@ -53,10 +56,17 @@ export class PlanExpirationReminderService {
     if (alreadySent) return;
 
     try {
+      const isTestPlan =
+        await this.planReleaseRepository.findPlanIsTestById(planId);
+
+      const notificationTypeId = isTestPlan
+        ? ENotificationTypeId.test_plan_expiration
+        : ENotificationTypeId.plan_expiration;
+
       await this.notificationMessageService.sendPlanNotification(
         accountId,
-        planAccountId,
-        ENotificationTypeId.plan_expiration
+        planId,
+        notificationTypeId
       );
 
       await this.markNotificationAsSent(accountId, planAccountId, days);
@@ -82,6 +92,7 @@ export class PlanExpirationReminderService {
           this.sendReminderNotification(
             plan.account_id,
             plan.plan_account_id,
+            plan.plan_id,
             days
           )
         );

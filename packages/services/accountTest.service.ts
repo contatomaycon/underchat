@@ -3,6 +3,8 @@ import { AccountTestRepository } from '@core/repositories/account/AccountTest.re
 import { EncryptService } from './encrypt.service';
 import { PasswordEncryptorService } from './passwordEncryptor.service';
 import { PlanReleaseRepository } from '@core/repositories/plan/PlanRelease.repository';
+import { NotificationMessageService } from './notificationMessage.service';
+import { ENotificationTypeId } from '@core/common/enums/ENotificationType';
 
 @injectable()
 export class AccountTestService {
@@ -10,7 +12,8 @@ export class AccountTestService {
     private readonly accountTestRepository: AccountTestRepository,
     private readonly encryptService: EncryptService,
     private readonly passwordEncryptorService: PasswordEncryptorService,
-    private readonly planReleaseRepository: PlanReleaseRepository
+    private readonly planReleaseRepository: PlanReleaseRepository,
+    private readonly notificationMessageService: NotificationMessageService
   ) {}
 
   checkExistingTest = async (data: {
@@ -73,5 +76,11 @@ export class AccountTestService {
       email: emailEncrypted,
       emailC,
     });
+
+    await this.notificationMessageService.sendPlanNotification(
+      data.accountId,
+      data.planId,
+      ENotificationTypeId.test_plan_new
+    );
   };
 }

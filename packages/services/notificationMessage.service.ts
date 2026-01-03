@@ -337,6 +337,10 @@ export class NotificationMessageService {
       notificationTypeName === ENotificationType.test_plan_expiration
     ) {
       const planData = await this.getPlanData(accountId);
+      const isTestNotification =
+        notificationTypeName === ENotificationType.test_plan_new ||
+        notificationTypeName === ENotificationType.test_plan_expiration;
+
       replacedMessage = replacedMessage.replaceAll(
         '{{plan}}',
         planData.plan || ''
@@ -346,10 +350,15 @@ export class NotificationMessageService {
         '{{expiration_date}}',
         planData.expiration_date || ''
       );
-      replacedMessage = replacedMessage.replaceAll(
-        '{{value}}',
-        planData.value || ''
-      );
+
+      if (!isTestNotification) {
+        replacedMessage = replacedMessage.replaceAll(
+          '{{value}}',
+          planData.value || ''
+        );
+      } else {
+        replacedMessage = replacedMessage.replaceAll('{{value}}', '');
+      }
     }
 
     return replacedMessage;

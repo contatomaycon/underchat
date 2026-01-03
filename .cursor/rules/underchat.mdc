@@ -11,6 +11,7 @@ GENERAL
 - Never add comments to the code.
 - Never use `else`. Prefer early returns, guard clauses, and extracted functions.
 - Never use dynamic imports. Always use static imports.
+- Never use nested or chained ternary operators. Prefer clear control flow using early returns, guard clauses, or extracted functions.
 
 I18N
 

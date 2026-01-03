@@ -623,6 +623,17 @@ export class PlanReleaseRepository {
     return planData || null;
   };
 
+  findPlanIsTestById = async (planId: string): Promise<boolean> => {
+    const planData = await this.dbRo.query.plan.findFirst({
+      where: eq(plan.plan_id, planId),
+      columns: {
+        is_test: true,
+      },
+    });
+
+    return planData?.is_test || false;
+  };
+
   private readonly createTestPlanAccountRecord = async (
     tx: Parameters<
       Parameters<NodePgDatabase<typeof schema>['transaction']>[0]
