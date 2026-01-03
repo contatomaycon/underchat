@@ -171,6 +171,8 @@
     "channel_general_config_load_error": "No fue posible cargar las configuraciones del canal.",
     "channel_general_config_save_success": "¡Configuraciones del canal guardadas con éxito!",
     "channel_general_config_save_error": "Error al guardar las configuraciones del canal.",
+    "channels_recreate_all_success": "¡{{success}} canales recreados con éxito! {{errors}} errores.",
+    "channels_recreate_all_error": "¡Error al recrear todos los canales!",
     "transfer_protocol_text_label": "Texto del protocolo",
     "transfer_protocol_text_placeholder": "Ingrese el texto del protocolo que se enviará en las transferencias...",
     "transfer_protocol_text_hint": "Puede usar formato de WhatsApp: *negrita*, _cursiva_, ~tachado~, `monoespaciado`.",
