@@ -1645,6 +1645,8 @@
     "plan_expiration_reminder": "Plan Expiration Reminder",
     "plan_cancellation_notification": "Plan Cancellation",
     "recurring_payment_failure_notification": "Recurring Payment Failure",
+    "test_plan_new_notification": "New Test Plan",
+    "test_plan_expiration_reminder": "Test Plan Expiration Reminder",
     "worker": "Channel",
     "not_configured": "Not configured",
     "select_worker_two_factor": "Select Channel for Two Factor Notification",

@@ -27,6 +27,8 @@ export const listNotificationsResponseSchema = Type.Object({
     notificationSchema,
     Type.Null(),
   ]),
+  test_plan_new_notification: Type.Union([notificationSchema, Type.Null()]),
+  test_plan_expiration_reminder: Type.Union([notificationSchema, Type.Null()]),
   created_at: Type.Union([Type.String(), Type.Null()]),
   updated_at: Type.Union([Type.String(), Type.Null()]),
 });

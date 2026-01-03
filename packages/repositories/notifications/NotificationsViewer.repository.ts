@@ -32,6 +32,12 @@ export class NotificationsViewerRepository {
       await this.findNotificationTypeIdByName(
         ENotificationType.recurring_payment_failure
       );
+    const testPlanNewTypeId = await this.findNotificationTypeIdByName(
+      ENotificationType.test_plan_new
+    );
+    const testPlanExpirationTypeId = await this.findNotificationTypeIdByName(
+      ENotificationType.test_plan_expiration
+    );
 
     const twoFactorNotification =
       await this.findNotificationByType(twoFactorTypeId);
@@ -46,6 +52,11 @@ export class NotificationsViewerRepository {
     );
     const recurringPaymentFailureNotification =
       await this.findNotificationByType(recurringPaymentFailureTypeId);
+    const testPlanNewNotification =
+      await this.findNotificationByType(testPlanNewTypeId);
+    const testPlanExpirationNotification = await this.findNotificationByType(
+      testPlanExpirationTypeId
+    );
 
     const firstNotificationId =
       twoFactorNotification?.notification_id ||
@@ -54,6 +65,8 @@ export class NotificationsViewerRepository {
       planExpirationNotification?.notification_id ||
       planCancellationNotification?.notification_id ||
       recurringPaymentFailureNotification?.notification_id ||
+      testPlanNewNotification?.notification_id ||
+      testPlanExpirationNotification?.notification_id ||
       null;
 
     return {
@@ -141,6 +154,32 @@ export class NotificationsViewerRepository {
               },
             }
           : null,
+      test_plan_new_notification: testPlanNewNotification
+        ? {
+            whatsapp: {
+              worker_id: testPlanNewNotification.nwr?.worker_id || null,
+              name: testPlanNewNotification.nwr?.name || null,
+              message: testPlanNewNotification.message_whatsapp || null,
+            },
+            email: {
+              subject: testPlanNewNotification.email_subject || null,
+              message: testPlanNewNotification.message_email || null,
+            },
+          }
+        : null,
+      test_plan_expiration_reminder: testPlanExpirationNotification
+        ? {
+            whatsapp: {
+              worker_id: testPlanExpirationNotification.nwr?.worker_id || null,
+              name: testPlanExpirationNotification.nwr?.name || null,
+              message: testPlanExpirationNotification.message_whatsapp || null,
+            },
+            email: {
+              subject: testPlanExpirationNotification.email_subject || null,
+              message: testPlanExpirationNotification.message_email || null,
+            },
+          }
+        : null,
       created_at: twoFactorNotification?.created_at || null,
       updated_at:
         twoFactorNotification?.updated_at ||
@@ -149,6 +188,8 @@ export class NotificationsViewerRepository {
         planExpirationNotification?.updated_at ||
         planCancellationNotification?.updated_at ||
         recurringPaymentFailureNotification?.updated_at ||
+        testPlanNewNotification?.updated_at ||
+        testPlanExpirationNotification?.updated_at ||
         null,
     };
   };

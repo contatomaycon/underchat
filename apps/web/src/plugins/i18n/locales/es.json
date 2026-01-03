@@ -1647,6 +1647,8 @@
     "plan_expiration_reminder": "Recordatorio de Vencimiento de Plan",
     "plan_cancellation_notification": "Cancelación de Plan",
     "recurring_payment_failure_notification": "Fallo en el Pago Recurrente",
+    "test_plan_new_notification": "Nuevo Plan de Prueba",
+    "test_plan_expiration_reminder": "Recordatorio de Vencimiento de Plan de Prueba",
     "worker": "Canal",
     "not_configured": "No configurado",
     "select_worker_two_factor": "Seleccionar Canal para Notificación de Dos Factores",

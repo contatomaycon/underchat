@@ -27,6 +27,8 @@ const selectedNotificationType = ref<
   | 'plan_expiration'
   | 'plan_cancellation'
   | 'recurring_payment_failure'
+  | 'test_plan_new'
+  | 'test_plan_expiration'
   | null
 >(null);
 const selectedWorkerId = ref<string | null>(null);
@@ -90,6 +92,25 @@ const isRecurringPaymentFailureActive = computed(() => {
   );
 });
 
+const isTestPlanNewActive = computed(() => {
+  return (
+    notifications.value?.test_plan_new_notification !== null &&
+    (notifications.value?.test_plan_new_notification?.whatsapp?.worker_id !==
+      null ||
+      notifications.value?.test_plan_new_notification?.email?.message !== null)
+  );
+});
+
+const isTestPlanExpirationActive = computed(() => {
+  return (
+    notifications.value?.test_plan_expiration_reminder !== null &&
+    (notifications.value?.test_plan_expiration_reminder?.whatsapp?.worker_id !==
+      null ||
+      notifications.value?.test_plan_expiration_reminder?.email?.message !==
+        null)
+  );
+});
+
 const twoFactorWorkerName = computed(() => {
   return notifications.value?.two_factor_notification?.whatsapp?.name || null;
 });
@@ -116,6 +137,18 @@ const recurringPaymentFailureWorkerName = computed(() => {
   return (
     notifications.value?.recurring_payment_failure_notification?.whatsapp
       ?.name || null
+  );
+});
+
+const testPlanNewWorkerName = computed(() => {
+  return (
+    notifications.value?.test_plan_new_notification?.whatsapp?.name || null
+  );
+});
+
+const testPlanExpirationWorkerName = computed(() => {
+  return (
+    notifications.value?.test_plan_expiration_reminder?.whatsapp?.name || null
   );
 });
 
@@ -149,6 +182,8 @@ const openWorkerModal = async (
     | 'plan_expiration'
     | 'plan_cancellation'
     | 'recurring_payment_failure'
+    | 'test_plan_new'
+    | 'test_plan_expiration'
 ) => {
   selectedNotificationType.value = type;
   selectedWorkerId.value = null;
@@ -218,6 +253,27 @@ const openWorkerModal = async (
     emailMessage.value =
       notifications.value?.recurring_payment_failure_notification?.email
         ?.message || '';
+  } else if (type === 'test_plan_new') {
+    selectedWorkerId.value =
+      notifications.value?.test_plan_new_notification?.whatsapp?.worker_id ||
+      null;
+    whatsappMessage.value =
+      notifications.value?.test_plan_new_notification?.whatsapp?.message || '';
+    emailSubject.value =
+      notifications.value?.test_plan_new_notification?.email?.subject || '';
+    emailMessage.value =
+      notifications.value?.test_plan_new_notification?.email?.message || '';
+  } else if (type === 'test_plan_expiration') {
+    selectedWorkerId.value =
+      notifications.value?.test_plan_expiration_reminder?.whatsapp?.worker_id ||
+      null;
+    whatsappMessage.value =
+      notifications.value?.test_plan_expiration_reminder?.whatsapp?.message ||
+      '';
+    emailSubject.value =
+      notifications.value?.test_plan_expiration_reminder?.email?.subject || '';
+    emailMessage.value =
+      notifications.value?.test_plan_expiration_reminder?.email?.message || '';
   }
 
   await loadWorkers();
@@ -285,6 +341,19 @@ const saveNotification = async () => {
         emailMessage.value || null;
       updateData.recurring_payment_failure_email_subject =
         emailSubject.value || null;
+    } else if (selectedNotificationType.value === 'test_plan_new') {
+      updateData.test_plan_new_notification = selectedWorkerId.value;
+      updateData.test_plan_new_message_whatsapp = whatsappMessage.value || null;
+      updateData.test_plan_new_message_email = emailMessage.value || null;
+      updateData.test_plan_new_email_subject = emailSubject.value || null;
+    } else if (selectedNotificationType.value === 'test_plan_expiration') {
+      updateData.test_plan_expiration_reminder = selectedWorkerId.value;
+      updateData.test_plan_expiration_message_whatsapp =
+        whatsappMessage.value || null;
+      updateData.test_plan_expiration_message_email =
+        emailMessage.value || null;
+      updateData.test_plan_expiration_email_subject =
+        emailSubject.value || null;
     }
 
     const result = await settingsStore.updateNotifications(updateData);
@@ -298,6 +367,8 @@ const saveNotification = async () => {
         plan_cancellation_notification: result.plan_cancellation_notification,
         recurring_payment_failure_notification:
           result.recurring_payment_failure_notification,
+        test_plan_new_notification: result.test_plan_new_notification,
+        test_plan_expiration_reminder: result.test_plan_expiration_reminder,
         created_at: result.created_at,
         updated_at: result.updated_at,
       };
@@ -316,6 +387,8 @@ const removeNotification = async (
     | 'plan_expiration'
     | 'plan_cancellation'
     | 'recurring_payment_failure'
+    | 'test_plan_new'
+    | 'test_plan_expiration'
 ) => {
   try {
     isSaving.value = true;
@@ -334,6 +407,10 @@ const removeNotification = async (
       updateData.plan_cancellation_notification = null;
     } else if (type === 'recurring_payment_failure') {
       updateData.recurring_payment_failure_notification = null;
+    } else if (type === 'test_plan_new') {
+      updateData.test_plan_new_notification = null;
+    } else if (type === 'test_plan_expiration') {
+      updateData.test_plan_expiration_reminder = null;
     }
 
     const result = await settingsStore.updateNotifications(updateData);
@@ -347,6 +424,8 @@ const removeNotification = async (
         plan_cancellation_notification: result.plan_cancellation_notification,
         recurring_payment_failure_notification:
           result.recurring_payment_failure_notification,
+        test_plan_new_notification: result.test_plan_new_notification,
+        test_plan_expiration_reminder: result.test_plan_expiration_reminder,
         created_at: result.created_at,
         updated_at: result.updated_at,
       };
@@ -414,6 +493,8 @@ const getNotificationTypeLabel = (typeName: string): string => {
     PLAN_EXPIRATION: t('plan_expiration_reminder'),
     PLAN_CANCELLATION: t('plan_cancellation_notification'),
     RECURRING_PAYMENT_FAILURE: t('recurring_payment_failure_notification'),
+    TEST_PLAN_NEW: t('test_plan_new_notification'),
+    TEST_PLAN_EXPIRATION: t('test_plan_expiration_reminder'),
   };
   return typeMap[typeName] || typeName;
 };
@@ -426,9 +507,30 @@ const getNotificationTypeColor = (typeName: string): string => {
     PLAN_EXPIRATION: 'warning',
     PLAN_CANCELLATION: 'error',
     RECURRING_PAYMENT_FAILURE: 'error',
+    TEST_PLAN_NEW: 'success',
+    TEST_PLAN_EXPIRATION: 'warning',
   };
   return colorMap[typeName] || 'default';
 };
+
+const selectedNotificationTypeLabel = computed(() => {
+  if (!selectedNotificationType.value) {
+    return '';
+  }
+
+  const labelMap: Record<string, string> = {
+    two_factor: t('two_factor_notification'),
+    plan_new: t('plan_new_notification'),
+    plan_renewal: t('plan_renewal_notification'),
+    plan_expiration: t('plan_expiration_reminder'),
+    plan_cancellation: t('plan_cancellation_notification'),
+    recurring_payment_failure: t('recurring_payment_failure_notification'),
+    test_plan_new: t('test_plan_new_notification'),
+    test_plan_expiration: t('test_plan_expiration_reminder'),
+  };
+
+  return labelMap[selectedNotificationType.value] || '';
+});
 
 const handleTableChange = (o: { page: number; itemsPerPage: number }) => {
   options.value.page = o.page;
@@ -489,10 +591,19 @@ onMounted(async () => {
           <VDivider />
 
           <VCardText>
-            <VRow v-if="loading">
-              <VCol v-for="i in 6" :key="`skeleton-${i}`" cols="12" md="4">
-                <VCard variant="outlined" class="notification-card">
-                  <VCardText>
+            <VRow v-if="loading" align="stretch">
+              <VCol
+                v-for="i in 8"
+                :key="`skeleton-${i}`"
+                cols="12"
+                md="3"
+                class="d-flex"
+              >
+                <VCard
+                  variant="outlined"
+                  class="notification-card flex-grow-1 d-flex flex-column"
+                >
+                  <VCardText class="d-flex flex-column flex-grow-1">
                     <div class="d-flex align-center justify-space-between mb-2">
                       <div class="d-flex align-center gap-2">
                         <VSkeletonLoader type="avatar" width="24" height="24" />
@@ -511,22 +622,23 @@ onMounted(async () => {
               </VCol>
             </VRow>
 
-            <VRow v-else>
-              <VCol cols="12" md="4">
+            <VRow v-else align="stretch">
+              <VCol cols="12" md="3" class="d-flex">
                 <VCard
                   variant="outlined"
-                  class="notification-card"
+                  class="notification-card flex-grow-1 d-flex flex-column"
                   :class="{
                     'notification-card--active': isTwoFactorActive,
                   }"
                   @click="openWorkerModal('two_factor')"
                 >
-                  <VCardText>
-                    <div class="d-flex align-center justify-space-between mb-2">
-                      <div class="d-flex align-center gap-2">
+                  <VCardText class="d-flex flex-column flex-grow-1">
+                    <div class="d-flex align-start justify-space-between mb-2">
+                      <div class="d-flex align-start gap-2 flex-grow-1">
                         <VIcon
                           icon="tabler-shield-lock"
                           :color="isTwoFactorActive ? 'success' : 'error'"
+                          class="mt-1"
                         />
                         <span class="font-weight-medium">
                           {{ $t('two_factor_notification') }}
@@ -555,21 +667,22 @@ onMounted(async () => {
                 </VCard>
               </VCol>
 
-              <VCol cols="12" md="4">
+              <VCol cols="12" md="3" class="d-flex">
                 <VCard
                   variant="outlined"
-                  class="notification-card"
+                  class="notification-card flex-grow-1 d-flex flex-column"
                   :class="{
                     'notification-card--active': isPlanNewActive,
                   }"
                   @click="openWorkerModal('plan_new')"
                 >
-                  <VCardText>
-                    <div class="d-flex align-center justify-space-between mb-2">
-                      <div class="d-flex align-center gap-2">
+                  <VCardText class="d-flex flex-column flex-grow-1">
+                    <div class="d-flex align-start justify-space-between mb-2">
+                      <div class="d-flex align-start gap-2 flex-grow-1">
                         <VIcon
                           icon="tabler-package"
                           :color="isPlanNewActive ? 'success' : 'error'"
+                          class="mt-1"
                         />
                         <span class="font-weight-medium">
                           {{ $t('plan_new_notification') }}
@@ -596,21 +709,22 @@ onMounted(async () => {
                 </VCard>
               </VCol>
 
-              <VCol cols="12" md="4">
+              <VCol cols="12" md="3" class="d-flex">
                 <VCard
                   variant="outlined"
-                  class="notification-card"
+                  class="notification-card flex-grow-1 d-flex flex-column"
                   :class="{
                     'notification-card--active': isPlanRenewalActive,
                   }"
                   @click="openWorkerModal('plan_renewal')"
                 >
-                  <VCardText>
-                    <div class="d-flex align-center justify-space-between mb-2">
-                      <div class="d-flex align-center gap-2">
+                  <VCardText class="d-flex flex-column flex-grow-1">
+                    <div class="d-flex align-start justify-space-between mb-2">
+                      <div class="d-flex align-start gap-2 flex-grow-1">
                         <VIcon
                           icon="tabler-refresh"
                           :color="isPlanRenewalActive ? 'success' : 'error'"
+                          class="mt-1"
                         />
                         <span class="font-weight-medium">
                           {{ $t('plan_renewal_notification') }}
@@ -639,21 +753,22 @@ onMounted(async () => {
                 </VCard>
               </VCol>
 
-              <VCol cols="12" md="4">
+              <VCol cols="12" md="3" class="d-flex">
                 <VCard
                   variant="outlined"
-                  class="notification-card"
+                  class="notification-card flex-grow-1 d-flex flex-column"
                   :class="{
                     'notification-card--active': isPlanExpirationActive,
                   }"
                   @click="openWorkerModal('plan_expiration')"
                 >
-                  <VCardText>
-                    <div class="d-flex align-center justify-space-between mb-2">
-                      <div class="d-flex align-center gap-2">
+                  <VCardText class="d-flex flex-column flex-grow-1">
+                    <div class="d-flex align-start justify-space-between mb-2">
+                      <div class="d-flex align-start gap-2 flex-grow-1">
                         <VIcon
                           icon="tabler-clock"
                           :color="isPlanExpirationActive ? 'success' : 'error'"
+                          class="mt-1"
                         />
                         <span class="font-weight-medium">
                           {{ $t('plan_expiration_reminder') }}
@@ -684,23 +799,24 @@ onMounted(async () => {
                 </VCard>
               </VCol>
 
-              <VCol cols="12" md="4">
+              <VCol cols="12" md="3" class="d-flex">
                 <VCard
                   variant="outlined"
-                  class="notification-card"
+                  class="notification-card flex-grow-1 d-flex flex-column"
                   :class="{
                     'notification-card--active': isPlanCancellationActive,
                   }"
                   @click="openWorkerModal('plan_cancellation')"
                 >
-                  <VCardText>
-                    <div class="d-flex align-center justify-space-between mb-2">
-                      <div class="d-flex align-center gap-2">
+                  <VCardText class="d-flex flex-column flex-grow-1">
+                    <div class="d-flex align-start justify-space-between mb-2">
+                      <div class="d-flex align-start gap-2 flex-grow-1">
                         <VIcon
                           icon="tabler-ban"
                           :color="
                             isPlanCancellationActive ? 'success' : 'error'
                           "
+                          class="mt-1"
                         />
                         <span class="font-weight-medium">
                           {{ $t('plan_cancellation_notification') }}
@@ -731,19 +847,19 @@ onMounted(async () => {
                 </VCard>
               </VCol>
 
-              <VCol cols="12" md="4">
+              <VCol cols="12" md="3" class="d-flex">
                 <VCard
                   variant="outlined"
-                  class="notification-card"
+                  class="notification-card flex-grow-1 d-flex flex-column"
                   :class="{
                     'notification-card--active':
                       isRecurringPaymentFailureActive,
                   }"
                   @click="openWorkerModal('recurring_payment_failure')"
                 >
-                  <VCardText>
-                    <div class="d-flex align-center justify-space-between mb-2">
-                      <div class="d-flex align-center gap-2">
+                  <VCardText class="d-flex flex-column flex-grow-1">
+                    <div class="d-flex align-start justify-space-between mb-2">
+                      <div class="d-flex align-start gap-2 flex-grow-1">
                         <VIcon
                           icon="tabler-alert-circle"
                           :color="
@@ -751,6 +867,7 @@ onMounted(async () => {
                               ? 'success'
                               : 'error'
                           "
+                          class="mt-1"
                         />
                         <span class="font-weight-medium">
                           {{ $t('recurring_payment_failure_notification') }}
@@ -776,6 +893,100 @@ onMounted(async () => {
                     >
                       {{ $t('channel') }}:
                       {{ recurringPaymentFailureWorkerName }}
+                    </div>
+                    <div v-else class="text-body-2 text-medium-emphasis">
+                      {{ $t('not_configured') }}
+                    </div>
+                  </VCardText>
+                </VCard>
+              </VCol>
+
+              <VCol cols="12" md="3" class="d-flex">
+                <VCard
+                  variant="outlined"
+                  class="notification-card flex-grow-1 d-flex flex-column"
+                  :class="{
+                    'notification-card--active': isTestPlanNewActive,
+                  }"
+                  @click="openWorkerModal('test_plan_new')"
+                >
+                  <VCardText class="d-flex flex-column flex-grow-1">
+                    <div class="d-flex align-start justify-space-between mb-2">
+                      <div class="d-flex align-start gap-2 flex-grow-1">
+                        <VIcon
+                          icon="tabler-flask"
+                          :color="isTestPlanNewActive ? 'success' : 'error'"
+                          class="mt-1"
+                        />
+                        <span class="font-weight-medium">
+                          {{ $t('test_plan_new_notification') }}
+                        </span>
+                      </div>
+                      <VChip
+                        :color="isTestPlanNewActive ? 'success' : 'error'"
+                        size="small"
+                        variant="tonal"
+                      >
+                        {{
+                          isTestPlanNewActive ? $t('active') : $t('deactivated')
+                        }}
+                      </VChip>
+                    </div>
+                    <div
+                      v-if="testPlanNewWorkerName"
+                      class="text-body-2 text-medium-emphasis"
+                    >
+                      {{ $t('channel') }}: {{ testPlanNewWorkerName }}
+                    </div>
+                    <div v-else class="text-body-2 text-medium-emphasis">
+                      {{ $t('not_configured') }}
+                    </div>
+                  </VCardText>
+                </VCard>
+              </VCol>
+
+              <VCol cols="12" md="3" class="d-flex">
+                <VCard
+                  variant="outlined"
+                  class="notification-card flex-grow-1 d-flex flex-column"
+                  :class="{
+                    'notification-card--active': isTestPlanExpirationActive,
+                  }"
+                  @click="openWorkerModal('test_plan_expiration')"
+                >
+                  <VCardText class="d-flex flex-column flex-grow-1">
+                    <div class="d-flex align-start justify-space-between mb-2">
+                      <div class="d-flex align-start gap-2 flex-grow-1">
+                        <VIcon
+                          icon="tabler-clock-hour-4"
+                          :color="
+                            isTestPlanExpirationActive ? 'success' : 'error'
+                          "
+                          class="mt-1"
+                        />
+                        <span class="font-weight-medium">
+                          {{ $t('test_plan_expiration_reminder') }}
+                        </span>
+                      </div>
+                      <VChip
+                        :color="
+                          isTestPlanExpirationActive ? 'success' : 'error'
+                        "
+                        size="small"
+                        variant="tonal"
+                      >
+                        {{
+                          isTestPlanExpirationActive
+                            ? $t('active')
+                            : $t('deactivated')
+                        }}
+                      </VChip>
+                    </div>
+                    <div
+                      v-if="testPlanExpirationWorkerName"
+                      class="text-body-2 text-medium-emphasis"
+                    >
+                      {{ $t('channel') }}: {{ testPlanExpirationWorkerName }}
                     </div>
                     <div v-else class="text-body-2 text-medium-emphasis">
                       {{ $t('not_configured') }}
@@ -1011,21 +1222,7 @@ onMounted(async () => {
     <VDialog v-model="isWorkerModalOpen" max-width="600" persistent>
       <VCard>
         <VCardTitle class="d-flex align-center justify-space-between">
-          <span>
-            {{
-              selectedNotificationType === 'two_factor'
-                ? $t('two_factor_notification')
-                : selectedNotificationType === 'plan_new'
-                  ? $t('plan_new_notification')
-                  : selectedNotificationType === 'plan_renewal'
-                    ? $t('plan_renewal_notification')
-                    : selectedNotificationType === 'plan_expiration'
-                      ? $t('plan_expiration_reminder')
-                      : selectedNotificationType === 'plan_cancellation'
-                        ? $t('plan_cancellation_notification')
-                        : $t('recurring_payment_failure_notification')
-            }}
-          </span>
+          <span>{{ selectedNotificationTypeLabel }}</span>
           <IconBtn @click="closeWorkerModal">
             <VIcon>tabler-x</VIcon>
           </IconBtn>
@@ -1215,6 +1412,30 @@ onMounted(async () => {
                 <div>• {{ $t('name') }}: {{ formatParameter('name') }}</div>
                 <div>• {{ $t('value') }}: {{ formatParameter('value') }}</div>
               </div>
+              <div
+                v-else-if="selectedNotificationType === 'test_plan_new'"
+                class="text-body-2"
+              >
+                <div>• {{ $t('plan') }}: {{ formatParameter('plan') }}</div>
+                <div>• {{ $t('name') }}: {{ formatParameter('name') }}</div>
+                <div>
+                  • {{ $t('expiration_date') }}:
+                  {{ formatParameter('expiration_date') }}
+                </div>
+                <div>• {{ $t('value') }}: {{ formatParameter('value') }}</div>
+              </div>
+              <div
+                v-else-if="selectedNotificationType === 'test_plan_expiration'"
+                class="text-body-2"
+              >
+                <div>• {{ $t('plan') }}: {{ formatParameter('plan') }}</div>
+                <div>• {{ $t('name') }}: {{ formatParameter('name') }}</div>
+                <div>
+                  • {{ $t('expiration_date') }}:
+                  {{ formatParameter('expiration_date') }}
+                </div>
+                <div>• {{ $t('value') }}: {{ formatParameter('value') }}</div>
+              </div>
             </VCardText>
           </VCard>
         </VCardText>
@@ -1233,7 +1454,11 @@ onMounted(async () => {
                 (selectedNotificationType === 'plan_cancellation' &&
                   isPlanCancellationActive) ||
                 (selectedNotificationType === 'recurring_payment_failure' &&
-                  isRecurringPaymentFailureActive))
+                  isRecurringPaymentFailureActive) ||
+                (selectedNotificationType === 'test_plan_new' &&
+                  isTestPlanNewActive) ||
+                (selectedNotificationType === 'test_plan_expiration' &&
+                  isTestPlanExpirationActive))
             "
             color="error"
             variant="tonal"
@@ -1282,6 +1507,7 @@ onMounted(async () => {
 .notification-card {
   cursor: pointer;
   transition: all 0.2s ease;
+  height: 100%;
 }
 
 .notification-card:hover {
@@ -1292,6 +1518,19 @@ onMounted(async () => {
 .notification-card--active {
   border-color: rgb(var(--v-theme-success)) !important;
   background-color: rgba(var(--v-theme-success), 0.05);
+}
+
+.notification-card :deep(.v-card-text) {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+}
+
+.notification-card :deep(.font-weight-medium) {
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  white-space: normal;
+  line-height: 1.4;
 }
 
 .email-preview {
