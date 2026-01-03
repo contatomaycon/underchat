@@ -61,6 +61,7 @@ import { TFunction } from 'i18next';
 import { ViewContactResponse } from '@core/schema/contact/viewContact/response.schema';
 import { ChatMessageService } from '@core/services/chatMessage.service';
 import { ChatbotFlowRunnerService } from '@core/services/chatbotFlowRunner.service';
+import { replaceMessageTags } from '@core/common/functions/replaceMessageTags';
 import { WorkerConfigService } from '@core/services/workerConfig.service';
 import { PlanAccountService } from '@core/services/planAccount.service';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
@@ -1317,11 +1318,17 @@ export class MessageUpsertConsume {
       await this.updateChatPhotoIfNeeded(chat, data);
     }
 
+    const message = replaceMessageTags({
+      message: workerConfig.show_message_on_call,
+      chat,
+      t,
+    });
+
     await this.chatMessageService.sendMessage(t, {
       chat,
       accountId: data.account_id,
       type: EMessageType.system,
-      message: workerConfig.show_message_on_call,
+      message,
       typeUser: ETypeUserChat.system,
     });
   }

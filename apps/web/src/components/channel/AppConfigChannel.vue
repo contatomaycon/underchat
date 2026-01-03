@@ -231,6 +231,40 @@ const startProtocolModalOpen = ref(false);
 const isSavingStartProtocol = ref(false);
 
 const protocolTag = '{{protocolo}}';
+const availableTags = computed(() => [
+  {
+    tag: '{{ greeting }}',
+    description: t('tag_greeting_description'),
+  },
+  {
+    tag: '{{ name }}',
+    description: t('tag_name_description'),
+  },
+  {
+    tag: '{{ protocol }}',
+    description: t('tag_protocol_description'),
+  },
+  {
+    tag: '{{ date }}',
+    description: t('tag_date_description'),
+  },
+  {
+    tag: '{{ time }}',
+    description: t('tag_time_description'),
+  },
+  {
+    tag: '{{ account_name }}',
+    description: t('tag_account_name_description'),
+  },
+  {
+    tag: '{{ phone }}',
+    description: t('tag_phone_description'),
+  },
+  {
+    tag: '{{ channel_name }}',
+    description: t('tag_channel_name_description'),
+  },
+]);
 const simultaneousAttendance = ref<number | null>(null);
 const simultaneousAttendanceModalOpen = ref(false);
 const isSavingSimultaneousAttendance = ref(false);
@@ -3054,11 +3088,25 @@ onMounted(async () => {
         <div class="text-caption text-medium-emphasis mt-2">
           {{ $t('transfer_protocol_text_hint') }}
         </div>
-        <div class="text-caption text-medium-emphasis">
-          {{ $t('transfer_protocol_tag_hint_prefix') }}
-          <code>{{ protocolTag }}</code>
-          {{ $t('transfer_protocol_tag_hint_suffix') }}
-        </div>
+        <VExpansionPanels variant="accordion" class="mt-2">
+          <VExpansionPanel>
+            <VExpansionPanelTitle>
+              <span class="text-caption">{{ $t('available_tags') }}</span>
+            </VExpansionPanelTitle>
+            <VExpansionPanelText>
+              <div class="d-flex flex-column gap-1">
+                <div
+                  v-for="tag in availableTags"
+                  :key="tag.tag"
+                  class="text-caption"
+                >
+                  <code>{{ tag.tag }}</code
+                  >: {{ tag.description }}
+                </div>
+              </div>
+            </VExpansionPanelText>
+          </VExpansionPanel>
+        </VExpansionPanels>
       </VCardText>
       <VCardText class="d-flex justify-end flex-wrap gap-3">
         <VBtn
@@ -3115,11 +3163,25 @@ onMounted(async () => {
         <div class="text-caption text-medium-emphasis mt-2">
           {{ $t('start_protocol_text_hint') }}
         </div>
-        <div class="text-caption text-medium-emphasis">
-          {{ $t('start_protocol_tag_hint_prefix') }}
-          <code>{{ protocolTag }}</code>
-          {{ $t('start_protocol_tag_hint_suffix') }}
-        </div>
+        <VExpansionPanels variant="accordion" class="mt-2">
+          <VExpansionPanel>
+            <VExpansionPanelTitle>
+              <span class="text-caption">{{ $t('available_tags') }}</span>
+            </VExpansionPanelTitle>
+            <VExpansionPanelText>
+              <div class="d-flex flex-column gap-1">
+                <div
+                  v-for="tag in availableTags"
+                  :key="tag.tag"
+                  class="text-caption"
+                >
+                  <code>{{ tag.tag }}</code
+                  >: {{ tag.description }}
+                </div>
+              </div>
+            </VExpansionPanelText>
+          </VExpansionPanel>
+        </VExpansionPanels>
       </VCardText>
       <VCardText class="d-flex justify-end flex-wrap gap-3">
         <VBtn
@@ -3245,6 +3307,25 @@ onMounted(async () => {
         <div class="text-caption text-medium-emphasis mt-2">
           {{ $t('show_message_on_call_text_hint') }}
         </div>
+        <VExpansionPanels variant="accordion" class="mt-2">
+          <VExpansionPanel>
+            <VExpansionPanelTitle>
+              <span class="text-caption">{{ $t('available_tags') }}</span>
+            </VExpansionPanelTitle>
+            <VExpansionPanelText>
+              <div class="d-flex flex-column gap-1">
+                <div
+                  v-for="tag in availableTags"
+                  :key="tag.tag"
+                  class="text-caption"
+                >
+                  <code>{{ tag.tag }}</code
+                  >: {{ tag.description }}
+                </div>
+              </div>
+            </VExpansionPanelText>
+          </VExpansionPanel>
+        </VExpansionPanels>
         <VDivider class="my-4" />
         <div class="d-flex flex-column" style="gap: 4px">
           <VCheckbox
@@ -3324,6 +3405,25 @@ onMounted(async () => {
         <div class="text-caption text-medium-emphasis mt-2">
           {{ $t('send_message_on_finish_attendance_text_hint') }}
         </div>
+        <VExpansionPanels variant="accordion" class="mt-2">
+          <VExpansionPanel>
+            <VExpansionPanelTitle>
+              <span class="text-caption">{{ $t('available_tags') }}</span>
+            </VExpansionPanelTitle>
+            <VExpansionPanelText>
+              <div class="d-flex flex-column gap-1">
+                <div
+                  v-for="tag in availableTags"
+                  :key="tag.tag"
+                  class="text-caption"
+                >
+                  <code>{{ tag.tag }}</code
+                  >: {{ tag.description }}
+                </div>
+              </div>
+            </VExpansionPanelText>
+          </VExpansionPanel>
+        </VExpansionPanels>
       </VCardText>
       <VCardText class="d-flex justify-end flex-wrap gap-3">
         <VBtn

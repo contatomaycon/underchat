@@ -18,6 +18,7 @@ import { WorkerConfigService } from '@core/services/workerConfig.service';
 import { ChatMessageService } from '@core/services/chatMessage.service';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { generateProtocol } from '@core/common/functions/generateProtocol';
+import { replaceMessageTags } from '@core/common/functions/replaceMessageTags';
 import { AutomaticAttendanceService } from '@core/services/automaticAttendance.service';
 import { ChatUserViewerRepository } from '@core/repositories/chat/ChatUserViewer.repository';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
@@ -46,15 +47,18 @@ export class ChatStatusUpdaterUseCase {
     protocolType: 'protocol_ura' | 'protocol_start' | 'protocol_transfer'
   ): Promise<string> {
     const protocol = generateProtocol();
-    const message = protocolText.replaceAll(
-      /\{\{\s*protocolo\s*\}\}/gi,
-      protocol
-    );
 
     const chat = await this.chatService.findChatByChatId(accountId, chatId);
     if (!chat) {
       throw new Error(t('chat_not_found'));
     }
+
+    const message = replaceMessageTags({
+      message: protocolText,
+      chat,
+      protocol,
+      t,
+    });
 
     await Promise.all([
       this.chatMessageService.sendMessage(t, {
@@ -110,11 +114,17 @@ export class ChatStatusUpdaterUseCase {
       return;
     }
 
+    const message = replaceMessageTags({
+      message: workerConfigFields.send_message_on_finish_attendance,
+      chat: chatData,
+      t,
+    });
+
     await this.chatMessageService.sendMessage(t, {
       chat: chatData,
       accountId,
       type: EMessageType.text,
-      message: workerConfigFields.send_message_on_finish_attendance,
+      message,
       typeUser: ETypeUserChat.system,
     });
   }

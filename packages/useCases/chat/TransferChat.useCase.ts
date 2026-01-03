@@ -18,6 +18,7 @@ import { EMessageType } from '@core/common/enums/EMessageType';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { WorkerService } from '@core/services/worker.service';
 import { generateProtocol } from '@core/common/functions/generateProtocol';
+import { replaceMessageTags } from '@core/common/functions/replaceMessageTags';
 import { AutomaticAttendanceService } from '@core/services/automaticAttendance.service';
 import { ChatUserViewerRepository } from '@core/repositories/chat/ChatUserViewer.repository';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
@@ -137,15 +138,18 @@ export class TransferChatUseCase {
     protocolType: 'protocol_ura' | 'protocol_start' | 'protocol_transfer'
   ): Promise<string> {
     const protocol = generateProtocol();
-    const message = protocolText.replaceAll(
-      /\{\{\s*protocolo\s*\}\}/gi,
-      protocol
-    );
 
     const chat = await this.chatService.findChatByChatId(accountId, chatId);
     if (!chat) {
       throw new Error(t('chat_not_found'));
     }
+
+    const message = replaceMessageTags({
+      message: protocolText,
+      chat,
+      protocol,
+      t,
+    });
 
     await Promise.all([
       this.chatMessageService.sendMessage(t, {

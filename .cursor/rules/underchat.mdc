@@ -10,6 +10,7 @@ GENERAL
 - Always apply Clean Code and SOLID. Separate responsibilities clearly.
 - Never add comments to the code.
 - Never use `else`. Prefer early returns, guard clauses, and extracted functions.
+- Never use dynamic imports. Always use static imports.
 
 I18N
 
