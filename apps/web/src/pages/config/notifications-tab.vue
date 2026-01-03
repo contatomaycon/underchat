@@ -479,13 +479,7 @@ onMounted(async () => {
 
 <template>
   <div>
-    <VRow v-if="loading">
-      <VCol cols="12" class="text-center">
-        <VProgressCircular indeterminate color="primary" />
-      </VCol>
-    </VRow>
-
-    <VRow v-else>
+    <VRow>
       <VCol cols="12">
         <VCard>
           <VCardTitle class="text-h6 pa-6 pb-4">
@@ -495,7 +489,34 @@ onMounted(async () => {
           <VDivider />
 
           <VCardText>
-            <VRow>
+            <VRow v-if="loading">
+              <VCol
+                v-for="i in 6"
+                :key="`skeleton-${i}`"
+                cols="12"
+                md="4"
+              >
+                <VCard variant="outlined" class="notification-card">
+                  <VCardText>
+                    <div class="d-flex align-center justify-space-between mb-2">
+                      <div class="d-flex align-center gap-2">
+                        <VSkeletonLoader type="avatar" width="24" height="24" />
+                        <VSkeletonLoader type="text" width="150" height="20" />
+                      </div>
+                      <VSkeletonLoader type="chip" width="80" height="24" />
+                    </div>
+                    <VSkeletonLoader
+                      type="text"
+                      width="120"
+                      height="16"
+                      class="mt-2"
+                    />
+                  </VCardText>
+                </VCard>
+              </VCol>
+            </VRow>
+
+            <VRow v-else>
               <VCol cols="12" md="4">
                 <VCard
                   variant="outlined"
