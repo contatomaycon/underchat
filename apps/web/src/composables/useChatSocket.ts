@@ -255,6 +255,8 @@ export const useChatSocket = () => {
 
     const chatId = chatStore.activeChat.chat_id;
 
+    chatStore.ensureActiveChatUnreadCountIsZero();
+
     await Promise.all([
       processPendingMessages(chatId),
       processPendingChatUpdates(chatId),

@@ -290,6 +290,7 @@ watch(
       oldRouteName !== 'chat' &&
       chatStore.activeChat?.chat_id
     ) {
+      chatStore.ensureActiveChatUnreadCountIsZero();
       await chatSocket.refreshActiveChat();
       await nextTick();
       requestAnimationFrame(() => {

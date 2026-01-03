@@ -271,6 +271,7 @@ export const useChatStore = defineStore('chat', {
       this.activeChat.summary = {
         ...this.activeChat.summary,
         last_date: chat.summary.last_date,
+        unread_count: 0,
       };
     },
 
@@ -285,6 +286,7 @@ export const useChatStore = defineStore('chat', {
       return {
         ...existingSummary,
         last_date: input.summary?.last_date ?? existingSummary.last_date,
+        unread_count: 0,
       };
     },
 
@@ -1272,6 +1274,41 @@ export const useChatStore = defineStore('chat', {
         date: chat.date,
         label: chat.label,
       };
+    },
+
+    ensureActiveChatUnreadCountIsZero(): void {
+      if (!this.activeChat?.chat_id) {
+        return;
+      }
+
+      if (this.activeChat.status !== EChatStatus.in_chat) {
+        return;
+      }
+
+      const chatId = this.activeChat.chat_id;
+
+      if (this.activeChat.summary) {
+        this.activeChat.summary = {
+          ...this.activeChat.summary,
+          unread_count: 0,
+        };
+      }
+
+      const chatInQueue = this.listQueue.find((c) => c.chat_id === chatId);
+      if (chatInQueue?.summary) {
+        chatInQueue.summary = {
+          ...chatInQueue.summary,
+          unread_count: 0,
+        };
+      }
+
+      const chatInList = this.listInChat.find((c) => c.chat_id === chatId);
+      if (chatInList?.summary) {
+        chatInList.summary = {
+          ...chatInList.summary,
+          unread_count: 0,
+        };
+      }
     },
 
     setMessageReply(m: ListMessageResult) {
