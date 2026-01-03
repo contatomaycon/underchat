@@ -490,12 +490,7 @@ onMounted(async () => {
 
           <VCardText>
             <VRow v-if="loading">
-              <VCol
-                v-for="i in 6"
-                :key="`skeleton-${i}`"
-                cols="12"
-                md="4"
-              >
+              <VCol v-for="i in 6" :key="`skeleton-${i}`" cols="12" md="4">
                 <VCard variant="outlined" class="notification-card">
                   <VCardText>
                     <div class="d-flex align-center justify-space-between mb-2">
