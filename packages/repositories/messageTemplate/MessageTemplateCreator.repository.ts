@@ -30,6 +30,7 @@ export class MessageTemplateCreatorRepository {
         duration: input.duration ?? null,
         width: input.width ?? null,
         height: input.height ?? null,
+        auto_send: input.auto_send ?? false,
       })
       .execute();
 

@@ -17,6 +17,11 @@ export const createMessageTemplateRequestSchema = Type.Object({
   type: Type.Object({
     value: Type.String(),
   }),
+  auto_send: Type.Optional(
+    Type.Object({
+      value: Type.Boolean(),
+    })
+  ),
 });
 
 export type CreateMessageTemplateRequest = Static<

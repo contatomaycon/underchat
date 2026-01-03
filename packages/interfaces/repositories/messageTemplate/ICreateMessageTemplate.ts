@@ -9,4 +9,5 @@ export interface ICreateMessageTemplate {
   duration?: number | null;
   width?: number | null;
   height?: number | null;
+  auto_send?: boolean;
 }

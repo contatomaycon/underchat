@@ -38,6 +38,7 @@ export class ChatQuickMessageTemplatesListerRepository {
         duration: messageTemplate.duration,
         width: messageTemplate.width,
         height: messageTemplate.height,
+        auto_send: messageTemplate.auto_send,
       })
       .from(messageTemplate)
       .innerJoin(
@@ -63,6 +64,7 @@ export class ChatQuickMessageTemplatesListerRepository {
       duration: message.duration ?? null,
       width: message.width ?? null,
       height: message.height ?? null,
+      auto_send: message.auto_send ?? null,
     })) as ListQuickMessageTemplatesResponse[];
   };
 }

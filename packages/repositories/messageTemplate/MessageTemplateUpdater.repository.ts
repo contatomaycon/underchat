@@ -55,6 +55,10 @@ export class MessageTemplateUpdaterRepository {
       inputUpdate.height = input.height ?? undefined;
     }
 
+    if (input?.auto_send !== undefined) {
+      inputUpdate.auto_send = input.auto_send ?? false;
+    }
+
     return inputUpdate;
   }
 

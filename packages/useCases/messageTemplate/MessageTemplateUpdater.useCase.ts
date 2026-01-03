@@ -87,6 +87,7 @@ export class MessageTemplateUpdaterUseCase {
       duration,
       width,
       height,
+      auto_send: this.normalizeBooleanValue(body.auto_send?.value),
     };
 
     const messageTemplateUpdater =
@@ -99,6 +100,23 @@ export class MessageTemplateUpdaterUseCase {
     }
 
     return messageTemplateUpdater;
+  }
+
+  private normalizeBooleanValue(value: unknown): boolean | undefined {
+    if (value === null || value === undefined) {
+      return undefined;
+    }
+
+    if (typeof value === 'boolean') {
+      return value;
+    }
+
+    if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase();
+      return normalized === 'true' || normalized === '1';
+    }
+
+    return undefined;
   }
 
   private async ensureMessageTemplateExists(

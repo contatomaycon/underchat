@@ -33,6 +33,7 @@ export class MessageTemplateViewerRepository {
         duration: messageTemplate.duration,
         width: messageTemplate.width,
         height: messageTemplate.height,
+        auto_send: messageTemplate.auto_send,
         created_at: messageTemplate.created_at,
       })
       .from(messageTemplate)

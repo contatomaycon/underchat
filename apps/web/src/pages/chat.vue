@@ -74,6 +74,7 @@ import { Picker, EmojiIndex } from 'emoji-mart-vue-fast/src';
 import data from 'emoji-mart-vue-fast/data/all.json';
 import 'emoji-mart-vue-fast/css/emoji-mart.css';
 import { useI18n } from 'vue-i18n';
+import { ListQuickMessageTemplatesResponse } from '@core/schema/chat/listQuickMessageTemplates/response.schema';
 
 const emojiIndex = new EmojiIndex(data);
 const { t } = useI18n();
@@ -3211,9 +3212,16 @@ const replaceTagsInMessage = (message: string | null): string => {
   return replaced;
 };
 
-const selectQuickMessage = (
-  template: import('@core/schema/chat/listQuickMessageTemplates/response.schema').ListQuickMessageTemplatesResponse
+const selectQuickMessage = async (
+  template: ListQuickMessageTemplatesResponse
 ) => {
+  if (template.auto_send) {
+    selectedQuickMessage.value = template;
+    showQuickMessageList.value = false;
+    await sendQuickMessage();
+    return;
+  }
+
   selectedQuickMessage.value = template;
   showQuickMessageList.value = false;
   msg.value = '';

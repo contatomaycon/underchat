@@ -10,6 +10,7 @@ export const listQuickMessageTemplatesResponseSchema = Type.Object({
   duration: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
   width: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
   height: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
+  auto_send: Type.Optional(Type.Union([Type.Boolean(), Type.Null()])),
 });
 
 export const listQuickMessageTemplatesFinalResponseSchema = Type.Object({

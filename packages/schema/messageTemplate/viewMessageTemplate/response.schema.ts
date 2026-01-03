@@ -22,6 +22,7 @@ export const viewMessageTemplateResponseSchema = Type.Object({
   duration: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
   width: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
   height: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
+  auto_send: Type.Optional(Type.Union([Type.Boolean(), Type.Null()])),
   created_at: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 });
 

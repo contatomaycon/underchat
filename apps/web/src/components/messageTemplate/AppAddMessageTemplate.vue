@@ -81,10 +81,16 @@ const itemsStatus = ref([
   { value: EMessageStatus.inactive, text: t('inactive') },
 ]);
 
+const itemsAutoSend = ref([
+  { value: true, text: t('auto_send_yes') },
+  { value: false, text: t('auto_send_no') },
+]);
+
 const selectedType = ref<EMessageType>(EMessageType.text);
 const message = ref<string | null>(null);
 const command = ref<string | null>(null);
 const message_status_id = ref<string | null>(EMessageStatus.active);
+const auto_send = ref<boolean>(false);
 const attachmentFile = ref<File | null>(null);
 const filePreview = ref<FilePreview | null>(null);
 const fileInputKey = ref(0);
@@ -311,6 +317,7 @@ const addMessageTemplate = async () => {
     form.append('command', command.value ?? '');
     form.append('message_status_id', message_status_id.value ?? '');
     form.append('type', selectedType.value);
+    form.append('auto_send', auto_send.value ? 'true' : 'false');
     if (attachmentFile.value) {
       form.append('attachment_url', attachmentFile.value);
     }
@@ -379,6 +386,7 @@ const resetForm = () => {
   selectedType.value = EMessageType.text;
   message.value = null;
   message_status_id.value = EMessageStatus.active;
+  auto_send.value = false;
   command.value = null;
   attachmentFile.value = null;
   fileSizeError.value = null;
@@ -694,6 +702,18 @@ onBeforeUnmount(() => {
                 :items="itemsStatus"
                 :placeholder="$t('message_status')"
                 :clearable="true"
+                item-value="value"
+                item-title="text"
+              />
+            </VCol>
+
+            <VCol cols="12" md="6">
+              <VLabel class="text-body-2 mb-1">{{ $t('auto_send') }}:</VLabel>
+              <AppSelectSearch
+                v-model="auto_send"
+                :items="itemsAutoSend"
+                :placeholder="$t('auto_send')"
+                :clearable="false"
                 item-value="value"
                 item-title="text"
               />

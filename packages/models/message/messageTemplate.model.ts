@@ -5,6 +5,7 @@ import {
   varchar,
   text,
   integer,
+  boolean,
 } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 import { messageStatus, account } from '@core/models';
@@ -25,6 +26,7 @@ export const messageTemplate = pgTable('message_template', {
   duration: integer(),
   width: integer(),
   height: integer(),
+  auto_send: boolean().notNull().default(false),
   created_at: timestamp({
     mode: 'string',
     withTimezone: true,

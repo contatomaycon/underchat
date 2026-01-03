@@ -27,6 +27,11 @@ export const updateMessageTemplateRequestSchema = Type.Object({
   type: Type.Object({
     value: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   }),
+  auto_send: Type.Optional(
+    Type.Object({
+      value: Type.Optional(Type.Union([Type.Boolean(), Type.Null()])),
+    })
+  ),
 });
 
 export type UpdateMessageTemplateRequest = Static<

@@ -121,6 +121,23 @@ export class MessageTemplateCreatorUseCase {
     return null;
   }
 
+  private normalizeBooleanValue(value: unknown): boolean {
+    if (value === null || value === undefined) {
+      return false;
+    }
+
+    if (typeof value === 'boolean') {
+      return value;
+    }
+
+    if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase();
+      return normalized === 'true' || normalized === '1';
+    }
+
+    return false;
+  }
+
   private resolveMessageType(
     inputType: string | undefined,
     attachmentFilename?: string
@@ -296,6 +313,7 @@ export class MessageTemplateCreatorUseCase {
       duration,
       width,
       height,
+      auto_send: this.normalizeBooleanValue(input.auto_send?.value) ?? false,
     };
 
     const createMessageTemplate =
