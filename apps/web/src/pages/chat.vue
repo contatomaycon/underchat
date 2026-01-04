@@ -129,6 +129,7 @@ const isUpdatingUserProfileStatus = ref(false);
 const isActiveChatUserProfileSidebarOpen = ref(false);
 const isSearchSidebarOpen = ref(false);
 const linkPreview = ref<ViewLinkPreviewResponse | null>(null);
+const isLoadingLinkPreview = ref(false);
 const composerRef = ref();
 
 const fileDocRef = ref<HTMLInputElement | null>(null);
@@ -3109,20 +3110,24 @@ const formatFileSize = (bytes: number): string => {
   return `${formatted} ${units[exponent]}`;
 };
 
-const debouncedMsg = refDebounced(msg, 500);
+const debouncedMsg = refDebounced(msg, 250);
 watch(
   debouncedMsg,
   async (val) => {
     const firstUrl = extractFirstUrl(val as string);
     if (firstUrl) {
+      isLoadingLinkPreview.value = true;
+      linkPreview.value = null;
       const linkPreviewResponse = await chatStore.generateLinkPreview({
         url: firstUrl,
       });
+      isLoadingLinkPreview.value = false;
       if (linkPreviewResponse?.title !== 'Error') {
         linkPreview.value = linkPreviewResponse as ViewLinkPreviewResponse;
       }
       return;
     }
+    isLoadingLinkPreview.value = false;
     linkPreview.value = null;
   },
   { immediate: true }
@@ -4278,7 +4283,14 @@ onBeforeUnmount(() => {
           <ChatLog :key="chatStore.activeChat?.chat_id || 'no-chat'" />
         </PerfectScrollbar>
 
-        <ChatLinkPreview :preview="linkPreview" @close="linkPreview = null" />
+        <ChatLinkPreview
+          :preview="linkPreview"
+          :loading="isLoadingLinkPreview"
+          @close="
+            linkPreview = null;
+            isLoadingLinkPreview = false;
+          "
+        />
 
         <VForm
           class="chat-log-message-form mb-5 mx-5"

@@ -4,6 +4,7 @@ import { ViewLinkPreviewResponse } from '@core/schema/chat/viewLinkPreview/respo
 
 const props = defineProps<{
   preview: ViewLinkPreviewResponse | null;
+  loading?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -42,7 +43,7 @@ const previewImage = computed(() => {
 
 <template>
   <Transition name="fade">
-    <div v-if="preview" class="mx-5 mt-3">
+    <div v-if="preview || loading" class="mx-5 mt-3">
       <VCard class="link-preview-card">
         <VBtn
           class="link-preview-close"
@@ -54,20 +55,61 @@ const previewImage = computed(() => {
           <VIcon size="18" icon="tabler-x" />
         </VBtn>
         <div class="d-flex gap-3">
-          <VAvatar size="56" :rounded="8" variant="tonal">
+          <VAvatar v-if="!loading" size="56" :rounded="8" variant="tonal">
             <VImg v-if="previewImage" :src="previewImage" />
           </VAvatar>
+          <VSkeletonLoader
+            v-else
+            type="avatar"
+            width="56"
+            height="56"
+            class="link-preview-skeleton-avatar"
+          />
           <div class="flex-grow-1 overflow-hidden">
-            <div class="text-caption text-medium-emphasis">
+            <div v-if="!loading" class="text-caption text-medium-emphasis">
               {{ previewDomain }}
             </div>
-            <div class="text-subtitle-1 font-weight-medium text-truncate">
+            <VSkeletonLoader
+              v-else
+              type="text"
+              width="120"
+              height="12"
+              class="mb-2"
+            />
+            <div
+              v-if="!loading"
+              class="text-subtitle-1 font-weight-medium text-truncate"
+            >
               {{ preview?.title }}
             </div>
-            <div class="text-body-2 text-medium-emphasis two-line-ellipsis">
+            <VSkeletonLoader
+              v-else
+              type="text"
+              width="80%"
+              height="16"
+              class="mb-2"
+            />
+            <div
+              v-if="!loading"
+              class="text-body-2 text-medium-emphasis two-line-ellipsis"
+            >
               {{ preview?.description }}
             </div>
-            <div class="mt-2">
+            <template v-else>
+              <VSkeletonLoader
+                type="text"
+                width="100%"
+                height="14"
+                class="mb-1"
+              />
+              <VSkeletonLoader
+                type="text"
+                width="90%"
+                height="14"
+                class="mb-2"
+              />
+            </template>
+            <div v-if="!loading" class="mt-2">
               <a
                 v-if="previewHref"
                 :href="previewHref"
@@ -78,6 +120,13 @@ const previewImage = computed(() => {
                 {{ previewHref }}
               </a>
             </div>
+            <VSkeletonLoader
+              v-else
+              type="text"
+              width="70%"
+              height="14"
+              class="mt-2"
+            />
           </div>
         </div>
       </VCard>
@@ -105,6 +154,10 @@ const previewImage = computed(() => {
   display: -webkit-box;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+.link-preview-skeleton-avatar {
+  border-radius: 8px;
 }
 
 .fade-enter-active,
