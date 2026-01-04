@@ -1776,7 +1776,43 @@ export class ChatbotFlowRunnerService {
       phoneAndDdi.phone_ddi
     );
 
-    const selectedOption = contact ? contactOption : notContactOption;
+    let selectedOption = notContactOption;
+
+    if (!contact) {
+      const nextFlowId = this.getNextFlowIdByOption(
+        chatbotFlow,
+        currentFlowId,
+        selectedOption.id
+      );
+      if (!nextFlowId) {
+        throw new Error(t('chatbot_flow_not_found'));
+      }
+      await this.resetFailedAttempts(createChat);
+      await this.updateCache(createChat, nextFlowId);
+      return this.processNextNode(
+        t,
+        createChat,
+        chatbotFlow,
+        nextFlowId,
+        customMessages
+      );
+    }
+
+    const chatDate = createChat.started_at || createChat.date;
+    const contactCreatedAt = contact.created_at;
+
+    if (!chatDate || !contactCreatedAt) {
+      selectedOption = contactOption;
+    }
+
+    if (chatDate && contactCreatedAt) {
+      const chatTimestamp = new Date(chatDate).getTime();
+      const contactTimestamp = new Date(contactCreatedAt).getTime();
+
+      if (contactTimestamp < chatTimestamp) {
+        selectedOption = contactOption;
+      }
+    }
     const nextFlowId = this.getNextFlowIdByOption(
       chatbotFlow,
       currentFlowId,
