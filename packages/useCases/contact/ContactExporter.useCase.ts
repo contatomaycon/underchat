@@ -22,6 +22,9 @@ export class ContactExporterUseCase {
       ...contact,
       email: this.contactService.getContactEmailDecrypted(contact.email),
       phone: this.contactService.getContactPhoneDecrypted(contact.phone),
+      document: this.contactService.getContactDocumentDecrypted(
+        contact.document
+      ),
     }));
   }
 }

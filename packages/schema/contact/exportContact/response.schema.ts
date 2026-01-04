@@ -10,6 +10,9 @@ export const exportContactResponseSchema = Type.Object({
   nickname: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   birthday: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   notes: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  contact_document_type_name: Type.Optional(
+    Type.Union([Type.String(), Type.Null()])
+  ),
   document: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 });
 

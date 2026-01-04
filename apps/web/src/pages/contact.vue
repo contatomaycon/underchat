@@ -116,6 +116,8 @@ const exportContactsToCsv = async () => {
     t('nickname'),
     t('birthday'),
     t('notes'),
+    t('document_type'),
+    t('document'),
   ];
 
   const rows = contacts.map((item) => [
@@ -127,6 +129,8 @@ const exportContactsToCsv = async () => {
     item.nickname ?? '',
     item.birthday ?? '',
     item.notes ?? '',
+    item.contact_document_type_name ?? '',
+    item.document ?? '',
   ]);
 
   const delimiter = ';';
