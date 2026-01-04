@@ -5,10 +5,18 @@ import {
   NodePgQueryResultHKT,
 } from 'drizzle-orm/node-postgres';
 import { PgTransaction } from 'drizzle-orm/pg-core';
-import { ExtractTablesWithRelations, eq } from 'drizzle-orm';
+import { ExtractTablesWithRelations, eq, and } from 'drizzle-orm';
 import { inject, injectable } from 'tsyringe';
 import { v7 as uuidv7 } from 'uuid';
 import { IUpdateWorkerConfig } from '@core/common/interfaces/IUpdateWorkerConfig';
+import { EWorkerConfigStatus } from '@core/common/enums/EWorkerConfigStatus';
+import { EWorkerConfigType } from '@core/common/enums/EWorkerConfigType';
+
+type Transaction = PgTransaction<
+  NodePgQueryResultHKT,
+  typeof schema,
+  ExtractTablesWithRelations<typeof schema>
+>;
 
 @injectable()
 export class WorkerConfigUpserterRepository {
@@ -22,604 +30,422 @@ export class WorkerConfigUpserterRepository {
     input: IUpdateWorkerConfig
   ): Promise<void> => {
     await this.dbRw.transaction(async (tx) => {
-      await this.ensureSingleConfigPerWorker(tx, workerId);
-
-      const existingConfig = await this.findExistingConfigTx(tx, workerId);
-
-      if (existingConfig) {
-        await this.updateWorkerConfigTx(tx, workerId, input);
-        return;
+      if (input.is_automatic_attendance !== undefined) {
+        await this.upsertBooleanConfig(
+          tx,
+          workerId,
+          EWorkerConfigType.is_automatic_attendance,
+          input.is_automatic_attendance
+        );
       }
 
-      await this.createWorkerConfigTx(tx, workerId, input);
+      if (input.show_attendee_name !== undefined) {
+        await this.upsertBooleanConfig(
+          tx,
+          workerId,
+          EWorkerConfigType.show_attendee_name,
+          input.show_attendee_name
+        );
+      }
+
+      if (input.show_worker_name !== undefined) {
+        await this.upsertBooleanConfig(
+          tx,
+          workerId,
+          EWorkerConfigType.show_worker_name,
+          input.show_worker_name
+        );
+      }
+
+      if (input.allow_attendance_only_online !== undefined) {
+        await this.upsertBooleanConfig(
+          tx,
+          workerId,
+          EWorkerConfigType.allow_attendance_only_online,
+          input.allow_attendance_only_online
+        );
+      }
+
+      if (input.reject_call !== undefined) {
+        await this.upsertBooleanConfig(
+          tx,
+          workerId,
+          EWorkerConfigType.reject_call,
+          input.reject_call
+        );
+      }
+
+      if (input.auto_save_contacts !== undefined) {
+        await this.upsertBooleanConfig(
+          tx,
+          workerId,
+          EWorkerConfigType.auto_save_contacts,
+          input.auto_save_contacts
+        );
+      }
     });
   };
-
-  private async ensureSingleConfigPerWorker(
-    tx: PgTransaction<
-      NodePgQueryResultHKT,
-      typeof schema,
-      ExtractTablesWithRelations<typeof schema>
-    >,
-    workerId: string
-  ): Promise<void> {
-    const existingConfigs = await tx
-      .select({ worker_config_id: workerConfig.worker_config_id })
-      .from(workerConfig)
-      .where(eq(workerConfig.worker_id, workerId))
-      .execute();
-
-    if (existingConfigs.length <= 1) {
-      return;
-    }
-
-    const configsToDelete = existingConfigs.slice(1);
-    for (const config of configsToDelete) {
-      await tx
-        .delete(workerConfig)
-        .where(eq(workerConfig.worker_config_id, config.worker_config_id))
-        .execute();
-    }
-  }
-
-  private async findExistingConfigTx(
-    tx: PgTransaction<
-      NodePgQueryResultHKT,
-      typeof schema,
-      ExtractTablesWithRelations<typeof schema>
-    >,
-    workerId: string
-  ): Promise<boolean> {
-    const result = await tx
-      .select({ worker_config_id: workerConfig.worker_config_id })
-      .from(workerConfig)
-      .where(eq(workerConfig.worker_id, workerId))
-      .limit(1)
-      .execute();
-
-    return result.length > 0;
-  }
-
-  private buildUpdateData(
-    input: IUpdateWorkerConfig
-  ): Partial<typeof workerConfig.$inferInsert> {
-    const updateData: Partial<typeof workerConfig.$inferInsert> = {
-      updated_at: new Date().toISOString(),
-    };
-
-    if (input.is_automatic_attendance !== undefined) {
-      updateData.is_automatic_attendance = input.is_automatic_attendance;
-    }
-
-    if (input.show_attendee_name !== undefined) {
-      updateData.show_attendee_name = input.show_attendee_name;
-    }
-
-    if (input.show_worker_name !== undefined) {
-      updateData.show_worker_name = input.show_worker_name;
-    }
-
-    if (input.allow_attendance_only_online !== undefined) {
-      updateData.allow_attendance_only_online =
-        input.allow_attendance_only_online;
-    }
-
-    if (input.reject_call !== undefined) {
-      updateData.reject_call = input.reject_call;
-    }
-
-    if (input.auto_save_contacts !== undefined) {
-      updateData.auto_save_contacts = input.auto_save_contacts;
-    }
-
-    return updateData;
-  }
-
-  private async updateWorkerConfigTx(
-    tx: PgTransaction<
-      NodePgQueryResultHKT,
-      typeof schema,
-      ExtractTablesWithRelations<typeof schema>
-    >,
-    workerId: string,
-    input: IUpdateWorkerConfig
-  ): Promise<void> {
-    const updateData = this.buildUpdateData(input);
-
-    if (Object.keys(updateData).length <= 1) {
-      return;
-    }
-
-    await tx
-      .update(workerConfig)
-      .set(updateData)
-      .where(eq(workerConfig.worker_id, workerId))
-      .execute();
-  }
-
-  private async createWorkerConfigTx(
-    tx: PgTransaction<
-      NodePgQueryResultHKT,
-      typeof schema,
-      ExtractTablesWithRelations<typeof schema>
-    >,
-    workerId: string,
-    input: IUpdateWorkerConfig
-  ): Promise<void> {
-    await tx
-      .insert(workerConfig)
-      .values({
-        worker_config_id: uuidv7(),
-        worker_id: workerId,
-        is_automatic_attendance: input.is_automatic_attendance ?? false,
-        show_attendee_name: input.show_attendee_name ?? false,
-        show_worker_name: input.show_worker_name ?? false,
-        allow_attendance_only_online:
-          input.allow_attendance_only_online ?? false,
-        reject_call: input.reject_call ?? false,
-        auto_save_contacts: input.auto_save_contacts ?? false,
-      })
-      .execute();
-  }
 
   updateTransferProtocolText = async (
     workerId: string,
     text: string | null
   ): Promise<string | null> => {
     await this.dbRw.transaction(async (tx) => {
-      await this.ensureSingleConfigPerWorker(tx, workerId);
-
-      const existingConfig = await this.findExistingConfigTx(tx, workerId);
-
-      if (existingConfig) {
-        await this.updateTransferProtocolTextTx(tx, workerId, text);
-        return;
-      }
-
-      await this.createTransferProtocolTextTx(tx, workerId, text);
+      const statusId = EWorkerConfigStatus.ativo;
+      await this.upsertConfigValue(
+        tx,
+        workerId,
+        statusId,
+        EWorkerConfigType.generate_protocol_at_transfer,
+        text
+      );
     });
 
-    return this.getTransferProtocolText(workerId);
+    return this.getConfigValue(
+      workerId,
+      EWorkerConfigType.generate_protocol_at_transfer
+    );
   };
-
-  private async updateTransferProtocolTextTx(
-    tx: PgTransaction<
-      NodePgQueryResultHKT,
-      typeof schema,
-      ExtractTablesWithRelations<typeof schema>
-    >,
-    workerId: string,
-    text: string | null
-  ): Promise<void> {
-    await tx
-      .update(workerConfig)
-      .set({
-        generate_protocol_at_transfer: text || null,
-        updated_at: new Date().toISOString(),
-      })
-      .where(eq(workerConfig.worker_id, workerId))
-      .execute();
-  }
-
-  private async createTransferProtocolTextTx(
-    tx: PgTransaction<
-      NodePgQueryResultHKT,
-      typeof schema,
-      ExtractTablesWithRelations<typeof schema>
-    >,
-    workerId: string,
-    text: string | null
-  ): Promise<void> {
-    await tx
-      .insert(workerConfig)
-      .values({
-        worker_config_id: uuidv7(),
-        worker_id: workerId,
-        is_automatic_attendance: false,
-        show_attendee_name: false,
-        show_worker_name: false,
-        allow_attendance_only_online: false,
-        auto_save_contacts: false,
-        generate_protocol_at_transfer: text || null,
-      })
-      .execute();
-  }
-
-  private async getTransferProtocolText(
-    workerId: string
-  ): Promise<string | null> {
-    const result = await this.dbRo
-      .select({
-        generate_protocol_at_transfer:
-          workerConfig.generate_protocol_at_transfer,
-      })
-      .from(workerConfig)
-      .where(eq(workerConfig.worker_id, workerId))
-      .limit(1)
-      .execute();
-
-    return result[0]?.generate_protocol_at_transfer || null;
-  }
 
   updateStartProtocolText = async (
     workerId: string,
     text: string | null
   ): Promise<string | null> => {
     await this.dbRw.transaction(async (tx) => {
-      await this.ensureSingleConfigPerWorker(tx, workerId);
-
-      const existingConfig = await this.findExistingConfigTx(tx, workerId);
-
-      if (existingConfig) {
-        await this.updateStartProtocolTextTx(tx, workerId, text);
-        return;
-      }
-
-      await this.createStartProtocolTextTx(tx, workerId, text);
+      const statusId = EWorkerConfigStatus.ativo;
+      await this.upsertConfigValue(
+        tx,
+        workerId,
+        statusId,
+        EWorkerConfigType.generate_protocol_at_start,
+        text
+      );
     });
 
-    return this.getStartProtocolText(workerId);
+    return this.getConfigValue(
+      workerId,
+      EWorkerConfigType.generate_protocol_at_start
+    );
   };
-
-  private async updateStartProtocolTextTx(
-    tx: PgTransaction<
-      NodePgQueryResultHKT,
-      typeof schema,
-      ExtractTablesWithRelations<typeof schema>
-    >,
-    workerId: string,
-    text: string | null
-  ): Promise<void> {
-    await tx
-      .update(workerConfig)
-      .set({
-        generate_protocol_at_start: text || null,
-        updated_at: new Date().toISOString(),
-      })
-      .where(eq(workerConfig.worker_id, workerId))
-      .execute();
-  }
-
-  private async createStartProtocolTextTx(
-    tx: PgTransaction<
-      NodePgQueryResultHKT,
-      typeof schema,
-      ExtractTablesWithRelations<typeof schema>
-    >,
-    workerId: string,
-    text: string | null
-  ): Promise<void> {
-    await tx
-      .insert(workerConfig)
-      .values({
-        worker_config_id: uuidv7(),
-        worker_id: workerId,
-        is_automatic_attendance: false,
-        show_attendee_name: false,
-        show_worker_name: false,
-        allow_attendance_only_online: false,
-        auto_save_contacts: false,
-        generate_protocol_at_start: text || null,
-      })
-      .execute();
-  }
-
-  private async getStartProtocolText(workerId: string): Promise<string | null> {
-    const result = await this.dbRo
-      .select({
-        generate_protocol_at_start: workerConfig.generate_protocol_at_start,
-      })
-      .from(workerConfig)
-      .where(eq(workerConfig.worker_id, workerId))
-      .limit(1)
-      .execute();
-
-    return result[0]?.generate_protocol_at_start || null;
-  }
 
   updateSimultaneousAttendance = async (
     workerId: string,
     quantity: number | null
   ): Promise<number | null> => {
     await this.dbRw.transaction(async (tx) => {
-      await this.ensureSingleConfigPerWorker(tx, workerId);
-
-      const existingConfig = await this.findExistingConfigTx(tx, workerId);
-
-      if (existingConfig) {
-        await this.updateSimultaneousAttendanceTx(tx, workerId, quantity);
-        return;
-      }
-
-      await this.createSimultaneousAttendanceTx(tx, workerId, quantity);
+      const statusId = EWorkerConfigStatus.ativo;
+      await this.upsertConfigValue(
+        tx,
+        workerId,
+        statusId,
+        EWorkerConfigType.simultaneous_attendance,
+        quantity !== null ? quantity.toString() : null
+      );
     });
 
-    return this.getSimultaneousAttendance(workerId);
+    const value = await this.getConfigValue(
+      workerId,
+      EWorkerConfigType.simultaneous_attendance
+    );
+
+    return value !== null ? parseInt(value, 10) : null;
   };
-
-  private async updateSimultaneousAttendanceTx(
-    tx: PgTransaction<
-      NodePgQueryResultHKT,
-      typeof schema,
-      ExtractTablesWithRelations<typeof schema>
-    >,
-    workerId: string,
-    quantity: number | null
-  ): Promise<void> {
-    await tx
-      .update(workerConfig)
-      .set({
-        simultaneous_attendance: quantity || null,
-        updated_at: new Date().toISOString(),
-      })
-      .where(eq(workerConfig.worker_id, workerId))
-      .execute();
-  }
-
-  private async createSimultaneousAttendanceTx(
-    tx: PgTransaction<
-      NodePgQueryResultHKT,
-      typeof schema,
-      ExtractTablesWithRelations<typeof schema>
-    >,
-    workerId: string,
-    quantity: number | null
-  ): Promise<void> {
-    await tx
-      .insert(workerConfig)
-      .values({
-        worker_config_id: uuidv7(),
-        worker_id: workerId,
-        is_automatic_attendance: false,
-        show_attendee_name: false,
-        show_worker_name: false,
-        allow_attendance_only_online: false,
-        auto_save_contacts: false,
-        simultaneous_attendance: quantity || null,
-      })
-      .execute();
-  }
-
-  private async getSimultaneousAttendance(
-    workerId: string
-  ): Promise<number | null> {
-    const result = await this.dbRo
-      .select({
-        simultaneous_attendance: workerConfig.simultaneous_attendance,
-      })
-      .from(workerConfig)
-      .where(eq(workerConfig.worker_id, workerId))
-      .limit(1)
-      .execute();
-
-    return result[0]?.simultaneous_attendance || null;
-  }
 
   updateShowMessageOnCall = async (
     workerId: string,
     text: string | null
   ): Promise<string | null> => {
     await this.dbRw.transaction(async (tx) => {
-      await this.ensureSingleConfigPerWorker(tx, workerId);
-
-      const existingConfig = await this.findExistingConfigTx(tx, workerId);
-
-      if (existingConfig) {
-        await this.updateShowMessageOnCallTx(tx, workerId, text);
-        return;
-      }
-
-      await this.createShowMessageOnCallTx(tx, workerId, text);
+      const statusId = EWorkerConfigStatus.ativo;
+      await this.upsertConfigValue(
+        tx,
+        workerId,
+        statusId,
+        EWorkerConfigType.show_message_on_call,
+        text
+      );
     });
 
-    return this.getShowMessageOnCall(workerId);
+    return this.getConfigValue(
+      workerId,
+      EWorkerConfigType.show_message_on_call
+    );
   };
-
-  private async updateShowMessageOnCallTx(
-    tx: PgTransaction<
-      NodePgQueryResultHKT,
-      typeof schema,
-      ExtractTablesWithRelations<typeof schema>
-    >,
-    workerId: string,
-    text: string | null
-  ): Promise<void> {
-    await tx
-      .update(workerConfig)
-      .set({
-        show_message_on_call: text || null,
-        updated_at: new Date().toISOString(),
-      })
-      .where(eq(workerConfig.worker_id, workerId))
-      .execute();
-  }
-
-  private async createShowMessageOnCallTx(
-    tx: PgTransaction<
-      NodePgQueryResultHKT,
-      typeof schema,
-      ExtractTablesWithRelations<typeof schema>
-    >,
-    workerId: string,
-    text: string | null
-  ): Promise<void> {
-    await tx
-      .insert(workerConfig)
-      .values({
-        worker_config_id: uuidv7(),
-        worker_id: workerId,
-        is_automatic_attendance: false,
-        show_attendee_name: false,
-        show_worker_name: false,
-        allow_attendance_only_online: false,
-        auto_save_contacts: false,
-        show_message_on_call: text || null,
-      })
-      .execute();
-  }
-
-  private async getShowMessageOnCall(workerId: string): Promise<string | null> {
-    const result = await this.dbRo
-      .select({
-        show_message_on_call: workerConfig.show_message_on_call,
-      })
-      .from(workerConfig)
-      .where(eq(workerConfig.worker_id, workerId))
-      .limit(1)
-      .execute();
-
-    return result[0]?.show_message_on_call || null;
-  }
 
   updateSendMessageOnFinishAttendance = async (
     workerId: string,
     text: string | null
   ): Promise<string | null> => {
     await this.dbRw.transaction(async (tx) => {
-      await this.ensureSingleConfigPerWorker(tx, workerId);
-
-      const existingConfig = await this.findExistingConfigTx(tx, workerId);
-
-      if (existingConfig) {
-        await this.updateSendMessageOnFinishAttendanceTx(tx, workerId, text);
-        return;
-      }
-
-      await this.createSendMessageOnFinishAttendanceTx(tx, workerId, text);
+      const statusId = EWorkerConfigStatus.ativo;
+      await this.upsertConfigValue(
+        tx,
+        workerId,
+        statusId,
+        EWorkerConfigType.send_message_on_finish_attendance,
+        text
+      );
     });
 
-    return this.getSendMessageOnFinishAttendance(workerId);
+    return this.getConfigValue(
+      workerId,
+      EWorkerConfigType.send_message_on_finish_attendance
+    );
   };
-
-  private async updateSendMessageOnFinishAttendanceTx(
-    tx: PgTransaction<
-      NodePgQueryResultHKT,
-      typeof schema,
-      ExtractTablesWithRelations<typeof schema>
-    >,
-    workerId: string,
-    text: string | null
-  ): Promise<void> {
-    await tx
-      .update(workerConfig)
-      .set({
-        send_message_on_finish_attendance: text || null,
-        updated_at: new Date().toISOString(),
-      })
-      .where(eq(workerConfig.worker_id, workerId))
-      .execute();
-  }
-
-  private async createSendMessageOnFinishAttendanceTx(
-    tx: PgTransaction<
-      NodePgQueryResultHKT,
-      typeof schema,
-      ExtractTablesWithRelations<typeof schema>
-    >,
-    workerId: string,
-    text: string | null
-  ): Promise<void> {
-    await tx
-      .insert(workerConfig)
-      .values({
-        worker_config_id: uuidv7(),
-        worker_id: workerId,
-        is_automatic_attendance: false,
-        show_attendee_name: false,
-        show_worker_name: false,
-        allow_attendance_only_online: false,
-        auto_save_contacts: false,
-        send_message_on_finish_attendance: text || null,
-      })
-      .execute();
-  }
-
-  private async getSendMessageOnFinishAttendance(
-    workerId: string
-  ): Promise<string | null> {
-    const result = await this.dbRo
-      .select({
-        send_message_on_finish_attendance:
-          workerConfig.send_message_on_finish_attendance,
-      })
-      .from(workerConfig)
-      .where(eq(workerConfig.worker_id, workerId))
-      .limit(1)
-      .execute();
-
-    return result[0]?.send_message_on_finish_attendance || null;
-  }
 
   updateChatbot = async (
     workerId: string,
     chatbotId: string | null
   ): Promise<string | null> => {
     await this.dbRw.transaction(async (tx) => {
-      await this.ensureSingleConfigPerWorker(tx, workerId);
+      const statusId = EWorkerConfigStatus.ativo;
 
-      const existingConfig = await this.findExistingConfigTx(tx, workerId);
+      const existing = await this.findConfigByWorkerAndTypeId(
+        tx,
+        workerId,
+        EWorkerConfigType.chatbot_id
+      );
 
-      if (existingConfig) {
-        await this.updateChatbotTx(tx, workerId, chatbotId);
+      if (existing) {
+        await this.updateChatbotId(tx, existing.worker_config_id, chatbotId);
         return;
       }
 
-      await this.createChatbotTx(tx, workerId, chatbotId);
+      await this.createChatbotConfig(
+        tx,
+        workerId,
+        statusId,
+        EWorkerConfigType.chatbot_id,
+        chatbotId
+      );
     });
 
-    return this.getChatbot(workerId);
+    return this.getChatbotId(workerId);
   };
 
-  private async updateChatbotTx(
-    tx: PgTransaction<
-      NodePgQueryResultHKT,
-      typeof schema,
-      ExtractTablesWithRelations<typeof schema>
-    >,
-    workerId: string,
+  private async updateChatbotId(
+    tx: Transaction,
+    configId: string,
     chatbotId: string | null
   ): Promise<void> {
     await tx
       .update(workerConfig)
       .set({
-        chatbot_id: chatbotId || null,
+        chatbot_id: chatbotId,
         updated_at: new Date().toISOString(),
       })
-      .where(eq(workerConfig.worker_id, workerId))
+      .where(eq(workerConfig.worker_config_id, configId))
       .execute();
   }
 
-  private async createChatbotTx(
-    tx: PgTransaction<
-      NodePgQueryResultHKT,
-      typeof schema,
-      ExtractTablesWithRelations<typeof schema>
-    >,
+  private async createChatbotConfig(
+    tx: Transaction,
     workerId: string,
+    statusId: string,
+    typeId: string,
     chatbotId: string | null
   ): Promise<void> {
-    await tx
-      .insert(workerConfig)
-      .values({
-        worker_config_id: uuidv7(),
-        worker_id: workerId,
-        is_automatic_attendance: false,
-        show_attendee_name: false,
-        show_worker_name: false,
-        allow_attendance_only_online: false,
-        auto_save_contacts: false,
-        chatbot_id: chatbotId || null,
+    await tx.insert(workerConfig).values({
+      worker_config_id: uuidv7(),
+      worker_id: workerId,
+      worker_config_status_id: statusId,
+      worker_config_type_id: typeId,
+      chatbot_id: chatbotId,
+      value: null,
+    });
+  }
+
+  private async findConfigByWorkerAndTypeId(
+    tx: Transaction,
+    workerId: string,
+    typeId: string
+  ): Promise<{
+    worker_config_id: string;
+    worker_config_status_id: string;
+  } | null> {
+    const result = await tx
+      .select({
+        worker_config_id: workerConfig.worker_config_id,
+        worker_config_status_id: workerConfig.worker_config_status_id,
       })
+      .from(workerConfig)
+      .where(
+        and(
+          eq(workerConfig.worker_id, workerId),
+          eq(workerConfig.worker_config_type_id, typeId)
+        )
+      )
+      .limit(1)
+      .execute();
+
+    return result[0] || null;
+  }
+
+  private async upsertBooleanConfig(
+    tx: Transaction,
+    workerId: string,
+    type: EWorkerConfigType,
+    isActive: boolean
+  ): Promise<void> {
+    const activeStatusId = EWorkerConfigStatus.ativo;
+    const inactiveStatusId = EWorkerConfigStatus.inativo;
+
+    const existingConfig = await this.findConfigByWorkerAndTypeId(
+      tx,
+      workerId,
+      type
+    );
+
+    if (existingConfig) {
+      const targetStatusId = isActive ? activeStatusId : inactiveStatusId;
+      await this.updateConfigStatus(
+        tx,
+        existingConfig.worker_config_id,
+        targetStatusId,
+        null
+      );
+      return;
+    }
+
+    const targetStatusId = isActive ? activeStatusId : inactiveStatusId;
+    await this.createBooleanConfig(tx, workerId, targetStatusId, type);
+  }
+
+  private async updateConfigStatus(
+    tx: Transaction,
+    configId: string,
+    statusId: string,
+    value: string | null
+  ): Promise<void> {
+    await tx
+      .update(workerConfig)
+      .set({
+        worker_config_status_id: statusId,
+        value: value,
+        updated_at: new Date().toISOString(),
+      })
+      .where(eq(workerConfig.worker_config_id, configId))
       .execute();
   }
 
-  private async getChatbot(workerId: string): Promise<string | null> {
+  private async createBooleanConfig(
+    tx: Transaction,
+    workerId: string,
+    statusId: string,
+    typeId: string
+  ): Promise<void> {
+    await tx.insert(workerConfig).values({
+      worker_config_id: uuidv7(),
+      worker_id: workerId,
+      worker_config_status_id: statusId,
+      worker_config_type_id: typeId,
+      value: null,
+      chatbot_id: null,
+    });
+  }
+
+  private async upsertConfigValue(
+    tx: Transaction,
+    workerId: string,
+    statusId: string,
+    type: EWorkerConfigType,
+    value: string | null
+  ): Promise<void> {
+    const existing = await this.findConfigByWorkerAndTypeId(tx, workerId, type);
+
+    if (existing) {
+      await this.updateConfigValue(tx, existing.worker_config_id, value);
+      return;
+    }
+
+    await this.createConfigValue(tx, workerId, statusId, type, value);
+  }
+
+  private async getConfigValueById(
+    tx: Transaction,
+    configId: string
+  ): Promise<string | null> {
+    const result = await tx
+      .select({
+        value: workerConfig.value,
+      })
+      .from(workerConfig)
+      .where(eq(workerConfig.worker_config_id, configId))
+      .limit(1)
+      .execute();
+
+    return result[0]?.value || null;
+  }
+
+  private async updateConfigValue(
+    tx: Transaction,
+    configId: string,
+    newValue: string | null
+  ): Promise<void> {
+    const currentValue = await this.getConfigValueById(tx, configId);
+
+    await tx
+      .update(workerConfig)
+      .set({
+        value: newValue !== null ? newValue : currentValue,
+        updated_at: new Date().toISOString(),
+      })
+      .where(eq(workerConfig.worker_config_id, configId))
+      .execute();
+  }
+
+  private async createConfigValue(
+    tx: Transaction,
+    workerId: string,
+    statusId: string,
+    typeId: string,
+    value: string | null
+  ): Promise<void> {
+    await tx.insert(workerConfig).values({
+      worker_config_id: uuidv7(),
+      worker_id: workerId,
+      worker_config_status_id: statusId,
+      worker_config_type_id: typeId,
+      value: value,
+      chatbot_id: null,
+    });
+  }
+
+  private async getConfigValue(
+    workerId: string,
+    type: EWorkerConfigType
+  ): Promise<string | null> {
+    const result = await this.dbRo
+      .select({
+        value: workerConfig.value,
+      })
+      .from(workerConfig)
+      .where(
+        and(
+          eq(workerConfig.worker_id, workerId),
+          eq(workerConfig.worker_config_status_id, EWorkerConfigStatus.ativo),
+          eq(workerConfig.worker_config_type_id, type)
+        )
+      )
+      .limit(1)
+      .execute();
+
+    return result[0]?.value || null;
+  }
+
+  private async getChatbotId(workerId: string): Promise<string | null> {
     const result = await this.dbRo
       .select({
         chatbot_id: workerConfig.chatbot_id,
       })
       .from(workerConfig)
-      .where(eq(workerConfig.worker_id, workerId))
+      .where(
+        and(
+          eq(workerConfig.worker_id, workerId),
+          eq(workerConfig.worker_config_status_id, EWorkerConfigStatus.ativo),
+          eq(workerConfig.worker_config_type_id, EWorkerConfigType.chatbot_id)
+        )
+      )
       .limit(1)
       .execute();
 

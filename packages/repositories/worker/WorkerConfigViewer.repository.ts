@@ -2,7 +2,10 @@ import * as schema from '@core/models';
 import { workerConfig } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
+import { IWorkerConfigValue } from '@core/common/interfaces/IWorkerConfigValue';
+import { EWorkerConfigStatus } from '@core/common/enums/EWorkerConfigStatus';
+import { EWorkerConfigType } from '@core/common/enums/EWorkerConfigType';
 
 @injectable()
 export class WorkerConfigViewerRepository {
@@ -12,33 +15,112 @@ export class WorkerConfigViewerRepository {
 
   viewWorkerConfigByWorkerId = async (
     workerId: string
-  ): Promise<typeof workerConfig.$inferSelect | null> => {
+  ): Promise<IWorkerConfigValue | null> => {
+    const configMap = await this.fetchActiveConfigs(workerId);
+    const chatbotId = await this.fetchChatbotId(workerId);
+
+    if (configMap.size === 0 && !chatbotId) {
+      return null;
+    }
+
+    return this.buildConfigValue(workerId, configMap, chatbotId);
+  };
+
+  private async fetchActiveConfigs(
+    workerId: string
+  ): Promise<Map<EWorkerConfigType, string | null>> {
     const result = await this.dbRo
       .select({
-        worker_config_id: workerConfig.worker_config_id,
-        worker_id: workerConfig.worker_id,
-        is_automatic_attendance: workerConfig.is_automatic_attendance,
-        show_attendee_name: workerConfig.show_attendee_name,
-        show_worker_name: workerConfig.show_worker_name,
-        allow_attendance_only_online: workerConfig.allow_attendance_only_online,
-        simultaneous_attendance: workerConfig.simultaneous_attendance,
-        generate_protocol_at_start: workerConfig.generate_protocol_at_start,
-        generate_protocol_at_transfer:
-          workerConfig.generate_protocol_at_transfer,
-        show_message_on_call: workerConfig.show_message_on_call,
-        send_message_on_finish_attendance:
-          workerConfig.send_message_on_finish_attendance,
-        reject_call: workerConfig.reject_call,
-        auto_save_contacts: workerConfig.auto_save_contacts,
-        chatbot_id: workerConfig.chatbot_id,
-        created_at: workerConfig.created_at,
-        updated_at: workerConfig.updated_at,
+        value: workerConfig.value,
+        worker_config_type_id: workerConfig.worker_config_type_id,
       })
       .from(workerConfig)
-      .where(eq(workerConfig.worker_id, workerId))
+      .where(
+        and(
+          eq(workerConfig.worker_id, workerId),
+          eq(workerConfig.worker_config_status_id, EWorkerConfigStatus.ativo)
+        )
+      )
+      .execute();
+
+    const configMap = new Map<EWorkerConfigType, string | null>();
+    for (const row of result) {
+      configMap.set(row.worker_config_type_id as EWorkerConfigType, row.value);
+    }
+
+    return configMap;
+  }
+
+  private async fetchChatbotId(workerId: string): Promise<string | null> {
+    const result = await this.dbRo
+      .select({
+        chatbot_id: workerConfig.chatbot_id,
+      })
+      .from(workerConfig)
+      .where(
+        and(
+          eq(workerConfig.worker_id, workerId),
+          eq(workerConfig.worker_config_status_id, EWorkerConfigStatus.ativo),
+          eq(workerConfig.worker_config_type_id, EWorkerConfigType.chatbot_id)
+        )
+      )
       .limit(1)
       .execute();
 
-    return result[0] || null;
-  };
+    return result[0]?.chatbot_id || null;
+  }
+
+  private buildConfigValue(
+    workerId: string,
+    configMap: Map<EWorkerConfigType, string | null>,
+    chatbotId: string | null
+  ): IWorkerConfigValue {
+    return {
+      worker_config_id: '',
+      worker_id: workerId,
+      is_automatic_attendance: configMap.has(
+        EWorkerConfigType.is_automatic_attendance
+      )
+        ? true
+        : null,
+      show_attendee_name: configMap.has(EWorkerConfigType.show_attendee_name)
+        ? true
+        : null,
+      show_worker_name: configMap.has(EWorkerConfigType.show_worker_name)
+        ? true
+        : null,
+      allow_attendance_only_online: configMap.has(
+        EWorkerConfigType.allow_attendance_only_online
+      )
+        ? true
+        : null,
+      simultaneous_attendance: this.parseNumber(
+        configMap.get(EWorkerConfigType.simultaneous_attendance)
+      ),
+      generate_protocol_at_start:
+        configMap.get(EWorkerConfigType.generate_protocol_at_start) || null,
+      generate_protocol_at_transfer:
+        configMap.get(EWorkerConfigType.generate_protocol_at_transfer) || null,
+      show_message_on_call:
+        configMap.get(EWorkerConfigType.show_message_on_call) || null,
+      send_message_on_finish_attendance:
+        configMap.get(EWorkerConfigType.send_message_on_finish_attendance) ||
+        null,
+      reject_call: configMap.has(EWorkerConfigType.reject_call) ? true : null,
+      auto_save_contacts: configMap.has(EWorkerConfigType.auto_save_contacts)
+        ? true
+        : null,
+      chatbot_id: chatbotId,
+      created_at: null,
+      updated_at: null,
+    };
+  }
+
+  private parseNumber(value: string | null | undefined): number | null {
+    if (value === null || value === undefined) {
+      return null;
+    }
+    const parsed = parseInt(value, 10);
+    return isNaN(parsed) ? null : parsed;
+  }
 }

@@ -1,9 +1,9 @@
 import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
-import { workerConfig } from '@core/models';
 import { WorkerConfigViewerRepository } from '@core/repositories/worker/WorkerConfigViewer.repository';
 import { WorkerConfigUpserterRepository } from '@core/repositories/worker/WorkerConfigUpserter.repository';
 import { IUpdateWorkerConfig } from '@core/common/interfaces/IUpdateWorkerConfig';
+import { IWorkerConfigValue } from '@core/common/interfaces/IWorkerConfigValue';
 import { ViewWorkerConfigResponse } from '@core/schema/worker/viewWorkerConfig/response.schema';
 import { WorkerConfig } from '@core/schema/worker/updateWorkerConfig/response.schema';
 import Redis from 'ioredis';
@@ -74,9 +74,7 @@ export class WorkerConfigService {
     return this.mapToWorkerConfig(result);
   }
 
-  private mapToWorkerConfig(
-    result: typeof workerConfig.$inferSelect
-  ): WorkerConfig {
+  private mapToWorkerConfig(result: IWorkerConfigValue): WorkerConfig {
     return {
       worker_config_id: result.worker_config_id,
       worker_id: result.worker_id,

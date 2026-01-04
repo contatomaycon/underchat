@@ -30,7 +30,8 @@ INSERT INTO "worker_config_type" ("worker_config_type_id", "type") VALUES
   ('019b89ac-697d-750c-b404-241ec3feab8d'::uuid, 'show_message_on_call'),
   ('019b89ac-697d-750c-b404-2814beaa64cf'::uuid, 'send_message_on_finish_attendance'),
   ('019b89ac-697e-75cb-83a0-13761ab6d869'::uuid, 'reject_call'),
-  ('019b89ac-697e-75cb-83a0-15f55c82806a'::uuid, 'auto_save_contacts');
+  ('019b89ac-697e-75cb-83a0-15f55c82806a'::uuid, 'auto_save_contacts'),
+  ('019b89ac-697e-75cb-83a0-17749e49888b'::uuid, 'chatbot_id');
 -- Delete all existing data from worker_config
 DELETE FROM "worker_config";
 -- Add new columns as NOT NULL

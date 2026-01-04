@@ -85,6 +85,50 @@ export const useChatSocket = () => {
     return userSectors.includes(chat.sector.id);
   };
 
+  const processPendingMessages = async (chatId: string) => {
+    const messages = pendingMessages.value.get(chatId);
+    if (!messages || messages.length === 0) return;
+
+    for (const message of messages) {
+      chatStore.addMessageActiveChat(message);
+    }
+
+    pendingMessages.value.delete(chatId);
+  };
+
+  const processPendingChatUpdates = async (chatId: string) => {
+    const updates = pendingChatUpdates.value.get(chatId);
+    if (!updates || updates.length === 0) return;
+
+    const lastUpdate = updates[updates.length - 1];
+    if (lastUpdate) {
+      chatStore.addChat(lastUpdate);
+    }
+
+    pendingChatUpdates.value.delete(chatId);
+  };
+
+  const refreshActiveChat = async () => {
+    if (!isChatRoute() || !chatStore.activeChat?.chat_id) {
+      return;
+    }
+
+    const chatId = chatStore.activeChat.chat_id;
+
+    chatStore.ensureActiveChatUnreadCountIsZero();
+
+    await Promise.all([
+      processPendingMessages(chatId),
+      processPendingChatUpdates(chatId),
+    ]);
+
+    const requestQueue: ListMessageChatsQuery = {
+      current_page: 1,
+      per_page: 10,
+    };
+    await chatStore.getChatById(requestQueue);
+  };
+
   const handleMessageEvent = async (
     messageData: IChatMessage
   ): Promise<void> => {
@@ -116,16 +160,16 @@ export const useChatSocket = () => {
 
     if (
       isChatRoute() &&
-      chatStore.activeChat?.chat_id === chatData.chat_id &&
       (chatData as any)._active &&
       chatData.user?.id === chatStore.user?.user_id
     ) {
+      if (chatStore.activeChat?.chat_id === chatData.chat_id) {
+        await refreshActiveChat();
+        return;
+      }
+
       chatStore.setActiveChat(chatData.chat_id);
-      const requestQueue: ListMessageChatsQuery = {
-        current_page: 1,
-        per_page: 10,
-      };
-      await chatStore.getChatById(requestQueue);
+      await refreshActiveChat();
       return;
     }
 
@@ -134,29 +178,6 @@ export const useChatSocket = () => {
       pendingChatUpdates.value.set(chatId, []);
     }
     pendingChatUpdates.value.get(chatId)?.push(chatData);
-  };
-
-  const processPendingMessages = async (chatId: string) => {
-    const messages = pendingMessages.value.get(chatId);
-    if (!messages || messages.length === 0) return;
-
-    for (const message of messages) {
-      chatStore.addMessageActiveChat(message);
-    }
-
-    pendingMessages.value.delete(chatId);
-  };
-
-  const processPendingChatUpdates = async (chatId: string) => {
-    const updates = pendingChatUpdates.value.get(chatId);
-    if (!updates || updates.length === 0) return;
-
-    const lastUpdate = updates[updates.length - 1];
-    if (lastUpdate) {
-      chatStore.addChat(lastUpdate);
-    }
-
-    pendingChatUpdates.value.delete(chatId);
   };
 
   const initializeSocket = async () => {
@@ -246,27 +267,6 @@ export const useChatSocket = () => {
     isInitialized = false;
     pendingMessages.value.clear();
     pendingChatUpdates.value.clear();
-  };
-
-  const refreshActiveChat = async () => {
-    if (!isChatRoute() || !chatStore.activeChat?.chat_id) {
-      return;
-    }
-
-    const chatId = chatStore.activeChat.chat_id;
-
-    chatStore.ensureActiveChatUnreadCountIsZero();
-
-    await Promise.all([
-      processPendingMessages(chatId),
-      processPendingChatUpdates(chatId),
-    ]);
-
-    const requestQueue: ListMessageChatsQuery = {
-      current_page: 1,
-      per_page: 10,
-    };
-    await chatStore.getChatById(requestQueue);
   };
 
   return {

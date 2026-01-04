@@ -2,8 +2,10 @@ import * as schema from '@core/models';
 import { workerConfig } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import { ViewWorkerConfigForChatResponse } from '@core/schema/chat/viewWorkerConfigForChat/response.schema';
+import { EWorkerConfigStatus } from '@core/common/enums/EWorkerConfigStatus';
+import { EWorkerConfigType } from '@core/common/enums/EWorkerConfigType';
 
 @injectable()
 export class WorkerConfigForChatViewerRepository {
@@ -14,23 +16,71 @@ export class WorkerConfigForChatViewerRepository {
   viewWorkerConfigForChatByWorkerId = async (
     workerId: string
   ): Promise<ViewWorkerConfigForChatResponse> => {
-    const result = await this.dbRo
-      .select({
-        show_worker_name: workerConfig.show_worker_name,
-        show_attendee_name: workerConfig.show_attendee_name,
-        is_automatic_attendance: workerConfig.is_automatic_attendance,
-        allow_attendance_only_online: workerConfig.allow_attendance_only_online,
-        simultaneous_attendance: workerConfig.simultaneous_attendance,
-      })
-      .from(workerConfig)
-      .where(eq(workerConfig.worker_id, workerId))
-      .limit(1)
-      .execute();
+    const configMap = await this.fetchActiveConfigs(workerId);
 
-    if (!result || result.length === 0) {
+    if (configMap.size === 0) {
       return null;
     }
 
-    return result[0] as ViewWorkerConfigForChatResponse;
+    return this.buildConfigForChat(configMap);
   };
+
+  private async fetchActiveConfigs(
+    workerId: string
+  ): Promise<Map<EWorkerConfigType, string | null>> {
+    const result = await this.dbRo
+      .select({
+        value: workerConfig.value,
+        worker_config_type_id: workerConfig.worker_config_type_id,
+      })
+      .from(workerConfig)
+      .where(
+        and(
+          eq(workerConfig.worker_id, workerId),
+          eq(workerConfig.worker_config_status_id, EWorkerConfigStatus.ativo)
+        )
+      )
+      .execute();
+
+    const configMap = new Map<EWorkerConfigType, string | null>();
+    for (const row of result) {
+      configMap.set(row.worker_config_type_id as EWorkerConfigType, row.value);
+    }
+
+    return configMap;
+  }
+
+  private buildConfigForChat(
+    configMap: Map<EWorkerConfigType, string | null>
+  ): ViewWorkerConfigForChatResponse {
+    return {
+      show_worker_name: configMap.has(EWorkerConfigType.show_worker_name)
+        ? true
+        : false,
+      show_attendee_name: configMap.has(EWorkerConfigType.show_attendee_name)
+        ? true
+        : false,
+      is_automatic_attendance: configMap.has(
+        EWorkerConfigType.is_automatic_attendance
+      )
+        ? true
+        : false,
+      allow_attendance_only_online: configMap.has(
+        EWorkerConfigType.allow_attendance_only_online
+      )
+        ? true
+        : false,
+      simultaneous_attendance: this.parseNumber(
+        configMap.get(EWorkerConfigType.simultaneous_attendance)
+      ),
+    };
+  }
+
+  private parseNumber(value: string | null | undefined): number | null {
+    if (value === null || value === undefined) {
+      return null;
+    }
+    const parsed = parseInt(value, 10);
+    return isNaN(parsed) ? null : parsed;
+  }
 }

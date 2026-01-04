@@ -19,6 +19,6 @@ export const workerConfigStatus = pgTable('worker_config_status', {
 export const workerConfigStatusRelations = relations(
   workerConfigStatus,
   ({ many }) => ({
-    wcss: many(workerConfig),
+    wcs: many(workerConfig),
   })
 );

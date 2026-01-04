@@ -2,8 +2,10 @@ import * as schema from '@core/models';
 import { workerConfig } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import { IWorkerConfigFields } from '@core/common/interfaces/IWorkerConfigFields';
+import { EWorkerConfigStatus } from '@core/common/enums/EWorkerConfigStatus';
+import { EWorkerConfigType } from '@core/common/enums/EWorkerConfigType';
 
 @injectable()
 export class WorkerConfigFieldsViewerRepository {
@@ -14,27 +16,84 @@ export class WorkerConfigFieldsViewerRepository {
   viewWorkerConfigFieldsByWorkerId = async (
     workerId: string
   ): Promise<IWorkerConfigFields | null> => {
+    const configMap = await this.fetchActiveConfigs(workerId);
+
+    if (configMap.size === 0) {
+      return null;
+    }
+
+    return this.buildConfigFields(configMap);
+  };
+
+  private async fetchActiveConfigs(
+    workerId: string
+  ): Promise<Map<EWorkerConfigType, string | null>> {
     const result = await this.dbRo
       .select({
-        is_automatic_attendance: workerConfig.is_automatic_attendance,
-        show_attendee_name: workerConfig.show_attendee_name,
-        show_worker_name: workerConfig.show_worker_name,
-        allow_attendance_only_online: workerConfig.allow_attendance_only_online,
-        generate_protocol_at_start: workerConfig.generate_protocol_at_start,
-        generate_protocol_at_transfer:
-          workerConfig.generate_protocol_at_transfer,
-        show_message_on_call: workerConfig.show_message_on_call,
-        send_message_on_finish_attendance:
-          workerConfig.send_message_on_finish_attendance,
-        reject_call: workerConfig.reject_call,
-        auto_save_contacts: workerConfig.auto_save_contacts,
-        simultaneous_attendance: workerConfig.simultaneous_attendance,
+        value: workerConfig.value,
+        worker_config_type_id: workerConfig.worker_config_type_id,
       })
       .from(workerConfig)
-      .where(eq(workerConfig.worker_id, workerId))
-      .limit(1)
+      .where(
+        and(
+          eq(workerConfig.worker_id, workerId),
+          eq(workerConfig.worker_config_status_id, EWorkerConfigStatus.ativo)
+        )
+      )
       .execute();
 
-    return (result[0] as IWorkerConfigFields) || null;
-  };
+    const configMap = new Map<EWorkerConfigType, string | null>();
+    for (const row of result) {
+      configMap.set(row.worker_config_type_id as EWorkerConfigType, row.value);
+    }
+
+    return configMap;
+  }
+
+  private buildConfigFields(
+    configMap: Map<EWorkerConfigType, string | null>
+  ): IWorkerConfigFields {
+    return {
+      is_automatic_attendance: configMap.has(
+        EWorkerConfigType.is_automatic_attendance
+      )
+        ? true
+        : null,
+      show_attendee_name: configMap.has(EWorkerConfigType.show_attendee_name)
+        ? true
+        : null,
+      show_worker_name: configMap.has(EWorkerConfigType.show_worker_name)
+        ? true
+        : null,
+      allow_attendance_only_online: configMap.has(
+        EWorkerConfigType.allow_attendance_only_online
+      )
+        ? true
+        : null,
+      generate_protocol_at_start:
+        configMap.get(EWorkerConfigType.generate_protocol_at_start) || null,
+      generate_protocol_at_transfer:
+        configMap.get(EWorkerConfigType.generate_protocol_at_transfer) || null,
+      show_message_on_call:
+        configMap.get(EWorkerConfigType.show_message_on_call) || null,
+      send_message_on_finish_attendance:
+        configMap.get(EWorkerConfigType.send_message_on_finish_attendance) ||
+        null,
+      reject_call: configMap.has(EWorkerConfigType.reject_call) ? true : null,
+      auto_save_contacts: configMap.has(EWorkerConfigType.auto_save_contacts)
+        ? true
+        : null,
+      simultaneous_attendance: this.parseNumber(
+        configMap.get(EWorkerConfigType.simultaneous_attendance)
+      ),
+    };
+  }
+
+  private parseNumber(value: string | null | undefined): number | null {
+    if (value === null || value === undefined) {
+      return null;
+    }
+    const parsed = parseInt(value, 10);
+    return isNaN(parsed) ? null : parsed;
+  }
 }
