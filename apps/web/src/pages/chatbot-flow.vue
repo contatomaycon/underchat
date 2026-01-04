@@ -104,7 +104,7 @@ const defaultInvalidMenuOptionMessage = computed(() =>
   t('chatbot_option_invalid')
 );
 const defaultInvalidSatisfactionOptionMessage = computed(() =>
-  t('chatbot_option_invalid')
+  t('chatbot_satisfaction_option_invalid')
 );
 const defaultInvalidCpfMessage = computed(() => t('cpf_invalid'));
 const defaultInvalidCnpjMessage = computed(() => t('cnpj_invalid'));

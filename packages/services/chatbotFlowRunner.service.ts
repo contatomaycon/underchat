@@ -148,9 +148,15 @@ export class ChatbotFlowRunnerService {
   private async sendTextOptionInvalidMessage(
     t: TFunction<'translation', undefined>,
     createChat: IChat,
-    customMessage?: string
+    customMessage?: string,
+    nodeType?: 'menu' | 'satisfaction'
   ): Promise<boolean> {
-    const rawMessage = customMessage || t('chatbot_option_invalid');
+    let defaultMessage = t('chatbot_option_invalid');
+    if (!customMessage && nodeType === 'satisfaction') {
+      defaultMessage = t('chatbot_satisfaction_option_invalid');
+    }
+
+    const rawMessage = customMessage || defaultMessage;
     const message = await this.replaceVariables(
       t,
       rawMessage,
@@ -1968,7 +1974,14 @@ export class ChatbotFlowRunnerService {
       transfer_message_sector_user?: string;
     }
   ): Promise<boolean> {
-    await this.sendTextOptionInvalidMessage(t, createChat, customMessage);
+    const nodeType =
+      currentNode.type === 'satisfaction' ? 'satisfaction' : 'menu';
+    await this.sendTextOptionInvalidMessage(
+      t,
+      createChat,
+      customMessage,
+      nodeType
+    );
 
     // Reenviar o menu/satisfaction após a mensagem de erro
     await this.sendBuildMenuMessage(t, createChat, currentNode);
