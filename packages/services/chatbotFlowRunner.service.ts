@@ -731,6 +731,16 @@ export class ChatbotFlowRunnerService {
       return this.sendBuildMenuMessage(t, createChat, nextFlowNode);
     }
 
+    if (nextFlowNode.type === 'contact') {
+      return this.processContactNode(
+        t,
+        createChat,
+        chatbotFlow,
+        nextFlowId,
+        customMessages
+      );
+    }
+
     if (nextFlowNode.type === 'message') {
       return this.processMessageNode(
         t,
@@ -1669,6 +1679,126 @@ export class ChatbotFlowRunnerService {
     );
   }
 
+  private async processContactNode(
+    t: TFunction<'translation', undefined>,
+    createChat: IChat,
+    chatbotFlow: ListChatbotFlowResponse,
+    currentFlowId: string,
+    customMessages?: {
+      service_finished_message?: string;
+      invalid_menu_option_message?: string;
+      invalid_satisfaction_option_message?: string;
+      invalid_cpf_message?: string;
+      invalid_cnpj_message?: string;
+      invalid_email_message?: string;
+      transfer_message_user?: string;
+      transfer_message_sector?: string;
+      transfer_message_sector_user?: string;
+    }
+  ): Promise<boolean> {
+    const currentNode = this.getFlowNodeById(chatbotFlow, currentFlowId);
+    if (!currentNode) {
+      throw new Error(t('chatbot_flow_node_not_found'));
+    }
+
+    const menuOptions = currentNode.data?.options ?? [];
+    if (menuOptions.length < 2) {
+      throw new Error(
+        t('chatbot_flow_validation_options_required', {
+          nodeLabel: currentNode.data?.title || currentNode.id,
+        })
+      );
+    }
+
+    const contactOption = menuOptions.find((option) => {
+      const textLower = option.text.toLowerCase().trim();
+      return (
+        textLower === 'contato' ||
+        (textLower.includes('contato') && !textLower.includes('não'))
+      );
+    });
+    const notContactOption = menuOptions.find((option) => {
+      const textLower = option.text.toLowerCase().trim();
+      return (
+        textLower === 'não é contato' ||
+        (textLower.includes('não') && textLower.includes('contato'))
+      );
+    });
+
+    if (!contactOption || !notContactOption) {
+      throw new Error(
+        'Contact node must have "Contato" and "Não é contato" options'
+      );
+    }
+
+    if (!createChat.phone) {
+      const nextFlowId = this.getNextFlowIdByOption(
+        chatbotFlow,
+        currentFlowId,
+        notContactOption.id
+      );
+      if (!nextFlowId) {
+        throw new Error(t('chatbot_flow_not_found'));
+      }
+      await this.updateCache(createChat, nextFlowId);
+      return this.processNextNode(
+        t,
+        createChat,
+        chatbotFlow,
+        nextFlowId,
+        customMessages
+      );
+    }
+
+    const phoneAndDdi = extractPhoneAndDdi(createChat.phone);
+    if (!phoneAndDdi) {
+      const nextFlowId = this.getNextFlowIdByOption(
+        chatbotFlow,
+        currentFlowId,
+        notContactOption.id
+      );
+      if (!nextFlowId) {
+        throw new Error(t('chatbot_flow_not_found'));
+      }
+      await this.updateCache(createChat, nextFlowId);
+      return this.processNextNode(
+        t,
+        createChat,
+        chatbotFlow,
+        nextFlowId,
+        customMessages
+      );
+    }
+
+    const contact = await this.contactService.getContactByPhone(
+      createChat.account.id,
+      phoneAndDdi.phone,
+      phoneAndDdi.phone_ddi
+    );
+
+    const selectedOption = contact ? contactOption : notContactOption;
+    const nextFlowId = this.getNextFlowIdByOption(
+      chatbotFlow,
+      currentFlowId,
+      selectedOption.id
+    );
+
+    if (!nextFlowId) {
+      throw new Error(t('chatbot_flow_not_found'));
+    }
+
+    await this.resetFailedAttempts(createChat);
+    await this.updateCache(createChat, nextFlowId);
+
+    return this.processNextNode(
+      t,
+      createChat,
+      chatbotFlow,
+      nextFlowId,
+      customMessages
+    );
+  }
+
   private async scheduleInactivityCheck(
     createChat: IChat,
     timeMinutes: number,
@@ -1983,7 +2113,6 @@ export class ChatbotFlowRunnerService {
       nodeType
     );
 
-    // Reenviar o menu/satisfaction após a mensagem de erro
     await this.sendBuildMenuMessage(t, createChat, currentNode);
 
     if (
@@ -2416,6 +2545,16 @@ export class ChatbotFlowRunnerService {
           redirectFailedAttempts,
           customMessages,
         }
+      );
+    }
+
+    if (currentNode.type === 'contact') {
+      return this.processContactNode(
+        t,
+        createChat,
+        chatbotFlow,
+        currentFlowId,
+        customMessages
       );
     }
 

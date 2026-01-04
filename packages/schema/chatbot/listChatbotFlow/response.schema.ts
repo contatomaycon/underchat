@@ -29,6 +29,7 @@ const nodeDataSchema = Type.Object({
       Type.Object({
         id: Type.String(),
         text: Type.String(),
+        required: Type.Optional(Type.Boolean()),
       })
     )
   ),

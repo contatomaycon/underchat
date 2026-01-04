@@ -21,6 +21,7 @@ import ChatbotFinishNode from '@/components/chatbot/ChatbotFinishNode.vue';
 import ChatbotTagNode from '@/components/chatbot/ChatbotTagNode.vue';
 import ChatbotMessageNode from '@/components/chatbot/ChatbotMessageNode.vue';
 import ChatbotDataNode from '@/components/chatbot/ChatbotDataNode.vue';
+import ChatbotContactNode from '@/components/chatbot/ChatbotContactNode.vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter, useRoute } from 'vue-router';
 import DialogCloseBtn from '@/@webcore/components/DialogCloseBtn.vue';
@@ -47,6 +48,7 @@ const nodeTypes = {
   tag: markRaw(ChatbotTagNode),
   message: markRaw(ChatbotMessageNode),
   data: markRaw(ChatbotDataNode),
+  contact: markRaw(ChatbotContactNode),
 };
 
 const { t } = useI18n();
@@ -448,7 +450,7 @@ const contextMenuEdgeId = ref<string | null>(null);
 const contextMenuCard = ref<HTMLElement | null>(null);
 
 let nodeIdCounter = 2;
-const optionNodeTypes = new Set(['menu', 'satisfaction']);
+const optionNodeTypes = new Set(['menu', 'satisfaction', 'contact']);
 
 const normalizeHandleId = (handle?: string | null): string | null => {
   if (!handle) {
@@ -640,6 +642,37 @@ const addMenuNode = (position?: { x: number; y: number }) => {
       title: '',
       message: '',
       options: [],
+      onRemove: () => removeNode(nodeId),
+      onRemoveOption: (optionId: string) => removeOptionEdge(nodeId, optionId),
+    },
+  };
+  nodes.value.push(newNode as Node);
+};
+
+const addContactMenuNode = (position?: { x: number; y: number }) => {
+  const nodeId = `contact-${nodeIdCounter++}`;
+  const contactOptionId = crypto.randomUUID();
+  const notContactOptionId = crypto.randomUUID();
+  const newNode: Node = {
+    id: nodeId,
+    type: 'contact',
+    position: position || {
+      x: getSecureRandom(400) + 100,
+      y: getSecureRandom(300) + 100,
+    },
+    data: {
+      options: [
+        {
+          id: contactOptionId,
+          text: t('chatbot_contact_option'),
+          required: true,
+        },
+        {
+          id: notContactOptionId,
+          text: t('chatbot_not_contact_option'),
+          required: true,
+        },
+      ],
       onRemove: () => removeNode(nodeId),
       onRemoveOption: (optionId: string) => removeOptionEdge(nodeId, optionId),
     },
@@ -905,6 +938,9 @@ const onDrop = (event: DragEvent) => {
     case 'data':
       addDataNode(position);
       break;
+    case 'contact':
+      addContactMenuNode(position);
+      break;
   }
 
   draggedNodeType.value = null;
@@ -1131,6 +1167,9 @@ const processNodeDataByType = (node: Node): void => {
     case 'satisfaction':
       processSatisfactionNodeData(node.data);
       break;
+    case 'contact':
+      processMenuNodeData(node.data);
+      break;
     case 'redirect':
       processRedirectNodeData(node.data);
       break;
@@ -1159,7 +1198,11 @@ const processLoadedNode = (node: Node): Node => {
     }
     node.data.onRemove = () => removeNode(node.id);
 
-    if (node.type === 'menu' || node.type === 'satisfaction') {
+    if (
+      node.type === 'menu' ||
+      node.type === 'satisfaction' ||
+      node.type === 'contact'
+    ) {
       node.data.onRemoveOption = (optionId: string) =>
         removeOptionEdge(node.id, optionId);
     }
@@ -1698,6 +1741,26 @@ onUnmounted(() => {
             >
               <VIcon icon="tabler-database" class="me-2" />
               {{ t('chatbot_data') }}
+            </VBtn>
+            <VBtn
+              color="tertiary"
+              draggable="true"
+              @dragstart.stop="
+                (e: DragEvent) => {
+                  draggedNodeType = 'contact';
+                  e.dataTransfer!.effectAllowed = 'move';
+                  e.dataTransfer!.dropEffect = 'move';
+                }
+              "
+              @dragend="
+                () => {
+                  draggedNodeType = null;
+                }
+              "
+              style="cursor: grab"
+            >
+              <VIcon icon="tabler-users" class="me-2" />
+              {{ t('chatbot_contact') }}
             </VBtn>
           </div>
           <div class="vertical-divider" />

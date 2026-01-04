@@ -211,6 +211,9 @@ export const chatbotFlowMappings = () => {
                     text: {
                       type: 'text',
                     },
+                    required: {
+                      type: 'boolean',
+                    },
                   },
                 },
               },

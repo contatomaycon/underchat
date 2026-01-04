@@ -10,6 +10,7 @@ import { useI18n } from 'vue-i18n';
 interface MenuOption {
   id: string;
   text: string;
+  required?: boolean;
 }
 
 interface MenuData {
@@ -83,6 +84,11 @@ const updateOption = (index: number, text: string) => {
 
 const removeOption = (index: number) => {
   const option = menuData.value.options[index];
+
+  if (option?.required) {
+    return;
+  }
+
   const data = props.data as MenuData;
 
   if (data?.onRemoveOption && option) {
@@ -363,6 +369,7 @@ watch(
               <div class="option-number">
                 <span class="option-number-text">{{ index + 1 }}</span>
                 <VIcon
+                  v-if="!option.required"
                   icon="tabler-x"
                   size="16"
                   color="error"

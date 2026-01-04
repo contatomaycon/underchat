@@ -342,25 +342,33 @@ export class ChatbotFlowSaverUseCase {
     node: any,
     errors: string[]
   ): void {
-    if (node.type !== 'menu' && node.type !== 'satisfaction') {
+    if (
+      node.type !== 'menu' &&
+      node.type !== 'satisfaction' &&
+      node.type !== 'contact'
+    ) {
       return;
     }
 
     const data = node.data;
-    if (!data.title || data.title.trim().length === 0) {
-      errors.push(
-        t('chatbot_flow_validation_title_required', {
-          nodeLabel: node.data?.title || node.label || node.id,
-        })
-      );
+    if (node.type !== 'contact') {
+      if (!data.title || data.title.trim().length === 0) {
+        errors.push(
+          t('chatbot_flow_validation_title_required', {
+            nodeLabel: node.data?.title || node.label || node.id,
+          })
+        );
+      }
     }
 
-    if (!data.message || data.message.trim().length === 0) {
-      errors.push(
-        t('chatbot_flow_validation_message_required', {
-          nodeLabel: node.data?.title || node.label || node.id,
-        })
-      );
+    if (node.type !== 'contact') {
+      if (!data.message || data.message.trim().length === 0) {
+        errors.push(
+          t('chatbot_flow_validation_message_required', {
+            nodeLabel: node.data?.title || node.label || node.id,
+          })
+        );
+      }
     }
 
     if (!data.options || data.options.length === 0) {
