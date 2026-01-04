@@ -16,7 +16,10 @@ export class UpdateStartProtocolTextUseCase {
     accountId: string,
     workerId: string,
     body: UpdateStartProtocolTextRequest
-  ): Promise<{ generate_protocol_at_start: string | null }> {
+  ): Promise<{
+    generate_protocol_at_start: string | null;
+    enabled: boolean;
+  }> {
     const existsWorkerById = await this.workerService.existsWorkerById(
       accountId,
       workerId
@@ -27,13 +30,13 @@ export class UpdateStartProtocolTextUseCase {
     }
 
     const text = body.text?.trim() || null;
+
     const result = await this.workerConfigService.updateStartProtocolText(
       workerId,
-      text
+      text,
+      body.enabled
     );
 
-    return {
-      generate_protocol_at_start: result,
-    };
+    return result;
   }
 }

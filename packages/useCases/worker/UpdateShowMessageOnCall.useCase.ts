@@ -16,7 +16,10 @@ export class UpdateShowMessageOnCallUseCase {
     accountId: string,
     workerId: string,
     body: UpdateShowMessageOnCallRequest
-  ): Promise<{ show_message_on_call: string | null }> {
+  ): Promise<{
+    show_message_on_call: string | null;
+    enabled: boolean;
+  }> {
     const existsWorkerById = await this.workerService.existsWorkerById(
       accountId,
       workerId
@@ -27,13 +30,13 @@ export class UpdateShowMessageOnCallUseCase {
     }
 
     const text = body.text?.trim() || null;
+
     const result = await this.workerConfigService.updateShowMessageOnCall(
       workerId,
-      text
+      text,
+      body.enabled
     );
 
-    return {
-      show_message_on_call: result,
-    };
+    return result;
   }
 }

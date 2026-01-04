@@ -14,7 +14,10 @@ export class ViewChatbotUseCase {
     t: TFunction<'translation', undefined>,
     accountId: string,
     workerId: string
-  ): Promise<{ chatbot_id: string | null }> {
+  ): Promise<{
+    chatbot_id: string | null;
+    enabled: boolean;
+  }> {
     const existsWorkerById = await this.workerService.existsWorkerById(
       accountId,
       workerId
@@ -26,8 +29,6 @@ export class ViewChatbotUseCase {
 
     const result = await this.workerConfigService.viewChatbot(workerId);
 
-    return {
-      chatbot_id: result,
-    };
+    return result;
   }
 }

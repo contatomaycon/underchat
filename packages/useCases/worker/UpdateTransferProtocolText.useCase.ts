@@ -16,7 +16,10 @@ export class UpdateTransferProtocolTextUseCase {
     accountId: string,
     workerId: string,
     body: UpdateTransferProtocolTextRequest
-  ): Promise<{ generate_protocol_at_transfer: string | null }> {
+  ): Promise<{
+    generate_protocol_at_transfer: string | null;
+    enabled: boolean;
+  }> {
     const existsWorkerById = await this.workerService.existsWorkerById(
       accountId,
       workerId
@@ -27,13 +30,13 @@ export class UpdateTransferProtocolTextUseCase {
     }
 
     const text = body.text?.trim() || null;
+
     const result = await this.workerConfigService.updateTransferProtocolText(
       workerId,
-      text
+      text,
+      body.enabled
     );
 
-    return {
-      generate_protocol_at_transfer: result,
-    };
+    return result;
   }
 }

@@ -922,16 +922,28 @@ export const useChannelsStore = defineStore('channels', {
 
     async updateTransferProtocolText(
       workerId: string,
-      text: string | null
-    ): Promise<string | null> {
+      text: string | null,
+      enabled: boolean
+    ): Promise<{
+      generate_protocol_at_transfer: string | null;
+      enabled: boolean;
+    } | null> {
       if (!workerId) return null;
 
       try {
+        const body: { text?: string; enabled: boolean } = {
+          enabled,
+        };
+        if (text !== null) {
+          body.text = text;
+        }
+
         const response = await axios.patch<
-          IApiResponse<{ generate_protocol_at_transfer: string | null }>
-        >(`/worker/${workerId}/config/transfer-protocol`, {
-          text: text || null,
-        });
+          IApiResponse<{
+            generate_protocol_at_transfer: string | null;
+            enabled: boolean;
+          }>
+        >(`/worker/${workerId}/config/transfer-protocol`, body);
 
         const data = response?.data;
 
@@ -949,7 +961,7 @@ export const useChannelsStore = defineStore('channels', {
           EColor.success
         );
 
-        return data.data.generate_protocol_at_transfer;
+        return data.data;
       } catch (error) {
         let message = this.i18n.global.t('transfer_protocol_text_update_error');
         if (error instanceof AxiosError) {
@@ -984,16 +996,28 @@ export const useChannelsStore = defineStore('channels', {
 
     async updateStartProtocolText(
       workerId: string,
-      text: string | null
-    ): Promise<string | null> {
+      text: string | null,
+      enabled: boolean
+    ): Promise<{
+      generate_protocol_at_start: string | null;
+      enabled: boolean;
+    } | null> {
       if (!workerId) return null;
 
       try {
+        const body: { text?: string; enabled: boolean } = {
+          enabled,
+        };
+        if (text !== null) {
+          body.text = text;
+        }
+
         const response = await axios.patch<
-          IApiResponse<{ generate_protocol_at_start: string | null }>
-        >(`/worker/${workerId}/config/start-protocol`, {
-          text: text || null,
-        });
+          IApiResponse<{
+            generate_protocol_at_start: string | null;
+            enabled: boolean;
+          }>
+        >(`/worker/${workerId}/config/start-protocol`, body);
 
         const data = response?.data;
 
@@ -1011,7 +1035,7 @@ export const useChannelsStore = defineStore('channels', {
           EColor.success
         );
 
-        return data.data.generate_protocol_at_start;
+        return data.data;
       } catch (error) {
         let message = this.i18n.global.t('start_protocol_text_update_error');
         if (error instanceof AxiosError) {
@@ -1046,16 +1070,28 @@ export const useChannelsStore = defineStore('channels', {
 
     async updateChatbot(
       workerId: string,
-      chatbotId: string | null
-    ): Promise<string | null> {
+      chatbotId: string | null,
+      enabled: boolean
+    ): Promise<{
+      chatbot_id: string | null;
+      enabled: boolean;
+    } | null> {
       if (!workerId) return null;
 
       try {
+        const body: { chatbot_id?: string; enabled: boolean } = {
+          enabled,
+        };
+        if (chatbotId !== null) {
+          body.chatbot_id = chatbotId;
+        }
+
         const response = await axios.patch<
-          IApiResponse<{ chatbot_id: string | null }>
-        >(`/worker/${workerId}/config/chatbot`, {
-          chatbot_id: chatbotId || null,
-        });
+          IApiResponse<{
+            chatbot_id: string | null;
+            enabled: boolean;
+          }>
+        >(`/worker/${workerId}/config/chatbot`, body);
 
         const data = response?.data;
 
@@ -1072,7 +1108,7 @@ export const useChannelsStore = defineStore('channels', {
           EColor.success
         );
 
-        return data.data.chatbot_id;
+        return data.data;
       } catch (error) {
         let message = this.i18n.global.t('chatbot_update_error');
         if (error instanceof AxiosError) {
@@ -1125,14 +1161,18 @@ export const useChannelsStore = defineStore('channels', {
       }
     },
 
-    async fetchSimultaneousAttendance(
-      workerId: string
-    ): Promise<number | null> {
+    async fetchSimultaneousAttendance(workerId: string): Promise<{
+      simultaneous_attendance: number | null;
+      enabled: boolean;
+    } | null> {
       if (!workerId) return null;
 
       try {
         const response = await axios.get<
-          IApiResponse<{ simultaneous_attendance: number | null }>
+          IApiResponse<{
+            simultaneous_attendance: number | null;
+            enabled: boolean;
+          }>
         >(`/worker/${workerId}/config/simultaneous-attendance`);
 
         const data = response?.data;
@@ -1141,7 +1181,7 @@ export const useChannelsStore = defineStore('channels', {
           return null;
         }
 
-        return data.data.simultaneous_attendance;
+        return data.data;
       } catch {
         return null;
       }
@@ -1149,18 +1189,27 @@ export const useChannelsStore = defineStore('channels', {
 
     async updateSimultaneousAttendance(
       workerId: string,
-      quantity: number | null
-    ): Promise<number | null> {
+      quantity: number | null,
+      enabled: boolean
+    ): Promise<{
+      simultaneous_attendance: number | null;
+      enabled: boolean;
+    } | null> {
       if (!workerId) return null;
 
       try {
-        const body: { quantity?: number } = {};
+        const body: { quantity?: number; enabled: boolean } = {
+          enabled,
+        };
         if (quantity !== null) {
           body.quantity = quantity;
         }
 
         const response = await axios.patch<
-          IApiResponse<{ simultaneous_attendance: number | null }>
+          IApiResponse<{
+            simultaneous_attendance: number | null;
+            enabled: boolean;
+          }>
         >(`/worker/${workerId}/config/simultaneous-attendance`, body);
 
         const data = response?.data;
@@ -1179,7 +1228,7 @@ export const useChannelsStore = defineStore('channels', {
           EColor.success
         );
 
-        return data.data.simultaneous_attendance;
+        return data.data;
       } catch (error) {
         let message = this.i18n.global.t(
           'simultaneous_attendance_update_error'
@@ -1216,16 +1265,28 @@ export const useChannelsStore = defineStore('channels', {
 
     async updateShowMessageOnCall(
       workerId: string,
-      text: string | null
-    ): Promise<string | null> {
+      text: string | null,
+      enabled: boolean
+    ): Promise<{
+      show_message_on_call: string | null;
+      enabled: boolean;
+    } | null> {
       if (!workerId) return null;
 
       try {
+        const body: { text?: string; enabled: boolean } = {
+          enabled,
+        };
+        if (text !== null) {
+          body.text = text;
+        }
+
         const response = await axios.patch<
-          IApiResponse<{ show_message_on_call: string | null }>
-        >(`/worker/${workerId}/config/show-message-on-call`, {
-          text: text || null,
-        });
+          IApiResponse<{
+            show_message_on_call: string | null;
+            enabled: boolean;
+          }>
+        >(`/worker/${workerId}/config/show-message-on-call`, body);
 
         const data = response?.data;
 
@@ -1243,7 +1304,7 @@ export const useChannelsStore = defineStore('channels', {
           EColor.success
         );
 
-        return data.data.show_message_on_call;
+        return data.data;
       } catch (error) {
         let message = this.i18n.global.t('show_message_on_call_update_error');
         if (error instanceof AxiosError) {
@@ -1282,16 +1343,28 @@ export const useChannelsStore = defineStore('channels', {
 
     async updateSendMessageOnFinishAttendance(
       workerId: string,
-      text: string | null
-    ): Promise<string | null> {
+      text: string | null,
+      enabled: boolean
+    ): Promise<{
+      send_message_on_finish_attendance: string | null;
+      enabled: boolean;
+    } | null> {
       if (!workerId) return null;
 
       try {
+        const body: { text?: string; enabled: boolean } = {
+          enabled,
+        };
+        if (text !== null) {
+          body.text = text;
+        }
+
         const response = await axios.patch<
-          IApiResponse<{ send_message_on_finish_attendance: string | null }>
-        >(`/worker/${workerId}/config/send-message-on-finish-attendance`, {
-          text: text || null,
-        });
+          IApiResponse<{
+            send_message_on_finish_attendance: string | null;
+            enabled: boolean;
+          }>
+        >(`/worker/${workerId}/config/send-message-on-finish-attendance`, body);
 
         const data = response?.data;
 
@@ -1313,7 +1386,7 @@ export const useChannelsStore = defineStore('channels', {
           EColor.success
         );
 
-        return data.data.send_message_on_finish_attendance;
+        return data.data;
       } catch (error) {
         let message = this.i18n.global.t(
           'send_message_on_finish_attendance_update_error'

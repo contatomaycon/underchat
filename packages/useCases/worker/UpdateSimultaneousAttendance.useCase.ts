@@ -16,7 +16,7 @@ export class UpdateSimultaneousAttendanceUseCase {
     accountId: string,
     workerId: string,
     body: UpdateSimultaneousAttendanceRequest
-  ): Promise<{ simultaneous_attendance: number | null }> {
+  ): Promise<{ simultaneous_attendance: number | null; enabled: boolean }> {
     const existsWorkerById = await this.workerService.existsWorkerById(
       accountId,
       workerId
@@ -27,13 +27,13 @@ export class UpdateSimultaneousAttendanceUseCase {
     }
 
     const quantity = body.quantity || null;
+
     const result = await this.workerConfigService.updateSimultaneousAttendance(
       workerId,
-      quantity
+      quantity,
+      body.enabled
     );
 
-    return {
-      simultaneous_attendance: result,
-    };
+    return result;
   }
 }

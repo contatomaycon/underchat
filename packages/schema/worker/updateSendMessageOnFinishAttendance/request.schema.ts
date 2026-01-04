@@ -6,6 +6,7 @@ export const updateSendMessageOnFinishAttendanceParamsSchema = Type.Object({
 
 export const updateSendMessageOnFinishAttendanceRequestSchema = Type.Object({
   text: Type.Optional(Type.String({ maxLength: 2000 })),
+  enabled: Type.Boolean(),
 });
 
 export type UpdateSendMessageOnFinishAttendanceParams = Static<

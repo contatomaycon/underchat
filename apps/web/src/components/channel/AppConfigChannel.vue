@@ -12,6 +12,7 @@ import { can } from '@layouts/plugins/casl';
 import { ListContactGroupAllResponse } from '@core/schema/contactGroup/listContactGroupAll/response.schema';
 import { ListContactResponse } from '@core/schema/contact/listContact/response.schema';
 import { ViewWorkerConfigResponse } from '@core/schema/worker/viewWorkerConfig/response.schema';
+import { UpdateWorkerConfigRequest } from '@core/schema/worker/updateWorkerConfig/request.schema';
 
 const channelStore = useChannelsStore();
 const contactGroupStore = useContactGroupStore();
@@ -459,6 +460,7 @@ const applyWorkerConfig = (config?: ViewWorkerConfigResponse | null) => {
     );
     nextState.reject_call = config.reject_call ?? false;
     nextState.auto_save_contacts = config.auto_save_contacts;
+    nextState.chatbot = config.chatbot_id !== null && config.chatbot_id !== '';
   }
 
   Object.assign(workerConfigForm, nextState);
@@ -483,7 +485,7 @@ const loadWorkerConfig = async (force = false) => {
     const [
       protocolTransferText,
       protocolStartText,
-      simultaneousAttendanceValue,
+      simultaneousAttendanceData,
       showMessageOnCallValue,
       sendMessageOnFinishAttendanceValue,
       chatbotValue,
@@ -500,8 +502,6 @@ const loadWorkerConfig = async (force = false) => {
       protocolTransferText !== null && protocolTransferText.trim().length > 0;
     const hasStartProtocolText =
       protocolStartText !== null && protocolStartText.trim().length > 0;
-    const hasSimultaneousAttendance =
-      simultaneousAttendanceValue !== null && simultaneousAttendanceValue > 0;
 
     transferProtocolText.value = hasTransferProtocolText
       ? protocolTransferText
@@ -511,11 +511,20 @@ const loadWorkerConfig = async (force = false) => {
     startProtocolText.value = hasStartProtocolText ? protocolStartText : '';
     workerConfigForm.generate_protocol_at_start = hasStartProtocolText;
 
-    simultaneousAttendance.value = simultaneousAttendanceValue;
-    workerConfigForm.simultaneous_attendance = hasSimultaneousAttendance;
-    simultaneousAttendanceInput.value = hasSimultaneousAttendance
-      ? simultaneousAttendanceValue.toString()
-      : '';
+    if (simultaneousAttendanceData) {
+      simultaneousAttendance.value =
+        simultaneousAttendanceData.simultaneous_attendance;
+      workerConfigForm.simultaneous_attendance =
+        simultaneousAttendanceData.enabled;
+      simultaneousAttendanceInput.value =
+        simultaneousAttendanceData.simultaneous_attendance
+          ? simultaneousAttendanceData.simultaneous_attendance.toString()
+          : '';
+    } else {
+      simultaneousAttendance.value = null;
+      workerConfigForm.simultaneous_attendance = false;
+      simultaneousAttendanceInput.value = '';
+    }
 
     const hasShowMessageOnCall =
       showMessageOnCallValue !== null &&
@@ -568,7 +577,39 @@ const onWorkerConfigCheckboxChange = async (
   value: boolean | null
 ) => {
   workerConfigForm[field] = Boolean(value);
-  await saveWorkerConfig();
+
+  const fieldsToUpdateViaConfigEndpoint: WorkerConfigField[] = [
+    'is_automatic_attendance',
+    'show_attendee_name',
+    'show_worker_name',
+    'allow_attendance_only_online',
+    'reject_call',
+    'auto_save_contacts',
+  ];
+
+  if (!fieldsToUpdateViaConfigEndpoint.includes(field)) {
+    return;
+  }
+
+  if (!channelId.value) return;
+
+  try {
+    isSavingWorkerConfig.value = true;
+    const payload: UpdateWorkerConfigRequest = {
+      [field]: Boolean(value),
+    } as UpdateWorkerConfigRequest;
+    const result = await channelStore.updateWorkerConfig(
+      channelId.value,
+      payload
+    );
+
+    if (result) {
+      applyWorkerConfig(result);
+      workerConfigLoadedFor.value = channelId.value;
+    }
+  } finally {
+    isSavingWorkerConfig.value = false;
+  }
 };
 
 type WorkerConfigField = keyof WorkerConfigForm;
@@ -593,14 +634,17 @@ const saveTransferProtocolText = async () => {
   try {
     isSavingTransferProtocol.value = true;
     const text = transferProtocolText.value.trim() || null;
+    const enabled = true;
     const result = await channelStore.updateTransferProtocolText(
       channelId.value,
-      text
+      text,
+      enabled
     );
 
-    const hasText = result !== null && result.trim().length > 0;
-    workerConfigForm.generate_protocol_at_transfer = hasText;
-    transferProtocolText.value = result || '';
+    if (result) {
+      workerConfigForm.generate_protocol_at_transfer = result.enabled;
+      transferProtocolText.value = result.generate_protocol_at_transfer || '';
+    }
 
     closeTransferProtocolModal();
   } finally {
@@ -613,10 +657,19 @@ const deleteTransferProtocolText = async () => {
 
   try {
     isSavingTransferProtocol.value = true;
-    await channelStore.updateTransferProtocolText(channelId.value, null);
+    const text = null;
+    const enabled = false;
+    const result = await channelStore.updateTransferProtocolText(
+      channelId.value,
+      text,
+      enabled
+    );
 
-    workerConfigForm.generate_protocol_at_transfer = false;
-    transferProtocolText.value = '';
+    if (result) {
+      workerConfigForm.generate_protocol_at_transfer = result.enabled;
+      transferProtocolText.value = result.generate_protocol_at_transfer || '';
+    }
+
     closeTransferProtocolModal();
   } finally {
     isSavingTransferProtocol.value = false;
@@ -643,14 +696,17 @@ const saveStartProtocolText = async () => {
   try {
     isSavingStartProtocol.value = true;
     const text = startProtocolText.value.trim() || null;
+    const enabled = true;
     const result = await channelStore.updateStartProtocolText(
       channelId.value,
-      text
+      text,
+      enabled
     );
 
-    const hasText = result !== null && result.trim().length > 0;
-    workerConfigForm.generate_protocol_at_start = hasText;
-    startProtocolText.value = result || '';
+    if (result) {
+      workerConfigForm.generate_protocol_at_start = result.enabled;
+      startProtocolText.value = result.generate_protocol_at_start || '';
+    }
 
     closeStartProtocolModal();
   } finally {
@@ -663,10 +719,19 @@ const deleteStartProtocolText = async () => {
 
   try {
     isSavingStartProtocol.value = true;
-    await channelStore.updateStartProtocolText(channelId.value, null);
+    const text = null;
+    const enabled = false;
+    const result = await channelStore.updateStartProtocolText(
+      channelId.value,
+      text,
+      enabled
+    );
 
-    workerConfigForm.generate_protocol_at_start = false;
-    startProtocolText.value = '';
+    if (result) {
+      workerConfigForm.generate_protocol_at_start = result.enabled;
+      startProtocolText.value = result.generate_protocol_at_start || '';
+    }
+
     closeStartProtocolModal();
   } finally {
     isSavingStartProtocol.value = false;
@@ -676,11 +741,18 @@ const deleteStartProtocolText = async () => {
 const openSimultaneousAttendanceModal = async () => {
   if (!channelId.value) return;
 
-  const quantity = await channelStore.fetchSimultaneousAttendance(
-    channelId.value
-  );
-  simultaneousAttendance.value = quantity;
-  simultaneousAttendanceInput.value = quantity ? quantity.toString() : '';
+  const data = await channelStore.fetchSimultaneousAttendance(channelId.value);
+
+  if (data) {
+    simultaneousAttendance.value = data.simultaneous_attendance;
+    simultaneousAttendanceInput.value = data.simultaneous_attendance
+      ? data.simultaneous_attendance.toString()
+      : '';
+  } else {
+    simultaneousAttendance.value = null;
+    simultaneousAttendanceInput.value = '';
+  }
+
   simultaneousAttendanceModalOpen.value = true;
 };
 
@@ -691,47 +763,63 @@ const closeSimultaneousAttendanceModal = () => {
     : '';
 };
 
-const saveSimultaneousAttendance = async () => {
+const toggleSimultaneousAttendanceStatus = async () => {
   if (!channelId.value) return;
 
-  const quantityValue = simultaneousAttendanceInput.value.trim();
-  if (!quantityValue) {
-    return;
-  }
-
-  const quantity = Number.parseInt(quantityValue, 10);
-  if (Number.isNaN(quantity) || quantity < 1) {
-    return;
-  }
+  const isCurrentlyEnabled = workerConfigForm.simultaneous_attendance;
+  const newEnabled = !isCurrentlyEnabled;
 
   try {
     isSavingSimultaneousAttendance.value = true;
+
+    const quantity = newEnabled ? simultaneousAttendance.value || null : null;
+
     const result = await channelStore.updateSimultaneousAttendance(
       channelId.value,
-      quantity
+      quantity,
+      newEnabled
     );
 
-    const hasQuantity = result !== null && result > 0;
-    workerConfigForm.simultaneous_attendance = hasQuantity;
-    simultaneousAttendance.value = result;
-    simultaneousAttendanceInput.value = result ? result.toString() : '';
-
-    closeSimultaneousAttendanceModal();
+    if (result) {
+      workerConfigForm.simultaneous_attendance = result.enabled;
+      simultaneousAttendance.value = result.simultaneous_attendance;
+      simultaneousAttendanceInput.value = result.simultaneous_attendance
+        ? result.simultaneous_attendance.toString()
+        : '';
+    }
   } finally {
     isSavingSimultaneousAttendance.value = false;
   }
 };
 
-const deleteSimultaneousAttendance = async () => {
+const saveSimultaneousAttendanceQuantity = async () => {
   if (!channelId.value) return;
+
+  const quantityValue = simultaneousAttendanceInput.value.trim();
+  const quantity = quantityValue ? Number.parseInt(quantityValue, 10) : null;
+
+  if (quantity !== null && (Number.isNaN(quantity) || quantity < 1)) {
+    return;
+  }
 
   try {
     isSavingSimultaneousAttendance.value = true;
-    await channelStore.updateSimultaneousAttendance(channelId.value, null);
 
-    workerConfigForm.simultaneous_attendance = false;
-    simultaneousAttendance.value = null;
-    simultaneousAttendanceInput.value = '';
+    const currentEnabled = workerConfigForm.simultaneous_attendance;
+
+    const result = await channelStore.updateSimultaneousAttendance(
+      channelId.value,
+      quantity,
+      currentEnabled
+    );
+
+    if (result) {
+      simultaneousAttendance.value = result.simultaneous_attendance;
+      simultaneousAttendanceInput.value = result.simultaneous_attendance
+        ? result.simultaneous_attendance.toString()
+        : '';
+    }
+
     closeSimultaneousAttendanceModal();
   } finally {
     isSavingSimultaneousAttendance.value = false;
@@ -760,17 +848,19 @@ const saveShowMessageOnCallText = async () => {
   try {
     isSavingShowMessageOnCall.value = true;
     const text = showMessageOnCallText.value.trim() || null;
+    const enabled = true;
     const [result] = await Promise.all([
-      channelStore.updateShowMessageOnCall(channelId.value, text),
+      channelStore.updateShowMessageOnCall(channelId.value, text, enabled),
       channelStore.updateWorkerConfig(channelId.value, {
         reject_call: showMessageOnCallRejectCall.value,
       }),
     ]);
 
-    const hasText = result !== null && result.trim().length > 0;
-    workerConfigForm.show_message_on_call = hasText;
+    if (result) {
+      workerConfigForm.show_message_on_call = result.enabled;
+      showMessageOnCallText.value = result.show_message_on_call || '';
+    }
     workerConfigForm.reject_call = showMessageOnCallRejectCall.value;
-    showMessageOnCallText.value = result || '';
 
     closeShowMessageOnCallModal();
   } finally {
@@ -783,17 +873,22 @@ const deleteShowMessageOnCallText = async () => {
 
   try {
     isSavingShowMessageOnCall.value = true;
-    await Promise.all([
-      channelStore.updateShowMessageOnCall(channelId.value, null),
+    const text = null;
+    const enabled = false;
+    const [result] = await Promise.all([
+      channelStore.updateShowMessageOnCall(channelId.value, text, enabled),
       channelStore.updateWorkerConfig(channelId.value, {
         reject_call: false,
       }),
     ]);
 
-    workerConfigForm.show_message_on_call = false;
+    if (result) {
+      workerConfigForm.show_message_on_call = result.enabled;
+      showMessageOnCallText.value = result.show_message_on_call || '';
+    }
     workerConfigForm.reject_call = false;
-    showMessageOnCallText.value = '';
     showMessageOnCallRejectCall.value = false;
+
     closeShowMessageOnCallModal();
   } finally {
     isSavingShowMessageOnCall.value = false;
@@ -820,14 +915,18 @@ const saveSendMessageOnFinishAttendanceText = async () => {
   try {
     isSavingSendMessageOnFinishAttendance.value = true;
     const text = sendMessageOnFinishAttendanceText.value.trim() || null;
+    const enabled = true;
     const result = await channelStore.updateSendMessageOnFinishAttendance(
       channelId.value,
-      text
+      text,
+      enabled
     );
 
-    const hasText = result !== null && result.trim().length > 0;
-    workerConfigForm.send_message_on_finish_attendance = hasText;
-    sendMessageOnFinishAttendanceText.value = result || '';
+    if (result) {
+      workerConfigForm.send_message_on_finish_attendance = result.enabled;
+      sendMessageOnFinishAttendanceText.value =
+        result.send_message_on_finish_attendance || '';
+    }
 
     closeSendMessageOnFinishAttendanceModal();
   } finally {
@@ -840,13 +939,20 @@ const deleteSendMessageOnFinishAttendanceText = async () => {
 
   try {
     isSavingSendMessageOnFinishAttendance.value = true;
-    await channelStore.updateSendMessageOnFinishAttendance(
+    const text = null;
+    const enabled = false;
+    const result = await channelStore.updateSendMessageOnFinishAttendance(
       channelId.value,
-      null
+      text,
+      enabled
     );
 
-    workerConfigForm.send_message_on_finish_attendance = false;
-    sendMessageOnFinishAttendanceText.value = '';
+    if (result) {
+      workerConfigForm.send_message_on_finish_attendance = result.enabled;
+      sendMessageOnFinishAttendanceText.value =
+        result.send_message_on_finish_attendance || '';
+    }
+
     closeSendMessageOnFinishAttendanceModal();
   } finally {
     isSavingSendMessageOnFinishAttendance.value = false;
@@ -872,14 +978,19 @@ const saveChatbot = async () => {
 
   try {
     isSavingChatbot.value = true;
+    const chatbotIdValue = selectedChatbotId.value || null;
+    const enabled = true;
     const result = await channelStore.updateChatbot(
       channelId.value,
-      selectedChatbotId.value
+      chatbotIdValue,
+      enabled
     );
 
-    const hasChatbot = result !== null && result !== '';
-    workerConfigForm.chatbot = hasChatbot;
-    chatbotId.value = result;
+    if (result) {
+      workerConfigForm.chatbot = result.enabled;
+      chatbotId.value = result.chatbot_id;
+      selectedChatbotId.value = result.chatbot_id;
+    }
 
     closeChatbotModal();
   } finally {
@@ -892,11 +1003,19 @@ const deleteChatbot = async () => {
 
   try {
     isSavingChatbot.value = true;
-    await channelStore.updateChatbot(channelId.value, null);
+    const chatbotIdValue = null;
+    const enabled = false;
+    const result = await channelStore.updateChatbot(
+      channelId.value,
+      chatbotIdValue,
+      enabled
+    );
 
-    workerConfigForm.chatbot = false;
-    chatbotId.value = null;
-    selectedChatbotId.value = null;
+    if (result) {
+      workerConfigForm.chatbot = result.enabled;
+      chatbotId.value = result.chatbot_id;
+      selectedChatbotId.value = result.chatbot_id;
+    }
 
     closeChatbotModal();
   } finally {
@@ -3219,9 +3338,17 @@ onMounted(async () => {
         <span>{{
           $t('channel_general_config_simultaneous_attendance_title')
         }}</span>
-        <IconBtn @click="closeSimultaneousAttendanceModal">
-          <VIcon icon="tabler-x" />
-        </IconBtn>
+        <div class="d-flex align-center gap-2">
+          <VSwitch
+            :model-value="workerConfigForm.simultaneous_attendance"
+            color="primary"
+            :disabled="isSavingSimultaneousAttendance"
+            @click="toggleSimultaneousAttendanceStatus"
+          />
+          <IconBtn @click="closeSimultaneousAttendanceModal">
+            <VIcon icon="tabler-x" />
+          </IconBtn>
+        </div>
       </VCardTitle>
       <VCardText>
         <VLabel class="text-body-2 mb-1"
@@ -3232,6 +3359,7 @@ onMounted(async () => {
           :placeholder="$t('simultaneous_attendance_quantity_placeholder')"
           type="number"
           min="1"
+          :disabled="!workerConfigForm.simultaneous_attendance"
           :rules="[
             (v) => {
               if (!v || v.trim() === '') return true;
@@ -3254,27 +3382,16 @@ onMounted(async () => {
           :disabled="isSavingSimultaneousAttendance"
           @click="closeSimultaneousAttendanceModal"
         >
-          {{ $t('cancel') }}
-        </VBtn>
-        <VBtn
-          v-if="simultaneousAttendance !== null && simultaneousAttendance > 0"
-          color="error"
-          variant="tonal"
-          :loading="isSavingSimultaneousAttendance"
-          :disabled="isSavingSimultaneousAttendance"
-          @click="deleteSimultaneousAttendance"
-        >
-          {{ $t('deactivate') }}
+          {{ $t('close') }}
         </VBtn>
         <VBtn
           color="primary"
           :loading="isSavingSimultaneousAttendance"
           :disabled="
             isSavingSimultaneousAttendance ||
-            !simultaneousAttendanceInput.trim() ||
-            Number.parseInt(simultaneousAttendanceInput, 10) < 1
+            !workerConfigForm.simultaneous_attendance
           "
-          @click="saveSimultaneousAttendance"
+          @click="saveSimultaneousAttendanceQuantity"
         >
           {{ $t('save') }}
         </VBtn>

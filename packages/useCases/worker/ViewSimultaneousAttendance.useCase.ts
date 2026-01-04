@@ -14,7 +14,7 @@ export class ViewSimultaneousAttendanceUseCase {
     t: TFunction<'translation', undefined>,
     accountId: string,
     workerId: string
-  ): Promise<{ simultaneous_attendance: number | null }> {
+  ): Promise<{ simultaneous_attendance: number | null; enabled: boolean }> {
     const existsWorkerById = await this.workerService.existsWorkerById(
       accountId,
       workerId
@@ -27,8 +27,6 @@ export class ViewSimultaneousAttendanceUseCase {
     const result =
       await this.workerConfigService.viewSimultaneousAttendance(workerId);
 
-    return {
-      simultaneous_attendance: result,
-    };
+    return result;
   }
 }

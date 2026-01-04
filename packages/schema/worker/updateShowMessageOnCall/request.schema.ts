@@ -6,6 +6,7 @@ export const updateShowMessageOnCallParamsSchema = Type.Object({
 
 export const updateShowMessageOnCallRequestSchema = Type.Object({
   text: Type.Optional(Type.String({ maxLength: 2000 })),
+  enabled: Type.Boolean(),
 });
 
 export type UpdateShowMessageOnCallParams = Static<

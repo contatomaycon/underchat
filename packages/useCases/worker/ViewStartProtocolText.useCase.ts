@@ -14,7 +14,10 @@ export class ViewStartProtocolTextUseCase {
     t: TFunction<'translation', undefined>,
     accountId: string,
     workerId: string
-  ): Promise<{ generate_protocol_at_start: string | null }> {
+  ): Promise<{
+    generate_protocol_at_start: string | null;
+    enabled: boolean;
+  }> {
     const existsWorkerById = await this.workerService.existsWorkerById(
       accountId,
       workerId
@@ -27,8 +30,6 @@ export class ViewStartProtocolTextUseCase {
     const result =
       await this.workerConfigService.viewStartProtocolText(workerId);
 
-    return {
-      generate_protocol_at_start: result,
-    };
+    return result;
   }
 }

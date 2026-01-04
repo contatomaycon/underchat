@@ -14,7 +14,10 @@ export class ViewTransferProtocolTextUseCase {
     t: TFunction<'translation', undefined>,
     accountId: string,
     workerId: string
-  ): Promise<{ generate_protocol_at_transfer: string | null }> {
+  ): Promise<{
+    generate_protocol_at_transfer: string | null;
+    enabled: boolean;
+  }> {
     const existsWorkerById = await this.workerService.existsWorkerById(
       accountId,
       workerId
@@ -27,8 +30,6 @@ export class ViewTransferProtocolTextUseCase {
     const result =
       await this.workerConfigService.viewTransferProtocolText(workerId);
 
-    return {
-      generate_protocol_at_transfer: result,
-    };
+    return result;
   }
 }

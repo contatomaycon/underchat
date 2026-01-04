@@ -6,6 +6,7 @@ export const updateSimultaneousAttendanceParamsSchema = Type.Object({
 
 export const updateSimultaneousAttendanceRequestSchema = Type.Object({
   quantity: Type.Optional(Type.Integer({ minimum: 1 })),
+  enabled: Type.Boolean(),
 });
 
 export type UpdateSimultaneousAttendanceParams = Static<

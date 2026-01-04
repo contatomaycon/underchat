@@ -6,6 +6,7 @@ export const updateStartProtocolTextParamsSchema = Type.Object({
 
 export const updateStartProtocolTextRequestSchema = Type.Object({
   text: Type.Optional(Type.String({ maxLength: 2000 })),
+  enabled: Type.Boolean(),
 });
 
 export type UpdateStartProtocolTextParams = Static<

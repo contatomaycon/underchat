@@ -37,7 +37,7 @@ export class WorkerConfigForChatViewerRepository {
       .where(
         and(
           eq(workerConfig.worker_id, workerId),
-          eq(workerConfig.worker_config_status_id, EWorkerConfigStatus.ativo)
+          eq(workerConfig.worker_config_status_id, EWorkerConfigStatus.active)
         )
       )
       .execute();
@@ -53,6 +53,10 @@ export class WorkerConfigForChatViewerRepository {
   private buildConfigForChat(
     configMap: Map<EWorkerConfigType, string | null>
   ): ViewWorkerConfigForChatResponse {
+    const simultaneousAttendance = this.parseNumber(
+      configMap.get(EWorkerConfigType.simultaneous_attendance)
+    );
+
     return {
       show_worker_name: configMap.has(EWorkerConfigType.show_worker_name)
         ? true
@@ -70,9 +74,9 @@ export class WorkerConfigForChatViewerRepository {
       )
         ? true
         : false,
-      simultaneous_attendance: this.parseNumber(
-        configMap.get(EWorkerConfigType.simultaneous_attendance)
-      ),
+      simultaneous_attendance: simultaneousAttendance,
+      simultaneous_attendance_enabled:
+        simultaneousAttendance !== null && simultaneousAttendance > 0,
     };
   }
 

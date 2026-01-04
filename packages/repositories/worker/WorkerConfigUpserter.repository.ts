@@ -88,10 +88,10 @@ export class WorkerConfigUpserterRepository {
 
   updateTransferProtocolText = async (
     workerId: string,
-    text: string | null
+    text: string | null,
+    statusId: string
   ): Promise<string | null> => {
     await this.dbRw.transaction(async (tx) => {
-      const statusId = EWorkerConfigStatus.ativo;
       await this.upsertConfigValue(
         tx,
         workerId,
@@ -109,10 +109,10 @@ export class WorkerConfigUpserterRepository {
 
   updateStartProtocolText = async (
     workerId: string,
-    text: string | null
+    text: string | null,
+    statusId: string
   ): Promise<string | null> => {
     await this.dbRw.transaction(async (tx) => {
-      const statusId = EWorkerConfigStatus.ativo;
       await this.upsertConfigValue(
         tx,
         workerId,
@@ -130,10 +130,10 @@ export class WorkerConfigUpserterRepository {
 
   updateSimultaneousAttendance = async (
     workerId: string,
-    quantity: number | null
+    quantity: number | null,
+    statusId: string
   ): Promise<number | null> => {
     await this.dbRw.transaction(async (tx) => {
-      const statusId = EWorkerConfigStatus.ativo;
       await this.upsertConfigValue(
         tx,
         workerId,
@@ -153,10 +153,10 @@ export class WorkerConfigUpserterRepository {
 
   updateShowMessageOnCall = async (
     workerId: string,
-    text: string | null
+    text: string | null,
+    statusId: string
   ): Promise<string | null> => {
     await this.dbRw.transaction(async (tx) => {
-      const statusId = EWorkerConfigStatus.ativo;
       await this.upsertConfigValue(
         tx,
         workerId,
@@ -174,10 +174,10 @@ export class WorkerConfigUpserterRepository {
 
   updateSendMessageOnFinishAttendance = async (
     workerId: string,
-    text: string | null
+    text: string | null,
+    statusId: string
   ): Promise<string | null> => {
     await this.dbRw.transaction(async (tx) => {
-      const statusId = EWorkerConfigStatus.ativo;
       await this.upsertConfigValue(
         tx,
         workerId,
@@ -195,11 +195,10 @@ export class WorkerConfigUpserterRepository {
 
   updateChatbot = async (
     workerId: string,
-    chatbotId: string | null
+    chatbotId: string | null,
+    statusId: string
   ): Promise<string | null> => {
     await this.dbRw.transaction(async (tx) => {
-      const statusId = EWorkerConfigStatus.ativo;
-
       const existing = await this.findConfigByWorkerAndTypeId(
         tx,
         workerId,
@@ -207,7 +206,12 @@ export class WorkerConfigUpserterRepository {
       );
 
       if (existing) {
-        await this.updateChatbotId(tx, existing.worker_config_id, chatbotId);
+        await this.updateChatbotId(
+          tx,
+          existing.worker_config_id,
+          chatbotId,
+          statusId
+        );
         return;
       }
 
@@ -226,11 +230,13 @@ export class WorkerConfigUpserterRepository {
   private async updateChatbotId(
     tx: Transaction,
     configId: string,
-    chatbotId: string | null
+    chatbotId: string | null,
+    statusId: string
   ): Promise<void> {
     await tx
       .update(workerConfig)
       .set({
+        worker_config_status_id: statusId,
         chatbot_id: chatbotId,
         updated_at: new Date().toISOString(),
       })
@@ -287,8 +293,8 @@ export class WorkerConfigUpserterRepository {
     type: EWorkerConfigType,
     isActive: boolean
   ): Promise<void> {
-    const activeStatusId = EWorkerConfigStatus.ativo;
-    const inactiveStatusId = EWorkerConfigStatus.inativo;
+    const activeStatusId = EWorkerConfigStatus.active;
+    const inactiveStatusId = EWorkerConfigStatus.inactive;
 
     const existingConfig = await this.findConfigByWorkerAndTypeId(
       tx,
@@ -354,7 +360,12 @@ export class WorkerConfigUpserterRepository {
     const existing = await this.findConfigByWorkerAndTypeId(tx, workerId, type);
 
     if (existing) {
-      await this.updateConfigValue(tx, existing.worker_config_id, value);
+      await this.updateConfigValue(
+        tx,
+        existing.worker_config_id,
+        statusId,
+        value
+      );
       return;
     }
 
@@ -380,6 +391,7 @@ export class WorkerConfigUpserterRepository {
   private async updateConfigValue(
     tx: Transaction,
     configId: string,
+    statusId: string,
     newValue: string | null
   ): Promise<void> {
     const currentValue = await this.getConfigValueById(tx, configId);
@@ -387,6 +399,7 @@ export class WorkerConfigUpserterRepository {
     await tx
       .update(workerConfig)
       .set({
+        worker_config_status_id: statusId,
         value: newValue !== null ? newValue : currentValue,
         updated_at: new Date().toISOString(),
       })
@@ -423,7 +436,6 @@ export class WorkerConfigUpserterRepository {
       .where(
         and(
           eq(workerConfig.worker_id, workerId),
-          eq(workerConfig.worker_config_status_id, EWorkerConfigStatus.ativo),
           eq(workerConfig.worker_config_type_id, type)
         )
       )
@@ -442,7 +454,6 @@ export class WorkerConfigUpserterRepository {
       .where(
         and(
           eq(workerConfig.worker_id, workerId),
-          eq(workerConfig.worker_config_status_id, EWorkerConfigStatus.ativo),
           eq(workerConfig.worker_config_type_id, EWorkerConfigType.chatbot_id)
         )
       )

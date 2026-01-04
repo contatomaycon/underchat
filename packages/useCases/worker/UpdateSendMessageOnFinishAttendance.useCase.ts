@@ -16,7 +16,10 @@ export class UpdateSendMessageOnFinishAttendanceUseCase {
     accountId: string,
     workerId: string,
     body: UpdateSendMessageOnFinishAttendanceRequest
-  ): Promise<{ send_message_on_finish_attendance: string | null }> {
+  ): Promise<{
+    send_message_on_finish_attendance: string | null;
+    enabled: boolean;
+  }> {
     const existsWorkerById = await this.workerService.existsWorkerById(
       accountId,
       workerId
@@ -27,14 +30,14 @@ export class UpdateSendMessageOnFinishAttendanceUseCase {
     }
 
     const text = body.text?.trim() || null;
+
     const result =
       await this.workerConfigService.updateSendMessageOnFinishAttendance(
         workerId,
-        text
+        text,
+        body.enabled
       );
 
-    return {
-      send_message_on_finish_attendance: result,
-    };
+    return result;
   }
 }

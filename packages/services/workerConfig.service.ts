@@ -10,6 +10,7 @@ import Redis from 'ioredis';
 import { StreamProducerService } from './streamProducer.service';
 import { KafkaServiceQueueService } from './kafkaServiceQueue.service';
 import { IWorkerConfigUpdateEvent } from '@core/common/interfaces/IWorkerConfigUpdateEvent';
+import { EWorkerConfigStatus } from '@core/common/enums/EWorkerConfigStatus';
 
 @injectable()
 export class WorkerConfigService {
@@ -52,7 +53,24 @@ export class WorkerConfigService {
       );
 
     if (!result) {
-      throw new Error(t('worker_config_not_found'));
+      return this.mapToWorkerConfig({
+        worker_config_id: '',
+        worker_id: workerId,
+        is_automatic_attendance: null,
+        show_attendee_name: null,
+        show_worker_name: null,
+        allow_attendance_only_online: null,
+        simultaneous_attendance: null,
+        generate_protocol_at_start: null,
+        generate_protocol_at_transfer: null,
+        show_message_on_call: null,
+        send_message_on_finish_attendance: null,
+        reject_call: null,
+        auto_save_contacts: null,
+        chatbot_id: null,
+        created_at: null,
+        updated_at: null,
+      });
     }
 
     if (input.reject_call !== undefined) {
@@ -99,169 +117,342 @@ export class WorkerConfigService {
 
   async updateTransferProtocolText(
     workerId: string,
-    text: string | null
-  ): Promise<string | null> {
+    text: string | null,
+    enabled: boolean
+  ): Promise<{
+    generate_protocol_at_transfer: string | null;
+    enabled: boolean;
+  }> {
+    const statusId = enabled
+      ? EWorkerConfigStatus.active
+      : EWorkerConfigStatus.inactive;
+
+    const currentConfig = await this.viewTransferProtocolText(workerId);
+    const textToSave =
+      text !== null ? text : currentConfig.generate_protocol_at_transfer;
+
     const [result] = await Promise.all([
       this.workerConfigUpserterRepository.updateTransferProtocolText(
         workerId,
-        text
+        textToSave,
+        statusId
       ),
       this.invalidateWorkerConfigCache(workerId),
     ]);
 
-    return result;
+    return {
+      generate_protocol_at_transfer: result,
+      enabled,
+    };
   }
 
-  async viewTransferProtocolText(workerId: string): Promise<string | null> {
+  async viewTransferProtocolText(workerId: string): Promise<{
+    generate_protocol_at_transfer: string | null;
+    enabled: boolean;
+  }> {
     const result =
       await this.workerConfigViewerRepository.viewWorkerConfigByWorkerId(
         workerId
       );
 
     if (!result) {
-      return null;
+      return {
+        generate_protocol_at_transfer: null,
+        enabled: false,
+      };
     }
 
-    return result.generate_protocol_at_transfer || null;
+    const protocolText = result.generate_protocol_at_transfer || null;
+    const enabled = protocolText !== null && protocolText.trim().length > 0;
+
+    return {
+      generate_protocol_at_transfer: protocolText,
+      enabled,
+    };
   }
 
   async updateStartProtocolText(
     workerId: string,
-    text: string | null
-  ): Promise<string | null> {
+    text: string | null,
+    enabled: boolean
+  ): Promise<{
+    generate_protocol_at_start: string | null;
+    enabled: boolean;
+  }> {
+    const statusId = enabled
+      ? EWorkerConfigStatus.active
+      : EWorkerConfigStatus.inactive;
+
+    const currentConfig = await this.viewStartProtocolText(workerId);
+    const textToSave =
+      text !== null ? text : currentConfig.generate_protocol_at_start;
+
     const [result] = await Promise.all([
       this.workerConfigUpserterRepository.updateStartProtocolText(
         workerId,
-        text
+        textToSave,
+        statusId
       ),
       this.invalidateWorkerConfigCache(workerId),
     ]);
 
-    return result;
+    return {
+      generate_protocol_at_start: result,
+      enabled,
+    };
   }
 
-  async viewStartProtocolText(workerId: string): Promise<string | null> {
+  async viewStartProtocolText(workerId: string): Promise<{
+    generate_protocol_at_start: string | null;
+    enabled: boolean;
+  }> {
     const result =
       await this.workerConfigViewerRepository.viewWorkerConfigByWorkerId(
         workerId
       );
 
     if (!result) {
-      return null;
+      return {
+        generate_protocol_at_start: null,
+        enabled: false,
+      };
     }
 
-    return result.generate_protocol_at_start || null;
+    const protocolText = result.generate_protocol_at_start || null;
+    const enabled = protocolText !== null && protocolText.trim().length > 0;
+
+    return {
+      generate_protocol_at_start: protocolText,
+      enabled,
+    };
   }
 
   async updateSimultaneousAttendance(
     workerId: string,
-    quantity: number | null
-  ): Promise<number | null> {
+    quantity: number | null,
+    enabled: boolean
+  ): Promise<{
+    simultaneous_attendance: number | null;
+    enabled: boolean;
+  }> {
+    const statusId = enabled
+      ? EWorkerConfigStatus.active
+      : EWorkerConfigStatus.inactive;
+
+    const currentConfig = await this.viewSimultaneousAttendance(workerId);
+    const quantityToSave =
+      quantity !== null
+        ? quantity
+        : currentConfig.simultaneous_attendance !== null
+          ? currentConfig.simultaneous_attendance
+          : null;
+
     const [result] = await Promise.all([
       this.workerConfigUpserterRepository.updateSimultaneousAttendance(
         workerId,
-        quantity
+        quantityToSave,
+        statusId
       ),
       this.invalidateWorkerConfigCache(workerId),
     ]);
 
-    return result;
+    return {
+      simultaneous_attendance: result,
+      enabled,
+    };
   }
 
-  async viewSimultaneousAttendance(workerId: string): Promise<number | null> {
-    const result =
-      await this.workerConfigViewerRepository.viewWorkerConfigByWorkerId(
+  async viewSimultaneousAttendance(
+    workerId: string
+  ): Promise<{ simultaneous_attendance: number | null; enabled: boolean }> {
+    const config =
+      await this.workerConfigViewerRepository.fetchSimultaneousAttendanceValue(
         workerId
       );
 
-    if (!result) {
-      return null;
-    }
+    const attendance =
+      config.value !== null ? parseInt(config.value, 10) : null;
 
-    return result.simultaneous_attendance || null;
+    const enabled =
+      config.statusId === EWorkerConfigStatus.active &&
+      attendance !== null &&
+      !isNaN(attendance) &&
+      attendance > 0;
+
+    return {
+      simultaneous_attendance:
+        attendance !== null && !isNaN(attendance) ? attendance : null,
+      enabled,
+    };
   }
 
   async updateShowMessageOnCall(
     workerId: string,
-    text: string | null
-  ): Promise<string | null> {
+    text: string | null,
+    enabled: boolean
+  ): Promise<{
+    show_message_on_call: string | null;
+    enabled: boolean;
+  }> {
+    const statusId = enabled
+      ? EWorkerConfigStatus.active
+      : EWorkerConfigStatus.inactive;
+
+    const currentConfig = await this.viewShowMessageOnCall(workerId);
+    const textToSave =
+      text !== null ? text : currentConfig.show_message_on_call;
+
     const [result] = await Promise.all([
       this.workerConfigUpserterRepository.updateShowMessageOnCall(
         workerId,
-        text
+        textToSave,
+        statusId
       ),
       this.invalidateWorkerConfigCache(workerId),
     ]);
 
-    return result;
+    return {
+      show_message_on_call: result,
+      enabled,
+    };
   }
 
-  async viewShowMessageOnCall(workerId: string): Promise<string | null> {
+  async viewShowMessageOnCall(workerId: string): Promise<{
+    show_message_on_call: string | null;
+    enabled: boolean;
+  }> {
     const result =
       await this.workerConfigViewerRepository.viewWorkerConfigByWorkerId(
         workerId
       );
 
     if (!result) {
-      return null;
+      return {
+        show_message_on_call: null,
+        enabled: false,
+      };
     }
 
-    return result.show_message_on_call || null;
+    const messageText = result.show_message_on_call || null;
+    const enabled = messageText !== null && messageText.trim().length > 0;
+
+    return {
+      show_message_on_call: messageText,
+      enabled,
+    };
   }
 
   async updateSendMessageOnFinishAttendance(
     workerId: string,
-    text: string | null
-  ): Promise<string | null> {
+    text: string | null,
+    enabled: boolean
+  ): Promise<{
+    send_message_on_finish_attendance: string | null;
+    enabled: boolean;
+  }> {
+    const statusId = enabled
+      ? EWorkerConfigStatus.active
+      : EWorkerConfigStatus.inactive;
+
+    const currentConfig =
+      await this.viewSendMessageOnFinishAttendance(workerId);
+    const textToSave =
+      text !== null ? text : currentConfig.send_message_on_finish_attendance;
+
     const [result] = await Promise.all([
       this.workerConfigUpserterRepository.updateSendMessageOnFinishAttendance(
         workerId,
-        text
+        textToSave,
+        statusId
       ),
       this.invalidateWorkerConfigCache(workerId),
     ]);
 
-    return result;
+    return {
+      send_message_on_finish_attendance: result,
+      enabled,
+    };
   }
 
-  async viewSendMessageOnFinishAttendance(
-    workerId: string
-  ): Promise<string | null> {
+  async viewSendMessageOnFinishAttendance(workerId: string): Promise<{
+    send_message_on_finish_attendance: string | null;
+    enabled: boolean;
+  }> {
     const result =
       await this.workerConfigViewerRepository.viewWorkerConfigByWorkerId(
         workerId
       );
 
     if (!result) {
-      return null;
+      return {
+        send_message_on_finish_attendance: null,
+        enabled: false,
+      };
     }
 
-    return result.send_message_on_finish_attendance || null;
+    const messageText = result.send_message_on_finish_attendance || null;
+    const enabled = messageText !== null && messageText.trim().length > 0;
+
+    return {
+      send_message_on_finish_attendance: messageText,
+      enabled,
+    };
   }
 
   async updateChatbot(
     workerId: string,
-    chatbotId: string | null
-  ): Promise<string | null> {
+    chatbotId: string | null,
+    enabled: boolean
+  ): Promise<{
+    chatbot_id: string | null;
+    enabled: boolean;
+  }> {
+    const statusId = enabled
+      ? EWorkerConfigStatus.active
+      : EWorkerConfigStatus.inactive;
+
+    const currentConfig = await this.viewChatbot(workerId);
+    const chatbotIdToSave =
+      chatbotId !== null ? chatbotId : currentConfig.chatbot_id;
+
     const [result] = await Promise.all([
-      this.workerConfigUpserterRepository.updateChatbot(workerId, chatbotId),
+      this.workerConfigUpserterRepository.updateChatbot(
+        workerId,
+        chatbotIdToSave,
+        statusId
+      ),
       this.invalidateWorkerConfigCache(workerId),
     ]);
 
-    return result;
+    return {
+      chatbot_id: result,
+      enabled,
+    };
   }
 
-  async viewChatbot(workerId: string): Promise<string | null> {
+  async viewChatbot(workerId: string): Promise<{
+    chatbot_id: string | null;
+    enabled: boolean;
+  }> {
     const result =
       await this.workerConfigViewerRepository.viewWorkerConfigByWorkerId(
         workerId
       );
 
     if (!result) {
-      return null;
+      return {
+        chatbot_id: null,
+        enabled: false,
+      };
     }
 
-    return result.chatbot_id || null;
+    const chatbotId = result.chatbot_id || null;
+    const enabled = chatbotId !== null && chatbotId.trim().length > 0;
+
+    return {
+      chatbot_id: chatbotId,
+      enabled,
+    };
   }
 
   private async invalidateWorkerConfigCache(workerId: string): Promise<void> {

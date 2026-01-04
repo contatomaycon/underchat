@@ -14,7 +14,10 @@ export class ViewSendMessageOnFinishAttendanceUseCase {
     t: TFunction<'translation', undefined>,
     accountId: string,
     workerId: string
-  ): Promise<{ send_message_on_finish_attendance: string | null }> {
+  ): Promise<{
+    send_message_on_finish_attendance: string | null;
+    enabled: boolean;
+  }> {
     const existsWorkerById = await this.workerService.existsWorkerById(
       accountId,
       workerId
@@ -29,8 +32,6 @@ export class ViewSendMessageOnFinishAttendanceUseCase {
         workerId
       );
 
-    return {
-      send_message_on_finish_attendance: result,
-    };
+    return result;
   }
 }

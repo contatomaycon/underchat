@@ -14,7 +14,10 @@ export class ViewShowMessageOnCallUseCase {
     t: TFunction<'translation', undefined>,
     accountId: string,
     workerId: string
-  ): Promise<{ show_message_on_call: string | null }> {
+  ): Promise<{
+    show_message_on_call: string | null;
+    enabled: boolean;
+  }> {
     const existsWorkerById = await this.workerService.existsWorkerById(
       accountId,
       workerId
@@ -27,8 +30,6 @@ export class ViewShowMessageOnCallUseCase {
     const result =
       await this.workerConfigService.viewShowMessageOnCall(workerId);
 
-    return {
-      show_message_on_call: result,
-    };
+    return result;
   }
 }

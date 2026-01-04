@@ -18,7 +18,10 @@ export class UpdateChatbotUseCase {
     accountId: string,
     workerId: string,
     body: UpdateChatbotRequest
-  ): Promise<{ chatbot_id: string | null }> {
+  ): Promise<{
+    chatbot_id: string | null;
+    enabled: boolean;
+  }> {
     const existsWorkerById = await this.workerService.existsWorkerById(
       accountId,
       workerId
@@ -28,25 +31,23 @@ export class UpdateChatbotUseCase {
       throw new Error(t('worker_not_found'));
     }
 
-    if (body.chatbot_id) {
+    const chatbotId = body.chatbot_id?.trim() || null;
+
+    if (chatbotId) {
       const chatbots = await this.chatbotService.listChatbots(accountId);
-      const chatbotExists = chatbots.some(
-        (c) => c.chatbot_id === body.chatbot_id
-      );
+      const chatbotExists = chatbots.some((c) => c.chatbot_id === chatbotId);
 
       if (!chatbotExists) {
         throw new Error(t('chatbot_not_found'));
       }
     }
 
-    const chatbotId = body.chatbot_id?.trim() || null;
     const result = await this.workerConfigService.updateChatbot(
       workerId,
-      chatbotId
+      chatbotId,
+      body.enabled
     );
 
-    return {
-      chatbot_id: result,
-    };
+    return result;
   }
 }

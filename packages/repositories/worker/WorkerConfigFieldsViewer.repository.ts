@@ -37,7 +37,7 @@ export class WorkerConfigFieldsViewerRepository {
       .where(
         and(
           eq(workerConfig.worker_id, workerId),
-          eq(workerConfig.worker_config_status_id, EWorkerConfigStatus.ativo)
+          eq(workerConfig.worker_config_status_id, EWorkerConfigStatus.active)
         )
       )
       .execute();

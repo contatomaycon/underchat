@@ -244,11 +244,13 @@ const cannotAttendDueToStatus = computed(() => {
 const cannotAttendDueToLimit = computed(() => {
   if (!isQueueOrUraStatus.value) return false;
   if (cannotAttendDueToStatus.value) return false;
-  if (!workerConfigForChat.value?.simultaneous_attendance) return false;
+  if (!workerConfigForChat.value?.simultaneous_attendance_enabled) return false;
   if (!chatStore.activeChat?.worker?.id || !chatStore.user?.user_id)
     return false;
 
   const limit = workerConfigForChat.value.simultaneous_attendance;
+  if (limit === null || limit === undefined) return false;
+
   const currentInChatCount = chatStore.listInChat.filter(
     (chat) =>
       chat.user?.id === chatStore.user?.user_id &&
