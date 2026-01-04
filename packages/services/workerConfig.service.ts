@@ -11,6 +11,7 @@ import { StreamProducerService } from './streamProducer.service';
 import { KafkaServiceQueueService } from './kafkaServiceQueue.service';
 import { IWorkerConfigUpdateEvent } from '@core/common/interfaces/IWorkerConfigUpdateEvent';
 import { EWorkerConfigStatus } from '@core/common/enums/EWorkerConfigStatus';
+import { EWorkerConfigType } from '@core/common/enums/EWorkerConfigType';
 
 @injectable()
 export class WorkerConfigService {
@@ -150,20 +151,18 @@ export class WorkerConfigService {
     generate_protocol_at_transfer: string | null;
     enabled: boolean;
   }> {
-    const result =
-      await this.workerConfigViewerRepository.viewWorkerConfigByWorkerId(
-        workerId
+    const config =
+      await this.workerConfigViewerRepository.fetchConfigValueByType(
+        workerId,
+        EWorkerConfigType.generate_protocol_at_transfer
       );
 
-    if (!result) {
-      return {
-        generate_protocol_at_transfer: null,
-        enabled: false,
-      };
-    }
+    const protocolText = config.value || null;
 
-    const protocolText = result.generate_protocol_at_transfer || null;
-    const enabled = protocolText !== null && protocolText.trim().length > 0;
+    const enabled =
+      config.statusId === EWorkerConfigStatus.active &&
+      protocolText !== null &&
+      protocolText.trim().length > 0;
 
     return {
       generate_protocol_at_transfer: protocolText,
@@ -206,20 +205,18 @@ export class WorkerConfigService {
     generate_protocol_at_start: string | null;
     enabled: boolean;
   }> {
-    const result =
-      await this.workerConfigViewerRepository.viewWorkerConfigByWorkerId(
-        workerId
+    const config =
+      await this.workerConfigViewerRepository.fetchConfigValueByType(
+        workerId,
+        EWorkerConfigType.generate_protocol_at_start
       );
 
-    if (!result) {
-      return {
-        generate_protocol_at_start: null,
-        enabled: false,
-      };
-    }
+    const protocolText = config.value || null;
 
-    const protocolText = result.generate_protocol_at_start || null;
-    const enabled = protocolText !== null && protocolText.trim().length > 0;
+    const enabled =
+      config.statusId === EWorkerConfigStatus.active &&
+      protocolText !== null &&
+      protocolText.trim().length > 0;
 
     return {
       generate_protocol_at_start: protocolText,
@@ -321,20 +318,18 @@ export class WorkerConfigService {
     show_message_on_call: string | null;
     enabled: boolean;
   }> {
-    const result =
-      await this.workerConfigViewerRepository.viewWorkerConfigByWorkerId(
-        workerId
+    const config =
+      await this.workerConfigViewerRepository.fetchConfigValueByType(
+        workerId,
+        EWorkerConfigType.show_message_on_call
       );
 
-    if (!result) {
-      return {
-        show_message_on_call: null,
-        enabled: false,
-      };
-    }
+    const messageText = config.value || null;
 
-    const messageText = result.show_message_on_call || null;
-    const enabled = messageText !== null && messageText.trim().length > 0;
+    const enabled =
+      config.statusId === EWorkerConfigStatus.active &&
+      messageText !== null &&
+      messageText.trim().length > 0;
 
     return {
       show_message_on_call: messageText,
@@ -378,20 +373,18 @@ export class WorkerConfigService {
     send_message_on_finish_attendance: string | null;
     enabled: boolean;
   }> {
-    const result =
-      await this.workerConfigViewerRepository.viewWorkerConfigByWorkerId(
-        workerId
+    const config =
+      await this.workerConfigViewerRepository.fetchConfigValueByType(
+        workerId,
+        EWorkerConfigType.send_message_on_finish_attendance
       );
 
-    if (!result) {
-      return {
-        send_message_on_finish_attendance: null,
-        enabled: false,
-      };
-    }
+    const messageText = config.value || null;
 
-    const messageText = result.send_message_on_finish_attendance || null;
-    const enabled = messageText !== null && messageText.trim().length > 0;
+    const enabled =
+      config.statusId === EWorkerConfigStatus.active &&
+      messageText !== null &&
+      messageText.trim().length > 0;
 
     return {
       send_message_on_finish_attendance: messageText,
@@ -434,20 +427,15 @@ export class WorkerConfigService {
     chatbot_id: string | null;
     enabled: boolean;
   }> {
-    const result =
-      await this.workerConfigViewerRepository.viewWorkerConfigByWorkerId(
-        workerId
-      );
+    const config =
+      await this.workerConfigViewerRepository.fetchChatbotValue(workerId);
 
-    if (!result) {
-      return {
-        chatbot_id: null,
-        enabled: false,
-      };
-    }
+    const chatbotId = config.chatbotId || null;
 
-    const chatbotId = result.chatbot_id || null;
-    const enabled = chatbotId !== null && chatbotId.trim().length > 0;
+    const enabled =
+      config.statusId === EWorkerConfigStatus.active &&
+      chatbotId !== null &&
+      chatbotId.trim().length > 0;
 
     return {
       chatbot_id: chatbotId,

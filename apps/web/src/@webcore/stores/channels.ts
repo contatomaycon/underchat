@@ -900,12 +900,18 @@ export const useChannelsStore = defineStore('channels', {
       }
     },
 
-    async fetchTransferProtocolText(workerId: string): Promise<string | null> {
+    async fetchTransferProtocolText(workerId: string): Promise<{
+      generate_protocol_at_transfer: string | null;
+      enabled: boolean;
+    } | null> {
       if (!workerId) return null;
 
       try {
         const response = await axios.get<
-          IApiResponse<{ generate_protocol_at_transfer: string | null }>
+          IApiResponse<{
+            generate_protocol_at_transfer: string | null;
+            enabled: boolean;
+          }>
         >(`/worker/${workerId}/config/transfer-protocol`);
 
         const data = response?.data;
@@ -914,7 +920,7 @@ export const useChannelsStore = defineStore('channels', {
           return null;
         }
 
-        return data.data.generate_protocol_at_transfer;
+        return data.data;
       } catch {
         return null;
       }
@@ -974,12 +980,18 @@ export const useChannelsStore = defineStore('channels', {
       }
     },
 
-    async fetchStartProtocolText(workerId: string): Promise<string | null> {
+    async fetchStartProtocolText(workerId: string): Promise<{
+      generate_protocol_at_start: string | null;
+      enabled: boolean;
+    } | null> {
       if (!workerId) return null;
 
       try {
         const response = await axios.get<
-          IApiResponse<{ generate_protocol_at_start: string | null }>
+          IApiResponse<{
+            generate_protocol_at_start: string | null;
+            enabled: boolean;
+          }>
         >(`/worker/${workerId}/config/start-protocol`);
 
         const data = response?.data;
@@ -988,7 +1000,7 @@ export const useChannelsStore = defineStore('channels', {
           return null;
         }
 
-        return data.data.generate_protocol_at_start;
+        return data.data;
       } catch {
         return null;
       }
@@ -1048,12 +1060,14 @@ export const useChannelsStore = defineStore('channels', {
       }
     },
 
-    async fetchChatbot(workerId: string): Promise<string | null> {
+    async fetchChatbot(
+      workerId: string
+    ): Promise<{ chatbot_id: string | null; enabled: boolean } | null> {
       if (!workerId) return null;
 
       try {
         const response = await axios.get<
-          IApiResponse<{ chatbot_id: string | null }>
+          IApiResponse<{ chatbot_id: string | null; enabled: boolean }>
         >(`/worker/${workerId}/config/chatbot`);
 
         const data = response?.data;
@@ -1062,7 +1076,7 @@ export const useChannelsStore = defineStore('channels', {
           return null;
         }
 
-        return data.data.chatbot_id;
+        return data.data;
       } catch {
         return null;
       }
@@ -1243,12 +1257,18 @@ export const useChannelsStore = defineStore('channels', {
       }
     },
 
-    async fetchShowMessageOnCall(workerId: string): Promise<string | null> {
+    async fetchShowMessageOnCall(workerId: string): Promise<{
+      show_message_on_call: string | null;
+      enabled: boolean;
+    } | null> {
       if (!workerId) return null;
 
       try {
         const response = await axios.get<
-          IApiResponse<{ show_message_on_call: string | null }>
+          IApiResponse<{
+            show_message_on_call: string | null;
+            enabled: boolean;
+          }>
         >(`/worker/${workerId}/config/show-message-on-call`);
 
         const data = response?.data;
@@ -1257,7 +1277,7 @@ export const useChannelsStore = defineStore('channels', {
           return null;
         }
 
-        return data.data.show_message_on_call;
+        return data.data;
       } catch {
         return null;
       }
@@ -1317,15 +1337,17 @@ export const useChannelsStore = defineStore('channels', {
       }
     },
 
-    async fetchSendMessageOnFinishAttendance(
-      workerId: string
-    ): Promise<string | null> {
+    async fetchSendMessageOnFinishAttendance(workerId: string): Promise<{
+      send_message_on_finish_attendance: string | null;
+      enabled: boolean;
+    } | null> {
       if (!workerId) return null;
 
       try {
         const response = await axios.get<
           IApiResponse<{
             send_message_on_finish_attendance: string | null;
+            enabled: boolean;
           }>
         >(`/worker/${workerId}/config/send-message-on-finish-attendance`);
 
@@ -1335,7 +1357,7 @@ export const useChannelsStore = defineStore('channels', {
           return null;
         }
 
-        return data.data.send_message_on_finish_attendance;
+        return data.data;
       } catch {
         return null;
       }

@@ -483,12 +483,12 @@ const loadWorkerConfig = async (force = false) => {
     workerConfigLoadedFor.value = channelId.value;
 
     const [
-      protocolTransferText,
-      protocolStartText,
+      protocolTransferData,
+      protocolStartData,
       simultaneousAttendanceData,
-      showMessageOnCallValue,
-      sendMessageOnFinishAttendanceValue,
-      chatbotValue,
+      showMessageOnCallData,
+      sendMessageOnFinishAttendanceData,
+      chatbotData,
     ] = await Promise.all([
       channelStore.fetchTransferProtocolText(channelId.value),
       channelStore.fetchStartProtocolText(channelId.value),
@@ -498,18 +498,24 @@ const loadWorkerConfig = async (force = false) => {
       channelStore.fetchChatbot(channelId.value),
     ]);
 
-    const hasTransferProtocolText =
-      protocolTransferText !== null && protocolTransferText.trim().length > 0;
-    const hasStartProtocolText =
-      protocolStartText !== null && protocolStartText.trim().length > 0;
+    if (protocolTransferData) {
+      transferProtocolText.value =
+        protocolTransferData.generate_protocol_at_transfer || '';
+      workerConfigForm.generate_protocol_at_transfer =
+        protocolTransferData.enabled;
+    } else {
+      transferProtocolText.value = '';
+      workerConfigForm.generate_protocol_at_transfer = false;
+    }
 
-    transferProtocolText.value = hasTransferProtocolText
-      ? protocolTransferText
-      : '';
-    workerConfigForm.generate_protocol_at_transfer = hasTransferProtocolText;
-
-    startProtocolText.value = hasStartProtocolText ? protocolStartText : '';
-    workerConfigForm.generate_protocol_at_start = hasStartProtocolText;
+    if (protocolStartData) {
+      startProtocolText.value =
+        protocolStartData.generate_protocol_at_start || '';
+      workerConfigForm.generate_protocol_at_start = protocolStartData.enabled;
+    } else {
+      startProtocolText.value = '';
+      workerConfigForm.generate_protocol_at_start = false;
+    }
 
     if (simultaneousAttendanceData) {
       simultaneousAttendance.value =
@@ -526,25 +532,35 @@ const loadWorkerConfig = async (force = false) => {
       simultaneousAttendanceInput.value = '';
     }
 
-    const hasShowMessageOnCall =
-      showMessageOnCallValue !== null &&
-      showMessageOnCallValue.trim().length > 0;
-    showMessageOnCallText.value = hasShowMessageOnCall
-      ? showMessageOnCallValue
-      : '';
-    workerConfigForm.show_message_on_call = hasShowMessageOnCall;
+    if (showMessageOnCallData) {
+      showMessageOnCallText.value =
+        showMessageOnCallData.show_message_on_call || '';
+      workerConfigForm.show_message_on_call = showMessageOnCallData.enabled;
+    } else {
+      showMessageOnCallText.value = '';
+      workerConfigForm.show_message_on_call = false;
+    }
 
-    const hasSendMessageOnFinishAttendance =
-      sendMessageOnFinishAttendanceValue !== null &&
-      sendMessageOnFinishAttendanceValue.trim().length > 0;
-    sendMessageOnFinishAttendanceText.value = hasSendMessageOnFinishAttendance
-      ? sendMessageOnFinishAttendanceValue
-      : '';
-    workerConfigForm.send_message_on_finish_attendance =
-      hasSendMessageOnFinishAttendance;
+    if (sendMessageOnFinishAttendanceData) {
+      sendMessageOnFinishAttendanceText.value =
+        sendMessageOnFinishAttendanceData.send_message_on_finish_attendance ||
+        '';
+      workerConfigForm.send_message_on_finish_attendance =
+        sendMessageOnFinishAttendanceData.enabled;
+    } else {
+      sendMessageOnFinishAttendanceText.value = '';
+      workerConfigForm.send_message_on_finish_attendance = false;
+    }
 
-    chatbotId.value = chatbotValue;
-    workerConfigForm.chatbot = chatbotValue !== null && chatbotValue !== '';
+    if (chatbotData) {
+      chatbotId.value = chatbotData.chatbot_id;
+      selectedChatbotId.value = chatbotData.chatbot_id;
+      workerConfigForm.chatbot = chatbotData.enabled;
+    } else {
+      chatbotId.value = null;
+      selectedChatbotId.value = null;
+      workerConfigForm.chatbot = false;
+    }
   } finally {
     isLoadingWorkerConfig.value = false;
   }
@@ -617,15 +633,45 @@ type WorkerConfigField = keyof WorkerConfigForm;
 const openTransferProtocolModal = async () => {
   if (!channelId.value) return;
 
-  const protocolText = await channelStore.fetchTransferProtocolText(
-    channelId.value
-  );
-  transferProtocolText.value = protocolText || '';
+  const data = await channelStore.fetchTransferProtocolText(channelId.value);
+
+  if (data) {
+    transferProtocolText.value = data.generate_protocol_at_transfer || '';
+  } else {
+    transferProtocolText.value = '';
+  }
+
   transferProtocolModalOpen.value = true;
 };
 
 const closeTransferProtocolModal = () => {
   transferProtocolModalOpen.value = false;
+};
+
+const toggleTransferProtocolStatus = async () => {
+  if (!channelId.value) return;
+
+  const isCurrentlyEnabled = workerConfigForm.generate_protocol_at_transfer;
+  const newEnabled = !isCurrentlyEnabled;
+
+  try {
+    isSavingTransferProtocol.value = true;
+
+    const text = newEnabled ? transferProtocolText.value.trim() || null : null;
+
+    const result = await channelStore.updateTransferProtocolText(
+      channelId.value,
+      text,
+      newEnabled
+    );
+
+    if (result) {
+      workerConfigForm.generate_protocol_at_transfer = result.enabled;
+      transferProtocolText.value = result.generate_protocol_at_transfer || '';
+    }
+  } finally {
+    isSavingTransferProtocol.value = false;
+  }
 };
 
 const saveTransferProtocolText = async () => {
@@ -634,39 +680,15 @@ const saveTransferProtocolText = async () => {
   try {
     isSavingTransferProtocol.value = true;
     const text = transferProtocolText.value.trim() || null;
-    const enabled = true;
+    const currentEnabled = workerConfigForm.generate_protocol_at_transfer;
+
     const result = await channelStore.updateTransferProtocolText(
       channelId.value,
       text,
-      enabled
+      currentEnabled
     );
 
     if (result) {
-      workerConfigForm.generate_protocol_at_transfer = result.enabled;
-      transferProtocolText.value = result.generate_protocol_at_transfer || '';
-    }
-
-    closeTransferProtocolModal();
-  } finally {
-    isSavingTransferProtocol.value = false;
-  }
-};
-
-const deleteTransferProtocolText = async () => {
-  if (!channelId.value) return;
-
-  try {
-    isSavingTransferProtocol.value = true;
-    const text = null;
-    const enabled = false;
-    const result = await channelStore.updateTransferProtocolText(
-      channelId.value,
-      text,
-      enabled
-    );
-
-    if (result) {
-      workerConfigForm.generate_protocol_at_transfer = result.enabled;
       transferProtocolText.value = result.generate_protocol_at_transfer || '';
     }
 
@@ -679,15 +701,45 @@ const deleteTransferProtocolText = async () => {
 const openStartProtocolModal = async () => {
   if (!channelId.value) return;
 
-  const protocolText = await channelStore.fetchStartProtocolText(
-    channelId.value
-  );
-  startProtocolText.value = protocolText || '';
+  const data = await channelStore.fetchStartProtocolText(channelId.value);
+
+  if (data) {
+    startProtocolText.value = data.generate_protocol_at_start || '';
+  } else {
+    startProtocolText.value = '';
+  }
+
   startProtocolModalOpen.value = true;
 };
 
 const closeStartProtocolModal = () => {
   startProtocolModalOpen.value = false;
+};
+
+const toggleStartProtocolStatus = async () => {
+  if (!channelId.value) return;
+
+  const isCurrentlyEnabled = workerConfigForm.generate_protocol_at_start;
+  const newEnabled = !isCurrentlyEnabled;
+
+  try {
+    isSavingStartProtocol.value = true;
+
+    const text = newEnabled ? startProtocolText.value.trim() || null : null;
+
+    const result = await channelStore.updateStartProtocolText(
+      channelId.value,
+      text,
+      newEnabled
+    );
+
+    if (result) {
+      workerConfigForm.generate_protocol_at_start = result.enabled;
+      startProtocolText.value = result.generate_protocol_at_start || '';
+    }
+  } finally {
+    isSavingStartProtocol.value = false;
+  }
 };
 
 const saveStartProtocolText = async () => {
@@ -696,39 +748,15 @@ const saveStartProtocolText = async () => {
   try {
     isSavingStartProtocol.value = true;
     const text = startProtocolText.value.trim() || null;
-    const enabled = true;
+    const currentEnabled = workerConfigForm.generate_protocol_at_start;
+
     const result = await channelStore.updateStartProtocolText(
       channelId.value,
       text,
-      enabled
+      currentEnabled
     );
 
     if (result) {
-      workerConfigForm.generate_protocol_at_start = result.enabled;
-      startProtocolText.value = result.generate_protocol_at_start || '';
-    }
-
-    closeStartProtocolModal();
-  } finally {
-    isSavingStartProtocol.value = false;
-  }
-};
-
-const deleteStartProtocolText = async () => {
-  if (!channelId.value) return;
-
-  try {
-    isSavingStartProtocol.value = true;
-    const text = null;
-    const enabled = false;
-    const result = await channelStore.updateStartProtocolText(
-      channelId.value,
-      text,
-      enabled
-    );
-
-    if (result) {
-      workerConfigForm.generate_protocol_at_start = result.enabled;
       startProtocolText.value = result.generate_protocol_at_start || '';
     }
 
@@ -829,11 +857,16 @@ const saveSimultaneousAttendanceQuantity = async () => {
 const openShowMessageOnCallModal = async () => {
   if (!channelId.value) return;
 
-  const [messageText, config] = await Promise.all([
+  const [data, config] = await Promise.all([
     channelStore.fetchShowMessageOnCall(channelId.value),
     channelStore.fetchWorkerConfig(channelId.value, false),
   ]);
-  showMessageOnCallText.value = messageText || '';
+
+  if (data) {
+    showMessageOnCallText.value = data.show_message_on_call || '';
+  } else {
+    showMessageOnCallText.value = '';
+  }
   showMessageOnCallRejectCall.value = config?.reject_call ?? false;
   showMessageOnCallModalOpen.value = true;
 };
@@ -842,22 +875,52 @@ const closeShowMessageOnCallModal = () => {
   showMessageOnCallModalOpen.value = false;
 };
 
+const toggleShowMessageOnCallStatus = async () => {
+  if (!channelId.value) return;
+
+  const isCurrentlyEnabled = workerConfigForm.show_message_on_call;
+  const newEnabled = !isCurrentlyEnabled;
+
+  try {
+    isSavingShowMessageOnCall.value = true;
+
+    const text = newEnabled ? showMessageOnCallText.value.trim() || null : null;
+
+    const result = await channelStore.updateShowMessageOnCall(
+      channelId.value,
+      text,
+      newEnabled
+    );
+
+    if (result) {
+      workerConfigForm.show_message_on_call = result.enabled;
+      showMessageOnCallText.value = result.show_message_on_call || '';
+    }
+  } finally {
+    isSavingShowMessageOnCall.value = false;
+  }
+};
+
 const saveShowMessageOnCallText = async () => {
   if (!channelId.value) return;
 
   try {
     isSavingShowMessageOnCall.value = true;
     const text = showMessageOnCallText.value.trim() || null;
-    const enabled = true;
+    const currentEnabled = workerConfigForm.show_message_on_call;
+
     const [result] = await Promise.all([
-      channelStore.updateShowMessageOnCall(channelId.value, text, enabled),
+      channelStore.updateShowMessageOnCall(
+        channelId.value,
+        text,
+        currentEnabled
+      ),
       channelStore.updateWorkerConfig(channelId.value, {
         reject_call: showMessageOnCallRejectCall.value,
       }),
     ]);
 
     if (result) {
-      workerConfigForm.show_message_on_call = result.enabled;
       showMessageOnCallText.value = result.show_message_on_call || '';
     }
     workerConfigForm.reject_call = showMessageOnCallRejectCall.value;
@@ -868,45 +931,53 @@ const saveShowMessageOnCallText = async () => {
   }
 };
 
-const deleteShowMessageOnCallText = async () => {
-  if (!channelId.value) return;
-
-  try {
-    isSavingShowMessageOnCall.value = true;
-    const text = null;
-    const enabled = false;
-    const [result] = await Promise.all([
-      channelStore.updateShowMessageOnCall(channelId.value, text, enabled),
-      channelStore.updateWorkerConfig(channelId.value, {
-        reject_call: false,
-      }),
-    ]);
-
-    if (result) {
-      workerConfigForm.show_message_on_call = result.enabled;
-      showMessageOnCallText.value = result.show_message_on_call || '';
-    }
-    workerConfigForm.reject_call = false;
-    showMessageOnCallRejectCall.value = false;
-
-    closeShowMessageOnCallModal();
-  } finally {
-    isSavingShowMessageOnCall.value = false;
-  }
-};
-
 const openSendMessageOnFinishAttendanceModal = async () => {
   if (!channelId.value) return;
 
-  const messageText = await channelStore.fetchSendMessageOnFinishAttendance(
+  const data = await channelStore.fetchSendMessageOnFinishAttendance(
     channelId.value
   );
-  sendMessageOnFinishAttendanceText.value = messageText || '';
+
+  if (data) {
+    sendMessageOnFinishAttendanceText.value =
+      data.send_message_on_finish_attendance || '';
+  } else {
+    sendMessageOnFinishAttendanceText.value = '';
+  }
   sendMessageOnFinishAttendanceModalOpen.value = true;
 };
 
 const closeSendMessageOnFinishAttendanceModal = () => {
   sendMessageOnFinishAttendanceModalOpen.value = false;
+};
+
+const toggleSendMessageOnFinishAttendanceStatus = async () => {
+  if (!channelId.value) return;
+
+  const isCurrentlyEnabled = workerConfigForm.send_message_on_finish_attendance;
+  const newEnabled = !isCurrentlyEnabled;
+
+  try {
+    isSavingSendMessageOnFinishAttendance.value = true;
+
+    const text = newEnabled
+      ? sendMessageOnFinishAttendanceText.value.trim() || null
+      : null;
+
+    const result = await channelStore.updateSendMessageOnFinishAttendance(
+      channelId.value,
+      text,
+      newEnabled
+    );
+
+    if (result) {
+      workerConfigForm.send_message_on_finish_attendance = result.enabled;
+      sendMessageOnFinishAttendanceText.value =
+        result.send_message_on_finish_attendance || '';
+    }
+  } finally {
+    isSavingSendMessageOnFinishAttendance.value = false;
+  }
 };
 
 const saveSendMessageOnFinishAttendanceText = async () => {
@@ -915,40 +986,15 @@ const saveSendMessageOnFinishAttendanceText = async () => {
   try {
     isSavingSendMessageOnFinishAttendance.value = true;
     const text = sendMessageOnFinishAttendanceText.value.trim() || null;
-    const enabled = true;
+    const currentEnabled = workerConfigForm.send_message_on_finish_attendance;
+
     const result = await channelStore.updateSendMessageOnFinishAttendance(
       channelId.value,
       text,
-      enabled
+      currentEnabled
     );
 
     if (result) {
-      workerConfigForm.send_message_on_finish_attendance = result.enabled;
-      sendMessageOnFinishAttendanceText.value =
-        result.send_message_on_finish_attendance || '';
-    }
-
-    closeSendMessageOnFinishAttendanceModal();
-  } finally {
-    isSavingSendMessageOnFinishAttendance.value = false;
-  }
-};
-
-const deleteSendMessageOnFinishAttendanceText = async () => {
-  if (!channelId.value) return;
-
-  try {
-    isSavingSendMessageOnFinishAttendance.value = true;
-    const text = null;
-    const enabled = false;
-    const result = await channelStore.updateSendMessageOnFinishAttendance(
-      channelId.value,
-      text,
-      enabled
-    );
-
-    if (result) {
-      workerConfigForm.send_message_on_finish_attendance = result.enabled;
       sendMessageOnFinishAttendanceText.value =
         result.send_message_on_finish_attendance || '';
     }
@@ -963,14 +1009,47 @@ const openChatbotModal = async () => {
   if (!channelId.value) return;
 
   await chatbotStore.listChatbots();
-  const currentChatbotId = await channelStore.fetchChatbot(channelId.value);
-  chatbotId.value = currentChatbotId;
-  selectedChatbotId.value = currentChatbotId;
+  const data = await channelStore.fetchChatbot(channelId.value);
+
+  if (data) {
+    chatbotId.value = data.chatbot_id;
+    selectedChatbotId.value = data.chatbot_id;
+  } else {
+    chatbotId.value = null;
+    selectedChatbotId.value = null;
+  }
   chatbotModalOpen.value = true;
 };
 
 const closeChatbotModal = () => {
   chatbotModalOpen.value = false;
+};
+
+const toggleChatbotStatus = async () => {
+  if (!channelId.value) return;
+
+  const isCurrentlyEnabled = workerConfigForm.chatbot;
+  const newEnabled = !isCurrentlyEnabled;
+
+  try {
+    isSavingChatbot.value = true;
+
+    const chatbotIdValue = newEnabled ? selectedChatbotId.value || null : null;
+
+    const result = await channelStore.updateChatbot(
+      channelId.value,
+      chatbotIdValue,
+      newEnabled
+    );
+
+    if (result) {
+      workerConfigForm.chatbot = result.enabled;
+      chatbotId.value = result.chatbot_id;
+      selectedChatbotId.value = result.chatbot_id;
+    }
+  } finally {
+    isSavingChatbot.value = false;
+  }
 };
 
 const saveChatbot = async () => {
@@ -979,40 +1058,15 @@ const saveChatbot = async () => {
   try {
     isSavingChatbot.value = true;
     const chatbotIdValue = selectedChatbotId.value || null;
-    const enabled = true;
+    const currentEnabled = workerConfigForm.chatbot;
+
     const result = await channelStore.updateChatbot(
       channelId.value,
       chatbotIdValue,
-      enabled
+      currentEnabled
     );
 
     if (result) {
-      workerConfigForm.chatbot = result.enabled;
-      chatbotId.value = result.chatbot_id;
-      selectedChatbotId.value = result.chatbot_id;
-    }
-
-    closeChatbotModal();
-  } finally {
-    isSavingChatbot.value = false;
-  }
-};
-
-const deleteChatbot = async () => {
-  if (!channelId.value) return;
-
-  try {
-    isSavingChatbot.value = true;
-    const chatbotIdValue = null;
-    const enabled = false;
-    const result = await channelStore.updateChatbot(
-      channelId.value,
-      chatbotIdValue,
-      enabled
-    );
-
-    if (result) {
-      workerConfigForm.chatbot = result.enabled;
       chatbotId.value = result.chatbot_id;
       selectedChatbotId.value = result.chatbot_id;
     }
@@ -3188,9 +3242,17 @@ onMounted(async () => {
         <span>{{
           $t('channel_general_config_generate_protocol_transfer_title')
         }}</span>
-        <IconBtn @click="closeTransferProtocolModal">
-          <VIcon icon="tabler-x" />
-        </IconBtn>
+        <div class="d-flex align-center gap-2">
+          <VSwitch
+            :model-value="workerConfigForm.generate_protocol_at_transfer"
+            color="primary"
+            :disabled="isSavingTransferProtocol"
+            @click="toggleTransferProtocolStatus"
+          />
+          <IconBtn @click="closeTransferProtocolModal">
+            <VIcon icon="tabler-x" />
+          </IconBtn>
+        </div>
       </VCardTitle>
       <VCardText>
         <VLabel class="text-body-2 mb-1"
@@ -3203,6 +3265,7 @@ onMounted(async () => {
           rows="8"
           counter
           auto-grow
+          :disabled="!workerConfigForm.generate_protocol_at_transfer"
         />
         <div class="text-caption text-medium-emphasis mt-2">
           {{ $t('transfer_protocol_text_hint') }}
@@ -3237,18 +3300,12 @@ onMounted(async () => {
           {{ $t('close') }}
         </VBtn>
         <VBtn
-          color="error"
-          variant="tonal"
-          :loading="isSavingTransferProtocol"
-          :disabled="isSavingTransferProtocol"
-          @click="deleteTransferProtocolText"
-        >
-          {{ $t('deactivate') }}
-        </VBtn>
-        <VBtn
           color="primary"
           :loading="isSavingTransferProtocol"
-          :disabled="isSavingTransferProtocol"
+          :disabled="
+            isSavingTransferProtocol ||
+            !workerConfigForm.generate_protocol_at_transfer
+          "
           @click="saveTransferProtocolText"
         >
           {{ $t('save') }}
@@ -3263,9 +3320,17 @@ onMounted(async () => {
         <span>{{
           $t('channel_general_config_generate_protocol_start_title')
         }}</span>
-        <IconBtn @click="closeStartProtocolModal">
-          <VIcon icon="tabler-x" />
-        </IconBtn>
+        <div class="d-flex align-center gap-2">
+          <VSwitch
+            :model-value="workerConfigForm.generate_protocol_at_start"
+            color="primary"
+            :disabled="isSavingStartProtocol"
+            @click="toggleStartProtocolStatus"
+          />
+          <IconBtn @click="closeStartProtocolModal">
+            <VIcon icon="tabler-x" />
+          </IconBtn>
+        </div>
       </VCardTitle>
       <VCardText>
         <VLabel class="text-body-2 mb-1"
@@ -3278,6 +3343,7 @@ onMounted(async () => {
           rows="8"
           counter
           auto-grow
+          :disabled="!workerConfigForm.generate_protocol_at_start"
         />
         <div class="text-caption text-medium-emphasis mt-2">
           {{ $t('start_protocol_text_hint') }}
@@ -3312,18 +3378,12 @@ onMounted(async () => {
           {{ $t('close') }}
         </VBtn>
         <VBtn
-          color="error"
-          variant="tonal"
-          :loading="isSavingStartProtocol"
-          :disabled="isSavingStartProtocol"
-          @click="deleteStartProtocolText"
-        >
-          {{ $t('deactivate') }}
-        </VBtn>
-        <VBtn
           color="primary"
           :loading="isSavingStartProtocol"
-          :disabled="isSavingStartProtocol"
+          :disabled="
+            isSavingStartProtocol ||
+            !workerConfigForm.generate_protocol_at_start
+          "
           @click="saveStartProtocolText"
         >
           {{ $t('save') }}
@@ -3405,9 +3465,17 @@ onMounted(async () => {
         <span>{{
           $t('channel_general_config_show_message_on_call_title')
         }}</span>
-        <IconBtn @click="closeShowMessageOnCallModal">
-          <VIcon icon="tabler-x" />
-        </IconBtn>
+        <div class="d-flex align-center gap-2">
+          <VSwitch
+            :model-value="workerConfigForm.show_message_on_call"
+            color="primary"
+            :disabled="isSavingShowMessageOnCall"
+            @click="toggleShowMessageOnCallStatus"
+          />
+          <IconBtn @click="closeShowMessageOnCallModal">
+            <VIcon icon="tabler-x" />
+          </IconBtn>
+        </div>
       </VCardTitle>
       <VCardText>
         <VLabel class="text-body-2 mb-1"
@@ -3420,6 +3488,7 @@ onMounted(async () => {
           rows="8"
           counter
           auto-grow
+          :disabled="!workerConfigForm.show_message_on_call"
         />
         <div class="text-caption text-medium-emphasis mt-2">
           {{ $t('show_message_on_call_text_hint') }}
@@ -3471,18 +3540,11 @@ onMounted(async () => {
           {{ $t('close') }}
         </VBtn>
         <VBtn
-          color="error"
-          variant="tonal"
-          :loading="isSavingShowMessageOnCall"
-          :disabled="isSavingShowMessageOnCall"
-          @click="deleteShowMessageOnCallText"
-        >
-          {{ $t('deactivate') }}
-        </VBtn>
-        <VBtn
           color="primary"
           :loading="isSavingShowMessageOnCall"
-          :disabled="isSavingShowMessageOnCall"
+          :disabled="
+            isSavingShowMessageOnCall || !workerConfigForm.show_message_on_call
+          "
           @click="saveShowMessageOnCallText"
         >
           {{ $t('save') }}
@@ -3501,9 +3563,17 @@ onMounted(async () => {
         <span>{{
           $t('channel_general_config_send_message_on_finish_attendance_title')
         }}</span>
-        <IconBtn @click="closeSendMessageOnFinishAttendanceModal">
-          <VIcon icon="tabler-x" />
-        </IconBtn>
+        <div class="d-flex align-center gap-2">
+          <VSwitch
+            :model-value="workerConfigForm.send_message_on_finish_attendance"
+            color="primary"
+            :disabled="isSavingSendMessageOnFinishAttendance"
+            @click="toggleSendMessageOnFinishAttendanceStatus"
+          />
+          <IconBtn @click="closeSendMessageOnFinishAttendanceModal">
+            <VIcon icon="tabler-x" />
+          </IconBtn>
+        </div>
       </VCardTitle>
       <VCardText>
         <VLabel class="text-body-2 mb-1"
@@ -3518,6 +3588,7 @@ onMounted(async () => {
           rows="8"
           counter
           auto-grow
+          :disabled="!workerConfigForm.send_message_on_finish_attendance"
         />
         <div class="text-caption text-medium-emphasis mt-2">
           {{ $t('send_message_on_finish_attendance_text_hint') }}
@@ -3552,18 +3623,12 @@ onMounted(async () => {
           {{ $t('close') }}
         </VBtn>
         <VBtn
-          color="error"
-          variant="tonal"
-          :loading="isSavingSendMessageOnFinishAttendance"
-          :disabled="isSavingSendMessageOnFinishAttendance"
-          @click="deleteSendMessageOnFinishAttendanceText"
-        >
-          {{ $t('deactivate') }}
-        </VBtn>
-        <VBtn
           color="primary"
           :loading="isSavingSendMessageOnFinishAttendance"
-          :disabled="isSavingSendMessageOnFinishAttendance"
+          :disabled="
+            isSavingSendMessageOnFinishAttendance ||
+            !workerConfigForm.send_message_on_finish_attendance
+          "
           @click="saveSendMessageOnFinishAttendanceText"
         >
           {{ $t('save') }}
@@ -3576,9 +3641,17 @@ onMounted(async () => {
     <VCard>
       <VCardTitle class="d-flex justify-space-between align-center">
         <span>{{ $t('channel_general_config_chatbot_title') }}</span>
-        <IconBtn @click="closeChatbotModal">
-          <VIcon icon="tabler-x" />
-        </IconBtn>
+        <div class="d-flex align-center gap-2">
+          <VSwitch
+            :model-value="workerConfigForm.chatbot"
+            color="primary"
+            :disabled="isSavingChatbot"
+            @click="toggleChatbotStatus"
+          />
+          <IconBtn @click="closeChatbotModal">
+            <VIcon icon="tabler-x" />
+          </IconBtn>
+        </div>
       </VCardTitle>
       <VCardText>
         <VLabel class="text-body-2 mb-1"
@@ -3591,6 +3664,7 @@ onMounted(async () => {
           item-value="chatbot_id"
           :placeholder="$t('chatbot_select_placeholder')"
           clearable
+          :disabled="!workerConfigForm.chatbot"
         />
         <div class="text-caption text-medium-emphasis mt-2">
           {{ $t('chatbot_select_hint') }}
@@ -3606,19 +3680,9 @@ onMounted(async () => {
           {{ $t('close') }}
         </VBtn>
         <VBtn
-          v-if="selectedChatbotId"
-          color="error"
-          variant="tonal"
-          :loading="isSavingChatbot"
-          :disabled="isSavingChatbot"
-          @click="deleteChatbot"
-        >
-          {{ $t('deactivate') }}
-        </VBtn>
-        <VBtn
           color="primary"
           :loading="isSavingChatbot"
-          :disabled="isSavingChatbot"
+          :disabled="isSavingChatbot || !workerConfigForm.chatbot"
           @click="saveChatbot"
         >
           {{ $t('save') }}

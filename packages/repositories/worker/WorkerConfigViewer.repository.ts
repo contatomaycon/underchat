@@ -70,6 +70,30 @@ export class WorkerConfigViewerRepository {
     return result[0]?.chatbot_id || null;
   }
 
+  async fetchChatbotValue(
+    workerId: string
+  ): Promise<{ chatbotId: string | null; statusId: string | null }> {
+    const result = await this.dbRo
+      .select({
+        chatbot_id: workerConfig.chatbot_id,
+        worker_config_status_id: workerConfig.worker_config_status_id,
+      })
+      .from(workerConfig)
+      .where(
+        and(
+          eq(workerConfig.worker_id, workerId),
+          eq(workerConfig.worker_config_type_id, EWorkerConfigType.chatbot_id)
+        )
+      )
+      .limit(1)
+      .execute();
+
+    return {
+      chatbotId: result[0]?.chatbot_id || null,
+      statusId: result[0]?.worker_config_status_id || null,
+    };
+  }
+
   async fetchSimultaneousAttendanceValue(
     workerId: string
   ): Promise<{ value: string | null; statusId: string | null }> {
@@ -86,6 +110,31 @@ export class WorkerConfigViewerRepository {
             workerConfig.worker_config_type_id,
             EWorkerConfigType.simultaneous_attendance
           )
+        )
+      )
+      .limit(1)
+      .execute();
+
+    return {
+      value: result[0]?.value || null,
+      statusId: result[0]?.worker_config_status_id || null,
+    };
+  }
+
+  async fetchConfigValueByType(
+    workerId: string,
+    type: EWorkerConfigType
+  ): Promise<{ value: string | null; statusId: string | null }> {
+    const result = await this.dbRo
+      .select({
+        value: workerConfig.value,
+        worker_config_status_id: workerConfig.worker_config_status_id,
+      })
+      .from(workerConfig)
+      .where(
+        and(
+          eq(workerConfig.worker_id, workerId),
+          eq(workerConfig.worker_config_type_id, type)
         )
       )
       .limit(1)

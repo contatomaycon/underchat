@@ -1835,10 +1835,15 @@ export class MessageUpsertConsume {
     jid?: string | null,
     jidAlt?: string | null
   ): Promise<void> {
-    const [chatbotId, getChat] = await Promise.all([
+    const [chatbotConfig, getChat] = await Promise.all([
       this.workerConfigService.viewChatbot(data.worker_id),
       this.getChat(data.account_id, data.worker_id, phone, jid, jidAlt),
     ]);
+
+    const chatbotId =
+      chatbotConfig.enabled && chatbotConfig.chatbot_id
+        ? chatbotConfig.chatbot_id
+        : null;
 
     if (chatbotId && (!getChat || getChat.status === EChatStatus.ura)) {
       await this.createOrUpdateChatBotFlow(t, getChat, data, chatbotId);
