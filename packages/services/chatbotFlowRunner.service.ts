@@ -24,6 +24,8 @@ import { IProcessFlowNodeOptions } from '@core/common/interfaces/IProcessFlowNod
 import { generateProtocol } from '@core/common/functions/generateProtocol';
 import { extractPhoneAndDdi } from '@core/common/functions/extractPhoneAndDdi';
 import { proto } from '@whiskeysockets/baileys';
+import { EContactDocumentType } from '@core/common/enums/EContactDocumentType';
+import { UpdateContactRequest } from '@core/schema/contact/editContact/request.schema';
 
 @injectable()
 export class ChatbotFlowRunnerService {
@@ -1259,8 +1261,24 @@ export class ChatbotFlowRunnerService {
     return true;
   }
 
+  private async updateContactData(
+    createChat: IChat,
+    updateData: UpdateContactRequest
+  ): Promise<void> {
+    if (!createChat.contact?.id) {
+      return;
+    }
+
+    await this.contactService.updateContactById(
+      updateData,
+      createChat.contact.id,
+      createChat.account.id
+    );
+  }
+
   private async processNameDataNode(
     t: TFunction<'translation', undefined>,
+    data: IUpsertMessage,
     createChat: IChat,
     chatbotFlow: ListChatbotFlowResponse,
     currentFlowId: string,
@@ -1276,6 +1294,14 @@ export class ChatbotFlowRunnerService {
       transfer_message_sector_user?: string;
     }
   ): Promise<boolean> {
+    const userText = this.getTextFromUpsertMessage(data)?.trim();
+
+    if (userText && createChat.contact?.id) {
+      await this.updateContactData(createChat, {
+        name: userText,
+      });
+    }
+
     return this.processNextNodeAfterValidation(
       t,
       createChat,
@@ -1287,6 +1313,7 @@ export class ChatbotFlowRunnerService {
 
   private async processLastNameDataNode(
     t: TFunction<'translation', undefined>,
+    data: IUpsertMessage,
     createChat: IChat,
     chatbotFlow: ListChatbotFlowResponse,
     currentFlowId: string,
@@ -1302,6 +1329,14 @@ export class ChatbotFlowRunnerService {
       transfer_message_sector_user?: string;
     }
   ): Promise<boolean> {
+    const userText = this.getTextFromUpsertMessage(data)?.trim();
+
+    if (userText && createChat.contact?.id) {
+      await this.updateContactData(createChat, {
+        last_name: userText,
+      });
+    }
+
     return this.processNextNodeAfterValidation(
       t,
       createChat,
@@ -1333,9 +1368,14 @@ export class ChatbotFlowRunnerService {
   ): Promise<boolean> {
     if (!this.isValidEmail(userText)) {
       await this.sendInvalidEmailMessage(t, createChat, customMessage);
-      // Reenviar a pergunta do nó de dados após a mensagem de erro
       await this.processDataNodeQuestion(t, createChat, currentNode);
       return false;
+    }
+
+    if (createChat.contact?.id) {
+      await this.updateContactData(createChat, {
+        email: userText,
+      });
     }
 
     return this.processNextNodeAfterValidation(
@@ -1369,9 +1409,17 @@ export class ChatbotFlowRunnerService {
   ): Promise<boolean> {
     if (!this.isValidCPF(userText)) {
       await this.sendInvalidCpfMessage(t, createChat, customMessage);
-      // Reenviar a pergunta do nó de dados após a mensagem de erro
       await this.processDataNodeQuestion(t, createChat, currentNode);
       return false;
+    }
+
+    const cpfDigits = userText.replaceAll(/\D/g, '');
+
+    if (createChat.contact?.id) {
+      await this.updateContactData(createChat, {
+        contact_document_type_id: EContactDocumentType.cpf,
+        document: cpfDigits,
+      });
     }
 
     return this.processNextNodeAfterValidation(
@@ -1405,9 +1453,17 @@ export class ChatbotFlowRunnerService {
   ): Promise<boolean> {
     if (!this.isValidCNPJ(userText)) {
       await this.sendInvalidCnpjMessage(t, createChat, customMessage);
-      // Reenviar a pergunta do nó de dados após a mensagem de erro
       await this.processDataNodeQuestion(t, createChat, currentNode);
       return false;
+    }
+
+    const cnpjDigits = userText.replaceAll(/\D/g, '');
+
+    if (createChat.contact?.id) {
+      await this.updateContactData(createChat, {
+        contact_document_type_id: EContactDocumentType.cnpj,
+        document: cnpjDigits,
+      });
     }
 
     return this.processNextNodeAfterValidation(
@@ -1453,6 +1509,7 @@ export class ChatbotFlowRunnerService {
     if (dataType === 'name') {
       return this.processNameDataNode(
         t,
+        data,
         createChat,
         chatbotFlow,
         currentFlowId,
@@ -1463,6 +1520,7 @@ export class ChatbotFlowRunnerService {
     if (dataType === 'lastname') {
       return this.processLastNameDataNode(
         t,
+        data,
         createChat,
         chatbotFlow,
         currentFlowId,
