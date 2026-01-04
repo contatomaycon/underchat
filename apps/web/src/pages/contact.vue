@@ -100,6 +100,31 @@ const escapeCsv = (value: unknown): string => {
   return s;
 };
 
+const formatCpfDigits = (digits: string) => {
+  const clean = digits.slice(0, 11);
+  if (clean.length <= 3) return clean;
+  if (clean.length <= 6) return `${clean.slice(0, 3)}.${clean.slice(3)}`;
+  if (clean.length <= 9) {
+    return `${clean.slice(0, 3)}.${clean.slice(3, 6)}.${clean.slice(6)}`;
+  }
+  return `${clean.slice(0, 3)}.${clean.slice(3, 6)}.${clean.slice(6, 9)}-${clean.slice(9, 11)}`;
+};
+
+const formatCnpjDigits = (digits: string) => {
+  const clean = digits.slice(0, 14);
+  if (clean.length <= 2) return clean;
+  if (clean.length <= 5) {
+    return `${clean.slice(0, 2)}.${clean.slice(2)}`;
+  }
+  if (clean.length <= 8) {
+    return `${clean.slice(0, 2)}.${clean.slice(2, 5)}.${clean.slice(5)}`;
+  }
+  if (clean.length <= 12) {
+    return `${clean.slice(0, 2)}.${clean.slice(2, 5)}.${clean.slice(5, 8)}/${clean.slice(8)}`;
+  }
+  return `${clean.slice(0, 2)}.${clean.slice(2, 5)}.${clean.slice(5, 8)}/${clean.slice(8, 12)}-${clean.slice(12, 14)}`;
+};
+
 const exportContactsToCsv = async () => {
   const contacts = await contactStore.exportContacts();
 
@@ -113,30 +138,53 @@ const exportContactsToCsv = async () => {
     t('email'),
     t('phone_ddi'),
     t('phone'),
+    t('document_type'),
+    t('document'),
     t('nickname'),
     t('birthday'),
     t('notes'),
-    t('document_type'),
-    t('document'),
   ];
 
-  const rows = contacts.map((item) => [
-    item.name ?? '',
-    item.last_name ?? '',
-    item.email ?? '',
-    item.phone_ddi ?? '',
-    item.phone ?? '',
-    item.nickname ?? '',
-    item.birthday ?? '',
-    item.notes ?? '',
-    item.contact_document_type_name ?? '',
-    item.document ?? '',
-  ]);
+  const rows = contacts.map((item) => {
+    const document = item.document ?? '';
+    let documentFormatted = '';
+    if (document) {
+      const digits = document.replaceAll(/\D/g, '');
+      const docType = item.contact_document_type_name?.toLowerCase();
+      if (docType === 'cpf' && digits.length === 11) {
+        documentFormatted = formatCpfDigits(digits);
+      } else if (docType === 'cnpj' && digits.length === 14) {
+        documentFormatted = formatCnpjDigits(digits);
+      } else {
+        documentFormatted = document;
+      }
+    }
+    return [
+      item.name ?? '',
+      item.last_name ?? '',
+      item.email ?? '',
+      item.phone_ddi ?? '',
+      item.phone ?? '',
+      item.contact_document_type_name ?? '',
+      documentFormatted,
+      item.nickname ?? '',
+      item.birthday ?? '',
+      item.notes ?? '',
+    ];
+  });
 
   const delimiter = ';';
   const csv = [
     header.map(escapeCsv).join(delimiter),
-    ...rows.map((r) => r.map(escapeCsv).join(delimiter)),
+    ...rows.map((r) => {
+      const escapedRow = r.map((value, index) => {
+        if (index === 6 && value) {
+          return `"${String(value).replaceAll('"', '""')}"`;
+        }
+        return escapeCsv(value);
+      });
+      return escapedRow.join(delimiter);
+    }),
   ].join('\r\n');
 
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
