@@ -275,7 +275,7 @@ export class PlanReleaseService {
     );
 
     if (data.shouldSendNotification !== false) {
-      const isRenewal = await this.checkIfPlanAccountIsActive(data.accountId);
+      const isRenewal = currentPlanAccount !== null;
       const isTestPlan = await this.planReleaseRepository.findPlanIsTestById(
         data.planId
       );
@@ -336,7 +336,7 @@ export class PlanReleaseService {
         paymentAsaasId
       );
 
-      const isRenewal = await this.checkIfPlanAccountIsActive(
+      const isRenewal = await this.checkIfPlanAccountExists(
         accountPaymentData.account_id
       );
       const isTestPlan = await this.planReleaseRepository.findPlanIsTestById(
@@ -518,7 +518,7 @@ export class PlanReleaseService {
         accountPaymentData.billing || ''
       );
 
-      const isRenewal = await this.checkIfPlanAccountIsActive(data.accountId);
+      const isRenewal = await this.checkIfPlanAccountExists(data.accountId);
       const isTestPlan = await this.planReleaseRepository.findPlanIsTestById(
         data.planId
       );
@@ -659,27 +659,13 @@ export class PlanReleaseService {
     }
   };
 
-  private readonly checkIfPlanAccountIsActive = async (
+  private readonly checkIfPlanAccountExists = async (
     accountId: string
   ): Promise<boolean> => {
     const existingPlanAccount =
       await this.planReleaseRepository.findPlanAccountByAccountId(accountId);
 
-    if (!existingPlanAccount) {
-      return false;
-    }
-
-    if (!existingPlanAccount.cancellation_date) {
-      return true;
-    }
-
-    if (existingPlanAccount.next_payment_date) {
-      const nextPaymentDate = new Date(existingPlanAccount.next_payment_date);
-      const now = new Date();
-      return nextPaymentDate > now;
-    }
-
-    return false;
+    return existingPlanAccount !== null;
   };
 
   private readonly getNotificationTypeId = (
