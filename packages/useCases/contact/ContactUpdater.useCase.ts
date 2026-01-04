@@ -297,6 +297,10 @@ export class ContactUpdaterUseCase {
     const nickname = this.extractFieldValue(body.nickname as FieldValue);
     const birthday = this.extractFieldValue(body.birthday as FieldValue);
     const notes = this.extractFieldValue(body.notes as FieldValue);
+    const contactDocumentTypeId = this.extractFieldValue(
+      body.contact_document_type_id as FieldValue
+    );
+    const document = this.extractFieldValue(body.document as FieldValue);
 
     if (labelTemplateId) {
       const labelTemplateExists =
@@ -326,6 +330,8 @@ export class ContactUpdaterUseCase {
       nickname,
       birthday,
       notes,
+      contact_document_type_id: contactDocumentTypeId,
+      document,
       photo: body.photo,
       image_url: body.image_url,
     };

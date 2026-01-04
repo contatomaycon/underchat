@@ -10,6 +10,9 @@ import { useChatStore } from '@/@webcore/stores/chat';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { ELabelTemplatePermissions } from '@core/common/enums/EPermissions/labelTemplate';
 import { can } from '@layouts/plugins/casl';
+import { EContactDocumentType } from '@core/common/enums/EContactDocumentType';
+import { validateCpf } from '@core/common/functions/validateCpf';
+import { validateCnpj } from '@core/common/functions/validateCnpj';
 
 const contactStore = useContactStore();
 const labelTemplateStore = useLabelTemplateStore();
@@ -68,6 +71,111 @@ const emailValidator = (v: string | null | undefined) => {
   return re.test(s) || t('email_invalid');
 };
 
+const itemsDocumentTypes = ref([
+  { value: null, title: t('select_option') },
+  { value: EContactDocumentType.cpf, title: t('cpf') },
+  { value: EContactDocumentType.cnpj, title: t('cnpj') },
+]);
+
+const isCPF = computed(
+  () => contact_document_type_id.value === EContactDocumentType.cpf
+);
+const isCNPJ = computed(
+  () => contact_document_type_id.value === EContactDocumentType.cnpj
+);
+const showDocumentField = computed(() => isCPF.value || isCNPJ.value);
+
+const docConfig = {
+  cpf: {
+    mask: '###.###.###-##',
+    label: t('cpf'),
+    placeholder: '000.000.000-00',
+  },
+  cnpj: {
+    mask: '##.###.###/####-##',
+    label: t('cnpj'),
+    placeholder: '00.000.000/0000-00',
+  },
+};
+
+const currentDocType = computed<'cpf' | 'cnpj' | null>(
+  () => (isCPF.value && 'cpf') || (isCNPJ.value && 'cnpj') || null
+);
+
+const docMask = computed(() =>
+  currentDocType.value ? docConfig[currentDocType.value].mask : ''
+);
+const docLabel = computed(() =>
+  currentDocType.value ? docConfig[currentDocType.value].label : t('document')
+);
+const docPlaceholder = computed(() =>
+  currentDocType.value
+    ? docConfig[currentDocType.value].placeholder
+    : t('document')
+);
+
+const formatCpfDigits = (digits: string) => {
+  const clean = digits.slice(0, 11);
+  if (clean.length <= 3) return clean;
+  if (clean.length <= 6) return `${clean.slice(0, 3)}.${clean.slice(3)}`;
+  if (clean.length <= 9) {
+    return `${clean.slice(0, 3)}.${clean.slice(3, 6)}.${clean.slice(6)}`;
+  }
+  return `${clean.slice(0, 3)}.${clean.slice(3, 6)}.${clean.slice(6, 9)}-${clean.slice(9, 11)}`;
+};
+
+const formatCnpjDigits = (digits: string) => {
+  const clean = digits.slice(0, 14);
+  if (clean.length <= 2) return clean;
+  if (clean.length <= 5) {
+    return `${clean.slice(0, 2)}.${clean.slice(2)}`;
+  }
+  if (clean.length <= 8) {
+    return `${clean.slice(0, 2)}.${clean.slice(2, 5)}.${clean.slice(5)}`;
+  }
+  if (clean.length <= 12) {
+    return `${clean.slice(0, 2)}.${clean.slice(2, 5)}.${clean.slice(5, 8)}/${clean.slice(8)}`;
+  }
+  return `${clean.slice(0, 2)}.${clean.slice(2, 5)}.${clean.slice(5, 8)}/${clean.slice(8, 12)}-${clean.slice(12, 14)}`;
+};
+
+const documentFormatted = computed({
+  get: () => {
+    if (!document.value) return '';
+    const digits = document.value.replaceAll(/\D/g, '');
+    if (isCPF.value) return formatCpfDigits(digits);
+    if (isCNPJ.value) return formatCnpjDigits(digits);
+    return document.value;
+  },
+  set: (value: string) => {
+    document.value = value.replaceAll(/\D/g, '');
+  },
+});
+
+const documentValidator = (v: string | null | undefined) => {
+  if (!showDocumentField.value) return true;
+  const s = (v ?? '').trim();
+  if (!s) return t('document_required');
+  const digits = s.replaceAll(/\D/g, '');
+  if (isCPF.value) {
+    if (digits.length !== 11) {
+      return t('cpf_invalid');
+    }
+    if (!validateCpf(digits)) {
+      return t('cpf_invalid');
+    }
+  }
+  if (isCNPJ.value) {
+    if (digits.length !== 14) {
+      return t('cnpj_invalid');
+    }
+    if (!validateCnpj(digits)) {
+      return t('cnpj_invalid');
+    }
+  }
+  return true;
+};
+
 const canAccessLabelTemplate = computed(() => {
   const permissions = [
     EGeneralPermissions.full_access,
@@ -94,6 +202,15 @@ const phone = ref<string | null>(null);
 const nickname = ref<string | null>(null);
 const birthday = ref<string | null>(null);
 const notes = ref<string | null>(null);
+const contact_document_type_id = ref<string | null>(null);
+const document = ref<string | null>(null);
+
+watch(contact_document_type_id, () => {
+  if (!showDocumentField.value) {
+    document.value = null;
+  }
+});
+
 const photoFile = ref<File | null>(null);
 const photoPreview = ref<string | null>(null);
 const isCropModalOpen = ref(false);
@@ -154,6 +271,8 @@ const addContact = async () => {
       nickname: nickname.value ?? null,
       birthday: birthday.value ?? null,
       notes: notes.value ?? null,
+      contact_document_type_id: contact_document_type_id.value ?? null,
+      document: document.value ?? null,
       image_url: imageUrl,
     },
     imageUrl ? null : photoFile.value
@@ -202,6 +321,12 @@ const resetForm = () => {
       props.initialData.birthday as FieldValue
     );
     notes.value = extractFieldValue(props.initialData.notes as FieldValue);
+    contact_document_type_id.value = extractFieldValue(
+      props.initialData.contact_document_type_id as FieldValue
+    );
+    document.value = extractFieldValue(
+      props.initialData.document as FieldValue
+    );
   } else {
     label_template_id.value = null;
     name.value = null;
@@ -212,6 +337,8 @@ const resetForm = () => {
     nickname.value = null;
     birthday.value = null;
     notes.value = null;
+    contact_document_type_id.value = null;
+    document.value = null;
   }
   photoFile.value = null;
   photoPreview.value = null;
@@ -221,7 +348,7 @@ const resetForm = () => {
 };
 
 const openFileSelector = () => {
-  const input = document.createElement('input');
+  const input = globalThis.document.createElement('input');
   input.type = 'file';
   input.accept = 'image/*';
   input.onchange = (e: Event) => {
@@ -328,10 +455,10 @@ const startCropDrag = (e: MouseEvent | TouchEvent) => {
   cropArea.value.startX = clientX - rect.left - cropArea.value.x;
   cropArea.value.startY = clientY - rect.top - cropArea.value.y;
 
-  document.addEventListener('mousemove', onCropDrag);
-  document.addEventListener('touchmove', onCropDrag);
-  document.addEventListener('mouseup', endCropDrag);
-  document.addEventListener('touchend', endCropDrag);
+  globalThis.document.addEventListener('mousemove', onCropDrag);
+  globalThis.document.addEventListener('touchmove', onCropDrag);
+  globalThis.document.addEventListener('mouseup', endCropDrag);
+  globalThis.document.addEventListener('touchend', endCropDrag);
 };
 
 const startCropResize = (
@@ -358,10 +485,10 @@ const startCropResize = (
   cropArea.value.startX = clientX - rect.left;
   cropArea.value.startY = clientY - rect.top;
 
-  document.addEventListener('mousemove', onCropResize);
-  document.addEventListener('touchmove', onCropResize);
-  document.addEventListener('mouseup', endCropResize);
-  document.addEventListener('touchend', endCropResize);
+  globalThis.document.addEventListener('mousemove', onCropResize);
+  globalThis.document.addEventListener('touchmove', onCropResize);
+  globalThis.document.addEventListener('mouseup', endCropResize);
+  globalThis.document.addEventListener('touchend', endCropResize);
 };
 
 const onCropDrag = (e: MouseEvent | TouchEvent) => {
@@ -674,19 +801,19 @@ const onCropResize = (e: MouseEvent | TouchEvent) => {
 
 const endCropDrag = () => {
   cropArea.value.isDragging = false;
-  document.removeEventListener('mousemove', onCropDrag);
-  document.removeEventListener('touchmove', onCropDrag);
-  document.removeEventListener('mouseup', endCropDrag);
-  document.removeEventListener('touchend', endCropDrag);
+  globalThis.document.removeEventListener('mousemove', onCropDrag);
+  globalThis.document.removeEventListener('touchmove', onCropDrag);
+  globalThis.document.removeEventListener('mouseup', endCropDrag);
+  globalThis.document.removeEventListener('touchend', endCropDrag);
 };
 
 const endCropResize = () => {
   cropArea.value.isResizing = false;
   cropArea.value.resizeHandle = null;
-  document.removeEventListener('mousemove', onCropResize);
-  document.removeEventListener('touchmove', onCropResize);
-  document.removeEventListener('mouseup', endCropResize);
-  document.removeEventListener('touchend', endCropResize);
+  globalThis.document.removeEventListener('mousemove', onCropResize);
+  globalThis.document.removeEventListener('touchmove', onCropResize);
+  globalThis.document.removeEventListener('mouseup', endCropResize);
+  globalThis.document.removeEventListener('touchend', endCropResize);
 };
 
 const cropImage = () => {
@@ -949,6 +1076,33 @@ watch(
                   />
                 </template>
               </AppSelectSearch>
+            </VCol>
+          </VRow>
+          <VRow>
+            <VCol cols="12" md="6">
+              <VLabel class="text-body-2 mb-1"
+                >{{ $t('document_type') }}:</VLabel
+              >
+              <AppSelectSearch
+                v-model="contact_document_type_id"
+                :items="itemsDocumentTypes"
+                :placeholder="$t('document_type')"
+                :clearable="true"
+                item-value="value"
+                item-title="title"
+              />
+            </VCol>
+
+            <VCol v-if="showDocumentField" cols="12" md="6">
+              <VLabel class="text-body-2 mb-1">{{ docLabel }}:</VLabel>
+              <AppTextField
+                v-model="documentFormatted"
+                :placeholder="docPlaceholder"
+                :rules="[documentValidator]"
+                :maxlength="currentDocType === 'cpf' ? 14 : 18"
+                v-maska="docMask"
+                inputmode="numeric"
+              />
             </VCol>
           </VRow>
           <VRow>

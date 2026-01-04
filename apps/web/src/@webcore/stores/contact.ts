@@ -20,6 +20,7 @@ import {
 } from '@core/schema/contact/editContact/request.schema';
 import { ViewContactPhoneResponse } from '@core/schema/contact/viewContactPhone/response.schema';
 import { ViewContactEmailResponse } from '@core/schema/contact/viewContactEmail/response.schema';
+import { ViewContactDocumentResponse } from '@core/schema/contact/viewContactDocument/response.schema';
 import { ExportContactResponse } from '@core/schema/contact/exportContact/response.schema';
 
 type FieldValue = string | { value: string } | null;
@@ -99,6 +100,38 @@ export const useContactStore = defineStore('contact', {
         this.showSnackbar(errorMessage, EColor.error);
 
         this.loading = false;
+
+        return null;
+      }
+    },
+
+    async getContactDocumentDecrypted(
+      contactId: string
+    ): Promise<string | null> {
+      try {
+        const response = await axios.get<
+          IApiResponse<ViewContactDocumentResponse>
+        >(`/contact/${contactId}/document`);
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('contact_view_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return null;
+        }
+
+        return data.data.document;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('contact_view_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
 
         return null;
       }
@@ -198,6 +231,24 @@ export const useContactStore = defineStore('contact', {
       if (notes) {
         formData.append('notes', notes);
       }
+      if (body.contact_document_type_id === null) {
+        formData.append('contact_document_type_id', '');
+      } else if (body.contact_document_type_id !== undefined) {
+        const contactDocumentTypeId = this.extractFieldValue(
+          body.contact_document_type_id as FieldValue
+        );
+        if (contactDocumentTypeId) {
+          formData.append('contact_document_type_id', contactDocumentTypeId);
+        }
+      }
+      if (body.document === null) {
+        formData.append('document', '');
+      } else if (body.document !== undefined) {
+        const document = this.extractFieldValue(body.document as FieldValue);
+        if (document) {
+          formData.append('document', document);
+        }
+      }
       const imageUrl = this.extractFieldValue(body.image_url as FieldValue);
       if (imageUrl) {
         formData.append('image_url', imageUrl);
@@ -260,6 +311,16 @@ export const useContactStore = defineStore('contact', {
         const notes = this.extractFieldValue(payload.notes as FieldValue);
         if (notes) {
           formData.append('notes', notes);
+        }
+        const contactDocumentTypeId = this.extractFieldValue(
+          payload.contact_document_type_id as FieldValue
+        );
+        if (contactDocumentTypeId) {
+          formData.append('contact_document_type_id', contactDocumentTypeId);
+        }
+        const document = this.extractFieldValue(payload.document as FieldValue);
+        if (document) {
+          formData.append('document', document);
         }
         const imageUrl = this.extractFieldValue(
           payload.image_url as FieldValue

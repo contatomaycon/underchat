@@ -4,11 +4,12 @@ import type { NodeProps } from '@vue-flow/core';
 import { Handle, Position } from '@vue-flow/core';
 import { useI18n } from 'vue-i18n';
 
-type DataType = 'name' | 'email' | 'cpf' | 'cnpj' | null;
+type DataType = 'name' | 'lastname' | 'email' | 'cpf' | 'cnpj' | null;
 
 interface DataNodeData {
   dataType: DataType;
   firstName: string;
+  lastName: string;
   email: string;
   cpf: string;
   cnpj: string;
@@ -23,6 +24,7 @@ const getInitialData = (): DataNodeData => {
   return {
     dataType: data?.dataType || null,
     firstName: data?.firstName || t('chatbot_data_default_name_question'),
+    lastName: data?.lastName || t('chatbot_data_default_lastname_question'),
     email: data?.email || t('chatbot_data_default_email_question'),
     cpf: data?.cpf || t('chatbot_data_default_cpf_question'),
     cnpj: data?.cnpj || t('chatbot_data_default_cnpj_question'),
@@ -35,6 +37,10 @@ const dataTypeOptions = computed(() => [
   {
     value: 'name',
     title: t('chatbot_data_type_name'),
+  },
+  {
+    value: 'lastname',
+    title: t('chatbot_data_type_lastname'),
   },
   {
     value: 'email',
@@ -51,6 +57,9 @@ const dataTypeOptions = computed(() => [
 ]);
 
 const showNameFields = computed(() => dataNodeData.value.dataType === 'name');
+const showLastNameField = computed(
+  () => dataNodeData.value.dataType === 'lastname'
+);
 const showEmailField = computed(() => dataNodeData.value.dataType === 'email');
 const showCpfField = computed(() => dataNodeData.value.dataType === 'cpf');
 const showCnpjField = computed(() => dataNodeData.value.dataType === 'cnpj');
@@ -58,6 +67,14 @@ const showCnpjField = computed(() => dataNodeData.value.dataType === 'cnpj');
 const firstNameRules = computed(() => [
   (v: string | null | undefined) => {
     if (!showNameFields.value) return true;
+    const s = (v ?? '').trim();
+    return !!s || t('chatbot_data_field_required');
+  },
+]);
+
+const lastNameRules = computed(() => [
+  (v: string | null | undefined) => {
+    if (!showLastNameField.value) return true;
     const s = (v ?? '').trim();
     return !!s || t('chatbot_data_field_required');
   },
@@ -92,6 +109,7 @@ const updateNodeData = () => {
     const data = props.data as DataNodeData;
     data.dataType = dataNodeData.value.dataType;
     data.firstName = dataNodeData.value.firstName;
+    data.lastName = dataNodeData.value.lastName;
     data.email = dataNodeData.value.email;
     data.cpf = dataNodeData.value.cpf;
     data.cnpj = dataNodeData.value.cnpj;
@@ -112,25 +130,33 @@ watch(
       if (newType === 'name') {
         dataNodeData.value.firstName = t('chatbot_data_default_name_question');
       } else {
-      dataNodeData.value.firstName = '';
+        dataNodeData.value.firstName = '';
+      }
+
+      if (newType === 'lastname') {
+        dataNodeData.value.lastName = t(
+          'chatbot_data_default_lastname_question'
+        );
+      } else {
+        dataNodeData.value.lastName = '';
       }
 
       if (newType === 'email') {
         dataNodeData.value.email = t('chatbot_data_default_email_question');
       } else {
-      dataNodeData.value.email = '';
+        dataNodeData.value.email = '';
       }
 
       if (newType === 'cpf') {
         dataNodeData.value.cpf = t('chatbot_data_default_cpf_question');
       } else {
-      dataNodeData.value.cpf = '';
+        dataNodeData.value.cpf = '';
       }
 
       if (newType === 'cnpj') {
         dataNodeData.value.cnpj = t('chatbot_data_default_cnpj_question');
       } else {
-      dataNodeData.value.cnpj = '';
+        dataNodeData.value.cnpj = '';
       }
     }
     updateNodeData();
@@ -182,17 +208,27 @@ watch(
           hide-details
         />
 
-        <template v-if="showNameFields">
-          <VTextField
-            v-model="dataNodeData.firstName"
-            :label="t('chatbot_data_question')"
-            variant="outlined"
-            density="compact"
-            class="mb-3"
-            :rules="firstNameRules"
-            hide-details="auto"
-          />
-        </template>
+        <VTextField
+          v-if="showNameFields"
+          v-model="dataNodeData.firstName"
+          :label="t('chatbot_data_question')"
+          variant="outlined"
+          density="compact"
+          class="mb-3"
+          :rules="firstNameRules"
+          hide-details="auto"
+        />
+
+        <VTextField
+          v-if="showLastNameField"
+          v-model="dataNodeData.lastName"
+          :label="t('chatbot_data_question')"
+          variant="outlined"
+          density="compact"
+          class="mb-3"
+          :rules="lastNameRules"
+          hide-details="auto"
+        />
 
         <VTextField
           v-if="showEmailField"

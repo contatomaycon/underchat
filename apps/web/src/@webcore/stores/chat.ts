@@ -37,6 +37,7 @@ import { ListChatContactsFinalResponse } from '@core/schema/chat/listContacts/re
 import { ViewChatContactResponse } from '@core/schema/chat/viewContact/response.schema';
 import { ViewChatContactEmailResponse } from '@core/schema/chat/viewContactEmail/response.schema';
 import { ViewChatContactPhoneResponse } from '@core/schema/chat/viewContactPhone/response.schema';
+import { ViewChatContactDocumentResponse } from '@core/schema/chat/viewContactDocument/response.schema';
 import { ListChatLabelTemplatesResponse } from '@core/schema/chat/listLabelTemplates/response.schema';
 import {
   ListQuickMessageTemplatesFinalResponse,
@@ -1609,6 +1610,26 @@ export const useChatStore = defineStore('chat', {
       }
     },
 
+    async getChatContactDocumentDecrypted(
+      contactId: string
+    ): Promise<string | null> {
+      try {
+        const response = await axios.get<
+          IApiResponse<ViewChatContactDocumentResponse>
+        >(`/chat/contacts/${contactId}/document`);
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        return data.data.document;
+      } catch {
+        return null;
+      }
+    },
+
     async listChatLabelTemplates(): Promise<ListChatLabelTemplatesResponse[]> {
       try {
         const response = await axios.get<
@@ -1723,6 +1744,16 @@ export const useChatStore = defineStore('chat', {
         if (notes) {
           formData.append('notes', notes);
         }
+        const contactDocumentTypeId = this.extractFieldValue(
+          payload.contact_document_type_id as FieldValue
+        );
+        if (contactDocumentTypeId) {
+          formData.append('contact_document_type_id', contactDocumentTypeId);
+        }
+        const document = this.extractFieldValue(payload.document as FieldValue);
+        if (document) {
+          formData.append('document', document);
+        }
         const imageUrl = this.extractFieldValue(
           payload.image_url as FieldValue
         );
@@ -1825,6 +1856,19 @@ export const useChatStore = defineStore('chat', {
         const notes = this.extractFieldValue(body.notes as FieldValue);
         if (notes) {
           formData.append('notes', notes);
+        }
+        const contactDocumentTypeId = this.extractFieldValue(
+          body.contact_document_type_id as FieldValue
+        );
+        if (
+          contactDocumentTypeId !== undefined &&
+          contactDocumentTypeId !== null
+        ) {
+          formData.append('contact_document_type_id', contactDocumentTypeId);
+        }
+        const document = this.extractFieldValue(body.document as FieldValue);
+        if (document !== undefined && document !== null) {
+          formData.append('document', document);
         }
         const imageUrl = this.extractFieldValue(body.image_url as FieldValue);
         if (imageUrl) {

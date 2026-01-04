@@ -12,6 +12,7 @@ import { createContactSchema } from '@core/schema/contact/createContact';
 import { viewContactSchema } from '@core/schema/contact/viewContact';
 import { viewContactPhoneSchema } from '@core/schema/contact/viewContactPhone';
 import { viewContactEmailSchema } from '@core/schema/contact/viewContactEmail';
+import { viewContactDocumentSchema } from '@core/schema/contact/viewContactDocument';
 import { deleteContactSchema } from '@core/schema/contact/deleteContact';
 import { editContactSchema } from '@core/schema/contact/editContact';
 import { exportContactSchema } from '@core/schema/contact/exportContact';
@@ -70,6 +71,17 @@ export default async function contactRoutes(server: FastifyInstance) {
   server.get('/contact/:contact_id/email', {
     schema: viewContactEmailSchema,
     handler: contactController.viewContactEmail,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, contactViewPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.get('/contact/:contact_id/document', {
+    schema: viewContactDocumentSchema,
+    handler: contactController.viewContactDocument,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, contactViewPermissions),

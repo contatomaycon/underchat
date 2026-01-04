@@ -33,6 +33,7 @@ export class ContactExporterRepository {
           string | null
         >`CASE WHEN ${contact.birthday} IS NULL THEN NULL ELSE to_char(${contact.birthday}, 'YYYY-MM-DD') END`,
         notes: contact.notes,
+        document: contact.document,
       })
       .from(contact)
       .where(and(...whereConditions))

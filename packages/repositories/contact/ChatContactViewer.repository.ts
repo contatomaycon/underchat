@@ -1,5 +1,5 @@
 import * as schema from '@core/models';
-import { contact, labelTemplate } from '@core/models';
+import { contact, labelTemplate, contactDocumentType } from '@core/models';
 import { ViewChatContactResponse } from '@core/schema/chat/viewContact/response.schema';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
@@ -29,17 +29,31 @@ export class ChatContactViewerRepository {
           string | null
         >`CASE WHEN ${contact.birthday} IS NULL THEN NULL ELSE to_char(${contact.birthday}, 'YYYY-MM-DD') END`,
         notes: contact.notes,
+        document: contact.document,
+        document_partial: contact.document_partial,
         is_valided: contact.is_valided,
         label_template: {
           label_template_id: labelTemplate.label_template_id,
           label: labelTemplate.label,
           color: labelTemplate.color,
         },
+        contact_document_type: {
+          contact_document_type_id:
+            contactDocumentType.contact_document_type_id,
+          name: contactDocumentType.name,
+        },
       })
       .from(contact)
       .leftJoin(
         labelTemplate,
         eq(contact.label_template_id, labelTemplate.label_template_id)
+      )
+      .leftJoin(
+        contactDocumentType,
+        eq(
+          contactDocumentType.contact_document_type_id,
+          contact.contact_document_type_id
+        )
       )
       .where(
         and(

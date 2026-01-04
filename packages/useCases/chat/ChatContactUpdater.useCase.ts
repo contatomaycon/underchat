@@ -25,6 +25,8 @@ export class ChatContactUpdaterUseCase {
       nickname: body.nickname,
       birthday: body.birthday,
       notes: body.notes,
+      contact_document_type_id: body.contact_document_type_id,
+      document: body.document,
       photo: body.photo,
       image_url: body.image_url,
     };

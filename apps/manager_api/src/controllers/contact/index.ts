@@ -3,6 +3,7 @@ import { listContact } from './methods/listContact';
 import { viewContact } from './methods/viewContact';
 import { viewContactPhone } from './methods/viewContactPhone';
 import { viewContactEmail } from './methods/viewContactEmail';
+import { viewContactDocument } from './methods/viewContactDocument';
 import { deleteContact } from './methods/deleteContact';
 import { editContact } from './methods/editContact';
 import { createContact } from './methods/createContact';
@@ -16,6 +17,7 @@ class ContactController {
   public viewContact = viewContact;
   public viewContactPhone = viewContactPhone;
   public viewContactEmail = viewContactEmail;
+  public viewContactDocument = viewContactDocument;
   public deleteContact = deleteContact;
   public editContact = editContact;
   public createContact = createContact;

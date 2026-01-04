@@ -6,6 +6,11 @@ const labelTemplateSchema = Type.Object({
   color: Type.String(),
 });
 
+const contactDocumentTypeSchema = Type.Object({
+  contact_document_type_id: Type.String({ format: 'uuid' }),
+  name: Type.String(),
+});
+
 export const viewChatContactResponseSchema = Type.Object({
   contact_id: Type.String({ format: 'uuid' }),
   name: Type.String(),
@@ -16,9 +21,14 @@ export const viewChatContactResponseSchema = Type.Object({
   nickname: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   birthday: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   notes: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  document: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  document_partial: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   photo: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   is_valided: Type.Optional(Type.Union([Type.Boolean(), Type.Null()])),
   label_template: Type.Optional(Type.Union([labelTemplateSchema, Type.Null()])),
+  contact_document_type: Type.Optional(
+    Type.Union([contactDocumentTypeSchema, Type.Null()])
+  ),
 });
 
 export type ViewChatContactResponse = Static<

@@ -278,6 +278,11 @@ export class ContactCreatorUseCase {
       isValidated = normalized.isValidated;
     }
 
+    const contactDocumentTypeId = this.extractFieldValue(
+      input.contact_document_type_id as FieldValue
+    );
+    const document = this.extractFieldValue(input.document as FieldValue);
+
     const contactToCreate: CreateContactRequest = {
       label_template_id: labelTemplateId,
       name,
@@ -288,6 +293,8 @@ export class ContactCreatorUseCase {
       nickname,
       birthday,
       notes,
+      contact_document_type_id: contactDocumentTypeId,
+      document,
       photo: input.photo,
       image_url: input.image_url,
     };

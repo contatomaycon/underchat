@@ -12,11 +12,16 @@ export class ContactSensitiveDataRepository {
 
   getContactSensitiveDataById = async (
     contactId: string
-  ): Promise<{ phone: string | null; email: string | null } | null> => {
+  ): Promise<{
+    phone: string | null;
+    email: string | null;
+    document: string | null;
+  } | null> => {
     const result = await this.dbRo
       .select({
         phone: contact.phone,
         email: contact.email,
+        document: contact.document,
       })
       .from(contact)
       .where(and(eq(contact.contact_id, contactId), isNull(contact.deleted_at)))
@@ -29,6 +34,7 @@ export class ContactSensitiveDataRepository {
     return {
       phone: result[0].phone ?? null,
       email: result[0].email ?? null,
+      document: result[0].document ?? null,
     };
   };
 }

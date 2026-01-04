@@ -1,5 +1,10 @@
 import * as schema from '@core/models';
-import { contact, labelTemplate, account } from '@core/models';
+import {
+  contact,
+  labelTemplate,
+  account,
+  contactDocumentType,
+} from '@core/models';
 import { ViewContactResponse } from '@core/schema/contact/viewContact/response.schema';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
@@ -36,6 +41,11 @@ export class ContactViewerRepository {
           label: labelTemplate.label,
           color: labelTemplate.color,
         },
+        contact_document_type: {
+          contact_document_type_id:
+            contactDocumentType.contact_document_type_id,
+          name: contactDocumentType.name,
+        },
         name: contact.name,
         last_name: contact.last_name,
         email_partial: contact.email_partial,
@@ -48,6 +58,8 @@ export class ContactViewerRepository {
           string | null
         >`CASE WHEN ${contact.birthday} IS NULL THEN NULL ELSE to_char(${contact.birthday}, 'YYYY-MM-DD') END`,
         notes: contact.notes,
+        document: contact.document,
+        document_partial: contact.document_partial,
         created_at: contact.created_at,
         is_valided: contact.is_valided,
       })
@@ -56,6 +68,13 @@ export class ContactViewerRepository {
       .leftJoin(
         labelTemplate,
         eq(labelTemplate.label_template_id, contact.label_template_id)
+      )
+      .leftJoin(
+        contactDocumentType,
+        eq(
+          contactDocumentType.contact_document_type_id,
+          contact.contact_document_type_id
+        )
       )
       .where(and(...conditions))
       .execute();
@@ -91,6 +110,11 @@ export class ContactViewerRepository {
           label: labelTemplate.label,
           color: labelTemplate.color,
         },
+        contact_document_type: {
+          contact_document_type_id:
+            contactDocumentType.contact_document_type_id,
+          name: contactDocumentType.name,
+        },
         name: contact.name,
         last_name: contact.last_name,
         email_partial: contact.email_partial,
@@ -102,6 +126,8 @@ export class ContactViewerRepository {
           string | null
         >`CASE WHEN ${contact.birthday} IS NULL THEN NULL ELSE to_char(${contact.birthday}, 'YYYY-MM-DD') END`,
         notes: contact.notes,
+        document: contact.document,
+        document_partial: contact.document_partial,
         created_at: contact.created_at,
         is_valided: contact.is_valided,
       })
@@ -110,6 +136,13 @@ export class ContactViewerRepository {
       .leftJoin(
         labelTemplate,
         eq(labelTemplate.label_template_id, contact.label_template_id)
+      )
+      .leftJoin(
+        contactDocumentType,
+        eq(
+          contactDocumentType.contact_document_type_id,
+          contact.contact_document_type_id
+        )
       )
       .where(and(...conditions))
       .limit(1)

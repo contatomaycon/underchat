@@ -13,5 +13,9 @@ export interface IUpdateContact {
   photo?: string | null;
   birthday?: string | null;
   notes?: string | null;
+  contact_document_type_id?: string | null;
+  document?: string | null;
+  document_partial?: string | null;
+  document_c?: string | null;
   is_valided: boolean;
 }

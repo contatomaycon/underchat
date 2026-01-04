@@ -27,6 +27,7 @@ import { listChatContactsSchema } from '@core/schema/chat/listContacts';
 import { viewChatContactSchema } from '@core/schema/chat/viewContact';
 import { viewChatContactEmailSchema } from '@core/schema/chat/viewContactEmail';
 import { viewChatContactPhoneSchema } from '@core/schema/chat/viewContactPhone';
+import { viewChatContactDocumentSchema } from '@core/schema/chat/viewContactDocument';
 import { listChatLabelTemplatesSchema } from '@core/schema/chat/listLabelTemplates';
 import { createChatContactSchema } from '@core/schema/chat/createContact';
 import { updateChatContactSchema } from '@core/schema/chat/updateContact';
@@ -283,6 +284,17 @@ export default function chatRoutes(server: FastifyInstance) {
   server.get('/chat/contacts/:contact_id/phone', {
     schema: viewChatContactPhoneSchema,
     handler: chatController.viewContactPhone,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, chatPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.get('/chat/contacts/:contact_id/document', {
+    schema: viewChatContactDocumentSchema,
+    handler: chatController.viewContactDocument,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, chatPermissions),

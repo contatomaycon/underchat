@@ -61,6 +61,17 @@ export class ContactUpdaterRepository {
       inputUpdate.photo = input.photo;
     }
 
+    if ('contact_document_type_id' in input) {
+      inputUpdate.contact_document_type_id =
+        input.contact_document_type_id ?? null;
+    }
+
+    if ('document' in input) {
+      inputUpdate.document = input.document ?? null;
+      inputUpdate.document_partial = input.document_partial ?? null;
+      inputUpdate.document_c = input.document_c ?? null;
+    }
+
     inputUpdate.is_valided = input.is_valided ?? false;
 
     return inputUpdate;

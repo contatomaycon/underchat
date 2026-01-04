@@ -22,6 +22,7 @@ import { listContacts } from './methods/listContacts';
 import { viewContact } from './methods/viewContact';
 import { viewContactEmail } from './methods/viewContactEmail';
 import { viewContactPhone } from './methods/viewContactPhone';
+import { viewContactDocument } from './methods/viewContactDocument';
 import { listLabelTemplates } from './methods/listLabelTemplates';
 import { createContact } from './methods/createContact';
 import { updateContact } from './methods/updateContact';
@@ -55,6 +56,7 @@ class ChatController {
   public viewContact = viewContact;
   public viewContactEmail = viewContactEmail;
   public viewContactPhone = viewContactPhone;
+  public viewContactDocument = viewContactDocument;
   public listLabelTemplates = listLabelTemplates;
   public createContact = createContact;
   public updateContact = updateContact;

@@ -163,6 +163,44 @@ export class ContactService {
     };
   }
 
+  private processDocumentFields(
+    input: CreateContactRequest | ICreateContact,
+    isAlreadyEncrypted: boolean
+  ): {
+    documentCEncrypted: string | null;
+    documentPartialEncrypted: string | null;
+    documentC: string | null;
+  } {
+    if (isAlreadyEncrypted) {
+      const encryptedInput = input as ICreateContact;
+
+      return {
+        documentCEncrypted: encryptedInput.document ?? null,
+        documentPartialEncrypted: encryptedInput.document_partial ?? null,
+        documentC: encryptedInput.document_c ?? null,
+      };
+    }
+
+    const documentField = 'document' in input ? input.document : null;
+    const plainDocument = this.extractFieldValue(documentField as FieldValue);
+    if (!plainDocument) {
+      return {
+        documentCEncrypted: null,
+        documentPartialEncrypted: null,
+        documentC: null,
+      };
+    }
+
+    return {
+      documentCEncrypted: this.passwordEncryptorService.encrypt(plainDocument),
+      documentPartialEncrypted: (
+        this.encryptService.sanitize(plainDocument, ETypeSanetize.document) ??
+        ''
+      ).slice(0, 20),
+      documentC: this.encryptService.encrypt(plainDocument),
+    };
+  }
+
   private prepareContactPayload(
     input: CreateContactRequest | ICreateContact,
     accountId: string,
@@ -173,6 +211,10 @@ export class ContactService {
 
     const emailFields = this.processEmailFields(input, isAlreadyEncrypted);
     const phoneFields = this.processPhoneFields(input, isAlreadyEncrypted);
+    const documentFields = this.processDocumentFields(
+      input,
+      isAlreadyEncrypted
+    );
 
     if (isAlreadyEncrypted) {
       return {
@@ -195,10 +237,14 @@ export class ContactService {
     const nickname = this.extractFieldValue(createInput.nickname as FieldValue);
     const birthday = this.extractFieldValue(createInput.birthday as FieldValue);
     const notes = this.extractFieldValue(createInput.notes as FieldValue);
+    const contactDocumentTypeId = this.extractFieldValue(
+      createInput.contact_document_type_id as FieldValue
+    );
 
     return {
       account_id: accountId,
       label_template_id: labelTemplateId,
+      contact_document_type_id: contactDocumentTypeId,
       is_valided: isValidated,
       name: name ?? '',
       last_name: lastName,
@@ -213,6 +259,9 @@ export class ContactService {
       photo: photoUrl,
       birthday: nullIfEmpty(birthday),
       notes,
+      document: documentFields.documentCEncrypted,
+      document_partial: documentFields.documentPartialEncrypted,
+      document_c: documentFields.documentC,
     };
   }
 
@@ -390,6 +439,22 @@ export class ContactService {
 
     const phoneC = phoneField ? this.encryptService.encrypt(phoneField) : null;
 
+    const documentField = this.extractFieldValue(input.document as FieldValue);
+    const documentCEncrypted = documentField
+      ? this.passwordEncryptorService.encrypt(documentField)
+      : null;
+
+    const documentPartialEncrypted = documentField
+      ? (
+          this.encryptService.sanitize(documentField, ETypeSanetize.document) ??
+          ''
+        ).slice(0, 20)
+      : null;
+
+    const documentC = documentField
+      ? this.encryptService.encrypt(documentField)
+      : null;
+
     const phoneDdiField = this.extractFieldValue(input.phone_ddi as FieldValue);
     const isValided = this.determineIsValided(
       currentContact,
@@ -421,6 +486,9 @@ export class ContactService {
     const nickname = this.extractFieldValue(input.nickname as FieldValue);
     const birthday = this.extractFieldValue(input.birthday as FieldValue);
     const notes = this.extractFieldValue(input.notes as FieldValue);
+    const contactDocumentTypeId = this.extractFieldValue(
+      input.contact_document_type_id as FieldValue
+    );
 
     const payload: IUpdateContact = {
       label_template_id: labelTemplateId,
@@ -437,6 +505,10 @@ export class ContactService {
       photo: photoUrl,
       birthday: nullIfEmpty(birthday),
       notes,
+      contact_document_type_id: contactDocumentTypeId,
+      document: documentCEncrypted,
+      document_partial: documentPartialEncrypted,
+      document_c: documentC,
       is_valided: isValided,
     };
 
@@ -499,9 +571,44 @@ export class ContactService {
     }
   };
 
+  getContactDocumentDecrypted = (
+    encryptedDocument: string | null | undefined
+  ): string | null => {
+    if (!encryptedDocument) return null;
+
+    if (typeof encryptedDocument !== 'string') {
+      return null;
+    }
+
+    if (encryptedDocument.includes('*')) {
+      return null;
+    }
+
+    const isAESFormat =
+      encryptedDocument.includes(':') &&
+      encryptedDocument.split(':').length === 3;
+
+    if (!isAESFormat) {
+      return null;
+    }
+
+    try {
+      const decryptedDocument =
+        this.passwordEncryptorService.decrypt(encryptedDocument);
+
+      return decryptedDocument;
+    } catch {
+      return null;
+    }
+  };
+
   getContactSensitiveDataDecrypted = async (
     contactId: string
-  ): Promise<{ phone: string | null; email: string | null } | null> => {
+  ): Promise<{
+    phone: string | null;
+    email: string | null;
+    document: string | null;
+  } | null> => {
     const sensitiveData =
       await this.contactSensitiveDataRepository.getContactSensitiveDataById(
         contactId
@@ -511,6 +618,7 @@ export class ContactService {
     return {
       phone: this.getContactPhoneDecrypted(sensitiveData.phone),
       email: this.getContactEmailDecrypted(sensitiveData.email),
+      document: this.getContactDocumentDecrypted(sensitiveData.document),
     };
   };
 

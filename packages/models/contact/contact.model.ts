@@ -12,11 +12,15 @@ import { labelTemplate } from '../label';
 import { contactGroupAssignment } from './contactGroupAssignment.model';
 import { workerProfileStatusContact } from '../worker/workerProfileStatusContact.model';
 import { scheduledContact } from '../schedule';
+import { contactDocumentType } from './contactDocumentType.model';
 
 export const contact = pgTable('contact', {
   contact_id: uuid().primaryKey().notNull(),
   account_id: uuid().references(() => account.account_id),
   label_template_id: uuid().references(() => labelTemplate.label_template_id),
+  contact_document_type_id: uuid().references(
+    () => contactDocumentType.contact_document_type_id
+  ),
   is_valided: boolean().default(false),
   name: varchar({ length: 100 }).notNull(),
   last_name: varchar({ length: 100 }),
@@ -34,6 +38,9 @@ export const contact = pgTable('contact', {
     withTimezone: true,
   }),
   notes: text(),
+  document: varchar({ length: 500 }),
+  document_partial: varchar({ length: 20 }),
+  document_c: varchar({ length: 500 }),
   created_at: timestamp({
     mode: 'string',
     withTimezone: true,
@@ -53,6 +60,10 @@ export const contactRelations = relations(contact, ({ one, many }) => ({
   clt: one(labelTemplate, {
     fields: [contact.label_template_id],
     references: [labelTemplate.label_template_id],
+  }),
+  cdt: one(contactDocumentType, {
+    fields: [contact.contact_document_type_id],
+    references: [contactDocumentType.contact_document_type_id],
   }),
   cga: many(contactGroupAssignment),
   cpc: many(workerProfileStatusContact),

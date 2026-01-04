@@ -37,10 +37,14 @@ const viewContactEmail = ref<string | null>(null);
 const viewContactEmailPartial = ref<string | null>(null);
 const viewContactPhone = ref<string | null>(null);
 const viewContactPhonePartial = ref<string | null>(null);
+const viewContactDocument = ref<string | null>(null);
+const viewContactDocumentPartial = ref<string | null>(null);
 const isViewEmailDecrypted = ref(false);
 const isViewPhoneDecrypted = ref(false);
+const isViewDocumentDecrypted = ref(false);
 const isLoadingViewEmail = ref(false);
 const isLoadingViewPhone = ref(false);
+const isLoadingViewDocument = ref(false);
 
 const viewContactEmailFormatted = computed(() => {
   if (isViewEmailDecrypted.value) {
@@ -65,6 +69,48 @@ function formatPhone(value: string | null | undefined): string {
   }
   return `(${numbers.slice(0, 2)}) ${numbers.slice(2, 7)}-${numbers.slice(7)}`;
 }
+
+function formatCpfDigits(digits: string): string {
+  const clean = digits.replaceAll(/\D/g, '').slice(0, 11);
+  if (clean.length <= 3) return clean;
+  if (clean.length <= 6) return `${clean.slice(0, 3)}.${clean.slice(3)}`;
+  if (clean.length <= 9) {
+    return `${clean.slice(0, 3)}.${clean.slice(3, 6)}.${clean.slice(6)}`;
+  }
+  return `${clean.slice(0, 3)}.${clean.slice(3, 6)}.${clean.slice(6, 9)}-${clean.slice(9, 11)}`;
+}
+
+function formatCnpjDigits(digits: string): string {
+  const clean = digits.replaceAll(/\D/g, '').slice(0, 14);
+  if (clean.length <= 2) return clean;
+  if (clean.length <= 5) {
+    return `${clean.slice(0, 2)}.${clean.slice(2)}`;
+  }
+  if (clean.length <= 8) {
+    return `${clean.slice(0, 2)}.${clean.slice(2, 5)}.${clean.slice(5)}`;
+  }
+  if (clean.length <= 12) {
+    return `${clean.slice(0, 2)}.${clean.slice(2, 5)}.${clean.slice(5, 8)}/${clean.slice(8)}`;
+  }
+  return `${clean.slice(0, 2)}.${clean.slice(2, 5)}.${clean.slice(5, 8)}/${clean.slice(8, 12)}-${clean.slice(12, 14)}`;
+}
+
+const documentFormatted = computed(() => {
+  if (!props.contact?.contact_document_type) return '';
+
+  if (isViewDocumentDecrypted.value && viewContactDocument.value) {
+    const digits = viewContactDocument.value.replaceAll(/\D/g, '');
+    if (props.contact.contact_document_type.name === 'CPF') {
+      return formatCpfDigits(digits);
+    }
+    if (props.contact.contact_document_type.name === 'CNPJ') {
+      return formatCnpjDigits(digits);
+    }
+    return viewContactDocument.value;
+  }
+
+  return viewContactDocumentPartial.value ?? '';
+});
 
 const viewContactPhoneFormatted = computed(() => {
   if (isViewPhoneDecrypted.value && viewContactPhone.value) {
@@ -125,6 +171,27 @@ const toggleViewPhoneVisibility = async () => {
   }
 };
 
+const toggleViewDocumentVisibility = async () => {
+  if (!props.contact?.contact_id) return;
+
+  if (isViewDocumentDecrypted.value) {
+    viewContactDocument.value = null;
+    isViewDocumentDecrypted.value = false;
+    return;
+  }
+
+  isLoadingViewDocument.value = true;
+  const decryptedDocument = await chatStore.getChatContactDocumentDecrypted(
+    props.contact.contact_id
+  );
+  isLoadingViewDocument.value = false;
+
+  if (decryptedDocument) {
+    viewContactDocument.value = decryptedDocument;
+    isViewDocumentDecrypted.value = true;
+  }
+};
+
 watch(
   () => props.contact,
   (contact) => {
@@ -135,6 +202,9 @@ watch(
       viewContactPhonePartial.value = contact.phone_partial ?? null;
       viewContactPhone.value = null;
       isViewPhoneDecrypted.value = false;
+      viewContactDocumentPartial.value = contact.document_partial ?? null;
+      viewContactDocument.value = null;
+      isViewDocumentDecrypted.value = false;
     }
   },
   { immediate: true }
@@ -276,6 +346,42 @@ watch(
               </span>
             </div>
             <div v-else class="text-body-2 text-medium-emphasis mt-1">-</div>
+          </VCol>
+        </VRow>
+        <VRow
+          v-if="
+            contact.contact_document_type &&
+            (contact.document_partial || contact.document)
+          "
+        >
+          <VCol cols="12" md="6">
+            <VLabel class="text-body-2 mb-1">{{ $t('document_type') }}:</VLabel>
+            <AppTextField
+              :model-value="contact.contact_document_type.name"
+              readonly
+            />
+          </VCol>
+
+          <VCol cols="12" md="6">
+            <VLabel class="text-body-2 mb-1">
+              {{
+                contact.contact_document_type.name === 'CPF'
+                  ? $t('cpf')
+                  : $t('cnpj')
+              }}:
+            </VLabel>
+            <AppTextField :model-value="documentFormatted" readonly>
+              <template #append-inner>
+                <VIcon
+                  :icon="
+                    isViewDocumentDecrypted ? 'tabler-eye-off' : 'tabler-eye'
+                  "
+                  class="cursor-pointer"
+                  :class="{ 'opacity-50': isLoadingViewDocument }"
+                  @click="toggleViewDocumentVisibility"
+                />
+              </template>
+            </AppTextField>
           </VCol>
         </VRow>
         <VRow>

@@ -1,6 +1,7 @@
 export interface ICreateContact {
   account_id?: string | null;
   label_template_id?: string | null;
+  contact_document_type_id?: string | null;
   is_valided?: boolean;
   name: string;
   last_name?: string | null;
@@ -15,4 +16,7 @@ export interface ICreateContact {
   photo?: string | null;
   birthday?: string | null;
   notes?: string | null;
+  document?: string | null;
+  document_partial?: string | null;
+  document_c?: string | null;
 }

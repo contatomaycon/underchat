@@ -11,10 +11,16 @@ const accountSchema = Type.Object({
   name: Type.String(),
 });
 
+const contactDocumentTypeSchema = Type.Object({
+  contact_document_type_id: Type.String({ format: 'uuid' }),
+  name: Type.String(),
+});
+
 export const viewContactResponseSchema = Type.Object({
   contact_id: Type.String({ format: 'uuid' }),
   account: accountSchema,
   label_template: Type.Union([labelTemplateSchema, Type.Null()]),
+  contact_document_type: Type.Union([contactDocumentTypeSchema, Type.Null()]),
   name: Type.String(),
   last_name: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   email_partial: Type.Optional(Type.Union([Type.String(), Type.Null()])),
@@ -24,6 +30,8 @@ export const viewContactResponseSchema = Type.Object({
   nickname: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   birthday: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   notes: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  document: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  document_partial: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   is_valided: Type.Optional(Type.Union([Type.Boolean(), Type.Null()])),
   photo: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 });

@@ -91,6 +91,24 @@ export const updateChatContactRequestSchema = Type.Object({
       Type.Null(),
     ])
   ),
+  contact_document_type_id: Type.Optional(
+    Type.Union([
+      Type.String({ format: 'uuid' }),
+      Type.Object({
+        value: Type.String({ format: 'uuid' }),
+      }),
+      Type.Null(),
+    ])
+  ),
+  document: Type.Optional(
+    Type.Union([
+      Type.String(),
+      Type.Object({
+        value: Type.String(),
+      }),
+      Type.Null(),
+    ])
+  ),
   photo: Type.Optional(uploadFileRequestSchema),
   image_url: Type.Optional(
     Type.Union([

@@ -1109,6 +1109,8 @@ const processMessageNodeData = (nodeData: any): void => {
 const processDataNodeData = (nodeData: any): void => {
   if (nodeData.firstName === undefined)
     nodeData.firstName = t('chatbot_data_default_name_question');
+  if (nodeData.lastName === undefined)
+    nodeData.lastName = t('chatbot_data_default_lastname_question');
   if (nodeData.email === undefined)
     nodeData.email = t('chatbot_data_default_email_question');
   if (nodeData.cpf === undefined)

@@ -71,6 +71,19 @@ export class ChatContactService {
     return sensitiveData.phone;
   };
 
+  getChatContactDocumentDecrypted = async (
+    contactId: string
+  ): Promise<string | null> => {
+    const sensitiveData =
+      await this.contactService.getContactSensitiveDataDecrypted(contactId);
+
+    if (!sensitiveData) {
+      return null;
+    }
+
+    return sensitiveData.document;
+  };
+
   listChatLabelTemplates = async (
     accountId: string
   ): Promise<ListChatLabelTemplatesResponse[]> => {

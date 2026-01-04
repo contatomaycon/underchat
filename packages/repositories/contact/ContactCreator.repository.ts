@@ -38,6 +38,7 @@ export class ContactCreatorRepository {
         contact_id: contactId,
         account_id: input.account_id,
         label_template_id: input.label_template_id,
+        contact_document_type_id: input.contact_document_type_id,
         is_valided: input.is_valided ?? false,
         name: input.name,
         last_name: input.last_name,
@@ -52,6 +53,9 @@ export class ContactCreatorRepository {
         photo: input.photo,
         birthday: nullIfEmpty(input.birthday),
         notes: input.notes,
+        document: input.document,
+        document_partial: input.document_partial,
+        document_c: input.document_c,
       })
       .execute();
 

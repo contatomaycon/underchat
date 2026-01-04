@@ -39,6 +39,8 @@ export class ChatContactCreatorUseCase {
       nickname: input.nickname,
       birthday: input.birthday,
       notes: input.notes,
+      contact_document_type_id: input.contact_document_type_id,
+      document: input.document,
       photo: input.photo,
       image_url: input.image_url,
       chat_id: chatId,

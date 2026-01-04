@@ -657,6 +657,10 @@ export class ChatbotFlowRunnerService {
       return node.data?.firstName || '';
     }
 
+    if (dataType === 'lastname') {
+      return node.data?.lastName || '';
+    }
+
     if (dataType === 'email') {
       return node.data?.email || '';
     }
@@ -1281,6 +1285,32 @@ export class ChatbotFlowRunnerService {
     );
   }
 
+  private async processLastNameDataNode(
+    t: TFunction<'translation', undefined>,
+    createChat: IChat,
+    chatbotFlow: ListChatbotFlowResponse,
+    currentFlowId: string,
+    customMessages?: {
+      service_finished_message?: string;
+      invalid_menu_option_message?: string;
+      invalid_satisfaction_option_message?: string;
+      invalid_cpf_message?: string;
+      invalid_cnpj_message?: string;
+      invalid_email_message?: string;
+      transfer_message_user?: string;
+      transfer_message_sector?: string;
+      transfer_message_sector_user?: string;
+    }
+  ): Promise<boolean> {
+    return this.processNextNodeAfterValidation(
+      t,
+      createChat,
+      chatbotFlow,
+      currentFlowId,
+      customMessages
+    );
+  }
+
   private async processEmailDataNode(
     t: TFunction<'translation', undefined>,
     createChat: IChat,
@@ -1422,6 +1452,16 @@ export class ChatbotFlowRunnerService {
 
     if (dataType === 'name') {
       return this.processNameDataNode(
+        t,
+        createChat,
+        chatbotFlow,
+        currentFlowId,
+        customMessages
+      );
+    }
+
+    if (dataType === 'lastname') {
+      return this.processLastNameDataNode(
         t,
         createChat,
         chatbotFlow,
