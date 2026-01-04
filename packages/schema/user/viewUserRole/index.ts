@@ -5,7 +5,7 @@ import { viewUserRoleParamsRequestSchema } from './request.schema';
 import { viewUserRoleResponseSchema } from './response.schema';
 
 export const viewUserRoleSchema = {
-  description: 'Visualiza o cargo atual do usuário',
+  description: 'Visualiza o grupo de acesso atual do usuário',
   tags: [ETagSwagger.user],
   produces: ['application/json'],
   security: [

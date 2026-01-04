@@ -8,7 +8,7 @@ import {
 import { updateRolePermissionsResponseSchema } from './response.schema';
 
 export const updateRolePermissionsSchema = {
-  description: 'Atualiza as permissões de um cargo',
+  description: 'Atualiza as permissões de um grupo de acesso',
   tags: [ETagSwagger.permission],
   produces: ['application/json'],
   security: [

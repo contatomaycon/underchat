@@ -6,7 +6,7 @@ import { viewPermissionGroupsUserParamsSchema } from './request.schema';
 
 export const viewPermissionGroupsUserSchema = {
   description:
-    'Lista os grupos de permissão e suas permissões para o cargo informado',
+    'Lista os grupos de permissão e suas permissões para o grupo de acesso informado',
   tags: [ETagSwagger.permission],
   produces: ['application/json'],
   security: [

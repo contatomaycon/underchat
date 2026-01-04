@@ -5,7 +5,7 @@ import { listPermissionRoleAccountParamsRequestSchema } from './request.schema';
 import { listPermissionRoleAccountResponseSchema } from './response.schema';
 
 export const listPermissionRoleAccountSchema = {
-  description: 'Lista os cargos de uma conta',
+  description: 'Lista os grupos de acesso de uma conta',
   tags: [ETagSwagger.permission],
   produces: ['application/json'],
   security: [

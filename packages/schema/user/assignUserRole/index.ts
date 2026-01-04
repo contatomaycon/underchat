@@ -7,7 +7,7 @@ import {
 } from './request.schema';
 
 export const assignUserRoleSchema = {
-  description: 'Adiciona um usuário a um cargo',
+  description: 'Adiciona um usuário a um grupo de acesso',
   tags: [ETagSwagger.user],
   produces: ['application/json'],
   security: [

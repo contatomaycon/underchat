@@ -4,7 +4,7 @@ INSERT INTO "permission_action_groups" ("permission_action_group_id", "name", "d
   ('019a930d-c6f6-766d-9c83-9fbdaf4410f6', 'Usuários', 'Grupo de permissões relacionadas a usuários', 'user_group'),
   ('019a930d-c6f6-766d-9c83-a01975e5c60d', 'Contatos', 'Grupo de permissões relacionadas a contatos', 'contact_group'),
   ('019a930d-c6f6-766d-9c83-a64c450966b1', 'Grupos de Contatos', 'Grupo de permissões relacionadas a grupos de contatos', 'contact_group_assignment_group'),
-  ('019a930d-c6f6-766d-9c83-abdcf2adde3c', 'Cargos', 'Grupo de permissões relacionadas a cargos e permissões', 'role_group'),
+  ('019a930d-c6f6-766d-9c83-abdcf2adde3c', 'Grupos de Acesso', 'Grupo de permissões relacionadas a cargos e permissões', 'role_group'),
   ('019a930d-c6f6-766d-9c83-ad605ed5246f', 'Planos', 'Grupo de permissões relacionadas a planos', 'plan_group'),
   ('019a930d-c6f6-766d-9c83-b09ab31e3311', 'Templates de Mensagem', 'Grupo de permissões relacionadas a templates de mensagens', 'message_template_group'),
   ('019a930d-c6f6-766d-9c83-b678db6a749f', 'Templates de Etiqueta', 'Grupo de permissões relacionadas a templates de etiquetas', 'label_template_group'),

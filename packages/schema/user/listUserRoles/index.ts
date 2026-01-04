@@ -4,7 +4,7 @@ import { ETagSwagger } from '@core/common/enums/ETagSwagger';
 import { listUserRolesResponseSchema } from './response.schema';
 
 export const listUserRolesSchema = {
-  description: 'Lista todos os cargos da conta do usuário',
+  description: 'Lista todos os grupos de acesso da conta do usuário',
   tags: [ETagSwagger.user],
   produces: ['application/json'],
   security: [
