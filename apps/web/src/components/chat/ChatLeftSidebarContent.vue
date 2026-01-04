@@ -90,6 +90,7 @@ const chatbotPagings = ref({
   total: 0,
 });
 const isLoadingChatbot = ref(false);
+const isLoadingWorkerConfigs = ref(false);
 
 type FilterType = 'new' | 'all' | 'in_chat' | 'queue' | 'chatbot' | 'my_chats';
 
@@ -224,6 +225,34 @@ const handleFilterClick = (filter: FilterType) => {
   }
 };
 
+const loadWorkerConfigs = async (chats: ListChatsResult[]) => {
+  const workerIds = new Set<string>();
+
+  chats.forEach((chat) => {
+    if (chat.worker?.id) {
+      workerIds.add(chat.worker.id);
+    }
+  });
+
+  if (workerIds.size === 0) {
+    return;
+  }
+
+  isLoadingWorkerConfigs.value = true;
+
+  try {
+    await Promise.all(
+      Array.from(workerIds).map((workerId) =>
+        channelsStore.fetchWorkerConfigForChat(workerId)
+      )
+    );
+  } catch (error) {
+    console.error('Error loading worker configs:', error);
+  } finally {
+    isLoadingWorkerConfigs.value = false;
+  }
+};
+
 const loadChatsByFilter = async () => {
   if (activeFilter.value === 'all' || activeFilter.value === 'my_chats') {
     const requestQueue: ListChatsQuery = {
@@ -242,6 +271,9 @@ const loadChatsByFilter = async () => {
       chatStore.listQueueChats(requestQueue),
       chatStore.listInChatChats(requestInChat),
     ]);
+
+    const allChats = [...chatStore.listQueue, ...chatStore.listInChat];
+    await loadWorkerConfigs(allChats);
   } else if (activeFilter.value === 'in_chat') {
     const requestInChat: ListChatsQuery = {
       current_page: currentPageInChat.value,
@@ -250,6 +282,7 @@ const loadChatsByFilter = async () => {
     };
 
     await chatStore.listInChatChats(requestInChat);
+    await loadWorkerConfigs(chatStore.listInChat);
   } else if (activeFilter.value === 'queue') {
     const requestQueue: ListChatsQuery = {
       current_page: currentPageQueue.value,
@@ -258,6 +291,7 @@ const loadChatsByFilter = async () => {
     };
 
     await chatStore.listQueueChats(requestQueue);
+    await loadWorkerConfigs(chatStore.listQueue);
   }
 };
 
@@ -301,6 +335,7 @@ const loadChatbotChats = async () => {
     const result = await chatStore.listChatbotChats(request);
     if (result) {
       chatbotPagings.value = result.pagings;
+      await loadWorkerConfigs(chatStore.listChatbot);
     }
   } finally {
     isLoadingChatbot.value = false;
@@ -1021,7 +1056,7 @@ onMounted(async () => {
   <template v-else-if="activeFilter === 'chatbot'">
     <PerfectScrollbar :options="{ wheelPropagation: false }">
       <ul class="d-flex flex-column gap-y-1 chat-list px-3 py-2 list-none">
-        <template v-if="isLoadingChatbot">
+        <template v-if="isLoadingChatbot || isLoadingWorkerConfigs">
           <li
             v-for="i in 5"
             :key="`skeleton-chatbot-${i}`"
@@ -1077,7 +1112,7 @@ onMounted(async () => {
   <template v-else-if="activeFilter === 'my_chats'">
     <PerfectScrollbar :options="{ wheelPropagation: false }">
       <ul class="d-flex flex-column gap-y-1 chat-list px-3 py-2 list-none">
-        <template v-if="chatStore.loadingChats">
+        <template v-if="chatStore.loadingChats || isLoadingWorkerConfigs">
           <li
             v-for="i in 5"
             :key="`skeleton-my-chat-${i}`"
@@ -1132,7 +1167,7 @@ onMounted(async () => {
 
   <PerfectScrollbar v-else :options="{ wheelPropagation: false }">
     <ul class="d-flex flex-column gap-y-1 chat-list px-3 py-2 list-none">
-      <template v-if="chatStore.loadingChats">
+      <template v-if="chatStore.loadingChats || isLoadingWorkerConfigs">
         <li
           v-for="i in 5"
           :key="`skeleton-${i}`"
