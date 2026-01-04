@@ -372,6 +372,7 @@
     "recreate_all": "Recrear Todos",
     "recreate_all_channels_confirmation": "¿Está seguro de que desea recrear todos los canales no eliminados?",
     "delete": "Eliminar",
+    "deactivate": "Desactivar",
     "user_list_error": "Ocurrió un error al listar los usuarios. Por favor, inténtalo de nuevo.",
     "user_email_decrypt_error": "¡Error al desencriptar el email del usuario!",
     "user_phone_decrypt_error": "¡Error al desencriptar el teléfono del usuario!",

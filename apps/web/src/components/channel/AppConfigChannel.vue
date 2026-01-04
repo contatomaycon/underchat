@@ -3124,7 +3124,7 @@ onMounted(async () => {
           :disabled="isSavingTransferProtocol"
           @click="deleteTransferProtocolText"
         >
-          {{ $t('delete') }}
+          {{ $t('deactivate') }}
         </VBtn>
         <VBtn
           color="primary"
@@ -3199,7 +3199,7 @@ onMounted(async () => {
           :disabled="isSavingStartProtocol"
           @click="deleteStartProtocolText"
         >
-          {{ $t('delete') }}
+          {{ $t('deactivate') }}
         </VBtn>
         <VBtn
           color="primary"
@@ -3264,7 +3264,7 @@ onMounted(async () => {
           :disabled="isSavingSimultaneousAttendance"
           @click="deleteSimultaneousAttendance"
         >
-          {{ $t('delete') }}
+          {{ $t('deactivate') }}
         </VBtn>
         <VBtn
           color="primary"
@@ -3360,7 +3360,7 @@ onMounted(async () => {
           :disabled="isSavingShowMessageOnCall"
           @click="deleteShowMessageOnCallText"
         >
-          {{ $t('delete') }}
+          {{ $t('deactivate') }}
         </VBtn>
         <VBtn
           color="primary"
@@ -3441,7 +3441,7 @@ onMounted(async () => {
           :disabled="isSavingSendMessageOnFinishAttendance"
           @click="deleteSendMessageOnFinishAttendanceText"
         >
-          {{ $t('delete') }}
+          {{ $t('deactivate') }}
         </VBtn>
         <VBtn
           color="primary"
@@ -3496,7 +3496,7 @@ onMounted(async () => {
           :disabled="isSavingChatbot"
           @click="deleteChatbot"
         >
-          {{ $t('delete') }}
+          {{ $t('deactivate') }}
         </VBtn>
         <VBtn
           color="primary"
