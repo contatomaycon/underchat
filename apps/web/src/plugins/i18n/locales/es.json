@@ -167,6 +167,7 @@
     "channel_general_config_auto_save_contacts_description": "Guarda automáticamente los contactos que interactúan con el canal.",
     "channel_general_config_chatbot_title": "Activar chatbot en el canal",
     "channel_general_config_chatbot_description": "Activa el chatbot seleccionado para este canal.",
+    "channel_general_config_configure": "Configurar",
     "channel_general_config_save": "Guardar configuraciones",
     "channel_general_config_load_error": "No fue posible cargar las configuraciones del canal.",
     "channel_general_config_save_success": "¡Configuraciones del canal guardadas con éxito!",

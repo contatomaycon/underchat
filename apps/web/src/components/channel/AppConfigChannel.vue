@@ -1145,6 +1145,125 @@ const workerConfigOptions = computed(() => [
   },
 ]);
 
+const hasModal = (key: WorkerConfigField): boolean => {
+  return (
+    key === 'generate_protocol_at_transfer' ||
+    key === 'generate_protocol_at_start' ||
+    key === 'simultaneous_attendance' ||
+    key === 'show_message_on_call' ||
+    key === 'send_message_on_finish_attendance' ||
+    key === 'chatbot'
+  );
+};
+
+const getToggleDisabled = (key: WorkerConfigField): boolean => {
+  if (key === 'generate_protocol_at_transfer') {
+    return isSavingWorkerConfig.value || isSavingTransferProtocol.value;
+  }
+
+  if (key === 'generate_protocol_at_start') {
+    return isSavingWorkerConfig.value || isSavingStartProtocol.value;
+  }
+
+  if (key === 'simultaneous_attendance') {
+    return isSavingWorkerConfig.value || isSavingSimultaneousAttendance.value;
+  }
+
+  if (key === 'show_message_on_call') {
+    return isSavingWorkerConfig.value || isSavingShowMessageOnCall.value;
+  }
+
+  if (key === 'send_message_on_finish_attendance') {
+    return (
+      isSavingWorkerConfig.value || isSavingSendMessageOnFinishAttendance.value
+    );
+  }
+
+  if (key === 'chatbot') {
+    return isSavingWorkerConfig.value || isSavingChatbot.value;
+  }
+
+  return isSavingWorkerConfig.value;
+};
+
+const handleToggleClick = (key: WorkerConfigField): void => {
+  if (key === 'generate_protocol_at_transfer') {
+    toggleTransferProtocolStatus();
+
+    return;
+  }
+
+  if (key === 'generate_protocol_at_start') {
+    toggleStartProtocolStatus();
+
+    return;
+  }
+
+  if (key === 'simultaneous_attendance') {
+    toggleSimultaneousAttendanceStatus();
+
+    return;
+  }
+
+  if (key === 'show_message_on_call') {
+    toggleShowMessageOnCallStatus();
+
+    return;
+  }
+
+  if (key === 'send_message_on_finish_attendance') {
+    toggleSendMessageOnFinishAttendanceStatus();
+
+    return;
+  }
+
+  if (key === 'chatbot') {
+    toggleChatbotStatus();
+
+    return;
+  }
+
+  onWorkerConfigCheckboxChange(key, !workerConfigForm[key]);
+};
+
+const handleCardClick = (key: WorkerConfigField): void => {
+  if (key === 'generate_protocol_at_transfer') {
+    openTransferProtocolModal();
+
+    return;
+  }
+
+  if (key === 'generate_protocol_at_start') {
+    openStartProtocolModal();
+
+    return;
+  }
+
+  if (key === 'simultaneous_attendance') {
+    openSimultaneousAttendanceModal();
+
+    return;
+  }
+
+  if (key === 'show_message_on_call') {
+    openShowMessageOnCallModal();
+
+    return;
+  }
+
+  if (key === 'send_message_on_finish_attendance') {
+    openSendMessageOnFinishAttendanceModal();
+
+    return;
+  }
+
+  if (key === 'chatbot') {
+    openChatbotModal();
+
+    return;
+  }
+};
+
 const remainingSlots = computed(() => {
   const existingCount = existingStatus.value.length;
 
@@ -2355,101 +2474,37 @@ onMounted(async () => {
                   cols="12"
                   md="6"
                 >
-                  <VCard class="general-config-card h-100" variant="outlined">
-                    <div class="d-flex flex-column gap-2">
-                      <VCheckbox
-                        v-if="
-                          option.key !== 'generate_protocol_at_transfer' &&
-                          option.key !== 'generate_protocol_at_start' &&
-                          option.key !== 'simultaneous_attendance' &&
-                          option.key !== 'show_message_on_call' &&
-                          option.key !== 'send_message_on_finish_attendance' &&
-                          option.key !== 'chatbot'
-                        "
-                        :model-value="workerConfigForm[option.key]"
-                        :label="option.title"
-                        color="primary"
-                        hide-details
-                        :disabled="isSavingWorkerConfig"
-                        @update:model-value="
-                          onWorkerConfigCheckboxChange(option.key, $event)
-                        "
-                      />
-                      <VCheckbox
-                        v-else-if="
-                          option.key === 'generate_protocol_at_transfer'
-                        "
-                        :model-value="workerConfigForm[option.key]"
-                        :label="option.title"
-                        color="primary"
-                        hide-details
-                        :disabled="
-                          isSavingWorkerConfig || isSavingTransferProtocol
-                        "
-                        @click.stop.prevent="openTransferProtocolModal"
-                      />
-                      <VCheckbox
-                        v-else-if="option.key === 'generate_protocol_at_start'"
-                        :model-value="workerConfigForm[option.key]"
-                        :label="option.title"
-                        color="primary"
-                        hide-details
-                        :disabled="
-                          isSavingWorkerConfig || isSavingStartProtocol
-                        "
-                        @click.stop.prevent="openStartProtocolModal"
-                      />
-                      <VCheckbox
-                        v-else-if="option.key === 'simultaneous_attendance'"
-                        :model-value="workerConfigForm[option.key]"
-                        :label="option.title"
-                        color="primary"
-                        hide-details
-                        :disabled="
-                          isSavingWorkerConfig || isSavingSimultaneousAttendance
-                        "
-                        @click.stop.prevent="openSimultaneousAttendanceModal"
-                      />
-                      <VCheckbox
-                        v-else-if="option.key === 'show_message_on_call'"
-                        :model-value="workerConfigForm[option.key]"
-                        :label="option.title"
-                        color="primary"
-                        hide-details
-                        :disabled="
-                          isSavingWorkerConfig || isSavingShowMessageOnCall
-                        "
-                        @click.stop.prevent="openShowMessageOnCallModal"
-                      />
-                      <VCheckbox
-                        v-else-if="
-                          option.key === 'send_message_on_finish_attendance'
-                        "
-                        :model-value="workerConfigForm[option.key]"
-                        :label="option.title"
-                        color="primary"
-                        hide-details
-                        :disabled="
-                          isSavingWorkerConfig ||
-                          isSavingSendMessageOnFinishAttendance
-                        "
-                        @click.stop.prevent="
-                          openSendMessageOnFinishAttendanceModal
-                        "
-                      />
-                      <VCheckbox
-                        v-else-if="option.key === 'chatbot'"
-                        :model-value="workerConfigForm[option.key]"
-                        :label="option.title"
-                        color="primary"
-                        hide-details
-                        :disabled="isSavingWorkerConfig || isSavingChatbot"
-                        @click.stop.prevent="openChatbotModal"
-                      />
+                  <VCard
+                    class="general-config-card h-100 position-relative"
+                    variant="outlined"
+                  >
+                    <VSwitch
+                      class="general-config-toggle"
+                      :model-value="workerConfigForm[option.key]"
+                      color="primary"
+                      :disabled="getToggleDisabled(option.key)"
+                      @click.stop="handleToggleClick(option.key)"
+                    />
+                    <div
+                      class="general-config-content d-flex flex-column gap-2"
+                    >
+                      <h6 class="text-body-1 font-weight-bold mb-0">
+                        {{ option.title }}
+                      </h6>
                       <p class="text-body-2 text-medium-emphasis mb-0">
                         {{ option.description }}
                       </p>
                     </div>
+                    <VBtn
+                      v-if="hasModal(option.key)"
+                      class="general-config-button"
+                      variant="tonal"
+                      color="primary"
+                      size="small"
+                      @click.stop="handleCardClick(option.key)"
+                    >
+                      {{ $t('channel_general_config_configure') }}
+                    </VBtn>
                   </VCard>
                 </VCol>
               </VRow>
@@ -3833,6 +3888,28 @@ onMounted(async () => {
 
 .general-config-card :deep(.v-selection-control) {
   margin-bottom: 0;
+}
+
+.general-config-content {
+  padding-right: 60px;
+  padding-top: 36px;
+  padding-bottom: 48px;
+}
+
+.general-config-toggle {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  z-index: 2;
+}
+
+.general-config-button {
+  position: absolute;
+  bottom: 12px;
+  right: 12px;
+  z-index: 2;
+  transform: scale(0.8);
+  transform-origin: bottom right;
 }
 
 .general-config-grid {
