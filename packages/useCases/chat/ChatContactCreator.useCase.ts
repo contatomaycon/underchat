@@ -3,6 +3,7 @@ import { TFunction } from 'i18next';
 import { CreateChatContactRequest } from '@core/schema/chat/createContact/request.schema';
 import { CreateContactRequest } from '@core/schema/contact/createContact/request.schema';
 import { ContactCreatorUseCase } from '@core/useCases/contact/ContactCreator.useCase';
+import { normalizeContactRequest } from '@core/common/functions/normalizeContactRequest';
 
 @injectable()
 export class ChatContactCreatorUseCase {
@@ -27,22 +28,23 @@ export class ChatContactCreatorUseCase {
     input: CreateChatContactRequest,
     accountId: string
   ): Promise<boolean> {
-    const chatId = this.extractChatId(input.chat_id);
+    const normalizedInput = normalizeContactRequest(input);
+    const chatId = this.extractChatId(normalizedInput.chat_id);
 
     const contactRequest: CreateContactRequest = {
-      label_template_id: input.label_template_id,
-      name: input.name,
-      last_name: input.last_name,
-      email: input.email,
-      phone_ddi: input.phone_ddi,
-      phone: input.phone,
-      nickname: input.nickname,
-      birthday: input.birthday,
-      notes: input.notes,
-      contact_document_type_id: input.contact_document_type_id,
-      document: input.document,
-      photo: input.photo,
-      image_url: input.image_url,
+      label_template_id: normalizedInput.label_template_id,
+      name: normalizedInput.name,
+      last_name: normalizedInput.last_name,
+      email: normalizedInput.email,
+      phone_ddi: normalizedInput.phone_ddi,
+      phone: normalizedInput.phone,
+      nickname: normalizedInput.nickname,
+      birthday: normalizedInput.birthday,
+      notes: normalizedInput.notes,
+      contact_document_type_id: normalizedInput.contact_document_type_id,
+      document: normalizedInput.document,
+      photo: normalizedInput.photo,
+      image_url: normalizedInput.image_url,
       chat_id: chatId,
     };
 

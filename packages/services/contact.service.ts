@@ -237,9 +237,23 @@ export class ContactService {
     const nickname = this.extractFieldValue(createInput.nickname as FieldValue);
     const birthday = this.extractFieldValue(createInput.birthday as FieldValue);
     const notes = this.extractFieldValue(createInput.notes as FieldValue);
-    const contactDocumentTypeId = this.extractFieldValue(
+    const rawContactDocumentTypeId = this.extractFieldValue(
       createInput.contact_document_type_id as FieldValue
     );
+    const contactDocumentTypeId =
+      rawContactDocumentTypeId && rawContactDocumentTypeId.trim() !== ''
+        ? rawContactDocumentTypeId
+        : null;
+
+    const finalDocumentCEncrypted = contactDocumentTypeId
+      ? documentFields.documentCEncrypted
+      : null;
+    const finalDocumentPartialEncrypted = contactDocumentTypeId
+      ? documentFields.documentPartialEncrypted
+      : null;
+    const finalDocumentC = contactDocumentTypeId
+      ? documentFields.documentC
+      : null;
 
     return {
       account_id: accountId,
@@ -259,9 +273,9 @@ export class ContactService {
       photo: photoUrl,
       birthday: nullIfEmpty(birthday),
       notes,
-      document: documentFields.documentCEncrypted,
-      document_partial: documentFields.documentPartialEncrypted,
-      document_c: documentFields.documentC,
+      document: finalDocumentCEncrypted,
+      document_partial: finalDocumentPartialEncrypted,
+      document_c: finalDocumentC,
     };
   }
 
@@ -486,9 +500,21 @@ export class ContactService {
     const nickname = this.extractFieldValue(input.nickname as FieldValue);
     const birthday = this.extractFieldValue(input.birthday as FieldValue);
     const notes = this.extractFieldValue(input.notes as FieldValue);
-    const contactDocumentTypeId = this.extractFieldValue(
+    const rawContactDocumentTypeId = this.extractFieldValue(
       input.contact_document_type_id as FieldValue
     );
+    const contactDocumentTypeId =
+      rawContactDocumentTypeId && rawContactDocumentTypeId.trim() !== ''
+        ? rawContactDocumentTypeId
+        : null;
+
+    const finalDocumentCEncrypted = contactDocumentTypeId
+      ? documentCEncrypted
+      : null;
+    const finalDocumentPartialEncrypted = contactDocumentTypeId
+      ? documentPartialEncrypted
+      : null;
+    const finalDocumentC = contactDocumentTypeId ? documentC : null;
 
     const payload: IUpdateContact = {
       label_template_id: labelTemplateId,
@@ -506,9 +532,9 @@ export class ContactService {
       birthday: nullIfEmpty(birthday),
       notes,
       contact_document_type_id: contactDocumentTypeId,
-      document: documentCEncrypted,
-      document_partial: documentPartialEncrypted,
-      document_c: documentC,
+      document: finalDocumentCEncrypted,
+      document_partial: finalDocumentPartialEncrypted,
+      document_c: finalDocumentC,
       is_valided: isValided,
     };
 

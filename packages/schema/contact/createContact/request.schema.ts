@@ -77,8 +77,9 @@ export const createContactRequestSchema = Type.Object({
   contact_document_type_id: Type.Optional(
     Type.Union([
       Type.String({ format: 'uuid' }),
+      Type.String(),
       Type.Object({
-        value: Type.String({ format: 'uuid' }),
+        value: Type.Union([Type.String({ format: 'uuid' }), Type.String()]),
       }),
       Type.Null(),
     ])

@@ -15,6 +15,7 @@ import {
   chatQueueAccountCentrifugo,
 } from '@core/common/functions/centrifugoQueue';
 import { IChat } from '@core/common/interfaces/IChat';
+import { normalizeContactRequest } from '@core/common/functions/normalizeContactRequest';
 
 type FieldValue = string | { value: string } | null;
 
@@ -259,11 +260,12 @@ export class ContactUpdaterUseCase {
     }
 
     if (typeof field === 'object' && 'value' in field) {
-      return field.value ?? null;
+      const value = field.value ?? null;
+      return value && value.trim() !== '' ? value : null;
     }
 
     if (typeof field === 'string') {
-      return field;
+      return field.trim() !== '' ? field : null;
     }
 
     return null;
@@ -275,6 +277,8 @@ export class ContactUpdaterUseCase {
     contactId: string,
     body: UpdateContactRequest
   ): Promise<boolean> {
+    const normalizedBody = normalizeContactRequest(body);
+
     const contactExists =
       await this.contactService.existsContactById(contactId);
 
@@ -283,24 +287,42 @@ export class ContactUpdaterUseCase {
     }
 
     const rawLabelTemplateId = this.extractFieldValue(
-      body.label_template_id as FieldValue
+      normalizedBody.label_template_id as FieldValue
     );
     const labelTemplateId =
       rawLabelTemplateId && rawLabelTemplateId.trim() !== ''
         ? rawLabelTemplateId
         : null;
-    const name = this.extractFieldValue(body.name as FieldValue);
-    const lastName = this.extractFieldValue(body.last_name as FieldValue);
-    const email = this.extractFieldValue(body.email as FieldValue);
-    const phoneDdi = this.extractFieldValue(body.phone_ddi as FieldValue);
-    const phone = this.extractFieldValue(body.phone as FieldValue);
-    const nickname = this.extractFieldValue(body.nickname as FieldValue);
-    const birthday = this.extractFieldValue(body.birthday as FieldValue);
-    const notes = this.extractFieldValue(body.notes as FieldValue);
-    const contactDocumentTypeId = this.extractFieldValue(
-      body.contact_document_type_id as FieldValue
+    const name = this.extractFieldValue(normalizedBody.name as FieldValue);
+    const lastName = this.extractFieldValue(
+      normalizedBody.last_name as FieldValue
     );
-    const document = this.extractFieldValue(body.document as FieldValue);
+    const email = this.extractFieldValue(normalizedBody.email as FieldValue);
+    const phoneDdi = this.extractFieldValue(
+      normalizedBody.phone_ddi as FieldValue
+    );
+    const phone = this.extractFieldValue(normalizedBody.phone as FieldValue);
+    const nickname = this.extractFieldValue(
+      normalizedBody.nickname as FieldValue
+    );
+    const birthday = this.extractFieldValue(
+      normalizedBody.birthday as FieldValue
+    );
+    const notes = this.extractFieldValue(normalizedBody.notes as FieldValue);
+    const rawContactDocumentTypeId = this.extractFieldValue(
+      normalizedBody.contact_document_type_id as FieldValue
+    );
+    const contactDocumentTypeId =
+      rawContactDocumentTypeId && rawContactDocumentTypeId.trim() !== ''
+        ? rawContactDocumentTypeId
+        : null;
+    const rawDocument = this.extractFieldValue(
+      normalizedBody.document as FieldValue
+    );
+    const document =
+      contactDocumentTypeId && rawDocument && rawDocument.trim() !== ''
+        ? rawDocument
+        : null;
 
     if (labelTemplateId) {
       const labelTemplateExists =
@@ -332,8 +354,8 @@ export class ContactUpdaterUseCase {
       notes,
       contact_document_type_id: contactDocumentTypeId,
       document,
-      photo: body.photo,
-      image_url: body.image_url,
+      photo: normalizedBody.photo,
+      image_url: normalizedBody.image_url,
     };
 
     const contactUpdater = await this.contactService.updateContactById(
@@ -351,7 +373,7 @@ export class ContactUpdaterUseCase {
       await this.contactService.updateContactIsValided(contactId, false);
     }
 
-    const chatId = this.extractFieldValue(body.chat_id as FieldValue);
+    const chatId = this.extractFieldValue(normalizedBody.chat_id as FieldValue);
 
     if (chatId) {
       await this.updateSpecificChatWithContactData(
