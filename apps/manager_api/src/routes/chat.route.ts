@@ -25,6 +25,7 @@ import { listTransferSectorsSchema } from '@core/schema/chat/listTransferSectors
 import { listTransferSectorUsersSchema } from '@core/schema/chat/listTransferSectorUsers';
 import { listChatContactsSchema } from '@core/schema/chat/listContacts';
 import { viewChatContactSchema } from '@core/schema/chat/viewContact';
+import { viewChatContactsBatchSchema } from '@core/schema/chat/viewContactsBatch';
 import { viewChatContactEmailSchema } from '@core/schema/chat/viewContactEmail';
 import { viewChatContactPhoneSchema } from '@core/schema/chat/viewContactPhone';
 import { viewChatContactDocumentSchema } from '@core/schema/chat/viewContactDocument';
@@ -262,6 +263,17 @@ export default function chatRoutes(server: FastifyInstance) {
   server.get('/chat/contacts/:contact_id', {
     schema: viewChatContactSchema,
     handler: chatController.viewContact,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, chatPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.post('/chat/contacts/batch', {
+    schema: viewChatContactsBatchSchema,
+    handler: chatController.viewContactsBatch,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, chatPermissions),

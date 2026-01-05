@@ -20,6 +20,7 @@ import { listTransferSectors } from './methods/listTransferSectors';
 import { listTransferSectorUsers } from './methods/listTransferSectorUsers';
 import { listContacts } from './methods/listContacts';
 import { viewContact } from './methods/viewContact';
+import { viewContactsBatch } from './methods/viewContactsBatch';
 import { viewContactEmail } from './methods/viewContactEmail';
 import { viewContactPhone } from './methods/viewContactPhone';
 import { viewContactDocument } from './methods/viewContactDocument';
@@ -54,6 +55,7 @@ class ChatController {
   public listTransferSectorUsers = listTransferSectorUsers;
   public listContacts = listContacts;
   public viewContact = viewContact;
+  public viewContactsBatch = viewContactsBatch;
   public viewContactEmail = viewContactEmail;
   public viewContactPhone = viewContactPhone;
   public viewContactDocument = viewContactDocument;

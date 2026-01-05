@@ -228,11 +228,11 @@ const handleFilterClick = (filter: FilterType) => {
 const loadWorkerConfigs = async (chats: ListChatsResult[]) => {
   const workerIds = new Set<string>();
 
-  chats.forEach((chat) => {
+  for (const chat of chats) {
     if (chat.worker?.id) {
       workerIds.add(chat.worker.id);
     }
-  });
+  }
 
   if (workerIds.size === 0) {
     return;
@@ -241,16 +241,43 @@ const loadWorkerConfigs = async (chats: ListChatsResult[]) => {
   isLoadingWorkerConfigs.value = true;
 
   try {
-    await Promise.all(
-      Array.from(workerIds).map((workerId) =>
-        channelsStore.fetchWorkerConfigForChat(workerId)
-      )
-    );
+    const workerIdsArray = Array.from(workerIds);
+    const promises = [];
+
+    for (const workerId of workerIdsArray) {
+      promises.push(channelsStore.fetchWorkerConfigForChat(workerId));
+    }
+
+    await Promise.all(promises);
   } catch (error) {
     console.error('Error loading worker configs:', error);
   } finally {
     isLoadingWorkerConfigs.value = false;
   }
+};
+
+const loadChatContacts = async (chats: ListChatsResult[]) => {
+  const contactIds = new Set<string>();
+
+  for (const chat of chats) {
+    if (chat.contact?.id) {
+      contactIds.add(chat.contact.id);
+    }
+  }
+
+  if (contactIds.size === 0) {
+    return;
+  }
+
+  const contactIdsToLoad = Array.from(contactIds).filter(
+    (contactId) => !chatStore.chatContacts[contactId]
+  );
+
+  if (contactIdsToLoad.length === 0) {
+    return;
+  }
+
+  await chatStore.getChatContactsByIds(contactIdsToLoad);
 };
 
 const loadChatsByFilter = async () => {
@@ -273,8 +300,14 @@ const loadChatsByFilter = async () => {
     ]);
 
     const allChats = [...chatStore.listQueue, ...chatStore.listInChat];
-    await loadWorkerConfigs(allChats);
-  } else if (activeFilter.value === 'in_chat') {
+    await Promise.all([
+      loadWorkerConfigs(allChats),
+      loadChatContacts(allChats),
+    ]);
+    return;
+  }
+
+  if (activeFilter.value === 'in_chat') {
     const requestInChat: ListChatsQuery = {
       current_page: currentPageInChat.value,
       per_page: perPageInChat.value,
@@ -282,8 +315,14 @@ const loadChatsByFilter = async () => {
     };
 
     await chatStore.listInChatChats(requestInChat);
-    await loadWorkerConfigs(chatStore.listInChat);
-  } else if (activeFilter.value === 'queue') {
+    await Promise.all([
+      loadWorkerConfigs(chatStore.listInChat),
+      loadChatContacts(chatStore.listInChat),
+    ]);
+    return;
+  }
+
+  if (activeFilter.value === 'queue') {
     const requestQueue: ListChatsQuery = {
       current_page: currentPageQueue.value,
       per_page: perPageQueue.value,
@@ -291,7 +330,10 @@ const loadChatsByFilter = async () => {
     };
 
     await chatStore.listQueueChats(requestQueue);
-    await loadWorkerConfigs(chatStore.listQueue);
+    await Promise.all([
+      loadWorkerConfigs(chatStore.listQueue),
+      loadChatContacts(chatStore.listQueue),
+    ]);
   }
 };
 
@@ -335,7 +377,10 @@ const loadChatbotChats = async () => {
     const result = await chatStore.listChatbotChats(request);
     if (result) {
       chatbotPagings.value = result.pagings;
-      await loadWorkerConfigs(chatStore.listChatbot);
+      await Promise.all([
+        loadWorkerConfigs(chatStore.listChatbot),
+        loadChatContacts(chatStore.listChatbot),
+      ]);
     }
   } finally {
     isLoadingChatbot.value = false;

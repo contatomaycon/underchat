@@ -336,6 +336,7 @@
   "contact_creator_error": "Error creating contact!",
   "contact_creation_failed": "Contact creation failed!",
   "contact_view_successfully": "Contact viewed successfully!",
+  "contacts_view_successfully": "Contacts viewed successfully!",
   "contact_phone_view_successfully": "Decrypted phone retrieved successfully!",
   "contact_export_successfully": "Contacts exported successfully!",
   "contact_export_error": "Error exporting contacts!",

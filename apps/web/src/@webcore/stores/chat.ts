@@ -1570,6 +1570,36 @@ export const useChatStore = defineStore('chat', {
       }
     },
 
+    async getChatContactsByIds(
+      contactIds: string[]
+    ): Promise<ViewChatContactResponse[]> {
+      if (!contactIds.length) {
+        return [];
+      }
+
+      try {
+        const response = await axios.post<
+          IApiResponse<ViewChatContactResponse[]>
+        >('/chat/contacts/batch', {
+          contact_ids: contactIds,
+        });
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return [];
+        }
+
+        for (const contact of data.data) {
+          this.chatContacts[contact.contact_id] = contact;
+        }
+
+        return data.data;
+      } catch {
+        return [];
+      }
+    },
+
     async getChatContactEmailDecrypted(
       contactId: string
     ): Promise<string | null> {

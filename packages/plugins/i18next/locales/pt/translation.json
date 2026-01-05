@@ -335,6 +335,7 @@
   "contact_creator_error": "Erro ao criar o contato!",
   "contact_creation_failed": "Falha ao criar o contato!",
   "contact_view_successfully": "Contato visualizado com sucesso!",
+  "contacts_view_successfully": "Contatos visualizados com sucesso!",
   "contact_export_successfully": "Contatos exportados com sucesso!",
   "contact_export_error": "Erro ao exportar contatos!",
   "contact_phone_view_successfully": "Telefone descriptografado recuperado com sucesso!",

@@ -122,16 +122,6 @@ const textColor = (s: string | null): string => {
   return yiq >= 128 ? '#4A4A4A' : '#FFFFFF';
 };
 
-watch(
-  () => props.user.contact?.id,
-  (contactId) => {
-    if (contactId) {
-      chatStore.getChatContactById(contactId);
-    }
-  },
-  { immediate: true }
-);
-
 const loadWorkerConfig = async (workerId?: string | null) => {
   if (!workerId) {
     showWorkerNameLabel.value = false;

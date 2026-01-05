@@ -5,6 +5,7 @@ import { ChatLabelTemplateAllListerRepository } from '@core/repositories/labelTe
 import { ContactService } from '@core/services/contact.service';
 import { ListChatContactsResponse } from '@core/schema/chat/listContacts/response.schema';
 import { ViewChatContactResponse } from '@core/schema/chat/viewContact/response.schema';
+import { ViewChatContactsBatchResponse } from '@core/schema/chat/viewContactsBatch/response.schema';
 import { ListChatLabelTemplatesResponse } from '@core/schema/chat/listLabelTemplates/response.schema';
 
 @injectable()
@@ -41,6 +42,16 @@ export class ChatContactService {
   ): Promise<ViewChatContactResponse | null> => {
     return this.chatContactViewerRepository.viewChatContactById(
       contactId,
+      accountId
+    );
+  };
+
+  viewChatContactsByIds = async (
+    contactIds: string[],
+    accountId: string
+  ): Promise<ViewChatContactsBatchResponse> => {
+    return this.chatContactViewerRepository.viewChatContactsByIds(
+      contactIds,
       accountId
     );
   };

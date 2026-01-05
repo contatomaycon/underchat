@@ -50,6 +50,10 @@ export const useChannelsStore = defineStore('channels', {
       string,
       ViewWorkerConfigForChatResponse | null
     >,
+    workerConfigForChatPending: {} as Record<
+      string,
+      Promise<ViewWorkerConfigForChatResponse | null>
+    >,
   }),
   actions: {
     showSnackbar(message: string, color: EColor) {
@@ -824,36 +828,48 @@ export const useChannelsStore = defineStore('channels', {
         return this.workerConfigForChatCache[workerId];
       }
 
-      try {
-        const response = await axios.get<
-          IApiResponse<ViewWorkerConfigForChatResponse>
-        >(`/chat/worker/${workerId}/config`);
+      if (workerId in this.workerConfigForChatPending) {
+        return this.workerConfigForChatPending[workerId];
+      }
 
-        const data = response?.data;
+      const promise = (async () => {
+        try {
+          const response = await axios.get<
+            IApiResponse<ViewWorkerConfigForChatResponse>
+          >(`/chat/worker/${workerId}/config`);
 
-        if (!data?.status) {
-          const message =
-            data?.message ??
-            this.i18n.global.t('channel_general_config_load_error');
+          const data = response?.data;
+
+          if (!data?.status) {
+            const message =
+              data?.message ??
+              this.i18n.global.t('channel_general_config_load_error');
+            this.showSnackbar(message, EColor.error);
+
+            this.workerConfigForChatCache[workerId] = null;
+            delete this.workerConfigForChatPending[workerId];
+            return null;
+          }
+
+          this.workerConfigForChatCache[workerId] = data.data ?? null;
+          delete this.workerConfigForChatPending[workerId];
+          return this.workerConfigForChatCache[workerId];
+        } catch (error) {
+          let message = this.i18n.global.t('channel_general_config_load_error');
+          if (error instanceof AxiosError) {
+            message = error?.response?.data?.message ?? message;
+          }
+
           this.showSnackbar(message, EColor.error);
 
           this.workerConfigForChatCache[workerId] = null;
+          delete this.workerConfigForChatPending[workerId];
           return null;
         }
+      })();
 
-        this.workerConfigForChatCache[workerId] = data.data ?? null;
-        return this.workerConfigForChatCache[workerId];
-      } catch (error) {
-        let message = this.i18n.global.t('channel_general_config_load_error');
-        if (error instanceof AxiosError) {
-          message = error?.response?.data?.message ?? message;
-        }
-
-        this.showSnackbar(message, EColor.error);
-
-        this.workerConfigForChatCache[workerId] = null;
-        return null;
-      }
+      this.workerConfigForChatPending[workerId] = promise;
+      return promise;
     },
 
     async updateWorkerConfig(
