@@ -120,7 +120,7 @@
     "@types/lodash": "^4.17.20",
     "@types/mime-types": "^3.0.1",
     "@types/pdfkit": "^0.17.4",
-    "@whiskeysockets/baileys": "https://gitea.devunder.com/underchat/-/packages/npm/@whiskeysockets%2Fbaileys/20.12.2025/files/2",
+    "@whiskeysockets/baileys": "https://gitea.devunder.com/underchat/-/packages/npm/@whiskeysockets%2Fbaileys/5.1.2026/files/25",
     "audio-decode": "^2.2.3",
     "axios": "^1.13.2",
     "centrifuge": "^5.5.2",
