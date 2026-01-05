@@ -72,6 +72,9 @@ export class StreamProducerService {
 
         producer.on('event.error', (err: LibrdKafkaError) => {
           console.error('Kafka producer error:', err);
+          if (this.isDisconnectedError(err)) {
+            this.invalidateProducer();
+          }
         });
 
         producer.connect({}, (err) => {
@@ -129,6 +132,8 @@ export class StreamProducerService {
       errorMessage.includes('disconnected') ||
       errorCode === 'ECONNREFUSED' ||
       errorMessage.includes('NOT_CONNECTED') ||
+      errorMessage.includes('not connected') ||
+      errorMessage.includes('Producer not connected') ||
       errorMessage.includes('write after end') ||
       errorMessage.includes('broker transport failure') ||
       errorMessage.includes('all broker connections are down') ||
@@ -202,11 +207,7 @@ export class StreamProducerService {
               clearTimeout(timeout);
             }
             producer.removeListener('event.error', errorHandler);
-            const errorMessage = err.message || '';
-            if (
-              errorMessage.includes('broker transport failure') ||
-              errorMessage.includes('all broker connections are down')
-            ) {
+            if (this.isDisconnectedError(err)) {
               this.invalidateProducer();
             }
             reject(toError(err));
@@ -220,19 +221,29 @@ export class StreamProducerService {
           const error = new Error(
             `Failed to produce message: librdkafka error code ${produceError}`
           );
+          if (this.isDisconnectedError(error)) {
+            this.invalidateProducer();
+          }
           reject(error);
           return;
         }
 
         if (produceError instanceof Error) {
           producer.removeListener('event.error', errorHandler);
+          if (this.isDisconnectedError(produceError)) {
+            this.invalidateProducer();
+          }
           reject(produceError);
           return;
         }
 
         if (typeof produceError === 'string') {
           producer.removeListener('event.error', errorHandler);
-          reject(new Error(produceError));
+          const error = new Error(produceError);
+          if (this.isDisconnectedError(error)) {
+            this.invalidateProducer();
+          }
+          reject(error);
           return;
         }
 
@@ -275,16 +286,13 @@ export class StreamProducerService {
 
         if (err) {
           const errorMessage = this.getErrorMessage(err);
+          const error = new Error(errorMessage);
 
-          if (
-            errorMessage.includes('broker transport failure') ||
-            errorMessage.includes('all broker connections are down') ||
-            errorMessage.includes('timed out')
-          ) {
+          if (this.isDisconnectedError(error)) {
             this.invalidateProducer();
           }
 
-          reject(new Error(errorMessage));
+          reject(error);
           return;
         }
 

@@ -1951,6 +1951,11 @@ export class ChatbotFlowRunnerService {
       selected_user?: string;
       selected_sector?: string;
       selected_sector_user?: string;
+    },
+    customMessages?: {
+      transfer_message_user?: string;
+      transfer_message_sector?: string;
+      transfer_message_sector_user?: string;
     }
   ): Promise<boolean> {
     const redirectType = inactivityAlert.redirect_type;
@@ -1959,7 +1964,8 @@ export class ChatbotFlowRunnerService {
       return this.processInactivityUserRedirect(
         t,
         createChat,
-        inactivityAlert.selected_user
+        inactivityAlert.selected_user,
+        customMessages
       );
     }
 
@@ -1968,7 +1974,8 @@ export class ChatbotFlowRunnerService {
         t,
         createChat,
         inactivityAlert.selected_sector,
-        inactivityAlert.selected_sector_user
+        inactivityAlert.selected_sector_user,
+        customMessages
       );
     }
 
@@ -1978,7 +1985,12 @@ export class ChatbotFlowRunnerService {
   private async processInactivityUserRedirect(
     t: TFunction<'translation', undefined>,
     createChat: IChat,
-    selectedUser?: string
+    selectedUser?: string,
+    customMessages?: {
+      transfer_message_user?: string;
+      transfer_message_sector?: string;
+      transfer_message_sector_user?: string;
+    }
   ): Promise<boolean> {
     if (!selectedUser) {
       return false;
@@ -1989,7 +2001,22 @@ export class ChatbotFlowRunnerService {
       return false;
     }
 
-    await this.updateAndPublishChat(t, createChat, user, undefined);
+    const updatedChat = await this.updateAndPublishChat(
+      t,
+      createChat,
+      user,
+      undefined
+    );
+
+    await this.sendTransferMessageIfNeeded(
+      t,
+      updatedChat,
+      'user',
+      user,
+      undefined,
+      customMessages
+    );
+
     return true;
   }
 
@@ -1997,7 +2024,12 @@ export class ChatbotFlowRunnerService {
     t: TFunction<'translation', undefined>,
     createChat: IChat,
     selectedSector?: string,
-    selectedSectorUser?: string
+    selectedSectorUser?: string,
+    customMessages?: {
+      transfer_message_user?: string;
+      transfer_message_sector?: string;
+      transfer_message_sector_user?: string;
+    }
   ): Promise<boolean> {
     if (!selectedSector) {
       return false;
@@ -2015,7 +2047,22 @@ export class ChatbotFlowRunnerService {
       ? await this.getUserForRedirect(selectedSectorUser)
       : undefined;
 
-    await this.updateAndPublishChat(t, createChat, user, sector);
+    const updatedChat = await this.updateAndPublishChat(
+      t,
+      createChat,
+      user,
+      sector
+    );
+
+    await this.sendTransferMessageIfNeeded(
+      t,
+      updatedChat,
+      'sector',
+      user,
+      sector,
+      customMessages
+    );
+
     return true;
   }
 
@@ -2035,7 +2082,12 @@ export class ChatbotFlowRunnerService {
     },
     createChat: IChat,
     customInactivityMessage?: string,
-    customServiceFinishedMessage?: string
+    customServiceFinishedMessage?: string,
+    customMessages?: {
+      transfer_message_user?: string;
+      transfer_message_sector?: string;
+      transfer_message_sector_user?: string;
+    }
   ): Promise<boolean> {
     const action = inactivityAlert.action;
     if (!action) {
@@ -2061,7 +2113,8 @@ export class ChatbotFlowRunnerService {
       createChat,
       action,
       inactivityAlert,
-      customServiceFinishedMessage
+      customServiceFinishedMessage,
+      customMessages
     );
   }
 
@@ -2107,7 +2160,12 @@ export class ChatbotFlowRunnerService {
       selected_sector?: string;
       selected_sector_user?: string;
     },
-    customServiceFinishedMessage?: string
+    customServiceFinishedMessage?: string,
+    customMessages?: {
+      transfer_message_user?: string;
+      transfer_message_sector?: string;
+      transfer_message_sector_user?: string;
+    }
   ): Promise<boolean> {
     if (action === 'finish') {
       await this.sendFinishMessage(t, createChat, customServiceFinishedMessage);
@@ -2115,7 +2173,12 @@ export class ChatbotFlowRunnerService {
     }
 
     if (action === 'redirect') {
-      return this.processInactivityRedirect(t, createChat, inactivityAlert);
+      return this.processInactivityRedirect(
+        t,
+        createChat,
+        inactivityAlert,
+        customMessages
+      );
     }
 
     return false;
@@ -2482,6 +2545,17 @@ export class ChatbotFlowRunnerService {
         configurations?.configurations?.messages?.inactivity_message;
       const customServiceFinishedMessage =
         configurations?.configurations?.messages?.service_finished_message;
+      const customMessages = configurations?.configurations?.messages
+        ? {
+            transfer_message_user:
+              configurations.configurations.messages.transfer_message_user,
+            transfer_message_sector:
+              configurations.configurations.messages.transfer_message_sector,
+            transfer_message_sector_user:
+              configurations.configurations.messages
+                .transfer_message_sector_user,
+          }
+        : undefined;
 
       await this.processInactivityAlert(
         t,
@@ -2490,7 +2564,8 @@ export class ChatbotFlowRunnerService {
         inactivityAlert,
         createChat,
         customInactivityMessage,
-        customServiceFinishedMessage
+        customServiceFinishedMessage,
+        customMessages
       );
     }
   }
