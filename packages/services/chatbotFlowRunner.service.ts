@@ -2654,35 +2654,37 @@ export class ChatbotFlowRunnerService {
     createChat: IChat,
     chatbotId: string
   ): Promise<string | null> => {
-    const userText = this.getTextFromUpsertMessage(data)?.trim();
-
-    if (!userText) {
-      return null;
-    }
-
     const configurations =
       await this.chatbotService.findChatbotFlowConfigurationsByChatbotId(
         createChat.account.id,
         chatbotId
       );
 
-    const finishTriggers =
-      configurations?.configurations?.finish_triggers || [];
-    const userTextLower = userText.toLowerCase();
-    const userWords = userTextLower.split(/\s+/);
+    const userText = this.getTextFromUpsertMessage(data)?.trim();
 
-    const hasFinishTrigger = finishTriggers.some((trigger) => {
-      const triggerLower = trigger.toLowerCase();
-      return userWords.includes(triggerLower);
-    });
+    if (userText) {
+      const finishTriggers =
+        configurations?.configurations?.finish_triggers || [];
+      const userTextLower = userText.toLowerCase();
+      const userWords = userTextLower.split(/\s+/);
 
-    if (hasFinishTrigger) {
-      const customServiceFinishedMessage =
-        configurations?.configurations?.messages?.service_finished_message;
+      const hasFinishTrigger = finishTriggers.some((trigger) => {
+        const triggerLower = trigger.toLowerCase();
+        return userWords.includes(triggerLower);
+      });
 
-      await this.sendFinishMessage(t, createChat, customServiceFinishedMessage);
+      if (hasFinishTrigger) {
+        const customServiceFinishedMessage =
+          configurations?.configurations?.messages?.service_finished_message;
 
-      return null;
+        await this.sendFinishMessage(
+          t,
+          createChat,
+          customServiceFinishedMessage
+        );
+
+        return null;
+      }
     }
 
     const chatbotFlow = await this.chatbotService.findChatbotFlowByChatbotId(
