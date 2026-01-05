@@ -235,6 +235,9 @@ const addContact = async () => {
       ? photoPreview.value
       : null;
 
+  const shouldLinkToActiveChat =
+    !!chatStore.activeChat?.chat_id && !chatStore.activeChat?.contact?.id;
+
   const result = await chatStore.createChatContact(
     {
       label_template_id: label_template_id.value ?? null,
@@ -249,7 +252,9 @@ const addContact = async () => {
       contact_document_type_id: contact_document_type_id.value ?? null,
       document: document.value ?? null,
       image_url: imageUrl,
-      chat_id: chatStore.activeChat?.chat_id ?? undefined,
+      chat_id: shouldLinkToActiveChat
+        ? chatStore.activeChat?.chat_id
+        : undefined,
     },
     imageUrl ? null : photoFile.value
   );

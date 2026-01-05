@@ -32,6 +32,7 @@ import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
 import { EPermissionsRoles } from '@core/common/enums/EPermissions';
 import { getPermissions, getSectors } from '@/@webcore/localStorage/user';
+import { can } from '@/@layouts/plugins/casl';
 import { ListChatsResult } from '@core/schema/chat/listChats/response.schema';
 import { useChatStore } from '@/@webcore/stores/chat';
 import { useChannelsStore } from '@/@webcore/stores/channels';
@@ -530,6 +531,27 @@ const handleTransfer = async () => {
 const isInChatStatus = computed(
   () => chatStore.activeChat?.status === EChatStatus.in_chat
 );
+
+const canCloseChatWithoutAttending = computed(() => {
+  return can([
+    EGeneralPermissions.full_access,
+    EGeneralPermissions.full_access_group,
+    EChatPermissions.chat_group,
+    EChatPermissions.close_chat_without_attending,
+  ]);
+});
+
+const canShowCloseButton = computed(() => {
+  if (isInChatStatus.value) {
+    return true;
+  }
+
+  if (isQueueOrUraStatus.value && canCloseChatWithoutAttending.value) {
+    return true;
+  }
+
+  return false;
+});
 
 const canTransfer = computed(() => {
   return true;
@@ -4112,7 +4134,7 @@ onBeforeUnmount(() => {
           </IconBtn>
 
           <IconBtn
-            v-if="isInChatStatus"
+            v-if="canShowCloseButton"
             class="me-2"
             color="error"
             variant="text"
@@ -4251,7 +4273,7 @@ onBeforeUnmount(() => {
               <VIcon icon="tabler-search" />
             </IconBtn>
             <VMenu
-              v-if="isInChatStatus"
+              v-if="canShowCloseButton"
               offset="8"
               :close-on-content-click="true"
               location="bottom end"

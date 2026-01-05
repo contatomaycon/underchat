@@ -1,0 +1,2 @@
+-- Insert permission action: close chat without attending
+INSERT INTO "permission_action" ("permission_action_id", "permission_module_id", "permission_action_group_id", "action", "name", "description") VALUES ('019b9038-9a40-7603-99a6-6288f8d77d08', '019a930d-c6f6-766d-9c83-914b7faa4337', '019a930d-c6f6-766d-9c83-b9db2f0d1aae', 'close_chat_without_attending', 'Encerrar atendimento sem atender', 'Permite encerrar atendimento sem precisar atender o chat');
