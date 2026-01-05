@@ -4,6 +4,7 @@ import { onlyDigits } from '@core/common/functions/onlyDigits';
 import { normalizeJid } from '@core/common/functions/normalizeJid';
 import { IPhoneValidationResult } from '@core/common/interfaces/IPhoneValidationResult';
 import { buildCandidates } from '@core/common/functions/buildCandidatesBR';
+import { getPhoneNumber } from '@core/common/functions/getPhoneNumber';
 
 @injectable()
 export class BaileysPhoneValidationService {
@@ -44,7 +45,7 @@ export class BaileysPhoneValidationService {
           return {
             valid: true,
             jid: currentResult.jid,
-            phone: currentResult.candidate,
+            phone: getPhoneNumber(currentResult.jid) || currentResult.candidate,
           };
         }
 
