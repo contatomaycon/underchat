@@ -20,20 +20,22 @@ export class ServerUpdaterUseCase {
     serverId: string,
     input: EditServerRequest
   ): Promise<void> {
-    const serverExists = await this.serverService.existsServerNotIdAndByIp(
-      serverId,
-      input.ssh_ip
-    );
-
-    if (serverExists) {
-      throw new Error(t('server_already_exists'));
-    }
-
     const viewServerSshById =
       await this.serverService.viewServerSshById(serverId);
 
     if (!viewServerSshById) {
       throw new Error(t('server_ssh_not_found'));
+    }
+
+    if (viewServerSshById.ssh_ip !== input.ssh_ip) {
+      const serverExists = await this.serverService.existsServerNotIdAndByIp(
+        serverId,
+        input.ssh_ip
+      );
+
+      if (serverExists) {
+        throw new Error(t('server_already_exists'));
+      }
     }
 
     const sshUsernameDescrypted = this.passwordEncryptorService.decrypt(
