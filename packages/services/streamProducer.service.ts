@@ -26,17 +26,35 @@ export class StreamProducerService {
           if (!isResolved) {
             isResolved = true;
             this.producer = null;
-            reject(new Error('Kafka producer connection timeout'));
+            producer.removeAllListeners();
+            try {
+              producer.disconnect(() => {});
+            } catch {}
+            const broker = this.kafka.getBroker();
+            reject(
+              new Error(
+                `Kafka producer connection timeout after 60s. Broker: ${broker}. Verifique se o Kafka está acessível e se as configurações estão corretas.`
+              )
+            );
           }
-        }, 15000);
+        }, 60000);
+
+        const cleanup = () => {
+          if (timeout) {
+            clearTimeout(timeout);
+          }
+          producer.removeAllListeners('ready');
+          producer.removeAllListeners('event.error');
+        };
 
         const errorHandler = (err: LibrdKafkaError) => {
           if (!isResolved) {
             isResolved = true;
-            clearTimeout(timeout);
-            producer.removeAllListeners('ready');
-            producer.removeAllListeners('event.error');
+            cleanup();
             this.producer = null;
+            try {
+              producer.disconnect(() => {});
+            } catch {}
             reject(toError(err));
           }
         };
@@ -44,9 +62,7 @@ export class StreamProducerService {
         const readyHandler = () => {
           if (!isResolved) {
             isResolved = true;
-            clearTimeout(timeout);
-            producer.removeAllListeners('ready');
-            producer.removeAllListeners('event.error');
+            cleanup();
             resolve();
           }
         };
@@ -62,9 +78,7 @@ export class StreamProducerService {
           if (err) {
             if (!isResolved) {
               isResolved = true;
-              clearTimeout(timeout);
-              producer.removeAllListeners('ready');
-              producer.removeAllListeners('event.error');
+              cleanup();
               this.producer = null;
               reject(toError(err));
             }
@@ -118,7 +132,8 @@ export class StreamProducerService {
       errorMessage.includes('write after end') ||
       errorMessage.includes('broker transport failure') ||
       errorMessage.includes('all broker connections are down') ||
-      errorMessage.includes('Flush timeout')
+      errorMessage.includes('Flush timeout') ||
+      errorMessage.includes('connection timeout')
     );
   }
 
