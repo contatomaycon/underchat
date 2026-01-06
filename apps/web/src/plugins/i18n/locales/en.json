@@ -1979,5 +1979,22 @@
     "contact": "Contact",
     "sticker": "Sticker"
   },
-  "backend_url_not_configured": "Backend URL not configured. Check the .env file"
+  "backend_url_not_configured": "Backend URL not configured. Check the .env file",
+  "ai_agent": "AI Agent",
+  "ai_agent_type": "Agent Type",
+  "ai_agent_name_placeholder": "AI agent name",
+  "base_url": "Base URL",
+  "base_url_placeholder": "API base URL",
+  "api_key": "API Key",
+  "api_key_placeholder": "API key",
+  "select_ai_agent_type": "Select agent type",
+  "ai_agent_type_required": "Agent type is required",
+  "ai_agent_list_error": "An error occurred while listing AI agents. Please try again.",
+  "ai_agent_add_error": "An error occurred while adding the AI agent. Please try again.",
+  "ai_agent_add_success": "AI agent added successfully!",
+  "ai_agent_update_error": "An error occurred while updating the AI agent. Please try again.",
+  "ai_agent_update_success": "AI agent updated successfully!",
+  "ai_agent_delete_error": "An error occurred while deleting the AI agent. Please try again.",
+  "ai_agent_delete_success": "AI agent deleted successfully!",
+  "delete_ai_agent_confirmation": "Are you sure you want to delete this AI agent? This action cannot be undone."
 }

@@ -786,5 +786,17 @@
   "register_phone_already_used": "Este telefone já está cadastrado!",
   "personalization_not_available": "Personalização não disponível!",
   "internal_database_error": "Erro 1064: Ocorreu um erro interno, entre em contato com o suporte.",
-  "permission_denied": "Permissão negada"
+  "permission_denied": "Permissão negada",
+  "ai_agent_list_successfully": "Lista de agentes de IA obtida com sucesso!",
+  "ai_agent_list_not_found": "Nenhum agente de IA encontrado!",
+  "ai_agent_creator_success": "Agente de IA criado com sucesso!",
+  "ai_agent_creator_error": "Erro ao criar o agente de IA!",
+  "ai_agent_creation_failed": "Falha ao criar o agente de IA!",
+  "ai_agent_view_successfully": "Agente de IA visualizado com sucesso!",
+  "ai_agent_not_found": "Agente de IA não encontrado!",
+  "ai_agent_deleted_successfully": "Agente de IA excluído com sucesso!",
+  "ai_agent_deleter_error": "Erro ao excluir o agente de IA!",
+  "ai_agent_update_successfully": "Agente de IA atualizado com sucesso!",
+  "ai_agent_update_error": "Erro ao atualizar o agente de IA!",
+  "ai_agent_type_list_successfully": "Lista de tipos de agente de IA obtida com sucesso!"
 }

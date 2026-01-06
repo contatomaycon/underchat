@@ -32,4 +32,5 @@ export enum ETagSwagger {
   dashboard = 'Dashboard',
   schedule = 'Agendamentos',
   masterSession = 'Sessão Master',
+  aiAgent = 'Agente de IA',
 }

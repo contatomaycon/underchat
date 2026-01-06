@@ -139,6 +139,13 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       | never
     >,
+    'ai-agent': RouteRecordInfo<
+      'ai-agent',
+      '/ai-agent',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
     'channels': RouteRecordInfo<
       'channels',
       '/channels',
@@ -498,6 +505,12 @@ declare module 'vue-router/auto-routes' {
     'src/pages/account-tests.vue': {
       routes:
         | 'account-tests'
+      views:
+        | never
+    }
+    'src/pages/ai-agent.vue': {
+      routes:
+        | 'ai-agent'
       views:
         | never
     }

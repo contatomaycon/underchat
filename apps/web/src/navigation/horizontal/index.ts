@@ -12,6 +12,7 @@ import { ELabelTemplatePermissions } from '@core/common/enums/EPermissions/label
 import { EContactPermissions } from '@core/common/enums/EPermissions/contact';
 import { ESchedulePermissions } from '@core/common/enums/EPermissions/schedule';
 import { EChatbotPermissions } from '@core/common/enums/EPermissions/chatbot';
+import { EAiAgentPermissions } from '@core/common/enums/EPermissions/aiAgent';
 import { EPlanPermissions } from '@core/common/enums/EPermissions/plan';
 import { EFinancialPermissions } from '@core/common/enums/EPermissions/financial';
 import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
@@ -105,6 +106,20 @@ export default [
           ESchedulePermissions.schedule_create,
           ESchedulePermissions.schedule_update,
           ESchedulePermissions.schedule_delete,
+        ],
+      },
+      {
+        title: 'ai_agent',
+        to: { name: 'ai-agent' as keyof RouteNamedMap },
+        icon: { icon: 'tabler-brain' },
+        permissions: [
+          EGeneralPermissions.full_access,
+          EGeneralPermissions.full_access_group,
+          EAiAgentPermissions.ai_agent_group,
+          EAiAgentPermissions.ai_agent_view,
+          EAiAgentPermissions.ai_agent_create,
+          EAiAgentPermissions.ai_agent_update,
+          EAiAgentPermissions.ai_agent_delete,
         ],
       },
     ],

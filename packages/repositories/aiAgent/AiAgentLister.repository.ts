@@ -1,0 +1,101 @@
+import * as schema from '@core/models';
+import { aiAgent } from '@core/models';
+import { NodePgDatabase } from 'drizzle-orm/node-postgres';
+import { inject, injectable } from 'tsyringe';
+import { and, count, eq, SQLWrapper, or, ilike } from 'drizzle-orm';
+import { ListAiAgentRequest } from '@core/schema/aiAgent/listAiAgent/request.schema';
+import { ListAiAgentResponse } from '@core/schema/aiAgent/listAiAgent/response.schema';
+
+@injectable()
+export class AiAgentListerRepository {
+  constructor(
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
+  ) {}
+
+  private readonly setFiltersAiAgent = (
+    query: ListAiAgentRequest,
+    accountId: string
+  ): SQLWrapper[] => {
+    const filters: SQLWrapper[] = [eq(aiAgent.account_id, accountId)];
+
+    if (query.name || query.status) {
+      const conditions: (SQLWrapper | undefined)[] = [
+        query.name ? ilike(aiAgent.name, `%${query.name}%`) : undefined,
+        query.status ? eq(aiAgent.status, query.status) : undefined,
+      ];
+
+      const filteredConditions = conditions.filter(
+        (condition): condition is SQLWrapper => condition !== undefined
+      );
+
+      if (filteredConditions.length > 0) {
+        const combined = or(...filteredConditions);
+        if (combined) filters.push(combined);
+      }
+    }
+
+    return filters;
+  };
+
+  listAiAgents = async (
+    perPage: number,
+    currentPage: number,
+    query: ListAiAgentRequest,
+    accountId: string
+  ): Promise<ListAiAgentResponse[]> => {
+    const filtersAiAgent = this.setFiltersAiAgent(query, accountId);
+
+    const result = await this.dbRo.query.aiAgent.findMany({
+      where: and(...filtersAiAgent),
+      columns: {
+        ai_agent_id: true,
+        name: true,
+        base_url: true,
+        status: true,
+        created_at: true,
+      },
+      with: {
+        aat: {
+          columns: {
+            ai_agent_type_id: true,
+            name: true,
+          },
+        },
+      },
+      limit: perPage,
+      offset: (currentPage - 1) * perPage,
+      orderBy: (aiAgent, { desc }) => [desc(aiAgent.created_at)],
+    });
+
+    if (!result) {
+      return [];
+    }
+
+    return result.map((item) => ({
+      ai_agent_id: item.ai_agent_id,
+      name: item.name,
+      base_url: item.base_url,
+      status: item.status,
+      ai_agent_type_id: item.aat.ai_agent_type_id,
+      ai_agent_type_name: item.aat.name,
+      created_at: item.created_at,
+    }));
+  };
+
+  listAiAgentsTotal = async (
+    query: ListAiAgentRequest,
+    accountId: string
+  ): Promise<number> => {
+    const filtersAiAgent = this.setFiltersAiAgent(query, accountId);
+
+    const result = await this.dbRo
+      .select({
+        count: count(),
+      })
+      .from(aiAgent)
+      .where(and(...filtersAiAgent))
+      .execute();
+
+    return result[0]?.count ?? 0;
+  };
+}

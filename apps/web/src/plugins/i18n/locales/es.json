@@ -1981,5 +1981,22 @@
     "contact": "Contacto",
     "sticker": "Sticker"
   },
-  "backend_url_not_configured": "URL del backend no configurada. Verifique el archivo .env"
+  "backend_url_not_configured": "URL del backend no configurada. Verifique el archivo .env",
+  "ai_agent": "Agente de IA",
+  "ai_agent_type": "Tipo de Agente",
+  "ai_agent_name_placeholder": "Nombre del agente de IA",
+  "base_url": "URL Base",
+  "base_url_placeholder": "URL base de la API",
+  "api_key": "Clave API",
+  "api_key_placeholder": "Clave de API",
+  "select_ai_agent_type": "Seleccione el tipo de agente",
+  "ai_agent_type_required": "El tipo de agente es obligatorio",
+  "ai_agent_list_error": "Ocurrió un error al listar los agentes de IA. Por favor, inténtelo de nuevo.",
+  "ai_agent_add_error": "Ocurrió un error al agregar el agente de IA. Por favor, inténtelo de nuevo.",
+  "ai_agent_add_success": "Agente de IA agregado con éxito!",
+  "ai_agent_update_error": "Ocurrió un error al actualizar el agente de IA. Por favor, inténtelo de nuevo.",
+  "ai_agent_update_success": "Agente de IA actualizado con éxito!",
+  "ai_agent_delete_error": "Ocurrió un error al eliminar el agente de IA. Por favor, inténtelo de nuevo.",
+  "ai_agent_delete_success": "Agente de IA eliminado con éxito!",
+  "delete_ai_agent_confirmation": "¿Está seguro de que desea eliminar este agente de IA? Esta acción no se puede deshacer."
 }

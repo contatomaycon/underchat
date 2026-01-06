@@ -1,0 +1,58 @@
+import * as schema from '@core/models';
+import { aiAgent } from '@core/models';
+import { NodePgDatabase } from 'drizzle-orm/node-postgres';
+import { inject, injectable } from 'tsyringe';
+import { and, eq } from 'drizzle-orm';
+import { ViewAiAgentResponse } from '@core/schema/aiAgent/viewAiAgent/response.schema';
+
+@injectable()
+export class AiAgentViewerRepository {
+  constructor(
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
+  ) {}
+
+  viewAiAgent = async (
+    aiAgentId: string,
+    accountId: string
+  ): Promise<ViewAiAgentResponse | null> => {
+    const result = await this.dbRo.query.aiAgent.findFirst({
+      where: and(
+        eq(aiAgent.ai_agent_id, aiAgentId),
+        eq(aiAgent.account_id, accountId)
+      ),
+      columns: {
+        ai_agent_id: true,
+        name: true,
+        base_url: true,
+        api_key: true,
+        status: true,
+        created_at: true,
+        updated_at: true,
+      },
+      with: {
+        aat: {
+          columns: {
+            ai_agent_type_id: true,
+            name: true,
+          },
+        },
+      },
+    });
+
+    if (!result) {
+      return null;
+    }
+
+    return {
+      ai_agent_id: result.ai_agent_id,
+      name: result.name,
+      base_url: result.base_url,
+      api_key: result.api_key,
+      status: result.status,
+      ai_agent_type_id: result.aat.ai_agent_type_id,
+      ai_agent_type_name: result.aat.name,
+      created_at: result.created_at,
+      updated_at: result.updated_at,
+    };
+  };
+}

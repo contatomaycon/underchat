@@ -786,5 +786,17 @@
   "register_phone_already_used": "This phone number is already registered!",
   "personalization_not_available": "Personalization is not available!",
   "internal_database_error": "Error 1064: An internal error occurred, please contact support.",
-  "permission_denied": "Permission denied"
+  "permission_denied": "Permission denied",
+  "ai_agent_list_successfully": "AI agent list retrieved successfully!",
+  "ai_agent_list_not_found": "No AI agents found!",
+  "ai_agent_creator_success": "AI agent created successfully!",
+  "ai_agent_creator_error": "Error creating AI agent!",
+  "ai_agent_creation_failed": "Failed to create AI agent!",
+  "ai_agent_view_successfully": "AI agent viewed successfully!",
+  "ai_agent_not_found": "AI agent not found!",
+  "ai_agent_deleted_successfully": "AI agent deleted successfully!",
+  "ai_agent_deleter_error": "Error deleting AI agent!",
+  "ai_agent_update_successfully": "AI agent updated successfully!",
+  "ai_agent_update_error": "Error updating AI agent!",
+  "ai_agent_type_list_successfully": "AI agent types list retrieved successfully!"
 }
