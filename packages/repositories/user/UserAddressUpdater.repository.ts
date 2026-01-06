@@ -80,7 +80,8 @@ export class UserAddressUpdaterRepository {
 
   deleteUserAddressById = async (userId: string): Promise<boolean> => {
     const result = await this.dbRw
-      .delete(userAddress)
+      .update(userAddress)
+      .set({ deleted_at: new Date().toISOString() })
       .where(eq(userAddress.user_id, userId))
       .execute();
 
