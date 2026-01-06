@@ -10,6 +10,7 @@ import { EncryptService } from '@core/services/encrypt.service';
 import { onlyDigits } from '@core/common/functions/onlyDigits';
 import { extractPhoneAndDdi } from '@core/common/functions/extractPhoneAndDdi';
 import { PlanAccountService } from '@core/services/planAccount.service';
+import { CentrifugoService } from '@core/services/centrifugo.service';
 
 @injectable()
 export class ContactGroupAssignmentCreatorUseCase {
@@ -17,7 +18,8 @@ export class ContactGroupAssignmentCreatorUseCase {
     private readonly csvFileReaderService: CsvFileReaderService,
     private readonly contactService: ContactService,
     private readonly encryptService: EncryptService,
-    private readonly planAccountService: PlanAccountService
+    private readonly planAccountService: PlanAccountService,
+    private readonly centrifugoService: CentrifugoService
   ) {}
 
   private buildCompletePhone(
@@ -28,7 +30,7 @@ export class ContactGroupAssignmentCreatorUseCase {
   }
 
   private createStatusResult(
-    contact: Pick<ICreateContact, 'phone' | 'phone_ddi'>,
+    contact: Pick<ICreateContact, 'phone' | 'phone_ddi' | 'name' | 'last_name'>,
     status: IContactImportStatus['status'],
     message: string
   ): IContactImportStatus {
@@ -38,6 +40,8 @@ export class ContactGroupAssignmentCreatorUseCase {
       phone_complete: this.buildCompletePhone(contact.phone_ddi, contact.phone),
       status,
       message,
+      name: contact.name ?? null,
+      last_name: contact.last_name ?? null,
     };
   }
 
@@ -96,55 +100,69 @@ export class ContactGroupAssignmentCreatorUseCase {
     accountId: string,
     contactGroupId: string
   ): Promise<IContactImportStatus> {
-    const phoneExists = await this.contactService.existsContactByPhone(
-      accountId,
-      phonesC
-    );
+    try {
+      const phoneExists = await this.contactService.existsContactByPhone(
+        accountId,
+        phonesC
+      );
 
-    if (phoneExists) {
+      if (phoneExists) {
+        return this.createStatusResult(
+          contact,
+          'duplicate',
+          t('contact_already_exists_phone')
+        );
+      }
+
+      await this.planAccountService.validateCanCreateContact(t, accountId);
+
+      const { phone: phoneToSave, phoneDdi: phoneDdiToSave } =
+        this.normalizePhoneFromValidation(contact.phone, contact.phone_ddi);
+
+      const contactCreated = await this.contactService.createContactWithGroup(
+        t,
+        {
+          ...contact,
+          phone: phoneToSave,
+          phone_ddi: phoneDdiToSave,
+        },
+        contactGroupId,
+        accountId,
+        false
+      );
+
+      if (!contactCreated) {
+        return this.createStatusResult(
+          contact,
+          'invalid',
+          t('contact_creation_failed')
+        );
+      }
+
       return this.createStatusResult(
         contact,
-        'duplicate',
-        t('contact_already_exists_phone')
+        'valid',
+        t('contact_creator_success')
       );
+    } catch (error) {
+      const pgError = error as { code?: string; message?: string };
+      if (pgError.code === '22001') {
+        return this.createStatusResult(
+          contact,
+          'invalid',
+          t('contact_field_too_long')
+        );
+      }
+      throw error;
     }
-
-    await this.planAccountService.validateCanCreateContact(t, accountId);
-
-    const { phone: phoneToSave, phoneDdi: phoneDdiToSave } =
-      this.normalizePhoneFromValidation(contact.phone, contact.phone_ddi);
-
-    const contactCreated = await this.contactService.createContactWithGroup(
-      t,
-      {
-        ...contact,
-        phone: phoneToSave,
-        phone_ddi: phoneDdiToSave,
-      },
-      contactGroupId,
-      accountId,
-      false
-    );
-
-    if (!contactCreated) {
-      return this.createStatusResult(
-        contact,
-        'duplicate',
-        t('contact_already_exists_phone')
-      );
-    }
-
-    return this.createStatusResult(
-      contact,
-      'valid',
-      t('contact_creator_success')
-    );
   }
 
   async execute(
     t: TFunction<'translation', undefined>,
     input: CreateContactGroupAssignmentRequest,
-    accountId: string
+    accountId: string,
+    userId?: string,
+    importSessionId?: string
   ): Promise<IContactImportStatus[]> {
     if (!input.contacts) return [];
 
@@ -156,33 +174,52 @@ export class ContactGroupAssignmentCreatorUseCase {
 
     const contactGroupId = input?.contact_group_id?.value ?? '';
     const results: IContactImportStatus[] = [];
+    const total = contacts.length;
 
-    for (const contact of contacts) {
+    const sendProgressUpdate = async (
+      processed: number,
+      lastContact: IContactImportStatus | null
+    ) => {
+      if (!this.centrifugoService || !importSessionId || !userId) return;
+
+      const channel = `channels:user#${userId}:contact-import:${importSessionId}`;
+
+      try {
+        await this.centrifugoService.publish(channel, {
+          processed,
+          total,
+          lastContact,
+        });
+      } catch (error) {
+        console.error('Failed to send progress update:', error);
+      }
+    };
+
+    for (let index = 0; index < contacts.length; index++) {
+      const contact = contacts[index];
       const phone = contact?.phone;
       const phoneDdi = contact.phone_ddi ?? '55';
 
       if (!phone) {
-        results.push(
-          this.createStatusResult(
-            contact,
-            'no_phone',
-            t('phone_required_for_validation')
-          )
+        const result = this.createStatusResult(
+          contact,
+          'no_phone',
+          t('phone_required_for_validation')
         );
-
+        results.push(result);
+        await sendProgressUpdate(index + 1, result);
         continue;
       }
 
       const validation = this.validateBrazilianPhone(t, phone, phoneDdi);
       if (!validation.isValid) {
-        results.push(
-          this.createStatusResult(
-            contact,
-            'invalid',
-            validation.message || t('invalid_phone_format')
-          )
+        const result = this.createStatusResult(
+          contact,
+          'invalid',
+          validation.message || t('invalid_phone_format')
         );
-
+        results.push(result);
+        await sendProgressUpdate(index + 1, result);
         continue;
       }
 
@@ -198,6 +235,21 @@ export class ContactGroupAssignmentCreatorUseCase {
       );
 
       results.push(result);
+      await sendProgressUpdate(index + 1, result);
+    }
+
+    if (this.centrifugoService && importSessionId && userId) {
+      const channel = `channels:user#${userId}:contact-import:${importSessionId}`;
+      try {
+        await this.centrifugoService.publish(channel, {
+          processed: total,
+          total,
+          completed: true,
+          results,
+        });
+      } catch (error) {
+        console.error('Failed to send completion update:', error);
+      }
     }
 
     return results;

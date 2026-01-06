@@ -5,6 +5,7 @@ import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
 import { CreateContactGroupAssignmentRequest } from '@core/schema/contactGroup/createContactGroupAssignment/request.schema';
 import { ContactGroupAssignmentCreatorUseCase } from '@core/useCases/contactGroup/ContactGroupAssignmentCreator.useCase';
+import { v7 as uuidv7 } from 'uuid';
 
 export const createContactGroupAssignment = async (
   request: FastifyRequest<{
@@ -18,16 +19,26 @@ export const createContactGroupAssignment = async (
   const { t, tokenJwtData } = request;
 
   try {
-    const response = await contactGroupAssignmentCreatorUseCase.execute(
-      t,
-      request.body,
-      tokenJwtData.account_id
-    );
+    const importSessionId = uuidv7();
+
+    setImmediate(async () => {
+      try {
+        await contactGroupAssignmentCreatorUseCase.execute(
+          t,
+          request.body,
+          tokenJwtData.account_id,
+          tokenJwtData.user_id,
+          importSessionId
+        );
+      } catch (error) {
+        console.error('Error processing contact import in background:', error);
+      }
+    });
 
     return sendResponse(reply, {
-      message: t('contact_group_assignment_create_success'),
+      message: t('contact_import_started'),
       httpStatusCode: EHTTPStatusCode.ok,
-      data: response,
+      data: { import_session_id: importSessionId },
     });
   } catch (error) {
     handleControllerError(error, reply, t);

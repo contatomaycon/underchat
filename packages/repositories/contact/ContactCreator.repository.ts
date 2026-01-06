@@ -20,6 +20,35 @@ export class ContactCreatorRepository {
     private readonly contactGroupAssignmentCreatorRepository: ContactGroupAssignmentCreatorRepository
   ) {}
 
+  private truncateField(
+    value: string | null | undefined,
+    maxLength: number
+  ): string | null {
+    if (!value) return null;
+    if (value.length <= maxLength) return value;
+    return value.slice(0, maxLength);
+  }
+
+  private validateAndTruncateContact(input: ICreateContact): ICreateContact {
+    return {
+      ...input,
+      name: this.truncateField(input.name, 100) ?? '',
+      last_name: this.truncateField(input.last_name, 100),
+      email: this.truncateField(input.email, 500),
+      email_partial: this.truncateField(input.email_partial, 50),
+      email_c: this.truncateField(input.email_c, 500),
+      phone_ddi: this.truncateField(input.phone_ddi, 5),
+      phone: this.truncateField(input.phone, 500),
+      phone_partial: this.truncateField(input.phone_partial, 15),
+      phone_c: this.truncateField(input.phone_c, 500),
+      nickname: this.truncateField(input.nickname, 100),
+      photo: this.truncateField(input.photo, 500),
+      document: this.truncateField(input.document, 500),
+      document_partial: this.truncateField(input.document_partial, 20),
+      document_c: this.truncateField(input.document_c, 500),
+    };
+  }
+
   createContact = async (
     input: ICreateContact,
     tx?: PgTransaction<
@@ -28,40 +57,49 @@ export class ContactCreatorRepository {
       ExtractTablesWithRelations<typeof schema>
     >
   ): Promise<string | null> => {
+    const validatedInput = this.validateAndTruncateContact(input);
     const contactId = uuidv7();
 
     const dbOrTx = tx || this.dbRw;
 
-    const result = await dbOrTx
-      .insert(contact)
-      .values({
-        contact_id: contactId,
-        account_id: input.account_id,
-        label_template_id: input.label_template_id,
-        contact_document_type_id: input.contact_document_type_id,
-        is_valided: input.is_valided ?? false,
-        name: input.name,
-        last_name: input.last_name,
-        email: input.email,
-        email_partial: input.email_partial,
-        email_c: input.email_c,
-        phone_ddi: input.phone_ddi,
-        phone: input.phone,
-        phone_partial: input.phone_partial,
-        phone_c: input.phone_c,
-        nickname: input.nickname,
-        photo: input.photo,
-        birthday: nullIfEmpty(input.birthday),
-        notes: input.notes,
-        document: input.document,
-        document_partial: input.document_partial,
-        document_c: input.document_c,
-      })
-      .execute();
+    try {
+      const result = await dbOrTx
+        .insert(contact)
+        .values({
+          contact_id: contactId,
+          account_id: validatedInput.account_id,
+          label_template_id: validatedInput.label_template_id,
+          contact_document_type_id: validatedInput.contact_document_type_id,
+          is_valided: validatedInput.is_valided ?? false,
+          name: validatedInput.name,
+          last_name: validatedInput.last_name,
+          email: validatedInput.email,
+          email_partial: validatedInput.email_partial,
+          email_c: validatedInput.email_c,
+          phone_ddi: validatedInput.phone_ddi,
+          phone: validatedInput.phone,
+          phone_partial: validatedInput.phone_partial,
+          phone_c: validatedInput.phone_c,
+          nickname: validatedInput.nickname,
+          photo: validatedInput.photo,
+          birthday: nullIfEmpty(validatedInput.birthday),
+          notes: validatedInput.notes,
+          document: validatedInput.document,
+          document_partial: validatedInput.document_partial,
+          document_c: validatedInput.document_c,
+        })
+        .execute();
 
-    if (!result) return null;
+      if (!result) return null;
 
-    return contactId;
+      return contactId;
+    } catch (error) {
+      const pgError = error as { code?: string; message?: string };
+      if (pgError.code === '22001') {
+        return null;
+      }
+      throw error;
+    }
   };
 
   createContactWithGroup = async (
@@ -69,27 +107,35 @@ export class ContactCreatorRepository {
     input: ICreateContact,
     contactGroupId: string
   ): Promise<boolean | null> => {
-    return this.dbRw.transaction(async (tx) => {
-      const contactId = await this.createContact(input, tx);
+    try {
+      return await this.dbRw.transaction(async (tx) => {
+        const contactId = await this.createContact(input, tx);
 
-      if (!contactId) {
-        throw new Error(t('contact_creation_failed'));
-      }
-
-      if (contactGroupId) {
-        const contactGroupAssignmentId =
-          await this.contactGroupAssignmentCreatorRepository.createContactGroupAssignment(
-            tx,
-            contactGroupId,
-            contactId
-          );
-
-        if (!contactGroupAssignmentId) {
-          throw new Error(t('contact_group_assignment_creation_failed'));
+        if (!contactId) {
+          return null;
         }
-      }
 
-      return true;
-    });
+        if (contactGroupId) {
+          const contactGroupAssignmentId =
+            await this.contactGroupAssignmentCreatorRepository.createContactGroupAssignment(
+              tx,
+              contactGroupId,
+              contactId
+            );
+
+          if (!contactGroupAssignmentId) {
+            return null;
+          }
+        }
+
+        return true;
+      });
+    } catch (error) {
+      const pgError = error as { code?: string; message?: string };
+      if (pgError.code === '22001') {
+        return null;
+      }
+      throw error;
+    }
   };
 }

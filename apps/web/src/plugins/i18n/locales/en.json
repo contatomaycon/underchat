@@ -897,6 +897,7 @@
   "no_phone": "No Phone",
   "no_valid_contacts_found": "No valid contacts found!",
   "processing_import": "Processing import...",
+  "last_imported": "Last imported",
   "please_wait": "Please wait",
   "required": "Required",
   "select_contacts": "Select Contacts",

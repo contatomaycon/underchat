@@ -1,13 +1,21 @@
 <script lang="ts" setup>
-import { ref, computed, watch, onMounted } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { VForm } from 'vuetify/components/VForm';
 import { useContactStore } from '@/@webcore/stores/contact';
 import { useContactGroupStore } from '@/@webcore/stores/contactGroup';
 import { ContactImportStatus } from '@core/schema/contactGroup/createContactGroupAssignment/response.schema';
+import {
+  onMessage,
+  unsubscribe,
+  type Subscription,
+} from '@/@webcore/centrifugo';
+import { useChatStore } from '@/@webcore/stores/chat';
+import { EColor } from '@core/common/enums/EColor';
 
 const contactStore = useContactStore();
 const contactGroupStore = useContactGroupStore();
+const chatStore = useChatStore();
 
 const { t } = useI18n();
 
@@ -32,6 +40,11 @@ const isVisible = computed({
 const contact_group_id = ref<string | null>(null);
 const contactFile = ref<File | null>(null);
 const importResults = ref<ContactImportStatus[]>([]);
+const processedCount = ref<number>(0);
+const totalCount = ref<number>(0);
+const lastContact = ref<ContactImportStatus | null>(null);
+const importSessionId = ref<string | null>(null);
+const socketSubscription = ref<Subscription | null>(null);
 
 const refFormAddContact = ref<VForm>();
 
@@ -75,6 +88,61 @@ const onFileChange = (files: File[] | File | null) => {
   importResults.value = [];
 };
 
+const subscribeToImportProgress = async (sessionId: string) => {
+  const userId = chatStore.user?.user_id;
+  if (!userId) return;
+
+  const channel = `channels:user#${userId}:contact-import:${sessionId}`;
+
+  try {
+    const subscription = await onMessage(channel, (data: any) => {
+      if (data.processed !== undefined && data.total !== undefined) {
+        processedCount.value = data.processed;
+        totalCount.value = data.total;
+      }
+
+      if (data.lastContact) {
+        lastContact.value = data.lastContact;
+      }
+
+      if (data.completed && data.results) {
+        importResults.value = data.results;
+        contactGroupStore.loading = false;
+
+        const validCount = data.results.filter(
+          (r: ContactImportStatus) => r.status === 'valid'
+        ).length;
+        const total = data.results.length;
+
+        if (validCount > 0) {
+          contactGroupStore.showSnackbar(
+            contactGroupStore.i18n.global.t(
+              'contact_group_assignment_add_success'
+            ) +
+              ` (${validCount}/${total} ${contactGroupStore.i18n.global.t('valid')})`,
+            EColor.success
+          );
+          contactStore.listContact();
+        } else {
+          contactGroupStore.showSnackbar(
+            contactGroupStore.i18n.global.t('no_valid_contacts_found'),
+            EColor.warning
+          );
+        }
+
+        if (subscription) {
+          unsubscribe(channel).catch(() => {});
+          socketSubscription.value = null;
+        }
+      }
+    });
+
+    socketSubscription.value = subscription;
+  } catch (error) {
+    console.error('Error subscribing to import progress:', error);
+  }
+};
+
 const addContactGroupAssignment = async () => {
   const validateForm = await refFormAddContact?.value?.validate();
   if (!validateForm?.valid) return;
@@ -83,26 +151,22 @@ const addContactGroupAssignment = async () => {
     return;
   }
 
+  processedCount.value = 0;
+  totalCount.value = 0;
+  lastContact.value = null;
+  importResults.value = [];
+
   const form = new FormData();
   form.append('contact_group_id', contact_group_id.value ?? '');
   form.append('contacts', contactFile.value);
 
   const result = await contactGroupStore.addContactGroupAssignment(form as any);
 
-  if (result && result.length > 0) {
-    importResults.value = result;
-
-    const hasValidContacts = result.some((r) => r.status === 'valid');
-
-    if (hasValidContacts) {
-      await contactStore.listContact();
-    }
-
-    const allValid = result.every((r) => r.status === 'valid');
-    if (allValid) {
-      isVisible.value = false;
-    }
-  } else if (result === null) {
+  if (result?.import_session_id) {
+    importSessionId.value = result.import_session_id;
+    await subscribeToImportProgress(result.import_session_id);
+  } else {
+    contactGroupStore.loading = false;
     importResults.value = [];
   }
 };
@@ -111,6 +175,20 @@ const resetForm = () => {
   contact_group_id.value = null;
   contactFile.value = null;
   importResults.value = [];
+  processedCount.value = 0;
+  totalCount.value = 0;
+  lastContact.value = null;
+  importSessionId.value = null;
+
+  if (socketSubscription.value && importSessionId.value) {
+    const userId = chatStore.user?.user_id;
+    if (userId) {
+      const channel = `channels:user#${userId}:contact-import:${importSessionId.value}`;
+      unsubscribe(channel).catch(() => {});
+    }
+    socketSubscription.value = null;
+  }
+
   refFormAddContact.value?.resetValidation();
 };
 
@@ -154,7 +232,19 @@ onMounted(async () => {
 });
 
 watch(isVisible, (visible) => {
-  if (visible) resetForm();
+  if (visible) {
+    resetForm();
+  }
+});
+
+onUnmounted(() => {
+  if (socketSubscription.value && importSessionId.value) {
+    const userId = chatStore.user?.user_id;
+    if (userId) {
+      const channel = `channels:user#${userId}:contact-import:${importSessionId.value}`;
+      unsubscribe(channel).catch(() => {});
+    }
+  }
 });
 </script>
 
@@ -173,18 +263,40 @@ watch(isVisible, (visible) => {
           <VCard
             class="text-center pa-6"
             elevation="4"
-            style="min-width: 280px"
+            style="min-width: 320px"
           >
             <VProgressCircular
               color="primary"
-              indeterminate
+              :model-value="
+                totalCount > 0 ? (processedCount / totalCount) * 100 : undefined
+              "
+              :indeterminate="totalCount === 0"
               size="64"
               class="ma-auto"
             />
             <div class="text-body-1 mt-4 text-high-emphasis">
               {{ $t('processing_import') }}
             </div>
-            <div class="text-caption text-medium-emphasis mt-2">
+            <div
+              class="text-body-2 mt-2 text-medium-emphasis"
+              v-if="totalCount > 0"
+            >
+              {{ processedCount }} / {{ totalCount }}
+            </div>
+            <div
+              class="text-caption text-medium-emphasis mt-2"
+              v-if="lastContact"
+            >
+              <div v-if="lastContact.name || lastContact.last_name">
+                <strong>{{ $t('last_imported') }}:</strong>
+                {{ lastContact.name ?? '' }}
+                {{ lastContact.last_name ?? '' }}
+              </div>
+              <div v-if="lastContact.phone_complete">
+                {{ lastContact.phone_complete }}
+              </div>
+            </div>
+            <div class="text-caption text-medium-emphasis mt-2" v-else>
               {{ $t('please_wait') }}
             </div>
           </VCard>

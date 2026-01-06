@@ -30,7 +30,9 @@ export const createContactGroupAssignmentSchema = {
         id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
         status: Type.Boolean({ const: true }),
         message: Type.String(),
-        data: Type.Array(contactImportStatusSchema),
+        data: Type.Object({
+          import_session_id: Type.String(),
+        }),
       },
       { description: 'Successful' }
     ),

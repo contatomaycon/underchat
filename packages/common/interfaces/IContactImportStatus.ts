@@ -5,4 +5,6 @@ export interface IContactImportStatus {
   status: 'valid' | 'invalid' | 'error' | 'duplicate' | 'no_phone';
   message?: string | null;
   contact_id?: string | null;
+  name?: string | null;
+  last_name?: string | null;
 }

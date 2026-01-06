@@ -10,6 +10,8 @@ import axios from '@webcore/axios';
 import { IApiResponse } from '@core/common/interfaces/IApiResponse';
 import { AuthTokenResponse } from '@core/schema/centrifugo/token/response.schema';
 
+export type { Subscription };
+
 let centrifugeClient: Centrifuge | null = null;
 let tokenGenerationPromise: Promise<AuthTokenResponse> | null = null;
 

@@ -20,7 +20,6 @@ import {
 } from '@core/schema/contactGroup/editContactGroup/request.schema';
 import { ListContactGroupAllResponse } from '@core/schema/contactGroup/listContactGroupAll/response.schema';
 import { CreateContactGroupAssignmentRequest } from '@core/schema/contactGroup/createContactGroupAssignment/request.schema';
-import { ContactImportStatus } from '@core/schema/contactGroup/createContactGroupAssignment/response.schema';
 
 export const useContactGroupStore = defineStore('contact-group', {
   state: () => ({
@@ -312,16 +311,13 @@ export const useContactGroupStore = defineStore('contact-group', {
 
     async addContactGroupAssignment(
       payload: CreateContactGroupAssignmentRequest
-    ): Promise<ContactImportStatus[] | null> {
+    ): Promise<{ import_session_id: string } | null> {
       try {
         this.loading = true;
 
-        const response = await axios.post<IApiResponse<ContactImportStatus[]>>(
-          `/contact-group-assignment`,
-          payload
-        );
-
-        this.loading = false;
+        const response = await axios.post<
+          IApiResponse<{ import_session_id: string }>
+        >(`/contact-group-assignment`, payload);
 
         const data = response?.data;
 
@@ -331,28 +327,12 @@ export const useContactGroupStore = defineStore('contact-group', {
             this.i18n.global.t('contact_group_assignment_add_error');
 
           this.showSnackbar(mensage, EColor.error);
+          this.loading = false;
 
           return null;
         }
 
-        const results = data?.data || [];
-        const validCount = results.filter((r) => r.status === 'valid').length;
-        const totalCount = results.length;
-
-        if (validCount > 0) {
-          this.showSnackbar(
-            this.i18n.global.t('contact_group_assignment_add_success') +
-              ` (${validCount}/${totalCount} ${this.i18n.global.t('valid')})`,
-            EColor.success
-          );
-        } else {
-          this.showSnackbar(
-            this.i18n.global.t('no_valid_contacts_found'),
-            EColor.warning
-          );
-        }
-
-        return results;
+        return data?.data || null;
       } catch (error) {
         let errorMessage = this.i18n.global.t(
           'contact_group_assignment_add_error'

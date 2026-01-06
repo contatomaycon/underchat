@@ -13,6 +13,8 @@ export const contactImportStatusSchema = Type.Object({
   ]),
   message: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   contact_id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  name: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  last_name: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 });
 
 export type ContactImportStatus = Static<typeof contactImportStatusSchema>;

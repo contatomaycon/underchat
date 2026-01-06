@@ -335,6 +335,8 @@
   "contact_creator_success": "¡Contacto creado con éxito!",
   "contact_creator_error": "Error al crear el contacto!",
   "contact_creation_failed": "¡Error al crear el contacto!",
+  "contact_field_too_long": "¡El campo del contacto excede la longitud máxima permitida!",
+  "contact_import_started": "¡Importación de contactos iniciada!",
   "contact_view_successfully": "¡Contacto visualizado con éxito!",
   "contacts_view_successfully": "¡Contactos visualizados con éxito!",
   "contact_export_successfully": "¡Contactos exportados con éxito!",
