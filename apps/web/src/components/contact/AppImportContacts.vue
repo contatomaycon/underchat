@@ -124,10 +124,36 @@ const subscribeToImportProgress = async (sessionId: string) => {
   const channel = `channels:user#${userId}:contact-import:${sessionId}`;
 
   try {
+    const handleCompletion = () => {
+      if (isCompleted.value) return;
+
+      isCompleted.value = true;
+      contactGroupStore.loading = false;
+
+      if (subscription) {
+        unsubscribe(channel).catch(() => {});
+        socketSubscription.value = null;
+      }
+
+      if (closeTimer) {
+        clearTimeout(closeTimer);
+      }
+
+      closeTimer = setTimeout(() => {
+        isCompleted.value = false;
+        isVisible.value = false;
+        resetForm();
+      }, 2000);
+    };
+
     const subscription = await onMessage(channel, (data: any) => {
       if (data.processed !== undefined && data.total !== undefined) {
         processedCount.value = data.processed;
         totalCount.value = data.total;
+
+        if (data.processed === data.total && data.total > 0) {
+          handleCompletion();
+        }
       }
 
       if (data.lastContact) {
@@ -136,7 +162,6 @@ const subscribeToImportProgress = async (sessionId: string) => {
 
       if (data.completed && data.results) {
         importResults.value = data.results;
-        isCompleted.value = true;
 
         const validCount = data.results.filter(
           (r: ContactImportStatus) => r.status === 'valid'
@@ -159,20 +184,7 @@ const subscribeToImportProgress = async (sessionId: string) => {
           );
         }
 
-        if (subscription) {
-          unsubscribe(channel).catch(() => {});
-          socketSubscription.value = null;
-        }
-
-        if (closeTimer) {
-          clearTimeout(closeTimer);
-        }
-
-        closeTimer = setTimeout(() => {
-          contactGroupStore.loading = false;
-          isVisible.value = false;
-          isCompleted.value = false;
-        }, 3000);
+        handleCompletion();
       }
     });
 
@@ -306,10 +318,9 @@ onUnmounted(() => {
     <VForm ref="refFormAddContact" @submit.prevent>
       <VCard :title="$t('import_contacts')">
         <VOverlay
-          :model-value="contactGroupStore.loading"
+          :model-value="contactGroupStore.loading || isCompleted"
           class="align-center justify-center"
           contained
-          persistent
         >
           <VCard
             class="text-center pa-6"
