@@ -142,6 +142,7 @@ onMounted(() => {
             color="primary"
             @click="openAddModal"
             :disabled="isLoading"
+            :loading="aiAgentStore.loading"
           >
             {{ $t('add') }} {{ $t('prompt') }}
           </VBtn>
@@ -221,14 +222,6 @@ onMounted(() => {
       persistent
       class="v-dialog-sm"
     >
-      <VOverlay
-        :model-value="isDeleting"
-        class="align-center justify-center"
-        contained
-      >
-        <VProgressCircular color="primary" indeterminate size="64" />
-      </VOverlay>
-
       <DialogCloseBtn
         @click="isDeleteDialogVisible = false"
         :disabled="isDeleting"
