@@ -337,6 +337,10 @@ const handleValidate = async () => {
   contactToValidate.value = null;
 };
 
+const handleImportCompleted = async () => {
+  await contactStore.listContact(query.value);
+};
+
 watch(
   query,
   async (q) => {
@@ -580,6 +584,7 @@ watch(
       <AppImportContacts
         v-if="isAddImportContactVisible"
         v-model="isAddImportContactVisible"
+        @import-completed="handleImportCompleted"
       />
     </VCard>
 

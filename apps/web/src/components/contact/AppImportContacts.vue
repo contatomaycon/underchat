@@ -30,7 +30,10 @@ const itemsGroup = computed(() =>
   }))
 );
 
-const emit = defineEmits<(e: 'update:modelValue', visible: boolean) => void>();
+const emit = defineEmits<{
+  (e: 'update:modelValue', visible: boolean): void;
+  (e: 'importCompleted'): void;
+}>();
 
 const isVisible = computed({
   get: () => props.modelValue,
@@ -152,6 +155,7 @@ const subscribeToImportProgress = async (sessionId: string) => {
         totalCount.value = data.total;
 
         if (data.processed === data.total && data.total > 0) {
+          emit('importCompleted');
           handleCompletion();
         }
       }
@@ -176,7 +180,6 @@ const subscribeToImportProgress = async (sessionId: string) => {
               ` (${validCount}/${total} ${contactGroupStore.i18n.global.t('valid')})`,
             EColor.success
           );
-          contactStore.listContact();
         } else {
           contactGroupStore.showSnackbar(
             contactGroupStore.i18n.global.t('no_valid_contacts_found'),
@@ -184,6 +187,7 @@ const subscribeToImportProgress = async (sessionId: string) => {
           );
         }
 
+        emit('importCompleted');
         handleCompletion();
       }
     });
