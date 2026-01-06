@@ -1,0 +1,41 @@
+import { pgTable, timestamp, uuid, varchar } from 'drizzle-orm/pg-core';
+import { relations } from 'drizzle-orm';
+import { account } from '@core/models';
+import { aiAgentType } from './aiAgentType.model';
+import { EAiAgentStatus } from '@core/common/enums/EAiAgentStatus';
+
+export const aiAgent = pgTable('ai_agent', {
+  ai_agent_id: uuid().primaryKey().notNull(),
+  account_id: uuid()
+    .references(() => account.account_id)
+    .notNull(),
+  ai_agent_type_id: uuid()
+    .references(() => aiAgentType.ai_agent_type_id)
+    .notNull(),
+  name: varchar({ length: 200 }).notNull(),
+  base_url: varchar({ length: 500 }),
+  api_key: varchar({ length: 2000 }),
+  status: varchar({ length: 20 })
+    .notNull()
+    .$type<EAiAgentStatus>()
+    .default(EAiAgentStatus.active),
+  created_at: timestamp('created_at', {
+    mode: 'string',
+    withTimezone: true,
+  }).defaultNow(),
+  updated_at: timestamp('updated_at', {
+    mode: 'string',
+    withTimezone: true,
+  }).defaultNow(),
+});
+
+export const aiAgentRelations = relations(aiAgent, ({ one }) => ({
+  acc: one(account, {
+    fields: [aiAgent.account_id],
+    references: [account.account_id],
+  }),
+  aat: one(aiAgentType, {
+    fields: [aiAgent.ai_agent_type_id],
+    references: [aiAgentType.ai_agent_type_id],
+  }),
+}));
