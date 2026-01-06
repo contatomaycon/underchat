@@ -100,14 +100,14 @@ export const useChatStore = defineStore('chat', {
     queuePagings: {
       current_page: 1,
       total_pages: 1,
-      per_page: 10,
+      per_page: 25,
       count: 0,
       total: 0,
     },
     inChatPagings: {
       current_page: 1,
       total_pages: 1,
-      per_page: 10,
+      per_page: 25,
       count: 0,
       total: 0,
     },
@@ -394,9 +394,22 @@ export const useChatStore = defineStore('chat', {
       chat: IChat,
       isActiveChat: boolean
     ): void {
+      const wasInQueue = this.listQueue.some((c) => c.chat_id === chat.chat_id);
+      const wasInInChat = this.listInChat.some(
+        (c) => c.chat_id === chat.chat_id
+      );
+
       this.removeFromList(this.listInChat, chat.chat_id);
       this.removeFromList(this.listChatbot, chat.chat_id);
       this.replaceOrPushInList(this.listQueue, input, isActiveChat);
+
+      if (!wasInQueue) {
+        this.queuePagings.total = (this.queuePagings.total || 0) + 1;
+      }
+
+      if (wasInInChat && this.inChatPagings.total > 0) {
+        this.inChatPagings.total = Math.max(0, this.inChatPagings.total - 1);
+      }
 
       if (this.activeChat?.chat_id === chat.chat_id) {
         this.activeChat = this.createUpdatedActiveChat(input, isActiveChat);
@@ -409,9 +422,24 @@ export const useChatStore = defineStore('chat', {
       isActiveChat: boolean
     ): void {
       if (!this.canViewChat(chat)) {
+        const wasInInChat = this.listInChat.some(
+          (c) => c.chat_id === chat.chat_id
+        );
+        const wasInQueue = this.listQueue.some(
+          (c) => c.chat_id === chat.chat_id
+        );
+
         this.removeFromList(this.listInChat, chat.chat_id);
         this.removeFromList(this.listQueue, chat.chat_id);
         this.removeFromList(this.listChatbot, chat.chat_id);
+
+        if (wasInInChat && this.inChatPagings.total > 0) {
+          this.inChatPagings.total = Math.max(0, this.inChatPagings.total - 1);
+        }
+
+        if (wasInQueue && this.queuePagings.total > 0) {
+          this.queuePagings.total = Math.max(0, this.queuePagings.total - 1);
+        }
 
         if (this.activeChat?.chat_id === chat.chat_id) {
           this.activeChat = null;
@@ -419,9 +447,22 @@ export const useChatStore = defineStore('chat', {
         return;
       }
 
+      const wasInQueue = this.listQueue.some((c) => c.chat_id === chat.chat_id);
+      const wasInInChat = this.listInChat.some(
+        (c) => c.chat_id === chat.chat_id
+      );
+
       this.removeFromList(this.listQueue, chat.chat_id);
       this.removeFromList(this.listChatbot, chat.chat_id);
       this.replaceOrPushInList(this.listInChat, input, isActiveChat);
+
+      if (!wasInInChat) {
+        this.inChatPagings.total = (this.inChatPagings.total || 0) + 1;
+      }
+
+      if (wasInQueue && this.queuePagings.total > 0) {
+        this.queuePagings.total = Math.max(0, this.queuePagings.total - 1);
+      }
 
       if (this.activeChat?.chat_id === chat.chat_id) {
         this.activeChat = this.createUpdatedActiveChat(input, isActiveChat);

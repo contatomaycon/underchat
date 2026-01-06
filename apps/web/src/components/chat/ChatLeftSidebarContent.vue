@@ -41,9 +41,9 @@ const channelsStore = useChannelsStore();
 const { global } = useTheme();
 
 const currentPageQueue = ref(1);
-const perPageQueue = ref(10);
+const perPageQueue = ref(25);
 const currentPageInChat = ref(1);
-const perPageInChat = ref(10);
+const perPageInChat = ref(25);
 
 const contactSearchQuery = ref('');
 const debouncedContactSearch = refDebounced(contactSearchQuery, 500);
@@ -62,9 +62,6 @@ const searchPagings = ref({
 });
 const isAddContactModalOpen = ref(false);
 const isLoadingMoreContacts = ref(false);
-const contactScrollContainer = ref<InstanceType<
-  typeof PerfectScrollbar
-> | null>(null);
 const accumulatedContacts = ref<ListChatContactsResponse[]>([]);
 const contactsTotalPages = ref(1);
 const isValidateContactDialogOpen = ref(false);
