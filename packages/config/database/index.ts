@@ -14,6 +14,11 @@ async function dbConnector(fastify: FastifyInstance) {
     user: databaseEnvironment.dbUser,
     password: databaseEnvironment.dbPassword,
     database: databaseEnvironment.dbDatabase,
+    min: Number(databaseEnvironment.dbPoolMin ?? 10),
+    max: Number(databaseEnvironment.dbPoolMax ?? 30),
+    idleTimeoutMillis: databaseEnvironment.dbPoolIdleTimeout,
+    connectionTimeoutMillis: databaseEnvironment.dbPoolAcquireTimeout,
+    keepAlive: true,
   });
 
   const poolRo = new Pool({
@@ -22,6 +27,11 @@ async function dbConnector(fastify: FastifyInstance) {
     user: databaseEnvironment.dbUser,
     password: databaseEnvironment.dbPassword,
     database: databaseEnvironment.dbDatabase,
+    min: Number(databaseEnvironment.dbPoolMin ?? 10),
+    max: Number(databaseEnvironment.dbPoolMax ?? 30),
+    idleTimeoutMillis: databaseEnvironment.dbPoolIdleTimeout,
+    connectionTimeoutMillis: databaseEnvironment.dbPoolAcquireTimeout,
+    keepAlive: true,
   });
 
   if (databaseEnvironment.dbSslMode) {

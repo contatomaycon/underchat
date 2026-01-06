@@ -73,6 +73,52 @@ export class DatabaseEnvironment {
     return sm === 'true';
   }
 
+  public get dbPoolMin(): number {
+    const min = process.env.DB_POOL_MIN && Number(process.env.DB_POOL_MIN);
+    if (!min) {
+      throw new InvalidConfigurationError('DB_POOL_MIN is not defined.');
+    }
+
+    return min;
+  }
+
+  public get dbPoolIdleTimeout(): number {
+    const idleTimeout =
+      process.env.DB_POOL_IDLE_TIMEOUT &&
+      Number(process.env.DB_POOL_IDLE_TIMEOUT);
+
+    if (!idleTimeout) {
+      throw new InvalidConfigurationError(
+        'DB_POOL_IDLE_TIMEOUT is not defined.'
+      );
+    }
+
+    return idleTimeout;
+  }
+
+  public get dbPoolAcquireTimeout(): number {
+    const acquireTimeout =
+      process.env.DB_POOL_ACQUIRE_TIMEOUT &&
+      Number(process.env.DB_POOL_ACQUIRE_TIMEOUT);
+
+    if (!acquireTimeout) {
+      throw new InvalidConfigurationError(
+        'DB_POOL_ACQUIRE_TIMEOUT is not defined.'
+      );
+    }
+
+    return acquireTimeout;
+  }
+
+  public get dbPoolMax(): number {
+    const max = process.env.DB_POOL_MAX && Number(process.env.DB_POOL_MAX);
+    if (!max) {
+      throw new InvalidConfigurationError('DB_POOL_MAX is not defined.');
+    }
+
+    return max;
+  }
+
   public get dbDatabaseUrl(): string {
     const url = process.env.DB_DATABASE_URL;
     if (!url) {
