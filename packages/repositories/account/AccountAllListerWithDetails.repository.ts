@@ -1,5 +1,12 @@
 import * as schema from '@core/models';
-import { account, plan, planAccount } from '@core/models';
+import {
+  account,
+  plan,
+  planAccount,
+  user,
+  userDocument,
+  userInfo,
+} from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import {
@@ -41,6 +48,35 @@ export class AccountAllListerWithDetailsRepository {
               WHERE pa.account_id = ${account.account_id}
                 AND p.name ILIKE ${`%${query.plan}%`}
                 AND p.deleted_at IS NULL
+            )`
+          : undefined,
+        query.name
+          ? sql`EXISTS (
+              SELECT 1
+              FROM ${user} u
+              WHERE u.account_id = ${account.account_id}
+                AND u.email_partial ILIKE ${`%${query.name}%`}
+                AND u.deleted_at IS NULL
+            )`
+          : undefined,
+        query.name
+          ? sql`EXISTS (
+              SELECT 1
+              FROM ${user} u
+              INNER JOIN ${userDocument} ud ON ud.user_id = u.user_id
+              WHERE u.account_id = ${account.account_id}
+                AND ud.document_partial ILIKE ${`%${query.name}%`}
+                AND u.deleted_at IS NULL
+            )`
+          : undefined,
+        query.name
+          ? sql`EXISTS (
+              SELECT 1
+              FROM ${user} u
+              INNER JOIN ${userInfo} ui ON ui.user_id = u.user_id
+              WHERE u.account_id = ${account.account_id}
+                AND ui.phone_partial ILIKE ${`%${query.name}%`}
+                AND u.deleted_at IS NULL
             )`
           : undefined,
       ];
