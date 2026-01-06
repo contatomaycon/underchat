@@ -572,6 +572,13 @@ export class UserUpdaterUseCase {
     userId: string,
     body: UpdateUserRequest
   ): Promise<void> {
+    const countryIdValue = this.extractNumberValue(body.country_id);
+
+    if (countryIdValue === null || countryIdValue === undefined) {
+      await this.userService.deleteUserAddressById(userId);
+      return;
+    }
+
     const userAddress = this.buildUpdateUserAddressInput(body);
     const updateUserAddress = await this.userService.updateUserAddressById(
       userId,
@@ -610,7 +617,7 @@ export class UserUpdaterUseCase {
 
   private hasUserAddressFields(body: UpdateUserRequest): boolean {
     return !!(
-      body.country_id?.value ||
+      body.country_id !== undefined ||
       body.zip_code?.value ||
       body.address1?.value ||
       body.address2?.value ||

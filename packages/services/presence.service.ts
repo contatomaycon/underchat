@@ -13,6 +13,8 @@ export class PresenceService {
   private readonly ttlSeconds = 90;
   private readonly monitorIntervalMs = 30_000;
   private readonly keyPrefix = 'presence:user:';
+  private readonly accountIdCachePrefix = 'presence:account_id:';
+  private readonly accountIdCacheTtl = 3600;
 
   private readonly statusCache = new Map<string, EChatUserStatus>();
   private monitorTimer: ReturnType<typeof setInterval> | null = null;
@@ -27,6 +29,53 @@ export class PresenceService {
 
   private getKey(userId: string): string {
     return `${this.keyPrefix}${userId}`;
+  }
+
+  private getAccountIdCacheKey(userId: string): string {
+    return `${this.accountIdCachePrefix}${userId}`;
+  }
+
+  private async getCachedAccountId(userId: string): Promise<string | null> {
+    const cacheKey = this.getAccountIdCacheKey(userId);
+    const cached = await this.redis.get(cacheKey);
+
+    if (cached) {
+      return cached;
+    }
+
+    return null;
+  }
+
+  private async setCachedAccountId(
+    userId: string,
+    accountId: string
+  ): Promise<void> {
+    const cacheKey = this.getAccountIdCacheKey(userId);
+    await this.redis.set(cacheKey, accountId, 'EX', this.accountIdCacheTtl);
+  }
+
+  private async getUserAccountIdWithCache(
+    userId: string
+  ): Promise<string | null> {
+    const cached = await this.getCachedAccountId(userId);
+
+    if (cached) {
+      return cached;
+    }
+
+    try {
+      const accountId =
+        await this.userAccountViewerRepository.getUserAccountId(userId);
+
+      if (accountId) {
+        await this.setCachedAccountId(userId, accountId);
+      }
+
+      return accountId;
+    } catch (error) {
+      console.error('Failed to get user account ID', { userId, error });
+      return null;
+    }
   }
 
   private async clearPresenceKey(userId: string): Promise<void> {
@@ -102,8 +151,7 @@ export class PresenceService {
     status: EChatUserStatus
   ): Promise<void> {
     try {
-      const accountId =
-        await this.userAccountViewerRepository.getUserAccountId(userId);
+      const accountId = await this.getUserAccountIdWithCache(userId);
 
       if (!accountId) {
         return;

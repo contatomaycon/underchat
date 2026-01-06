@@ -40,7 +40,7 @@ const documentTypeSchema = Type.Object({
 const userDocumentSchema = Type.Object({
   user_document_id: Type.String({ format: 'uuid' }),
   user_document_type: Type.Union([documentTypeSchema, Type.Null()]),
-  document_partial: Type.String(),
+  document_partial: Type.Union([Type.String(), Type.Null()]),
 });
 
 const countrySchema = Type.Object({
@@ -52,14 +52,14 @@ const countrySchema = Type.Object({
 const userAddressSchema = Type.Object({
   user_address_id: Type.String({ format: 'uuid' }),
   country: Type.Union([countrySchema, Type.Null()]),
-  zip_code: Type.String(),
-  address1_partial: Type.String(),
+  zip_code: Type.Union([Type.String(), Type.Null()]),
+  address1_partial: Type.Union([Type.String(), Type.Null()]),
   address2_partial: Type.Union([Type.String(), Type.Null()]),
   city: Type.Union([Type.String(), Type.Null()]),
   state: Type.Union([Type.String(), Type.Null()]),
   city_fiscal_code: Type.Union([Type.String(), Type.Null()]),
   state_fiscal_code: Type.Union([Type.String(), Type.Null()]),
-  district: Type.String(),
+  district: Type.Union([Type.String(), Type.Null()]),
 });
 
 export const listUserResponseSchema = Type.Object({

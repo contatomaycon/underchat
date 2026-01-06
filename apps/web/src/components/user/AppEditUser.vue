@@ -141,13 +141,9 @@ const cnpjRegex = /^\d{14}$/;
 
 const docRules = computed(() => [
   (v: string | null) => {
+    if (!user_document_type_id.value) return true;
     if (!isDocumentDecrypted.value) return true;
-
-    const digits = onlyDigits(v ?? '');
-    return (!!digits && digits.length > 0) || t('required');
-  },
-  (v: string | null) => {
-    if (!isDocumentDecrypted.value) return true;
+    if (!v) return true;
 
     const digits = onlyDigits(v ?? '');
     if (!digits) return true;
@@ -2561,7 +2557,11 @@ watch(
 
                   <VCol cols="12" md="6">
                     <VLabel class="text-body-2 mb-1">{{ $t('name') }}:</VLabel>
-                    <AppTextField v-model="name" :placeholder="$t('name')" />
+                    <AppTextField
+                      v-model="name"
+                      :placeholder="$t('name')"
+                      :rules="[requiredValidator(name, $t('name_required'))]"
+                    />
                   </VCol>
 
                   <VCol cols="12" md="6">
@@ -2571,6 +2571,9 @@ watch(
                     <AppTextField
                       v-model="last_name"
                       :placeholder="$t('last_name')"
+                      :rules="[
+                        requiredValidator(last_name, $t('last_name_required')),
+                      ]"
                     />
                   </VCol>
 
@@ -2679,9 +2682,6 @@ watch(
                       ref="zipInputRef"
                       v-model="zip_codeFormatted"
                       :placeholder="$t('zip_code')"
-                      :rules="[
-                        requiredValidator(zip_code, $t('zip_code_required')),
-                      ]"
                       :disabled="!country_id"
                       :loading="isViewingZipcode"
                       v-maska="'#####-###'"

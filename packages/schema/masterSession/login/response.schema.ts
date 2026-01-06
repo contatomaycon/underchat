@@ -36,18 +36,18 @@ export const userResponseSchema = Type.Object({
   }),
   document: Type.Object({
     user_document_id: Type.String(),
-    document_partial: Type.String(),
+    document_partial: Type.Union([Type.String(), Type.Null()]),
     document_type: Type.String(),
   }),
   address: Type.Union([
     Type.Object({
       user_address_id: Type.String(),
-      zip_code: Type.String(),
-      address1_partial: Type.String(),
+      zip_code: Type.Union([Type.String(), Type.Null()]),
+      address1_partial: Type.Union([Type.String(), Type.Null()]),
       address2_partial: Type.Union([Type.String(), Type.Null()]),
       city: Type.Union([Type.String(), Type.Null()]),
       state: Type.Union([Type.String(), Type.Null()]),
-      district: Type.String(),
+      district: Type.Union([Type.String(), Type.Null()]),
     }),
     Type.Null(),
   ]),

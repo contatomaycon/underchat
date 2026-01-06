@@ -29,6 +29,7 @@ const props = withDefaults(
     itemText?: string;
     noItemsText?: string;
     noResultsText?: string;
+    rules?: Array<((value: any) => boolean | string) | (boolean | string)>;
   }>(),
   {
     placeholder: '',
@@ -41,6 +42,7 @@ const props = withDefaults(
     itemText: 'text',
     noItemsText: 'no_items_available',
     noResultsText: 'no_results_found',
+    rules: () => [],
   }
 );
 
@@ -74,6 +76,20 @@ const selectedItem = computed(() => {
 
 const displayValue = computed(() => {
   return selectedItem.value ? getItemTitle(selectedItem.value) : '';
+});
+
+const computedRules = computed(() => {
+  if (!props.rules || props.rules.length === 0) {
+    return [];
+  }
+  return props.rules
+    .filter((rule) => rule != null)
+    .map((rule) => {
+      if (typeof rule === 'function') {
+        return (value: any) => rule(props.modelValue);
+      }
+      return () => rule;
+    });
 });
 
 const filteredItems = computed(() => {
@@ -120,6 +136,7 @@ const handleClear = () => {
           readonly
           :disabled="disabled"
           :loading="loading"
+          :rules="computedRules"
         >
           <template v-if="$slots['prepend-inner']" #prepend-inner>
             <slot name="prepend-inner" :item="selectedItem" />

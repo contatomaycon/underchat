@@ -1,8 +1,8 @@
 export interface ICreateUserInfo {
-  phone_ddi: string;
-  phone: string;
-  phone_partial: string;
-  phone_c: string;
+  phone_ddi: string | null;
+  phone: string | null;
+  phone_partial: string | null;
+  phone_c: string | null;
   photo?: string | null;
   name: string;
   last_name: string;

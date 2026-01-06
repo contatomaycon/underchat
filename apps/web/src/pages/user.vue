@@ -486,11 +486,11 @@ watch(
             </template>
 
             <template #item.phone_partial="{ item }">
-              {{ item.user_info?.phone_partial }}
+              {{ item.user_info?.phone_partial || '-' }}
             </template>
 
             <template #item.document_partial="{ item }">
-              {{ item.user_document?.document_partial }}
+              {{ item.user_document?.document_partial || '-' }}
             </template>
 
             <template #item.created_at="{ item }">

@@ -246,10 +246,12 @@ export const useUsersStore = defineStore('users', {
       field: { value?: string | null } | undefined,
       fieldName: string
     ): void {
-      if (this.shouldAppendStringValue(field)) {
+      if (field !== undefined) {
         const value = field?.value;
-        if (value) {
+        if (value !== null && value !== undefined && value !== '') {
           formData.append(fieldName, value);
+        } else if (value === null) {
+          formData.append(fieldName, '');
         }
       }
     },
@@ -259,10 +261,12 @@ export const useUsersStore = defineStore('users', {
       field: { value?: number | null } | undefined,
       fieldName: string
     ): void {
-      if (this.shouldAppendNumberValue(field)) {
+      if (field !== undefined) {
         const value = field?.value;
         if (value !== null && value !== undefined) {
           formData.append(fieldName, value.toString());
+        } else {
+          formData.append(fieldName, '');
         }
       }
     },
@@ -329,26 +333,20 @@ export const useUsersStore = defineStore('users', {
         password: { value: string };
         account_id?: { value: string };
         permission_role_id?: { value: string };
-        user_info: {
-          phone_ddi: { value: string };
-          phone: { value: string };
-          name: { value: string };
-          last_name: { value: string };
-          birth_date?: { value: string | null };
-        };
-        user_document: {
-          document_type_id: { value: string };
-          document: { value: string };
-        };
-        user_address: {
-          country_id: { value: number };
-          zip_code: { value: string };
-          address1: { value: string };
-          address2?: { value: string | null };
-          city_fiscal_code: { value: string | null };
-          state_fiscal_code: { value: string | null };
-          district: { value: string };
-        };
+        phone_ddi?: { value: string };
+        phone?: { value: string };
+        name: { value: string };
+        last_name: { value: string };
+        birth_date?: { value: string | null };
+        document_type_id?: { value: string };
+        document?: { value: string };
+        country_id?: { value: number };
+        zip_code?: { value: string };
+        address1?: { value: string };
+        address2?: { value: string | null };
+        city_fiscal_code?: { value: string | null };
+        state_fiscal_code?: { value: string | null };
+        district?: { value: string };
       },
       photoFile?: File | null
     ): Promise<boolean> {
@@ -360,55 +358,38 @@ export const useUsersStore = defineStore('users', {
         formData.append('email', payload.email.value);
         formData.append('password', payload.password.value);
 
-        if (payload.account_id) {
-          formData.append('account_id', payload.account_id.value);
-        }
-
-        if (payload.permission_role_id) {
-          formData.append(
-            'permission_role_id',
-            payload.permission_role_id.value
-          );
-        }
-
-        formData.append('phone_ddi', payload.user_info.phone_ddi.value);
-        formData.append('phone', payload.user_info.phone.value);
-        formData.append('name', payload.user_info.name.value);
-        formData.append('last_name', payload.user_info.last_name.value);
-        if (payload.user_info.birth_date) {
-          formData.append(
-            'birth_date',
-            payload.user_info.birth_date.value || ''
-          );
-        }
-
-        formData.append(
-          'document_type_id',
-          payload.user_document.document_type_id.value
+        this.appendStringField(formData, payload.account_id, 'account_id');
+        this.appendStringField(
+          formData,
+          payload.permission_role_id,
+          'permission_role_id'
         );
-        formData.append('document', payload.user_document.document.value);
-
-        formData.append(
-          'country_id',
-          payload.user_address.country_id.value.toString()
+        this.appendStringField(formData, payload.phone_ddi, 'phone_ddi');
+        this.appendStringField(formData, payload.phone, 'phone');
+        formData.append('name', payload.name.value);
+        formData.append('last_name', payload.last_name.value);
+        this.appendStringField(formData, payload.birth_date, 'birth_date');
+        this.appendStringField(
+          formData,
+          payload.document_type_id,
+          'document_type_id'
         );
-        formData.append('zip_code', payload.user_address.zip_code.value);
-        formData.append('address1', payload.user_address.address1.value);
-        if (payload.user_address.address2) {
-          formData.append(
-            'address2',
-            payload.user_address.address2.value || ''
-          );
-        }
-        formData.append(
-          'city_fiscal_code',
-          payload.user_address.city_fiscal_code.value || ''
+        this.appendStringField(formData, payload.document, 'document');
+        this.appendNumberField(formData, payload.country_id, 'country_id');
+        this.appendStringField(formData, payload.zip_code, 'zip_code');
+        this.appendStringField(formData, payload.address1, 'address1');
+        this.appendStringField(formData, payload.address2, 'address2');
+        this.appendStringField(
+          formData,
+          payload.city_fiscal_code,
+          'city_fiscal_code'
         );
-        formData.append(
-          'state_fiscal_code',
-          payload.user_address.state_fiscal_code.value || ''
+        this.appendStringField(
+          formData,
+          payload.state_fiscal_code,
+          'state_fiscal_code'
         );
-        formData.append('district', payload.user_address.district.value);
+        this.appendStringField(formData, payload.district, 'district');
 
         if (photoFile instanceof File) {
           formData.append('photo', photoFile);

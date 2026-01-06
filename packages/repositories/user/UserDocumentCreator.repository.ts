@@ -33,9 +33,9 @@ export class UserDocumentCreatorRepository {
         user_document_id: userDocumentId,
         user_id: userId,
         user_document_type_id: input.user_document_type_id,
-        document: input.document,
-        document_partial: input.document_partial,
-        document_c: input.document_c,
+        document: input.document ?? null,
+        document_partial: input.document_partial ?? null,
+        document_c: input.document_c ?? null,
       })
       .execute();
 

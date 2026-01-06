@@ -9,6 +9,10 @@ import { UserAccountViewerRepository } from '@core/repositories/user/UserAccount
 @singleton()
 export class PresenceCentrifugoConsume {
   private isRunning = false;
+  private readonly accountIdCachePrefix = 'presence:account_id:';
+  private readonly accountIdCacheTtl = 3600;
+  private readonly userExistsCachePrefix = 'presence:user:exists:';
+  private readonly userExistsCacheTtl = 86400;
 
   constructor(
     private readonly centrifugoService: CentrifugoService,
@@ -38,36 +42,78 @@ export class PresenceCentrifugoConsume {
     this.isRunning = false;
   }
 
-  private getUserCacheKey(userId: string): string {
-    return `presence:user:exists:${userId}`;
+  private getAccountIdCacheKey(userId: string): string {
+    return `${this.accountIdCachePrefix}${userId}`;
+  }
+
+  private getUserExistsCacheKey(userId: string): string {
+    return `${this.userExistsCachePrefix}${userId}`;
+  }
+
+  private async getCachedAccountId(userId: string): Promise<string | null> {
+    const cacheKey = this.getAccountIdCacheKey(userId);
+    const cached = await this.redis.get(cacheKey);
+
+    if (cached) {
+      return cached;
+    }
+
+    return null;
+  }
+
+  private async setCachedAccountId(
+    userId: string,
+    accountId: string
+  ): Promise<void> {
+    const cacheKey = this.getAccountIdCacheKey(userId);
+    await this.redis.set(cacheKey, accountId, 'EX', this.accountIdCacheTtl);
   }
 
   private async ensureValidUser(userId: string): Promise<boolean> {
-    const cacheKey = this.getUserCacheKey(userId);
-    const cached = await this.redis.get(cacheKey);
+    const existsCacheKey = this.getUserExistsCacheKey(userId);
+    const existsCached = await this.redis.get(existsCacheKey);
 
-    if (cached === '0') {
+    if (existsCached === '0') {
       return false;
     }
 
-    if (cached === '1') {
+    if (existsCached === '1') {
       return true;
     }
 
-    const accountId =
-      await this.userAccountViewerRepository.getUserAccountId(userId);
+    const accountIdCacheKey = this.getAccountIdCacheKey(userId);
+    const accountIdCached = await this.redis.get(accountIdCacheKey);
 
-    if (!accountId) {
-      console.warn(
-        `Invalid user_id in presence message: ${userId} - user does not exist or was deleted`
-      );
-
-      await this.redis.set(cacheKey, '0', 'EX', 86_400);
-      return false;
+    if (accountIdCached) {
+      await this.redis.set(existsCacheKey, '1', 'EX', this.userExistsCacheTtl);
+      return true;
     }
 
-    await this.redis.set(cacheKey, '1', 'EX', 86_400);
-    return true;
+    try {
+      const accountId =
+        await this.userAccountViewerRepository.getUserAccountId(userId);
+
+      if (!accountId) {
+        console.warn(
+          `Invalid user_id in presence message: ${userId} - user does not exist or was deleted`
+        );
+
+        await this.redis.set(
+          existsCacheKey,
+          '0',
+          'EX',
+          this.userExistsCacheTtl
+        );
+        return false;
+      }
+
+      await this.setCachedAccountId(userId, accountId);
+      await this.redis.set(existsCacheKey, '1', 'EX', this.userExistsCacheTtl);
+      return true;
+    } catch (error) {
+      console.error('Failed to validate user', { userId, error });
+      return false;
+    }
   }
 
   private async handlePresenceMessage(data: unknown): Promise<void> {

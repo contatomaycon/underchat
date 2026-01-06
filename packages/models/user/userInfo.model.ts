@@ -7,10 +7,10 @@ export const userInfo = pgTable('user_info', {
   user_id: uuid()
     .references(() => user.user_id)
     .notNull(),
-  phone_ddi: varchar({ length: 5 }).notNull(),
-  phone: varchar({ length: 500 }).notNull(),
-  phone_partial: varchar({ length: 15 }).notNull(),
-  phone_c: varchar({ length: 500 }).notNull(),
+  phone_ddi: varchar({ length: 5 }),
+  phone: varchar({ length: 500 }),
+  phone_partial: varchar({ length: 15 }),
+  phone_c: varchar({ length: 500 }),
   phone_jid: varchar({ length: 500 }),
   photo: varchar({ length: 255 }),
   name: varchar({ length: 100 }).notNull(),

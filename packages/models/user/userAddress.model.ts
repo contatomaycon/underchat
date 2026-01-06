@@ -16,16 +16,16 @@ export const userAddress = pgTable('user_address', {
   country_id: smallint()
     .references(() => country.country_id)
     .notNull(),
-  zip_code: varchar({ length: 10 }).notNull(),
-  address1: varchar({ length: 1000 }).notNull(),
-  address1_partial: varchar({ length: 200 }).notNull(),
-  address1_c: varchar({ length: 500 }).notNull(),
+  zip_code: varchar({ length: 10 }),
+  address1: varchar({ length: 1000 }),
+  address1_partial: varchar({ length: 200 }),
+  address1_c: varchar({ length: 500 }),
   address2: varchar({ length: 1000 }),
   address2_partial: varchar({ length: 200 }),
   address2_c: varchar({ length: 500 }),
   city_fiscal_code: varchar({ length: 10 }),
   state_fiscal_code: varchar({ length: 10 }),
-  district: varchar({ length: 100 }).notNull(),
+  district: varchar({ length: 100 }),
   created_at: timestamp({
     mode: 'string',
     withTimezone: true,

@@ -30,28 +30,24 @@ export class UserCreatorUseCase {
       throw new Error(t('account_not_found'));
     }
 
-    if (!input.document_type_id?.value) {
-      throw new Error(t('document_type_not_found'));
+    if (input.document_type_id?.value) {
+      const documentTypeExists =
+        await this.userService.existsUserDocumentTypeById(
+          input.document_type_id.value
+        );
+
+      if (!documentTypeExists) {
+        throw new Error(t('document_type_not_found'));
+      }
     }
 
-    const documentTypeExists =
-      await this.userService.existsUserDocumentTypeById(
-        input.document_type_id.value
+    if (input.country_id?.value) {
+      const countryExists = await this.countryService.existsCountryById(
+        input.country_id.value
       );
-
-    if (!documentTypeExists) {
-      throw new Error(t('document_type_not_found'));
-    }
-
-    if (!input.country_id?.value) {
-      throw new Error(t('country_not_found'));
-    }
-
-    const countryExists = await this.countryService.existsCountryById(
-      input.country_id.value
-    );
-    if (!countryExists) {
-      throw new Error(t('country_not_found'));
+      if (!countryExists) {
+        throw new Error(t('country_not_found'));
+      }
     }
 
     if (!input.email?.value) {
@@ -74,6 +70,14 @@ export class UserCreatorUseCase {
     if (!passwordValidation.isValid) {
       const errorMessages = passwordValidation.errors.map((err) => t(err));
       throw new Error(errorMessages.join(', '));
+    }
+
+    if (!input.name?.value) {
+      throw new Error(t('name_required'));
+    }
+
+    if (!input.last_name?.value) {
+      throw new Error(t('last_name_required'));
     }
 
     await this.planAccountService.validateCanCreateUser(t, accountId);

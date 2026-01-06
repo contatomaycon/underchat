@@ -81,7 +81,7 @@ export class UserTransactionCreatorRepository {
         input.password.value
       );
 
-      const phoneC = input.phone.value
+      const phoneC = input.phone?.value
         ? this.encryptService.encrypt(input.phone.value)
         : null;
 
@@ -117,108 +117,154 @@ export class UserTransactionCreatorRepository {
         throw new Error(t('user_creation_failed'));
       }
 
-      const addressEncrypted = this.passwordEncryptorService.encrypt(
-        input.address1.value
-      );
-      const addressPartialEncrypted = this.encryptService.sanitize(
-        input.address1.value,
-        ETypeSanetize.other
-      );
-      const address1C = this.encryptService.encrypt(input.address1.value);
-
-      const address2Encrypted = input.address2?.value
-        ? this.passwordEncryptorService.encrypt(input.address2.value)
-        : null;
-      const address2PartialEncrypted = input.address2?.value
-        ? this.encryptService.sanitize(
-            input.address2.value,
-            ETypeSanetize.other
-          )
-        : null;
-      const address2C = input.address2?.value
-        ? this.encryptService.encrypt(input.address2.value)
-        : null;
-
-      const createUserAddress: ICreateUserAddress = {
-        country_id: input.country_id.value,
-        zip_code: input.zip_code.value,
-        address1: addressEncrypted,
-        address1_partial: addressPartialEncrypted,
-        address1_c: address1C,
-        address2: address2Encrypted,
-        address2_partial: address2PartialEncrypted,
-        address2_c: address2C,
-        city_fiscal_code: input.city_fiscal_code?.value ?? null,
-        state_fiscal_code: input.state_fiscal_code?.value ?? null,
-        district: input.district.value,
-      };
-
-      const documentEncrypted = this.passwordEncryptorService.encrypt(
-        input.document.value
-      );
-      const documentPartialEncrypted = this.encryptService.sanitize(
-        input.document.value,
-        ETypeSanetize.document
-      );
-      const documentC = this.encryptService.encrypt(input.document.value);
-
-      const createUserDocument: ICreateUserDocument = {
-        user_document_type_id: input.document_type_id.value,
-        document: documentEncrypted,
-        document_partial: documentPartialEncrypted,
-        document_c: documentC,
-      };
-
-      if (!phoneC) {
-        throw new Error(t('phone_connection_required'));
-      }
-
-      const phoneEncrypted = this.passwordEncryptorService.encrypt(
-        input.phone.value
-      );
-
-      const phonePartialEncrypted = this.encryptService.sanitize(
-        input.phone.value,
-        ETypeSanetize.phone
-      );
-
-      const birthDate = input.birth_date?.value
-        ? this.validateBirthDate(t, input.birth_date.value)
-        : null;
-
       const createUserInfo: ICreateUserInfo = {
-        phone_ddi: input.phone_ddi.value,
-        phone: phoneEncrypted,
-        phone_partial: phonePartialEncrypted,
-        phone_c: phoneC,
+        phone_ddi: input.phone_ddi?.value ?? null,
+        phone: null,
+        phone_partial: null,
+        phone_c: null,
         photo: photoUrl ?? null,
         name: input.name.value,
         last_name: input.last_name.value,
-        birth_date: birthDate ?? null,
+        birth_date: null,
       };
 
-      const [userAddress, userDocument, userInfo, chatUser] = await Promise.all(
-        [
+      if (input.phone?.value) {
+        const phoneEncrypted = this.passwordEncryptorService.encrypt(
+          input.phone.value
+        );
+        const phonePartialEncrypted = this.encryptService.sanitize(
+          input.phone.value,
+          ETypeSanetize.phone
+        );
+
+        createUserInfo.phone = phoneEncrypted;
+        createUserInfo.phone_partial = phonePartialEncrypted;
+        createUserInfo.phone_c = phoneC;
+      }
+
+      if (input.birth_date?.value) {
+        createUserInfo.birth_date = this.validateBirthDate(
+          t,
+          input.birth_date.value
+        );
+      }
+
+      const createUserAddress: ICreateUserAddress | null = input.country_id
+        ? {
+            country_id: input.country_id.value,
+            zip_code: input.zip_code?.value ?? null,
+            address1: null,
+            address1_partial: null,
+            address1_c: null,
+            address2: null,
+            address2_partial: null,
+            address2_c: null,
+            city_fiscal_code: input.city_fiscal_code?.value ?? null,
+            state_fiscal_code: input.state_fiscal_code?.value ?? null,
+            district: input.district?.value ?? null,
+          }
+        : null;
+
+      if (input.address1?.value) {
+        const addressEncrypted = this.passwordEncryptorService.encrypt(
+          input.address1.value
+        );
+        const addressPartialEncrypted = this.encryptService.sanitize(
+          input.address1.value,
+          ETypeSanetize.other
+        );
+        const address1C = this.encryptService.encrypt(input.address1.value);
+
+        if (createUserAddress) {
+          createUserAddress.address1 = addressEncrypted;
+          createUserAddress.address1_partial = addressPartialEncrypted;
+          createUserAddress.address1_c = address1C;
+        }
+      }
+
+      if (input.address2?.value) {
+        const address2Encrypted = this.passwordEncryptorService.encrypt(
+          input.address2.value
+        );
+        const address2PartialEncrypted = this.encryptService.sanitize(
+          input.address2.value,
+          ETypeSanetize.other
+        );
+        const address2C = this.encryptService.encrypt(input.address2.value);
+
+        if (createUserAddress) {
+          createUserAddress.address2 = address2Encrypted;
+          createUserAddress.address2_partial = address2PartialEncrypted;
+          createUserAddress.address2_c = address2C;
+        }
+      }
+
+      const createUserDocument: ICreateUserDocument | null =
+        input.document_type_id
+          ? {
+              user_document_type_id: input.document_type_id.value,
+              document: null,
+              document_partial: null,
+              document_c: null,
+            }
+          : null;
+
+      if (input.document?.value) {
+        const documentEncrypted = this.passwordEncryptorService.encrypt(
+          input.document.value
+        );
+        const documentPartialEncrypted = this.encryptService.sanitize(
+          input.document.value,
+          ETypeSanetize.document
+        );
+        const documentC = this.encryptService.encrypt(input.document.value);
+
+        if (createUserDocument) {
+          createUserDocument.document = documentEncrypted;
+          createUserDocument.document_partial = documentPartialEncrypted;
+          createUserDocument.document_c = documentC;
+        }
+      }
+
+      const promises: Promise<any>[] = [
+        this.userInfoCreatorRepository.createUserInfo(
+          tx,
+          createUserInfo,
+          createUserId
+        ),
+        this.chatUserCreatorRepository.createChatUser(tx, createUserId),
+      ];
+
+      if (createUserAddress) {
+        promises.push(
           this.userAddressCreatorRepository.createUserAddress(
             tx,
             createUserAddress,
             createUserId
-          ),
+          )
+        );
+      }
+
+      if (createUserDocument) {
+        promises.push(
           this.userDocumentCreatorRepository.createUserDocument(
             tx,
             createUserDocument,
             createUserId
-          ),
-          this.userInfoCreatorRepository.createUserInfo(
-            tx,
-            createUserInfo,
-            createUserId
-          ),
-          this.chatUserCreatorRepository.createChatUser(tx, createUserId),
-        ]
-      );
+          )
+        );
+      }
 
-      if (!userAddress || !userDocument || !userInfo || !chatUser) {
+      const results = await Promise.all(promises);
+
+      const userInfo = results[0];
+      const chatUser = results[1];
+      const userAddress = createUserAddress ? results[2] : true;
+      const userDocument = createUserDocument
+        ? results[createUserAddress ? 3 : 2]
+        : true;
+
+      if (!userInfo || !chatUser || !userAddress || !userDocument) {
         throw new Error('user_creation_failed');
       }
 

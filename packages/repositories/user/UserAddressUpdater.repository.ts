@@ -77,4 +77,13 @@ export class UserAddressUpdaterRepository {
 
     return result.rowCount === 1;
   };
+
+  deleteUserAddressById = async (userId: string): Promise<boolean> => {
+    const result = await this.dbRw
+      .delete(userAddress)
+      .where(eq(userAddress.user_id, userId))
+      .execute();
+
+    return (result.rowCount ?? 0) >= 0;
+  };
 }

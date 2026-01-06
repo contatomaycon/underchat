@@ -226,6 +226,10 @@ export class UserService {
     );
   };
 
+  deleteUserAddressById = async (userId: string): Promise<boolean> => {
+    return this.userAddressUpdaterRepository.deleteUserAddressById(userId);
+  };
+
   viewUserNamePhoto = async (
     userId: string
   ): Promise<IViewUserNamePhoto | null> => {

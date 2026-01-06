@@ -32,14 +32,14 @@ export class UserInfoCreatorRepository {
       .values({
         user_info_id: userInfoId,
         user_id: userId,
-        phone_ddi: input.phone_ddi,
-        phone: input.phone,
-        phone_partial: input.phone_partial,
-        phone_c: input.phone_c,
-        photo: input.photo,
+        phone_ddi: input.phone_ddi ?? null,
+        phone: input.phone ?? null,
+        phone_partial: input.phone_partial ?? null,
+        phone_c: input.phone_c ?? null,
+        photo: input.photo ?? null,
         name: input.name,
         last_name: input.last_name,
-        birth_date: input.birth_date,
+        birth_date: input.birth_date ?? null,
       })
       .execute();
 

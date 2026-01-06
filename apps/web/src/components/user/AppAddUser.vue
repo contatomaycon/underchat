@@ -135,11 +135,11 @@ const cnpjRegex = /^\d{14}$/;
 const requiredMsg = (label: string) => t('field_required', { field: label });
 
 const docRules = computed(() => [
-  (v: string | null) =>
-    (!!v && onlyDigits(v).length > 0) || requiredMsg(docLabel.value),
   (v: string | null) => {
+    if (!user_document_type_id.value) return true;
     if (!v) return true;
-    const digits = onlyDigits(v);
+    const digits = onlyDigits(v ?? '');
+    if (!digits) return true;
     if (isCPF.value) return cpfRegex.test(digits) || t('cpf_invalid');
     if (isCNPJ.value) return cnpjRegex.test(digits) || t('cnpj_invalid');
     return true;
@@ -426,63 +426,73 @@ const viewZipcode = async () => {
 };
 
 const validateRequiredFields = (): boolean => {
-  return !!(
-    email.value &&
-    password.value &&
-    phone_ddi.value &&
-    phone.value &&
-    name.value &&
-    last_name.value &&
-    birth_date.value &&
-    user_document_type_id.value &&
-    document.value &&
-    country_id.value &&
-    zip_code.value &&
-    address1.value &&
-    city_id.value &&
-    state_id.value &&
-    district.value
-  );
+  return !!(email.value && password.value && name.value && last_name.value);
 };
 
 const buildUserPayload = () => {
-  const phoneNumber = phone.value!.replaceAll(/\D/g, '');
+  const phoneNumber = phone.value ? phone.value.replaceAll(/\D/g, '') : null;
 
-  const selectedState = states.value.find(
-    (s) => s.id_zipcode_state === state_id.value
-  );
-  const selectedCity = cities.value.find(
-    (c) => c.id_zipcode_city === city_id.value
-  );
+  const selectedState = state_id.value
+    ? states.value.find((s) => s.id_zipcode_state === state_id.value)
+    : null;
+  const selectedCity = city_id.value
+    ? cities.value.find((c) => c.id_zipcode_city === city_id.value)
+    : null;
 
   const payload: any = {
     email: { value: email.value! },
     password: { value: password.value! },
-    user_info: {
-      phone_ddi: { value: phone_ddi.value! },
-      phone: { value: phoneNumber },
-      name: { value: name.value! },
-      last_name: { value: last_name.value! },
-      birth_date: birth_date.value ? { value: birth_date.value } : undefined,
-    },
-    user_document: {
-      document_type_id: { value: user_document_type_id.value! },
-      document: { value: document.value! },
-    },
-    user_address: {
-      country_id: { value: country_id.value! },
-      zip_code: { value: zip_code.value! },
-      address1: { value: address1.value! },
-      address2: address2.value ? { value: address2.value } : undefined,
-      city_fiscal_code: {
-        value: selectedCity?.fiscal_code ?? null,
-      },
-      state_fiscal_code: {
-        value: selectedState?.fiscal_code ?? null,
-      },
-      district: { value: district.value! },
-    },
+    name: { value: name.value! },
+    last_name: { value: last_name.value! },
   };
+
+  if (phone_ddi.value) {
+    payload.phone_ddi = { value: phone_ddi.value };
+  }
+
+  if (phoneNumber) {
+    payload.phone = { value: phoneNumber };
+  }
+
+  if (birth_date.value) {
+    payload.birth_date = { value: birth_date.value };
+  }
+
+  if (user_document_type_id.value) {
+    payload.document_type_id = { value: user_document_type_id.value };
+  }
+
+  if (document.value) {
+    payload.document = { value: document.value };
+  }
+
+  if (country_id.value) {
+    payload.country_id = { value: country_id.value };
+  }
+
+  if (zip_code.value) {
+    payload.zip_code = { value: zip_code.value };
+  }
+
+  if (address1.value) {
+    payload.address1 = { value: address1.value };
+  }
+
+  if (address2.value) {
+    payload.address2 = { value: address2.value };
+  }
+
+  if (district.value) {
+    payload.district = { value: district.value };
+  }
+
+  if (selectedCity?.fiscal_code) {
+    payload.city_fiscal_code = { value: selectedCity.fiscal_code };
+  }
+
+  if (selectedState?.fiscal_code) {
+    payload.state_fiscal_code = { value: selectedState.fiscal_code };
+  }
 
   if (accountId.value) {
     payload.account_id = { value: accountId.value };
@@ -1591,9 +1601,6 @@ onMounted(resetForm);
                       v-model="phoneFormatted"
                       type="tel"
                       :placeholder="$t('phone')"
-                      :rules="[
-                        requiredValidator(phoneFormatted, $t('phone_required')),
-                      ]"
                       maxlength="15"
                     />
                   </VCol>
@@ -1658,12 +1665,6 @@ onMounted(resetForm);
                     <AppDateTimePicker
                       v-model="birth_date"
                       :placeholder="$t('birth_date')"
-                      :rules="[
-                        requiredValidator(
-                          birth_date,
-                          $t('birth_date_required')
-                        ),
-                      ]"
                     />
                   </VCol>
                 </VRow>
@@ -1706,9 +1707,6 @@ onMounted(resetForm);
                       ref="zipInputRef"
                       v-model="zip_codeFormatted"
                       :placeholder="$t('zip_code')"
-                      :rules="[
-                        requiredValidator(zip_code, $t('zip_code_required')),
-                      ]"
                       :disabled="!country_id"
                       :loading="isViewingZipcode"
                       v-maska="'#####-###'"
@@ -1758,9 +1756,6 @@ onMounted(resetForm);
                       v-model="address1"
                       :disabled="!country_id"
                       :placeholder="$t('address')"
-                      :rules="[
-                        requiredValidator(address1, $t('address_required')),
-                      ]"
                     />
                   </VCol>
                   <VCol cols="12" md="6">
@@ -1781,9 +1776,6 @@ onMounted(resetForm);
                       v-model="district"
                       :disabled="!country_id"
                       :placeholder="$t('district')"
-                      :rules="[
-                        requiredValidator(district, $t('district_required')),
-                      ]"
                     />
                   </VCol>
                 </VRow>
