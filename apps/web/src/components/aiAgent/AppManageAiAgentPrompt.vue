@@ -7,7 +7,7 @@ import { ListAiAgentPromptResponse } from '@core/schema/aiAgent/listAiAgentPromp
 import { EAiAgentPromptType } from '@core/common/enums/EAiAgentPromptType';
 import { EAiAgentStatus } from '@core/common/enums/EAiAgentStatus';
 import AppAddEditAiAgentPrompt from './AppAddEditAiAgentPrompt.vue';
-import VDialogHandler from '@/components/VDialogHandler.vue';
+import TablePagination from '@/@webcore/components/TablePagination.vue';
 
 const aiAgentStore = useAiAgentStore();
 const { t } = useI18n();
@@ -33,6 +33,30 @@ const isAddEditModalVisible = ref(false);
 const promptToEdit = ref<string | null>(null);
 const promptToDelete = ref<string | null>(null);
 const isDeleteDialogVisible = ref(false);
+
+const options = ref({
+  page: 1,
+  itemsPerPage: 10,
+  sortBy: [] as any[],
+});
+
+const paginatedPrompts = computed(() => {
+  const start = (options.value.page - 1) * options.value.itemsPerPage;
+  const end = start + options.value.itemsPerPage;
+  return aiAgentStore.prompts.slice(start, end);
+});
+
+const totalItems = computed(() => aiAgentStore.prompts.length);
+
+const handleTableChange = (o: {
+  page: number;
+  itemsPerPage: number;
+  sortBy: any[];
+}) => {
+  options.value.page = o.page;
+  options.value.itemsPerPage = o.itemsPerPage;
+  options.value.sortBy = o.sortBy;
+};
 
 const headers: DataTableHeader<ListAiAgentPromptResponse>[] = [
   { title: t('name'), key: 'name' },
@@ -148,11 +172,17 @@ onMounted(() => {
           </VBtn>
         </div>
 
-        <VDataTable
+        <VDataTableServer
+          v-model:page="options.page"
+          v-model:items-per-page="options.itemsPerPage"
+          v-model:sort-by="options.sortBy"
           :headers="headers"
-          :items="aiAgentStore.prompts"
+          :items="paginatedPrompts"
+          :items-length="totalItems"
           :loading="isLoading"
           class="data-table"
+          @update:options="handleTableChange"
+          :loading-text="$t('loading_text')"
         >
           <template #item.name="{ item }">
             {{ item.name }}
@@ -225,7 +255,16 @@ onMounted(() => {
           <template #no-data>
             {{ $t('no_data_available') }}
           </template>
-        </VDataTable>
+
+          <template #bottom>
+            <TablePagination
+              v-if="options.itemsPerPage !== -1"
+              v-model:page="options.page"
+              :items-per-page="options.itemsPerPage"
+              :total-items="totalItems"
+            />
+          </template>
+        </VDataTableServer>
       </VCardText>
     </VCard>
 
