@@ -128,15 +128,17 @@ const filteredMyChats = computed(() => {
 });
 
 const allChatsCount = computed(() => {
-  return chatStore.listInChat.length + chatStore.listQueue.length;
+  return (
+    (chatStore.inChatPagings.total || 0) + (chatStore.queuePagings.total || 0)
+  );
 });
 
 const inChatCount = computed(() => {
-  return chatStore.listInChat.length;
+  return chatStore.inChatPagings.total || 0;
 });
 
 const queueCount = computed(() => {
-  return chatStore.listQueue.length;
+  return chatStore.queuePagings.total || 0;
 });
 
 const myChatsCount = computed(() => {
