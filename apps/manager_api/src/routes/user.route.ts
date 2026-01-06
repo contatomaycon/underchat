@@ -6,6 +6,7 @@ import {
   userDeletePermissions,
   userUpdatePermissions,
   userViewPermissions,
+  masterSessionPermissions,
 } from '@/permissions';
 import { listUserSchema } from '@core/schema/user/listUser';
 import { listAllUsersSchema } from '@core/schema/user/listAllUsers';
@@ -23,6 +24,7 @@ import { viewUserRoleSchema } from '@core/schema/user/viewUserRole';
 import { uploadPhotoSchema } from '@core/schema/user/uploadPhoto';
 import { deletePhotoSchema } from '@core/schema/user/deletePhoto';
 import { listUserRolesSchema } from '@core/schema/user/listUserRoles';
+import { sessionLoginSchema } from '@core/schema/user/sessionLogin';
 import { planGuard } from '@/plugins/planGuard';
 import { planStatus } from '@/plugins/planStatus';
 
@@ -202,6 +204,15 @@ export default function userRoutes(server: FastifyInstance) {
         server.authenticateJwt(request, reply, userViewPermissions),
       planGuard,
       planStatus,
+    ],
+  });
+
+  server.post('/user/:user_id/session-login', {
+    schema: sessionLoginSchema,
+    handler: userController.sessionLogin,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, masterSessionPermissions),
     ],
   });
 }

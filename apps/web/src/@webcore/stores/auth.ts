@@ -170,5 +170,56 @@ export const useAuthStore = defineStore('auth', {
         return false;
       }
     },
+
+    async userSessionLogin(userId: string): Promise<boolean> {
+      try {
+        const response = await axiosAuth.post<
+          IApiResponse<AuthLoginResponse | null>
+        >(`/user/${userId}/session-login`);
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          const errorMessage =
+            data?.message ?? this.i18n.global.t('login_error');
+          this.showSnackbar(errorMessage, EColor.error);
+
+          return false;
+        }
+
+        if (!data.data) {
+          const errorMessage =
+            data?.message ?? this.i18n.global.t('login_invalid');
+          this.showSnackbar(errorMessage, EColor.error);
+
+          return false;
+        }
+
+        this.user = data.data.user;
+        this.token = data.data.token;
+        this.permissions = (data.data.permissions ?? []) as EPermissionsRoles[];
+        this.layout = data.data.layout;
+        this.planIsActive = data.data.plan_is_active ?? false;
+
+        setUser(this.user);
+        setToken(this.token);
+        setPermissions(this.permissions);
+        setLayout(this.layout);
+        setSectors(data.data.sectors ?? []);
+        persistPlanStatus(this.planIsActive);
+        updateAbilityPermissions(this.permissions);
+
+        return true;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('login_invalid');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        return false;
+      }
+    },
   },
 });

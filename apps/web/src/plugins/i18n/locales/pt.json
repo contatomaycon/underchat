@@ -392,6 +392,7 @@
   "document_partial": "Documento (parcial)",
   "delete_user": "Excluir Usuário?",
   "delete_user_confirmation": "Você tem certeza que deseja excluir este usuário?",
+  "login_as_user_confirmation": "Você tem certeza que deseja entrar na sessão deste usuário?",
   "edit_user": "Editar Usuário",
   "add_user": "Adicionar Usuário",
   "assign_role": "Vincular Grupo de Acesso",
@@ -1970,6 +1971,7 @@
   "good_evening": "Boa noite",
   "switch_account": "Alternar Conta",
   "enter": "Entrar",
+  "login_as_user": "Entrar como Usuário",
   "master_accounts_list_error": "Ocorreu um erro ao listar as contas acessíveis. Por favor, tente novamente.",
   "message_notification": {
     "preview_default": "Nova mensagem",

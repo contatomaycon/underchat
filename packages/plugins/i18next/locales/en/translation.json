@@ -812,5 +812,9 @@
   "ai_agent_prompt_update_successfully": "Prompt updated successfully!",
   "ai_agent_prompt_update_error": "Error updating prompt!",
   "ai_agent_prompt_file_upload_failed": "Failed to upload file!",
-  "ai_agent_prompt_value_required": "Prompt value is required!"
+  "ai_agent_prompt_value_required": "Prompt value is required!",
+  "session_login_successfully": "Session login successful!",
+  "session_login_error": "Error logging into session!",
+  "user_account_not_found": "User account not found!",
+  "user_without_access_group": "The user does not have an access group. It is necessary to assign an access group to the user before logging into the session."
 }

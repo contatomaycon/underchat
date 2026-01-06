@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, computed } from 'vue';
+import { ref, watch, computed, nextTick } from 'vue';
 import { refDebounced } from '@vueuse/core';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { useI18n } from 'vue-i18n';
@@ -17,6 +17,14 @@ import { getUser } from '@/@webcore/localStorage/user';
 import { can } from '@/@layouts/plugins/casl';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import { useAccountStore } from '@/@webcore/stores/account';
+import { useAuthStore } from '@/@webcore/stores/auth';
+import { applyLayoutTheme } from '@/@webcore/utils/applyLayoutTheme';
+import { useConfigStore } from '@webcore/stores/config';
+import { useLayoutConfigStore } from '@layouts/stores/config';
+import { resetConnection } from '@/@webcore/centrifugo';
+import { resetPresencePermissionError } from '@/@webcore/presence';
+import { useChatStore } from '@/@webcore/stores/chat';
+import { EColor } from '@core/common/enums/EColor';
 
 definePage({
   meta: {
@@ -61,12 +69,22 @@ const { t } = useI18n();
 const { global } = useTheme();
 const userStore = useUsersStore();
 const accountStore = useAccountStore();
+const authStore = useAuthStore();
+const configStore = useConfigStore();
+const layoutStore = useLayoutConfigStore();
+const vuetifyTheme = useTheme();
+const chatStore = useChatStore();
 useSnackbarCleanup(userStore);
 
 const currentUser = computed(() => getUser());
 const hasFullAccess = computed(() =>
   can([EGeneralPermissions.full_access, EGeneralPermissions.full_access_group])
 );
+
+const permissionsSessionLogin = [
+  EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+];
 
 const canAssignRole = (userId: string) => {
   if (!can(permissionsAssignRole)) {
@@ -139,6 +157,9 @@ const userToAssignRole = ref<string | null>(null);
 const photoViewerOpen = ref(false);
 const photoViewerSrc = ref<string>('');
 const photoViewerDownloadName = ref<string>('user-photo.jpg');
+const switchingSession = ref(false);
+const isDialogSessionLoginShow = ref(false);
+const userToSessionLogin = ref<string | null>(null);
 
 const resolvePresenceLabel = (status?: EChatUserStatus | null): string => {
   if (!status) {
@@ -288,6 +309,71 @@ const downloadPhoto = async (url: string, filename?: string | null) => {
     anchor.download = filename || 'user-photo.jpg';
     anchor.rel = 'noopener';
     anchor.click();
+  }
+};
+
+const openSessionLoginDialog = (userId: string) => {
+  userToSessionLogin.value = userId;
+  isDialogSessionLoginShow.value = true;
+};
+
+const handleSessionLogin = async () => {
+  if (!userToSessionLogin.value || switchingSession.value) return;
+
+  switchingSession.value = true;
+
+  try {
+    const success = await authStore.userSessionLogin(userToSessionLogin.value);
+
+    if (!success) {
+      const errorMessage = authStore.snackbar.message || t('login_error');
+      userStore.showSnackbar(errorMessage, authStore.snackbar.color);
+      userToSessionLogin.value = null;
+
+      return;
+    }
+
+    try {
+      applyLayoutTheme(authStore.layout, {
+        configStore,
+        layoutStore,
+        vuetifyTheme,
+      });
+    } catch (error) {
+      console.error('Failed to apply layout/theme after login', error);
+    }
+
+    resetConnection();
+    resetPresencePermissionError();
+
+    chatStore.updateUser();
+    const permissions = authStore.permissions;
+
+    const userAbilityRules = permissions.map((permission) => ({
+      action: permission,
+      subject: permission,
+    }));
+
+    try {
+      const { ability: abilityInstance } =
+        await import('@/plugins/0.casl/ability');
+      abilityInstance.update(userAbilityRules);
+    } catch (error) {
+      console.error('Failed to update permissions after login', error);
+    }
+
+    await nextTick();
+    userToSessionLogin.value = null;
+
+    setTimeout(() => {
+      globalThis.location.reload();
+    }, 100);
+  } catch (error) {
+    console.error('Error switching session', error);
+    const errorMessage = authStore.snackbar.message || t('login_error');
+    userStore.showSnackbar(errorMessage, EColor.error);
+  } finally {
+    switchingSession.value = false;
   }
 };
 
@@ -499,6 +585,26 @@ watch(
 
             <template #item.actions="{ item }">
               <div class="d-flex gap-1">
+                <IconBtn
+                  v-if="
+                    $canPermission(permissionsSessionLogin) &&
+                    currentUser?.user_id !== item.user_id
+                  "
+                  :disabled="switchingSession"
+                >
+                  <VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>{{ $t('login_as_user') }}</span>
+                  </VTooltip>
+                  <VIcon
+                    icon="tabler-login"
+                    @click="openSessionLoginDialog(item.user_id)"
+                  />
+                </IconBtn>
+
                 <IconBtn v-if="canAssignRole(item.user_id)">
                   <VTooltip
                     location="top"
@@ -564,6 +670,14 @@ watch(
         :title="$t('delete_user')"
         :message="$t('delete_user_confirmation')"
         @confirm="handleDelete"
+      />
+
+      <VDialogHandler
+        v-if="isDialogSessionLoginShow"
+        v-model="isDialogSessionLoginShow"
+        :title="$t('login_as_user')"
+        :message="$t('login_as_user_confirmation')"
+        @confirm="handleSessionLogin"
       />
 
       <AppEditUser
