@@ -4,6 +4,7 @@ import { usePlanStore } from '@/@webcore/stores/plan';
 import { VForm } from 'vuetify/components/VForm';
 import { EBillingPeriod } from '@core/common/enums/EBillingPeriod';
 import { UpdatePlanAccountRequest } from '@core/schema/planAccount/updatePlanAccount/request.schema';
+import { requiredValidator } from '@/@webcore/utils/validators';
 
 const accountStore = useAccountStore();
 const planStore = usePlanStore();
@@ -343,6 +344,12 @@ onMounted(async () => {
                 :clearable="true"
                 item-value="value"
                 item-title="text"
+                :rules="[
+                  requiredValidator(
+                    billing_period_id,
+                    $t('billing_period_required')
+                  ),
+                ]"
               />
             </VCol>
 
