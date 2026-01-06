@@ -13,6 +13,11 @@ import { viewAiAgentSchema } from '@core/schema/aiAgent/viewAiAgent';
 import { deleteAiAgentSchema } from '@core/schema/aiAgent/deleteAiAgent';
 import { updateAiAgentSchema } from '@core/schema/aiAgent/updateAiAgent';
 import { listAiAgentTypeSchema } from '@core/schema/aiAgent/listAiAgentType';
+import { listAiAgentPromptSchema } from '@core/schema/aiAgent/listAiAgentPrompt';
+import { createAiAgentPromptSchema } from '@core/schema/aiAgent/createAiAgentPrompt';
+import { viewAiAgentPromptSchema } from '@core/schema/aiAgent/viewAiAgentPrompt';
+import { updateAiAgentPromptSchema } from '@core/schema/aiAgent/updateAiAgentPrompt';
+import { deleteAiAgentPromptSchema } from '@core/schema/aiAgent/deleteAiAgentPrompt';
 
 export default async function aiAgentRoutes(server: FastifyInstance) {
   const aiAgentController = container.resolve(AiAgentController);
@@ -68,6 +73,51 @@ export default async function aiAgentRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, aiAgentUpdatePermissions),
+    ],
+  });
+
+  server.get('/ai-agent/:ai_agent_id/prompt', {
+    schema: listAiAgentPromptSchema,
+    handler: aiAgentController.listAiAgentPrompt,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, aiAgentViewPermissions),
+    ],
+  });
+
+  server.post('/ai-agent/prompt', {
+    schema: createAiAgentPromptSchema,
+    handler: aiAgentController.createAiAgentPrompt,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, aiAgentCreatePermissions),
+    ],
+  });
+
+  server.get('/ai-agent/prompt/:ai_agent_prompt_id', {
+    schema: viewAiAgentPromptSchema,
+    handler: aiAgentController.viewAiAgentPrompt,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, aiAgentViewPermissions),
+    ],
+  });
+
+  server.patch('/ai-agent/prompt/:ai_agent_prompt_id', {
+    schema: updateAiAgentPromptSchema,
+    handler: aiAgentController.updateAiAgentPrompt,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, aiAgentUpdatePermissions),
+    ],
+  });
+
+  server.delete('/ai-agent/prompt/:ai_agent_prompt_id', {
+    schema: deleteAiAgentPromptSchema,
+    handler: aiAgentController.deleteAiAgentPrompt,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, aiAgentDeletePermissions),
     ],
   });
 }

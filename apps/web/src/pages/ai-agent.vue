@@ -64,6 +64,8 @@ const aiAgentToDelete = ref<string | null>(null);
 const isDialogEditAiAgentShow = ref(false);
 const isAddAiAgentVisible = ref(false);
 const aiAgentToEdit = ref<string | null>(null);
+const isPromptDialogVisible = ref(false);
+const aiAgentForPrompt = ref<string | null>(null);
 
 const headers: DataTableHeader<ListAiAgentResponse>[] = [
   { title: t('name'), key: 'name' },
@@ -125,6 +127,13 @@ const openEditDialog = (id: string) => {
   aiAgentToEdit.value = id;
   nextTick(() => {
     isDialogEditAiAgentShow.value = true;
+  });
+};
+
+const openPromptDialog = (id: string) => {
+  aiAgentForPrompt.value = id;
+  nextTick(() => {
+    isPromptDialogVisible.value = true;
   });
 };
 
@@ -221,6 +230,20 @@ watch(
                   transition="scale-transition"
                   activator="parent"
                 >
+                  <span>{{ $t('prompt') }}</span>
+                </VTooltip>
+                <VIcon
+                  icon="tabler-message"
+                  @click="openPromptDialog(item.ai_agent_id)"
+                />
+              </IconBtn>
+
+              <IconBtn v-if="$canPermission(permissionsEdit)">
+                <VTooltip
+                  location="top"
+                  transition="scale-transition"
+                  activator="parent"
+                >
                   <span>{{ $t('edit') }}</span>
                 </VTooltip>
                 <VIcon
@@ -279,6 +302,12 @@ watch(
         v-if="isAddAiAgentVisible"
         v-model="isAddAiAgentVisible"
         @created="handleCreated"
+      />
+
+      <AppManageAiAgentPrompt
+        v-if="isPromptDialogVisible"
+        v-model="isPromptDialogVisible"
+        :ai-agent-id="aiAgentForPrompt"
       />
     </VCard>
 

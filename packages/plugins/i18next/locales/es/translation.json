@@ -798,5 +798,15 @@
   "ai_agent_deleter_error": "Error al eliminar el agente de IA!",
   "ai_agent_update_successfully": "Agente de IA actualizado con éxito!",
   "ai_agent_update_error": "Error al actualizar el agente de IA!",
-  "ai_agent_type_list_successfully": "Lista de tipos de agente de IA obtenida con éxito!"
+  "ai_agent_type_list_successfully": "Lista de tipos de agente de IA obtenida con éxito!",
+  "ai_agent_prompt_list_successfully": "¡Lista de prompts obtenida con éxito!",
+  "ai_agent_prompt_creator_success": "¡Prompt creado con éxito!",
+  "ai_agent_prompt_creator_error": "¡Error al crear el prompt!",
+  "ai_agent_prompt_creation_failed": "¡Error al crear el prompt!",
+  "ai_agent_prompt_view_successfully": "¡Prompt visualizado con éxito!",
+  "ai_agent_prompt_not_found": "¡Prompt no encontrado!",
+  "ai_agent_prompt_deleted_successfully": "¡Prompt eliminado con éxito!",
+  "ai_agent_prompt_deleter_error": "¡Error al eliminar el prompt!",
+  "ai_agent_prompt_update_successfully": "¡Prompt actualizado con éxito!",
+  "ai_agent_prompt_update_error": "¡Error al actualizar el prompt!"
 }

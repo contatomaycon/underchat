@@ -16,6 +16,10 @@ import { UpdateAiAgentRequest } from '@core/schema/aiAgent/updateAiAgent/request
 import { ViewAiAgentResponse } from '@core/schema/aiAgent/viewAiAgent/response.schema';
 import { ListAiAgentTypeResponse } from '@core/schema/aiAgent/listAiAgentType/response.schema';
 import { EAiAgentStatus } from '@core/common/enums/EAiAgentStatus';
+import { ListAiAgentPromptResponse } from '@core/schema/aiAgent/listAiAgentPrompt/response.schema';
+import { CreateAiAgentPromptRequest } from '@core/schema/aiAgent/createAiAgentPrompt/request.schema';
+import { UpdateAiAgentPromptRequest } from '@core/schema/aiAgent/updateAiAgentPrompt/request.schema';
+import { ViewAiAgentPromptResponse } from '@core/schema/aiAgent/viewAiAgentPrompt/response.schema';
 
 interface IListAiAgents {
   page?: number;
@@ -44,6 +48,7 @@ export const useAiAgentStore = defineStore('aiAgent', {
       total: 0 as number,
     } as PagingResponseSchema,
     types: [] as ListAiAgentTypeResponse[],
+    prompts: [] as ListAiAgentPromptResponse[],
   }),
   actions: {
     showSnackbar(message: string, color: EColor) {
@@ -280,6 +285,214 @@ export const useAiAgentStore = defineStore('aiAgent', {
         return true;
       } catch (error) {
         let errorMessage = this.i18n.global.t('ai_agent_deleter_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return false;
+      }
+    },
+
+    async listAiAgentPrompts(
+      aiAgentId: string
+    ): Promise<ListAiAgentPromptResponse[] | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.get<
+          IApiResponse<ListAiAgentPromptResponse[]>
+        >(`/ai-agent/${aiAgentId}/prompt`);
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('ai_agent_prompt_list_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return null;
+        }
+
+        this.prompts = data.data;
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('ai_agent_prompt_list_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return null;
+      }
+    },
+
+    async addAiAgentPrompt(
+      input: CreateAiAgentPromptRequest
+    ): Promise<string | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.post<
+          IApiResponse<{ ai_agent_prompt_id: string }>
+        >(`/ai-agent/prompt`, input);
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('ai_agent_prompt_add_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return null;
+        }
+
+        this.showSnackbar(
+          this.i18n.global.t('ai_agent_prompt_add_success'),
+          EColor.success
+        );
+
+        return data.data.ai_agent_prompt_id;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('ai_agent_prompt_add_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return null;
+      }
+    },
+
+    async viewAiAgentPrompt(
+      aiAgentPromptId: string
+    ): Promise<ViewAiAgentPromptResponse | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.get<
+          IApiResponse<ViewAiAgentPromptResponse>
+        >(`/ai-agent/prompt/${aiAgentPromptId}`);
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('ai_agent_prompt_not_found');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return null;
+        }
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('ai_agent_prompt_not_found');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return null;
+      }
+    },
+
+    async updateAiAgentPrompt(
+      aiAgentPromptId: string,
+      input: UpdateAiAgentPromptRequest
+    ): Promise<boolean> {
+      try {
+        this.loading = true;
+
+        const response = await axios.patch<IApiResponse<null>>(
+          `/ai-agent/prompt/${aiAgentPromptId}`,
+          input
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('ai_agent_prompt_update_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return false;
+        }
+
+        this.showSnackbar(
+          this.i18n.global.t('ai_agent_prompt_update_successfully'),
+          EColor.success
+        );
+
+        return true;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('ai_agent_prompt_update_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return false;
+      }
+    },
+
+    async deleteAiAgentPrompt(aiAgentPromptId: string): Promise<boolean> {
+      try {
+        this.loading = true;
+
+        const response = await axios.delete<IApiResponse<null>>(
+          `/ai-agent/prompt/${aiAgentPromptId}`
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          const mensage =
+            data?.message ??
+            this.i18n.global.t('ai_agent_prompt_deleter_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return false;
+        }
+
+        this.showSnackbar(
+          this.i18n.global.t('ai_agent_prompt_deleted_successfully'),
+          EColor.success
+        );
+
+        return true;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('ai_agent_prompt_deleter_error');
         if (error instanceof AxiosError) {
           errorMessage = error?.response?.data?.message ?? errorMessage;
         }
