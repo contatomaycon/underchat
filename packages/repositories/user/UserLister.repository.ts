@@ -183,6 +183,7 @@ export class UserListerRepository {
             city_fiscal_code: true,
             state_fiscal_code: true,
             district: true,
+            deleted_at: true,
           },
           with: {
             uuc: {
@@ -239,84 +240,89 @@ export class UserListerRepository {
       return [];
     }
 
-    return result.map((user) => ({
-      user_id: user.user_id,
-      account: user.uac
-        ? {
-            account_id: user.uac.account_id,
-            name: user.uac.name,
-          }
-        : null,
-      email_partial: user.email_partial,
-      user_status: user.uus
-        ? {
-            user_status_id: user.uus.user_status_id,
-            name: user.uus.name,
-          }
-        : null,
-      user_info: user.uui
-        ? {
-            user_info_id: user.uui.user_info_id,
-            phone_ddi: user.uui.phone_ddi,
-            phone_partial: user.uui.phone_partial,
-            name: user.uui.name,
-            last_name: user.uui.last_name,
-            birth_date: user.uui.birth_date,
-            photo: user.uui.photo,
-          }
-        : null,
-      user_document: user.uud
-        ? {
-            user_document_id: user.uud.user_document_id,
-            document_partial: user.uud.document_partial,
-            user_document_type: user.uud.udt
-              ? {
-                  user_document_type_id: user.uud.udt.user_document_type_id,
-                  name: user.uud.udt.name,
+    return result.map((user) => {
+      const userAddressData =
+        user.uua && !user.uua.deleted_at ? user.uua : null;
+
+      return {
+        user_id: user.user_id,
+        account: user.uac
+          ? {
+              account_id: user.uac.account_id,
+              name: user.uac.name,
+            }
+          : null,
+        email_partial: user.email_partial,
+        user_status: user.uus
+          ? {
+              user_status_id: user.uus.user_status_id,
+              name: user.uus.name,
+            }
+          : null,
+        user_info: user.uui
+          ? {
+              user_info_id: user.uui.user_info_id,
+              phone_ddi: user.uui.phone_ddi,
+              phone_partial: user.uui.phone_partial,
+              name: user.uui.name,
+              last_name: user.uui.last_name,
+              birth_date: user.uui.birth_date,
+              photo: user.uui.photo,
+            }
+          : null,
+        user_document: user.uud
+          ? {
+              user_document_id: user.uud.user_document_id,
+              document_partial: user.uud.document_partial,
+              user_document_type: user.uud.udt
+                ? {
+                    user_document_type_id: user.uud.udt.user_document_type_id,
+                    name: user.uud.udt.name,
+                  }
+                : null,
+            }
+          : null,
+        user_address: userAddressData
+          ? {
+              user_address_id: userAddressData.user_address_id,
+              zip_code: userAddressData.zip_code,
+              address1_partial: userAddressData.address1_partial,
+              address2_partial: userAddressData.address2_partial,
+              city: userAddressData.uzc?.city ?? null,
+              state: (() => {
+                if (!userAddressData.uzs) return null;
+                if (userAddressData.uzs.abbreviation) {
+                  return `${userAddressData.uzs.state} (${userAddressData.uzs.abbreviation})`;
                 }
-              : null,
-          }
-        : null,
-      user_address: user.uua
-        ? {
-            user_address_id: user.uua.user_address_id,
-            zip_code: user.uua.zip_code,
-            address1_partial: user.uua.address1_partial,
-            address2_partial: user.uua.address2_partial,
-            city: user.uua.uzc?.city ?? null,
-            state: (() => {
-              if (!user.uua.uzs) return null;
-              if (user.uua.uzs.abbreviation) {
-                return `${user.uua.uzs.state} (${user.uua.uzs.abbreviation})`;
-              }
-              return user.uua.uzs.state;
-            })(),
-            city_fiscal_code: user.uua.city_fiscal_code,
-            state_fiscal_code: user.uua.state_fiscal_code,
-            district: user.uua.district,
-            country: user.uua.uuc
-              ? {
-                  country_id: user.uua.uuc.country_id,
-                  iso_code: user.uua.uuc.iso_code,
-                  name: user.uua.uuc.name,
-                }
-              : null,
-          }
-        : null,
-      chat_user: user.ucu?.status
-        ? {
-            chat_user_id: user.ucu.chat_user_id,
-            status: user.ucu.status,
-          }
-        : null,
-      permission_role: user.upa?.ppr
-        ? {
-            permission_role_id: user.upa.ppr.permission_role_id,
-            name: user.upa.ppr.name,
-          }
-        : null,
-      created_at: user.created_at,
-    }));
+                return userAddressData.uzs.state;
+              })(),
+              city_fiscal_code: userAddressData.city_fiscal_code,
+              state_fiscal_code: userAddressData.state_fiscal_code,
+              district: userAddressData.district,
+              country: userAddressData.uuc
+                ? {
+                    country_id: userAddressData.uuc.country_id,
+                    iso_code: userAddressData.uuc.iso_code,
+                    name: userAddressData.uuc.name,
+                  }
+                : null,
+            }
+          : null,
+        chat_user: user.ucu?.status
+          ? {
+              chat_user_id: user.ucu.chat_user_id,
+              status: user.ucu.status,
+            }
+          : null,
+        permission_role: user.upa?.ppr
+          ? {
+              permission_role_id: user.upa.ppr.permission_role_id,
+              name: user.upa.ppr.name,
+            }
+          : null,
+        created_at: user.created_at,
+      };
+    });
   };
 
   listUsersTotal = async (
