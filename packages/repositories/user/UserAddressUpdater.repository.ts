@@ -69,6 +69,10 @@ export class UserAddressUpdaterRepository {
   ): Promise<boolean> => {
     const updateInput = this.updateInput(input);
 
+    if (input.country_id) {
+      updateInput.deleted_at = null;
+    }
+
     const result = await this.dbRw
       .update(userAddress)
       .set(updateInput)

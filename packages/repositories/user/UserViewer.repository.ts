@@ -68,6 +68,7 @@ export class UserViewerRepository {
             city_fiscal_code: true,
             state_fiscal_code: true,
             district: true,
+            deleted_at: true,
           },
           with: {
             uuc: {
@@ -102,14 +103,17 @@ export class UserViewerRepository {
       return null;
     }
 
-    const cityName = result.uua?.uzc?.city ?? null;
+    const userAddressData =
+      result.uua && !result.uua.deleted_at ? result.uua : null;
+
+    const cityName = userAddressData?.uzc?.city ?? null;
     let stateName: string | null = null;
-    if (result.uua?.uzs) {
-      if (result.uua.uzs.abbreviation) {
-        stateName = `${result.uua.uzs.state} (${result.uua.uzs.abbreviation})`;
+    if (userAddressData?.uzs) {
+      if (userAddressData.uzs.abbreviation) {
+        stateName = `${userAddressData.uzs.state} (${userAddressData.uzs.abbreviation})`;
       }
-      if (!result.uua.uzs.abbreviation) {
-        stateName = result.uua.uzs.state;
+      if (!userAddressData.uzs.abbreviation) {
+        stateName = userAddressData.uzs.state;
       }
     }
 
@@ -149,22 +153,22 @@ export class UserViewerRepository {
               : null,
           }
         : null,
-      user_address: result.uua
+      user_address: userAddressData
         ? {
-            user_address_id: result.uua.user_address_id,
-            zip_code: result.uua.zip_code,
-            address1_partial: result.uua.address1_partial,
-            address2_partial: result.uua.address2_partial,
+            user_address_id: userAddressData.user_address_id,
+            zip_code: userAddressData.zip_code,
+            address1_partial: userAddressData.address1_partial,
+            address2_partial: userAddressData.address2_partial,
             city: cityName,
             state: stateName,
-            city_fiscal_code: result.uua.city_fiscal_code,
-            state_fiscal_code: result.uua.state_fiscal_code,
-            district: result.uua.district,
-            country: result.uua.uuc
+            city_fiscal_code: userAddressData.city_fiscal_code,
+            state_fiscal_code: userAddressData.state_fiscal_code,
+            district: userAddressData.district,
+            country: userAddressData.uuc
               ? {
-                  country_id: result.uua.uuc.country_id,
-                  iso_code: result.uua.uuc.iso_code,
-                  name: result.uua.uuc.name,
+                  country_id: userAddressData.uuc.country_id,
+                  iso_code: userAddressData.uuc.iso_code,
+                  name: userAddressData.uuc.name,
                 }
               : null,
           }
