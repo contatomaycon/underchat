@@ -97,6 +97,20 @@ export const useChatStore = defineStore('chat', {
     listQueue: [] as ListChatsResult[],
     listInChat: [] as ListChatsResult[],
     listChatbot: [] as ListChatsResult[],
+    queuePagings: {
+      current_page: 1,
+      total_pages: 1,
+      per_page: 10,
+      count: 0,
+      total: 0,
+    },
+    inChatPagings: {
+      current_page: 1,
+      total_pages: 1,
+      per_page: 10,
+      count: 0,
+      total: 0,
+    },
     messageReply: null as ListMessageResult | null,
     user: getUser(),
     currentPage: 1,
@@ -479,7 +493,10 @@ export const useChatStore = defineStore('chat', {
       });
     },
 
-    async listQueueChats(input: ListChatsQuery): Promise<ListChatsResult[]> {
+    async listQueueChats(
+      input: ListChatsQuery,
+      append = false
+    ): Promise<ListChatsResult[]> {
       try {
         this.loading = true;
         this.loadingChats = true;
@@ -503,16 +520,26 @@ export const useChatStore = defineStore('chat', {
         const data = response?.data;
 
         if (!data?.status || !data?.data) {
-          this.listQueue = [];
+          if (!append) {
+            this.listQueue = [];
+          }
 
           return [] as ListChatsResult[];
         }
 
-        this.listQueue = data.data.results;
+        if (append) {
+          this.listQueue = [...this.listQueue, ...data.data.results];
+        } else {
+          this.listQueue = data.data.results;
+        }
+
+        this.queuePagings = data.data.pagings;
 
         return data.data.results;
       } catch {
-        this.listQueue = [];
+        if (!append) {
+          this.listQueue = [];
+        }
         this.loading = false;
         this.loadingChats = false;
 
@@ -520,7 +547,10 @@ export const useChatStore = defineStore('chat', {
       }
     },
 
-    async listInChatChats(input: ListChatsQuery): Promise<ListChatsResult[]> {
+    async listInChatChats(
+      input: ListChatsQuery,
+      append = false
+    ): Promise<ListChatsResult[]> {
       try {
         this.loading = true;
         this.loadingChats = true;
@@ -544,16 +574,26 @@ export const useChatStore = defineStore('chat', {
         const data = response?.data;
 
         if (!data?.status || !data?.data) {
-          this.listInChat = [];
+          if (!append) {
+            this.listInChat = [];
+          }
 
           return [] as ListChatsResult[];
         }
 
-        this.listInChat = data.data.results;
+        if (append) {
+          this.listInChat = [...this.listInChat, ...data.data.results];
+        } else {
+          this.listInChat = data.data.results;
+        }
+
+        this.inChatPagings = data.data.pagings;
 
         return data.data.results;
       } catch {
-        this.listInChat = [];
+        if (!append) {
+          this.listInChat = [];
+        }
         this.loading = false;
         this.loadingChats = false;
 

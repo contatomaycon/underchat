@@ -91,6 +91,11 @@ const chatbotPagings = ref({
 });
 const isLoadingChatbot = ref(false);
 const isLoadingWorkerConfigs = ref(false);
+const isLoadingMoreQueue = ref(false);
+const isLoadingMoreInChat = ref(false);
+const chatScrollContainer = ref<InstanceType<typeof PerfectScrollbar> | null>(
+  null
+);
 
 type FilterType = 'new' | 'all' | 'in_chat' | 'queue' | 'chatbot' | 'my_chats';
 
@@ -212,6 +217,8 @@ const handleFilterClick = (filter: FilterType) => {
   expandedFilter.value = filter;
 
   if (filter === 'all' || filter === 'in_chat' || filter === 'queue') {
+    currentPageQueue.value = 1;
+    currentPageInChat.value = 1;
     loadChatsByFilter();
   } else if (filter === 'new') {
     currentPageContacts.value = 1;
@@ -221,6 +228,8 @@ const handleFilterClick = (filter: FilterType) => {
     chatbotPagings.value.current_page = 1;
     loadChatbotChats();
   } else if (filter === 'my_chats') {
+    currentPageQueue.value = 1;
+    currentPageInChat.value = 1;
     loadChatsByFilter();
   }
 };
@@ -280,7 +289,7 @@ const loadChatContacts = async (chats: ListChatsResult[]) => {
   await chatStore.getChatContactsByIds(contactIdsToLoad);
 };
 
-const loadChatsByFilter = async () => {
+const loadChatsByFilter = async (append = false) => {
   if (activeFilter.value === 'all' || activeFilter.value === 'my_chats') {
     const requestQueue: ListChatsQuery = {
       current_page: currentPageQueue.value,
@@ -295,8 +304,8 @@ const loadChatsByFilter = async () => {
     };
 
     await Promise.all([
-      chatStore.listQueueChats(requestQueue),
-      chatStore.listInChatChats(requestInChat),
+      chatStore.listQueueChats(requestQueue, append),
+      chatStore.listInChatChats(requestInChat, append),
     ]);
 
     const allChats = [...chatStore.listQueue, ...chatStore.listInChat];
@@ -314,7 +323,7 @@ const loadChatsByFilter = async () => {
       status: EChatStatus.in_chat,
     };
 
-    await chatStore.listInChatChats(requestInChat);
+    await chatStore.listInChatChats(requestInChat, append);
     await Promise.all([
       loadWorkerConfigs(chatStore.listInChat),
       loadChatContacts(chatStore.listInChat),
@@ -329,7 +338,7 @@ const loadChatsByFilter = async () => {
       status: EChatStatus.queue,
     };
 
-    await chatStore.listQueueChats(requestQueue);
+    await chatStore.listQueueChats(requestQueue, append);
     await Promise.all([
       loadWorkerConfigs(chatStore.listQueue),
       loadChatContacts(chatStore.listQueue),
@@ -391,6 +400,18 @@ const hasMoreContacts = computed(() => {
   return currentPageContacts.value < contactsTotalPages.value;
 });
 
+const hasMoreQueue = computed(() => {
+  return (
+    chatStore.queuePagings.current_page < chatStore.queuePagings.total_pages
+  );
+});
+
+const hasMoreInChat = computed(() => {
+  return (
+    chatStore.inChatPagings.current_page < chatStore.inChatPagings.total_pages
+  );
+});
+
 const handleContactScroll = (e: Event) => {
   const target = e.target as HTMLElement;
   if (!target) return;
@@ -408,6 +429,82 @@ const handleContactScroll = (e: Event) => {
   ) {
     currentPageContacts.value += 1;
     loadContacts(true);
+  }
+};
+
+const handleChatScroll = async () => {
+  if (!chatScrollContainer.value) return;
+
+  const psElement = chatScrollContainer.value.$el as HTMLElement;
+  if (!psElement) return;
+
+  let scrollContainer: HTMLElement | null =
+    (psElement.querySelector('.ps') as HTMLElement) ||
+    (psElement.querySelector('.ps__container') as HTMLElement) ||
+    psElement;
+
+  if (!scrollContainer) return;
+
+  const { scrollTop, scrollHeight, clientHeight } = scrollContainer;
+  const threshold = 100;
+
+  if (activeFilter.value === 'all' || activeFilter.value === 'my_chats') {
+    if (
+      scrollTop + clientHeight >= scrollHeight - threshold &&
+      !isLoadingMoreQueue.value &&
+      !isLoadingMoreInChat.value &&
+      !chatStore.loadingChats
+    ) {
+      const shouldLoadQueue = hasMoreQueue.value;
+      const shouldLoadInChat = hasMoreInChat.value;
+
+      if (shouldLoadQueue || shouldLoadInChat) {
+        if (shouldLoadQueue) {
+          isLoadingMoreQueue.value = true;
+          currentPageQueue.value += 1;
+        }
+
+        if (shouldLoadInChat) {
+          isLoadingMoreInChat.value = true;
+          currentPageInChat.value += 1;
+        }
+
+        await loadChatsByFilter(true);
+
+        isLoadingMoreQueue.value = false;
+        isLoadingMoreInChat.value = false;
+      }
+    }
+    return;
+  }
+
+  if (activeFilter.value === 'in_chat') {
+    if (
+      scrollTop + clientHeight >= scrollHeight - threshold &&
+      hasMoreInChat.value &&
+      !isLoadingMoreInChat.value &&
+      !chatStore.loadingChats
+    ) {
+      isLoadingMoreInChat.value = true;
+      currentPageInChat.value += 1;
+      await loadChatsByFilter(true);
+      isLoadingMoreInChat.value = false;
+    }
+    return;
+  }
+
+  if (activeFilter.value === 'queue') {
+    if (
+      scrollTop + clientHeight >= scrollHeight - threshold &&
+      hasMoreQueue.value &&
+      !isLoadingMoreQueue.value &&
+      !chatStore.loadingChats
+    ) {
+      isLoadingMoreQueue.value = true;
+      currentPageQueue.value += 1;
+      await loadChatsByFilter(true);
+      isLoadingMoreQueue.value = false;
+    }
   }
 };
 
@@ -1210,7 +1307,12 @@ onMounted(async () => {
     </PerfectScrollbar>
   </template>
 
-  <PerfectScrollbar v-else :options="{ wheelPropagation: false }">
+  <PerfectScrollbar
+    v-else
+    ref="chatScrollContainer"
+    :options="{ wheelPropagation: false }"
+    @ps-scroll-y="handleChatScroll"
+  >
     <ul class="d-flex flex-column gap-y-1 chat-list px-3 py-2 list-none">
       <template v-if="chatStore.loadingChats || isLoadingWorkerConfigs">
         <li
@@ -1277,6 +1379,18 @@ onMounted(async () => {
           class="no-chat-items-text text-disabled"
         >
           {{ $t('no_chat_in_queue') }}
+        </li>
+
+        <li
+          v-if="
+            (isLoadingMoreQueue || isLoadingMoreInChat) &&
+            (activeFilter === 'all' ||
+              activeFilter === 'in_chat' ||
+              activeFilter === 'queue')
+          "
+          class="d-flex justify-center pa-4"
+        >
+          <VProgressCircular indeterminate color="primary" size="32" />
         </li>
       </template>
     </ul>
