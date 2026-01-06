@@ -165,7 +165,20 @@ onMounted(() => {
           </template>
 
           <template #item.value="{ item }">
-            {{ truncateValue(item.value) }}
+            <div v-if="item.ai_agent_prompt_type === EAiAgentPromptType.file">
+              <a
+                :href="item.value"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="text-primary text-decoration-none d-inline-flex align-center gap-1"
+              >
+                <VIcon icon="tabler-external-link" size="16" />
+                <span>{{ $t('view_file') }}</span>
+              </a>
+            </div>
+            <div v-else>
+              {{ truncateValue(item.value) }}
+            </div>
           </template>
 
           <template #item.status="{ item }">
