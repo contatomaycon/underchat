@@ -58,7 +58,9 @@ const loadTypes = async () => {
   }
 };
 
-const isGeminiSelected = computed(() => aiAgentTypeId.value === EAiAgentType.gemini);
+const isGeminiSelected = computed(
+  () => aiAgentTypeId.value === EAiAgentType.gemini
+);
 const isGptSelected = computed(() => aiAgentTypeId.value === EAiAgentType.gpt);
 const apiKeyLink = computed(() => {
   if (isGeminiSelected.value) {
