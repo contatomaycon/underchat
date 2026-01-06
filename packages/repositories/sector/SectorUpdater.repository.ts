@@ -33,7 +33,8 @@ export class SectorUpdaterRepository {
 
   updateSectorById = async (
     sectorId: string,
-    input: EditSectorParamsBody
+    input: EditSectorParamsBody,
+    accountId: string
   ): Promise<string | null> => {
     const updateInput = this.updateInput(input);
 
@@ -45,10 +46,7 @@ export class SectorUpdaterRepository {
       .update(sector)
       .set(updateInput)
       .where(
-        and(
-          eq(sector.sector_id, sectorId),
-          eq(sector.account_id, input.account_id)
-        )
+        and(eq(sector.sector_id, sectorId), eq(sector.account_id, accountId))
       )
       .execute();
 
@@ -56,6 +54,6 @@ export class SectorUpdaterRepository {
       return null;
     }
 
-    return input.account_id;
+    return accountId;
   };
 }

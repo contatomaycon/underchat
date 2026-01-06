@@ -10,11 +10,12 @@ export class SectorUpdaterUseCase {
   async execute(
     t: TFunction<'translation', undefined>,
     sectorId: string,
-    input: EditSectorParamsBody
+    input: EditSectorParamsBody,
+    accountId: string
   ): Promise<boolean> {
     const exists = await this.sectorService.existsSectorById(
       sectorId,
-      input.account_id
+      accountId
     );
 
     if (!exists) {
@@ -30,8 +31,10 @@ export class SectorUpdaterUseCase {
     }
 
     const sectorUpdate = await this.sectorService.updateSectorById(
+      t,
       sectorId,
-      input
+      input,
+      accountId
     );
 
     if (!sectorUpdate) {

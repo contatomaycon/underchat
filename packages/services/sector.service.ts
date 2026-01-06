@@ -12,6 +12,7 @@ import { SectorViewerRepository } from '@core/repositories/sector/SectorViewer.r
 import { SectorDeleterRepository } from '@core/repositories/sector/SectorDeleter.repository';
 import { EditSectorParamsBody } from '@core/schema/sector/editSector/request.schema';
 import { SectorUpdaterRepository } from '@core/repositories/sector/SectorUpdater.repository';
+import { SectorUpdaterTransactionRepository } from '@core/repositories/sector/SectorUpdaterTransaction.repository';
 import { SectorRoleViewerExistsRepository } from '@core/repositories/sector/SectorRoleViewerExists.repository';
 import { SectorRoleListerRepository } from '@core/repositories/sector/SectorRoleLister.repository';
 import { SectorRoleTransactionCreatorRepository } from '@core/repositories/sector/SectorRoleCreatorTransaction.repository';
@@ -25,17 +26,20 @@ import { SectorTransferListerRepository } from '@core/repositories/sector/Sector
 import { TransferSector } from '@core/schema/chat/listTransferOptions/response.schema';
 import { TransferSectorResponse } from '@core/schema/chat/listTransferSectors/response.schema';
 import { TransferSectorUserResponse } from '@core/schema/chat/listTransferSectorUsers/response.schema';
+import { SectorCreatorTransactionRepository } from '@core/repositories/sector/SectorCreatorTransaction.repository';
 
 @injectable()
 export class SectorService {
   constructor(
     private readonly sectorViewerExistsRepository: SectorViewerExistsRepository,
     private readonly sectorCreatorRepository: SectorCreatorRepository,
+    private readonly sectorCreatorTransactionRepository: SectorCreatorTransactionRepository,
     private readonly sectorStatusViewerExistsRepository: SectorStatusViewerExistsRepository,
     private readonly sectorListerRepository: SectorListerRepository,
     private readonly sectorViewerRepository: SectorViewerRepository,
     private readonly sectorDeleterRepository: SectorDeleterRepository,
     private readonly sectorUpdaterRepository: SectorUpdaterRepository,
+    private readonly sectorUpdaterTransactionRepository: SectorUpdaterTransactionRepository,
     private readonly sectorRoleViewerExistsRepository: SectorRoleViewerExistsRepository,
     private readonly sectorRoleListerRepository: SectorRoleListerRepository,
     private readonly sectorRoleTransactionCreatorRepository: SectorRoleTransactionCreatorRepository,
@@ -56,10 +60,15 @@ export class SectorService {
   };
 
   createSector = async (
+    t: TFunction<'translation', undefined>,
     input: CreateSectorRequest,
     accountId: string
   ): Promise<CreateSectorResponse | null> => {
-    return this.sectorCreatorRepository.createSector(input, accountId);
+    return this.sectorCreatorTransactionRepository.createSector(
+      t,
+      input,
+      accountId
+    );
   };
 
   existsSectorStatusById = async (sectorStatusId: string): Promise<boolean> => {
@@ -102,10 +111,17 @@ export class SectorService {
   };
 
   updateSectorById = async (
+    t: TFunction<'translation', undefined>,
     sectorId: string,
-    input: EditSectorParamsBody
-  ): Promise<string | null> => {
-    return this.sectorUpdaterRepository.updateSectorById(sectorId, input);
+    input: EditSectorParamsBody,
+    accountId: string
+  ): Promise<boolean> => {
+    return this.sectorUpdaterTransactionRepository.updateSectorById(
+      t,
+      sectorId,
+      input,
+      accountId
+    );
   };
 
   existsSectorRoleById = async (sectorId: string): Promise<boolean> => {

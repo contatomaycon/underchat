@@ -31,6 +31,7 @@ export class SectorCreatorUseCase {
     await this.validate(t, accountId);
 
     const sectorCreator = await this.sectorService.createSector(
+      t,
       input,
       accountId
     );
