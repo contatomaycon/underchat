@@ -21,6 +21,7 @@ import { EFinancialPermissions } from './financial';
 import { EReportConversationHistoryPermissions } from './reportConversationHistory';
 import { EReportAttendancePermissions } from './reportAttendance';
 import { ESchedulePermissions } from './schedule';
+import { EAiAgentPermissions } from './aiAgent';
 
 export type EPermissionsRoles =
   | EUserPermissions
@@ -45,4 +46,5 @@ export type EPermissionsRoles =
   | EFinancialPermissions
   | EReportConversationHistoryPermissions
   | EReportAttendancePermissions
-  | ESchedulePermissions;
+  | ESchedulePermissions
+  | EAiAgentPermissions;
