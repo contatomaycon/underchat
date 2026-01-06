@@ -15,6 +15,7 @@ export class PresenceService {
   private readonly keyPrefix = 'presence:user:';
   private readonly accountIdCachePrefix = 'presence:account_id:';
   private readonly accountIdCacheTtl = 3600;
+  private readonly concurrency = 10;
 
   private readonly statusCache = new Map<string, EChatUserStatus>();
   private monitorTimer: ReturnType<typeof setInterval> | null = null;
@@ -295,15 +296,19 @@ export class PresenceService {
       this.getActiveStatuses()
     );
 
-    await Promise.all(
-      activeUserIds.map(async (userId) => {
-        try {
-          await this.syncStatusFromRedis(userId);
-        } catch (error) {
-          console.error('Failed to sync presence status', { userId, error });
-        }
-      })
-    );
+    for (let i = 0; i < activeUserIds.length; i += this.concurrency) {
+      const batch = activeUserIds.slice(i, i + this.concurrency);
+
+      await Promise.allSettled(
+        batch.map(async (userId) => {
+          try {
+            await this.syncStatusFromRedis(userId);
+          } catch (error) {
+            console.error('Failed to sync presence status', { userId, error });
+          }
+        })
+      );
+    }
   }
 
   startMonitoring(): void {
