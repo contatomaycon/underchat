@@ -78,18 +78,13 @@ const loadAiAgent = async () => {
     return;
   }
 
-  isLoading.value = true;
-  try {
-    const result = await aiAgentStore.viewAiAgent(aiAgentId.value);
-    if (result) {
-      aiAgentTypeId.value = result.ai_agent_type_id;
-      name.value = result.name;
-      baseUrl.value = result.base_url || '';
-      apiKey.value = result.api_key || '';
-      status.value = result.status;
-    }
-  } finally {
-    isLoading.value = false;
+  const result = await aiAgentStore.viewAiAgent(aiAgentId.value);
+  if (result) {
+    aiAgentTypeId.value = result.ai_agent_type_id;
+    name.value = result.name;
+    baseUrl.value = result.base_url || '';
+    apiKey.value = result.api_key || '';
+    status.value = result.status;
   }
 };
 
@@ -112,9 +107,14 @@ watch(
   isVisible,
   async (newVisible) => {
     if (newVisible && aiAgentId.value) {
+      isLoading.value = true;
       await nextTick();
-      await loadTypes();
-      await loadAiAgent();
+      try {
+        await loadTypes();
+        await loadAiAgent();
+      } finally {
+        isLoading.value = false;
+      }
     } else if (!newVisible) {
       aiAgentTypeId.value = '';
       name.value = '';
@@ -122,6 +122,7 @@ watch(
       apiKey.value = '';
       status.value = EAiAgentStatus.active;
       refForm.value?.resetValidation();
+      isApiKeyVisible.value = false;
     }
   },
   { immediate: true }
@@ -129,9 +130,14 @@ watch(
 
 watch(aiAgentId, async (newId, oldId) => {
   if (isVisible.value && newId && newId !== oldId) {
+    isLoading.value = true;
     await nextTick();
-    await loadTypes();
-    await loadAiAgent();
+    try {
+      await loadTypes();
+      await loadAiAgent();
+    } finally {
+      isLoading.value = false;
+    }
   }
 });
 
