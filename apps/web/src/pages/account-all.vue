@@ -14,6 +14,7 @@ import { ListAccountResponse } from '@core/schema/account/listAccount/response.s
 import { EColor } from '@core/common/enums/EColor';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import AppAccountExclusivePlans from '@/components/account/AppAccountExclusivePlans.vue';
+import { EAccountFilterStatus } from '@core/common/enums/EAccountFilterStatus';
 
 definePage({
   meta: {
@@ -69,6 +70,17 @@ const itemsPerPage = ref([
   { value: -1, title: 'All' },
 ]);
 
+const itemsStatus = ref([
+  { value: EAccountFilterStatus.all, title: t('all') },
+  { value: EAccountFilterStatus.subscribers, title: t('subscribers') },
+  { value: EAccountFilterStatus.cancelling, title: t('cancelling') },
+  { value: EAccountFilterStatus.cancelled, title: t('cancelled') },
+  { value: EAccountFilterStatus.blocked, title: t('blocked') },
+  { value: EAccountFilterStatus.expired, title: t('expired') },
+  { value: EAccountFilterStatus.tests, title: t('tests') },
+  { value: EAccountFilterStatus.deleted, title: t('deleted') },
+]);
+
 const resolvePlanVariant = (planName?: string | null) => {
   if (!planName) {
     return { color: EColor.primary, text: t('unknown') };
@@ -122,6 +134,7 @@ const options = ref({
   itemsPerPage: 10,
   sortBy: [] as SortRequest[],
   search: null as string | null,
+  filterStatus: EAccountFilterStatus.subscribers,
 });
 
 const debouncedSearch = refDebounced(
@@ -134,6 +147,7 @@ const query = computed(() => ({
   per_page: options.value.itemsPerPage,
   sort_by: options.value.sortBy,
   search: debouncedSearch.value,
+  filter_status: options.value.filterStatus,
 }));
 
 const handleTableChange = (o: {
@@ -264,6 +278,16 @@ watch(
                 dense
                 outlined
                 v-model="options.search"
+              />
+            </div>
+            <div class="invoice-list-filter">
+              <VLabel class="text-body-2 mb-1"
+                >{{ $t('account_status') }}:</VLabel
+              >
+              <AppSelect
+                :model-value="options.filterStatus"
+                :items="itemsStatus"
+                @update:model-value="options.filterStatus = $event"
               />
             </div>
           </div>

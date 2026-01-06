@@ -19,13 +19,6 @@ import { listAllAccountsSchema } from '@core/schema/account/listAllAccounts';
 import { listAccountSubscriptionsSchema } from '@core/schema/account/listAccountSubscriptions';
 import { updatePlanAccountSchema } from '@core/schema/planAccount/updatePlanAccount';
 import { viewPlanAccountSchema } from '@core/schema/planAccount/viewPlanAccount';
-import { listAccountSubscribersSchema } from '@core/schema/account/listAccountSubscribers';
-import { listAccountCancellingSchema } from '@core/schema/account/listAccountCancelling';
-import { listAccountCancelledSchema } from '@core/schema/account/listAccountCancelled';
-import { listAccountBlockedSchema } from '@core/schema/account/listAccountBlocked';
-import { listAccountTestsSchema } from '@core/schema/account/listAccountTests';
-import { listAccountExpiredSchema } from '@core/schema/account/listAccountExpired';
-import { listAccountDeletedSchema } from '@core/schema/account/listAccountDeleted';
 import { listPlanAccountExclusiveSchema } from '@core/schema/planAccountExclusive/listPlanAccountExclusive';
 import { createPlanAccountExclusiveSchema } from '@core/schema/planAccountExclusive/createPlanAccountExclusive';
 import { deletePlanAccountExclusiveSchema } from '@core/schema/planAccountExclusive/deletePlanAccountExclusive';
@@ -150,69 +143,6 @@ export default async function accountRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, accountUpdatePermissions),
-    ],
-  });
-
-  server.get('/account/subscribers', {
-    schema: listAccountSubscribersSchema,
-    handler: accountController.listAccountSubscribers,
-    preHandler: [
-      (request, reply) =>
-        server.authenticateJwt(request, reply, accountViewPermissions),
-    ],
-  });
-
-  server.get('/account/cancelling', {
-    schema: listAccountCancellingSchema,
-    handler: accountController.listAccountCancelling,
-    preHandler: [
-      (request, reply) =>
-        server.authenticateJwt(request, reply, accountViewPermissions),
-    ],
-  });
-
-  server.get('/account/cancelled', {
-    schema: listAccountCancelledSchema,
-    handler: accountController.listAccountCancelled,
-    preHandler: [
-      (request, reply) =>
-        server.authenticateJwt(request, reply, accountViewPermissions),
-    ],
-  });
-
-  server.get('/account/blocked', {
-    schema: listAccountBlockedSchema,
-    handler: accountController.listAccountBlocked,
-    preHandler: [
-      (request, reply) =>
-        server.authenticateJwt(request, reply, accountViewPermissions),
-    ],
-  });
-
-  server.get('/account/tests', {
-    schema: listAccountTestsSchema,
-    handler: accountController.listAccountTests,
-    preHandler: [
-      (request, reply) =>
-        server.authenticateJwt(request, reply, accountViewPermissions),
-    ],
-  });
-
-  server.get('/account/expired', {
-    schema: listAccountExpiredSchema,
-    handler: accountController.listAccountExpired,
-    preHandler: [
-      (request, reply) =>
-        server.authenticateJwt(request, reply, accountViewPermissions),
-    ],
-  });
-
-  server.get('/account/deleted', {
-    schema: listAccountDeletedSchema,
-    handler: accountController.listAccountDeleted,
-    preHandler: [
-      (request, reply) =>
-        server.authenticateJwt(request, reply, accountViewPermissions),
     ],
   });
 

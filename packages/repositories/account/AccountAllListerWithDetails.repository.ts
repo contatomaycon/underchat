@@ -12,10 +12,12 @@ import {
   ilike,
   sql,
   desc,
+  isNotNull,
 } from 'drizzle-orm';
 import { ListAccountRequest } from '@core/schema/account/listAccount/request.schema';
 import { ListAccountResponse } from '@core/schema/account/listAccount/response.schema';
 import { EAccountStatus } from '@core/common/enums/EAccountStatus';
+import { EAccountFilterStatus } from '@core/common/enums/EAccountFilterStatus';
 
 @injectable()
 export class AccountAllListerWithDetailsRepository {
@@ -52,6 +54,93 @@ export class AccountAllListerWithDetailsRepository {
       filters.push(eq(account.account_status_id, query.account_status));
     }
 
+    if (query.filter_status) {
+      const now = new Date().toISOString();
+
+      if (query.filter_status === EAccountFilterStatus.subscribers) {
+        filters.push(
+          sql`EXISTS (
+            SELECT 1
+            FROM ${planAccount} pa
+            INNER JOIN ${plan} p ON p.plan_id = pa.plan_id
+            WHERE pa.account_id = ${account.account_id}
+              AND pa.cancellation_date IS NULL
+              AND pa.next_payment_date IS NOT NULL
+              AND pa.next_payment_date > ${now}
+              AND ${account.account_status_id} = ${EAccountStatus.active}
+              AND p.is_test = false
+              AND p.deleted_at IS NULL
+          )`
+        );
+      }
+
+      if (query.filter_status === EAccountFilterStatus.cancelling) {
+        filters.push(
+          sql`EXISTS (
+            SELECT 1
+            FROM ${planAccount} pa
+            INNER JOIN ${plan} p ON p.plan_id = pa.plan_id
+            WHERE pa.account_id = ${account.account_id}
+              AND pa.cancellation_date IS NOT NULL
+              AND pa.next_payment_date IS NOT NULL
+              AND pa.next_payment_date > ${now}
+              AND p.deleted_at IS NULL
+          )`
+        );
+      }
+
+      if (query.filter_status === EAccountFilterStatus.cancelled) {
+        filters.push(
+          sql`EXISTS (
+            SELECT 1
+            FROM ${planAccount} pa
+            INNER JOIN ${plan} p ON p.plan_id = pa.plan_id
+            WHERE pa.account_id = ${account.account_id}
+              AND pa.cancellation_date IS NOT NULL
+              AND (pa.next_payment_date IS NULL OR pa.next_payment_date <= ${now})
+              AND p.deleted_at IS NULL
+          )`
+        );
+      }
+
+      if (query.filter_status === EAccountFilterStatus.blocked) {
+        filters.push(eq(account.account_status_id, EAccountStatus.blocked));
+      }
+
+      if (query.filter_status === EAccountFilterStatus.expired) {
+        filters.push(
+          sql`EXISTS (
+            SELECT 1
+            FROM ${planAccount} pa
+            INNER JOIN ${plan} p ON p.plan_id = pa.plan_id
+            WHERE pa.account_id = ${account.account_id}
+              AND pa.cancellation_date IS NULL
+              AND pa.next_payment_date IS NOT NULL
+              AND pa.next_payment_date <= ${now}
+              AND ${account.account_status_id} = ${EAccountStatus.active}
+              AND p.deleted_at IS NULL
+          )`
+        );
+      }
+
+      if (query.filter_status === EAccountFilterStatus.tests) {
+        filters.push(
+          sql`EXISTS (
+            SELECT 1
+            FROM ${planAccount} pa
+            INNER JOIN ${plan} p ON p.plan_id = pa.plan_id
+            WHERE pa.account_id = ${account.account_id}
+              AND p.is_test = true
+              AND p.deleted_at IS NULL
+          )`
+        );
+      }
+
+      if (query.filter_status === EAccountFilterStatus.deleted) {
+        filters.push(isNotNull(account.deleted_at));
+      }
+    }
+
     return filters;
   };
 
@@ -62,8 +151,13 @@ export class AccountAllListerWithDetailsRepository {
   ): Promise<ListAccountResponse[]> => {
     const filtersAccount = this.setFiltersAccount(query);
 
+    const whereCondition =
+      query.filter_status === EAccountFilterStatus.deleted
+        ? and(...filtersAccount)
+        : and(isNull(account.deleted_at), ...filtersAccount);
+
     const result = await this.dbRo.query.account.findMany({
-      where: and(isNull(account.deleted_at), ...filtersAccount),
+      where: whereCondition,
       with: {
         aac: {
           columns: {
@@ -76,12 +170,14 @@ export class AccountAllListerWithDetailsRepository {
             plan_account_id: true,
             next_payment_date: true,
             recurring_payment: true,
+            cancellation_date: true,
           },
           with: {
             ppl: {
               columns: {
                 plan_id: true,
                 name: true,
+                is_test: true,
               },
             },
             bpl: {
@@ -147,12 +243,17 @@ export class AccountAllListerWithDetailsRepository {
   listAccountsTotal = async (query: ListAccountRequest): Promise<number> => {
     const filtersAccount = this.setFiltersAccount(query);
 
+    const whereCondition =
+      query.filter_status === EAccountFilterStatus.deleted
+        ? and(...filtersAccount)
+        : and(...filtersAccount, isNull(account.deleted_at));
+
     const result = await this.dbRo
       .select({
         count: count(),
       })
       .from(account)
-      .where(and(...filtersAccount, isNull(account.deleted_at)))
+      .where(whereCondition)
       .execute();
 
     return result[0]?.count ?? 0;

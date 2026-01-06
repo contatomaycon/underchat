@@ -44,41 +44,6 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       | never
     >,
-    'account-blocked': RouteRecordInfo<
-      'account-blocked',
-      '/account-blocked',
-      Record<never, never>,
-      Record<never, never>,
-      | never
-    >,
-    'account-cancelled': RouteRecordInfo<
-      'account-cancelled',
-      '/account-cancelled',
-      Record<never, never>,
-      Record<never, never>,
-      | never
-    >,
-    'account-cancelling': RouteRecordInfo<
-      'account-cancelling',
-      '/account-cancelling',
-      Record<never, never>,
-      Record<never, never>,
-      | never
-    >,
-    'account-deleted': RouteRecordInfo<
-      'account-deleted',
-      '/account-deleted',
-      Record<never, never>,
-      Record<never, never>,
-      | never
-    >,
-    'account-expired': RouteRecordInfo<
-      'account-expired',
-      '/account-expired',
-      Record<never, never>,
-      Record<never, never>,
-      | never
-    >,
     'account-settings': RouteRecordInfo<
       'account-settings',
       '/account-settings',
@@ -121,20 +86,6 @@ declare module 'vue-router/auto-routes' {
     'account-settings-security-tab': RouteRecordInfo<
       'account-settings-security-tab',
       '/account-settings/security-tab',
-      Record<never, never>,
-      Record<never, never>,
-      | never
-    >,
-    'account-subscribers': RouteRecordInfo<
-      'account-subscribers',
-      '/account-subscribers',
-      Record<never, never>,
-      Record<never, never>,
-      | never
-    >,
-    'account-tests': RouteRecordInfo<
-      'account-tests',
-      '/account-tests',
       Record<never, never>,
       Record<never, never>,
       | never
@@ -425,36 +376,6 @@ declare module 'vue-router/auto-routes' {
       views:
         | never
     }
-    'src/pages/account-blocked.vue': {
-      routes:
-        | 'account-blocked'
-      views:
-        | never
-    }
-    'src/pages/account-cancelled.vue': {
-      routes:
-        | 'account-cancelled'
-      views:
-        | never
-    }
-    'src/pages/account-cancelling.vue': {
-      routes:
-        | 'account-cancelling'
-      views:
-        | never
-    }
-    'src/pages/account-deleted.vue': {
-      routes:
-        | 'account-deleted'
-      views:
-        | never
-    }
-    'src/pages/account-expired.vue': {
-      routes:
-        | 'account-expired'
-      views:
-        | never
-    }
     'src/pages/account-settings.vue': {
       routes:
         | 'account-settings'
@@ -493,18 +414,6 @@ declare module 'vue-router/auto-routes' {
     'src/pages/account-settings/security-tab.vue': {
       routes:
         | 'account-settings-security-tab'
-      views:
-        | never
-    }
-    'src/pages/account-subscribers.vue': {
-      routes:
-        | 'account-subscribers'
-      views:
-        | never
-    }
-    'src/pages/account-tests.vue': {
-      routes:
-        | 'account-tests'
       views:
         | never
     }
