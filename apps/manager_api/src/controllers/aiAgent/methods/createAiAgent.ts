@@ -26,7 +26,9 @@ export const createAiAgent = async (
       return sendResponse(reply, {
         message: t('ai_agent_creator_success'),
         httpStatusCode: EHTTPStatusCode.ok,
-        data: response,
+        data: {
+          ai_agent_id: response,
+        },
       });
     }
 

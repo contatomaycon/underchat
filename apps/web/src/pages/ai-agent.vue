@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, computed, onMounted } from 'vue';
+import { ref, watch, computed, nextTick } from 'vue';
 import { refDebounced } from '@vueuse/core';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { useI18n } from 'vue-i18n';
@@ -123,7 +123,9 @@ const handleDelete = async () => {
 
 const openEditDialog = (id: string) => {
   aiAgentToEdit.value = id;
-  isDialogEditAiAgentShow.value = true;
+  nextTick(() => {
+    isDialogEditAiAgentShow.value = true;
+  });
 };
 
 const handleCreated = async () => {
@@ -141,10 +143,6 @@ watch(
   },
   { immediate: true }
 );
-
-onMounted(async () => {
-  await aiAgentStore.listAiAgents(query.value);
-});
 </script>
 
 <template>

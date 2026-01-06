@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { ref, computed, watch, onMounted } from 'vue';
+import { ref, computed, watch, onMounted, nextTick } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useAiAgentStore } from '@/@webcore/stores/aiAgent';
 import { requiredValidator } from '@/@webcore/utils/validators';
@@ -34,6 +34,7 @@ const apiKey = ref('');
 const status = ref<EAiAgentStatus>(EAiAgentStatus.active);
 const isUpdating = ref(false);
 const isLoading = ref(false);
+const isApiKeyVisible = ref(false);
 const refForm = ref<VForm>();
 const types = ref<ListAiAgentTypeResponse[]>([]);
 const otherTypes = ref<ListAiAgentTypeResponse[]>([]);
@@ -73,7 +74,9 @@ const apiKeyLink = computed(() => {
 });
 
 const loadAiAgent = async () => {
-  if (!aiAgentId.value) return;
+  if (!aiAgentId.value) {
+    return;
+  }
 
   isLoading.value = true;
   try {
@@ -105,17 +108,30 @@ watch(aiAgentTypeId, (newTypeId) => {
   }
 });
 
-watch(isVisible, (newValue) => {
-  if (newValue && aiAgentId.value) {
-    loadAiAgent();
-    loadTypes();
-  } else {
-    aiAgentTypeId.value = '';
-    name.value = '';
-    baseUrl.value = '';
-    apiKey.value = '';
-    status.value = EAiAgentStatus.active;
-    refForm.value?.resetValidation();
+watch(
+  isVisible,
+  async (newVisible) => {
+    if (newVisible && aiAgentId.value) {
+      await nextTick();
+      await loadTypes();
+      await loadAiAgent();
+    } else if (!newVisible) {
+      aiAgentTypeId.value = '';
+      name.value = '';
+      baseUrl.value = '';
+      apiKey.value = '';
+      status.value = EAiAgentStatus.active;
+      refForm.value?.resetValidation();
+    }
+  },
+  { immediate: true }
+);
+
+watch(aiAgentId, async (newId, oldId) => {
+  if (isVisible.value && newId && newId !== oldId) {
+    await nextTick();
+    await loadTypes();
+    await loadAiAgent();
   }
 });
 
@@ -224,9 +240,13 @@ const handleUpdateAiAgent = async () => {
               <VLabel class="text-body-2 mb-1">{{ $t('api_key') }}:</VLabel>
               <AppTextField
                 v-model="apiKey"
-                type="password"
+                :type="isApiKeyVisible ? 'text' : 'password'"
                 :placeholder="$t('api_key_placeholder')"
                 :disabled="isUpdating || isLoading"
+                :append-inner-icon="
+                  isApiKeyVisible ? 'tabler-eye-off' : 'tabler-eye'
+                "
+                @click:append-inner="isApiKeyVisible = !isApiKeyVisible"
               />
             </VCol>
             <VCol cols="12">
