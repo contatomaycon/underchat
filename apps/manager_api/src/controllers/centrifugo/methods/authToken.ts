@@ -5,14 +5,18 @@ import { centrifugoEnvironment } from '@core/config/environments';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import jwt from 'jsonwebtoken';
 
-const generateToken = async (accountId: string): Promise<string> => {
+const generateToken = async (
+  accountId: string,
+  userId: string
+): Promise<string> => {
   const exp = Math.floor(Date.now() / 1000) + 24 * 60 * 60;
   return jwt.sign(
     {
       sub: accountId,
+      user: userId,
       exp,
       params: {
-        userID: accountId,
+        userID: userId,
       },
     },
     centrifugoEnvironment.centrifugoHmacSecretKey,
@@ -27,7 +31,10 @@ export const authToken = async (
   const { t, tokenJwtData } = request;
 
   try {
-    const token = await generateToken(tokenJwtData.account_id);
+    const token = await generateToken(
+      tokenJwtData.account_id,
+      tokenJwtData.user_id
+    );
 
     if (token) {
       return sendResponse(reply, {

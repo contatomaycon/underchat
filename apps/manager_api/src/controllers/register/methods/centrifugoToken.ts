@@ -11,6 +11,7 @@ const generateToken = async (accountId: string): Promise<string> => {
   return jwt.sign(
     {
       sub: accountId,
+      user: accountId,
       exp,
       params: {
         userID: accountId,
