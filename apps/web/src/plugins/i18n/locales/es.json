@@ -1991,6 +1991,7 @@
   "api_key_placeholder": "Clave de API",
   "select_ai_agent_type": "Seleccione el tipo de agente",
   "ai_agent_type_required": "El tipo de agente es obligatorio",
+  "generate_api_key": "Generar clave de API",
   "ai_agent_list_error": "Ocurrió un error al listar los agentes de IA. Por favor, inténtelo de nuevo.",
   "ai_agent_add_error": "Ocurrió un error al agregar el agente de IA. Por favor, inténtelo de nuevo.",
   "ai_agent_add_success": "Agente de IA agregado con éxito!",

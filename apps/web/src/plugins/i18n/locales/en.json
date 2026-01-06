@@ -1989,6 +1989,7 @@
   "api_key_placeholder": "API key",
   "select_ai_agent_type": "Select agent type",
   "ai_agent_type_required": "Agent type is required",
+  "generate_api_key": "Generate API Key",
   "ai_agent_list_error": "An error occurred while listing AI agents. Please try again.",
   "ai_agent_add_error": "An error occurred while adding the AI agent. Please try again.",
   "ai_agent_add_success": "AI agent added successfully!",

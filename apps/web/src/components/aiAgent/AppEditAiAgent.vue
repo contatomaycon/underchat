@@ -58,6 +58,18 @@ const loadTypes = async () => {
   }
 };
 
+const isGeminiSelected = computed(() => aiAgentTypeId.value === EAiAgentType.gemini);
+const isGptSelected = computed(() => aiAgentTypeId.value === EAiAgentType.gpt);
+const apiKeyLink = computed(() => {
+  if (isGeminiSelected.value) {
+    return 'https://aistudio.google.com/app/apikey?utm_source=chatgpt.com';
+  }
+  if (isGptSelected.value) {
+    return 'https://platform.openai.com/api-keys?utm_source=chatgpt.com';
+  }
+  return null;
+});
+
 const loadAiAgent = async () => {
   if (!aiAgentId.value) return;
 
@@ -175,6 +187,18 @@ const handleUpdateAiAgent = async () => {
                 :rules="typeRules"
                 :disabled="isUpdating || isLoading"
               />
+              <VBtn
+                v-if="apiKeyLink"
+                variant="text"
+                size="small"
+                class="mt-1 pa-0"
+                :href="apiKeyLink"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <VIcon icon="tabler-external-link" size="small" class="me-1" />
+                {{ $t('generate_api_key') }}
+              </VBtn>
             </VCol>
             <VCol cols="12">
               <VLabel class="text-body-2 mb-1">{{ $t('name') }}:</VLabel>
