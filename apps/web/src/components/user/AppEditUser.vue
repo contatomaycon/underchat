@@ -836,7 +836,12 @@ const determinePhoneToSave = (): string | null | undefined => {
 };
 
 const determineDocumentToSave = (): string | null | undefined => {
-  if (!isCPF.value && !isCNPJ.value) return undefined;
+  if (!isCPF.value && !isCNPJ.value) {
+    if (initialValues.value.user_document_type_id) {
+      return null;
+    }
+    return undefined;
+  }
 
   if (!isDocumentDecrypted.value) return undefined;
 
@@ -846,7 +851,7 @@ const determineDocumentToSave = (): string | null | undefined => {
 
   if (digits === originalDigits) return undefined;
 
-  if (!digits) return '';
+  if (!digits) return null;
 
   return digits;
 };
@@ -1575,6 +1580,16 @@ const addFieldIfDefined = <K extends keyof UpdateUserRequest>(
   }
 };
 
+const addFieldIfDefinedOrNull = <K extends keyof UpdateUserRequest>(
+  body: UpdateUserRequest,
+  key: K,
+  value: string | null | undefined
+): void => {
+  if (value !== undefined) {
+    body[key] = { value: value ?? null } as UpdateUserRequest[K];
+  }
+};
+
 const addFieldIfChanged = <K extends keyof UpdateUserRequest>(
   body: UpdateUserRequest,
   key: K,
@@ -1628,15 +1643,16 @@ const buildUpdateUserBody = (): UpdateUserRequest => {
     initialValues.value.birth_date
   );
 
-  addFieldIfChanged(
-    body,
-    'document_type_id',
+  const documentTypeIdChanged = getChangedValue(
     user_document_type_id.value,
     initialValues.value.user_document_type_id
   );
+  if (documentTypeIdChanged !== undefined) {
+    body.document_type_id = { value: documentTypeIdChanged ?? null };
+  }
 
   const documentToSave = determineDocumentToSave();
-  addFieldIfDefined(body, 'document', documentToSave);
+  addFieldIfDefinedOrNull(body, 'document', documentToSave);
 
   addFieldIfChanged(
     body,

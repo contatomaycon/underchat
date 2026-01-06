@@ -605,6 +605,26 @@ export class UserUpdaterUseCase {
     userId: string,
     body: UpdateUserRequest
   ): Promise<void> {
+    const documentTypeIdWasProvided = body.document_type_id !== undefined;
+    const documentTypeIdValue = this.extractStringValue(body.document_type_id);
+    const documentWasProvided = body.document !== undefined;
+    const documentValue = this.extractStringValue(body.document);
+
+    if (
+      (documentTypeIdWasProvided && documentTypeIdValue === null) ||
+      (documentWasProvided &&
+        (documentValue === null || documentValue === undefined))
+    ) {
+      const documentExists =
+        await this.userService.existsUserDocumentByUserId(userId);
+
+      if (documentExists) {
+        await this.userService.deleteUserDocumentById(userId);
+      }
+
+      return;
+    }
+
     const documentExists =
       await this.userService.existsUserDocumentByUserId(userId);
 
@@ -705,7 +725,7 @@ export class UserUpdaterUseCase {
   }
 
   private hasUserDocumentFields(body: UpdateUserRequest): boolean {
-    return !!(body.document_type_id?.value || body.document?.value);
+    return body.document_type_id !== undefined || body.document !== undefined;
   }
 
   private hasUserAddressFields(body: UpdateUserRequest): boolean {

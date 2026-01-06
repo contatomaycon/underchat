@@ -228,6 +228,10 @@ export class UserService {
     );
   };
 
+  deleteUserDocumentById = async (userId: string): Promise<boolean> => {
+    return this.userDocumentUpdaterRepository.deleteUserDocumentById(userId);
+  };
+
   createUserDocumentWithoutTransaction = async (
     input: ICreateUserDocument,
     userId: string

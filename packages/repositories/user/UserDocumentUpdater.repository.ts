@@ -16,19 +16,21 @@ export class UserDocumentUpdaterRepository {
   ): Partial<typeof userDocument.$inferInsert> {
     const inputUpdate: Partial<typeof userDocument.$inferInsert> = {};
 
-    if (input.user_document_type_id) {
-      inputUpdate.user_document_type_id = input.user_document_type_id;
+    if (input.user_document_type_id !== undefined) {
+      if (input.user_document_type_id !== null) {
+        inputUpdate.user_document_type_id = input.user_document_type_id;
+      }
     }
 
-    if (input.document) {
+    if (input.document !== undefined) {
       inputUpdate.document = input.document;
     }
 
-    if (input.document_partial) {
+    if (input.document_partial !== undefined) {
       inputUpdate.document_partial = input.document_partial;
     }
 
-    if (input.document_c) {
+    if (input.document_c !== undefined) {
       inputUpdate.document_c = input.document_c;
     }
 
@@ -48,6 +50,15 @@ export class UserDocumentUpdaterRepository {
       .execute();
 
     return result.rowCount === 1;
+  };
+
+  deleteUserDocumentById = async (userId: string): Promise<boolean> => {
+    const result = await this.dbRw
+      .delete(userDocument)
+      .where(eq(userDocument.user_id, userId))
+      .execute();
+
+    return (result.rowCount ?? 0) >= 0;
   };
 
   existsUserDocumentByUserId = async (userId: string): Promise<boolean> => {
