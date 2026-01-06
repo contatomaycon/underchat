@@ -21,6 +21,8 @@ import { UserDocumentUpdaterRepository } from '@core/repositories/user/UserDocum
 import { IUpdateUserDocument } from '@core/common/interfaces/IUpdateUserDocument';
 import { UserAddressUpdaterRepository } from '@core/repositories/user/UserAddressUpdater.repository';
 import { IUpdateUserAddress } from '@core/common/interfaces/IUpdateUserAddress';
+import { UserAddressCreatorRepository } from '@core/repositories/user/UserAddressCreator.repository';
+import { ICreateUserAddress } from '@core/common/interfaces/ICreateUserAddress';
 import { UserNamePhotoViewerRepository } from '@core/repositories/user/UserNamePhotoViewer.repository';
 import { IViewUserNamePhoto } from '@core/common/interfaces/IViewUserNamePhoto';
 import { UserExistsByEmailAndPhoneRepository } from '@core/repositories/user/UserExistsByEmailAndPhone.repository';
@@ -69,6 +71,7 @@ export class UserService {
     private readonly userInfoUpdaterRepository: UserInfoUpdaterRepository,
     private readonly userDocumentUpdaterRepository: UserDocumentUpdaterRepository,
     private readonly userAddressUpdaterRepository: UserAddressUpdaterRepository,
+    private readonly userAddressCreatorRepository: UserAddressCreatorRepository,
     private readonly userNamePhotoViewerRepository: UserNamePhotoViewerRepository,
     private readonly userExistsByEmailAndPhoneRepository: UserExistsByEmailAndPhoneRepository,
     private readonly userSensitiveDataRepository: UserSensitiveDataRepository,
@@ -228,6 +231,20 @@ export class UserService {
 
   deleteUserAddressById = async (userId: string): Promise<boolean> => {
     return this.userAddressUpdaterRepository.deleteUserAddressById(userId);
+  };
+
+  existsUserAddressByUserId = async (userId: string): Promise<boolean> => {
+    return this.userAddressUpdaterRepository.existsUserAddressByUserId(userId);
+  };
+
+  createUserAddressWithoutTransaction = async (
+    input: ICreateUserAddress,
+    userId: string
+  ): Promise<boolean> => {
+    return this.userAddressCreatorRepository.createUserAddressWithoutTransaction(
+      input,
+      userId
+    );
   };
 
   viewUserNamePhoto = async (

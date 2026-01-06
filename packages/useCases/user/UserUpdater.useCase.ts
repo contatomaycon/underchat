@@ -10,6 +10,7 @@ import { IUpdateUserInfo } from '@core/common/interfaces/IUpdateUserInfo';
 import moment from 'moment';
 import { IUpdateUserDocument } from '@core/common/interfaces/IUpdateUserDocument';
 import { IUpdateUserAddress } from '@core/common/interfaces/IUpdateUserAddress';
+import { ICreateUserAddress } from '@core/common/interfaces/ICreateUserAddress';
 import { CountryService } from '@core/services/country.service';
 import { AccountService } from '@core/services/account.service';
 import { StorageService } from '@core/services/storage.service';
@@ -378,6 +379,34 @@ export class UserUpdaterUseCase {
     };
   }
 
+  private buildCreateUserAddressInput(
+    body: UpdateUserRequest
+  ): ICreateUserAddress {
+    const address1Value = this.extractStringValue(body.address1);
+    const address2Value = this.extractStringValue(body.address2);
+    const address1Data = this.encryptAddressData(address1Value);
+    const address2Data = this.encryptAddressData(address2Value);
+    const countryIdValue = this.extractNumberValue(body.country_id);
+
+    if (!countryIdValue) {
+      throw new Error('country_id is required to create address');
+    }
+
+    return {
+      country_id: countryIdValue,
+      zip_code: this.extractStringValue(body.zip_code),
+      address1: address1Data.addressCEncrypted,
+      address1_partial: address1Data.addressPartialEncrypted,
+      address1_c: address1Data.addressC,
+      address2: address2Data.addressCEncrypted,
+      address2_partial: address2Data.addressPartialEncrypted,
+      address2_c: address2Data.addressC,
+      city_fiscal_code: this.extractStringValue(body.city_fiscal_code),
+      state_fiscal_code: this.extractStringValue(body.state_fiscal_code),
+      district: this.extractStringValue(body.district),
+    };
+  }
+
   private async validateUserFields(
     t: TFunction<'translation', undefined>,
     body: UpdateUserRequest,
@@ -576,6 +605,24 @@ export class UserUpdaterUseCase {
 
     if (countryIdValue === null || countryIdValue === undefined) {
       await this.userService.deleteUserAddressById(userId);
+      return;
+    }
+
+    const addressExists =
+      await this.userService.existsUserAddressByUserId(userId);
+
+    if (!addressExists) {
+      const createUserAddress = this.buildCreateUserAddressInput(body);
+      const createResult =
+        await this.userService.createUserAddressWithoutTransaction(
+          createUserAddress,
+          userId
+        );
+
+      if (!createResult) {
+        throw new Error(t('user_address_create_failed'));
+      }
+
       return;
     }
 

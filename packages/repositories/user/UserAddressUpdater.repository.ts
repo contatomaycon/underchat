@@ -16,8 +16,9 @@ export class UserAddressUpdaterRepository {
   ): Partial<typeof userAddress.$inferInsert> {
     const inputUpdate: Partial<typeof userAddress.$inferInsert> = {};
 
-    if (input.country_id) {
+    if (input.country_id !== undefined && input.country_id !== null) {
       inputUpdate.country_id = input.country_id;
+      inputUpdate.deleted_at = null;
     }
 
     if (input.zip_code) {
@@ -69,10 +70,6 @@ export class UserAddressUpdaterRepository {
   ): Promise<boolean> => {
     const updateInput = this.updateInput(input);
 
-    if (input.country_id) {
-      updateInput.deleted_at = null;
-    }
-
     const result = await this.dbRw
       .update(userAddress)
       .set(updateInput)
@@ -90,5 +87,16 @@ export class UserAddressUpdaterRepository {
       .execute();
 
     return (result.rowCount ?? 0) >= 0;
+  };
+
+  existsUserAddressByUserId = async (userId: string): Promise<boolean> => {
+    const result = await this.dbRw
+      .select({ user_address_id: userAddress.user_address_id })
+      .from(userAddress)
+      .where(eq(userAddress.user_id, userId))
+      .limit(1)
+      .execute();
+
+    return result.length > 0;
   };
 }
