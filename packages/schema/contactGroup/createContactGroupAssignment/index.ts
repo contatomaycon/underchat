@@ -2,7 +2,6 @@ import { Type } from '@sinclair/typebox';
 import { ELanguage } from '@core/common/enums/ELanguage';
 import { ETagSwagger } from '@core/common/enums/ETagSwagger';
 import { createContactGroupAssignmentRequestSchema } from './request.schema';
-import { contactImportStatusSchema } from './response.schema';
 
 export const createContactGroupAssignmentSchema = {
   description: 'Adiciona uma atribuição de grupo de contato a uma conta',

@@ -45,6 +45,35 @@ const totalCount = ref<number>(0);
 const lastContact = ref<ContactImportStatus | null>(null);
 const importSessionId = ref<string | null>(null);
 const socketSubscription = ref<Subscription | null>(null);
+const isCompleted = ref<boolean>(false);
+let closeTimer: ReturnType<typeof setTimeout> | null = null;
+
+const progressPercentage = computed(() => {
+  if (totalCount.value === 0) return 0;
+  return Math.round((processedCount.value / totalCount.value) * 100);
+});
+
+const formatPhone = (phone: string | null | undefined): string => {
+  if (!phone) return '';
+
+  const numbers = phone.replaceAll(/\D/g, '').slice(0, 11);
+
+  if (numbers.length <= 2) {
+    return numbers;
+  }
+  if (numbers.length <= 6) {
+    return `(${numbers.slice(0, 2)}) ${numbers.slice(2)}`;
+  }
+  if (numbers.length <= 10) {
+    return `(${numbers.slice(0, 2)}) ${numbers.slice(2, 6)}-${numbers.slice(6)}`;
+  }
+  return `(${numbers.slice(0, 2)}) ${numbers.slice(2, 7)}-${numbers.slice(7)}`;
+};
+
+const formattedPhone = computed(() => {
+  if (!lastContact.value?.phone_complete) return '';
+  return formatPhone(lastContact.value.phone_complete);
+});
 
 const refFormAddContact = ref<VForm>();
 
@@ -107,7 +136,7 @@ const subscribeToImportProgress = async (sessionId: string) => {
 
       if (data.completed && data.results) {
         importResults.value = data.results;
-        contactGroupStore.loading = false;
+        isCompleted.value = true;
 
         const validCount = data.results.filter(
           (r: ContactImportStatus) => r.status === 'valid'
@@ -134,6 +163,16 @@ const subscribeToImportProgress = async (sessionId: string) => {
           unsubscribe(channel).catch(() => {});
           socketSubscription.value = null;
         }
+
+        if (closeTimer) {
+          clearTimeout(closeTimer);
+        }
+
+        closeTimer = setTimeout(() => {
+          contactGroupStore.loading = false;
+          isVisible.value = false;
+          isCompleted.value = false;
+        }, 3000);
       }
     });
 
@@ -155,6 +194,12 @@ const addContactGroupAssignment = async () => {
   totalCount.value = 0;
   lastContact.value = null;
   importResults.value = [];
+  isCompleted.value = false;
+
+  if (closeTimer) {
+    clearTimeout(closeTimer);
+    closeTimer = null;
+  }
 
   const form = new FormData();
   form.append('contact_group_id', contact_group_id.value ?? '');
@@ -179,6 +224,12 @@ const resetForm = () => {
   totalCount.value = 0;
   lastContact.value = null;
   importSessionId.value = null;
+  isCompleted.value = false;
+
+  if (closeTimer) {
+    clearTimeout(closeTimer);
+    closeTimer = null;
+  }
 
   if (socketSubscription.value && importSessionId.value) {
     const userId = chatStore.user?.user_id;
@@ -265,38 +316,53 @@ onUnmounted(() => {
             elevation="4"
             style="min-width: 320px"
           >
-            <VProgressCircular
-              color="primary"
-              :model-value="
-                totalCount > 0 ? (processedCount / totalCount) * 100 : undefined
-              "
-              :indeterminate="totalCount === 0"
-              size="64"
-              class="ma-auto"
-            />
-            <div class="text-body-1 mt-4 text-high-emphasis">
-              {{ $t('processing_import') }}
+            <div class="d-flex align-center justify-center position-relative">
+              <VProgressCircular
+                :color="isCompleted ? 'success' : 'primary'"
+                :model-value="
+                  totalCount > 0 || isCompleted
+                    ? isCompleted
+                      ? 100
+                      : progressPercentage
+                    : undefined
+                "
+                :indeterminate="totalCount === 0 && !isCompleted"
+                size="80"
+                width="6"
+              >
+                <template v-if="totalCount > 0 || isCompleted">
+                  <div class="text-h6 font-weight-bold">
+                    {{ isCompleted ? 100 : progressPercentage }}%
+                  </div>
+                </template>
+              </VProgressCircular>
             </div>
             <div
-              class="text-body-2 mt-2 text-medium-emphasis"
-              v-if="totalCount > 0"
+              class="text-body-1 mt-4 text-high-emphasis"
+              v-if="!isCompleted"
             >
-              {{ processedCount }} / {{ totalCount }}
+              {{ $t('processing_import') }}
+            </div>
+            <div class="text-body-1 mt-4 text-success font-weight-bold" v-else>
+              {{ $t('import_completed') }}
             </div>
             <div
               class="text-caption text-medium-emphasis mt-2"
-              v-if="lastContact"
+              v-if="lastContact && !isCompleted"
             >
               <div v-if="lastContact.name || lastContact.last_name">
                 <strong>{{ $t('last_imported') }}:</strong>
                 {{ lastContact.name ?? '' }}
                 {{ lastContact.last_name ?? '' }}
               </div>
-              <div v-if="lastContact.phone_complete">
-                {{ lastContact.phone_complete }}
+              <div v-if="formattedPhone">
+                {{ formattedPhone }}
               </div>
             </div>
-            <div class="text-caption text-medium-emphasis mt-2" v-else>
+            <div
+              class="text-caption text-medium-emphasis mt-2"
+              v-else-if="!isCompleted"
+            >
               {{ $t('please_wait') }}
             </div>
           </VCard>
