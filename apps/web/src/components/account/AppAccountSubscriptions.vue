@@ -316,6 +316,9 @@ onMounted(async () => {
                 :clearable="true"
                 item-value="value"
                 item-title="text"
+                :rules="[
+                  (value) => requiredValidator(value, $t('plan_required')),
+                ]"
               />
             </VCol>
 
@@ -330,6 +333,12 @@ onMounted(async () => {
                 :clearable="true"
                 item-value="value"
                 item-title="text"
+                :rules="[
+                  (value) =>
+                    value !== null && value !== undefined
+                      ? true
+                      : $t('recurring_payment_required'),
+                ]"
               />
             </VCol>
 
@@ -345,10 +354,8 @@ onMounted(async () => {
                 item-value="value"
                 item-title="text"
                 :rules="[
-                  requiredValidator(
-                    billing_period_id,
-                    $t('billing_period_required')
-                  ),
+                  (value) =>
+                    requiredValidator(value, $t('billing_period_required')),
                 ]"
               />
             </VCol>
@@ -360,10 +367,11 @@ onMounted(async () => {
                 @input="handleValueInput"
                 :placeholder="$t('value')"
                 :rules="[
-                  requiredValidator(
-                    valueRaw !== null && valueRaw !== undefined,
-                    $t('value_required')
-                  ),
+                  () =>
+                    requiredValidator(
+                      valueRaw !== null && valueRaw !== undefined,
+                      $t('value_required')
+                    ),
                 ]"
               />
             </VCol>
