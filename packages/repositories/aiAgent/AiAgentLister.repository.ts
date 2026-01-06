@@ -1,8 +1,8 @@
 import * as schema from '@core/models';
-import { aiAgent } from '@core/models';
+import { aiAgent, aiAgentType } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, count, eq, SQLWrapper, or, ilike } from 'drizzle-orm';
+import { and, count, eq, SQLWrapper, or, ilike, inArray } from 'drizzle-orm';
 import { ListAiAgentRequest } from '@core/schema/aiAgent/listAiAgent/request.schema';
 import { ListAiAgentResponse } from '@core/schema/aiAgent/listAiAgent/response.schema';
 
@@ -18,10 +18,17 @@ export class AiAgentListerRepository {
   ): SQLWrapper[] => {
     const filters: SQLWrapper[] = [eq(aiAgent.account_id, accountId)];
 
-    if (query.name || query.status) {
+    if (query.name) {
       const conditions: (SQLWrapper | undefined)[] = [
-        query.name ? ilike(aiAgent.name, `%${query.name}%`) : undefined,
-        query.status ? eq(aiAgent.status, query.status) : undefined,
+        ilike(aiAgent.name, `%${query.name}%`),
+        ilike(aiAgent.base_url, `%${query.name}%`),
+        inArray(
+          aiAgent.ai_agent_type_id,
+          this.dbRo
+            .select({ ai_agent_type_id: aiAgentType.ai_agent_type_id })
+            .from(aiAgentType)
+            .where(ilike(aiAgentType.name, `%${query.name}%`))
+        ),
       ];
 
       const filteredConditions = conditions.filter(
@@ -32,6 +39,10 @@ export class AiAgentListerRepository {
         const combined = or(...filteredConditions);
         if (combined) filters.push(combined);
       }
+    }
+
+    if (query.status) {
+      filters.push(eq(aiAgent.status, query.status));
     }
 
     return filters;
