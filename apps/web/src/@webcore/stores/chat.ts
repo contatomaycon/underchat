@@ -721,7 +721,14 @@ export const useChatStore = defineStore('chat', {
           return null;
         }
 
-        return data.data;
+        const results = data.data.results.filter(
+          (result) => result.chat_id && result.chat_id.trim().length > 0
+        );
+
+        return {
+          ...data.data,
+          results,
+        };
       } catch {
         this.loading = false;
         return null;

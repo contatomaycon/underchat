@@ -1032,9 +1032,11 @@ onMounted(async () => {
         <template v-else>
           <ChatQueue
             v-for="result in searchResults"
-            :key="`search-${result.chat_id}`"
+            :key="`search-${result.chat_id || 'unknown'}`"
             :user="result"
-            @click="$emit('openChat', result.chat_id)"
+            @click="
+              result.chat_id ? $emit('openChat', result.chat_id) : undefined
+            "
           />
           <li
             v-if="!searchResults.length && !isSearching"

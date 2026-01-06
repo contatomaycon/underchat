@@ -192,9 +192,13 @@ export class ChatListerUseCase {
       };
     }
 
-    const chats = result.hits.hits.map(
-      (hit) => hit._source
-    ) as ListChatsResult[];
+    const chats = result.hits.hits.map((hit) => {
+      const source = hit._source as ListChatsResult;
+      if (!source.chat_id && hit._id) {
+        source.chat_id = hit._id;
+      }
+      return source;
+    }) as ListChatsResult[];
     const total = result.hits.total as { value: number; relation: string };
 
     const pagings = setPaginationData(
