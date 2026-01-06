@@ -19,6 +19,8 @@ import { UserInfoUpdaterRepository } from '@core/repositories/user/UserInfoUpdat
 import { IUpdateUserInfo } from '@core/common/interfaces/IUpdateUserInfo';
 import { UserDocumentUpdaterRepository } from '@core/repositories/user/UserDocumentUpdater.repository';
 import { IUpdateUserDocument } from '@core/common/interfaces/IUpdateUserDocument';
+import { UserDocumentCreatorRepository } from '@core/repositories/user/UserDocumentCreator.repository';
+import { ICreateUserDocument } from '@core/common/interfaces/ICreateUserDocument';
 import { UserAddressUpdaterRepository } from '@core/repositories/user/UserAddressUpdater.repository';
 import { IUpdateUserAddress } from '@core/common/interfaces/IUpdateUserAddress';
 import { UserAddressCreatorRepository } from '@core/repositories/user/UserAddressCreator.repository';
@@ -70,6 +72,7 @@ export class UserService {
     private readonly userUpdaterTransactionRepository: UserUpdaterTransactionRepository,
     private readonly userInfoUpdaterRepository: UserInfoUpdaterRepository,
     private readonly userDocumentUpdaterRepository: UserDocumentUpdaterRepository,
+    private readonly userDocumentCreatorRepository: UserDocumentCreatorRepository,
     private readonly userAddressUpdaterRepository: UserAddressUpdaterRepository,
     private readonly userAddressCreatorRepository: UserAddressCreatorRepository,
     private readonly userNamePhotoViewerRepository: UserNamePhotoViewerRepository,
@@ -216,6 +219,22 @@ export class UserService {
     return this.userDocumentUpdaterRepository.updateUserDocumentById(
       userId,
       input
+    );
+  };
+
+  existsUserDocumentByUserId = async (userId: string): Promise<boolean> => {
+    return this.userDocumentUpdaterRepository.existsUserDocumentByUserId(
+      userId
+    );
+  };
+
+  createUserDocumentWithoutTransaction = async (
+    input: ICreateUserDocument,
+    userId: string
+  ): Promise<boolean> => {
+    return this.userDocumentCreatorRepository.createUserDocumentWithoutTransaction(
+      input,
+      userId
     );
   };
 

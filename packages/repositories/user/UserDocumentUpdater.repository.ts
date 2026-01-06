@@ -49,4 +49,15 @@ export class UserDocumentUpdaterRepository {
 
     return result.rowCount === 1;
   };
+
+  existsUserDocumentByUserId = async (userId: string): Promise<boolean> => {
+    const result = await this.dbRw
+      .select({ user_document_id: userDocument.user_document_id })
+      .from(userDocument)
+      .where(eq(userDocument.user_id, userId))
+      .limit(1)
+      .execute();
+
+    return result.length > 0;
+  };
 }

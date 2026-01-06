@@ -596,6 +596,18 @@ const toggleEmailVisibility = async () => {
   await decryptEmail();
 };
 
+const handleDocumentTypeSelect = () => {
+  document.value = null;
+  if (!documentPartialOriginal.value) {
+    isDocumentDecrypted.value = true;
+  }
+};
+
+const handleDocumentTypeClear = () => {
+  document.value = null;
+  isDocumentDecrypted.value = false;
+};
+
 const startEditDocument = async () => {
   if (!userId.value) return;
 
@@ -613,6 +625,9 @@ const startEditDocument = async () => {
       document.value = digits;
       documentDecryptedOriginal.value = digits;
     }
+  } else if (!documentPartialOriginal.value) {
+    isDocumentDecrypted.value = true;
+    document.value = null;
   }
 };
 
@@ -2588,15 +2603,15 @@ watch(
                       :clearable="true"
                       item-value="value"
                       item-title="title"
-                      @select="document = null"
-                      @clear="document = null"
+                      @select="handleDocumentTypeSelect"
+                      @clear="handleDocumentTypeClear"
                     />
                   </VCol>
 
                   <VCol v-if="isCPF || isCNPJ" cols="12" md="6">
                     <VLabel class="text-body-2 mb-1">{{ docLabel }}:</VLabel>
                     <AppTextField
-                      v-if="isDocumentDecrypted"
+                      v-if="isDocumentDecrypted || !documentPartialOriginal"
                       v-model="document"
                       :placeholder="docPlaceholder"
                       :rules="docRules"
@@ -2606,6 +2621,7 @@ watch(
                     >
                       <template #append-inner>
                         <VIcon
+                          v-if="documentPartialOriginal"
                           :icon="'tabler-eye-off'"
                           class="cursor-pointer"
                           :class="{ 'opacity-50': isLoadingDocument }"

@@ -11,6 +11,7 @@ import moment from 'moment';
 import { IUpdateUserDocument } from '@core/common/interfaces/IUpdateUserDocument';
 import { IUpdateUserAddress } from '@core/common/interfaces/IUpdateUserAddress';
 import { ICreateUserAddress } from '@core/common/interfaces/ICreateUserAddress';
+import { ICreateUserDocument } from '@core/common/interfaces/ICreateUserDocument';
 import { CountryService } from '@core/services/country.service';
 import { AccountService } from '@core/services/account.service';
 import { StorageService } from '@core/services/storage.service';
@@ -356,6 +357,25 @@ export class UserUpdaterUseCase {
     };
   }
 
+  private buildCreateUserDocumentInput(
+    body: UpdateUserRequest
+  ): ICreateUserDocument {
+    const documentValue = this.extractStringValue(body.document);
+    const documentData = this.encryptDocumentData(documentValue);
+    const documentTypeIdValue = this.extractStringValue(body.document_type_id);
+
+    if (!documentTypeIdValue) {
+      throw new Error('user_document_type_id is required to create document');
+    }
+
+    return {
+      user_document_type_id: documentTypeIdValue,
+      document: documentData.documentCEncrypted,
+      document_partial: documentData.documentPartialEncrypted,
+      document_c: documentData.documentC,
+    };
+  }
+
   private buildUpdateUserAddressInput(
     body: UpdateUserRequest
   ): IUpdateUserAddress {
@@ -585,6 +605,24 @@ export class UserUpdaterUseCase {
     userId: string,
     body: UpdateUserRequest
   ): Promise<void> {
+    const documentExists =
+      await this.userService.existsUserDocumentByUserId(userId);
+
+    if (!documentExists) {
+      const createUserDocument = this.buildCreateUserDocumentInput(body);
+      const createResult =
+        await this.userService.createUserDocumentWithoutTransaction(
+          createUserDocument,
+          userId
+        );
+
+      if (!createResult) {
+        throw new Error(t('user_document_create_failed'));
+      }
+
+      return;
+    }
+
     const userDocument = this.buildUpdateUserDocumentInput(body);
     const updateUserDocument = await this.userService.updateUserDocumentById(
       userId,
@@ -601,9 +639,13 @@ export class UserUpdaterUseCase {
     userId: string,
     body: UpdateUserRequest
   ): Promise<void> {
+    const countryIdWasProvided = body.country_id !== undefined;
     const countryIdValue = this.extractNumberValue(body.country_id);
 
-    if (countryIdValue === null || countryIdValue === undefined) {
+    if (
+      countryIdWasProvided &&
+      (countryIdValue === null || countryIdValue === undefined)
+    ) {
       await this.userService.deleteUserAddressById(userId);
       return;
     }
@@ -612,6 +654,10 @@ export class UserUpdaterUseCase {
       await this.userService.existsUserAddressByUserId(userId);
 
     if (!addressExists) {
+      if (!countryIdValue) {
+        return;
+      }
+
       const createUserAddress = this.buildCreateUserAddressInput(body);
       const createResult =
         await this.userService.createUserAddressWithoutTransaction(

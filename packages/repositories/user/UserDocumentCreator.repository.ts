@@ -41,4 +41,25 @@ export class UserDocumentCreatorRepository {
 
     return result.rowCount === 1;
   };
+
+  createUserDocumentWithoutTransaction = async (
+    input: ICreateUserDocument,
+    userId: string
+  ): Promise<boolean> => {
+    const userDocumentId = uuidv7();
+
+    const result = await this.dbRw
+      .insert(userDocument)
+      .values({
+        user_document_id: userDocumentId,
+        user_id: userId,
+        user_document_type_id: input.user_document_type_id,
+        document: input.document ?? null,
+        document_partial: input.document_partial ?? null,
+        document_c: input.document_c ?? null,
+      })
+      .execute();
+
+    return result.rowCount === 1;
+  };
 }
