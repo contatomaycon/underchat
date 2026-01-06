@@ -28,6 +28,7 @@ const isVisible = computed({
 
 const aiAgentId = computed(() => props.aiAgentId);
 const isLoading = ref(false);
+const isDeleting = ref(false);
 const isAddEditModalVisible = ref(false);
 const promptToEdit = ref<string | null>(null);
 const promptToDelete = ref<string | null>(null);
@@ -65,13 +66,17 @@ const openEditModal = (promptId: string) => {
 const handleDelete = async () => {
   if (!promptToDelete.value) return;
 
-  const result = await aiAgentStore.deleteAiAgentPrompt(promptToDelete.value);
-  if (result) {
-    await loadPrompts();
+  isDeleting.value = true;
+  try {
+    const result = await aiAgentStore.deleteAiAgentPrompt(promptToDelete.value);
+    if (result) {
+      await loadPrompts();
+    }
+  } finally {
+    isDeleting.value = false;
+    promptToDelete.value = null;
+    isDeleteDialogVisible.value = false;
   }
-
-  promptToDelete.value = null;
-  isDeleteDialogVisible.value = false;
 };
 
 const deletePrompt = (promptId: string) => {
@@ -210,13 +215,43 @@ onMounted(() => {
       </VCardText>
     </VCard>
 
-    <VDialogHandler
+    <VDialog
       v-if="isDeleteDialogVisible"
       v-model="isDeleteDialogVisible"
-      :title="$t('delete') + ' ' + $t('prompt')"
-      :message="$t('delete_prompt_confirmation')"
-      @confirm="handleDelete"
-    />
+      persistent
+      class="v-dialog-sm"
+    >
+      <VOverlay
+        :model-value="isDeleting"
+        class="align-center justify-center"
+        contained
+      >
+        <VProgressCircular color="primary" indeterminate size="64" />
+      </VOverlay>
+
+      <DialogCloseBtn
+        @click="isDeleteDialogVisible = false"
+        :disabled="isDeleting"
+      />
+
+      <VCard :title="$t('delete') + ' ' + $t('prompt')">
+        <VCardText>{{ $t('delete_prompt_confirmation') }}</VCardText>
+
+        <VCardText class="d-flex justify-end gap-3 flex-wrap">
+          <VBtn
+            color="secondary"
+            variant="tonal"
+            @click="isDeleteDialogVisible = false"
+            :disabled="isDeleting"
+          >
+            {{ $t('cancel') }}
+          </VBtn>
+          <VBtn @click="handleDelete" :loading="isDeleting">
+            {{ $t('confirm') }}
+          </VBtn>
+        </VCardText>
+      </VCard>
+    </VDialog>
 
     <AppAddEditAiAgentPrompt
       v-if="isAddEditModalVisible"
