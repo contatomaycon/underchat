@@ -61,7 +61,6 @@ export class AuthRepository {
           address2_partial: userAddress.address2_partial,
           city: zipcodeCity.city,
           state: zipcodeState.state,
-          state_abbreviation: zipcodeState.abbreviation,
           district: userAddress.district,
         },
         chat_user: {
@@ -85,8 +84,8 @@ export class AuthRepository {
           permissionAssignment.permission_role_id
         )
       )
-      .innerJoin(userDocument, eq(userDocument.user_id, user.user_id))
-      .innerJoin(
+      .leftJoin(userDocument, eq(userDocument.user_id, user.user_id))
+      .leftJoin(
         userDocumentType,
         eq(
           userDocumentType.user_document_type_id,
@@ -117,7 +116,12 @@ export class AuthRepository {
       return null;
     }
 
-    return result[0] as AuthUserResponse;
+    const userData = result[0] as AuthUserResponse;
+    if (userData.address && !userData.address.user_address_id) {
+      userData.address = null;
+    }
+
+    return userData as AuthUserResponse;
   };
 
   findUserById = async (userId: string): Promise<AuthUserResponse | null> => {
@@ -154,7 +158,6 @@ export class AuthRepository {
           address2_partial: userAddress.address2_partial,
           city: zipcodeCity.city,
           state: zipcodeState.state,
-          state_abbreviation: zipcodeState.abbreviation,
           district: userAddress.district,
         },
         chat_user: {
@@ -204,7 +207,12 @@ export class AuthRepository {
       return null;
     }
 
-    return result[0] as AuthUserResponse;
+    const userData = result[0] as AuthUserResponse;
+    if (userData.address && !userData.address.user_address_id) {
+      userData.address = null;
+    }
+
+    return userData as AuthUserResponse;
   };
 
   authenticateByUserId = async (
@@ -244,7 +252,6 @@ export class AuthRepository {
           address2_partial: userAddress.address2_partial,
           city: zipcodeCity.city,
           state: zipcodeState.state,
-          state_abbreviation: zipcodeState.abbreviation,
           district: userAddress.district,
         },
         chat_user: {
@@ -301,6 +308,11 @@ export class AuthRepository {
       return null;
     }
 
-    return result[0] as AuthUserResponse;
+    const userData = result[0] as AuthUserResponse;
+    if (userData.address && !userData.address.user_address_id) {
+      userData.address = null;
+    }
+
+    return userData as AuthUserResponse;
   };
 }
