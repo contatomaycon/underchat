@@ -1,11 +1,10 @@
 import * as schema from '@core/models';
 import { aiAgentPrompt, aiAgent } from '@core/models';
-import { CreateAiAgentPromptRequest } from '@core/schema/aiAgent/createAiAgentPrompt/request.schema';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { v7 as uuidv7 } from 'uuid';
-import { EAiAgentStatus } from '@core/common/enums/EAiAgentStatus';
 import { and, eq } from 'drizzle-orm';
+import { ICreateAiAgentPromptInput } from '@core/common/interfaces/ICreateAiAgentPromptInput';
 
 @injectable()
 export class AiAgentPromptCreatorRepository {
@@ -31,7 +30,7 @@ export class AiAgentPromptCreatorRepository {
   };
 
   createAiAgentPrompt = async (
-    input: CreateAiAgentPromptRequest,
+    input: ICreateAiAgentPromptInput,
     accountId: string
   ): Promise<string | null> => {
     const aiAgentExists = await this.verifyAiAgentExists(
@@ -53,7 +52,7 @@ export class AiAgentPromptCreatorRepository {
         ai_agent_prompt_type: input.ai_agent_prompt_type,
         name: input.name,
         value: input.value,
-        status: input.status ?? EAiAgentStatus.active,
+        status: input.status,
       })
       .execute();
 

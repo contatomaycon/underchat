@@ -808,5 +808,7 @@
   "ai_agent_prompt_deleted_successfully": "Prompt deleted successfully!",
   "ai_agent_prompt_deleter_error": "Error deleting prompt!",
   "ai_agent_prompt_update_successfully": "Prompt updated successfully!",
-  "ai_agent_prompt_update_error": "Error updating prompt!"
+  "ai_agent_prompt_update_error": "Error updating prompt!",
+  "ai_agent_prompt_file_upload_failed": "Failed to upload file!",
+  "ai_agent_prompt_value_required": "Prompt value is required!"
 }

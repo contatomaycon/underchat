@@ -8,6 +8,7 @@ export const createAiAgentPromptSchema = {
   description: 'Cria um novo prompt para um agente de IA',
   tags: [ETagSwagger.aiAgent],
   produces: ['application/json'],
+  consumes: ['multipart/form-data'],
   security: [
     {
       authenticateJwt: [],

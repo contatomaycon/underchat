@@ -2001,7 +2001,7 @@
   "ai_agent_delete_success": "Agente de IA eliminado con éxito!",
   "delete_ai_agent_confirmation": "¿Está seguro de que desea eliminar este agente de IA? Esta acción no se puede deshacer.",
   "prompt": "Prompt",
-  "ai_agent_prompt_type": "Tipo de Prompt",
+  "ai_agent_prompt_type": "Tipo",
   "text": "Texto",
   "prompt_name_placeholder": "Nombre del prompt",
   "prompt_value_placeholder": "Contenido del prompt",

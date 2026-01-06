@@ -808,5 +808,7 @@
   "ai_agent_prompt_deleted_successfully": "¡Prompt eliminado con éxito!",
   "ai_agent_prompt_deleter_error": "¡Error al eliminar el prompt!",
   "ai_agent_prompt_update_successfully": "¡Prompt actualizado con éxito!",
-  "ai_agent_prompt_update_error": "¡Error al actualizar el prompt!"
+  "ai_agent_prompt_update_error": "¡Error al actualizar el prompt!",
+  "ai_agent_prompt_file_upload_failed": "¡Error al subir el archivo!",
+  "ai_agent_prompt_value_required": "¡El valor del prompt es obligatorio!"
 }

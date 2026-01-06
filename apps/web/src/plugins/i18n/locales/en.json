@@ -1999,7 +1999,7 @@
   "ai_agent_delete_success": "AI agent deleted successfully!",
   "delete_ai_agent_confirmation": "Are you sure you want to delete this AI agent? This action cannot be undone.",
   "prompt": "Prompt",
-  "ai_agent_prompt_type": "Prompt Type",
+  "ai_agent_prompt_type": "Type",
   "text": "Text",
   "prompt_name_placeholder": "Prompt name",
   "prompt_value_placeholder": "Prompt content",

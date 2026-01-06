@@ -18,9 +18,9 @@ import { ListAiAgentTypeResponse } from '@core/schema/aiAgent/listAiAgentType/re
 import { ListAiAgentResponse } from '@core/schema/aiAgent/listAiAgent/response.schema';
 import { ListAiAgentPromptRequest } from '@core/schema/aiAgent/listAiAgentPrompt/request.schema';
 import { ListAiAgentPromptResponse } from '@core/schema/aiAgent/listAiAgentPrompt/response.schema';
-import { CreateAiAgentPromptRequest } from '@core/schema/aiAgent/createAiAgentPrompt/request.schema';
 import { ViewAiAgentPromptResponse } from '@core/schema/aiAgent/viewAiAgentPrompt/response.schema';
 import { UpdateAiAgentPromptRequest } from '@core/schema/aiAgent/updateAiAgentPrompt/request.schema';
+import { ICreateAiAgentPromptInput } from '@core/common/interfaces/ICreateAiAgentPromptInput';
 
 @injectable()
 export class AiAgentService {
@@ -108,7 +108,7 @@ export class AiAgentService {
   };
 
   createAiAgentPrompt = async (
-    input: CreateAiAgentPromptRequest,
+    input: ICreateAiAgentPromptInput,
     accountId: string
   ): Promise<string | null> => {
     return this.aiAgentPromptCreatorRepository.createAiAgentPrompt(

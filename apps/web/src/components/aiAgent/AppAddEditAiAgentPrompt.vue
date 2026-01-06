@@ -116,14 +116,17 @@ const handleSave = async () => {
       }
     } else {
       const createData: CreateAiAgentPromptRequest = {
-        ai_agent_id: aiAgentId.value,
-        ai_agent_prompt_type: promptType.value,
-        name: name.value.trim(),
-        value: value.value.trim(),
-        status: status.value,
+        ai_agent_id: { value: aiAgentId.value },
+        ai_agent_prompt_type: { value: promptType.value },
+        name: { value: name.value.trim() },
+        value: isTextType.value ? { value: value.value.trim() } : undefined,
+        status: status.value ? { value: status.value } : undefined,
       };
 
-      const result = await aiAgentStore.addAiAgentPrompt(createData);
+      const result = await aiAgentStore.addAiAgentPrompt(
+        createData,
+        isFileType.value ? file.value : null
+      );
 
       if (result) {
         isVisible.value = false;

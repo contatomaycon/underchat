@@ -5,7 +5,7 @@ import { EColor } from '@core/common/enums/EColor';
 import { ISnackbar } from '@core/common/interfaces/ISnackbar';
 import { PagingResponseSchema } from '@core/schema/common/pagingResponseSchema';
 import axios from '@webcore/axios';
-import { AxiosError } from 'axios';
+import { AxiosError, AxiosRequestConfig } from 'axios';
 import {
   ListAiAgentFinalResponse,
   ListAiAgentResponse,
@@ -338,14 +338,39 @@ export const useAiAgentStore = defineStore('aiAgent', {
     },
 
     async addAiAgentPrompt(
-      input: CreateAiAgentPromptRequest
+      input: CreateAiAgentPromptRequest,
+      file?: File | null
     ): Promise<string | null> {
       try {
         this.loading = true;
 
+        const formData = new FormData();
+        formData.append('ai_agent_id', input.ai_agent_id.value);
+        formData.append(
+          'ai_agent_prompt_type',
+          input.ai_agent_prompt_type.value
+        );
+        formData.append('name', input.name.value);
+
+        if (input.ai_agent_prompt_type.value === 'file' && file) {
+          formData.append('file', file);
+        } else if (input.value) {
+          formData.append('value', input.value.value);
+        }
+
+        if (input.status) {
+          formData.append('status', input.status.value);
+        }
+
+        const config: AxiosRequestConfig<FormData> = {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+        };
+
         const response = await axios.post<
           IApiResponse<{ ai_agent_prompt_id: string }>
-        >(`/ai-agent/prompt`, input);
+        >(`/ai-agent/prompt`, formData, config);
 
         this.loading = false;
 
