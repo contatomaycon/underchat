@@ -183,7 +183,7 @@ export default [
   {
     title: 'accounts',
     to: { name: 'account-all' as keyof RouteNamedMap },
-    icon: { icon: 'tabler-user' },
+    icon: { icon: 'tabler-building' },
     permissions: [
       EGeneralPermissions.full_access,
       EGeneralPermissions.full_access_group,
