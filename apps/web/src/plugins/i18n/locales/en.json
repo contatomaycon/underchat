@@ -2004,6 +2004,7 @@
   "prompt_name_placeholder": "Prompt name",
   "prompt_value_placeholder": "Prompt content",
   "file_required": "File is required",
+  "view_file": "View file",
   "delete_prompt_confirmation": "Are you sure you want to delete this prompt?",
   "ai_agent_prompt_list_error": "An error occurred while listing prompts. Please try again.",
   "ai_agent_prompt_add_error": "An error occurred while adding the prompt. Please try again.",

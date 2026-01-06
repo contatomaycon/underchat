@@ -37,6 +37,8 @@ const promptType = ref<EAiAgentPromptType>(EAiAgentPromptType.text);
 const name = ref('');
 const value = ref('');
 const file = ref<File | null>(null);
+const originalFileUrl = ref<string | null>(null);
+const hasNewFile = ref(false);
 const status = ref<EAiAgentStatus>(EAiAgentStatus.active);
 const isSaving = ref(false);
 const isLoading = ref(false);
@@ -46,11 +48,24 @@ const nameRules = computed(() => [
   requiredValidator(name.value, t('name_required')),
 ]);
 
+const fileRules = computed(() => {
+  if (promptType.value === EAiAgentPromptType.file) {
+    return [
+      (v: File | File[] | null) => {
+        if (!v) return t('file_required');
+        if (Array.isArray(v)) return v.length > 0 || t('file_required');
+        return true;
+      },
+    ];
+  }
+  return [];
+});
+
 const valueRules = computed(() => {
   if (promptType.value === EAiAgentPromptType.text) {
     return [requiredValidator(value.value, t('value_required'))];
   }
-  return [requiredValidator(file.value, t('file_required'))];
+  return [];
 });
 
 const isTextType = computed(() => promptType.value === EAiAgentPromptType.text);
@@ -67,6 +82,11 @@ const loadPrompt = async () => {
       name.value = result.name;
       value.value = result.value;
       status.value = result.status;
+
+      if (result.ai_agent_prompt_type === EAiAgentPromptType.file) {
+        originalFileUrl.value = result.value;
+        hasNewFile.value = false;
+      }
     }
   } finally {
     isLoading.value = false;
@@ -75,9 +95,10 @@ const loadPrompt = async () => {
 
 const handleFileChange = (files: File[] | File | null) => {
   const selectedFile = Array.isArray(files) ? (files?.[0] ?? null) : files;
-  file.value = selectedFile;
 
   if (selectedFile) {
+    file.value = selectedFile;
+    hasNewFile.value = true;
     const reader = new FileReader();
     reader.onload = (e) => {
       const content = e.target?.result as string;
@@ -85,6 +106,8 @@ const handleFileChange = (files: File[] | File | null) => {
     };
     reader.readAsText(selectedFile);
   } else {
+    file.value = null;
+    hasNewFile.value = false;
     value.value = '';
   }
 };
@@ -99,15 +122,16 @@ const handleSave = async () => {
   try {
     if (isEditMode.value && promptId.value) {
       const updateData: UpdateAiAgentPromptRequest = {
-        ai_agent_prompt_type: promptType.value,
-        name: name.value.trim(),
-        value: value.value.trim(),
-        status: status.value,
+        ai_agent_prompt_type: { value: promptType.value },
+        name: { value: name.value.trim() },
+        value: isTextType.value ? { value: value.value.trim() } : undefined,
+        status: { value: status.value },
       };
 
       const result = await aiAgentStore.updateAiAgentPrompt(
         promptId.value,
-        updateData
+        updateData,
+        isFileType.value && hasNewFile.value ? file.value : null
       );
 
       if (result) {
@@ -142,6 +166,7 @@ watch(promptType, () => {
   if (promptType.value === EAiAgentPromptType.file) {
     value.value = '';
     file.value = null;
+    hasNewFile.value = false;
   }
 });
 
@@ -155,6 +180,8 @@ watch(isVisible, async (newValue) => {
       name.value = '';
       value.value = '';
       file.value = null;
+      originalFileUrl.value = null;
+      hasNewFile.value = false;
       status.value = EAiAgentStatus.active;
       refForm.value?.resetValidation();
     }
@@ -240,13 +267,27 @@ onMounted(() => {
               <VFileInput
                 v-model="file"
                 :placeholder="$t('select_file')"
-                :rules="valueRules"
+                :rules="fileRules"
                 :disabled="isSaving || isLoading"
                 show-size
                 chips
                 clearable
                 @update:model-value="handleFileChange"
               />
+              <div
+                v-if="isEditMode && originalFileUrl && !hasNewFile"
+                class="mt-2"
+              >
+                <a
+                  :href="originalFileUrl"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="text-primary text-decoration-none d-inline-flex align-center gap-1"
+                >
+                  <VIcon icon="tabler-external-link" size="16" />
+                  <span>{{ $t('view_file') }}</span>
+                </a>
+              </div>
             </VCol>
 
             <VCol cols="12">

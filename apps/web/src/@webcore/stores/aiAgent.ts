@@ -445,14 +445,47 @@ export const useAiAgentStore = defineStore('aiAgent', {
 
     async updateAiAgentPrompt(
       aiAgentPromptId: string,
-      input: UpdateAiAgentPromptRequest
+      input: UpdateAiAgentPromptRequest,
+      file?: File | null
     ): Promise<boolean> {
       try {
         this.loading = true;
 
+        const formData = new FormData();
+
+        if (input.ai_agent_prompt_type !== undefined) {
+          formData.append(
+            'ai_agent_prompt_type[value]',
+            input.ai_agent_prompt_type.value
+          );
+        }
+
+        if (input.name !== undefined) {
+          formData.append('name[value]', input.name.value);
+        }
+
+        if (input.value !== undefined) {
+          formData.append('value[value]', input.value.value);
+        }
+
+        if (input.status !== undefined) {
+          formData.append('status[value]', input.status.value);
+        }
+
+        if (file) {
+          formData.append('file', file);
+        }
+
+        const config: AxiosRequestConfig<FormData> = {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+        };
+
         const response = await axios.patch<IApiResponse<null>>(
           `/ai-agent/prompt/${aiAgentPromptId}`,
-          input
+          formData,
+          config
         );
 
         this.loading = false;

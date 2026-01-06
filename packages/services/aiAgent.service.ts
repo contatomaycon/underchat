@@ -19,8 +19,8 @@ import { ListAiAgentResponse } from '@core/schema/aiAgent/listAiAgent/response.s
 import { ListAiAgentPromptRequest } from '@core/schema/aiAgent/listAiAgentPrompt/request.schema';
 import { ListAiAgentPromptResponse } from '@core/schema/aiAgent/listAiAgentPrompt/response.schema';
 import { ViewAiAgentPromptResponse } from '@core/schema/aiAgent/viewAiAgentPrompt/response.schema';
-import { UpdateAiAgentPromptRequest } from '@core/schema/aiAgent/updateAiAgentPrompt/request.schema';
 import { ICreateAiAgentPromptInput } from '@core/common/interfaces/ICreateAiAgentPromptInput';
+import { IUpdateAiAgentPromptInput } from '@core/common/interfaces/IUpdateAiAgentPromptInput';
 
 @injectable()
 export class AiAgentService {
@@ -128,7 +128,7 @@ export class AiAgentService {
   };
 
   updateAiAgentPromptById = async (
-    input: UpdateAiAgentPromptRequest,
+    input: IUpdateAiAgentPromptInput,
     aiAgentPromptId: string,
     accountId: string
   ): Promise<boolean> => {

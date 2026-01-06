@@ -3,7 +3,7 @@ import { aiAgentPrompt } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { eq } from 'drizzle-orm';
-import { UpdateAiAgentPromptRequest } from '@core/schema/aiAgent/updateAiAgentPrompt/request.schema';
+import { IUpdateAiAgentPromptInput } from '@core/common/interfaces/IUpdateAiAgentPromptInput';
 
 @injectable()
 export class AiAgentPromptUpdaterRepository {
@@ -12,7 +12,7 @@ export class AiAgentPromptUpdaterRepository {
   ) {}
 
   updateAiAgentPromptById = async (
-    input: UpdateAiAgentPromptRequest,
+    input: IUpdateAiAgentPromptInput,
     aiAgentPromptId: string,
     accountId: string
   ): Promise<boolean> => {
@@ -33,21 +33,23 @@ export class AiAgentPromptUpdaterRepository {
 
     const updateInput: Partial<typeof aiAgentPrompt.$inferInsert> = {};
 
-    if (input.ai_agent_prompt_type !== undefined) {
-      updateInput.ai_agent_prompt_type =
-        input.ai_agent_prompt_type ?? undefined;
+    if (
+      input.ai_agent_prompt_type !== undefined &&
+      input.ai_agent_prompt_type !== null
+    ) {
+      updateInput.ai_agent_prompt_type = input.ai_agent_prompt_type;
     }
 
-    if (input.name !== undefined) {
-      updateInput.name = input.name ?? undefined;
+    if (input.name !== undefined && input.name !== null) {
+      updateInput.name = input.name;
     }
 
-    if (input.value !== undefined) {
-      updateInput.value = input.value ?? undefined;
+    if (input.value !== undefined && input.value !== null) {
+      updateInput.value = input.value;
     }
 
-    if (input.status !== undefined) {
-      updateInput.status = input.status ?? undefined;
+    if (input.status !== undefined && input.status !== null) {
+      updateInput.status = input.status;
     }
 
     if (Object.keys(updateInput).length === 0) {

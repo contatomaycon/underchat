@@ -10,6 +10,7 @@ export const updateAiAgentPromptSchema = {
   description: 'Atualiza um prompt de um agente de IA',
   tags: [ETagSwagger.aiAgent],
   produces: ['application/json'],
+  consumes: ['multipart/form-data'],
   security: [
     {
       authenticateJwt: [],

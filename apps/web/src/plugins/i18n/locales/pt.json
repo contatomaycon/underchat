@@ -2006,6 +2006,7 @@
   "prompt_name_placeholder": "Nome do prompt",
   "prompt_value_placeholder": "Conteúdo do prompt",
   "file_required": "Arquivo é obrigatório",
+  "view_file": "Visualizar arquivo",
   "delete_prompt_confirmation": "Tem certeza que deseja excluir este prompt?",
   "ai_agent_prompt_list_error": "Ocorreu um erro ao listar os prompts. Por favor, tente novamente.",
   "ai_agent_prompt_add_error": "Ocorreu um erro ao adicionar o prompt. Por favor, tente novamente.",
