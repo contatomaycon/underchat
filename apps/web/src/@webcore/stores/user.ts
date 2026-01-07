@@ -318,10 +318,15 @@ export const useUsersStore = defineStore('users', {
         }
       }
 
-      if (body.sector_ids !== undefined && Array.isArray(body.sector_ids)) {
-        body.sector_ids.forEach((sectorId, index) => {
-          formData.append(`sector_ids[${index}]`, sectorId);
-        });
+      if (body.sector_ids !== undefined) {
+        const sectorIdsValue = body.sector_ids.value;
+        if (sectorIdsValue === null) {
+          formData.append('sector_ids', '');
+        } else if (Array.isArray(sectorIdsValue)) {
+          sectorIdsValue.forEach((sectorId, index) => {
+            formData.append(`sector_ids[${index}]`, sectorId);
+          });
+        }
       }
 
       if (body.photo_url?.value !== undefined) {

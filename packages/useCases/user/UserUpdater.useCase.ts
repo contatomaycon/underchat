@@ -855,7 +855,13 @@ export class UserUpdaterUseCase {
     userId: string,
     body: UpdateUserRequest
   ): Promise<void> {
-    const sectorIds = body.sector_ids || [];
+    if (body.sector_ids?.value === null) {
+      await this.userService.updateUserSectors(t, userId, []);
+      return;
+    }
+
+    const sectorIdsValue = body.sector_ids?.value;
+    const sectorIds = Array.isArray(sectorIdsValue) ? sectorIdsValue : [];
 
     await this.userService.updateUserSectors(t, userId, sectorIds);
   }
@@ -930,6 +936,15 @@ export class UserUpdaterUseCase {
   }
 
   private processSectorIdsFromMultipartFormData(body: any): void {
+    if (
+      body.sector_ids === 'null' ||
+      body.sector_ids === null ||
+      body.sector_ids === ''
+    ) {
+      body.sector_ids = { value: null };
+      return;
+    }
+
     const sectorIdsArray: string[] = [];
 
     Object.keys(body).forEach((key) => {
@@ -946,7 +961,7 @@ export class UserUpdaterUseCase {
     });
 
     if (sectorIdsArray.length > 0) {
-      body.sector_ids = sectorIdsArray.filter(Boolean);
+      body.sector_ids = { value: sectorIdsArray.filter(Boolean) };
     }
   }
 

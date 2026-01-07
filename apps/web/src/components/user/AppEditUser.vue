@@ -1746,8 +1746,10 @@ const buildUpdateUserBody = (): UpdateUserRequest => {
       JSON.stringify(currentFilteredIds) !== JSON.stringify(initialFilteredIds);
 
     if (sectorIdsChanged) {
-      if (currentFilteredIds.length > 0 || initialFilteredIds.length > 0) {
-        body.sector_ids = currentFilteredIds;
+      if (currentFilteredIds.length > 0) {
+        body.sector_ids = { value: currentFilteredIds };
+      } else {
+        body.sector_ids = { value: null };
       }
     }
   }
