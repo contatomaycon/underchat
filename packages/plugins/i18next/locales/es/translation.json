@@ -548,6 +548,7 @@
   "chatbot_flow_validation_redirect_sector_required": "Sector es obligatorio en el nodo \"{{nodeLabel}}\"",
   "chatbot_flow_validation_tag_type_required": "Tipo de etiqueta es obligatorio en el nodo \"{{nodeLabel}}\"",
   "chatbot_flow_validation_tag_required": "Etiqueta es obligatoria en el nodo \"{{nodeLabel}}\"",
+  "chatbot_flow_validation_ai_agent_required": "El agente de IA es obligatorio en el nodo \"{{nodeLabel}}\"",
   "chatbot_flow_validation_title_required": "Título es obligatorio en el nodo \"{{nodeLabel}}\"",
   "chatbot_flow_validation_message_required": "Mensaje es obligatorio en el nodo \"{{nodeLabel}}\"",
   "chatbot_flow_validation_options_required": "Al menos una opción es obligatoria en el nodo \"{{nodeLabel}}\"",

@@ -1465,6 +1465,7 @@
   "chatbot_flow_validation_redirect_sector_required": "Sector is required in node \"{{nodeLabel}}\"",
   "chatbot_flow_validation_tag_type_required": "Tag type is required in node \"{{nodeLabel}}\"",
   "chatbot_flow_validation_tag_required": "Tag is required in node \"{{nodeLabel}}\"",
+  "chatbot_flow_validation_ai_agent_required": "AI agent is required in node \"{{nodeLabel}}\"",
   "chatbot_flow_validation_title_required": "Title is required in node \"{{nodeLabel}}\"",
   "chatbot_flow_validation_message_required": "Message is required in node \"{{nodeLabel}}\"",
   "chatbot_flow_validation_options_required": "At least one option is required in node \"{{nodeLabel}}\"",

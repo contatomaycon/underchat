@@ -337,6 +337,31 @@ export class ChatbotFlowSaverUseCase {
     }
   }
 
+  private validateAiAgentNode(
+    t: TFunction<'translation', undefined>,
+    node: any,
+    errors: string[]
+  ): void {
+    if (node.type !== 'aiAgent') {
+      return;
+    }
+
+    const data = node.data;
+    if (
+      !data ||
+      !data.selectedAiAgent ||
+      (typeof data.selectedAiAgent === 'string' &&
+        data.selectedAiAgent.trim().length === 0)
+    ) {
+      const nodeLabel = node.data?.title || node.label || node.id || 'aiAgent';
+      errors.push(
+        t('chatbot_flow_validation_ai_agent_required', {
+          nodeLabel,
+        })
+      );
+    }
+  }
+
   private validateMenuOrSatisfactionNode(
     t: TFunction<'translation', undefined>,
     node: any,
@@ -434,6 +459,7 @@ export class ChatbotFlowSaverUseCase {
       this.validateDataNode(t, node, errors);
       this.validateRedirectNode(t, node, errors);
       this.validateTagNode(t, node, errors);
+      this.validateAiAgentNode(t, node, errors);
       this.validateMenuOrSatisfactionNode(t, node, errors);
     }
 

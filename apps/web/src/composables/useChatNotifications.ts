@@ -194,7 +194,7 @@ async function preloadImage(url: string): Promise<string | undefined> {
     let finalUrl = url;
     if (!finalUrl.startsWith('http://') && !finalUrl.startsWith('https://')) {
       if (finalUrl.startsWith('/')) {
-        const baseUrl = window.location.origin;
+        const baseUrl = globalThis.location.origin;
         finalUrl = `${baseUrl}${finalUrl}`;
       } else {
         resolve(undefined);
@@ -232,9 +232,31 @@ export const useChatNotifications = () => {
   const isPageVisible = ref(true);
   const processingMessages = ref(new Set<string>());
   const notifiedQueueChats = ref(new Set<string>());
+  const serviceWorkerRegistration = ref<ServiceWorkerRegistration | null>(null);
+
+  async function registerServiceWorker(): Promise<ServiceWorkerRegistration | null> {
+    if (!('serviceWorker' in navigator)) {
+      return null;
+    }
+
+    try {
+      const registration = await navigator.serviceWorker.register(
+        '/service-worker.js',
+        {
+          scope: '/',
+        }
+      );
+
+      await navigator.serviceWorker.ready;
+      serviceWorkerRegistration.value = registration;
+      return registration;
+    } catch {
+      return null;
+    }
+  }
 
   async function requestNotificationPermission(): Promise<boolean> {
-    if (!('Notification' in window)) {
+    if (!('Notification' in globalThis)) {
       return false;
     }
 
@@ -255,7 +277,7 @@ export const useChatNotifications = () => {
   }
 
   async function showNotification(message: IChatMessage): Promise<void> {
-    if (!('Notification' in window)) {
+    if (!('Notification' in globalThis)) {
       return;
     }
 
@@ -264,18 +286,20 @@ export const useChatNotifications = () => {
     }
 
     const tag = `chat-${message.chat_id}-${message.message_id}`;
-
     const title = getSenderName(message, chatStore, t);
     const preview = getMessagePreview(message, t);
     const body = formatNotificationBody(preview);
     const iconUrl = getSenderIcon(message, chatStore);
-
     const icon = await preloadImage(iconUrl);
 
     const notificationOptions: NotificationOptions = {
       body,
       tag,
       requireInteraction: false,
+      data: {
+        chatId: message.chat_id,
+        messageId: message.message_id,
+      },
     };
 
     if (icon) {
@@ -283,10 +307,21 @@ export const useChatNotifications = () => {
       notificationOptions.badge = icon;
     }
 
+    if (
+      serviceWorkerRegistration.value &&
+      'showNotification' in serviceWorkerRegistration.value
+    ) {
+      await serviceWorkerRegistration.value.showNotification(
+        title,
+        notificationOptions
+      );
+      return;
+    }
+
     const notification = new Notification(title, notificationOptions);
 
     notification.onclick = () => {
-      window.focus();
+      globalThis.focus();
       notification.close();
 
       if (chatStore.setActiveChat) {
@@ -373,9 +408,40 @@ export const useChatNotifications = () => {
     isPageVisible.value = !document.hidden;
   }
 
-  onMounted(() => {
+  onMounted(async () => {
     isPageVisible.value = !document.hidden;
     document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    if ('serviceWorker' in navigator) {
+      await registerServiceWorker();
+
+      const handleServiceWorkerMessage = (event: Event) => {
+        const messageEvent = event as MessageEvent;
+        if (
+          messageEvent.data?.type === 'navigateToChat' &&
+          messageEvent.data?.chatId
+        ) {
+          if (chatStore.setActiveChat) {
+            chatStore.setActiveChat(messageEvent.data.chatId);
+          }
+          router.push({
+            name: 'chat',
+          });
+        }
+      };
+
+      if (navigator.serviceWorker.controller) {
+        navigator.serviceWorker.controller.addEventListener(
+          'message',
+          handleServiceWorkerMessage as EventListener
+        );
+      }
+
+      navigator.serviceWorker.addEventListener(
+        'message',
+        handleServiceWorkerMessage as EventListener
+      );
+    }
   });
 
   onUnmounted(() => {
@@ -385,8 +451,14 @@ export const useChatNotifications = () => {
   watch(
     () => chatStore.user?.chat_user?.notifications,
     async (notifications) => {
-      if (notifications === true && Notification.permission === 'default') {
-        await requestNotificationPermission();
+      if (notifications === true) {
+        if (Notification.permission === 'default') {
+          await requestNotificationPermission();
+        }
+
+        if ('serviceWorker' in navigator && !serviceWorkerRegistration.value) {
+          await registerServiceWorker();
+        }
       }
     },
     { immediate: true }
@@ -395,5 +467,6 @@ export const useChatNotifications = () => {
   return {
     handleNewMessage,
     requestNotificationPermission,
+    registerServiceWorker,
   };
 };

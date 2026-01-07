@@ -1466,6 +1466,7 @@
   "chatbot_flow_validation_redirect_sector_required": "Setor é obrigatório no nó \"{{nodeLabel}}\"",
   "chatbot_flow_validation_tag_type_required": "Tipo de etiqueta é obrigatório no nó \"{{nodeLabel}}\"",
   "chatbot_flow_validation_tag_required": "Etiqueta é obrigatória no nó \"{{nodeLabel}}\"",
+  "chatbot_flow_validation_ai_agent_required": "Agente de IA é obrigatório no nó \"{{nodeLabel}}\"",
   "chatbot_flow_validation_title_required": "Título é obrigatório no nó \"{{nodeLabel}}\"",
   "chatbot_flow_validation_message_required": "Mensagem é obrigatória no nó \"{{nodeLabel}}\"",
   "chatbot_flow_validation_options_required": "Pelo menos uma opção é obrigatória no nó \"{{nodeLabel}}\"",

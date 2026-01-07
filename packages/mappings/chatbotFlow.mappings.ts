@@ -202,6 +202,9 @@ export const chatbotFlowMappings = () => {
                 selectedTag: {
                   type: 'keyword',
                 },
+                selectedAiAgent: {
+                  type: 'keyword',
+                },
                 options: {
                   type: 'nested',
                   properties: {

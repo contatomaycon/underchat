@@ -103,6 +103,9 @@ export const useNotificationsStore = defineStore('notifications', {
             data.data.plan_cancellation_notification,
           recurring_payment_failure_notification:
             data.data.recurring_payment_failure_notification,
+          test_plan_new_notification: data.data.test_plan_new_notification,
+          test_plan_expiration_reminder:
+            data.data.test_plan_expiration_reminder,
           created_at: data.data.created_at,
           updated_at: data.data.updated_at,
         };

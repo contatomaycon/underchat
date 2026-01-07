@@ -12,7 +12,9 @@ import { VueFlow } from '@vue-flow/core';
 import type { Node, Edge, Connection, NodeChange } from '@vue-flow/core';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EChatbotPermissions } from '@core/common/enums/EPermissions/chatbot';
+import { EAiAgentPermissions } from '@core/common/enums/EPermissions/aiAgent';
 import { EColor } from '@core/common/enums/EColor';
+import { can } from '@/@layouts/plugins/casl';
 import ChatbotMenuNode from '@/components/chatbot/ChatbotMenuNode.vue';
 import ChatbotStartNode from '@/components/chatbot/ChatbotStartNode.vue';
 import ChatbotSatisfactionNode from '@/components/chatbot/ChatbotSatisfactionNode.vue';
@@ -57,6 +59,15 @@ const { t } = useI18n();
 const router = useRouter();
 const route = useRoute();
 const chatbotStore = useChatbotStore();
+
+const canUseAiAgent = computed(() => {
+  return can([
+    EGeneralPermissions.full_access,
+    EGeneralPermissions.full_access_group,
+    EAiAgentPermissions.ai_agent_group,
+    EAiAgentPermissions.ai_agent_view,
+  ]);
+});
 
 const chatbotId = computed(() => {
   const params = route.params as Record<string, string | string[]>;
@@ -986,11 +997,19 @@ const prepareNodesForSave = (
     if (nodeData && 'onRemove' in nodeData) {
       delete nodeData.onRemove;
     }
+    if (nodeData && 'onRemoveOption' in nodeData) {
+      delete nodeData.onRemoveOption;
+    }
     if (
       node.type === 'data' &&
       (nodeData.dataType === null || nodeData.dataType === undefined)
     ) {
       delete nodeData.dataType;
+    }
+    if (node.type === 'aiAgent') {
+      if (nodeData.selectedAiAgent === undefined) {
+        nodeData.selectedAiAgent = null;
+      }
     }
     return {
       id: node.id,
@@ -1049,6 +1068,7 @@ const handleSave = async () => {
   isLoadingFlow.value = true;
 
   try {
+    await nextTick();
     const preparedNodes = prepareNodesForSave(nodes.value);
 
     const preparedEdges = edges.value.map((edge) => {
@@ -1150,6 +1170,10 @@ const processTagNodeData = (nodeData: any): void => {
   if (nodeData.selectedTag === undefined) nodeData.selectedTag = null;
 };
 
+const processAiAgentNodeData = (nodeData: any): void => {
+  if (nodeData.selectedAiAgent === undefined) nodeData.selectedAiAgent = null;
+};
+
 const processMessageNodeData = (nodeData: any): void => {
   if (nodeData.messageType === undefined) nodeData.messageType = null;
   if (nodeData.text === undefined) nodeData.text = '';
@@ -1203,6 +1227,9 @@ const processNodeDataByType = (node: Node): void => {
       break;
     case 'data':
       processDataNodeData(node.data);
+      break;
+    case 'aiAgent':
+      processAiAgentNodeData(node.data);
       break;
   }
 };
@@ -1785,6 +1812,7 @@ onUnmounted(() => {
               {{ t('chatbot_contact') }}
             </VBtn>
             <VBtn
+              v-if="canUseAiAgent"
               color="primary"
               draggable="true"
               @dragstart.stop="

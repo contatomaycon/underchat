@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, onMounted } from 'vue';
+import { ref, watch, onMounted, nextTick } from 'vue';
 import type { NodeProps } from '@vue-flow/core';
 import { Handle, Position } from '@vue-flow/core';
 import { useChatbotStore } from '@/@webcore/stores/chatbot';
@@ -22,8 +22,16 @@ const normalizeValue = (value?: string | null): string | null => {
 
 const getInitialData = (): AiAgentData => {
   const data = props.data as AiAgentData | undefined;
+  const selectedAiAgent = normalizeValue(data?.selectedAiAgent);
+
+  if (data) {
+    if (data.selectedAiAgent === undefined) {
+      data.selectedAiAgent = selectedAiAgent;
+    }
+  }
+
   return {
-    selectedAiAgent: normalizeValue(data?.selectedAiAgent),
+    selectedAiAgent,
   };
 };
 
@@ -33,10 +41,18 @@ const aiAgents = ref<Array<{ value: string; title: string }>>([]);
 const isLoadingAiAgents = ref(false);
 
 const updateNodeData = () => {
-  if (props.data) {
-    const data = props.data as AiAgentData;
-    data.selectedAiAgent = aiAgentData.value.selectedAiAgent;
+  if (!props.data) {
+    return;
   }
+  isUpdatingFromProps = true;
+  const data = props.data as AiAgentData;
+  const newValue = aiAgentData.value.selectedAiAgent;
+  if (data.selectedAiAgent !== newValue) {
+    data.selectedAiAgent = newValue;
+  }
+  nextTick(() => {
+    isUpdatingFromProps = false;
+  });
 };
 
 const loadAiAgents = async () => {
@@ -70,6 +86,11 @@ const loadAiAgents = async () => {
             value: selectedAgent.ai_agent_id,
             title: selectedAgent.name,
           });
+        } else {
+          aiAgents.value.unshift({
+            value: aiAgentData.value.selectedAiAgent,
+            title: aiAgentData.value.selectedAiAgent,
+          });
         }
       }
     }
@@ -81,9 +102,56 @@ const loadAiAgents = async () => {
   }
 };
 
-onMounted(() => {
-  loadAiAgents();
+onMounted(async () => {
+  const savedValue = normalizeValue(
+    (props.data as AiAgentData)?.selectedAiAgent
+  );
+
+  if (savedValue) {
+    aiAgentData.value.selectedAiAgent = savedValue;
+  }
+
+  await loadAiAgents();
+
+  if (savedValue) {
+    aiAgentData.value.selectedAiAgent = savedValue;
+    updateNodeData();
+  }
 });
+
+let isUpdatingFromProps = false;
+
+watch(
+  () => (props.data as AiAgentData)?.selectedAiAgent,
+  (newValue) => {
+    if (isUpdatingFromProps) {
+      return;
+    }
+    const normalized = normalizeValue(newValue);
+    if (normalized !== aiAgentData.value.selectedAiAgent) {
+      aiAgentData.value.selectedAiAgent = normalized;
+      if (normalized && aiAgents.value.length > 0) {
+        const agentExists = aiAgents.value.some(
+          (a: { value: string; title: string }) => a.value === normalized
+        );
+        if (!agentExists) {
+          loadAiAgents();
+        }
+      }
+    }
+  },
+  { flush: 'post' }
+);
+
+watch(
+  () => aiAgentData.value.selectedAiAgent,
+  (newValue, oldValue) => {
+    if (newValue !== oldValue) {
+      updateNodeData();
+    }
+  },
+  { immediate: false }
+);
 
 watch(
   () => aiAgentData.value,
@@ -92,6 +160,11 @@ watch(
   },
   { deep: true }
 );
+
+const handleAiAgentChange = (value: any) => {
+  aiAgentData.value.selectedAiAgent = value ? String(value) : null;
+  updateNodeData();
+};
 
 const handleRemove = () => {
   const data = props.data as AiAgentData;
@@ -131,14 +204,14 @@ const handleRemove = () => {
           >{{ t('chatbot_ai_agent_select') }}:</VLabel
         >
         <AppSelectSearch
-          v-model="aiAgentData.selectedAiAgent"
+          :model-value="aiAgentData.selectedAiAgent"
           :items="aiAgents"
           :placeholder="t('chatbot_ai_agent_placeholder')"
           :loading="isLoadingAiAgents"
           :clearable="true"
           item-value="value"
           item-title="title"
-          @select="loadAiAgents()"
+          @update:model-value="handleAiAgentChange"
         />
       </VCardText>
     </VCard>
