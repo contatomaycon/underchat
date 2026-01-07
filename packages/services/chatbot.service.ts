@@ -13,9 +13,11 @@ import { ListChatbotResponse } from '@core/schema/chatbot/listChatbot/response.s
 import { ChatbotChatTagResponse } from '@core/schema/chatbot/listChatTags/response.schema';
 import { UserService } from '@core/services/user.service';
 import { SectorService } from '@core/services/sector.service';
+import { AiAgentService } from '@core/services/aiAgent.service';
 import { ListChatbotUsersResponse } from '@core/schema/chatbot/listUsers/response.schema';
 import { ListChatbotSectorsResponse } from '@core/schema/chatbot/listSectors/response.schema';
 import { ChatbotSectorUserResponse } from '@core/schema/chatbot/listSectorUsers/response.schema';
+import { ListChatbotAiAgentsResponse } from '@core/schema/chatbot/listAiAgents/response.schema';
 import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { chatbotFlowMappings } from '@core/mappings/chatbotFlow.mappings';
@@ -40,6 +42,7 @@ export class ChatbotService {
     private readonly chatbotChatTagsListerRepository: ChatbotChatTagsListerRepository,
     private readonly userService: UserService,
     private readonly sectorService: SectorService,
+    private readonly aiAgentService: AiAgentService,
     private readonly elasticDatabaseService: ElasticDatabaseService
   ) {}
 
@@ -97,6 +100,12 @@ export class ChatbotService {
     sectorId: string
   ): Promise<ChatbotSectorUserResponse[]> => {
     return this.sectorService.listSectorUsersForTransfer(accountId, sectorId);
+  };
+
+  listChatbotAiAgents = async (
+    accountId: string
+  ): Promise<ListChatbotAiAgentsResponse> => {
+    return this.aiAgentService.listActiveAiAgentsForChatbot(accountId);
   };
 
   saveChatbotFlow = async (

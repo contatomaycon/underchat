@@ -9,6 +9,7 @@ import { listChatbotUsersSchema } from '@core/schema/chatbot/listUsers';
 import { listChatbotSectorsSchema } from '@core/schema/chatbot/listSectors';
 import { listChatbotSectorUsersSchema } from '@core/schema/chatbot/listSectorUsers';
 import { listChatbotChatTagsSchema } from '@core/schema/chatbot/listChatTags';
+import { listChatbotAiAgentsSchema } from '@core/schema/chatbot/listAiAgents';
 import { saveChatbotFlowSchema } from '@core/schema/chatbot/saveChatbotFlow';
 import { listChatbotFlowSchema } from '@core/schema/chatbot/listChatbotFlow';
 import { saveChatbotFlowConfigurationsSchema } from '@core/schema/chatbot/saveChatbotFlowConfigurations';
@@ -100,6 +101,17 @@ export default function chatbotRoutes(server: FastifyInstance) {
   server.get('/chatbot/tags', {
     schema: listChatbotChatTagsSchema,
     handler: chatbotController.listChatTags,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, chatbotPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.get('/chatbot/ai-agents', {
+    schema: listChatbotAiAgentsSchema,
+    handler: chatbotController.listAiAgents,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, chatbotPermissions),

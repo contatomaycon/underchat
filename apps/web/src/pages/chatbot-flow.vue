@@ -22,6 +22,7 @@ import ChatbotTagNode from '@/components/chatbot/ChatbotTagNode.vue';
 import ChatbotMessageNode from '@/components/chatbot/ChatbotMessageNode.vue';
 import ChatbotDataNode from '@/components/chatbot/ChatbotDataNode.vue';
 import ChatbotContactNode from '@/components/chatbot/ChatbotContactNode.vue';
+import ChatbotAiAgentNode from '@/components/chatbot/ChatbotAiAgentNode.vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter, useRoute } from 'vue-router';
 import DialogCloseBtn from '@/@webcore/components/DialogCloseBtn.vue';
@@ -49,6 +50,7 @@ const nodeTypes = {
   message: markRaw(ChatbotMessageNode),
   data: markRaw(ChatbotDataNode),
   contact: markRaw(ChatbotContactNode),
+  aiAgent: markRaw(ChatbotAiAgentNode),
 };
 
 const { t } = useI18n();
@@ -800,6 +802,23 @@ const addDataNode = (position?: { x: number; y: number }) => {
   nodes.value.push(newNode as Node);
 };
 
+const addAiAgentNode = (position?: { x: number; y: number }) => {
+  const nodeId = `aiAgent-${nodeIdCounter++}`;
+  const newNode: Node = {
+    id: nodeId,
+    type: 'aiAgent',
+    position: position || {
+      x: getSecureRandom(400) + 100,
+      y: getSecureRandom(300) + 100,
+    },
+    data: {
+      selectedAiAgent: null,
+      onRemove: () => removeNode(nodeId),
+    },
+  };
+  nodes.value.push(newNode as Node);
+};
+
 const onConnect = (connection: Connection) => {
   const normalizedSourceHandle = normalizeConnectionSourceHandle(connection);
   const normalizedTargetHandle = connection.targetHandle
@@ -940,6 +959,9 @@ const onDrop = (event: DragEvent) => {
       break;
     case 'contact':
       addContactMenuNode(position);
+      break;
+    case 'aiAgent':
+      addAiAgentNode(position);
       break;
   }
 
@@ -1761,6 +1783,26 @@ onUnmounted(() => {
             >
               <VIcon icon="tabler-users" class="me-2" />
               {{ t('chatbot_contact') }}
+            </VBtn>
+            <VBtn
+              color="primary"
+              draggable="true"
+              @dragstart.stop="
+                (e: DragEvent) => {
+                  draggedNodeType = 'aiAgent';
+                  e.dataTransfer!.effectAllowed = 'move';
+                  e.dataTransfer!.dropEffect = 'move';
+                }
+              "
+              @dragend="
+                () => {
+                  draggedNodeType = null;
+                }
+              "
+              style="cursor: grab"
+            >
+              <VIcon icon="tabler-brain" class="me-2" />
+              {{ t('chatbot_ai_agent') }}
             </VBtn>
           </div>
           <div class="vertical-divider" />

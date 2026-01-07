@@ -14,6 +14,7 @@ import { ChatbotUserResponse } from '@core/schema/chatbot/listUsers/response.sch
 import { ChatbotSectorResponse } from '@core/schema/chatbot/listSectors/response.schema';
 import { ChatbotSectorUserResponse } from '@core/schema/chatbot/listSectorUsers/response.schema';
 import { ChatbotChatTagResponse } from '@core/schema/chatbot/listChatTags/response.schema';
+import { ChatbotAiAgentResponse } from '@core/schema/chatbot/listAiAgents/response.schema';
 import { SaveChatbotFlowResponse } from '@core/schema/chatbot/saveChatbotFlow/response.schema';
 import { ListChatbotFlowResponse } from '@core/schema/chatbot/listChatbotFlow/response.schema';
 import { SaveChatbotFlowConfigurationsRequest } from '@core/schema/chatbot/saveChatbotFlowConfigurations/request.schema';
@@ -349,6 +350,13 @@ export const useChatbotStore = defineStore('chatbot', {
       return this._handleGetRequestArray<ChatbotChatTagResponse>(
         '/chatbot/tags',
         'error_loading_chatbot_tags'
+      );
+    },
+
+    async listChatbotAiAgents(): Promise<ChatbotAiAgentResponse[]> {
+      return this._handleGetRequestArray<ChatbotAiAgentResponse>(
+        '/chatbot/ai-agents',
+        'error_loading_chatbot_ai_agents'
       );
     },
 

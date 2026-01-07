@@ -21,6 +21,7 @@ import { ListAiAgentPromptResponse } from '@core/schema/aiAgent/listAiAgentPromp
 import { ViewAiAgentPromptResponse } from '@core/schema/aiAgent/viewAiAgentPrompt/response.schema';
 import { ICreateAiAgentPromptInput } from '@core/common/interfaces/ICreateAiAgentPromptInput';
 import { IUpdateAiAgentPromptInput } from '@core/common/interfaces/IUpdateAiAgentPromptInput';
+import { ListChatbotAiAgentsResponse } from '@core/schema/chatbot/listAiAgents/response.schema';
 
 @injectable()
 export class AiAgentService {
@@ -147,5 +148,11 @@ export class AiAgentService {
       aiAgentPromptId,
       accountId
     );
+  };
+
+  listActiveAiAgentsForChatbot = async (
+    accountId: string
+  ): Promise<ListChatbotAiAgentsResponse> => {
+    return this.aiAgentListerRepository.listActiveAiAgentsForChatbot(accountId);
   };
 }
