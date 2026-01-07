@@ -15,6 +15,9 @@ export const aiAgent = pgTable('ai_agent', {
   name: varchar({ length: 200 }).notNull(),
   base_url: varchar({ length: 500 }),
   api_key: varchar({ length: 2000 }),
+  model: varchar({ length: 100 }),
+  chunk_size: varchar({ length: 10 }).notNull().default('600'),
+  chunk_overlap: varchar({ length: 10 }).notNull().default('100'),
   status: varchar({ length: 20 })
     .notNull()
     .$type<EAiAgentStatus>()

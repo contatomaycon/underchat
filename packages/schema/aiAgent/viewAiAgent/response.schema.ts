@@ -6,6 +6,9 @@ export const viewAiAgentResponseSchema = Type.Object({
   name: Type.String(),
   base_url: Type.Union([Type.String(), Type.Null()]),
   api_key: Type.Union([Type.String(), Type.Null()]),
+  model: Type.Union([Type.String(), Type.Null()]),
+  chunk_size: Type.String(),
+  chunk_overlap: Type.String(),
   status: Type.Union([
     Type.Literal(EAiAgentStatus.active),
     Type.Literal(EAiAgentStatus.inactive),

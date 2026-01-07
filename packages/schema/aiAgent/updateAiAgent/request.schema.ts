@@ -14,6 +14,15 @@ export const updateAiAgentBodySchema = Type.Object({
   ),
   base_url: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   api_key: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  model: Type.Optional(
+    Type.Union([Type.String({ minLength: 1, maxLength: 100 }), Type.Null()])
+  ),
+  chunk_size: Type.Optional(
+    Type.Union([Type.String({ minLength: 1, maxLength: 10 }), Type.Null()])
+  ),
+  chunk_overlap: Type.Optional(
+    Type.Union([Type.String({ minLength: 1, maxLength: 10 }), Type.Null()])
+  ),
   status: Type.Optional(
     Type.Union([
       Type.Literal(EAiAgentStatus.active),

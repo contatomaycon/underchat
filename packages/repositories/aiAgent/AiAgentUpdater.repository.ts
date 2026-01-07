@@ -60,6 +60,18 @@ export class AiAgentUpdaterRepository {
       inputUpdate.api_key = input.api_key ?? undefined;
     }
 
+    if (input.model !== undefined) {
+      inputUpdate.model = input.model ?? undefined;
+    }
+
+    if (input.chunk_size !== undefined) {
+      inputUpdate.chunk_size = input.chunk_size ?? undefined;
+    }
+
+    if (input.chunk_overlap !== undefined) {
+      inputUpdate.chunk_overlap = input.chunk_overlap ?? undefined;
+    }
+
     if (input.status !== undefined) {
       inputUpdate.status = input.status ?? undefined;
     }

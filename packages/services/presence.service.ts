@@ -166,6 +166,17 @@ export class PresenceService {
         status,
       });
     } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+
+      if (
+        errorMessage.includes('Connection closed') ||
+        errorMessage.includes('transport closed') ||
+        errorMessage.includes('Transport closed')
+      ) {
+        return;
+      }
+
       console.error('Failed to publish user presence status', error);
     }
   }

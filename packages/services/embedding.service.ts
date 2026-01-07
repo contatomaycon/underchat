@@ -1,12 +1,13 @@
 import { injectable, inject } from 'tsyringe';
 import { Client } from '@elastic/elasticsearch';
-import { aiEmbeddingEnvironment } from '@core/config/environments';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { v7 as uuidv7 } from 'uuid';
 import { IChunk } from '@core/common/interfaces/IChunk';
 import { IEmbeddingDocument } from '@core/common/interfaces/IEmbeddingDocument';
 import { IEmbeddingResponse } from '@core/common/interfaces/IEmbeddingResponse';
 import { aiAgentPromptEmbeddingMappings } from '@core/mappings/aiAgentPromptEmbedding.mappings';
+import { AiAgentViewerRepository } from '@core/repositories/aiAgent/AiAgentViewer.repository';
+import InvalidConfigurationError from '@core/common/exceptions/InvalidConfigurationError';
 
 @injectable()
 export class EmbeddingService {
@@ -14,7 +15,8 @@ export class EmbeddingService {
   private readonly embeddingDimensions = 1536;
 
   constructor(
-    @inject('DatabaseElasticClient') private readonly elasticClient: Client
+    @inject('DatabaseElasticClient') private readonly elasticClient: Client,
+    private readonly aiAgentViewerRepository: AiAgentViewerRepository
   ) {}
 
   private async ensureIndex(): Promise<void> {
@@ -41,9 +43,11 @@ export class EmbeddingService {
     }
   }
 
-  private splitTextIntoChunks(text: string): IChunk[] {
-    const chunkSize = aiEmbeddingEnvironment.chunkSize;
-    const overlap = aiEmbeddingEnvironment.chunkOverlap;
+  private splitTextIntoChunks(
+    text: string,
+    chunkSize: number,
+    overlap: number
+  ): IChunk[] {
     const chunks: IChunk[] = [];
 
     const words = text.split(/\s+/);
@@ -82,25 +86,43 @@ export class EmbeddingService {
     return chunks;
   }
 
-  private async generateEmbeddings(texts: string[]): Promise<number[][]> {
+  private async generateEmbeddings(
+    texts: string[],
+    baseUrl: string,
+    apiKey: string,
+    model: string
+  ): Promise<number[][]> {
     if (texts.length === 0) {
       return [];
     }
 
-    const response = await fetch(
-      `${aiEmbeddingEnvironment.baseUrl}/embeddings`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${aiEmbeddingEnvironment.apiKey}`,
-        },
-        body: JSON.stringify({
-          model: aiEmbeddingEnvironment.model,
-          input: texts,
-        }),
-      }
-    );
+    if (!baseUrl) {
+      throw new InvalidConfigurationError(
+        'AI Agent base_url is not configured.'
+      );
+    }
+
+    if (!apiKey) {
+      throw new InvalidConfigurationError(
+        'AI Agent api_key is not configured.'
+      );
+    }
+
+    if (!model) {
+      throw new InvalidConfigurationError('AI Agent model is not configured.');
+    }
+
+    const response = await fetch(`${baseUrl}/embeddings`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        input: texts,
+      }),
+    });
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -119,16 +141,43 @@ export class EmbeddingService {
   ): Promise<number> {
     await this.ensureIndex();
 
+    const aiAgent = await this.aiAgentViewerRepository.viewAiAgent(
+      aiAgentId,
+      accountId
+    );
+
+    if (!aiAgent) {
+      throw new Error('AI Agent not found.');
+    }
+
+    if (!aiAgent.base_url || !aiAgent.api_key) {
+      throw new InvalidConfigurationError(
+        'AI Agent base_url or api_key is not configured.'
+      );
+    }
+
+    if (!aiAgent.model) {
+      throw new InvalidConfigurationError('AI Agent model is not configured.');
+    }
+
     await this.deletePromptEmbeddings(aiAgentPromptId);
 
-    const chunks = this.splitTextIntoChunks(text);
+    const chunkSize = Number.parseInt(aiAgent.chunk_size, 10) || 600;
+    const chunkOverlap = Number.parseInt(aiAgent.chunk_overlap, 10) || 100;
+
+    const chunks = this.splitTextIntoChunks(text, chunkSize, chunkOverlap);
 
     if (chunks.length === 0) {
       return 0;
     }
 
     const chunkTexts = chunks.map((chunk) => chunk.text);
-    const embeddings = await this.generateEmbeddings(chunkTexts);
+    const embeddings = await this.generateEmbeddings(
+      chunkTexts,
+      aiAgent.base_url,
+      aiAgent.api_key,
+      aiAgent.model
+    );
 
     const now = new Date().toISOString();
     const documents: IEmbeddingDocument[] = chunks.map((chunk, idx) => ({
@@ -157,7 +206,31 @@ export class EmbeddingService {
     queryText: string,
     topK = 5
   ): Promise<Array<{ text: string; score: number; promptId: string }>> {
-    const embeddings = await this.generateEmbeddings([queryText]);
+    const aiAgent = await this.aiAgentViewerRepository.viewAiAgent(
+      aiAgentId,
+      accountId
+    );
+
+    if (!aiAgent) {
+      throw new Error('AI Agent not found.');
+    }
+
+    if (!aiAgent.base_url || !aiAgent.api_key) {
+      throw new InvalidConfigurationError(
+        'AI Agent base_url or api_key is not configured.'
+      );
+    }
+
+    if (!aiAgent.model) {
+      throw new InvalidConfigurationError('AI Agent model is not configured.');
+    }
+
+    const embeddings = await this.generateEmbeddings(
+      [queryText],
+      aiAgent.base_url,
+      aiAgent.api_key,
+      aiAgent.model
+    );
     const queryVector = embeddings[0];
 
     const response = await this.elasticClient.search({

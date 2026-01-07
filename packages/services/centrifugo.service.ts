@@ -65,27 +65,109 @@ export class CentrifugoService {
       }
     );
 
-    await new Promise<void>((resolve, reject) => {
-      const onError = (err: unknown) => {
-        tempClient.off('error', onError);
-        reject(this.toError(err));
-      };
+    let connected = false;
+    let cleanupDone = false;
+    let resolveConnect: () => void;
+    let rejectConnect: (err: Error) => void;
 
-      const onConnect = () => {
+    const toError = (err: unknown): Error => {
+      if (err instanceof Error) return err;
+      if (typeof err === 'string') return new Error(err);
+      try {
+        return new Error(JSON.stringify(err));
+      } catch {
+        return new Error(String(err));
+      }
+    };
+
+    let onConnect: () => void;
+    let onError: (err: unknown) => void;
+    let onDisconnected: () => void;
+
+    const cleanup = (): void => {
+      if (cleanupDone) {
+        return;
+      }
+      cleanupDone = true;
+
+      try {
         tempClient.off('connected', onConnect);
-        resolve();
-      };
+        tempClient.off('error', onError);
+        tempClient.off('disconnected', onDisconnected);
+      } catch {}
+
+      try {
+        if (tempClient.state !== State.Disconnected) {
+          tempClient.disconnect();
+        }
+      } catch {}
+    };
+
+    onDisconnected = (): void => {
+      if (!connected) {
+        return;
+      }
+
+      cleanup();
+    };
+
+    onError = (err: unknown): void => {
+      tempClient.off('error', onError);
+      tempClient.off('connected', onConnect);
+      tempClient.off('disconnected', onDisconnected);
+
+      if (!connected) {
+        cleanup();
+        rejectConnect(toError(err));
+      }
+    };
+
+    onConnect = (): void => {
+      connected = true;
+      tempClient.off('connected', onConnect);
+      tempClient.off('error', onError);
+      resolveConnect();
+    };
+
+    const connectPromise = new Promise<void>((resolve, reject) => {
+      resolveConnect = resolve;
+      rejectConnect = reject;
 
       tempClient.on('connected', onConnect);
       tempClient.on('error', onError);
+      tempClient.on('disconnected', onDisconnected);
       tempClient.connect();
     });
 
-    const result = await tempClient.publish(channel, data);
+    try {
+      await connectPromise;
+    } catch (error) {
+      cleanup();
+      throw error;
+    }
 
-    tempClient.disconnect();
+    if (tempClient.state !== State.Connected) {
+      cleanup();
+      throw new Error('Connection closed before publish');
+    }
 
-    return result;
+    try {
+      const result = await tempClient.publish(channel, data);
+      cleanup();
+      return result;
+    } catch (error) {
+      const errorObj = this.toError(error);
+      cleanup();
+
+      if (
+        errorObj.message.includes('transport closed') ||
+        errorObj.message.includes('Transport closed')
+      ) {
+        throw new Error('Connection closed during publish');
+      }
+
+      throw errorObj;
+    }
   }
 
   private extractSubId(channel: string): string | null {
