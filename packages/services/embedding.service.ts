@@ -1,6 +1,7 @@
 import { injectable, inject } from 'tsyringe';
 import { Client } from '@elastic/elasticsearch';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
+import { EAiAgentType } from '@core/common/enums/EAiAgentType';
 import { v7 as uuidv7 } from 'uuid';
 import { IChunk } from '@core/common/interfaces/IChunk';
 import { IEmbeddingDocument } from '@core/common/interfaces/IEmbeddingDocument';
@@ -8,6 +9,15 @@ import { IEmbeddingResponse } from '@core/common/interfaces/IEmbeddingResponse';
 import { aiAgentPromptEmbeddingMappings } from '@core/mappings/aiAgentPromptEmbedding.mappings';
 import { AiAgentViewerRepository } from '@core/repositories/aiAgent/AiAgentViewer.repository';
 import InvalidConfigurationError from '@core/common/exceptions/InvalidConfigurationError';
+
+type IGeminiBatchEmbedContentsResponse = {
+  embeddings?: Array<{
+    values?: number[];
+    embedding?: {
+      values?: number[];
+    };
+  }>;
+};
 
 @injectable()
 export class EmbeddingService {
@@ -86,16 +96,31 @@ export class EmbeddingService {
     return chunks;
   }
 
-  private async generateEmbeddings(
-    texts: string[],
+  private isGeminiAgent(aiAgentTypeId: string): boolean {
+    return aiAgentTypeId === EAiAgentType.gemini;
+  }
+
+  private normalizeEmbedding(embedding: number[]): number[] {
+    if (embedding.length === this.embeddingDimensions) {
+      return embedding;
+    }
+
+    if (embedding.length > this.embeddingDimensions) {
+      return embedding.slice(0, this.embeddingDimensions);
+    }
+
+    const padded = embedding.slice();
+    while (padded.length < this.embeddingDimensions) {
+      padded.push(0);
+    }
+    return padded;
+  }
+
+  private validateEmbeddingConfig(
     baseUrl: string,
     apiKey: string,
     model: string
-  ): Promise<number[][]> {
-    if (texts.length === 0) {
-      return [];
-    }
-
+  ): void {
     if (!baseUrl) {
       throw new InvalidConfigurationError(
         'AI Agent base_url is not configured.'
@@ -111,7 +136,52 @@ export class EmbeddingService {
     if (!model) {
       throw new InvalidConfigurationError('AI Agent model is not configured.');
     }
+  }
 
+  private async callGeminiEmbeddingApi(
+    baseUrl: string,
+    apiKey: string,
+    model: string,
+    texts: string[]
+  ): Promise<number[][]> {
+    const url = `${baseUrl}/models/${encodeURIComponent(
+      model
+    )}:batchEmbedContents?key=${encodeURIComponent(apiKey)}`;
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        requests: texts.map((text) => ({
+          model: `models/${model}`,
+          content: {
+            parts: [{ text }],
+          },
+        })),
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Embedding API error: ${response.status} - ${errorText}`);
+    }
+
+    const data = (await response.json()) as IGeminiBatchEmbedContentsResponse;
+
+    const rawEmbeddings =
+      data.embeddings?.map((e) => e.values ?? e.embedding?.values ?? []) ?? [];
+
+    return rawEmbeddings.map((e) => this.normalizeEmbedding(e));
+  }
+
+  private async callOpenAiEmbeddingApi(
+    baseUrl: string,
+    apiKey: string,
+    model: string,
+    texts: string[]
+  ): Promise<number[][]> {
     const response = await fetch(`${baseUrl}/embeddings`, {
       method: 'POST',
       headers: {
@@ -130,7 +200,95 @@ export class EmbeddingService {
     }
 
     const data = (await response.json()) as IEmbeddingResponse;
-    return data.data.sort((a, b) => a.index - b.index).map((d) => d.embedding);
+    const raw = data.data
+      .sort((a, b) => a.index - b.index)
+      .map((d) => d.embedding);
+
+    return raw.map((e) => this.normalizeEmbedding(e));
+  }
+
+  private async generateEmbeddings(
+    texts: string[],
+    baseUrl: string,
+    apiKey: string,
+    model: string,
+    aiAgentTypeId: string
+  ): Promise<number[][]> {
+    if (texts.length === 0) {
+      return [];
+    }
+
+    this.validateEmbeddingConfig(baseUrl, apiKey, model);
+
+    if (this.isGeminiAgent(aiAgentTypeId)) {
+      return this.callGeminiEmbeddingApi(baseUrl, apiKey, model, texts);
+    }
+
+    return this.callOpenAiEmbeddingApi(baseUrl, apiKey, model, texts);
+  }
+
+  private validateAiAgentConfig(aiAgent: {
+    base_url: string | null;
+    api_key: string | null;
+    model: string | null;
+  }): asserts aiAgent is {
+    base_url: string;
+    api_key: string;
+    model: string;
+  } {
+    if (!aiAgent.base_url || !aiAgent.api_key) {
+      throw new InvalidConfigurationError(
+        'AI Agent base_url or api_key is not configured.'
+      );
+    }
+
+    if (!aiAgent.model) {
+      throw new InvalidConfigurationError('AI Agent model is not configured.');
+    }
+  }
+
+  private parseChunkConfig(
+    chunkSize: string,
+    chunkOverlap: string
+  ): {
+    size: number;
+    overlap: number;
+  } {
+    return {
+      size: Number.parseInt(chunkSize, 10) || 600,
+      overlap: Number.parseInt(chunkOverlap, 10) || 100,
+    };
+  }
+
+  private createEmbeddingDocuments(
+    chunks: IChunk[],
+    embeddings: number[][],
+    accountId: string,
+    aiAgentId: string,
+    aiAgentPromptId: string
+  ): IEmbeddingDocument[] {
+    const now = new Date().toISOString();
+
+    return chunks.map((chunk, idx) => ({
+      account_id: accountId,
+      ai_agent_id: aiAgentId,
+      ai_agent_prompt_id: aiAgentPromptId,
+      chunk_index: chunk.index,
+      chunk_text: chunk.text,
+      embedding: embeddings[idx],
+      created_at: now,
+    }));
+  }
+
+  private async bulkIndexDocuments(
+    documents: IEmbeddingDocument[]
+  ): Promise<void> {
+    const body = documents.flatMap((doc) => [
+      { index: { _index: this.indexName, _id: uuidv7() } },
+      doc,
+    ]);
+
+    await this.elasticClient.bulk({ body, refresh: 'wait_for' });
   }
 
   async processAndStoreEmbeddings(
@@ -150,22 +308,16 @@ export class EmbeddingService {
       throw new Error('AI Agent not found.');
     }
 
-    if (!aiAgent.base_url || !aiAgent.api_key) {
-      throw new InvalidConfigurationError(
-        'AI Agent base_url or api_key is not configured.'
-      );
-    }
-
-    if (!aiAgent.model) {
-      throw new InvalidConfigurationError('AI Agent model is not configured.');
-    }
+    this.validateAiAgentConfig(aiAgent);
 
     await this.deletePromptEmbeddings(aiAgentPromptId);
 
-    const chunkSize = Number.parseInt(aiAgent.chunk_size, 10) || 600;
-    const chunkOverlap = Number.parseInt(aiAgent.chunk_overlap, 10) || 100;
+    const { size, overlap } = this.parseChunkConfig(
+      aiAgent.chunk_size,
+      aiAgent.chunk_overlap
+    );
 
-    const chunks = this.splitTextIntoChunks(text, chunkSize, chunkOverlap);
+    const chunks = this.splitTextIntoChunks(text, size, overlap);
 
     if (chunks.length === 0) {
       return 0;
@@ -176,64 +328,30 @@ export class EmbeddingService {
       chunkTexts,
       aiAgent.base_url,
       aiAgent.api_key,
-      aiAgent.model
+      aiAgent.model,
+      aiAgent.ai_agent_type_id
     );
 
-    const now = new Date().toISOString();
-    const documents: IEmbeddingDocument[] = chunks.map((chunk, idx) => ({
-      account_id: accountId,
-      ai_agent_id: aiAgentId,
-      ai_agent_prompt_id: aiAgentPromptId,
-      chunk_index: chunk.index,
-      chunk_text: chunk.text,
-      embedding: embeddings[idx],
-      created_at: now,
-    }));
+    const documents = this.createEmbeddingDocuments(
+      chunks,
+      embeddings,
+      accountId,
+      aiAgentId,
+      aiAgentPromptId
+    );
 
-    const body = documents.flatMap((doc) => [
-      { index: { _index: this.indexName, _id: uuidv7() } },
-      doc,
-    ]);
-
-    await this.elasticClient.bulk({ body, refresh: 'wait_for' });
+    await this.bulkIndexDocuments(documents);
 
     return documents.length;
   }
 
-  async searchSimilarChunks(
+  private buildSimilaritySearchQuery(
     accountId: string,
     aiAgentId: string,
-    queryText: string,
-    topK = 5
-  ): Promise<Array<{ text: string; score: number; promptId: string }>> {
-    const aiAgent = await this.aiAgentViewerRepository.viewAiAgent(
-      aiAgentId,
-      accountId
-    );
-
-    if (!aiAgent) {
-      throw new Error('AI Agent not found.');
-    }
-
-    if (!aiAgent.base_url || !aiAgent.api_key) {
-      throw new InvalidConfigurationError(
-        'AI Agent base_url or api_key is not configured.'
-      );
-    }
-
-    if (!aiAgent.model) {
-      throw new InvalidConfigurationError('AI Agent model is not configured.');
-    }
-
-    const embeddings = await this.generateEmbeddings(
-      [queryText],
-      aiAgent.base_url,
-      aiAgent.api_key,
-      aiAgent.model
-    );
-    const queryVector = embeddings[0];
-
-    const response = await this.elasticClient.search({
+    queryVector: number[],
+    topK: number
+  ) {
+    return {
       index: this.indexName,
       size: topK,
       query: {
@@ -261,13 +379,15 @@ export class EmbeddingService {
           ],
         },
       },
-    });
+    };
+  }
 
-    const hits = response.hits.hits as Array<{
+  private parseSearchResults(
+    hits: Array<{
       _score: number;
       _source: IEmbeddingDocument;
-    }>;
-
+    }>
+  ): Array<{ text: string; score: number; promptId: string }> {
     return hits.map((hit) => ({
       text: hit._source.chunk_text,
       score: hit._score - 1.0,
@@ -275,11 +395,58 @@ export class EmbeddingService {
     }));
   }
 
+  async searchSimilarChunks(
+    accountId: string,
+    aiAgentId: string,
+    queryText: string,
+    topK = 5
+  ): Promise<Array<{ text: string; score: number; promptId: string }>> {
+    const aiAgent = await this.aiAgentViewerRepository.viewAiAgent(
+      aiAgentId,
+      accountId
+    );
+
+    if (!aiAgent) {
+      throw new Error('AI Agent not found.');
+    }
+
+    this.validateAiAgentConfig(aiAgent);
+
+    const embeddings = await this.generateEmbeddings(
+      [queryText],
+      aiAgent.base_url,
+      aiAgent.api_key,
+      aiAgent.model,
+      aiAgent.ai_agent_type_id
+    );
+    const queryVector = embeddings[0];
+
+    const searchQuery = this.buildSimilaritySearchQuery(
+      accountId,
+      aiAgentId,
+      queryVector,
+      topK
+    );
+
+    const response = await this.elasticClient.search(searchQuery);
+
+    const hits = response.hits.hits as Array<{
+      _score: number;
+      _source: IEmbeddingDocument;
+    }>;
+
+    return this.parseSearchResults(hits);
+  }
+
+  private async checkIndexExists(): Promise<boolean> {
+    return this.elasticClient.indices.exists({
+      index: this.indexName,
+    });
+  }
+
   async deletePromptEmbeddings(aiAgentPromptId: string): Promise<boolean> {
     try {
-      const exists = await this.elasticClient.indices.exists({
-        index: this.indexName,
-      });
+      const exists = await this.checkIndexExists();
 
       if (!exists) {
         return true;
@@ -306,9 +473,7 @@ export class EmbeddingService {
     aiAgentId: string
   ): Promise<boolean> {
     try {
-      const exists = await this.elasticClient.indices.exists({
-        index: this.indexName,
-      });
+      const exists = await this.checkIndexExists();
 
       if (!exists) {
         return true;

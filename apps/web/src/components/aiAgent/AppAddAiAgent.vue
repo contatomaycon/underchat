@@ -29,6 +29,9 @@ const aiAgentTypeId = ref<string>('');
 const name = ref('');
 const baseUrl = ref('');
 const apiKey = ref('');
+const model = ref('');
+const chunkSize = ref('600');
+const chunkOverlap = ref('100');
 const status = ref<EAiAgentStatus>(EAiAgentStatus.active);
 const isCreating = ref(false);
 const refForm = ref<VForm>();
@@ -72,8 +75,14 @@ const apiKeyLink = computed(() => {
 watch(aiAgentTypeId, (newTypeId) => {
   if (newTypeId === EAiAgentType.gpt) {
     baseUrl.value = 'https://api.openai.com/v1';
+    model.value = 'text-embedding-3-small';
+    chunkSize.value = '600';
+    chunkOverlap.value = '100';
   } else if (newTypeId === EAiAgentType.gemini) {
     baseUrl.value = 'https://generativelanguage.googleapis.com/v1';
+    model.value = 'text-embedding-004';
+    chunkSize.value = '600';
+    chunkOverlap.value = '100';
   } else if (newTypeId && otherTypes.value.length > 0) {
     const selectedType = types.value.find(
       (type) => type.ai_agent_type_id === newTypeId
@@ -84,6 +93,9 @@ watch(aiAgentTypeId, (newTypeId) => {
       selectedType.name.toLowerCase() !== 'gemini'
     ) {
       baseUrl.value = '';
+      model.value = '';
+      chunkSize.value = '600';
+      chunkOverlap.value = '100';
     }
   }
 });
@@ -94,6 +106,9 @@ watch(isVisible, (newValue) => {
     name.value = '';
     baseUrl.value = '';
     apiKey.value = '';
+    model.value = '';
+    chunkSize.value = '600';
+    chunkOverlap.value = '100';
     status.value = EAiAgentStatus.active;
     refForm.value?.resetValidation();
     loadTypes();
@@ -113,8 +128,11 @@ const handleCreateAiAgent = async () => {
     const result = await aiAgentStore.addAiAgent({
       ai_agent_type_id: aiAgentTypeId.value,
       name: name.value.trim(),
-      base_url: baseUrl.value.trim() || null,
-      api_key: apiKey.value.trim() || null,
+      base_url: baseUrl.value.trim() || undefined,
+      api_key: apiKey.value.trim() || undefined,
+      model: model.value.trim() || undefined,
+      chunk_size: chunkSize.value.trim() || undefined,
+      chunk_overlap: chunkOverlap.value.trim() || undefined,
       status: status.value,
     });
 
@@ -205,6 +223,34 @@ const handleCreateAiAgent = async () => {
                 v-model="apiKey"
                 type="password"
                 :placeholder="$t('api_key_placeholder')"
+                :disabled="isCreating"
+              />
+            </VCol>
+            <VCol cols="12">
+              <VLabel class="text-body-2 mb-1">{{ $t('model') }}:</VLabel>
+              <AppTextField
+                v-model="model"
+                :placeholder="$t('model_placeholder')"
+                :disabled="isCreating"
+              />
+            </VCol>
+            <VCol cols="6">
+              <VLabel class="text-body-2 mb-1">{{ $t('chunk_size') }}:</VLabel>
+              <AppTextField
+                v-model="chunkSize"
+                type="number"
+                :placeholder="$t('chunk_size_placeholder')"
+                :disabled="isCreating"
+              />
+            </VCol>
+            <VCol cols="6">
+              <VLabel class="text-body-2 mb-1"
+                >{{ $t('chunk_overlap') }}:</VLabel
+              >
+              <AppTextField
+                v-model="chunkOverlap"
+                type="number"
+                :placeholder="$t('chunk_overlap_placeholder')"
                 :disabled="isCreating"
               />
             </VCol>
