@@ -84,6 +84,9 @@ importers:
       '@types/pdfkit':
         specifier: ^0.17.4
         version: 0.17.4
+      '@types/web-push':
+        specifier: ^3.6.4
+        version: 3.6.4
       '@whiskeysockets/baileys':
         specifier: https://gitea.devunder.com/underchat/-/packages/npm/@whiskeysockets%2Fbaileys/5.1.2026/files/25
         version: https://gitea.devunder.com/underchat/-/packages/npm/@whiskeysockets%2Fbaileys/5.1.2026/files/25(audio-decode@2.2.3)(link-preview-js@4.0.0)(sharp@0.34.5)
@@ -222,6 +225,9 @@ importers:
       uuid:
         specifier: ^13.0.0
         version: 13.0.0
+      web-push:
+        specifier: ^3.6.7
+        version: 3.6.7
       ws:
         specifier: ^8.18.3
         version: 8.19.0
@@ -3530,6 +3536,9 @@ packages:
   '@types/web-bluetooth@0.0.21':
     resolution: {integrity: sha512-oIQLCGWtcFZy2JW77j9k8nHzAOpqMHLQejDA48XXMWH6tjCQHz5RCFz1bzsmROyL6PUm+LLnUiI4BCn221inxA==}
 
+  '@types/web-push@3.6.4':
+    resolution: {integrity: sha512-GnJmSr40H3RAnj0s34FNTcJi1hmWFV5KXugE0mYWnYhgTAHLJ/dJKAwDmvPJYMke0RplY2XE9LnM4hqSqKIjhQ==}
+
   '@types/webfontloader@1.6.38':
     resolution: {integrity: sha512-kUaF72Fv202suFx6yBrwXqeVRMx7hGtJTesyESZgn9sEPCUeDXm2p0SiyS1MTqW74nQP4p7JyrOCwZ7pNFns4w==}
 
@@ -4115,7 +4124,7 @@ packages:
     resolution: {integrity: sha512-kPSSXE6De1XOR820C90RIo2ogvZG+c3KiHzqUoO/F34Y2shGzesfqv7o57xrxovZJH/MetF5UjroJ/R/3isoiw==}
 
   '@whiskeysockets/baileys@https://gitea.devunder.com/underchat/-/packages/npm/@whiskeysockets%2Fbaileys/5.1.2026/files/25':
-    resolution: {integrity: sha512-IDcSD/ABav/tNcucNu7p/8NtYycqkOkBCqknf1mZQPYuBMzWbO12Cv8fXkwlJasv4N0nKLC7WhJCfctR5aQbtg==, tarball: https://gitea.devunder.com/underchat/-/packages/npm/@whiskeysockets%2Fbaileys/5.1.2026/files/25}
+    resolution: {tarball: https://gitea.devunder.com/underchat/-/packages/npm/@whiskeysockets%2Fbaileys/5.1.2026/files/25}
     version: 5.1.2026
     engines: {node: '>=20.0.0'}
     peerDependencies:
@@ -6372,6 +6381,10 @@ packages:
   http-signature@1.4.0:
     resolution: {integrity: sha512-G5akfn7eKbpDN+8nPS/cb57YeA1jLTVxjpCj7tmm3QKPdyDy7T+qSC40e9ptydSWvkwjSXw1VbkpyEm39ukeAg==}
     engines: {node: '>=0.10'}
+
+  http_ece@1.2.0:
+    resolution: {integrity: sha512-JrF8SSLVmcvc5NducxgyOrKXe3EsyHMgBFgSaIUGmArKe+rwr0uphRkRXvwiom3I+fpIfoItveHrfudL8/rxuA==}
+    engines: {node: '>=16'}
 
   https-proxy-agent@7.0.6:
     resolution: {integrity: sha512-vK9P5/iUfdl95AI+JVyUuIcVtd4ofvtrOr3HNtM2yxC9bnMbEdp3x01OhQNnjb8IJYi38VlTE3mBXwcfvywuSw==}
@@ -9548,6 +9561,11 @@ packages:
   watchpack@2.5.0:
     resolution: {integrity: sha512-e6vZvY6xboSwLz2GD36c16+O/2Z6fKvIf4pOXptw2rY9MVwE/TXc6RGqxD3I3x0a28lwBY7DE+76uTPSsBrrCA==}
     engines: {node: '>=10.13.0'}
+
+  web-push@3.6.7:
+    resolution: {integrity: sha512-OpiIUe8cuGjrj3mMBFWY+e4MMIkW3SVT+7vEIjvD9kejGUypv8GPDf84JdPWskK8zMRIJ6xYGm+Kxr8YkPyA0A==}
+    engines: {node: '>= 16'}
+    hasBin: true
 
   web-streams-polyfill@3.3.3:
     resolution: {integrity: sha512-d2JWLCivmZYTSIoge9MsgFCZrt571BikcWGYkjC1khllbTeDlGqZ2D8vD8E/lJa8WGWbb7Plm8/XJYV7IJHZZw==}
@@ -13266,6 +13284,10 @@ snapshots:
 
   '@types/web-bluetooth@0.0.21': {}
 
+  '@types/web-push@3.6.4':
+    dependencies:
+      '@types/node': 25.0.3
+
   '@types/webfontloader@1.6.38': {}
 
   '@types/ws@8.18.1':
@@ -16674,6 +16696,8 @@ snapshots:
       assert-plus: 1.0.0
       jsprim: 2.0.2
       sshpk: 1.18.0
+
+  http_ece@1.2.0: {}
 
   https-proxy-agent@7.0.6:
     dependencies:
@@ -20526,6 +20550,16 @@ snapshots:
     dependencies:
       glob-to-regexp: 0.4.1
       graceful-fs: 4.2.11
+
+  web-push@3.6.7:
+    dependencies:
+      asn1.js: 5.4.1
+      http_ece: 1.2.0
+      https-proxy-agent: 7.0.6
+      jws: 4.0.1
+      minimist: 1.2.8
+    transitivePeerDependencies:
+      - supports-color
 
   web-streams-polyfill@3.3.3: {}
 

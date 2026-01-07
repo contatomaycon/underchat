@@ -15,6 +15,8 @@ import { ConverterService } from './converter';
 import { ContactService } from './contact.service';
 import { ContactViewerRepository } from '@core/repositories/contact/ContactViewer.repository';
 import { WorkerService } from './worker.service';
+import { PushNotificationService } from './pushNotification.service';
+import { IPushNotificationPayload } from '@core/common/interfaces/IPushNotificationPayload';
 import { v7 as uuidv7 } from 'uuid';
 import {
   IChatMessage,
@@ -55,7 +57,8 @@ export class ChatMessageService {
     private readonly converterService: ConverterService,
     private readonly contactService: ContactService,
     private readonly contactViewerRepository: ContactViewerRepository,
-    private readonly workerService: WorkerService
+    private readonly workerService: WorkerService,
+    private readonly pushNotificationService: PushNotificationService
   ) {}
 
   private async getChat(
@@ -333,6 +336,34 @@ export class ChatMessageService {
         updatedChat
       ),
     ]);
+
+    if (updatedChat.user?.id && message.type_user !== ETypeUserChat.operator) {
+      const isFromMe = message.message_key?.from_me === true;
+
+      if (!isFromMe) {
+        const senderName =
+          updatedChat.name || updatedChat.contact?.name || 'Desconhecido';
+        const messagePreview = messageText || '[Mensagem]';
+
+        const payload: IPushNotificationPayload = {
+          title: senderName,
+          body: messagePreview,
+          icon:
+            updatedChat.photo ||
+            updatedChat.contact?.photo ||
+            '/images/svg/avatar-default.svg',
+          tag: `chat-${message.chat_id}`,
+          data: {
+            chatId: message.chat_id,
+            messageId: message.message_id,
+          },
+        };
+
+        await this.pushNotificationService
+          .sendNotificationToUser(updatedChat.user.id, payload)
+          .catch(() => {});
+      }
+    }
 
     return true;
   }

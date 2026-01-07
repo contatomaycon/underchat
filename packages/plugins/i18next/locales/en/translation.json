@@ -819,5 +819,9 @@
   "session_login_successfully": "Session login successful!",
   "session_login_error": "Error logging into session!",
   "user_account_not_found": "User account not found!",
-  "user_without_access_group": "The user does not have an access group. It is necessary to assign an access group to the user before logging into the session."
+  "user_without_access_group": "The user does not have an access group. It is necessary to assign an access group to the user before logging into the session.",
+  "push_vapid_not_configured": "VAPID keys not configured. Push notifications will not work.",
+  "push_subscription_registered_successfully": "Push notification subscription registered successfully!",
+  "push_public_key_retrieved_successfully": "VAPID public key retrieved successfully!",
+  "push_subscription_deleted_successfully": "Push notification subscription removed successfully!"
 }

@@ -65,6 +65,8 @@ import { replaceMessageTags } from '@core/common/functions/replaceMessageTags';
 import { WorkerConfigService } from '@core/services/workerConfig.service';
 import { PlanAccountService } from '@core/services/planAccount.service';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
+import { PushNotificationService } from '@core/services/pushNotification.service';
+import { IPushNotificationPayload } from '@core/common/interfaces/IPushNotificationPayload';
 
 @singleton()
 export class MessageUpsertConsume {
@@ -89,7 +91,8 @@ export class MessageUpsertConsume {
     private readonly chatMessageService: ChatMessageService,
     private readonly workerConfigService: WorkerConfigService,
     private readonly chatbotFlowRunnerService: ChatbotFlowRunnerService,
-    private readonly planAccountService: PlanAccountService
+    private readonly planAccountService: PlanAccountService,
+    private readonly pushNotificationService: PushNotificationService
   ) {}
 
   private get consumerOrThrow(): KafkaConsumer {
@@ -1559,6 +1562,37 @@ export class MessageUpsertConsume {
           updatedChat
         ),
       ]);
+
+      if (
+        updatedChat.user?.id &&
+        inputChatMessage.type_user !== ETypeUserChat.operator
+      ) {
+        const isFromMe = inputChatMessage.message_key?.from_me === true;
+
+        if (!isFromMe) {
+          const senderName =
+            updatedChat.name || updatedChat.contact?.name || 'Desconhecido';
+          const messagePreview = messageText || '[Mensagem]';
+
+          const payload: IPushNotificationPayload = {
+            title: senderName,
+            body: messagePreview,
+            icon:
+              updatedChat.photo ||
+              updatedChat.contact?.photo ||
+              '/images/svg/avatar-default.svg',
+            tag: `chat-${inputChatMessage.chat_id}`,
+            data: {
+              chatId: inputChatMessage.chat_id,
+              messageId: inputChatMessage.message_id,
+            },
+          };
+
+          await this.pushNotificationService
+            .sendNotificationToUser(updatedChat.user.id, payload)
+            .catch(() => {});
+        }
+      }
 
       return result;
     } catch {

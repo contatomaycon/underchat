@@ -33,6 +33,7 @@ import reportClientsRoutes from './reportClients.route';
 import reportUsersRoutes from './reportUsers.route';
 import masterSessionRoutes from './masterSession.route';
 import aiAgentRoutes from './aiAgent.route';
+import pushRoutes from './push.route';
 
 export default function registerRoutes(server: FastifyInstance) {
   server.register(authRoutes);
@@ -68,5 +69,6 @@ export default function registerRoutes(server: FastifyInstance) {
   server.register(reportUsersRoutes);
   server.register(masterSessionRoutes);
   server.register(aiAgentRoutes);
+  server.register(pushRoutes);
   server.register(regRoutes);
 }

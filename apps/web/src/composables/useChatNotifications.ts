@@ -13,6 +13,7 @@ import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
 import { EPermissionsRoles } from '@core/common/enums/EPermissions';
 import { extractMessageTextFromContent } from '@core/common/functions/extractMessageTextFromContent';
 import { useChatNotificationToast } from './useChatNotificationToast';
+import axiosAuth from '@/@webcore/axios';
 
 const MAX_LINE_LENGTH = 70;
 
@@ -255,6 +256,64 @@ export const useChatNotifications = () => {
     }
   }
 
+  function urlBase64ToUint8Array(base64String: string): ArrayBuffer {
+    const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+    const base64 = (base64String + padding)
+      .replace(/\-/g, '+')
+      .replace(/_/g, '/');
+
+    const rawData = globalThis.atob(base64);
+    const bytes = Uint8Array.from(
+      [...rawData].map((char) => char.charCodeAt(0))
+    );
+    return bytes.buffer;
+  }
+
+  function arrayBufferToBase64(buffer: ArrayBuffer | null): string {
+    if (!buffer) return '';
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    for (let i = 0; i < bytes.byteLength; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    return globalThis.btoa(binary);
+  }
+
+  async function subscribeToPushNotifications(): Promise<void> {
+    if (!('serviceWorker' in navigator) || !('PushManager' in globalThis)) {
+      return;
+    }
+
+    if (Notification.permission !== 'granted') {
+      return;
+    }
+
+    try {
+      const registration = await navigator.serviceWorker.ready;
+
+      const response = await axiosAuth.get('/push/public-key');
+      const { public_key } = response.data.data;
+
+      const convertedVapidKey = urlBase64ToUint8Array(public_key);
+
+      const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: convertedVapidKey,
+      });
+
+      await axiosAuth.post('/push/subscribe', {
+        endpoint: subscription.endpoint,
+        keys: {
+          p256dh: arrayBufferToBase64(subscription.getKey('p256dh')),
+          auth: arrayBufferToBase64(subscription.getKey('auth')),
+        },
+        user_agent: navigator.userAgent,
+      });
+    } catch {
+      return;
+    }
+  }
+
   async function requestNotificationPermission(): Promise<boolean> {
     if (!('Notification' in globalThis)) {
       return false;
@@ -458,6 +517,10 @@ export const useChatNotifications = () => {
 
         if ('serviceWorker' in navigator && !serviceWorkerRegistration.value) {
           await registerServiceWorker();
+        }
+
+        if (Notification.permission === 'granted') {
+          await subscribeToPushNotifications();
         }
       }
     },
