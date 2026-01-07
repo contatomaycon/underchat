@@ -181,8 +181,8 @@ export class AuthRepository {
           permissionAssignment.permission_role_id
         )
       )
-      .innerJoin(userDocument, eq(userDocument.user_id, user.user_id))
-      .innerJoin(
+      .leftJoin(userDocument, eq(userDocument.user_id, user.user_id))
+      .leftJoin(
         userDocumentType,
         eq(
           userDocumentType.user_document_type_id,
@@ -275,8 +275,8 @@ export class AuthRepository {
           permissionAssignment.permission_role_id
         )
       )
-      .innerJoin(userDocument, eq(userDocument.user_id, user.user_id))
-      .innerJoin(
+      .leftJoin(userDocument, eq(userDocument.user_id, user.user_id))
+      .leftJoin(
         userDocumentType,
         eq(
           userDocumentType.user_document_type_id,
