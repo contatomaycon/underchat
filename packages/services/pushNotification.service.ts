@@ -38,7 +38,14 @@ export class PushNotificationService {
     try {
       const publicKey = vapidEnvironment.vapidPublicKey;
       const privateKey = vapidEnvironment.vapidPrivateKey;
-      const contactEmail = vapidEnvironment.vapidContactEmail;
+      let contactEmail = vapidEnvironment.vapidContactEmail;
+
+      if (
+        !contactEmail.startsWith('mailto:') &&
+        !contactEmail.startsWith('https://')
+      ) {
+        contactEmail = `mailto:${contactEmail}`;
+      }
 
       this.vapidKeys = {
         publicKey,
