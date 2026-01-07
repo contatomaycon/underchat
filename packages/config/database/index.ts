@@ -14,11 +14,12 @@ async function dbConnector(fastify: FastifyInstance) {
     user: databaseEnvironment.dbUser,
     password: databaseEnvironment.dbPassword,
     database: databaseEnvironment.dbDatabase,
-    min: Number(databaseEnvironment.dbPoolMin ?? 10),
-    max: Number(databaseEnvironment.dbPoolMax ?? 30),
+    min: databaseEnvironment.dbPoolMin,
+    max: databaseEnvironment.dbPoolMax,
     idleTimeoutMillis: databaseEnvironment.dbPoolIdleTimeout,
     connectionTimeoutMillis: databaseEnvironment.dbPoolAcquireTimeout,
     keepAlive: true,
+    keepAliveInitialDelayMillis: 10000,
   });
 
   const poolRo = new Pool({
@@ -27,11 +28,20 @@ async function dbConnector(fastify: FastifyInstance) {
     user: databaseEnvironment.dbUser,
     password: databaseEnvironment.dbPassword,
     database: databaseEnvironment.dbDatabase,
-    min: Number(databaseEnvironment.dbPoolMin ?? 10),
-    max: Number(databaseEnvironment.dbPoolMax ?? 30),
+    min: databaseEnvironment.dbPoolMin,
+    max: databaseEnvironment.dbPoolMax,
     idleTimeoutMillis: databaseEnvironment.dbPoolIdleTimeout,
     connectionTimeoutMillis: databaseEnvironment.dbPoolAcquireTimeout,
     keepAlive: true,
+    keepAliveInitialDelayMillis: 10000,
+  });
+
+  poolRw.on('error', (err) => {
+    console.error('Unexpected error on idle database client (RW)', err);
+  });
+
+  poolRo.on('error', (err) => {
+    console.error('Unexpected error on idle database client (RO)', err);
   });
 
   if (databaseEnvironment.dbSslMode) {
