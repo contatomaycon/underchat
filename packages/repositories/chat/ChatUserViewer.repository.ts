@@ -2,14 +2,20 @@ import * as schema from '@core/models';
 import { chatUser } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { ListChatsUserResponse } from '@core/schema/chat/listChatsUser/response.schema';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
+import { PresenceService } from '@core/services/presence.service';
+import Redis from 'ioredis';
 
 @injectable()
 export class ChatUserViewerRepository {
+  private readonly keyPrefix = 'presence:user:';
+
   constructor(
-    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>,
+    @inject('Redis') private readonly redis: Redis,
+    private readonly presenceService: PresenceService
   ) {}
 
   viewChatUser = async (
@@ -19,7 +25,6 @@ export class ChatUserViewerRepository {
       .select({
         chat_user_id: chatUser.chat_user_id,
         about: chatUser.about,
-        status: chatUser.status,
         notifications: chatUser.notifications,
       })
       .from(chatUser)
@@ -30,25 +35,18 @@ export class ChatUserViewerRepository {
       return null;
     }
 
-    return result[0] as ListChatsUserResponse;
+    const status = await this.presenceService.getStatus(userId);
+
+    return {
+      ...result[0],
+      status: status ?? null,
+    } as ListChatsUserResponse;
   };
 
   findStatusByUserId = async (
     userId: string
   ): Promise<EChatUserStatus | null> => {
-    const result = await this.dbRo
-      .select({
-        status: chatUser.status,
-      })
-      .from(chatUser)
-      .where(and(eq(chatUser.user_id, userId)))
-      .execute();
-
-    if (!result?.length || !result[0]?.status) {
-      return null;
-    }
-
-    return result[0].status as EChatUserStatus;
+    return this.presenceService.getStatus(userId);
   };
 
   listUserIdsByStatuses = async (
@@ -58,12 +56,32 @@ export class ChatUserViewerRepository {
       return [];
     }
 
-    const result = await this.dbRo
-      .select({ user_id: chatUser.user_id })
-      .from(chatUser)
-      .where(inArray(chatUser.status, statuses))
-      .execute();
+    const activeUserIds: string[] = [];
+    const pattern = `${this.keyPrefix}*`;
+    let cursor = '0';
 
-    return result.map((row) => row.user_id);
+    do {
+      const [nextCursor, keys] = await this.redis.scan(
+        cursor,
+        'MATCH',
+        pattern,
+        'COUNT',
+        100
+      );
+
+      cursor = nextCursor;
+
+      for (const key of keys) {
+        const userId = key.replace(this.keyPrefix, '');
+        if (userId) {
+          const value = await this.redis.get(key);
+          if (value && statuses.includes(value as EChatUserStatus)) {
+            activeUserIds.push(userId);
+          }
+        }
+      }
+    } while (cursor !== '0');
+
+    return activeUserIds;
   };
 }

@@ -1,14 +1,16 @@
 import * as schema from '@core/models';
-import { sectorUser, sector, user, userInfo, chatUser } from '@core/models';
+import { sectorUser, sector, user, userInfo } from '@core/models';
 import { ListSectorUsersResponse } from '@core/schema/sector/listSectorUsers/response.schema';
 import { and, eq, isNull } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
+import { PresenceService } from '@core/services/presence.service';
 
 @injectable()
 export class SectorUsersListerRepository {
   constructor(
-    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>,
+    private readonly presenceService: PresenceService
   ) {}
 
   listSectorUsers = async (
@@ -24,15 +26,11 @@ export class SectorUsersListerRepository {
           last_name: userInfo.last_name,
           photo: userInfo.photo,
         },
-        chat_user: {
-          status: chatUser.status,
-        },
       })
       .from(sectorUser)
       .innerJoin(sector, eq(sectorUser.sector_id, sector.sector_id))
       .innerJoin(user, eq(sectorUser.user_id, user.user_id))
       .leftJoin(userInfo, eq(user.user_id, userInfo.user_id))
-      .leftJoin(chatUser, eq(user.user_id, chatUser.user_id))
       .where(
         and(
           eq(sectorUser.sector_id, sectorId),
@@ -49,8 +47,7 @@ export class SectorUsersListerRepository {
         user.email_partial,
         userInfo.name,
         userInfo.last_name,
-        userInfo.photo,
-        chatUser.status
+        userInfo.photo
       )
       .execute();
 
@@ -58,6 +55,18 @@ export class SectorUsersListerRepository {
       return [];
     }
 
-    return result as ListSectorUsersResponse[];
+    const usersWithStatus = await Promise.all(
+      result.map(async (row) => {
+        const status = await this.presenceService.getStatus(row.user_id);
+        return {
+          ...row,
+          chat_user: {
+            status: status,
+          },
+        };
+      })
+    );
+
+    return usersWithStatus as ListSectorUsersResponse[];
   };
 }

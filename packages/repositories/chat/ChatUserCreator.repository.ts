@@ -8,7 +8,6 @@ import { ExtractTablesWithRelations } from 'drizzle-orm';
 import { PgTransaction } from 'drizzle-orm/pg-core';
 import { inject, injectable } from 'tsyringe';
 import { v7 as uuidv7 } from 'uuid';
-import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 
 @injectable()
 export class ChatUserCreatorRepository {
@@ -31,7 +30,6 @@ export class ChatUserCreatorRepository {
       .values({
         chat_user_id: chatUserId,
         user_id: userId,
-        status: EChatUserStatus.offline,
         notifications: true,
       })
       .execute();

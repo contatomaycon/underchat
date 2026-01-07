@@ -34,10 +34,17 @@ export class ChatUserUpdaterUseCase {
     }
 
     if (input.status) {
-      await this.presenceService['publishUserStatus']?.(
-        userId,
-        input.status as EChatUserStatus
-      );
+      switch (input.status) {
+        case EChatUserStatus.online:
+          await this.presenceService.setUserOnline(userId);
+          break;
+        case EChatUserStatus.busy:
+          await this.presenceService.setUserBusy(userId);
+          break;
+        case EChatUserStatus.do_not_disturb:
+          await this.presenceService.setUserDoNotDisturb(userId);
+          break;
+      }
     }
 
     return updateChatUser;

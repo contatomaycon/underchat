@@ -1,4 +1,5 @@
 import { EUserStatus } from '@core/common/enums/EUserStatus';
+import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import { IAuthenticate } from '@core/common/interfaces/IAuthenticate';
 import * as schema from '@core/models';
 import {
@@ -18,11 +19,13 @@ import { AuthUserResponse } from '@core/schema/auth/login/response.schema';
 import { and, eq, isNull } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
+import { PresenceService } from '@core/services/presence.service';
 
 @injectable()
 export class AuthRepository {
   constructor(
-    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>,
+    private readonly presenceService: PresenceService
   ) {}
 
   authenticate = async (
@@ -65,7 +68,6 @@ export class AuthRepository {
         },
         chat_user: {
           chat_user_id: chatUser.chat_user_id,
-          status: chatUser.status,
           about: chatUser.about,
           notifications: chatUser.notifications,
         },
@@ -121,6 +123,11 @@ export class AuthRepository {
       userData.address = null;
     }
 
+    if (userData.chat_user) {
+      const status = await this.presenceService.getStatus(userData.user_id);
+      userData.chat_user.status = status ?? EChatUserStatus.offline;
+    }
+
     return userData as AuthUserResponse;
   };
 
@@ -162,7 +169,6 @@ export class AuthRepository {
         },
         chat_user: {
           chat_user_id: chatUser.chat_user_id,
-          status: chatUser.status,
           about: chatUser.about,
           notifications: chatUser.notifications,
         },
@@ -212,6 +218,11 @@ export class AuthRepository {
       userData.address = null;
     }
 
+    if (userData.chat_user) {
+      const status = await this.presenceService.getStatus(userData.user_id);
+      userData.chat_user.status = status ?? EChatUserStatus.offline;
+    }
+
     return userData as AuthUserResponse;
   };
 
@@ -256,7 +267,6 @@ export class AuthRepository {
         },
         chat_user: {
           chat_user_id: chatUser.chat_user_id,
-          status: chatUser.status,
           about: chatUser.about,
           notifications: chatUser.notifications,
         },
@@ -311,6 +321,11 @@ export class AuthRepository {
     const userData = result[0] as AuthUserResponse;
     if (userData.address && !userData.address.user_address_id) {
       userData.address = null;
+    }
+
+    if (userData.chat_user) {
+      const status = await this.presenceService.getStatus(userData.user_id);
+      userData.chat_user.status = status ?? EChatUserStatus.offline;
     }
 
     return userData as AuthUserResponse;

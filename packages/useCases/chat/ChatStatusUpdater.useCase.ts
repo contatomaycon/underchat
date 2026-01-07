@@ -24,6 +24,7 @@ import { ChatUserViewerRepository } from '@core/repositories/chat/ChatUserViewer
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import Redis from 'ioredis';
 import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
+import { PresenceService } from '@core/services/presence.service';
 
 @injectable()
 export class ChatStatusUpdaterUseCase {
@@ -36,6 +37,7 @@ export class ChatStatusUpdaterUseCase {
     private readonly chatMessageService: ChatMessageService,
     private readonly automaticAttendanceService: AutomaticAttendanceService,
     private readonly chatUserViewerRepository: ChatUserViewerRepository,
+    private readonly presenceService: PresenceService,
     @inject('Redis') private readonly redis: Redis
   ) {}
 
@@ -145,8 +147,7 @@ export class ChatStatusUpdaterUseCase {
       await this.workerService.viewWorkerConfigFieldsByWorkerId(workerId);
 
     if (workerConfig?.allow_attendance_only_online) {
-      const userStatus =
-        await this.chatUserViewerRepository.findStatusByUserId(userId);
+      const userStatus = await this.presenceService.getStatus(userId);
 
       if (userStatus !== EChatUserStatus.online) {
         throw new Error(t('attendance_only_online_allowed'));

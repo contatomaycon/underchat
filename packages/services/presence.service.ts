@@ -1,14 +1,9 @@
 import { inject, injectable } from 'tsyringe';
 import Redis from 'ioredis';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
-import { ChatUserViewerRepository } from '@core/repositories/chat/ChatUserViewer.repository';
-import { ChatUserUpdaterRepository } from '@core/repositories/chat/ChatUserUpdater.repository';
-import { UpdateChatsUserRequest } from '@core/schema/chat/updateChatsUser/request.schema';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { UserAccountViewerRepository } from '@core/repositories/user/UserAccountViewer.repository';
 import { chatAccountCentrifugo } from '@core/common/functions/centrifugoQueue';
-import { DrizzleQueryError } from 'drizzle-orm';
-import { getErrorMessage } from '@core/common/functions/toError';
 
 @injectable()
 export class PresenceService {
@@ -24,8 +19,6 @@ export class PresenceService {
 
   constructor(
     @inject('Redis') private readonly redis: Redis,
-    private readonly chatUserViewer: ChatUserViewerRepository,
-    private readonly chatUserUpdater: ChatUserUpdaterRepository,
     private readonly centrifugoService: CentrifugoService,
     private readonly userAccountViewerRepository: UserAccountViewerRepository
   ) {}
@@ -114,14 +107,26 @@ export class PresenceService {
     return null;
   }
 
-  private async getCurrentStatus(
-    userId: string
-  ): Promise<EChatUserStatus | null> {
+  async getStatus(userId: string): Promise<EChatUserStatus | null> {
     const cached = this.statusCache.get(userId);
     if (cached) return cached;
 
-    const dbStatus = await this.chatUserViewer.findStatusByUserId(userId);
-    return dbStatus ?? null;
+    const key = this.getKey(userId);
+    const value = await this.redis.get(key);
+    const status = this.parseStatusFromCache(value);
+
+    if (status) {
+      this.statusCache.set(userId, status);
+      return status;
+    }
+
+    return null;
+  }
+
+  private async getCurrentStatus(
+    userId: string
+  ): Promise<EChatUserStatus | null> {
+    return this.getStatus(userId);
   }
 
   private getActiveStatuses(): EChatUserStatus[] {
@@ -131,73 +136,6 @@ export class PresenceService {
       EChatUserStatus.busy,
       EChatUserStatus.do_not_disturb,
     ];
-  }
-
-  private isTemporaryDatabaseError(error: unknown): boolean {
-    if (!error || typeof error !== 'object') {
-      return false;
-    }
-
-    const errorMessage = getErrorMessage(error);
-    const lowerMessage = errorMessage.toLowerCase();
-
-    const temporaryErrorPatterns = [
-      'timeout exceeded when trying to connect',
-      'timeout',
-      'connection refused',
-      'connection closed',
-      'connection terminated',
-      'could not connect',
-      'connection error',
-      'connect econnrefused',
-      'pool timeout',
-      'too many connections',
-    ];
-
-    for (const pattern of temporaryErrorPatterns) {
-      if (lowerMessage.includes(pattern)) {
-        return true;
-      }
-    }
-
-    if (error instanceof DrizzleQueryError && error.cause) {
-      return this.isTemporaryDatabaseError(error.cause);
-    }
-
-    const cause = (error as { cause?: unknown })?.cause;
-    if (cause) {
-      return this.isTemporaryDatabaseError(cause);
-    }
-
-    return false;
-  }
-
-  private async ensureChatUserRow(
-    userId: string,
-    status: EChatUserStatus
-  ): Promise<void> {
-    try {
-      const existsStatus = await this.chatUserViewer.findStatusByUserId(userId);
-
-      if (existsStatus === null) {
-        const input: UpdateChatsUserRequest = {
-          status,
-          notifications: true,
-        };
-
-        await this.chatUserUpdater.updateChatUser(userId, input);
-      }
-    } catch (error) {
-      if (this.isTemporaryDatabaseError(error)) {
-        console.warn('Temporary database error while ensuring chat user row', {
-          userId,
-          error: getErrorMessage(error),
-        });
-        return;
-      }
-
-      throw error;
-    }
   }
 
   private async publishUserStatus(
@@ -249,21 +187,7 @@ export class PresenceService {
       forcePublish = false,
     } = options;
 
-    let currentStatus: EChatUserStatus | null;
-
-    try {
-      currentStatus = await this.getCurrentStatus(userId);
-    } catch (error) {
-      if (this.isTemporaryDatabaseError(error)) {
-        console.warn('Temporary database error while getting current status', {
-          userId,
-          error: getErrorMessage(error),
-        });
-        currentStatus = this.statusCache.get(userId) ?? null;
-      } else {
-        throw error;
-      }
-    }
+    const currentStatus = await this.getCurrentStatus(userId);
 
     if (clearRedis) {
       await this.clearPresenceKey(userId);
@@ -271,33 +195,10 @@ export class PresenceService {
       await this.refreshPresenceKey(userId, newStatus);
     }
 
-    if (currentStatus === null) {
-      await this.ensureChatUserRow(userId, newStatus);
-    }
-
     if (currentStatus !== newStatus) {
-      try {
-        await this.chatUserUpdater.updateStatusIfChanged(userId, newStatus);
-        this.statusCache.set(userId, newStatus);
-        await this.publishUserStatus(userId, newStatus);
-        return;
-      } catch (error) {
-        if (this.isTemporaryDatabaseError(error)) {
-          console.warn(
-            'Temporary database error while updating status, continuing without database update',
-            {
-              userId,
-              newStatus,
-              error: getErrorMessage(error),
-            }
-          );
-          this.statusCache.set(userId, newStatus);
-          await this.publishUserStatus(userId, newStatus);
-          return;
-        }
-
-        throw error;
-      }
+      this.statusCache.set(userId, newStatus);
+      await this.publishUserStatus(userId, newStatus);
+      return;
     }
 
     this.statusCache.set(userId, newStatus);
@@ -387,10 +288,43 @@ export class PresenceService {
     });
   }
 
+  private isValidUUID(uuid: string): boolean {
+    const uuidRegex =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    return uuidRegex.test(uuid);
+  }
+
   private async syncActiveUsersFromRedis(): Promise<void> {
-    const activeUserIds = await this.chatUserViewer.listUserIdsByStatuses(
-      this.getActiveStatuses()
-    );
+    const activeUserIds: string[] = [];
+    const pattern = `${this.keyPrefix}*`;
+    let cursor = '0';
+
+    do {
+      const [nextCursor, keys] = await this.redis.scan(
+        cursor,
+        'MATCH',
+        pattern,
+        'COUNT',
+        100
+      );
+
+      cursor = nextCursor;
+
+      for (const key of keys) {
+        if (!key.startsWith(this.keyPrefix)) {
+          continue;
+        }
+
+        if (key.includes(':exists:') || key.includes(':account_id:')) {
+          continue;
+        }
+
+        const userId = key.replace(this.keyPrefix, '');
+        if (userId && this.isValidUUID(userId)) {
+          activeUserIds.push(userId);
+        }
+      }
+    } while (cursor !== '0');
 
     for (let i = 0; i < activeUserIds.length; i += this.concurrency) {
       const batch = activeUserIds.slice(i, i + this.concurrency);

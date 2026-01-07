@@ -25,11 +25,14 @@ import {
 import { isDefinedFilter } from '@core/common/functions/isDefinedFilter';
 import { ListUserResponse } from '@core/schema/user/listUser/response.schema';
 import { ListUserRequest } from '@core/schema/user/listUser/request.schema';
+import { PresenceService } from '@core/services/presence.service';
+import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 
 @injectable()
 export class UserListerRepository {
   constructor(
-    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>,
+    private readonly presenceService: PresenceService
   ) {}
 
   private readonly setFiltersUser = (
@@ -209,7 +212,6 @@ export class UserListerRepository {
         ucu: {
           columns: {
             chat_user_id: true,
-            status: true,
           },
         },
         upa: {
@@ -240,7 +242,14 @@ export class UserListerRepository {
       return [];
     }
 
-    return result.map((user) => {
+    const usersWithStatus = await Promise.all(
+      result.map(async (userData) => {
+        const status = await this.presenceService.getStatus(userData.user_id);
+        return { userData, status: status ?? EChatUserStatus.offline };
+      })
+    );
+
+    return usersWithStatus.map(({ userData: user, status }) => {
       const userAddressData =
         user.uua && !user.uua.deleted_at ? user.uua : null;
 
@@ -308,10 +317,10 @@ export class UserListerRepository {
                 : null,
             }
           : null,
-        chat_user: user.ucu?.status
+        chat_user: user.ucu
           ? {
               chat_user_id: user.ucu.chat_user_id,
-              status: user.ucu.status,
+              status: status,
             }
           : null,
         permission_role: user.upa?.ppr

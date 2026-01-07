@@ -14,7 +14,6 @@ export const chatUser = pgTable('chat_user', {
     .references(() => user.user_id)
     .notNull(),
   about: varchar({ length: 200 }),
-  status: varchar({ length: 100 }),
   notifications: boolean().default(true),
   created_at: timestamp({
     mode: 'string',
