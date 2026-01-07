@@ -1,17 +1,14 @@
 import { ref, watch, onMounted, onUnmounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { useI18n } from 'vue-i18n';
 import { useChatStore } from '@/@webcore/stores/chat';
 import { getPermissions, getSectors } from '@/@webcore/localStorage/user';
 import type { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import type { IChat } from '@core/common/interfaces/IChat';
-import { EMessageType } from '@core/common/enums/EMessageType';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
 import { EPermissionsRoles } from '@core/common/enums/EPermissions';
-import { extractMessageTextFromContent } from '@core/common/functions/extractMessageTextFromContent';
 import { useChatNotificationToast } from './useChatNotificationToast';
 import axiosAuth from '@/@webcore/axios';
 
@@ -45,40 +42,6 @@ export function formatNotificationBody(preview: string): string {
   }
 
   return `${line1}\n${line2}`;
-}
-
-function getMessagePreview(
-  message: IChatMessage,
-  t: ReturnType<typeof useI18n>['t']
-): string {
-  if (!message.content) {
-    return `[${t('message')}]`;
-  }
-
-  const text = extractMessageTextFromContent(message.content);
-  if (text) {
-    return text;
-  }
-
-  switch (message.content.type) {
-    case EMessageType.image:
-      return `[${t('image')}]`;
-    case EMessageType.video:
-      return `[${t('video')}]`;
-    case EMessageType.audio:
-      return `[${t('audio')}]`;
-    case EMessageType.document:
-      return `[${t('document')}]`;
-    case EMessageType.sticker:
-      return `[${t('sticker')}]`;
-    case EMessageType.location:
-      return `[${t('location')}]`;
-    case EMessageType.contact_card:
-    case EMessageType.contacts:
-      return `[${t('contact')}]`;
-    default:
-      return `[${t('message')}]`;
-  }
 }
 
 function playAlertSound(): void {
@@ -156,84 +119,16 @@ function canReceiveMessageNotification(
   return userSectors.includes(chat.sector.id);
 }
 
-function getSenderName(
-  message: IChatMessage,
-  chatStore: ReturnType<typeof useChatStore>,
-  t: ReturnType<typeof useI18n>['t']
-): string {
-  const chat = getChatFromStore(message, chatStore);
-  if (chat?.name) {
-    return chat.name;
-  }
-  return t('unknown');
-}
-
-function getSenderIcon(
-  message: IChatMessage,
-  chatStore: ReturnType<typeof useChatStore>
-): string {
-  const chat = getChatFromStore(message, chatStore);
-  if (chat?.photo) {
-    return chat.photo;
-  }
-
-  return '/images/svg/avatar-default.svg';
-}
-
-async function preloadImage(url: string): Promise<string | undefined> {
-  return new Promise((resolve) => {
-    if (!url) {
-      resolve(undefined);
-      return;
-    }
-
-    if (url.startsWith('data:') || url.startsWith('blob:')) {
-      resolve(url);
-      return;
-    }
-
-    let finalUrl = url;
-    if (!finalUrl.startsWith('http://') && !finalUrl.startsWith('https://')) {
-      if (finalUrl.startsWith('/')) {
-        const baseUrl = globalThis.location.origin;
-        finalUrl = `${baseUrl}${finalUrl}`;
-      } else {
-        resolve(undefined);
-        return;
-      }
-    }
-
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-
-    const timeout = setTimeout(() => {
-      resolve(undefined);
-    }, 3000);
-
-    img.onload = () => {
-      clearTimeout(timeout);
-      resolve(finalUrl);
-    };
-
-    img.onerror = () => {
-      clearTimeout(timeout);
-      resolve(undefined);
-    };
-
-    img.src = finalUrl;
-  });
-}
-
 export const useChatNotifications = () => {
   const route = useRoute();
   const router = useRouter();
   const chatStore = useChatStore();
-  const { t } = useI18n();
   const { showToast } = useChatNotificationToast();
   const isPageVisible = ref(true);
   const processingMessages = ref(new Set<string>());
   const notifiedQueueChats = ref(new Set<string>());
   const serviceWorkerRegistration = ref<ServiceWorkerRegistration | null>(null);
+  const isSubscribing = ref(false);
 
   async function registerServiceWorker(): Promise<ServiceWorkerRegistration | null> {
     if (!('serviceWorker' in navigator)) {
@@ -248,7 +143,6 @@ export const useChatNotifications = () => {
         }
       );
 
-      await navigator.serviceWorker.ready;
       serviceWorkerRegistration.value = registration;
       return registration;
     } catch {
@@ -280,6 +174,10 @@ export const useChatNotifications = () => {
   }
 
   async function subscribeToPushNotifications(): Promise<void> {
+    if (isSubscribing.value) {
+      return;
+    }
+
     if (!('serviceWorker' in navigator) || !('PushManager' in globalThis)) {
       return;
     }
@@ -288,10 +186,37 @@ export const useChatNotifications = () => {
       return;
     }
 
+    isSubscribing.value = true;
+
     try {
-      const registration = await navigator.serviceWorker.ready;
+      let registration: ServiceWorkerRegistration | null = null;
+
+      if (serviceWorkerRegistration.value) {
+        registration = serviceWorkerRegistration.value;
+      } else {
+        const existingRegistration =
+          await navigator.serviceWorker.getRegistration();
+        if (existingRegistration) {
+          registration = existingRegistration;
+          serviceWorkerRegistration.value = existingRegistration;
+        } else {
+          const newRegistration = await registerServiceWorker();
+          if (newRegistration) {
+            registration = newRegistration;
+          } else {
+            isSubscribing.value = false;
+            return;
+          }
+        }
+      }
+
+      if (!registration) {
+        isSubscribing.value = false;
+        return;
+      }
 
       const response = await axiosAuth.get('/push/public-key');
+
       const { public_key } = response.data.data;
 
       const convertedVapidKey = urlBase64ToUint8Array(public_key);
@@ -301,15 +226,20 @@ export const useChatNotifications = () => {
         applicationServerKey: convertedVapidKey,
       });
 
-      await axiosAuth.post('/push/subscribe', {
+      const subscriptionData = {
         endpoint: subscription.endpoint,
         keys: {
           p256dh: arrayBufferToBase64(subscription.getKey('p256dh')),
           auth: arrayBufferToBase64(subscription.getKey('auth')),
         },
         user_agent: navigator.userAgent,
-      });
+      };
+
+      await axiosAuth.post('/push/subscribe', subscriptionData);
+
+      isSubscribing.value = false;
     } catch {
+      isSubscribing.value = false;
       return;
     }
   }
@@ -333,64 +263,6 @@ export const useChatNotifications = () => {
     }
 
     return false;
-  }
-
-  async function showNotification(message: IChatMessage): Promise<void> {
-    if (!('Notification' in globalThis)) {
-      return;
-    }
-
-    if (Notification.permission !== 'granted') {
-      return;
-    }
-
-    const tag = `chat-${message.chat_id}-${message.message_id}`;
-    const title = getSenderName(message, chatStore, t);
-    const preview = getMessagePreview(message, t);
-    const body = formatNotificationBody(preview);
-    const iconUrl = getSenderIcon(message, chatStore);
-    const icon = await preloadImage(iconUrl);
-
-    const notificationOptions: NotificationOptions = {
-      body,
-      tag,
-      requireInteraction: false,
-      data: {
-        chatId: message.chat_id,
-        messageId: message.message_id,
-      },
-    };
-
-    if (icon) {
-      notificationOptions.icon = icon;
-      notificationOptions.badge = icon;
-    }
-
-    if (
-      serviceWorkerRegistration.value &&
-      'showNotification' in serviceWorkerRegistration.value
-    ) {
-      await serviceWorkerRegistration.value.showNotification(
-        title,
-        notificationOptions
-      );
-      return;
-    }
-
-    const notification = new Notification(title, notificationOptions);
-
-    notification.onclick = () => {
-      globalThis.focus();
-      notification.close();
-
-      if (chatStore.setActiveChat) {
-        chatStore.setActiveChat(message.chat_id);
-      }
-
-      router.push({
-        name: 'chat',
-      });
-    };
   }
 
   async function handleNewMessage(message: IChatMessage): Promise<void> {
@@ -453,11 +325,6 @@ export const useChatNotifications = () => {
       showToast(message);
     }
 
-    const hasPermission = await requestNotificationPermission();
-    if (hasPermission) {
-      await showNotification(message);
-    }
-
     setTimeout(() => {
       processingMessages.value.delete(messageKey);
     }, 5000);
@@ -500,6 +367,20 @@ export const useChatNotifications = () => {
         'message',
         handleServiceWorkerMessage as EventListener
       );
+    }
+
+    if (chatStore.user?.chat_user?.notifications === true) {
+      if (Notification.permission === 'default') {
+        await requestNotificationPermission();
+      }
+
+      if (Notification.permission === 'granted') {
+        if ('serviceWorker' in navigator && !serviceWorkerRegistration.value) {
+          await registerServiceWorker();
+          await new Promise((resolve) => setTimeout(resolve, 500));
+        }
+        await subscribeToPushNotifications();
+      }
     }
   });
 

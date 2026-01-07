@@ -75,7 +75,16 @@ export class PushNotificationService {
       return { sent: 0, failed: 0 };
     }
 
-    const notificationPayload = JSON.stringify(payload);
+    const notificationPayload = JSON.stringify({
+      title: payload.title,
+      options: {
+        body: payload.body,
+        icon: payload.icon,
+        badge: payload.badge || payload.icon,
+        tag: payload.tag,
+        data: payload.data,
+      },
+    });
     let sent = 0;
     let failed = 0;
 

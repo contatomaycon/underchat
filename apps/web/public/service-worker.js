@@ -12,7 +12,7 @@ self.addEventListener('push', (event) => {
   }
 
   const data = event.data.json();
-  const { title, options } = data;
+  const { title, options = {} } = data;
 
   event.waitUntil(
     self.registration.showNotification(title, {
@@ -35,11 +35,10 @@ self.addEventListener('notificationclick', (event) => {
       .then((clientList) => {
         if (clientList.length > 0) {
           const client = clientList[0];
-          client.focus();
           if (chatId) {
             client.postMessage({ type: 'navigateToChat', chatId });
           }
-          return;
+          return client.focus().catch(() => {});
         }
 
         if (self.clients.openWindow) {
@@ -47,5 +46,6 @@ self.addEventListener('notificationclick', (event) => {
           return self.clients.openWindow(url);
         }
       })
+      .catch(() => {})
   );
 });
