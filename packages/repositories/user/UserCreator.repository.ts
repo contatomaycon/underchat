@@ -32,7 +32,7 @@ export class UserCreatorRepository {
       .values({
         user_id: userId,
         account_id: input.account_id,
-        user_status_id: EUserStatus.active,
+        user_status_id: input.user_status_id || EUserStatus.active,
         email: input.email,
         email_partial: input.email_partial,
         email_c: input.email_c,

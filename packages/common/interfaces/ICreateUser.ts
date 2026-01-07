@@ -4,4 +4,5 @@ export interface ICreateUser {
   email_partial: string;
   email_c: string;
   password: string;
+  user_status_id?: string;
 }

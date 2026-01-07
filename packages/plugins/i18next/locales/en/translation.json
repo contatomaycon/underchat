@@ -117,6 +117,8 @@
   "sector_users_successfully": "Sector users retrieved successfully!",
   "sector_users_not_found": "No users found in sector!",
   "user_sectors_successfully": "User sectors retrieved successfully!",
+  "user_sectors_list_successfully": "User sectors list retrieved successfully!",
+  "user_sectors_view_successfully": "User sectors viewed successfully!",
   "permission_role_count_sector_incompatible": "Sector role count incompatible!",
   "phone_connection_required": "Phone is required!",
   "worker_connection_logs_success": "Worker connection logs retrieved successfully!",

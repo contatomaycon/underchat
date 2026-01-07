@@ -744,6 +744,10 @@ export class UserUpdaterUseCase {
     return body.permission_role_id !== undefined;
   }
 
+  private hasSectorIdsField(body: UpdateUserRequest): boolean {
+    return body.sector_ids !== undefined;
+  }
+
   private async validatePermissionRoleExists(
     t: TFunction<'translation', undefined>,
     permissionRoleId: string,
@@ -846,6 +850,16 @@ export class UserUpdaterUseCase {
     await this.removeUserRoleFromUser(t, userId);
   }
 
+  private async updateUserSectorsData(
+    t: TFunction<'translation', undefined>,
+    userId: string,
+    body: UpdateUserRequest
+  ): Promise<void> {
+    const sectorIds = body.sector_ids || [];
+
+    await this.userService.updateUserSectors(t, userId, sectorIds);
+  }
+
   private async validateUserExistsInAccount(
     t: TFunction<'translation', undefined>,
     userId: string,
@@ -906,6 +920,10 @@ export class UserUpdaterUseCase {
       updatePromises.push(
         this.updateUserRoleData(t, userId, body, accountId, canOperateOnOthers)
       );
+    }
+
+    if (this.hasSectorIdsField(body)) {
+      updatePromises.push(this.updateUserSectorsData(t, userId, body));
     }
 
     return updatePromises;

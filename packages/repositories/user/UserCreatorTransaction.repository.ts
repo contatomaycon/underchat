@@ -18,6 +18,7 @@ import moment from 'moment';
 import { PasswordEncryptorService } from '@core/services/passwordEncryptor.service';
 import { ChatUserCreatorRepository } from '../chat/ChatUserCreator.repository';
 import { PermissionAssignmentCreatorRepository } from '../permission/PermissionAssignmentCreator.repository';
+import { SectorUserCreatorRepository } from '../sector/SectorUserCreator.repository';
 
 @injectable()
 export class UserTransactionCreatorRepository {
@@ -31,7 +32,8 @@ export class UserTransactionCreatorRepository {
     private readonly userInfoCreatorRepository: UserInfoCreatorRepository,
     private readonly userExistsByEmailAndPhoneRepository: UserExistsByEmailAndPhoneRepository,
     private readonly chatUserCreatorRepository: ChatUserCreatorRepository,
-    private readonly permissionAssignmentCreatorRepository: PermissionAssignmentCreatorRepository
+    private readonly permissionAssignmentCreatorRepository: PermissionAssignmentCreatorRepository,
+    private readonly sectorUserCreatorRepository: SectorUserCreatorRepository
   ) {}
 
   private validateBirthDate(
@@ -106,6 +108,7 @@ export class UserTransactionCreatorRepository {
         email_partial: emailPartialEncrypted,
         email_c: emailC,
         password: passwordEncrypted,
+        user_status_id: input.user_status_id?.value || undefined,
       };
 
       const createUserId = await this.userCreatorRepository.createUser(
@@ -280,6 +283,18 @@ export class UserTransactionCreatorRepository {
         if (!permissionAssignmentId) {
           throw new Error(t('user_role_assignment_failed'));
         }
+      }
+
+      if (input.sector_ids && input.sector_ids.length > 0) {
+        await Promise.all(
+          input.sector_ids.map((sectorId) =>
+            this.sectorUserCreatorRepository.createSectorUserInTransaction(
+              tx,
+              createUserId,
+              sectorId
+            )
+          )
+        );
       }
     });
     return true;

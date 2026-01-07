@@ -85,6 +85,12 @@ export const createUserRequestSchema = Type.Object({
       value: Type.Union([Type.String({ format: 'uuid' }), Type.Null()]),
     })
   ),
+  sector_ids: Type.Optional(Type.Array(Type.String({ format: 'uuid' }))),
+  user_status_id: Type.Optional(
+    Type.Object({
+      value: Type.Union([Type.String({ format: 'uuid' }), Type.Null()]),
+    })
+  ),
 });
 
 export type CreateUserRequest = Static<typeof createUserRequestSchema>;

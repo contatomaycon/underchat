@@ -16,6 +16,7 @@ import { usePasswordStrength } from '@/composables/usePasswordStrength';
 import { validatePassword } from '@/@webcore/utils/passwordStrength';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { can } from '@/@layouts/plugins/casl';
+import { EUserStatus } from '@core/common/enums/EUserStatus';
 
 const userStore = useUsersStore();
 const accountStore = useAccountStore();
@@ -40,6 +41,11 @@ const accountsOptions = ref<{ id: string; text: string }[]>([]);
 const accountsLoading = ref(false);
 const permissionRoleId = ref<string | null>(null);
 const rolesOptions = ref<{ id: string; name: string }[]>([]);
+const sectorIds = ref<string[]>([]);
+const sectorsOptions = ref<
+  { sector_id: string; name: string; color: string }[]
+>([]);
+const userStatusId = ref<string>(EUserStatus.active);
 
 const props = defineProps<{
   modelValue: boolean;
@@ -131,8 +137,6 @@ const onlyDigits = (s: string) => s.replaceAll(/\D+/g, '');
 
 const cpfRegex = /^\d{11}$/;
 const cnpjRegex = /^\d{14}$/;
-
-const requiredMsg = (label: string) => t('field_required', { field: label });
 
 const docRules = computed(() => [
   (v: string | null) => {
@@ -502,6 +506,12 @@ const buildUserPayload = () => {
     payload.permission_role_id = { value: permissionRoleId.value };
   }
 
+  if (sectorIds.value && sectorIds.value.length > 0) {
+    payload.sector_ids = sectorIds.value;
+  }
+
+  payload.user_status_id = { value: userStatusId.value };
+
   return payload;
 };
 
@@ -584,6 +594,8 @@ const resetForm = () => {
   district.value = null;
   accountId.value = null;
   permissionRoleId.value = null;
+  sectorIds.value = [];
+  userStatusId.value = EUserStatus.active;
   if (currentUser.value?.account_id) {
     accountId.value = currentUser.value.account_id;
   }
@@ -1224,12 +1236,20 @@ const loadRoles = async () => {
   }
 };
 
+const loadSectors = async () => {
+  const sectors = await userStore.listUserSectors();
+  if (sectors) {
+    sectorsOptions.value = sectors;
+  }
+};
+
 const loadUserDataTab = async (force = false) => {
   if (!force && loadedTabs.value.has('user_data')) return;
 
   setCurrentUserAccount();
   await loadAccounts();
   await loadRoles();
+  await loadSectors();
 
   loadedTabs.value.add('user_data');
 };
@@ -1450,7 +1470,27 @@ onMounted(resetForm);
                         :md="hasFullAccess ? 6 : 12"
                       >
                         <VLabel class="text-body-2 mb-1"
-                          >{{ $t('role') }}:</VLabel
+                          >{{ $t('status') }}:</VLabel
+                        >
+                        <AppSelectSearch
+                          v-model="userStatusId"
+                          :items="[
+                            { id: EUserStatus.active, name: $t('active') },
+                            { id: EUserStatus.inactive, name: $t('inactive') },
+                            { id: EUserStatus.blocked, name: $t('blocked') },
+                          ]"
+                          :placeholder="$t('select_status')"
+                          item-value="id"
+                          item-title="name"
+                        />
+                      </VCol>
+                    </VRow>
+
+                    <VDivider class="mb-4" />
+                    <VRow class="mb-4">
+                      <VCol cols="12" md="6">
+                        <VLabel class="text-body-2 mb-1"
+                          >{{ $t('access_group') }}:</VLabel
                         >
                         <AppSelectSearch
                           v-model="permissionRoleId"
@@ -1460,6 +1500,46 @@ onMounted(resetForm);
                           item-value="id"
                           item-title="name"
                         />
+                      </VCol>
+                      <VCol cols="12" md="6">
+                        <VLabel class="text-body-2 mb-1"
+                          >{{ $t('sector') }}:</VLabel
+                        >
+                        <VAutocomplete
+                          v-model="sectorIds"
+                          :items="sectorsOptions"
+                          item-title="name"
+                          item-value="sector_id"
+                          multiple
+                          chips
+                          closable-chips
+                          :placeholder="$t('select_sectors')"
+                        >
+                          <template #chip="{ props: chipProps, item }">
+                            <VChip
+                              v-bind="chipProps"
+                              :style="{
+                                backgroundColor: item.raw.color,
+                                color: 'white',
+                              }"
+                            >
+                              {{ item.raw.name }}
+                            </VChip>
+                          </template>
+                          <template #item="{ props: itemProps, item }">
+                            <VListItem v-bind="itemProps">
+                              <template #prepend>
+                                <VAvatar
+                                  size="20"
+                                  :style="{ backgroundColor: item.raw.color }"
+                                />
+                              </template>
+                              <VListItemTitle>
+                                {{ item.raw.name }}
+                              </VListItemTitle>
+                            </VListItem>
+                          </template>
+                        </VAutocomplete>
                       </VCol>
                     </VRow>
 

@@ -15,6 +15,8 @@ import { viewUserRole } from './methods/viewUserRole';
 import { uploadPhoto } from './methods/uploadPhoto';
 import { deletePhoto } from './methods/deletePhoto';
 import { listUserRoles } from './methods/listUserRoles';
+import { listUserSectors } from './methods/listUserSectors';
+import { viewUserSectors } from './methods/viewUserSectors';
 import { sessionLogin } from './methods/sessionLogin';
 
 @injectable()
@@ -35,6 +37,8 @@ class UserController {
   public uploadPhoto = uploadPhoto;
   public deletePhoto = deletePhoto;
   public listUserRoles = listUserRoles;
+  public listUserSectors = listUserSectors;
+  public viewUserSectors = viewUserSectors;
   public sessionLogin = sessionLogin;
 }
 

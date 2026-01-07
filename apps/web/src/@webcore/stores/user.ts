@@ -28,6 +28,7 @@ import { AssignUserRoleRequest } from '@core/schema/user/assignUserRole/request.
 import { ViewUserRoleResponse } from '@core/schema/user/viewUserRole/response.schema';
 import { ListAllUsersResponse } from '@core/schema/user/listAllUsers/response.schema';
 import { ListUserRolesResponse } from '@core/schema/user/listUserRoles/response.schema';
+import { ListUserSectorsResponse } from '@core/schema/user/listUserSectors/response.schema';
 
 export const useUsersStore = defineStore('users', {
   state: () => ({
@@ -783,6 +784,79 @@ export const useUsersStore = defineStore('users', {
         return data.data;
       } catch (error) {
         let errorMessage = this.i18n.global.t('user_roles_list_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return null;
+      }
+    },
+
+    async listUserSectors(): Promise<ListUserSectorsResponse | null> {
+      try {
+        this.loading = true;
+
+        const response =
+          await axios.get<IApiResponse<ListUserSectorsResponse>>(
+            `/user/sectors`
+          );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const message =
+            data?.message ?? this.i18n.global.t('user_sectors_list_error');
+
+          this.showSnackbar(message, EColor.error);
+
+          return null;
+        }
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('user_sectors_list_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return null;
+      }
+    },
+
+    async listUserSectorsByUserId(userId: string): Promise<string[] | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.get<IApiResponse<string[]>>(
+          `/user/${userId}/sectors`
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const message =
+            data?.message ?? this.i18n.global.t('user_sectors_view_error');
+
+          this.showSnackbar(message, EColor.error);
+
+          return null;
+        }
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('user_sectors_view_error');
         if (error instanceof AxiosError) {
           errorMessage = error?.response?.data?.message ?? errorMessage;
         }

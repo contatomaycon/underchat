@@ -45,6 +45,7 @@ import { UserOnlineListerRepository } from '@core/repositories/user/UserOnlineLi
 import { UserTransferListerRepository } from '@core/repositories/user/UserTransferLister.repository';
 import { UserMasterViewerRepository } from '@core/repositories/user/UserMasterViewer.repository';
 import { UserSectorsListerRepository } from '@core/repositories/user/UserSectorsLister.repository';
+import { UserSectorsUpdaterTransactionRepository } from '@core/repositories/user/UserSectorsUpdaterTransaction.repository';
 import { EncryptService } from './encrypt.service';
 import { IUserSensitiveDataDecrypted } from '@core/common/interfaces/IUserSensitiveDataDecrypted';
 import { StorageService } from '@core/services/storage.service';
@@ -94,7 +95,8 @@ export class UserService {
     private readonly accountSettingsAdditionalInfoViewerRepository: AccountSettingsAdditionalInfoViewerRepository,
     private readonly userPasswordViewerRepository: UserPasswordViewerRepository,
     private readonly userMasterViewerRepository: UserMasterViewerRepository,
-    private readonly userSectorsListerRepository: UserSectorsListerRepository
+    private readonly userSectorsListerRepository: UserSectorsListerRepository,
+    private readonly userSectorsUpdaterTransactionRepository: UserSectorsUpdaterTransactionRepository
   ) {}
 
   listUsers = async (
@@ -681,6 +683,18 @@ export class UserService {
     userId: string
   ): Promise<string[]> => {
     return this.userSectorsListerRepository.listUserSectors(accountId, userId);
+  };
+
+  updateUserSectors = async (
+    t: TFunction<'translation', undefined>,
+    userId: string,
+    sectorIds: string[]
+  ): Promise<boolean> => {
+    return this.userSectorsUpdaterTransactionRepository.updateUserSectors(
+      t,
+      userId,
+      sectorIds
+    );
   };
 
   existsUserEmailById = async (userEmail: string): Promise<boolean> => {

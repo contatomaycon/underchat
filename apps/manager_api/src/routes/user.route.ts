@@ -24,6 +24,8 @@ import { viewUserRoleSchema } from '@core/schema/user/viewUserRole';
 import { uploadPhotoSchema } from '@core/schema/user/uploadPhoto';
 import { deletePhotoSchema } from '@core/schema/user/deletePhoto';
 import { listUserRolesSchema } from '@core/schema/user/listUserRoles';
+import { listUserSectorsSchema } from '@core/schema/user/listUserSectors';
+import { viewUserSectorsSchema } from '@core/schema/user/viewUserSectors';
 import { sessionLoginSchema } from '@core/schema/user/sessionLogin';
 import { planGuard } from '@/plugins/planGuard';
 import { planStatus } from '@/plugins/planStatus';
@@ -199,6 +201,28 @@ export default function userRoutes(server: FastifyInstance) {
   server.get('/user/roles', {
     schema: listUserRolesSchema,
     handler: userController.listUserRoles,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, userViewPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.get('/user/sectors', {
+    schema: listUserSectorsSchema,
+    handler: userController.listUserSectors,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, userViewPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.get('/user/:user_id/sectors', {
+    schema: viewUserSectorsSchema,
+    handler: userController.viewUserSectors,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, userViewPermissions),

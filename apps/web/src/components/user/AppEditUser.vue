@@ -21,6 +21,7 @@ import { usePasswordStrength } from '@/composables/usePasswordStrength';
 import { validatePassword } from '@/@webcore/utils/passwordStrength';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { can } from '@/@layouts/plugins/casl';
+import { getUser } from '@/@webcore/localStorage/user';
 
 const userStore = useUsersStore();
 const accountStore = useAccountStore();
@@ -47,6 +48,11 @@ const accountsLoading = ref(false);
 const permissionRoleId = ref<string | null>(null);
 const initialPermissionRoleId = ref<string | null>(null);
 const rolesOptions = ref<{ id: string; name: string }[]>([]);
+const sectorIds = ref<string[]>([]);
+const initialSectorIds = ref<string[]>([]);
+const sectorsOptions = ref<
+  { sector_id: string; name: string; color: string }[]
+>([]);
 
 const props = defineProps<{
   modelValue: boolean;
@@ -259,6 +265,7 @@ const initialValues = ref<{
   user_status_id: string | null;
   account_id: string | null;
   permission_role_id: string | null;
+  sector_ids: string[];
 }>({
   email: null,
   phone_ddi: null,
@@ -278,6 +285,7 @@ const initialValues = ref<{
   user_status_id: null,
   account_id: null,
   permission_role_id: null,
+  sector_ids: [],
 });
 
 const refFormEditUser = ref<VForm>();
@@ -1710,6 +1718,13 @@ const buildUpdateUserBody = (): UpdateUserRequest => {
     };
   }
 
+  const sectorIdsChanged =
+    JSON.stringify(sectorIds.value.sort()) !==
+    JSON.stringify(initialSectorIds.value.sort());
+  if (sectorIdsChanged) {
+    body.sector_ids = sectorIds.value;
+  }
+
   if (hasFullAccess.value) {
     const initialAccountId = initialValues.value.account_id;
     if (accountId.value !== initialAccountId) {
@@ -1896,6 +1911,23 @@ const loadRoles = async () => {
   const roles = await userStore.listUserRoles();
   if (roles) {
     rolesOptions.value = roles;
+  }
+};
+
+const loadSectors = async () => {
+  const sectors = await userStore.listUserSectors();
+  if (sectors) {
+    sectorsOptions.value = sectors;
+  }
+};
+
+const loadUserSectors = async () => {
+  if (!userId.value) return;
+
+  const userSectors = await userStore.listUserSectorsByUserId(userId.value);
+  if (userSectors) {
+    sectorIds.value = userSectors;
+    initialSectorIds.value = [...userSectors];
   }
 };
 
@@ -2120,7 +2152,9 @@ const loadUserDataTab = async (force = false): Promise<void> => {
 
   await loadAccounts();
   await loadRoles();
+  await loadSectors();
   await loadUserRole();
+  await loadUserSectors();
 
   const responseUser = await userStore.viewUserById(userId.value);
   if (!responseUser) {
@@ -2398,21 +2432,10 @@ watch(
                           item-title="text"
                         />
                       </VCol>
-                      <VCol cols="12" md="6">
-                        <VLabel class="text-body-2 mb-1"
-                          >{{ $t('role') }}:</VLabel
-                        >
-                        <AppSelectSearch
-                          v-model="permissionRoleId"
-                          :items="rolesOptions"
-                          :placeholder="$t('select_role')"
-                          :clearable="true"
-                          item-value="id"
-                          item-title="name"
-                        />
-                      </VCol>
-
-                      <VCol cols="12" md="6">
+                      <VCol
+                        :cols="hasFullAccess ? 12 : 12"
+                        :md="hasFullAccess ? 6 : 12"
+                      >
                         <VLabel class="text-body-2 mb-1"
                           >{{ $t('status') }}:</VLabel
                         >
@@ -2424,6 +2447,63 @@ watch(
                           item-value="id"
                           item-title="text"
                         />
+                      </VCol>
+                    </VRow>
+
+                    <VDivider class="mb-4" />
+                    <VRow class="mb-4">
+                      <VCol cols="12" md="6">
+                        <VLabel class="text-body-2 mb-1"
+                          >{{ $t('access_group') }}:</VLabel
+                        >
+                        <AppSelectSearch
+                          v-model="permissionRoleId"
+                          :items="rolesOptions"
+                          :placeholder="$t('select_role')"
+                          :clearable="true"
+                          item-value="id"
+                          item-title="name"
+                        />
+                      </VCol>
+                      <VCol cols="12" md="6">
+                        <VLabel class="text-body-2 mb-1"
+                          >{{ $t('sector') }}:</VLabel
+                        >
+                        <VAutocomplete
+                          v-model="sectorIds"
+                          :items="sectorsOptions"
+                          item-title="name"
+                          item-value="sector_id"
+                          multiple
+                          chips
+                          closable-chips
+                          :placeholder="$t('select_sectors')"
+                        >
+                          <template #chip="{ props: chipProps, item }">
+                            <VChip
+                              v-bind="chipProps"
+                              :style="{
+                                backgroundColor: item.raw.color,
+                                color: 'white',
+                              }"
+                            >
+                              {{ item.raw.name }}
+                            </VChip>
+                          </template>
+                          <template #item="{ props: itemProps, item }">
+                            <VListItem v-bind="itemProps">
+                              <template #prepend>
+                                <VAvatar
+                                  size="20"
+                                  :style="{ backgroundColor: item.raw.color }"
+                                />
+                              </template>
+                              <VListItemTitle>
+                                {{ item.raw.name }}
+                              </VListItemTitle>
+                            </VListItem>
+                          </template>
+                        </VAutocomplete>
                       </VCol>
                     </VRow>
 
