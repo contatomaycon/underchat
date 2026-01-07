@@ -8,11 +8,12 @@ import { chatAccountCentrifugo } from '@core/common/functions/centrifugoQueue';
 @injectable()
 export class PresenceService {
   private readonly ttlSeconds = 90;
-  private readonly monitorIntervalMs = 30_000;
+  private readonly accountIdCacheTtl = this.ttlSeconds * 2;
+  private readonly monitorIntervalMs = 60_000;
   private readonly keyPrefix = 'presence:user:';
   private readonly accountIdCachePrefix = 'presence:account_id:';
-  private readonly accountIdCacheTtl = 3600;
   private readonly concurrency = 10;
+  private readonly maxActiveUsersPerCycle = 1_000;
 
   private readonly statusCache = new Map<string, EChatUserStatus>();
   private monitorTimer: ReturnType<typeof setInterval> | null = null;
@@ -36,6 +37,7 @@ export class PresenceService {
     const cached = await this.redis.get(cacheKey);
 
     if (cached) {
+      await this.redis.expire(cacheKey, this.accountIdCacheTtl);
       return cached;
     }
 
@@ -121,7 +123,10 @@ export class PresenceService {
   }
 
   private async clearPresenceKey(userId: string): Promise<void> {
-    await this.redis.del(this.getKey(userId));
+    const key = this.getKey(userId);
+    const accountKey = this.getAccountIdCacheKey(userId);
+
+    await this.redis.del(key, accountKey);
   }
 
   async isUserLoggedIn(userId: string): Promise<boolean> {
@@ -335,6 +340,7 @@ export class PresenceService {
     const activeUserIds: string[] = [];
     const pattern = `${this.keyPrefix}*`;
     let cursor = '0';
+    let reachedLimit = false;
 
     do {
       const [nextCursor, keys] = await this.redis.scan(
@@ -360,8 +366,27 @@ export class PresenceService {
         if (userId && this.isValidUUID(userId)) {
           activeUserIds.push(userId);
         }
+
+        if (activeUserIds.length >= this.maxActiveUsersPerCycle) {
+          reachedLimit = true;
+          break;
+        }
+      }
+
+      if (reachedLimit) {
+        break;
       }
     } while (cursor !== '0');
+
+    if (reachedLimit) {
+      console.warn(
+        'Presence monitor stopped after reaching the active user limit',
+        {
+          limit: this.maxActiveUsersPerCycle,
+          tracked: activeUserIds.length,
+        }
+      );
+    }
 
     for (let i = 0; i < activeUserIds.length; i += this.concurrency) {
       const batch = activeUserIds.slice(i, i + this.concurrency);
