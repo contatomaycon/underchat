@@ -14,6 +14,7 @@ import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { extractMessageTextFromContent } from '@core/common/functions/extractMessageTextFromContent';
+import { vapidEnvironment } from '@core/config/environments';
 
 @injectable()
 export class PushNotificationService {
@@ -34,25 +35,22 @@ export class PushNotificationService {
   }
 
   private initializeVapidKeys(): void {
-    const publicKey = process.env.VAPID_PUBLIC_KEY;
-    const privateKey = process.env.VAPID_PRIVATE_KEY;
+    try {
+      const publicKey = vapidEnvironment.vapidPublicKey;
+      const privateKey = vapidEnvironment.vapidPrivateKey;
+      const contactEmail = vapidEnvironment.vapidContactEmail;
 
-    if (!publicKey || !privateKey) {
+      this.vapidKeys = {
+        publicKey,
+        privateKey,
+      };
+
+      webPush.setVapidDetails(contactEmail, publicKey, privateKey);
+    } catch {
       console.warn(
         'VAPID keys não configuradas. Push notifications não funcionarão.'
       );
-      return;
     }
-
-    this.vapidKeys = {
-      publicKey,
-      privateKey,
-    };
-
-    const contactEmail =
-      process.env.VAPID_CONTACT_EMAIL || 'noreply@underchat.com';
-
-    webPush.setVapidDetails(contactEmail, publicKey, privateKey);
   }
 
   async sendNotificationToUser(
