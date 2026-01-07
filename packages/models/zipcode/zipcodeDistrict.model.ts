@@ -5,35 +5,44 @@ import {
   varchar,
   numeric,
   smallint,
+  index,
 } from 'drizzle-orm/pg-core';
 import { country, zipcodeCity, zipcodeState, zipcode } from '@core/models';
 import { relations } from 'drizzle-orm';
 
-export const zipcodeDistrict = pgTable('zipcode_district', {
-  id_zipcode_district: uuid().primaryKey().notNull(),
-  id_country: smallint()
-    .references(() => country.country_id)
-    .notNull(),
-  id_zipcode_city: uuid()
-    .references(() => zipcodeCity.id_zipcode_city)
-    .notNull(),
-  id_zipcode_state: uuid()
-    .references(() => zipcodeState.id_zipcode_state)
-    .notNull(),
-  district: varchar({ length: 100 }).notNull(),
-  latitude: numeric<'number'>({ precision: 10, scale: 6 }),
-  longitude: numeric<'number'>({ precision: 10, scale: 6 }),
-  zipcode_end: varchar({ length: 15 }),
-  zipcode_start: varchar({ length: 15 }),
-  created_at: timestamp('created_at', {
-    mode: 'string',
-    withTimezone: true,
-  }).defaultNow(),
-  updated_at: timestamp('updated_at', {
-    mode: 'string',
-    withTimezone: true,
-  }).defaultNow(),
-});
+export const zipcodeDistrict = pgTable(
+  'zipcode_district',
+  {
+    id_zipcode_district: uuid().primaryKey().notNull(),
+    id_country: smallint()
+      .references(() => country.country_id)
+      .notNull(),
+    id_zipcode_city: uuid()
+      .references(() => zipcodeCity.id_zipcode_city)
+      .notNull(),
+    id_zipcode_state: uuid()
+      .references(() => zipcodeState.id_zipcode_state)
+      .notNull(),
+    district: varchar({ length: 100 }).notNull(),
+    latitude: numeric<'number'>({ precision: 10, scale: 6 }),
+    longitude: numeric<'number'>({ precision: 10, scale: 6 }),
+    zipcode_end: varchar({ length: 15 }),
+    zipcode_start: varchar({ length: 15 }),
+    created_at: timestamp('created_at', {
+      mode: 'string',
+      withTimezone: true,
+    }).defaultNow(),
+    updated_at: timestamp('updated_at', {
+      mode: 'string',
+      withTimezone: true,
+    }).defaultNow(),
+  },
+  (table) => [
+    index('zipcode_district_id_country_idx').on(table.id_country),
+    index('zipcode_district_id_zipcode_city_idx').on(table.id_zipcode_city),
+    index('zipcode_district_id_zipcode_state_idx').on(table.id_zipcode_state),
+  ]
+);
 
 export const zipcodeDistrictRelations = relations(
   zipcodeDistrict,

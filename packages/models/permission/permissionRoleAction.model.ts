@@ -1,4 +1,4 @@
-import { pgTable, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { pgTable, timestamp, uuid, index } from 'drizzle-orm/pg-core';
 import {
   permissionAction,
   permissionRole,
@@ -6,26 +6,40 @@ import {
 } from '@core/models';
 import { relations } from 'drizzle-orm';
 
-export const permissionRoleAction = pgTable('permission_role_action', {
-  permission_role_action_id: uuid().primaryKey().notNull(),
-  permission_action_id: uuid().references(
-    () => permissionAction.permission_action_id
-  ),
-  permission_action_group_id: uuid().references(
-    () => permissionActionGroup.permission_action_group_id
-  ),
-  permission_role_id: uuid()
-    .references(() => permissionRole.permission_role_id)
-    .notNull(),
-  created_at: timestamp('created_at', {
-    mode: 'string',
-    withTimezone: true,
-  }).defaultNow(),
-  updated_at: timestamp('updated_at', {
-    mode: 'string',
-    withTimezone: true,
-  }).defaultNow(),
-});
+export const permissionRoleAction = pgTable(
+  'permission_role_action',
+  {
+    permission_role_action_id: uuid().primaryKey().notNull(),
+    permission_action_id: uuid().references(
+      () => permissionAction.permission_action_id
+    ),
+    permission_action_group_id: uuid().references(
+      () => permissionActionGroup.permission_action_group_id
+    ),
+    permission_role_id: uuid()
+      .references(() => permissionRole.permission_role_id)
+      .notNull(),
+    created_at: timestamp('created_at', {
+      mode: 'string',
+      withTimezone: true,
+    }).defaultNow(),
+    updated_at: timestamp('updated_at', {
+      mode: 'string',
+      withTimezone: true,
+    }).defaultNow(),
+  },
+  (table) => [
+    index('permission_role_action_permission_action_id_idx').on(
+      table.permission_action_id
+    ),
+    index('permission_role_action_permission_action_group_id_idx').on(
+      table.permission_action_group_id
+    ),
+    index('permission_role_action_permission_role_id_idx').on(
+      table.permission_role_id
+    ),
+  ]
+);
 
 export const permissionRoleActionRelations = relations(
   permissionRoleAction,

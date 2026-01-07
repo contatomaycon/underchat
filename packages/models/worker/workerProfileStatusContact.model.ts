@@ -1,4 +1,4 @@
-import { pgTable, uuid, timestamp } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, timestamp, index } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 import { workerProfileStatus } from './workerProfileStatus.model';
 import { contact } from '../contact/contact.model';
@@ -21,7 +21,13 @@ export const workerProfileStatusContact = pgTable(
       mode: 'string',
       withTimezone: true,
     }).defaultNow(),
-  }
+  },
+  (table) => [
+    index('worker_profile_status_contact_worker_profile_status_id_idx').on(
+      table.worker_profile_status_id
+    ),
+    index('worker_profile_status_contact_contact_id_idx').on(table.contact_id),
+  ]
 );
 
 export const workerProfileStatusContactRelations = relations(

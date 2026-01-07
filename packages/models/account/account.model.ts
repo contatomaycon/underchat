@@ -1,4 +1,4 @@
-import { pgTable, uuid, timestamp, varchar } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, timestamp, varchar, index } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 import {
   accountInfo,
@@ -19,22 +19,29 @@ import {
   planAccountExclusive,
 } from '@core/models';
 
-export const account = pgTable('account', {
-  account_id: uuid().primaryKey().notNull(),
-  account_status_id: uuid()
-    .references(() => accountStatus.account_status_id)
-    .notNull(),
-  name: varchar({ length: 10 }).notNull(),
-  created_at: timestamp({
-    mode: 'string',
-    withTimezone: true,
-  }).defaultNow(),
-  updated_at: timestamp({
-    mode: 'string',
-    withTimezone: true,
-  }).defaultNow(),
-  deleted_at: timestamp({ mode: 'string', withTimezone: true }),
-});
+export const account = pgTable(
+  'account',
+  {
+    account_id: uuid().primaryKey().notNull(),
+    account_status_id: uuid()
+      .references(() => accountStatus.account_status_id)
+      .notNull(),
+    name: varchar({ length: 10 }).notNull(),
+    created_at: timestamp({
+      mode: 'string',
+      withTimezone: true,
+    }).defaultNow(),
+    updated_at: timestamp({
+      mode: 'string',
+      withTimezone: true,
+    }).defaultNow(),
+    deleted_at: timestamp({ mode: 'string', withTimezone: true }),
+  },
+  (table) => [
+    index('account_account_status_id_idx').on(table.account_status_id),
+    index('account_deleted_at_idx').on(table.deleted_at),
+  ]
+);
 
 export const accountRelations = relations(account, ({ one, many }) => ({
   aac: one(accountStatus, {

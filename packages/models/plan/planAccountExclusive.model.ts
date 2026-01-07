@@ -1,24 +1,31 @@
-import { pgTable, uuid, timestamp } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, timestamp, index } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 import { account, plan } from '@core/models';
 
-export const planAccountExclusive = pgTable('plan_account_exclusive', {
-  plan_account_exclusive_id: uuid().primaryKey().notNull(),
-  plan_id: uuid()
-    .references(() => plan.plan_id)
-    .notNull(),
-  account_id: uuid()
-    .references(() => account.account_id)
-    .notNull(),
-  created_at: timestamp({
-    mode: 'string',
-    withTimezone: true,
-  }).defaultNow(),
-  updated_at: timestamp({
-    mode: 'string',
-    withTimezone: true,
-  }).defaultNow(),
-});
+export const planAccountExclusive = pgTable(
+  'plan_account_exclusive',
+  {
+    plan_account_exclusive_id: uuid().primaryKey().notNull(),
+    plan_id: uuid()
+      .references(() => plan.plan_id)
+      .notNull(),
+    account_id: uuid()
+      .references(() => account.account_id)
+      .notNull(),
+    created_at: timestamp({
+      mode: 'string',
+      withTimezone: true,
+    }).defaultNow(),
+    updated_at: timestamp({
+      mode: 'string',
+      withTimezone: true,
+    }).defaultNow(),
+  },
+  (table) => [
+    index('plan_account_exclusive_plan_id_idx').on(table.plan_id),
+    index('plan_account_exclusive_account_id_idx').on(table.account_id),
+  ]
+);
 
 export const planAccountExclusiveRelations = relations(
   planAccountExclusive,

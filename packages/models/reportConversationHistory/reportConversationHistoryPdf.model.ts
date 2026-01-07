@@ -1,4 +1,11 @@
-import { pgTable, uuid, timestamp, text, varchar } from 'drizzle-orm/pg-core';
+import {
+  pgTable,
+  uuid,
+  timestamp,
+  text,
+  varchar,
+  index,
+} from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 import { account } from '@core/models';
 import { EReportConversationHistoryPdfStatus } from '@core/common/enums/EReportConversationHistoryPdfStatus';
@@ -32,7 +39,14 @@ export const reportConversationHistoryPdf = pgTable(
       mode: 'string',
       withTimezone: true,
     }).defaultNow(),
-  }
+  },
+  (table) => [
+    index('report_conversation_history_pdf_account_id_idx').on(
+      table.account_id
+    ),
+    index('report_conversation_history_pdf_chat_id_idx').on(table.chat_id),
+    index('report_conversation_history_pdf_status_idx').on(table.status),
+  ]
 );
 
 export const reportConversationHistoryPdfRelations = relations(

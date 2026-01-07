@@ -1,26 +1,40 @@
-import { pgTable, timestamp, uuid, text, varchar } from 'drizzle-orm/pg-core';
+import {
+  pgTable,
+  timestamp,
+  uuid,
+  text,
+  varchar,
+  index,
+} from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 import { user } from '@core/models';
 
-export const pushSubscription = pgTable('push_subscription', {
-  push_subscription_id: uuid().primaryKey().notNull(),
-  user_id: uuid()
-    .references(() => user.user_id)
-    .notNull(),
-  endpoint: text().notNull(),
-  p256dh: text().notNull(),
-  auth: text().notNull(),
-  user_agent: varchar({ length: 500 }),
-  created_at: timestamp({
-    mode: 'string',
-    withTimezone: true,
-  }).defaultNow(),
-  updated_at: timestamp({
-    mode: 'string',
-    withTimezone: true,
-  }).defaultNow(),
-  deleted_at: timestamp({ mode: 'string', withTimezone: true }),
-});
+export const pushSubscription = pgTable(
+  'push_subscription',
+  {
+    push_subscription_id: uuid().primaryKey().notNull(),
+    user_id: uuid()
+      .references(() => user.user_id)
+      .notNull(),
+    endpoint: text().notNull(),
+    p256dh: text().notNull(),
+    auth: text().notNull(),
+    user_agent: varchar({ length: 500 }),
+    created_at: timestamp({
+      mode: 'string',
+      withTimezone: true,
+    }).defaultNow(),
+    updated_at: timestamp({
+      mode: 'string',
+      withTimezone: true,
+    }).defaultNow(),
+    deleted_at: timestamp({ mode: 'string', withTimezone: true }),
+  },
+  (table) => [
+    index('push_subscription_user_id_idx').on(table.user_id),
+    index('push_subscription_deleted_at_idx').on(table.deleted_at),
+  ]
+);
 
 export const pushSubscriptionRelations = relations(
   pushSubscription,

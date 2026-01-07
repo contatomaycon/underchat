@@ -1,19 +1,23 @@
-import { pgTable, timestamp, varchar, uuid } from 'drizzle-orm/pg-core';
+import { pgTable, timestamp, varchar, uuid, index } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 import { contact } from './contact.model';
 
-export const contactDocumentType = pgTable('contact_document_type', {
-  contact_document_type_id: uuid().primaryKey().notNull(),
-  name: varchar({ length: 20 }).notNull(),
-  created_at: timestamp({
-    mode: 'string',
-    withTimezone: true,
-  }).defaultNow(),
-  updated_at: timestamp({
-    mode: 'string',
-    withTimezone: true,
-  }).defaultNow(),
-});
+export const contactDocumentType = pgTable(
+  'contact_document_type',
+  {
+    contact_document_type_id: uuid().primaryKey().notNull(),
+    name: varchar({ length: 20 }).notNull(),
+    created_at: timestamp({
+      mode: 'string',
+      withTimezone: true,
+    }).defaultNow(),
+    updated_at: timestamp({
+      mode: 'string',
+      withTimezone: true,
+    }).defaultNow(),
+  },
+  (table) => [index('contact_document_type_name_idx').on(table.name)]
+);
 
 export const contactDocumentTypeRelations = relations(
   contactDocumentType,

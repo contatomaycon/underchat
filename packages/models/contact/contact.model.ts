@@ -5,6 +5,7 @@ import {
   uuid,
   text,
   boolean,
+  index,
 } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 import { account } from '../account';
@@ -14,43 +15,57 @@ import { workerProfileStatusContact } from '../worker/workerProfileStatusContact
 import { scheduledContact } from '../schedule';
 import { contactDocumentType } from './contactDocumentType.model';
 
-export const contact = pgTable('contact', {
-  contact_id: uuid().primaryKey().notNull(),
-  account_id: uuid().references(() => account.account_id),
-  label_template_id: uuid().references(() => labelTemplate.label_template_id),
-  contact_document_type_id: uuid().references(
-    () => contactDocumentType.contact_document_type_id
-  ),
-  is_valided: boolean().default(false),
-  name: varchar({ length: 100 }).notNull(),
-  last_name: varchar({ length: 100 }),
-  email: varchar({ length: 500 }),
-  email_partial: varchar({ length: 50 }),
-  email_c: varchar({ length: 500 }),
-  phone_ddi: varchar({ length: 5 }),
-  phone: varchar({ length: 500 }),
-  phone_partial: varchar({ length: 15 }),
-  phone_c: varchar({ length: 500 }),
-  nickname: varchar({ length: 100 }),
-  photo: varchar({ length: 500 }),
-  birthday: timestamp({
-    mode: 'string',
-    withTimezone: true,
-  }),
-  notes: text(),
-  document: varchar({ length: 500 }),
-  document_partial: varchar({ length: 20 }),
-  document_c: varchar({ length: 500 }),
-  created_at: timestamp({
-    mode: 'string',
-    withTimezone: true,
-  }).defaultNow(),
-  updated_at: timestamp({
-    mode: 'string',
-    withTimezone: true,
-  }).defaultNow(),
-  deleted_at: timestamp({ mode: 'string', withTimezone: true }),
-});
+export const contact = pgTable(
+  'contact',
+  {
+    contact_id: uuid().primaryKey().notNull(),
+    account_id: uuid().references(() => account.account_id),
+    label_template_id: uuid().references(() => labelTemplate.label_template_id),
+    contact_document_type_id: uuid().references(
+      () => contactDocumentType.contact_document_type_id
+    ),
+    is_valided: boolean().default(false),
+    name: varchar({ length: 100 }).notNull(),
+    last_name: varchar({ length: 100 }),
+    email: varchar({ length: 500 }),
+    email_partial: varchar({ length: 50 }),
+    email_c: varchar({ length: 500 }),
+    phone_ddi: varchar({ length: 5 }),
+    phone: varchar({ length: 500 }),
+    phone_partial: varchar({ length: 15 }),
+    phone_c: varchar({ length: 500 }),
+    nickname: varchar({ length: 100 }),
+    photo: varchar({ length: 500 }),
+    birthday: timestamp({
+      mode: 'string',
+      withTimezone: true,
+    }),
+    notes: text(),
+    document: varchar({ length: 500 }),
+    document_partial: varchar({ length: 20 }),
+    document_c: varchar({ length: 500 }),
+    created_at: timestamp({
+      mode: 'string',
+      withTimezone: true,
+    }).defaultNow(),
+    updated_at: timestamp({
+      mode: 'string',
+      withTimezone: true,
+    }).defaultNow(),
+    deleted_at: timestamp({ mode: 'string', withTimezone: true }),
+  },
+  (table) => [
+    index('contact_account_id_idx').on(table.account_id),
+    index('contact_label_template_id_idx').on(table.label_template_id),
+    index('contact_contact_document_type_id_idx').on(
+      table.contact_document_type_id
+    ),
+    index('contact_email_partial_idx').on(table.email_partial),
+    index('contact_phone_partial_idx').on(table.phone_partial),
+    index('contact_document_partial_idx').on(table.document_partial),
+    index('contact_deleted_at_idx').on(table.deleted_at),
+  ]
+);
 
 export const contactRelations = relations(contact, ({ one, many }) => ({
   cac: one(account, {

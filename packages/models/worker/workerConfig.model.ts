@@ -1,4 +1,4 @@
-import { pgTable, timestamp, uuid, varchar } from 'drizzle-orm/pg-core';
+import { pgTable, timestamp, uuid, varchar, index } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 import {
   worker,
@@ -7,28 +7,41 @@ import {
   workerConfigType,
 } from '@core/models';
 
-export const workerConfig = pgTable('worker_config', {
-  worker_config_id: uuid().primaryKey().notNull(),
-  worker_id: uuid()
-    .references(() => worker.worker_id)
-    .notNull(),
-  worker_config_status_id: uuid()
-    .references(() => workerConfigStatus.worker_config_status_id)
-    .notNull(),
-  worker_config_type_id: uuid()
-    .references(() => workerConfigType.worker_config_type_id)
-    .notNull(),
-  chatbot_id: uuid().references(() => chatbot.chatbot_id),
-  value: varchar({ length: 2000 }),
-  created_at: timestamp({
-    mode: 'string',
-    withTimezone: true,
-  }).defaultNow(),
-  updated_at: timestamp({
-    mode: 'string',
-    withTimezone: true,
-  }).defaultNow(),
-});
+export const workerConfig = pgTable(
+  'worker_config',
+  {
+    worker_config_id: uuid().primaryKey().notNull(),
+    worker_id: uuid()
+      .references(() => worker.worker_id)
+      .notNull(),
+    worker_config_status_id: uuid()
+      .references(() => workerConfigStatus.worker_config_status_id)
+      .notNull(),
+    worker_config_type_id: uuid()
+      .references(() => workerConfigType.worker_config_type_id)
+      .notNull(),
+    chatbot_id: uuid().references(() => chatbot.chatbot_id),
+    value: varchar({ length: 2000 }),
+    created_at: timestamp({
+      mode: 'string',
+      withTimezone: true,
+    }).defaultNow(),
+    updated_at: timestamp({
+      mode: 'string',
+      withTimezone: true,
+    }).defaultNow(),
+  },
+  (table) => [
+    index('worker_config_worker_id_idx').on(table.worker_id),
+    index('worker_config_worker_config_status_id_idx').on(
+      table.worker_config_status_id
+    ),
+    index('worker_config_worker_config_type_id_idx').on(
+      table.worker_config_type_id
+    ),
+    index('worker_config_chatbot_id_idx').on(table.chatbot_id),
+  ]
+);
 
 export const workerConfigRelations = relations(workerConfig, ({ one }) => ({
   wcw: one(worker, {
