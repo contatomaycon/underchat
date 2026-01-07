@@ -50,6 +50,53 @@ export class PresenceService {
     await this.redis.set(cacheKey, accountId, 'EX', this.accountIdCacheTtl);
   }
 
+  private isConnectionError(error: unknown): boolean {
+    if (!(error instanceof Error)) {
+      return false;
+    }
+
+    const message = error.message.toLowerCase();
+    const cause = (error as any).cause;
+
+    return (
+      message.includes('connection terminated') ||
+      message.includes('connection timeout') ||
+      message.includes('connection closed') ||
+      message.includes('connection ended') ||
+      (cause instanceof Error &&
+        (cause.message.toLowerCase().includes('connection terminated') ||
+          cause.message.toLowerCase().includes('connection timeout')))
+    );
+  }
+
+  private async delay(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private async getUserAccountIdWithRetry(
+    userId: string,
+    maxRetries = 3
+  ): Promise<string | null> {
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        const accountId =
+          await this.userAccountViewerRepository.getUserAccountId(userId);
+        return accountId;
+      } catch (error) {
+        const isConnectionErr = this.isConnectionError(error);
+
+        if (!isConnectionErr || attempt === maxRetries - 1) {
+          throw error;
+        }
+
+        const backoffMs = Math.min(1000 * Math.pow(2, attempt), 5000);
+        await this.delay(backoffMs);
+      }
+    }
+
+    return null;
+  }
+
   private async getUserAccountIdWithCache(
     userId: string
   ): Promise<string | null> {
@@ -60,8 +107,7 @@ export class PresenceService {
     }
 
     try {
-      const accountId =
-        await this.userAccountViewerRepository.getUserAccountId(userId);
+      const accountId = await this.getUserAccountIdWithRetry(userId);
 
       if (accountId) {
         await this.setCachedAccountId(userId, accountId);
@@ -338,6 +384,10 @@ export class PresenceService {
           }
         })
       );
+
+      if (i + this.concurrency < activeUserIds.length) {
+        await this.delay(100);
+      }
     }
   }
 
