@@ -175,15 +175,6 @@ export class PresenceService {
     return this.getStatus(userId);
   }
 
-  private getActiveStatuses(): EChatUserStatus[] {
-    return [
-      EChatUserStatus.online,
-      EChatUserStatus.away,
-      EChatUserStatus.busy,
-      EChatUserStatus.do_not_disturb,
-    ];
-  }
-
   private async publishUserStatus(
     userId: string,
     status: EChatUserStatus
