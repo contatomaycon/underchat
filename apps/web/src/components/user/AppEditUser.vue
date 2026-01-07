@@ -54,6 +54,17 @@ const sectorsOptions = ref<
   { sector_id: string; name: string; color: string }[]
 >([]);
 
+const uniqueSectorsOptions = computed(() => {
+  const seen = new Set<string>();
+  return sectorsOptions.value.filter((sector) => {
+    if (seen.has(sector.sector_id)) {
+      return false;
+    }
+    seen.add(sector.sector_id);
+    return true;
+  });
+});
+
 const props = defineProps<{
   modelValue: boolean;
   userId: string | null;
@@ -2471,7 +2482,7 @@ watch(
                         >
                         <VAutocomplete
                           v-model="sectorIds"
-                          :items="sectorsOptions"
+                          :items="uniqueSectorsOptions"
                           item-title="name"
                           item-value="sector_id"
                           multiple
@@ -2498,9 +2509,6 @@ watch(
                                   :style="{ backgroundColor: item.raw.color }"
                                 />
                               </template>
-                              <VListItemTitle>
-                                {{ item.raw.name }}
-                              </VListItemTitle>
                             </VListItem>
                           </template>
                         </VAutocomplete>

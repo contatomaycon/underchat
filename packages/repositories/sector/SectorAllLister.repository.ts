@@ -34,6 +34,12 @@ export class SectorAllListerRepository {
           eq(sector.sector_status_id, ESectorStatus.active)
         )
       )
+      .groupBy(
+        sector.sector_id,
+        sector.name,
+        sector.color,
+        sectorStatus.sector_status_id
+      )
       .orderBy(asc(sector.name))
       .execute();
 
