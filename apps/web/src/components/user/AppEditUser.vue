@@ -56,13 +56,18 @@ const sectorsOptions = ref<
 
 const uniqueSectorsOptions = computed(() => {
   const seen = new Set<string>();
-  return sectorsOptions.value.filter((sector) => {
+  const unique = sectorsOptions.value.filter((sector) => {
     if (seen.has(sector.sector_id)) {
       return false;
     }
     seen.add(sector.sector_id);
     return true;
   });
+  return unique.map((sector) => ({
+    value: sector.sector_id,
+    title: sector.name,
+    color: sector.color,
+  }));
 });
 
 const props = defineProps<{
@@ -1729,11 +1734,22 @@ const buildUpdateUserBody = (): UpdateUserRequest => {
     };
   }
 
-  const sectorIdsChanged =
-    JSON.stringify(sectorIds.value.sort()) !==
-    JSON.stringify(initialSectorIds.value.sort());
-  if (sectorIdsChanged) {
-    body.sector_ids = sectorIds.value;
+  if (Array.isArray(sectorIds.value)) {
+    const currentFilteredIds = sectorIds.value
+      .filter((id) => id && typeof id === 'string' && id.trim() !== '')
+      .sort();
+    const initialFilteredIds = initialSectorIds.value
+      .filter((id) => id && typeof id === 'string' && id.trim() !== '')
+      .sort();
+
+    const sectorIdsChanged =
+      JSON.stringify(currentFilteredIds) !== JSON.stringify(initialFilteredIds);
+
+    if (sectorIdsChanged) {
+      if (currentFilteredIds.length > 0 || initialFilteredIds.length > 0) {
+        body.sector_ids = currentFilteredIds;
+      }
+    }
   }
 
   if (hasFullAccess.value) {
@@ -2483,8 +2499,8 @@ watch(
                         <VAutocomplete
                           v-model="sectorIds"
                           :items="uniqueSectorsOptions"
-                          item-title="name"
-                          item-value="sector_id"
+                          item-title="title"
+                          item-value="value"
                           multiple
                           chips
                           closable-chips
@@ -2498,7 +2514,7 @@ watch(
                                 color: 'white',
                               }"
                             >
-                              {{ item.raw.name }}
+                              {{ item.raw.title }}
                             </VChip>
                           </template>
                           <template #item="{ props: itemProps, item }">

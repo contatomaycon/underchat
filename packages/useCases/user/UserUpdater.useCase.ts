@@ -929,6 +929,27 @@ export class UserUpdaterUseCase {
     return updatePromises;
   }
 
+  private processSectorIdsFromMultipartFormData(body: any): void {
+    const sectorIdsArray: string[] = [];
+
+    Object.keys(body).forEach((key) => {
+      const match = key.match(/^sector_ids\[(\d+)\]$/);
+      if (!match) {
+        return;
+      }
+
+      const index = parseInt(match[1], 10);
+      const field = body[key];
+      const value =
+        typeof field === 'object' && field.value ? field.value : field;
+      sectorIdsArray[index] = value;
+    });
+
+    if (sectorIdsArray.length > 0) {
+      body.sector_ids = sectorIdsArray.filter(Boolean);
+    }
+  }
+
   async execute(
     t: TFunction<'translation', undefined>,
     userId: string,
@@ -936,6 +957,8 @@ export class UserUpdaterUseCase {
     accountId: string,
     canOperateOnOthers: boolean
   ): Promise<boolean> {
+    this.processSectorIdsFromMultipartFormData(body);
+
     if (!canOperateOnOthers) {
       await this.validateUserExistsInAccount(t, userId, accountId);
     }

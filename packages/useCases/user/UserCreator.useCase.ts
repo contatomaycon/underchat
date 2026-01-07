@@ -83,11 +83,34 @@ export class UserCreatorUseCase {
     await this.planAccountService.validateCanCreateUser(t, accountId);
   }
 
+  private processSectorIdsFromMultipartFormData(input: any): void {
+    const sectorIdsArray: string[] = [];
+
+    Object.keys(input).forEach((key) => {
+      const match = key.match(/^sector_ids\[(\d+)\]$/);
+      if (!match) {
+        return;
+      }
+
+      const index = parseInt(match[1], 10);
+      const field = input[key];
+      const value =
+        typeof field === 'object' && field.value ? field.value : field;
+      sectorIdsArray[index] = value;
+    });
+
+    if (sectorIdsArray.length > 0) {
+      input.sector_ids = sectorIdsArray.filter(Boolean);
+    }
+  }
+
   async execute(
     t: TFunction<'translation', undefined>,
     input: CreateUserRequest,
     accountId: string
   ): Promise<boolean> {
+    this.processSectorIdsFromMultipartFormData(input);
+
     await this.validate(t, input, accountId);
 
     let photoUrl: string | null = null;

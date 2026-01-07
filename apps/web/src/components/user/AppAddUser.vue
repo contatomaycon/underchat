@@ -48,13 +48,18 @@ const sectorsOptions = ref<
 
 const uniqueSectorsOptions = computed(() => {
   const seen = new Set<string>();
-  return sectorsOptions.value.filter((sector) => {
+  const unique = sectorsOptions.value.filter((sector) => {
     if (seen.has(sector.sector_id)) {
       return false;
     }
     seen.add(sector.sector_id);
     return true;
   });
+  return unique.map((sector) => ({
+    value: sector.sector_id,
+    title: sector.name,
+    color: sector.color,
+  }));
 });
 const userStatusId = ref<string>(EUserStatus.active);
 
@@ -517,14 +522,18 @@ const buildUserPayload = () => {
     payload.permission_role_id = { value: permissionRoleId.value };
   }
 
-  if (sectorIds.value && sectorIds.value.length > 0) {
-    payload.sector_ids = sectorIds.value;
+  if (sectorIds.value && Array.isArray(sectorIds.value)) {
+    payload.sector_ids = sectorIds.value.filter((id) => id);
   }
 
   payload.user_status_id = { value: userStatusId.value };
 
   return payload;
 };
+
+const isFormValid = computed(() => {
+  return !!(email.value && password.value && name.value && last_name.value);
+});
 
 const addUser = async () => {
   const validateForm = await refFormAddUser?.value?.validate();
@@ -1519,8 +1528,8 @@ onMounted(resetForm);
                         <VAutocomplete
                           v-model="sectorIds"
                           :items="uniqueSectorsOptions"
-                          item-title="name"
-                          item-value="sector_id"
+                          item-title="title"
+                          item-value="value"
                           multiple
                           chips
                           closable-chips
@@ -1534,7 +1543,7 @@ onMounted(resetForm);
                                 color: 'white',
                               }"
                             >
-                              {{ item.raw.name }}
+                              {{ item.raw.title }}
                             </VChip>
                           </template>
                           <template #item="{ props: itemProps, item }">
@@ -1878,7 +1887,9 @@ onMounted(resetForm);
                   >
                     {{ $t('cancel') }}
                   </VBtn>
-                  <VBtn @click="addUser"> {{ $t('save') }} </VBtn>
+                  <VBtn @click="addUser" :disabled="!isFormValid">
+                    {{ $t('save') }}
+                  </VBtn>
                 </VCardText>
               </VForm>
             </VWindowItem>

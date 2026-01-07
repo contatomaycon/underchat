@@ -318,6 +318,12 @@ export const useUsersStore = defineStore('users', {
         }
       }
 
+      if (body.sector_ids !== undefined && Array.isArray(body.sector_ids)) {
+        body.sector_ids.forEach((sectorId, index) => {
+          formData.append(`sector_ids[${index}]`, sectorId);
+        });
+      }
+
       if (body.photo_url?.value !== undefined) {
         formData.append('photo_url', body.photo_url.value ?? '');
       }
@@ -391,6 +397,25 @@ export const useUsersStore = defineStore('users', {
           'state_fiscal_code'
         );
         this.appendStringField(formData, payload.district, 'district');
+
+        if (
+          (payload as any).sector_ids !== undefined &&
+          Array.isArray((payload as any).sector_ids)
+        ) {
+          (payload as any).sector_ids.forEach(
+            (sectorId: string, index: number) => {
+              formData.append(`sector_ids[${index}]`, sectorId);
+            }
+          );
+        }
+
+        if ((payload as any).user_status_id !== undefined) {
+          this.appendStringField(
+            formData,
+            (payload as any).user_status_id,
+            'user_status_id'
+          );
+        }
 
         if (photoFile instanceof File) {
           formData.append('photo', photoFile);
