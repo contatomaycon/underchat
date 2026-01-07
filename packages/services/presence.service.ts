@@ -7,6 +7,8 @@ import { UpdateChatsUserRequest } from '@core/schema/chat/updateChatsUser/reques
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { UserAccountViewerRepository } from '@core/repositories/user/UserAccountViewer.repository';
 import { chatAccountCentrifugo } from '@core/common/functions/centrifugoQueue';
+import { DrizzleQueryError } from 'drizzle-orm';
+import { getErrorMessage } from '@core/common/functions/toError';
 
 @injectable()
 export class PresenceService {
@@ -131,19 +133,70 @@ export class PresenceService {
     ];
   }
 
+  private isTemporaryDatabaseError(error: unknown): boolean {
+    if (!error || typeof error !== 'object') {
+      return false;
+    }
+
+    const errorMessage = getErrorMessage(error);
+    const lowerMessage = errorMessage.toLowerCase();
+
+    const temporaryErrorPatterns = [
+      'timeout exceeded when trying to connect',
+      'timeout',
+      'connection refused',
+      'connection closed',
+      'connection terminated',
+      'could not connect',
+      'connection error',
+      'connect econnrefused',
+      'pool timeout',
+      'too many connections',
+    ];
+
+    for (const pattern of temporaryErrorPatterns) {
+      if (lowerMessage.includes(pattern)) {
+        return true;
+      }
+    }
+
+    if (error instanceof DrizzleQueryError && error.cause) {
+      return this.isTemporaryDatabaseError(error.cause);
+    }
+
+    const cause = (error as { cause?: unknown })?.cause;
+    if (cause) {
+      return this.isTemporaryDatabaseError(cause);
+    }
+
+    return false;
+  }
+
   private async ensureChatUserRow(
     userId: string,
     status: EChatUserStatus
   ): Promise<void> {
-    const existsStatus = await this.chatUserViewer.findStatusByUserId(userId);
+    try {
+      const existsStatus = await this.chatUserViewer.findStatusByUserId(userId);
 
-    if (existsStatus === null) {
-      const input: UpdateChatsUserRequest = {
-        status,
-        notifications: true,
-      };
+      if (existsStatus === null) {
+        const input: UpdateChatsUserRequest = {
+          status,
+          notifications: true,
+        };
 
-      await this.chatUserUpdater.updateChatUser(userId, input);
+        await this.chatUserUpdater.updateChatUser(userId, input);
+      }
+    } catch (error) {
+      if (this.isTemporaryDatabaseError(error)) {
+        console.warn('Temporary database error while ensuring chat user row', {
+          userId,
+          error: getErrorMessage(error),
+        });
+        return;
+      }
+
+      throw error;
     }
   }
 
@@ -196,7 +249,21 @@ export class PresenceService {
       forcePublish = false,
     } = options;
 
-    const currentStatus = await this.getCurrentStatus(userId);
+    let currentStatus: EChatUserStatus | null;
+
+    try {
+      currentStatus = await this.getCurrentStatus(userId);
+    } catch (error) {
+      if (this.isTemporaryDatabaseError(error)) {
+        console.warn('Temporary database error while getting current status', {
+          userId,
+          error: getErrorMessage(error),
+        });
+        currentStatus = this.statusCache.get(userId) ?? null;
+      } else {
+        throw error;
+      }
+    }
 
     if (clearRedis) {
       await this.clearPresenceKey(userId);
@@ -209,10 +276,28 @@ export class PresenceService {
     }
 
     if (currentStatus !== newStatus) {
-      await this.chatUserUpdater.updateStatusIfChanged(userId, newStatus);
-      this.statusCache.set(userId, newStatus);
-      await this.publishUserStatus(userId, newStatus);
-      return;
+      try {
+        await this.chatUserUpdater.updateStatusIfChanged(userId, newStatus);
+        this.statusCache.set(userId, newStatus);
+        await this.publishUserStatus(userId, newStatus);
+        return;
+      } catch (error) {
+        if (this.isTemporaryDatabaseError(error)) {
+          console.warn(
+            'Temporary database error while updating status, continuing without database update',
+            {
+              userId,
+              newStatus,
+              error: getErrorMessage(error),
+            }
+          );
+          this.statusCache.set(userId, newStatus);
+          await this.publishUserStatus(userId, newStatus);
+          return;
+        }
+
+        throw error;
+      }
     }
 
     this.statusCache.set(userId, newStatus);
