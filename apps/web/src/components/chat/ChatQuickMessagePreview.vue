@@ -223,14 +223,23 @@ const hasPhoto = computed(() => {
           }"
         >
           <div class="message-block">
-            <div v-if="template.type === 'text' && replacedMessage">
+            <div
+              v-if="template.type === 'text' && replacedMessage"
+              class="text-message-wrapper"
+            >
               <p
-                class="mr-6 text-base message-text mb-2"
+                class="text-base message-text mb-0"
                 :style="{
                   color: 'rgb(var(--v-theme-title))',
                 }"
                 v-html="formatWhatsAppText(replacedMessage)"
               ></p>
+              <span class="message-time-inline">
+                {{ currentTime }}
+                <VIcon size="16" color="rgba(17, 27, 33, 0.6)" class="ml-1">
+                  tabler-checks
+                </VIcon>
+              </span>
             </div>
 
             <div
@@ -327,7 +336,7 @@ const hasPhoto = computed(() => {
             </div>
           </div>
 
-          <div class="message-meta">
+          <div v-if="template.type !== 'text'" class="message-meta">
             <div class="message-meta-content">
               <div class="message-meta-row">
                 <span class="message-time">
@@ -413,7 +422,31 @@ const hasPhoto = computed(() => {
   border-end-end-radius: 6px;
   border-end-start-radius: 6px;
   padding-right: 1.8rem !important;
-  padding-bottom: 1.4rem !important;
+  padding-bottom: 0.75rem !important;
+  max-height: 40vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+
+  &::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.05);
+    border-radius: 10px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 10px;
+
+    &:hover {
+      background: rgba(0, 0, 0, 0.3);
+    }
+  }
+
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.2) rgba(0, 0, 0, 0.05);
 
   p {
     overflow-wrap: anywhere;
@@ -430,8 +463,27 @@ const hasPhoto = computed(() => {
     position: relative;
   }
 
+  .text-message-wrapper {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+  }
+
   .message-text {
     white-space: pre-line;
+  }
+
+  .message-time-inline {
+    display: inline-flex;
+    align-items: center;
+    align-self: flex-end;
+    gap: 2px;
+    font-size: 0.75rem;
+    color: rgba(17, 27, 33, 0.6);
+    white-space: nowrap;
+    margin-top: 0.125rem;
+    margin-right: -1rem;
+    margin-bottom: -0.25rem;
   }
 
   .image-bubble {
@@ -587,15 +639,14 @@ const hasPhoto = computed(() => {
 
   .message-meta {
     position: absolute;
-    left: 0;
-    right: 0;
     bottom: 6px;
+    right: 12px;
     display: flex;
     align-items: flex-end;
     gap: 4px;
     justify-content: flex-end;
-    padding-inline: 16px 12px;
     font-size: 0.75rem;
+    z-index: 1;
 
     .v-icon {
       font-size: 0.95rem;
@@ -616,6 +667,11 @@ const hasPhoto = computed(() => {
 
     .message-time {
       line-height: 1;
+      pointer-events: auto;
+    }
+
+    .v-icon {
+      pointer-events: auto;
     }
   }
 }
