@@ -6,8 +6,6 @@ import {
 } from '@core/schema/sector/editSector/request.schema';
 import { VForm } from 'vuetify/components/VForm';
 import { ESectorStatus } from '@core/common/enums/ESectorStatus';
-import { ListRoleAccountResponse } from '@core/schema/sector/listSectorRoleAccount/response.schema';
-import { ListSectorRoleAccountSectorResponse } from '@core/schema/sector/viewSectorRoleAccountSector/response.schema';
 
 const sectorStore = useSectorsStore();
 const { t } = useI18n();
@@ -31,8 +29,6 @@ const sectorId = toRef(props, 'sectorId');
 const name = ref<string | null>(null);
 const color = ref<string | null>(null);
 const sectorStatus = ref<string | null>(null);
-const permissionRoleId = ref<string[]>([]);
-const roleOptions = ref<ListRoleAccountResponse[]>([]);
 const sectorStatusOptions = Object.entries(ESectorStatus).map(
   ([key, value]) => ({
     name: t(`${key}`) || key,
@@ -42,57 +38,11 @@ const sectorStatusOptions = Object.entries(ESectorStatus).map(
 
 const refFormEditSector = ref<VForm>();
 
-function toArray<T>(value: T | T[] | null | undefined): T[] {
-  if (Array.isArray(value)) return value;
-  return value ? [value] : [];
-}
-
-function uniqById(
-  arr: (ListRoleAccountResponse | ListSectorRoleAccountSectorResponse)[]
-) {
-  const map = new Map<
-    string,
-    ListRoleAccountResponse | ListSectorRoleAccountSectorResponse
-  >();
-  for (const it of arr) map.set(it.id, it);
-  return Array.from(map.values()) as ListRoleAccountResponse[];
-}
-
-const loadRoles = async () => {
-  try {
-    const [allRoles, assignedRoles] = await Promise.all([
-      sectorStore.listSectorsRoleAccount(),
-      sectorId.value
-        ? sectorStore.listSectorsRoleSectorId(sectorId.value)
-        : null,
-    ]);
-
-    const all = toArray(allRoles);
-    const assigned = toArray(assignedRoles);
-
-    roleOptions.value = uniqById([...all, ...assigned]);
-
-    if (assigned.length > 0) {
-      permissionRoleId.value = assigned.map((r) => r.id);
-    }
-  } catch (error) {
-    console.error('Error loading roles:', error);
-    roleOptions.value = [];
-  }
-};
-
 const updateSector = async () => {
   const validateForm = await refFormEditSector?.value?.validate();
   if (!validateForm?.valid) return;
 
-  if (
-    !sectorId.value ||
-    !name.value ||
-    !color.value ||
-    !sectorStatus.value ||
-    !permissionRoleId.value ||
-    permissionRoleId.value.length === 0
-  ) {
+  if (!sectorId.value || !name.value || !color.value || !sectorStatus.value) {
     return;
   }
 
@@ -101,7 +51,6 @@ const updateSector = async () => {
   };
 
   const body: EditSectorParamsBody = {
-    permission_role_id: permissionRoleId.value,
     name: name.value,
     color: color.value.toUpperCase(),
     sector_status_id: sectorStatus.value,
@@ -117,8 +66,6 @@ const updateSector = async () => {
 
 onMounted(async () => {
   if (!sectorId.value) return;
-
-  await loadRoles();
 
   const sector = await sectorStore.getSectorById(sectorId.value);
   if (sector) {
@@ -163,26 +110,6 @@ onMounted(async () => {
                 :clearable="true"
                 item-value="id"
                 item-title="name"
-              />
-            </VCol>
-
-            <VCol cols="12" sm="6" md="6">
-              <VLabel class="text-body-2 mb-1">{{ $t('cargos') }}:</VLabel>
-              <AppAutocomplete
-                v-model="permissionRoleId"
-                :items="roleOptions"
-                :placeholder="$t('select_role')"
-                item-value="id"
-                item-title="name"
-                chips
-                multiple
-                closable-chips
-                :rules="[
-                  requiredValidator(
-                    permissionRoleId.length > 0,
-                    $t('role_required')
-                  ),
-                ]"
               />
             </VCol>
 

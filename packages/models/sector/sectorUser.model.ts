@@ -1,14 +1,14 @@
 import { pgTable, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
-import { sector, permissionRole } from '@core/models';
+import { sector, user } from '@core/models';
 
-export const sectorRole = pgTable('sector_role', {
-  sector_role_id: uuid().primaryKey().notNull(),
+export const sectorUser = pgTable('sector_user', {
+  sector_user_id: uuid().primaryKey().notNull(),
   sector_id: uuid()
     .references(() => sector.sector_id)
     .notNull(),
-  permission_role_id: uuid()
-    .references(() => permissionRole.permission_role_id)
+  user_id: uuid()
+    .references(() => user.user_id)
     .notNull(),
   created_at: timestamp({
     mode: 'string',
@@ -21,13 +21,13 @@ export const sectorRole = pgTable('sector_role', {
   deleted_at: timestamp({ mode: 'string', withTimezone: true }),
 });
 
-export const sectorRoleRelations = relations(sectorRole, ({ one }) => ({
-  sst: one(sector, {
-    fields: [sectorRole.sector_id],
+export const sectorUserRelations = relations(sectorUser, ({ one }) => ({
+  sus: one(sector, {
+    fields: [sectorUser.sector_id],
     references: [sector.sector_id],
   }),
-  spr: one(permissionRole, {
-    fields: [sectorRole.permission_role_id],
-    references: [permissionRole.permission_role_id],
+  suu: one(user, {
+    fields: [sectorUser.user_id],
+    references: [user.user_id],
   }),
 }));

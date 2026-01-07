@@ -2,7 +2,7 @@ import { injectable } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { PermissionService } from '@core/services/permission.service';
 import { AccountService } from '@core/services/account.service';
-import { ListRoleAccountResponse } from '@core/schema/sector/listSectorRoleAccount/response.schema';
+import { IRoleAccount } from '@core/common/interfaces/IRoleAccount';
 
 @injectable()
 export class PermissionRoleAccountListerUseCase {
@@ -14,7 +14,7 @@ export class PermissionRoleAccountListerUseCase {
   async execute(
     t: TFunction<'translation', undefined>,
     accountId: string
-  ): Promise<ListRoleAccountResponse[]> {
+  ): Promise<IRoleAccount[]> {
     const accountExists =
       await this.accountService.existsAccountById(accountId);
 

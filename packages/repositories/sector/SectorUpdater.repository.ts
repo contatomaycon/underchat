@@ -4,6 +4,7 @@ import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { and, eq } from 'drizzle-orm';
 import { EditSectorParamsBody } from '@core/schema/sector/editSector/request.schema';
+import { currentTime } from '@core/common/functions/currentTime';
 
 @injectable()
 export class SectorUpdaterRepository {
@@ -11,49 +12,42 @@ export class SectorUpdaterRepository {
     @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
 
-  private updateInput(
-    input: EditSectorParamsBody
-  ): Partial<typeof sector.$inferInsert> {
-    const inputUpdate: Partial<typeof sector.$inferInsert> = {};
-
-    if (input.sector_status_id) {
-      inputUpdate.sector_status_id = input.sector_status_id;
-    }
-
-    if (input.name) {
-      inputUpdate.name = input.name;
-    }
-
-    if (input.color) {
-      inputUpdate.color = input.color;
-    }
-
-    return inputUpdate;
-  }
-
   updateSectorById = async (
     sectorId: string,
     input: EditSectorParamsBody,
     accountId: string
-  ): Promise<string | null> => {
-    const updateInput = this.updateInput(input);
+  ): Promise<boolean> => {
+    const date = currentTime();
 
-    if (Object.keys(updateInput).length === 0) {
-      return null;
+    const updateData: Partial<{
+      name: string;
+      color: string;
+      sector_status_id: string;
+      updated_at: string;
+    }> = {
+      updated_at: date,
+    };
+
+    if (input.name !== undefined) {
+      updateData.name = input.name;
+    }
+
+    if (input.color !== undefined) {
+      updateData.color = input.color;
+    }
+
+    if (input.sector_status_id !== undefined) {
+      updateData.sector_status_id = input.sector_status_id;
     }
 
     const result = await this.dbRw
       .update(sector)
-      .set(updateInput)
+      .set(updateData)
       .where(
-        and(eq(sector.sector_id, sectorId), eq(sector.account_id, accountId))
+        and(eq(sector.account_id, accountId), eq(sector.sector_id, sectorId))
       )
       .execute();
 
-    if ((result.rowCount ?? 0) === 0) {
-      return null;
-    }
-
-    return accountId;
+    return result.rowCount === 1;
   };
 }

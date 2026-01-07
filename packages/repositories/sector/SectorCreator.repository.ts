@@ -1,11 +1,11 @@
-import { ESectorStatus } from '@core/common/enums/ESectorStatus';
 import * as schema from '@core/models';
 import { sector } from '@core/models';
-import { CreateSectorRequest } from '@core/schema/sector/createSector/request.schema';
-import { CreateSectorResponse } from '@core/schema/sector/createSector/response.schema';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { v7 as uuidv7 } from 'uuid';
+import { CreateSectorRequest } from '@core/schema/sector/createSector/request.schema';
+import { CreateSectorResponse } from '@core/schema/sector/createSector/response.schema';
+import { ESectorStatus } from '@core/common/enums/ESectorStatus';
+import { randomUUID } from 'crypto';
 
 @injectable()
 export class SectorCreatorRepository {
@@ -17,23 +17,28 @@ export class SectorCreatorRepository {
     input: CreateSectorRequest,
     accountId: string
   ): Promise<CreateSectorResponse | null> => {
-    const sectorId = uuidv7();
+    const sectorId = randomUUID();
 
     const result = await this.dbRw
       .insert(sector)
       .values({
         sector_id: sectorId,
-        sector_status_id: ESectorStatus.active,
         account_id: accountId,
+        sector_status_id: ESectorStatus.active,
         name: input.name,
         color: input.color,
       })
-      .returning();
+      .returning({
+        sector_id: sector.sector_id,
+      })
+      .execute();
 
     if (!result?.length) {
       return null;
     }
 
-    return { sector_id: result[0].sector_id };
+    return {
+      sector_id: result[0].sector_id,
+    };
   };
 }

@@ -9,7 +9,6 @@ export type EditSectorParamsRequest = Static<
 >;
 
 export const editSectorParamsBodySchema = Type.Object({
-  permission_role_id: Type.Array(Type.String({ format: 'uuid' })),
   sector_status_id: Type.Optional(
     Type.Union([Type.String({ format: 'uuid' })])
   ),

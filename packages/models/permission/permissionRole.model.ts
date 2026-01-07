@@ -3,7 +3,6 @@ import {
   account,
   permissionAssignment,
   permissionRoleAction,
-  sectorRole,
 } from '@core/models';
 import { relations } from 'drizzle-orm';
 
@@ -30,6 +29,5 @@ export const permissionRoleRelations = relations(
   ({ many }) => ({
     ppa: many(permissionAssignment),
     pra: many(permissionRoleAction),
-    sro: many(sectorRole),
   })
 );

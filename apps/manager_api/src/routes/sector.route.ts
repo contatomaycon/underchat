@@ -12,9 +12,6 @@ import { deleteSectorSchema } from '@core/schema/sector/deleteSector';
 import { listSectorSchema } from '@core/schema/sector/listSector';
 import { viewSectorSchema } from '@core/schema/sector/viewSector';
 import { editSectorSchema } from '@core/schema/sector/editSector';
-import { listSectorRoleAccountSchema } from '@core/schema/sector/listSectorRoleAccount';
-import { viewSectorRoleAccountSectorSchema } from '@core/schema/sector/viewSectorRoleAccountSector';
-import { createSectorRoleSchema } from '@core/schema/sector/createSectorRole';
 import { listSectorUsersSchema } from '@core/schema/sector/listSectorUsers';
 import { planGuard } from '@/plugins/planGuard';
 import { planStatus } from '@/plugins/planStatus';
@@ -69,39 +66,6 @@ export default function sectorRoutes(server: FastifyInstance) {
   server.post('/sector', {
     schema: createSectorSchema,
     handler: sectorController.createSector,
-    preHandler: [
-      (request, reply) =>
-        server.authenticateJwt(request, reply, sectorCreatePermissions),
-      planGuard,
-      planStatus,
-    ],
-  });
-
-  server.get('/sector-role/account', {
-    schema: listSectorRoleAccountSchema,
-    handler: sectorController.listSectorRoleAccount,
-    preHandler: [
-      (request, reply) =>
-        server.authenticateJwt(request, reply, sectorViewPermissions),
-      planGuard,
-      planStatus,
-    ],
-  });
-
-  server.get('/sector-role/account/:sector_id', {
-    schema: viewSectorRoleAccountSectorSchema,
-    handler: sectorController.listSectorRoleAccountSector,
-    preHandler: [
-      (request, reply) =>
-        server.authenticateJwt(request, reply, sectorViewPermissions),
-      planGuard,
-      planStatus,
-    ],
-  });
-
-  server.post('/sector-role/:sector_id', {
-    schema: createSectorRoleSchema,
-    handler: sectorController.createSectorRole,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, sectorCreatePermissions),

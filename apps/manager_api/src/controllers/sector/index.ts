@@ -4,9 +4,6 @@ import { viewSector } from './methods/viewSector';
 import { deleteSector } from './methods/deleteSector';
 import { editSector } from './methods/editSector';
 import { createSector } from './methods/createSector';
-import { listSectorRoleAccount } from './methods/listSectorRoleAccount';
-import { listSectorRoleAccountSector } from './methods/listSectorRoleAccountSector';
-import { createSectorRole } from './methods/createSectorRole';
 import { listSectorUsers } from './methods/listSectorUsers';
 
 @injectable()
@@ -16,9 +13,6 @@ class SectorController {
   public deleteSector = deleteSector;
   public editSector = editSector;
   public createSector = createSector;
-  public listSectorRoleAccount = listSectorRoleAccount;
-  public listSectorRoleAccountSector = listSectorRoleAccountSector;
-  public createSectorRole = createSectorRole;
   public listSectorUsers = listSectorUsers;
 }
 

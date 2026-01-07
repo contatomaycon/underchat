@@ -69,10 +69,8 @@ const isDialogDeleterShow = ref(false);
 const sectorToDelete = ref<string | null>(null);
 
 const isDialogEditSectorShow = ref(false);
-const isDialogAddSectorRoleShow = ref(false);
 const isAddSectorVisible = ref(false);
 const sectorToEdit = ref<string | null>(null);
-const sectorToAddRole = ref<string | null>(null);
 
 const isHexColor = (s: string) => /^#([0-9A-F]{6}|[0-9A-F]{3})$/i.test(s);
 
@@ -167,12 +165,6 @@ const openEditDialog = (id: string) => {
 
 const handleSectorUpdated = async () => {
   await sectorStore.listSectors(query.value);
-};
-
-const openAddRoleDialog = (id: string) => {
-  sectorToAddRole.value = id;
-
-  isDialogAddSectorRoleShow.value = true;
 };
 
 watch(
@@ -306,18 +298,6 @@ watch(
             <template #item.actions="{ item }">
               <div class="d-flex gap-1">
                 <IconBtn
-                  ><VTooltip
-                    location="top"
-                    transition="scale-transition"
-                    activator="parent"
-                  >
-                    <span>{{ $t('add_role') }}</span> </VTooltip
-                  ><VIcon
-                    icon="tabler-square-rounded-plus"
-                    @click="openAddRoleDialog(item.sector_id)"
-                /></IconBtn>
-
-                <IconBtn
                   v-if="$canPermission(permissionsEdit) && item.account?.id"
                   ><VTooltip
                     location="top"
@@ -366,12 +346,6 @@ watch(
         :title="$t('delete_sector')"
         :message="$t('delete_sector_confirmation')"
         @confirm="handleDelete"
-      />
-
-      <AppAddSectorRole
-        v-if="isDialogAddSectorRoleShow"
-        v-model="isDialogAddSectorRoleShow"
-        :sector-id="sectorToAddRole"
       />
 
       <AppEditSector

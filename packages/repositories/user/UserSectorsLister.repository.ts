@@ -1,13 +1,8 @@
 import * as schema from '@core/models';
-import {
-  sectorRole,
-  permissionRole,
-  permissionAssignment,
-  sector,
-} from '@core/models';
-import { and, eq, isNull } from 'drizzle-orm';
+import { sectorUser, sector } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
+import { and, eq, isNull } from 'drizzle-orm';
 
 @injectable()
 export class UserSectorsListerRepository {
@@ -23,26 +18,14 @@ export class UserSectorsListerRepository {
       .select({
         sector_id: sector.sector_id,
       })
-      .from(permissionAssignment)
-      .innerJoin(
-        permissionRole,
-        eq(
-          permissionAssignment.permission_role_id,
-          permissionRole.permission_role_id
-        )
-      )
-      .innerJoin(
-        sectorRole,
-        eq(sectorRole.permission_role_id, permissionRole.permission_role_id)
-      )
-      .innerJoin(sector, eq(sectorRole.sector_id, sector.sector_id))
+      .from(sectorUser)
+      .innerJoin(sector, eq(sectorUser.sector_id, sector.sector_id))
       .where(
         and(
-          eq(permissionAssignment.user_id, userId),
-          eq(permissionRole.account_id, accountId),
+          eq(sectorUser.user_id, userId),
           eq(sector.account_id, accountId),
-          isNull(sector.deleted_at),
-          isNull(sectorRole.deleted_at)
+          isNull(sectorUser.deleted_at),
+          isNull(sector.deleted_at)
         )
       )
       .groupBy(sector.sector_id)

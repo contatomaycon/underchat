@@ -3,7 +3,7 @@ import { permissionRole } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { and, eq, isNull } from 'drizzle-orm';
-import { ListRoleAccountResponse } from '@core/schema/sector/listSectorRoleAccount/response.schema';
+import { IRoleAccount } from '@core/common/interfaces/IRoleAccount';
 
 @injectable()
 export class PermissionRoleAccountListerRepository {
@@ -13,7 +13,7 @@ export class PermissionRoleAccountListerRepository {
 
   listPermissionRoleAccountById = async (
     accountId: string
-  ): Promise<ListRoleAccountResponse[]> => {
+  ): Promise<IRoleAccount[]> => {
     const result = await this.dbRo
       .select({
         id: permissionRole.permission_role_id,
@@ -32,6 +32,6 @@ export class PermissionRoleAccountListerRepository {
       return [];
     }
 
-    return result as ListRoleAccountResponse[];
+    return result as IRoleAccount[];
   };
 }

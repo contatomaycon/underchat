@@ -3,10 +3,8 @@ import { PermissionAssignmentUserViewerRepository } from '@core/repositories/per
 import { PermissionRoleViewerExistsRepository } from '@core/repositories/permission/PermissionRoleViewerExists.repository';
 import { PermissionRoleAccountListerRepository } from '@core/repositories/permission/PermissionRoleAccountLister.repository';
 import { PermissionRoleAccountViewerRepository } from '@core/repositories/permission/PermissionRoleAccountViewer.repository';
-import { ListRoleAccountResponse } from '@core/schema/sector/listSectorRoleAccount/response.schema';
-import { PermissionRoleCountSectorViewerRepository } from '@core/repositories/permission/PermissionRoleCountSectorViewer.repository';
-import { CreateSectorRoleRequest } from '@core/schema/sector/createSectorRole/request.schema';
 import { PermissionGroupsListerRepository } from '@core/repositories/permission/PermissionGroupsLister.repository';
+import { IRoleAccount } from '@core/common/interfaces/IRoleAccount';
 import { ListPermissionGroupsResponse } from '@core/schema/permission/listPermissionGroups/response.schema';
 import { ERouteModule } from '@core/common/enums/ERouteModule';
 import { RolePermissionsUpdaterRepository } from '@core/repositories/permission/RolePermissionsUpdater.repository';
@@ -19,7 +17,6 @@ export class PermissionService {
     private readonly permissionRoleViewerExistsRepository: PermissionRoleViewerExistsRepository,
     private readonly permissionRoleAccountListerRepository: PermissionRoleAccountListerRepository,
     private readonly permissionRoleAccountViewerRepository: PermissionRoleAccountViewerRepository,
-    private readonly permissionRoleCountSectorViewerRepository: PermissionRoleCountSectorViewerRepository,
     private readonly permissionGroupsListerRepository: PermissionGroupsListerRepository,
     private readonly rolePermissionsUpdaterRepository: RolePermissionsUpdaterRepository
   ) {}
@@ -45,19 +42,9 @@ export class PermissionService {
 
   listPermissionRoleAccountById = async (
     accountId: string
-  ): Promise<ListRoleAccountResponse[]> => {
+  ): Promise<IRoleAccount[]> => {
     return this.permissionRoleAccountListerRepository.listPermissionRoleAccountById(
       accountId
-    );
-  };
-
-  countRolesSector = async (
-    accountId: string,
-    rolesId: CreateSectorRoleRequest
-  ): Promise<boolean> => {
-    return this.permissionRoleCountSectorViewerRepository.countRolesSector(
-      accountId,
-      rolesId
     );
   };
 

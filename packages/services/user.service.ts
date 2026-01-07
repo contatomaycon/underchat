@@ -41,10 +41,10 @@ import { PermissionAssignmentDeleterRepository } from '@core/repositories/permis
 import { UserAccountViewerRepository } from '@core/repositories/user/UserAccountViewer.repository';
 import { UserEmailViewerExistsRepository } from '@core/repositories/user/UserEmailViewerExists.repository';
 import { UserTotalViewerRepository } from '@core/repositories/user/UserTotalViewer.repository';
-import { UserSectorsListerRepository } from '@core/repositories/user/UserSectorsLister.repository';
 import { UserOnlineListerRepository } from '@core/repositories/user/UserOnlineLister.repository';
 import { UserTransferListerRepository } from '@core/repositories/user/UserTransferLister.repository';
 import { UserMasterViewerRepository } from '@core/repositories/user/UserMasterViewer.repository';
+import { UserSectorsListerRepository } from '@core/repositories/user/UserSectorsLister.repository';
 import { EncryptService } from './encrypt.service';
 import { IUserSensitiveDataDecrypted } from '@core/common/interfaces/IUserSensitiveDataDecrypted';
 import { StorageService } from '@core/services/storage.service';
@@ -87,14 +87,14 @@ export class UserService {
     private readonly userAccountViewerRepository: UserAccountViewerRepository,
     private readonly userEmailViewerExistsRepository: UserEmailViewerExistsRepository,
     private readonly userTotalViewerRepository: UserTotalViewerRepository,
-    private readonly userSectorsListerRepository: UserSectorsListerRepository,
     private readonly userOnlineListerRepository: UserOnlineListerRepository,
     private readonly userTransferListerRepository: UserTransferListerRepository,
     private readonly storageService: StorageService,
     private readonly elasticDatabaseService: ElasticDatabaseService,
     private readonly accountSettingsAdditionalInfoViewerRepository: AccountSettingsAdditionalInfoViewerRepository,
     private readonly userPasswordViewerRepository: UserPasswordViewerRepository,
-    private readonly userMasterViewerRepository: UserMasterViewerRepository
+    private readonly userMasterViewerRepository: UserMasterViewerRepository,
+    private readonly userSectorsListerRepository: UserSectorsListerRepository
   ) {}
 
   listUsers = async (
