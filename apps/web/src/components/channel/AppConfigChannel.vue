@@ -225,8 +225,12 @@ const isLoadingWorkerConfig = ref(false);
 const isSavingWorkerConfig = ref(false);
 const workerConfigLoadedFor = ref<string | null>(null);
 const transferProtocolText = ref<string>('');
+const transferProtocolSectorText = ref<string>('');
+const transferProtocolSectorAndUserText = ref<string>('');
 const transferProtocolModalOpen = ref(false);
 const isSavingTransferProtocol = ref(false);
+const isSavingTransferProtocolSector = ref(false);
+const isSavingTransferProtocolSectorAndUser = ref(false);
 const startProtocolText = ref<string>('');
 const startProtocolModalOpen = ref(false);
 const isSavingStartProtocol = ref(false);
@@ -264,6 +268,14 @@ const availableTags = computed(() => [
   {
     tag: '{{ channel_name }}',
     description: t('tag_channel_name_description'),
+  },
+  {
+    tag: '{{ sector }}',
+    description: t('tag_sector_description'),
+  },
+  {
+    tag: '{{ user }}',
+    description: t('tag_user_description'),
   },
 ]);
 const simultaneousAttendance = ref<number | null>(null);
@@ -484,6 +496,8 @@ const loadWorkerConfig = async (force = false) => {
 
     const [
       protocolTransferData,
+      protocolTransferSectorData,
+      protocolTransferSectorAndUserData,
       protocolStartData,
       simultaneousAttendanceData,
       showMessageOnCallData,
@@ -491,6 +505,8 @@ const loadWorkerConfig = async (force = false) => {
       chatbotData,
     ] = await Promise.all([
       channelStore.fetchTransferProtocolText(channelId.value),
+      channelStore.fetchTransferProtocolSectorText(channelId.value),
+      channelStore.fetchTransferProtocolSectorAndUserText(channelId.value),
       channelStore.fetchStartProtocolText(channelId.value),
       channelStore.fetchSimultaneousAttendance(channelId.value),
       channelStore.fetchShowMessageOnCall(channelId.value),
@@ -506,6 +522,21 @@ const loadWorkerConfig = async (force = false) => {
     } else {
       transferProtocolText.value = '';
       workerConfigForm.generate_protocol_at_transfer = false;
+    }
+
+    if (protocolTransferSectorData) {
+      transferProtocolSectorText.value =
+        protocolTransferSectorData.generate_protocol_at_transfer_sector || '';
+    } else {
+      transferProtocolSectorText.value = '';
+    }
+
+    if (protocolTransferSectorAndUserData) {
+      transferProtocolSectorAndUserText.value =
+        protocolTransferSectorAndUserData.generate_protocol_at_transfer_sector_and_user ||
+        '';
+    } else {
+      transferProtocolSectorAndUserText.value = '';
     }
 
     if (protocolStartData) {
@@ -633,12 +664,30 @@ type WorkerConfigField = keyof WorkerConfigForm;
 const openTransferProtocolModal = async () => {
   if (!channelId.value) return;
 
-  const data = await channelStore.fetchTransferProtocolText(channelId.value);
+  const [userData, sectorData, sectorAndUserData] = await Promise.all([
+    channelStore.fetchTransferProtocolText(channelId.value),
+    channelStore.fetchTransferProtocolSectorText(channelId.value),
+    channelStore.fetchTransferProtocolSectorAndUserText(channelId.value),
+  ]);
 
-  if (data) {
-    transferProtocolText.value = data.generate_protocol_at_transfer || '';
+  if (userData) {
+    transferProtocolText.value = userData.generate_protocol_at_transfer || '';
   } else {
     transferProtocolText.value = '';
+  }
+
+  if (sectorData) {
+    transferProtocolSectorText.value =
+      sectorData.generate_protocol_at_transfer_sector || '';
+  } else {
+    transferProtocolSectorText.value = '';
+  }
+
+  if (sectorAndUserData) {
+    transferProtocolSectorAndUserText.value =
+      sectorAndUserData.generate_protocol_at_transfer_sector_and_user || '';
+  } else {
+    transferProtocolSectorAndUserText.value = '';
   }
 
   transferProtocolModalOpen.value = true;
@@ -656,45 +705,99 @@ const toggleTransferProtocolStatus = async () => {
 
   try {
     isSavingTransferProtocol.value = true;
+    isSavingTransferProtocolSector.value = true;
+    isSavingTransferProtocolSectorAndUser.value = true;
 
-    const text = newEnabled ? transferProtocolText.value.trim() || null : null;
+    const [userResult, sectorResult, sectorAndUserResult] = await Promise.all([
+      channelStore.updateTransferProtocolText(
+        channelId.value,
+        newEnabled ? transferProtocolText.value.trim() || null : null,
+        newEnabled
+      ),
+      channelStore.updateTransferProtocolSectorText(
+        channelId.value,
+        newEnabled ? transferProtocolSectorText.value.trim() || null : null,
+        newEnabled
+      ),
+      channelStore.updateTransferProtocolSectorAndUserText(
+        channelId.value,
+        newEnabled
+          ? transferProtocolSectorAndUserText.value.trim() || null
+          : null,
+        newEnabled
+      ),
+    ]);
 
-    const result = await channelStore.updateTransferProtocolText(
-      channelId.value,
-      text,
-      newEnabled
-    );
+    if (userResult) {
+      workerConfigForm.generate_protocol_at_transfer = userResult.enabled;
+      transferProtocolText.value =
+        userResult.generate_protocol_at_transfer || '';
+    }
 
-    if (result) {
-      workerConfigForm.generate_protocol_at_transfer = result.enabled;
-      transferProtocolText.value = result.generate_protocol_at_transfer || '';
+    if (sectorResult) {
+      transferProtocolSectorText.value =
+        sectorResult.generate_protocol_at_transfer_sector || '';
+    }
+
+    if (sectorAndUserResult) {
+      transferProtocolSectorAndUserText.value =
+        sectorAndUserResult.generate_protocol_at_transfer_sector_and_user || '';
     }
   } finally {
     isSavingTransferProtocol.value = false;
+    isSavingTransferProtocolSector.value = false;
+    isSavingTransferProtocolSectorAndUser.value = false;
   }
 };
 
-const saveTransferProtocolText = async () => {
+const saveTransferProtocolTexts = async () => {
   if (!channelId.value) return;
 
   try {
     isSavingTransferProtocol.value = true;
-    const text = transferProtocolText.value.trim() || null;
+    isSavingTransferProtocolSector.value = true;
+    isSavingTransferProtocolSectorAndUser.value = true;
+
     const currentEnabled = workerConfigForm.generate_protocol_at_transfer;
 
-    const result = await channelStore.updateTransferProtocolText(
-      channelId.value,
-      text,
-      currentEnabled
-    );
+    const [userResult, sectorResult, sectorAndUserResult] = await Promise.all([
+      channelStore.updateTransferProtocolText(
+        channelId.value,
+        transferProtocolText.value.trim() || null,
+        currentEnabled
+      ),
+      channelStore.updateTransferProtocolSectorText(
+        channelId.value,
+        transferProtocolSectorText.value.trim() || null,
+        currentEnabled
+      ),
+      channelStore.updateTransferProtocolSectorAndUserText(
+        channelId.value,
+        transferProtocolSectorAndUserText.value.trim() || null,
+        currentEnabled
+      ),
+    ]);
 
-    if (result) {
-      transferProtocolText.value = result.generate_protocol_at_transfer || '';
+    if (userResult) {
+      transferProtocolText.value =
+        userResult.generate_protocol_at_transfer || '';
+    }
+
+    if (sectorResult) {
+      transferProtocolSectorText.value =
+        sectorResult.generate_protocol_at_transfer_sector || '';
+    }
+
+    if (sectorAndUserResult) {
+      transferProtocolSectorAndUserText.value =
+        sectorAndUserResult.generate_protocol_at_transfer_sector_and_user || '';
     }
 
     closeTransferProtocolModal();
   } finally {
     isSavingTransferProtocol.value = false;
+    isSavingTransferProtocolSector.value = false;
+    isSavingTransferProtocolSectorAndUser.value = false;
   }
 };
 
@@ -3301,7 +3404,11 @@ onMounted(async () => {
           <VSwitch
             :model-value="workerConfigForm.generate_protocol_at_transfer"
             color="primary"
-            :disabled="isSavingTransferProtocol"
+            :disabled="
+              isSavingTransferProtocol ||
+              isSavingTransferProtocolSector ||
+              isSavingTransferProtocolSectorAndUser
+            "
             @click="toggleTransferProtocolStatus"
           />
           <IconBtn @click="closeTransferProtocolModal">
@@ -3317,10 +3424,39 @@ onMounted(async () => {
           v-model="transferProtocolText"
           :placeholder="$t('transfer_protocol_text_placeholder')"
           :maxlength="2000"
-          rows="8"
+          rows="6"
           counter
           auto-grow
           :disabled="!workerConfigForm.generate_protocol_at_transfer"
+          class="mb-4"
+        />
+        <VLabel class="text-body-2 mb-1"
+          >{{ $t('transfer_protocol_sector_text_label') }}:</VLabel
+        >
+        <VTextarea
+          v-model="transferProtocolSectorText"
+          :placeholder="$t('transfer_protocol_sector_text_placeholder')"
+          :maxlength="2000"
+          rows="6"
+          counter
+          auto-grow
+          :disabled="!workerConfigForm.generate_protocol_at_transfer"
+          class="mb-4"
+        />
+        <VLabel class="text-body-2 mb-1"
+          >{{ $t('transfer_protocol_sector_and_user_text_label') }}:</VLabel
+        >
+        <VTextarea
+          v-model="transferProtocolSectorAndUserText"
+          :placeholder="
+            $t('transfer_protocol_sector_and_user_text_placeholder')
+          "
+          :maxlength="2000"
+          rows="6"
+          counter
+          auto-grow
+          :disabled="!workerConfigForm.generate_protocol_at_transfer"
+          class="mb-2"
         />
         <div class="text-caption text-medium-emphasis mt-2">
           {{ $t('transfer_protocol_text_hint') }}
@@ -3349,19 +3485,29 @@ onMounted(async () => {
         <VBtn
           variant="tonal"
           color="secondary"
-          :disabled="isSavingTransferProtocol"
+          :disabled="
+            isSavingTransferProtocol ||
+            isSavingTransferProtocolSector ||
+            isSavingTransferProtocolSectorAndUser
+          "
           @click="closeTransferProtocolModal"
         >
           {{ $t('close') }}
         </VBtn>
         <VBtn
           color="primary"
-          :loading="isSavingTransferProtocol"
+          :loading="
+            isSavingTransferProtocol ||
+            isSavingTransferProtocolSector ||
+            isSavingTransferProtocolSectorAndUser
+          "
           :disabled="
             isSavingTransferProtocol ||
+            isSavingTransferProtocolSector ||
+            isSavingTransferProtocolSectorAndUser ||
             !workerConfigForm.generate_protocol_at_transfer
           "
-          @click="saveTransferProtocolText"
+          @click="saveTransferProtocolTexts"
         >
           {{ $t('save') }}
         </VBtn>

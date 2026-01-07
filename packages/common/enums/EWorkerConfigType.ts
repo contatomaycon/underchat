@@ -6,6 +6,8 @@ export enum EWorkerConfigType {
   simultaneous_attendance = '019b89ac-697d-750c-b404-18cfe47c791e',
   generate_protocol_at_start = '019b89ac-697d-750c-b404-1ed338f8324a',
   generate_protocol_at_transfer = '019b89ac-697d-750c-b404-207f03dc5b3c',
+  generate_protocol_at_transfer_sector = '019b89ac-697d-750c-b404-2a8f14dc5b4d',
+  generate_protocol_at_transfer_sector_and_user = '019b89ac-697d-750c-b404-2b9f25ed6c5e',
   show_message_on_call = '019b89ac-697d-750c-b404-241ec3feab8d',
   send_message_on_finish_attendance = '019b89ac-697d-750c-b404-2814beaa64cf',
   reject_call = '019b89ac-697e-75cb-83a0-13761ab6d869',

@@ -135,7 +135,9 @@ export class TransferChatUseCase {
     accountId: string,
     chatId: string,
     protocolText: string,
-    protocolType: 'protocol_ura' | 'protocol_start' | 'protocol_transfer'
+    protocolType: 'protocol_ura' | 'protocol_start' | 'protocol_transfer',
+    sectorName?: string | null,
+    userName?: string | null
   ): Promise<string> {
     const protocol = generateProtocol();
 
@@ -149,6 +151,8 @@ export class TransferChatUseCase {
       chat,
       protocol,
       t,
+      sectorName,
+      userName,
     });
 
     await Promise.all([
@@ -210,16 +214,36 @@ export class TransferChatUseCase {
     > | null,
     t: TFunction<'translation', undefined>,
     accountId: string,
-    chatId: string
+    chatId: string,
+    user: IChat['user'] | null | undefined,
+    sector: IChat['sector'] | null | undefined
   ): Promise<IChat> {
     let protocol: string | null = null;
-    if (workerConfigFields?.generate_protocol_at_transfer) {
+    let protocolText: string | null = null;
+
+    const hasUser = !!user;
+    const hasSector = !!sector;
+
+    if (hasUser && hasSector) {
+      protocolText =
+        workerConfigFields?.generate_protocol_at_transfer_sector_and_user ||
+        null;
+    } else if (hasSector) {
+      protocolText =
+        workerConfigFields?.generate_protocol_at_transfer_sector || null;
+    } else if (hasUser) {
+      protocolText = workerConfigFields?.generate_protocol_at_transfer || null;
+    }
+
+    if (protocolText) {
       protocol = await this.sendProtocolMessage(
         t,
         accountId,
         chatId,
-        workerConfigFields.generate_protocol_at_transfer,
-        'protocol_transfer'
+        protocolText,
+        'protocol_transfer',
+        sector?.name || null,
+        user?.name || null
       );
     }
 
@@ -319,7 +343,9 @@ export class TransferChatUseCase {
       workerConfigFields,
       t,
       accountId,
-      params.chat_id
+      params.chat_id,
+      user,
+      sector
     );
 
     await this.publishChatUpdate(chatWithProtocol, accountId);

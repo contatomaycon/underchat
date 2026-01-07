@@ -10,6 +10,8 @@ interface ReplaceMessageTagsOptions {
   protocol?: string | null;
   t?: TFunction<'translation', undefined>;
   contactName?: string | null;
+  sectorName?: string | null;
+  userName?: string | null;
 }
 
 function getGreeting(t?: TFunction<'translation', undefined>): string {
@@ -87,7 +89,8 @@ function getCurrentProtocol(
 }
 
 export function replaceMessageTags(options: ReplaceMessageTagsOptions): string {
-  const { message, chat, protocol, t, contactName } = options;
+  const { message, chat, protocol, t, contactName, sectorName, userName } =
+    options;
 
   if (!message) {
     return '';
@@ -127,6 +130,12 @@ export function replaceMessageTags(options: ReplaceMessageTagsOptions): string {
 
   const channelName = chat.worker?.name || '';
   replaced = replaced.replaceAll(/\{\{\s*channel_name\s*\}\}/gi, channelName);
+
+  const sector = sectorName || chat.sector?.name || '';
+  replaced = replaced.replaceAll(/\{\{\s*sector\s*\}\}/gi, sector);
+
+  const user = userName || chat.user?.name || '';
+  replaced = replaced.replaceAll(/\{\{\s*user\s*\}\}/gi, user);
 
   return replaced;
 }

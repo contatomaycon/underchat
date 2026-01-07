@@ -17,6 +17,10 @@ import { viewWorkerConfig } from './methods/viewWorkerConfig';
 import { updateWorkerConfig } from './methods/updateWorkerConfig';
 import { updateTransferProtocolText } from './methods/updateTransferProtocolText';
 import { viewTransferProtocolText } from './methods/viewTransferProtocolText';
+import { updateTransferProtocolSectorText } from './methods/updateTransferProtocolSectorText';
+import { viewTransferProtocolSectorText } from './methods/viewTransferProtocolSectorText';
+import { updateTransferProtocolSectorAndUserText } from './methods/updateTransferProtocolSectorAndUserText';
+import { viewTransferProtocolSectorAndUserText } from './methods/viewTransferProtocolSectorAndUserText';
 import { updateStartProtocolText } from './methods/updateStartProtocolText';
 import { viewStartProtocolText } from './methods/viewStartProtocolText';
 import { updateSimultaneousAttendance } from './methods/updateSimultaneousAttendance';
@@ -48,6 +52,12 @@ class WorkerController {
   public updateWorkerConfig = updateWorkerConfig;
   public updateTransferProtocolText = updateTransferProtocolText;
   public viewTransferProtocolText = viewTransferProtocolText;
+  public updateTransferProtocolSectorText = updateTransferProtocolSectorText;
+  public viewTransferProtocolSectorText = viewTransferProtocolSectorText;
+  public updateTransferProtocolSectorAndUserText =
+    updateTransferProtocolSectorAndUserText;
+  public viewTransferProtocolSectorAndUserText =
+    viewTransferProtocolSectorAndUserText;
   public updateStartProtocolText = updateStartProtocolText;
   public viewStartProtocolText = viewStartProtocolText;
   public updateSimultaneousAttendance = updateSimultaneousAttendance;

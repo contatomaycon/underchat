@@ -996,6 +996,156 @@ export const useChannelsStore = defineStore('channels', {
       }
     },
 
+    async fetchTransferProtocolSectorText(workerId: string): Promise<{
+      generate_protocol_at_transfer_sector: string | null;
+      enabled: boolean;
+    } | null> {
+      if (!workerId) return null;
+
+      try {
+        const response = await axios.get<
+          IApiResponse<{
+            generate_protocol_at_transfer_sector: string | null;
+            enabled: boolean;
+          }>
+        >(`/worker/${workerId}/config/transfer-protocol-sector`);
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        return data.data;
+      } catch {
+        return null;
+      }
+    },
+
+    async updateTransferProtocolSectorText(
+      workerId: string,
+      text: string | null,
+      enabled: boolean
+    ): Promise<{
+      generate_protocol_at_transfer_sector: string | null;
+      enabled: boolean;
+    } | null> {
+      if (!workerId) return null;
+
+      try {
+        const body: { text?: string; enabled: boolean } = {
+          enabled,
+        };
+        if (text !== null) {
+          body.text = text;
+        }
+
+        const response = await axios.patch<
+          IApiResponse<{
+            generate_protocol_at_transfer_sector: string | null;
+            enabled: boolean;
+          }>
+        >(`/worker/${workerId}/config/transfer-protocol-sector`, body);
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const message =
+            data?.message ??
+            this.i18n.global.t('transfer_protocol_text_update_error');
+          this.showSnackbar(message, EColor.error);
+
+          return null;
+        }
+
+        return data.data;
+      } catch (error) {
+        let message = this.i18n.global.t('transfer_protocol_text_update_error');
+        if (error instanceof AxiosError) {
+          message = error?.response?.data?.message ?? message;
+        }
+
+        this.showSnackbar(message, EColor.error);
+
+        return null;
+      }
+    },
+
+    async fetchTransferProtocolSectorAndUserText(workerId: string): Promise<{
+      generate_protocol_at_transfer_sector_and_user: string | null;
+      enabled: boolean;
+    } | null> {
+      if (!workerId) return null;
+
+      try {
+        const response = await axios.get<
+          IApiResponse<{
+            generate_protocol_at_transfer_sector_and_user: string | null;
+            enabled: boolean;
+          }>
+        >(`/worker/${workerId}/config/transfer-protocol-sector-and-user`);
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        return data.data;
+      } catch {
+        return null;
+      }
+    },
+
+    async updateTransferProtocolSectorAndUserText(
+      workerId: string,
+      text: string | null,
+      enabled: boolean
+    ): Promise<{
+      generate_protocol_at_transfer_sector_and_user: string | null;
+      enabled: boolean;
+    } | null> {
+      if (!workerId) return null;
+
+      try {
+        const body: { text?: string; enabled: boolean } = {
+          enabled,
+        };
+        if (text !== null) {
+          body.text = text;
+        }
+
+        const response = await axios.patch<
+          IApiResponse<{
+            generate_protocol_at_transfer_sector_and_user: string | null;
+            enabled: boolean;
+          }>
+        >(`/worker/${workerId}/config/transfer-protocol-sector-and-user`, body);
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const message =
+            data?.message ??
+            this.i18n.global.t('transfer_protocol_text_update_error');
+          this.showSnackbar(message, EColor.error);
+
+          return null;
+        }
+
+        return data.data;
+      } catch (error) {
+        let message = this.i18n.global.t('transfer_protocol_text_update_error');
+        if (error instanceof AxiosError) {
+          message = error?.response?.data?.message ?? message;
+        }
+
+        this.showSnackbar(message, EColor.error);
+
+        return null;
+      }
+    },
+
     async fetchStartProtocolText(workerId: string): Promise<{
       generate_protocol_at_start: string | null;
       enabled: boolean;

@@ -5,7 +5,7 @@ import { viewTransferProtocolTextParamsSchema } from './request.schema';
 import { viewTransferProtocolTextResponseSchema } from './response.schema';
 
 export const viewTransferProtocolTextSchema = {
-  description: 'Visualizar texto do protocolo de transferência',
+  description: 'Visualizar texto da mensagem de transferência para usuário',
   tags: [ETagSwagger.worker],
   produces: ['application/json'],
   security: [

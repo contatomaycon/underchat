@@ -74,6 +74,13 @@ export class WorkerConfigFieldsViewerRepository {
         configMap.get(EWorkerConfigType.generate_protocol_at_start) || null,
       generate_protocol_at_transfer:
         configMap.get(EWorkerConfigType.generate_protocol_at_transfer) || null,
+      generate_protocol_at_transfer_sector:
+        configMap.get(EWorkerConfigType.generate_protocol_at_transfer_sector) ||
+        null,
+      generate_protocol_at_transfer_sector_and_user:
+        configMap.get(
+          EWorkerConfigType.generate_protocol_at_transfer_sector_and_user
+        ) || null,
       show_message_on_call:
         configMap.get(EWorkerConfigType.show_message_on_call) || null,
       send_message_on_finish_attendance:

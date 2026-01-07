@@ -2,13 +2,13 @@ import { Type } from '@sinclair/typebox';
 import { ELanguage } from '@core/common/enums/ELanguage';
 import { ETagSwagger } from '@core/common/enums/ETagSwagger';
 import {
-  updateTransferProtocolTextParamsSchema,
-  updateTransferProtocolTextRequestSchema,
+  updateTransferProtocolSectorTextParamsSchema,
+  updateTransferProtocolSectorTextRequestSchema,
 } from './request.schema';
-import { updateTransferProtocolTextResponseSchema } from './response.schema';
+import { updateTransferProtocolSectorTextResponseSchema } from './response.schema';
 
-export const updateTransferProtocolTextSchema = {
-  description: 'Atualizar texto da mensagem de transferência para usuário',
+export const updateTransferProtocolSectorTextSchema = {
+  description: 'Atualizar texto da mensagem ao transferir para setor',
   tags: [ETagSwagger.worker],
   produces: ['application/json'],
   consumes: ['application/json'],
@@ -26,15 +26,15 @@ export const updateTransferProtocolTextSchema = {
       })
     ),
   }),
-  params: updateTransferProtocolTextParamsSchema,
-  body: updateTransferProtocolTextRequestSchema,
+  params: updateTransferProtocolSectorTextParamsSchema,
+  body: updateTransferProtocolSectorTextRequestSchema,
   response: {
     200: Type.Object(
       {
         id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
         status: Type.Boolean({ const: true }),
         message: Type.String(),
-        data: updateTransferProtocolTextResponseSchema,
+        data: updateTransferProtocolSectorTextResponseSchema,
       },
       { description: 'Successful' }
     ),

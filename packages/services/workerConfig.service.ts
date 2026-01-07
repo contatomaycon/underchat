@@ -170,6 +170,117 @@ export class WorkerConfigService {
     };
   }
 
+  async updateTransferProtocolSectorText(
+    workerId: string,
+    text: string | null,
+    enabled: boolean
+  ): Promise<{
+    generate_protocol_at_transfer_sector: string | null;
+    enabled: boolean;
+  }> {
+    const statusId = enabled
+      ? EWorkerConfigStatus.active
+      : EWorkerConfigStatus.inactive;
+
+    const currentConfig = await this.viewTransferProtocolSectorText(workerId);
+    const textToSave =
+      text !== null ? text : currentConfig.generate_protocol_at_transfer_sector;
+
+    const [result] = await Promise.all([
+      this.workerConfigUpserterRepository.updateTransferProtocolSectorText(
+        workerId,
+        textToSave,
+        statusId
+      ),
+      this.invalidateWorkerConfigCache(workerId),
+    ]);
+
+    return {
+      generate_protocol_at_transfer_sector: result,
+      enabled,
+    };
+  }
+
+  async viewTransferProtocolSectorText(workerId: string): Promise<{
+    generate_protocol_at_transfer_sector: string | null;
+    enabled: boolean;
+  }> {
+    const config =
+      await this.workerConfigViewerRepository.fetchConfigValueByType(
+        workerId,
+        EWorkerConfigType.generate_protocol_at_transfer_sector
+      );
+
+    const protocolText = config.value || null;
+
+    const enabled =
+      config.statusId === EWorkerConfigStatus.active &&
+      protocolText !== null &&
+      protocolText.trim().length > 0;
+
+    return {
+      generate_protocol_at_transfer_sector: protocolText,
+      enabled,
+    };
+  }
+
+  async updateTransferProtocolSectorAndUserText(
+    workerId: string,
+    text: string | null,
+    enabled: boolean
+  ): Promise<{
+    generate_protocol_at_transfer_sector_and_user: string | null;
+    enabled: boolean;
+  }> {
+    const statusId = enabled
+      ? EWorkerConfigStatus.active
+      : EWorkerConfigStatus.inactive;
+
+    const currentConfig =
+      await this.viewTransferProtocolSectorAndUserText(workerId);
+    const textToSave =
+      text !== null
+        ? text
+        : currentConfig.generate_protocol_at_transfer_sector_and_user;
+
+    const [result] = await Promise.all([
+      this.workerConfigUpserterRepository.updateTransferProtocolSectorAndUserText(
+        workerId,
+        textToSave,
+        statusId
+      ),
+      this.invalidateWorkerConfigCache(workerId),
+    ]);
+
+    return {
+      generate_protocol_at_transfer_sector_and_user: result,
+      enabled,
+    };
+  }
+
+  async viewTransferProtocolSectorAndUserText(workerId: string): Promise<{
+    generate_protocol_at_transfer_sector_and_user: string | null;
+    enabled: boolean;
+  }> {
+    const config =
+      await this.workerConfigViewerRepository.fetchConfigValueByType(
+        workerId,
+        EWorkerConfigType.generate_protocol_at_transfer_sector_and_user
+      );
+
+    const protocolText = config.value || null;
+
+    const enabled =
+      config.statusId === EWorkerConfigStatus.active &&
+      protocolText !== null &&
+      protocolText.trim().length > 0;
+
+    return {
+      generate_protocol_at_transfer_sector_and_user: protocolText,
+      enabled,
+    };
+  }
+
   async updateStartProtocolText(
     workerId: string,
     text: string | null,

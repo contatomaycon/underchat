@@ -107,6 +107,48 @@ export class WorkerConfigUpserterRepository {
     );
   };
 
+  updateTransferProtocolSectorText = async (
+    workerId: string,
+    text: string | null,
+    statusId: string
+  ): Promise<string | null> => {
+    await this.dbRw.transaction(async (tx) => {
+      await this.upsertConfigValue(
+        tx,
+        workerId,
+        statusId,
+        EWorkerConfigType.generate_protocol_at_transfer_sector,
+        text
+      );
+    });
+
+    return this.getConfigValue(
+      workerId,
+      EWorkerConfigType.generate_protocol_at_transfer_sector
+    );
+  };
+
+  updateTransferProtocolSectorAndUserText = async (
+    workerId: string,
+    text: string | null,
+    statusId: string
+  ): Promise<string | null> => {
+    await this.dbRw.transaction(async (tx) => {
+      await this.upsertConfigValue(
+        tx,
+        workerId,
+        statusId,
+        EWorkerConfigType.generate_protocol_at_transfer_sector_and_user,
+        text
+      );
+    });
+
+    return this.getConfigValue(
+      workerId,
+      EWorkerConfigType.generate_protocol_at_transfer_sector_and_user
+    );
+  };
+
   updateStartProtocolText = async (
     workerId: string,
     text: string | null,

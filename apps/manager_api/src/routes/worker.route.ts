@@ -29,6 +29,10 @@ import { viewWorkerConfigSchema } from '@core/schema/worker/viewWorkerConfig';
 import { updateWorkerConfigSchema } from '@core/schema/worker/updateWorkerConfig';
 import { updateTransferProtocolTextSchema } from '@core/schema/worker/updateTransferProtocolText';
 import { viewTransferProtocolTextSchema } from '@core/schema/worker/viewTransferProtocolText';
+import { updateTransferProtocolSectorTextSchema } from '@core/schema/worker/updateTransferProtocolSectorText';
+import { viewTransferProtocolSectorTextSchema } from '@core/schema/worker/viewTransferProtocolSectorText';
+import { updateTransferProtocolSectorAndUserTextSchema } from '@core/schema/worker/updateTransferProtocolSectorAndUserText';
+import { viewTransferProtocolSectorAndUserTextSchema } from '@core/schema/worker/viewTransferProtocolSectorAndUserText';
 import { updateStartProtocolTextSchema } from '@core/schema/worker/updateStartProtocolText';
 import { viewStartProtocolTextSchema } from '@core/schema/worker/viewStartProtocolText';
 import { updateSimultaneousAttendanceSchema } from '@core/schema/worker/updateSimultaneousAttendance';
@@ -235,6 +239,50 @@ export default function workerRoutes(server: FastifyInstance) {
   server.patch('/worker/:worker_id/config/transfer-protocol', {
     schema: updateTransferProtocolTextSchema,
     handler: workerController.updateTransferProtocolText,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, workerEditPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.get('/worker/:worker_id/config/transfer-protocol-sector', {
+    schema: viewTransferProtocolSectorTextSchema,
+    handler: workerController.viewTransferProtocolSectorText,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, workerViewPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.patch('/worker/:worker_id/config/transfer-protocol-sector', {
+    schema: updateTransferProtocolSectorTextSchema,
+    handler: workerController.updateTransferProtocolSectorText,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, workerEditPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.get('/worker/:worker_id/config/transfer-protocol-sector-and-user', {
+    schema: viewTransferProtocolSectorAndUserTextSchema,
+    handler: workerController.viewTransferProtocolSectorAndUserText,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, workerViewPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.patch('/worker/:worker_id/config/transfer-protocol-sector-and-user', {
+    schema: updateTransferProtocolSectorAndUserTextSchema,
+    handler: workerController.updateTransferProtocolSectorAndUserText,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, workerEditPermissions),

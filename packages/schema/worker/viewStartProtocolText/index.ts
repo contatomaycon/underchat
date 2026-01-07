@@ -5,7 +5,7 @@ import { viewStartProtocolTextParamsSchema } from './request.schema';
 import { viewStartProtocolTextResponseSchema } from './response.schema';
 
 export const viewStartProtocolTextSchema = {
-  description: 'Visualizar texto do protocolo ao iniciar atendimento',
+  description: 'Visualizar texto da mensagem ao iniciar atendimento',
   tags: [ETagSwagger.worker],
   produces: ['application/json'],
   security: [

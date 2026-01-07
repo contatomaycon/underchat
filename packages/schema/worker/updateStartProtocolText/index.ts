@@ -8,7 +8,7 @@ import {
 import { updateStartProtocolTextResponseSchema } from './response.schema';
 
 export const updateStartProtocolTextSchema = {
-  description: 'Atualizar texto do protocolo ao iniciar atendimento',
+  description: 'Atualizar texto da mensagem ao iniciar atendimento',
   tags: [ETagSwagger.worker],
   produces: ['application/json'],
   consumes: ['application/json'],
