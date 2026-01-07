@@ -40,6 +40,14 @@ export const account = pgTable(
   (table) => [
     index('account_account_status_id_idx').on(table.account_status_id),
     index('account_deleted_at_idx').on(table.deleted_at),
+    index('account_deleted_at_created_at_idx').on(
+      table.deleted_at,
+      table.created_at
+    ),
+    index('account_account_status_id_created_at_idx').on(
+      table.account_status_id,
+      table.created_at
+    ),
   ]
 );
 

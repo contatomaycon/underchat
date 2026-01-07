@@ -83,6 +83,11 @@ export const contact = pgTable(
       table.is_valided,
       table.deleted_at
     ),
+    index('contact_account_id_deleted_at_created_at_idx').on(
+      table.account_id,
+      table.deleted_at,
+      table.created_at
+    ),
   ]
 );
 
