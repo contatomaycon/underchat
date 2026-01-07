@@ -25,6 +25,10 @@ export const scheduledContact = pgTable(
     index('scheduled_contact_schedule_id_idx').on(table.schedule_id),
     index('scheduled_contact_contact_group_id_idx').on(table.contact_group_id),
     index('scheduled_contact_contact_id_idx').on(table.contact_id),
+    index('scheduled_contact_schedule_id_contact_id_idx').on(
+      table.schedule_id,
+      table.contact_id
+    ),
   ]
 );
 

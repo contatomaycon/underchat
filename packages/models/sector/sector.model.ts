@@ -28,6 +28,10 @@ export const sector = pgTable(
     index('sector_sector_status_id_idx').on(table.sector_status_id),
     index('sector_account_id_idx').on(table.account_id),
     index('sector_deleted_at_idx').on(table.deleted_at),
+    index('sector_account_id_deleted_at_idx').on(
+      table.account_id,
+      table.deleted_at
+    ),
   ]
 );
 

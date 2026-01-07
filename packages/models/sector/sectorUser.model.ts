@@ -26,6 +26,14 @@ export const sectorUser = pgTable(
     index('sector_user_sector_id_idx').on(table.sector_id),
     index('sector_user_user_id_idx').on(table.user_id),
     index('sector_user_deleted_at_idx').on(table.deleted_at),
+    index('sector_user_user_id_deleted_at_idx').on(
+      table.user_id,
+      table.deleted_at
+    ),
+    index('sector_user_sector_id_user_id_idx').on(
+      table.sector_id,
+      table.user_id
+    ),
   ]
 );
 

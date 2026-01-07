@@ -27,6 +27,10 @@ export const planItems = pgTable(
     index('plan_items_plan_product_id_idx').on(table.plan_product_id),
     index('plan_items_plan_id_idx').on(table.plan_id),
     index('plan_items_deleted_at_idx').on(table.deleted_at),
+    index('plan_items_plan_id_deleted_at_idx').on(
+      table.plan_id,
+      table.deleted_at
+    ),
   ]
 );
 

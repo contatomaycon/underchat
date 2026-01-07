@@ -30,6 +30,11 @@ export const userDocument = pgTable(
     ),
     index('user_document_user_id_idx').on(table.user_id),
     index('user_document_document_partial_idx').on(table.document_partial),
+    index('user_document_user_id_user_document_type_id_idx').on(
+      table.user_id,
+      table.user_document_type_id
+    ),
+    index('user_document_document_c_idx').on(table.document_c),
   ]
 );
 

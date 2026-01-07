@@ -23,6 +23,10 @@ export const contactGroupAssignment = pgTable(
     index('contact_group_assignment_contact_group_id_idx').on(
       table.contact_group_id
     ),
+    index('contact_group_assignment_contact_group_id_contact_id_idx').on(
+      table.contact_group_id,
+      table.contact_id
+    ),
   ]
 );
 

@@ -55,6 +55,8 @@ export const schedule = pgTable(
     index('schedule_worker_id_idx').on(table.worker_id),
     index('schedule_send_date_idx').on(table.send_date),
     index('schedule_status_idx').on(table.status),
+    index('schedule_account_id_status_idx').on(table.account_id, table.status),
+    index('schedule_status_send_date_idx').on(table.status, table.send_date),
   ]
 );
 

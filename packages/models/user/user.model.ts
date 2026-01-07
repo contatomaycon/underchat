@@ -42,6 +42,16 @@ export const user = pgTable(
     index('user_email_idx').on(table.email),
     index('user_email_partial_idx').on(table.email_partial),
     index('user_deleted_at_idx').on(table.deleted_at),
+    index('user_account_id_deleted_at_idx').on(
+      table.account_id,
+      table.deleted_at
+    ),
+    index('user_account_id_user_status_id_deleted_at_idx').on(
+      table.account_id,
+      table.user_status_id,
+      table.deleted_at
+    ),
+    index('user_email_c_deleted_at_idx').on(table.email_c, table.deleted_at),
   ]
 );
 

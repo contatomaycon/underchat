@@ -37,6 +37,10 @@ export const labelTemplate = pgTable(
     index('label_template_account_id_idx').on(table.account_id),
     index('label_template_label_status_id_idx').on(table.label_status_id),
     index('label_template_deleted_at_idx').on(table.deleted_at),
+    index('label_template_account_id_deleted_at_idx').on(
+      table.account_id,
+      table.deleted_at
+    ),
   ]
 );
 

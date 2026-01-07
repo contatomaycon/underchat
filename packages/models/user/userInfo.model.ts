@@ -35,6 +35,14 @@ export const userInfo = pgTable(
     index('user_info_user_id_idx').on(table.user_id),
     index('user_info_phone_partial_idx').on(table.phone_partial),
     index('user_info_deleted_at_idx').on(table.deleted_at),
+    index('user_info_user_id_deleted_at_idx').on(
+      table.user_id,
+      table.deleted_at
+    ),
+    index('user_info_phone_c_deleted_at_idx').on(
+      table.phone_c,
+      table.deleted_at
+    ),
   ]
 );
 

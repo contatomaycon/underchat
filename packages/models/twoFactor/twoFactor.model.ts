@@ -31,6 +31,17 @@ export const twoFactor = pgTable(
     index('two_factor_token_idx').on(table.token),
     index('two_factor_code_idx').on(table.code),
     index('two_factor_deleted_at_idx').on(table.deleted_at),
+    index('two_factor_email_c_phone_c_code_deleted_at_idx').on(
+      table.email_c,
+      table.phone_c,
+      table.code,
+      table.deleted_at
+    ),
+    index('two_factor_email_c_phone_c_token_idx').on(
+      table.email_c,
+      table.phone_c,
+      table.token
+    ),
   ]
 );
 

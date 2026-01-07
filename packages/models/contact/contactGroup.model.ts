@@ -33,6 +33,10 @@ export const contactGroup = pgTable(
   (table) => [
     index('contact_group_account_id_idx').on(table.account_id),
     index('contact_group_deleted_at_idx').on(table.deleted_at),
+    index('contact_group_account_id_deleted_at_idx').on(
+      table.account_id,
+      table.deleted_at
+    ),
   ]
 );
 

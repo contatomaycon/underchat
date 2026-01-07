@@ -45,6 +45,10 @@ export const messageTemplate = pgTable(
     index('message_template_message_status_id_idx').on(table.message_status_id),
     index('message_template_command_idx').on(table.command),
     index('message_template_deleted_at_idx').on(table.deleted_at),
+    index('message_template_account_id_deleted_at_idx').on(
+      table.account_id,
+      table.deleted_at
+    ),
   ]
 );
 

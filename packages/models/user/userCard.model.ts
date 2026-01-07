@@ -37,6 +37,11 @@ export const userCard = pgTable(
   (table) => [
     index('user_card_user_id_idx').on(table.user_id),
     index('user_card_deleted_at_idx').on(table.deleted_at),
+    index('user_card_user_id_deleted_at_idx').on(
+      table.user_id,
+      table.deleted_at
+    ),
+    index('user_card_user_id_default_idx').on(table.user_id, table.default),
   ]
 );
 

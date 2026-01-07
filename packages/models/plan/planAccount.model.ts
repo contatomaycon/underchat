@@ -52,6 +52,26 @@ export const planAccount = pgTable(
     index('plan_account_account_payment_id_idx').on(table.account_payment_id),
     index('plan_account_billing_period_id_idx').on(table.billing_period_id),
     index('plan_account_next_payment_date_idx').on(table.next_payment_date),
+    index('plan_account_account_id_next_payment_date_idx').on(
+      table.account_id,
+      table.next_payment_date
+    ),
+    index('plan_account_account_id_cancellation_date_idx').on(
+      table.account_id,
+      table.cancellation_date
+    ),
+    index('plan_account_account_id_next_payment_date_cancellation_date_idx').on(
+      table.account_id,
+      table.next_payment_date,
+      table.cancellation_date
+    ),
+    index(
+      'plan_account_recurring_payment_cancellation_date_next_payment_date_idx'
+    ).on(
+      table.recurring_payment,
+      table.cancellation_date,
+      table.next_payment_date
+    ),
   ]
 );
 

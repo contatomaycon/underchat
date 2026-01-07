@@ -45,6 +45,10 @@ export const userAddress = pgTable(
     index('user_address_city_fiscal_code_idx').on(table.city_fiscal_code),
     index('user_address_state_fiscal_code_idx').on(table.state_fiscal_code),
     index('user_address_deleted_at_idx').on(table.deleted_at),
+    index('user_address_user_id_deleted_at_idx').on(
+      table.user_id,
+      table.deleted_at
+    ),
   ]
 );
 

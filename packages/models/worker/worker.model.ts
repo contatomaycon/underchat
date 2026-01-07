@@ -50,6 +50,10 @@ export const worker = pgTable(
     index('worker_server_id_idx').on(table.server_id),
     index('worker_account_id_idx').on(table.account_id),
     index('worker_deleted_at_idx').on(table.deleted_at),
+    index('worker_account_id_deleted_at_idx').on(
+      table.account_id,
+      table.deleted_at
+    ),
   ]
 );
 

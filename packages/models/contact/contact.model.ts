@@ -64,6 +64,25 @@ export const contact = pgTable(
     index('contact_phone_partial_idx').on(table.phone_partial),
     index('contact_document_partial_idx').on(table.document_partial),
     index('contact_deleted_at_idx').on(table.deleted_at),
+    index('contact_account_id_deleted_at_idx').on(
+      table.account_id,
+      table.deleted_at
+    ),
+    index('contact_account_id_email_c_deleted_at_idx').on(
+      table.account_id,
+      table.email_c,
+      table.deleted_at
+    ),
+    index('contact_account_id_phone_c_deleted_at_idx').on(
+      table.account_id,
+      table.phone_c,
+      table.deleted_at
+    ),
+    index('contact_account_id_is_valided_deleted_at_idx').on(
+      table.account_id,
+      table.is_valided,
+      table.deleted_at
+    ),
   ]
 );
 
