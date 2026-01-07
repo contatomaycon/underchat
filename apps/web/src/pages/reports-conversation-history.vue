@@ -4,6 +4,7 @@ import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { useI18n } from 'vue-i18n';
 import { formatDateTime } from '@core/common/functions/formatDateTime';
 import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
+import moment from 'moment-timezone';
 import { SortRequest } from '@core/schema/common/sortRequestSchema';
 import { DataTableHeader } from 'vuetify';
 import { EReportConversationHistoryPermissions } from '@core/common/enums/EPermissions/reportConversationHistory';
@@ -330,14 +331,33 @@ const formatDateForApi = (
   isEndDate = false
 ): string | null => {
   if (!date) return null;
-  const d = new Date(date);
-  if (Number.isNaN(d.getTime())) return null;
-  if (isEndDate) {
-    d.setHours(23, 59, 59, 999);
+
+  const BRAZIL_TIMEZONE = 'America/Sao_Paulo';
+  let dateMoment: moment.Moment;
+
+  if (typeof date === 'string' && date.includes('-')) {
+    const parts = date.split('-');
+    if (parts.length === 3) {
+      const year = Number.parseInt(parts[0], 10);
+      const month = Number.parseInt(parts[1], 10);
+      const day = Number.parseInt(parts[2], 10);
+      dateMoment = moment.tz({ year, month: month - 1, day }, BRAZIL_TIMEZONE);
+    } else {
+      dateMoment = moment.tz(date, BRAZIL_TIMEZONE);
+    }
   } else {
-    d.setHours(0, 0, 0, 0);
+    dateMoment = moment.tz(date, BRAZIL_TIMEZONE);
   }
-  return d.toISOString();
+
+  if (!dateMoment.isValid()) return null;
+
+  if (isEndDate) {
+    dateMoment.add(1, 'day').startOf('day');
+  } else {
+    dateMoment.startOf('day');
+  }
+
+  return dateMoment.utc().toISOString();
 };
 
 const query = computed(() => {
@@ -367,7 +387,7 @@ const query = computed(() => {
       baseQuery.client_name = clientName.value;
       break;
     case 'phone':
-      baseQuery.phone = phoneDebounced.value;
+      baseQuery.phone = phoneDebounced.value || null;
       break;
   }
 

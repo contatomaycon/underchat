@@ -52,7 +52,7 @@ export class ReportConversationHistoryListerUseCase {
         dateRange.gte = query.start_date;
       }
       if (query.end_date) {
-        dateRange.lte = query.end_date;
+        dateRange.lt = query.end_date;
       }
       filterClauses.push({
         range: {
@@ -123,11 +123,51 @@ export class ReportConversationHistoryListerUseCase {
     }
 
     if (query.phone) {
-      filterClauses.push({
-        term: {
-          phone: query.phone.replaceAll(/\D/g, ''),
-        },
-      } as IElasticsearchBoolClause);
+      const phoneDigits = query.phone.replaceAll(/\D/g, '');
+
+      if (phoneDigits.length >= 3) {
+        const searchTerms: string[] = [phoneDigits];
+
+        if (phoneDigits.length === 11 && phoneDigits[2] === '9') {
+          const without9 = phoneDigits.slice(0, 2) + phoneDigits.slice(3);
+          searchTerms.push(without9);
+        }
+
+        const shouldClauses: IElasticsearchBoolClause[] = [];
+
+        for (const term of searchTerms) {
+          shouldClauses.push(
+            {
+              wildcard: {
+                phone: {
+                  value: `*${term}*`,
+                  case_insensitive: true,
+                },
+              },
+            } as unknown as IElasticsearchBoolClause,
+            {
+              nested: {
+                path: 'contact',
+                query: {
+                  wildcard: {
+                    'contact.phone': {
+                      value: `*${term}*`,
+                      case_insensitive: true,
+                    },
+                  },
+                },
+              },
+            } as unknown as IElasticsearchBoolClause
+          );
+        }
+
+        filterClauses.push({
+          bool: {
+            should: shouldClauses,
+            minimum_should_match: 1,
+          },
+        } as unknown as IElasticsearchBoolClause);
+      }
     }
 
     const sortClauses = sortBy.map((sort) => {
