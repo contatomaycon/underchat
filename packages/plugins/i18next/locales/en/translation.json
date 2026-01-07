@@ -815,6 +815,7 @@
   "ai_agent_prompt_update_successfully": "Prompt updated successfully!",
   "ai_agent_prompt_update_error": "Error updating prompt!",
   "ai_agent_prompt_file_upload_failed": "Failed to upload file!",
+  "ai_agent_prompt_file_format_not_supported": "File format not supported! Accepted formats: TXT, JSON, Markdown, CSV, PDF, DOCX, DOC.",
   "ai_agent_prompt_value_required": "Prompt value is required!",
   "session_login_successfully": "Session login successful!",
   "session_login_error": "Error logging into session!",

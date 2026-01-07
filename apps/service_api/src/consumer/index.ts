@@ -13,6 +13,7 @@ import { startNotificationMessageConsume } from './notificationMessage.consume';
 import { startUserPhoneJidUpdateConsume } from './userPhoneJidUpdate.consume';
 import { startReportConversationHistoryPdfGenerateConsume } from './reportConversationHistoryPdfGenerate.consume';
 import { startScheduleStatusUpdateConsume } from './scheduleStatusUpdate.consume';
+import { startAiAgentPromptEmbeddingConsume } from './aiAgentPromptEmbedding.consume';
 
 const consumers: Array<{ close?: () => Promise<void> }> = [];
 
@@ -40,7 +41,8 @@ export function startConsumers(server: FastifyInstance): void {
       startNotificationMessageConsume(server),
       startUserPhoneJidUpdateConsume(server),
       startReportConversationHistoryPdfGenerateConsume(server),
-      startScheduleStatusUpdateConsume(server)
+      startScheduleStatusUpdateConsume(server),
+      startAiAgentPromptEmbeddingConsume(server)
     );
   });
 }

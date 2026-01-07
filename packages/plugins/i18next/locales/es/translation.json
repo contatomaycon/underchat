@@ -815,6 +815,7 @@
   "ai_agent_prompt_update_successfully": "¡Prompt actualizado con éxito!",
   "ai_agent_prompt_update_error": "¡Error al actualizar el prompt!",
   "ai_agent_prompt_file_upload_failed": "¡Error al subir el archivo!",
+  "ai_agent_prompt_file_format_not_supported": "¡Formato de archivo no soportado! Formatos aceptados: TXT, JSON, Markdown, CSV, PDF, DOCX, DOC.",
   "ai_agent_prompt_value_required": "¡El valor del prompt es obligatorio!",
   "session_login_successfully": "¡Inicio de sesión en la sesión exitoso!",
   "session_login_error": "¡Error al iniciar sesión en la sesión!",

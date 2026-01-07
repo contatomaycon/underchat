@@ -7,4 +7,5 @@ export enum EElasticIndex {
   chatbot_flow_configurations = 'chatbot-flow-configurations',
   notification = 'notification',
   schedule = 'schedule',
+  ai_agent_prompt_embedding = 'ai-agent-prompt-embedding',
 }

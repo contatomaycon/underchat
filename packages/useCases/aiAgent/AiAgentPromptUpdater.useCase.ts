@@ -3,14 +3,19 @@ import { TFunction } from 'i18next';
 import { UpdateAiAgentPromptRequest } from '@core/schema/aiAgent/updateAiAgentPrompt/request.schema';
 import { AiAgentService } from '@core/services/aiAgent.service';
 import { StorageService } from '@core/services/storage.service';
+import { StreamProducerService } from '@core/services/streamProducer.service';
+import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { EAiAgentPromptType } from '@core/common/enums/EAiAgentPromptType';
 import { UploadFileRequest } from '@core/schema/upload/request.schema';
+import { IAiAgentPromptEmbeddingRequest } from '@core/common/interfaces/IAiAgentPromptEmbeddingRequest';
 
 @injectable()
 export class AiAgentPromptUpdaterUseCase {
   constructor(
     private readonly aiAgentService: AiAgentService,
-    private readonly storageService: StorageService
+    private readonly storageService: StorageService,
+    private readonly streamProducerService: StreamProducerService,
+    private readonly kafkaServiceQueueService: KafkaServiceQueueService
   ) {}
 
   private getValueFromMultipart<T>(
@@ -29,6 +34,49 @@ export class AiAgentPromptUpdaterUseCase {
     }
 
     return value as T;
+  }
+
+  private validateFileFormat(
+    file: UploadFileRequest,
+    t: TFunction<'translation', undefined>
+  ): void {
+    const mimetype = file.mimetype?.toLowerCase() ?? '';
+    const filename = file.filename.toLowerCase();
+
+    const allowedMimetypes = [
+      'text/plain',
+      'application/json',
+      'text/markdown',
+      'text/csv',
+      'text/tab-separated-values',
+      'application/pdf',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml',
+      'application/msword',
+    ];
+
+    const allowedExtensions = [
+      '.txt',
+      '.json',
+      '.md',
+      '.markdown',
+      '.csv',
+      '.tsv',
+      '.pdf',
+      '.docx',
+      '.doc',
+    ];
+
+    const isAllowedMimetype = allowedMimetypes.some((allowed) =>
+      mimetype.includes(allowed)
+    );
+
+    const isAllowedExtension = allowedExtensions.some((ext) =>
+      filename.endsWith(ext)
+    );
+
+    if (!isAllowedMimetype && !isAllowedExtension) {
+      throw new Error(t('ai_agent_prompt_file_format_not_supported'));
+    }
   }
 
   private async deleteFileFromS3(
@@ -53,6 +101,8 @@ export class AiAgentPromptUpdaterUseCase {
     if (!file) {
       throw new Error(t('ai_agent_prompt_file_upload_failed'));
     }
+
+    this.validateFileFormat(file, t);
 
     const uploadResult = await this.storageService.uploadDocument(
       file,
@@ -140,6 +190,37 @@ export class AiAgentPromptUpdaterUseCase {
       throw new Error(t('ai_agent_prompt_update_error'));
     }
 
+    await this.sendToEmbeddingQueue(
+      accountId,
+      aiAgentPromptExists.ai_agent_id,
+      aiAgentPromptId,
+      finalPromptType,
+      updateBody.name ?? aiAgentPromptExists.name,
+      finalValue
+    );
+
     return aiAgentPromptUpdater;
+  }
+
+  private async sendToEmbeddingQueue(
+    accountId: string,
+    aiAgentId: string,
+    aiAgentPromptId: string,
+    promptType: EAiAgentPromptType,
+    name: string,
+    value: string
+  ): Promise<void> {
+    const payload: IAiAgentPromptEmbeddingRequest = {
+      account_id: accountId,
+      ai_agent_id: aiAgentId,
+      ai_agent_prompt_id: aiAgentPromptId,
+      prompt_type: promptType,
+      name,
+      value,
+    };
+
+    const topic = this.kafkaServiceQueueService.aiAgentPromptEmbedding();
+
+    await this.streamProducerService.send(topic, payload, aiAgentPromptId);
   }
 }

@@ -2,13 +2,15 @@ import { injectable } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { AiAgentService } from '@core/services/aiAgent.service';
 import { StorageService } from '@core/services/storage.service';
+import { EmbeddingService } from '@core/services/embedding.service';
 import { EAiAgentPromptType } from '@core/common/enums/EAiAgentPromptType';
 
 @injectable()
 export class AiAgentPromptDeleterUseCase {
   constructor(
     private readonly aiAgentService: AiAgentService,
-    private readonly storageService: StorageService
+    private readonly storageService: StorageService,
+    private readonly embeddingService: EmbeddingService
   ) {}
 
   private async deleteFileFromS3(
@@ -48,6 +50,8 @@ export class AiAgentPromptDeleterUseCase {
     if (!aiAgentPromptDeleted) {
       throw new Error(t('ai_agent_prompt_deleter_error'));
     }
+
+    await this.embeddingService.deletePromptEmbeddings(aiAgentPromptId);
 
     return true;
   }

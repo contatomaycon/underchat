@@ -2,17 +2,22 @@ import { injectable } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { AiAgentService } from '@core/services/aiAgent.service';
 import { StorageService } from '@core/services/storage.service';
+import { StreamProducerService } from '@core/services/streamProducer.service';
+import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { CreateAiAgentPromptRequest } from '@core/schema/aiAgent/createAiAgentPrompt/request.schema';
 import { EAiAgentPromptType } from '@core/common/enums/EAiAgentPromptType';
 import { UploadFileRequest } from '@core/schema/upload/request.schema';
 import { EAiAgentStatus } from '@core/common/enums/EAiAgentStatus';
 import { ICreateAiAgentPromptInput } from '@core/common/interfaces/ICreateAiAgentPromptInput';
+import { IAiAgentPromptEmbeddingRequest } from '@core/common/interfaces/IAiAgentPromptEmbeddingRequest';
 
 @injectable()
 export class AiAgentPromptCreatorUseCase {
   constructor(
     private readonly aiAgentService: AiAgentService,
-    private readonly storageService: StorageService
+    private readonly storageService: StorageService,
+    private readonly streamProducerService: StreamProducerService,
+    private readonly kafkaServiceQueueService: KafkaServiceQueueService
   ) {}
 
   private getValueFromMultipart<T>(
@@ -52,6 +57,49 @@ export class AiAgentPromptCreatorUseCase {
     }
   }
 
+  private validateFileFormat(
+    file: UploadFileRequest,
+    t: TFunction<'translation', undefined>
+  ): void {
+    const mimetype = file.mimetype?.toLowerCase() ?? '';
+    const filename = file.filename.toLowerCase();
+
+    const allowedMimetypes = [
+      'text/plain',
+      'application/json',
+      'text/markdown',
+      'text/csv',
+      'text/tab-separated-values',
+      'application/pdf',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml',
+      'application/msword',
+    ];
+
+    const allowedExtensions = [
+      '.txt',
+      '.json',
+      '.md',
+      '.markdown',
+      '.csv',
+      '.tsv',
+      '.pdf',
+      '.docx',
+      '.doc',
+    ];
+
+    const isAllowedMimetype = allowedMimetypes.some((allowed) =>
+      mimetype.includes(allowed)
+    );
+
+    const isAllowedExtension = allowedExtensions.some((ext) =>
+      filename.endsWith(ext)
+    );
+
+    if (!isAllowedMimetype && !isAllowedExtension) {
+      throw new Error(t('ai_agent_prompt_file_format_not_supported'));
+    }
+  }
+
   private async uploadFileToS3(
     file: UploadFileRequest | null | undefined,
     accountId: string,
@@ -60,6 +108,8 @@ export class AiAgentPromptCreatorUseCase {
     if (!file) {
       throw new Error(t('ai_agent_prompt_file_upload_failed'));
     }
+
+    this.validateFileFormat(file, t);
 
     const uploadResult = await this.storageService.uploadDocument(
       file,
@@ -124,6 +174,28 @@ export class AiAgentPromptCreatorUseCase {
     return result;
   }
 
+  private async sendToEmbeddingQueue(
+    accountId: string,
+    aiAgentId: string,
+    aiAgentPromptId: string,
+    promptType: EAiAgentPromptType,
+    name: string,
+    value: string
+  ): Promise<void> {
+    const payload: IAiAgentPromptEmbeddingRequest = {
+      account_id: accountId,
+      ai_agent_id: aiAgentId,
+      ai_agent_prompt_id: aiAgentPromptId,
+      prompt_type: promptType,
+      name,
+      value,
+    };
+
+    const topic = this.kafkaServiceQueueService.aiAgentPromptEmbedding();
+
+    await this.streamProducerService.send(topic, payload, aiAgentPromptId);
+  }
+
   async execute(
     t: TFunction<'translation', undefined>,
     input: CreateAiAgentPromptRequest,
@@ -154,6 +226,21 @@ export class AiAgentPromptCreatorUseCase {
       status: status ?? EAiAgentStatus.active,
     };
 
-    return this.createPrompt(processedInput, accountId, t);
+    const aiAgentPromptId = await this.createPrompt(
+      processedInput,
+      accountId,
+      t
+    );
+
+    await this.sendToEmbeddingQueue(
+      accountId,
+      aiAgentId,
+      aiAgentPromptId,
+      aiAgentPromptType,
+      name,
+      finalValue
+    );
+
+    return aiAgentPromptId;
   }
 }
