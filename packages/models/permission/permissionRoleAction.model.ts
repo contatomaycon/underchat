@@ -38,6 +38,9 @@ export const permissionRoleAction = pgTable(
     index('permission_role_action_permission_role_id_idx').on(
       table.permission_role_id
     ),
+    index(
+      'permission_role_action_permission_role_id_permission_action_group_id_idx'
+    ).on(table.permission_role_id, table.permission_action_group_id),
   ]
 );
 

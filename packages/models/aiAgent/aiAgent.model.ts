@@ -37,6 +37,7 @@ export const aiAgent = pgTable(
     index('ai_agent_account_id_idx').on(table.account_id),
     index('ai_agent_ai_agent_type_id_idx').on(table.ai_agent_type_id),
     index('ai_agent_status_idx').on(table.status),
+    index('ai_agent_account_id_status_idx').on(table.account_id, table.status),
   ]
 );
 

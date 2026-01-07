@@ -73,6 +73,22 @@ export const accountPayment = pgTable(
     ),
     index('account_payment_payment_status_id_idx').on(table.payment_status_id),
     index('account_payment_payment_date_idx').on(table.payment_date),
+    index('account_payment_payment_status_id_created_at_idx').on(
+      table.payment_status_id,
+      table.created_at
+    ),
+    index('account_payment_plan_id_payment_status_id_created_at_idx').on(
+      table.plan_id,
+      table.payment_status_id,
+      table.created_at
+    ),
+    index(
+      'account_payment_payment_billing_type_id_payment_status_id_created_at_idx'
+    ).on(
+      table.payment_billing_type_id,
+      table.payment_status_id,
+      table.created_at
+    ),
   ]
 );
 

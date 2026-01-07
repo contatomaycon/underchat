@@ -40,6 +40,14 @@ export const workerConfig = pgTable(
       table.worker_config_type_id
     ),
     index('worker_config_chatbot_id_idx').on(table.chatbot_id),
+    index('worker_config_worker_id_worker_config_type_id_idx').on(
+      table.worker_id,
+      table.worker_config_type_id
+    ),
+    index('worker_config_worker_id_chatbot_id_idx').on(
+      table.worker_id,
+      table.chatbot_id
+    ),
   ]
 );
 

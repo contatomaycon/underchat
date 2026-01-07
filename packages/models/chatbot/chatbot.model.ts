@@ -19,7 +19,10 @@ export const chatbot = pgTable(
       withTimezone: true,
     }).defaultNow(),
   },
-  (table) => [index('chatbot_account_id_idx').on(table.account_id)]
+  (table) => [
+    index('chatbot_account_id_idx').on(table.account_id),
+    index('chatbot_name_idx').on(table.name),
+  ]
 );
 
 export const chatbotRelations = relations(chatbot, ({ one }) => ({

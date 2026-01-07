@@ -24,6 +24,10 @@ export const planAccountExclusive = pgTable(
   (table) => [
     index('plan_account_exclusive_plan_id_idx').on(table.plan_id),
     index('plan_account_exclusive_account_id_idx').on(table.account_id),
+    index('plan_account_exclusive_account_id_plan_id_idx').on(
+      table.account_id,
+      table.plan_id
+    ),
   ]
 );
 

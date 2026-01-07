@@ -30,6 +30,14 @@ export const notifications = pgTable(
       table.notification_type_id
     ),
     index('notifications_deleted_at_idx').on(table.deleted_at),
+    index('notifications_notification_type_id_deleted_at_idx').on(
+      table.notification_type_id,
+      table.deleted_at
+    ),
+    index('notifications_worker_id_deleted_at_idx').on(
+      table.worker_id,
+      table.deleted_at
+    ),
   ]
 );
 

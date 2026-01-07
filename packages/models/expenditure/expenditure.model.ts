@@ -26,7 +26,14 @@ export const expenditure = pgTable(
     }).defaultNow(),
     deleted_at: timestamp({ mode: 'string', withTimezone: true }),
   },
-  (table) => [index('expenditure_deleted_at_idx').on(table.deleted_at)]
+  (table) => [
+    index('expenditure_deleted_at_idx').on(table.deleted_at),
+    index('expenditure_deleted_at_created_at_idx').on(
+      table.deleted_at,
+      table.created_at
+    ),
+    index('expenditure_created_at_idx').on(table.created_at),
+  ]
 );
 
 export const expenditureRelations = relations(expenditure, () => ({}));

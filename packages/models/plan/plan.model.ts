@@ -43,6 +43,16 @@ export const plan = pgTable(
     index('plan_status_idx').on(table.status),
     index('plan_deleted_at_idx').on(table.deleted_at),
     index('plan_deleted_at_status_idx').on(table.deleted_at, table.status),
+    index('plan_deleted_at_is_exclusive_idx').on(
+      table.deleted_at,
+      table.is_exclusive
+    ),
+    index('plan_deleted_at_status_is_exclusive_idx').on(
+      table.deleted_at,
+      table.status,
+      table.is_exclusive
+    ),
+    index('plan_is_test_idx').on(table.is_test),
   ]
 );
 

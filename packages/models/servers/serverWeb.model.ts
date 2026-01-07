@@ -32,6 +32,11 @@ export const serverWeb = pgTable(
   (table) => [
     index('server_web_server_id_idx').on(table.server_id),
     index('server_web_deleted_at_idx').on(table.deleted_at),
+    index('server_web_server_id_deleted_at_idx').on(
+      table.server_id,
+      table.deleted_at
+    ),
+    index('server_web_web_domain_idx').on(table.web_domain),
   ]
 );
 

@@ -50,6 +50,10 @@ export const accountInfo = pgTable(
   (table) => [
     index('account_info_account_id_idx').on(table.account_id),
     index('account_info_deleted_at_idx').on(table.deleted_at),
+    index('account_info_account_id_deleted_at_idx').on(
+      table.account_id,
+      table.deleted_at
+    ),
   ]
 );
 

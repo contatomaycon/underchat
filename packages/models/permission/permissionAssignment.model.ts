@@ -26,6 +26,14 @@ export const permissionAssignment = pgTable(
     ),
     index('permission_assignment_user_id_idx').on(table.user_id),
     index('permission_assignment_account_id_idx').on(table.account_id),
+    index('permission_assignment_user_id_permission_role_id_idx').on(
+      table.user_id,
+      table.permission_role_id
+    ),
+    index('permission_assignment_account_id_permission_role_id_idx').on(
+      table.account_id,
+      table.permission_role_id
+    ),
   ]
 );
 

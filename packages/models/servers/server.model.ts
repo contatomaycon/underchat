@@ -35,6 +35,10 @@ export const server = pgTable(
   (table) => [
     index('server_server_status_id_idx').on(table.server_status_id),
     index('server_deleted_at_idx').on(table.deleted_at),
+    index('server_deleted_at_server_status_id_idx').on(
+      table.deleted_at,
+      table.server_status_id
+    ),
   ]
 );
 

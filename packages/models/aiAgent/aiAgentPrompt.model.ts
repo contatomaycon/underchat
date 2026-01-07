@@ -39,6 +39,10 @@ export const aiAgentPrompt = pgTable(
   (table) => [
     index('ai_agent_prompt_ai_agent_id_idx').on(table.ai_agent_id),
     index('ai_agent_prompt_status_idx').on(table.status),
+    index('ai_agent_prompt_ai_agent_id_status_idx').on(
+      table.ai_agent_id,
+      table.status
+    ),
   ]
 );
 

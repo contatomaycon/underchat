@@ -33,6 +33,11 @@ export const serverSsh = pgTable(
   (table) => [
     index('server_ssh_server_id_idx').on(table.server_id),
     index('server_ssh_deleted_at_idx').on(table.deleted_at),
+    index('server_ssh_ssh_ip_idx').on(table.ssh_ip),
+    index('server_ssh_server_id_deleted_at_idx').on(
+      table.server_id,
+      table.deleted_at
+    ),
   ]
 );
 

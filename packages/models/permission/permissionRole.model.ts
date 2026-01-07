@@ -28,6 +28,11 @@ export const permissionRole = pgTable(
   (table) => [
     index('permission_role_account_id_idx').on(table.account_id),
     index('permission_role_deleted_at_idx').on(table.deleted_at),
+    index('permission_role_account_id_deleted_at_idx').on(
+      table.account_id,
+      table.deleted_at
+    ),
+    index('permission_role_name_idx').on(table.name),
   ]
 );
 

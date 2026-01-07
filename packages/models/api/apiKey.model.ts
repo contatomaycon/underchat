@@ -25,6 +25,11 @@ export const apiKey = pgTable(
     index('api_key_account_id_idx').on(table.account_id),
     index('api_key_key_idx').on(table.key),
     index('api_key_deleted_at_idx').on(table.deleted_at),
+    index('api_key_account_id_deleted_at_idx').on(
+      table.account_id,
+      table.deleted_at
+    ),
+    index('api_key_key_deleted_at_idx').on(table.key, table.deleted_at),
   ]
 );
 

@@ -33,6 +33,10 @@ export const pushSubscription = pgTable(
   (table) => [
     index('push_subscription_user_id_idx').on(table.user_id),
     index('push_subscription_deleted_at_idx').on(table.deleted_at),
+    index('push_subscription_user_id_deleted_at_idx').on(
+      table.user_id,
+      table.deleted_at
+    ),
   ]
 );
 

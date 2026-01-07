@@ -46,6 +46,14 @@ export const reportConversationHistoryPdf = pgTable(
     ),
     index('report_conversation_history_pdf_chat_id_idx').on(table.chat_id),
     index('report_conversation_history_pdf_status_idx').on(table.status),
+    index('report_conversation_history_pdf_account_id_status_idx').on(
+      table.account_id,
+      table.status
+    ),
+    index('report_conversation_history_pdf_account_id_chat_id_idx').on(
+      table.account_id,
+      table.chat_id
+    ),
   ]
 );
 
