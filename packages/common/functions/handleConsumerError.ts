@@ -1,4 +1,6 @@
 import { getErrorMessage } from './toError';
+import { logger } from '@core/plugins/telemetry/logger';
+import { captureException } from '@core/plugins/telemetry/sentry';
 
 function isKnownConnectionError(error: unknown): boolean {
   if (!error || typeof error !== 'object') {
@@ -36,9 +38,30 @@ function isKnownConnectionError(error: unknown): boolean {
 
 export function handleConsumerError(error: unknown, topic?: string): void {
   if (isKnownConnectionError(error)) {
+    logger.debug(
+      {
+        err: error,
+        type: 'kafka_connection_error',
+        topic,
+      },
+      'Known Kafka connection error (ignored)'
+    );
     return;
   }
 
-  const topicInfo = topic ? ` for topic ${topic}` : '';
-  console.error(`Kafka consumer error${topicInfo}:`, error);
+  logger.error(
+    {
+      err: error,
+      type: 'kafka_consumer_error',
+      topic,
+    },
+    `Kafka consumer error${topic ? ` for topic ${topic}` : ''}`
+  );
+
+  captureException(error, {
+    kafka: {
+      type: 'consumer_error',
+      topic,
+    },
+  });
 }

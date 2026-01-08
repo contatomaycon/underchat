@@ -1,5 +1,7 @@
+import '@core/plugins/telemetry/instrument';
 import 'reflect-metadata';
 import 'module-alias/register';
+import * as Sentry from '@sentry/node';
 import fastify from 'fastify';
 import dbConnector from '@core/config/database';
 import i18nextPlugin from '@core/plugins/i18next';
@@ -24,6 +26,8 @@ const server = fastify({
   genReqId: () => v7(),
   logger: true,
 });
+
+Sentry.setupFastifyErrorHandler(server);
 
 server.decorateRequest('module', ERouteModule.schedule);
 

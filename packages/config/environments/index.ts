@@ -18,6 +18,7 @@ import { S3Environment } from './S3Environment';
 import { AsaasEnvironment } from './AsaasEnvironment';
 import { SmtpEnvironment } from './SmtpEnvironment';
 import { VapidEnvironment } from './VapidEnvironment';
+import { TelemetryEnvironment } from './TelemetryEnvironment';
 
 export const generalEnvironment = new GeneralEnvironment();
 export const databaseEnvironment = new DatabaseEnvironment();
@@ -32,3 +33,4 @@ export const s3Environment = new S3Environment();
 export const asaasEnvironment = new AsaasEnvironment();
 export const smtpEnvironment = new SmtpEnvironment();
 export const vapidEnvironment = new VapidEnvironment();
+export const telemetryEnvironment = new TelemetryEnvironment();

@@ -15,7 +15,44 @@ const redisPlugin = async (fastify: FastifyInstance) => {
   });
 
   client.on('error', (error: Error) => {
-    fastify.log.error(error);
+    fastify.log.error(
+      {
+        err: error,
+        type: 'redis_error',
+      },
+      'Redis client error'
+    );
+
+    import('@core/plugins/telemetry/sentry.js')
+      .then(({ captureException }) => {
+        captureException(error, {
+          redis: {
+            type: 'client_error',
+          },
+        });
+      })
+      .catch(() => {});
+  });
+
+  client.on('connect', () => {
+    fastify.log.info('Redis client connected');
+  });
+
+  client.on('ready', () => {
+    fastify.log.info('Redis client ready');
+  });
+
+  client.on('close', () => {
+    fastify.log.warn('Redis client connection closed');
+  });
+
+  client.on('reconnecting', (delay: number) => {
+    fastify.log.warn(
+      {
+        delay,
+      },
+      'Redis client reconnecting'
+    );
   });
 
   container.register<Redis>('Redis', {

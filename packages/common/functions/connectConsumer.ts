@@ -1,5 +1,7 @@
 import { KafkaConsumer, LibrdKafkaError } from 'node-rdkafka';
 import { getErrorMessage } from './toError';
+import { logger } from '@core/plugins/telemetry/logger';
+import { captureException } from '@core/plugins/telemetry/sentry';
 
 const TIMEOUT_ERROR_CODE = -185;
 const FALLBACK_DELAY_MS = 5000;
@@ -48,7 +50,11 @@ function createTimeoutHandler(
 
     isResolved.value = true;
     cleanup();
-    console.warn(
+    logger.warn(
+      {
+        topic,
+        type: 'kafka_connection_timeout',
+      },
       `Kafka consumer connection timeout for topic ${topic}, continuing without connection`
     );
   }, 30000);
@@ -73,7 +79,21 @@ function handleTimeoutError(
 }
 
 function handleNonTimeoutError(topic: string, error: unknown): void {
-  console.error(`Kafka consumer error for topic ${topic}:`, error);
+  logger.error(
+    {
+      err: error,
+      topic,
+      type: 'kafka_consumer_error',
+    },
+    `Kafka consumer error for topic ${topic}`
+  );
+
+  captureException(error, {
+    kafka: {
+      type: 'consumer_connection_error',
+      topic,
+    },
+  });
 }
 
 function createErrorHandler(
@@ -112,10 +132,30 @@ function createReadyHandler(
     try {
       consumer.subscribe([topic]);
       consumer.consume();
-      console.log(`Kafka consumer connected to topic: ${topic}`);
+      logger.info(
+        {
+          topic,
+          type: 'kafka_consumer_connected',
+        },
+        `Kafka consumer connected to topic: ${topic}`
+      );
       onConnected();
     } catch (error) {
-      console.error(`Error subscribing to topic ${topic}:`, error);
+      logger.error(
+        {
+          err: error,
+          topic,
+          type: 'kafka_subscribe_error',
+        },
+        `Error subscribing to topic ${topic}`
+      );
+
+      captureException(error, {
+        kafka: {
+          type: 'subscribe_error',
+          topic,
+        },
+      });
     }
 
     if (isResolved.value) {
@@ -189,16 +229,31 @@ function handleConnectException(
   cleanup();
 
   if (isTimeoutError(connectError)) {
-    console.warn(
+    logger.warn(
+      {
+        topic,
+        type: 'kafka_connect_timeout',
+      },
       `Kafka consumer connect() threw timeout error for topic ${topic}, continuing without connection`
     );
     return;
   }
 
-  console.error(
-    `Kafka consumer connect() error for topic ${topic}:`,
-    connectError
+  logger.error(
+    {
+      err: connectError,
+      topic,
+      type: 'kafka_connect_error',
+    },
+    `Kafka consumer connect() error for topic ${topic}`
   );
+
+  captureException(connectError, {
+    kafka: {
+      type: 'connect_error',
+      topic,
+    },
+  });
 }
 
 function attemptConnect(
@@ -238,7 +293,13 @@ function handleSubscribeSuccess(
   timeout: NodeJS.Timeout,
   isResolved: { value: boolean }
 ): void {
-  console.log(`Kafka consumer connected to topic: ${topic}`);
+  logger.info(
+    {
+      topic,
+      type: 'kafka_consumer_connected',
+    },
+    `Kafka consumer connected to topic: ${topic}`
+  );
   onConnected();
 
   if (isResolved.value) {
@@ -268,7 +329,11 @@ function handleSubscribeError(
   isResolved.value = true;
   clearTimeout(timeout);
   cleanup();
-  console.warn(
+  logger.warn(
+    {
+      topic,
+      type: 'kafka_subscribe_timeout',
+    },
     `Kafka consumer subscribe timeout for topic ${topic}, continuing without subscription`
   );
 }

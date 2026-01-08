@@ -37,11 +37,55 @@ async function dbConnector(fastify: FastifyInstance) {
   });
 
   poolRw.on('error', (err) => {
-    console.error('Unexpected error on idle database client (RW)', err);
+    import('@core/plugins/telemetry/logger.js')
+      .then(({ logger }) => {
+        logger.error(
+          {
+            err,
+            type: 'database_pool_error',
+            pool: 'rw',
+          },
+          'Unexpected error on idle database client (RW)'
+        );
+      })
+      .catch(() => {});
+
+    import('@core/plugins/telemetry/sentry.js')
+      .then(({ captureException }) => {
+        captureException(err, {
+          database: {
+            pool: 'rw',
+            type: 'pool_error',
+          },
+        });
+      })
+      .catch(() => {});
   });
 
   poolRo.on('error', (err) => {
-    console.error('Unexpected error on idle database client (RO)', err);
+    import('@core/plugins/telemetry/logger.js')
+      .then(({ logger }) => {
+        logger.error(
+          {
+            err,
+            type: 'database_pool_error',
+            pool: 'ro',
+          },
+          'Unexpected error on idle database client (RO)'
+        );
+      })
+      .catch(() => {});
+
+    import('@core/plugins/telemetry/sentry.js')
+      .then(({ captureException }) => {
+        captureException(err, {
+          database: {
+            pool: 'ro',
+            type: 'pool_error',
+          },
+        });
+      })
+      .catch(() => {});
   });
 
   if (databaseEnvironment.dbSslMode) {

@@ -1,6 +1,9 @@
+import '@core/plugins/telemetry/instrument';
 import 'reflect-metadata';
 import 'module-alias/register';
+import * as Sentry from '@sentry/node';
 import fastify from 'fastify';
+import telemetryPlugin from '@core/plugins/telemetry';
 import dbConnector from '@core/config/database';
 import i18nextPlugin from '@core/plugins/i18next';
 import { ERouteModule } from '@core/common/enums/ERouteModule';
@@ -25,8 +28,11 @@ const server = fastify({
   logger: true,
 });
 
+Sentry.setupFastifyErrorHandler(server);
+
 server.decorateRequest('module', ERouteModule.balancer);
 
+server.register(safePlugin(telemetryPlugin, 'telemetry'));
 server.register(safePlugin(centrifugoPlugin, 'centrifugo'), {
   module: ERouteModule.balancer,
 });
