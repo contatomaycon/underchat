@@ -95,6 +95,65 @@ export class ChatbotFlowSaverUseCase {
     }
   }
 
+  private getNodeLabel(
+    t: TFunction<'translation', undefined>,
+    node: any
+  ): string {
+    if (node.data?.title) {
+      return node.data.title;
+    }
+
+    if (node.label) {
+      return node.label;
+    }
+
+    if (node.type === 'aiAgent') {
+      return t('chatbot_ai_agent');
+    }
+
+    if (node.type === 'menu') {
+      return t('chatbot_menu');
+    }
+
+    if (node.type === 'satisfaction') {
+      return t('chatbot_satisfaction');
+    }
+
+    if (node.type === 'message') {
+      return t('chatbot_message');
+    }
+
+    if (node.type === 'redirect') {
+      return t('chatbot_redirect');
+    }
+
+    if (node.type === 'tag') {
+      return t('chatbot_tag');
+    }
+
+    if (node.type === 'data') {
+      return t('chatbot_data');
+    }
+
+    if (node.type === 'contact') {
+      return t('chatbot_contact');
+    }
+
+    if (node.type === 'annotation') {
+      return t('chatbot_annotation_node_title');
+    }
+
+    if (node.type === 'finish') {
+      return t('chatbot_finish');
+    }
+
+    if (node.type === 'start') {
+      return t('chatbot_start');
+    }
+
+    return node.id || 'Nó';
+  }
+
   private validateNodeConnections(
     t: TFunction<'translation', undefined>,
     node: any,
@@ -161,11 +220,46 @@ export class ChatbotFlowSaverUseCase {
       );
     }
 
-    if (node.type === 'aiAgent' && nodeData?.actionAfterInteractions === true) {
-      const interactionsHandleId = 'interactions-quantity-source';
-      const normalizedInteractionsHandle = 'interactions-quantity';
+    if (node.type === 'aiAgent') {
+      if (nodeData?.actionAfterInteractions === true) {
+        const interactionsHandleId = 'interactions-quantity-source';
+        const normalizedInteractionsHandle = 'interactions-quantity';
 
-      const hasInteractionsConnection = outgoingEdges.some((edge) => {
+        const hasInteractionsConnection = outgoingEdges.some((edge) => {
+          const edgeHandleId = this.normalizeHandleId(
+            typeof edge.sourceHandle === 'string' ||
+              typeof edge.sourceHandle === 'number'
+              ? String(edge.sourceHandle)
+              : null
+          );
+          const rawHandleId =
+            typeof edge.sourceHandle === 'string'
+              ? edge.sourceHandle
+              : typeof edge.sourceHandle === 'number'
+                ? String(edge.sourceHandle)
+                : null;
+
+          return (
+            edgeHandleId === normalizedInteractionsHandle ||
+            rawHandleId === interactionsHandleId ||
+            rawHandleId === 'interactions-quantity'
+          );
+        });
+
+        if (!hasInteractionsConnection) {
+          const nodeLabel = this.getNodeLabel(t, node);
+          errors.push(
+            t('chatbot_flow_validation_interactions_handle_required', {
+              nodeLabel,
+            })
+          );
+        }
+      }
+
+      const fallbackHandleId = 'fallback-source';
+      const normalizedFallbackHandle = 'fallback';
+
+      const hasFallbackConnection = outgoingEdges.some((edge) => {
         const edgeHandleId = this.normalizeHandleId(
           typeof edge.sourceHandle === 'string' ||
             typeof edge.sourceHandle === 'number'
@@ -180,17 +274,16 @@ export class ChatbotFlowSaverUseCase {
               : null;
 
         return (
-          edgeHandleId === normalizedInteractionsHandle ||
-          rawHandleId === interactionsHandleId ||
-          rawHandleId === 'interactions-quantity'
+          edgeHandleId === normalizedFallbackHandle ||
+          rawHandleId === fallbackHandleId ||
+          rawHandleId === 'fallback'
         );
       });
 
-      if (!hasInteractionsConnection) {
-        const nodeLabel =
-          node.data?.title || node.label || node.id || 'aiAgent';
+      if (!hasFallbackConnection) {
+        const nodeLabel = this.getNodeLabel(t, node);
         errors.push(
-          t('chatbot_flow_validation_interactions_handle_required', {
+          t('chatbot_flow_validation_fallback_handle_required', {
             nodeLabel,
           })
         );
@@ -392,9 +485,10 @@ export class ChatbotFlowSaverUseCase {
       (typeof data.annotation === 'string' &&
         data.annotation.trim().length === 0)
     ) {
+      const nodeLabel = this.getNodeLabel(t, node);
       errors.push(
         t('chatbot_flow_validation_annotation_required', {
-          nodeLabel: node.data?.title || node.label || node.id,
+          nodeLabel,
         })
       );
     }

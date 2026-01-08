@@ -152,6 +152,20 @@ export class ChatbotFlowRunnerService {
     return edge?.target ?? null;
   }
 
+  private getNextFlowIdByFallbackHandle(
+    chatbotFlow: ListChatbotFlowResponse,
+    currentFlowId: string
+  ): string | null {
+    const edge = chatbotFlow.edges.find(
+      (currentEdge) =>
+        currentEdge.source === currentFlowId &&
+        (currentEdge.sourceHandle === 'fallback-source' ||
+          currentEdge.sourceHandle === 'fallback')
+    );
+
+    return edge?.target ?? null;
+  }
+
   private getAiAgentInteractionsCountKey(
     accountId: string,
     workerId: string,
@@ -3757,14 +3771,40 @@ Retorne APENAS uma das palavras: positive, negative ou question.`;
       conversationSummaryKey
     );
 
-    const aiResponse = await this.callAiAgentChatApi(
-      aiAgent.base_url,
-      aiAgent.api_key,
-      aiAgent.model,
-      aiAgent.ai_agent_type_id,
-      enhancedPrompt,
-      userText
-    );
+    let aiResponse: string;
+    try {
+      aiResponse = await this.callAiAgentChatApi(
+        aiAgent.base_url,
+        aiAgent.api_key,
+        aiAgent.model,
+        aiAgent.ai_agent_type_id,
+        enhancedPrompt,
+        userText
+      );
+    } catch (error) {
+      const actionAfterInteractions =
+        currentNode.data?.actionAfterInteractions === true;
+
+      if (actionAfterInteractions) {
+        const nextFlowId = this.getNextFlowIdByFallbackHandle(
+          chatbotFlow,
+          currentFlowId
+        );
+
+        if (nextFlowId) {
+          await this.updateCache(createChat, nextFlowId);
+          return this.processNextNode(
+            t,
+            createChat,
+            chatbotFlow,
+            nextFlowId,
+            customMessages
+          );
+        }
+      }
+
+      throw error;
+    }
 
     await this.sendAiAgentResponse(
       t,

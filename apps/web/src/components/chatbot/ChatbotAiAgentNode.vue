@@ -20,6 +20,7 @@ interface AiAgentData {
   interactionsQuantity?: number | null;
   onRemove?: () => void;
   onRemoveOption?: (optionId: string) => void;
+  onRemoveInteractionsEdge?: () => void;
 }
 
 const props = defineProps<NodeProps>();
@@ -453,6 +454,14 @@ watch(
   () => aiAgentData.value.actionAfterInteractions,
   (newValue, oldValue) => {
     if (newValue !== oldValue) {
+      if (newValue === false) {
+        const data = props.data as AiAgentData;
+        const removeInteractionsEdge = data?.onRemoveInteractionsEdge;
+
+        if (removeInteractionsEdge) {
+          removeInteractionsEdge();
+        }
+      }
       updateNodeData();
     }
   },
@@ -653,6 +662,30 @@ const handleRemove = () => {
             />
           </div>
         </div>
+        <VLabel class="text-body-2 mb-0 mt-2">{{
+          t('chatbot_ai_agent_fallback_label')
+        }}</VLabel>
+        <VLabel class="text-caption text-disabled mb-1 fallback-description">{{
+          t('chatbot_ai_agent_fallback_description')
+        }}</VLabel>
+        <div class="fallback-item nodrag">
+          <VTextField
+            :model-value="t('chatbot_ai_agent_fallback_placeholder')"
+            variant="outlined"
+            density="compact"
+            class="fallback-field"
+            disabled
+            hide-details
+          />
+          <Handle
+            id="fallback-source"
+            type="source"
+            :position="Position.Right"
+            class="fallback-handle handle-source"
+            @mousedown.stop
+            @touchstart.stop
+          />
+        </div>
       </VCardText>
     </VCard>
   </div>
@@ -660,7 +693,9 @@ const handleRemove = () => {
 
 <style scoped>
 .chatbot-ai-agent-node {
+  width: 350px;
   min-width: 350px;
+  max-width: 350px;
 }
 
 .ai-agent-card {
@@ -743,5 +778,40 @@ const handleRemove = () => {
   top: 50%;
   transform: translateY(-50%);
   z-index: 10;
+}
+
+.fallback-item {
+  padding: 2px 0;
+  display: flex;
+  align-items: center;
+  flex-direction: row;
+  gap: 4px;
+  margin-bottom: 8px;
+  margin-top: 2px;
+  position: relative;
+}
+
+.fallback-field {
+  flex: 1;
+  min-width: 0;
+  margin-right: 12px;
+}
+
+.fallback-field :deep(input) {
+  pointer-events: auto;
+}
+
+.fallback-handle {
+  position: absolute;
+  right: -12px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 10;
+}
+
+.fallback-description {
+  white-space: normal;
+  word-wrap: break-word;
+  line-height: 1.4;
 }
 </style>
