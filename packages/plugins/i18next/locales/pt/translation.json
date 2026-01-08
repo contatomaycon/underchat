@@ -552,6 +552,8 @@
   "chatbot_flow_validation_title_required": "Título é obrigatório no nó \"{{nodeLabel}}\"",
   "chatbot_flow_validation_message_required": "Mensagem é obrigatória no nó \"{{nodeLabel}}\"",
   "chatbot_flow_validation_options_required": "Pelo menos uma opção é obrigatória no nó \"{{nodeLabel}}\"",
+  "chatbot_flow_validation_interactions_quantity_required": "Quantidade de interações é obrigatória quando a ação após interações está habilitada no nó \"{{nodeLabel}}\"",
+  "chatbot_flow_validation_interactions_handle_required": "A conexão do handler de quantidade de interações é obrigatória quando a ação após interações está habilitada no nó \"{{nodeLabel}}\"",
   "chatbot_flow_validation_inactivity_quantity_required": "Quantidade de alerta é obrigatória quando o alerta de inatividade está ativo",
   "chatbot_flow_validation_inactivity_time_required": "Tempo de alerta é obrigatório quando o alerta de inatividade está ativo",
   "chatbot_flow_validation_inactivity_redirect_type_required": "Tipo de redirecionamento é obrigatório quando a ação é redirecionar",

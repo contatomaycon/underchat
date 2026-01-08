@@ -205,6 +205,21 @@ export const chatbotFlowMappings = () => {
                 selectedAiAgent: {
                   type: 'keyword',
                 },
+                defaultQuestion: {
+                  type: 'text',
+                },
+                continueMessage: {
+                  type: 'text',
+                },
+                actionAfterInteractions: {
+                  type: 'boolean',
+                },
+                interactionsQuantity: {
+                  type: 'integer',
+                },
+                annotation: {
+                  type: 'text',
+                },
                 options: {
                   type: 'nested',
                   properties: {

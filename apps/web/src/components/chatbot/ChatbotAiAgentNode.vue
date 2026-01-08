@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, onMounted, nextTick } from 'vue';
+import { ref, watch, onMounted, nextTick, computed } from 'vue';
 import type { NodeProps } from '@vue-flow/core';
 import { Handle, Position, useVueFlow } from '@vue-flow/core';
 import { useChatbotStore } from '@/@webcore/stores/chatbot';
@@ -16,6 +16,8 @@ interface AiAgentData {
   defaultQuestion: string | null;
   continueMessage: string | null;
   options: AiAgentOption[];
+  actionAfterInteractions?: boolean | null;
+  interactionsQuantity?: number | null;
   onRemove?: () => void;
   onRemoveOption?: (optionId: string) => void;
 }
@@ -39,6 +41,8 @@ const getInitialData = (): AiAgentData => {
     normalizeValue(data?.continueMessage) ||
     t('chatbot_ai_agent_continue_option') ||
     null;
+  const actionAfterInteractions = data?.actionAfterInteractions ?? true;
+  const interactionsQuantity = data?.interactionsQuantity ?? 5;
   const defaultOptions: AiAgentOption[] = [
     {
       id: 'positive-option',
@@ -115,6 +119,12 @@ const getInitialData = (): AiAgentData => {
       data.continueMessage =
         continueMessage || t('chatbot_ai_agent_continue_option');
     }
+    if (data.actionAfterInteractions === undefined) {
+      data.actionAfterInteractions = actionAfterInteractions;
+    }
+    if (data.interactionsQuantity === undefined) {
+      data.interactionsQuantity = interactionsQuantity;
+    }
     data.options = options;
   }
 
@@ -123,6 +133,8 @@ const getInitialData = (): AiAgentData => {
     defaultQuestion,
     continueMessage,
     options,
+    actionAfterInteractions,
+    interactionsQuantity,
   };
 };
 
@@ -130,6 +142,34 @@ const aiAgentData = ref<AiAgentData>(getInitialData());
 
 const aiAgents = ref<Array<{ value: string; title: string }>>([]);
 const isLoadingAiAgents = ref(false);
+
+const onlyDigits = (s: string) => s.replaceAll(/\D+/g, '');
+
+const interactionsQuantityComputed = computed({
+  get: () => {
+    const value = aiAgentData.value.interactionsQuantity;
+    return value !== null && value !== undefined ? String(value) : '5';
+  },
+  set: (value: string) => {
+    const numericValue = onlyDigits(value);
+    aiAgentData.value.interactionsQuantity = numericValue
+      ? Number(numericValue)
+      : 5;
+  },
+});
+
+const showInteractionsFields = computed(() => {
+  return aiAgentData.value.actionAfterInteractions === true;
+});
+
+const actionAfterInteractionsComputed = computed({
+  get: () => {
+    return aiAgentData.value.actionAfterInteractions ?? true;
+  },
+  set: (value: boolean) => {
+    aiAgentData.value.actionAfterInteractions = value;
+  },
+});
 
 const buildOptionHandleId = (optionId: string) => {
   return `option-${optionId}-source`;
@@ -144,17 +184,15 @@ const updateNodeData = () => {
   const newSelectedValue = aiAgentData.value.selectedAiAgent;
   const newDefaultQuestion = aiAgentData.value.defaultQuestion;
   const newContinueMessage = aiAgentData.value.continueMessage;
+  const newActionAfterInteractions = aiAgentData.value.actionAfterInteractions;
+  const newInteractionsQuantity = aiAgentData.value.interactionsQuantity;
   const newOptions = [...aiAgentData.value.options];
 
-  if (data.selectedAiAgent !== newSelectedValue) {
-    data.selectedAiAgent = newSelectedValue;
-  }
-  if (data.defaultQuestion !== newDefaultQuestion) {
-    data.defaultQuestion = newDefaultQuestion;
-  }
-  if (data.continueMessage !== newContinueMessage) {
-    data.continueMessage = newContinueMessage;
-  }
+  data.selectedAiAgent = newSelectedValue;
+  data.defaultQuestion = newDefaultQuestion;
+  data.continueMessage = newContinueMessage;
+  data.actionAfterInteractions = newActionAfterInteractions;
+  data.interactionsQuantity = newInteractionsQuantity;
   data.options = newOptions;
 
   nextTick(() => {
@@ -220,6 +258,10 @@ onMounted(async () => {
   const savedContinueMessage = normalizeValue(
     (props.data as AiAgentData)?.continueMessage
   );
+  const savedActionAfterInteractions = (props.data as AiAgentData)
+    ?.actionAfterInteractions;
+  const savedInteractionsQuantity = (props.data as AiAgentData)
+    ?.interactionsQuantity;
 
   if (savedSelectedValue) {
     aiAgentData.value.selectedAiAgent = savedSelectedValue;
@@ -241,6 +283,24 @@ onMounted(async () => {
     aiAgentData.value.continueMessage === undefined
   ) {
     aiAgentData.value.continueMessage = t('chatbot_ai_agent_continue_option');
+  }
+
+  if (
+    savedActionAfterInteractions !== undefined &&
+    savedActionAfterInteractions !== null
+  ) {
+    aiAgentData.value.actionAfterInteractions = savedActionAfterInteractions;
+  } else {
+    aiAgentData.value.actionAfterInteractions = true;
+  }
+
+  if (
+    savedInteractionsQuantity !== undefined &&
+    savedInteractionsQuantity !== null
+  ) {
+    aiAgentData.value.interactionsQuantity = savedInteractionsQuantity;
+  } else {
+    aiAgentData.value.interactionsQuantity = 5;
   }
 
   if (
@@ -334,6 +394,32 @@ watch(
 );
 
 watch(
+  () => (props.data as AiAgentData)?.actionAfterInteractions,
+  (newValue) => {
+    if (isUpdatingFromProps) {
+      return;
+    }
+    if (newValue !== aiAgentData.value.actionAfterInteractions) {
+      aiAgentData.value.actionAfterInteractions = newValue ?? null;
+    }
+  },
+  { flush: 'post' }
+);
+
+watch(
+  () => (props.data as AiAgentData)?.interactionsQuantity,
+  (newValue) => {
+    if (isUpdatingFromProps) {
+      return;
+    }
+    if (newValue !== aiAgentData.value.interactionsQuantity) {
+      aiAgentData.value.interactionsQuantity = newValue ?? 5;
+    }
+  },
+  { flush: 'post' }
+);
+
+watch(
   () => aiAgentData.value.selectedAiAgent,
   (newValue, oldValue) => {
     if (newValue !== oldValue) {
@@ -355,6 +441,26 @@ watch(
 
 watch(
   () => aiAgentData.value.continueMessage,
+  (newValue, oldValue) => {
+    if (newValue !== oldValue) {
+      updateNodeData();
+    }
+  },
+  { immediate: false }
+);
+
+watch(
+  () => aiAgentData.value.actionAfterInteractions,
+  (newValue, oldValue) => {
+    if (newValue !== oldValue) {
+      updateNodeData();
+    }
+  },
+  { immediate: false }
+);
+
+watch(
+  () => aiAgentData.value.interactionsQuantity,
   (newValue, oldValue) => {
     if (newValue !== oldValue) {
       updateNodeData();
@@ -455,7 +561,7 @@ const handleRemove = () => {
           :placeholder="t('chatbot_ai_agent_continue_message_placeholder')"
           variant="outlined"
           density="compact"
-          class="mb-3"
+          class="mb-1"
           hide-details="auto"
         />
         <div v-if="aiAgentData.options.length > 0" class="options-list nodrag">
@@ -484,6 +590,69 @@ const handleRemove = () => {
             />
           </div>
         </div>
+        <VLabel class="text-body-2 mb-1">{{
+          t('chatbot_ai_agent_action_after_interactions_label')
+        }}</VLabel>
+        <AppSelectSearch
+          v-model="actionAfterInteractionsComputed"
+          :items="[
+            { id: true, title: t('yes') },
+            { id: false, title: t('no') },
+          ]"
+          item-value="id"
+          item-title="title"
+          :clearable="false"
+          class="mb-3"
+        />
+        <div v-if="showInteractionsFields">
+          <VLabel class="text-body-2 mb-0">{{
+            t('chatbot_ai_agent_interactions_quantity_label')
+          }}</VLabel>
+          <div class="interactions-quantity-item nodrag">
+            <VTextField
+              v-model="interactionsQuantityComputed"
+              @keydown="
+                (e: KeyboardEvent) => {
+                  if (
+                    !/[0-9]/.test(e.key) &&
+                    ![
+                      'Backspace',
+                      'Delete',
+                      'ArrowLeft',
+                      'ArrowRight',
+                      'Tab',
+                    ].includes(e.key)
+                  ) {
+                    e.preventDefault();
+                  }
+                }
+              "
+              @paste.prevent="
+                (e: ClipboardEvent) => {
+                  const pastedText = e.clipboardData?.getData('text') || '';
+                  const numericValue = onlyDigits(pastedText);
+                  if (numericValue) {
+                    interactionsQuantityComputed = numericValue;
+                  }
+                }
+              "
+              variant="outlined"
+              density="compact"
+              class="interactions-quantity-field"
+              hide-details
+              inputmode="numeric"
+              type="text"
+            />
+            <Handle
+              id="interactions-quantity-source"
+              type="source"
+              :position="Position.Right"
+              class="interactions-handle handle-source"
+              @mousedown.stop
+              @touchstart.stop
+            />
+          </div>
+        </div>
       </VCardText>
     </VCard>
   </div>
@@ -498,13 +667,17 @@ const handleRemove = () => {
   border-radius: 8px;
 }
 
+.options-list {
+  margin-top: 4px;
+}
+
 .option-item {
-  padding: 4px 0;
+  padding: 2px 0;
   display: flex;
   align-items: center;
   flex-direction: row;
   gap: 8px;
-  margin-bottom: 8px;
+  margin-bottom: 4px;
   position: relative;
 }
 
@@ -541,5 +714,34 @@ const handleRemove = () => {
 
 .cursor-pointer {
   cursor: pointer;
+}
+
+.interactions-quantity-item {
+  padding: 2px 0;
+  display: flex;
+  align-items: center;
+  flex-direction: row;
+  gap: 4px;
+  margin-bottom: 8px;
+  margin-top: 2px;
+  position: relative;
+}
+
+.interactions-quantity-field {
+  flex: 1;
+  min-width: 0;
+  margin-right: 12px;
+}
+
+.interactions-quantity-field :deep(input) {
+  pointer-events: auto;
+}
+
+.interactions-handle {
+  position: absolute;
+  right: -12px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 10;
 }
 </style>

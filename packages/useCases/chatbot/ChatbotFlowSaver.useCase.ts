@@ -160,6 +160,42 @@ export class ChatbotFlowSaverUseCase {
         })
       );
     }
+
+    if (node.type === 'aiAgent' && nodeData?.actionAfterInteractions === true) {
+      const interactionsHandleId = 'interactions-quantity-source';
+      const normalizedInteractionsHandle = 'interactions-quantity';
+
+      const hasInteractionsConnection = outgoingEdges.some((edge) => {
+        const edgeHandleId = this.normalizeHandleId(
+          typeof edge.sourceHandle === 'string' ||
+            typeof edge.sourceHandle === 'number'
+            ? String(edge.sourceHandle)
+            : null
+        );
+        const rawHandleId =
+          typeof edge.sourceHandle === 'string'
+            ? edge.sourceHandle
+            : typeof edge.sourceHandle === 'number'
+              ? String(edge.sourceHandle)
+              : null;
+
+        return (
+          edgeHandleId === normalizedInteractionsHandle ||
+          rawHandleId === interactionsHandleId ||
+          rawHandleId === 'interactions-quantity'
+        );
+      });
+
+      if (!hasInteractionsConnection) {
+        const nodeLabel =
+          node.data?.title || node.label || node.id || 'aiAgent';
+        errors.push(
+          t('chatbot_flow_validation_interactions_handle_required', {
+            nodeLabel,
+          })
+        );
+      }
+    }
   }
 
   private validateTextMessage(
@@ -434,6 +470,23 @@ export class ChatbotFlowSaverUseCase {
           nodeLabel,
         })
       );
+    }
+
+    if (data.actionAfterInteractions === true) {
+      if (
+        data.interactionsQuantity === null ||
+        data.interactionsQuantity === undefined ||
+        (typeof data.interactionsQuantity === 'number' &&
+          data.interactionsQuantity <= 0)
+      ) {
+        const nodeLabel =
+          node.data?.title || node.label || node.id || 'aiAgent';
+        errors.push(
+          t('chatbot_flow_validation_interactions_quantity_required', {
+            nodeLabel,
+          })
+        );
+      }
     }
   }
 

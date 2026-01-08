@@ -553,6 +553,8 @@
   "chatbot_flow_validation_title_required": "Title is required in node \"{{nodeLabel}}\"",
   "chatbot_flow_validation_message_required": "Message is required in node \"{{nodeLabel}}\"",
   "chatbot_flow_validation_options_required": "At least one option is required in node \"{{nodeLabel}}\"",
+  "chatbot_flow_validation_interactions_quantity_required": "Number of interactions is required when action after interactions is enabled in node \"{{nodeLabel}}\"",
+  "chatbot_flow_validation_interactions_handle_required": "Interactions quantity handler connection is required when action after interactions is enabled in node \"{{nodeLabel}}\"",
   "chatbot_flow_validation_inactivity_quantity_required": "Alert quantity is required when inactivity alert is active",
   "chatbot_flow_validation_inactivity_time_required": "Alert time is required when inactivity alert is active",
   "chatbot_flow_validation_inactivity_redirect_type_required": "Redirect type is required when action is redirect",

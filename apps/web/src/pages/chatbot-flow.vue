@@ -847,6 +847,8 @@ const addAiAgentNode = (position?: { x: number; y: number }) => {
       selectedAiAgent: null,
       defaultQuestion: null,
       continueMessage: null,
+      actionAfterInteractions: true,
+      interactionsQuantity: 5,
       options: [
         {
           id: positiveOptionId,
@@ -1063,6 +1065,18 @@ const prepareNodesForSave = (
       ) {
         nodeData.continueMessage = null;
       }
+      if (
+        nodeData.actionAfterInteractions === undefined ||
+        nodeData.actionAfterInteractions === null
+      ) {
+        nodeData.actionAfterInteractions = true;
+      }
+      if (
+        nodeData.interactionsQuantity === undefined ||
+        nodeData.interactionsQuantity === null
+      ) {
+        nodeData.interactionsQuantity = 5;
+      }
       if (nodeData.options && Array.isArray(nodeData.options)) {
         nodeData.options = normalizeOptions(nodeData.options);
       }
@@ -1234,6 +1248,10 @@ const processAiAgentNodeData = (nodeData: any): void => {
   if (nodeData.selectedAiAgent === undefined) nodeData.selectedAiAgent = null;
   if (nodeData.defaultQuestion === undefined) nodeData.defaultQuestion = null;
   if (nodeData.continueMessage === undefined) nodeData.continueMessage = null;
+  if (nodeData.actionAfterInteractions === undefined)
+    nodeData.actionAfterInteractions = true;
+  if (nodeData.interactionsQuantity === undefined)
+    nodeData.interactionsQuantity = 5;
   if (!nodeData.options || nodeData.options.length === 0) {
     const positiveOptionId = crypto.randomUUID();
     const negativeOptionId = crypto.randomUUID();
