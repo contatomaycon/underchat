@@ -205,7 +205,8 @@ export class ChatbotFlowRunnerService {
       nodeId
     );
     const count = await this.redis.get(key);
-    return count ? parseInt(count, 10) : 0;
+    const countValue = count ? parseInt(count, 10) : 0;
+    return countValue;
   }
 
   private async resetAiAgentInteractionsCount(
@@ -915,6 +916,16 @@ export class ChatbotFlowRunnerService {
     if (nextFlowNode.type === 'data') {
       await this.processDataNodeQuestion(t, createChat, nextFlowNode);
       return true;
+    }
+
+    if (nextFlowNode.type === 'annotation') {
+      return this.processAnnotationNode(
+        t,
+        createChat,
+        chatbotFlow,
+        nextFlowId,
+        customMessages
+      );
     }
 
     if (nextFlowNode.type === 'finish') {
@@ -2829,10 +2840,11 @@ export class ChatbotFlowRunnerService {
       }>;
     };
 
-    return (
+    const responseText =
       data.candidates?.[0]?.content?.parts?.[0]?.text ||
-      'Desculpe, não consegui processar sua solicitação.'
-    );
+      'Desculpe, não consegui processar sua solicitação.';
+
+    return responseText;
   }
 
   private buildGeminiContents(
@@ -3168,9 +3180,7 @@ export class ChatbotFlowRunnerService {
         payload,
         `${createChat.account.id}:${createChat.phone}:${aiAgentId}`
       );
-    } catch {
-      // Silently fail - embedding is not critical
-    }
+    } catch {}
   }
 
   private async getRecentChatMessages(
@@ -3268,9 +3278,11 @@ export class ChatbotFlowRunnerService {
         userResponse
       );
 
-      return this.parseAnalysisResponse(analysis);
+      const result = this.parseAnalysisResponse(analysis);
+      return result;
     } catch {
-      return this.fallbackAnalysis(userResponse);
+      const fallbackResult = this.fallbackAnalysis(userResponse);
+      return fallbackResult;
     }
   }
 
@@ -3782,25 +3794,20 @@ Retorne APENAS uma das palavras: positive, negative ou question.`;
         userText
       );
     } catch (error) {
-      const actionAfterInteractions =
-        currentNode.data?.actionAfterInteractions === true;
+      const nextFlowId = this.getNextFlowIdByFallbackHandle(
+        chatbotFlow,
+        currentFlowId
+      );
 
-      if (actionAfterInteractions) {
-        const nextFlowId = this.getNextFlowIdByFallbackHandle(
+      if (nextFlowId) {
+        await this.updateCache(createChat, nextFlowId);
+        return this.processNextNode(
+          t,
+          createChat,
           chatbotFlow,
-          currentFlowId
+          nextFlowId,
+          customMessages
         );
-
-        if (nextFlowId) {
-          await this.updateCache(createChat, nextFlowId);
-          return this.processNextNode(
-            t,
-            createChat,
-            chatbotFlow,
-            nextFlowId,
-            customMessages
-          );
-        }
       }
 
       throw error;
