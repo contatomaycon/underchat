@@ -9,7 +9,7 @@ import { CentrifugoService } from './centrifugo.service';
 import { UserService } from './user.service';
 import { SectorService } from './sector.service';
 import { RagService } from './rag.service';
-import { AiAgentViewerRepository } from '@core/repositories/aiAgent/AiAgentViewer.repository';
+import { AiAgentService } from './aiAgent.service';
 import { ElasticDatabaseService } from './elasticDatabase.service';
 import { EAiAgentType } from '@core/common/enums/EAiAgentType';
 import { IChat } from '@core/common/interfaces/IChat';
@@ -51,7 +51,7 @@ export class ChatbotFlowRunnerService {
     private readonly userService: UserService,
     private readonly sectorService: SectorService,
     private readonly ragService: RagService,
-    private readonly aiAgentViewerRepository: AiAgentViewerRepository,
+    private readonly aiAgentService: AiAgentService,
     private readonly elasticDatabaseService: ElasticDatabaseService,
     private readonly streamProducerService: StreamProducerService,
     private readonly kafkaServiceQueueService: KafkaServiceQueueService
@@ -3067,7 +3067,7 @@ export class ChatbotFlowRunnerService {
     aiAgentId: string,
     bootstrapSummaryKey: string
   ): Promise<void> {
-    const aiAgent = await this.aiAgentViewerRepository.viewAiAgent(
+    const aiAgent = await this.aiAgentService.viewAiAgent(
       aiAgentId,
       createChat.account.id
     );
@@ -3683,7 +3683,7 @@ Retorne APENAS uma das palavras: positive, negative ou question.`;
       return false;
     }
 
-    const aiAgentForAnalysis = await this.aiAgentViewerRepository.viewAiAgent(
+    const aiAgentForAnalysis = await this.aiAgentService.viewAiAgent(
       selectedAiAgentId,
       createChat.account.id
     );
@@ -3748,7 +3748,7 @@ Retorne APENAS uma das palavras: positive, negative ou question.`;
       transfer_message_sector_user?: string;
     }
   ): Promise<boolean> {
-    const aiAgent = await this.aiAgentViewerRepository.viewAiAgent(
+    const aiAgent = await this.aiAgentService.viewAiAgent(
       selectedAiAgentId,
       createChat.account.id
     );

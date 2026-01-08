@@ -1,4 +1,5 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
+import Redis from 'ioredis';
 import { AiAgentListerRepository } from '@core/repositories/aiAgent/AiAgentLister.repository';
 import { AiAgentCreatorRepository } from '@core/repositories/aiAgent/AiAgentCreator.repository';
 import { AiAgentViewerRepository } from '@core/repositories/aiAgent/AiAgentViewer.repository';
@@ -25,6 +26,9 @@ import { ListChatbotAiAgentsResponse } from '@core/schema/chatbot/listAiAgents/r
 
 @injectable()
 export class AiAgentService {
+  private readonly cacheTTL = 600;
+  private readonly cacheKeyPrefix = 'ai-agent:view:';
+
   constructor(
     private readonly aiAgentListerRepository: AiAgentListerRepository,
     private readonly aiAgentCreatorRepository: AiAgentCreatorRepository,
@@ -36,7 +40,8 @@ export class AiAgentService {
     private readonly aiAgentPromptCreatorRepository: AiAgentPromptCreatorRepository,
     private readonly aiAgentPromptViewerRepository: AiAgentPromptViewerRepository,
     private readonly aiAgentPromptUpdaterRepository: AiAgentPromptUpdaterRepository,
-    private readonly aiAgentPromptDeleterRepository: AiAgentPromptDeleterRepository
+    private readonly aiAgentPromptDeleterRepository: AiAgentPromptDeleterRepository,
+    @inject('Redis') private readonly redis: Redis
   ) {}
 
   listAiAgents = async (
@@ -58,18 +63,55 @@ export class AiAgentService {
     return [result, total];
   };
 
+  private getCacheKey(aiAgentId: string, accountId: string): string {
+    return `${this.cacheKeyPrefix}${aiAgentId}:${accountId}`;
+  }
+
+  private async invalidateAiAgentCache(
+    aiAgentId: string,
+    accountId: string
+  ): Promise<void> {
+    const cacheKey = this.getCacheKey(aiAgentId, accountId);
+    await this.redis.del(cacheKey);
+  }
+
   createAiAgent = async (
     input: CreateAiAgentRequest,
     accountId: string
   ): Promise<string | null> => {
-    return this.aiAgentCreatorRepository.createAiAgent(input, accountId);
+    const aiAgentId = await this.aiAgentCreatorRepository.createAiAgent(
+      input,
+      accountId
+    );
+
+    if (aiAgentId) {
+      await this.invalidateAiAgentCache(aiAgentId, accountId);
+    }
+
+    return aiAgentId;
   };
 
   viewAiAgent = async (
     aiAgentId: string,
     accountId: string
   ): Promise<ViewAiAgentResponse | null> => {
-    return this.aiAgentViewerRepository.viewAiAgent(aiAgentId, accountId);
+    const cacheKey = this.getCacheKey(aiAgentId, accountId);
+    const cached = await this.redis.get(cacheKey);
+
+    if (cached) {
+      return JSON.parse(cached) as ViewAiAgentResponse;
+    }
+
+    const result = await this.aiAgentViewerRepository.viewAiAgent(
+      aiAgentId,
+      accountId
+    );
+
+    if (result) {
+      await this.redis.setex(cacheKey, this.cacheTTL, JSON.stringify(result));
+    }
+
+    return result;
   };
 
   updateAiAgentById = async (
@@ -77,21 +119,33 @@ export class AiAgentService {
     aiAgentId: string,
     accountId: string
   ): Promise<boolean> => {
-    return this.aiAgentUpdaterRepository.updateAiAgentById(
+    const result = await this.aiAgentUpdaterRepository.updateAiAgentById(
       input,
       aiAgentId,
       accountId
     );
+
+    if (result) {
+      await this.invalidateAiAgentCache(aiAgentId, accountId);
+    }
+
+    return result;
   };
 
   deleteAiAgentById = async (
     aiAgentId: string,
     accountId: string
   ): Promise<boolean> => {
-    return this.aiAgentDeleterRepository.deleteAiAgentById(
+    const result = await this.aiAgentDeleterRepository.deleteAiAgentById(
       aiAgentId,
       accountId
     );
+
+    if (result) {
+      await this.invalidateAiAgentCache(aiAgentId, accountId);
+    }
+
+    return result;
   };
 
   listAiAgentTypes = async (): Promise<ListAiAgentTypeResponse[]> => {
