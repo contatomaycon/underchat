@@ -341,6 +341,29 @@ export class ChatbotFlowSaverUseCase {
     }
   }
 
+  private validateAnnotationNode(
+    t: TFunction<'translation', undefined>,
+    node: any,
+    errors: string[]
+  ): void {
+    if (node.type !== 'annotation') {
+      return;
+    }
+
+    const data = node.data;
+    if (
+      !data.annotation ||
+      (typeof data.annotation === 'string' &&
+        data.annotation.trim().length === 0)
+    ) {
+      errors.push(
+        t('chatbot_flow_validation_annotation_required', {
+          nodeLabel: node.data?.title || node.label || node.id,
+        })
+      );
+    }
+  }
+
   private normalizeAiAgentNode(
     t: TFunction<'translation', undefined>,
     node: any
@@ -515,6 +538,7 @@ export class ChatbotFlowSaverUseCase {
       this.validateDataNode(t, node, errors);
       this.validateRedirectNode(t, node, errors);
       this.validateTagNode(t, node, errors);
+      this.validateAnnotationNode(t, node, errors);
       this.validateAiAgentNode(t, node, errors);
       this.validateMenuOrSatisfactionNode(t, node, errors);
     }

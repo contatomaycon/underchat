@@ -24,6 +24,7 @@ const nodeDataSchema = Type.Object({
   selectedSectorUser: Type.Optional(Type.String()),
   tagType: Type.Optional(Type.String()),
   selectedTag: Type.Optional(Type.String()),
+  annotation: Type.Optional(Type.String()),
   selectedAiAgent: Type.Optional(Type.String()),
   defaultQuestion: Type.Optional(Type.String()),
   continueMessage: Type.Optional(Type.String()),

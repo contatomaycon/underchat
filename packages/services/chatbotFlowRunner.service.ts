@@ -1089,6 +1089,76 @@ export class ChatbotFlowRunnerService {
     );
   }
 
+  private async processAnnotationNode(
+    t: TFunction<'translation', undefined>,
+    createChat: IChat,
+    chatbotFlow: ListChatbotFlowResponse,
+    currentFlowId: string,
+    customMessages?: {
+      service_finished_message?: string;
+      invalid_menu_option_message?: string;
+      invalid_satisfaction_option_message?: string;
+      invalid_cpf_message?: string;
+      invalid_cnpj_message?: string;
+      invalid_email_message?: string;
+      transfer_message_user?: string;
+      transfer_message_sector?: string;
+      transfer_message_sector_user?: string;
+    }
+  ): Promise<boolean> {
+    const currentNode = this.getFlowNodeById(chatbotFlow, currentFlowId);
+
+    if (!currentNode) {
+      throw new Error(t('chatbot_flow_node_not_found'));
+    }
+
+    const annotation = currentNode.data?.annotation;
+
+    if (!annotation || annotation.trim().length === 0) {
+      const nextFlowId = this.getNextFlowId(chatbotFlow, currentFlowId);
+      if (!nextFlowId) {
+        return true;
+      }
+
+      return this.processNextNode(
+        t,
+        createChat,
+        chatbotFlow,
+        nextFlowId,
+        customMessages
+      );
+    }
+
+    const message = await this.replaceVariables(
+      t,
+      annotation.trim(),
+      createChat,
+      createChat.user,
+      createChat.sector
+    );
+
+    await this.chatMessageService.sendMessage(t, {
+      chat: createChat,
+      accountId: createChat.account.id,
+      type: EMessageType.annotation,
+      message,
+      typeUser: ETypeUserChat.system,
+    });
+
+    const nextFlowId = this.getNextFlowId(chatbotFlow, currentFlowId);
+    if (!nextFlowId) {
+      return true;
+    }
+
+    return this.processNextNode(
+      t,
+      createChat,
+      chatbotFlow,
+      nextFlowId,
+      customMessages
+    );
+  }
+
   private async processUserRedirect(
     t: TFunction<'translation', undefined>,
     selectedUser: string | null | undefined
@@ -3817,6 +3887,16 @@ Retorne APENAS uma das palavras: positive, negative ou question.`;
 
     if (currentNode.type === 'tag') {
       return this.processTagNode(
+        t,
+        createChat,
+        chatbotFlow,
+        currentFlowId,
+        customMessages
+      );
+    }
+
+    if (currentNode.type === 'annotation') {
+      return this.processAnnotationNode(
         t,
         createChat,
         chatbotFlow,

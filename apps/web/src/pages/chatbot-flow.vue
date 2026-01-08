@@ -25,6 +25,7 @@ import ChatbotMessageNode from '@/components/chatbot/ChatbotMessageNode.vue';
 import ChatbotDataNode from '@/components/chatbot/ChatbotDataNode.vue';
 import ChatbotContactNode from '@/components/chatbot/ChatbotContactNode.vue';
 import ChatbotAiAgentNode from '@/components/chatbot/ChatbotAiAgentNode.vue';
+import ChatbotAnnotationNode from '@/components/chatbot/ChatbotAnnotationNode.vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter, useRoute } from 'vue-router';
 import DialogCloseBtn from '@/@webcore/components/DialogCloseBtn.vue';
@@ -53,6 +54,7 @@ const nodeTypes = {
   data: markRaw(ChatbotDataNode),
   contact: markRaw(ChatbotContactNode),
   aiAgent: markRaw(ChatbotAiAgentNode),
+  annotation: markRaw(ChatbotAnnotationNode),
 };
 
 const { t } = useI18n();
@@ -767,6 +769,23 @@ const addTagNode = (position?: { x: number; y: number }) => {
   nodes.value.push(newNode as Node);
 };
 
+const addAnnotationNode = (position?: { x: number; y: number }) => {
+  const nodeId = `annotation-${nodeIdCounter++}`;
+  const newNode: Node = {
+    id: nodeId,
+    type: 'annotation',
+    position: position || {
+      x: getSecureRandom(400) + 100,
+      y: getSecureRandom(300) + 100,
+    },
+    data: {
+      annotation: '',
+      onRemove: () => removeNode(nodeId),
+    },
+  };
+  nodes.value.push(newNode as Node);
+};
+
 const addMessageNode = (position?: { x: number; y: number }) => {
   const nodeId = `message-${nodeIdCounter++}`;
   const newNode: Node = {
@@ -991,6 +1010,9 @@ const onDrop = (event: DragEvent) => {
     case 'aiAgent':
       addAiAgentNode(position);
       break;
+    case 'annotation':
+      addAnnotationNode(position);
+      break;
   }
 
   draggedNodeType.value = null;
@@ -1204,6 +1226,10 @@ const processTagNodeData = (nodeData: any): void => {
   if (nodeData.selectedTag === undefined) nodeData.selectedTag = null;
 };
 
+const processAnnotationNodeData = (nodeData: any): void => {
+  if (nodeData.annotation === undefined) nodeData.annotation = '';
+};
+
 const processAiAgentNodeData = (nodeData: any): void => {
   if (nodeData.selectedAiAgent === undefined) nodeData.selectedAiAgent = null;
   if (nodeData.defaultQuestion === undefined) nodeData.defaultQuestion = null;
@@ -1282,6 +1308,9 @@ const processNodeDataByType = (node: Node): void => {
       break;
     case 'aiAgent':
       processAiAgentNodeData(node.data);
+      break;
+    case 'annotation':
+      processAnnotationNodeData(node.data);
       break;
   }
 };
@@ -1884,6 +1913,26 @@ onUnmounted(() => {
             >
               <VIcon icon="tabler-brain" class="me-2" />
               {{ t('chatbot_ai_agent') }}
+            </VBtn>
+            <VBtn
+              color="annotation"
+              draggable="true"
+              @dragstart.stop="
+                (e: DragEvent) => {
+                  draggedNodeType = 'annotation';
+                  e.dataTransfer!.effectAllowed = 'move';
+                  e.dataTransfer!.dropEffect = 'move';
+                }
+              "
+              @dragend="
+                () => {
+                  draggedNodeType = null;
+                }
+              "
+              style="cursor: grab"
+            >
+              <VIcon icon="tabler-note" class="me-2" />
+              {{ t('chatbot_annotation_node_title') }}
             </VBtn>
           </div>
           <div class="vertical-divider" />
