@@ -6,4 +6,5 @@ export enum EPlanProduct {
   contact = '019b1eb0-ca29-7cc4-9d29-896f9685cbb6',
   mass_sending = '019b1eb0-e975-7785-b3a5-a5788319846a',
   personalization = '019b32e5-6c1a-77aa-aabe-19b07d87ee1e',
+  ai_agent = '019b9f13-63a8-74ca-b294-cd0c810c6c82',
 }

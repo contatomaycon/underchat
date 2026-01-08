@@ -12,14 +12,12 @@ import { KafkaServiceQueueService } from './kafkaServiceQueue.service';
 import { IWorkerConfigUpdateEvent } from '@core/common/interfaces/IWorkerConfigUpdateEvent';
 import { EWorkerConfigStatus } from '@core/common/enums/EWorkerConfigStatus';
 import { EWorkerConfigType } from '@core/common/enums/EWorkerConfigType';
-import { AiAgentService } from './aiAgent.service';
 
 @injectable()
 export class WorkerConfigService {
   constructor(
     private readonly workerConfigViewerRepository: WorkerConfigViewerRepository,
     private readonly workerConfigUpserterRepository: WorkerConfigUpserterRepository,
-    private readonly aiAgentService: AiAgentService,
     private readonly streamProducerService: StreamProducerService,
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
     @inject('Redis') private readonly redis: Redis
@@ -71,7 +69,6 @@ export class WorkerConfigService {
         reject_call: null,
         auto_save_contacts: null,
         chatbot_id: null,
-        ai_agent: null,
         created_at: null,
         updated_at: null,
       });
@@ -114,7 +111,6 @@ export class WorkerConfigService {
       reject_call: result.reject_call ?? false,
       auto_save_contacts: result.auto_save_contacts ?? false,
       chatbot_id: result.chatbot_id ?? null,
-      ai_agent: result.ai_agent ?? null,
       created_at: result.created_at ?? null,
       updated_at: result.updated_at ?? null,
     };
@@ -555,36 +551,6 @@ export class WorkerConfigService {
     return {
       chatbot_id: chatbotId,
       enabled,
-    };
-  }
-
-  async viewAiAgentConfigByAccountId(accountId: string): Promise<{
-    ai_agent: number | null;
-    enabled: boolean;
-    total: number;
-  }> {
-    const [config, total] = await Promise.all([
-      this.workerConfigViewerRepository.fetchConfigValueByAccountId(
-        accountId,
-        EWorkerConfigType.ai_agent
-      ),
-      this.aiAgentService.totalAiAgentByAccountId(accountId),
-    ]);
-
-    const aiAgentValue =
-      config.value !== null ? parseInt(config.value, 10) : null;
-
-    const enabled =
-      config.statusId === EWorkerConfigStatus.active &&
-      aiAgentValue !== null &&
-      !isNaN(aiAgentValue) &&
-      aiAgentValue > 0;
-
-    return {
-      ai_agent:
-        aiAgentValue !== null && !isNaN(aiAgentValue) ? aiAgentValue : null,
-      enabled,
-      total,
     };
   }
 

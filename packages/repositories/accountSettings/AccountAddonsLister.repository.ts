@@ -7,6 +7,7 @@ import { ListAccountAddonsResponse } from '@core/schema/accountSettings/listAcco
 import { WorkerTotalViewerRepository } from '@core/repositories/worker/WorkerTotalViewer.repository';
 import { UserTotalViewerRepository } from '@core/repositories/user/UserTotalViewer.repository';
 import { RoleTotalViewerRepository } from '@core/repositories/role/RoleTotalViewer.repository';
+import { AiAgentService } from '@core/services/aiAgent.service';
 import { EPlanProduct } from '@core/common/enums/EPlanProduct';
 
 @injectable()
@@ -15,7 +16,8 @@ export class AccountAddonsListerRepository {
     @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>,
     private readonly workerTotalViewerRepository: WorkerTotalViewerRepository,
     private readonly userTotalViewerRepository: UserTotalViewerRepository,
-    private readonly roleTotalViewerRepository: RoleTotalViewerRepository
+    private readonly roleTotalViewerRepository: RoleTotalViewerRepository,
+    private readonly aiAgentService: AiAgentService
   ) {}
 
   private readonly getQuantityUsed = async (
@@ -30,6 +32,9 @@ export class AccountAddonsListerRepository {
     }
     if (planProductId === EPlanProduct.role) {
       return this.roleTotalViewerRepository.totalRoleByAccount(accountId);
+    }
+    if (planProductId === EPlanProduct.ai_agent) {
+      return this.aiAgentService.totalAiAgentByAccountId(accountId);
     }
     return 0;
   };

@@ -11,6 +11,7 @@ import { DashboardStatsRepository } from '@core/repositories/dashboard/Dashboard
 import { DashboardSchedulesRepository } from '@core/repositories/dashboard/DashboardSchedules.repository';
 import { DashboardChatbotsRepository } from '@core/repositories/dashboard/DashboardChatbots.repository';
 import { AccountInfoViewerExistsRepository } from '@core/repositories/account/AccountInfoViewerExists.repository';
+import { AiAgentService } from '@core/services/aiAgent.service';
 import { EPlanProduct } from '@core/common/enums/EPlanProduct';
 
 @injectable()
@@ -23,7 +24,8 @@ export class AccountPlanProductsListerRepository {
     private readonly dashboardStatsRepository: DashboardStatsRepository,
     private readonly dashboardSchedulesRepository: DashboardSchedulesRepository,
     private readonly dashboardChatbotsRepository: DashboardChatbotsRepository,
-    private readonly accountInfoViewerExistsRepository: AccountInfoViewerExistsRepository
+    private readonly accountInfoViewerExistsRepository: AccountInfoViewerExistsRepository,
+    private readonly aiAgentService: AiAgentService
   ) {}
 
   private readonly getQuantityUsed = async (
@@ -54,6 +56,9 @@ export class AccountPlanProductsListerRepository {
       return this.accountInfoViewerExistsRepository.totalAccountInfoByAccountId(
         accountId
       );
+    }
+    if (planProductId === EPlanProduct.ai_agent) {
+      return this.aiAgentService.totalAiAgentByAccountId(accountId);
     }
     return 0;
   };

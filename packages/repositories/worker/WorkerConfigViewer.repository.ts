@@ -216,7 +216,6 @@ export class WorkerConfigViewerRepository {
         ? true
         : null,
       chatbot_id: chatbotId,
-      ai_agent: this.parseNumber(configMap.get(EWorkerConfigType.ai_agent)),
       created_at: null,
       updated_at: null,
     };

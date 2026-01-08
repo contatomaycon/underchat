@@ -13,5 +13,4 @@ export enum EWorkerConfigType {
   reject_call = '019b89ac-697e-75cb-83a0-13761ab6d869',
   auto_save_contacts = '019b89ac-697e-75cb-83a0-15f55c82806a',
   chatbot_id = '019b89ac-697e-75cb-83a0-17749e49888b',
-  ai_agent = '019b9ee8-acf5-756c-a56c-b67a2647cec0',
 }

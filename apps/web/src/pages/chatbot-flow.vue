@@ -88,11 +88,6 @@ onMounted(async () => {
     return;
   }
 
-  if (config.total >= config.ai_agent) {
-    canUseAiAgent.value = false;
-    return;
-  }
-
   canUseAiAgent.value = true;
 });
 

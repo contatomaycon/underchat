@@ -15,7 +15,6 @@ export const workerConfigSchema = Type.Object({
   reject_call: Type.Boolean(),
   auto_save_contacts: Type.Boolean(),
   chatbot_id: Type.Union([Type.String(), Type.Null()]),
-  ai_agent: Type.Union([Type.Integer(), Type.Null()]),
   created_at: Type.Union([Type.String(), Type.Null()]),
   updated_at: Type.Union([Type.String(), Type.Null()]),
 });

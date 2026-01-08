@@ -13,7 +13,6 @@ export interface IWorkerConfigValue {
   reject_call: boolean | null;
   auto_save_contacts: boolean | null;
   chatbot_id: string | null;
-  ai_agent: number | null;
   created_at: string | null;
   updated_at: string | null;
 }

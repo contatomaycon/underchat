@@ -11,7 +11,6 @@ import { TFunction } from 'i18next';
 import { DashboardChatbotsRepository } from '@core/repositories/dashboard/DashboardChatbots.repository';
 import { DashboardStatsRepository } from '@core/repositories/dashboard/DashboardStats.repository';
 import { DashboardSchedulesRepository } from '@core/repositories/dashboard/DashboardSchedules.repository';
-import { WorkerConfigService } from './workerConfig.service';
 import { AiAgentService } from './aiAgent.service';
 import Redis from 'ioredis';
 
@@ -26,7 +25,6 @@ export class PlanAccountService {
     private readonly dashboardChatbotsRepository: DashboardChatbotsRepository,
     private readonly dashboardStatsRepository: DashboardStatsRepository,
     private readonly dashboardSchedulesRepository: DashboardSchedulesRepository,
-    private readonly workerConfigService: WorkerConfigService,
     private readonly aiAgentService: AiAgentService,
     @inject('Redis') private readonly redis: Redis
   ) {}
@@ -240,14 +238,33 @@ export class PlanAccountService {
     return true;
   }
 
+  async viewAiAgentConfigByAccountId(accountId: string): Promise<{
+    ai_agent: number | null;
+    enabled: boolean;
+    total: number;
+  }> {
+    const [aiAgentQuantity, total] = await Promise.all([
+      this.accountService.viewAccountQuantityProduct(
+        accountId,
+        EPlanProduct.ai_agent
+      ),
+      this.aiAgentService.totalAiAgentByAccountId(accountId),
+    ]);
+
+    const enabled = aiAgentQuantity > 0;
+
+    return {
+      ai_agent: aiAgentQuantity > 0 ? aiAgentQuantity : null,
+      enabled,
+      total,
+    };
+  }
+
   async validateCanCreateAiAgent(
     t: TFunction<'translation', undefined>,
     accountId: string
   ): Promise<void> {
-    const [aiAgentConfig, totalAiAgentsByAccountId] = await Promise.all([
-      this.workerConfigService.viewAiAgentConfigByAccountId(accountId),
-      this.aiAgentService.totalAiAgentByAccountId(accountId),
-    ]);
+    const aiAgentConfig = await this.viewAiAgentConfigByAccountId(accountId);
 
     if (
       !aiAgentConfig.enabled ||
@@ -257,7 +274,7 @@ export class PlanAccountService {
       throw new Error(t('ai_agent_not_available'));
     }
 
-    if (totalAiAgentsByAccountId >= aiAgentConfig.ai_agent) {
+    if (aiAgentConfig.total >= aiAgentConfig.ai_agent) {
       throw new Error(t('ai_agent_not_available_additional'));
     }
   }
