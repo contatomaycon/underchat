@@ -2741,6 +2741,260 @@ const onPickAudio = async (e: Event) => {
   target.value = '';
 };
 
+const processPastedFile = async (file: File) => {
+  const fileExtension = file.name.split('.').pop()?.toLowerCase() || '';
+
+  const allowedImageTypes = new Set([
+    'image/jpeg',
+    'image/jpg',
+    'image/png',
+    'image/gif',
+  ]);
+  const allowedImageExtensions = new Set(['jpg', 'jpeg', 'png', 'gif']);
+
+  const allowedVideoTypes = new Set([
+    'video/mp4',
+    'video/avi',
+    'video/x-flv',
+    'video/x-matroska',
+    'video/quicktime',
+    'video/3gpp',
+  ]);
+  const allowedVideoExtensions = new Set([
+    'mp4',
+    'avi',
+    'flv',
+    'mkv',
+    'mov',
+    '3gp',
+  ]);
+
+  const allowedAudioTypes = new Set([
+    'audio/mpeg',
+    'audio/mp3',
+    'audio/aac',
+    'audio/m4a',
+    'audio/x-m4a',
+    'audio/amr',
+    'audio/amr-wb',
+    'audio/ogg',
+    'audio/opus',
+  ]);
+  const allowedAudioExtensions = new Set([
+    'mp3',
+    'aac',
+    'm4a',
+    'amr',
+    'ogg',
+    'opus',
+  ]);
+
+  const isImage =
+    allowedImageTypes.has(file.type) ||
+    (fileExtension && allowedImageExtensions.has(fileExtension));
+  const isVideo =
+    allowedVideoTypes.has(file.type) ||
+    (fileExtension && allowedVideoExtensions.has(fileExtension));
+  const isAudio =
+    allowedAudioTypes.has(file.type) ||
+    (fileExtension && allowedAudioExtensions.has(fileExtension));
+  const isDocument = !isImage && !isVideo && !isAudio;
+
+  if (isImage) {
+    if (selectedVideos.value.length > 0) {
+      chatStore.showSnackbar(t('clear_videos_before_images'), EColor.warning);
+      return;
+    }
+
+    if (selectedDocuments.value.length > 0) {
+      chatStore.showSnackbar(
+        t('clear_documents_before_images'),
+        EColor.warning
+      );
+      return;
+    }
+
+    if (file.size > MAX_IMAGE_SIZE_BYTES) {
+      chatStore.showSnackbar(t('image_size_exceeded'), EColor.error);
+      return;
+    }
+
+    const currentCount = selectedPhotos.value.length;
+    if (currentCount >= 10) {
+      chatStore.showSnackbar(t('max_images_selected'), EColor.warning);
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      if (event.target?.result) {
+        selectedPhotos.value.push({
+          file,
+          preview: event.target.result as string,
+        });
+      }
+    };
+    reader.readAsDataURL(file);
+    return;
+  }
+
+  if (isVideo) {
+    if (selectedDocuments.value.length > 0) {
+      chatStore.showSnackbar(
+        t('clear_documents_before_videos'),
+        EColor.warning
+      );
+      return;
+    }
+
+    if (selectedPhotos.value.length > 0) {
+      chatStore.showSnackbar(t('clear_images_before_videos'), EColor.warning);
+      return;
+    }
+
+    if (file.size > MAX_VIDEO_SIZE_BYTES) {
+      chatStore.showSnackbar(t('video_size_exceeded'), EColor.error);
+      return;
+    }
+
+    const currentCount = selectedVideos.value.length;
+    if (currentCount >= 10) {
+      chatStore.showSnackbar(t('max_videos_selected'), EColor.warning);
+      return;
+    }
+
+    const preview = URL.createObjectURL(file);
+    const duration = await getVideoDuration(preview);
+
+    selectedVideos.value.push({
+      file,
+      preview,
+      name: file.name,
+      size: file.size,
+      type: file.type,
+      duration: duration ?? null,
+    });
+    return;
+  }
+
+  if (isAudio) {
+    if (selectedDocuments.value.length > 0) {
+      chatStore.showSnackbar(
+        t('clear_documents_before_audios'),
+        EColor.warning
+      );
+      return;
+    }
+
+    if (selectedPhotos.value.length > 0) {
+      chatStore.showSnackbar(t('clear_images_before_audios'), EColor.warning);
+      return;
+    }
+
+    if (selectedVideos.value.length > 0) {
+      chatStore.showSnackbar(t('clear_videos_before_audios'), EColor.warning);
+      return;
+    }
+
+    if (file.size > MAX_AUDIO_SIZE_BYTES) {
+      chatStore.showSnackbar(t('audio_size_exceeded'), EColor.error);
+      return;
+    }
+
+    const currentCount = selectedAudios.value.length;
+    if (currentCount >= 10) {
+      chatStore.showSnackbar(t('max_audios_selected'), EColor.warning);
+      return;
+    }
+
+    const preview = URL.createObjectURL(file);
+    const duration = await getAudioDuration(preview);
+
+    selectedAudios.value.push({
+      file,
+      preview,
+      name: file.name,
+      size: file.size,
+      type: file.type,
+      duration: duration ?? null,
+    });
+    return;
+  }
+
+  if (isDocument) {
+    if (selectedVideos.value.length > 0) {
+      chatStore.showSnackbar(
+        t('clear_videos_before_documents'),
+        EColor.warning
+      );
+      return;
+    }
+
+    if (selectedPhotos.value.length > 0) {
+      chatStore.showSnackbar(
+        t('clear_images_before_documents'),
+        EColor.warning
+      );
+      return;
+    }
+
+    if (file.size > MAX_DOCUMENT_SIZE_BYTES) {
+      chatStore.showSnackbar(t('document_size_exceeded'), EColor.error);
+      return;
+    }
+
+    const currentCount = selectedDocuments.value.length;
+    if (currentCount >= 10) {
+      chatStore.showSnackbar(t('max_documents_selected'), EColor.warning);
+      return;
+    }
+
+    selectedDocuments.value.push({
+      file,
+      name: file.name,
+      size: file.size,
+      extension: fileExtension,
+      type: file.type,
+    });
+    return;
+  }
+
+  chatStore.showSnackbar(t('invalid_file_format'), EColor.error);
+};
+
+const handlePaste = async (event: ClipboardEvent) => {
+  if (isQueueStatus.value || isUraStatus.value || selectedQuickMessage.value) {
+    return;
+  }
+
+  const items = event.clipboardData?.items;
+  if (!items) {
+    return;
+  }
+
+  const files: File[] = [];
+
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    if (item.kind === 'file') {
+      const file = item.getAsFile();
+      if (file) {
+        files.push(file);
+      }
+    }
+  }
+
+  if (files.length === 0) {
+    return;
+  }
+
+  event.preventDefault();
+
+  for (const file of files) {
+    await processPastedFile(file);
+  }
+};
+
 const openPreviewImage = (photo: ISelectedPhotoPreview) => {
   viewerKind.value = 'image';
   viewerSrc.value = photo.preview;
@@ -4859,6 +5113,7 @@ onBeforeUnmount(() => {
               :max-rows="8"
               :disabled="isQueueStatus || isUraStatus || !!selectedQuickMessage"
               @keydown.enter.exact.prevent="onSendText"
+              @paste="handlePaste"
             >
               <template #prepend-inner>
                 <VMenu

@@ -14,8 +14,11 @@ export class PresenceService {
   private readonly accountIdCachePrefix = 'presence:account_id:';
   private readonly concurrency = 10;
   private readonly maxActiveUsersPerCycle = 1_000;
+  private readonly accountIdErrorCooldownMs = 60_000;
 
   private readonly statusCache = new Map<string, EChatUserStatus>();
+  private readonly accountIdErrorCache = new Map<string, number>();
+  private dbErrorCooldownUntil = 0;
   private monitorTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(
@@ -65,9 +68,14 @@ export class PresenceService {
       message.includes('connection timeout') ||
       message.includes('connection closed') ||
       message.includes('connection ended') ||
+      message.includes('timeout exceeded') ||
+      message.includes('timeout while waiting') ||
+      message.includes('connect') ||
       (cause instanceof Error &&
         (cause.message.toLowerCase().includes('connection terminated') ||
-          cause.message.toLowerCase().includes('connection timeout')))
+          cause.message.toLowerCase().includes('connection timeout') ||
+          cause.message.toLowerCase().includes('timeout exceeded') ||
+          cause.message.toLowerCase().includes('connect')))
     );
   }
 
@@ -102,6 +110,20 @@ export class PresenceService {
   private async getUserAccountIdWithCache(
     userId: string
   ): Promise<string | null> {
+    const now = Date.now();
+
+    if (this.dbErrorCooldownUntil && now < this.dbErrorCooldownUntil) {
+      return null;
+    }
+
+    const userCooldownUntil = this.accountIdErrorCache.get(userId);
+    if (userCooldownUntil && now < userCooldownUntil) {
+      return null;
+    }
+    if (userCooldownUntil && now >= userCooldownUntil) {
+      this.accountIdErrorCache.delete(userId);
+    }
+
     const cached = await this.getCachedAccountId(userId);
 
     if (cached) {
@@ -117,6 +139,12 @@ export class PresenceService {
 
       return accountId;
     } catch (error) {
+      if (this.isConnectionError(error)) {
+        const cooldownUntil = Date.now() + this.accountIdErrorCooldownMs;
+        this.accountIdErrorCache.set(userId, cooldownUntil);
+        this.dbErrorCooldownUntil = cooldownUntil;
+      }
+
       console.error('Failed to get user account ID', { userId, error });
       return null;
     }

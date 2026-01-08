@@ -928,6 +928,7 @@
   "invalid_audio_format": "Formato de áudio inválido.",
   "invalid_image_format": "Formato de imagem inválido.",
   "invalid_video_format": "Formato de vídeo inválido.",
+  "invalid_file_format": "Formato de arquivo não suportado.",
   "country_AF": "Afeganistão",
   "country_ZA": "África do Sul",
   "country_AL": "Albânia",
