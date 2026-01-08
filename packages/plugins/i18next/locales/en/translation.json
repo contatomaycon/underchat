@@ -555,6 +555,7 @@
   "chatbot_flow_validation_options_required": "At least one option is required in node \"{{nodeLabel}}\"",
   "chatbot_flow_validation_interactions_quantity_required": "Number of interactions is required when action after interactions is enabled in node \"{{nodeLabel}}\"",
   "chatbot_flow_validation_interactions_handle_required": "Interactions quantity handler connection is required when action after interactions is enabled in node \"{{nodeLabel}}\"",
+  "chatbot_flow_validation_human_support_handle_required": "Human Support handler connection is required when enabled in node \"{{nodeLabel}}\"",
   "chatbot_flow_validation_fallback_handle_required": "Fallback handler connection is required in node \"{{nodeLabel}}\"",
   "chatbot_ai_agent": "AI Agent",
   "chatbot_menu": "Menu",

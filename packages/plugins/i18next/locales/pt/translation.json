@@ -554,6 +554,7 @@
   "chatbot_flow_validation_options_required": "Pelo menos uma opção é obrigatória no nó \"{{nodeLabel}}\"",
   "chatbot_flow_validation_interactions_quantity_required": "Quantidade de interações é obrigatória quando a ação após interações está habilitada no nó \"{{nodeLabel}}\"",
   "chatbot_flow_validation_interactions_handle_required": "A conexão do handler de quantidade de interações é obrigatória quando a ação após interações está habilitada no nó \"{{nodeLabel}}\"",
+  "chatbot_flow_validation_human_support_handle_required": "A conexão do handler Atendimento humano é obrigatória quando habilitado no nó \"{{nodeLabel}}\"",
   "chatbot_flow_validation_fallback_handle_required": "A conexão do handler Fallback é obrigatória no nó \"{{nodeLabel}}\"",
   "chatbot_ai_agent": "Agente de IA",
   "chatbot_menu": "Menu",

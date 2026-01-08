@@ -656,6 +656,18 @@ const removeInteractionsEdge = (nodeId: string) => {
   );
 };
 
+const removeHumanSupportEdge = (nodeId: string) => {
+  const sourceHandle = 'human-support-source';
+  const normalizedHandle = 'human-support';
+  edges.value = edges.value.filter(
+    (e) =>
+      !(
+        e.source === nodeId &&
+        (e.sourceHandle === sourceHandle || e.sourceHandle === normalizedHandle)
+      )
+  );
+};
+
 const addMenuNode = (position?: { x: number; y: number }) => {
   const nodeId = `menu-${nodeIdCounter++}`;
   const newNode: Node = {
@@ -876,6 +888,7 @@ const addAiAgentNode = (position?: { x: number; y: number }) => {
       onRemove: () => removeNode(nodeId),
       onRemoveOption: (optionId: string) => removeOptionEdge(nodeId, optionId),
       onRemoveInteractionsEdge: () => removeInteractionsEdge(nodeId),
+      onRemoveHumanSupportEdge: () => removeHumanSupportEdge(nodeId),
     },
   };
   nodes.value.push(newNode as Node);
@@ -1372,6 +1385,8 @@ const processLoadedNode = (node: Node): Node => {
     if (node.type === 'aiAgent') {
       node.data.onRemoveInteractionsEdge = () =>
         removeInteractionsEdge(node.id);
+      node.data.onRemoveHumanSupportEdge = () =>
+        removeHumanSupportEdge(node.id);
     }
   }
 

@@ -30,6 +30,7 @@ const nodeDataSchema = Type.Object({
   continueMessage: Type.Optional(Type.String()),
   actionAfterInteractions: Type.Optional(Type.Boolean()),
   interactionsQuantity: Type.Optional(Type.Number()),
+  humanSupportEnabled: Type.Optional(Type.Boolean()),
   options: Type.Optional(
     Type.Array(
       Type.Object({

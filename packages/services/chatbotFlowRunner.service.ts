@@ -154,6 +154,20 @@ export class ChatbotFlowRunnerService {
     return edge?.target ?? null;
   }
 
+  private getNextFlowIdByHumanSupportHandle(
+    chatbotFlow: ListChatbotFlowResponse,
+    currentFlowId: string
+  ): string | null {
+    const edge = chatbotFlow.edges.find(
+      (currentEdge) =>
+        currentEdge.source === currentFlowId &&
+        (currentEdge.sourceHandle === 'human-support-source' ||
+          currentEdge.sourceHandle === 'human-support')
+    );
+
+    return edge?.target ?? null;
+  }
+
   private getNextFlowIdByFallbackHandle(
     chatbotFlow: ListChatbotFlowResponse,
     currentFlowId: string
