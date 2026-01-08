@@ -45,6 +45,7 @@ export const workerMonitorSchedule = async (fastify: FastifyInstance) => {
           scheduleId,
           spec: {
             intervals: [{ every: '600s' }],
+            timezone: 'America/Sao_Paulo',
           },
           action: {
             type: 'startWorkflow',

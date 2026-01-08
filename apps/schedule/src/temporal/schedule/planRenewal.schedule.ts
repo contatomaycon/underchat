@@ -42,6 +42,7 @@ export const planRenewalSchedule = async (fastify: FastifyInstance) => {
             scheduleId,
             spec: {
               intervals: [{ every: '1h' }],
+              timezone: 'America/Sao_Paulo',
             },
             action: {
               type: 'startWorkflow',

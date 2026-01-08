@@ -45,6 +45,7 @@ export const balanceMonitorSchedule = async (fastify: FastifyInstance) => {
           scheduleId,
           spec: {
             intervals: [{ every: '60s' }],
+            timezone: 'America/Sao_Paulo',
           },
           action: {
             type: 'startWorkflow',

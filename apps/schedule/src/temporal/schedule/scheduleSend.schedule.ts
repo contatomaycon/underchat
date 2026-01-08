@@ -42,6 +42,7 @@ export const scheduleSendSchedule = async (fastify: FastifyInstance) => {
             scheduleId,
             spec: {
               intervals: [{ every: '1 minute' }],
+              timezone: 'America/Sao_Paulo',
             },
             action: {
               type: 'startWorkflow',

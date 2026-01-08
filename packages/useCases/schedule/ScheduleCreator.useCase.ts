@@ -10,8 +10,9 @@ import { UploadFileResponse } from '@core/schema/upload/response.schema';
 import { EScheduleType } from '@core/common/enums/EScheduleType';
 import { WorkerService } from '@core/services/worker.service';
 import { EScheduleSendTo } from '@core/common/enums/EScheduleSendTo';
-import moment from 'moment';
+import moment from 'moment-timezone';
 import { extractArrayField } from '@core/common/functions/extractArrayField';
+import { formatDateToISO } from '@core/common/functions/formatDateToISO';
 
 @injectable()
 export class ScheduleCreatorUseCase {
@@ -92,13 +93,14 @@ export class ScheduleCreatorUseCase {
       throw new Error(t('send_date_required'));
     }
 
-    const date = moment(sendDate, 'YYYY-MM-DD HH:mm', true);
+    const BRAZIL_TIMEZONE = 'America/Sao_Paulo';
+    const date = moment.tz(sendDate, 'YYYY-MM-DD HH:mm', true, BRAZIL_TIMEZONE);
 
     if (!date.isValid()) {
       throw new Error(t('send_date_invalid_format'));
     }
 
-    const now = moment();
+    const now = moment.tz(BRAZIL_TIMEZONE);
 
     if (date.isBefore(now)) {
       throw new Error(t('send_date_must_be_future'));
@@ -369,14 +371,10 @@ export class ScheduleCreatorUseCase {
       contactGroupIds: string[];
     }
   ) {
-    const sendDateMoment = moment(
+    const sendDateISO = formatDateToISO(
       scheduleBasic.sendDate,
-      'YYYY-MM-DD HH:mm',
-      true
+      'YYYY-MM-DD HH:mm'
     );
-    const sendDateISO = sendDateMoment.isValid()
-      ? sendDateMoment.toISOString()
-      : scheduleBasic.sendDate;
 
     return {
       account_id: scheduleBasic.accountId,

@@ -42,6 +42,7 @@ export const chatbotInactivitySchedule = async (fastify: FastifyInstance) => {
             scheduleId,
             spec: {
               intervals: [{ every: '30s' }],
+              timezone: 'America/Sao_Paulo',
             },
             action: {
               type: 'startWorkflow',
