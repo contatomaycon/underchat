@@ -4,12 +4,14 @@ import { IRagContext } from '@core/common/interfaces/IRagContext';
 import { AiAgentPromptListerRepository } from '@core/repositories/aiAgent/AiAgentPromptLister.repository';
 import { EAiAgentPromptType } from '@core/common/enums/EAiAgentPromptType';
 import { EAiAgentStatus } from '@core/common/enums/EAiAgentStatus';
+import { SummaryProviderFactory } from './summary/summaryProviderFactory.service';
 
 @injectable()
 export class RagService {
   constructor(
     private readonly embeddingService: EmbeddingService,
-    private readonly aiAgentPromptListerRepository: AiAgentPromptListerRepository
+    private readonly aiAgentPromptListerRepository: AiAgentPromptListerRepository,
+    private readonly summaryProviderFactory: SummaryProviderFactory
   ) {}
 
   async getChatHistoryContext(
@@ -19,31 +21,37 @@ export class RagService {
     userQuery: string,
     topK = 10,
     minScore = 0.0,
-    phone?: string
-  ): Promise<IRagContext> {
+    phone?: string,
+    options?: {
+      searchMultipleChats?: boolean;
+      minQualityScore?: number;
+      onlyUseful?: boolean;
+      onlyAssistantResponses?: boolean;
+    }
+  ): Promise<IRagContext & { chunksCount: number }> {
     const chunks = await this.embeddingService.searchChatHistory(
       accountId,
       chatId,
       aiAgentId,
       userQuery,
       topK,
-      phone
+      phone,
+      {
+        searchMultipleChats: options?.searchMultipleChats ?? true,
+        minQualityScore: options?.minQualityScore ?? 0.2,
+        onlyUseful: options?.onlyUseful ?? false,
+        onlyAssistantResponses: options?.onlyAssistantResponses ?? true,
+      }
     );
 
-    const relevantChunks = chunks.filter((chunk) => chunk.score >= minScore);
-
-    const combinedContext = relevantChunks
-      .map((chunk) => chunk.text)
-      .join('\n\n---\n\n');
-
-    return {
-      chunks: relevantChunks.map((chunk) => ({
+    return this.processChunks(
+      chunks.map((chunk) => ({
         text: chunk.text,
         score: chunk.score,
         promptId: chunk.message_id || '',
       })),
-      combinedContext,
-    };
+      minScore
+    );
   }
 
   async getRelevantContext(
@@ -52,7 +60,7 @@ export class RagService {
     userQuery: string,
     topK = 100,
     minScore = 0.0
-  ): Promise<IRagContext> {
+  ): Promise<IRagContext & { chunksCount: number }> {
     const chunks = await this.embeddingService.searchSimilarChunks(
       accountId,
       aiAgentId,
@@ -60,6 +68,13 @@ export class RagService {
       topK
     );
 
+    return this.processChunks(chunks, minScore);
+  }
+
+  private processChunks(
+    chunks: Array<{ text: string; score: number; promptId: string }>,
+    minScore: number
+  ): IRagContext & { chunksCount: number } {
     const relevantChunks = chunks.filter((chunk) => chunk.score >= minScore);
 
     const combinedContext = relevantChunks
@@ -69,6 +84,7 @@ export class RagService {
     return {
       chunks: relevantChunks,
       combinedContext,
+      chunksCount: relevantChunks.length,
     };
   }
 
@@ -111,12 +127,15 @@ export class RagService {
     const summaryPrompt = this.buildBootstrapSummaryPrompt(allPrompts);
 
     try {
-      const summary = await this.callAiApiForSummary(
+      const provider = this.summaryProviderFactory.getProvider(
+        aiAgentTypeId,
+        baseUrl
+      );
+      const summary = await provider.generateSummary(
+        summaryPrompt,
         baseUrl,
         apiKey,
-        model,
-        aiAgentTypeId,
-        summaryPrompt
+        model
       );
       return summary.trim();
     } catch (error) {
@@ -126,16 +145,13 @@ export class RagService {
   }
 
   async generateOrUpdateConversationSummary(
-    accountId: string,
-    chatId: string,
-    aiAgentId: string,
     previousSummary: string | null,
     recentMessages: Array<{ role: 'user' | 'assistant'; content: string }>,
     baseUrl: string,
     apiKey: string,
     model: string,
     aiAgentTypeId: string,
-    maxTokens = 2000
+    maxChars = 2000
   ): Promise<string> {
     const messagesText = this.formatMessagesForSummary(recentMessages);
     const summaryPrompt = this.buildConversationSummaryPrompt(
@@ -144,16 +160,19 @@ export class RagService {
     );
 
     try {
-      const summary = await this.callAiApiForSummary(
+      const provider = this.summaryProviderFactory.getProvider(
+        aiAgentTypeId,
+        baseUrl
+      );
+      const summary = await provider.generateSummary(
+        summaryPrompt,
         baseUrl,
         apiKey,
-        model,
-        aiAgentTypeId,
-        summaryPrompt
+        model
       );
 
-      if (summary.length > maxTokens) {
-        return summary.substring(0, maxTokens);
+      if (summary.length > maxChars) {
+        return summary.substring(0, maxChars);
       }
 
       return summary.trim();
@@ -193,26 +212,21 @@ export class RagService {
       return this.buildBootstrapPrompt(accountId, aiAgentId);
     }
 
-    const contextParts = await this.buildContextParts(
-      accountId,
-      aiAgentId,
-      userQuery,
-      options
-    );
-
-    const totalChunks = this.countChunks(contextParts, options);
+    const { contextParts, chunksCount, hasRelevantContext } =
+      await this.buildContextParts(accountId, aiAgentId, userQuery, options);
 
     const enhancedPrompt = this.buildEnhancedPrompt(
       systemPrompt,
       contextParts,
       options?.bootstrapSummary,
-      options?.conversationSummary
+      options?.conversationSummary,
+      hasRelevantContext
     );
 
     return {
       enhancedPrompt,
       contextUsed: contextParts.length > 0,
-      chunksCount: totalChunks,
+      chunksCount,
     };
   }
 
@@ -307,118 +321,6 @@ ${updateInstruction}
 Gere APENAS o sumário atualizado, sem introduções ou explicações adicionais.`;
   }
 
-  private async callAiApiForSummary(
-    baseUrl: string,
-    apiKey: string,
-    model: string,
-    aiAgentTypeId: string,
-    prompt: string
-  ): Promise<string> {
-    const isGemini =
-      aiAgentTypeId.includes('gemini') || baseUrl.includes('google');
-
-    if (isGemini) {
-      return this.callGeminiApiForSummary(baseUrl, apiKey, model, prompt);
-    }
-
-    return this.callOpenAiApiForSummary(baseUrl, apiKey, model, prompt);
-  }
-
-  private async callGeminiApiForSummary(
-    baseUrl: string,
-    apiKey: string,
-    model: string,
-    prompt: string
-  ): Promise<string> {
-    const apiVersion = baseUrl.replace('/v1', '/v1beta');
-    const url = `${apiVersion}/models/${encodeURIComponent(
-      model
-    )}:generateContent?key=${encodeURIComponent(apiKey)}`;
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        contents: [
-          {
-            role: 'user',
-            parts: [{ text: prompt }],
-          },
-        ],
-        generationConfig: {
-          maxOutputTokens: 2048,
-          temperature: 0.3,
-        },
-      }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Gemini API error: ${response.status} - ${errorText}`);
-    }
-
-    const data = (await response.json()) as {
-      candidates?: Array<{
-        content?: {
-          parts?: Array<{ text?: string }>;
-        };
-      }>;
-    };
-
-    return (
-      data.candidates?.[0]?.content?.parts?.[0]?.text ||
-      'Erro ao gerar sumário.'
-    );
-  }
-
-  private async callOpenAiApiForSummary(
-    baseUrl: string,
-    apiKey: string,
-    model: string,
-    prompt: string
-  ): Promise<string> {
-    const response = await fetch(`${baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model,
-        messages: [
-          {
-            role: 'system',
-            content:
-              'Você é um assistente especializado em criar sumários concisos.',
-          },
-          {
-            role: 'user',
-            content: prompt,
-          },
-        ],
-        max_tokens: 2048,
-        temperature: 0.3,
-      }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`OpenAI API error: ${response.status} - ${errorText}`);
-    }
-
-    const data = (await response.json()) as {
-      choices?: Array<{
-        message?: {
-          content?: string;
-        };
-      }>;
-    };
-
-    return data.choices?.[0]?.message?.content || 'Erro ao gerar sumário.';
-  }
-
   private async buildBootstrapPrompt(
     accountId: string,
     aiAgentId: string
@@ -462,8 +364,14 @@ Agora, responda à pergunta do usuário seguindo TODAS as regras e diretrizes ac
       recentMessages?: Array<{ role: 'user' | 'assistant'; content: string }>;
       phone?: string;
     }
-  ): Promise<string[]> {
+  ): Promise<{
+    contextParts: string[];
+    chunksCount: number;
+    hasRelevantContext: boolean;
+  }> {
     const contextParts: string[] = [];
+    let totalChunksCount = 0;
+    let hasRelevantContext = false;
 
     if (
       options?.bootstrapSummary &&
@@ -493,7 +401,7 @@ Agora, responda à pergunta do usuário seguindo TODAS as regras e diretrizes ac
     const topK = options?.topK ?? 8;
     const minScore = options?.minScore ?? 0.0;
 
-    const { chunks, combinedContext } = await this.getRelevantContext(
+    const relevantContext = await this.getRelevantContext(
       accountId,
       aiAgentId,
       userQuery,
@@ -501,10 +409,15 @@ Agora, responda à pergunta do usuário seguindo TODAS as regras e diretrizes ac
       minScore
     );
 
-    if (combinedContext && combinedContext.trim().length > 0) {
+    if (
+      relevantContext.combinedContext &&
+      relevantContext.combinedContext.trim().length > 0
+    ) {
       contextParts.push(
-        `### Contexto Relevante da Base de Conhecimento (Top ${chunks.length} resultados):\n${combinedContext}`
+        `### Contexto Relevante da Base de Conhecimento (Top ${relevantContext.chunksCount} resultados):\n${relevantContext.combinedContext}`
       );
+      totalChunksCount += relevantContext.chunksCount;
+      hasRelevantContext = true;
     }
 
     if (options?.includeChatHistory && options?.chatId) {
@@ -522,10 +435,16 @@ Agora, responda à pergunta do usuário seguindo TODAS as regras e diretrizes ac
         contextParts.push(
           `### Histórico de Conversação Relevante:\n${chatHistoryContext.combinedContext}`
         );
+        totalChunksCount += chatHistoryContext.chunksCount;
+        hasRelevantContext = true;
       }
     }
 
-    return contextParts;
+    return {
+      contextParts,
+      chunksCount: totalChunksCount,
+      hasRelevantContext,
+    };
   }
 
   private formatRecentMessages(
@@ -539,62 +458,19 @@ Agora, responda à pergunta do usuário seguindo TODAS as regras e diretrizes ac
       .join('\n');
   }
 
-  private countChunks(
-    contextParts: string[],
-    options?: {
-      chatId?: string;
-      includeChatHistory?: boolean;
-    }
-  ): number {
-    if (contextParts.length === 0) {
-      return 0;
-    }
-
-    const baseChunks = this.extractBaseChunksCount(contextParts);
-
-    if (!options?.includeChatHistory || !options?.chatId) {
-      return baseChunks;
-    }
-
-    const hasChatHistory = contextParts.some((part) =>
-      part.includes('Histórico de Conversação Relevante')
-    );
-
-    if (!hasChatHistory) {
-      return baseChunks;
-    }
-
-    return baseChunks + 10;
-  }
-
-  private extractBaseChunksCount(contextParts: string[]): number {
-    const ragPart = contextParts.find((part) =>
-      part.includes('Contexto Relevante da Base de Conhecimento')
-    );
-
-    if (!ragPart) {
-      return 0;
-    }
-
-    const match = ragPart.match(/Top (\d+) resultados/);
-    if (!match) {
-      return 0;
-    }
-
-    return Number.parseInt(match[1], 10) || 0;
-  }
-
   private buildEnhancedPrompt(
     systemPrompt: string,
     contextParts: string[],
     bootstrapSummary?: string | null,
-    conversationSummary?: string | null
+    conversationSummary?: string | null,
+    hasRelevantContext = false
   ): string {
     const finalContext = contextParts.join('\n\n');
     const instructionsText = this.buildInstructionsText(
       contextParts,
       bootstrapSummary,
-      conversationSummary
+      conversationSummary,
+      hasRelevantContext
     );
 
     return `${systemPrompt}
@@ -608,7 +484,8 @@ ${instructionsText || 'Responda à pergunta do usuário de forma clara e precisa
   private buildInstructionsText(
     contextParts: string[],
     bootstrapSummary?: string | null,
-    conversationSummary?: string | null
+    conversationSummary?: string | null,
+    hasRelevantContext = false
   ): string {
     let instructionsText = '';
 
@@ -622,13 +499,22 @@ ${instructionsText || 'Responda à pergunta do usuário de forma clara e precisa
         '- Use o "Sumário da Conversa" para manter consistência e contexto da conversa.\n';
     }
 
-    if (contextParts.length > 0) {
+    if (hasRelevantContext) {
       instructionsText +=
         '- Use o contexto acima para responder à pergunta do usuário. Sempre priorize as informações do contexto fornecido.\n';
       return instructionsText;
     }
 
-    instructionsText += '- Responda com base no seu conhecimento geral.';
+    if (contextParts.length > 0) {
+      instructionsText +=
+        '- Use o contexto acima para responder à pergunta do usuário. Sempre priorize as informações do contexto fornecido.\n';
+      instructionsText +=
+        '- IMPORTANTE: Se a pergunta do usuário estiver fora do contexto ou tema da empresa/agente (não relacionada ao assunto tratado pela empresa), você deve educadamente informar que não pode responder sobre esse assunto e orientar o usuário a fazer perguntas relacionadas ao tema da empresa/agente. Seja prestativo e sugira exemplos de perguntas relevantes ao contexto da empresa.\n';
+      return instructionsText;
+    }
+
+    instructionsText +=
+      '- IMPORTANTE: Se a pergunta do usuário estiver fora do contexto ou tema da empresa/agente, você deve educadamente informar que não pode responder sobre esse assunto e orientar o usuário a fazer perguntas relacionadas ao tema da empresa/agente. Seja prestativo e sugira exemplos de perguntas relevantes ao contexto da empresa.\n';
     return instructionsText;
   }
 }

@@ -2,6 +2,7 @@ import { injectable, inject } from 'tsyringe';
 import { Client } from '@elastic/elasticsearch';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { EAiAgentType } from '@core/common/enums/EAiAgentType';
+import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 import { v7 as uuidv7 } from 'uuid';
 import { IChunk } from '@core/common/interfaces/IChunk';
 import { IEmbeddingDocument } from '@core/common/interfaces/IEmbeddingDocument';
@@ -548,7 +549,7 @@ export class EmbeddingService {
     accountId: string,
     chatId: string,
     aiAgentId: string,
-    userId?: string | null
+    phone?: string | null
   ): Promise<number> {
     await this.ensureChatHistoryIndex();
 
@@ -623,7 +624,12 @@ export class EmbeddingService {
       return 0;
     }
 
-    const messages: Array<{ text: string; message_id: string }> = [];
+    const messages: Array<{
+      text: string;
+      message_id: string;
+      is_assistant_response: boolean;
+      phone: string | null;
+    }> = [];
 
     for (const hit of result.hits.hits.reverse()) {
       const message = hit._source as IChatMessage;
@@ -636,9 +642,15 @@ export class EmbeddingService {
         continue;
       }
 
+      const isAssistantResponse =
+        message.type_user === ETypeUserChat.bot ||
+        message.type_user === ETypeUserChat.system;
+
       messages.push({
         text,
         message_id: message.message_id,
+        is_assistant_response: isAssistantResponse,
+        phone: message.phone || phone || null,
       });
     }
 
@@ -657,16 +669,24 @@ export class EmbeddingService {
 
     const now = new Date().toISOString();
     const documents: IChatHistoryEmbeddingDocument[] = messages.map(
-      (msg, idx) => ({
-        account_id: accountId,
-        chat_id: chatId,
-        ai_agent_id: aiAgentId,
-        message_id: msg.message_id,
-        message_text: msg.text,
-        embedding: embeddings[idx],
-        created_at: now,
-        user_id: userId || null,
-      })
+      (msg, idx) => {
+        const isAssistantResponse = msg.is_assistant_response;
+        const initialQualityScore = isAssistantResponse ? 0.5 : 0.3;
+
+        return {
+          account_id: accountId,
+          chat_id: chatId,
+          ai_agent_id: aiAgentId,
+          message_id: msg.message_id,
+          message_text: msg.text,
+          embedding: embeddings[idx],
+          created_at: now,
+          phone: msg.phone,
+          quality_score: initialQualityScore,
+          is_useful: isAssistantResponse ? true : null,
+          is_assistant_response: isAssistantResponse,
+        };
+      }
     );
 
     const body = documents.flatMap((doc) => [
@@ -720,12 +740,12 @@ export class EmbeddingService {
           continue;
         }
 
-        const userId = chat.user?.id || null;
+        const chatPhone = chat.phone || phone;
         const count = await this.processChatHistoryEmbeddings(
           accountId,
           chat.chat_id,
           aiAgentId,
-          userId
+          chatPhone
         );
         totalProcessed += count;
       } catch (error) {
@@ -745,7 +765,13 @@ export class EmbeddingService {
     aiAgentId: string,
     queryText: string,
     topK = 10,
-    phone?: string
+    phone?: string,
+    options?: {
+      searchMultipleChats?: boolean;
+      minQualityScore?: number;
+      onlyUseful?: boolean;
+      onlyAssistantResponses?: boolean;
+    }
   ): Promise<Array<{ text: string; score: number; message_id: string }>> {
     await this.ensureChatHistoryIndex();
 
@@ -778,7 +804,12 @@ export class EmbeddingService {
       { term: { ai_agent_id: aiAgentId } },
     ];
 
-    if (phone) {
+    const searchMultipleChats = options?.searchMultipleChats ?? true;
+    const minQualityScore = options?.minQualityScore ?? 0.0;
+    const onlyUseful = options?.onlyUseful ?? false;
+    const onlyAssistantResponses = options?.onlyAssistantResponses ?? false;
+
+    if (searchMultipleChats && phone) {
       const candidates = buildCandidates(phone);
       if (Array.isArray(candidates) && candidates.length > 0) {
         const chatIds = await this.getChatIdsByPhone(accountId, phone);
@@ -794,9 +825,72 @@ export class EmbeddingService {
       filterClauses.push({ term: { chat_id: chatId } });
     }
 
+    if (minQualityScore > 0) {
+      filterClauses.push({
+        bool: {
+          should: [
+            {
+              range: {
+                quality_score: {
+                  gte: minQualityScore,
+                },
+              },
+            },
+            {
+              bool: {
+                must_not: {
+                  exists: {
+                    field: 'quality_score',
+                  },
+                },
+              },
+            },
+          ],
+        },
+      });
+    }
+
+    if (onlyUseful) {
+      filterClauses.push({
+        bool: {
+          should: [
+            { term: { is_useful: true } },
+            {
+              bool: {
+                must_not: {
+                  exists: {
+                    field: 'is_useful',
+                  },
+                },
+              },
+            },
+          ],
+        },
+      });
+    }
+
+    if (onlyAssistantResponses) {
+      filterClauses.push({
+        bool: {
+          should: [
+            { term: { is_assistant_response: true } },
+            {
+              bool: {
+                must_not: {
+                  exists: {
+                    field: 'is_assistant_response',
+                  },
+                },
+              },
+            },
+          ],
+        },
+      });
+    }
+
     const searchQuery = {
       index: this.chatHistoryIndexName,
-      size: topK,
+      size: topK * 2,
       query: {
         bool: {
           must: [
@@ -808,8 +902,15 @@ export class EmbeddingService {
                   },
                 },
                 script: {
-                  source:
-                    "cosineSimilarity(params.query_vector, 'embedding') + 1.0",
+                  source: `
+                    double similarity = cosineSimilarity(params.query_vector, 'embedding') + 1.0;
+                    double qualityBoost = 0.0;
+                    if (doc['quality_score'].size() > 0) {
+                      qualityBoost = doc['quality_score'].value;
+                    }
+                    double finalScore = similarity * (1.0 + qualityBoost * 0.5);
+                    return finalScore;
+                  `,
                   params: {
                     query_vector: queryVector,
                   },
@@ -819,6 +920,7 @@ export class EmbeddingService {
           ],
         },
       },
+      sort: ['_score', { created_at: { order: 'desc' as const } }] as any,
     };
 
     try {
@@ -829,11 +931,23 @@ export class EmbeddingService {
         _source: IChatHistoryEmbeddingDocument;
       }>;
 
-      return hits.map((hit) => ({
-        text: hit._source.message_text,
-        score: hit._score - 1.0,
-        message_id: hit._source.message_id,
-      }));
+      const results = hits
+        .map((hit) => {
+          const similarityScore =
+            hit._score / (1.0 + (hit._source.quality_score || 0.0) * 0.5) - 1.0;
+          const qualityScore = hit._source.quality_score || 0.0;
+          const combinedScore = similarityScore * 0.7 + qualityScore * 0.3;
+
+          return {
+            text: hit._source.message_text,
+            score: Math.max(0, Math.min(1, combinedScore)),
+            message_id: hit._source.message_id,
+          };
+        })
+        .filter((result) => result.score >= minQualityScore)
+        .slice(0, topK);
+
+      return results;
     } catch (error) {
       console.error('[searchChatHistory] Erro ao buscar histórico:', error);
       return [];

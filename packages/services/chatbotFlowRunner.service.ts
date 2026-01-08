@@ -3099,9 +3099,6 @@ export class ChatbotFlowRunnerService {
 
     const updatedConversationSummary =
       await this.ragService.generateOrUpdateConversationSummary(
-        createChat.account.id,
-        createChat.chat_id,
-        selectedAiAgentId,
         previousSummary,
         updatedRecentMessages,
         aiAgent.base_url,
