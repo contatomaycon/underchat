@@ -11,6 +11,8 @@ import { TFunction } from 'i18next';
 import { DashboardChatbotsRepository } from '@core/repositories/dashboard/DashboardChatbots.repository';
 import { DashboardStatsRepository } from '@core/repositories/dashboard/DashboardStats.repository';
 import { DashboardSchedulesRepository } from '@core/repositories/dashboard/DashboardSchedules.repository';
+import { WorkerConfigService } from './workerConfig.service';
+import { AiAgentService } from './aiAgent.service';
 import Redis from 'ioredis';
 
 @injectable()
@@ -24,6 +26,8 @@ export class PlanAccountService {
     private readonly dashboardChatbotsRepository: DashboardChatbotsRepository,
     private readonly dashboardStatsRepository: DashboardStatsRepository,
     private readonly dashboardSchedulesRepository: DashboardSchedulesRepository,
+    private readonly workerConfigService: WorkerConfigService,
+    private readonly aiAgentService: AiAgentService,
     @inject('Redis') private readonly redis: Redis
   ) {}
 
@@ -234,5 +238,27 @@ export class PlanAccountService {
     }
 
     return true;
+  }
+
+  async validateCanCreateAiAgent(
+    t: TFunction<'translation', undefined>,
+    accountId: string
+  ): Promise<void> {
+    const [aiAgentConfig, totalAiAgentsByAccountId] = await Promise.all([
+      this.workerConfigService.viewAiAgentConfigByAccountId(accountId),
+      this.aiAgentService.totalAiAgentByAccountId(accountId),
+    ]);
+
+    if (
+      !aiAgentConfig.enabled ||
+      aiAgentConfig.ai_agent === null ||
+      aiAgentConfig.ai_agent <= 0
+    ) {
+      throw new Error(t('ai_agent_not_available'));
+    }
+
+    if (totalAiAgentsByAccountId >= aiAgentConfig.ai_agent) {
+      throw new Error(t('ai_agent_not_available_additional'));
+    }
   }
 }

@@ -18,6 +18,9 @@ import { createAiAgentPromptSchema } from '@core/schema/aiAgent/createAiAgentPro
 import { viewAiAgentPromptSchema } from '@core/schema/aiAgent/viewAiAgentPrompt';
 import { updateAiAgentPromptSchema } from '@core/schema/aiAgent/updateAiAgentPrompt';
 import { deleteAiAgentPromptSchema } from '@core/schema/aiAgent/deleteAiAgentPrompt';
+import { viewAiAgentConfigSchema } from '@core/schema/aiAgent/viewAiAgentConfig';
+import { planGuard } from '@/plugins/planGuard';
+import { planStatus } from '@/plugins/planStatus';
 
 export default async function aiAgentRoutes(server: FastifyInstance) {
   const aiAgentController = container.resolve(AiAgentController);
@@ -28,6 +31,8 @@ export default async function aiAgentRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, aiAgentViewPermissions),
+      planGuard,
+      planStatus,
     ],
   });
 
@@ -37,6 +42,8 @@ export default async function aiAgentRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, aiAgentViewPermissions),
+      planGuard,
+      planStatus,
     ],
   });
 
@@ -46,6 +53,8 @@ export default async function aiAgentRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, aiAgentCreatePermissions),
+      planGuard,
+      planStatus,
     ],
   });
 
@@ -55,6 +64,8 @@ export default async function aiAgentRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, aiAgentViewPermissions),
+      planGuard,
+      planStatus,
     ],
   });
 
@@ -64,6 +75,8 @@ export default async function aiAgentRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, aiAgentDeletePermissions),
+      planGuard,
+      planStatus,
     ],
   });
 
@@ -73,6 +86,8 @@ export default async function aiAgentRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, aiAgentUpdatePermissions),
+      planGuard,
+      planStatus,
     ],
   });
 
@@ -82,6 +97,8 @@ export default async function aiAgentRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, aiAgentViewPermissions),
+      planGuard,
+      planStatus,
     ],
   });
 
@@ -91,6 +108,8 @@ export default async function aiAgentRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, aiAgentCreatePermissions),
+      planGuard,
+      planStatus,
     ],
   });
 
@@ -100,6 +119,8 @@ export default async function aiAgentRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, aiAgentViewPermissions),
+      planGuard,
+      planStatus,
     ],
   });
 
@@ -109,6 +130,8 @@ export default async function aiAgentRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, aiAgentUpdatePermissions),
+      planGuard,
+      planStatus,
     ],
   });
 
@@ -118,6 +141,19 @@ export default async function aiAgentRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, aiAgentDeletePermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.get('/ai-agent/config', {
+    schema: viewAiAgentConfigSchema,
+    handler: aiAgentController.viewAiAgentConfig,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, aiAgentViewPermissions),
+      planGuard,
+      planStatus,
     ],
   });
 }

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, computed, nextTick } from 'vue';
+import { ref, watch, computed, nextTick, onMounted } from 'vue';
 import { refDebounced } from '@vueuse/core';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { useI18n } from 'vue-i18n';
@@ -48,6 +48,26 @@ const permissionsCreate = [
 const { t } = useI18n();
 const aiAgentStore = useAiAgentStore();
 useSnackbarCleanup(aiAgentStore);
+
+const canCreateAiAgent = ref(false);
+const aiAgentConfigTooltip = ref('');
+
+onMounted(async () => {
+  const config = await aiAgentStore.fetchAiAgentConfig();
+  if (!config?.enabled || !config?.ai_agent || config.ai_agent <= 0) {
+    canCreateAiAgent.value = false;
+    aiAgentConfigTooltip.value = t('ai_agent_not_available_plan_message');
+    return;
+  }
+
+  if (config.total >= config.ai_agent) {
+    canCreateAiAgent.value = false;
+    aiAgentConfigTooltip.value = t('ai_agent_not_available_additional');
+    return;
+  }
+
+  canCreateAiAgent.value = true;
+});
 
 const itemsPerPage = ref([
   { value: 5, title: '5' },
@@ -118,6 +138,14 @@ const handleDelete = async () => {
   const result = await aiAgentStore.deleteAiAgent(aiAgentToDelete.value);
   if (result) {
     await aiAgentStore.listAiAgents(query.value);
+
+    const config = await aiAgentStore.fetchAiAgentConfig(true);
+    if (config?.enabled && config?.ai_agent && config.ai_agent > 0) {
+      if (config.total < config.ai_agent) {
+        canCreateAiAgent.value = true;
+        aiAgentConfigTooltip.value = '';
+      }
+    }
   }
 
   aiAgentToDelete.value = null;
@@ -139,6 +167,21 @@ const openPromptDialog = (id: string) => {
 
 const handleCreated = async () => {
   await aiAgentStore.listAiAgents(query.value);
+
+  const config = await aiAgentStore.fetchAiAgentConfig(true);
+  if (!config?.enabled || !config?.ai_agent || config.ai_agent <= 0) {
+    canCreateAiAgent.value = false;
+    aiAgentConfigTooltip.value = t('ai_agent_not_available_plan_message');
+    return;
+  }
+
+  if (config.total >= config.ai_agent) {
+    canCreateAiAgent.value = false;
+    aiAgentConfigTooltip.value = t('ai_agent_not_available_additional');
+    return;
+  }
+
+  canCreateAiAgent.value = true;
 };
 
 const handleUpdated = async () => {
@@ -160,13 +203,23 @@ watch(
       <VCardText>
         <div class="d-flex justify-space-between flex-wrap gap-4">
           <div class="d-flex gap-4 align-center mt-5">
-            <VBtn
+            <VTooltip
               v-if="$canPermission(permissionsCreate)"
-              prepend-icon="tabler-plus"
-              @click="isAddAiAgentVisible = true"
+              :text="!canCreateAiAgent ? aiAgentConfigTooltip : ''"
+              location="top"
             >
-              {{ $t('add') }}
-            </VBtn>
+              <template #activator="{ props }">
+                <span v-bind="props" class="d-inline-block">
+                  <VBtn
+                    :disabled="!canCreateAiAgent"
+                    prepend-icon="tabler-plus"
+                    @click="isAddAiAgentVisible = true"
+                  >
+                    {{ $t('add') }}
+                  </VBtn>
+                </span>
+              </template>
+            </VTooltip>
           </div>
           <div class="d-flex align-center flex-wrap gap-4">
             <div class="invoice-list-filter">

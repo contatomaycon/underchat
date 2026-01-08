@@ -12,6 +12,7 @@ import { saveChatbotFlow } from './methods/saveChatbotFlow';
 import { listChatbotFlow } from './methods/listChatbotFlow';
 import { saveChatbotFlowConfigurations } from './methods/saveChatbotFlowConfigurations';
 import { listChatbotFlowConfigurations } from './methods/listChatbotFlowConfigurations';
+import { viewChatbotConfig } from './methods/viewChatbotConfig';
 
 @injectable()
 class ChatbotController {
@@ -28,6 +29,7 @@ class ChatbotController {
   public listChatbotFlow = listChatbotFlow;
   public saveChatbotFlowConfigurations = saveChatbotFlowConfigurations;
   public listChatbotFlowConfigurations = listChatbotFlowConfigurations;
+  public viewChatbotConfig = viewChatbotConfig;
 }
 
 export default ChatbotController;

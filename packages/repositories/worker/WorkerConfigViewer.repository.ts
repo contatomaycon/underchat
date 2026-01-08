@@ -1,11 +1,12 @@
 import * as schema from '@core/models';
-import { workerConfig } from '@core/models';
+import { workerConfig, worker } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, isNull } from 'drizzle-orm';
 import { IWorkerConfigValue } from '@core/common/interfaces/IWorkerConfigValue';
 import { EWorkerConfigStatus } from '@core/common/enums/EWorkerConfigStatus';
 import { EWorkerConfigType } from '@core/common/enums/EWorkerConfigType';
+import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 
 @injectable()
 export class WorkerConfigViewerRepository {
@@ -146,6 +147,34 @@ export class WorkerConfigViewerRepository {
     };
   }
 
+  async fetchConfigValueByAccountId(
+    accountId: string,
+    type: EWorkerConfigType
+  ): Promise<{ value: string | null; statusId: string | null }> {
+    const result = await this.dbRo
+      .select({
+        value: workerConfig.value,
+        worker_config_status_id: workerConfig.worker_config_status_id,
+      })
+      .from(workerConfig)
+      .innerJoin(worker, eq(worker.worker_id, workerConfig.worker_id))
+      .where(
+        and(
+          eq(worker.account_id, accountId),
+          isNull(worker.deleted_at),
+          eq(worker.worker_status_id, EWorkerStatus.online),
+          eq(workerConfig.worker_config_type_id, type)
+        )
+      )
+      .limit(1)
+      .execute();
+
+    return {
+      value: result[0]?.value || null,
+      statusId: result[0]?.worker_config_status_id || null,
+    };
+  }
+
   private buildConfigValue(
     workerId: string,
     configMap: Map<EWorkerConfigType, string | null>,
@@ -187,6 +216,7 @@ export class WorkerConfigViewerRepository {
         ? true
         : null,
       chatbot_id: chatbotId,
+      ai_agent: this.parseNumber(configMap.get(EWorkerConfigType.ai_agent)),
       created_at: null,
       updated_at: null,
     };

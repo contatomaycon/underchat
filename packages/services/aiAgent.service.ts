@@ -209,4 +209,8 @@ export class AiAgentService {
   ): Promise<ListChatbotAiAgentsResponse> => {
     return this.aiAgentListerRepository.listActiveAiAgentsForChatbot(accountId);
   };
+
+  totalAiAgentByAccountId = async (accountId: string): Promise<number> => {
+    return this.aiAgentListerRepository.totalAiAgentByAccountId(accountId);
+  };
 }

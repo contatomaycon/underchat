@@ -30,6 +30,7 @@ import { useI18n } from 'vue-i18n';
 import { useRouter, useRoute } from 'vue-router';
 import DialogCloseBtn from '@/@webcore/components/DialogCloseBtn.vue';
 import { useChatbotStore } from '@/@webcore/stores/chatbot';
+import { useAiAgentStore } from '@/@webcore/stores/aiAgent';
 import { getUser } from '@/@webcore/localStorage/user';
 
 definePage({
@@ -62,13 +63,37 @@ const router = useRouter();
 const route = useRoute();
 const chatbotStore = useChatbotStore();
 
-const canUseAiAgent = computed(() => {
+const aiAgentStore = useAiAgentStore();
+
+const canUseAiAgentPermission = computed(() => {
   return can([
     EGeneralPermissions.full_access,
     EGeneralPermissions.full_access_group,
     EAiAgentPermissions.ai_agent_group,
     EAiAgentPermissions.ai_agent_view,
   ]);
+});
+
+const canUseAiAgent = ref(false);
+
+onMounted(async () => {
+  if (!canUseAiAgentPermission.value) {
+    canUseAiAgent.value = false;
+    return;
+  }
+
+  const config = await aiAgentStore.fetchAiAgentConfig();
+  if (!config?.enabled || !config?.ai_agent || config.ai_agent <= 0) {
+    canUseAiAgent.value = false;
+    return;
+  }
+
+  if (config.total >= config.ai_agent) {
+    canUseAiAgent.value = false;
+    return;
+  }
+
+  canUseAiAgent.value = true;
 });
 
 const chatbotId = computed(() => {
@@ -1945,7 +1970,7 @@ onUnmounted(() => {
               {{ t('chatbot_contact') }}
             </VBtn>
             <VBtn
-              v-if="canUseAiAgent"
+              v-if="canUseAiAgentPermission && canUseAiAgent"
               color="primary"
               draggable="true"
               @dragstart.stop="

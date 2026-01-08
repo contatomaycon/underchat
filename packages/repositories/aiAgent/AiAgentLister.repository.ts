@@ -112,6 +112,22 @@ export class AiAgentListerRepository {
     return result[0]?.count ?? 0;
   };
 
+  totalAiAgentByAccountId = async (accountId: string): Promise<number> => {
+    const result = await this.dbRo
+      .select({
+        total: count(),
+      })
+      .from(aiAgent)
+      .where(eq(aiAgent.account_id, accountId))
+      .execute();
+
+    if (!result.length) {
+      return 0;
+    }
+
+    return result[0].total;
+  };
+
   listActiveAiAgentsForChatbot = async (
     accountId: string
   ): Promise<ListChatbotAiAgentsResponse> => {

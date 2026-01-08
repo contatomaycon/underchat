@@ -2066,5 +2066,7 @@
   "ai_agent_prompt_update_error": "Ocurrió un error al actualizar el prompt. Por favor, inténtelo de nuevo.",
   "ai_agent_prompt_update_successfully": "¡Prompt actualizado con éxito!",
   "ai_agent_prompt_deleter_error": "Ocurrió un error al eliminar el prompt. Por favor, inténtelo de nuevo.",
-  "ai_agent_prompt_deleted_successfully": "¡Prompt eliminado con éxito!"
+  "ai_agent_prompt_deleted_successfully": "¡Prompt eliminado con éxito!",
+  "ai_agent_not_available_plan_message": "Esta opción no está disponible en el plan actual. Actualice su plan o compre un complemento para usar esta funcionalidad.",
+  "ai_agent_not_available_additional": "Límite de agentes de IA alcanzado. Elimine un agente para agregar otro."
 }

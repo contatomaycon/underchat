@@ -20,6 +20,7 @@ import { ListAiAgentPromptResponse } from '@core/schema/aiAgent/listAiAgentPromp
 import { CreateAiAgentPromptRequest } from '@core/schema/aiAgent/createAiAgentPrompt/request.schema';
 import { UpdateAiAgentPromptRequest } from '@core/schema/aiAgent/updateAiAgentPrompt/request.schema';
 import { ViewAiAgentPromptResponse } from '@core/schema/aiAgent/viewAiAgentPrompt/response.schema';
+import { ViewAiAgentConfigResponse } from '@core/schema/aiAgent/viewAiAgentConfig/response.schema';
 
 interface IListAiAgents {
   page?: number;
@@ -49,6 +50,7 @@ export const useAiAgentStore = defineStore('aiAgent', {
     } as PagingResponseSchema,
     types: [] as ListAiAgentTypeResponse[],
     prompts: [] as ListAiAgentPromptResponse[],
+    aiAgentConfig: null as ViewAiAgentConfigResponse | null,
   }),
   actions: {
     showSnackbar(message: string, color: EColor) {
@@ -560,6 +562,42 @@ export const useAiAgentStore = defineStore('aiAgent', {
         this.loading = false;
 
         return false;
+      }
+    },
+
+    async fetchAiAgentConfig(
+      forceRefresh = false
+    ): Promise<ViewAiAgentConfigResponse | null> {
+      if (!forceRefresh && this.aiAgentConfig !== null) {
+        return this.aiAgentConfig;
+      }
+
+      try {
+        const response =
+          await axios.get<IApiResponse<ViewAiAgentConfigResponse>>(
+            `/ai-agent/config`
+          );
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          this.aiAgentConfig = {
+            ai_agent: null,
+            enabled: false,
+            total: 0,
+          };
+          return this.aiAgentConfig;
+        }
+
+        this.aiAgentConfig = data.data;
+        return this.aiAgentConfig;
+      } catch {
+        this.aiAgentConfig = {
+          ai_agent: null,
+          enabled: false,
+          total: 0,
+        };
+        return this.aiAgentConfig;
       }
     },
   },
