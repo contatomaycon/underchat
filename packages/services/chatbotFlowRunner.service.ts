@@ -3022,7 +3022,7 @@ export class ChatbotFlowRunnerService {
     currentFlowId: string,
     currentNode: any,
     options: any[],
-    analysis: 'positive' | 'negative' | 'question',
+    analysis: 'positive' | 'negative' | 'question' | 'human_support',
     customMessages?: {
       service_finished_message?: string;
       invalid_menu_option_message?: string;
@@ -3039,8 +3039,28 @@ export class ChatbotFlowRunnerService {
       return false;
     }
 
-    const targetOptionId = this.findTargetOptionId(t, options, analysis);
+    if (analysis === 'human_support') {
+      const nextFlowId = this.getNextFlowIdByHumanSupportHandle(
+        chatbotFlow,
+        currentFlowId
+      );
 
+      if (!nextFlowId) {
+        return false;
+      }
+
+      await this.resetFailedAttempts(createChat);
+
+      return this.processNextNode(
+        t,
+        createChat,
+        chatbotFlow,
+        nextFlowId,
+        customMessages
+      );
+    }
+
+    const targetOptionId = this.findTargetOptionId(t, options, analysis);
     if (!targetOptionId) {
       return false;
     }
@@ -3302,11 +3322,13 @@ export class ChatbotFlowRunnerService {
     model: string,
     aiAgentTypeId: string,
     continueMessage: string,
-    userResponse: string
-  ): Promise<'positive' | 'negative' | 'question'> {
+    userResponse: string,
+    humanSupportEnabled: boolean = false
+  ): Promise<'positive' | 'negative' | 'question' | 'human_support'> {
     const analysisPrompt = this.buildAnalysisPrompt(
       continueMessage,
-      userResponse
+      userResponse,
+      humanSupportEnabled
     );
 
     try {
@@ -3319,11 +3341,14 @@ export class ChatbotFlowRunnerService {
         userResponse
       );
 
-      const result = this.parseAnalysisResponse(analysis);
+      const result = this.parseAnalysisResponse(analysis, humanSupportEnabled);
 
       return result;
     } catch {
-      const fallbackResult = this.fallbackAnalysis(userResponse);
+      const fallbackResult = this.fallbackAnalysis(
+        userResponse,
+        humanSupportEnabled
+      );
 
       return fallbackResult;
     }
@@ -3331,42 +3356,96 @@ export class ChatbotFlowRunnerService {
 
   private buildAnalysisPrompt(
     continueMessage: string,
-    userResponse: string
+    userResponse: string,
+    humanSupportEnabled: boolean = false
   ): string {
+    const humanSupportSection = humanSupportEnabled
+      ? `- "human_support": se o usuário QUER falar com um atendente humano, operador, suporte humano ou pessoa real. Exemplos: "quero falar com humano", "falar com atendente", "falar com operador", "falar com suporte", "quero falar com pessoa", "preciso de atendimento humano", "quero atendimento humano", "me transfere para humano", "quero falar com alguém", "falar com uma pessoa"
+`
+      : '';
+
+    const validOptions = humanSupportEnabled
+      ? 'positive, negative, question ou human_support'
+      : 'positive, negative ou question';
+
     return `Você é um analisador de respostas. Analise a resposta do usuário considerando o contexto da pergunta e classifique como:
 
 - "positive": se o usuário PRECISA de mais ajuda, quer continuar a conversa, tem mais dúvidas ou pedidos. Exemplos: "sim, preciso", "tenho outra dúvida", "quero saber mais", "me ajuda com", "preciso de ajuda com"
 - "negative": se o usuário NÃO PRECISA mais de ajuda, está satisfeito, quer finalizar ou agradeceu. Exemplos: "não, obrigado", "tudo certo", "não preciso mais", "já resolvi", "está tudo bem", "obrigado", "valeu", "tudo certo, obrigado", "não preciso mais de ajuda", "já entendi"
 - "question": se o usuário fez uma pergunta sobre um assunto diferente ou quer mudar de tópico
-
+${humanSupportSection}
 IMPORTANTE: 
 - Se o usuário agradecer e dizer que está tudo certo, que não precisa mais de ajuda, ou que já resolveu, classifique como "negative"
 - Se o usuário disser "tudo certo" ou "obrigado" sem indicar necessidade de mais ajuda, classifique como "negative"
 - Apenas classifique como "positive" se o usuário claramente indicar que PRECISA de mais ajuda ou quer continuar
-
+${humanSupportEnabled ? '- Se o usuário pedir explicitamente para falar com humano, atendente, operador, suporte humano ou pessoa real, classifique como "human_support"\n' : ''}
 Pergunta feita: "${continueMessage}"
 Resposta do usuário: "${userResponse}"
 
-Retorne APENAS uma das palavras: positive, negative ou question.`;
+Retorne APENAS uma das palavras: ${validOptions}.`;
   }
 
   private parseAnalysisResponse(
-    analysis: string
-  ): 'positive' | 'negative' | 'question' {
+    analysis: string,
+    humanSupportEnabled: boolean = false
+  ): 'positive' | 'negative' | 'question' | 'human_support' {
     const normalized = analysis.trim().toLowerCase();
+    if (humanSupportEnabled && normalized.includes('human_support')) {
+      return 'human_support';
+    }
+
     if (normalized.includes('positive')) {
       return 'positive';
     }
     if (normalized.includes('negative')) {
       return 'negative';
     }
+
     return 'question';
   }
 
   private fallbackAnalysis(
-    userResponse: string
-  ): 'positive' | 'negative' | 'question' {
+    userResponse: string,
+    humanSupportEnabled: boolean = false
+  ): 'positive' | 'negative' | 'question' | 'human_support' {
     const lowerResponse = userResponse.toLowerCase().trim();
+
+    if (humanSupportEnabled) {
+      const humanSupportIndicators = [
+        'falar com humano',
+        'falar com atendente',
+        'falar com operador',
+        'falar com suporte',
+        'quero falar com humano',
+        'quero falar com atendente',
+        'quero falar com operador',
+        'quero falar com suporte',
+        'quero falar com pessoa',
+        'falar com uma pessoa',
+        'atendimento humano',
+        'atendente humano',
+        'suporte humano',
+        'atendimento humano, por favor',
+        'me transfere para humano',
+        'me transfere para atendente',
+        'quero humano',
+        'preciso de humano',
+        'atendente real',
+        'pessoa real',
+        'atendente de verdade',
+        'pessoa de verdade',
+        'quero falar com alguém',
+        'falar com alguém',
+        'quero alguém',
+        'preciso de alguém',
+      ];
+
+      for (const indicator of humanSupportIndicators) {
+        if (lowerResponse.includes(indicator)) {
+          return 'human_support';
+        }
+      }
+    }
 
     const negativeIndicators = [
       'não',
@@ -3547,6 +3626,7 @@ Retorne APENAS uma das palavras: positive, negative ou question.`;
     }
 
     const userText = this.getTextFromUpsertMessage(data)?.trim();
+
     if (!userText) {
       return false;
     }
@@ -3730,6 +3810,7 @@ Retorne APENAS uma das palavras: positive, negative ou question.`;
     }
 
     const selectedOption = options[selectedNumber - 1];
+
     if (!selectedOption) {
       return false;
     }
@@ -3794,6 +3875,7 @@ Retorne APENAS uma das palavras: positive, negative ou question.`;
     }
 
     const selectedAiAgentId = currentNode.data?.selectedAiAgent;
+
     if (!selectedAiAgentId) {
       return false;
     }
@@ -3812,13 +3894,16 @@ Retorne APENAS uma das palavras: positive, negative ou question.`;
       return false;
     }
 
+    const humanSupportEnabled = currentNode.data?.humanSupportEnabled === true;
+
     const analysis = await this.analyzeUserResponse(
       aiAgentForAnalysis.base_url,
       aiAgentForAnalysis.api_key,
       aiAgentForAnalysis.model,
       aiAgentForAnalysis.ai_agent_type_id,
       continueMessage,
-      userText
+      userText,
+      humanSupportEnabled
     );
 
     await this.redis.del(continueMessageSentKey);
