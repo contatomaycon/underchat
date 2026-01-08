@@ -18,14 +18,16 @@ export class RagService {
     aiAgentId: string,
     userQuery: string,
     topK = 10,
-    minScore = 0.0
+    minScore = 0.0,
+    phone?: string
   ): Promise<IRagContext> {
     const chunks = await this.embeddingService.searchChatHistory(
       accountId,
       chatId,
       aiAgentId,
       userQuery,
-      topK
+      topK,
+      phone
     );
 
     const relevantChunks = chunks.filter((chunk) => chunk.score >= minScore);
@@ -178,6 +180,7 @@ export class RagService {
       bootstrapSummary?: string | null;
       conversationSummary?: string | null;
       recentMessages?: Array<{ role: 'user' | 'assistant'; content: string }>;
+      phone?: string;
     }
   ): Promise<{
     enhancedPrompt: string;
@@ -457,6 +460,7 @@ Agora, responda à pergunta do usuário seguindo TODAS as regras e diretrizes ac
       bootstrapSummary?: string | null;
       conversationSummary?: string | null;
       recentMessages?: Array<{ role: 'user' | 'assistant'; content: string }>;
+      phone?: string;
     }
   ): Promise<string[]> {
     const contextParts: string[] = [];
@@ -510,7 +514,8 @@ Agora, responda à pergunta do usuário seguindo TODAS as regras e diretrizes ac
         aiAgentId,
         userQuery,
         10,
-        minScore
+        minScore,
+        options.phone
       );
 
       if (chatHistoryContext.combinedContext) {

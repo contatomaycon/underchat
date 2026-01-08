@@ -118,8 +118,9 @@ export class ChatHistoryEmbeddingConsume {
       if (
         parsed &&
         'account_id' in parsed &&
-        'user_id' in parsed &&
-        'ai_agent_id' in parsed
+        'ai_agent_id' in parsed &&
+        'phone' in parsed &&
+        parsed.phone
       ) {
         return parsed;
       }
@@ -134,7 +135,7 @@ export class ChatHistoryEmbeddingConsume {
   ): Promise<void> {
     await this.embeddingService.processMultipleChatHistoryEmbeddings(
       data.account_id,
-      data.user_id,
+      data.phone,
       data.ai_agent_id
     );
   }

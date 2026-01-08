@@ -16,6 +16,7 @@ import { AiAgentViewerRepository } from '@core/repositories/aiAgent/AiAgentViewe
 import { ElasticDatabaseService } from './elasticDatabase.service';
 import { extractMessageTextFromContent } from '@core/common/functions/extractMessageTextFromContent';
 import InvalidConfigurationError from '@core/common/exceptions/InvalidConfigurationError';
+import { buildCandidates } from '@core/common/functions/buildCandidatesBR';
 
 type ElasticHit<T> = {
   _source?: T;
@@ -687,14 +688,18 @@ export class EmbeddingService {
 
   async processMultipleChatHistoryEmbeddings(
     accountId: string,
-    userId: string,
+    phone: string,
     aiAgentId: string
   ): Promise<number> {
-    const unembeddedChats = await this.findUnembeddedChats(
+    if (!phone) {
+      return 0;
+    }
+
+    const unembeddedChats = await this.findUnembeddedChatsByPhone(
       accountId,
-      userId,
+      phone,
       aiAgentId,
-      5
+      10
     );
 
     if (unembeddedChats.length === 0) {
@@ -705,6 +710,17 @@ export class EmbeddingService {
 
     for (const chat of unembeddedChats) {
       try {
+        const alreadyEmbedded = await this.hasChatHistoryEmbeddings(
+          accountId,
+          chat.chat_id,
+          aiAgentId
+        );
+
+        if (alreadyEmbedded) {
+          continue;
+        }
+
+        const userId = chat.user?.id || null;
         const count = await this.processChatHistoryEmbeddings(
           accountId,
           chat.chat_id,
@@ -728,7 +744,8 @@ export class EmbeddingService {
     chatId: string,
     aiAgentId: string,
     queryText: string,
-    topK = 10
+    topK = 10,
+    phone?: string
   ): Promise<Array<{ text: string; score: number; message_id: string }>> {
     await this.ensureChatHistoryIndex();
 
@@ -756,6 +773,27 @@ export class EmbeddingService {
     );
     const queryVector = embeddings[0];
 
+    const filterClauses: any[] = [
+      { term: { account_id: accountId } },
+      { term: { ai_agent_id: aiAgentId } },
+    ];
+
+    if (phone) {
+      const candidates = buildCandidates(phone);
+      if (Array.isArray(candidates) && candidates.length > 0) {
+        const chatIds = await this.getChatIdsByPhone(accountId, phone);
+        if (chatIds.length > 0) {
+          filterClauses.push({ terms: { chat_id: chatIds } });
+        } else {
+          filterClauses.push({ term: { chat_id: chatId } });
+        }
+      } else {
+        filterClauses.push({ term: { chat_id: chatId } });
+      }
+    } else {
+      filterClauses.push({ term: { chat_id: chatId } });
+    }
+
     const searchQuery = {
       index: this.chatHistoryIndexName,
       size: topK,
@@ -766,11 +804,7 @@ export class EmbeddingService {
               script_score: {
                 query: {
                   bool: {
-                    filter: [
-                      { term: { account_id: accountId } },
-                      { term: { chat_id: chatId } },
-                      { term: { ai_agent_id: aiAgentId } },
-                    ],
+                    filter: filterClauses,
                   },
                 },
                 script: {
@@ -802,6 +836,72 @@ export class EmbeddingService {
       }));
     } catch (error) {
       console.error('[searchChatHistory] Erro ao buscar histórico:', error);
+      return [];
+    }
+  }
+
+  private async getChatIdsByPhone(
+    accountId: string,
+    phone: string,
+    limit = 50
+  ): Promise<string[]> {
+    try {
+      const candidates = buildCandidates(phone);
+      const shouldClauses: any[] = [];
+
+      if (Array.isArray(candidates) && candidates.length > 0) {
+        shouldClauses.push({ terms: { phone: candidates } });
+      }
+
+      if (shouldClauses.length === 0) {
+        return [];
+      }
+
+      const queryElastic = {
+        size: limit,
+        _source: ['chat_id'],
+        sort: [{ date: { order: 'desc' } }],
+        query: {
+          bool: {
+            must: [
+              {
+                nested: {
+                  path: 'account',
+                  query: {
+                    term: {
+                      'account.id': accountId,
+                    },
+                  },
+                },
+              },
+              {
+                bool: {
+                  should: shouldClauses,
+                  minimum_should_match: 1,
+                },
+              },
+            ],
+          },
+        },
+      };
+
+      const result = await this.elasticDatabaseService.select<IChat>(
+        EElasticIndex.chat,
+        queryElastic
+      );
+
+      if (!result || !result.hits.hits || result.hits.hits.length === 0) {
+        return [];
+      }
+
+      return result.hits.hits
+        .map((hit) => {
+          const chat = (hit as ElasticHit<IChat>)._source;
+          return chat?.chat_id;
+        })
+        .filter((id): id is string => id !== undefined);
+    } catch (error) {
+      console.error('[getChatIdsByPhone] Erro ao buscar chat IDs:', error);
       return [];
     }
   }
@@ -924,6 +1024,85 @@ export class EmbeddingService {
       return chats.filter((chat): chat is IChat => chat !== undefined);
     } catch (error) {
       console.error('[findUnembeddedChats] Erro ao buscar chats:', error);
+      return [];
+    }
+  }
+
+  async findUnembeddedChatsByPhone(
+    accountId: string,
+    phone: string,
+    aiAgentId: string,
+    limit = 10
+  ): Promise<IChat[]> {
+    try {
+      const candidates = buildCandidates(phone);
+      const shouldClauses: any[] = [];
+
+      if (Array.isArray(candidates) && candidates.length > 0) {
+        shouldClauses.push({ terms: { phone: candidates } });
+      }
+
+      if (shouldClauses.length === 0) {
+        return [];
+      }
+
+      const queryElastic = {
+        size: limit,
+        sort: [{ date: { order: 'desc' } }],
+        query: {
+          bool: {
+            must: [
+              {
+                nested: {
+                  path: 'account',
+                  query: {
+                    term: {
+                      'account.id': accountId,
+                    },
+                  },
+                },
+              },
+              {
+                bool: {
+                  should: shouldClauses,
+                  minimum_should_match: 1,
+                },
+              },
+            ],
+            must_not: [
+              {
+                term: {
+                  embedded_for_ai_agents: aiAgentId,
+                },
+              },
+            ],
+          },
+        },
+      };
+
+      const result = await this.elasticDatabaseService.select<IChat>(
+        EElasticIndex.chat,
+        queryElastic
+      );
+
+      if (!result || !result.hits.hits || result.hits.hits.length === 0) {
+        return [];
+      }
+
+      const chats = result.hits.hits.map((hit) => {
+        const chat = (hit as ElasticHit<IChat>)._source;
+        if (chat && Array.isArray(chat.summary)) {
+          chat.summary = chat.summary[0] as IChat['summary'];
+        }
+        return chat;
+      });
+
+      return chats.filter((chat): chat is IChat => chat !== undefined);
+    } catch (error) {
+      console.error(
+        '[findUnembeddedChatsByPhone] Erro ao buscar chats:',
+        error
+      );
       return [];
     }
   }

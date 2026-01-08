@@ -3141,21 +3141,21 @@ export class ChatbotFlowRunnerService {
     aiAgentId: string
   ): Promise<void> {
     try {
-      if (!createChat.user?.id) {
+      if (!createChat.phone) {
         return;
       }
 
       const payload: IChatHistoryEmbeddingRequest = {
         account_id: createChat.account.id,
-        user_id: createChat.user.id,
         ai_agent_id: aiAgentId,
+        phone: createChat.phone,
       };
 
       const topic = this.kafkaServiceQueueService.chatHistoryEmbedding();
       await this.streamProducerService.send(
         topic,
         payload,
-        `${createChat.account.id}:${createChat.user.id}:${aiAgentId}`
+        `${createChat.account.id}:${createChat.phone}:${aiAgentId}`
       );
     } catch {
       // Silently fail - embedding is not critical
@@ -3426,20 +3426,6 @@ Retorne APENAS uma das palavras: positive, negative ou question.`;
       return false;
     }
 
-    const menuResult = await this.handleMenuOptionIfExists(
-      t,
-      createChat,
-      chatbotFlow,
-      currentFlowId,
-      currentNode,
-      userText,
-      customMessages
-    );
-
-    if (menuResult !== null) {
-      return menuResult;
-    }
-
     const actionAfterInteractions =
       currentNode.data?.actionAfterInteractions === true;
     const interactionsQuantity = currentNode.data?.interactionsQuantity ?? 0;
@@ -3475,6 +3461,20 @@ Retorne APENAS uma das palavras: positive, negative ou question.`;
           );
         }
       }
+    }
+
+    const menuResult = await this.handleMenuOptionIfExists(
+      t,
+      createChat,
+      chatbotFlow,
+      currentFlowId,
+      currentNode,
+      userText,
+      customMessages
+    );
+
+    if (menuResult !== null) {
+      return menuResult;
     }
 
     return this.processAiAgentResponse(
@@ -3819,6 +3819,7 @@ Retorne APENAS uma das palavras: positive, negative ou question.`;
         bootstrapSummary: bootstrapSummary,
         conversationSummary: conversationSummary,
         recentMessages: recentMessages,
+        phone: createChat.phone,
       }
     );
 
