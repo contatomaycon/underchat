@@ -101,7 +101,11 @@ export class ChatbotFlowSaverUseCase {
     requestData: SaveChatbotFlowRequestData,
     errors: string[]
   ): void {
-    if (node.type !== 'menu' && node.type !== 'satisfaction') {
+    if (
+      node.type !== 'menu' &&
+      node.type !== 'satisfaction' &&
+      node.type !== 'aiAgent'
+    ) {
       return;
     }
 
@@ -337,6 +341,28 @@ export class ChatbotFlowSaverUseCase {
     }
   }
 
+  private normalizeAiAgentNode(
+    t: TFunction<'translation', undefined>,
+    node: any
+  ): void {
+    if (node.type !== 'aiAgent') {
+      return;
+    }
+
+    const data = node.data;
+    if (!data) {
+      return;
+    }
+
+    if (
+      !data.defaultQuestion ||
+      (typeof data.defaultQuestion === 'string' &&
+        data.defaultQuestion.trim().length === 0)
+    ) {
+      data.defaultQuestion = t('ai_agent_default_question');
+    }
+  }
+
   private validateAiAgentNode(
     t: TFunction<'translation', undefined>,
     node: any,
@@ -356,6 +382,32 @@ export class ChatbotFlowSaverUseCase {
       const nodeLabel = node.data?.title || node.label || node.id || 'aiAgent';
       errors.push(
         t('chatbot_flow_validation_ai_agent_required', {
+          nodeLabel,
+        })
+      );
+    }
+
+    if (
+      !data.defaultQuestion ||
+      (typeof data.defaultQuestion === 'string' &&
+        data.defaultQuestion.trim().length === 0)
+    ) {
+      const nodeLabel = node.data?.title || node.label || node.id || 'aiAgent';
+      errors.push(
+        t('chatbot_flow_validation_ai_agent_default_question_required', {
+          nodeLabel,
+        })
+      );
+    }
+
+    if (
+      !data.options ||
+      !Array.isArray(data.options) ||
+      data.options.length === 0
+    ) {
+      const nodeLabel = node.data?.title || node.label || node.id || 'aiAgent';
+      errors.push(
+        t('chatbot_flow_validation_options_required', {
           nodeLabel,
         })
       );
@@ -441,6 +493,10 @@ export class ChatbotFlowSaverUseCase {
     }
 
     for (const node of requestData.nodes) {
+      if (node.type === 'aiAgent') {
+        this.normalizeAiAgentNode(t, node);
+      }
+
       this.validateNodeConnections(t, node, requestData, errors);
 
       if (node.type === 'message') {

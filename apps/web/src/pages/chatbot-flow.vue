@@ -815,6 +815,8 @@ const addDataNode = (position?: { x: number; y: number }) => {
 
 const addAiAgentNode = (position?: { x: number; y: number }) => {
   const nodeId = `aiAgent-${nodeIdCounter++}`;
+  const positiveOptionId = crypto.randomUUID();
+  const negativeOptionId = crypto.randomUUID();
   const newNode: Node = {
     id: nodeId,
     type: 'aiAgent',
@@ -824,7 +826,22 @@ const addAiAgentNode = (position?: { x: number; y: number }) => {
     },
     data: {
       selectedAiAgent: null,
+      defaultQuestion: null,
+      continueMessage: null,
+      options: [
+        {
+          id: positiveOptionId,
+          text: t('chatbot_ai_agent_positive_option'),
+          required: true,
+        },
+        {
+          id: negativeOptionId,
+          text: t('chatbot_ai_agent_negative_option'),
+          required: true,
+        },
+      ],
       onRemove: () => removeNode(nodeId),
+      onRemoveOption: (optionId: string) => removeOptionEdge(nodeId, optionId),
     },
   };
   nodes.value.push(newNode as Node);
@@ -1010,6 +1027,23 @@ const prepareNodesForSave = (
       if (nodeData.selectedAiAgent === undefined) {
         nodeData.selectedAiAgent = null;
       }
+      if (
+        !nodeData.defaultQuestion ||
+        (typeof nodeData.defaultQuestion === 'string' &&
+          nodeData.defaultQuestion.trim().length === 0)
+      ) {
+        nodeData.defaultQuestion = null;
+      }
+      if (
+        !nodeData.continueMessage ||
+        (typeof nodeData.continueMessage === 'string' &&
+          nodeData.continueMessage.trim().length === 0)
+      ) {
+        nodeData.continueMessage = null;
+      }
+      if (nodeData.options && Array.isArray(nodeData.options)) {
+        nodeData.options = normalizeOptions(nodeData.options);
+      }
     }
     return {
       id: node.id,
@@ -1172,6 +1206,24 @@ const processTagNodeData = (nodeData: any): void => {
 
 const processAiAgentNodeData = (nodeData: any): void => {
   if (nodeData.selectedAiAgent === undefined) nodeData.selectedAiAgent = null;
+  if (nodeData.defaultQuestion === undefined) nodeData.defaultQuestion = null;
+  if (nodeData.continueMessage === undefined) nodeData.continueMessage = null;
+  if (!nodeData.options || nodeData.options.length === 0) {
+    const positiveOptionId = crypto.randomUUID();
+    const negativeOptionId = crypto.randomUUID();
+    nodeData.options = [
+      {
+        id: positiveOptionId,
+        text: t('chatbot_ai_agent_positive_option'),
+        required: true,
+      },
+      {
+        id: negativeOptionId,
+        text: t('chatbot_ai_agent_negative_option'),
+        required: true,
+      },
+    ];
+  }
 };
 
 const processMessageNodeData = (nodeData: any): void => {
@@ -1250,7 +1302,8 @@ const processLoadedNode = (node: Node): Node => {
     if (
       node.type === 'menu' ||
       node.type === 'satisfaction' ||
-      node.type === 'contact'
+      node.type === 'contact' ||
+      node.type === 'aiAgent'
     ) {
       node.data.onRemoveOption = (optionId: string) =>
         removeOptionEdge(node.id, optionId);

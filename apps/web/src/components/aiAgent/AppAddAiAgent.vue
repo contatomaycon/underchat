@@ -30,6 +30,7 @@ const name = ref('');
 const baseUrl = ref('');
 const apiKey = ref('');
 const model = ref('');
+const embeddingModel = ref('');
 const chunkSize = ref('600');
 const chunkOverlap = ref('100');
 const status = ref<EAiAgentStatus>(EAiAgentStatus.active);
@@ -62,6 +63,78 @@ const isGeminiSelected = computed(
   () => aiAgentTypeId.value === EAiAgentType.gemini
 );
 const isGptSelected = computed(() => aiAgentTypeId.value === EAiAgentType.gpt);
+
+const geminiChatModels = [
+  {
+    title: 'gemini-2.5-flash (recomendado - mais recente)',
+    value: 'gemini-2.5-flash',
+  },
+  {
+    title: 'gemini-2.5-flash-lite (variante menor)',
+    value: 'gemini-2.5-flash-lite',
+  },
+  { title: 'gemini-2.0-flash (2ª geração)', value: 'gemini-2.0-flash' },
+  { title: 'gemini-2.0-flash-001 (stable)', value: 'gemini-2.0-flash-001' },
+  {
+    title: 'gemini-2.0-flash-lite (variante menor)',
+    value: 'gemini-2.0-flash-lite',
+  },
+];
+
+const geminiEmbeddingModels = [
+  {
+    title: 'gemini-embedding-001 (recomendado)',
+    value: 'gemini-embedding-001',
+  },
+  { title: 'text-embedding-004 (legacy)', value: 'text-embedding-004' },
+  { title: 'embedding-001 (legacy)', value: 'embedding-001' },
+];
+
+const gptChatModels = [
+  { title: 'gpt-4', value: 'gpt-4' },
+  { title: 'gpt-4-turbo', value: 'gpt-4-turbo' },
+  { title: 'gpt-4o', value: 'gpt-4o' },
+  { title: 'gpt-4o-mini', value: 'gpt-4o-mini' },
+  { title: 'gpt-3.5-turbo', value: 'gpt-3.5-turbo' },
+];
+
+const gptEmbeddingModels = [
+  {
+    title: 'text-embedding-3-small (recomendado)',
+    value: 'text-embedding-3-small',
+  },
+  { title: 'text-embedding-3-large', value: 'text-embedding-3-large' },
+  { title: 'text-embedding-ada-002 (legacy)', value: 'text-embedding-ada-002' },
+];
+
+const availableChatModels = computed(() => {
+  if (isGeminiSelected.value) {
+    return geminiChatModels;
+  }
+  if (isGptSelected.value) {
+    return gptChatModels;
+  }
+  return [];
+});
+
+const availableEmbeddingModels = computed(() => {
+  if (isGeminiSelected.value) {
+    return geminiEmbeddingModels;
+  }
+  if (isGptSelected.value) {
+    return gptEmbeddingModels;
+  }
+  return [];
+});
+
+const shouldUseSelectForModel = computed(
+  () => isGeminiSelected.value || isGptSelected.value
+);
+
+const shouldUseSelectForEmbeddingModel = computed(
+  () => isGeminiSelected.value || isGptSelected.value
+);
+
 const apiKeyLink = computed(() => {
   if (isGeminiSelected.value) {
     return 'https://aistudio.google.com/app/apikey?utm_source=chatgpt.com';
@@ -75,12 +148,14 @@ const apiKeyLink = computed(() => {
 watch(aiAgentTypeId, (newTypeId) => {
   if (newTypeId === EAiAgentType.gpt) {
     baseUrl.value = 'https://api.openai.com/v1';
-    model.value = 'text-embedding-3-small';
+    model.value = 'gpt-4o';
+    embeddingModel.value = 'text-embedding-3-small';
     chunkSize.value = '600';
     chunkOverlap.value = '100';
   } else if (newTypeId === EAiAgentType.gemini) {
     baseUrl.value = 'https://generativelanguage.googleapis.com/v1';
-    model.value = 'text-embedding-004';
+    model.value = 'gemini-2.5-flash';
+    embeddingModel.value = 'gemini-embedding-001';
     chunkSize.value = '600';
     chunkOverlap.value = '100';
   } else if (newTypeId && otherTypes.value.length > 0) {
@@ -94,6 +169,7 @@ watch(aiAgentTypeId, (newTypeId) => {
     ) {
       baseUrl.value = '';
       model.value = '';
+      embeddingModel.value = '';
       chunkSize.value = '600';
       chunkOverlap.value = '100';
     }
@@ -107,6 +183,7 @@ watch(isVisible, (newValue) => {
     baseUrl.value = '';
     apiKey.value = '';
     model.value = '';
+    embeddingModel.value = '';
     chunkSize.value = '600';
     chunkOverlap.value = '100';
     status.value = EAiAgentStatus.active;
@@ -131,6 +208,7 @@ const handleCreateAiAgent = async () => {
       base_url: baseUrl.value.trim() || undefined,
       api_key: apiKey.value.trim() || undefined,
       model: model.value.trim() || undefined,
+      embedding_model: embeddingModel.value.trim() || undefined,
       chunk_size: chunkSize.value.trim() || undefined,
       chunk_overlap: chunkOverlap.value.trim() || undefined,
       status: status.value,
@@ -228,9 +306,39 @@ const handleCreateAiAgent = async () => {
             </VCol>
             <VCol cols="12">
               <VLabel class="text-body-2 mb-1">{{ $t('model') }}:</VLabel>
+              <AppSelectSearch
+                v-if="shouldUseSelectForModel"
+                v-model="model"
+                :items="availableChatModels"
+                item-title="title"
+                item-value="value"
+                :placeholder="$t('model_placeholder')"
+                :disabled="isCreating"
+              />
               <AppTextField
+                v-else
                 v-model="model"
                 :placeholder="$t('model_placeholder')"
+                :disabled="isCreating"
+              />
+            </VCol>
+            <VCol cols="12">
+              <VLabel class="text-body-2 mb-1"
+                >{{ $t('embedding_model') }}:</VLabel
+              >
+              <AppSelectSearch
+                v-if="shouldUseSelectForEmbeddingModel"
+                v-model="embeddingModel"
+                :items="availableEmbeddingModels"
+                item-title="title"
+                item-value="value"
+                :placeholder="$t('embedding_model_placeholder')"
+                :disabled="isCreating"
+              />
+              <AppTextField
+                v-else
+                v-model="embeddingModel"
+                :placeholder="$t('embedding_model_placeholder')"
                 :disabled="isCreating"
               />
             </VCol>

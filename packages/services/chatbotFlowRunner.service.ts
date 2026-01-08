@@ -8,6 +8,10 @@ import { LabelTemplateViewerRepository } from '@core/repositories/labelTemplate/
 import { CentrifugoService } from './centrifugo.service';
 import { UserService } from './user.service';
 import { SectorService } from './sector.service';
+import { RagService } from './rag.service';
+import { AiAgentViewerRepository } from '@core/repositories/aiAgent/AiAgentViewer.repository';
+import { ElasticDatabaseService } from './elasticDatabase.service';
+import { EAiAgentType } from '@core/common/enums/EAiAgentType';
 import { IChat } from '@core/common/interfaces/IChat';
 import { TFunction } from 'i18next';
 import { ListChatbotFlowResponse } from '@core/schema/chatbot/listChatbotFlow/response.schema';
@@ -26,6 +30,13 @@ import { extractPhoneAndDdi } from '@core/common/functions/extractPhoneAndDdi';
 import { proto } from '@whiskeysockets/baileys';
 import { EContactDocumentType } from '@core/common/enums/EContactDocumentType';
 import { UpdateContactRequest } from '@core/schema/contact/editContact/request.schema';
+import InvalidConfigurationError from '@core/common/exceptions/InvalidConfigurationError';
+import { EElasticIndex } from '@core/common/enums/EElasticIndex';
+import { IChatMessage } from '@core/common/interfaces/IChatMessage';
+import { extractMessageTextFromContent } from '@core/common/functions/extractMessageTextFromContent';
+import { StreamProducerService } from './streamProducer.service';
+import { KafkaServiceQueueService } from './kafkaServiceQueue.service';
+import { IChatHistoryEmbeddingRequest } from '@core/common/interfaces/IChatHistoryEmbeddingRequest';
 
 @injectable()
 export class ChatbotFlowRunnerService {
@@ -38,7 +49,12 @@ export class ChatbotFlowRunnerService {
     private readonly labelTemplateViewerRepository: LabelTemplateViewerRepository,
     private readonly centrifugoService: CentrifugoService,
     private readonly userService: UserService,
-    private readonly sectorService: SectorService
+    private readonly sectorService: SectorService,
+    private readonly ragService: RagService,
+    private readonly aiAgentViewerRepository: AiAgentViewerRepository,
+    private readonly elasticDatabaseService: ElasticDatabaseService,
+    private readonly streamProducerService: StreamProducerService,
+    private readonly kafkaServiceQueueService: KafkaServiceQueueService
   ) {}
 
   private getChatbotFlowCacheKey(
@@ -723,6 +739,52 @@ export class ChatbotFlowRunnerService {
 
     if (!nextFlowNode) {
       return false;
+    }
+
+    if (nextFlowNode.type === 'aiAgent') {
+      const cacheKey = this.getChatbotFlowCacheKey(
+        createChat.account.id,
+        createChat.worker.id,
+        createChat.chat_id
+      );
+      const previousFlowId = await this.redis.get(cacheKey);
+
+      const isReturningToAiAgent =
+        previousFlowId && previousFlowId === nextFlowId;
+
+      if (!isReturningToAiAgent) {
+        const nodeDefaultQuestion = nextFlowNode.data?.defaultQuestion;
+        const defaultQuestion =
+          nodeDefaultQuestion && nodeDefaultQuestion.trim().length > 0
+            ? nodeDefaultQuestion
+            : t('ai_agent_default_question');
+        const questionMessage = await this.replaceVariables(
+          t,
+          defaultQuestion,
+          createChat,
+          createChat.user,
+          createChat.sector
+        );
+
+        await this.chatMessageService.sendMessage(t, {
+          chat: createChat,
+          accountId: createChat.account.id,
+          type: EMessageType.text,
+          message: questionMessage,
+          typeUser: ETypeUserChat.bot,
+        });
+
+        const selectedAiAgentId = nextFlowNode.data?.selectedAiAgent;
+        if (selectedAiAgentId) {
+          await this.scheduleChatHistoryEmbedding(
+            createChat,
+            selectedAiAgentId
+          );
+        }
+      }
+
+      await this.updateCache(createChat, nextFlowId);
+      return true;
     }
 
     await this.updateCache(createChat, nextFlowId);
@@ -2570,6 +2632,1079 @@ export class ChatbotFlowRunnerService {
     }
   }
 
+  private async callGeminiChatApi(
+    baseUrl: string,
+    apiKey: string,
+    model: string,
+    prompt: string,
+    userQuery: string,
+    history?: Array<{ role: 'user' | 'assistant'; content: string }>
+  ): Promise<string> {
+    const url = `${baseUrl.replace('/v1', '/v1beta')}/models/${encodeURIComponent(
+      model
+    )}:generateContent?key=${encodeURIComponent(apiKey)}`;
+
+    const contents = this.buildGeminiContents(history, userQuery);
+    const requestBody = this.buildGeminiRequestBody(contents, prompt);
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`AI Agent API error: ${response.status} - ${errorText}`);
+    }
+
+    const data = (await response.json()) as {
+      candidates?: Array<{
+        content?: {
+          parts?: Array<{
+            text?: string;
+          }>;
+        };
+      }>;
+    };
+
+    return (
+      data.candidates?.[0]?.content?.parts?.[0]?.text ||
+      'Desculpe, não consegui processar sua solicitação.'
+    );
+  }
+
+  private buildGeminiContents(
+    history: Array<{ role: 'user' | 'assistant'; content: string }> | undefined,
+    userQuery: string
+  ): Array<{
+    role: 'user' | 'model';
+    parts: Array<{ text: string }>;
+  }> {
+    const contents: Array<{
+      role: 'user' | 'model';
+      parts: Array<{ text: string }>;
+    }> = [];
+
+    if (history && history.length > 0) {
+      for (const msg of history) {
+        contents.push({
+          role: msg.role === 'user' ? 'user' : 'model',
+          parts: [{ text: msg.content }],
+        });
+      }
+    }
+
+    contents.push({
+      role: 'user',
+      parts: [{ text: userQuery }],
+    });
+
+    return contents;
+  }
+
+  private buildGeminiRequestBody(
+    contents: Array<{
+      role: 'user' | 'model';
+      parts: Array<{ text: string }>;
+    }>,
+    prompt: string
+  ): {
+    contents: Array<{
+      role: 'user' | 'model';
+      parts: Array<{ text: string }>;
+    }>;
+    system_instruction?: {
+      parts: Array<{
+        text: string;
+      }>;
+    };
+  } {
+    return {
+      contents,
+      system_instruction: prompt
+        ? {
+            parts: [
+              {
+                text: prompt,
+              },
+            ],
+          }
+        : undefined,
+    };
+  }
+
+  private async callOpenAiChatApi(
+    baseUrl: string,
+    apiKey: string,
+    model: string,
+    prompt: string,
+    userQuery: string,
+    history?: Array<{ role: 'user' | 'assistant'; content: string }>
+  ): Promise<string> {
+    const response = await fetch(`${baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          {
+            role: 'system',
+            content: prompt,
+          },
+          ...(history || []).map((msg) => ({
+            role: msg.role,
+            content: msg.content,
+          })),
+          {
+            role: 'user',
+            content: userQuery,
+          },
+        ],
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`AI Agent API error: ${response.status} - ${errorText}`);
+    }
+
+    const data = (await response.json()) as {
+      choices?: Array<{
+        message?: {
+          content?: string;
+        };
+      }>;
+    };
+
+    const text =
+      data.choices?.[0]?.message?.content ||
+      'Desculpe, não consegui processar sua solicitação.';
+
+    return text;
+  }
+
+  private async sendDefaultQuestionMessage(
+    t: TFunction<'translation', undefined>,
+    createChat: IChat,
+    currentNode: any,
+    clearCache = false
+  ): Promise<void> {
+    if (clearCache) {
+      const cacheKey = this.getChatbotFlowCacheKey(
+        createChat.account.id,
+        createChat.worker.id,
+        createChat.chat_id
+      );
+      await this.redis.del(cacheKey);
+      const continueMessageSentKey = `${cacheKey}:continue-message-sent`;
+      await this.redis.del(continueMessageSentKey);
+    }
+
+    const nodeDefaultQuestion = currentNode.data?.defaultQuestion;
+    const defaultQuestion =
+      nodeDefaultQuestion && nodeDefaultQuestion.trim().length > 0
+        ? nodeDefaultQuestion
+        : t('ai_agent_default_question');
+    const questionMessage = await this.replaceVariables(
+      t,
+      defaultQuestion,
+      createChat,
+      createChat.user,
+      createChat.sector
+    );
+
+    await this.chatMessageService.sendMessage(t, {
+      chat: createChat,
+      accountId: createChat.account.id,
+      type: EMessageType.text,
+      message: questionMessage,
+      typeUser: ETypeUserChat.bot,
+    });
+  }
+
+  private async processTextResponseAnalysis(
+    t: TFunction<'translation', undefined>,
+    createChat: IChat,
+    chatbotFlow: ListChatbotFlowResponse,
+    currentFlowId: string,
+    currentNode: any,
+    options: any[],
+    analysis: 'positive' | 'negative' | 'question',
+    customMessages?: {
+      service_finished_message?: string;
+      invalid_menu_option_message?: string;
+      invalid_satisfaction_option_message?: string;
+      invalid_cpf_message?: string;
+      invalid_email_message?: string;
+      invalid_phone_message?: string;
+      transfer_message_user?: string;
+      transfer_message_sector?: string;
+      transfer_message_sector_user?: string;
+    }
+  ): Promise<boolean> {
+    if (analysis === 'question') {
+      return false;
+    }
+
+    const targetOptionId = this.findTargetOptionId(t, options, analysis);
+    if (!targetOptionId) {
+      return false;
+    }
+
+    const nextFlowId = this.getNextFlowIdByOption(
+      chatbotFlow,
+      currentFlowId,
+      targetOptionId
+    );
+
+    if (!nextFlowId) {
+      return false;
+    }
+
+    await this.resetFailedAttempts(createChat);
+    return this.processNextNode(
+      t,
+      createChat,
+      chatbotFlow,
+      nextFlowId,
+      customMessages
+    );
+  }
+
+  private findTargetOptionId(
+    t: TFunction<'translation', undefined>,
+    options: any[],
+    analysis: 'positive' | 'negative' | 'question'
+  ): string | null {
+    if (analysis === 'positive') {
+      const positiveOption = options.find(
+        (opt) =>
+          opt.text === t('chatbot_ai_agent_positive_option') ||
+          opt.id === 'positive-option'
+      );
+      return (positiveOption?.id ?? null) as string | null;
+    }
+
+    if (analysis === 'negative') {
+      const negativeOption = options.find(
+        (opt) =>
+          opt.text === t('chatbot_ai_agent_negative_option') ||
+          opt.id === 'negative-option'
+      );
+      return (negativeOption?.id ?? null) as string | null;
+    }
+
+    return null;
+  }
+
+  private async generateBootstrapSummaryForChat(
+    createChat: IChat,
+    aiAgentId: string,
+    bootstrapSummaryKey: string
+  ): Promise<void> {
+    const aiAgent = await this.aiAgentViewerRepository.viewAiAgent(
+      aiAgentId,
+      createChat.account.id
+    );
+
+    if (!aiAgent || !aiAgent.base_url || !aiAgent.api_key || !aiAgent.model) {
+      return;
+    }
+
+    const bootstrapSummary = await this.ragService.generateBootstrapSummary(
+      createChat.account.id,
+      aiAgentId,
+      aiAgent.base_url,
+      aiAgent.api_key,
+      aiAgent.model,
+      aiAgent.ai_agent_type_id
+    );
+
+    if (bootstrapSummary && bootstrapSummary.trim().length > 0) {
+      await this.redis.set(bootstrapSummaryKey, bootstrapSummary, 'EX', 86400);
+    }
+  }
+
+  private async updateConversationSummaryAfterResponse(
+    createChat: IChat,
+    selectedAiAgentId: string,
+    conversationSummaryKey: string,
+    previousSummary: string | null,
+    recentMessages: Array<{ role: 'user' | 'assistant'; content: string }>,
+    userText: string,
+    aiResponse: string,
+    aiAgent: {
+      base_url: string;
+      api_key: string;
+      model: string;
+      ai_agent_type_id: string;
+    }
+  ): Promise<void> {
+    const updatedRecentMessages = this.buildUpdatedRecentMessages(
+      recentMessages,
+      userText,
+      aiResponse
+    );
+
+    const updatedConversationSummary =
+      await this.ragService.generateOrUpdateConversationSummary(
+        createChat.account.id,
+        createChat.chat_id,
+        selectedAiAgentId,
+        previousSummary,
+        updatedRecentMessages,
+        aiAgent.base_url,
+        aiAgent.api_key,
+        aiAgent.model,
+        aiAgent.ai_agent_type_id,
+        2000
+      );
+
+    if (
+      updatedConversationSummary &&
+      updatedConversationSummary.trim().length > 0
+    ) {
+      await this.redis.set(
+        conversationSummaryKey,
+        updatedConversationSummary,
+        'EX',
+        86400
+      );
+    }
+  }
+
+  private buildUpdatedRecentMessages(
+    recentMessages: Array<{ role: 'user' | 'assistant'; content: string }>,
+    userText: string,
+    aiResponse: string
+  ): Array<{ role: 'user' | 'assistant'; content: string }> {
+    return [
+      ...recentMessages.slice(-18),
+      { role: 'user' as const, content: userText },
+      { role: 'assistant' as const, content: aiResponse },
+    ];
+  }
+
+  private async scheduleChatHistoryEmbedding(
+    createChat: IChat,
+    aiAgentId: string
+  ): Promise<void> {
+    try {
+      if (!createChat.user?.id) {
+        return;
+      }
+
+      const payload: IChatHistoryEmbeddingRequest = {
+        account_id: createChat.account.id,
+        user_id: createChat.user.id,
+        ai_agent_id: aiAgentId,
+      };
+
+      const topic = this.kafkaServiceQueueService.chatHistoryEmbedding();
+      await this.streamProducerService.send(
+        topic,
+        payload,
+        `${createChat.account.id}:${createChat.user.id}:${aiAgentId}`
+      );
+    } catch {
+      // Silently fail - embedding is not critical
+    }
+  }
+
+  private async getRecentChatMessages(
+    accountId: string,
+    chatId: string,
+    limit: number = 20
+  ): Promise<Array<{ role: 'user' | 'assistant'; content: string }>> {
+    const queryElastic = {
+      size: limit,
+      sort: [{ date: { order: 'desc' } }],
+      query: {
+        bool: {
+          must: [
+            {
+              nested: {
+                path: 'account',
+                query: {
+                  term: {
+                    'account.id': accountId,
+                  },
+                },
+              },
+            },
+          ],
+          filter: [
+            {
+              term: {
+                chat_id: chatId,
+              },
+            },
+            {
+              terms: {
+                'content.type': [
+                  EMessageType.text,
+                  EMessageType.system,
+                  EMessageType.annotation,
+                ],
+              },
+            },
+          ],
+        },
+      },
+    };
+
+    const result = await this.elasticDatabaseService.select<IChatMessage>(
+      EElasticIndex.message,
+      queryElastic
+    );
+
+    if (!result || !result.hits.hits) {
+      return [];
+    }
+
+    const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+
+    for (const hit of result.hits.hits.reverse()) {
+      const message = hit._source as IChatMessage;
+      if (!message.content) {
+        continue;
+      }
+
+      const text = extractMessageTextFromContent(message.content);
+      if (!text || text.trim().length === 0) {
+        continue;
+      }
+
+      const role: 'user' | 'assistant' =
+        message.type_user === ETypeUserChat.bot ? 'assistant' : 'user';
+      messages.push({ role, content: text });
+    }
+
+    return messages;
+  }
+
+  private async analyzeUserResponse(
+    baseUrl: string,
+    apiKey: string,
+    model: string,
+    aiAgentTypeId: string,
+    continueMessage: string,
+    userResponse: string
+  ): Promise<'positive' | 'negative' | 'question'> {
+    const analysisPrompt = this.buildAnalysisPrompt(
+      continueMessage,
+      userResponse
+    );
+
+    try {
+      const analysis = await this.callAiAgentChatApi(
+        baseUrl,
+        apiKey,
+        model,
+        aiAgentTypeId,
+        analysisPrompt,
+        userResponse
+      );
+
+      return this.parseAnalysisResponse(analysis);
+    } catch {
+      return this.fallbackAnalysis(userResponse);
+    }
+  }
+
+  private buildAnalysisPrompt(
+    continueMessage: string,
+    userResponse: string
+  ): string {
+    return `Você é um analisador de respostas. Analise a resposta do usuário e classifique como:
+- "positive": se o usuário aceitou, concordou ou disse sim de alguma forma
+- "negative": se o usuário recusou, discordou ou disse não de alguma forma  
+- "question": se o usuário fez uma pergunta ou quer continuar a conversa sobre outro assunto
+
+Pergunta feita: "${continueMessage}"
+Resposta do usuário: "${userResponse}"
+
+Retorne APENAS uma das palavras: positive, negative ou question.`;
+  }
+
+  private parseAnalysisResponse(
+    analysis: string
+  ): 'positive' | 'negative' | 'question' {
+    const normalized = analysis.trim().toLowerCase();
+    if (normalized.includes('positive')) {
+      return 'positive';
+    }
+    if (normalized.includes('negative')) {
+      return 'negative';
+    }
+    return 'question';
+  }
+
+  private fallbackAnalysis(
+    userResponse: string
+  ): 'positive' | 'negative' | 'question' {
+    const lowerResponse = userResponse.toLowerCase().trim();
+
+    if (
+      lowerResponse.includes('sim') ||
+      lowerResponse.includes('yes') ||
+      lowerResponse.includes('ok') ||
+      lowerResponse.includes('1')
+    ) {
+      return 'positive';
+    }
+
+    if (
+      lowerResponse.includes('não') ||
+      lowerResponse.includes('no') ||
+      lowerResponse.includes('2')
+    ) {
+      return 'negative';
+    }
+
+    if (this.isQuestionPattern(lowerResponse)) {
+      return 'question';
+    }
+
+    return 'positive';
+  }
+
+  private isQuestionPattern(text: string): boolean {
+    return (
+      text.includes('?') ||
+      text.startsWith('como') ||
+      text.startsWith('qual') ||
+      text.startsWith('quando') ||
+      text.startsWith('onde') ||
+      text.startsWith('quem') ||
+      text.startsWith('por que')
+    );
+  }
+
+  private async callAiAgentChatApi(
+    baseUrl: string,
+    apiKey: string,
+    model: string,
+    aiAgentTypeId: string,
+    prompt: string,
+    userQuery: string,
+    history?: Array<{ role: 'user' | 'assistant'; content: string }>
+  ): Promise<string> {
+    if (!baseUrl || !apiKey || !model) {
+      throw new InvalidConfigurationError(
+        'AI Agent base_url, api_key ou model não está configurado.'
+      );
+    }
+
+    if (aiAgentTypeId === EAiAgentType.gemini) {
+      return this.callGeminiChatApi(
+        baseUrl,
+        apiKey,
+        model,
+        prompt,
+        userQuery,
+        history
+      );
+    }
+
+    return this.callOpenAiChatApi(
+      baseUrl,
+      apiKey,
+      model,
+      prompt,
+      userQuery,
+      history
+    );
+  }
+
+  private async processAiAgentNode(
+    t: TFunction<'translation', undefined>,
+    data: IUpsertMessage,
+    createChat: IChat,
+    chatbotFlow: ListChatbotFlowResponse,
+    currentFlowId: string,
+    customMessages?: {
+      service_finished_message?: string;
+      invalid_menu_option_message?: string;
+      invalid_satisfaction_option_message?: string;
+      invalid_cpf_message?: string;
+      invalid_cnpj_message?: string;
+      invalid_email_message?: string;
+      transfer_message_user?: string;
+      transfer_message_sector?: string;
+      transfer_message_sector_user?: string;
+    }
+  ): Promise<boolean> {
+    const currentNode = this.getFlowNodeById(chatbotFlow, currentFlowId);
+
+    if (!currentNode) {
+      throw new Error(t('chatbot_flow_node_not_found'));
+    }
+
+    const selectedAiAgentId = currentNode.data?.selectedAiAgent;
+
+    if (!selectedAiAgentId) {
+      throw new Error(t('chatbot_flow_validation_ai_agent_required'));
+    }
+
+    const cacheKey = this.getChatbotFlowCacheKey(
+      createChat.account.id,
+      createChat.worker.id,
+      createChat.chat_id
+    );
+    const cachedFlowId = await this.redis.get(cacheKey);
+    const isFirstEntry = cachedFlowId !== currentFlowId;
+
+    const bootstrapSummaryKey = `${cacheKey}:bootstrap-summary`;
+    const conversationSummaryKey = `${cacheKey}:conversation-summary`;
+
+    if (isFirstEntry) {
+      return this.handleBootstrapEntry(
+        t,
+        createChat,
+        currentNode,
+        selectedAiAgentId,
+        currentFlowId,
+        bootstrapSummaryKey
+      );
+    }
+
+    const userText = this.getTextFromUpsertMessage(data)?.trim();
+
+    if (!userText) {
+      return false;
+    }
+
+    const menuResult = await this.handleMenuOptionIfExists(
+      t,
+      createChat,
+      chatbotFlow,
+      currentFlowId,
+      currentNode,
+      userText,
+      customMessages
+    );
+
+    if (menuResult !== null) {
+      return menuResult;
+    }
+
+    return this.processAiAgentResponse(
+      t,
+      createChat,
+      currentNode,
+      selectedAiAgentId,
+      currentFlowId,
+      userText,
+      bootstrapSummaryKey,
+      conversationSummaryKey
+    );
+  }
+
+  private async handleBootstrapEntry(
+    t: TFunction<'translation', undefined>,
+    createChat: IChat,
+    currentNode: ListChatbotFlowResponse['nodes'][number],
+    selectedAiAgentId: string,
+    currentFlowId: string,
+    bootstrapSummaryKey: string
+  ): Promise<boolean> {
+    await this.generateBootstrapSummaryForChat(
+      createChat,
+      selectedAiAgentId,
+      bootstrapSummaryKey
+    );
+
+    await this.sendDefaultQuestionMessage(t, createChat, currentNode, false);
+    await this.updateCache(createChat, currentFlowId);
+    await this.scheduleChatHistoryEmbedding(createChat, selectedAiAgentId);
+
+    return true;
+  }
+
+  private async handleMenuOptionIfExists(
+    t: TFunction<'translation', undefined>,
+    createChat: IChat,
+    chatbotFlow: ListChatbotFlowResponse,
+    currentFlowId: string,
+    currentNode: ListChatbotFlowResponse['nodes'][number],
+    userText: string,
+    customMessages?: {
+      service_finished_message?: string;
+      invalid_menu_option_message?: string;
+      invalid_satisfaction_option_message?: string;
+      invalid_cpf_message?: string;
+      invalid_cnpj_message?: string;
+      invalid_email_message?: string;
+      transfer_message_user?: string;
+      transfer_message_sector?: string;
+      transfer_message_sector_user?: string;
+    }
+  ): Promise<boolean | null> {
+    const options = currentNode.data?.options;
+    const continueMessage = currentNode.data?.continueMessage;
+
+    if (!options || !Array.isArray(options) || options.length < 2) {
+      return null;
+    }
+
+    const numericResult = await this.handleNumericMenuOption(
+      t,
+      createChat,
+      chatbotFlow,
+      currentFlowId,
+      options,
+      userText,
+      customMessages
+    );
+
+    if (numericResult !== null) {
+      return numericResult;
+    }
+
+    if (!continueMessage) {
+      return false;
+    }
+
+    return this.handleContinueMessageAnalysis(
+      t,
+      createChat,
+      chatbotFlow,
+      currentFlowId,
+      currentNode,
+      options,
+      continueMessage,
+      userText,
+      customMessages
+    );
+  }
+
+  private async handleNumericMenuOption(
+    t: TFunction<'translation', undefined>,
+    createChat: IChat,
+    chatbotFlow: ListChatbotFlowResponse,
+    currentFlowId: string,
+    options: any[],
+    userText: string,
+    customMessages?: {
+      service_finished_message?: string;
+      invalid_menu_option_message?: string;
+      invalid_satisfaction_option_message?: string;
+      invalid_cpf_message?: string;
+      invalid_cnpj_message?: string;
+      invalid_email_message?: string;
+      transfer_message_user?: string;
+      transfer_message_sector?: string;
+      transfer_message_sector_user?: string;
+    }
+  ): Promise<boolean | null> {
+    const selectedNumber = Number.parseInt(userText, 10);
+
+    if (
+      Number.isNaN(selectedNumber) ||
+      selectedNumber < 1 ||
+      selectedNumber > options.length
+    ) {
+      return null;
+    }
+
+    const selectedOption = options[selectedNumber - 1];
+    if (!selectedOption) {
+      return false;
+    }
+
+    const continueMessageSentKey = `${this.getChatbotFlowCacheKey(
+      createChat.account.id,
+      createChat.worker.id,
+      createChat.chat_id
+    )}:continue-message-sent`;
+    await this.redis.del(continueMessageSentKey);
+
+    const nextFlowId = this.getNextFlowIdByOption(
+      chatbotFlow,
+      currentFlowId,
+      selectedOption.id
+    );
+
+    if (!nextFlowId) {
+      return false;
+    }
+
+    await this.resetFailedAttempts(createChat);
+    return this.processNextNode(
+      t,
+      createChat,
+      chatbotFlow,
+      nextFlowId,
+      customMessages
+    );
+  }
+
+  private async handleContinueMessageAnalysis(
+    t: TFunction<'translation', undefined>,
+    createChat: IChat,
+    chatbotFlow: ListChatbotFlowResponse,
+    currentFlowId: string,
+    currentNode: ListChatbotFlowResponse['nodes'][number],
+    options: any[],
+    continueMessage: string,
+    userText: string,
+    customMessages?: {
+      service_finished_message?: string;
+      invalid_menu_option_message?: string;
+      invalid_satisfaction_option_message?: string;
+      invalid_cpf_message?: string;
+      invalid_cnpj_message?: string;
+      invalid_email_message?: string;
+      transfer_message_user?: string;
+      transfer_message_sector?: string;
+      transfer_message_sector_user?: string;
+    }
+  ): Promise<boolean | null> {
+    const continueMessageSentKey = `${this.getChatbotFlowCacheKey(
+      createChat.account.id,
+      createChat.worker.id,
+      createChat.chat_id
+    )}:continue-message-sent`;
+    const continueMessageSent = await this.redis.get(continueMessageSentKey);
+
+    if (continueMessageSent !== 'true') {
+      return null;
+    }
+
+    const selectedAiAgentId = currentNode.data?.selectedAiAgent;
+    if (!selectedAiAgentId) {
+      return false;
+    }
+
+    const aiAgentForAnalysis = await this.aiAgentViewerRepository.viewAiAgent(
+      selectedAiAgentId,
+      createChat.account.id
+    );
+
+    if (
+      !aiAgentForAnalysis ||
+      !aiAgentForAnalysis.base_url ||
+      !aiAgentForAnalysis.api_key ||
+      !aiAgentForAnalysis.model
+    ) {
+      return false;
+    }
+
+    const analysis = await this.analyzeUserResponse(
+      aiAgentForAnalysis.base_url,
+      aiAgentForAnalysis.api_key,
+      aiAgentForAnalysis.model,
+      aiAgentForAnalysis.ai_agent_type_id,
+      continueMessage,
+      userText
+    );
+
+    await this.redis.del(continueMessageSentKey);
+
+    const analysisResult = await this.processTextResponseAnalysis(
+      t,
+      createChat,
+      chatbotFlow,
+      currentFlowId,
+      currentNode,
+      options,
+      analysis,
+      customMessages
+    );
+
+    if (analysisResult) {
+      return true;
+    }
+
+    return null;
+  }
+
+  private async processAiAgentResponse(
+    t: TFunction<'translation', undefined>,
+    createChat: IChat,
+    currentNode: ListChatbotFlowResponse['nodes'][number],
+    selectedAiAgentId: string,
+    currentFlowId: string,
+    userText: string,
+    bootstrapSummaryKey: string,
+    conversationSummaryKey: string
+  ): Promise<boolean> {
+    const aiAgent = await this.aiAgentViewerRepository.viewAiAgent(
+      selectedAiAgentId,
+      createChat.account.id
+    );
+
+    if (!aiAgent) {
+      throw new Error(t('ai_agent_not_found'));
+    }
+
+    if (!aiAgent.base_url || !aiAgent.api_key || !aiAgent.model) {
+      throw new InvalidConfigurationError(
+        'AI Agent base_url, api_key ou model não está configurado.'
+      );
+    }
+
+    const enhancedPrompt = await this.buildEnhancedPromptForAiAgent(
+      createChat,
+      selectedAiAgentId,
+      userText,
+      bootstrapSummaryKey,
+      conversationSummaryKey
+    );
+
+    const aiResponse = await this.callAiAgentChatApi(
+      aiAgent.base_url,
+      aiAgent.api_key,
+      aiAgent.model,
+      aiAgent.ai_agent_type_id,
+      enhancedPrompt,
+      userText
+    );
+
+    await this.sendAiAgentResponse(
+      t,
+      createChat,
+      aiResponse,
+      currentNode,
+      selectedAiAgentId,
+      conversationSummaryKey,
+      userText,
+      {
+        base_url: aiAgent.base_url,
+        api_key: aiAgent.api_key,
+        model: aiAgent.model,
+        ai_agent_type_id: aiAgent.ai_agent_type_id,
+      }
+    );
+
+    await this.updateCache(createChat, currentFlowId);
+    return true;
+  }
+
+  private async buildEnhancedPromptForAiAgent(
+    createChat: IChat,
+    selectedAiAgentId: string,
+    userText: string,
+    bootstrapSummaryKey: string,
+    conversationSummaryKey: string
+  ): Promise<string> {
+    const systemPrompt = 'Você é um assistente virtual prestativo e educado.';
+
+    const bootstrapSummary = await this.redis.get(bootstrapSummaryKey);
+    const conversationSummary = await this.redis.get(conversationSummaryKey);
+
+    const recentMessages = await this.getRecentChatMessages(
+      createChat.account.id,
+      createChat.chat_id,
+      20
+    );
+
+    const { enhancedPrompt } = await this.ragService.enhancePromptWithRag(
+      createChat.account.id,
+      selectedAiAgentId,
+      systemPrompt,
+      userText,
+      {
+        topK: 8,
+        minScore: 0.0,
+        chatId: createChat.chat_id,
+        includeChatHistory: true,
+        isBootstrap: false,
+        bootstrapSummary: bootstrapSummary,
+        conversationSummary: conversationSummary,
+        recentMessages: recentMessages,
+      }
+    );
+
+    return enhancedPrompt;
+  }
+
+  private async sendAiAgentResponse(
+    t: TFunction<'translation', undefined>,
+    createChat: IChat,
+    aiResponse: string,
+    currentNode: ListChatbotFlowResponse['nodes'][number],
+    selectedAiAgentId: string,
+    conversationSummaryKey: string,
+    userText: string,
+    aiAgent: {
+      base_url: string;
+      api_key: string;
+      model: string;
+      ai_agent_type_id: string;
+    }
+  ): Promise<void> {
+    await this.chatMessageService.sendMessage(t, {
+      chat: createChat,
+      accountId: createChat.account.id,
+      type: EMessageType.text,
+      message: aiResponse,
+      typeUser: ETypeUserChat.bot,
+    });
+
+    const conversationSummary = await this.redis.get(conversationSummaryKey);
+    const recentMessages = await this.getRecentChatMessages(
+      createChat.account.id,
+      createChat.chat_id,
+      20
+    );
+
+    await this.updateConversationSummaryAfterResponse(
+      createChat,
+      selectedAiAgentId,
+      conversationSummaryKey,
+      conversationSummary,
+      recentMessages,
+      userText,
+      aiResponse,
+      aiAgent
+    );
+
+    await this.sendContinueMessageIfNeeded(t, createChat, currentNode);
+  }
+
+  private async sendContinueMessageIfNeeded(
+    t: TFunction<'translation', undefined>,
+    createChat: IChat,
+    currentNode: ListChatbotFlowResponse['nodes'][number]
+  ): Promise<void> {
+    const continueMessage = currentNode.data?.continueMessage;
+
+    if (!continueMessage || continueMessage.trim().length === 0) {
+      return;
+    }
+
+    const continueMessageText = await this.replaceVariables(
+      t,
+      continueMessage,
+      createChat,
+      createChat.user,
+      createChat.sector
+    );
+
+    await this.chatMessageService.sendMessage(t, {
+      chat: createChat,
+      accountId: createChat.account.id,
+      type: EMessageType.text,
+      message: continueMessageText,
+      typeUser: ETypeUserChat.bot,
+    });
+
+    const continueMessageSentKey = `${this.getChatbotFlowCacheKey(
+      createChat.account.id,
+      createChat.worker.id,
+      createChat.chat_id
+    )}:continue-message-sent`;
+    await this.redis.set(continueMessageSentKey, 'true', 'EX', 3600);
+  }
+
   private async processStartNode(
     t: TFunction<'translation', undefined>,
     createChat: IChat,
@@ -2702,6 +3837,17 @@ export class ChatbotFlowRunnerService {
 
     if (currentNode.type === 'data') {
       return this.processDataNode(
+        t,
+        data,
+        createChat,
+        chatbotFlow,
+        currentFlowId,
+        customMessages
+      );
+    }
+
+    if (currentNode.type === 'aiAgent') {
+      return this.processAiAgentNode(
         t,
         data,
         createChat,

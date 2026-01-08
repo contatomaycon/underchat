@@ -8,4 +8,5 @@ export enum EElasticIndex {
   notification = 'notification',
   schedule = 'schedule',
   ai_agent_prompt_embedding = 'ai-agent-prompt-embedding',
+  chat_history_embedding = 'chat-history-embedding',
 }

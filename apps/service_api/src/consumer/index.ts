@@ -14,6 +14,7 @@ import { startUserPhoneJidUpdateConsume } from './userPhoneJidUpdate.consume';
 import { startReportConversationHistoryPdfGenerateConsume } from './reportConversationHistoryPdfGenerate.consume';
 import { startScheduleStatusUpdateConsume } from './scheduleStatusUpdate.consume';
 import { startAiAgentPromptEmbeddingConsume } from './aiAgentPromptEmbedding.consume';
+import { startChatHistoryEmbeddingConsume } from './chatHistoryEmbedding.consume';
 
 const consumers: Array<{ close?: () => Promise<void> }> = [];
 
@@ -42,7 +43,8 @@ export function startConsumers(server: FastifyInstance): void {
       startUserPhoneJidUpdateConsume(server),
       startReportConversationHistoryPdfGenerateConsume(server),
       startScheduleStatusUpdateConsume(server),
-      startAiAgentPromptEmbeddingConsume(server)
+      startAiAgentPromptEmbeddingConsume(server),
+      startChatHistoryEmbeddingConsume(server)
     );
   });
 }

@@ -52,6 +52,7 @@ export class AiAgentCreatorRepository {
         base_url: baseUrl,
         api_key: input.api_key,
         model: input.model,
+        embedding_model: input.embedding_model,
         chunk_size: input.chunk_size ?? '600',
         chunk_overlap: input.chunk_overlap ?? '100',
         status: input.status ?? EAiAgentStatus.active,

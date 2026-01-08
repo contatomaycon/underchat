@@ -6,15 +6,15 @@ export const updateAiAgentParamsSchema = Type.Object({
 });
 
 export const updateAiAgentBodySchema = Type.Object({
-  ai_agent_type_id: Type.Optional(
-    Type.Union([Type.String({ format: 'uuid' }), Type.Null()])
-  ),
   name: Type.Optional(
     Type.Union([Type.String({ minLength: 1, maxLength: 200 }), Type.Null()])
   ),
   base_url: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   api_key: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   model: Type.Optional(
+    Type.Union([Type.String({ minLength: 1, maxLength: 100 }), Type.Null()])
+  ),
+  embedding_model: Type.Optional(
     Type.Union([Type.String({ minLength: 1, maxLength: 100 }), Type.Null()])
   ),
   chunk_size: Type.Optional(

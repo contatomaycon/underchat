@@ -24,6 +24,7 @@ export class KafkaServiceQueueService {
     const scheduleStatusUpdate = this.scheduleStatusUpdate();
     const workerConfigUpdate = this.workerConfigUpdate();
     const aiAgentPromptEmbedding = this.aiAgentPromptEmbedding();
+    const chatHistoryEmbedding = this.chatHistoryEmbedding();
 
     return [
       createServer,
@@ -43,6 +44,7 @@ export class KafkaServiceQueueService {
       scheduleStatusUpdate,
       workerConfigUpdate,
       aiAgentPromptEmbedding,
+      chatHistoryEmbedding,
     ];
   };
 
@@ -122,5 +124,9 @@ export class KafkaServiceQueueService {
 
   aiAgentPromptEmbedding = () => {
     return `ai.agent.prompt.embedding`;
+  };
+
+  chatHistoryEmbedding = () => {
+    return `chat.history.embedding`;
   };
 }

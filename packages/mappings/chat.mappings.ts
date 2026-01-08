@@ -154,6 +154,9 @@ export const chatMappings = () => {
             },
           },
         },
+        embedded_for_ai_agents: {
+          type: 'keyword',
+        },
       },
     },
   };

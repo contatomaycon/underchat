@@ -4,40 +4,12 @@ import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { and, eq } from 'drizzle-orm';
 import { UpdateAiAgentRequest } from '@core/schema/aiAgent/updateAiAgent/request.schema';
-import { EAiAgentType } from '@core/common/enums/EAiAgentType';
 
 @injectable()
 export class AiAgentUpdaterRepository {
   constructor(
     @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
-
-  private getBaseUrlByType(aiAgentTypeId: string): string | null | undefined {
-    if (aiAgentTypeId === EAiAgentType.gpt) {
-      return 'https://api.openai.com/v1';
-    }
-
-    if (aiAgentTypeId === EAiAgentType.gemini) {
-      return 'https://generativelanguage.googleapis.com/v1';
-    }
-
-    return null;
-  }
-
-  private getBaseUrlForUpdate(
-    baseUrl: string | null | undefined,
-    aiAgentTypeId: string | null | undefined
-  ): string | null | undefined {
-    if (baseUrl !== undefined) {
-      return baseUrl ?? undefined;
-    }
-
-    if (aiAgentTypeId) {
-      return this.getBaseUrlByType(aiAgentTypeId);
-    }
-
-    return undefined;
-  }
 
   private updateInput(
     input: UpdateAiAgentRequest
@@ -48,12 +20,8 @@ export class AiAgentUpdaterRepository {
       inputUpdate.name = input.name ?? undefined;
     }
 
-    const baseUrl = this.getBaseUrlForUpdate(
-      input.base_url,
-      input.ai_agent_type_id
-    );
-    if (baseUrl !== undefined) {
-      inputUpdate.base_url = baseUrl;
+    if (input.base_url !== undefined) {
+      inputUpdate.base_url = input.base_url ?? undefined;
     }
 
     if (input.api_key !== undefined) {
@@ -62,6 +30,10 @@ export class AiAgentUpdaterRepository {
 
     if (input.model !== undefined) {
       inputUpdate.model = input.model ?? undefined;
+    }
+
+    if (input.embedding_model !== undefined) {
+      inputUpdate.embedding_model = input.embedding_model ?? undefined;
     }
 
     if (input.chunk_size !== undefined) {
@@ -74,10 +46,6 @@ export class AiAgentUpdaterRepository {
 
     if (input.status !== undefined) {
       inputUpdate.status = input.status ?? undefined;
-    }
-
-    if (input.ai_agent_type_id !== undefined) {
-      inputUpdate.ai_agent_type_id = input.ai_agent_type_id ?? undefined;
     }
 
     return inputUpdate;

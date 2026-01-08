@@ -18,6 +18,7 @@ export const aiAgent = pgTable(
     base_url: varchar({ length: 500 }),
     api_key: varchar({ length: 2000 }),
     model: varchar({ length: 100 }),
+    embedding_model: varchar({ length: 100 }),
     chunk_size: varchar({ length: 10 }).notNull().default('600'),
     chunk_overlap: varchar({ length: 10 }).notNull().default('100'),
     status: varchar({ length: 20 })
@@ -38,6 +39,8 @@ export const aiAgent = pgTable(
     index('ai_agent_ai_agent_type_id_idx').on(table.ai_agent_type_id),
     index('ai_agent_status_idx').on(table.status),
     index('ai_agent_account_id_status_idx').on(table.account_id, table.status),
+    index('ai_agent_embedding_model_idx').on(table.embedding_model),
+    index('ai_agent_model_idx').on(table.model),
   ]
 );
 
