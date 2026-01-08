@@ -13,6 +13,11 @@ import { centrifugoEnvironment } from '@core/config/environments';
 
 @injectable()
 export class CentrifugoService {
+  private readonly publishRetryAttempts = 3;
+  private readonly publishRetryBaseDelayMs = 500;
+  private readonly publishRetryMaxDelayMs = 4_000;
+  private readonly connectTimeoutMs = 15_000;
+
   constructor(@inject('Centrifuge') private readonly client: Centrifuge) {}
 
   private toError(e: unknown): Error {
@@ -25,29 +30,213 @@ export class CentrifugoService {
     }
   }
 
+  private async delay(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private isTransientError(error: Error): boolean {
+    const message = error.message.toLowerCase();
+    const cause = (error as { cause?: unknown }).cause;
+
+    if (
+      message.includes('timeout') ||
+      message.includes('transport closed') ||
+      message.includes('websocket') ||
+      message.includes('connection') ||
+      message.includes('connect') ||
+      message.includes('network')
+    ) {
+      return true;
+    }
+
+    if (cause instanceof Error) {
+      const causeMessage = cause.message.toLowerCase();
+
+      return (
+        causeMessage.includes('timeout') ||
+        causeMessage.includes('connection') ||
+        causeMessage.includes('connect')
+      );
+    }
+
+    return false;
+  }
+
   private async waitForConnected(): Promise<void> {
     if (this.client.state === State.Connected) {
       return;
     }
 
-    await new Promise<void>((resolve) => {
-      const handler = () => {
-        this.client.off('connected', handler);
+    await new Promise<void>((resolve, reject) => {
+      let timer: ReturnType<typeof setTimeout> | null = null;
+
+      let onConnected: () => void;
+      let onError: (err: unknown) => void;
+      let onDisconnected: () => void;
+
+      const cleanup = (): void => {
+        if (timer) {
+          clearTimeout(timer);
+          timer = null;
+        }
+
+        try {
+          this.client.off('connected', onConnected);
+          this.client.off('error', onError);
+          this.client.off('disconnected', onDisconnected);
+        } catch {}
+      };
+
+      onConnected = (): void => {
+        cleanup();
         resolve();
       };
 
-      this.client.on('connected', handler);
+      onError = (err: unknown): void => {
+        cleanup();
+        reject(this.toError(err));
+      };
+
+      onDisconnected = (): void => {
+        if (this.client.state !== State.Connected) {
+          cleanup();
+          reject(new Error('Centrifugo disconnected before connect'));
+        }
+      };
+
+      timer = setTimeout(() => {
+        cleanup();
+        reject(new Error('Centrifugo connection timeout'));
+      }, this.connectTimeoutMs);
+
+      this.client.on('connected', onConnected);
+      this.client.on('error', onError);
+      this.client.on('disconnected', onDisconnected);
+
+      if (this.client.state === State.Disconnected) {
+        try {
+          this.client.connect();
+        } catch (err) {
+          cleanup();
+          reject(this.toError(err));
+        }
+      }
     });
   }
 
   private generateSubToken(subId: string): string {
-    const exp = Math.floor(Date.now() / 1000) * 60 * 60 * 24;
+    const exp = Math.floor(Date.now() / 1000) + 60 * 60 * 24;
 
     return jwt.sign(
       { sub: subId, exp },
       centrifugoEnvironment.centrifugoHmacSecretKey,
       { algorithm: 'HS256' }
     );
+  }
+
+  private async withPublishRetry(
+    action: () => Promise<PublishResult>,
+    context: { channel: string; subId?: string }
+  ): Promise<PublishResult> {
+    let lastError: Error | null = null;
+
+    for (let attempt = 1; attempt <= this.publishRetryAttempts; attempt++) {
+      try {
+        return await action();
+      } catch (error) {
+        const normalizedError = this.toError(error);
+        lastError = normalizedError;
+        const isTransient = this.isTransientError(normalizedError);
+        const isLastAttempt = attempt === this.publishRetryAttempts;
+
+        if (!isTransient) {
+          throw normalizedError;
+        }
+
+        if (isLastAttempt) {
+          console.error('Centrifugo publish failed after retries', {
+            channel: context.channel,
+            subId: context.subId,
+            error: normalizedError.message,
+          });
+
+          return {} as PublishResult;
+        }
+
+        const backoff = Math.min(
+          this.publishRetryBaseDelayMs * 2 ** (attempt - 1),
+          this.publishRetryMaxDelayMs
+        );
+
+        await this.delay(backoff);
+      }
+    }
+
+    if (lastError) {
+      console.error('Centrifugo publish failed without recovery', {
+        channel: context.channel,
+        subId: context.subId,
+        error: lastError.message,
+      });
+    }
+
+    return {} as PublishResult;
+  }
+
+  private async connectTempClient(client: Centrifuge): Promise<void> {
+    if (client.state === State.Connected) {
+      return;
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      let timer: ReturnType<typeof setTimeout> | null = null;
+
+      let onConnect: () => void;
+      let onError: (err: unknown) => void;
+      let onDisconnected: () => void;
+
+      const cleanup = (): void => {
+        if (timer) {
+          clearTimeout(timer);
+          timer = null;
+        }
+
+        try {
+          client.off('connected', onConnect);
+          client.off('error', onError);
+          client.off('disconnected', onDisconnected);
+        } catch {}
+      };
+
+      onConnect = (): void => {
+        cleanup();
+        resolve();
+      };
+
+      onError = (err: unknown): void => {
+        cleanup();
+        reject(this.toError(err));
+      };
+
+      onDisconnected = (): void => {
+        if (client.state !== State.Connected) {
+          cleanup();
+          reject(
+            new Error('Centrifugo temp client disconnected before connect')
+          );
+        }
+      };
+
+      timer = setTimeout(() => {
+        cleanup();
+        reject(new Error('Centrifugo temp client connection timeout'));
+      }, this.connectTimeoutMs);
+
+      client.on('connected', onConnect);
+      client.on('error', onError);
+      client.on('disconnected', onDisconnected);
+      client.connect();
+    });
   }
 
   private async publishWithToken(
@@ -65,35 +254,9 @@ export class CentrifugoService {
       }
     );
 
-    let connected = false;
-    let cleanupDone = false;
-    let resolveConnect: () => void;
-    let rejectConnect: (err: Error) => void;
-
-    const toError = (err: unknown): Error => {
-      if (err instanceof Error) return err;
-      if (typeof err === 'string') return new Error(err);
-      try {
-        return new Error(JSON.stringify(err));
-      } catch {
-        return new Error(String(err));
-      }
-    };
-
-    let onConnect: () => void;
-    let onError: (err: unknown) => void;
-    let onDisconnected: () => void;
-
     const cleanup = (): void => {
-      if (cleanupDone) {
-        return;
-      }
-      cleanupDone = true;
-
       try {
-        tempClient.off('connected', onConnect);
-        tempClient.off('error', onError);
-        tempClient.off('disconnected', onDisconnected);
+        tempClient.removeAllListeners();
       } catch {}
 
       try {
@@ -103,61 +266,16 @@ export class CentrifugoService {
       } catch {}
     };
 
-    onDisconnected = (): void => {
-      if (!connected) {
-        return;
+    try {
+      await this.connectTempClient(tempClient);
+
+      if (tempClient.state !== State.Connected) {
+        throw new Error('Connection closed before publish');
       }
 
-      cleanup();
-    };
-
-    onError = (err: unknown): void => {
-      tempClient.off('error', onError);
-      tempClient.off('connected', onConnect);
-      tempClient.off('disconnected', onDisconnected);
-
-      if (!connected) {
-        cleanup();
-        rejectConnect(toError(err));
-      }
-    };
-
-    onConnect = (): void => {
-      connected = true;
-      tempClient.off('connected', onConnect);
-      tempClient.off('error', onError);
-      resolveConnect();
-    };
-
-    const connectPromise = new Promise<void>((resolve, reject) => {
-      resolveConnect = resolve;
-      rejectConnect = reject;
-
-      tempClient.on('connected', onConnect);
-      tempClient.on('error', onError);
-      tempClient.on('disconnected', onDisconnected);
-      tempClient.connect();
-    });
-
-    try {
-      await connectPromise;
-    } catch (error) {
-      cleanup();
-      throw error;
-    }
-
-    if (tempClient.state !== State.Connected) {
-      cleanup();
-      throw new Error('Connection closed before publish');
-    }
-
-    try {
-      const result = await tempClient.publish(channel, data);
-      cleanup();
-      return result;
+      return await tempClient.publish(channel, data);
     } catch (error) {
       const errorObj = this.toError(error);
-      cleanup();
 
       if (
         errorObj.message.includes('transport closed') ||
@@ -167,6 +285,8 @@ export class CentrifugoService {
       }
 
       throw errorObj;
+    } finally {
+      cleanup();
     }
   }
 
@@ -181,9 +301,13 @@ export class CentrifugoService {
   }
 
   async publish(channel: string, data: unknown): Promise<PublishResult> {
-    await this.waitForConnected();
-
-    return this.client.publish(channel, data);
+    return this.withPublishRetry(
+      async () => {
+        await this.waitForConnected();
+        return this.client.publish(channel, data);
+      },
+      { channel }
+    );
   }
 
   async publishSub(channel: string, data: unknown): Promise<PublishResult> {
@@ -195,7 +319,10 @@ export class CentrifugoService {
 
     const token = this.generateSubToken(subId);
 
-    return this.publishWithToken(token, channel, data);
+    return this.withPublishRetry(
+      () => this.publishWithToken(token, channel, data),
+      { channel, subId }
+    );
   }
 
   async onMessage(

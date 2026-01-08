@@ -3418,7 +3418,6 @@ Retorne APENAS uma das palavras: positive, negative ou question.`;
     }
 
     const userText = this.getTextFromUpsertMessage(data)?.trim();
-
     if (!userText) {
       return false;
     }
@@ -3482,7 +3481,9 @@ Retorne APENAS uma das palavras: positive, negative ou question.`;
       currentFlowId,
       userText,
       bootstrapSummaryKey,
-      conversationSummaryKey
+      conversationSummaryKey,
+      chatbotFlow,
+      customMessages
     );
   }
 
@@ -3719,7 +3720,19 @@ Retorne APENAS uma das palavras: positive, negative ou question.`;
     currentFlowId: string,
     userText: string,
     bootstrapSummaryKey: string,
-    conversationSummaryKey: string
+    conversationSummaryKey: string,
+    chatbotFlow: ListChatbotFlowResponse,
+    customMessages?: {
+      service_finished_message?: string;
+      invalid_menu_option_message?: string;
+      invalid_satisfaction_option_message?: string;
+      invalid_cpf_message?: string;
+      invalid_cnpj_message?: string;
+      invalid_email_message?: string;
+      transfer_message_user?: string;
+      transfer_message_sector?: string;
+      transfer_message_sector_user?: string;
+    }
   ): Promise<boolean> {
     const aiAgent = await this.aiAgentViewerRepository.viewAiAgent(
       selectedAiAgentId,
@@ -3771,13 +3784,39 @@ Retorne APENAS uma das palavras: positive, negative ou question.`;
 
     const actionAfterInteractions =
       currentNode.data?.actionAfterInteractions === true;
-    if (actionAfterInteractions) {
-      await this.incrementAiAgentInteractionsCount(
+    const interactionsQuantity = currentNode.data?.interactionsQuantity ?? 0;
+
+    if (actionAfterInteractions && interactionsQuantity > 0) {
+      const newCount = await this.incrementAiAgentInteractionsCount(
         createChat.account.id,
         createChat.worker.id,
         createChat.chat_id,
         currentFlowId
       );
+
+      if (newCount >= interactionsQuantity) {
+        const nextFlowId = this.getNextFlowIdByInteractionsHandle(
+          chatbotFlow,
+          currentFlowId
+        );
+
+        if (nextFlowId) {
+          await this.resetAiAgentInteractionsCount(
+            createChat.account.id,
+            createChat.worker.id,
+            createChat.chat_id,
+            currentFlowId
+          );
+          await this.updateCache(createChat, nextFlowId);
+          return this.processNextNode(
+            t,
+            createChat,
+            chatbotFlow,
+            nextFlowId,
+            customMessages
+          );
+        }
+      }
     }
 
     await this.updateCache(createChat, currentFlowId);
