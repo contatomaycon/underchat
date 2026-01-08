@@ -1191,6 +1191,8 @@ export class ChatbotFlowRunnerService {
         return true;
       }
 
+      await this.updateCache(createChat, nextFlowId);
+
       return this.processNextNode(
         t,
         createChat,
@@ -1220,6 +1222,8 @@ export class ChatbotFlowRunnerService {
     if (!nextFlowId) {
       return true;
     }
+
+    await this.updateCache(createChat, nextFlowId);
 
     return this.processNextNode(
       t,
