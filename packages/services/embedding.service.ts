@@ -730,6 +730,8 @@ export class EmbeddingService {
     queryText: string,
     topK = 10
   ): Promise<Array<{ text: string; score: number; message_id: string }>> {
+    await this.ensureChatHistoryIndex();
+
     const aiAgent = await this.aiAgentViewerRepository.viewAiAgent(
       aiAgentId,
       accountId
