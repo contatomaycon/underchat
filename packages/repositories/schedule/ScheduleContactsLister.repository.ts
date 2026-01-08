@@ -13,6 +13,7 @@ import {
   SQLWrapper,
   or,
   ilike,
+  sql,
 } from 'drizzle-orm';
 import { ESortOrder } from '@core/common/enums/ESortOrder';
 import { ListScheduleContactsResponse } from '@core/schema/schedule/listScheduleContacts/response.schema';
@@ -54,17 +55,49 @@ export class ScheduleContactsListerRepository {
       isNull(contact.deleted_at),
     ];
 
-    if (query.search) {
-      const conditions: (SQLWrapper | undefined)[] = [
-        query.search ? ilike(contact.name, `%${query.search}%`) : undefined,
-        query.search
-          ? ilike(contact.phone_partial, `%${query.search}%`)
-          : undefined,
-      ];
+    if (!query.search) {
+      return filters;
+    }
 
-      const combined = or(...conditions);
+    const searchTerm = query.search;
+    const searchWords = searchTerm
+      .trim()
+      .split(/\s+/)
+      .filter((word) => word.length > 0);
+    const hasMultipleWords = searchWords.length > 1;
 
-      if (combined) filters.push(combined);
+    const rawConditions: Array<SQLWrapper | undefined> = [
+      searchTerm ? ilike(contact.name, `%${searchTerm}%`) : undefined,
+      searchTerm ? ilike(contact.last_name, `%${searchTerm}%`) : undefined,
+      hasMultipleWords
+        ? and(
+            ilike(contact.name, `%${searchWords[0]}%`),
+            ilike(contact.last_name, `%${searchWords[1]}%`)
+          )
+        : undefined,
+      hasMultipleWords
+        ? and(
+            ilike(contact.name, `%${searchWords[1]}%`),
+            ilike(contact.last_name, `%${searchWords[0]}%`)
+          )
+        : undefined,
+      searchTerm
+        ? ilike(
+            sql`CONCAT(COALESCE(${contact.name}, ''), ' ', COALESCE(${contact.last_name}, ''))`,
+            `%${searchTerm}%`
+          )
+        : undefined,
+      searchTerm ? ilike(contact.phone_partial, `%${searchTerm}%`) : undefined,
+      searchTerm ? ilike(contact.phone, `%${searchTerm}%`) : undefined,
+    ];
+
+    const conditions = rawConditions.filter(
+      (condition): condition is SQLWrapper => condition !== undefined
+    );
+
+    if (conditions.length) {
+      const combinedFilter = or(...conditions) as SQLWrapper;
+      filters.push(combinedFilter);
     }
 
     return filters;

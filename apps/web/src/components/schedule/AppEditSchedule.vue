@@ -564,11 +564,19 @@ watch(selectedType, () => {
 });
 
 watch(debouncedContactSearch, () => {
-  loadContacts();
+  if (contactSearch.value) {
+    loadContacts();
+  }
 });
 
 watch(debouncedContactGroupSearch, () => {
   loadContactGroups();
+});
+
+watch(selectedContactIds, (newValue, oldValue) => {
+  if (newValue.length > (oldValue?.length ?? 0)) {
+    contactSearch.value = '';
+  }
 });
 
 watch(sendTo, (newValue) => {

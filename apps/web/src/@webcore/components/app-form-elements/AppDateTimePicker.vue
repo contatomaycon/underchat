@@ -211,6 +211,35 @@ const parseDateOnlyWithDash = (trimmed: string): Date | null => {
   return new Date(year, month - 1, day);
 };
 
+const emitModelValue = (val: DateOption | DateOption[] | null) => {
+  emit('update:modelValue', val);
+};
+
+const updateAltInputFormat = (selectedDates: Date[], instance: any): void => {
+  const altInput = instance.altInput as HTMLInputElement;
+  if (!altInput) return;
+
+  if (selectedDates.length > 0) {
+    const date = selectedDates[0];
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year = date.getFullYear();
+    const hasTime = instance.config.enableTime;
+    if (hasTime) {
+      const hours = String(date.getHours()).padStart(2, '0');
+      const minutes = String(date.getMinutes()).padStart(2, '0');
+      altInput.value = `${day}/${month}/${year} ${hours}:${minutes}`;
+    } else {
+      altInput.value = `${day}/${month}/${year}`;
+    }
+  }
+
+  const originalInput = instance.input as HTMLInputElement;
+  if (originalInput) {
+    originalInput.style.display = 'none';
+  }
+};
+
 const defaultConfig: FlatpickrOptions = {
   locale: Portuguese,
   dateFormat: 'Y-m-d',
@@ -218,49 +247,40 @@ const defaultConfig: FlatpickrOptions = {
   altFormat: 'd/m/Y',
   allowInput: true,
   clickOpens: true,
+  onOpen: (selectedDates, dateStr, instance) => {
+    if (!props.modelValue && selectedDates.length === 0) {
+      const now = new Date();
+      instance.setDate(now, false);
+      emitModelValue(now);
+      updateAltInputFormat(instance.selectedDates, instance);
+    }
+  },
   onReady: (selectedDates, dateStr, instance) => {
+    const originalInput = instance.input as HTMLInputElement;
+    if (originalInput) {
+      originalInput.style.display = 'none';
+    }
+    updateAltInputFormat(selectedDates, instance);
     nextTick(() => {
       enableYearEditing();
       setupInputMask();
+      setupTimeInputAutoUpdate();
+      updateAltInputFormat(selectedDates, instance);
     });
   },
   onChange: (selectedDates, dateStr, instance) => {
+    updateAltInputFormat(selectedDates, instance);
     nextTick(() => {
       setupInputMask();
-      const altInput = instance.altInput as HTMLInputElement;
-      if (altInput && selectedDates.length > 0) {
-        const date = selectedDates[0];
-        const day = String(date.getDate()).padStart(2, '0');
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const year = date.getFullYear();
-        const hasTime = instance.config.enableTime;
-        if (hasTime) {
-          const hours = String(date.getHours()).padStart(2, '0');
-          const minutes = String(date.getMinutes()).padStart(2, '0');
-          altInput.value = `${day}/${month}/${year} ${hours}:${minutes}`;
-        } else {
-          altInput.value = `${day}/${month}/${year}`;
-        }
-      }
     });
   },
+  onValueUpdate: (selectedDates, dateStr, instance) => {
+    updateAltInputFormat(selectedDates, instance);
+  },
   onClose: (selectedDates, dateStr, instance) => {
+    updateAltInputFormat(selectedDates, instance);
     nextTick(() => {
-      const altInput = instance.altInput as HTMLInputElement;
-      if (altInput && selectedDates.length > 0) {
-        const date = selectedDates[0];
-        const day = String(date.getDate()).padStart(2, '0');
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const year = date.getFullYear();
-        const hasTime = instance.config.enableTime;
-        if (hasTime) {
-          const hours = String(date.getHours()).padStart(2, '0');
-          const minutes = String(date.getMinutes()).padStart(2, '0');
-          altInput.value = `${day}/${month}/${year} ${hours}:${minutes}`;
-        } else {
-          altInput.value = `${day}/${month}/${year}`;
-        }
-      }
+      updateAltInputFormat(selectedDates, instance);
     });
   },
   parseDate: (datestr: string, format: string): Date => {
@@ -454,18 +474,93 @@ const enableYearEditing = () => {
   yearInput.addEventListener('mousedown', handleYearMouseDown, true);
 };
 
+const setupTimeInputAutoUpdate = () => {
+  if (!refFlatPicker.value?.fp) return;
+
+  const instance = refFlatPicker.value.fp;
+  if (!instance.config.enableTime) return;
+
+  const originalInput = instance.input as HTMLInputElement;
+  if (originalInput) {
+    originalInput.style.display = 'none';
+  }
+
+  const calendarContainer = instance.calendarContainer;
+  if (!calendarContainer) return;
+
+  const hourInput = calendarContainer.querySelector(
+    '.flatpickr-hour'
+  ) as HTMLInputElement;
+  const minuteInput = calendarContainer.querySelector(
+    '.flatpickr-minute'
+  ) as HTMLInputElement;
+
+  if (!hourInput || !minuteInput) return;
+
+  const updateTime = () => {
+    const selectedDates = instance.selectedDates;
+    if (selectedDates.length === 0) return;
+
+    const currentDate = selectedDates[0];
+    const hourValue = Number.parseInt(hourInput.value, 10);
+    const minuteValue = Number.parseInt(minuteInput.value, 10);
+
+    if (
+      !Number.isNaN(hourValue) &&
+      !Number.isNaN(minuteValue) &&
+      hourValue >= 0 &&
+      hourValue < 24 &&
+      minuteValue >= 0 &&
+      minuteValue < 60
+    ) {
+      const newDate = new Date(currentDate);
+      newDate.setHours(hourValue);
+      newDate.setMinutes(minuteValue);
+
+      instance.setDate(newDate, false);
+      emitModelValue(newDate);
+      updateAltInputFormat(instance.selectedDates, instance);
+    }
+  };
+
+  const handleHourInput = () => {
+    updateTime();
+  };
+
+  const handleMinuteInput = () => {
+    updateTime();
+  };
+
+  hourInput.removeEventListener('input', handleHourInput);
+  minuteInput.removeEventListener('input', handleMinuteInput);
+
+  hourInput.addEventListener('input', handleHourInput);
+  minuteInput.addEventListener('input', handleMinuteInput);
+};
+
 const onCalendarOpen = () => {
   isCalendarOpen.value = true;
 
   nextTick(() => {
     if (refFlatPicker.value?.fp) {
+      const instance = refFlatPicker.value.fp;
+
+      if (!props.modelValue && instance.selectedDates.length === 0) {
+        const now = new Date();
+        instance.setDate(now, false);
+        emitModelValue(now);
+        updateAltInputFormat(instance.selectedDates, instance);
+      }
+
       enableYearEditing();
       setupInputMask();
+      setupTimeInputAutoUpdate();
 
-      const calendarContainer = refFlatPicker.value.fp.calendarContainer;
+      const calendarContainer = instance.calendarContainer;
       if (calendarContainer) {
         const observer = new MutationObserver(() => {
           enableYearEditing();
+          setupTimeInputAutoUpdate();
         });
 
         observer.observe(calendarContainer, {
@@ -710,10 +805,6 @@ onMounted(() => {
   });
 });
 
-const emitModelValue = (val: DateOption | DateOption[] | null) => {
-  emit('update:modelValue', val);
-};
-
 watch(
   () => props,
   () => {
@@ -723,6 +814,22 @@ watch(
   {
     deep: true,
     immediate: true,
+  }
+);
+
+watch(
+  () => props.modelValue,
+  () => {
+    if (refFlatPicker.value?.fp) {
+      const instance = refFlatPicker.value.fp;
+      const originalInput = instance.input as HTMLInputElement;
+      if (originalInput) {
+        originalInput.style.display = 'none';
+      }
+      nextTick(() => {
+        updateAltInputFormat(instance.selectedDates, instance);
+      });
+    }
   }
 );
 
@@ -1058,6 +1165,10 @@ input[altinputclass='inlinePicker'] {
 .flatpickr-input ~ .form-control[readonly],
 .flatpickr-human-friendly[readonly] {
   background-color: inherit;
+}
+
+.flatpickr-input {
+  display: none !important;
 }
 
 .flatpickr-weekdays {

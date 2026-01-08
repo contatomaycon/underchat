@@ -48,7 +48,7 @@ server.register(safePlugin(temporalPlugin, 'temporal'));
 
 const start = async () => {
   try {
-    await server.listen({ port: 3005, host: '0.0.0.0' });
+    await server.listen({ port: 3006, host: '0.0.0.0' });
 
     console.log('Server running');
 
