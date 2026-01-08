@@ -3024,6 +3024,7 @@ export class ChatbotFlowRunnerService {
     }
 
     const targetOptionId = this.findTargetOptionId(t, options, analysis);
+
     if (!targetOptionId) {
       return false;
     }
@@ -3841,7 +3842,7 @@ Retorne APENAS uma das palavras: positive, negative ou question.`;
         currentFlowId
       );
 
-      if (newCount >= interactionsQuantity) {
+      if (newCount > interactionsQuantity) {
         const nextFlowId = this.getNextFlowIdByInteractionsHandle(
           chatbotFlow,
           currentFlowId
