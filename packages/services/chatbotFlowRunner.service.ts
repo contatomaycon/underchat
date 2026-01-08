@@ -129,10 +129,12 @@ export class ChatbotFlowRunnerService {
     currentFlowId: string,
     optionId: string
   ): string | null {
+    const expectedSourceHandle = `option-${optionId}-source`;
+
     const edge = chatbotFlow.edges.find(
       (currentEdge) =>
         currentEdge.source === currentFlowId &&
-        currentEdge.sourceHandle === `option-${optionId}-source`
+        currentEdge.sourceHandle === expectedSourceHandle
     );
 
     return edge?.target ?? null;
@@ -3039,7 +3041,31 @@ export class ChatbotFlowRunnerService {
       return false;
     }
 
+    if (analysis === 'positive') {
+      const nodeDefaultQuestion = currentNode.data?.defaultQuestion;
+      const defaultQuestion =
+        nodeDefaultQuestion && nodeDefaultQuestion.trim().length > 0
+          ? nodeDefaultQuestion
+          : t('ai_agent_default_question');
+      const questionMessage = await this.replaceVariables(
+        t,
+        defaultQuestion,
+        createChat,
+        createChat.user,
+        createChat.sector
+      );
+
+      await this.chatMessageService.sendMessage(t, {
+        chat: createChat,
+        accountId: createChat.account.id,
+        type: EMessageType.text,
+        message: questionMessage,
+        typeUser: ETypeUserChat.bot,
+      });
+    }
+
     await this.resetFailedAttempts(createChat);
+
     return this.processNextNode(
       t,
       createChat,
@@ -3055,20 +3081,20 @@ export class ChatbotFlowRunnerService {
     analysis: 'positive' | 'negative' | 'question'
   ): string | null {
     if (analysis === 'positive') {
+      const positiveOptionText = t('chatbot_ai_agent_positive_option');
       const positiveOption = options.find(
-        (opt) =>
-          opt.text === t('chatbot_ai_agent_positive_option') ||
-          opt.id === 'positive-option'
+        (opt) => opt.text === positiveOptionText || opt.id === 'positive-option'
       );
+
       return (positiveOption?.id ?? null) as string | null;
     }
 
     if (analysis === 'negative') {
+      const negativeOptionText = t('chatbot_ai_agent_negative_option');
       const negativeOption = options.find(
-        (opt) =>
-          opt.text === t('chatbot_ai_agent_negative_option') ||
-          opt.id === 'negative-option'
+        (opt) => opt.text === negativeOptionText || opt.id === 'negative-option'
       );
+
       return (negativeOption?.id ?? null) as string | null;
     }
 
@@ -3280,9 +3306,11 @@ export class ChatbotFlowRunnerService {
       );
 
       const result = this.parseAnalysisResponse(analysis);
+
       return result;
     } catch {
       const fallbackResult = this.fallbackAnalysis(userResponse);
+
       return fallbackResult;
     }
   }
@@ -3291,10 +3319,16 @@ export class ChatbotFlowRunnerService {
     continueMessage: string,
     userResponse: string
   ): string {
-    return `Você é um analisador de respostas. Analise a resposta do usuário e classifique como:
-- "positive": se o usuário aceitou, concordou ou disse sim de alguma forma
-- "negative": se o usuário recusou, discordou ou disse não de alguma forma  
-- "question": se o usuário fez uma pergunta ou quer continuar a conversa sobre outro assunto
+    return `Você é um analisador de respostas. Analise a resposta do usuário considerando o contexto da pergunta e classifique como:
+
+- "positive": se o usuário PRECISA de mais ajuda, quer continuar a conversa, tem mais dúvidas ou pedidos. Exemplos: "sim, preciso", "tenho outra dúvida", "quero saber mais", "me ajuda com", "preciso de ajuda com"
+- "negative": se o usuário NÃO PRECISA mais de ajuda, está satisfeito, quer finalizar ou agradeceu. Exemplos: "não, obrigado", "tudo certo", "não preciso mais", "já resolvi", "está tudo bem", "obrigado", "valeu", "tudo certo, obrigado", "não preciso mais de ajuda", "já entendi"
+- "question": se o usuário fez uma pergunta sobre um assunto diferente ou quer mudar de tópico
+
+IMPORTANTE: 
+- Se o usuário agradecer e dizer que está tudo certo, que não precisa mais de ajuda, ou que já resolveu, classifique como "negative"
+- Se o usuário disser "tudo certo" ou "obrigado" sem indicar necessidade de mais ajuda, classifique como "negative"
+- Apenas classifique como "positive" se o usuário claramente indicar que PRECISA de mais ajuda ou quer continuar
 
 Pergunta feita: "${continueMessage}"
 Resposta do usuário: "${userResponse}"
@@ -3320,28 +3354,82 @@ Retorne APENAS uma das palavras: positive, negative ou question.`;
   ): 'positive' | 'negative' | 'question' {
     const lowerResponse = userResponse.toLowerCase().trim();
 
+    const negativeIndicators = [
+      'não',
+      'nao',
+      'no',
+      'não preciso',
+      'nao preciso',
+      'não preciso mais',
+      'nao preciso mais',
+      'tudo certo',
+      'obrigado',
+      'obrigada',
+      'valeu',
+      'já resolvi',
+      'já entendi',
+      'está tudo bem',
+      'está tudo certo',
+      'não preciso de ajuda',
+      'nao preciso de ajuda',
+      'já está resolvido',
+      'já está certo',
+      'tudo certo, obrigado',
+      'tudo certo, obrigada',
+      'não preciso mais de ajuda',
+      'nao preciso mais de ajuda',
+    ];
+
+    const positiveIndicators = [
+      'sim, preciso',
+      'sim preciso',
+      'yes',
+      'quero',
+      'preciso',
+      'ajuda',
+      'tenho dúvida',
+      'tenho duvida',
+      'quero saber',
+      'me ajuda',
+      'preciso de ajuda',
+      'tenho outra',
+      'outra dúvida',
+      'outra duvida',
+    ];
+
+    for (const indicator of negativeIndicators) {
+      if (lowerResponse.includes(indicator)) {
+        return 'negative';
+      }
+    }
+
     if (
-      lowerResponse.includes('sim') ||
-      lowerResponse.includes('yes') ||
-      lowerResponse.includes('ok') ||
-      lowerResponse.includes('1')
+      lowerResponse === 'ok' ||
+      lowerResponse === 'sim' ||
+      lowerResponse === 'yes'
     ) {
       return 'positive';
     }
 
-    if (
-      lowerResponse.includes('não') ||
-      lowerResponse.includes('no') ||
-      lowerResponse.includes('2')
-    ) {
-      return 'negative';
+    for (const indicator of positiveIndicators) {
+      if (lowerResponse.includes(indicator)) {
+        return 'positive';
+      }
     }
 
     if (this.isQuestionPattern(lowerResponse)) {
       return 'question';
     }
 
-    return 'positive';
+    if (
+      lowerResponse.includes('obrigado') ||
+      lowerResponse.includes('obrigada') ||
+      lowerResponse.includes('tudo certo')
+    ) {
+      return 'negative';
+    }
+
+    return 'negative';
   }
 
   private isQuestionPattern(text: string): boolean {
