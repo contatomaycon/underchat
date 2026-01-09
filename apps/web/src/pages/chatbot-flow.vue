@@ -26,6 +26,7 @@ import ChatbotDataNode from '@/components/chatbot/ChatbotDataNode.vue';
 import ChatbotContactNode from '@/components/chatbot/ChatbotContactNode.vue';
 import ChatbotAiAgentNode from '@/components/chatbot/ChatbotAiAgentNode.vue';
 import ChatbotAnnotationNode from '@/components/chatbot/ChatbotAnnotationNode.vue';
+import ChatbotDistributionNode from '@/components/chatbot/ChatbotDistributionNode.vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter, useRoute } from 'vue-router';
 import DialogCloseBtn from '@/@webcore/components/DialogCloseBtn.vue';
@@ -56,6 +57,7 @@ const nodeTypes = {
   contact: markRaw(ChatbotContactNode),
   aiAgent: markRaw(ChatbotAiAgentNode),
   annotation: markRaw(ChatbotAnnotationNode),
+  distribution: markRaw(ChatbotDistributionNode),
 };
 
 const { t } = useI18n();
@@ -876,6 +878,23 @@ const addDataNode = (position?: { x: number; y: number }) => {
   nodes.value.push(newNode as Node);
 };
 
+const addDistributionNode = (position?: { x: number; y: number }) => {
+  const nodeId = `distribution-${nodeIdCounter++}`;
+  const newNode: Node = {
+    id: nodeId,
+    type: 'distribution',
+    position: position || {
+      x: getSecureRandom(400) + 100,
+      y: getSecureRandom(300) + 100,
+    },
+    data: {
+      distributionType: null,
+      onRemove: () => removeNode(nodeId),
+    },
+  };
+  nodes.value.push(newNode as Node);
+};
+
 const addAiAgentNode = (position?: { x: number; y: number }) => {
   const nodeId = `aiAgent-${nodeIdCounter++}`;
   const positiveOptionId = crypto.randomUUID();
@@ -1070,6 +1089,9 @@ const onDrop = (event: DragEvent) => {
       break;
     case 'annotation':
       addAnnotationNode(position);
+      break;
+    case 'distribution':
+      addDistributionNode(position);
       break;
   }
 
@@ -1353,6 +1375,10 @@ const processDataNodeData = (nodeData: any): void => {
     nodeData.cnpj = t('chatbot_data_default_cnpj_question');
 };
 
+const processDistributionNodeData = (nodeData: any): void => {
+  if (nodeData.distributionType === undefined) nodeData.distributionType = null;
+};
+
 const processNodeDataByType = (node: Node): void => {
   if (!node.data) {
     node.data = {};
@@ -1385,6 +1411,9 @@ const processNodeDataByType = (node: Node): void => {
       break;
     case 'annotation':
       processAnnotationNodeData(node.data);
+      break;
+    case 'distribution':
+      processDistributionNodeData(node.data);
       break;
   }
 };
@@ -1851,170 +1880,194 @@ onUnmounted(() => {
               {{ t('chatbot_satisfaction') }}
             </VBtn>
             <VDivider class="my-2" />
-            <div class="text-caption text-medium-emphasis mb-2">
-              {{ t('chatbot_options') }}
+            <div class="node-options-container">
+              <div class="text-caption text-medium-emphasis mb-2">
+                {{ t('chatbot_options') }}
+              </div>
+              <div class="node-options-scroll">
+                <VBtn
+                  color="info"
+                  draggable="true"
+                  @dragstart.stop="
+                    (e: DragEvent) => {
+                      draggedNodeType = 'redirect';
+                      e.dataTransfer!.effectAllowed = 'move';
+                      e.dataTransfer!.dropEffect = 'move';
+                    }
+                  "
+                  @dragend="
+                    () => {
+                      draggedNodeType = null;
+                    }
+                  "
+                  style="cursor: grab"
+                >
+                  <VIcon icon="tabler-arrow-forward" class="me-2" />
+                  {{ t('chatbot_redirect') }}
+                </VBtn>
+                <VBtn
+                  color="error"
+                  draggable="true"
+                  @dragstart.stop="
+                    (e: DragEvent) => {
+                      draggedNodeType = 'finish';
+                      e.dataTransfer!.effectAllowed = 'move';
+                      e.dataTransfer!.dropEffect = 'move';
+                    }
+                  "
+                  @dragend="
+                    () => {
+                      draggedNodeType = null;
+                    }
+                  "
+                  style="cursor: grab"
+                >
+                  <VIcon icon="tabler-circle-check" class="me-2" />
+                  {{ t('chatbot_finish') }}
+                </VBtn>
+                <VBtn
+                  color="secondary"
+                  draggable="true"
+                  @dragstart.stop="
+                    (e: DragEvent) => {
+                      draggedNodeType = 'tag';
+                      e.dataTransfer!.effectAllowed = 'move';
+                      e.dataTransfer!.dropEffect = 'move';
+                    }
+                  "
+                  @dragend="
+                    () => {
+                      draggedNodeType = null;
+                    }
+                  "
+                  style="cursor: grab"
+                >
+                  <VIcon icon="tabler-tag" class="me-2" />
+                  {{ t('chatbot_tag_node_title') }}
+                </VBtn>
+                <VBtn
+                  color="success"
+                  draggable="true"
+                  @dragstart.stop="
+                    (e: DragEvent) => {
+                      draggedNodeType = 'message';
+                      e.dataTransfer!.effectAllowed = 'move';
+                      e.dataTransfer!.dropEffect = 'move';
+                    }
+                  "
+                  @dragend="
+                    () => {
+                      draggedNodeType = null;
+                    }
+                  "
+                  style="cursor: grab"
+                >
+                  <VIcon icon="tabler-message" class="me-2" />
+                  {{ t('chatbot_message') }}
+                </VBtn>
+                <VBtn
+                  color="info"
+                  draggable="true"
+                  @dragstart.stop="
+                    (e: DragEvent) => {
+                      draggedNodeType = 'data';
+                      e.dataTransfer!.effectAllowed = 'move';
+                      e.dataTransfer!.dropEffect = 'move';
+                    }
+                  "
+                  @dragend="
+                    () => {
+                      draggedNodeType = null;
+                    }
+                  "
+                  style="cursor: grab"
+                >
+                  <VIcon icon="tabler-database" class="me-2" />
+                  {{ t('chatbot_data') }}
+                </VBtn>
+                <VBtn
+                  color="info"
+                  draggable="true"
+                  @dragstart.stop="
+                    (e: DragEvent) => {
+                      draggedNodeType = 'distribution';
+                      e.dataTransfer!.effectAllowed = 'move';
+                      e.dataTransfer!.dropEffect = 'move';
+                    }
+                  "
+                  @dragend="
+                    () => {
+                      draggedNodeType = null;
+                    }
+                  "
+                  style="cursor: grab"
+                >
+                  <VIcon icon="tabler-users-group" class="me-2" />
+                  {{ t('chatbot_distribution') }}
+                </VBtn>
+                <VBtn
+                  color="tertiary"
+                  draggable="true"
+                  @dragstart.stop="
+                    (e: DragEvent) => {
+                      draggedNodeType = 'contact';
+                      e.dataTransfer!.effectAllowed = 'move';
+                      e.dataTransfer!.dropEffect = 'move';
+                    }
+                  "
+                  @dragend="
+                    () => {
+                      draggedNodeType = null;
+                    }
+                  "
+                  style="cursor: grab"
+                >
+                  <VIcon icon="tabler-users" class="me-2" />
+                  {{ t('chatbot_contact') }}
+                </VBtn>
+                <VBtn
+                  v-if="canUseAiAgentPermission && canUseAiAgent"
+                  color="primary"
+                  draggable="true"
+                  @dragstart.stop="
+                    (e: DragEvent) => {
+                      draggedNodeType = 'aiAgent';
+                      e.dataTransfer!.effectAllowed = 'move';
+                      e.dataTransfer!.dropEffect = 'move';
+                    }
+                  "
+                  @dragend="
+                    () => {
+                      draggedNodeType = null;
+                    }
+                  "
+                  style="cursor: grab"
+                >
+                  <VIcon icon="tabler-brain" class="me-2" />
+                  {{ t('chatbot_ai_agent') }}
+                </VBtn>
+                <VBtn
+                  color="annotation"
+                  draggable="true"
+                  @dragstart.stop="
+                    (e: DragEvent) => {
+                      draggedNodeType = 'annotation';
+                      e.dataTransfer!.effectAllowed = 'move';
+                      e.dataTransfer!.dropEffect = 'move';
+                    }
+                  "
+                  @dragend="
+                    () => {
+                      draggedNodeType = null;
+                    }
+                  "
+                  style="cursor: grab"
+                >
+                  <VIcon icon="tabler-note" class="me-2" />
+                  {{ t('chatbot_annotation_node_title') }}
+                </VBtn>
+              </div>
             </div>
-            <VBtn
-              color="info"
-              draggable="true"
-              @dragstart.stop="
-                (e: DragEvent) => {
-                  draggedNodeType = 'redirect';
-                  e.dataTransfer!.effectAllowed = 'move';
-                  e.dataTransfer!.dropEffect = 'move';
-                }
-              "
-              @dragend="
-                () => {
-                  draggedNodeType = null;
-                }
-              "
-              style="cursor: grab"
-            >
-              <VIcon icon="tabler-arrow-forward" class="me-2" />
-              {{ t('chatbot_redirect') }}
-            </VBtn>
-            <VBtn
-              color="error"
-              draggable="true"
-              @dragstart.stop="
-                (e: DragEvent) => {
-                  draggedNodeType = 'finish';
-                  e.dataTransfer!.effectAllowed = 'move';
-                  e.dataTransfer!.dropEffect = 'move';
-                }
-              "
-              @dragend="
-                () => {
-                  draggedNodeType = null;
-                }
-              "
-              style="cursor: grab"
-            >
-              <VIcon icon="tabler-circle-check" class="me-2" />
-              {{ t('chatbot_finish') }}
-            </VBtn>
-            <VBtn
-              color="secondary"
-              draggable="true"
-              @dragstart.stop="
-                (e: DragEvent) => {
-                  draggedNodeType = 'tag';
-                  e.dataTransfer!.effectAllowed = 'move';
-                  e.dataTransfer!.dropEffect = 'move';
-                }
-              "
-              @dragend="
-                () => {
-                  draggedNodeType = null;
-                }
-              "
-              style="cursor: grab"
-            >
-              <VIcon icon="tabler-tag" class="me-2" />
-              {{ t('chatbot_tag_node_title') }}
-            </VBtn>
-            <VBtn
-              color="success"
-              draggable="true"
-              @dragstart.stop="
-                (e: DragEvent) => {
-                  draggedNodeType = 'message';
-                  e.dataTransfer!.effectAllowed = 'move';
-                  e.dataTransfer!.dropEffect = 'move';
-                }
-              "
-              @dragend="
-                () => {
-                  draggedNodeType = null;
-                }
-              "
-              style="cursor: grab"
-            >
-              <VIcon icon="tabler-message" class="me-2" />
-              {{ t('chatbot_message') }}
-            </VBtn>
-            <VBtn
-              color="info"
-              draggable="true"
-              @dragstart.stop="
-                (e: DragEvent) => {
-                  draggedNodeType = 'data';
-                  e.dataTransfer!.effectAllowed = 'move';
-                  e.dataTransfer!.dropEffect = 'move';
-                }
-              "
-              @dragend="
-                () => {
-                  draggedNodeType = null;
-                }
-              "
-              style="cursor: grab"
-            >
-              <VIcon icon="tabler-database" class="me-2" />
-              {{ t('chatbot_data') }}
-            </VBtn>
-            <VBtn
-              color="tertiary"
-              draggable="true"
-              @dragstart.stop="
-                (e: DragEvent) => {
-                  draggedNodeType = 'contact';
-                  e.dataTransfer!.effectAllowed = 'move';
-                  e.dataTransfer!.dropEffect = 'move';
-                }
-              "
-              @dragend="
-                () => {
-                  draggedNodeType = null;
-                }
-              "
-              style="cursor: grab"
-            >
-              <VIcon icon="tabler-users" class="me-2" />
-              {{ t('chatbot_contact') }}
-            </VBtn>
-            <VBtn
-              v-if="canUseAiAgentPermission && canUseAiAgent"
-              color="primary"
-              draggable="true"
-              @dragstart.stop="
-                (e: DragEvent) => {
-                  draggedNodeType = 'aiAgent';
-                  e.dataTransfer!.effectAllowed = 'move';
-                  e.dataTransfer!.dropEffect = 'move';
-                }
-              "
-              @dragend="
-                () => {
-                  draggedNodeType = null;
-                }
-              "
-              style="cursor: grab"
-            >
-              <VIcon icon="tabler-brain" class="me-2" />
-              {{ t('chatbot_ai_agent') }}
-            </VBtn>
-            <VBtn
-              color="annotation"
-              draggable="true"
-              @dragstart.stop="
-                (e: DragEvent) => {
-                  draggedNodeType = 'annotation';
-                  e.dataTransfer!.effectAllowed = 'move';
-                  e.dataTransfer!.dropEffect = 'move';
-                }
-              "
-              @dragend="
-                () => {
-                  draggedNodeType = null;
-                }
-              "
-              style="cursor: grab"
-            >
-              <VIcon icon="tabler-note" class="me-2" />
-              {{ t('chatbot_annotation_node_title') }}
-            </VBtn>
           </div>
           <div class="vertical-divider" />
           <div class="flow-area">
@@ -2758,8 +2811,10 @@ onUnmounted(() => {
                     />
                     <div class="text-caption text-medium-emphasis mt-2">
                       <strong>{{ t('chatbot_message_default_label') }}:</strong>
-                      {{ defaultTransferMessageUser ||
-                      t('chatbot_transfer_message_user_default') }}
+                      {{
+                        defaultTransferMessageUser ||
+                        t('chatbot_transfer_message_user_default')
+                      }}
                     </div>
                   </VCardText>
                 </VCard>
@@ -2788,8 +2843,10 @@ onUnmounted(() => {
                     />
                     <div class="text-caption text-medium-emphasis mt-2">
                       <strong>{{ t('chatbot_message_default_label') }}:</strong>
-                      {{ defaultTransferMessageSector ||
-                      t('chatbot_transfer_message_sector_default') }}
+                      {{
+                        defaultTransferMessageSector ||
+                        t('chatbot_transfer_message_sector_default')
+                      }}
                     </div>
                   </VCardText>
                 </VCard>
@@ -2818,8 +2875,10 @@ onUnmounted(() => {
                     />
                     <div class="text-caption text-medium-emphasis mt-2">
                       <strong>{{ t('chatbot_message_default_label') }}:</strong>
-                      {{ defaultTransferMessageSectorUser ||
-                      t('chatbot_transfer_message_sector_user_default') }}
+                      {{
+                        defaultTransferMessageSectorUser ||
+                        t('chatbot_transfer_message_sector_user_default')
+                      }}
                     </div>
                   </VCardText>
                 </VCard>
@@ -2924,6 +2983,45 @@ onUnmounted(() => {
   gap: 12px;
   padding-top: 4px;
   padding-right: 12px;
+  height: 100%;
+  overflow: hidden;
+}
+
+.node-options-container {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.node-options-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 8px;
+  flex: 1;
+}
+
+.node-options-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.node-options-scroll::-webkit-scrollbar-track {
+  background: rgba(var(--v-theme-surface-variant), 0.3);
+  border-radius: 4px;
+}
+
+.node-options-scroll::-webkit-scrollbar-thumb {
+  background: rgba(var(--v-theme-on-surface), 0.3);
+  border-radius: 4px;
+  transition: background 0.2s ease;
+}
+
+.node-options-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(var(--v-theme-on-surface), 0.5);
 }
 
 .vertical-divider {

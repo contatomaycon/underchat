@@ -12,7 +12,7 @@ export const sector = pgTable(
     account_id: uuid()
       .references(() => account.account_id)
       .notNull(),
-    name: varchar({ length: 20 }).notNull(),
+    name: varchar({ length: 100 }).notNull(),
     color: varchar({ length: 20 }).notNull(),
     created_at: timestamp({
       mode: 'string',

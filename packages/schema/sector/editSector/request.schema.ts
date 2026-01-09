@@ -12,8 +12,8 @@ export const editSectorParamsBodySchema = Type.Object({
   sector_status_id: Type.Optional(
     Type.Union([Type.String({ format: 'uuid' })])
   ),
-  name: Type.Optional(Type.Union([Type.String()])),
-  color: Type.Optional(Type.Union([Type.String()])),
+  name: Type.Optional(Type.Union([Type.String({ maxLength: 100 })])),
+  color: Type.Optional(Type.Union([Type.String({ maxLength: 20 })])),
 });
 
 export type EditSectorParamsBody = Static<typeof editSectorParamsBodySchema>;

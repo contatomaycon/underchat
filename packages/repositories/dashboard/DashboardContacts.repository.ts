@@ -29,40 +29,52 @@ export class DashboardContactsRepository {
       };
     });
 
-    const monthEndDates = monthDates.map((m) => m.monthEnd);
+    const monthBoundaries = monthDates.map((m, i) => ({
+      end: m.monthEnd,
+      order: i + 1,
+    }));
+
     const firstMonthStart = monthDates[0].monthStart.toISOString();
-
-    const baseCountQuery = `
-      SELECT COUNT(*) AS total
-      FROM contact c
-      WHERE c.account_id = '${accountId}'
-        AND c.deleted_at IS NULL
-        AND c.created_at < '${firstMonthStart}'::timestamp
-    `;
-
-    const baseCountResult = await this.dbRo.execute(baseCountQuery);
-    const baseCount = baseCountResult.rows[0]
-      ? Number(baseCountResult.rows[0].total)
-      : 0;
+    const lastMonthEnd = monthDates[monthDates.length - 1].monthEnd;
 
     const query = `
-      WITH month_ends AS (
-        SELECT unnest(ARRAY[${monthEndDates
-          .map((date) => `'${date}'::timestamp`)
-          .join(',')}]) AS month_end
+      WITH base_count AS (
+        SELECT COUNT(*) AS total
+        FROM contact
+        WHERE account_id = '${accountId}'
+          AND deleted_at IS NULL
+          AND created_at < '${firstMonthStart}'::timestamp
+      ),
+      month_boundaries AS (
+        SELECT * FROM (VALUES
+          ${monthBoundaries.map((m) => `('${m.end}'::timestamp, ${m.order})`).join(',\n          ')}
+        ) AS t(month_end, month_order)
+      ),
+      monthly_new_contacts AS (
+        SELECT 
+          DATE_TRUNC('month', c.created_at) AS month_start,
+          COUNT(*) AS new_count
+        FROM contact c
+        WHERE c.account_id = '${accountId}'
+          AND c.deleted_at IS NULL
+          AND c.created_at >= '${firstMonthStart}'::timestamp
+          AND c.created_at < '${lastMonthEnd}'::timestamp
+        GROUP BY DATE_TRUNC('month', c.created_at)
+      ),
+      cumulative AS (
+        SELECT 
+          mb.month_end,
+          mb.month_order,
+          COALESCE(SUM(mnc.new_count) OVER (ORDER BY mb.month_order), 0) AS cumulative_new
+        FROM month_boundaries mb
+        LEFT JOIN monthly_new_contacts mnc 
+          ON DATE_TRUNC('month', mb.month_end - INTERVAL '1 day') = mnc.month_start
       )
       SELECT 
-        me.month_end,
-        ${baseCount}::bigint + (
-          SELECT COUNT(*)
-          FROM contact c
-          WHERE c.account_id = '${accountId}'
-            AND c.deleted_at IS NULL
-            AND c.created_at >= '${firstMonthStart}'::timestamp
-            AND c.created_at < me.month_end
-        ) AS total
-      FROM month_ends me
-      ORDER BY me.month_end ASC
+        c.month_end,
+        (SELECT total FROM base_count) + c.cumulative_new AS total
+      FROM cumulative c
+      ORDER BY c.month_order ASC
     `;
 
     const result = await this.dbRo.execute(query);
