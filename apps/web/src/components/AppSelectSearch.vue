@@ -273,6 +273,8 @@ const handleClear = () => {
       :close-on-content-click="false"
       offset="0"
       :attach="attachElement"
+      scroll-strategy="reposition"
+      location-strategy="connected"
     >
       <template #activator="{ props: menuProps }">
         <div class="select-field-wrapper">
@@ -453,15 +455,20 @@ const handleClear = () => {
   color: transparent;
 }
 
-:deep(.v-menu .v-overlay__content) {
+:deep(.v-menu > .v-overlay__content) {
   transform-origin: top left !important;
-  margin-top: 0 !important;
+}
+
+:deep(.v-overlay__content[data-v-menu]) {
+  contain: layout style !important;
 }
 
 .select-menu-card {
   margin-top: 0 !important;
   border-top-left-radius: 0 !important;
   border-top-right-radius: 0 !important;
+  min-width: 100%;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15) !important;
 }
 
 .select-options-list {
