@@ -143,6 +143,10 @@ export class ChatbotFlowSaverUseCase {
       return t('chatbot_annotation_node_title');
     }
 
+    if (node.type === 'distribution') {
+      return t('chatbot_distribution');
+    }
+
     if (node.type === 'finish') {
       return t('chatbot_finish');
     }
@@ -531,6 +535,33 @@ export class ChatbotFlowSaverUseCase {
     }
   }
 
+  private validateDistributionNode(
+    t: TFunction<'translation', undefined>,
+    node: any,
+    errors: string[]
+  ): void {
+    if (node.type !== 'distribution') {
+      return;
+    }
+
+    const data = node.data;
+    const distributionHasSector = data.distributionHasSector;
+
+    if (
+      distributionHasSector === true &&
+      (!data.distributionSelectedSector ||
+        (typeof data.distributionSelectedSector === 'string' &&
+          data.distributionSelectedSector.trim().length === 0))
+    ) {
+      const nodeLabel = this.getNodeLabel(t, node);
+      errors.push(
+        t('chatbot_flow_validation_distribution_sector_required', {
+          nodeLabel,
+        })
+      );
+    }
+  }
+
   private normalizeAiAgentNode(
     t: TFunction<'translation', undefined>,
     node: any
@@ -725,6 +756,7 @@ export class ChatbotFlowSaverUseCase {
       this.validateAnnotationNode(t, node, errors);
       this.validateAiAgentNode(t, node, errors);
       this.validateMenuOrSatisfactionNode(t, node, errors);
+      this.validateDistributionNode(t, node, errors);
     }
 
     if (errors.length > 0) {

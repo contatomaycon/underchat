@@ -184,7 +184,7 @@ onMounted(() => {
 
         <div class="mb-3">
           <VLabel class="text-body-2 mb-1">{{
-            t('chatbot_distribution_sector')
+            t('chatbot_distribution_enable_sector')
           }}</VLabel>
           <VSelect
             v-model="distributionNodeData.distributionHasSector"

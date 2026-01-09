@@ -1407,6 +1407,7 @@
   "chatbot_distribution": "Service Distribution",
   "chatbot_distribution_label": "Distribution",
   "chatbot_distribution_sector": "Sector",
+  "chatbot_distribution_enable_sector": "Enable sector?",
   "chatbot_distribution_type_sequential": "Sequential",
   "chatbot_distribution_type_random": "Random",
   "chatbot_distribution_type_load": "By load",
