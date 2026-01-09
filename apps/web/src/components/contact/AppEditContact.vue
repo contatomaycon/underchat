@@ -1432,6 +1432,7 @@ watch(
               </AppTextField>
             </VCol>
           </VRow>
+          <VDivider class="my-4" />
           <VRow>
             <VCol cols="12" md="6">
               <VLabel class="text-body-2 mb-1"
