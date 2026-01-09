@@ -189,7 +189,6 @@ const cropPreviewSize = 160;
 /* removed isInitializingGeneralTab flag */
 
 type WorkerConfigForm = {
-  is_automatic_attendance: boolean;
   show_attendee_name: boolean;
   show_worker_name: boolean;
   allow_attendance_only_online: boolean;
@@ -204,7 +203,6 @@ type WorkerConfigForm = {
 };
 
 const createDefaultWorkerConfig = (): WorkerConfigForm => ({
-  is_automatic_attendance: false,
   show_attendee_name: false,
   show_worker_name: false,
   allow_attendance_only_online: false,
@@ -482,7 +480,6 @@ const applyWorkerConfig = (config?: ViewWorkerConfigResponse | null) => {
   const nextState = createDefaultWorkerConfig();
 
   if (config) {
-    nextState.is_automatic_attendance = config.is_automatic_attendance;
     nextState.show_attendee_name = config.show_attendee_name;
     nextState.show_worker_name = config.show_worker_name;
     nextState.allow_attendance_only_online =
@@ -657,7 +654,6 @@ const onWorkerConfigCheckboxChange = async (
   workerConfigForm[field] = Boolean(value);
 
   const fieldsToUpdateViaConfigEndpoint: WorkerConfigField[] = [
-    'is_automatic_attendance',
     'show_attendee_name',
     'show_worker_name',
     'allow_attendance_only_online',
@@ -1223,11 +1219,6 @@ const saveChatbot = async () => {
 };
 
 const workerConfigOptions = computed(() => [
-  {
-    key: 'is_automatic_attendance' as WorkerConfigField,
-    title: t('channel_general_config_auto_attendance_title'),
-    description: t('channel_general_config_auto_attendance_description'),
-  },
   {
     key: 'show_attendee_name' as WorkerConfigField,
     title: t('channel_general_config_show_attendee_name_title'),

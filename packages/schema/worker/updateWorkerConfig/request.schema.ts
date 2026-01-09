@@ -5,7 +5,6 @@ export const updateWorkerConfigParamsSchema = Type.Object({
 });
 
 export const updateWorkerConfigRequestSchema = Type.Object({
-  is_automatic_attendance: Type.Optional(Type.Boolean()),
   show_attendee_name: Type.Optional(Type.Boolean()),
   show_worker_name: Type.Optional(Type.Boolean()),
   allow_attendance_only_online: Type.Optional(Type.Boolean()),

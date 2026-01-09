@@ -144,8 +144,6 @@
   "profile_info_upload_error": "Erro ao salvar informações do perfil.",
   "channel_general_config_title": "Preferências de atendimento",
   "channel_general_config_subtitle": "Escolha como o canal se comporta durante o atendimento.",
-  "channel_general_config_auto_attendance_title": "Distribuir atendimentos automaticamente",
-  "channel_general_config_auto_attendance_description": "Direciona automaticamente os atendimentos para os atendentes com o status online assim que chegam.",
   "channel_general_config_show_attendee_name_title": "Mostrar nome do atendente ao cliente",
   "channel_general_config_show_attendee_name_description": "Exibe diretamente na conversa o nome de quem está respondendo.",
   "channel_general_config_show_worker_name_title": "Mostrar nome do canal no chat",

@@ -144,8 +144,6 @@
   "profile_info_upload_error": "Error saving profile information.",
   "channel_general_config_title": "Service preferences",
   "channel_general_config_subtitle": "Choose how this channel should behave during support.",
-  "channel_general_config_auto_attendance_title": "Distribute conversations automatically",
-  "channel_general_config_auto_attendance_description": "Automatically assigns new conversations to agents with online status as soon as they arrive.",
   "channel_general_config_show_attendee_name_title": "Show agent name to the client",
   "channel_general_config_show_attendee_name_description": "Displays who is responding directly inside the conversation.",
   "channel_general_config_show_worker_name_title": "Show channel name in the chat",

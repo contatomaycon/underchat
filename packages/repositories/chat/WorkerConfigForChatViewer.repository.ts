@@ -64,11 +64,6 @@ export class WorkerConfigForChatViewerRepository {
       show_attendee_name: configMap.has(EWorkerConfigType.show_attendee_name)
         ? true
         : false,
-      is_automatic_attendance: configMap.has(
-        EWorkerConfigType.is_automatic_attendance
-      )
-        ? true
-        : false,
       allow_attendance_only_online: configMap.has(
         EWorkerConfigType.allow_attendance_only_online
       )

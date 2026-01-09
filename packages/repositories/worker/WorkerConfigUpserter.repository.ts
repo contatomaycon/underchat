@@ -30,15 +30,6 @@ export class WorkerConfigUpserterRepository {
     input: IUpdateWorkerConfig
   ): Promise<void> => {
     await this.dbRw.transaction(async (tx) => {
-      if (input.is_automatic_attendance !== undefined) {
-        await this.upsertBooleanConfig(
-          tx,
-          workerId,
-          EWorkerConfigType.is_automatic_attendance,
-          input.is_automatic_attendance
-        );
-      }
-
       if (input.show_attendee_name !== undefined) {
         await this.upsertBooleanConfig(
           tx,

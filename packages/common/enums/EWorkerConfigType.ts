@@ -1,5 +1,4 @@
 export enum EWorkerConfigType {
-  is_automatic_attendance = '019b89ac-697c-768e-a69a-e1cb80cde900',
   show_attendee_name = '019b89ac-697d-750c-b404-0d52ac735a0c',
   show_worker_name = '019b89ac-697d-750c-b404-138f5cb791da',
   allow_attendance_only_online = '019b89ac-697d-750c-b404-1786f896d04c',

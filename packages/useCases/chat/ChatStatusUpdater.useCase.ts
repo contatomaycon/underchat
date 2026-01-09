@@ -19,7 +19,6 @@ import { ChatMessageService } from '@core/services/chatMessage.service';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { generateProtocol } from '@core/common/functions/generateProtocol';
 import { replaceMessageTags } from '@core/common/functions/replaceMessageTags';
-import { AutomaticAttendanceService } from '@core/services/automaticAttendance.service';
 import { ChatUserViewerRepository } from '@core/repositories/chat/ChatUserViewer.repository';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import Redis from 'ioredis';
@@ -35,7 +34,6 @@ export class ChatStatusUpdaterUseCase {
     private readonly workerService: WorkerService,
     private readonly workerConfigService: WorkerConfigService,
     private readonly chatMessageService: ChatMessageService,
-    private readonly automaticAttendanceService: AutomaticAttendanceService,
     private readonly chatUserViewerRepository: ChatUserViewerRepository,
     private readonly presenceService: PresenceService,
     @inject('Redis') private readonly redis: Redis
@@ -343,17 +341,7 @@ export class ChatStatusUpdaterUseCase {
     await this.publishChatUpdate(chatWithProtocol, accountId);
 
     if (status === EChatStatus.closed) {
-      await Promise.all([
-        this.handleClosedStatus(t, accountId, params.chat_id, chat),
-        this.automaticAttendanceService.handleAutomaticAttendance(
-          t,
-          accountId,
-          chat.worker.id,
-          userId,
-          userSectors,
-          params.chat_id
-        ),
-      ]);
+      await this.handleClosedStatus(t, accountId, params.chat_id, chat);
     }
 
     return chatWithProtocol;

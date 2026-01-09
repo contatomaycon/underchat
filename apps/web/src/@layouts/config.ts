@@ -1,3 +1,5 @@
+import { h } from 'vue';
+
 import {
   AppContentLayoutNav,
   ContentWidth,
@@ -7,10 +9,12 @@ import {
 } from '@layouts/enums';
 import type { LayoutConfig } from '@layouts/types';
 
+import logoUrl from '@images/logo.svg';
+
 export const layoutConfig: LayoutConfig = {
   app: {
     title: 'underchat',
-    logo: h('img', { src: '/src/assets/logo.svg' }),
+    logo: h('img', { src: logoUrl, alt: 'Underchat logo' }),
     contentWidth: ContentWidth.Boxed,
     contentLayoutNav: AppContentLayoutNav.Vertical,
     overlayNavFromBreakpoint: 0,

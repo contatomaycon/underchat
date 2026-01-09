@@ -19,7 +19,6 @@ import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { WorkerService } from '@core/services/worker.service';
 import { generateProtocol } from '@core/common/functions/generateProtocol';
 import { replaceMessageTags } from '@core/common/functions/replaceMessageTags';
-import { AutomaticAttendanceService } from '@core/services/automaticAttendance.service';
 import { ChatUserViewerRepository } from '@core/repositories/chat/ChatUserViewer.repository';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import Redis from 'ioredis';
@@ -34,7 +33,6 @@ export class TransferChatUseCase {
     private readonly chatMessageService: ChatMessageService,
     private readonly centrifugoService: CentrifugoService,
     private readonly workerService: WorkerService,
-    private readonly automaticAttendanceService: AutomaticAttendanceService,
     private readonly chatUserViewerRepository: ChatUserViewerRepository,
     @inject('Redis') private readonly redis: Redis
   ) {}
@@ -358,15 +356,6 @@ export class TransferChatUseCase {
         body.annotation
       );
     }
-
-    await this.automaticAttendanceService.handleAutomaticAttendance(
-      t,
-      accountId,
-      chat.worker.id,
-      userId,
-      userSectors,
-      params.chat_id
-    );
 
     return {
       chat_id: params.chat_id,

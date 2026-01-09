@@ -3,7 +3,6 @@ import { Static, Type } from '@sinclair/typebox';
 export const workerConfigSchema = Type.Object({
   worker_config_id: Type.String(),
   worker_id: Type.String(),
-  is_automatic_attendance: Type.Boolean(),
   show_attendee_name: Type.Boolean(),
   show_worker_name: Type.Boolean(),
   allow_attendance_only_online: Type.Boolean(),

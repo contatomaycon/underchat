@@ -57,7 +57,6 @@ export class WorkerConfigService {
       return this.mapToWorkerConfig({
         worker_config_id: '',
         worker_id: workerId,
-        is_automatic_attendance: null,
         show_attendee_name: null,
         show_worker_name: null,
         allow_attendance_only_online: null,
@@ -97,7 +96,6 @@ export class WorkerConfigService {
     return {
       worker_config_id: result.worker_config_id,
       worker_id: result.worker_id,
-      is_automatic_attendance: result.is_automatic_attendance ?? false,
       show_attendee_name: result.show_attendee_name ?? false,
       show_worker_name: result.show_worker_name ?? false,
       allow_attendance_only_online:

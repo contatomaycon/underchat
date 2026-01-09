@@ -54,11 +54,6 @@ export class WorkerConfigFieldsViewerRepository {
     configMap: Map<EWorkerConfigType, string | null>
   ): IWorkerConfigFields {
     return {
-      is_automatic_attendance: configMap.has(
-        EWorkerConfigType.is_automatic_attendance
-      )
-        ? true
-        : null,
       show_attendee_name: configMap.has(EWorkerConfigType.show_attendee_name)
         ? true
         : null,

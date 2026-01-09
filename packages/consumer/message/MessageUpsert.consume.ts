@@ -56,7 +56,6 @@ import {
 import { EncryptService } from '@core/services/encrypt.service';
 import { ETypeSanetize } from '@core/common/enums/ETypeSanetize';
 import { ContactService } from '@core/services/contact.service';
-import { AutomaticAttendanceService } from '@core/services/automaticAttendance.service';
 import { TFunction } from 'i18next';
 import { ViewContactResponse } from '@core/schema/contact/viewContact/response.schema';
 import { ChatMessageService } from '@core/services/chatMessage.service';
@@ -86,7 +85,6 @@ export class MessageUpsertConsume {
     private readonly streamProducerService: StreamProducerService,
     private readonly encryptService: EncryptService,
     private readonly contactService: ContactService,
-    private readonly automaticAttendanceService: AutomaticAttendanceService,
     private readonly chatMessageService: ChatMessageService,
     private readonly workerConfigService: WorkerConfigService,
     private readonly chatbotFlowRunnerService: ChatbotFlowRunnerService,
@@ -1769,11 +1767,6 @@ export class MessageUpsertConsume {
     if (!result) {
       throw new Error('Failed to create chat');
     }
-
-    await this.automaticAttendanceService.handleAutomaticAttendanceForNewChat(
-      t,
-      inputChatMessage
-    );
 
     return inputChatMessage;
   }

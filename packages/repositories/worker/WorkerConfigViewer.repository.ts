@@ -183,11 +183,6 @@ export class WorkerConfigViewerRepository {
     return {
       worker_config_id: '',
       worker_id: workerId,
-      is_automatic_attendance: configMap.has(
-        EWorkerConfigType.is_automatic_attendance
-      )
-        ? true
-        : null,
       show_attendee_name: configMap.has(EWorkerConfigType.show_attendee_name)
         ? true
         : null,
