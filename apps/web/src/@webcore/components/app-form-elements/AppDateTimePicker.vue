@@ -604,9 +604,11 @@ let inputMaskHandlers: {
 const setupInputMask = () => {
   if (!refFlatPicker.value?.fp) return;
 
-  const input = (refFlatPicker.value.fp.altInput ||
-    refFlatPicker.value.fp.input) as HTMLInputElement;
+  const instance = refFlatPicker.value.fp;
+  const input = (instance.altInput || instance.input) as HTMLInputElement;
   if (!input) return;
+
+  const hasTime = instance.config.enableTime || false;
 
   if (inputMaskHandlers.handleInput) {
     input.removeEventListener('input', inputMaskHandlers.handleInput);
@@ -616,6 +618,10 @@ const setupInputMask = () => {
   }
   if (inputMaskHandlers.handlePaste) {
     input.removeEventListener('paste', inputMaskHandlers.handlePaste);
+  }
+
+  if (hasTime) {
+    return;
   }
 
   const findDigitPosition = (value: string, targetDigit: number): number => {
