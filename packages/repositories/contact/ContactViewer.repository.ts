@@ -4,6 +4,8 @@ import {
   labelTemplate,
   account,
   contactDocumentType,
+  user,
+  userInfo,
 } from '@core/models';
 import { ViewContactResponse } from '@core/schema/contact/viewContact/response.schema';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
@@ -62,6 +64,13 @@ export class ContactViewerRepository {
         document_partial: contact.document_partial,
         created_at: contact.created_at,
         is_valided: contact.is_valided,
+        user: {
+          user_id: user.user_id,
+          name: sql<
+            string | null
+          >`CASE WHEN ${userInfo.name} IS NULL OR ${userInfo.last_name} IS NULL THEN NULL ELSE CONCAT(${userInfo.name}, ' ', ${userInfo.last_name}) END`,
+          photo: userInfo.photo,
+        },
       })
       .from(contact)
       .leftJoin(account, eq(contact.account_id, account.account_id))
@@ -76,6 +85,8 @@ export class ContactViewerRepository {
           contact.contact_document_type_id
         )
       )
+      .leftJoin(user, eq(contact.user_id, user.user_id))
+      .leftJoin(userInfo, eq(user.user_id, userInfo.user_id))
       .where(and(...conditions))
       .execute();
 
@@ -83,7 +94,19 @@ export class ContactViewerRepository {
       return null;
     }
 
-    return result[0] as (ViewContactResponse & { phone: string }) | null;
+    const contactData = result[0] as any;
+    const formattedResult = {
+      ...contactData,
+      user: contactData.user?.user_id
+        ? {
+            user_id: contactData.user.user_id,
+            name: contactData.user.name,
+            photo: contactData.user.photo,
+          }
+        : null,
+    };
+
+    return formattedResult as (ViewContactResponse & { phone: string }) | null;
   };
 
   viewContactByPhone = async (
@@ -130,6 +153,13 @@ export class ContactViewerRepository {
         document_partial: contact.document_partial,
         created_at: contact.created_at,
         is_valided: contact.is_valided,
+        user: {
+          user_id: user.user_id,
+          name: sql<
+            string | null
+          >`CASE WHEN ${userInfo.name} IS NULL OR ${userInfo.last_name} IS NULL THEN NULL ELSE CONCAT(${userInfo.name}, ' ', ${userInfo.last_name}) END`,
+          photo: userInfo.photo,
+        },
       })
       .from(contact)
       .leftJoin(account, eq(contact.account_id, account.account_id))
@@ -144,6 +174,8 @@ export class ContactViewerRepository {
           contact.contact_document_type_id
         )
       )
+      .leftJoin(user, eq(contact.user_id, user.user_id))
+      .leftJoin(userInfo, eq(user.user_id, userInfo.user_id))
       .where(and(...conditions))
       .limit(1)
       .execute();
@@ -152,6 +184,18 @@ export class ContactViewerRepository {
       return null;
     }
 
-    return result[0] as ViewContactResponse;
+    const contactData = result[0] as any;
+    const formattedResult = {
+      ...contactData,
+      user: contactData.user?.user_id
+        ? {
+            user_id: contactData.user.user_id,
+            name: contactData.user.name,
+            photo: contactData.user.photo,
+          }
+        : null,
+    };
+
+    return formattedResult as ViewContactResponse;
   };
 }

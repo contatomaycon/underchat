@@ -14,6 +14,7 @@ import { contactGroupAssignment } from './contactGroupAssignment.model';
 import { workerProfileStatusContact } from '../worker/workerProfileStatusContact.model';
 import { scheduledContact } from '../schedule';
 import { contactDocumentType } from './contactDocumentType.model';
+import { user } from '../user/user.model';
 
 export const contact = pgTable(
   'contact',
@@ -52,9 +53,11 @@ export const contact = pgTable(
       mode: 'string',
       withTimezone: true,
     }).defaultNow(),
+    user_id: uuid().references(() => user.user_id),
     deleted_at: timestamp({ mode: 'string', withTimezone: true }),
   },
   (table) => [
+    index('contact_user_id_idx').on(table.user_id),
     index('contact_account_id_idx').on(table.account_id),
     index('contact_label_template_id_idx').on(table.label_template_id),
     index('contact_contact_document_type_id_idx').on(
@@ -103,6 +106,10 @@ export const contactRelations = relations(contact, ({ one, many }) => ({
   cdt: one(contactDocumentType, {
     fields: [contact.contact_document_type_id],
     references: [contactDocumentType.contact_document_type_id],
+  }),
+  cus: one(user, {
+    fields: [contact.user_id],
+    references: [user.user_id],
   }),
   cga: many(contactGroupAssignment),
   cpc: many(workerProfileStatusContact),

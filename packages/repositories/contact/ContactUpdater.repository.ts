@@ -72,6 +72,10 @@ export class ContactUpdaterRepository {
       inputUpdate.document_c = input.document_c ?? null;
     }
 
+    if (input.user_id !== undefined) {
+      inputUpdate.user_id = input.user_id ?? null;
+    }
+
     inputUpdate.is_valided = input.is_valided ?? false;
 
     return inputUpdate;

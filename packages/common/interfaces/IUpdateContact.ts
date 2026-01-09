@@ -17,5 +17,6 @@ export interface IUpdateContact {
   document?: string | null;
   document_partial?: string | null;
   document_c?: string | null;
+  user_id?: string | null;
   is_valided: boolean;
 }

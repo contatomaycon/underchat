@@ -87,6 +87,7 @@ export class ContactCreatorRepository {
           document: validatedInput.document,
           document_partial: validatedInput.document_partial,
           document_c: validatedInput.document_c,
+          user_id: validatedInput.user_id,
         })
         .execute();
 

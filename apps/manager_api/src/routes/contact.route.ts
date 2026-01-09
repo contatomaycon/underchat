@@ -18,6 +18,7 @@ import { editContactSchema } from '@core/schema/contact/editContact';
 import { exportContactSchema } from '@core/schema/contact/exportContact';
 import { validateContactSchema } from '@core/schema/contact/validateContact';
 import { deleteContactPhotoSchema } from '@core/schema/contact/deletePhoto';
+import { listContactUsersSchema } from '@core/schema/contact/listUsers';
 import { planGuard } from '@/plugins/planGuard';
 import { planStatus } from '@/plugins/planStatus';
 
@@ -140,6 +141,17 @@ export default async function contactRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, contactUpdatePermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.get('/contact/users', {
+    schema: listContactUsersSchema,
+    handler: contactController.listUsers,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, contactViewPermissions),
       planGuard,
       planStatus,
     ],

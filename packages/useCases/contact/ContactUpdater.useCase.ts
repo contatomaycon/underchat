@@ -356,6 +356,7 @@ export class ContactUpdaterUseCase {
       document,
       photo: normalizedBody.photo,
       image_url: normalizedBody.image_url,
+      user_id: normalizedBody.user_id,
     };
 
     const contactUpdater = await this.contactService.updateContactById(

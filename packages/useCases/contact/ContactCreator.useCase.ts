@@ -319,6 +319,7 @@ export class ContactCreatorUseCase {
       document,
       photo: normalizedInput.photo,
       image_url: normalizedInput.image_url,
+      user_id: normalizedInput.user_id,
     };
 
     const contactId = await this.contactService.createContact(

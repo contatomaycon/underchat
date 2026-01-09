@@ -21,6 +21,10 @@ const { items: countryCodes } = useCountryCodes();
 const labelTemplates = ref<
   Array<{ label_template_id: string; label: string; color?: string }>
 >([]);
+const users = ref<
+  Array<{ user_id: string; name: string; photo?: string | null }>
+>([]);
+const isLoadingUsers = ref(false);
 
 const { t } = useI18n();
 
@@ -204,6 +208,7 @@ const birthday = ref<string | null>(null);
 const notes = ref<string | null>(null);
 const contact_document_type_id = ref<string | null>(null);
 const document = ref<string | null>(null);
+const user_id = ref<string | null>(null);
 
 watch(contact_document_type_id, () => {
   if (!showDocumentField.value) {
@@ -274,6 +279,7 @@ const addContact = async () => {
       contact_document_type_id: contact_document_type_id.value ?? null,
       document: document.value ?? null,
       image_url: imageUrl,
+      user_id: user_id.value ?? null,
     },
     imageUrl ? null : photoFile.value
   );
@@ -327,6 +333,7 @@ const resetForm = () => {
     document.value = extractFieldValue(
       props.initialData.document as FieldValue
     );
+    user_id.value = extractFieldValue(props.initialData.user_id as FieldValue);
   } else {
     label_template_id.value = null;
     name.value = null;
@@ -339,12 +346,27 @@ const resetForm = () => {
     notes.value = null;
     contact_document_type_id.value = null;
     document.value = null;
+    user_id.value = null;
   }
   photoFile.value = null;
   photoPreview.value = null;
   cropDialog.value.imageSrc = '';
   cropDialog.value.croppedImage = '';
   refFormAddContact.value?.resetValidation();
+};
+
+const loadUsers = async () => {
+  if (isLoadingUsers.value) return;
+  isLoadingUsers.value = true;
+  const usersList = await contactStore.listContactUsers();
+  if (usersList) {
+    users.value = usersList.map((u) => ({
+      user_id: u.user_id,
+      name: u.name || u.user_id,
+      photo: u.photo,
+    }));
+  }
+  isLoadingUsers.value = false;
 };
 
 const openFileSelector = () => {
@@ -918,12 +940,14 @@ const loadLabelTemplates = async () => {
 onMounted(async () => {
   resetForm();
   await loadLabelTemplates();
+  await loadUsers();
 });
 
 watch(isVisible, (visible) => {
   if (visible) {
     resetForm();
     loadLabelTemplates();
+    loadUsers();
   }
 });
 
@@ -1063,14 +1087,14 @@ watch(
               >
                 <template #prepend-inner="{ item }">
                   <div
-                    v-if="item?.color"
+                    v-if="item && !Array.isArray(item) && item.color"
                     class="label-color-circle me-2"
                     :style="{ backgroundColor: item.color }"
                   />
                 </template>
                 <template #item-prepend="{ item }">
                   <div
-                    v-if="item.color"
+                    v-if="item && item.color"
                     class="label-color-circle"
                     :style="{ backgroundColor: item.color }"
                   />
@@ -1102,6 +1126,27 @@ watch(
                 :maxlength="currentDocType === 'cpf' ? 14 : 18"
                 v-maska="docMask"
                 inputmode="numeric"
+              />
+            </VCol>
+          </VRow>
+          <VRow>
+            <VCol cols="12">
+              <VLabel class="text-body-2 mb-1"
+                >{{ $t('responsible_attendant') }}:</VLabel
+              >
+              <AppSelectSearch
+                v-model="user_id"
+                :items="
+                  users.map((u) => ({
+                    value: u.user_id,
+                    title: u.name,
+                  }))
+                "
+                :placeholder="$t('select_responsible_attendant')"
+                :loading="isLoadingUsers"
+                :clearable="true"
+                item-value="value"
+                item-title="title"
               />
             </VCol>
           </VRow>

@@ -10,6 +10,7 @@ import { createContact } from './methods/createContact';
 import { exportContact } from './methods/exportContact';
 import { validateContact } from './methods/validateContact';
 import { deletePhoto } from './methods/deletePhoto';
+import { listUsers } from './methods/listUsers';
 
 @injectable()
 class ContactController {
@@ -24,6 +25,7 @@ class ContactController {
   public exportContact = exportContact;
   public validateContact = validateContact;
   public deletePhoto = deletePhoto;
+  public listUsers = listUsers;
 }
 
 export default ContactController;

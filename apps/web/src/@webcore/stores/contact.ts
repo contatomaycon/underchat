@@ -22,6 +22,7 @@ import { ViewContactPhoneResponse } from '@core/schema/contact/viewContactPhone/
 import { ViewContactEmailResponse } from '@core/schema/contact/viewContactEmail/response.schema';
 import { ViewContactDocumentResponse } from '@core/schema/contact/viewContactDocument/response.schema';
 import { ExportContactResponse } from '@core/schema/contact/exportContact/response.schema';
+import { ListContactUsersResponse } from '@core/schema/contact/listUsers/response.schema';
 
 type FieldValue = string | { value: string } | null;
 
@@ -259,6 +260,14 @@ export const useContactStore = defineStore('contact', {
       if (chatId) {
         formData.append('chat_id', chatId);
       }
+      if (body.user_id === null) {
+        formData.append('user_id', '');
+      } else if (body.user_id !== undefined) {
+        const userId = this.extractFieldValue(body.user_id as FieldValue);
+        if (userId) {
+          formData.append('user_id', userId);
+        }
+      }
       return formData;
     },
 
@@ -333,6 +342,14 @@ export const useContactStore = defineStore('contact', {
         const chatId = this.extractFieldValue(payload.chat_id as FieldValue);
         if (chatId) {
           formData.append('chat_id', chatId);
+        }
+        if (payload.user_id === null) {
+          formData.append('user_id', '');
+        } else if (payload.user_id !== undefined) {
+          const userId = this.extractFieldValue(payload.user_id as FieldValue);
+          if (userId) {
+            formData.append('user_id', userId);
+          }
         }
 
         const response = await axios.post<IApiResponse<boolean>>(
@@ -648,6 +665,43 @@ export const useContactStore = defineStore('contact', {
         this.loading = false;
 
         return [];
+      }
+    },
+
+    async listContactUsers(): Promise<ListContactUsersResponse[] | null> {
+      try {
+        this.loading = true;
+
+        const response =
+          await axios.get<IApiResponse<ListContactUsersResponse[]>>(
+            `/contact/users`
+          );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('contact_users_list_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return null;
+        }
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('contact_users_list_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return null;
       }
     },
   },

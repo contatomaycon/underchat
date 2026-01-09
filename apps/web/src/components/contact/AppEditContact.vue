@@ -24,6 +24,10 @@ const { items: countryCodes } = useCountryCodes();
 const labelTemplates = ref<
   Array<{ label_template_id: string; label: string; color?: string }>
 >([]);
+const users = ref<
+  Array<{ user_id: string; name: string; photo?: string | null }>
+>([]);
+const isLoadingUsers = ref(false);
 
 const { t } = useI18n();
 const isInitializingModal = ref(false);
@@ -345,6 +349,7 @@ const notes = ref<string | null>(null);
 const contact_document_type_id = ref<string | null>(null);
 const document = ref<string | null>(null);
 const documentPartialOriginal = ref<string | null>(null);
+const user_id = ref<string | null>(null);
 
 watch(contact_document_type_id, () => {
   if (!showDocumentField.value) {
@@ -524,6 +529,7 @@ const loadContactData = async () => {
     photo.value = contact.photo ?? null;
     photoPreview.value = contact.photo ?? null;
     photoFile.value = null;
+    user_id.value = contact.user?.user_id ?? null;
   }
 };
 
@@ -555,6 +561,7 @@ const updateContact = async () => {
     notes: notes.value,
     contact_document_type_id: contact_document_type_id.value,
     document: documentToSave,
+    user_id: user_id.value,
   };
 
   let imageUrl: string | null = null;
@@ -1168,6 +1175,20 @@ const loadLabelTemplates = async () => {
     })) ?? [];
 };
 
+const loadUsers = async () => {
+  if (isLoadingUsers.value) return;
+  isLoadingUsers.value = true;
+  const usersList = await contactStore.listContactUsers();
+  if (usersList) {
+    users.value = usersList.map((u) => ({
+      user_id: u.user_id,
+      name: u.name || u.user_id,
+      photo: u.photo,
+    }));
+  }
+  isLoadingUsers.value = false;
+};
+
 const initializeModal = async () => {
   if (!isVisible.value || !contactId.value) return;
   if (isInitializingModal.value) return;
@@ -1175,7 +1196,7 @@ const initializeModal = async () => {
   isInitializingModal.value = true;
 
   try {
-    await loadLabelTemplates();
+    await Promise.all([loadLabelTemplates(), loadUsers()]);
     await loadContactData();
   } finally {
     isInitializingModal.value = false;
@@ -1351,14 +1372,14 @@ watch(
               >
                 <template #prepend-inner="{ item }">
                   <div
-                    v-if="item?.color"
+                    v-if="item && !Array.isArray(item) && item.color"
                     class="label-color-circle me-2"
                     :style="{ backgroundColor: item.color }"
                   />
                 </template>
                 <template #item-prepend="{ item }">
                   <div
-                    v-if="item.color"
+                    v-if="item && item.color"
                     class="label-color-circle"
                     :style="{ backgroundColor: item.color }"
                   />
@@ -1404,6 +1425,27 @@ watch(
                   />
                 </template>
               </AppTextField>
+            </VCol>
+          </VRow>
+          <VRow>
+            <VCol cols="12">
+              <VLabel class="text-body-2 mb-1"
+                >{{ $t('responsible_attendant') }}:</VLabel
+              >
+              <AppSelectSearch
+                v-model="user_id"
+                :items="
+                  users.map((u) => ({
+                    value: u.user_id,
+                    title: u.name,
+                  }))
+                "
+                :placeholder="$t('select_responsible_attendant')"
+                :loading="isLoadingUsers"
+                :clearable="true"
+                item-value="value"
+                item-title="title"
+              />
             </VCol>
           </VRow>
           <VRow>

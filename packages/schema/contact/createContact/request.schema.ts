@@ -110,6 +110,15 @@ export const createContactRequestSchema = Type.Object({
       Type.Null(),
     ])
   ),
+  user_id: Type.Optional(
+    Type.Union([
+      Type.String({ format: 'uuid' }),
+      Type.Object({
+        value: Type.String({ format: 'uuid' }),
+      }),
+      Type.Null(),
+    ])
+  ),
 });
 
 export type CreateContactRequest = Static<typeof createContactRequestSchema>;

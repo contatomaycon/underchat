@@ -127,6 +127,13 @@ export const updateContactRequestSchema = Type.Object({
       Type.Null(),
     ])
   ),
+  user_id: Type.Optional(
+    Type.Union([
+      Type.Object({
+        value: Type.Union([Type.String(), Type.Null()]),
+      }),
+    ])
+  ),
 });
 
 export type UpdateContactRequest = Static<typeof updateContactRequestSchema>;

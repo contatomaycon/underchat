@@ -18,6 +18,8 @@ import { TFunction } from 'i18next';
 import { PasswordEncryptorService } from './passwordEncryptor.service';
 import { ContactSensitiveDataRepository } from '@core/repositories/contact/ContactSensitiveData.repository';
 import { ContactExistsByEmailAndPhoneRepository } from '@core/repositories/contact/ContactExistsByEmailAndPhone.repository';
+import { ContactUsersListerRepository } from '@core/repositories/contact/ContactUsersLister.repository';
+import { ListContactUsersResponse } from '@core/schema/contact/listUsers/response.schema';
 import { nullIfEmpty } from '@core/common/functions/nullIfEmpty';
 import { StorageService } from './storage.service';
 import { buildCandidatesWithDdi } from '@core/common/functions/buildCandidatesBR';
@@ -38,6 +40,7 @@ export class ContactService {
     private readonly passwordEncryptorService: PasswordEncryptorService,
     private readonly contactSensitiveDataRepository: ContactSensitiveDataRepository,
     private readonly contactExistsByEmailAndPhoneRepository: ContactExistsByEmailAndPhoneRepository,
+    private readonly contactUsersListerRepository: ContactUsersListerRepository,
     private readonly storageService: StorageService
   ) {}
 
@@ -256,6 +259,9 @@ export class ContactService {
       ? documentFields.documentC
       : null;
 
+    const rawUserId = this.extractFieldValue(createInput.user_id as FieldValue);
+    const userId = rawUserId && rawUserId.trim() !== '' ? rawUserId : null;
+
     return {
       account_id: accountId,
       label_template_id: labelTemplateId,
@@ -277,6 +283,7 @@ export class ContactService {
       document: finalDocumentCEncrypted,
       document_partial: finalDocumentPartialEncrypted,
       document_c: finalDocumentC,
+      user_id: userId,
     };
   }
 
@@ -548,6 +555,12 @@ export class ContactService {
       : null;
     const finalDocumentC = contactDocumentTypeId ? documentC : null;
 
+    const rawUserId = this.extractFieldValue(input.user_id as FieldValue);
+    const userId =
+      rawUserId && rawUserId.trim() !== '' && rawUserId !== 'null'
+        ? rawUserId
+        : null;
+
     const payload: IUpdateContact = {
       label_template_id: labelTemplateId,
       name,
@@ -567,6 +580,7 @@ export class ContactService {
       document: finalDocumentCEncrypted,
       document_partial: finalDocumentPartialEncrypted,
       document_c: finalDocumentC,
+      user_id: input.user_id !== undefined ? userId : undefined,
       is_valided: isValided,
     };
 
@@ -728,5 +742,11 @@ export class ContactService {
     };
 
     return this.contactUpdaterRepository.updateContactById(contactId, payload);
+  };
+
+  listContactUsers = async (
+    accountId: string
+  ): Promise<ListContactUsersResponse[]> => {
+    return this.contactUsersListerRepository.listContactUsers(accountId);
   };
 }
