@@ -1211,24 +1211,30 @@ export class MessageUpsertConsume {
         return 'ignore_totally';
       }
 
+      const responsibleAttendant = existingContact.user
+        ? {
+            id: existingContact.user.user_id,
+            name: existingContact.user.name ?? '',
+            photo: existingContact.user.photo ?? null,
+          }
+        : null;
+
       inputChatMessage.contact = {
         id: existingContact.contact_id,
         name: existingContact.name,
         phone: existingContact.phone_partial ?? phone,
         phone_ddi: existingContact.phone_ddi ?? phoneAndDdi.phone_ddi,
         photo: existingContact.photo ?? null,
-        responsible_attendant: existingContact.user
-          ? {
-              id: existingContact.user.user_id,
-              name: existingContact.user.name ?? '',
-              photo: existingContact.user.photo ?? null,
-            }
-          : null,
+        responsible_attendant: responsibleAttendant,
         ignore: ignoreStatus,
       };
 
       if (ignoreStatus === EContactIgnore.ignore_automation) {
         inputChatMessage.status = EChatStatus.queue;
+        if (responsibleAttendant) {
+          inputChatMessage.user = responsibleAttendant;
+        }
+
         return 'ignore_automation';
       }
 
@@ -1253,24 +1259,30 @@ export class MessageUpsertConsume {
         return 'ignore_totally';
       }
 
+      const responsibleAttendant = createdContact.user
+        ? {
+            id: createdContact.user.user_id,
+            name: createdContact.user.name ?? '',
+            photo: createdContact.user.photo ?? null,
+          }
+        : null;
+
       inputChatMessage.contact = {
         id: createdContact.contact_id,
         name: createdContact.name,
         phone: createdContact.phone_partial ?? phone,
         phone_ddi: createdContact.phone_ddi ?? phoneAndDdi.phone_ddi,
         photo: createdContact.photo ?? null,
-        responsible_attendant: createdContact.user
-          ? {
-              id: createdContact.user.user_id,
-              name: createdContact.user.name ?? '',
-              photo: createdContact.user.photo ?? null,
-            }
-          : null,
+        responsible_attendant: responsibleAttendant,
         ignore: ignoreStatus,
       };
 
       if (ignoreStatus === EContactIgnore.ignore_automation) {
         inputChatMessage.status = EChatStatus.queue;
+        if (responsibleAttendant) {
+          inputChatMessage.user = responsibleAttendant;
+        }
+
         return 'ignore_automation';
       }
     }
