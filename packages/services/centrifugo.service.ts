@@ -10,6 +10,8 @@ import {
 import jwt from 'jsonwebtoken';
 import WebSocket from 'ws';
 import { centrifugoEnvironment } from '@core/config/environments';
+import { logger } from '@core/plugins/telemetry/logger';
+import { captureException } from '@core/plugins/telemetry/sentry';
 
 @injectable()
 export class CentrifugoService {
@@ -154,10 +156,24 @@ export class CentrifugoService {
         }
 
         if (isLastAttempt) {
-          console.error('Centrifugo publish failed after retries', {
-            channel: context.channel,
-            subId: context.subId,
-            error: normalizedError.message,
+          logger.error(
+            {
+              err: normalizedError,
+              type: 'centrifugo_publish_error',
+              channel: context.channel,
+              subId: context.subId,
+              attempts: this.publishRetryAttempts,
+            },
+            'Centrifugo publish failed after retries'
+          );
+
+          captureException(normalizedError, {
+            centrifugo: {
+              type: 'publish_error',
+              channel: context.channel,
+              subId: context.subId,
+              attempts: this.publishRetryAttempts,
+            },
           });
 
           return {} as PublishResult;
@@ -173,10 +189,24 @@ export class CentrifugoService {
     }
 
     if (lastError) {
-      console.error('Centrifugo publish failed without recovery', {
-        channel: context.channel,
-        subId: context.subId,
-        error: lastError.message,
+      logger.error(
+        {
+          err: lastError,
+          type: 'centrifugo_publish_error',
+          channel: context.channel,
+          subId: context.subId,
+          attempts: this.publishRetryAttempts,
+        },
+        'Centrifugo publish failed without recovery'
+      );
+
+      captureException(lastError, {
+        centrifugo: {
+          type: 'publish_error',
+          channel: context.channel,
+          subId: context.subId,
+          attempts: this.publishRetryAttempts,
+        },
       });
     }
 

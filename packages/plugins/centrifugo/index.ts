@@ -47,6 +47,26 @@ const centrifugoPlugin: FastifyPluginAsync<CentrifugoPluginOptions> = async (
     }
   );
 
+  client.on('error', (error) => {
+    fastify.log.error(
+      {
+        err: error,
+        type: 'centrifugo_error',
+      },
+      'Centrifugo client error'
+    );
+
+    import('@core/plugins/telemetry/sentry.js')
+      .then(({ captureException }) => {
+        captureException(error, {
+          centrifugo: {
+            type: 'connection_error',
+          },
+        });
+      })
+      .catch(() => {});
+  });
+
   client.connect();
 
   container.register<Centrifuge>('Centrifuge', { useValue: client });

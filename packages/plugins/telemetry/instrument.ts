@@ -38,7 +38,11 @@ if (telemetryEnvironment.enableSentry) {
     beforeSend(event, hint) {
       if (event.exception) {
         const error = hint.originalException;
-        if (error instanceof Error && error.message.includes('ECONNREFUSED')) {
+        if (
+          error instanceof Error &&
+          error.message.includes('ECONNREFUSED') &&
+          environment === 'development'
+        ) {
           return null;
         }
       }
@@ -53,3 +57,5 @@ if (telemetryEnvironment.enableSentry) {
     },
   });
 }
+
+export {};
