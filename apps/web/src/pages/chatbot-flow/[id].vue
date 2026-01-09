@@ -184,8 +184,16 @@ const onConnect = (connection: Connection) => {
   );
   if (existingEdge) return;
 
+  const edgeIdParts = [
+    'e',
+    connection.source,
+    connection.target,
+    Date.now().toString(),
+  ];
+  const edgeId = edgeIdParts.join('-');
+
   edges.value.push({
-    id: `e${connection.source}-${connection.target}-${Date.now()}`,
+    id: edgeId,
     source: connection.source!,
     target: connection.target!,
     markerEnd: {

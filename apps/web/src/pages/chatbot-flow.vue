@@ -933,8 +933,18 @@ const onConnect = (connection: Connection) => {
   });
   if (existingEdge) return;
 
+  const edgeIdParts = [
+    'e',
+    connection.source,
+    connection.target,
+    normalizedSourceHandle || '',
+    normalizedTargetHandle || '',
+    Date.now().toString(),
+  ];
+  const edgeId = edgeIdParts.join('-');
+
   const newEdge = normalizeEdge({
-    id: `e${connection.source}-${connection.target}-${normalizedSourceHandle || ''}-${normalizedTargetHandle || ''}-${Date.now()}`,
+    id: edgeId,
     source: connection.source!,
     target: connection.target!,
     sourceHandle: normalizedSourceHandle,
