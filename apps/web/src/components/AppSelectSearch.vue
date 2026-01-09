@@ -63,6 +63,9 @@ const emit = defineEmits<{
 
 const isMenuOpen = ref(false);
 const internalSearch = ref(props.search || '');
+const containerRef = ref<HTMLElement | null>(null);
+
+const attachElement = computed(() => containerRef.value || undefined);
 
 const getItemValue = (item: SelectItem): string | number | boolean => {
   return item[props.itemValue] ?? item.value ?? item.id ?? '';
@@ -134,6 +137,9 @@ watch(internalSearch, (newValue) => {
 
 const computedRules = computed(() => {
   if (!props.rules || props.rules.length === 0) {
+    return [];
+  }
+  if (isMenuOpen.value) {
     return [];
   }
   return props.rules
@@ -217,68 +223,76 @@ const handleClear = () => {
 </script>
 
 <template>
-  <div>
+  <div ref="containerRef">
     <VLabel v-if="label" class="mb-1 text-body-2"> {{ label }}: </VLabel>
-    <VMenu v-model="isMenuOpen">
+    <VMenu
+      v-model="isMenuOpen"
+      location="bottom"
+      :close-on-content-click="false"
+      offset="0"
+      :attach="attachElement"
+    >
       <template #activator="{ props: menuProps }">
-        <VTextField
-          v-bind="menuProps"
-          :class="{ 'as-hidden-multi-value': multiple && hasSelectedItems }"
-          :model-value="inputValue"
-          :placeholder="hasSelectedItems ? '' : placeholder"
-          variant="outlined"
-          :readonly="true"
-          :disabled="disabled"
-          :loading="loading"
-          :rules="computedRules"
-        >
-          <template
-            v-if="multiple && chips && selectedItems.length > 0"
-            #default
+        <div class="select-field-wrapper">
+          <VTextField
+            v-bind="menuProps"
+            :model-value="inputValue"
+            :placeholder="hasSelectedItems ? '' : placeholder"
+            variant="outlined"
+            :readonly="true"
+            :disabled="disabled"
+            :loading="loading"
+            :rules="computedRules"
+            :class="{
+              'select-with-chips': multiple && chips && hasSelectedItems,
+            }"
           >
-            <div class="d-flex flex-wrap gap-1 align-center">
-              <VChip
-                v-for="item in selectedItems"
-                :key="String(getItemValue(item))"
-                size="small"
-                :closable="closableChips"
-                @click:close.stop="handleRemove(getItemValue(item))"
-              >
-                <template v-if="$slots['chip']">
-                  <slot name="chip" :item="item" />
-                </template>
-                <template v-else>
-                  {{ getItemTitle(item) }}
-                </template>
-              </VChip>
-            </div>
-          </template>
-          <template v-if="$slots['prepend-inner']" #prepend-inner>
-            <slot
-              name="prepend-inner"
-              :item="selectedItem"
-              :items="selectedItems"
-            />
-          </template>
-          <template #append-inner>
-            <div class="d-flex align-center ga-1 append-inner-icons">
-              <VIcon
-                v-if="
-                  clearable &&
-                  (multiple
-                    ? Array.isArray(modelValue) && modelValue.length > 0
-                    : modelValue)
-                "
-                icon="tabler-x"
-                class="cursor-pointer clear-icon"
-                @click.stop="handleClear"
+            <template v-if="$slots['prepend-inner']" #prepend-inner>
+              <slot
+                name="prepend-inner"
+                :item="selectedItem"
+                :items="selectedItems"
               />
-              <VIcon icon="tabler-chevron-down" class="chevron-icon" />
-            </div>
-          </template>
-        </VTextField>
+            </template>
+            <template #append-inner>
+              <div class="d-flex align-center ga-1 append-inner-icons">
+                <VIcon
+                  v-if="
+                    clearable &&
+                    (multiple
+                      ? Array.isArray(modelValue) && modelValue.length > 0
+                      : modelValue)
+                  "
+                  icon="tabler-x"
+                  class="cursor-pointer clear-icon"
+                  @click.stop="handleClear"
+                />
+                <VIcon icon="tabler-chevron-down" class="chevron-icon" />
+              </div>
+            </template>
+          </VTextField>
+          <div
+            v-if="multiple && chips && selectedItems.length > 0"
+            class="chips-container"
+          >
+            <VChip
+              v-for="item in selectedItems"
+              :key="String(getItemValue(item))"
+              size="small"
+              :closable="closableChips"
+              @click:close.stop="handleRemove(getItemValue(item))"
+            >
+              <template v-if="$slots['chip']">
+                <slot name="chip" :item="item" />
+              </template>
+              <template v-else>
+                {{ getItemTitle(item) }}
+              </template>
+            </VChip>
+          </div>
+        </div>
       </template>
-      <VCard>
+      <VCard @click.stop class="select-menu-card">
         <VCardText class="pa-2">
           <AppTextField
             :model-value="internalSearch"
@@ -292,13 +306,13 @@ const handleClear = () => {
           />
         </VCardText>
         <VDivider />
-        <VList max-height="300" style="overflow-y: auto">
+        <VList class="select-options-list">
           <template v-if="filteredItems.length > 0">
             <VListItem
               v-for="(item, index) in filteredItems"
               :key="index"
               :value="getItemValue(item)"
-              @click="handleSelect(item)"
+              @click.prevent="handleSelect(item)"
               :active="
                 multiple
                   ? Array.isArray(modelValue) &&
@@ -355,12 +369,74 @@ const handleClear = () => {
   }
 }
 
-.as-hidden-multi-value :deep(.v-field__input) {
+.select-field-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+.chips-container {
+  position: absolute;
+  top: 50%;
+  left: 14px;
+  right: 80px;
+  transform: translateY(-50%);
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 4px;
+  align-items: center;
+  pointer-events: none;
+  z-index: 1;
+  overflow: hidden;
+  max-height: 32px;
+}
+
+.chips-container :deep(.v-chip) {
+  pointer-events: auto;
+}
+
+.select-with-chips :deep(.v-field__input) {
   color: transparent;
   caret-color: transparent;
 }
 
-.as-hidden-multi-value :deep(input) {
+.select-with-chips :deep(input) {
   color: transparent;
+}
+
+:deep(.v-menu .v-overlay__content) {
+  transform-origin: top left !important;
+  margin-top: 0 !important;
+}
+
+.select-menu-card {
+  margin-top: 0 !important;
+  border-top-left-radius: 0 !important;
+  border-top-right-radius: 0 !important;
+}
+
+.select-options-list {
+  max-height: 280px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(var(--v-theme-on-surface), 0.2) transparent;
+}
+
+.select-options-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.select-options-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.select-options-list::-webkit-scrollbar-thumb {
+  background: rgba(var(--v-theme-on-surface), 0.2);
+  border-radius: 3px;
+  transition: background 0.2s ease;
+}
+
+.select-options-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(var(--v-theme-on-surface), 0.3);
 }
 </style>
