@@ -60,6 +60,10 @@ const redisPlugin = async (fastify: FastifyInstance) => {
   });
 
   fastify.decorate<Redis>('Redis', client);
+
+  fastify.addHook('onClose', async () => {
+    await client.quit();
+  });
 };
 
 export default fp(redisPlugin, { name: 'redis-plugin' });

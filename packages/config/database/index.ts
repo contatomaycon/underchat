@@ -8,6 +8,15 @@ import { container } from 'tsyringe';
 import { FastifyInstance } from 'fastify';
 
 async function dbConnector(fastify: FastifyInstance) {
+  const sslMode = databaseEnvironment.dbSslMode;
+  const ssl =
+    sslMode === 'disable'
+      ? false
+      : {
+          rejectUnauthorized:
+            sslMode === 'verify-ca' || sslMode === 'verify-full',
+        };
+
   const poolRw = new Pool({
     host: databaseEnvironment.dbHostRw,
     port: databaseEnvironment.dbPortRw,
@@ -20,6 +29,7 @@ async function dbConnector(fastify: FastifyInstance) {
     connectionTimeoutMillis: databaseEnvironment.dbPoolAcquireTimeout,
     keepAlive: true,
     keepAliveInitialDelayMillis: 10000,
+    ssl,
   });
 
   const poolRo = new Pool({
@@ -34,6 +44,7 @@ async function dbConnector(fastify: FastifyInstance) {
     connectionTimeoutMillis: databaseEnvironment.dbPoolAcquireTimeout,
     keepAlive: true,
     keepAliveInitialDelayMillis: 10000,
+    ssl,
   });
 
   poolRw.on('error', (err) => {
@@ -88,15 +99,6 @@ async function dbConnector(fastify: FastifyInstance) {
       .catch(() => {});
   });
 
-  if (databaseEnvironment.dbSslMode) {
-    poolRw.options.ssl = {
-      rejectUnauthorized: false,
-    };
-    poolRo.options.ssl = {
-      rejectUnauthorized: false,
-    };
-  }
-
   const connectionRw = drizzle(poolRw, { schema });
   const connectionRo = drizzle(poolRo, { schema });
 
@@ -121,6 +123,10 @@ async function dbConnector(fastify: FastifyInstance) {
 
   fastify.decorate('DatabaseRw', connectionRw);
   fastify.decorate('DatabaseRo', connectionRo);
+
+  fastify.addHook('onClose', async () => {
+    await Promise.allSettled([poolRw.end(), poolRo.end()]);
+  });
 }
 
 export default fp(dbConnector, { name: 'db-connector' });

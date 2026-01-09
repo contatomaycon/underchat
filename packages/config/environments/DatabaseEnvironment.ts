@@ -1,5 +1,33 @@
 import InvalidConfigurationError from '@core/common/exceptions/InvalidConfigurationError';
 
+type DatabaseSslMode =
+  | 'disable'
+  | 'allow'
+  | 'prefer'
+  | 'require'
+  | 'verify-ca'
+  | 'verify-full'
+  | 'no-verify';
+
+const SSL_MODE_ALIASES: Partial<Record<string, DatabaseSslMode>> = {
+  true: 'require',
+  '1': 'require',
+  yes: 'require',
+  false: 'disable',
+  '0': 'disable',
+  no: 'disable',
+};
+
+const SSL_MODE_VALUES = new Set<DatabaseSslMode>([
+  'disable',
+  'allow',
+  'prefer',
+  'require',
+  'verify-ca',
+  'verify-full',
+  'no-verify',
+]);
+
 export class DatabaseEnvironment {
   public get dbHostRw(): string {
     const host = process.env.DB_HOST_RW;
@@ -64,13 +92,25 @@ export class DatabaseEnvironment {
     return db;
   }
 
-  public get dbSslMode(): boolean {
+  public get dbSslMode(): DatabaseSslMode {
     const sm = process.env.DB_SSLMODE;
     if (sm === undefined) {
       throw new InvalidConfigurationError('DB_SSLMODE is not defined.');
     }
 
-    return sm === 'true';
+    const normalized = sm.trim().toLowerCase();
+    const alias = SSL_MODE_ALIASES[normalized];
+    if (alias) {
+      return alias;
+    }
+
+    if (!SSL_MODE_VALUES.has(normalized as DatabaseSslMode)) {
+      throw new InvalidConfigurationError(
+        `DB_SSLMODE is invalid: ${sm}.`
+      );
+    }
+
+    return normalized as DatabaseSslMode;
   }
 
   public get dbPoolMin(): number {

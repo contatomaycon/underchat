@@ -1,5 +1,6 @@
 import { captureException, captureMessage } from './sentry';
 import { logger } from './logger';
+import type { FastifyInstance } from 'fastify';
 
 export function setupErrorHandlers(): void {
   process.on('uncaughtException', (error: Error) => {
@@ -77,4 +78,41 @@ export function setupErrorHandlers(): void {
     logger.info('SIGINT signal received');
     captureMessage('SIGINT signal received', 'info');
   });
+}
+
+export function setupGracefulShutdown(server: FastifyInstance): void {
+  const shutdown = async (signal: string) => {
+    logger.info(`${signal} signal received, starting graceful shutdown`);
+    captureMessage(
+      `${signal} signal received, starting graceful shutdown`,
+      'info'
+    );
+
+    try {
+      await server.close();
+      logger.info('Server closed successfully');
+      process.exit(0);
+    } catch (error) {
+      logger.error(
+        {
+          err: error,
+          type: 'graceful_shutdown_error',
+        },
+        'Error during graceful shutdown'
+      );
+      captureException(
+        error instanceof Error ? error : new Error(String(error)),
+        {
+          gracefulShutdown: {
+            signal,
+            type: 'shutdown_error',
+          },
+        }
+      );
+      process.exit(1);
+    }
+  };
+
+  process.once('SIGTERM', () => shutdown('SIGTERM'));
+  process.once('SIGINT', () => shutdown('SIGINT'));
 }
