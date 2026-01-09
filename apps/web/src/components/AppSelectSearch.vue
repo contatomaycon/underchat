@@ -65,6 +65,7 @@ const isMenuOpen = ref(false);
 const internalSearch = ref(props.search || '');
 const containerRef = ref<HTMLElement | null>(null);
 const maxVisibleChips = ref(2);
+const selectedItemsCache = ref<SelectItem[]>([]);
 
 const attachElement = computed(() => containerRef.value || undefined);
 
@@ -98,7 +99,29 @@ const selectedItems = computed(() => {
     return [];
   }
   const values = Array.isArray(props.modelValue) ? props.modelValue : [];
-  return props.items.filter((item) => values.includes(getItemValue(item)));
+  const foundItems = props.items.filter((item) =>
+    values.includes(getItemValue(item))
+  );
+
+  const cachedMap = new Map(
+    selectedItemsCache.value.map((item) => [getItemValue(item), item])
+  );
+  foundItems.forEach((item) => cachedMap.set(getItemValue(item), item));
+
+  const result = values
+    .filter((value): value is string | number | boolean => value !== null)
+    .map((value) => {
+      const found = foundItems.find((item) => getItemValue(item) === value);
+      if (found) {
+        return found;
+      }
+      return cachedMap.get(value);
+    })
+    .filter((item): item is SelectItem => item !== undefined);
+
+  selectedItemsCache.value = result;
+
+  return result;
 });
 
 const visibleChips = computed(() => {
