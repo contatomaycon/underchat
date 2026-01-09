@@ -54,7 +54,8 @@ async function dbConnector(fastify: FastifyInstance) {
       message.includes('connection closed') ||
       message.includes('connection ended') ||
       message.includes('server closed the connection') ||
-      message.includes('terminating connection due to')
+      message.includes('terminating connection due to') ||
+      message.includes('terminated unexpectedly')
     );
   };
 
@@ -88,16 +89,18 @@ async function dbConnector(fastify: FastifyInstance) {
       })
       .catch(() => {});
 
-    import('@core/plugins/telemetry/sentry.js')
-      .then(({ captureException }) => {
-        captureException(err, {
-          database: {
-            pool: 'rw',
-            type: 'pool_error',
-          },
-        });
-      })
-      .catch(() => {});
+    if (!isConnectionTerminatedError(err)) {
+      import('@core/plugins/telemetry/sentry.js')
+        .then(({ captureException }) => {
+          captureException(err, {
+            database: {
+              pool: 'rw',
+              type: 'pool_error',
+            },
+          });
+        })
+        .catch(() => {});
+    }
   });
 
   poolRw.on('connect', (client) => {
@@ -164,16 +167,18 @@ async function dbConnector(fastify: FastifyInstance) {
       })
       .catch(() => {});
 
-    import('@core/plugins/telemetry/sentry.js')
-      .then(({ captureException }) => {
-        captureException(err, {
-          database: {
-            pool: 'ro',
-            type: 'pool_error',
-          },
-        });
-      })
-      .catch(() => {});
+    if (!isConnectionTerminatedError(err)) {
+      import('@core/plugins/telemetry/sentry.js')
+        .then(({ captureException }) => {
+          captureException(err, {
+            database: {
+              pool: 'ro',
+              type: 'pool_error',
+            },
+          });
+        })
+        .catch(() => {});
+    }
   });
 
   poolRo.on('connect', (client) => {

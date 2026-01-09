@@ -1,6 +1,22 @@
 import * as Sentry from '@sentry/node';
 import { telemetryEnvironment } from '@core/config/environments';
 
+function isConnectionTerminatedError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const message = error.message.toLowerCase();
+  return (
+    message.includes('connection terminated') ||
+    message.includes('connection closed') ||
+    message.includes('connection ended') ||
+    message.includes('server closed the connection') ||
+    message.includes('terminating connection due to') ||
+    message.includes('terminated unexpectedly')
+  );
+}
+
 export function captureException(
   error: unknown,
   context?: Record<string, unknown>
@@ -9,7 +25,12 @@ export function captureException(
     return;
   }
 
+  if (isConnectionTerminatedError(error)) {
+    return;
+  }
+
   if (context) {
+
     Sentry.withScope((scope) => {
       Object.entries(context).forEach(([key, value]) => {
         scope.setContext(key, value as Record<string, unknown>);

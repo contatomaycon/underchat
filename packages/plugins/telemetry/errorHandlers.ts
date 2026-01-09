@@ -1,6 +1,8 @@
 import { addBreadcrumb, captureException, captureMessage } from './sentry';
 import { logger } from './logger';
 import type { FastifyInstance } from 'fastify';
+import * as Sentry from '@sentry/node';
+import { telemetryEnvironment } from '@core/config/environments';
 
 export function setupErrorHandlers(): void {
   process.on('uncaughtException', (error: Error) => {
@@ -71,7 +73,17 @@ export function setupErrorHandlers(): void {
 }
 
 export function setupGracefulShutdown(server: FastifyInstance): void {
-  const shutdown = async (signal: string) => {
+  let isShuttingDown = false;
+  const SHUTDOWN_TIMEOUT = 30000;
+
+  const shutdown = async (signal: string): Promise<void> => {
+    if (isShuttingDown) {
+      logger.warn(`${signal} signal received during shutdown, ignoring`);
+      return;
+    }
+
+    isShuttingDown = true;
+
     logger.info(`${signal} signal received, starting graceful shutdown`);
     addBreadcrumb({
       message: `${signal} signal received, starting graceful shutdown`,
@@ -80,11 +92,27 @@ export function setupGracefulShutdown(server: FastifyInstance): void {
       data: { signal },
     });
 
+    const forceExit = setTimeout(() => {
+      logger.error('Graceful shutdown timeout exceeded, forcing exit');
+      process.exit(1);
+    }, SHUTDOWN_TIMEOUT);
+
     try {
       await server.close();
+      clearTimeout(forceExit);
+
       logger.info('Server closed successfully');
+
+      if (telemetryEnvironment.enableSentry) {
+        try {
+          await Sentry.flush(2000);
+        } catch {}
+      }
+
       process.exit(0);
     } catch (error) {
+      clearTimeout(forceExit);
+
       logger.error(
         {
           err: error,
@@ -92,6 +120,7 @@ export function setupGracefulShutdown(server: FastifyInstance): void {
         },
         'Error during graceful shutdown'
       );
+
       captureException(
         error instanceof Error ? error : new Error(String(error)),
         {
@@ -101,10 +130,22 @@ export function setupGracefulShutdown(server: FastifyInstance): void {
           },
         }
       );
+
+      if (telemetryEnvironment.enableSentry) {
+        try {
+          await Sentry.flush(2000);
+        } catch {}
+      }
+
       process.exit(1);
     }
   };
 
-  process.once('SIGTERM', () => shutdown('SIGTERM'));
-  process.once('SIGINT', () => shutdown('SIGINT'));
+  process.on('SIGTERM', () => {
+    void shutdown('SIGTERM');
+  });
+
+  process.on('SIGINT', () => {
+    void shutdown('SIGINT');
+  });
 }

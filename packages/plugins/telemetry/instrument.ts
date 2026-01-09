@@ -36,25 +36,54 @@ if (telemetryEnvironment.enableSentry) {
     tracesSampleRate: telemetryEnvironment.sentryTracesSampleRate,
     profilesSampleRate: telemetryEnvironment.sentryProfilesSampleRate,
     beforeSend(event, hint) {
+      const isConnectionTerminatedError = (error: Error): boolean => {
+        const message = error.message.toLowerCase();
+        return (
+          message.includes('connection terminated') ||
+          message.includes('connection closed') ||
+          message.includes('connection ended') ||
+          message.includes('server closed the connection') ||
+          message.includes('terminating connection due to') ||
+          message.includes('terminated unexpectedly')
+        );
+      };
+
       if (event.exception) {
         const error = hint.originalException;
         if (error instanceof Error) {
-          const message = error.message.toLowerCase();
-          const isConnectionTerminatedError =
-            message.includes('connection terminated') ||
-            message.includes('connection closed') ||
-            message.includes('connection ended') ||
-            message.includes('server closed the connection') ||
-            message.includes('terminating connection due to');
-
           if (
             (error.message.includes('ECONNREFUSED') &&
               environment === 'development') ||
-            isConnectionTerminatedError
+            isConnectionTerminatedError(error)
           ) {
             return null;
           }
         }
+      }
+
+      const contexts = event.contexts || {};
+      if (
+        contexts.database &&
+        (contexts.database as { type?: string }).type === 'pool_error'
+      ) {
+        const error = hint.originalException;
+        if (error instanceof Error && isConnectionTerminatedError(error)) {
+          return null;
+        }
+      }
+
+      if (
+        event.message &&
+        typeof event.message === 'object' &&
+        'formatted' in event.message &&
+        typeof (event.message as { formatted?: string }).formatted ===
+          'string' &&
+        (event.message as { formatted: string }).formatted
+          .toLowerCase()
+          .includes('sigterm signal received') &&
+        event.level === 'info'
+      ) {
+        return null;
       }
 
       if (!event.tags) {
