@@ -64,6 +64,7 @@ const emit = defineEmits<{
 const isMenuOpen = ref(false);
 const internalSearch = ref(props.search || '');
 const containerRef = ref<HTMLElement | null>(null);
+const maxVisibleChips = ref(2);
 
 const attachElement = computed(() => containerRef.value || undefined);
 
@@ -98,6 +99,18 @@ const selectedItems = computed(() => {
   }
   const values = Array.isArray(props.modelValue) ? props.modelValue : [];
   return props.items.filter((item) => values.includes(getItemValue(item)));
+});
+
+const visibleChips = computed(() => {
+  if (selectedItems.value.length <= maxVisibleChips.value) {
+    return selectedItems.value;
+  }
+  return selectedItems.value.slice(0, maxVisibleChips.value);
+});
+
+const remainingChipsCount = computed(() => {
+  const remaining = selectedItems.value.length - maxVisibleChips.value;
+  return remaining > 0 ? remaining : 0;
 });
 
 const displayValue = computed(() => {
@@ -282,7 +295,7 @@ const handleClear = () => {
             class="chips-container"
           >
             <VChip
-              v-for="item in selectedItems"
+              v-for="item in visibleChips"
               :key="String(getItemValue(item))"
               size="small"
               :closable="closableChips"
@@ -294,6 +307,14 @@ const handleClear = () => {
               <template v-else>
                 {{ getItemTitle(item) }}
               </template>
+            </VChip>
+            <VChip
+              v-if="remainingChipsCount > 0"
+              size="small"
+              color="primary"
+              variant="tonal"
+            >
+              +{{ remainingChipsCount }}
             </VChip>
           </div>
         </div>
