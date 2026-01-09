@@ -19,5 +19,6 @@ export const planExpirationReminderWorker = async (
     taskQueue: 'plan-expiration-reminder-queue',
   });
 
+  fastify.temporal.registerWorker(worker);
   worker.run();
 };

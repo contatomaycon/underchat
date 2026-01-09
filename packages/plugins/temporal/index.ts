@@ -6,7 +6,7 @@ import { nativeConnectionTemporal } from './nativeConnection';
 import { clientTemporal } from './client';
 import { container } from 'tsyringe';
 import { Client, Connection } from '@temporalio/client';
-import { NativeConnection } from '@temporalio/worker';
+import { NativeConnection, Worker } from '@temporalio/worker';
 
 const temporalPlugin = async (fastify: FastifyInstance) => {
   const [connection, nativeConnection, client] = await Promise.all([
@@ -15,10 +15,15 @@ const temporalPlugin = async (fastify: FastifyInstance) => {
     clientTemporal(),
   ]);
 
+  const workers: Worker[] = [];
+
   fastify.decorate<ITemporal>('temporal', {
     connection,
     nativeConnection,
     client,
+    registerWorker: (worker: Worker) => {
+      workers.push(worker);
+    },
   });
 
   container.register<Connection>('TemporalConnection', {
@@ -34,6 +39,15 @@ const temporalPlugin = async (fastify: FastifyInstance) => {
   });
 
   fastify.addHook('onClose', async () => {
+    for (const worker of workers) {
+      try {
+        await worker.shutdown();
+        fastify.log.info('Temporal worker stopped successfully.');
+      } catch (err) {
+        fastify.log.error(err, 'Error stopping Temporal worker.');
+      }
+    }
+
     await connection.close();
     await nativeConnection.close();
 

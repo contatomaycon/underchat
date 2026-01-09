@@ -2070,5 +2070,7 @@
   "ai_agent_prompt_deleter_error": "Ocurrió un error al eliminar el prompt. Por favor, inténtelo de nuevo.",
   "ai_agent_prompt_deleted_successfully": "¡Prompt eliminado con éxito!",
   "ai_agent_not_available_plan_message": "Esta opción no está disponible en el plan actual. Actualice su plan o compre un complemento para usar esta funcionalidad.",
-  "ai_agent_not_available_additional": "Límite de agentes de IA alcanzado. Elimine un agente para agregar otro."
+  "ai_agent_not_available_additional": "Límite de agentes de IA alcanzado. Elimine un agente para agregar otro.",
+  "chunk_size_info": "Tamaño del Chunk: Define cuántos caracteres/tokens se procesarán en cada fragmento (chunk) del documento. Valores más pequeños resultan en chunks más precisos, pero aumentan el número de operaciones de procesamiento. Valores más grandes procesan más información a la vez, pero pueden perder contexto.",
+  "chunk_overlap_info": "Superposición del Chunk: Define cuántos caracteres/tokens se superponen entre chunks consecutivos. Esto ayuda a mantener el contexto entre partes del documento, evitando la pérdida de información en los límites entre chunks."
 }

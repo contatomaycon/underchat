@@ -17,5 +17,6 @@ export const profileStatusRenewalWorker = async (fastify: FastifyInstance) => {
     taskQueue: 'profile-status-renewal-queue',
   });
 
+  fastify.temporal.registerWorker(worker);
   worker.run();
 };

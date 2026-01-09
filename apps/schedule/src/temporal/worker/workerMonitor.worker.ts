@@ -17,5 +17,6 @@ export const workerMonitorWorker = async (fastify: FastifyInstance) => {
     taskQueue: 'worker-monitor-queue',
   });
 
+  fastify.temporal.registerWorker(worker);
   worker.run();
 };

@@ -17,5 +17,6 @@ export const scheduleSendWorker = async (fastify: FastifyInstance) => {
     taskQueue: 'schedule-send-queue',
   });
 
+  fastify.temporal.registerWorker(worker);
   worker.run();
 };

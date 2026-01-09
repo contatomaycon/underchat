@@ -2,7 +2,7 @@ import * as schema from '@core/models';
 import { ERouteModule } from '@core/common/enums/ERouteModule';
 import { TFunction } from 'i18next';
 import { Connection, Client as ClientTemporal } from '@temporalio/client';
-import { NativeConnection } from '@temporalio/worker';
+import { NativeConnection, Worker } from '@temporalio/worker';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { EPermissionsRoles } from '@core/common/enums/EPermissions';
 import { ITokenJwtData } from '@core/common/interfaces/ITokenJwtData';
@@ -48,6 +48,7 @@ declare module 'fastify' {
       connection: Connection;
       client: ClientTemporal;
       nativeConnection: NativeConnection;
+      registerWorker: (worker: Worker) => void;
     };
   }
 

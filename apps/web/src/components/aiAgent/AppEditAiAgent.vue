@@ -7,6 +7,7 @@ import { VForm } from 'vuetify/components/VForm';
 import { EAiAgentType } from '@core/common/enums/EAiAgentType';
 import { EAiAgentStatus } from '@core/common/enums/EAiAgentStatus';
 import { ListAiAgentTypeResponse } from '@core/schema/aiAgent/listAiAgentType/response.schema';
+import AppInfoTooltip from '@/components/AppInfoTooltip.vue';
 
 const aiAgentStore = useAiAgentStore();
 const { t } = useI18n();
@@ -136,6 +137,10 @@ const shouldUseSelectForModel = computed(
 );
 
 const shouldUseSelectForEmbeddingModel = computed(
+  () => isGeminiSelected.value || isGptSelected.value
+);
+
+const shouldDisableBaseUrl = computed(
   () => isGeminiSelected.value || isGptSelected.value
 );
 
@@ -360,7 +365,7 @@ const handleUpdateAiAgent = async () => {
               <AppTextField
                 v-model="baseUrl"
                 :placeholder="$t('base_url_placeholder')"
-                :disabled="isUpdating || isLoading"
+                :disabled="isUpdating || isLoading || shouldDisableBaseUrl"
               />
             </VCol>
             <VCol cols="12">
@@ -415,7 +420,13 @@ const handleUpdateAiAgent = async () => {
               />
             </VCol>
             <VCol cols="6">
-              <VLabel class="text-body-2 mb-1">{{ $t('chunk_size') }}:</VLabel>
+              <div class="d-flex align-center gap-1 mb-1">
+                <VLabel class="text-body-2">{{ $t('chunk_size') }}:</VLabel>
+                <AppInfoTooltip
+                  :text="$t('chunk_size_info')"
+                  :title="$t('chunk_size')"
+                />
+              </div>
               <AppTextField
                 v-model="chunkSize"
                 type="number"
@@ -424,9 +435,13 @@ const handleUpdateAiAgent = async () => {
               />
             </VCol>
             <VCol cols="6">
-              <VLabel class="text-body-2 mb-1"
-                >{{ $t('chunk_overlap') }}:</VLabel
-              >
+              <div class="d-flex align-center gap-1 mb-1">
+                <VLabel class="text-body-2">{{ $t('chunk_overlap') }}:</VLabel>
+                <AppInfoTooltip
+                  :text="$t('chunk_overlap_info')"
+                  :title="$t('chunk_overlap')"
+                />
+              </div>
               <AppTextField
                 v-model="chunkOverlap"
                 type="number"

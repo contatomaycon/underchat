@@ -17,5 +17,6 @@ export const planRenewalWorker = async (fastify: FastifyInstance) => {
     taskQueue: 'plan-renewal-queue',
   });
 
+  fastify.temporal.registerWorker(worker);
   worker.run();
 };

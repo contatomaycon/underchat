@@ -18,5 +18,6 @@ export const workerCreationWorker = async (fastify: FastifyInstance) => {
     taskQueue: 'worker-creation-queue',
   });
 
+  fastify.temporal.registerWorker(worker);
   worker.run();
 };

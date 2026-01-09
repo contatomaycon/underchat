@@ -204,9 +204,13 @@ watch(
         <div class="d-flex justify-space-between flex-wrap gap-4">
           <div class="d-flex gap-4 align-center mt-5">
             <VTooltip
-              v-if="$canPermission(permissionsCreate)"
-              :text="!canCreateAiAgent ? aiAgentConfigTooltip : ''"
-              location="top"
+              v-if="
+                $canPermission(permissionsCreate) &&
+                !canCreateAiAgent &&
+                aiAgentConfigTooltip
+              "
+              :text="aiAgentConfigTooltip"
+              location="end"
             >
               <template #activator="{ props }">
                 <span v-bind="props" class="d-inline-block">
@@ -220,6 +224,13 @@ watch(
                 </span>
               </template>
             </VTooltip>
+            <VBtn
+              v-else-if="$canPermission(permissionsCreate)"
+              prepend-icon="tabler-plus"
+              @click="isAddAiAgentVisible = true"
+            >
+              {{ $t('add') }}
+            </VBtn>
           </div>
           <div class="d-flex align-center flex-wrap gap-4">
             <div class="invoice-list-filter">

@@ -18,5 +18,6 @@ export const chatbotInactivityWorker = async (fastify: FastifyInstance) => {
     taskQueue: 'chatbot-inactivity-queue',
   });
 
+  fastify.temporal.registerWorker(worker);
   worker.run();
 };

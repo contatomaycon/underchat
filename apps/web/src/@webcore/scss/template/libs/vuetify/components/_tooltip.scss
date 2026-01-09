@@ -3,4 +3,28 @@
   .v-overlay__content {
     font-weight: 500;
   }
+
+  &.info-tooltip {
+    .v-overlay__content {
+      max-width: 300px !important;
+      min-width: 200px;
+      white-space: normal !important;
+      word-wrap: break-word !important;
+      word-break: break-word !important;
+      text-align: left !important;
+      display: block !important;
+      padding: 8px 12px !important;
+      line-height: 1.5 !important;
+
+      > span,
+      > div {
+        white-space: normal !important;
+        word-wrap: break-word !important;
+        word-break: break-word !important;
+        display: block !important;
+        width: 100% !important;
+        line-height: 1.5 !important;
+      }
+    }
+  }
 }

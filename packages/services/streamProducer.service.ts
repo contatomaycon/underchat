@@ -172,9 +172,12 @@ export class StreamProducerService {
       let lastError: LibrdKafkaError | null = null;
       let flushTimeout: NodeJS.Timeout | null = null;
       let overallTimeout: NodeJS.Timeout | null = null;
+      let errorListenerRemoved = false;
 
       const FLUSH_TIMEOUT_MS = 3000;
       const OVERALL_TIMEOUT_MS = 4000;
+
+      let cleanup: (() => void) | null = null;
 
       const errorHandler = (err: LibrdKafkaError) => {
         lastError = err;
@@ -186,22 +189,16 @@ export class StreamProducerService {
         ) {
           if (!isResolved) {
             isResolved = true;
-            if (flushTimeout) {
-              clearTimeout(flushTimeout);
-              flushTimeout = null;
+            if (cleanup) {
+              cleanup();
             }
-            if (overallTimeout) {
-              clearTimeout(overallTimeout);
-              overallTimeout = null;
-            }
-            producer.removeListener('event.error', errorHandler);
             this.invalidateProducer();
             reject(new Error(`Kafka connection error: ${errorMessage}`));
           }
         }
       };
 
-      const cleanup = () => {
+      cleanup = () => {
         if (flushTimeout) {
           clearTimeout(flushTimeout);
           flushTimeout = null;
@@ -210,7 +207,12 @@ export class StreamProducerService {
           clearTimeout(overallTimeout);
           overallTimeout = null;
         }
-        producer.removeListener('event.error', errorHandler);
+        if (!errorListenerRemoved) {
+          try {
+            producer.removeListener('event.error', errorHandler);
+            errorListenerRemoved = true;
+          } catch {}
+        }
       };
 
       producer.once('event.error', errorHandler);

@@ -17,5 +17,6 @@ export const balanceMonitorWorker = async (fastify: FastifyInstance) => {
     taskQueue: 'balance-monitor-queue',
   });
 
+  fastify.temporal.registerWorker(worker);
   worker.run();
 };
