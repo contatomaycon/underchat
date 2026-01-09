@@ -145,8 +145,8 @@ export class ChatMessageListerUseCase {
     }
 
     if (!this.canViewOthersChats(actions)) {
-      if (chat.status === EChatStatus.in_chat) {
-        if (chat.user?.id !== userId) {
+      if (chat.user?.id) {
+        if (chat.user.id !== userId) {
           throw new Error(t('chat_access_denied'));
         }
       }

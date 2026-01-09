@@ -26,7 +26,9 @@ export const searchMessages = async (
       t,
       tokenJwtData.account_id,
       request.query,
-      request.params
+      request.params,
+      tokenJwtData.user_id,
+      tokenJwtData.actions
     );
 
     return sendResponse(reply, {

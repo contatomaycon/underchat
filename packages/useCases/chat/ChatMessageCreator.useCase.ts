@@ -23,6 +23,10 @@ import { MessageTemplateService } from '@core/services/messageTemplate.service';
 import { ChatMessageService } from '@core/services/chatMessage.service';
 import { IMessageContext } from '@core/common/interfaces/IMessageContext';
 import { IChatContext } from '@core/common/interfaces/IChatContext';
+import { IJwtGroupHierarchy } from '@core/common/interfaces/IJwtGroupHierarchy';
+import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
+import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
+import { hasRequiredPermission } from '@core/common/functions/hasRequiredPermission';
 
 @injectable()
 export class ChatMessageCreatorUseCase {
@@ -36,6 +40,17 @@ export class ChatMessageCreatorUseCase {
     private readonly messageTemplateService: MessageTemplateService,
     private readonly chatMessageService: ChatMessageService
   ) {}
+
+  private canViewOthersChats(actions: IJwtGroupHierarchy[]): boolean {
+    const permissions = [
+      EGeneralPermissions.full_access,
+      EGeneralPermissions.full_access_group,
+      EChatPermissions.chat_group,
+      EChatPermissions.view_others_chats,
+    ];
+
+    return hasRequiredPermission(actions, permissions);
+  }
 
   private async getChat(
     accountId: string,
@@ -768,13 +783,23 @@ export class ChatMessageCreatorUseCase {
     accountId: string,
     params: CreateMessageChatsParams,
     body: CreateMessageChatsBody,
-    typeUser: ETypeUserChat
+    typeUser: ETypeUserChat,
+    userId: string,
+    actions: IJwtGroupHierarchy[]
   ): Promise<boolean> {
     this.validate(t, body);
 
     const chat = await this.getChat(accountId, params.chat_id);
     if (!chat) {
       throw new Error(t('chat_not_found'));
+    }
+
+    if (!this.canViewOthersChats(actions)) {
+      if (chat.user?.id) {
+        if (chat.user.id !== userId) {
+          throw new Error(t('chat_access_denied'));
+        }
+      }
     }
 
     const quickTemplateData = await this.resolveQuickMessageTemplate(

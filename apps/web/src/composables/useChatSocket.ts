@@ -6,7 +6,7 @@ import {
   chatQueueAccountCentrifugo,
 } from '@core/common/functions/centrifugoQueue';
 import { useChatStore } from '@/@webcore/stores/chat';
-import { getPermissions, getSectors } from '@/@webcore/localStorage/user';
+import { getPermissions } from '@/@webcore/localStorage/user';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
 import { EPermissionsRoles } from '@core/common/enums/EPermissions';
@@ -38,51 +38,23 @@ export const useChatSocket = () => {
     if (!chatStore.user?.account_id) return false;
 
     const permissions = getPermissions();
-    const canListAllChatsWithoutSectorLimit = permissions.some(
+    const canViewOthersChats = permissions.some(
       (perm: EPermissionsRoles) =>
         perm === EGeneralPermissions.full_access ||
         perm === EGeneralPermissions.full_access_group ||
         perm === EChatPermissions.chat_group ||
-        perm === EChatPermissions.list_all_chats_without_sector_limit
+        perm === EChatPermissions.view_others_chats
     );
 
-    const userSectors: string[] = canListAllChatsWithoutSectorLimit
-      ? []
-      : getSectors();
-
-    if (canListAllChatsWithoutSectorLimit) {
+    if (canViewOthersChats) {
       return true;
     }
 
-    const chatExistsInList =
-      chatStore.listQueue.some((c) => c.chat_id === chat.chat_id) ||
-      chatStore.listInChat.some((c) => c.chat_id === chat.chat_id);
-
-    if (chatExistsInList) {
-      return true;
-    }
-
-    if (chat.user?.id === chatStore.user?.user_id) {
-      return true;
-    }
-
-    if (
-      chat.status === EChatStatus.queue &&
-      !chat.sector?.id &&
-      !chat.user?.id
-    ) {
-      return true;
-    }
-
-    if (userSectors.length === 0) {
-      return !chat.sector?.id;
-    }
-
-    if (!chat.sector?.id) {
+    if (chat.user?.id && chat.user.id !== chatStore.user?.user_id) {
       return false;
     }
 
-    return userSectors.includes(chat.sector.id);
+    return true;
   };
 
   const processPendingMessages = async (chatId: string) => {

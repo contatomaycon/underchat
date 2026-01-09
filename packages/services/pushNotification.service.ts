@@ -217,6 +217,14 @@ export class PushNotificationService {
 
     const permissionActions = permissions.map((p) => p.action);
 
+    const canViewOthersChats = permissionActions.some(
+      (action) =>
+        action === EGeneralPermissions.full_access ||
+        action === EGeneralPermissions.full_access_group ||
+        action === EChatPermissions.chat_group ||
+        action === EChatPermissions.view_others_chats
+    );
+
     const canListAllChatsWithoutSectorLimit = permissionActions.some(
       (action) =>
         action === EGeneralPermissions.full_access ||
@@ -225,12 +233,15 @@ export class PushNotificationService {
         action === EChatPermissions.list_all_chats_without_sector_limit
     );
 
-    if (canListAllChatsWithoutSectorLimit) {
+    if (canListAllChatsWithoutSectorLimit || canViewOthersChats) {
       return true;
     }
 
-    if (chat.user?.id === userId) {
-      return true;
+    if (chat.user?.id) {
+      if (chat.user.id === userId) {
+        return true;
+      }
+      return false;
     }
 
     if (

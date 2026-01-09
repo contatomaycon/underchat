@@ -10,6 +10,10 @@ import {
   chatAccountCentrifugo,
   chatQueueAccountCentrifugo,
 } from '@core/common/functions/centrifugoQueue';
+import { IJwtGroupHierarchy } from '@core/common/interfaces/IJwtGroupHierarchy';
+import { hasRequiredPermission } from '@core/common/functions/hasRequiredPermission';
+import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
+import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
 import { IChat } from '@core/common/interfaces/IChat';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { UserService } from '@core/services/user.service';
@@ -72,6 +76,30 @@ export class ChatStatusUpdaterUseCase {
     ]);
 
     return protocol;
+  }
+
+  private canViewOthersChats(actions: IJwtGroupHierarchy[]): boolean {
+    const permissions = [
+      EGeneralPermissions.full_access,
+      EGeneralPermissions.full_access_group,
+      EChatPermissions.chat_group,
+      EChatPermissions.view_others_chats,
+    ];
+
+    return hasRequiredPermission(actions, permissions);
+  }
+
+  private canListAllChatsWithoutSectorLimit(
+    actions: IJwtGroupHierarchy[]
+  ): boolean {
+    const permissions = [
+      EGeneralPermissions.full_access,
+      EGeneralPermissions.full_access_group,
+      EChatPermissions.chat_group,
+      EChatPermissions.list_all_chats_without_sector_limit,
+    ];
+
+    return hasRequiredPermission(actions, permissions);
   }
 
   private async handleInChatStatus(
@@ -211,6 +239,38 @@ export class ChatStatusUpdaterUseCase {
     };
   }
 
+  private async validateAccess(
+    chat: IChat,
+    userId: string,
+    actions: IJwtGroupHierarchy[],
+    userSectors: string[]
+  ): Promise<void> {
+    const canViewOthers = this.canViewOthersChats(actions);
+    const canListAll = this.canListAllChatsWithoutSectorLimit(actions);
+    const hasPermissionToViewAll = canViewOthers || canListAll;
+
+    if (hasPermissionToViewAll) return;
+
+    if (chat.user?.id && chat.user.id !== userId) {
+      throw new Error('chat_access_denied');
+    }
+
+    if (!chat.user?.id) {
+      if (userSectors.length > 0) {
+        if (chat.sector?.id && !userSectors.includes(chat.sector.id)) {
+          throw new Error('chat_access_denied');
+        }
+        if (!chat.sector?.id) {
+          return;
+        }
+      } else {
+        if (chat.sector?.id) {
+          throw new Error('chat_access_denied');
+        }
+      }
+    }
+  }
+
   private async buildChatWithProtocol(
     updatedChat: IChat,
     status: EChatStatus,
@@ -267,7 +327,8 @@ export class ChatStatusUpdaterUseCase {
     userId: string,
     userSectors: string[],
     params: UpdateChatStatusParams,
-    body: UpdateChatStatusBody
+    body: UpdateChatStatusBody,
+    actions: IJwtGroupHierarchy[]
   ): Promise<IChat | null> {
     const chat = await this.chatService.findChatByChatId(
       accountId,
@@ -277,6 +338,8 @@ export class ChatStatusUpdaterUseCase {
     if (!chat) {
       throw new Error(t('chat_not_found'));
     }
+
+    await this.validateAccess(chat, userId, actions, userSectors);
 
     const status = body.status as EChatStatus;
     const currentDate = new Date().toISOString();

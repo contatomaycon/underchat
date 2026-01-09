@@ -37,7 +37,9 @@ export const deleteMessage = async (
       tokenJwtData.account_id,
       params,
       body,
-      ETypeUserChat.operator
+      ETypeUserChat.operator,
+      tokenJwtData.user_id,
+      tokenJwtData.actions
     );
 
     if (response) {

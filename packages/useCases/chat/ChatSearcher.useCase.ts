@@ -83,116 +83,96 @@ export class ChatSearcherUseCase {
       } as unknown as IElasticsearchBoolClause,
     ];
 
-    if (!this.canViewOthersChats(actions)) {
-      filterClauses.push({
+    const canViewOthers = this.canViewOthersChats(actions);
+    const canListAll = this.canListAllChatsWithoutSectorLimit(actions);
+
+    const hasPermissionToViewAll = canViewOthers || canListAll;
+
+    if (!hasPermissionToViewAll) {
+      const queueVisibility: IElasticsearchBoolClause = {
         bool: {
           should: [
             {
-              term: {
-                status: EChatStatus.queue,
+              nested: {
+                path: 'user',
+                query: {
+                  term: {
+                    'user.id': userId,
+                  },
+                },
               },
             },
             {
               bool: {
                 must: [
                   {
-                    term: {
-                      status: EChatStatus.in_chat,
-                    },
-                  },
-                  {
-                    nested: {
-                      path: 'user',
-                      query: {
-                        term: {
-                          'user.id': userId,
+                    bool: {
+                      must_not: {
+                        nested: {
+                          path: 'user',
+                          query: {
+                            match_all: {},
+                          },
                         },
                       },
                     },
                   },
+                  userSectors.length > 0
+                    ? ({
+                        nested: {
+                          path: 'sector',
+                          query: {
+                            terms: {
+                              'sector.id': userSectors,
+                            },
+                          },
+                        },
+                      } as unknown as IElasticsearchBoolClause)
+                    : ({
+                        bool: {
+                          must_not: {
+                            nested: {
+                              path: 'sector',
+                              query: {
+                                match_all: {},
+                              },
+                            },
+                          },
+                        },
+                      } as unknown as IElasticsearchBoolClause),
                 ],
               },
-            },
+            } as unknown as IElasticsearchBoolClause,
           ],
           minimum_should_match: 1,
         },
-      } as unknown as IElasticsearchBoolClause);
-    }
+      } as unknown as IElasticsearchBoolClause;
 
-    if (!this.canListAllChatsWithoutSectorLimit(actions)) {
-      const sectorFilterClauses: IElasticsearchBoolClause[] = [];
-
-      if (userSectors.length > 0) {
-        sectorFilterClauses.push({
-          nested: {
-            path: 'sector',
-            query: {
-              terms: {
-                'sector.id': userSectors,
-              },
-            },
-          },
-        } as unknown as IElasticsearchBoolClause);
-      }
-      if (userSectors.length === 0) {
-        sectorFilterClauses.push({
-          bool: {
-            must_not: {
-              exists: {
-                field: 'sector',
-              },
-            },
-          },
-        } as unknown as IElasticsearchBoolClause);
-      }
-
-      const shouldClauses: IElasticsearchBoolClause[] = [
-        {
-          nested: {
-            path: 'user',
-            query: {
-              term: {
-                'user.id': userId,
-              },
-            },
-          },
-        },
-        ...sectorFilterClauses,
-      ];
-
-      shouldClauses.push({
+      const inChatVisibility: IElasticsearchBoolClause = {
         bool: {
           must: [
             {
               term: {
-                status: EChatStatus.queue,
+                status: EChatStatus.in_chat,
               },
             },
             {
-              bool: {
-                must_not: {
-                  exists: {
-                    field: 'sector',
-                  },
-                },
-              },
-            },
-            {
-              bool: {
-                must_not: {
-                  exists: {
-                    field: 'user',
+              nested: {
+                path: 'user',
+                query: {
+                  term: {
+                    'user.id': userId,
                   },
                 },
               },
             },
           ],
         },
-      } as unknown as IElasticsearchBoolClause);
+      } as unknown as IElasticsearchBoolClause;
 
       filterClauses.push({
         bool: {
-          should: shouldClauses,
+          should: [queueVisibility, inChatVisibility],
           minimum_should_match: 1,
         },
       } as unknown as IElasticsearchBoolClause);

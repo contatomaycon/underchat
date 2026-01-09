@@ -15,6 +15,10 @@ import { extractMessageTextFromContent } from '@core/common/functions/extractMes
 import { ListMessageResult } from '@core/schema/chat/listMessageChats/response.schema';
 import { setPaginationData } from '@core/common/functions/createPaginationData';
 import { IContent } from '@core/common/interfaces/IChatMessage';
+import { IJwtGroupHierarchy } from '@core/common/interfaces/IJwtGroupHierarchy';
+import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
+import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
+import { hasRequiredPermission } from '@core/common/functions/hasRequiredPermission';
 
 @injectable()
 export class ChatMessageSearcherUseCase {
@@ -23,11 +27,24 @@ export class ChatMessageSearcherUseCase {
     private readonly chatService: ChatService
   ) {}
 
+  private canViewOthersChats(actions: IJwtGroupHierarchy[]): boolean {
+    const permissions = [
+      EGeneralPermissions.full_access,
+      EGeneralPermissions.full_access_group,
+      EChatPermissions.chat_group,
+      EChatPermissions.view_others_chats,
+    ];
+
+    return hasRequiredPermission(actions, permissions);
+  }
+
   async execute(
     t: TFunction<'translation', undefined>,
     accountId: string,
     query: SearchMessagesQuery,
-    params: SearchMessagesParams
+    params: SearchMessagesParams,
+    userId: string,
+    actions: IJwtGroupHierarchy[]
   ): Promise<SearchMessagesResponse> {
     const chat = await this.chatService.findChatByChatId(
       accountId,
@@ -36,6 +53,14 @@ export class ChatMessageSearcherUseCase {
 
     if (!chat) {
       throw new Error(t('chat_not_found'));
+    }
+
+    if (!this.canViewOthersChats(actions)) {
+      if (chat.user?.id) {
+        if (chat.user.id !== userId) {
+          throw new Error(t('chat_access_denied'));
+        }
+      }
     }
 
     const searchTerm = query.search.trim();

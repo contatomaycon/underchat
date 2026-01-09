@@ -237,6 +237,26 @@ export const useChatStore = defineStore('chat', {
       return 'created';
     },
     addChat(chat: IChat) {
+      const permissions = getPermissions();
+      const canViewOthersChats = permissions.some(
+        (perm: EPermissionsRoles) =>
+          perm === EGeneralPermissions.full_access ||
+          perm === EGeneralPermissions.full_access_group ||
+          perm === EChatPermissions.chat_group ||
+          perm === EChatPermissions.view_others_chats
+      );
+
+      if (!canViewOthersChats) {
+        if (chat.user?.id && chat.user.id !== this.user?.user_id) {
+          this.removeFromList(this.listQueue, chat.chat_id);
+          this.removeFromList(this.listInChat, chat.chat_id);
+          if (this.activeChat?.chat_id === chat.chat_id) {
+            this.activeChat = null;
+          }
+          return;
+        }
+      }
+
       const input: ListChatsResult = {
         chat_id: chat.chat_id,
         summary: chat.summary,

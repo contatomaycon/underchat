@@ -42,7 +42,9 @@ export const reactMessage = async (
       tokenJwtData.account_id,
       params,
       body,
-      ETypeUserChat.operator
+      ETypeUserChat.operator,
+      tokenJwtData.user_id,
+      tokenJwtData.actions
     );
 
     if (response) {
