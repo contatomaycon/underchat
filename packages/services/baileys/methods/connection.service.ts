@@ -609,7 +609,7 @@ export class BaileysConnectionService {
     }
 
     this.lastPayload = data;
-    this.centrifugo.publishSub(CHANNEL, payload);
+    void this.centrifugo.publishSub(CHANNEL, payload).catch(() => {});
   }
 
   private async updateWorkerMismatchedStatus(): Promise<void> {
