@@ -108,22 +108,7 @@ export default defineConfig(() => {
         '@core/': fileURLToPath(new URL('../../packages/', import.meta.url)),
       },
     },
-    build: {
-      chunkSizeWarningLimit: 5000,
-      minify: 'esbuild' as const,
-      target: 'esnext',
-      rollupOptions: {
-        output: {
-          manualChunks: undefined,
-        },
-      },
-    },
-    esbuild: {
-      legalComments: 'none' as const,
-      minifyIdentifiers: true,
-      minifySyntax: true,
-      minifyWhitespace: true,
-    },
+    build: { chunkSizeWarningLimit: 5000 },
     optimizeDeps: { exclude: ['vuetify'], entries: ['./src/**/*.vue'] },
   };
 });
