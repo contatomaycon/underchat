@@ -34,6 +34,8 @@ interface IContact {
   phone: string;
   phone_ddi?: string | null;
   photo?: string | null;
+  responsible_attendant?: IUser | null;
+  ignore?: string | null;
 }
 
 interface ILabel {

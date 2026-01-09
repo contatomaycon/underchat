@@ -37,6 +37,7 @@ import { extractMessageTextFromContent } from '@core/common/functions/extractMes
 import { StreamProducerService } from './streamProducer.service';
 import { KafkaServiceQueueService } from './kafkaServiceQueue.service';
 import { IChatHistoryEmbeddingRequest } from '@core/common/interfaces/IChatHistoryEmbeddingRequest';
+import { EContactIgnore } from '@core/common/enums/EContactIgnore';
 
 @injectable()
 export class ChatbotFlowRunnerService {
@@ -4356,6 +4357,10 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
     createChat: IChat,
     chatbotId: string
   ): Promise<string | null> => {
+    if (createChat.contact?.ignore === EContactIgnore.ignore_automation) {
+      return null;
+    }
+
     const configurations =
       await this.chatbotService.findChatbotFlowConfigurationsByChatbotId(
         createChat.account.id,

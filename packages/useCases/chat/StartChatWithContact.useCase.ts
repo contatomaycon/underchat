@@ -352,6 +352,14 @@ export class StartChatWithContactUseCase {
         phone: contactData.phonePartial,
         phone_ddi: contactData.contact.phone_ddi,
         photo: contactData.contact.photo,
+        responsible_attendant: contactData.contact.user
+          ? {
+              id: contactData.contact.user.user_id,
+              name: contactData.contact.user.name ?? '',
+              photo: contactData.contact.user.photo ?? null,
+            }
+          : null,
+        ignore: contactData.contact.ignore ?? 'not_ignore',
       },
       name: contactData.contactName,
       phone: contactData.fullPhone,
@@ -404,6 +412,14 @@ export class StartChatWithContactUseCase {
         phone: contactData.phonePartial,
         phone_ddi: contactData.contact.phone_ddi,
         photo: contactData.contact.photo,
+        responsible_attendant: contactData.contact.user
+          ? {
+              id: contactData.contact.user.user_id,
+              name: contactData.contact.user.name ?? '',
+              photo: contactData.contact.user.photo ?? null,
+            }
+          : null,
+        ignore: contactData.contact.ignore ?? 'not_ignore',
       },
       name: contactData.contactName,
       phone: contactData.fullPhone,

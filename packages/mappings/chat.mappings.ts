@@ -103,6 +103,23 @@ export const chatMappings = () => {
             photo: {
               type: 'keyword',
             },
+            responsible_attendant: {
+              type: 'nested',
+              properties: {
+                id: {
+                  type: 'keyword',
+                },
+                name: {
+                  type: 'text',
+                },
+                photo: {
+                  type: 'text',
+                },
+              },
+            },
+            ignore: {
+              type: 'keyword',
+            },
           },
         },
         photo: {

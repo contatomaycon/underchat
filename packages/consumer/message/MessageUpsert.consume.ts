@@ -65,6 +65,7 @@ import { WorkerConfigService } from '@core/services/workerConfig.service';
 import { PlanAccountService } from '@core/services/planAccount.service';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 import { PushNotificationService } from '@core/services/pushNotification.service';
+import { EContactIgnore } from '@core/common/enums/EContactIgnore';
 
 @singleton()
 export class MessageUpsertConsume {
@@ -147,7 +148,7 @@ export class MessageUpsertConsume {
     t: TFunction<'translation', undefined>,
     data: IUpsertMessage,
     chat: IChat | null
-  ): Promise<IChat> {
+  ): Promise<IChat | null> {
     if (chat) {
       await this.createChatMessage(chat, data);
 
@@ -157,6 +158,44 @@ export class MessageUpsertConsume {
     const newChat = await this.createChat(t, data, EChatStatus.ura);
     if (!newChat) {
       throw new Error('Failed to create chat');
+    }
+
+    const jid = remoteJid(data.message?.key);
+    const jidAlt = remoteJidAlt(data.message?.key);
+    const phone = getPhoneFromJid(jid, jidAlt);
+    if (!phone) {
+      throw new Error('Received message without valid phone');
+    }
+
+    const phoneWithPlus = `+${phone}`;
+    const phoneAndDdi = extractPhoneAndDdi(phoneWithPlus);
+
+    if (phoneAndDdi) {
+      const ignoreResult = await this.ensureContactForChat(
+        newChat,
+        data,
+        phoneAndDdi,
+        phone,
+        newChat.name ?? null
+      );
+
+      if (ignoreResult === 'ignore_totally') {
+        const closedChat: IChat = {
+          ...newChat,
+          status: EChatStatus.closed,
+          closed_at: new Date().toISOString(),
+        };
+
+        await this.cacheChat(closedChat);
+        await this.chatService.saveChat(closedChat);
+
+        return null;
+      }
+
+      if (ignoreResult === 'ignore_automation') {
+        await this.cacheChat(newChat);
+        await this.chatService.saveChat(newChat);
+      }
     }
 
     await this.handleNewChatMessageAndPublish(newChat, data);
@@ -1151,7 +1190,7 @@ export class MessageUpsertConsume {
     phoneAndDdi: { phone: string; phone_ddi: string | null },
     phone: string,
     name: string | null
-  ): Promise<void> {
+  ): Promise<'ignore_totally' | 'ignore_automation' | null> {
     const existingContact = await this.contactService.getContactByPhone(
       data.account_id,
       phoneAndDdi.phone,
@@ -1166,19 +1205,39 @@ export class MessageUpsertConsume {
         );
       }
 
+      const ignoreStatus = existingContact.ignore ?? 'not_ignore';
+
+      if (ignoreStatus === EContactIgnore.ignore_totally) {
+        return 'ignore_totally';
+      }
+
       inputChatMessage.contact = {
         id: existingContact.contact_id,
         name: existingContact.name,
         phone: existingContact.phone_partial ?? phone,
         phone_ddi: existingContact.phone_ddi ?? phoneAndDdi.phone_ddi,
         photo: existingContact.photo ?? null,
+        responsible_attendant: existingContact.user
+          ? {
+              id: existingContact.user.user_id,
+              name: existingContact.user.name ?? '',
+              photo: existingContact.user.photo ?? null,
+            }
+          : null,
+        ignore: ignoreStatus,
       };
-      return;
+
+      if (ignoreStatus === EContactIgnore.ignore_automation) {
+        inputChatMessage.status = EChatStatus.queue;
+        return 'ignore_automation';
+      }
+
+      return null;
     }
 
     const shouldAutoSave = await this.shouldAutoSaveContact(data.worker_id);
     if (!shouldAutoSave) {
-      return;
+      return null;
     }
 
     const createdContact = await this.createContactAutomatically(
@@ -1188,14 +1247,35 @@ export class MessageUpsertConsume {
     );
 
     if (createdContact) {
+      const ignoreStatus = createdContact.ignore ?? 'not_ignore';
+
+      if (ignoreStatus === EContactIgnore.ignore_totally) {
+        return 'ignore_totally';
+      }
+
       inputChatMessage.contact = {
         id: createdContact.contact_id,
         name: createdContact.name,
         phone: createdContact.phone_partial ?? phone,
         phone_ddi: createdContact.phone_ddi ?? phoneAndDdi.phone_ddi,
         photo: createdContact.photo ?? null,
+        responsible_attendant: createdContact.user
+          ? {
+              id: createdContact.user.user_id,
+              name: createdContact.user.name ?? '',
+              photo: createdContact.user.photo ?? null,
+            }
+          : null,
+        ignore: ignoreStatus,
       };
+
+      if (ignoreStatus === EContactIgnore.ignore_automation) {
+        inputChatMessage.status = EChatStatus.queue;
+        return 'ignore_automation';
+      }
     }
+
+    return null;
   }
 
   private async shouldAutoSaveContact(workerId: string): Promise<boolean> {
@@ -1384,13 +1464,17 @@ export class MessageUpsertConsume {
     const phoneAndDdi = extractPhoneAndDdi(phoneWithPlus);
 
     if (phoneAndDdi) {
-      await this.ensureContactForChat(
+      const ignoreResult = await this.ensureContactForChat(
         inputChatMessage,
         data,
         phoneAndDdi,
         phone,
         data.call_name ?? null
       );
+
+      if (ignoreResult === 'ignore_totally') {
+        return null;
+      }
 
       if (inputChatMessage.contact) {
         inputChatMessage.name = inputChatMessage.contact.name;
@@ -1742,13 +1826,18 @@ export class MessageUpsertConsume {
     const phoneAndDdi = extractPhoneAndDdi(phoneWithPlus);
 
     if (phoneAndDdi) {
-      await this.ensureContactForChat(
+      const ignoreResult = await this.ensureContactForChat(
         inputChatMessage,
         data,
         phoneAndDdi,
         phone,
         name
       );
+
+      if (ignoreResult === 'ignore_totally') {
+        inputChatMessage.status = EChatStatus.closed;
+        inputChatMessage.closed_at = new Date().toISOString();
+      }
     }
 
     if (data.photo) {
@@ -1813,6 +1902,10 @@ export class MessageUpsertConsume {
 
     const chat = await this.ensureChatAndHandleMessage(t, data, getChat);
 
+    if (!chat) {
+      return;
+    }
+
     return this.chatbotFlowRunnerService.execute(t, data, chat, chatbotId);
   }
 
@@ -1825,6 +1918,39 @@ export class MessageUpsertConsume {
       const createChat = await this.createChat(t, data, EChatStatus.queue);
       if (!createChat) {
         throw new Error('Failed to create chat');
+      }
+
+      const jid = remoteJid(data.message?.key);
+      const jidAlt = remoteJidAlt(data.message?.key);
+      const phone = getPhoneFromJid(jid, jidAlt);
+      if (!phone) {
+        throw new Error('Received message without valid phone');
+      }
+
+      const phoneWithPlus = `+${phone}`;
+      const phoneAndDdi = extractPhoneAndDdi(phoneWithPlus);
+
+      if (phoneAndDdi) {
+        const ignoreResult = await this.ensureContactForChat(
+          createChat,
+          data,
+          phoneAndDdi,
+          phone,
+          createChat.name ?? null
+        );
+
+        if (ignoreResult === 'ignore_totally') {
+          const closedChat: IChat = {
+            ...createChat,
+            status: EChatStatus.closed,
+            closed_at: new Date().toISOString(),
+          };
+
+          await this.cacheChat(closedChat);
+          await this.chatService.saveChat(closedChat);
+
+          return;
+        }
       }
 
       return this.handleNewChatMessageAndPublish(createChat, data);
