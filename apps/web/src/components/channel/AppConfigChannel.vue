@@ -227,6 +227,35 @@ const workerConfigLoadedFor = ref<string | null>(null);
 const transferProtocolText = ref<string>('');
 const transferProtocolSectorText = ref<string>('');
 const transferProtocolSectorAndUserText = ref<string>('');
+const defaultTransferMessageUser = computed(() =>
+  t('chatbot_transfer_message_user_default')
+);
+const defaultTransferMessageSector = computed(() =>
+  t('chatbot_transfer_message_sector_default')
+);
+const defaultTransferMessageSectorUser = computed(() =>
+  t('chatbot_transfer_message_sector_user_default')
+);
+
+watch(transferProtocolText, (newValue) => {
+  if (!newValue || !newValue.trim()) {
+    transferProtocolText.value = defaultTransferMessageUser.value;
+  }
+});
+
+watch(transferProtocolSectorText, (newValue) => {
+  if (!newValue || !newValue.trim()) {
+    transferProtocolSectorText.value = defaultTransferMessageSector.value;
+  }
+});
+
+watch(transferProtocolSectorAndUserText, (newValue) => {
+  if (!newValue || !newValue.trim()) {
+    transferProtocolSectorAndUserText.value =
+      defaultTransferMessageSectorUser.value;
+  }
+});
+
 const transferProtocolModalOpen = ref(false);
 const isSavingTransferProtocol = ref(false);
 const isSavingTransferProtocolSector = ref(false);
@@ -235,7 +264,6 @@ const startProtocolText = ref<string>('');
 const startProtocolModalOpen = ref(false);
 const isSavingStartProtocol = ref(false);
 
-const protocolTag = '{{protocolo}}';
 const availableTags = computed(() => [
   {
     tag: '{{ greeting }}',
@@ -516,27 +544,30 @@ const loadWorkerConfig = async (force = false) => {
 
     if (protocolTransferData) {
       transferProtocolText.value =
-        protocolTransferData.generate_protocol_at_transfer || '';
+        protocolTransferData.generate_protocol_at_transfer ||
+        defaultTransferMessageUser.value;
       workerConfigForm.generate_protocol_at_transfer =
         protocolTransferData.enabled;
     } else {
-      transferProtocolText.value = '';
+      transferProtocolText.value = defaultTransferMessageUser.value;
       workerConfigForm.generate_protocol_at_transfer = false;
     }
 
     if (protocolTransferSectorData) {
       transferProtocolSectorText.value =
-        protocolTransferSectorData.generate_protocol_at_transfer_sector || '';
+        protocolTransferSectorData.generate_protocol_at_transfer_sector ||
+        defaultTransferMessageSector.value;
     } else {
-      transferProtocolSectorText.value = '';
+      transferProtocolSectorText.value = defaultTransferMessageSector.value;
     }
 
     if (protocolTransferSectorAndUserData) {
       transferProtocolSectorAndUserText.value =
         protocolTransferSectorAndUserData.generate_protocol_at_transfer_sector_and_user ||
-        '';
+        defaultTransferMessageSectorUser.value;
     } else {
-      transferProtocolSectorAndUserText.value = '';
+      transferProtocolSectorAndUserText.value =
+        defaultTransferMessageSectorUser.value;
     }
 
     if (protocolStartData) {
@@ -671,23 +702,28 @@ const openTransferProtocolModal = async () => {
   ]);
 
   if (userData) {
-    transferProtocolText.value = userData.generate_protocol_at_transfer || '';
+    transferProtocolText.value =
+      userData.generate_protocol_at_transfer ||
+      defaultTransferMessageUser.value;
   } else {
-    transferProtocolText.value = '';
+    transferProtocolText.value = defaultTransferMessageUser.value;
   }
 
   if (sectorData) {
     transferProtocolSectorText.value =
-      sectorData.generate_protocol_at_transfer_sector || '';
+      sectorData.generate_protocol_at_transfer_sector ||
+      defaultTransferMessageSector.value;
   } else {
-    transferProtocolSectorText.value = '';
+    transferProtocolSectorText.value = defaultTransferMessageSector.value;
   }
 
   if (sectorAndUserData) {
     transferProtocolSectorAndUserText.value =
-      sectorAndUserData.generate_protocol_at_transfer_sector_and_user || '';
+      sectorAndUserData.generate_protocol_at_transfer_sector_and_user ||
+      defaultTransferMessageSectorUser.value;
   } else {
-    transferProtocolSectorAndUserText.value = '';
+    transferProtocolSectorAndUserText.value =
+      defaultTransferMessageSectorUser.value;
   }
 
   transferProtocolModalOpen.value = true;
@@ -731,17 +767,20 @@ const toggleTransferProtocolStatus = async () => {
     if (userResult) {
       workerConfigForm.generate_protocol_at_transfer = userResult.enabled;
       transferProtocolText.value =
-        userResult.generate_protocol_at_transfer || '';
+        userResult.generate_protocol_at_transfer ||
+        defaultTransferMessageUser.value;
     }
 
     if (sectorResult) {
       transferProtocolSectorText.value =
-        sectorResult.generate_protocol_at_transfer_sector || '';
+        sectorResult.generate_protocol_at_transfer_sector ||
+        defaultTransferMessageSector.value;
     }
 
     if (sectorAndUserResult) {
       transferProtocolSectorAndUserText.value =
-        sectorAndUserResult.generate_protocol_at_transfer_sector_and_user || '';
+        sectorAndUserResult.generate_protocol_at_transfer_sector_and_user ||
+        defaultTransferMessageSectorUser.value;
     }
   } finally {
     isSavingTransferProtocol.value = false;
@@ -780,17 +819,20 @@ const saveTransferProtocolTexts = async () => {
 
     if (userResult) {
       transferProtocolText.value =
-        userResult.generate_protocol_at_transfer || '';
+        userResult.generate_protocol_at_transfer ||
+        defaultTransferMessageUser.value;
     }
 
     if (sectorResult) {
       transferProtocolSectorText.value =
-        sectorResult.generate_protocol_at_transfer_sector || '';
+        sectorResult.generate_protocol_at_transfer_sector ||
+        defaultTransferMessageSector.value;
     }
 
     if (sectorAndUserResult) {
       transferProtocolSectorAndUserText.value =
-        sectorAndUserResult.generate_protocol_at_transfer_sector_and_user || '';
+        sectorAndUserResult.generate_protocol_at_transfer_sector_and_user ||
+        defaultTransferMessageSectorUser.value;
     }
 
     closeTransferProtocolModal();
@@ -3422,7 +3464,7 @@ onMounted(async () => {
         >
         <VTextarea
           v-model="transferProtocolText"
-          :placeholder="$t('transfer_protocol_text_placeholder')"
+          :placeholder="defaultTransferMessageUser"
           :maxlength="2000"
           rows="6"
           counter
@@ -3435,7 +3477,7 @@ onMounted(async () => {
         >
         <VTextarea
           v-model="transferProtocolSectorText"
-          :placeholder="$t('transfer_protocol_sector_text_placeholder')"
+          :placeholder="defaultTransferMessageSector"
           :maxlength="2000"
           rows="6"
           counter
@@ -3448,9 +3490,7 @@ onMounted(async () => {
         >
         <VTextarea
           v-model="transferProtocolSectorAndUserText"
-          :placeholder="
-            $t('transfer_protocol_sector_and_user_text_placeholder')
-          "
+          :placeholder="defaultTransferMessageSectorUser"
           :maxlength="2000"
           rows="6"
           counter

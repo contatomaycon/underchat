@@ -341,7 +341,19 @@ export class DashboardAttendanceRepository {
 
     const averagePerUser = await this.getAverageAttendancesPerUser();
 
-    if (averagePerUser === 0) {
+    return this.calculateProductivitySync(
+      totalAttendances,
+      totalUsers,
+      averagePerUser
+    );
+  };
+
+  private readonly calculateProductivitySync = (
+    totalAttendances: number,
+    totalUsers: number,
+    averagePerUser: number
+  ): number => {
+    if (totalAttendances === 0 || totalUsers === 0 || averagePerUser === 0) {
       return 0;
     }
 
@@ -366,45 +378,50 @@ export class DashboardAttendanceRepository {
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
     thirtyDaysAgo.setHours(0, 0, 0, 0);
 
-    const queryElastic = {
-      size: 10000,
-      query: {
-        bool: {
-          must: [
-            {
-              nested: {
-                path: 'account',
-                query: {
-                  term: {
-                    'account.id': accountId,
+    const [result, usersResult, averagePerUser] = await Promise.all([
+      this.elasticDatabaseService.select(EElasticIndex.chat, {
+        size: 10000,
+        query: {
+          bool: {
+            must: [
+              {
+                nested: {
+                  path: 'account',
+                  query: {
+                    term: {
+                      'account.id': accountId,
+                    },
                   },
                 },
               },
-            },
-          ],
-          filter: [
-            {
-              term: {
-                status: EChatStatus.closed,
-              },
-            },
-            {
-              range: {
-                closed_at: {
-                  gte: thirtyDaysAgo.toISOString(),
+            ],
+            filter: [
+              {
+                term: {
+                  status: EChatStatus.closed,
                 },
               },
-            },
-          ],
+              {
+                range: {
+                  closed_at: {
+                    gte: thirtyDaysAgo.toISOString(),
+                  },
+                },
+              },
+            ],
+          },
         },
-      },
-      _source: ['date', 'started_at', 'closed_at'],
-    };
-
-    const result = await this.elasticDatabaseService.select(
-      EElasticIndex.chat,
-      queryElastic
-    );
+        _source: ['date', 'started_at', 'closed_at'],
+      }),
+      this.dbRo
+        .select({
+          total: count(),
+        })
+        .from(user)
+        .where(and(eq(user.account_id, accountId), isNull(user.deleted_at)))
+        .execute(),
+      this.getAverageAttendancesPerUser(),
+    ]);
 
     const chats = result?.hits?.hits?.map((hit: any) => hit._source) || [];
 
@@ -425,19 +442,11 @@ export class DashboardAttendanceRepository {
     );
 
     const totalAttendances = chats.length;
-
-    const usersResult = await this.dbRo
-      .select({
-        total: count(),
-      })
-      .from(user)
-      .where(and(eq(user.account_id, accountId), isNull(user.deleted_at)))
-      .execute();
-
     const totalUsers = usersResult[0]?.total ?? 0;
-    const productivity = await this.calculateProductivity(
+    const productivity = this.calculateProductivitySync(
       totalAttendances,
-      totalUsers
+      totalUsers,
+      averagePerUser
     );
 
     return {
