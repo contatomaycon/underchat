@@ -29,8 +29,8 @@ import { generateProtocol } from '@core/common/functions/generateProtocol';
 @injectable()
 export class ScheduleSendService {
   private readonly BATCH_SIZE = 10;
-  private readonly DELAY_MIN_MS = 1000;
-  private readonly DELAY_MAX_MS = 4000;
+  private readonly DELAY_MIN_MS = 5000;
+  private readonly DELAY_MAX_MS = 20000;
 
   private readonly BRAZIL_TIMEZONE = 'America/Sao_Paulo';
 

@@ -30,7 +30,9 @@ if (telemetryEnvironment.enableSentry) {
         },
       }),
       nodeProfilingIntegration(),
+      Sentry.consoleLoggingIntegration({ levels: ['log', 'warn', 'error'] }),
     ],
+    enableLogs: true,
     tracesSampleRate: telemetryEnvironment.sentryTracesSampleRate,
     profilesSampleRate: telemetryEnvironment.sentryProfilesSampleRate,
     beforeSend(event, hint) {

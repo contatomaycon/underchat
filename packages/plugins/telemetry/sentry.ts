@@ -75,3 +75,43 @@ export function startSpan<T>(
 
   return Sentry.startSpan({ name, op }, callback);
 }
+
+export function metricsCount(
+  name: string,
+  value: number = 1,
+  attributes?: Record<string, string | number>
+): void {
+  if (!telemetryEnvironment.enableSentry) {
+    return;
+  }
+
+  Sentry.metrics.count(name, value, attributes ? { attributes } : undefined);
+}
+
+export function metricsGauge(
+  name: string,
+  value: number,
+  attributes?: Record<string, string | number>
+): void {
+  if (!telemetryEnvironment.enableSentry) {
+    return;
+  }
+
+  Sentry.metrics.gauge(name, value, attributes ? { attributes } : undefined);
+}
+
+export function metricsDistribution(
+  name: string,
+  value: number,
+  attributes?: Record<string, string | number>
+): void {
+  if (!telemetryEnvironment.enableSentry) {
+    return;
+  }
+
+  Sentry.metrics.distribution(
+    name,
+    value,
+    attributes ? { attributes } : undefined
+  );
+}
