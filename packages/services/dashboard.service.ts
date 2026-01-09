@@ -110,9 +110,7 @@ export class DashboardService {
       chatbotsAllowed,
       schedulesData,
       schedulesAllowed,
-      contactGroupsTotal,
-      messageTemplatesTotal,
-      labelTemplatesTotal,
+      templateTotals,
     ] = await Promise.all([
       this.dashboardContactsRepository.getContactsGrowthMonthly(accountId),
       this.dashboardAttendanceRepository.getAttendancePerformance(accountId),
@@ -125,10 +123,13 @@ export class DashboardService {
         accountId
       ),
       this.dashboardSchedulesRepository.getSchedulesAllowed(accountId),
-      this.dashboardTemplatesRepository.getContactGroupsTotal(accountId),
-      this.dashboardTemplatesRepository.getMessageTemplatesTotal(accountId),
-      this.dashboardTemplatesRepository.getLabelTemplatesTotal(accountId),
+      this.dashboardTemplatesRepository.getTemplateTotals(accountId),
     ]);
+    const {
+      contactGroupsTotal,
+      messageTemplatesTotal,
+      labelTemplatesTotal,
+    } = templateTotals;
 
     const schedulesRenewalDay = schedulesData.renewalDate
       ? this.formatRenewalDate(

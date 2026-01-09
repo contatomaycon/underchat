@@ -1,8 +1,7 @@
+import { ITemplateTotals } from '@core/common/interfaces/ITemplateTotals';
 import * as schema from '@core/models';
-import { contactGroup, messageTemplate, labelTemplate } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, count, eq, isNull } from 'drizzle-orm';
 
 @injectable()
 export class DashboardTemplatesRepository {
@@ -10,54 +9,33 @@ export class DashboardTemplatesRepository {
     @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
-  getContactGroupsTotal = async (accountId: string): Promise<number> => {
-    const result = await this.dbRo
-      .select({
-        total: count(),
-      })
-      .from(contactGroup)
-      .where(
-        and(
-          eq(contactGroup.account_id, accountId),
-          isNull(contactGroup.deleted_at)
-        )
-      )
-      .execute();
+  getTemplateTotals = async (accountId: string): Promise<ITemplateTotals> => {
+    const query = `
+      SELECT
+        (
+          SELECT COUNT(*)
+          FROM contact_group
+          WHERE account_id = '${accountId}' AND deleted_at IS NULL
+        ) AS contact_groups_total,
+        (
+          SELECT COUNT(*)
+          FROM message_template
+          WHERE account_id = '${accountId}' AND deleted_at IS NULL
+        ) AS message_templates_total,
+        (
+          SELECT COUNT(*)
+          FROM label_template
+          WHERE account_id = '${accountId}' AND deleted_at IS NULL
+        ) AS label_templates_total
+    `;
 
-    return result[0]?.total ?? 0;
-  };
+    const result = await this.dbRo.execute(query);
+    const row = result.rows[0] ?? {};
 
-  getMessageTemplatesTotal = async (accountId: string): Promise<number> => {
-    const result = await this.dbRo
-      .select({
-        total: count(),
-      })
-      .from(messageTemplate)
-      .where(
-        and(
-          eq(messageTemplate.account_id, accountId),
-          isNull(messageTemplate.deleted_at)
-        )
-      )
-      .execute();
-
-    return result[0]?.total ?? 0;
-  };
-
-  getLabelTemplatesTotal = async (accountId: string): Promise<number> => {
-    const result = await this.dbRo
-      .select({
-        total: count(),
-      })
-      .from(labelTemplate)
-      .where(
-        and(
-          eq(labelTemplate.account_id, accountId),
-          isNull(labelTemplate.deleted_at)
-        )
-      )
-      .execute();
-
-    return result[0]?.total ?? 0;
+    return {
+      contactGroupsTotal: Number(row.contact_groups_total ?? 0),
+      messageTemplatesTotal: Number(row.message_templates_total ?? 0),
+      labelTemplatesTotal: Number(row.label_templates_total ?? 0),
+    };
   };
 }

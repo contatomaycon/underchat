@@ -63,11 +63,8 @@ const emit = defineEmits<{
 
 const isMenuOpen = ref(false);
 const internalSearch = ref(props.search || '');
-const containerRef = ref<HTMLElement | null>(null);
 const maxVisibleChips = ref(2);
 const selectedItemsCache = ref<SelectItem[]>([]);
-
-const attachElement = computed(() => containerRef.value || undefined);
 
 const getItemValue = (item: SelectItem): string | number | boolean => {
   return item[props.itemValue] ?? item.value ?? item.id ?? '';
@@ -265,16 +262,16 @@ const handleClear = () => {
 </script>
 
 <template>
-  <div ref="containerRef">
+  <div>
     <VLabel v-if="label" class="mb-1 text-body-2"> {{ label }}: </VLabel>
     <VMenu
       v-model="isMenuOpen"
       location="bottom"
       :close-on-content-click="false"
       offset="0"
-      :attach="attachElement"
       scroll-strategy="reposition"
       location-strategy="connected"
+      :z-index="9999"
     >
       <template #activator="{ props: menuProps }">
         <div class="select-field-wrapper">
@@ -457,10 +454,20 @@ const handleClear = () => {
 
 :deep(.v-menu > .v-overlay__content) {
   transform-origin: top left !important;
+  z-index: 9999 !important;
 }
 
 :deep(.v-overlay__content[data-v-menu]) {
   contain: layout style !important;
+  z-index: 9999 !important;
+}
+
+:deep(.v-overlay[data-v-menu]) {
+  z-index: 9999 !important;
+}
+
+:deep(.v-overlay__scrim[data-v-menu]) {
+  z-index: 9998 !important;
 }
 
 .select-menu-card {
