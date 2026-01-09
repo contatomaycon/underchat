@@ -53,6 +53,94 @@ export class DashboardSchedulesRepository {
     };
   };
 
+  getSchedulesSentAndRenewalDate = async (
+    accountId: string
+  ): Promise<{
+    sent: number;
+    renewalDate: { day: number; month: number } | null;
+  }> => {
+    const planAccount =
+      await this.planAccountUpdaterRepository.findPlanAccountByAccountId(
+        accountId
+      );
+
+    const { startDate, endDate } = this.calculateMonthlyPeriod(
+      planAccount?.last_payment_date ?? null
+    );
+
+    await this.elasticDatabaseService.indices(
+      EElasticIndex.schedule,
+      scheduleMappings()
+    );
+
+    const query = {
+      size: 0,
+      query: {
+        bool: {
+          must: [
+            {
+              nested: {
+                path: 'account',
+                query: {
+                  term: {
+                    'account.id': accountId,
+                  },
+                },
+              },
+            },
+            {
+              term: {
+                status: EScheduleStatus.sent,
+              },
+            },
+          ],
+          filter: [
+            {
+              range: {
+                send_date: {
+                  gte: startDate.toISOString(),
+                  lte: endDate.toISOString(),
+                },
+              },
+            },
+          ],
+        },
+      },
+    };
+
+    const result = await this.elasticDatabaseService.select<{
+      hits: { total: { value: number } | number };
+    }>(EElasticIndex.schedule, query);
+
+    let sent = 0;
+    if (result) {
+      const total = result.hits.total as { value: number } | number;
+      sent = typeof total === 'number' ? total : total.value;
+    }
+
+    let renewalDate: { day: number; month: number } | null = null;
+    if (planAccount?.last_payment_date) {
+      const paymentDate = new Date(planAccount.last_payment_date);
+      const paymentDay = paymentDate.getDate();
+
+      const now = new Date();
+      const nextRenewalDate = new Date(now);
+      nextRenewalDate.setMonth(nextRenewalDate.getMonth() + 1);
+      nextRenewalDate.setDate(paymentDay);
+      nextRenewalDate.setHours(0, 0, 0, 0);
+
+      renewalDate = {
+        day: nextRenewalDate.getDate(),
+        month: nextRenewalDate.getMonth(),
+      };
+    }
+
+    return {
+      sent,
+      renewalDate,
+    };
+  };
+
   private readonly calculateMonthlyPeriod = (
     lastPaymentDate: string | null
   ): { startDate: Date; endDate: Date } => {

@@ -108,9 +108,8 @@ export class DashboardService {
       chatbotsTotal,
       chatbotsActive,
       chatbotsAllowed,
-      schedulesSent,
+      schedulesData,
       schedulesAllowed,
-      schedulesRenewalDate,
       contactGroupsTotal,
       messageTemplatesTotal,
       labelTemplatesTotal,
@@ -122,18 +121,19 @@ export class DashboardService {
       this.dashboardChatbotsRepository.getChatbotsTotal(accountId),
       this.dashboardChatbotsRepository.getChatbotsActive(accountId),
       this.dashboardChatbotsRepository.getChatbotsAllowed(accountId),
-      this.dashboardSchedulesRepository.getSchedulesSent(accountId),
+      this.dashboardSchedulesRepository.getSchedulesSentAndRenewalDate(
+        accountId
+      ),
       this.dashboardSchedulesRepository.getSchedulesAllowed(accountId),
-      this.dashboardSchedulesRepository.getSchedulesRenewalDate(accountId),
       this.dashboardTemplatesRepository.getContactGroupsTotal(accountId),
       this.dashboardTemplatesRepository.getMessageTemplatesTotal(accountId),
       this.dashboardTemplatesRepository.getLabelTemplatesTotal(accountId),
     ]);
 
-    const schedulesRenewalDay = schedulesRenewalDate
+    const schedulesRenewalDay = schedulesData.renewalDate
       ? this.formatRenewalDate(
-          schedulesRenewalDate.day,
-          schedulesRenewalDate.month,
+          schedulesData.renewalDate.day,
+          schedulesData.renewalDate.month,
           t
         )
       : null;
@@ -158,7 +158,7 @@ export class DashboardService {
         allowed: chatbotsAllowed,
       },
       schedules: {
-        sent: schedulesSent,
+        sent: schedulesData.sent,
         allowed: schedulesAllowed,
         renewal_day: schedulesRenewalDay,
       },
