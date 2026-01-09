@@ -138,7 +138,10 @@ export class StreamProducerService {
       errorMessage.includes('broker transport failure') ||
       errorMessage.includes('all broker connections are down') ||
       errorMessage.includes('Flush timeout') ||
-      errorMessage.includes('connection timeout')
+      errorMessage.includes('flush timeout') ||
+      errorMessage.includes('connection timeout') ||
+      errorMessage.includes('timed out') ||
+      errorMessage.includes('timeout')
     );
   }
 
@@ -167,7 +170,11 @@ export class StreamProducerService {
     return new Promise<void>((resolve, reject) => {
       let isResolved = false;
       let lastError: LibrdKafkaError | null = null;
-      let timeout: NodeJS.Timeout | null = null;
+      let flushTimeout: NodeJS.Timeout | null = null;
+      let overallTimeout: NodeJS.Timeout | null = null;
+
+      const FLUSH_TIMEOUT_MS = 3000;
+      const OVERALL_TIMEOUT_MS = 4000;
 
       const errorHandler = (err: LibrdKafkaError) => {
         lastError = err;
@@ -179,13 +186,31 @@ export class StreamProducerService {
         ) {
           if (!isResolved) {
             isResolved = true;
-            if (timeout) {
-              clearTimeout(timeout);
+            if (flushTimeout) {
+              clearTimeout(flushTimeout);
+              flushTimeout = null;
             }
+            if (overallTimeout) {
+              clearTimeout(overallTimeout);
+              overallTimeout = null;
+            }
+            producer.removeListener('event.error', errorHandler);
             this.invalidateProducer();
             reject(new Error(`Kafka connection error: ${errorMessage}`));
           }
         }
+      };
+
+      const cleanup = () => {
+        if (flushTimeout) {
+          clearTimeout(flushTimeout);
+          flushTimeout = null;
+        }
+        if (overallTimeout) {
+          clearTimeout(overallTimeout);
+          overallTimeout = null;
+        }
+        producer.removeListener('event.error', errorHandler);
       };
 
       producer.once('event.error', errorHandler);
@@ -203,10 +228,7 @@ export class StreamProducerService {
 
           if (err) {
             isResolved = true;
-            if (timeout) {
-              clearTimeout(timeout);
-            }
-            producer.removeListener('event.error', errorHandler);
+            cleanup();
             if (this.isDisconnectedError(err)) {
               this.invalidateProducer();
             }
@@ -217,7 +239,7 @@ export class StreamProducerService {
 
       if (produceError !== null && produceError !== undefined) {
         if (typeof produceError === 'number' && produceError < 0) {
-          producer.removeListener('event.error', errorHandler);
+          cleanup();
           const error = new Error(
             `Failed to produce message: librdkafka error code ${produceError}`
           );
@@ -229,7 +251,7 @@ export class StreamProducerService {
         }
 
         if (produceError instanceof Error) {
-          producer.removeListener('event.error', errorHandler);
+          cleanup();
           if (this.isDisconnectedError(produceError)) {
             this.invalidateProducer();
           }
@@ -238,7 +260,7 @@ export class StreamProducerService {
         }
 
         if (typeof produceError === 'string') {
-          producer.removeListener('event.error', errorHandler);
+          cleanup();
           const error = new Error(produceError);
           if (this.isDisconnectedError(error)) {
             this.invalidateProducer();
@@ -254,10 +276,10 @@ export class StreamProducerService {
 
       producer.poll();
 
-      timeout = setTimeout(() => {
+      overallTimeout = setTimeout(() => {
         if (!isResolved) {
           isResolved = true;
-          producer.removeListener('event.error', errorHandler);
+          cleanup();
 
           if (lastError) {
             reject(
@@ -268,30 +290,52 @@ export class StreamProducerService {
             return;
           }
 
-          reject(new Error('Flush timeout: message not sent within 5 seconds'));
+          reject(
+            new Error(
+              `Flush timeout: message not sent within ${OVERALL_TIMEOUT_MS}ms`
+            )
+          );
         }
-      }, 5000);
+      }, OVERALL_TIMEOUT_MS);
 
-      producer.flush(5000, (err) => {
-        if (timeout) {
-          clearTimeout(timeout);
+      flushTimeout = setTimeout(() => {
+        if (!isResolved) {
+          try {
+            producer.poll();
+          } catch {}
         }
-        producer.removeListener('event.error', errorHandler);
+      }, FLUSH_TIMEOUT_MS - 500);
 
+      producer.flush(FLUSH_TIMEOUT_MS, (err) => {
         if (isResolved) {
           return;
         }
 
         isResolved = true;
+        cleanup();
 
         if (err) {
           const errorMessage = this.getErrorMessage(err);
-          const error = new Error(errorMessage);
+          const isTimeoutError =
+            errorMessage.includes('timed out') ||
+            errorMessage.includes('timeout') ||
+            errorMessage.includes('Flush timeout');
 
+          if (isTimeoutError) {
+            const timeoutError = new Error(
+              `Kafka flush timeout after ${FLUSH_TIMEOUT_MS}ms`
+            );
+            if (this.isDisconnectedError(timeoutError)) {
+              this.invalidateProducer();
+            }
+            reject(timeoutError);
+            return;
+          }
+
+          const error = new Error(errorMessage);
           if (this.isDisconnectedError(error)) {
             this.invalidateProducer();
           }
-
           reject(error);
           return;
         }

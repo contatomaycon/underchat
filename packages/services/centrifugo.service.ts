@@ -71,6 +71,7 @@ export class CentrifugoService {
 
     await new Promise<void>((resolve, reject) => {
       let timer: ReturnType<typeof setTimeout> | null = null;
+      let isResolved = false;
 
       let onConnected: () => void;
       let onError: (err: unknown) => void;
@@ -89,39 +90,52 @@ export class CentrifugoService {
         } catch {}
       };
 
-      onConnected = (): void => {
+      const safeReject = (error: Error): void => {
+        if (isResolved) {
+          return;
+        }
+        isResolved = true;
+        cleanup();
+        reject(error);
+      };
+
+      const safeResolve = (): void => {
+        if (isResolved) {
+          return;
+        }
+        isResolved = true;
         cleanup();
         resolve();
       };
 
+      onConnected = (): void => {
+        safeResolve();
+      };
+
       onError = (err: unknown): void => {
-        cleanup();
-        reject(this.toError(err));
+        safeReject(this.toError(err));
       };
 
       onDisconnected = (): void => {
         if (this.client.state !== State.Connected) {
-          cleanup();
-          reject(new Error('Centrifugo disconnected before connect'));
+          safeReject(new Error('Centrifugo disconnected before connect'));
         }
       };
 
       timer = setTimeout(() => {
-        cleanup();
-        reject(new Error('Centrifugo connection timeout'));
+        safeReject(new Error('Centrifugo connection timeout'));
       }, this.connectTimeoutMs);
 
-      this.client.on('connected', onConnected);
-      this.client.on('error', onError);
-      this.client.on('disconnected', onDisconnected);
+      try {
+        this.client.on('connected', onConnected);
+        this.client.on('error', onError);
+        this.client.on('disconnected', onDisconnected);
 
-      if (this.client.state === State.Disconnected) {
-        try {
+        if (this.client.state === State.Disconnected) {
           this.client.connect();
-        } catch (err) {
-          cleanup();
-          reject(this.toError(err));
         }
+      } catch (err) {
+        safeReject(this.toError(err));
       }
     });
   }
@@ -220,6 +234,7 @@ export class CentrifugoService {
 
     await new Promise<void>((resolve, reject) => {
       let timer: ReturnType<typeof setTimeout> | null = null;
+      let isResolved = false;
 
       let onConnect: () => void;
       let onError: (err: unknown) => void;
@@ -238,34 +253,59 @@ export class CentrifugoService {
         } catch {}
       };
 
-      onConnect = (): void => {
+      const safeReject = (error: Error): void => {
+        if (isResolved) {
+          return;
+        }
+        isResolved = true;
+        cleanup();
+
+        try {
+          if (client.state !== State.Disconnected) {
+            client.disconnect();
+          }
+        } catch {}
+
+        reject(error);
+      };
+
+      const safeResolve = (): void => {
+        if (isResolved) {
+          return;
+        }
+        isResolved = true;
         cleanup();
         resolve();
       };
 
+      onConnect = (): void => {
+        safeResolve();
+      };
+
       onError = (err: unknown): void => {
-        cleanup();
-        reject(this.toError(err));
+        safeReject(this.toError(err));
       };
 
       onDisconnected = (): void => {
         if (client.state !== State.Connected) {
-          cleanup();
-          reject(
+          safeReject(
             new Error('Centrifugo temp client disconnected before connect')
           );
         }
       };
 
       timer = setTimeout(() => {
-        cleanup();
-        reject(new Error('Centrifugo temp client connection timeout'));
+        safeReject(new Error('Centrifugo temp client connection timeout'));
       }, this.connectTimeoutMs);
 
-      client.on('connected', onConnect);
-      client.on('error', onError);
-      client.on('disconnected', onDisconnected);
-      client.connect();
+      try {
+        client.on('connected', onConnect);
+        client.on('error', onError);
+        client.on('disconnected', onDisconnected);
+        client.connect();
+      } catch (err) {
+        safeReject(this.toError(err));
+      }
     });
   }
 
@@ -403,19 +443,68 @@ export class CentrifugoService {
     });
 
     await new Promise<void>((resolve, reject) => {
-      const onConnect = () => {
-        tempClient.off('connected', onConnect);
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      let isResolved = false;
+
+      let onConnect: () => void;
+      let onError: (err: unknown) => void;
+
+      const cleanup = (): void => {
+        if (timer) {
+          clearTimeout(timer);
+          timer = null;
+        }
+
+        try {
+          tempClient.off('connected', onConnect);
+          tempClient.off('error', onError);
+        } catch {}
+      };
+
+      const safeReject = (error: Error): void => {
+        if (isResolved) {
+          return;
+        }
+        isResolved = true;
+        cleanup();
+
+        try {
+          if (tempClient.state !== State.Disconnected) {
+            tempClient.disconnect();
+          }
+        } catch {}
+
+        reject(error);
+      };
+
+      const safeResolve = (): void => {
+        if (isResolved) {
+          return;
+        }
+        isResolved = true;
+        cleanup();
         resolve();
       };
 
-      const onError = (err: unknown) => {
-        tempClient.off('error', onError);
-        reject(this.toError(err));
+      onConnect = (): void => {
+        safeResolve();
       };
 
-      tempClient.on('connected', onConnect);
-      tempClient.on('error', onError);
-      tempClient.connect();
+      onError = (err: unknown): void => {
+        safeReject(this.toError(err));
+      };
+
+      timer = setTimeout(() => {
+        safeReject(new Error('Centrifugo temp client connection timeout'));
+      }, this.connectTimeoutMs);
+
+      try {
+        tempClient.on('connected', onConnect);
+        tempClient.on('error', onError);
+        tempClient.connect();
+      } catch (err) {
+        safeReject(this.toError(err));
+      }
     });
   }
 

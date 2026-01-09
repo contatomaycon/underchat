@@ -182,16 +182,7 @@ const acceptedFileTypes = computed(() => {
 });
 
 const filteredContacts = computed(() => {
-  if (!debouncedContactSearch.value) {
-    return contacts.value;
-  }
-  const query = debouncedContactSearch.value.toLowerCase();
-  return contacts.value.filter((contact) => {
-    const fullName =
-      `${contact.name}${contact.last_name ? ' ' + contact.last_name : ''}`.toLowerCase();
-    const phone = contact.phone_partial?.toLowerCase() || '';
-    return fullName.includes(query) || phone.includes(query);
-  });
+  return contacts.value;
 });
 
 const filteredContactGroups = computed(() => {
@@ -564,9 +555,7 @@ watch(selectedType, () => {
 });
 
 watch(debouncedContactSearch, () => {
-  if (contactSearch.value) {
-    loadContacts();
-  }
+  loadContacts();
 });
 
 watch(debouncedContactGroupSearch, () => {
@@ -952,7 +941,7 @@ onBeforeUnmount(() => {
 
             <VCol v-if="showContactsSelect" cols="12">
               <VLabel class="text-body-2 mb-1">{{ $t('contacts') }}:</VLabel>
-              <VAutocomplete
+              <AppSelectSearch
                 v-model="selectedContactIds"
                 :items="filteredContacts"
                 :item-title="
@@ -969,13 +958,24 @@ onBeforeUnmount(() => {
                 closable-chips
                 :search="contactSearch"
                 @update:search="contactSearch = $event"
+                :placeholder="$t('contacts')"
                 :rules="[
-                  requiredValidator(
-                    selectedContactIds.length > 0,
-                    $t('contacts_required')
-                  ),
+                  (value) => requiredValidator(value, $t('contacts_required')),
                 ]"
-              />
+              >
+                <template #chip="{ item }">
+                  <span
+                    >{{ item.name
+                    }}{{ item.last_name ? ' ' + item.last_name : '' }}</span
+                  >
+                  <span
+                    v-if="item.phone_partial"
+                    class="text-medium-emphasis ml-1"
+                  >
+                    ({{ item.phone_partial }})
+                  </span>
+                </template>
+              </AppSelectSearch>
             </VCol>
 
             <VCol v-if="showContactGroupsSelect" cols="12">

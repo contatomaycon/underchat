@@ -17,6 +17,31 @@ function isConnectionTerminatedError(error: unknown): boolean {
   );
 }
 
+function normalizeError(error: unknown): Error {
+  if (error instanceof Error) {
+    return error;
+  }
+
+  if (typeof error === 'object' && error !== null) {
+    const errorObj = error as Record<string, unknown>;
+    const errorMessage =
+      errorObj.error instanceof Error
+        ? errorObj.error.message
+        : typeof errorObj.error === 'object' && errorObj.error !== null
+          ? JSON.stringify(errorObj.error)
+          : String(errorObj.error || errorObj.message || 'Unknown error');
+
+    const normalizedError = new Error(errorMessage);
+    if (errorObj.error instanceof Error && errorObj.error.stack) {
+      normalizedError.stack = errorObj.error.stack;
+    }
+
+    return normalizedError;
+  }
+
+  return new Error(String(error));
+}
+
 export function captureException(
   error: unknown,
   context?: Record<string, unknown>
@@ -25,22 +50,32 @@ export function captureException(
     return;
   }
 
-  if (isConnectionTerminatedError(error)) {
+  const normalizedError = normalizeError(error);
+
+  if (isConnectionTerminatedError(normalizedError)) {
     return;
   }
 
   if (context) {
-
-    Sentry.withScope((scope) => {
-      Object.entries(context).forEach(([key, value]) => {
-        scope.setContext(key, value as Record<string, unknown>);
+    try {
+      Sentry.withScope((scope) => {
+        Object.entries(context).forEach(([key, value]) => {
+          scope.setContext(key, value as Record<string, unknown>);
+        });
+        Sentry.captureException(normalizedError);
       });
-      Sentry.captureException(error);
-    });
+    } catch {
+      Object.entries(context).forEach(([key, value]) => {
+        try {
+          Sentry.setContext(key, value as Record<string, unknown>);
+        } catch {}
+      });
+      Sentry.captureException(normalizedError);
+    }
     return;
   }
 
-  Sentry.captureException(error);
+  Sentry.captureException(normalizedError);
 }
 
 export function captureMessage(
@@ -53,12 +88,21 @@ export function captureMessage(
   }
 
   if (context) {
-    Sentry.withScope((scope) => {
+    try {
+      Sentry.withScope((scope) => {
+        Object.entries(context).forEach(([key, value]) => {
+          scope.setContext(key, value as Record<string, unknown>);
+        });
+        Sentry.captureMessage(message, level);
+      });
+    } catch {
       Object.entries(context).forEach(([key, value]) => {
-        scope.setContext(key, value as Record<string, unknown>);
+        try {
+          Sentry.setContext(key, value as Record<string, unknown>);
+        } catch {}
       });
       Sentry.captureMessage(message, level);
-    });
+    }
     return;
   }
 

@@ -14,6 +14,7 @@ import {
   or,
   ilike,
   sql,
+  inArray,
 } from 'drizzle-orm';
 import { ESortOrder } from '@core/common/enums/ESortOrder';
 import { ListScheduleContactsResponse } from '@core/schema/schedule/listScheduleContacts/response.schema';
@@ -48,7 +49,9 @@ export class ScheduleContactsListerRepository {
 
   private readonly setFilters = (
     query: ListScheduleContactsRequest,
-    accountId: string
+    accountId: string,
+    searchHashes: string | null,
+    searchHashesArray: string[] | null
   ): SQLWrapper[] => {
     const filters: SQLWrapper[] = [
       eq(contact.account_id, accountId),
@@ -88,7 +91,11 @@ export class ScheduleContactsListerRepository {
           )
         : undefined,
       searchTerm ? ilike(contact.phone_partial, `%${searchTerm}%`) : undefined,
-      searchTerm ? ilike(contact.phone, `%${searchTerm}%`) : undefined,
+      searchHashes ? eq(contact.email_c, searchHashes) : undefined,
+      searchHashes ? eq(contact.phone_c, searchHashes) : undefined,
+      searchHashesArray && searchHashesArray.length > 0
+        ? inArray(contact.phone_c, searchHashesArray)
+        : undefined,
     ];
 
     const conditions = rawConditions.filter(
@@ -107,9 +114,16 @@ export class ScheduleContactsListerRepository {
     perPage: number,
     currentPage: number,
     query: ListScheduleContactsRequest,
-    accountId: string
+    accountId: string,
+    searchHashes: string | null,
+    searchHashesArray: string[] | null
   ): Promise<ListScheduleContactsResponse[]> => {
-    const filters = this.setFilters(query, accountId);
+    const filters = this.setFilters(
+      query,
+      accountId,
+      searchHashes,
+      searchHashesArray
+    );
     const orders = this.setOrders(query);
 
     const queryBuilder = this.dbRo
@@ -145,9 +159,16 @@ export class ScheduleContactsListerRepository {
 
   listScheduleContactsTotal = async (
     query: ListScheduleContactsRequest,
-    accountId: string
+    accountId: string,
+    searchHashes: string | null,
+    searchHashesArray: string[] | null
   ): Promise<number> => {
-    const filters = this.setFilters(query, accountId);
+    const filters = this.setFilters(
+      query,
+      accountId,
+      searchHashes,
+      searchHashesArray
+    );
 
     const result = await this.dbRo
       .select({

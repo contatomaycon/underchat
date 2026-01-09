@@ -20,6 +20,9 @@ import { ListScheduleMessagesRequest } from '@core/schema/schedule/listScheduleM
 import { ListScheduleMessagesResponse } from '@core/schema/schedule/listScheduleMessages/response.schema';
 import { IUpdateSchedule } from '@core/interfaces/repositories/schedule/IUpdateSchedule';
 import { setPaginationData } from '@core/common/functions/createPaginationData';
+import { EncryptService } from '@core/services/encrypt.service';
+import { buildCandidates } from '@core/common/functions/buildCandidatesBR';
+import { onlyDigits } from '@core/common/functions/onlyDigits';
 
 @injectable()
 export class ScheduleService {
@@ -33,7 +36,8 @@ export class ScheduleService {
     private readonly scheduleWorkersListerRepository: ScheduleWorkersListerRepository,
     private readonly scheduleContactsListerRepository: ScheduleContactsListerRepository,
     private readonly scheduleContactGroupsListerRepository: ScheduleContactGroupsListerRepository,
-    private readonly scheduleMessagesListerRepository: ScheduleMessagesListerRepository
+    private readonly scheduleMessagesListerRepository: ScheduleMessagesListerRepository,
+    private readonly encryptService: EncryptService
   ) {}
 
   listSchedules = async (
@@ -106,16 +110,38 @@ export class ScheduleService {
     query: ListScheduleContactsRequest,
     accountId: string
   ): Promise<[ListScheduleContactsResponse[], number]> => {
+    let searchHashes: string | null = null;
+    let searchHashesArray: string[] | null = null;
+
+    if (query.search) {
+      const searchDigits = onlyDigits(query.search);
+      if (searchDigits.length >= 3) {
+        const candidates = buildCandidates(query.search);
+        searchHashesArray = candidates.map((candidate) =>
+          this.encryptService.encrypt(candidate)
+        );
+        searchHashes = this.encryptService.encrypt(query.search);
+      }
+
+      if (searchDigits.length < 3) {
+        searchHashes = this.encryptService.encrypt(query.search);
+      }
+    }
+
     const [result, total] = await Promise.all([
       this.scheduleContactsListerRepository.listScheduleContacts(
         perPage,
         currentPage,
         query,
-        accountId
+        accountId,
+        searchHashes,
+        searchHashesArray
       ),
       this.scheduleContactsListerRepository.listScheduleContactsTotal(
         query,
-        accountId
+        accountId,
+        searchHashes,
+        searchHashesArray
       ),
     ]);
 
