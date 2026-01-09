@@ -1407,6 +1407,7 @@
   "chatbot_data_cnpj_must_have_14_digits": "CNPJ debe contener 14 dígitos",
   "chatbot_distribution": "Distribución de Atención",
   "chatbot_distribution_label": "Distribución",
+  "chatbot_distribution_sector": "Sector",
   "chatbot_distribution_type_sequential": "Secuencial",
   "chatbot_distribution_type_random": "Aleatoria",
   "chatbot_distribution_type_load": "Por carga",

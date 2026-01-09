@@ -930,6 +930,16 @@ export class ChatbotFlowRunnerService {
       return this.processRedirectNode(t, createChat, chatbotFlow, nextFlowId);
     }
 
+    if (nextFlowNode.type === 'distribution') {
+      return this.processDistributionNode(
+        t,
+        createChat,
+        chatbotFlow,
+        nextFlowId,
+        customMessages
+      );
+    }
+
     if (nextFlowNode.type === 'data') {
       await this.processDataNodeQuestion(t, createChat, nextFlowNode);
       return true;
@@ -4339,6 +4349,16 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       );
     }
 
+    if (currentNode.type === 'distribution') {
+      return this.processDistributionNode(
+        t,
+        createChat,
+        chatbotFlow,
+        currentFlowId,
+        customMessages
+      );
+    }
+
     if (currentNode.type === 'finish') {
       await this.sendFinishMessage(
         t,
@@ -4349,6 +4369,326 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
     }
 
     return false;
+  }
+
+  private getDistributionCacheKey(accountId: string, workerId: string): string {
+    return `underchat:chatbot-distribution-sequential:${accountId}:${workerId}`;
+  }
+
+  private async getEligibleUsers(
+    accountId: string,
+    sectorId?: string | null
+  ): Promise<IChat['user'][]> {
+    if (sectorId) {
+      const sectorUsers = await this.sectorService.listSectorUsersForTransfer(
+        accountId,
+        sectorId
+      );
+      return sectorUsers.map((user) => ({
+        id: user.id,
+        name: user.name,
+        photo: user.photo ?? null,
+      }));
+    }
+
+    const users = await this.userService.listUsersForTransfer(accountId, '');
+    return users.map((user) => ({
+      id: user.id,
+      name: user.name,
+      photo: user.photo ?? null,
+    }));
+  }
+
+  private async getSequentialUser(
+    accountId: string,
+    workerId: string,
+    sectorId?: string | null
+  ): Promise<IChat['user'] | null> {
+    const eligibleUsers = await this.getEligibleUsers(accountId, sectorId);
+
+    if (eligibleUsers.length === 0) {
+      return null;
+    }
+
+    const cacheKey = this.getDistributionCacheKey(accountId, workerId);
+    const currentIndexStr = await this.redis.get(cacheKey);
+    let currentIndex = currentIndexStr
+      ? Number.parseInt(currentIndexStr, 10)
+      : 0;
+
+    if (currentIndex >= eligibleUsers.length || currentIndex < 0) {
+      currentIndex = 0;
+    }
+
+    const selectedUser = eligibleUsers[currentIndex];
+    const nextIndex = (currentIndex + 1) % eligibleUsers.length;
+
+    await this.redis.set(cacheKey, nextIndex.toString());
+
+    return selectedUser;
+  }
+
+  private async getLoadBasedUser(
+    accountId: string,
+    sectorId?: string | null
+  ): Promise<IChat['user'] | null> {
+    if (sectorId) {
+      const eligibleUsers = await this.getEligibleUsers(accountId, sectorId);
+
+      if (eligibleUsers.length === 0) {
+        return null;
+      }
+
+      const userChatCounts = await Promise.all(
+        eligibleUsers.map(async (user) => {
+          const inChatQuery: any = {
+            size: 0,
+            query: {
+              bool: {
+                must: [
+                  {
+                    nested: {
+                      path: 'account',
+                      query: {
+                        term: {
+                          'account.id': accountId,
+                        },
+                      },
+                    },
+                  },
+                  {
+                    nested: {
+                      path: 'user',
+                      query: {
+                        term: {
+                          'user.id': user?.id ?? '',
+                        },
+                      },
+                    },
+                  },
+                ],
+                filter: [
+                  {
+                    term: {
+                      status: EChatStatus.in_chat,
+                    },
+                  },
+                ],
+              },
+            },
+          };
+
+          const inChatResult = await this.elasticDatabaseService.select<IChat>(
+            EElasticIndex.chat,
+            inChatQuery
+          );
+          const inChatCount =
+            (inChatResult?.hits?.total as { value: number })?.value ?? 0;
+
+          return { user, inChatCount };
+        })
+      );
+
+      userChatCounts.sort((a, b) => a.inChatCount - b.inChatCount);
+
+      return userChatCounts[0]?.user ?? null;
+    }
+
+    const userData =
+      await this.userService.getAvailableUserWithLeastChats(accountId);
+
+    if (!userData) {
+      return null;
+    }
+
+    return {
+      id: userData.id,
+      name: userData.name,
+      photo: userData.photo ?? null,
+    };
+  }
+
+  private async getRandomUser(
+    accountId: string,
+    sectorId?: string | null
+  ): Promise<IChat['user'] | null> {
+    const eligibleUsers = await this.getEligibleUsers(accountId, sectorId);
+
+    if (eligibleUsers.length === 0) {
+      return null;
+    }
+
+    const randomIndex = Math.floor(Math.random() * eligibleUsers.length);
+    return eligibleUsers[randomIndex];
+  }
+
+  private getAffinityUser(createChat: IChat): IChat['user'] | null {
+    const responsibleAttendant = createChat.contact?.responsible_attendant;
+
+    if (!responsibleAttendant) {
+      return null;
+    }
+
+    return {
+      id: responsibleAttendant.id,
+      name: responsibleAttendant.name,
+      photo: responsibleAttendant.photo ?? null,
+    };
+  }
+
+  private async processDistributionNode(
+    t: TFunction<'translation', undefined>,
+    createChat: IChat,
+    chatbotFlow: ListChatbotFlowResponse,
+    currentFlowId: string,
+    customMessages?: {
+      service_finished_message?: string;
+      transfer_message_user?: string;
+      transfer_message_sector?: string;
+      transfer_message_sector_user?: string;
+    }
+  ): Promise<boolean> {
+    const currentNode = this.getFlowNodeById(chatbotFlow, currentFlowId);
+
+    if (!currentNode) {
+      throw new Error(t('chatbot_flow_node_not_found'));
+    }
+
+    const distributionType = currentNode.data?.distributionType as
+      | 'sequential'
+      | 'random'
+      | 'load'
+      | 'affinity'
+      | null
+      | undefined;
+
+    if (!distributionType) {
+      const nextFlowId = this.getNextFlowId(chatbotFlow, currentFlowId);
+      if (!nextFlowId) {
+        return true;
+      }
+
+      await this.updateCache(createChat, nextFlowId);
+      return this.processNextNode(
+        t,
+        createChat,
+        chatbotFlow,
+        nextFlowId,
+        customMessages
+      );
+    }
+
+    let selectedUser: IChat['user'] | null = null;
+    let selectedSector: IChat['sector'] | undefined = undefined;
+
+    if (distributionType === 'affinity') {
+      selectedUser = this.getAffinityUser(createChat);
+    } else {
+      const distributionHasSector = currentNode.data?.distributionHasSector as
+        | boolean
+        | null
+        | undefined;
+      const distributionSelectedSector = currentNode.data
+        ?.distributionSelectedSector as string | null | undefined;
+
+      const sectorId =
+        distributionHasSector === true && distributionSelectedSector
+          ? distributionSelectedSector
+          : null;
+
+      if (sectorId) {
+        const sectorData = await this.sectorService.viewSectorById(
+          sectorId,
+          createChat.account.id
+        );
+
+        if (sectorData) {
+          selectedSector = {
+            id: sectorData.sector_id,
+            name: sectorData.name,
+            color: sectorData.color,
+          };
+        }
+      }
+
+      if (distributionType === 'sequential') {
+        selectedUser = await this.getSequentialUser(
+          createChat.account.id,
+          createChat.worker.id,
+          sectorId
+        );
+      } else if (distributionType === 'load') {
+        selectedUser = await this.getLoadBasedUser(
+          createChat.account.id,
+          sectorId
+        );
+      } else if (distributionType === 'random') {
+        selectedUser = await this.getRandomUser(
+          createChat.account.id,
+          sectorId
+        );
+      }
+    }
+
+    if (!selectedUser) {
+      const nextFlowId = this.getNextFlowId(chatbotFlow, currentFlowId);
+      if (!nextFlowId) {
+        return true;
+      }
+
+      await this.updateCache(createChat, nextFlowId);
+      return this.processNextNode(
+        t,
+        createChat,
+        chatbotFlow,
+        nextFlowId,
+        customMessages
+      );
+    }
+
+    const updatedChat = await this.updateAndPublishChat(
+      t,
+      createChat,
+      selectedUser,
+      selectedSector
+    );
+
+    await this.cancelInactivityCheck(updatedChat);
+
+    const rawTransferMessage =
+      customMessages?.transfer_message_user ||
+      t('chatbot_transfer_message_user_default');
+
+    if (rawTransferMessage) {
+      const transferMessage = await this.replaceVariables(
+        t,
+        rawTransferMessage,
+        updatedChat,
+        selectedUser,
+        undefined
+      );
+      await this.chatMessageService.sendMessage(t, {
+        chat: updatedChat,
+        accountId: updatedChat.account.id,
+        type: EMessageType.text,
+        message: transferMessage,
+        typeUser: ETypeUserChat.bot,
+      });
+    }
+
+    const nextFlowId = this.getNextFlowId(chatbotFlow, currentFlowId);
+
+    if (!nextFlowId) {
+      return true;
+    }
+
+    return this.processNextNode(
+      t,
+      updatedChat,
+      chatbotFlow,
+      nextFlowId,
+      customMessages
+    );
   }
 
   execute = async (

@@ -220,6 +220,15 @@ export const chatbotFlowMappings = () => {
                 humanSupportEnabled: {
                   type: 'boolean',
                 },
+                distributionType: {
+                  type: 'keyword',
+                },
+                distributionHasSector: {
+                  type: 'boolean',
+                },
+                distributionSelectedSector: {
+                  type: 'keyword',
+                },
                 annotation: {
                   type: 'text',
                 },

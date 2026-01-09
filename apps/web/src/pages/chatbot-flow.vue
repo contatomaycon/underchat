@@ -889,6 +889,8 @@ const addDistributionNode = (position?: { x: number; y: number }) => {
     },
     data: {
       distributionType: null,
+      distributionHasSector: false,
+      distributionSelectedSector: null,
       onRemove: () => removeNode(nodeId),
     },
   };
@@ -1377,6 +1379,10 @@ const processDataNodeData = (nodeData: any): void => {
 
 const processDistributionNodeData = (nodeData: any): void => {
   if (nodeData.distributionType === undefined) nodeData.distributionType = null;
+  if (nodeData.distributionHasSector === undefined)
+    nodeData.distributionHasSector = false;
+  if (nodeData.distributionSelectedSector === undefined)
+    nodeData.distributionSelectedSector = null;
 };
 
 const processNodeDataByType = (node: Node): void => {

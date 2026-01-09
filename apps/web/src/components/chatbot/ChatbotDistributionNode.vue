@@ -1,28 +1,43 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, onMounted } from 'vue';
 import type { NodeProps } from '@vue-flow/core';
 import { Handle, Position } from '@vue-flow/core';
 import { useI18n } from 'vue-i18n';
 import AppInfoTooltip from '@/components/AppInfoTooltip.vue';
+import AppSelectSearch from '@/components/AppSelectSearch.vue';
+import { useChatbotStore } from '@/@webcore/stores/chatbot';
+import { getUser } from '@/@webcore/localStorage/user';
 
 type DistributionType = 'sequential' | 'random' | 'load' | 'affinity' | null;
 
 interface DistributionNodeData {
   distributionType: DistributionType;
+  distributionHasSector: boolean | null;
+  distributionSelectedSector: string | null;
   onRemove?: () => void;
 }
 
 const props = defineProps<NodeProps>();
 const { t } = useI18n();
+const chatbotStore = useChatbotStore();
 
 const getInitialData = (): DistributionNodeData => {
   const data = props.data as DistributionNodeData | undefined;
   return {
     distributionType: data?.distributionType || null,
+    distributionHasSector: data?.distributionHasSector ?? false,
+    distributionSelectedSector: data?.distributionSelectedSector || null,
   };
 };
 
 const distributionNodeData = ref<DistributionNodeData>(getInitialData());
+
+const sectors = ref<any[]>([]);
+const isLoadingSectors = ref(false);
+
+const showSectorSelect = computed(
+  () => distributionNodeData.value.distributionHasSector === true
+);
 
 const distributionTypeOptions = computed(() => [
   {
@@ -43,10 +58,48 @@ const distributionTypeOptions = computed(() => [
   },
 ]);
 
+const loadSectors = async () => {
+  if (isLoadingSectors.value) return;
+
+  const user = getUser();
+  if (!user?.account_id) return;
+
+  isLoadingSectors.value = true;
+  try {
+    const sectorsList = await chatbotStore.listChatbotSectors();
+    sectors.value = sectorsList.map((sector) => ({
+      value: sector.id,
+      title: sector.name,
+      color: sector.color || null,
+    }));
+
+    if (
+      distributionNodeData.value.distributionSelectedSector &&
+      !sectors.value.some(
+        (s) => s.value === distributionNodeData.value.distributionSelectedSector
+      )
+    ) {
+      sectors.value.unshift({
+        value: distributionNodeData.value.distributionSelectedSector,
+        title: distributionNodeData.value.distributionSelectedSector,
+        color: null,
+      });
+    }
+  } catch (error) {
+    console.error('Error loading sectors:', error);
+  } finally {
+    isLoadingSectors.value = false;
+  }
+};
+
 const updateNodeData = () => {
   if (props.data) {
     const data = props.data as DistributionNodeData;
     data.distributionType = distributionNodeData.value.distributionType;
+    data.distributionHasSector =
+      distributionNodeData.value.distributionHasSector;
+    data.distributionSelectedSector =
+      distributionNodeData.value.distributionSelectedSector;
   }
 };
 
@@ -58,18 +111,36 @@ const handleRemove = () => {
 };
 
 watch(
+  () => distributionNodeData.value.distributionHasSector,
+  (newValue) => {
+    if (newValue === true && sectors.value.length === 0) {
+      loadSectors();
+    }
+    if (newValue === false) {
+      distributionNodeData.value.distributionSelectedSector = null;
+    }
+    updateNodeData();
+  }
+);
+
+watch(
   () => distributionNodeData.value,
   () => {
     updateNodeData();
   },
   { deep: true }
 );
+
+onMounted(() => {
+  if (distributionNodeData.value.distributionHasSector === true) {
+    loadSectors();
+  }
+});
 </script>
 
 <template>
   <div class="chatbot-distribution-node">
     <Handle type="target" :position="Position.Top" class="handle-target" />
-    <Handle type="source" :position="Position.Bottom" class="handle-source" />
 
     <VCard class="distribution-card" elevation="2">
       <VCardTitle
@@ -92,7 +163,7 @@ watch(
       </VCardTitle>
 
       <VCardText class="pa-3">
-        <div class="mb-2">
+        <div class="mb-3">
           <div class="d-flex align-center ga-1 mb-1">
             <VLabel class="text-body-2">{{
               t('chatbot_distribution_label')
@@ -110,6 +181,47 @@ watch(
             hide-details
           />
         </div>
+
+        <div class="mb-3">
+          <VLabel class="text-body-2 mb-1">{{
+            t('chatbot_distribution_sector')
+          }}</VLabel>
+          <VSelect
+            v-model="distributionNodeData.distributionHasSector"
+            :items="[
+              { value: true, title: t('yes') },
+              { value: false, title: t('no') },
+            ]"
+            variant="outlined"
+            density="compact"
+            hide-details
+          />
+        </div>
+
+        <div v-if="showSectorSelect" class="mb-2">
+          <VLabel class="text-body-2 mb-1">{{
+            t('chatbot_sector_label')
+          }}</VLabel>
+          <AppSelectSearch
+            v-model="distributionNodeData.distributionSelectedSector"
+            :items="sectors"
+            :placeholder="t('chatbot_search')"
+            :loading="isLoadingSectors"
+            :clearable="true"
+            item-value="value"
+            item-title="title"
+            @select="loadSectors()"
+          >
+            <template #item-prepend="{ item }">
+              <VAvatar
+                size="24"
+                :style="{
+                  backgroundColor: item.color || '#1976D2',
+                }"
+              />
+            </template>
+          </AppSelectSearch>
+        </div>
       </VCardText>
     </VCard>
   </div>
@@ -118,6 +230,7 @@ watch(
 <style scoped>
 .chatbot-distribution-node {
   min-width: 380px;
+  position: relative;
 }
 
 .distribution-card {
@@ -147,5 +260,10 @@ watch(
 
 .cursor-pointer {
   cursor: pointer;
+}
+
+:deep(.handle-source),
+:deep(.handle-target) {
+  z-index: 10;
 }
 </style>
