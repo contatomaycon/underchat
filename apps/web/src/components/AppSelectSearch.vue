@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, nextTick } from 'vue';
 import { useI18n } from 'vue-i18n';
 
 const { t } = useI18n();
@@ -167,18 +167,19 @@ const filteredItems = computed(() => {
   });
 });
 
-watch(isMenuOpen, (isOpen) => {
+watch(isMenuOpen, async (isOpen) => {
   if (!isOpen) {
     if (props.multiple && props.search !== undefined) {
       internalSearch.value = '';
       emit('update:search', '');
+      await nextTick();
     } else if (!props.multiple) {
       internalSearch.value = '';
     }
   }
 });
 
-const handleSelect = (item: SelectItem) => {
+const handleSelect = async (item: SelectItem) => {
   const value = getItemValue(item);
 
   if (props.multiple) {
@@ -195,6 +196,11 @@ const handleSelect = (item: SelectItem) => {
     }
 
     internalSearch.value = '';
+    if (props.search !== undefined) {
+      emit('update:search', '');
+    }
+
+    await nextTick();
   } else {
     emit('update:modelValue', value);
     emit('select', item);
