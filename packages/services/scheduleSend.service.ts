@@ -4,7 +4,7 @@ import { ScheduleContactsValidatedListerRepository } from '@core/repositories/sc
 import { ScheduleStatusUpdaterRepository } from '@core/repositories/schedule/ScheduleStatusUpdater.repository';
 import { ContactService } from './contact.service';
 import { normalizePhoneToJid } from '@core/common/functions/normalizePhoneToJid';
-import { KafkaServiceQueueService } from './kafkaServiceQueue.service';
+import { KafkaBaileysQueueService } from './kafkaBaileysQueue.service';
 import { StreamProducerService } from './streamProducer.service';
 import { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import { EMessageType } from '@core/common/enums/EMessageType';
@@ -39,7 +39,7 @@ export class ScheduleSendService {
     private readonly scheduleContactsValidatedListerRepository: ScheduleContactsValidatedListerRepository,
     private readonly scheduleStatusUpdaterRepository: ScheduleStatusUpdaterRepository,
     private readonly contactService: ContactService,
-    private readonly kafkaServiceQueueService: KafkaServiceQueueService,
+    private readonly kafkaBaileysQueueService: KafkaBaileysQueueService,
     private readonly streamProducerService: StreamProducerService,
     private readonly elasticDatabaseService: ElasticDatabaseService,
     private readonly planAccountService: PlanAccountService,
@@ -442,15 +442,6 @@ export class ScheduleSendService {
     contact: IScheduleContactValidated,
     message: IChatMessage
   ): Promise<void> {
-    console.log(
-      '[ScheduleSendService] Preparando para enviar mensagem para Kafka',
-      {
-        scheduleId: schedule.schedule_id,
-        contactId: contact.contact_id,
-        messageId: message.message_id,
-      }
-    );
-
     const scheduleMessage: IScheduleMessage = {
       schedule_id: schedule.schedule_id,
       contact_id: contact.contact_id,
@@ -458,23 +449,11 @@ export class ScheduleSendService {
       is_validated: contact.is_validated,
     };
 
-    const topic = this.kafkaServiceQueueService.scheduleMessage();
-    console.log('[ScheduleSendService] Tópico Kafka:', topic);
-    console.log(
-      '[ScheduleSendService] Payload:',
-      JSON.stringify(scheduleMessage, null, 2)
-    );
+    const workerId = message.worker.id;
+    const topic = this.kafkaBaileysQueueService.workerSendMessage(workerId);
 
     try {
       await this.streamProducerService.send(topic, scheduleMessage);
-      console.log(
-        '[ScheduleSendService] Mensagem enviada com sucesso para Kafka',
-        {
-          scheduleId: schedule.schedule_id,
-          contactId: contact.contact_id,
-          messageId: message.message_id,
-        }
-      );
     } catch (error) {
       console.error(
         '[ScheduleSendService] Erro ao enviar mensagem para Kafka',
@@ -519,24 +498,12 @@ export class ScheduleSendService {
     schedule: ISchedulePendingData,
     contact: IScheduleContactValidated
   ): Promise<IScheduleMessageResult> {
-    console.log('[ScheduleSendService] Processando mensagem para contato', {
-      scheduleId: schedule.schedule_id,
-      contactId: contact.contact_id,
-    });
-
     const alreadySent = await this.checkMessageSent(
       schedule.schedule_id,
       contact.contact_id
     );
 
     if (alreadySent) {
-      console.log(
-        '[ScheduleSendService] Mensagem já foi enviada anteriormente',
-        {
-          scheduleId: schedule.schedule_id,
-          contactId: contact.contact_id,
-        }
-      );
       return {
         success: false,
         contactId: contact.contact_id,
@@ -549,30 +516,15 @@ export class ScheduleSendService {
     );
 
     if (!canSend) {
-      console.log(
-        '[ScheduleSendService] Duplicata detectada, não será enviado',
-        {
-          scheduleId: schedule.schedule_id,
-          contactId: contact.contact_id,
-        }
-      );
       return {
         success: false,
         contactId: contact.contact_id,
       };
     }
 
-    console.log('[ScheduleSendService] Validando telefone do contato', {
-      scheduleId: schedule.schedule_id,
-      contactId: contact.contact_id,
-    });
     const jid = await this.validateContactPhone(contact);
 
     if (!jid) {
-      console.error('[ScheduleSendService] JID inválido ou não encontrado', {
-        scheduleId: schedule.schedule_id,
-        contactId: contact.contact_id,
-      });
       const failedMessage = this.createFailedMessage(schedule);
       const saved = await this.saveToElasticsearch(
         schedule,
@@ -593,21 +545,9 @@ export class ScheduleSendService {
       };
     }
 
-    console.log('[ScheduleSendService] Criando mensagem', {
-      scheduleId: schedule.schedule_id,
-      contactId: contact.contact_id,
-      jid,
-    });
     const message = await this.createChatMessage(schedule, contact, jid);
 
     try {
-      console.log(
-        '[ScheduleSendService] Verificando limite de envio em massa',
-        {
-          scheduleId: schedule.schedule_id,
-          accountId: schedule.account_id,
-        }
-      );
       const hasLimit = await this.checkMassSendingLimit(schedule.account_id, 1);
 
       if (!hasLimit) {
@@ -637,11 +577,6 @@ export class ScheduleSendService {
         };
       }
 
-      console.log('[ScheduleSendService] Salvando no Elasticsearch', {
-        scheduleId: schedule.schedule_id,
-        contactId: contact.contact_id,
-        messageId: message.message_id,
-      });
       const saved = await this.saveToElasticsearch(
         schedule,
         contact,
@@ -659,18 +594,7 @@ export class ScheduleSendService {
         };
       }
 
-      console.log('[ScheduleSendService] Enviando para Kafka', {
-        scheduleId: schedule.schedule_id,
-        contactId: contact.contact_id,
-        messageId: message.message_id,
-      });
       await this.sendMessageToKafka(schedule, contact, message);
-
-      console.log('[ScheduleSendService] Mensagem processada com sucesso', {
-        scheduleId: schedule.schedule_id,
-        contactId: contact.contact_id,
-        messageId: message.message_id,
-      });
 
       return {
         success: true,
@@ -754,28 +678,12 @@ export class ScheduleSendService {
             EScheduleStatus.processing
           );
 
-          console.log('[ScheduleSendService] Buscando contatos para schedule', {
-            scheduleId: schedule.schedule_id,
-            sendTo: schedule.send_to,
-            accountId: schedule.account_id,
-          });
-
           const contacts =
             await this.scheduleContactsValidatedListerRepository.listValidatedContactsBySchedule(
               schedule.schedule_id,
               schedule.send_to,
               schedule.account_id
             );
-
-          console.log('[ScheduleSendService] Contatos encontrados:', {
-            scheduleId: schedule.schedule_id,
-            total: contacts.length,
-            contacts: contacts.map((c) => ({
-              contactId: c.contact_id,
-              name: c.name,
-              phone: c.phone ? '***' : null,
-            })),
-          });
 
           if (contacts.length === 0) {
             await this.scheduleStatusUpdaterRepository.updateScheduleStatus(
@@ -789,8 +697,6 @@ export class ScheduleSendService {
             contacts.length <= this.BATCH_SIZE
               ? await this.processContactsWithDelay(schedule, contacts)
               : await this.processContactsInBatches(schedule, contacts);
-
-          console.log('results', results);
 
           const status = this.determineScheduleStatus(results);
 
@@ -822,8 +728,6 @@ export class ScheduleSendService {
   async processSchedules(): Promise<void> {
     const schedules =
       await this.schedulePendingListerRepository.listPendingSchedules();
-
-    console.log('schedules', schedules);
 
     await Promise.all(
       schedules.map((schedule) => this.processSingleSchedule(schedule))

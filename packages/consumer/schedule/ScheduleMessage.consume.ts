@@ -2,7 +2,9 @@ import { singleton, inject } from 'tsyringe';
 import { KafkaConsumer } from 'node-rdkafka';
 import { KafkaClient } from '@core/plugins/kafkaStreams';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
+import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.service';
 import { StreamProducerService } from '@core/services/streamProducer.service';
+import { baileysEnvironment } from '@core/config/environments';
 import { IScheduleMessage } from '@core/common/interfaces/IScheduleMessage';
 import { IScheduleStatusUpdate } from '@core/common/interfaces/IScheduleStatusUpdate';
 import { EScheduleStatus } from '@core/common/enums/EScheduleStatus';
@@ -30,6 +32,7 @@ export class ScheduleMessageConsume {
   constructor(
     @inject('Kafka') private readonly kafka: KafkaClient,
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
+    private readonly kafkaBaileysQueueService: KafkaBaileysQueueService,
     private readonly streamProducerService: StreamProducerService,
     private readonly baileysMessageTextService: BaileysMessageTextService,
     private readonly baileysMessageMediaService: BaileysMessageMediaService,
@@ -48,14 +51,13 @@ export class ScheduleMessageConsume {
   public async execute(): Promise<void> {
     if (this.consumer && this.isRunning) return;
 
-    const topic = this.kafkaServiceQueueService.scheduleMessage();
+    const workerId = baileysEnvironment.baileysWorkerId;
+    const topic = this.kafkaBaileysQueueService.workerSendMessage(workerId);
+    const groupId = `group-underchat-schedule-message-${workerId}`;
 
     await ensureKafkaTopic(this.kafka, topic);
 
-    this.consumer = createConsumer(
-      this.kafka,
-      'group-underchat-schedule-message'
-    );
+    this.consumer = createConsumer(this.kafka, groupId);
 
     this.consumer.on('data', async (message) => {
       const data = this.parseMessage(message.value);
