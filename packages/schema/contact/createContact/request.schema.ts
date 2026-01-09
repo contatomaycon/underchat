@@ -111,13 +111,14 @@ export const createContactRequestSchema = Type.Object({
     ])
   ),
   user_id: Type.Optional(
-    Type.Union([
-      Type.String({ format: 'uuid' }),
-      Type.Object({
-        value: Type.String({ format: 'uuid' }),
-      }),
-      Type.Null(),
-    ])
+    Type.Object({
+      value: Type.String({ format: 'uuid' }),
+    })
+  ),
+  ignore: Type.Optional(
+    Type.Object({
+      value: Type.Union([Type.String(), Type.Null()]),
+    })
   ),
 });
 

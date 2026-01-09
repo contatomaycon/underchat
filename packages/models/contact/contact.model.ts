@@ -15,6 +15,7 @@ import { workerProfileStatusContact } from '../worker/workerProfileStatusContact
 import { scheduledContact } from '../schedule';
 import { contactDocumentType } from './contactDocumentType.model';
 import { user } from '../user/user.model';
+import { EContactIgnore } from '@core/common/enums/EContactIgnore';
 
 export const contact = pgTable(
   'contact',
@@ -54,6 +55,9 @@ export const contact = pgTable(
       withTimezone: true,
     }).defaultNow(),
     user_id: uuid().references(() => user.user_id),
+    ignore: varchar({ length: 20 })
+      .$type<EContactIgnore>()
+      .default(EContactIgnore.not_ignore),
     deleted_at: timestamp({ mode: 'string', withTimezone: true }),
   },
   (table) => [

@@ -12,6 +12,7 @@ import { v7 as uuidv7 } from 'uuid';
 import { nullIfEmpty } from '@core/common/functions/nullIfEmpty';
 import { ContactGroupAssignmentCreatorRepository } from '../contactGroup/ContactGroupAssignmentCreator.repository';
 import { TFunction } from 'i18next';
+import { EContactIgnore } from '@core/common/enums/EContactIgnore';
 
 @injectable()
 export class ContactCreatorRepository {
@@ -88,6 +89,9 @@ export class ContactCreatorRepository {
           document_partial: validatedInput.document_partial,
           document_c: validatedInput.document_c,
           user_id: validatedInput.user_id,
+          ignore:
+            (validatedInput.ignore as EContactIgnore) ??
+            (EContactIgnore.not_ignore as EContactIgnore),
         })
         .execute();
 

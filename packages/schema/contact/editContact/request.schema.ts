@@ -128,11 +128,14 @@ export const updateContactRequestSchema = Type.Object({
     ])
   ),
   user_id: Type.Optional(
-    Type.Union([
-      Type.Object({
-        value: Type.Union([Type.String(), Type.Null()]),
-      }),
-    ])
+    Type.Object({
+      value: Type.Union([Type.String(), Type.Null()]),
+    })
+  ),
+  ignore: Type.Optional(
+    Type.Object({
+      value: Type.Union([Type.String(), Type.Null()]),
+    })
   ),
 });
 

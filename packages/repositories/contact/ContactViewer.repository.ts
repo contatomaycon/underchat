@@ -64,6 +64,7 @@ export class ContactViewerRepository {
         document_partial: contact.document_partial,
         created_at: contact.created_at,
         is_valided: contact.is_valided,
+        ignore: contact.ignore,
         user: {
           user_id: user.user_id,
           name: sql<
@@ -153,6 +154,7 @@ export class ContactViewerRepository {
         document_partial: contact.document_partial,
         created_at: contact.created_at,
         is_valided: contact.is_valided,
+        ignore: contact.ignore,
         user: {
           user_id: user.user_id,
           name: sql<

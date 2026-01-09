@@ -41,6 +41,7 @@ export const viewContactResponseSchema = Type.Object({
   is_valided: Type.Optional(Type.Union([Type.Boolean(), Type.Null()])),
   photo: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   user: Type.Optional(Type.Union([userSchema, Type.Null()])),
+  ignore: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 });
 
 export type ViewContactResponse = Static<typeof viewContactResponseSchema>;

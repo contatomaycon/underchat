@@ -262,6 +262,9 @@ export class ContactService {
     const rawUserId = this.extractFieldValue(createInput.user_id as FieldValue);
     const userId = rawUserId && rawUserId.trim() !== '' ? rawUserId : null;
 
+    const rawIgnore = this.extractFieldValue(createInput.ignore as FieldValue);
+    const ignore = rawIgnore && rawIgnore.trim() !== '' ? rawIgnore : null;
+
     return {
       account_id: accountId,
       label_template_id: labelTemplateId,
@@ -284,6 +287,7 @@ export class ContactService {
       document_partial: finalDocumentPartialEncrypted,
       document_c: finalDocumentC,
       user_id: userId,
+      ignore,
     };
   }
 
@@ -561,6 +565,12 @@ export class ContactService {
         ? rawUserId
         : null;
 
+    const rawIgnore = this.extractFieldValue(input.ignore as FieldValue);
+    const ignore =
+      rawIgnore && rawIgnore.trim() !== '' && rawIgnore !== 'null'
+        ? rawIgnore
+        : null;
+
     const payload: IUpdateContact = {
       label_template_id: labelTemplateId,
       name,
@@ -581,6 +591,7 @@ export class ContactService {
       document_partial: finalDocumentPartialEncrypted,
       document_c: finalDocumentC,
       user_id: input.user_id !== undefined ? userId : undefined,
+      ignore: input.ignore !== undefined ? ignore : undefined,
       is_valided: isValided,
     };
 

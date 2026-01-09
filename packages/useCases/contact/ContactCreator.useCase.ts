@@ -320,6 +320,7 @@ export class ContactCreatorUseCase {
       photo: normalizedInput.photo,
       image_url: normalizedInput.image_url,
       user_id: normalizedInput.user_id,
+      ignore: normalizedInput.ignore,
     };
 
     const contactId = await this.contactService.createContact(

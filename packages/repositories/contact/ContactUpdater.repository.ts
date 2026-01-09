@@ -5,6 +5,7 @@ import { inject, injectable } from 'tsyringe';
 import { eq } from 'drizzle-orm';
 import { IUpdateContact } from '@core/common/interfaces/IUpdateContact';
 import { nullIfEmpty } from '@core/common/functions/nullIfEmpty';
+import { EContactIgnore } from '@core/common/enums/EContactIgnore';
 
 @injectable()
 export class ContactUpdaterRepository {
@@ -74,6 +75,12 @@ export class ContactUpdaterRepository {
 
     if (input.user_id !== undefined) {
       inputUpdate.user_id = input.user_id ?? null;
+    }
+
+    if (input.ignore !== undefined) {
+      inputUpdate.ignore =
+        (input.ignore as EContactIgnore) ??
+        (EContactIgnore.not_ignore as EContactIgnore);
     }
 
     inputUpdate.is_valided = input.is_valided ?? false;

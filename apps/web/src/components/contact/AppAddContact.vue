@@ -11,6 +11,7 @@ import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { ELabelTemplatePermissions } from '@core/common/enums/EPermissions/labelTemplate';
 import { can } from '@layouts/plugins/casl';
 import { EContactDocumentType } from '@core/common/enums/EContactDocumentType';
+import { EContactIgnore } from '@core/common/enums/EContactIgnore';
 import { validateCpf } from '@core/common/functions/validateCpf';
 import { validateCnpj } from '@core/common/functions/validateCnpj';
 
@@ -209,6 +210,7 @@ const notes = ref<string | null>(null);
 const contact_document_type_id = ref<string | null>(null);
 const document = ref<string | null>(null);
 const user_id = ref<string | null>(null);
+const ignore = ref<string | null>(EContactIgnore.not_ignore);
 
 watch(contact_document_type_id, () => {
   if (!showDocumentField.value) {
@@ -279,7 +281,8 @@ const addContact = async () => {
       contact_document_type_id: contact_document_type_id.value ?? null,
       document: document.value ?? null,
       image_url: imageUrl,
-      user_id: user_id.value ?? null,
+      user_id: user_id.value ? { value: user_id.value } : undefined,
+      ignore: { value: ignore.value ?? EContactIgnore.not_ignore },
     },
     imageUrl ? null : photoFile.value
   );
@@ -334,6 +337,10 @@ const resetForm = () => {
       props.initialData.document as FieldValue
     );
     user_id.value = extractFieldValue(props.initialData.user_id as FieldValue);
+    ignore.value =
+      (extractFieldValue(
+        props.initialData.ignore as FieldValue
+      ) as EContactIgnore) ?? EContactIgnore.not_ignore;
   } else {
     label_template_id.value = null;
     name.value = null;
@@ -347,6 +354,7 @@ const resetForm = () => {
     contact_document_type_id.value = null;
     document.value = null;
     user_id.value = null;
+    ignore.value = EContactIgnore.not_ignore;
   }
   photoFile.value = null;
   photoPreview.value = null;
@@ -1130,7 +1138,7 @@ watch(
             </VCol>
           </VRow>
           <VRow>
-            <VCol cols="12">
+            <VCol cols="12" md="6">
               <VLabel class="text-body-2 mb-1"
                 >{{ $t('responsible_attendant') }}:</VLabel
               >
@@ -1145,6 +1153,26 @@ watch(
                 :placeholder="$t('select_responsible_attendant')"
                 :loading="isLoadingUsers"
                 :clearable="true"
+                item-value="value"
+                item-title="title"
+              />
+            </VCol>
+            <VCol cols="12" md="6">
+              <VLabel class="text-body-2 mb-1">{{ $t('ignore') }}:</VLabel>
+              <AppSelectSearch
+                v-model="ignore"
+                :items="[
+                  { value: EContactIgnore.not_ignore, title: $t('not_ignore') },
+                  {
+                    value: EContactIgnore.ignore_automation,
+                    title: $t('ignore_automation'),
+                  },
+                  {
+                    value: EContactIgnore.ignore_totally,
+                    title: $t('ignore_totally'),
+                  },
+                ]"
+                :placeholder="$t('ignore')"
                 item-value="value"
                 item-title="title"
               />

@@ -268,6 +268,12 @@ export const useContactStore = defineStore('contact', {
           formData.append('user_id', userId);
         }
       }
+      if (body.ignore !== undefined) {
+        const ignoreValue = this.extractFieldValue(body.ignore as FieldValue);
+        if (ignoreValue) {
+          formData.append('ignore', ignoreValue);
+        }
+      }
       return formData;
     },
 
@@ -349,6 +355,14 @@ export const useContactStore = defineStore('contact', {
           const userId = this.extractFieldValue(payload.user_id as FieldValue);
           if (userId) {
             formData.append('user_id', userId);
+          }
+        }
+        if (payload.ignore !== undefined) {
+          const ignoreValue = this.extractFieldValue(
+            payload.ignore as FieldValue
+          );
+          if (ignoreValue) {
+            formData.append('ignore', ignoreValue);
           }
         }
 

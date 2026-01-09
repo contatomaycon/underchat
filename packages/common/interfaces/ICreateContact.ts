@@ -20,4 +20,5 @@ export interface ICreateContact {
   document_partial?: string | null;
   document_c?: string | null;
   user_id?: string | null;
+  ignore?: string | null;
 }
