@@ -20,17 +20,19 @@ import { routePathWithoutPrefix } from '@core/common/functions/routePathWithoutP
 import Redis from 'ioredis';
 import { UserService } from '@core/services/user.service';
 
-async function handleApiKeyCache(
+async function handleApiKeyCacheWithCachedValue(
   redis: Redis,
   cacheKey: string,
+  cachedPermissionsString: string | null,
   decoded: { user_id: string; account_id: string; session_id: string },
   routeModule: string,
   module: ERouteModule,
   permissions?: EPermissionsRoles[] | null
 ): Promise<IJwtPermissionsWithPlan | null> {
-  const cacheAuth = await redis.get(cacheKey);
-  if (cacheAuth) {
-    const cachedPermissions = JSON.parse(cacheAuth) as IJwtPermissionsWithPlan;
+  if (cachedPermissionsString) {
+    const cachedPermissions = JSON.parse(
+      cachedPermissionsString
+    ) as IJwtPermissionsWithPlan;
     const hasPermission = hasRequiredPermission(
       cachedPermissions.actions,
       permissions
@@ -143,7 +145,17 @@ async function authenticateJwt(
     }
 
     const sessionKey = createJwtSessionKey(decoded.account_id, decoded.user_id);
-    const activeSession = await Redis.get(sessionKey);
+    const routeModule = getRootPath(routePath, request.module);
+    const cacheKey = createJwtCacheKey(
+      decoded.account_id,
+      decoded.user_id,
+      routeModule
+    );
+
+    const [activeSession, cachedPermissions] = await Promise.all([
+      Redis.get(sessionKey),
+      Redis.get(cacheKey),
+    ]);
 
     if (!activeSession) {
       return sendResponse(reply, {
@@ -159,16 +171,10 @@ async function authenticateJwt(
       });
     }
 
-    const routeModule = getRootPath(routePath, request.module);
-    const cacheKey = createJwtCacheKey(
-      decoded.account_id,
-      decoded.user_id,
-      routeModule
-    );
-
-    const responseAuth = await handleApiKeyCache(
+    const responseAuth = await handleApiKeyCacheWithCachedValue(
       Redis,
       cacheKey,
+      cachedPermissions,
       decoded,
       routeModule,
       request.module,

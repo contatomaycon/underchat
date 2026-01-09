@@ -1,4 +1,4 @@
-import { captureException, captureMessage } from './sentry';
+import { addBreadcrumb, captureException, captureMessage } from './sentry';
 import { logger } from './logger';
 import type { FastifyInstance } from 'fastify';
 
@@ -68,25 +68,17 @@ export function setupErrorHandlers(): void {
       },
     });
   });
-
-  process.on('SIGTERM', () => {
-    logger.info('SIGTERM signal received');
-    captureMessage('SIGTERM signal received', 'info');
-  });
-
-  process.on('SIGINT', () => {
-    logger.info('SIGINT signal received');
-    captureMessage('SIGINT signal received', 'info');
-  });
 }
 
 export function setupGracefulShutdown(server: FastifyInstance): void {
   const shutdown = async (signal: string) => {
     logger.info(`${signal} signal received, starting graceful shutdown`);
-    captureMessage(
-      `${signal} signal received, starting graceful shutdown`,
-      'info'
-    );
+    addBreadcrumb({
+      message: `${signal} signal received, starting graceful shutdown`,
+      level: 'info',
+      category: 'signal',
+      data: { signal },
+    });
 
     try {
       await server.close();

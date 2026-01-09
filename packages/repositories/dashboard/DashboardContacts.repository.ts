@@ -1,8 +1,6 @@
 import * as schema from '@core/models';
-import { contact } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, count, eq, isNull, lt } from 'drizzle-orm';
 
 @injectable()
 export class DashboardContactsRepository {
@@ -17,7 +15,7 @@ export class DashboardContactsRepository {
     currentMonth.setDate(1);
     currentMonth.setHours(0, 0, 0, 0);
 
-    const monthPromises = Array.from({ length: 12 }, async (_, index) => {
+    const monthDates = Array.from({ length: 12 }, (_, index) => {
       const i = 11 - index;
       const monthStart = new Date(currentMonth);
       monthStart.setMonth(monthStart.getMonth() - i);
@@ -25,31 +23,47 @@ export class DashboardContactsRepository {
       const monthEnd = new Date(monthStart);
       monthEnd.setMonth(monthEnd.getMonth() + 1);
 
+      return {
+        monthStart,
+        monthEnd: monthEnd.toISOString(),
+      };
+    });
+
+    const monthEndDates = monthDates.map((m) => m.monthEnd);
+
+    const query = `
+      WITH month_ends AS (
+        SELECT unnest(ARRAY[${monthEndDates
+          .map((date) => `'${date}'::timestamp`)
+          .join(',')}]) AS month_end
+      )
+      SELECT 
+        me.month_end,
+        (
+          SELECT COUNT(*)
+          FROM contact c
+          WHERE c.account_id = '${accountId}'
+            AND c.deleted_at IS NULL
+            AND c.created_at < me.month_end
+        ) AS total
+      FROM month_ends me
+      ORDER BY me.month_end ASC
+    `;
+
+    const result = await this.dbRo.execute(query);
+
+    return monthDates.map(({ monthStart }, index) => {
       const monthName = monthStart.toLocaleDateString('pt-BR', {
         month: 'short',
         year: 'numeric',
       });
 
-      const cumulativeResult = await this.dbRo
-        .select({
-          total: count(),
-        })
-        .from(contact)
-        .where(
-          and(
-            eq(contact.account_id, accountId),
-            isNull(contact.deleted_at),
-            lt(contact.created_at, monthEnd.toISOString())
-          )
-        )
-        .execute();
+      const row = result.rows[index];
 
       return {
         month: monthName,
-        total: cumulativeResult[0]?.total ?? 0,
+        total: row ? Number(row.total) : 0,
       };
     });
-
-    return Promise.all(monthPromises);
   };
 }

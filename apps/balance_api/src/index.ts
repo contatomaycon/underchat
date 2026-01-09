@@ -19,6 +19,7 @@ import fastifyQs from 'fastify-qs';
 import routes from '@/routes';
 import { EPrefixRoutes } from '@core/common/enums/EPrefixRoutes';
 import { safePlugin } from '@core/common/functions/safePlugin';
+import { setupGracefulShutdown } from '@core/plugins/telemetry/errorHandlers';
 
 const server = fastify({
   pluginTimeout: 600000,
@@ -58,6 +59,8 @@ const start = async () => {
     await server.listen({ port: 3003, host: '0.0.0.0' });
 
     console.log('Server running');
+
+    setupGracefulShutdown(server);
   } catch (err) {
     console.log(err);
 

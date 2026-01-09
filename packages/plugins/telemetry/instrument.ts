@@ -38,12 +38,22 @@ if (telemetryEnvironment.enableSentry) {
     beforeSend(event, hint) {
       if (event.exception) {
         const error = hint.originalException;
-        if (
-          error instanceof Error &&
-          error.message.includes('ECONNREFUSED') &&
-          environment === 'development'
-        ) {
-          return null;
+        if (error instanceof Error) {
+          const message = error.message.toLowerCase();
+          const isConnectionTerminatedError =
+            message.includes('connection terminated') ||
+            message.includes('connection closed') ||
+            message.includes('connection ended') ||
+            message.includes('server closed the connection') ||
+            message.includes('terminating connection due to');
+
+          if (
+            (error.message.includes('ECONNREFUSED') &&
+              environment === 'development') ||
+            isConnectionTerminatedError
+          ) {
+            return null;
+          }
         }
       }
 
