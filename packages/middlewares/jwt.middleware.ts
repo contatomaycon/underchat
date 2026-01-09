@@ -200,11 +200,20 @@ async function authenticateJwt(
       });
     }
 
-    request.tokenJwtData = await generateTokenJwtAccess(
+    const tokenJwtData = await generateTokenJwtAccess(
       decoded.user_id,
       decoded.session_id,
       responseAuth
     );
+
+    if (!tokenJwtData.account_id) {
+      return sendResponse(reply, {
+        message: t('not_authorized'),
+        httpStatusCode: EHTTPStatusCode.unauthorized,
+      });
+    }
+
+    request.tokenJwtData = tokenJwtData;
     request.permissionsRoute = permissions ?? null;
 
     return;

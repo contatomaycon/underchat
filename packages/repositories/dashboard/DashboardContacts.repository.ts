@@ -11,6 +11,10 @@ export class DashboardContactsRepository {
   getContactsGrowthMonthly = async (
     accountId: string
   ): Promise<Array<{ month: string; total: number }>> => {
+    if (!accountId || typeof accountId !== 'string') {
+      throw new Error('accountId is required and must be a string');
+    }
+
     const currentMonth = new Date();
     currentMonth.setDate(1);
     currentMonth.setHours(0, 0, 0, 0);

@@ -14,6 +14,13 @@ export const getDashboardAdditional = async (
   );
   const { t, tokenJwtData } = request;
 
+  if (!tokenJwtData?.account_id) {
+    return sendResponse(reply, {
+      message: t('not_authorized'),
+      httpStatusCode: EHTTPStatusCode.unauthorized,
+    });
+  }
+
   try {
     const response = await dashboardAdditionalViewerUseCase.execute(
       tokenJwtData.account_id,

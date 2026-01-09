@@ -92,6 +92,20 @@ export class ContactService {
     return null;
   }
 
+  private normalizeUserId(rawUserId: string | null): string | null {
+    if (!rawUserId || typeof rawUserId !== 'string') {
+      return null;
+    }
+
+    const trimmedUserId = rawUserId.trim();
+
+    if (trimmedUserId === '' || trimmedUserId === 'null') {
+      return null;
+    }
+
+    return trimmedUserId;
+  }
+
   private processEmailFields(
     input: CreateContactRequest | ICreateContact,
     isAlreadyEncrypted: boolean
@@ -560,10 +574,7 @@ export class ContactService {
     const finalDocumentC = contactDocumentTypeId ? documentC : null;
 
     const rawUserId = this.extractFieldValue(input.user_id as FieldValue);
-    const userId =
-      rawUserId && rawUserId.trim() !== '' && rawUserId !== 'null'
-        ? rawUserId
-        : null;
+    const userId = this.normalizeUserId(rawUserId);
 
     const rawIgnore = this.extractFieldValue(input.ignore as FieldValue);
     const ignore =

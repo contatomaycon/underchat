@@ -1422,6 +1422,60 @@ export class ChatbotFlowRunnerService {
       throw new Error(t('chatbot_flow_node_not_found'));
     }
 
+    const responsibleAttendant = createChat.contact?.responsible_attendant;
+
+    if (responsibleAttendant) {
+      const user: IChat['user'] = {
+        id: responsibleAttendant.id,
+        name: responsibleAttendant.name,
+        photo: responsibleAttendant.photo ?? null,
+      };
+
+      const updatedChat = await this.updateAndPublishChat(
+        t,
+        createChat,
+        user,
+        undefined
+      );
+
+      await this.cancelInactivityCheck(updatedChat);
+
+      const rawTransferMessage =
+        customMessages?.transfer_message_user ||
+        t('chatbot_transfer_message_user_default');
+
+      if (rawTransferMessage) {
+        const transferMessage = await this.replaceVariables(
+          t,
+          rawTransferMessage,
+          updatedChat,
+          user,
+          undefined
+        );
+        await this.chatMessageService.sendMessage(t, {
+          chat: updatedChat,
+          accountId: updatedChat.account.id,
+          type: EMessageType.text,
+          message: transferMessage,
+          typeUser: ETypeUserChat.bot,
+        });
+      }
+
+      const nextFlowId = this.getNextFlowId(chatbotFlow, currentFlowId);
+
+      if (!nextFlowId) {
+        return true;
+      }
+
+      return this.processNextNode(
+        t,
+        updatedChat,
+        chatbotFlow,
+        nextFlowId,
+        customMessages
+      );
+    }
+
     const redirectType = currentNode.data?.redirectType;
     const selectedUser = currentNode.data?.selectedUser;
     const selectedSector = currentNode.data?.selectedSector;
@@ -4523,20 +4577,6 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
     return eligibleUsers[randomIndex];
   }
 
-  private getAffinityUser(createChat: IChat): IChat['user'] | null {
-    const responsibleAttendant = createChat.contact?.responsible_attendant;
-
-    if (!responsibleAttendant) {
-      return null;
-    }
-
-    return {
-      id: responsibleAttendant.id,
-      name: responsibleAttendant.name,
-      photo: responsibleAttendant.photo ?? null,
-    };
-  }
-
   private async processDistributionNode(
     t: TFunction<'translation', undefined>,
     createChat: IChat,
@@ -4555,11 +4595,64 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       throw new Error(t('chatbot_flow_node_not_found'));
     }
 
+    const responsibleAttendant = createChat.contact?.responsible_attendant;
+
+    if (responsibleAttendant) {
+      const user: IChat['user'] = {
+        id: responsibleAttendant.id,
+        name: responsibleAttendant.name,
+        photo: responsibleAttendant.photo ?? null,
+      };
+
+      const updatedChat = await this.updateAndPublishChat(
+        t,
+        createChat,
+        user,
+        undefined
+      );
+
+      await this.cancelInactivityCheck(updatedChat);
+
+      const rawTransferMessage =
+        customMessages?.transfer_message_user ||
+        t('chatbot_transfer_message_user_default');
+
+      if (rawTransferMessage) {
+        const transferMessage = await this.replaceVariables(
+          t,
+          rawTransferMessage,
+          updatedChat,
+          user,
+          undefined
+        );
+        await this.chatMessageService.sendMessage(t, {
+          chat: updatedChat,
+          accountId: updatedChat.account.id,
+          type: EMessageType.text,
+          message: transferMessage,
+          typeUser: ETypeUserChat.bot,
+        });
+      }
+
+      const nextFlowId = this.getNextFlowId(chatbotFlow, currentFlowId);
+
+      if (!nextFlowId) {
+        return true;
+      }
+
+      return this.processNextNode(
+        t,
+        updatedChat,
+        chatbotFlow,
+        nextFlowId,
+        customMessages
+      );
+    }
+
     const distributionType = currentNode.data?.distributionType as
       | 'sequential'
       | 'random'
       | 'load'
-      | 'affinity'
       | null
       | undefined;
 
@@ -4582,75 +4675,46 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
     let selectedUser: IChat['user'] | null = null;
     let selectedSector: IChat['sector'] | undefined = undefined;
 
-    if (distributionType === 'affinity') {
-      selectedUser = this.getAffinityUser(createChat);
+    const distributionHasSector = currentNode.data?.distributionHasSector as
+      | boolean
+      | null
+      | undefined;
+    const distributionSelectedSector = currentNode.data
+      ?.distributionSelectedSector as string | null | undefined;
 
-      if (!selectedUser) {
-        const distributionHasSector = currentNode.data
-          ?.distributionHasSector as boolean | null | undefined;
-        const distributionSelectedSector = currentNode.data
-          ?.distributionSelectedSector as string | null | undefined;
+    const sectorId =
+      distributionHasSector === true && distributionSelectedSector
+        ? distributionSelectedSector
+        : null;
 
-        if (distributionHasSector === true && distributionSelectedSector) {
-          const sectorData = await this.sectorService.viewSectorById(
-            distributionSelectedSector,
-            createChat.account.id
-          );
+    if (sectorId) {
+      const sectorData = await this.sectorService.viewSectorById(
+        sectorId,
+        createChat.account.id
+      );
 
-          if (sectorData) {
-            selectedSector = {
-              id: sectorData.sector_id,
-              name: sectorData.name,
-              color: sectorData.color,
-            };
-          }
-        }
+      if (sectorData) {
+        selectedSector = {
+          id: sectorData.sector_id,
+          name: sectorData.name,
+          color: sectorData.color,
+        };
       }
-    } else {
-      const distributionHasSector = currentNode.data?.distributionHasSector as
-        | boolean
-        | null
-        | undefined;
-      const distributionSelectedSector = currentNode.data
-        ?.distributionSelectedSector as string | null | undefined;
+    }
 
-      const sectorId =
-        distributionHasSector === true && distributionSelectedSector
-          ? distributionSelectedSector
-          : null;
-
-      if (sectorId) {
-        const sectorData = await this.sectorService.viewSectorById(
-          sectorId,
-          createChat.account.id
-        );
-
-        if (sectorData) {
-          selectedSector = {
-            id: sectorData.sector_id,
-            name: sectorData.name,
-            color: sectorData.color,
-          };
-        }
-      }
-
-      if (distributionType === 'sequential') {
-        selectedUser = await this.getSequentialUser(
-          createChat.account.id,
-          createChat.worker.id,
-          sectorId
-        );
-      } else if (distributionType === 'load') {
-        selectedUser = await this.getLoadBasedUser(
-          createChat.account.id,
-          sectorId
-        );
-      } else if (distributionType === 'random') {
-        selectedUser = await this.getRandomUser(
-          createChat.account.id,
-          sectorId
-        );
-      }
+    if (distributionType === 'sequential') {
+      selectedUser = await this.getSequentialUser(
+        createChat.account.id,
+        createChat.worker.id,
+        sectorId
+      );
+    } else if (distributionType === 'load') {
+      selectedUser = await this.getLoadBasedUser(
+        createChat.account.id,
+        sectorId
+      );
+    } else if (distributionType === 'random') {
+      selectedUser = await this.getRandomUser(createChat.account.id, sectorId);
     }
 
     if (!selectedUser && !selectedSector) {

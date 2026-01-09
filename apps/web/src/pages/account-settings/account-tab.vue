@@ -195,6 +195,7 @@ const toggleAddress1Visibility = async () => {
     address1.value = null;
     address1HasBeenEdited.value = false;
     isAddress1Decrypted.value = false;
+    initialAddressValues.value.address1 = null;
     return;
   }
 
@@ -205,6 +206,10 @@ const toggleAddress1Visibility = async () => {
   if (decryptedAddress1) {
     address1.value = decryptedAddress1;
     isAddress1Decrypted.value = true;
+
+    if (!address1HasBeenEdited.value) {
+      initialAddressValues.value.address1 = decryptedAddress1;
+    }
   }
 };
 
@@ -213,6 +218,7 @@ const toggleAddress2Visibility = async () => {
     address2.value = null;
     address2HasBeenEdited.value = false;
     isAddress2Decrypted.value = false;
+    initialAddressValues.value.address2 = null;
     return;
   }
 
@@ -223,6 +229,10 @@ const toggleAddress2Visibility = async () => {
   if (decryptedAddress2) {
     address2.value = decryptedAddress2;
     isAddress2Decrypted.value = true;
+
+    if (!address2HasBeenEdited.value) {
+      initialAddressValues.value.address2 = decryptedAddress2;
+    }
   }
 };
 
@@ -344,6 +354,19 @@ const cnpjRegex = /^\d{14}$/;
 const requiredMsg = (label: string) => t('field_required', { field: label });
 
 const docRules = computed(() => {
+  if (isCPF.value || isCNPJ.value) {
+    return [
+      (v: string | null) =>
+        (!!v && onlyDigits(v).length > 0) || requiredMsg(docLabel.value),
+      (v: string | null) => {
+        if (!v) return true;
+        const digits = onlyDigits(v);
+        if (isCPF.value) return cpfRegex.test(digits) || t('cpf_invalid');
+        if (isCNPJ.value) return cnpjRegex.test(digits) || t('cnpj_invalid');
+        return true;
+      },
+    ];
+  }
   if (!documentHasBeenEdited.value) {
     return [];
   }
@@ -400,6 +423,24 @@ const state = ref<string | null>(null);
 const state_id = ref<string | null>(null);
 const city_id = ref<string | null>(null);
 const district = ref<string | null>(null);
+
+const initialAddressValues = ref<{
+  country_id: number | null;
+  zip_code: string | null;
+  address1: string | null;
+  address2: string | null;
+  city_fiscal_code: string | null;
+  state_fiscal_code: string | null;
+  district: string | null;
+}>({
+  country_id: null,
+  zip_code: null,
+  address1: null,
+  address2: null,
+  city_fiscal_code: null,
+  state_fiscal_code: null,
+  district: null,
+});
 
 const itemsCountry = ref([{ value: ECountry.Brasil, title: t('brazil') }]);
 
@@ -774,6 +815,20 @@ const deletePhoto = async () => {
   }
 };
 
+const handleDocumentTypeSelect = () => {
+  document.value = null;
+  documentPartial.value = null;
+  isDocumentDecrypted.value = false;
+  documentHasBeenEdited.value = true;
+};
+
+const handleDocumentTypeClear = () => {
+  document.value = null;
+  documentPartial.value = null;
+  isDocumentDecrypted.value = false;
+  documentHasBeenEdited.value = false;
+};
+
 const buildAdditionalInfoBody = (): UpdateAdditionalInfoRequest => {
   const phoneNumber = phone.value?.replaceAll(/\D/g, '');
   const body: UpdateAdditionalInfoRequest = {};
@@ -793,11 +848,20 @@ const buildAdditionalInfoBody = (): UpdateAdditionalInfoRequest => {
   if (birth_date.value) {
     body.birth_date = birth_date.value;
   }
-  if (user_document_type_id.value) {
-    body.document_type_id = user_document_type_id.value;
-  }
-  if (document.value) {
-    body.document = document.value;
+  if (user_document_type_id.value !== undefined) {
+    if (user_document_type_id.value === null) {
+      body.document_type_id = null;
+      body.document = null;
+    } else {
+      body.document_type_id = user_document_type_id.value;
+      if (document.value) {
+        body.document = document.value;
+      }
+    }
+  } else {
+    if (document.value) {
+      body.document = document.value;
+    }
   }
 
   return body;
@@ -839,6 +903,7 @@ const clearAddressFields = () => {
   state_id.value = null;
   city_id.value = null;
   district.value = '';
+  zip_code.value = null;
   clearCities();
 };
 
@@ -969,29 +1034,88 @@ const saveAddress = async () => {
 
   const body: UpdateAddressRequest = {};
 
-  if (country_id.value) {
-    body.country_id = country_id.value;
-  }
-  if (zip_code.value) {
-    body.zip_code = zip_code.value;
-  }
-  if (address1.value) {
-    body.address1 = address1.value;
-  }
-  if (address2.value) {
-    body.address2 = address2.value;
-  }
-  if (selectedCity?.fiscal_code) {
-    body.city_fiscal_code = selectedCity.fiscal_code;
-  }
-  if (selectedState?.fiscal_code) {
-    body.state_fiscal_code = selectedState.fiscal_code;
-  }
-  if (district.value) {
-    body.district = district.value;
+  const currentCountryId =
+    country_id.value !== null && country_id.value !== undefined
+      ? country_id.value
+      : null;
+  if (currentCountryId !== initialAddressValues.value.country_id) {
+    if (currentCountryId === null) {
+      body.country_id = null;
+    } else {
+      body.country_id = currentCountryId;
+    }
   }
 
-  await accountSettingsStore.updateAddress(body);
+  const currentZipCode = zip_code.value || null;
+  if (currentZipCode !== initialAddressValues.value.zip_code) {
+    body.zip_code = currentZipCode;
+  }
+
+  if (address1HasBeenEdited.value) {
+    body.address1 = address1.value ?? '';
+  }
+
+  if (address2HasBeenEdited.value) {
+    body.address2 = address2.value ?? '';
+  }
+
+  const currentCityFiscalCode = selectedCity?.fiscal_code || null;
+  if (currentCityFiscalCode !== initialAddressValues.value.city_fiscal_code) {
+    body.city_fiscal_code = currentCityFiscalCode;
+  }
+
+  const currentStateFiscalCode = selectedState?.fiscal_code || null;
+  if (currentStateFiscalCode !== initialAddressValues.value.state_fiscal_code) {
+    body.state_fiscal_code = currentStateFiscalCode;
+  }
+
+  const currentDistrictValue = district.value?.trim();
+  const currentDistrict =
+    currentDistrictValue && currentDistrictValue.length > 0
+      ? currentDistrictValue
+      : null;
+  const initialDistrictValue = initialAddressValues.value.district?.trim();
+  const initialDistrict =
+    initialDistrictValue && initialDistrictValue.length > 0
+      ? initialDistrictValue
+      : null;
+  if (currentDistrict !== initialDistrict) {
+    body.district = currentDistrict;
+  }
+
+  if (Object.keys(body).length === 0) {
+    return;
+  }
+
+  const result = await accountSettingsStore.updateAddress(body);
+
+  if (result) {
+    if (body.address1 !== undefined) {
+      initialAddressValues.value.address1 = address1.value || null;
+      address1HasBeenEdited.value = false;
+    }
+    if (body.address2 !== undefined) {
+      initialAddressValues.value.address2 = address2.value || null;
+      address2HasBeenEdited.value = false;
+    }
+    if (body.zip_code !== undefined) {
+      initialAddressValues.value.zip_code = zip_code.value || null;
+    }
+    if (body.district !== undefined) {
+      initialAddressValues.value.district = district.value || null;
+    }
+    if (body.city_fiscal_code !== undefined) {
+      initialAddressValues.value.city_fiscal_code =
+        selectedCity?.fiscal_code || null;
+    }
+    if (body.state_fiscal_code !== undefined) {
+      initialAddressValues.value.state_fiscal_code =
+        selectedState?.fiscal_code || null;
+    }
+    if (body.country_id !== undefined) {
+      initialAddressValues.value.country_id = country_id.value || null;
+    }
+  }
 };
 
 const formatBirthDate = (
@@ -1050,8 +1174,24 @@ const loadAddressData = async () => {
   const addressData = await accountSettingsStore.getAddressComplete();
 
   if (!addressData) {
+    initialAddressValues.value = {
+      country_id: null,
+      zip_code: null,
+      address1: null,
+      address2: null,
+      city_fiscal_code: null,
+      state_fiscal_code: null,
+      district: null,
+    };
     return;
   }
+
+  const selectedStateInitial = states.value.find(
+    (s) => s.id_zipcode_state === addressData.state_id
+  );
+  const selectedCityInitial = cities.value.find(
+    (c) => c.id_zipcode_city === addressData.city_id
+  );
 
   country_id.value = addressData.country_id ?? ECountry.Brasil;
   zip_code.value = addressData.zip_code ?? null;
@@ -1069,6 +1209,16 @@ const loadAddressData = async () => {
   state_id.value = addressData.state_id ?? null;
   city_id.value = addressData.city_id ?? null;
 
+  initialAddressValues.value = {
+    country_id: addressData.country_id ?? null,
+    zip_code: addressData.zip_code ?? null,
+    address1: null,
+    address2: null,
+    city_fiscal_code: selectedCityInitial?.fiscal_code ?? null,
+    state_fiscal_code: selectedStateInitial?.fiscal_code ?? null,
+    district: addressData.district ?? null,
+  };
+
   if (country_id.value) {
     await loadStates(country_id.value);
   }
@@ -1076,6 +1226,18 @@ const loadAddressData = async () => {
   if (state_id.value) {
     await loadCities(state_id.value);
   }
+
+  const selectedState = states.value.find(
+    (s) => s.id_zipcode_state === addressData.state_id
+  );
+  const selectedCity = cities.value.find(
+    (c) => c.id_zipcode_city === addressData.city_id
+  );
+
+  initialAddressValues.value.city_fiscal_code =
+    selectedCity?.fiscal_code ?? null;
+  initialAddressValues.value.state_fiscal_code =
+    selectedState?.fiscal_code ?? null;
 };
 
 const setDefaultValues = () => {
@@ -1245,17 +1407,15 @@ watch(zip_code, () => {
               <VLabel class="text-body-2 mb-1"
                 >{{ $t('document_type') }}:</VLabel
               >
-              <AppSelect
-                :model-value="user_document_type_id"
+              <AppSelectSearch
+                v-model="user_document_type_id"
                 :items="itemsDocuments"
                 :placeholder="$t('document_type')"
-                @update:model-value="
-                  user_document_type_id = $event;
-                  document = null;
-                  documentPartial = null;
-                  isDocumentDecrypted = false;
-                  documentHasBeenEdited = false;
-                "
+                :clearable="true"
+                item-value="value"
+                item-title="title"
+                @select="handleDocumentTypeSelect"
+                @clear="handleDocumentTypeClear"
               />
             </VCol>
 
@@ -1313,11 +1473,17 @@ watch(zip_code, () => {
           <VRow class="mb-2">
             <VCol cols="12" md="6">
               <VLabel class="text-body-2 mb-1">{{ $t('country') }}:</VLabel>
-              <AppSelect
+              <AppSelectSearch
                 :placeholder="$t('country')"
                 :model-value="country_id"
                 :items="itemsCountry"
-                @update:model-value="onCountryChange"
+                :clearable="true"
+                item-value="value"
+                item-title="title"
+                @update:model-value="
+                  (val) => onCountryChange(val as number | null)
+                "
+                @select="(item) => onCountryChange(item.value as number | null)"
               />
             </VCol>
             <VCol cols="12" md="6">

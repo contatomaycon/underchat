@@ -7,6 +7,7 @@ import { UpdateAdditionalInfoRequest } from '@core/schema/accountSettings/update
 import { UpdateAdditionalInfoResponse } from '@core/schema/accountSettings/updateAdditionalInfo/response.schema';
 import { IUpdateUserInfo } from '@core/common/interfaces/IUpdateUserInfo';
 import { IUpdateUserDocument } from '@core/common/interfaces/IUpdateUserDocument';
+import { ICreateUserDocument } from '@core/common/interfaces/ICreateUserDocument';
 import { ETypeSanetize } from '@core/common/enums/ETypeSanetize';
 
 @injectable()
@@ -116,6 +117,25 @@ export class AccountSettingsAdditionalInfoUpdaterUseCase {
     };
   }
 
+  private buildCreateUserDocumentInput(
+    body: UpdateAdditionalInfoRequest
+  ): ICreateUserDocument {
+    const documentValue = this.extractStringValue(body.document);
+    const documentData = this.encryptDocumentData(documentValue);
+    const documentTypeIdValue = this.extractStringValue(body.document_type_id);
+
+    if (!documentTypeIdValue) {
+      throw new Error('user_document_type_id is required to create document');
+    }
+
+    return {
+      user_document_type_id: documentTypeIdValue,
+      document: documentData.documentCEncrypted,
+      document_partial: documentData.documentPartialEncrypted,
+      document_c: documentData.documentC,
+    };
+  }
+
   private async validatePhoneUniqueness(
     t: TFunction<'translation', undefined>,
     phoneC: string | null,
@@ -132,13 +152,68 @@ export class AccountSettingsAdditionalInfoUpdaterUseCase {
     }
   }
 
+  private async updateUserDocumentData(
+    t: TFunction<'translation', undefined>,
+    userId: string,
+    body: UpdateAdditionalInfoRequest
+  ): Promise<void> {
+    const documentTypeIdWasProvided = body.document_type_id !== undefined;
+    const documentTypeIdValue = this.extractStringValue(body.document_type_id);
+    const documentWasProvided = body.document !== undefined;
+    const documentValue = this.extractStringValue(body.document);
+
+    if (
+      (documentTypeIdWasProvided && documentTypeIdValue === null) ||
+      (documentWasProvided &&
+        (documentValue === null || documentValue === undefined))
+    ) {
+      const documentExists =
+        await this.userService.existsUserDocumentByUserId(userId);
+
+      if (documentExists) {
+        await this.userService.deleteUserDocumentById(userId);
+      }
+
+      return;
+    }
+
+    const documentExists =
+      await this.userService.existsUserDocumentByUserId(userId);
+
+    if (!documentExists) {
+      const createUserDocument = this.buildCreateUserDocumentInput(body);
+      const createResult =
+        await this.userService.createUserDocumentWithoutTransaction(
+          createUserDocument,
+          userId
+        );
+
+      if (!createResult) {
+        throw new Error(t('user_document_create_failed'));
+      }
+
+      return;
+    }
+
+    const userDocument = this.buildUpdateUserDocumentInput(body);
+    const updateUserDocument = await this.userService.updateUserDocumentById(
+      userId,
+      userDocument
+    );
+
+    if (!updateUserDocument) {
+      throw new Error(t('user_document_update_failed'));
+    }
+  }
+
   async execute(
     t: TFunction<'translation', undefined>,
     userId: string,
     body: UpdateAdditionalInfoRequest
   ): Promise<UpdateAdditionalInfoResponse> {
     const userInfo = this.buildUpdateUserInfoInput(t, body);
-    const userDocument = this.buildUpdateUserDocumentInput(body);
+    const documentTypeIdWasProvided = body.document_type_id !== undefined;
+    const documentWasProvided = body.document !== undefined;
 
     if (userInfo.phone_c) {
       await this.validatePhoneUniqueness(t, userInfo.phone_c, userId);
@@ -147,9 +222,8 @@ export class AccountSettingsAdditionalInfoUpdaterUseCase {
     const hasUserInfoFields = Object.values(userInfo).some(
       (value) => value !== undefined
     );
-    const hasUserDocumentFields = Object.values(userDocument).some(
-      (value) => value !== undefined
-    );
+    const hasUserDocumentFields =
+      documentTypeIdWasProvided || documentWasProvided;
 
     if (hasUserInfoFields) {
       const updated = await this.userService.updateUserInfoById(
@@ -163,14 +237,7 @@ export class AccountSettingsAdditionalInfoUpdaterUseCase {
     }
 
     if (hasUserDocumentFields) {
-      const updated = await this.userService.updateUserDocumentById(
-        userId,
-        userDocument
-      );
-
-      if (!updated) {
-        throw new Error(t('user_document_update_failed'));
-      }
+      await this.updateUserDocumentData(t, userId, body);
     }
 
     return {

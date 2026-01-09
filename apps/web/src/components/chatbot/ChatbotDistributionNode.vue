@@ -8,7 +8,7 @@ import AppSelectSearch from '@/components/AppSelectSearch.vue';
 import { useChatbotStore } from '@/@webcore/stores/chatbot';
 import { getUser } from '@/@webcore/localStorage/user';
 
-type DistributionType = 'sequential' | 'random' | 'load' | 'affinity' | null;
+type DistributionType = 'sequential' | 'random' | 'load' | null;
 
 interface DistributionNodeData {
   distributionType: DistributionType;
@@ -51,10 +51,6 @@ const distributionTypeOptions = computed(() => [
   {
     value: 'load',
     title: t('chatbot_distribution_type_load'),
-  },
-  {
-    value: 'affinity',
-    title: t('chatbot_distribution_type_affinity'),
   },
 ]);
 

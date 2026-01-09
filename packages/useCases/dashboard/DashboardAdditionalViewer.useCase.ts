@@ -11,6 +11,10 @@ export class DashboardAdditionalViewerUseCase {
     accountId: string,
     t: TFunction<'translation', undefined>
   ): Promise<GetDashboardAdditionalResponse> => {
+    if (!accountId || typeof accountId !== 'string') {
+      throw new Error(t('not_authorized'));
+    }
+
     const additional = await this.dashboardService.getDashboardAdditional(
       accountId,
       t

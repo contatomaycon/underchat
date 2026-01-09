@@ -43,6 +43,10 @@ export class UserDocumentUpdaterRepository {
   ): Promise<boolean> => {
     const updateInput = this.updateInput(input);
 
+    if (Object.keys(updateInput).length === 0) {
+      return false;
+    }
+
     const result = await this.dbRw
       .update(userDocument)
       .set(updateInput)

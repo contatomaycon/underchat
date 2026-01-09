@@ -565,7 +565,7 @@ const updateContact = async () => {
     notes: notes.value,
     contact_document_type_id: contact_document_type_id.value,
     document: documentToSave,
-    user_id: user_id.value ? { value: user_id.value } : undefined,
+    user_id: { value: user_id.value ?? null },
     ignore: { value: ignore.value ?? EContactIgnore.not_ignore },
   };
 

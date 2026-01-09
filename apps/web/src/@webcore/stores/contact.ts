@@ -260,12 +260,19 @@ export const useContactStore = defineStore('contact', {
       if (chatId) {
         formData.append('chat_id', chatId);
       }
-      if (body.user_id === null) {
-        formData.append('user_id', '');
-      } else if (body.user_id !== undefined) {
-        const userId = this.extractFieldValue(body.user_id as FieldValue);
-        if (userId) {
-          formData.append('user_id', userId);
+      if (body.user_id !== undefined) {
+        if (
+          typeof body.user_id === 'object' &&
+          body.user_id !== null &&
+          'value' in body.user_id &&
+          body.user_id.value === null
+        ) {
+          formData.append('user_id', '');
+        } else {
+          const userId = this.extractFieldValue(body.user_id as FieldValue);
+          if (userId) {
+            formData.append('user_id', userId);
+          }
         }
       }
       if (body.ignore !== undefined) {

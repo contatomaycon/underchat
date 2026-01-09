@@ -2,6 +2,7 @@ import { ITemplateTotals } from '@core/common/interfaces/ITemplateTotals';
 import * as schema from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
+import { sql } from 'drizzle-orm';
 
 @injectable()
 export class DashboardTemplatesRepository {
@@ -10,26 +11,31 @@ export class DashboardTemplatesRepository {
   ) {}
 
   getTemplateTotals = async (accountId: string): Promise<ITemplateTotals> => {
-    const query = `
-      SELECT
-        (
-          SELECT COUNT(*)
-          FROM contact_group
-          WHERE account_id = '${accountId}' AND deleted_at IS NULL
-        ) AS contact_groups_total,
-        (
-          SELECT COUNT(*)
-          FROM message_template
-          WHERE account_id = '${accountId}' AND deleted_at IS NULL
-        ) AS message_templates_total,
-        (
-          SELECT COUNT(*)
-          FROM label_template
-          WHERE account_id = '${accountId}' AND deleted_at IS NULL
-        ) AS label_templates_total
-    `;
+    if (!accountId) {
+      throw new Error('accountId is required');
+    }
 
-    const result = await this.dbRo.execute(query);
+    const result = await this.dbRo.execute(
+      sql`
+        SELECT
+          (
+            SELECT COUNT(*)
+            FROM contact_group
+            WHERE account_id = ${accountId} AND deleted_at IS NULL
+          ) AS contact_groups_total,
+          (
+            SELECT COUNT(*)
+            FROM message_template
+            WHERE account_id = ${accountId} AND deleted_at IS NULL
+          ) AS message_templates_total,
+          (
+            SELECT COUNT(*)
+            FROM label_template
+            WHERE account_id = ${accountId} AND deleted_at IS NULL
+          ) AS label_templates_total
+      `
+    );
+
     const row = result.rows[0] ?? {};
 
     return {

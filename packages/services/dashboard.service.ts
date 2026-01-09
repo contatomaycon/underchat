@@ -125,11 +125,8 @@ export class DashboardService {
       this.dashboardSchedulesRepository.getSchedulesAllowed(accountId),
       this.dashboardTemplatesRepository.getTemplateTotals(accountId),
     ]);
-    const {
-      contactGroupsTotal,
-      messageTemplatesTotal,
-      labelTemplatesTotal,
-    } = templateTotals;
+    const { contactGroupsTotal, messageTemplatesTotal, labelTemplatesTotal } =
+      templateTotals;
 
     const schedulesRenewalDay = schedulesData.renewalDate
       ? this.formatRenewalDate(
