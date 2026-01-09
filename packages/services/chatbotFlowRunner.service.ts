@@ -4441,7 +4441,7 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
 
       const userChatCounts = await Promise.all(
         eligibleUsers.map(async (user) => {
-          const inChatQuery: any = {
+          const workloadQuery: any = {
             size: 0,
             query: {
               bool: {
@@ -4469,8 +4469,8 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
                 ],
                 filter: [
                   {
-                    term: {
-                      status: EChatStatus.in_chat,
+                    terms: {
+                      status: [EChatStatus.in_chat, EChatStatus.queue],
                     },
                   },
                 ],
@@ -4478,18 +4478,19 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
             },
           };
 
-          const inChatResult = await this.elasticDatabaseService.select<IChat>(
-            EElasticIndex.chat,
-            inChatQuery
-          );
-          const inChatCount =
-            (inChatResult?.hits?.total as { value: number })?.value ?? 0;
+          const workloadResult =
+            await this.elasticDatabaseService.select<IChat>(
+              EElasticIndex.chat,
+              workloadQuery
+            );
+          const workloadCount =
+            (workloadResult?.hits?.total as { value: number })?.value ?? 0;
 
-          return { user, inChatCount };
+          return { user, workloadCount };
         })
       );
 
-      userChatCounts.sort((a, b) => a.inChatCount - b.inChatCount);
+      userChatCounts.sort((a, b) => a.workloadCount - b.workloadCount);
 
       return userChatCounts[0]?.user ?? null;
     }
@@ -4583,6 +4584,28 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
 
     if (distributionType === 'affinity') {
       selectedUser = this.getAffinityUser(createChat);
+
+      if (!selectedUser) {
+        const distributionHasSector = currentNode.data
+          ?.distributionHasSector as boolean | null | undefined;
+        const distributionSelectedSector = currentNode.data
+          ?.distributionSelectedSector as string | null | undefined;
+
+        if (distributionHasSector === true && distributionSelectedSector) {
+          const sectorData = await this.sectorService.viewSectorById(
+            distributionSelectedSector,
+            createChat.account.id
+          );
+
+          if (sectorData) {
+            selectedSector = {
+              id: sectorData.sector_id,
+              name: sectorData.name,
+              color: sectorData.color,
+            };
+          }
+        }
+      }
     } else {
       const distributionHasSector = currentNode.data?.distributionHasSector as
         | boolean
@@ -4630,7 +4653,7 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       }
     }
 
-    if (!selectedUser) {
+    if (!selectedUser && !selectedSector) {
       const nextFlowId = this.getNextFlowId(chatbotFlow, currentFlowId);
       if (!nextFlowId) {
         return true;
@@ -4655,9 +4678,17 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
 
     await this.cancelInactivityCheck(updatedChat);
 
-    const rawTransferMessage =
-      customMessages?.transfer_message_user ||
-      t('chatbot_transfer_message_user_default');
+    let rawTransferMessage: string | undefined = undefined;
+
+    if (selectedUser) {
+      rawTransferMessage =
+        customMessages?.transfer_message_user ||
+        t('chatbot_transfer_message_user_default');
+    } else if (selectedSector) {
+      rawTransferMessage =
+        customMessages?.transfer_message_sector ||
+        t('chatbot_transfer_message_sector_default');
+    }
 
     if (rawTransferMessage) {
       const transferMessage = await this.replaceVariables(
@@ -4665,7 +4696,7 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
         rawTransferMessage,
         updatedChat,
         selectedUser,
-        undefined
+        selectedSector
       );
       await this.chatMessageService.sendMessage(t, {
         chat: updatedChat,
