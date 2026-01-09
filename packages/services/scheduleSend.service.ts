@@ -307,6 +307,7 @@ export class ScheduleSendService {
       },
       user: null,
       phone: phone ?? '',
+      phone_ddi: contact.phone_ddi ?? null,
       summary: {
         is_sent: false,
         is_delivered: false,
@@ -382,50 +383,58 @@ export class ScheduleSendService {
     message: IChatMessage,
     status: EScheduleStatus | string
   ): Promise<boolean> {
-    await this.elasticDatabaseService.indices(
-      EElasticIndex.schedule,
-      scheduleMappings()
-    );
+    try {
+      await this.elasticDatabaseService.indices(
+        EElasticIndex.schedule,
+        scheduleMappings()
+      );
 
-    const phone = this.contactService.getContactPhoneDecrypted(contact.phone);
-    const jid = normalizePhoneToJid(phone, contact.phone_ddi);
+      const phone = this.contactService.getContactPhoneDecrypted(contact.phone);
+      const jid = normalizePhoneToJid(phone, contact.phone_ddi);
 
-    const document = {
-      id: message.message_id,
-      schedule_id: schedule.schedule_id,
-      message_key: {
-        remote_jid: jid ?? null,
-      },
-      contact: {
-        id: contact.contact_id,
-        name: contact.name,
-        phone: phone ?? null,
-        phone_ddi: contact.phone_ddi ?? null,
-        phone_partial: contact.phone_partial ?? null,
-      },
-      account: {
-        id: schedule.account_id,
-        name: schedule.account_name,
-      },
-      worker: {
-        id: schedule.worker_id,
-        name: schedule.worker_name,
-      },
-      type: schedule.type,
-      message: message.content?.message || schedule.message,
-      url: schedule.url,
-      status,
-      send_date: new Date(schedule.send_date).toISOString(),
-      send_log: null,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
+      const document = {
+        id: message.message_id,
+        schedule_id: schedule.schedule_id,
+        message_key: {
+          remote_jid: jid ?? null,
+        },
+        contact: {
+          id: contact.contact_id,
+          name: contact.name,
+          phone: phone ?? null,
+          phone_ddi: contact.phone_ddi ?? null,
+          phone_partial: contact.phone_partial ?? null,
+        },
+        account: {
+          id: schedule.account_id,
+          name: schedule.account_name,
+        },
+        worker: {
+          id: schedule.worker_id,
+          name: schedule.worker_name,
+        },
+        type: schedule.type,
+        message: message.content?.message || schedule.message,
+        url: schedule.url,
+        status,
+        send_date: new Date(schedule.send_date).toISOString(),
+        send_log: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
 
-    return this.elasticDatabaseService.update(
-      EElasticIndex.schedule,
-      document,
-      message.message_id
-    );
+      return this.elasticDatabaseService.update(
+        EElasticIndex.schedule,
+        document,
+        message.message_id
+      );
+    } catch (error) {
+      console.error(
+        `Failed to save to Elasticsearch for schedule ${schedule.schedule_id}, contact ${contact.contact_id}:`,
+        error
+      );
+      return false;
+    }
   }
 
   private async sendMessageToKafka(
@@ -433,14 +442,51 @@ export class ScheduleSendService {
     contact: IScheduleContactValidated,
     message: IChatMessage
   ): Promise<void> {
+    console.log(
+      '[ScheduleSendService] Preparando para enviar mensagem para Kafka',
+      {
+        scheduleId: schedule.schedule_id,
+        contactId: contact.contact_id,
+        messageId: message.message_id,
+      }
+    );
+
     const scheduleMessage: IScheduleMessage = {
       schedule_id: schedule.schedule_id,
       contact_id: contact.contact_id,
       message,
+      is_validated: contact.is_validated,
     };
 
     const topic = this.kafkaServiceQueueService.scheduleMessage();
-    await this.streamProducerService.send(topic, scheduleMessage);
+    console.log('[ScheduleSendService] Tópico Kafka:', topic);
+    console.log(
+      '[ScheduleSendService] Payload:',
+      JSON.stringify(scheduleMessage, null, 2)
+    );
+
+    try {
+      await this.streamProducerService.send(topic, scheduleMessage);
+      console.log(
+        '[ScheduleSendService] Mensagem enviada com sucesso para Kafka',
+        {
+          scheduleId: schedule.schedule_id,
+          contactId: contact.contact_id,
+          messageId: message.message_id,
+        }
+      );
+    } catch (error) {
+      console.error(
+        '[ScheduleSendService] Erro ao enviar mensagem para Kafka',
+        {
+          scheduleId: schedule.schedule_id,
+          contactId: contact.contact_id,
+          messageId: message.message_id,
+          error,
+        }
+      );
+      throw error;
+    }
   }
 
   private async validateContactPhone(
@@ -473,12 +519,24 @@ export class ScheduleSendService {
     schedule: ISchedulePendingData,
     contact: IScheduleContactValidated
   ): Promise<IScheduleMessageResult> {
+    console.log('[ScheduleSendService] Processando mensagem para contato', {
+      scheduleId: schedule.schedule_id,
+      contactId: contact.contact_id,
+    });
+
     const alreadySent = await this.checkMessageSent(
       schedule.schedule_id,
       contact.contact_id
     );
 
     if (alreadySent) {
+      console.log(
+        '[ScheduleSendService] Mensagem já foi enviada anteriormente',
+        {
+          scheduleId: schedule.schedule_id,
+          contactId: contact.contact_id,
+        }
+      );
       return {
         success: false,
         contactId: contact.contact_id,
@@ -491,15 +549,30 @@ export class ScheduleSendService {
     );
 
     if (!canSend) {
+      console.log(
+        '[ScheduleSendService] Duplicata detectada, não será enviado',
+        {
+          scheduleId: schedule.schedule_id,
+          contactId: contact.contact_id,
+        }
+      );
       return {
         success: false,
         contactId: contact.contact_id,
       };
     }
 
+    console.log('[ScheduleSendService] Validando telefone do contato', {
+      scheduleId: schedule.schedule_id,
+      contactId: contact.contact_id,
+    });
     const jid = await this.validateContactPhone(contact);
 
     if (!jid) {
+      console.error('[ScheduleSendService] JID inválido ou não encontrado', {
+        scheduleId: schedule.schedule_id,
+        contactId: contact.contact_id,
+      });
       const failedMessage = this.createFailedMessage(schedule);
       const saved = await this.saveToElasticsearch(
         schedule,
@@ -520,12 +593,31 @@ export class ScheduleSendService {
       };
     }
 
+    console.log('[ScheduleSendService] Criando mensagem', {
+      scheduleId: schedule.schedule_id,
+      contactId: contact.contact_id,
+      jid,
+    });
     const message = await this.createChatMessage(schedule, contact, jid);
 
     try {
+      console.log(
+        '[ScheduleSendService] Verificando limite de envio em massa',
+        {
+          scheduleId: schedule.schedule_id,
+          accountId: schedule.account_id,
+        }
+      );
       const hasLimit = await this.checkMassSendingLimit(schedule.account_id, 1);
 
       if (!hasLimit) {
+        console.error(
+          '[ScheduleSendService] Limite de envio em massa excedido',
+          {
+            scheduleId: schedule.schedule_id,
+            accountId: schedule.account_id,
+          }
+        );
         const saved = await this.saveToElasticsearch(
           schedule,
           contact,
@@ -545,6 +637,11 @@ export class ScheduleSendService {
         };
       }
 
+      console.log('[ScheduleSendService] Salvando no Elasticsearch', {
+        scheduleId: schedule.schedule_id,
+        contactId: contact.contact_id,
+        messageId: message.message_id,
+      });
       const saved = await this.saveToElasticsearch(
         schedule,
         contact,
@@ -562,7 +659,18 @@ export class ScheduleSendService {
         };
       }
 
+      console.log('[ScheduleSendService] Enviando para Kafka', {
+        scheduleId: schedule.schedule_id,
+        contactId: contact.contact_id,
+        messageId: message.message_id,
+      });
       await this.sendMessageToKafka(schedule, contact, message);
+
+      console.log('[ScheduleSendService] Mensagem processada com sucesso', {
+        scheduleId: schedule.schedule_id,
+        contactId: contact.contact_id,
+        messageId: message.message_id,
+      });
 
       return {
         success: true,
@@ -646,12 +754,28 @@ export class ScheduleSendService {
             EScheduleStatus.processing
           );
 
+          console.log('[ScheduleSendService] Buscando contatos para schedule', {
+            scheduleId: schedule.schedule_id,
+            sendTo: schedule.send_to,
+            accountId: schedule.account_id,
+          });
+
           const contacts =
             await this.scheduleContactsValidatedListerRepository.listValidatedContactsBySchedule(
               schedule.schedule_id,
               schedule.send_to,
               schedule.account_id
             );
+
+          console.log('[ScheduleSendService] Contatos encontrados:', {
+            scheduleId: schedule.schedule_id,
+            total: contacts.length,
+            contacts: contacts.map((c) => ({
+              contactId: c.contact_id,
+              name: c.name,
+              phone: c.phone ? '***' : null,
+            })),
+          });
 
           if (contacts.length === 0) {
             await this.scheduleStatusUpdaterRepository.updateScheduleStatus(
@@ -665,6 +789,8 @@ export class ScheduleSendService {
             contacts.length <= this.BATCH_SIZE
               ? await this.processContactsWithDelay(schedule, contacts)
               : await this.processContactsInBatches(schedule, contacts);
+
+          console.log('results', results);
 
           const status = this.determineScheduleStatus(results);
 
@@ -696,6 +822,8 @@ export class ScheduleSendService {
   async processSchedules(): Promise<void> {
     const schedules =
       await this.schedulePendingListerRepository.listPendingSchedules();
+
+    console.log('schedules', schedules);
 
     await Promise.all(
       schedules.map((schedule) => this.processSingleSchedule(schedule))

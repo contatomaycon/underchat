@@ -21,6 +21,7 @@ import { ContactExistsByEmailAndPhoneRepository } from '@core/repositories/conta
 import { nullIfEmpty } from '@core/common/functions/nullIfEmpty';
 import { StorageService } from './storage.service';
 import { buildCandidatesWithDdi } from '@core/common/functions/buildCandidatesBR';
+import { extractPhoneAndDdi } from '@core/common/functions/extractPhoneAndDdi';
 
 type FieldValue = string | { value: string } | null;
 
@@ -396,6 +397,37 @@ export class ContactService {
       contactId,
       isValided
     );
+  };
+
+  updateContactValidation = async (
+    contactId: string,
+    phoneWithDdi: string,
+    isValided: boolean
+  ): Promise<boolean> => {
+    const normalizedPhone = extractPhoneAndDdi(phoneWithDdi);
+    if (!normalizedPhone) return false;
+
+    const { phone, phone_ddi } = normalizedPhone;
+
+    const phoneCEncrypted = phone
+      ? this.passwordEncryptorService.encrypt(phone)
+      : null;
+
+    const phonePartialEncrypted = phone
+      ? this.encryptService.sanitize(phone, ETypeSanetize.phone)
+      : null;
+
+    const phoneC = phone ? this.encryptService.encrypt(phone) : null;
+
+    const payload: IUpdateContact = {
+      phone_ddi,
+      phone: phoneCEncrypted,
+      phone_partial: phonePartialEncrypted,
+      phone_c: phoneC,
+      is_valided: isValided,
+    };
+
+    return this.contactUpdaterRepository.updateContactById(contactId, payload);
   };
 
   deleteContactById = async (contactId: string): Promise<boolean> => {

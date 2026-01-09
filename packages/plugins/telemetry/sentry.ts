@@ -7,14 +7,30 @@ function isConnectionTerminatedError(error: unknown): boolean {
   }
 
   const message = error.message.toLowerCase();
-  return (
+
+  if (
     message.includes('connection terminated') ||
     message.includes('connection closed') ||
     message.includes('connection ended') ||
     message.includes('server closed the connection') ||
     message.includes('terminating connection due to') ||
-    message.includes('terminated unexpectedly')
-  );
+    message.includes('terminated unexpectedly') ||
+    message.includes('transport closed')
+  ) {
+    return true;
+  }
+
+  try {
+    const parsed = JSON.parse(error.message);
+    if (typeof parsed === 'object' && parsed !== null) {
+      const parsedMessage = String(parsed.message || '').toLowerCase();
+      if (parsedMessage.includes('transport closed')) {
+        return true;
+      }
+    }
+  } catch {}
+
+  return false;
 }
 
 function normalizeError(error: unknown): Error {
@@ -24,19 +40,34 @@ function normalizeError(error: unknown): Error {
 
   if (typeof error === 'object' && error !== null) {
     const errorObj = error as Record<string, unknown>;
-    const errorMessage =
-      errorObj.error instanceof Error
-        ? errorObj.error.message
-        : typeof errorObj.error === 'object' && errorObj.error !== null
-          ? JSON.stringify(errorObj.error)
-          : String(errorObj.error || errorObj.message || 'Unknown error');
 
-    const normalizedError = new Error(errorMessage);
-    if (errorObj.error instanceof Error && errorObj.error.stack) {
-      normalizedError.stack = errorObj.error.stack;
+    if (errorObj.error instanceof Error) {
+      return errorObj.error;
     }
 
-    return normalizedError;
+    if (typeof errorObj.error === 'object' && errorObj.error !== null) {
+      const innerError = errorObj.error as Record<string, unknown>;
+      if (innerError.message && typeof innerError.message === 'string') {
+        const normalizedError = new Error(innerError.message);
+        if (innerError.stack && typeof innerError.stack === 'string') {
+          normalizedError.stack = innerError.stack;
+        }
+        return normalizedError;
+      }
+      return new Error(JSON.stringify(innerError));
+    }
+
+    if (errorObj.message && typeof errorObj.message === 'string') {
+      const normalizedError = new Error(errorObj.message);
+      if (errorObj.stack && typeof errorObj.stack === 'string') {
+        normalizedError.stack = errorObj.stack;
+      }
+      return normalizedError;
+    }
+
+    return new Error(
+      String(errorObj.error || errorObj.message || 'Unknown error')
+    );
   }
 
   return new Error(String(error));

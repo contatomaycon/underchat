@@ -4,4 +4,5 @@ export interface IScheduleContactValidated {
   phone: string | null;
   phone_ddi: string | null;
   phone_partial: string | null;
+  is_validated: boolean;
 }

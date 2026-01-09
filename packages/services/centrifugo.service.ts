@@ -19,6 +19,7 @@ export class CentrifugoService {
   private readonly publishRetryBaseDelayMs = 500;
   private readonly publishRetryMaxDelayMs = 4_000;
   private readonly connectTimeoutMs = 15_000;
+  private readonly httpApiTimeoutMs = 10_000;
 
   constructor(@inject('Centrifuge') private readonly client: Centrifuge) {}
 
@@ -37,6 +38,18 @@ export class CentrifugoService {
   }
 
   private isTransientError(error: Error): boolean {
+    const status = (error as { status?: number }).status;
+
+    if (status) {
+      if (status >= 500 || status === 408 || status === 429) {
+        return true;
+      }
+
+      if (status >= 400) {
+        return false;
+      }
+    }
+
     const message = error.message.toLowerCase();
     const cause = (error as { cause?: unknown }).cause;
 
@@ -62,6 +75,13 @@ export class CentrifugoService {
     }
 
     return false;
+  }
+
+  private isHttpApiConfigured(): boolean {
+    return Boolean(
+      centrifugoEnvironment.centrifugoHttpApiUrl &&
+      centrifugoEnvironment.centrifugoHttpApiKey
+    );
   }
 
   private async waitForConnected(): Promise<void> {
@@ -164,13 +184,22 @@ export class CentrifugoService {
         lastError = normalizedError;
         const isTransient = this.isTransientError(normalizedError);
         const isLastAttempt = attempt === this.publishRetryAttempts;
+        const errorMessage = normalizedError.message.toLowerCase();
+        const isTimeoutError =
+          errorMessage.includes('timeout') ||
+          errorMessage.includes('connection timeout');
 
-        if (!isTransient) {
+        if (!isTransient && !isTimeoutError) {
           throw normalizedError;
         }
 
         if (isLastAttempt) {
-          logger.error(
+          const logLevel = isTimeoutError ? 'warn' : 'error';
+          const logMessage = isTimeoutError
+            ? 'Centrifugo publish timeout after retries - non-critical'
+            : 'Centrifugo publish failed after retries';
+
+          logger[logLevel](
             {
               err: normalizedError,
               type: 'centrifugo_publish_error',
@@ -178,10 +207,11 @@ export class CentrifugoService {
               subId: context.subId,
               attempts: this.publishRetryAttempts,
             },
-            'Centrifugo publish failed after retries'
+            logMessage
           );
 
           captureException(normalizedError, {
+            level: isTimeoutError ? 'warning' : 'error',
             centrifugo: {
               type: 'publish_error',
               channel: context.channel,
@@ -203,7 +233,16 @@ export class CentrifugoService {
     }
 
     if (lastError) {
-      logger.error(
+      const errorMessage = lastError.message.toLowerCase();
+      const isTimeoutError =
+        errorMessage.includes('timeout') ||
+        errorMessage.includes('connection timeout');
+      const logLevel = isTimeoutError ? 'warn' : 'error';
+      const logMessage = isTimeoutError
+        ? 'Centrifugo publish timeout without recovery - non-critical'
+        : 'Centrifugo publish failed without recovery';
+
+      logger[logLevel](
         {
           err: lastError,
           type: 'centrifugo_publish_error',
@@ -211,10 +250,11 @@ export class CentrifugoService {
           subId: context.subId,
           attempts: this.publishRetryAttempts,
         },
-        'Centrifugo publish failed without recovery'
+        logMessage
       );
 
       captureException(lastError, {
+        level: isTimeoutError ? 'warning' : 'error',
         centrifugo: {
           type: 'publish_error',
           channel: context.channel,
@@ -266,6 +306,28 @@ export class CentrifugoService {
           }
         } catch {}
 
+        const errorMessage = error.message.toLowerCase();
+        const isTimeoutError =
+          errorMessage.includes('timeout') ||
+          errorMessage.includes('connection timeout');
+
+        if (isTimeoutError) {
+          logger.warn(
+            {
+              err: error,
+              type: 'centrifugo_temp_client_timeout',
+            },
+            'Centrifugo temp client connection timeout - non-critical'
+          );
+
+          captureException(error, {
+            level: 'warning',
+            centrifugo: {
+              type: 'temp_client_timeout',
+            },
+          });
+        }
+
         reject(error);
       };
 
@@ -283,7 +345,23 @@ export class CentrifugoService {
       };
 
       onError = (err: unknown): void => {
-        safeReject(this.toError(err));
+        const error = this.toError(err);
+        const errorMessage = error.message.toLowerCase();
+        const isTimeoutError =
+          errorMessage.includes('timeout') ||
+          errorMessage.includes('connection timeout');
+
+        if (isTimeoutError) {
+          logger.warn(
+            {
+              err: error,
+              type: 'centrifugo_temp_client_error',
+            },
+            'Centrifugo temp client error - non-critical'
+          );
+        }
+
+        safeReject(error);
       };
 
       onDisconnected = (): void => {
@@ -307,6 +385,81 @@ export class CentrifugoService {
         safeReject(this.toError(err));
       }
     });
+  }
+
+  private async publishViaHttpApi(
+    channel: string,
+    data: unknown
+  ): Promise<PublishResult> {
+    const url = centrifugoEnvironment.centrifugoHttpApiUrl;
+    const apiKey = centrifugoEnvironment.centrifugoHttpApiKey;
+
+    if (!url || !apiKey) {
+      throw new Error('Centrifugo HTTP API is not configured.');
+    }
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.httpApiTimeoutMs);
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `apikey ${apiKey}`,
+        },
+        body: JSON.stringify({
+          method: 'publish',
+          params: {
+            channel,
+            data,
+          },
+        }),
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        const bodyText = await response.text().catch(() => '');
+        const error = new Error(
+          `Centrifugo HTTP API error: ${response.status} ${response.statusText}${
+            bodyText ? ` - ${bodyText}` : ''
+          }`
+        );
+        (error as { status?: number }).status = response.status;
+        throw error;
+      }
+
+      const payload = (await response.json().catch(() => null)) as {
+        result?: PublishResult;
+        error?: { message?: string };
+      } | null;
+
+      if (payload?.error) {
+        throw new Error(
+          `Centrifugo HTTP API error: ${payload.error.message ?? 'unknown'}`
+        );
+      }
+
+      return (payload?.result ?? {}) as PublishResult;
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new Error('Centrifugo HTTP API timeout');
+      }
+
+      if (error instanceof Error && (error as { status?: number }).status) {
+        throw error;
+      }
+
+      if (error instanceof Error) {
+        const wrapped = new Error('Centrifugo HTTP API connection error');
+        (wrapped as { cause?: unknown }).cause = error;
+        throw wrapped;
+      }
+
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
   private async publishWithToken(
@@ -346,6 +499,23 @@ export class CentrifugoService {
       return await tempClient.publish(channel, data);
     } catch (error) {
       const errorObj = this.toError(error);
+      const errorMessage = errorObj.message.toLowerCase();
+      const isTimeoutError =
+        errorMessage.includes('timeout') ||
+        errorMessage.includes('connection timeout');
+
+      if (isTimeoutError) {
+        logger.warn(
+          {
+            err: errorObj,
+            type: 'centrifugo_publish_timeout',
+            channel,
+          },
+          'Centrifugo publish timeout - non-critical'
+        );
+
+        throw errorObj;
+      }
 
       if (
         errorObj.message.includes('transport closed') ||
@@ -371,28 +541,106 @@ export class CentrifugoService {
   }
 
   async publish(channel: string, data: unknown): Promise<PublishResult> {
-    return this.withPublishRetry(
-      async () => {
-        await this.waitForConnected();
-        return this.client.publish(channel, data);
-      },
-      { channel }
-    );
+    try {
+      return await this.withPublishRetry(
+        async () => {
+          await this.waitForConnected();
+          return this.client.publish(channel, data);
+        },
+        { channel }
+      );
+    } catch (error) {
+      const errorObj = this.toError(error);
+      const errorMessage = errorObj.message.toLowerCase();
+      const isTimeoutError =
+        errorMessage.includes('timeout') ||
+        errorMessage.includes('connection timeout');
+
+      logger.warn(
+        {
+          err: errorObj,
+          type: 'centrifugo_publish_error',
+          channel,
+        },
+        isTimeoutError
+          ? 'Centrifugo publish timeout - non-critical'
+          : 'Centrifugo publish error - non-critical'
+      );
+
+      captureException(errorObj, {
+        level: 'warning',
+        centrifugo: {
+          type: 'publish_error',
+          channel,
+        },
+      });
+
+      return {} as PublishResult;
+    }
   }
 
   async publishSub(channel: string, data: unknown): Promise<PublishResult> {
-    const subId = this.extractSubId(channel);
+    try {
+      const subId = this.extractSubId(channel);
 
-    if (!subId) {
-      throw new Error('Invalid channel format');
+      if (!subId) {
+        logger.warn(
+          {
+            type: 'centrifugo_invalid_channel',
+            channel,
+          },
+          'Invalid channel format for publishSub'
+        );
+        return {} as PublishResult;
+      }
+
+      if (this.isHttpApiConfigured()) {
+        return await this.withPublishRetry(
+          () => this.publishViaHttpApi(channel, data),
+          {
+            channel,
+            subId,
+          }
+        );
+      }
+
+      const token = this.generateSubToken(subId);
+
+      return await this.withPublishRetry(
+        () => this.publishWithToken(token, channel, data),
+        {
+          channel,
+          subId,
+        }
+      );
+    } catch (error) {
+      const errorObj = this.toError(error);
+      const errorMessage = errorObj.message.toLowerCase();
+      const isTimeoutError =
+        errorMessage.includes('timeout') ||
+        errorMessage.includes('connection timeout');
+
+      logger.warn(
+        {
+          err: errorObj,
+          type: 'centrifugo_publish_sub_error',
+          channel,
+        },
+        isTimeoutError
+          ? 'Centrifugo publishSub timeout - non-critical'
+          : 'Centrifugo publishSub error - non-critical'
+      );
+
+      captureException(errorObj, {
+        level: 'warning',
+        centrifugo: {
+          type: 'publish_sub_error',
+          channel,
+        },
+      });
+
+      return {} as PublishResult;
     }
-
-    const token = this.generateSubToken(subId);
-
-    return this.withPublishRetry(
-      () => this.publishWithToken(token, channel, data),
-      { channel, subId }
-    );
   }
 
   async onMessage(
@@ -420,92 +668,167 @@ export class CentrifugoService {
     channel: string,
     handler: (data: unknown, ctx: PublicationContext) => void
   ): Promise<void> {
-    const subId = this.extractSubId(channel);
+    try {
+      const subId = this.extractSubId(channel);
 
-    if (!subId) {
-      throw new Error('Invalid channel format');
-    }
-
-    const token = this.generateSubToken(subId);
-
-    const tempClient = new Centrifuge(
-      `${centrifugoEnvironment.centrifugoWsUrl}/connection/websocket`,
-      {
-        websocket: WebSocket,
-        token,
-        timeout: 30_000,
-        maxServerPingDelay: 60_000,
+      if (!subId) {
+        logger.warn(
+          {
+            type: 'centrifugo_invalid_channel',
+            channel,
+          },
+          'Invalid channel format for onMessageSub'
+        );
+        return;
       }
-    );
 
-    tempClient.on('publication', (ctx) => {
-      handler(ctx.data, ctx);
-    });
+      const token = this.generateSubToken(subId);
 
-    await new Promise<void>((resolve, reject) => {
-      let timer: ReturnType<typeof setTimeout> | null = null;
-      let isResolved = false;
-
-      let onConnect: () => void;
-      let onError: (err: unknown) => void;
-
-      const cleanup = (): void => {
-        if (timer) {
-          clearTimeout(timer);
-          timer = null;
+      const tempClient = new Centrifuge(
+        `${centrifugoEnvironment.centrifugoWsUrl}/connection/websocket`,
+        {
+          websocket: WebSocket,
+          token,
+          timeout: 30_000,
+          maxServerPingDelay: 60_000,
         }
+      );
 
-        try {
-          tempClient.off('connected', onConnect);
-          tempClient.off('error', onError);
-        } catch {}
-      };
+      tempClient.on('publication', (ctx) => {
+        handler(ctx.data, ctx);
+      });
 
-      const safeReject = (error: Error): void => {
-        if (isResolved) {
-          return;
-        }
-        isResolved = true;
-        cleanup();
+      await new Promise<void>((resolve, reject) => {
+        let timer: ReturnType<typeof setTimeout> | null = null;
+        let isResolved = false;
 
-        try {
-          if (tempClient.state !== State.Disconnected) {
-            tempClient.disconnect();
+        let onConnect: () => void;
+        let onError: (err: unknown) => void;
+
+        const cleanup = (): void => {
+          if (timer) {
+            clearTimeout(timer);
+            timer = null;
           }
-        } catch {}
 
-        reject(error);
-      };
+          try {
+            tempClient.off('connected', onConnect);
+            tempClient.off('error', onError);
+          } catch {}
+        };
 
-      const safeResolve = (): void => {
-        if (isResolved) {
-          return;
+        const safeReject = (error: Error): void => {
+          if (isResolved) {
+            return;
+          }
+          isResolved = true;
+          cleanup();
+
+          try {
+            if (tempClient.state !== State.Disconnected) {
+              tempClient.disconnect();
+            }
+          } catch {}
+
+          const errorMessage = error.message.toLowerCase();
+          const isTimeoutError =
+            errorMessage.includes('timeout') ||
+            errorMessage.includes('connection timeout');
+
+          if (isTimeoutError) {
+            logger.warn(
+              {
+                err: error,
+                type: 'centrifugo_on_message_sub_timeout',
+                channel,
+              },
+              'Centrifugo onMessageSub connection timeout - non-critical'
+            );
+
+            captureException(error, {
+              level: 'warning',
+              centrifugo: {
+                type: 'on_message_sub_timeout',
+                channel,
+              },
+            });
+          }
+
+          reject(error);
+        };
+
+        const safeResolve = (): void => {
+          if (isResolved) {
+            return;
+          }
+          isResolved = true;
+          cleanup();
+          resolve();
+        };
+
+        onConnect = (): void => {
+          safeResolve();
+        };
+
+        onError = (err: unknown): void => {
+          const error = this.toError(err);
+          const errorMessage = error.message.toLowerCase();
+          const isTimeoutError =
+            errorMessage.includes('timeout') ||
+            errorMessage.includes('connection timeout');
+
+          if (isTimeoutError) {
+            logger.warn(
+              {
+                err: error,
+                type: 'centrifugo_on_message_sub_error',
+                channel,
+              },
+              'Centrifugo onMessageSub error - non-critical'
+            );
+          }
+
+          safeReject(error);
+        };
+
+        timer = setTimeout(() => {
+          safeReject(new Error('Centrifugo temp client connection timeout'));
+        }, this.connectTimeoutMs);
+
+        try {
+          tempClient.on('connected', onConnect);
+          tempClient.on('error', onError);
+          tempClient.connect();
+        } catch (err) {
+          safeReject(this.toError(err));
         }
-        isResolved = true;
-        cleanup();
-        resolve();
-      };
+      });
+    } catch (error) {
+      const errorObj = this.toError(error);
+      const errorMessage = errorObj.message.toLowerCase();
+      const isTimeoutError =
+        errorMessage.includes('timeout') ||
+        errorMessage.includes('connection timeout');
 
-      onConnect = (): void => {
-        safeResolve();
-      };
+      logger.warn(
+        {
+          err: errorObj,
+          type: 'centrifugo_on_message_sub_error',
+          channel,
+        },
+        isTimeoutError
+          ? 'Centrifugo onMessageSub timeout - non-critical'
+          : 'Centrifugo onMessageSub error - non-critical'
+      );
 
-      onError = (err: unknown): void => {
-        safeReject(this.toError(err));
-      };
-
-      timer = setTimeout(() => {
-        safeReject(new Error('Centrifugo temp client connection timeout'));
-      }, this.connectTimeoutMs);
-
-      try {
-        tempClient.on('connected', onConnect);
-        tempClient.on('error', onError);
-        tempClient.connect();
-      } catch (err) {
-        safeReject(this.toError(err));
-      }
-    });
+      captureException(errorObj, {
+        level: 'warning',
+        centrifugo: {
+          type: 'on_message_sub_error',
+          channel,
+        },
+      });
+    }
   }
 
   async unsubscribe(channel: string): Promise<void> {

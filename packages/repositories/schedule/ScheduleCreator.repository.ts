@@ -127,7 +127,6 @@ export class ScheduleCreatorRepository {
   }): Promise<string | null> => {
     return this.dbRw.transaction(async (tx) => {
       const scheduleId = uuidv7();
-
       const success = await this.insertSchedule(tx, scheduleId, {
         ...input,
       });

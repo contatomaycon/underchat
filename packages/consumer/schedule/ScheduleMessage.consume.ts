@@ -12,6 +12,8 @@ import { connectConsumer } from '@core/common/functions/connectConsumer';
 import { handleConsumerError } from '@core/common/functions/handleConsumerError';
 import { BaileysMessageTextService } from '@core/services/baileys/methods/messageText.service';
 import { BaileysMessageMediaService } from '@core/services/baileys/methods/messageMedia.service';
+import { BaileysPhoneValidationService } from '@core/services/baileys/methods/phoneValidation.service';
+import { IContactValidationUpdate } from '@core/common/interfaces/IContactValidationUpdate';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { selectJidChat } from '@core/common/functions/selectJidChat';
 import { IUpdateMessage } from '@core/common/interfaces/IUpdateMessage';
@@ -31,6 +33,7 @@ export class ScheduleMessageConsume {
     private readonly streamProducerService: StreamProducerService,
     private readonly baileysMessageTextService: BaileysMessageTextService,
     private readonly baileysMessageMediaService: BaileysMessageMediaService,
+    private readonly baileysPhoneValidationService: BaileysPhoneValidationService,
     private readonly elasticDatabaseService: ElasticDatabaseService
   ) {}
 
@@ -173,6 +176,48 @@ export class ScheduleMessageConsume {
 
     if (!jid) {
       throw new Error('Received message without remoteJid');
+    }
+
+    if (!data.is_validated) {
+      const phone = data.message.phone;
+      const phoneDdi = data.message.phone_ddi || '55';
+
+      try {
+        if (!phone) {
+          throw new Error('Não foi possível extrair o telefone do JID');
+        }
+
+        const validationResult =
+          await this.baileysPhoneValidationService.validatePhone(
+            phoneDdi,
+            phone
+          );
+
+        if (validationResult.valid && validationResult.phone) {
+          const contactUpdate: IContactValidationUpdate = {
+            contact_id: data.contact_id,
+            phone: validationResult.phone,
+            is_validated: true,
+          };
+
+          const topic = this.kafkaServiceQueueService.contactValidationUpdate();
+          await this.streamProducerService.send(topic, contactUpdate);
+        } else {
+          const contactUpdate: IContactValidationUpdate = {
+            contact_id: data.contact_id,
+            phone: phone,
+            is_validated: false,
+          };
+
+          const topic = this.kafkaServiceQueueService.contactValidationUpdate();
+          await this.streamProducerService.send(topic, contactUpdate);
+        }
+      } catch (error) {
+        console.error(
+          `[ScheduleMessageConsume] Erro ao validar contato. Schedule: ${data.schedule_id}, Contact: ${data.contact_id}:`,
+          error
+        );
+      }
     }
 
     const messageType = data.message.content?.type;

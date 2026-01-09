@@ -22,4 +22,12 @@ export class CentrifugoEnvironment {
 
     return url;
   }
+
+  public get centrifugoHttpApiUrl(): string | null {
+    return process.env.CENTRIFUGO_HTTP_API_URL ?? null;
+  }
+
+  public get centrifugoHttpApiKey(): string | null {
+    return process.env.CENTRIFUGO_HTTP_API_KEY ?? null;
+  }
 }

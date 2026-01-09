@@ -115,14 +115,20 @@ export class ContactUpdaterUseCase {
     const newDdi = phoneDdi ?? null;
     const ddiChanged = String(currentDdi) !== String(newDdi);
 
-    if (!ddiChanged) {
-      if (!currentContact?.phone) {
-        return;
-      }
+    let currentPhoneDecrypted: string | null = null;
 
-      const currentPhoneDecrypted =
-        this.contactService.getContactPhoneDecrypted(currentContact.phone);
+    if (currentContact?.phone) {
+      currentPhoneDecrypted = this.contactService.getContactPhoneDecrypted(
+        currentContact.phone
+      );
+    }
 
+    const phoneChanged =
+      phone && currentPhoneDecrypted && phone !== currentPhoneDecrypted;
+
+    const hasPhoneChange = phoneChanged || ddiChanged;
+
+    if (!hasPhoneChange) {
       if (!currentPhoneDecrypted) {
         return;
       }
@@ -130,24 +136,18 @@ export class ContactUpdaterUseCase {
       return {
         phone: currentPhoneDecrypted,
         phoneDdi: phoneDdi,
-        isValidated: currentContact.is_valided ?? false,
+        isValidated: currentContact?.is_valided ?? false,
       };
     }
 
     let phoneToValidate = phone;
 
     if (!phoneToValidate) {
-      if (!currentContact?.phone) {
+      if (!currentPhoneDecrypted) {
         throw new Error(t('phone_required_when_ddi_provided'));
       }
 
-      phoneToValidate = this.contactService.getContactPhoneDecrypted(
-        currentContact.phone
-      );
-
-      if (!phoneToValidate) {
-        throw new Error(t('phone_not_found_or_cannot_be_decrypted'));
-      }
+      phoneToValidate = currentPhoneDecrypted;
     }
 
     const phones = buildCandidatesWithDdi(phoneToValidate, phoneDdi);

@@ -110,6 +110,7 @@ export interface IChatMessage {
   worker: IWorker;
   user?: IUser | null;
   phone: string;
+  phone_ddi?: string | null;
   content?: IContent | null;
   summary: ISummary;
   date: string;

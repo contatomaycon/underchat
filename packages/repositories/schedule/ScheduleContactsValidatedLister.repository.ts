@@ -76,10 +76,7 @@ export class ScheduleContactsValidatedListerRepository {
       return [];
     }
 
-    const conditions = [
-      eq(contact.is_valided, true),
-      isNull(contact.deleted_at),
-    ];
+    const conditions = [isNull(contact.deleted_at)];
 
     if (accountId) {
       conditions.push(eq(contact.account_id, accountId));
@@ -96,6 +93,7 @@ export class ScheduleContactsValidatedListerRepository {
         phone: contact.phone,
         phone_ddi: contact.phone_ddi,
         phone_partial: contact.phone_partial,
+        is_valided: contact.is_valided,
       })
       .from(contact)
       .where(and(...conditions))
@@ -107,6 +105,7 @@ export class ScheduleContactsValidatedListerRepository {
       phone: c.phone,
       phone_ddi: c.phone_ddi,
       phone_partial: c.phone_partial,
+      is_validated: c.is_valided ?? false,
     }));
   }
 
@@ -116,7 +115,8 @@ export class ScheduleContactsValidatedListerRepository {
     accountId: string
   ): Promise<IScheduleContactValidated[]> => {
     if (sendTo === EScheduleSendTo.all) {
-      return this.getValidatedContacts([], accountId);
+      const contacts = await this.getValidatedContacts([], accountId);
+      return contacts;
     }
 
     const scheduledContacts = await this.getScheduledContacts(scheduleId);
@@ -132,6 +132,7 @@ export class ScheduleContactsValidatedListerRepository {
       ...contactsFromGroups.filter((id) => !contactIds.includes(id)),
     ];
 
-    return this.getValidatedContacts(allContactIds, accountId);
+    const contacts = await this.getValidatedContacts(allContactIds, accountId);
+    return contacts;
   };
 }
