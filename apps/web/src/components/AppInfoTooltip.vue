@@ -25,7 +25,7 @@ const isMenuOpen = ref(false);
         class="cursor-pointer info-icon"
       />
     </template>
-    <VCard class="info-tooltip-card" min-width="280" max-width="320">
+    <VCard class="info-tooltip-card" min-width="320" max-width="420">
       <VCardText class="pa-3">
         <div class="d-flex align-center justify-space-between mb-2">
           <span v-if="props.title" class="info-tooltip-title">{{
@@ -39,7 +39,7 @@ const isMenuOpen = ref(false);
             @click="isMenuOpen = false"
           />
         </div>
-        <div class="info-tooltip-text">{{ text }}</div>
+        <div class="info-tooltip-text" v-html="text"></div>
       </VCardText>
     </VCard>
   </VMenu>

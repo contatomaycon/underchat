@@ -75,9 +75,9 @@ watch(
       <VCardTitle
         class="d-flex align-center justify-space-between pa-2 node-drag-handle"
       >
-        <div class="d-flex align-center ga-2">
-          <VIcon icon="tabler-users-group" color="info" size="20" />
-          <span class="text-sm font-weight-medium">{{
+        <div class="d-flex align-center ga-2 node-title-container">
+          <VIcon icon="tabler-users-group" color="distribution" size="20" />
+          <span class="text-sm font-weight-medium node-title">{{
             t('chatbot_distribution')
           }}</span>
         </div>
@@ -117,7 +117,7 @@ watch(
 
 <style scoped>
 .chatbot-distribution-node {
-  min-width: 350px;
+  min-width: 380px;
 }
 
 .distribution-card {
@@ -131,6 +131,18 @@ watch(
 
 .node-drag-handle:active {
   cursor: grabbing;
+}
+
+.node-title-container {
+  flex: 1;
+  min-width: 0;
+}
+
+.node-title {
+  white-space: normal;
+  word-break: break-word;
+  line-height: 1.3;
+  max-width: 280px;
 }
 
 .cursor-pointer {

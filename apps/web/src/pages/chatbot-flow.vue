@@ -1986,8 +1986,9 @@ onUnmounted(() => {
                   {{ t('chatbot_data') }}
                 </VBtn>
                 <VBtn
-                  color="info"
+                  color="distribution"
                   draggable="true"
+                  class="distribution-btn"
                   @dragstart.stop="
                     (e: DragEvent) => {
                       draggedNodeType = 'distribution';
@@ -2003,7 +2004,9 @@ onUnmounted(() => {
                   style="cursor: grab"
                 >
                   <VIcon icon="tabler-users-group" class="me-2" />
-                  {{ t('chatbot_distribution') }}
+                  <span class="distribution-btn-text">{{
+                    t('chatbot_distribution')
+                  }}</span>
                 </VBtn>
                 <VBtn
                   color="tertiary"
@@ -3022,6 +3025,28 @@ onUnmounted(() => {
 
 .node-options-scroll::-webkit-scrollbar-thumb:hover {
   background: rgba(var(--v-theme-on-surface), 0.5);
+}
+
+.distribution-btn {
+  height: auto;
+  min-height: 40px;
+  white-space: normal;
+}
+
+.distribution-btn :deep(.v-btn__content) {
+  flex-wrap: wrap;
+  align-items: center;
+  text-align: left;
+  gap: 4px;
+  padding: 8px 2px;
+}
+
+.distribution-btn-text {
+  white-space: normal;
+  word-break: break-word;
+  line-height: 1.3;
+  flex: 1;
+  min-width: 0;
 }
 
 .vertical-divider {
