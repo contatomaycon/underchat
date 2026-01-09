@@ -92,7 +92,25 @@ export const scheduleMappings = () => {
         },
         send_log: {
           type: 'object',
-          enabled: false,
+          properties: {
+            result: {
+              type: 'object',
+              enabled: false,
+            },
+            error: {
+              type: 'text',
+            },
+            success: {
+              type: 'boolean',
+            },
+            jid: {
+              type: 'keyword',
+            },
+            payload: {
+              type: 'object',
+              enabled: false,
+            },
+          },
         },
       },
     },

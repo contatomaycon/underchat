@@ -600,6 +600,20 @@ watch(
         if (schedule.contacts && schedule.contacts.length > 0) {
           selectedContactIds.value = schedule.contacts.map((c) => c.contact_id);
           await loadContacts();
+          const selectedContactsFromSchedule = schedule.contacts.map((c) => ({
+            contact_id: c.contact_id,
+            name: c.name,
+            last_name: null,
+            phone_partial: c.phone_partial ?? null,
+          }));
+          const existingContactIds = new Set(
+            contacts.value.map((c) => c.contact_id)
+          );
+          for (const contact of selectedContactsFromSchedule) {
+            if (!existingContactIds.has(contact.contact_id)) {
+              contacts.value.push(contact);
+            }
+          }
         }
         if (schedule.contact_groups && schedule.contact_groups.length > 0) {
           selectedContactGroupIds.value = schedule.contact_groups.map(

@@ -22,6 +22,8 @@ const scheduleSendLogSchema = Type.Object({
   result: Type.Optional(Type.Union([Type.Any(), Type.Null()])),
   error: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   success: Type.Boolean(),
+  jid: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  payload: Type.Optional(Type.Union([Type.Any(), Type.Null()])),
 });
 
 export const scheduleMessageResultSchema = Type.Object({

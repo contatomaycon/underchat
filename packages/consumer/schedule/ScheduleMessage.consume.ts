@@ -241,10 +241,10 @@ export class ScheduleMessageConsume {
         EScheduleStatus.sent
       );
 
-      await this.sendSendLog(data, result, null, true);
+      await this.sendSendLog(data, jid, result, null, true);
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
-      await this.sendSendLog(data, null, error, false);
+      await this.sendSendLog(data, jid, null, error, false);
       throw err;
     }
   }
@@ -285,10 +285,10 @@ export class ScheduleMessageConsume {
         EScheduleStatus.sent
       );
 
-      await this.sendSendLog(data, result, null, true);
+      await this.sendSendLog(data, jid, result, null, true);
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
-      await this.sendSendLog(data, null, error, false);
+      await this.sendSendLog(data, jid, null, error, false);
       throw err;
     }
   }
@@ -330,10 +330,10 @@ export class ScheduleMessageConsume {
         EScheduleStatus.sent
       );
 
-      await this.sendSendLog(data, result, null, true);
+      await this.sendSendLog(data, jid, result, null, true);
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
-      await this.sendSendLog(data, null, error, false);
+      await this.sendSendLog(data, jid, null, error, false);
       throw err;
     }
   }
@@ -376,10 +376,10 @@ export class ScheduleMessageConsume {
         EScheduleStatus.sent
       );
 
-      await this.sendSendLog(data, result, null, true);
+      await this.sendSendLog(data, jid, result, null, true);
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
-      await this.sendSendLog(data, null, error, false);
+      await this.sendSendLog(data, jid, null, error, false);
       throw err;
     }
   }
@@ -408,6 +408,7 @@ export class ScheduleMessageConsume {
 
   private async sendSendLog(
     data: IScheduleMessage,
+    jid: string,
     result: any,
     error: string | null,
     success: boolean
@@ -421,6 +422,8 @@ export class ScheduleMessageConsume {
       result: success ? result : null,
       error,
       success,
+      jid,
+      payload: data.message.content,
     };
 
     try {
