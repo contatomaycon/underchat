@@ -416,6 +416,7 @@ export class ScheduleSendService {
       url: schedule.url,
       status,
       send_date: new Date(schedule.send_date).toISOString(),
+      send_log: null,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };

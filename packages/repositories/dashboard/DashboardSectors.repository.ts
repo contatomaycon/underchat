@@ -20,24 +20,23 @@ export class DashboardSectorsRepository {
   ): Promise<
     Array<{ sectorId: string; sectorName: string; count: number }>
   > => {
-    const allSectors = await this.dbRo
-      .select({
-        sector_id: sector.sector_id,
-        name: sector.name,
-      })
-      .from(sector)
-      .where(
-        and(
-          eq(sector.account_id, accountId),
-          isNull(sector.deleted_at),
-          eq(sector.sector_status_id, ESectorStatus.active)
+    const [allSectors, noSectorResult] = await Promise.all([
+      this.dbRo
+        .select({
+          sector_id: sector.sector_id,
+          name: sector.name,
+        })
+        .from(sector)
+        .where(
+          and(
+            eq(sector.account_id, accountId),
+            isNull(sector.deleted_at),
+            eq(sector.sector_status_id, ESectorStatus.active)
+          )
         )
-      )
-      .orderBy(asc(sector.name))
-      .execute();
-
-    const sectorCountPromises = allSectors.map(async (sectorItem) => {
-      const queryElastic = {
+        .orderBy(asc(sector.name))
+        .execute(),
+      this.elasticDatabaseService.select(EElasticIndex.chat, {
         size: 0,
         query: {
           bool: {
@@ -52,16 +51,6 @@ export class DashboardSectorsRepository {
                   },
                 },
               },
-              {
-                nested: {
-                  path: 'sector',
-                  query: {
-                    term: {
-                      'sector.id': sectorItem.sector_id,
-                    },
-                  },
-                },
-              },
             ],
             filter: [
               {
@@ -69,29 +58,44 @@ export class DashboardSectorsRepository {
                   status: EChatStatus.closed,
                 },
               },
+              {
+                bool: {
+                  must_not: {
+                    exists: {
+                      field: 'sector',
+                    },
+                  },
+                },
+              },
             ],
           },
         },
-      };
+      }),
+    ]);
 
-      const result = await this.elasticDatabaseService.select(
-        EElasticIndex.chat,
-        queryElastic
-      );
+    const sectorIds = allSectors.map((s) => s.sector_id);
 
-      const total = result?.hits?.total;
-      const count = typeof total === 'number' ? total : (total?.value ?? 0);
+    if (sectorIds.length === 0) {
+      const noSectorTotal = noSectorResult?.hits?.total;
+      const noSectorCount =
+        typeof noSectorTotal === 'number'
+          ? noSectorTotal
+          : (noSectorTotal?.value ?? 0);
 
-      return {
-        sectorId: sectorItem.sector_id,
-        sectorName: sectorItem.name,
-        count,
-      };
-    });
+      if (noSectorCount > 0) {
+        return [
+          {
+            sectorId: 'no-sector',
+            sectorName: 'Sem Setor',
+            count: noSectorCount,
+          },
+        ];
+      }
 
-    const sectors = await Promise.all(sectorCountPromises);
+      return [];
+    }
 
-    const noSectorQuery = {
+    const queryElastic = {
       size: 0,
       query: {
         bool: {
@@ -106,6 +110,16 @@ export class DashboardSectorsRepository {
                 },
               },
             },
+            {
+              nested: {
+                path: 'sector',
+                query: {
+                  terms: {
+                    'sector.id': sectorIds,
+                  },
+                },
+              },
+            },
           ],
           filter: [
             {
@@ -113,24 +127,48 @@ export class DashboardSectorsRepository {
                 status: EChatStatus.closed,
               },
             },
-            {
-              bool: {
-                must_not: {
-                  exists: {
-                    field: 'sector',
-                  },
-                },
+          ],
+        },
+      },
+      aggs: {
+        sectors: {
+          nested: {
+            path: 'sector',
+          },
+          aggs: {
+            by_sector: {
+              terms: {
+                field: 'sector.id',
+                size: sectorIds.length,
               },
             },
-          ],
+          },
         },
       },
     };
 
-    const noSectorResult = await this.elasticDatabaseService.select(
-      EElasticIndex.chat,
-      noSectorQuery
-    );
+    const result = await this.elasticDatabaseService.select<
+      unknown,
+      {
+        sectors: {
+          by_sector: {
+            buckets: Array<{ key: string; doc_count: number }>;
+          };
+        };
+      }
+    >(EElasticIndex.chat, queryElastic);
+
+    const sectorCountsMap: Record<string, number> = {};
+    const buckets = result?.aggregations?.sectors?.by_sector?.buckets || [];
+    for (const bucket of buckets) {
+      sectorCountsMap[bucket.key] = bucket.doc_count;
+    }
+
+    const sectors = allSectors.map((sectorItem) => ({
+      sectorId: sectorItem.sector_id,
+      sectorName: sectorItem.name,
+      count: sectorCountsMap[sectorItem.sector_id] || 0,
+    }));
 
     const noSectorTotal = noSectorResult?.hits?.total;
     const noSectorCount =

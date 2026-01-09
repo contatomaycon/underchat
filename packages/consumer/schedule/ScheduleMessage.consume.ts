@@ -16,6 +16,9 @@ import { EMessageType } from '@core/common/enums/EMessageType';
 import { selectJidChat } from '@core/common/functions/selectJidChat';
 import { IUpdateMessage } from '@core/common/interfaces/IUpdateMessage';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
+import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
+import { EElasticIndex } from '@core/common/enums/EElasticIndex';
+import { scheduleMappings } from '@core/mappings/schedule.mappings';
 
 @singleton()
 export class ScheduleMessageConsume {
@@ -27,7 +30,8 @@ export class ScheduleMessageConsume {
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
     private readonly streamProducerService: StreamProducerService,
     private readonly baileysMessageTextService: BaileysMessageTextService,
-    private readonly baileysMessageMediaService: BaileysMessageMediaService
+    private readonly baileysMessageMediaService: BaileysMessageMediaService,
+    private readonly elasticDatabaseService: ElasticDatabaseService
   ) {}
 
   private get consumerOrThrow(): KafkaConsumer {
@@ -214,24 +218,35 @@ export class ScheduleMessageConsume {
     jid: string,
     data: IScheduleMessage
   ): Promise<void> {
-    const result = await this.baileysMessageTextService.sendText(
-      jid,
-      data.message.content?.message ?? ''
-    );
+    let result = null;
+    let error: string | null = null;
 
-    if (!result) {
-      throw new Error('Failed to send text message');
+    try {
+      result = await this.baileysMessageTextService.sendText(
+        jid,
+        data.message.content?.message ?? ''
+      );
+
+      if (!result) {
+        throw new Error('Failed to send text message');
+      }
+
+      const update: IUpdateMessage = { message: result, data: data.message };
+      await this.pushUpdate(update);
+
+      await this.sendStatusUpdate(
+        data.schedule_id,
+        data.contact_id,
+        data.message.message_id,
+        EScheduleStatus.sent
+      );
+
+      await this.sendSendLog(data, result, null, true);
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+      await this.sendSendLog(data, null, error, false);
+      throw err;
     }
-
-    const update: IUpdateMessage = { message: result, data: data.message };
-    await this.pushUpdate(update);
-
-    await this.sendStatusUpdate(
-      data.schedule_id,
-      data.contact_id,
-      data.message.message_id,
-      EScheduleStatus.sent
-    );
   }
 
   private async processImage(
@@ -244,27 +259,38 @@ export class ScheduleMessageConsume {
       throw new Error('Image URL is required');
     }
 
-    const result = await this.baileysMessageMediaService.sendImage(
-      jid,
-      { url: imageUrl },
-      {
-        caption: data.message.content?.image?.caption ?? undefined,
+    let result = null;
+    let error: string | null = null;
+
+    try {
+      result = await this.baileysMessageMediaService.sendImage(
+        jid,
+        { url: imageUrl },
+        {
+          caption: data.message.content?.image?.caption ?? undefined,
+        }
+      );
+
+      if (!result) {
+        throw new Error('Failed to send image');
       }
-    );
 
-    if (!result) {
-      throw new Error('Failed to send image');
+      const update: IUpdateMessage = { message: result, data: data.message };
+      await this.pushUpdate(update);
+
+      await this.sendStatusUpdate(
+        data.schedule_id,
+        data.contact_id,
+        data.message.message_id,
+        EScheduleStatus.sent
+      );
+
+      await this.sendSendLog(data, result, null, true);
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+      await this.sendSendLog(data, null, error, false);
+      throw err;
     }
-
-    const update: IUpdateMessage = { message: result, data: data.message };
-    await this.pushUpdate(update);
-
-    await this.sendStatusUpdate(
-      data.schedule_id,
-      data.contact_id,
-      data.message.message_id,
-      EScheduleStatus.sent
-    );
   }
 
   private async processVideo(
@@ -277,28 +303,39 @@ export class ScheduleMessageConsume {
       throw new Error('Video URL is required');
     }
 
-    const result = await this.baileysMessageMediaService.sendVideo(
-      jid,
-      { url: video.url },
-      {
-        caption: video.caption ?? data.message.content?.message ?? undefined,
-        seconds: data.message.content?.video?.duration ?? undefined,
+    let result = null;
+    let error: string | null = null;
+
+    try {
+      result = await this.baileysMessageMediaService.sendVideo(
+        jid,
+        { url: video.url },
+        {
+          caption: video.caption ?? data.message.content?.message ?? undefined,
+          seconds: data.message.content?.video?.duration ?? undefined,
+        }
+      );
+
+      if (!result) {
+        throw new Error('Failed to send video');
       }
-    );
 
-    if (!result) {
-      throw new Error('Failed to send video');
+      const update: IUpdateMessage = { message: result, data: data.message };
+      await this.pushUpdate(update);
+
+      await this.sendStatusUpdate(
+        data.schedule_id,
+        data.contact_id,
+        data.message.message_id,
+        EScheduleStatus.sent
+      );
+
+      await this.sendSendLog(data, result, null, true);
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+      await this.sendSendLog(data, null, error, false);
+      throw err;
     }
-
-    const update: IUpdateMessage = { message: result, data: data.message };
-    await this.pushUpdate(update);
-
-    await this.sendStatusUpdate(
-      data.schedule_id,
-      data.contact_id,
-      data.message.message_id,
-      EScheduleStatus.sent
-    );
   }
 
   private async processAudio(
@@ -311,29 +348,40 @@ export class ScheduleMessageConsume {
       throw new Error('Audio URL is required');
     }
 
-    const result = await this.baileysMessageMediaService.sendAudio(
-      jid,
-      { url: audio.url },
-      {
-        ptt: audio.ptt ?? false,
-        seconds: audio.duration ?? undefined,
-        mimetype: audio.mimetype ?? undefined,
+    let result = null;
+    let error: string | null = null;
+
+    try {
+      result = await this.baileysMessageMediaService.sendAudio(
+        jid,
+        { url: audio.url },
+        {
+          ptt: audio.ptt ?? false,
+          seconds: audio.duration ?? undefined,
+          mimetype: audio.mimetype ?? undefined,
+        }
+      );
+
+      if (!result) {
+        throw new Error('Failed to send audio');
       }
-    );
 
-    if (!result) {
-      throw new Error('Failed to send audio');
+      const update: IUpdateMessage = { message: result, data: data.message };
+      await this.pushUpdate(update);
+
+      await this.sendStatusUpdate(
+        data.schedule_id,
+        data.contact_id,
+        data.message.message_id,
+        EScheduleStatus.sent
+      );
+
+      await this.sendSendLog(data, result, null, true);
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+      await this.sendSendLog(data, null, error, false);
+      throw err;
     }
-
-    const update: IUpdateMessage = { message: result, data: data.message };
-    await this.pushUpdate(update);
-
-    await this.sendStatusUpdate(
-      data.schedule_id,
-      data.contact_id,
-      data.message.message_id,
-      EScheduleStatus.sent
-    );
   }
 
   private async pushUpdate(input: IUpdateMessage): Promise<void> {
@@ -356,5 +404,38 @@ export class ScheduleMessageConsume {
 
     const topic = this.kafkaServiceQueueService.scheduleStatusUpdate();
     await this.streamProducerService.send(topic, statusUpdate);
+  }
+
+  private async sendSendLog(
+    data: IScheduleMessage,
+    result: any,
+    error: string | null,
+    success: boolean
+  ): Promise<void> {
+    await this.elasticDatabaseService.indices(
+      EElasticIndex.schedule,
+      scheduleMappings()
+    );
+
+    const sendLog = {
+      result: success ? result : null,
+      error,
+      success,
+    };
+
+    try {
+      await this.elasticDatabaseService.updateField(
+        EElasticIndex.schedule,
+        data.message.message_id,
+        'send_log',
+        sendLog,
+        3
+      );
+    } catch (error) {
+      console.error(
+        `Failed to save send log for message ${data.message.message_id}:`,
+        error
+      );
+    }
   }
 }

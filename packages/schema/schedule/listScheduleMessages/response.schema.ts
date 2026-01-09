@@ -18,6 +18,12 @@ const scheduleMessageWorkerSchema = Type.Object({
   name: Type.String(),
 });
 
+const scheduleSendLogSchema = Type.Object({
+  result: Type.Optional(Type.Union([Type.Any(), Type.Null()])),
+  error: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  success: Type.Boolean(),
+});
+
 export const scheduleMessageResultSchema = Type.Object({
   id: Type.String(),
   schedule_id: Type.String({ format: 'uuid' }),
@@ -33,6 +39,7 @@ export const scheduleMessageResultSchema = Type.Object({
   url: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   status: Type.String(),
   send_date: Type.String(),
+  send_log: Type.Optional(Type.Union([scheduleSendLogSchema, Type.Null()])),
 });
 
 export const listScheduleMessagesFinalResponseSchema = Type.Object({

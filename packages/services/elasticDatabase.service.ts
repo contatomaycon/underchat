@@ -64,16 +64,23 @@ export class ElasticDatabaseService {
   update = async (
     index: string,
     document: object,
-    id: string
+    id: string,
+    retryOnConflict?: number
   ): Promise<boolean> => {
     try {
-      const result = await this.client.update({
+      const updateParams: any = {
         index,
         id,
         doc: document,
         doc_as_upsert: true,
         refresh: 'wait_for',
-      });
+      };
+
+      if (retryOnConflict !== undefined) {
+        updateParams.retry_on_conflict = retryOnConflict;
+      }
+
+      const result = await this.client.update(updateParams);
 
       return (
         result.result === 'updated' ||
@@ -120,6 +127,42 @@ export class ElasticDatabaseService {
       );
     } catch (error) {
       throw new Error(`Failed to update array field: ${error}`);
+    }
+  };
+
+  updateField = async (
+    index: string,
+    id: string,
+    field: string,
+    value: any,
+    retryOnConflict?: number
+  ): Promise<boolean> => {
+    try {
+      const updateParams: any = {
+        index,
+        id,
+        script: {
+          source: `ctx._source.${field} = params.value`,
+          params: {
+            value,
+          },
+        },
+        refresh: 'wait_for',
+      };
+
+      if (retryOnConflict !== undefined) {
+        updateParams.retry_on_conflict = retryOnConflict;
+      }
+
+      const result = await this.client.update(updateParams);
+
+      return (
+        result.result === 'updated' ||
+        result.result === 'created' ||
+        result.result === 'noop'
+      );
+    } catch (error) {
+      throw new Error(`Failed to update field: ${error}`);
     }
   };
 

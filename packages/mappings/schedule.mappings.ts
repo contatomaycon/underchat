@@ -90,6 +90,10 @@ export const scheduleMappings = () => {
         updated_at: {
           type: 'date',
         },
+        send_log: {
+          type: 'object',
+          enabled: false,
+        },
       },
     },
   };

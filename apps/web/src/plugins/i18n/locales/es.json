@@ -1995,6 +1995,7 @@
   "select_send_to": "Seleccione a quién enviar",
   "schedule_messages": "Mensajes del Agendamiento",
   "schedule_messages_list_error": "Error al listar mensajes del agendamiento. Por favor, intente nuevamente.",
+  "send_log": "Log de Envío",
   "available_tags": "Etiquetas Disponibles",
   "tag_greeting_description": "Saludo basado en la hora del día (Buenos días, Buenas tardes, Buenas noches)",
   "tag_name_description": "Nombre del contacto guardado o nombre que viene de WhatsApp",

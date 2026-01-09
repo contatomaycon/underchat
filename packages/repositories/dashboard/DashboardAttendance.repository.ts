@@ -28,159 +28,18 @@ export class DashboardAttendanceRepository {
 
     const dayNames = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
 
-    const historicalQuery = {
-      size: 10000,
-      query: {
-        bool: {
-          must: [
-            {
-              nested: {
-                path: 'account',
-                query: {
-                  term: {
-                    'account.id': accountId,
-                  },
-                },
-              },
-            },
-          ],
-          filter: [
-            {
-              term: {
-                status: EChatStatus.closed,
-              },
-            },
-            {
-              range: {
-                closed_at: {
-                  gte: thirtyDaysAgo.toISOString(),
-                  lt: now.toISOString(),
-                },
-              },
-            },
-          ],
-        },
-      },
-      _source: ['closed_at'],
-    };
-
-    const historicalResult = await this.elasticDatabaseService.select(
-      EElasticIndex.chat,
-      historicalQuery
-    );
-
-    const historicalChats =
-      historicalResult?.hits?.hits?.map((hit: any) => hit._source) || [];
-
-    const uniqueDates = new Set<string>();
-    for (const chat of historicalChats) {
-      if (chat.closed_at) {
-        const chatDate = new Date(chat.closed_at);
-        const dateKey = chatDate.toISOString().split('T')[0];
-        uniqueDates.add(dateKey);
-      }
-    }
-
-    const dateQueries = Array.from(uniqueDates).map((dateKey) => {
-      const dayStart = new Date(dateKey);
-      dayStart.setHours(0, 0, 0, 0);
-      const dayEnd = new Date(dayStart);
-      dayEnd.setDate(dayEnd.getDate() + 1);
-
-      return {
-        dateKey,
-        query: {
-          size: 0,
-          query: {
-            bool: {
-              must: [
-                {
-                  nested: {
-                    path: 'account',
-                    query: {
-                      term: {
-                        'account.id': accountId,
-                      },
-                    },
-                  },
-                },
-              ],
-              filter: [
-                {
-                  term: {
-                    status: EChatStatus.closed,
-                  },
-                },
-                {
-                  range: {
-                    closed_at: {
-                      gte: dayStart.toISOString(),
-                      lt: dayEnd.toISOString(),
-                    },
-                  },
-                },
-              ],
-            },
-          },
-        },
-      };
-    });
-
-    const dateResults = await Promise.all(
-      dateQueries.map(async ({ dateKey, query }) => {
-        const dayResult = await this.elasticDatabaseService.select(
-          EElasticIndex.chat,
-          query
-        );
-        const dayTotal = dayResult?.hits?.total;
-        const dayCount =
-          typeof dayTotal === 'number' ? dayTotal : (dayTotal?.value ?? 0);
-        return { dateKey, count: dayCount };
-      })
-    );
-
-    const dayCountsByDate: Record<string, number> = {};
-    for (const { dateKey, count } of dateResults) {
-      dayCountsByDate[dateKey] = count;
-    }
-
-    const averagesByWeekday: Record<number, number[]> = {
-      0: [],
-      1: [],
-      2: [],
-      3: [],
-      4: [],
-      5: [],
-      6: [],
-    };
-
-    for (const [dateKey, count] of Object.entries(dayCountsByDate)) {
-      const date = new Date(dateKey);
-      const dayOfWeek = date.getDay();
-      averagesByWeekday[dayOfWeek].push(count);
-    }
-
-    const finalAverages: Record<number, number> = {};
-    for (let dayOfWeek = 0; dayOfWeek < 7; dayOfWeek++) {
-      const counts = averagesByWeekday[dayOfWeek];
-      finalAverages[dayOfWeek] =
-        counts.length > 0
-          ? Math.round(
-              counts.reduce((sum, count) => sum + count, 0) / counts.length
-            )
-          : 0;
-    }
-
-    const dayPromises = Array.from({ length: 7 }, async (_, i) => {
-      const date = new Date(sevenDaysAgo);
-      date.setDate(date.getDate() + i);
-      const nextDate = new Date(date);
-      nextDate.setDate(nextDate.getDate() + 1);
-
-      const dayName = dayNames[date.getDay()];
-      const dayOfWeek = date.getDay();
-
-      const queryElasticPerformed = {
+    const [historicalResult, last7DaysResult] = await Promise.all([
+      this.elasticDatabaseService.select<
+        unknown,
+        {
+          by_date: {
+            buckets: Array<{
+              key_as_string: string;
+              doc_count: number;
+            }>;
+          };
+        }
+      >(EElasticIndex.chat, {
         size: 0,
         query: {
           bool: {
@@ -205,35 +64,138 @@ export class DashboardAttendanceRepository {
               {
                 range: {
                   closed_at: {
-                    gte: date.toISOString(),
-                    lt: nextDate.toISOString(),
+                    gte: thirtyDaysAgo.toISOString(),
+                    lt: now.toISOString(),
                   },
                 },
               },
             ],
           },
         },
-      };
+        aggs: {
+          by_date: {
+            date_histogram: {
+              field: 'closed_at',
+              calendar_interval: 'day',
+              format: 'yyyy-MM-dd',
+              time_zone: 'America/Sao_Paulo',
+            },
+          },
+        },
+      }),
+      this.elasticDatabaseService.select<
+        unknown,
+        {
+          by_date: {
+            buckets: Array<{
+              key_as_string: string;
+              doc_count: number;
+            }>;
+          };
+        }
+      >(EElasticIndex.chat, {
+        size: 0,
+        query: {
+          bool: {
+            must: [
+              {
+                nested: {
+                  path: 'account',
+                  query: {
+                    term: {
+                      'account.id': accountId,
+                    },
+                  },
+                },
+              },
+            ],
+            filter: [
+              {
+                term: {
+                  status: EChatStatus.closed,
+                },
+              },
+              {
+                range: {
+                  closed_at: {
+                    gte: sevenDaysAgo.toISOString(),
+                    lt: now.toISOString(),
+                  },
+                },
+              },
+            ],
+          },
+        },
+        aggs: {
+          by_date: {
+            date_histogram: {
+              field: 'closed_at',
+              calendar_interval: 'day',
+              format: 'yyyy-MM-dd',
+              time_zone: 'America/Sao_Paulo',
+            },
+          },
+        },
+      }),
+    ]);
 
-      const resultPerformed = await this.elasticDatabaseService.select(
-        EElasticIndex.chat,
-        queryElasticPerformed
-      );
+    const dayCountsByDate: Record<string, number> = {};
+    const buckets = historicalResult?.aggregations?.by_date?.buckets || [];
+    for (const bucket of buckets) {
+      const dateKey = bucket.key_as_string;
+      dayCountsByDate[dateKey] = bucket.doc_count;
+    }
 
-      const totalPerformed = resultPerformed?.hits?.total;
-      const performed =
-        typeof totalPerformed === 'number'
-          ? totalPerformed
-          : (totalPerformed?.value ?? 0);
+    const averagesByWeekday: Record<number, number[]> = {
+      0: [],
+      1: [],
+      2: [],
+      3: [],
+      4: [],
+      5: [],
+      6: [],
+    };
+
+    for (const [dateKey, count] of Object.entries(dayCountsByDate)) {
+      const date = new Date(dateKey + 'T00:00:00');
+      const dayOfWeek = date.getDay();
+      averagesByWeekday[dayOfWeek].push(count);
+    }
+
+    const finalAverages: Record<number, number> = {};
+    for (let dayOfWeek = 0; dayOfWeek < 7; dayOfWeek++) {
+      const counts = averagesByWeekday[dayOfWeek];
+      finalAverages[dayOfWeek] =
+        counts.length > 0
+          ? Math.round(
+              counts.reduce((sum, count) => sum + count, 0) / counts.length
+            )
+          : 0;
+    }
+
+    const last7DaysCounts: Record<string, number> = {};
+    const last7DaysBuckets =
+      last7DaysResult?.aggregations?.by_date?.buckets || [];
+    for (const bucket of last7DaysBuckets) {
+      const dateKey = bucket.key_as_string;
+      last7DaysCounts[dateKey] = bucket.doc_count;
+    }
+
+    const result = Array.from({ length: 7 }, (_, i) => {
+      const date = new Date(sevenDaysAgo);
+      date.setDate(date.getDate() + i);
+      const dateKey = date.toISOString().split('T')[0];
+      const dayName = dayNames[date.getDay()];
+      const dayOfWeek = date.getDay();
 
       return {
         day: dayName,
-        performed,
+        performed: last7DaysCounts[dateKey] || 0,
         average: finalAverages[dayOfWeek] || 0,
       };
     });
 
-    return Promise.all(dayPromises);
+    return result;
   };
 
   private readonly formatTime = (seconds: number): string => {

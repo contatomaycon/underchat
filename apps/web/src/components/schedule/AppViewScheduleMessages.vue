@@ -194,6 +194,14 @@ const previewDialog = ref<{
   type: null,
 });
 
+const logDialog = ref<{
+  open: boolean;
+  log: any;
+}>({
+  open: false,
+  log: null,
+});
+
 const openPreview = (
   src: string | null,
   caption?: string | null,
@@ -217,6 +225,32 @@ const closePreview = () => {
     text: null,
     type: null,
   };
+};
+
+const openLog = (log: any) => {
+  logDialog.value = {
+    open: true,
+    log,
+  };
+};
+
+const closeLog = () => {
+  logDialog.value = {
+    open: false,
+    log: null,
+  };
+};
+
+const formatLog = (log: any): string => {
+  if (!log) {
+    return '';
+  }
+
+  try {
+    return JSON.stringify(log, null, 2);
+  } catch {
+    return String(log);
+  }
 };
 
 const loadMessages = async () => {
@@ -338,15 +372,25 @@ watch(
           </template>
 
           <template #item.status="{ item }">
-            <VChip
-              v-if="item.status"
-              :color="getStatusColor(item.status)"
-              size="small"
-              variant="tonal"
-            >
-              {{ getStatusLabel(item.status) }}
-            </VChip>
-            <span v-else class="text-medium-emphasis">-</span>
+            <div class="d-flex align-center gap-2">
+              <VChip
+                v-if="item.status"
+                :color="getStatusColor(item.status)"
+                size="small"
+                variant="tonal"
+              >
+                {{ getStatusLabel(item.status) }}
+              </VChip>
+              <span v-else class="text-medium-emphasis">-</span>
+              <VBtn
+                v-if="item.send_log"
+                size="x-small"
+                variant="text"
+                color="primary"
+                icon="tabler-file-text"
+                @click="openLog(item.send_log)"
+              />
+            </div>
           </template>
 
           <template #item.send_date="{ item }">
@@ -442,6 +486,29 @@ watch(
 
         <VCardText class="d-flex justify-end flex-wrap gap-3">
           <VBtn variant="tonal" color="secondary" @click="closePreview">
+            {{ $t('close') }}
+          </VBtn>
+        </VCardText>
+      </VCard>
+    </VDialog>
+
+    <VDialog v-model="logDialog.open" max-width="800">
+      <DialogCloseBtn @click="closeLog" />
+      <VCard :title="$t('send_log')">
+        <VCardText>
+          <VTextarea
+            :model-value="formatLog(logDialog.log)"
+            readonly
+            auto-grow
+            rows="15"
+            variant="outlined"
+            class="font-monospace"
+            style="font-size: 0.875rem"
+          />
+        </VCardText>
+
+        <VCardText class="d-flex justify-end flex-wrap gap-3">
+          <VBtn variant="tonal" color="secondary" @click="closeLog">
             {{ $t('close') }}
           </VBtn>
         </VCardText>

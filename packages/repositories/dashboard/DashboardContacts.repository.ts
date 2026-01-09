@@ -30,6 +30,20 @@ export class DashboardContactsRepository {
     });
 
     const monthEndDates = monthDates.map((m) => m.monthEnd);
+    const firstMonthStart = monthDates[0].monthStart.toISOString();
+
+    const baseCountQuery = `
+      SELECT COUNT(*) AS total
+      FROM contact c
+      WHERE c.account_id = '${accountId}'
+        AND c.deleted_at IS NULL
+        AND c.created_at < '${firstMonthStart}'::timestamp
+    `;
+
+    const baseCountResult = await this.dbRo.execute(baseCountQuery);
+    const baseCount = baseCountResult.rows[0]
+      ? Number(baseCountResult.rows[0].total)
+      : 0;
 
     const query = `
       WITH month_ends AS (
@@ -39,11 +53,12 @@ export class DashboardContactsRepository {
       )
       SELECT 
         me.month_end,
-        (
+        ${baseCount}::bigint + (
           SELECT COUNT(*)
           FROM contact c
           WHERE c.account_id = '${accountId}'
             AND c.deleted_at IS NULL
+            AND c.created_at >= '${firstMonthStart}'::timestamp
             AND c.created_at < me.month_end
         ) AS total
       FROM month_ends me

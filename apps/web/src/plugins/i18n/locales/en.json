@@ -1993,6 +1993,7 @@
   "select_send_to": "Select who to send to",
   "schedule_messages": "Schedule Messages",
   "schedule_messages_list_error": "Error listing schedule messages. Please try again.",
+  "send_log": "Send Log",
   "available_tags": "Available Tags",
   "tag_greeting_description": "Greeting based on time of day (Good morning, Good afternoon, Good evening)",
   "tag_name_description": "Saved contact name or name from WhatsApp",
