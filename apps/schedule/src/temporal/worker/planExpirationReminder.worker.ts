@@ -20,5 +20,8 @@ export const planExpirationReminderWorker = async (
   });
 
   fastify.temporal.registerWorker(worker);
-  worker.run();
+
+  worker.run().catch((err) => {
+    fastify.log.error(err, 'Plan expiration reminder worker failed');
+  });
 };

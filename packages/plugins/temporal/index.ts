@@ -39,19 +39,47 @@ const temporalPlugin = async (fastify: FastifyInstance) => {
   });
 
   fastify.addHook('onClose', async () => {
-    for (const worker of workers) {
+    if (workers.length === 0) {
+      fastify.log.info('No Temporal workers to shutdown.');
+      await connection.close();
+      await nativeConnection.close();
+      fastify.log.info('Connection to Temporal closed successfully.');
+      return;
+    }
+
+    for (let i = 0; i < workers.length; i++) {
+      const worker = workers[i];
       try {
-        await worker.shutdown();
-        fastify.log.info('Temporal worker stopped successfully.');
+        fastify.log.info(
+          `Shutting down Temporal worker ${i + 1}/${workers.length}...`
+        );
+        worker.shutdown();
+        fastify.log.info(
+          `Temporal worker ${i + 1}/${workers.length} stopped successfully.`
+        );
       } catch (err) {
-        fastify.log.error(err, 'Error stopping Temporal worker.');
+        fastify.log.error(
+          err,
+          `Error stopping Temporal worker ${i + 1}/${workers.length}.`
+        );
       }
     }
 
-    await connection.close();
-    await nativeConnection.close();
+    await new Promise((resolve) => setTimeout(resolve, 1000));
 
-    fastify.log.info('Connection to Temporal closed successfully.');
+    try {
+      await connection.close();
+      fastify.log.info('Temporal Connection closed successfully.');
+    } catch (err) {
+      fastify.log.error(err, 'Error closing Temporal Connection.');
+    }
+
+    try {
+      await nativeConnection.close();
+      fastify.log.info('Temporal NativeConnection closed successfully.');
+    } catch (err) {
+      fastify.log.error(err, 'Error closing Temporal NativeConnection.');
+    }
   });
 };
 

@@ -19,5 +19,8 @@ export const chatbotInactivityWorker = async (fastify: FastifyInstance) => {
   });
 
   fastify.temporal.registerWorker(worker);
-  worker.run();
+
+  worker.run().catch((err) => {
+    fastify.log.error(err, 'Chatbot inactivity worker failed');
+  });
 };

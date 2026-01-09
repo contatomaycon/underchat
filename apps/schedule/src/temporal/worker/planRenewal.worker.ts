@@ -18,5 +18,8 @@ export const planRenewalWorker = async (fastify: FastifyInstance) => {
   });
 
   fastify.temporal.registerWorker(worker);
-  worker.run();
+
+  worker.run().catch((err) => {
+    fastify.log.error(err, 'Plan renewal worker failed');
+  });
 };

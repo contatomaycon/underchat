@@ -18,5 +18,8 @@ export const scheduleSendWorker = async (fastify: FastifyInstance) => {
   });
 
   fastify.temporal.registerWorker(worker);
-  worker.run();
+
+  worker.run().catch((err) => {
+    fastify.log.error(err, 'Schedule send worker failed');
+  });
 };

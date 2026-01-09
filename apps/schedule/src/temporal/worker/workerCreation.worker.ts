@@ -19,5 +19,8 @@ export const workerCreationWorker = async (fastify: FastifyInstance) => {
   });
 
   fastify.temporal.registerWorker(worker);
-  worker.run();
+
+  worker.run().catch((err) => {
+    fastify.log.error(err, 'Worker creation worker failed');
+  });
 };
