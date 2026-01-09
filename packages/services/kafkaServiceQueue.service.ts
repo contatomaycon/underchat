@@ -20,7 +20,6 @@ export class KafkaServiceQueueService {
     const notificationMessage = this.notificationMessage();
     const reportConversationHistoryPdfGenerate =
       this.reportConversationHistoryPdfGenerate();
-    const scheduleMessage = this.scheduleMessage();
     const scheduleStatusUpdate = this.scheduleStatusUpdate();
     const workerConfigUpdate = this.workerConfigUpdate();
     const aiAgentPromptEmbedding = this.aiAgentPromptEmbedding();
@@ -41,7 +40,6 @@ export class KafkaServiceQueueService {
       asaasNfseWebhook,
       notificationMessage,
       reportConversationHistoryPdfGenerate,
-      scheduleMessage,
       scheduleStatusUpdate,
       workerConfigUpdate,
       aiAgentPromptEmbedding,
@@ -110,10 +108,6 @@ export class KafkaServiceQueueService {
 
   reportConversationHistoryPdfGenerate = () => {
     return `report.conversation.history.pdf.generate`;
-  };
-
-  scheduleMessage = () => {
-    return `schedule.message`;
   };
 
   scheduleStatusUpdate = () => {
