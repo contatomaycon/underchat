@@ -2809,10 +2809,7 @@ onUnmounted(() => {
                   <VCardText>
                     <VTextarea
                       v-model="transferMessageUser"
-                      :placeholder="
-                        defaultTransferMessageUser ||
-                        t('chatbot_transfer_message_user_default')
-                      "
+                      :placeholder="defaultTransferMessageUser"
                       variant="outlined"
                       density="compact"
                       hide-details
@@ -2820,10 +2817,7 @@ onUnmounted(() => {
                     />
                     <div class="text-caption text-medium-emphasis mt-2">
                       <strong>{{ t('chatbot_message_default_label') }}:</strong>
-                      {{
-                        defaultTransferMessageUser ||
-                        t('chatbot_transfer_message_user_default')
-                      }}
+                      {{ defaultTransferMessageUser }}
                     </div>
                   </VCardText>
                 </VCard>
@@ -2841,10 +2835,7 @@ onUnmounted(() => {
                   <VCardText>
                     <VTextarea
                       v-model="transferMessageSector"
-                      :placeholder="
-                        defaultTransferMessageSector ||
-                        t('chatbot_transfer_message_sector_default')
-                      "
+                      :placeholder="defaultTransferMessageSector"
                       variant="outlined"
                       density="compact"
                       hide-details
@@ -2852,10 +2843,7 @@ onUnmounted(() => {
                     />
                     <div class="text-caption text-medium-emphasis mt-2">
                       <strong>{{ t('chatbot_message_default_label') }}:</strong>
-                      {{
-                        defaultTransferMessageSector ||
-                        t('chatbot_transfer_message_sector_default')
-                      }}
+                      {{ defaultTransferMessageSector }}
                     </div>
                   </VCardText>
                 </VCard>
@@ -2873,10 +2861,7 @@ onUnmounted(() => {
                   <VCardText>
                     <VTextarea
                       v-model="transferMessageSectorUser"
-                      :placeholder="
-                        defaultTransferMessageSectorUser ||
-                        t('chatbot_transfer_message_sector_user_default')
-                      "
+                      :placeholder="defaultTransferMessageSectorUser"
                       variant="outlined"
                       density="compact"
                       hide-details
@@ -2884,10 +2869,7 @@ onUnmounted(() => {
                     />
                     <div class="text-caption text-medium-emphasis mt-2">
                       <strong>{{ t('chatbot_message_default_label') }}:</strong>
-                      {{
-                        defaultTransferMessageSectorUser ||
-                        t('chatbot_transfer_message_sector_user_default')
-                      }}
+                      {{ defaultTransferMessageSectorUser }}
                     </div>
                   </VCardText>
                 </VCard>
