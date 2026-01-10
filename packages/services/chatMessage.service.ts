@@ -300,11 +300,24 @@ export class ChatMessageService {
     }
 
     const messageText = extractMessageTextFromContent(message.content);
+    const isOperatorMessage = message.type_user === ETypeUserChat.operator;
+
+    const chat = await this.chatService.findChatByChatId(
+      message.account.id,
+      message.chat_id
+    );
+
+    if (!chat) {
+      return false;
+    }
+
+    const currentUnreadCount = chat.summary?.unread_count ?? 0;
+    const newUnreadCount = isOperatorMessage ? 0 : currentUnreadCount;
 
     const summaryUpdate: IChat['summary'] = {
       last_message: messageText,
       last_date: message.date,
-      unread_count: 0,
+      unread_count: newUnreadCount,
     };
 
     const summaryUpdated = await this.chatService.updateChatSummary(

@@ -1511,6 +1511,37 @@ export const useChatStore = defineStore('chat', {
       }
     },
 
+    clearActiveChatUnreadCountLocally(): void {
+      if (!this.activeChat?.chat_id) {
+        return;
+      }
+
+      const chatId = this.activeChat.chat_id;
+
+      if (this.activeChat.summary) {
+        this.activeChat.summary = {
+          ...this.activeChat.summary,
+          unread_count: 0,
+        };
+      }
+
+      const chatInQueue = this.listQueue.find((c) => c.chat_id === chatId);
+      if (chatInQueue?.summary) {
+        chatInQueue.summary = {
+          ...chatInQueue.summary,
+          unread_count: 0,
+        };
+      }
+
+      const chatInList = this.listInChat.find((c) => c.chat_id === chatId);
+      if (chatInList?.summary) {
+        chatInList.summary = {
+          ...chatInList.summary,
+          unread_count: 0,
+        };
+      }
+    },
+
     setMessageReply(m: ListMessageResult) {
       this.messageReply = m;
     },
