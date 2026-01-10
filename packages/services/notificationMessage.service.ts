@@ -616,10 +616,10 @@ export class NotificationMessageService {
       whatsappMessage
     );
 
-    if (sentViaWhatsapp) {
+    if (sentViaWhatsapp && notification.worker_id) {
       const workerName =
         await this.workerNameViewerRepository.findWorkerNameById(
-          notification.worker_id!
+          notification.worker_id
         );
 
       if (workerName) {
