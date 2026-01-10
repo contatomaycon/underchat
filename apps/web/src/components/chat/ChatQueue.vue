@@ -233,9 +233,6 @@ watch(
       <div
         v-if="attendantFirstName && hasAttendant"
         class="chat-attendant-label text-caption"
-        :class="{
-          'chat-attendant-label--with-sector': sectorName,
-        }"
       >
         {{ attendantFirstName }}
       </div>
@@ -328,6 +325,7 @@ watch(
 }
 
 .chat {
+  --chat-attendant-label-size: 28px;
   border-radius: vuetify.$border-radius-root;
   padding-block: 8px;
   padding-inline: 12px;
@@ -365,11 +363,7 @@ watch(
   }
 
   &.chat-has-attendant {
-    margin-bottom: 1.5rem;
-  }
-
-  &.chat-has-sector.chat-has-attendant {
-    margin-bottom: 3rem;
+    padding-inline-end: calc(12px + var(--chat-attendant-label-size));
   }
 }
 
@@ -391,29 +385,27 @@ watch(
 
 .chat-attendant-label {
   position: absolute;
+  top: 0;
   bottom: 0;
-  left: 0;
-  width: 100%;
-  padding: 2px 10px;
-  border-radius: 0 0 vuetify.$border-radius-root vuetify.$border-radius-root;
+  right: 0;
+  transform: none;
+  width: var(--chat-attendant-label-size);
+  padding-block: 6px;
+  padding-inline: 4px;
+  border-radius: 0 vuetify.$border-radius-root vuetify.$border-radius-root 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   font-weight: 500;
-  z-index: 1;
-  text-align: center;
+  z-index: 2;
   color: rgb(var(--v-theme-on-surface));
   background-color: rgba(var(--v-theme-on-surface), 0.06);
-
-  &.chat-attendant-label--with-sector {
-    transform: translateY(calc(100% + 24px));
-    border-top-left-radius: 0;
-    border-top-right-radius: 0;
-  }
-
-  &:not(.chat-attendant-label--with-sector) {
-    transform: translateY(100%);
-  }
+  border-left: 1px solid rgba(var(--v-theme-on-surface), 0.12);
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .chat-worker-label-wrapper {
