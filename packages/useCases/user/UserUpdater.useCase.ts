@@ -731,12 +731,10 @@ export class UserUpdaterUseCase {
   private hasUserAddressFields(body: UpdateUserRequest): boolean {
     return !!(
       body.country_id !== undefined ||
-      body.zip_code?.value ||
-      body.address1?.value ||
-      body.address2?.value ||
-      body.city_fiscal_code?.value ||
-      body.state_fiscal_code?.value ||
-      body.district?.value
+      body.zip_code !== undefined ||
+      body.address1 !== undefined ||
+      body.address2 !== undefined ||
+      body.district !== undefined
     );
   }
 
@@ -970,9 +968,18 @@ export class UserUpdaterUseCase {
     userId: string,
     body: UpdateUserRequest,
     accountId: string,
-    canOperateOnOthers: boolean
+    canOperateOnOthers: boolean,
+    currentUserId?: string
   ): Promise<boolean> {
     this.processSectorIdsFromMultipartFormData(body);
+
+    if (
+      currentUserId &&
+      userId === currentUserId &&
+      body.permission_role_id !== undefined
+    ) {
+      throw new Error(t('cannot_change_own_access_group'));
+    }
 
     if (!canOperateOnOthers) {
       await this.validateUserExistsInAccount(t, userId, accountId);

@@ -4806,7 +4806,7 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       }));
     }
 
-    const users = await this.userService.listUsersForTransfer(accountId, '');
+    const users = await this.userService.listUsersForTransfer(accountId);
     return users.map((user) => ({
       id: user.id,
       name: user.name,

@@ -6,10 +6,7 @@ import { ListTransferUsersResponse } from '@core/schema/chat/listTransferUsers/r
 export class ChatTransferUsersListerUseCase {
   constructor(private readonly userService: UserService) {}
 
-  async execute(
-    accountId: string,
-    excludeUserId: string
-  ): Promise<ListTransferUsersResponse> {
-    return this.userService.listUsersForTransfer(accountId, excludeUserId);
+  async execute(accountId: string): Promise<ListTransferUsersResponse> {
+    return this.userService.listUsersForTransfer(accountId);
   }
 }

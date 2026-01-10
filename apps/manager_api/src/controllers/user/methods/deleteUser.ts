@@ -19,11 +19,19 @@ export const deleteUser = async (
   const canOperateOnOthers = canOperateOnOtherAccounts(tokenJwtData.actions);
 
   try {
+    if (request.params.user_id === tokenJwtData.user_id) {
+      return sendResponse(reply, {
+        message: t('cannot_delete_own_user'),
+        httpStatusCode: EHTTPStatusCode.forbidden,
+      });
+    }
+
     const response = await userDeleterUseCase.execute(
       t,
       request.params.user_id,
       tokenJwtData.account_id,
-      canOperateOnOthers
+      canOperateOnOthers,
+      tokenJwtData.user_id
     );
 
     if (response) {

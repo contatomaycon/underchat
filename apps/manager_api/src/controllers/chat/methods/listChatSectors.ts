@@ -3,24 +3,22 @@ import { sendResponse } from '@core/common/functions/sendResponse';
 import { handleControllerError } from '@core/common/functions/handleControllerError';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
-import { ChatbotUsersListerUseCase } from '@core/useCases/chatbot/ChatbotUsersLister.useCase';
+import { ChatSectorsListerUseCase } from '@core/useCases/chat/ChatSectorsLister.useCase';
 
-export const listUsers = async (
+export const listChatSectors = async (
   request: FastifyRequest,
   reply: FastifyReply
 ) => {
-  const chatbotUsersListerUseCase = container.resolve(
-    ChatbotUsersListerUseCase
-  );
+  const chatSectorsListerUseCase = container.resolve(ChatSectorsListerUseCase);
   const { t, tokenJwtData } = request;
 
   try {
-    const response = await chatbotUsersListerUseCase.execute(
+    const response = await chatSectorsListerUseCase.execute(
       tokenJwtData.account_id
     );
 
     return sendResponse(reply, {
-      message: t('chatbot_users_listed_successfully'),
+      message: t('sectors_listed_successfully'),
       httpStatusCode: EHTTPStatusCode.ok,
       data: response,
     });

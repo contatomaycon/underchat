@@ -16,8 +16,7 @@ export const listTransferUsers = async (
 
   try {
     const response = await chatTransferUsersListerUseCase.execute(
-      tokenJwtData.account_id,
-      tokenJwtData.user_id
+      tokenJwtData.account_id
     );
 
     return sendResponse(reply, {

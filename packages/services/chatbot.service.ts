@@ -83,10 +83,9 @@ export class ChatbotService {
   };
 
   listChatbotUsers = async (
-    accountId: string,
-    excludeUserId: string
+    accountId: string
   ): Promise<ListChatbotUsersResponse> => {
-    return this.userService.listUsersForTransfer(accountId, excludeUserId);
+    return this.userService.listUsersForTransfer(accountId);
   };
 
   listChatbotSectors = async (

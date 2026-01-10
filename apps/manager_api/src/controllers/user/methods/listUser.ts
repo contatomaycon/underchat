@@ -27,7 +27,6 @@ export const listUser = async (
       t,
       query,
       accountId,
-      tokenJwtData.user_id,
       canReturnAll
     );
 

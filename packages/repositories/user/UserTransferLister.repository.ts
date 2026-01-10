@@ -2,7 +2,7 @@ import * as schema from '@core/models';
 import { user, userInfo } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, asc, eq, isNull, ne } from 'drizzle-orm';
+import { and, asc, eq, isNull } from 'drizzle-orm';
 import { TransferUserResponse } from '@core/schema/chat/listTransferUsers/response.schema';
 import { PresenceService } from '@core/services/presence.service';
 
@@ -14,8 +14,7 @@ export class UserTransferListerRepository {
   ) {}
 
   listUsersForTransfer = async (
-    accountId: string,
-    excludeUserId: string
+    accountId: string
   ): Promise<TransferUserResponse[]> => {
     const result = await this.dbRo
       .select({
@@ -30,7 +29,6 @@ export class UserTransferListerRepository {
         and(
           eq(user.account_id, accountId),
           isNull(user.deleted_at),
-          ne(user.user_id, excludeUserId),
           isNull(userInfo.deleted_at)
         )
       )

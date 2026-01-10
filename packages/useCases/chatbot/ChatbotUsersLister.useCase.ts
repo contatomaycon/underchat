@@ -6,10 +6,7 @@ import { ListChatbotUsersResponse } from '@core/schema/chatbot/listUsers/respons
 export class ChatbotUsersListerUseCase {
   constructor(private readonly chatbotService: ChatbotService) {}
 
-  async execute(
-    accountId: string,
-    excludeUserId: string
-  ): Promise<ListChatbotUsersResponse> {
-    return this.chatbotService.listChatbotUsers(accountId, excludeUserId);
+  async execute(accountId: string): Promise<ListChatbotUsersResponse> {
+    return this.chatbotService.listChatbotUsers(accountId);
   }
 }

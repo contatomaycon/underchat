@@ -633,7 +633,12 @@ watch(
                   />
                 </IconBtn>
 
-                <IconBtn v-if="$canPermission(permissionsDelete)">
+                <IconBtn
+                  v-if="
+                    $canPermission(permissionsDelete) &&
+                    currentUser?.user_id !== item.user_id
+                  "
+                >
                   <VTooltip
                     location="top"
                     transition="scale-transition"

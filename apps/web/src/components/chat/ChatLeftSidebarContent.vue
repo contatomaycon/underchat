@@ -121,23 +121,37 @@ const filteredMyChats = computed(() => {
     if (!userId) return [];
 
     const allChats = [...chatStore.listInChat, ...chatStore.listQueue];
-    const filtered = allChats.filter((chat) => chat.user?.id === userId);
-    const filters = getChatUserFilters();
-
-    if (filters.sort_my_chats_order) {
-      filtered.sort((a, b) => {
-        const dateA = new Date(a.date || 0).getTime();
-        const dateB = new Date(b.date || 0).getTime();
-        if (filters.sort_my_chats_order === 'asc') {
-          return dateA - dateB;
-        }
-        return dateB - dateA;
-      });
-    }
-
-    return filtered;
+    return allChats.filter((chat) => chat.user?.id === userId);
   }
   return [];
+});
+
+const hasActiveFilters = computed(() => {
+  return !!(
+    currentFilterLabelTemplateId.value ||
+    currentFilterWorkerId.value ||
+    currentFilterUserId.value ||
+    currentFilterSectorId.value ||
+    currentFilterName.value ||
+    currentFilterPhone.value ||
+    currentFilterProtocol.value ||
+    currentFilterDateStart.value ||
+    currentFilterDateEnd.value
+  );
+});
+
+const filteredChatbot = computed(() => {
+  if (activeFilter.value === 'all' && hasActiveFilters.value) {
+    return chatStore.listChatbot;
+  }
+  if (activeFilter.value === 'chatbot') {
+    return chatStore.listChatbot;
+  }
+  return [];
+});
+
+const showChatbotTitle = computed(() => {
+  return activeFilter.value === 'all' && hasActiveFilters.value;
 });
 
 const allChatsCount = computed(() => {
@@ -228,6 +242,16 @@ const handleFilterClick = (filter: FilterType) => {
     return;
   }
 
+  currentFilterLabelTemplateId.value = null;
+  currentFilterWorkerId.value = null;
+  currentFilterUserId.value = null;
+  currentFilterSectorId.value = null;
+  currentFilterName.value = null;
+  currentFilterPhone.value = null;
+  currentFilterProtocol.value = null;
+  currentFilterDateStart.value = null;
+  currentFilterDateEnd.value = null;
+
   activeFilter.value = filter;
   expandedFilter.value = filter;
 
@@ -246,6 +270,73 @@ const handleFilterClick = (filter: FilterType) => {
     currentPageQueue.value = 1;
     currentPageInChat.value = 1;
     loadChatsByFilter();
+  }
+};
+
+const handleFiltersUpdated = async () => {
+  if (
+    activeFilter.value !== 'all' &&
+    activeFilter.value !== 'my_chats' &&
+    activeFilter.value !== 'in_chat' &&
+    activeFilter.value !== 'queue' &&
+    activeFilter.value !== 'chatbot'
+  ) {
+    activeFilter.value = 'all';
+    expandedFilter.value = 'all';
+  }
+
+  if (activeFilter.value === 'all') {
+    currentPageQueue.value = 1;
+    currentPageInChat.value = 1;
+    chatbotPagings.value.current_page = 1;
+    await Promise.all([loadChatsByFilter(), loadChatbotChats()]);
+  } else if (activeFilter.value === 'chatbot') {
+    chatbotPagings.value.current_page = 1;
+    await loadChatbotChats();
+  } else {
+    currentPageQueue.value = 1;
+    currentPageInChat.value = 1;
+    await loadChatsByFilter();
+  }
+
+  if (
+    debouncedSearchQuery.value &&
+    debouncedSearchQuery.value.trim().length > 0
+  ) {
+    await performSearch();
+  }
+};
+
+const handleClearFilters = async () => {
+  currentFilterLabelTemplateId.value = null;
+  currentFilterWorkerId.value = null;
+  currentFilterUserId.value = null;
+  currentFilterSectorId.value = null;
+  currentFilterName.value = null;
+  currentFilterPhone.value = null;
+  currentFilterProtocol.value = null;
+  currentFilterDateStart.value = null;
+  currentFilterDateEnd.value = null;
+
+  if (activeFilter.value === 'all') {
+    currentPageQueue.value = 1;
+    currentPageInChat.value = 1;
+    chatbotPagings.value.current_page = 1;
+    await Promise.all([loadChatsByFilter(), loadChatbotChats()]);
+  } else if (activeFilter.value === 'chatbot') {
+    chatbotPagings.value.current_page = 1;
+    await loadChatbotChats();
+  } else {
+    currentPageQueue.value = 1;
+    currentPageInChat.value = 1;
+    await loadChatsByFilter();
+  }
+
+  if (
+    debouncedSearchQuery.value &&
+    debouncedSearchQuery.value.trim().length > 0
+  ) {
+    await performSearch();
   }
 };
 
@@ -304,15 +395,27 @@ const loadChatContacts = async (chats: ListChatsResult[]) => {
   await chatStore.getChatContactsByIds(contactIdsToLoad);
 };
 
+const currentFilterLabelTemplateId = ref<string | null>(null);
+const currentFilterWorkerId = ref<string | null>(null);
+const currentFilterUserId = ref<string | null>(null);
+const currentFilterSectorId = ref<string | null>(null);
+const currentFilterName = ref<string | null>(null);
+const currentFilterPhone = ref<string | null>(null);
+const currentFilterProtocol = ref<string | null>(null);
+const currentFilterDateStart = ref<string | null>(null);
+const currentFilterDateEnd = ref<string | null>(null);
+
 const getChatUserFilters = () => {
-  const chatUser = chatStore.user?.chat_user;
   return {
-    filter_label_template_id:
-      chatUser?.filter_label_template_id ?? undefined,
-    sort_in_chat_order: chatUser?.sort_in_chat_order ?? undefined,
-    sort_my_chats_order: chatUser?.sort_my_chats_order ?? undefined,
-    sort_queue_order: chatUser?.sort_queue_order ?? undefined,
-    sort_chatbot_order: chatUser?.sort_chatbot_order ?? undefined,
+    filter_label_template_id: currentFilterLabelTemplateId.value ?? undefined,
+    filter_worker_id: currentFilterWorkerId.value ?? undefined,
+    filter_user_id: currentFilterUserId.value ?? undefined,
+    filter_sector_id: currentFilterSectorId.value ?? undefined,
+    filter_name: currentFilterName.value ?? undefined,
+    filter_phone: currentFilterPhone.value ?? undefined,
+    filter_protocol: currentFilterProtocol.value ?? undefined,
+    filter_date_start: currentFilterDateStart.value ?? undefined,
+    filter_date_end: currentFilterDateEnd.value ?? undefined,
   };
 };
 
@@ -325,7 +428,14 @@ const loadChatsByFilter = async (append = false) => {
       per_page: perPageQueue.value,
       status: EChatStatus.queue,
       filter_label_template_id: filters.filter_label_template_id,
-      sort_order: filters.sort_queue_order,
+      filter_worker_id: filters.filter_worker_id,
+      filter_user_id: filters.filter_user_id,
+      filter_sector_id: filters.filter_sector_id,
+      filter_name: filters.filter_name,
+      filter_phone: filters.filter_phone,
+      filter_protocol: filters.filter_protocol,
+      filter_date_start: filters.filter_date_start,
+      filter_date_end: filters.filter_date_end,
     };
 
     const requestInChat: ListChatsQuery = {
@@ -333,7 +443,14 @@ const loadChatsByFilter = async (append = false) => {
       per_page: perPageInChat.value,
       status: EChatStatus.in_chat,
       filter_label_template_id: filters.filter_label_template_id,
-      sort_order: filters.sort_in_chat_order,
+      filter_worker_id: filters.filter_worker_id,
+      filter_user_id: filters.filter_user_id,
+      filter_sector_id: filters.filter_sector_id,
+      filter_name: filters.filter_name,
+      filter_phone: filters.filter_phone,
+      filter_protocol: filters.filter_protocol,
+      filter_date_start: filters.filter_date_start,
+      filter_date_end: filters.filter_date_end,
     };
 
     await Promise.all([
@@ -355,7 +472,14 @@ const loadChatsByFilter = async (append = false) => {
       per_page: perPageInChat.value,
       status: EChatStatus.in_chat,
       filter_label_template_id: filters.filter_label_template_id,
-      sort_order: filters.sort_in_chat_order,
+      filter_worker_id: filters.filter_worker_id,
+      filter_user_id: filters.filter_user_id,
+      filter_sector_id: filters.filter_sector_id,
+      filter_name: filters.filter_name,
+      filter_phone: filters.filter_phone,
+      filter_protocol: filters.filter_protocol,
+      filter_date_start: filters.filter_date_start,
+      filter_date_end: filters.filter_date_end,
     };
 
     await chatStore.listInChatChats(requestInChat, append);
@@ -372,7 +496,14 @@ const loadChatsByFilter = async (append = false) => {
       per_page: perPageQueue.value,
       status: EChatStatus.queue,
       filter_label_template_id: filters.filter_label_template_id,
-      sort_order: filters.sort_queue_order,
+      filter_worker_id: filters.filter_worker_id,
+      filter_user_id: filters.filter_user_id,
+      filter_sector_id: filters.filter_sector_id,
+      filter_name: filters.filter_name,
+      filter_phone: filters.filter_phone,
+      filter_protocol: filters.filter_protocol,
+      filter_date_start: filters.filter_date_start,
+      filter_date_end: filters.filter_date_end,
     };
 
     await chatStore.listQueueChats(requestQueue, append);
@@ -420,7 +551,14 @@ const loadChatbotChats = async () => {
       per_page: chatbotPagings.value.per_page,
       status: EChatStatus.ura,
       filter_label_template_id: filters.filter_label_template_id,
-      sort_order: filters.sort_chatbot_order,
+      filter_worker_id: filters.filter_worker_id,
+      filter_user_id: filters.filter_user_id,
+      filter_sector_id: filters.filter_sector_id,
+      filter_name: filters.filter_name,
+      filter_phone: filters.filter_phone,
+      filter_protocol: filters.filter_protocol,
+      filter_date_start: filters.filter_date_start,
+      filter_date_end: filters.filter_date_end,
     };
 
     const result = await chatStore.listChatbotChats(request);
@@ -631,10 +769,20 @@ const performSearch = async () => {
 
   isSearching.value = true;
   try {
+    const filters = getChatUserFilters();
     const request: SearchChatsQuery = {
       current_page: 1,
       per_page: 20,
       search: debouncedSearchQuery.value.trim(),
+      filter_label_template_id: filters.filter_label_template_id,
+      filter_worker_id: filters.filter_worker_id,
+      filter_user_id: filters.filter_user_id,
+      filter_sector_id: filters.filter_sector_id,
+      filter_name: filters.filter_name,
+      filter_phone: filters.filter_phone,
+      filter_protocol: filters.filter_protocol,
+      filter_date_start: filters.filter_date_start,
+      filter_date_end: filters.filter_date_end,
     };
 
     const result = await chatStore.searchChats(request);
@@ -668,6 +816,15 @@ watch(
   () => {
     searchQuery.value = '';
     searchResults.value = [];
+    currentFilterLabelTemplateId.value = null;
+    currentFilterWorkerId.value = null;
+    currentFilterUserId.value = null;
+    currentFilterSectorId.value = null;
+    currentFilterName.value = null;
+    currentFilterPhone.value = null;
+    currentFilterProtocol.value = null;
+    currentFilterDateStart.value = null;
+    currentFilterDateEnd.value = null;
   }
 );
 
@@ -906,13 +1063,17 @@ onMounted(async () => {
       :loading="isSearching"
     />
 
-    <IconBtn
-      class="me-1"
-      @click="isAdvancedFiltersModalOpen = true"
-    >
+    <IconBtn class="me-1" @click="isAdvancedFiltersModalOpen = true">
       <VIcon icon="tabler-filter" class="text-medium-emphasis" />
       <VTooltip activator="parent" location="bottom">
         {{ $t('advanced_filters') }}
+      </VTooltip>
+    </IconBtn>
+
+    <IconBtn v-if="hasActiveFilters" class="me-1" @click="handleClearFilters">
+      <VIcon icon="tabler-filter-off" class="text-medium-emphasis" />
+      <VTooltip activator="parent" location="bottom">
+        {{ $t('clear_filters', 'Limpar filtros') }}
       </VTooltip>
     </IconBtn>
 
@@ -1433,6 +1594,32 @@ onMounted(async () => {
           {{ $t('no_chat_in_queue') }}
         </li>
 
+        <li v-if="showChatbotTitle && canViewChatbotTab" class="list-none pt-2">
+          <h5 class="chat-header text-primary text-h5">
+            {{ $t('chatbot') }}
+          </h5>
+        </li>
+
+        <ChatQueue
+          v-if="showChatbotTitle && canViewChatbotTab"
+          v-for="chatbot in filteredChatbot"
+          :key="`chatbot-all-${chatbot.chat_id}`"
+          :user="chatbot"
+          @click="$emit('openChat', chatbot.chat_id)"
+        />
+
+        <li
+          v-if="
+            showChatbotTitle &&
+            canViewChatbotTab &&
+            !filteredChatbot.length &&
+            !isLoadingChatbot
+          "
+          class="no-chat-items-text text-disabled"
+        >
+          {{ $t('no_chat_in_ura') }}
+        </li>
+
         <li
           v-if="
             (isLoadingMoreQueue || isLoadingMoreInChat) &&
@@ -1590,8 +1777,26 @@ onMounted(async () => {
 
   <ChatAdvancedFiltersModal
     v-model="isAdvancedFiltersModalOpen"
+    :filter-label="currentFilterLabelTemplateId"
+    :filter-worker="currentFilterWorkerId"
+    :filter-user="currentFilterUserId"
+    :filter-sector="currentFilterSectorId"
+    :filter-name="currentFilterName"
+    :filter-phone="currentFilterPhone"
+    :filter-protocol="currentFilterProtocol"
+    :filter-date-start="currentFilterDateStart"
+    :filter-date-end="currentFilterDateEnd"
+    @update:filter-label="currentFilterLabelTemplateId = $event"
+    @update:filter-worker="currentFilterWorkerId = $event"
+    @update:filter-user="currentFilterUserId = $event"
+    @update:filter-sector="currentFilterSectorId = $event"
+    @update:filter-name="currentFilterName = $event"
+    @update:filter-phone="currentFilterPhone = $event"
+    @update:filter-protocol="currentFilterProtocol = $event"
+    @update:filter-date-start="currentFilterDateStart = $event"
+    @update:filter-date-end="currentFilterDateEnd = $event"
     @update:model-value="isAdvancedFiltersModalOpen = $event"
-    @filters-updated="loadChatsByFilter"
+    @filters-updated="handleFiltersUpdated"
   />
 </template>
 

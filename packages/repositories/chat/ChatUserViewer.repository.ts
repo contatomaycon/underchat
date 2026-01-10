@@ -26,7 +26,6 @@ export class ChatUserViewerRepository {
         chat_user_id: chatUser.chat_user_id,
         about: chatUser.about,
         notifications: chatUser.notifications,
-        filter_label_template_id: chatUser.filter_label_template_id,
         sort_in_chat_order: chatUser.sort_in_chat_order,
         sort_my_chats_order: chatUser.sort_my_chats_order,
         sort_queue_order: chatUser.sort_queue_order,

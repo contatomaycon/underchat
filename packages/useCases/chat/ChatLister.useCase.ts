@@ -88,6 +88,203 @@ export class ChatListerUseCase {
       });
     }
 
+    if (query.filter_worker_id) {
+      filterClauses.push({
+        nested: {
+          path: 'worker',
+          query: {
+            term: {
+              'worker.id': query.filter_worker_id,
+            },
+          },
+        },
+      });
+    }
+
+    if (query.filter_user_id) {
+      filterClauses.push({
+        nested: {
+          path: 'user',
+          query: {
+            term: {
+              'user.id': query.filter_user_id,
+            },
+          },
+        },
+      });
+    }
+
+    if (query.filter_sector_id) {
+      filterClauses.push({
+        nested: {
+          path: 'sector',
+          query: {
+            term: {
+              'sector.id': query.filter_sector_id,
+            },
+          },
+        },
+      });
+    }
+
+    if (query.filter_name) {
+      filterClauses.push({
+        bool: {
+          should: [
+            {
+              wildcard: {
+                'name.keyword': {
+                  value: `*${query.filter_name.toLowerCase()}*`,
+                  case_insensitive: true,
+                },
+              },
+            },
+            {
+              query_string: {
+                default_field: 'name',
+                query: `*${query.filter_name}*`,
+                analyze_wildcard: true,
+                default_operator: 'OR',
+              },
+            },
+            {
+              nested: {
+                path: 'contact',
+                query: {
+                  wildcard: {
+                    'contact.name.keyword': {
+                      value: `*${query.filter_name.toLowerCase()}*`,
+                      case_insensitive: true,
+                    },
+                  },
+                },
+              },
+            },
+            {
+              nested: {
+                path: 'contact',
+                query: {
+                  query_string: {
+                    default_field: 'contact.name',
+                    query: `*${query.filter_name}*`,
+                    analyze_wildcard: true,
+                    default_operator: 'OR',
+                  },
+                },
+              },
+            },
+          ],
+          minimum_should_match: 1,
+        },
+      } as unknown as IElasticsearchBoolClause);
+    }
+
+    if (query.filter_phone) {
+      const phoneFilter = query.filter_phone.replace(/\D/g, '');
+      if (phoneFilter.length > 0) {
+        filterClauses.push({
+          bool: {
+            should: [
+              {
+                wildcard: {
+                  phone: {
+                    value: `*${phoneFilter}*`,
+                    case_insensitive: true,
+                  },
+                },
+              },
+              {
+                wildcard: {
+                  'phone.keyword': {
+                    value: `*${phoneFilter}*`,
+                    case_insensitive: true,
+                  },
+                },
+              },
+              {
+                nested: {
+                  path: 'contact',
+                  query: {
+                    bool: {
+                      should: [
+                        {
+                          wildcard: {
+                            'contact.phone': {
+                              value: `*${phoneFilter}*`,
+                              case_insensitive: true,
+                            },
+                          },
+                        },
+                        {
+                          wildcard: {
+                            'contact.phone.keyword': {
+                              value: `*${phoneFilter}*`,
+                              case_insensitive: true,
+                            },
+                          },
+                        },
+                      ],
+                      minimum_should_match: 1,
+                    },
+                  },
+                },
+              },
+            ],
+            minimum_should_match: 1,
+          },
+        } as unknown as IElasticsearchBoolClause);
+      }
+    }
+
+    if (query.filter_protocol) {
+      filterClauses.push({
+        bool: {
+          should: [
+            {
+              wildcard: {
+                'protocol_ura.keyword': {
+                  value: `*${query.filter_protocol.toLowerCase()}*`,
+                  case_insensitive: true,
+                },
+              },
+            },
+            {
+              wildcard: {
+                'protocol_start.keyword': {
+                  value: `*${query.filter_protocol.toLowerCase()}*`,
+                  case_insensitive: true,
+                },
+              },
+            },
+            {
+              wildcard: {
+                'protocol_transfer.keyword': {
+                  value: `*${query.filter_protocol.toLowerCase()}*`,
+                  case_insensitive: true,
+                },
+              },
+            },
+          ],
+          minimum_should_match: 1,
+        },
+      } as unknown as IElasticsearchBoolClause);
+    }
+
+    if (query.filter_date_start || query.filter_date_end) {
+      const dateRange: Record<string, string> = {};
+      if (query.filter_date_start) {
+        dateRange.gte = query.filter_date_start;
+      }
+      if (query.filter_date_end) {
+        dateRange.lte = query.filter_date_end;
+      }
+      filterClauses.push({
+        range: {
+          date: dateRange,
+        },
+      } as unknown as IElasticsearchBoolClause);
+    }
+
     const canViewOthers = this.canViewOthersChats(actions);
     const canListAll = this.canListAllChatsWithoutSectorLimit(actions);
 
@@ -175,12 +372,10 @@ export class ChatListerUseCase {
       }
     }
 
-    const sortOrder = query.sort_order === 'asc' ? 'asc' : 'desc';
-
     const queryElastic = {
       from: (currentPage - 1) * perPage,
       size: perPage,
-      sort: [{ date: { order: sortOrder } }],
+      sort: [{ date: { order: 'desc' } }],
       query: {
         bool: {
           must: mustClauses,

@@ -29,10 +29,6 @@ export class ChatUserUpdaterRepository {
       inputUpdate.notifications = input.notifications;
     }
 
-    if (input.filter_label_template_id !== undefined) {
-      inputUpdate.filter_label_template_id = input.filter_label_template_id;
-    }
-
     if (input.sort_in_chat_order !== undefined) {
       inputUpdate.sort_in_chat_order = input.sort_in_chat_order;
     }

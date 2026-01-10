@@ -42,6 +42,13 @@ const { t } = useI18n();
 const hasFullAccess = computed(() =>
   can([EGeneralPermissions.full_access, EGeneralPermissions.full_access_group])
 );
+const currentUser = computed(() => getUser());
+const isEditingOwnUser = computed(() => {
+  if (!userId.value || !currentUser.value) {
+    return false;
+  }
+  return currentUser.value.user_id === userId.value;
+});
 const accountId = ref<string | null>(null);
 const accountsOptions = ref<{ id: string; text: string }[]>([]);
 const accountsLoading = ref(false);
@@ -1698,27 +1705,36 @@ const buildUpdateUserBody = (): UpdateUserRequest => {
   const address2ToSave = determineAddress2ToSave();
   addFieldIfDefined(body, 'address2', address2ToSave);
 
-  const selectedState = states.value.find(
-    (s) => s.id_zipcode_state === state_id.value
-  );
-  const selectedCity = cities.value.find(
-    (c) => c.id_zipcode_city === city_id.value
-  );
-
-  if (city_id.value !== null && selectedCity?.fiscal_code) {
-    addFieldIfDefined(body, 'city_fiscal_code', selectedCity.fiscal_code);
-  }
-
-  if (state_id.value !== null && selectedState?.fiscal_code) {
-    addFieldIfDefined(body, 'state_fiscal_code', selectedState.fiscal_code);
-  }
-
   addFieldIfChanged(
     body,
     'district',
     district.value,
     initialValues.value.district
   );
+
+  const hasAddressChanges =
+    body.country_id !== undefined ||
+    body.zip_code !== undefined ||
+    body.address1 !== undefined ||
+    body.address2 !== undefined ||
+    body.district !== undefined;
+
+  if (hasAddressChanges) {
+    const selectedState = states.value.find(
+      (s) => s.id_zipcode_state === state_id.value
+    );
+    const selectedCity = cities.value.find(
+      (c) => c.id_zipcode_city === city_id.value
+    );
+
+    if (city_id.value !== null && selectedCity?.fiscal_code) {
+      addFieldIfDefined(body, 'city_fiscal_code', selectedCity.fiscal_code);
+    }
+
+    if (state_id.value !== null && selectedState?.fiscal_code) {
+      addFieldIfDefined(body, 'state_fiscal_code', selectedState.fiscal_code);
+    }
+  }
 
   if (photoRemoved.value) {
     body.photo_url = { value: null };
@@ -1728,7 +1744,10 @@ const buildUpdateUserBody = (): UpdateUserRequest => {
     addFieldIfDefined(body, 'photo_url', photoUrl);
   }
 
-  if (permissionRoleId.value !== initialPermissionRoleId.value) {
+  if (
+    !isEditingOwnUser.value &&
+    permissionRoleId.value !== initialPermissionRoleId.value
+  ) {
     body.permission_role_id = {
       value: permissionRoleId.value,
     };
@@ -2490,6 +2509,7 @@ watch(
                           :items="rolesOptions"
                           :placeholder="$t('select_role')"
                           :clearable="true"
+                          :disabled="isEditingOwnUser"
                           item-value="id"
                           item-title="name"
                         />

@@ -19,6 +19,9 @@ import {
   getPermissions,
   getSectors,
 } from '../localStorage/user';
+import type { ListChatWorkersResponse } from '@core/schema/chat/listChatWorkers/response.schema';
+import type { ListChatUsersResponse } from '@core/schema/chat/listChatUsers/response.schema';
+import type { ListChatSectorsResponse } from '@core/schema/chat/listChatSectors/response.schema';
 import { AuthUserResponse } from '@core/schema/auth/login/response.schema';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import { ListMessageChatsQuery } from '@core/schema/chat/listMessageChats/request.schema';
@@ -686,7 +689,14 @@ export const useChatStore = defineStore('chat', {
           per_page: input.per_page,
           status: input.status,
           filter_label_template_id: input.filter_label_template_id,
-          sort_order: input.sort_order,
+          filter_worker_id: input.filter_worker_id,
+          filter_user_id: input.filter_user_id,
+          filter_sector_id: input.filter_sector_id,
+          filter_name: input.filter_name,
+          filter_phone: input.filter_phone,
+          filter_protocol: input.filter_protocol,
+          filter_date_start: input.filter_date_start,
+          filter_date_end: input.filter_date_end,
         };
 
         const response = await axios.get<IApiResponse<ListChatsResponse>>(
@@ -742,7 +752,14 @@ export const useChatStore = defineStore('chat', {
           per_page: input.per_page,
           status: input.status,
           filter_label_template_id: input.filter_label_template_id,
-          sort_order: input.sort_order,
+          filter_worker_id: input.filter_worker_id,
+          filter_user_id: input.filter_user_id,
+          filter_sector_id: input.filter_sector_id,
+          filter_name: input.filter_name,
+          filter_phone: input.filter_phone,
+          filter_protocol: input.filter_protocol,
+          filter_date_start: input.filter_date_start,
+          filter_date_end: input.filter_date_end,
         };
 
         const response = await axios.get<IApiResponse<ListChatsResponse>>(
@@ -796,7 +813,14 @@ export const useChatStore = defineStore('chat', {
           per_page: input.per_page,
           status: input.status,
           filter_label_template_id: input.filter_label_template_id,
-          sort_order: input.sort_order,
+          filter_worker_id: input.filter_worker_id,
+          filter_user_id: input.filter_user_id,
+          filter_sector_id: input.filter_sector_id,
+          filter_name: input.filter_name,
+          filter_phone: input.filter_phone,
+          filter_protocol: input.filter_protocol,
+          filter_date_start: input.filter_date_start,
+          filter_date_end: input.filter_date_end,
         };
 
         const response = await axios.get<IApiResponse<ListChatsResponse>>(
@@ -836,6 +860,15 @@ export const useChatStore = defineStore('chat', {
           current_page: input.current_page ?? 1,
           per_page: input.per_page ?? 20,
           search: input.search,
+          filter_label_template_id: input.filter_label_template_id,
+          filter_worker_id: input.filter_worker_id,
+          filter_user_id: input.filter_user_id,
+          filter_sector_id: input.filter_sector_id,
+          filter_name: input.filter_name,
+          filter_phone: input.filter_phone,
+          filter_protocol: input.filter_protocol,
+          filter_date_start: input.filter_date_start,
+          filter_date_end: input.filter_date_end,
         };
 
         const response = await axios.get<IApiResponse<SearchChatsResponse>>(
@@ -891,9 +924,20 @@ export const useChatStore = defineStore('chat', {
         if (this.user?.chat_user) {
           const updatedChatUser = {
             ...this.user.chat_user,
-            ...input,
+            sort_in_chat_order:
+              input.sort_in_chat_order ??
+              this.user.chat_user.sort_in_chat_order,
+            sort_my_chats_order:
+              input.sort_my_chats_order ??
+              this.user.chat_user.sort_my_chats_order,
+            sort_queue_order:
+              input.sort_queue_order ?? this.user.chat_user.sort_queue_order,
+            sort_chatbot_order:
+              input.sort_chatbot_order ??
+              this.user.chat_user.sort_chatbot_order,
           };
-          this.user.chat_user = updatedChatUser as AuthUserResponse['chat_user'];
+          this.user.chat_user =
+            updatedChatUser as AuthUserResponse['chat_user'];
           setUser({ ...this.user, chat_user: updatedChatUser });
         }
       } catch {
@@ -2512,6 +2556,61 @@ export const useChatStore = defineStore('chat', {
         this.showSnackbar(errorMessage, EColor.error);
 
         return false;
+      }
+    },
+
+    async listChatWorkers(): Promise<ListChatWorkersResponse | null> {
+      try {
+        const response =
+          await axios.get<IApiResponse<ListChatWorkersResponse>>(
+            '/chat/workers'
+          );
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        return data.data;
+      } catch {
+        return null;
+      }
+    },
+
+    async listChatUsers(): Promise<ListChatUsersResponse | null> {
+      try {
+        const response =
+          await axios.get<IApiResponse<ListChatUsersResponse>>('/chat/users');
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        return data.data;
+      } catch {
+        return null;
+      }
+    },
+
+    async listChatSectors(): Promise<ListChatSectorsResponse | null> {
+      try {
+        const response =
+          await axios.get<IApiResponse<ListChatSectorsResponse>>(
+            '/chat/sectors'
+          );
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        return data.data;
+      } catch {
+        return null;
       }
     },
   },

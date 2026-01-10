@@ -63,8 +63,13 @@ export class UserDeleterUseCase {
     t: TFunction<'translation', undefined>,
     userId: string,
     accountId: string,
-    canOperateOnOthers: boolean
+    canOperateOnOthers: boolean,
+    currentUserId?: string
   ): Promise<boolean> {
+    if (currentUserId && userId === currentUserId) {
+      throw new Error(t('cannot_delete_own_user'));
+    }
+
     if (!canOperateOnOthers) {
       await this.validateUserExistsInAccount(t, userId, accountId);
     }

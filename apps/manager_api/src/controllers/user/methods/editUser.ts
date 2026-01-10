@@ -34,6 +34,13 @@ export const editUser = async (
       });
     }
 
+    if (
+      request.params.user_id === tokenJwtData.user_id &&
+      request.body.permission_role_id !== undefined
+    ) {
+      delete request.body.permission_role_id;
+    }
+
     const accountIdToUse = request.body.account_id?.value
       ? request.body.account_id.value
       : tokenJwtData.account_id;
@@ -43,7 +50,8 @@ export const editUser = async (
       request.params.user_id,
       request.body,
       accountIdToUse,
-      canOperateOnOthers
+      canOperateOnOthers,
+      tokenJwtData.user_id
     );
 
     if (response) {

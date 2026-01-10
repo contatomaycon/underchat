@@ -103,8 +103,7 @@ export class UserService {
     perPage: number,
     currentPage: number,
     query: ListUserRequest,
-    accountId: string | null,
-    excludeUserId: string
+    accountId: string | null
   ): Promise<[ListUserResponse[], number]> => {
     const searchHashes = query.search
       ? this.encryptService.encrypt(query.search)
@@ -116,15 +115,9 @@ export class UserService {
         currentPage,
         query,
         accountId,
-        searchHashes,
-        excludeUserId
+        searchHashes
       ),
-      this.userListerRepository.listUsersTotal(
-        query,
-        accountId,
-        searchHashes,
-        excludeUserId
-      ),
+      this.userListerRepository.listUsersTotal(query, accountId, searchHashes),
     ]);
 
     return [result, total];
@@ -752,13 +745,9 @@ export class UserService {
   };
 
   listUsersForTransfer = async (
-    accountId: string,
-    excludeUserId: string
+    accountId: string
   ): Promise<TransferUserResponse[]> => {
-    return this.userTransferListerRepository.listUsersForTransfer(
-      accountId,
-      excludeUserId
-    );
+    return this.userTransferListerRepository.listUsersForTransfer(accountId);
   };
 
   viewAdditionalInfo = async (

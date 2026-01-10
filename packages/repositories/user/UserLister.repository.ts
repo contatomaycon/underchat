@@ -20,7 +20,6 @@ import {
   ilike,
   inArray,
   SQL,
-  ne,
 } from 'drizzle-orm';
 import { isDefinedFilter } from '@core/common/functions/isDefinedFilter';
 import { ListUserResponse } from '@core/schema/user/listUser/response.schema';
@@ -117,15 +116,13 @@ export class UserListerRepository {
     currentPage: number,
     query: ListUserRequest,
     accountId: string | null,
-    searchHashes: string | null,
-    excludeUserId: string
+    searchHashes: string | null
   ): Promise<ListUserResponse[]> => {
     const filtersUser = this.setFiltersUser(query, searchHashes);
     const filters = this.setFilters(query);
 
     const whereConditions = [
       isNull(user.deleted_at),
-      ne(user.user_id, excludeUserId),
       filters,
       ...filtersUser,
     ].filter(isDefinedFilter);
@@ -337,15 +334,13 @@ export class UserListerRepository {
   listUsersTotal = async (
     query: ListUserRequest,
     accountId: string | null,
-    searchHashes: string | null,
-    excludeUserId: string
+    searchHashes: string | null
   ): Promise<number> => {
     const filtersUser = this.setFiltersUser(query, searchHashes);
     const filters = this.setFilters(query);
 
     const whereConditions = [
       isNull(user.deleted_at),
-      ne(user.user_id, excludeUserId),
       filters,
       ...filtersUser,
     ].filter(isDefinedFilter);
