@@ -2718,7 +2718,9 @@ onUnmounted(() => {
                       rows="3"
                     />
                     <div class="text-caption text-medium-emphasis mt-2">
-                      <strong>{{ t('chatbot_message_default_label') }}:</strong>
+                      <strong
+                        >{{ t('chatbot_message_default_label') }}:
+                      </strong>
                       {{ defaultInactivityMessage }}
                     </div>
                   </VCardText>
@@ -2753,7 +2755,9 @@ onUnmounted(() => {
                       rows="3"
                     />
                     <div class="text-caption text-medium-emphasis mt-2">
-                      <strong>{{ t('chatbot_message_default_label') }}:</strong>
+                      <strong
+                        >{{ t('chatbot_message_default_label') }}:
+                      </strong>
                       {{ defaultInvalidMenuOptionMessage }}
                     </div>
                   </VCardText>
@@ -2794,7 +2798,9 @@ onUnmounted(() => {
                       rows="3"
                     />
                     <div class="text-caption text-medium-emphasis mt-2">
-                      <strong>{{ t('chatbot_message_default_label') }}:</strong>
+                      <strong
+                        >{{ t('chatbot_message_default_label') }}:
+                      </strong>
                       {{ defaultInvalidSatisfactionOptionMessage }}
                     </div>
                   </VCardText>
@@ -2829,7 +2835,9 @@ onUnmounted(() => {
                       rows="3"
                     />
                     <div class="text-caption text-medium-emphasis mt-2">
-                      <strong>{{ t('chatbot_message_default_label') }}:</strong>
+                      <strong
+                        >{{ t('chatbot_message_default_label') }}:
+                      </strong>
                       {{ defaultInvalidCpfMessage }}
                     </div>
                   </VCardText>
@@ -2864,7 +2872,9 @@ onUnmounted(() => {
                       rows="3"
                     />
                     <div class="text-caption text-medium-emphasis mt-2">
-                      <strong>{{ t('chatbot_message_default_label') }}:</strong>
+                      <strong
+                        >{{ t('chatbot_message_default_label') }}:
+                      </strong>
                       {{ defaultInvalidCnpjMessage }}
                     </div>
                   </VCardText>
@@ -2899,7 +2909,9 @@ onUnmounted(() => {
                       rows="3"
                     />
                     <div class="text-caption text-medium-emphasis mt-2">
-                      <strong>{{ t('chatbot_message_default_label') }}:</strong>
+                      <strong
+                        >{{ t('chatbot_message_default_label') }}:
+                      </strong>
                       {{ defaultInvalidEmailMessage }}
                     </div>
                   </VCardText>
@@ -2934,7 +2946,9 @@ onUnmounted(() => {
                       rows="3"
                     />
                     <div class="text-caption text-medium-emphasis mt-2">
-                      <strong>{{ t('chatbot_message_default_label') }}:</strong>
+                      <strong
+                        >{{ t('chatbot_message_default_label') }}:
+                      </strong>
                       {{ defaultServiceFinishedMessage }}
                     </div>
                   </VCardText>
@@ -2969,7 +2983,9 @@ onUnmounted(() => {
                       rows="3"
                     />
                     <div class="text-caption text-medium-emphasis mt-2">
-                      <strong>{{ t('chatbot_message_default_label') }}:</strong>
+                      <strong
+                        >{{ t('chatbot_message_default_label') }}:
+                      </strong>
                       <span v-text="safeDefaultTransferMessageUserText"></span>
                     </div>
                   </VCardText>
@@ -3004,7 +3020,9 @@ onUnmounted(() => {
                       rows="3"
                     />
                     <div class="text-caption text-medium-emphasis mt-2">
-                      <strong>{{ t('chatbot_message_default_label') }}:</strong>
+                      <strong
+                        >{{ t('chatbot_message_default_label') }}:
+                      </strong>
                       <span
                         v-text="safeDefaultTransferMessageSectorText"
                       ></span>
@@ -3043,7 +3061,9 @@ onUnmounted(() => {
                       rows="3"
                     />
                     <div class="text-caption text-medium-emphasis mt-2">
-                      <strong>{{ t('chatbot_message_default_label') }}:</strong>
+                      <strong
+                        >{{ t('chatbot_message_default_label') }}:
+                      </strong>
                       <span
                         v-text="safeDefaultTransferMessageSectorUserText"
                       ></span>
