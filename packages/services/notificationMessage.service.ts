@@ -616,11 +616,18 @@ export class NotificationMessageService {
       whatsappMessage
     );
 
-    if (sentViaWhatsapp && notification.worker_id) {
+    if (sentViaWhatsapp) {
+      if (!notification.worker_id) {
+        return {
+          code,
+          sent_via_email: true,
+          sent_via_whatsapp: false,
+        };
+      }
+
+      const workerId = notification.worker_id;
       const workerName =
-        await this.workerNameViewerRepository.findWorkerNameById(
-          notification.worker_id
-        );
+        await this.workerNameViewerRepository.findWorkerNameById(workerId);
 
       if (workerName) {
         const notificationMessage: INotificationMessage = {
@@ -631,7 +638,7 @@ export class NotificationMessageService {
             phone_number: phone.replaceAll(/\D/g, ''),
           },
           worker: {
-            id: notification.worker_id,
+            id: workerId,
             name: workerName,
           },
           notification_type: {
@@ -650,7 +657,7 @@ export class NotificationMessageService {
         await this.sendWhatsAppNotification(
           notification,
           phone,
-          notification.worker_id,
+          workerId,
           notificationMessage
         );
       }
