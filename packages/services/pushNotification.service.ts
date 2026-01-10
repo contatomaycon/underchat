@@ -4,6 +4,7 @@ import { PushSubscriptionListerRepository } from '@core/repositories/push/PushSu
 import { PushSubscriptionDeleterRepository } from '@core/repositories/push/PushSubscriptionDeleter.repository';
 import { UsersWithNotificationsListerRepository } from '@core/repositories/push/UsersWithNotificationsLister.repository';
 import { PermissionAssignmentUserViewerRepository } from '@core/repositories/permission/PermissionAssignmentUserViewer.repository';
+import { UserSectorsListerRepository } from '@core/repositories/user/UserSectorsLister.repository';
 import { IPushNotificationPayload } from '@core/common/interfaces/IPushNotificationPayload';
 import { IChat } from '@core/common/interfaces/IChat';
 import { IChatMessage } from '@core/common/interfaces/IChatMessage';
@@ -24,7 +25,8 @@ export class PushNotificationService {
     private readonly pushSubscriptionListerRepository: PushSubscriptionListerRepository,
     private readonly pushSubscriptionDeleterRepository: PushSubscriptionDeleterRepository,
     private readonly usersWithNotificationsListerRepository: UsersWithNotificationsListerRepository,
-    private readonly permissionAssignmentUserViewerRepository: PermissionAssignmentUserViewerRepository
+    private readonly permissionAssignmentUserViewerRepository: PermissionAssignmentUserViewerRepository,
+    private readonly userSectorsListerRepository: UserSectorsListerRepository
   ) {
     this.initializeVapidKeys();
   }
@@ -212,15 +214,46 @@ export class PushNotificationService {
         action === EChatPermissions.chat_group ||
         action === EChatPermissions.view_others_chats
     );
+    const canListAllChatsWithoutSectorLimit = permissionActions.some(
+      (action) =>
+        action === EGeneralPermissions.full_access ||
+        action === EGeneralPermissions.full_access_group ||
+        action === EChatPermissions.chat_group ||
+        action === EChatPermissions.list_all_chats_without_sector_limit
+    );
 
-    if (canViewOthersChats) {
+    const hasPermissionToViewAll =
+      canViewOthersChats || canListAllChatsWithoutSectorLimit;
+
+    if (hasPermissionToViewAll) {
       return true;
     }
 
-    if (chat.user?.id && chat.user.id !== userId) {
-      return false;
+    if (chat.status === EChatStatus.in_chat) {
+      return chat.user?.id === userId;
     }
 
-    return true;
+    if (chat.status === EChatStatus.queue) {
+      if (chat.user?.id) {
+        return chat.user.id === userId;
+      }
+
+      const userSectors =
+        await this.userSectorsListerRepository.listUserSectors(
+          accountId,
+          userId
+        );
+
+      if (userSectors.length > 0) {
+        if (!chat.sector?.id) {
+          return false;
+        }
+        return userSectors.includes(chat.sector.id);
+      }
+
+      return !chat.sector?.id;
+    }
+
+    return false;
   }
 }
