@@ -1,7 +1,7 @@
 import { inject, injectable } from 'tsyringe';
 import Redis from 'ioredis';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
-import { CentrifugoService } from '@core/services/centrifugo.service';
+import { PresenceCentrifugoService } from '@core/services/presence-centrifugo.service';
 import { UserAccountViewerRepository } from '@core/repositories/user/UserAccountViewer.repository';
 import { chatAccountCentrifugo } from '@core/common/functions/centrifugoQueue';
 
@@ -23,7 +23,7 @@ export class PresenceService {
 
   constructor(
     @inject('Redis') private readonly redis: Redis,
-    private readonly centrifugoService: CentrifugoService,
+    private readonly presenceCentrifugoService: PresenceCentrifugoService,
     private readonly userAccountViewerRepository: UserAccountViewerRepository
   ) {}
 
@@ -221,7 +221,7 @@ export class PresenceService {
 
       const channel = chatAccountCentrifugo(accountId);
 
-      await this.centrifugoService.publishSub(channel, {
+      await this.presenceCentrifugoService.publishSub(channel, {
         event: 'user_presence',
         user_id: userId,
         status,
