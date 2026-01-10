@@ -229,6 +229,8 @@ services:
       - ./infra/centrifugo/config.json:/etc/centrifugo/config.json:ro
     entrypoint: ['centrifugo']
     command: ['--config', '/etc/centrifugo/config.json']
+    networks:
+      - underchat
 
   under-minio:
     image: minio/minio:latest
