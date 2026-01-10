@@ -408,6 +408,11 @@ watch(
   justify-content: center;
 }
 
+.chat.chat-active .chat-attendant-label {
+  background-color: rgb(var(--v-theme-surface));
+  color: rgb(var(--v-theme-on-surface));
+}
+
 .chat-worker-label-wrapper {
   position: absolute;
   top: 0;
