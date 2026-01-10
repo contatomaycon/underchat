@@ -21,12 +21,32 @@ export class ChatUserUpdaterRepository {
   ): Partial<typeof chatUser.$inferInsert> {
     const inputUpdate: Partial<typeof chatUser.$inferInsert> = {};
 
-    if (input.about) {
+    if (input.about !== undefined) {
       inputUpdate.about = input.about;
     }
 
-    if (input.notifications) {
+    if (input.notifications !== undefined) {
       inputUpdate.notifications = input.notifications;
+    }
+
+    if (input.filter_label_template_id !== undefined) {
+      inputUpdate.filter_label_template_id = input.filter_label_template_id;
+    }
+
+    if (input.sort_in_chat_order !== undefined) {
+      inputUpdate.sort_in_chat_order = input.sort_in_chat_order;
+    }
+
+    if (input.sort_my_chats_order !== undefined) {
+      inputUpdate.sort_my_chats_order = input.sort_my_chats_order;
+    }
+
+    if (input.sort_queue_order !== undefined) {
+      inputUpdate.sort_queue_order = input.sort_queue_order;
+    }
+
+    if (input.sort_chatbot_order !== undefined) {
+      inputUpdate.sort_chatbot_order = input.sort_chatbot_order;
     }
 
     return inputUpdate;

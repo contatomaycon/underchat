@@ -685,6 +685,8 @@ export const useChatStore = defineStore('chat', {
           current_page: input.current_page,
           per_page: input.per_page,
           status: input.status,
+          filter_label_template_id: input.filter_label_template_id,
+          sort_order: input.sort_order,
         };
 
         const response = await axios.get<IApiResponse<ListChatsResponse>>(
@@ -739,6 +741,8 @@ export const useChatStore = defineStore('chat', {
           current_page: input.current_page,
           per_page: input.per_page,
           status: input.status,
+          filter_label_template_id: input.filter_label_template_id,
+          sort_order: input.sort_order,
         };
 
         const response = await axios.get<IApiResponse<ListChatsResponse>>(
@@ -791,6 +795,8 @@ export const useChatStore = defineStore('chat', {
           current_page: input.current_page,
           per_page: input.per_page,
           status: input.status,
+          filter_label_template_id: input.filter_label_template_id,
+          sort_order: input.sort_order,
         };
 
         const response = await axios.get<IApiResponse<ListChatsResponse>>(
@@ -880,6 +886,15 @@ export const useChatStore = defineStore('chat', {
           this.showSnackbar(errorMessage, EColor.error);
 
           return;
+        }
+
+        if (this.user?.chat_user) {
+          const updatedChatUser = {
+            ...this.user.chat_user,
+            ...input,
+          };
+          this.user.chat_user = updatedChatUser as AuthUserResponse['chat_user'];
+          setUser({ ...this.user, chat_user: updatedChatUser });
         }
       } catch {
         this.loading = false;
