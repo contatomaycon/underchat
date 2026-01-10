@@ -364,7 +364,8 @@ export const useChatStore = defineStore('chat', {
       this.activeChat.summary = {
         ...this.activeChat.summary,
         last_date: chat.summary.last_date,
-        unread_count: 0,
+        last_message: chat.summary.last_message,
+        unread_count: chat.summary.unread_count,
       };
     },
 
@@ -379,7 +380,10 @@ export const useChatStore = defineStore('chat', {
       return {
         ...existingSummary,
         last_date: input.summary?.last_date ?? existingSummary.last_date,
-        unread_count: 0,
+        last_message:
+          input.summary?.last_message ?? existingSummary.last_message,
+        unread_count:
+          input.summary?.unread_count ?? existingSummary.unread_count,
       };
     },
 
@@ -1455,37 +1459,9 @@ export const useChatStore = defineStore('chat', {
         return;
       }
 
-      if (
-        chat.status === EChatStatus.in_chat &&
-        (chat.summary?.unread_count ?? 0) > 0
-      ) {
-        const chatInQueue = this.listQueue.find((c) => c.chat_id === chatId);
-        const chatInList = this.listInChat.find((c) => c.chat_id === chatId);
-
-        if (chatInQueue?.summary) {
-          chatInQueue.summary = {
-            ...chatInQueue.summary,
-            unread_count: 0,
-          };
-        }
-
-        if (chatInList?.summary) {
-          chatInList.summary = {
-            ...chatInList.summary,
-            unread_count: 0,
-          };
-        }
-      }
-
       this.activeChat = {
         chat_id: chat.chat_id,
-        summary:
-          chat.status === EChatStatus.in_chat && chat.summary
-            ? {
-                ...chat.summary,
-                unread_count: 0,
-              }
-            : chat.summary,
+        summary: chat.summary,
         account: chat.account,
         worker: chat.worker,
         sector: chat.sector,

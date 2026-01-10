@@ -69,7 +69,7 @@ import {
 } from '@core/common/interfaces/IChatFilePreview';
 import { extractFirstUrl } from '@core/common/functions/extractFirstUrl';
 import { ViewLinkPreviewResponse } from '@core/schema/chat/viewLinkPreview/response.schema';
-import { refDebounced, useDebounceFn } from '@vueuse/core';
+import { refDebounced } from '@vueuse/core';
 import { getOffsetTop } from '@core/common/functions/getOffsetTop';
 import { Picker, EmojiIndex } from 'emoji-mart-vue-fast/src';
 import data from 'emoji-mart-vue-fast/data/all.json';
@@ -295,7 +295,6 @@ watch(
       oldRouteName !== 'chat' &&
       chatStore.activeChat?.chat_id
     ) {
-      chatStore.ensureActiveChatUnreadCountIsZero();
       await chatSocket.refreshActiveChat();
       await nextTick();
       requestAnimationFrame(() => {
@@ -1671,7 +1670,14 @@ const onTransferAnnotationEmojiSelect = (emoji: any) => {
   isTransferAnnotationEmojiOpen.value = false;
 };
 
-const finalizeSend = () => {
+const finalizeSend = async () => {
+  if (
+    chatStore.activeChat?.chat_id &&
+    chatStore.activeChat?.status === EChatStatus.in_chat
+  ) {
+    await chatStore.clearChatSummary(chatStore.activeChat.chat_id);
+  }
+
   nextTick(() => {
     const scrollEl = chatLogPS.value?.$el || chatLogPS.value;
     if (scrollEl) {
@@ -1786,6 +1792,10 @@ const openChat = async (chatId: ListChatsResult['chat_id']) => {
   };
 
   await chatStore.getChatById(requestQueue);
+
+  if (chatStore.activeChat?.status === EChatStatus.in_chat) {
+    await chatStore.clearChatSummary(chatId);
+  }
 
   if (vuetifyDisplays.smAndDown.value) {
     isLeftSidebarOpen.value = false;
@@ -4093,9 +4103,14 @@ const handleTypingEvent = (data: IChatTyping | IChatMessage) => {
   }, 5000);
 };
 
-const debouncedClearChatSummary = useDebounceFn(async (chatId: string) => {
-  await chatStore.clearChatSummary(chatId);
-}, 10000);
+const clearChatSummaryIfNeeded = async (chatId: string) => {
+  if (
+    chatStore.activeChat?.chat_id === chatId &&
+    chatStore.activeChat?.status === EChatStatus.in_chat
+  ) {
+    await chatStore.clearChatSummary(chatId);
+  }
+};
 
 const handleGlobalMessage = (e: Event) => {
   const messageData = (e as CustomEvent<IChatMessage>).detail;
@@ -4214,7 +4229,7 @@ const handleGlobalQueueUpdate = (e: Event) => {
     chatStore.activeChat?.chat_id === chatData.chat_id &&
     chatData.status === EChatStatus.in_chat
   ) {
-    debouncedClearChatSummary(chatData.chat_id);
+    clearChatSummaryIfNeeded(chatData.chat_id).catch(() => {});
   }
 };
 

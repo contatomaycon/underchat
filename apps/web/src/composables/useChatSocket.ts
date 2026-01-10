@@ -60,8 +60,6 @@ export const useChatSocket = () => {
 
     const chatId = chatStore.activeChat.chat_id;
 
-    chatStore.ensureActiveChatUnreadCountIsZero();
-
     await Promise.all([
       processPendingMessages(chatId),
       processPendingChatUpdates(chatId),
@@ -72,6 +70,10 @@ export const useChatSocket = () => {
       per_page: 10,
     };
     await chatStore.getChatById(requestQueue);
+
+    if (chatStore.activeChat?.status === EChatStatus.in_chat) {
+      await chatStore.clearChatSummary(chatId);
+    }
   };
 
   const handleMessageEvent = async (
@@ -97,6 +99,18 @@ export const useChatSocket = () => {
   };
 
   const handleChatUpdateEvent = async (chatData: IChat): Promise<void> => {
+    const isActiveChat =
+      isChatRoute() && chatStore.activeChat?.chat_id === chatData.chat_id;
+
+    if (isActiveChat && chatData.status === EChatStatus.in_chat) {
+      if (chatData.summary) {
+        chatData.summary = {
+          ...chatData.summary,
+          unread_count: 0,
+        };
+      }
+    }
+
     chatStore.addChat(chatData);
 
     if (
@@ -161,6 +175,18 @@ export const useChatSocket = () => {
       );
 
       await onMessage(chatQueueAccountCentrifugo(accountId), (data: IChat) => {
+        const isActiveChat =
+          isChatRoute() && chatStore.activeChat?.chat_id === data.chat_id;
+
+        if (isActiveChat && data.status === EChatStatus.in_chat) {
+          if (data.summary) {
+            data.summary = {
+              ...data.summary,
+              unread_count: 0,
+            };
+          }
+        }
+
         chatStore.addChat(data);
 
         if (
