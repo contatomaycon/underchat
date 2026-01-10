@@ -58,6 +58,14 @@ const hasAttendant = computed(() => {
   return Boolean(props.user?.user?.name);
 });
 
+const attendantLabel = computed(() => {
+  if (!attendantFirstName.value) {
+    return '';
+  }
+
+  return limitCharacters(7, attendantFirstName.value);
+});
+
 const chatLabelForList = computed<{
   label: string;
   color: string;
@@ -233,8 +241,9 @@ watch(
       <div
         v-if="attendantFirstName && hasAttendant"
         class="chat-attendant-label text-caption"
+        :title="props.user?.user?.name ?? attendantFirstName"
       >
-        {{ attendantFirstName }}
+        {{ attendantLabel }}
       </div>
       <VAvatar
         size="40"
