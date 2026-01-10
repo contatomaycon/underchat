@@ -14,6 +14,7 @@ import { EContactDocumentType } from '@core/common/enums/EContactDocumentType';
 import { EContactIgnore } from '@core/common/enums/EContactIgnore';
 import { validateCpf } from '@core/common/functions/validateCpf';
 import { validateCnpj } from '@core/common/functions/validateCnpj';
+import AppInfoTooltip from '@/components/AppInfoTooltip.vue';
 
 const contactStore = useContactStore();
 const labelTemplateStore = useLabelTemplateStore();
@@ -1140,9 +1141,15 @@ watch(
           <VDivider class="my-4" />
           <VRow>
             <VCol cols="12" md="6">
-              <VLabel class="text-body-2 mb-1"
-                >{{ $t('responsible_attendant') }}:</VLabel
-              >
+              <div class="d-flex align-center ga-1 mb-1">
+                <VLabel class="text-body-2"
+                  >{{ $t('responsible_attendant') }}:</VLabel
+                >
+                <AppInfoTooltip
+                  :text="$t('responsible_attendant_tooltip')"
+                  :title="$t('responsible_attendant')"
+                />
+              </div>
               <AppSelectSearch
                 v-model="user_id"
                 :items="
@@ -1159,7 +1166,13 @@ watch(
               />
             </VCol>
             <VCol cols="12" md="6">
-              <VLabel class="text-body-2 mb-1">{{ $t('ignore') }}:</VLabel>
+              <div class="d-flex align-center ga-1 mb-1">
+                <VLabel class="text-body-2">{{ $t('ignore') }}:</VLabel>
+                <AppInfoTooltip
+                  :text="$t('ignore_tooltip')"
+                  :title="$t('ignore')"
+                />
+              </div>
               <AppSelectSearch
                 v-model="ignore"
                 :items="[

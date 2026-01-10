@@ -266,9 +266,7 @@ onMounted(() => {
       </VCardTitle>
 
       <VCardText class="pa-3">
-        <VLabel class="text-body-2 mb-1"
-          >{{ t('chatbot_redirect_to') }}:</VLabel
-        >
+        <VLabel class="text-body-2 mb-1">{{ t('chatbot_redirect_to') }}</VLabel>
         <VSelect
           v-model="redirectData.redirectType"
           :items="[
@@ -282,9 +280,9 @@ onMounted(() => {
         />
 
         <div v-if="redirectData.redirectType === 'user'" class="mb-3">
-          <VLabel class="text-body-2 mb-1"
-            >{{ t('chatbot_user_label') }}:</VLabel
-          >
+          <VLabel class="text-body-2 mb-1">{{
+            t('chatbot_user_label')
+          }}</VLabel>
           <AppSelectSearch
             v-model="redirectData.selectedUser"
             :items="users"
@@ -309,9 +307,9 @@ onMounted(() => {
         </div>
 
         <div v-if="redirectData.redirectType === 'sector'" class="mb-3">
-          <VLabel class="text-body-2 mb-1"
-            >{{ t('chatbot_sector_label') }}:</VLabel
-          >
+          <VLabel class="text-body-2 mb-1">{{
+            t('chatbot_sector_label')
+          }}</VLabel>
           <AppSelectSearch
             v-model="redirectData.selectedSector"
             :items="sectors"
@@ -340,9 +338,9 @@ onMounted(() => {
           "
           class="mb-3"
         >
-          <VLabel class="text-body-2 mb-1"
-            >{{ t('chatbot_sector_user_label') }}:</VLabel
-          >
+          <VLabel class="text-body-2 mb-1">{{
+            t('chatbot_sector_user_label')
+          }}</VLabel>
           <AppSelectSearch
             v-model="redirectData.selectedSectorUser"
             :items="sectorUsers"

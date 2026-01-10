@@ -21,6 +21,7 @@ export const getI18n = () => {
         getBrowserLanguage(),
       fallbackLocale: 'pt',
       messages,
+      warnHtmlMessage: false,
     });
   }
 
