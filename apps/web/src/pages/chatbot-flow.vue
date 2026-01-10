@@ -151,15 +151,9 @@ const defaultInvalidEmailMessage = computed(() => t('email_invalid'));
 const defaultServiceFinishedMessage = computed(() =>
   t('chatbot_service_finished')
 );
-const defaultTransferMessageUser = computed(() =>
-  t('chatbot_transfer_message_user_default')
-);
-const defaultTransferMessageSector = computed(() =>
-  t('chatbot_transfer_message_sector_default')
-);
-const defaultTransferMessageSectorUser = computed(() =>
-  t('chatbot_transfer_message_sector_user_default')
-);
+const defaultTransferMessageUserText = ref('');
+const defaultTransferMessageSectorText = ref('');
+const defaultTransferMessageSectorUserText = ref('');
 
 const availableVariables = computed(() => [
   {
@@ -1806,6 +1800,15 @@ onMounted(() => {
   loadChatbotFlow();
   window.addEventListener('keydown', handleDeleteKey);
   document.addEventListener('click', handleDocumentClick, true);
+  defaultTransferMessageUserText.value = t(
+    'chatbot_transfer_message_user_default'
+  );
+  defaultTransferMessageSectorText.value = t(
+    'chatbot_transfer_message_sector_default'
+  );
+  defaultTransferMessageSectorUserText.value = t(
+    'chatbot_transfer_message_sector_user_default'
+  );
 });
 
 onUnmounted(() => {
@@ -2809,17 +2812,15 @@ onUnmounted(() => {
                   <VCardText>
                     <VTextarea
                       v-model="transferMessageUser"
-                      :placeholder="defaultTransferMessageUser"
+                      :placeholder="defaultTransferMessageUserText"
                       variant="outlined"
                       density="compact"
                       hide-details
                       rows="3"
                     />
                     <div class="text-caption text-medium-emphasis mt-2">
-                      <strong
-                        >{{ t('chatbot_message_default_label') }}:
-                      </strong>
-                      <span v-text="defaultTransferMessageUser"></span>
+                      <strong>{{ t('chatbot_message_default_label') }}:</strong>
+                      <span v-text="defaultTransferMessageUserText"></span>
                     </div>
                   </VCardText>
                 </VCard>
@@ -2837,17 +2838,15 @@ onUnmounted(() => {
                   <VCardText>
                     <VTextarea
                       v-model="transferMessageSector"
-                      :placeholder="defaultTransferMessageSector"
+                      :placeholder="defaultTransferMessageSectorText"
                       variant="outlined"
                       density="compact"
                       hide-details
                       rows="3"
                     />
                     <div class="text-caption text-medium-emphasis mt-2">
-                      <strong
-                        >{{ t('chatbot_message_default_label') }}:
-                      </strong>
-                      <span v-text="defaultTransferMessageSector"></span>
+                      <strong>{{ t('chatbot_message_default_label') }}:</strong>
+                      <span v-text="defaultTransferMessageSectorText"></span>
                     </div>
                   </VCardText>
                 </VCard>
@@ -2865,17 +2864,17 @@ onUnmounted(() => {
                   <VCardText>
                     <VTextarea
                       v-model="transferMessageSectorUser"
-                      :placeholder="defaultTransferMessageSectorUser"
+                      :placeholder="defaultTransferMessageSectorUserText"
                       variant="outlined"
                       density="compact"
                       hide-details
                       rows="3"
                     />
                     <div class="text-caption text-medium-emphasis mt-2">
-                      <strong
-                        >{{ t('chatbot_message_default_label') }}:
-                      </strong>
-                      <span v-text="defaultTransferMessageSectorUser"></span>
+                      <strong>{{ t('chatbot_message_default_label') }}:</strong>
+                      <span
+                        v-text="defaultTransferMessageSectorUserText"
+                      ></span>
                     </div>
                   </VCardText>
                 </VCard>
