@@ -248,8 +248,27 @@ export const useChatStore = defineStore('chat', {
 
       if (!canViewOthersChats) {
         if (chat.user?.id && chat.user.id !== this.user?.user_id) {
+          const wasInQueue = this.listQueue.some(
+            (c) => c.chat_id === chat.chat_id
+          );
+          const wasInInChat = this.listInChat.some(
+            (c) => c.chat_id === chat.chat_id
+          );
+
           this.removeFromList(this.listQueue, chat.chat_id);
           this.removeFromList(this.listInChat, chat.chat_id);
+
+          if (wasInQueue && this.queuePagings.total > 0) {
+            this.queuePagings.total = Math.max(0, this.queuePagings.total - 1);
+          }
+
+          if (wasInInChat && this.inChatPagings.total > 0) {
+            this.inChatPagings.total = Math.max(
+              0,
+              this.inChatPagings.total - 1
+            );
+          }
+
           if (this.activeChat?.chat_id === chat.chat_id) {
             this.activeChat = null;
           }

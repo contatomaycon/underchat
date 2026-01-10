@@ -4,15 +4,12 @@ import { PushSubscriptionListerRepository } from '@core/repositories/push/PushSu
 import { PushSubscriptionDeleterRepository } from '@core/repositories/push/PushSubscriptionDeleter.repository';
 import { UsersWithNotificationsListerRepository } from '@core/repositories/push/UsersWithNotificationsLister.repository';
 import { PermissionAssignmentUserViewerRepository } from '@core/repositories/permission/PermissionAssignmentUserViewer.repository';
-import { UserSectorsListerRepository } from '@core/repositories/user/UserSectorsLister.repository';
-import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
 import { IPushNotificationPayload } from '@core/common/interfaces/IPushNotificationPayload';
 import { IChat } from '@core/common/interfaces/IChat';
 import { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
-import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { extractMessageTextFromContent } from '@core/common/functions/extractMessageTextFromContent';
 import { vapidEnvironment } from '@core/config/environments';
 
@@ -27,9 +24,7 @@ export class PushNotificationService {
     private readonly pushSubscriptionListerRepository: PushSubscriptionListerRepository,
     private readonly pushSubscriptionDeleterRepository: PushSubscriptionDeleterRepository,
     private readonly usersWithNotificationsListerRepository: UsersWithNotificationsListerRepository,
-    private readonly permissionAssignmentUserViewerRepository: PermissionAssignmentUserViewerRepository,
-    private readonly userSectorsListerRepository: UserSectorsListerRepository,
-    private readonly elasticDatabaseService: ElasticDatabaseService
+    private readonly permissionAssignmentUserViewerRepository: PermissionAssignmentUserViewerRepository
   ) {
     this.initializeVapidKeys();
   }
@@ -227,65 +222,5 @@ export class PushNotificationService {
     }
 
     return true;
-  }
-
-  private async checkIfChatExistsInUserList(
-    userId: string,
-    accountId: string,
-    chatId: string
-  ): Promise<boolean> {
-    const queryElastic = {
-      size: 1,
-      query: {
-        bool: {
-          must: [
-            {
-              nested: {
-                path: 'account',
-                query: {
-                  term: {
-                    'account.id': accountId,
-                  },
-                },
-              },
-            },
-            {
-              nested: {
-                path: 'user',
-                query: {
-                  term: {
-                    'user.id': userId,
-                  },
-                },
-              },
-            },
-          ],
-          filter: [
-            {
-              term: {
-                chat_id: chatId,
-              },
-            },
-            {
-              terms: {
-                status: [EChatStatus.queue, EChatStatus.in_chat],
-              },
-            },
-          ],
-        },
-      },
-    };
-
-    const result = await this.elasticDatabaseService.select<IChat>(
-      EElasticIndex.chat,
-      queryElastic
-    );
-
-    const total =
-      (result?.hits?.total as { value: number })?.value ??
-      (result?.hits?.total as number) ??
-      0;
-
-    return total > 0;
   }
 }
