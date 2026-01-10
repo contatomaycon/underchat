@@ -95,7 +95,7 @@ function canReceiveMessageNotification(
     canViewOthersChats || canListAllChatsWithoutSectorLimit;
 
   if (chat.status === EChatStatus.in_chat) {
-    return chat.user?.id === chatStore.user?.user_id;
+    return hasPermissionToViewAll || chat.user?.id === chatStore.user?.user_id;
   }
 
   if (hasPermissionToViewAll) {
