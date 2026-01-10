@@ -1,5 +1,6 @@
 import { injectable } from 'tsyringe';
 import { Client, ConnectConfig } from 'ssh2';
+import stripAnsi from 'strip-ansi';
 import { IDistroInfo } from '@core/common/interfaces/IDistroInfo';
 import { EAllowedDistroVersion } from '@core/common/enums/EAllowedDistroVersion';
 import { installUbuntu2510 } from '@core/common/functions/installUbuntu2510';
@@ -19,17 +20,86 @@ export class SshService {
   private connect(config: ConnectConfig): Promise<Client> {
     return new Promise((resolve, reject) => {
       const conn = new Client();
+      let resolved = false;
+      let connectionTimeout: NodeJS.Timeout | undefined;
+
+      const cleanup = (): void => {
+        if (connectionTimeout) {
+          clearTimeout(connectionTimeout);
+          connectionTimeout = undefined;
+        }
+      };
+
+      const handleError = (err: Error): void => {
+        if (resolved) {
+          return;
+        }
+
+        resolved = true;
+        cleanup();
+
+        try {
+          conn.end();
+        } catch {}
+
+        reject(err);
+      };
+
+      const handleClose = (): void => {
+        if (resolved) {
+          return;
+        }
+
+        resolved = true;
+        cleanup();
+
+        const error = new Error('Connection lost before handshake');
+        error.name = 'ConnectionError';
+
+        reject(error);
+      };
+
+      const handleReady = (): void => {
+        if (resolved) {
+          return;
+        }
+
+        resolved = true;
+        cleanup();
+
+        resolve(conn);
+      };
+
       const connectConfig: ConnectConfig = {
         ...config,
-        readyTimeout: 600_000,
+        readyTimeout: 30_000,
         keepaliveInterval: 20_000,
         keepaliveCountMax: 10,
       };
 
-      conn
-        .on('ready', () => resolve(conn))
-        .on('error', (err) => reject(err))
-        .connect(connectConfig);
+      connectionTimeout = setTimeout(() => {
+        if (resolved) {
+          return;
+        }
+
+        resolved = true;
+        cleanup();
+
+        try {
+          conn.end();
+        } catch {}
+
+        const error = new Error('SSH connection timeout');
+        error.name = 'ConnectionTimeoutError';
+
+        reject(error);
+      }, 30_000);
+
+      conn.on('ready', handleReady);
+      conn.on('error', handleError);
+      conn.on('close', handleClose);
+
+      conn.connect(connectConfig);
     });
   }
 
@@ -138,8 +208,6 @@ export class SshService {
   ): Promise<IServerSshCentrifugo[]> {
     const conn = await this.connect(config);
     const results: IServerSshCentrifugo[] = [];
-
-    const stripAnsi = (await import('strip-ansi')).default;
 
     try {
       for (const cmd of commands) {
