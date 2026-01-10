@@ -244,7 +244,7 @@ export const useAuthStore = defineStore('auth', {
 
     async forgotPasswordSendCode(
       data: AuthForgotPasswordSendCodeRequest
-    ): Promise<boolean> {
+    ): Promise<AuthForgotPasswordSendCodeResponse | null> {
       const url = normalizeBaseUrl(import.meta.env.VITE_BACKEND_URL);
 
       if (!url) {
@@ -253,7 +253,7 @@ export const useAuthStore = defineStore('auth', {
             'Backend URL não configurada. Verifique o arquivo .env',
           EColor.error
         );
-        return false;
+        return null;
       }
 
       try {
@@ -270,20 +270,20 @@ export const useAuthStore = defineStore('auth', {
 
         const responseData = response?.data;
 
-        if (!responseData?.status) {
+        if (!responseData?.status || !responseData?.data) {
           this.showSnackbar(
             responseData?.message ||
               this.i18n.global.t('forgot_password_error'),
             EColor.error
           );
-          return false;
+          return null;
         }
 
         this.showSnackbar(
           this.i18n.global.t('forgot_password_code_sent'),
           EColor.success
         );
-        return true;
+        return responseData.data;
       } catch (error) {
         let errorMessage = this.i18n.global.t('forgot_password_error');
         if (error instanceof AxiosError) {
@@ -291,7 +291,7 @@ export const useAuthStore = defineStore('auth', {
         }
 
         this.showSnackbar(errorMessage, EColor.error);
-        return false;
+        return null;
       }
     },
 

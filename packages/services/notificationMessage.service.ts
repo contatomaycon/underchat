@@ -509,11 +509,32 @@ export class NotificationMessageService {
 
   async sendTwoFactorCodeByEmail(
     email: string,
-    name: string | null = null,
     userId: string,
-    phone?: string | null,
-    phoneDdi?: string | null
+    phone: string | null = null,
+    phoneDdi: string | null = null,
+    name: string | null = null
   ): Promise<string> {
+    const result = await this.sendTwoFactorCodeByEmailWithChannels(
+      email,
+      userId,
+      phone,
+      phoneDdi,
+      name
+    );
+    return result.code;
+  }
+
+  async sendTwoFactorCodeByEmailWithChannels(
+    email: string,
+    userId: string,
+    phone: string | null = null,
+    phoneDdi: string | null = null,
+    name: string | null = null
+  ): Promise<{
+    code: string;
+    sent_via_email: boolean;
+    sent_via_whatsapp: boolean;
+  }> {
     const notification =
       await this.notificationMessageViewerRepository.findNotificationByTypeId(
         ENotificationTypeId.two_factor
@@ -529,29 +550,29 @@ export class NotificationMessageService {
 
     const code = this.generateCode();
     const token = randomUUID();
-    const notificationTypeName = notification.nnt?.name || '';
+    const notificationTypeName = notification.nnt?.name ?? '';
 
     const emailMessage = notification.message_email
       .replaceAll('{{code}}', code)
-      .replaceAll('{{name}}', name || '');
+      .replaceAll('{{name}}', name ?? '');
 
     const emailSubject = notification.email_subject
       ? notification.email_subject
           .replaceAll('{{code}}', code)
-          .replaceAll('{{name}}', name || '')
+          .replaceAll('{{name}}', name ?? '')
       : null;
 
     let whatsappMessage: string | null = null;
     if (notification.message_whatsapp) {
       whatsappMessage = notification.message_whatsapp
         .replaceAll('{{code}}', code)
-        .replaceAll('{{name}}', name || '');
+        .replaceAll('{{name}}', name ?? '');
     }
 
     const emailEncrypted = this.passwordEncryptorService.encrypt(email);
     const emailC = this.encryptService.encrypt(email);
     const emailPartial =
-      this.encryptService.sanitize(email, ETypeSanetize.email)?.slice(0, 50) ||
+      this.encryptService.sanitize(email, ETypeSanetize.email)?.slice(0, 50) ??
       null;
 
     let phoneEncrypted: string | null = null;
@@ -564,12 +585,12 @@ export class NotificationMessageService {
       phonePartial =
         this.encryptService
           .sanitize(phone, ETypeSanetize.phone)
-          ?.slice(0, 15) || null;
+          ?.slice(0, 15) ?? null;
     }
 
     await this.twoFactorCreatorRepository.createTwoFactor({
       userId: userId,
-      phoneDdi: phoneDdi || null,
+      phoneDdi: phoneDdi ?? null,
       phone: phoneEncrypted,
       phonePartial,
       phoneC,
@@ -587,16 +608,18 @@ export class NotificationMessageService {
       emailSubject
     );
 
-    if (
+    const sentViaWhatsapp = !!(
       phone &&
       phoneDdi &&
       notification.message_whatsapp &&
       notification.worker_id &&
       whatsappMessage
-    ) {
+    );
+
+    if (sentViaWhatsapp) {
       const workerName =
         await this.workerNameViewerRepository.findWorkerNameById(
-          notification.worker_id
+          notification.worker_id!
         );
 
       if (workerName) {
@@ -618,9 +641,9 @@ export class NotificationMessageService {
           message_whatsapp: whatsappMessage,
           message_email: emailMessage,
           email_subject: emailSubject,
-          name: name || null,
-          phone: phone || null,
-          email: email || null,
+          name: name ?? null,
+          phone: phone ?? null,
+          email: email ?? null,
           date: new Date().toISOString(),
         };
 
@@ -633,6 +656,10 @@ export class NotificationMessageService {
       }
     }
 
-    return code;
+    return {
+      code,
+      sent_via_email: true,
+      sent_via_whatsapp: sentViaWhatsapp,
+    };
   }
 }

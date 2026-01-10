@@ -18,15 +18,15 @@ export const forgotPasswordSendCode = async (
   const { t } = request;
 
   try {
-    await authForgotPasswordSendCodeUseCase.execute(t, request.body);
+    const response = await authForgotPasswordSendCodeUseCase.execute(
+      t,
+      request.body
+    );
 
     return sendResponse(reply, {
       message: t('forgot_password_code_sent'),
       httpStatusCode: EHTTPStatusCode.ok,
-      data: {
-        success: true,
-        message: t('forgot_password_code_sent'),
-      },
+      data: response,
     });
   } catch (error) {
     handleControllerError(error, reply, t);

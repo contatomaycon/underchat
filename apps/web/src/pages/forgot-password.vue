@@ -25,7 +25,6 @@ const { t: $t } = useI18n();
 import {
   requiredValidator,
   emailValidator,
-  passwordValidator,
   confirmedValidator,
 } from '@/@webcore/utils/validators';
 import { validatePassword } from '@/@webcore/utils/passwordStrength';
@@ -59,6 +58,8 @@ const isVerificationValid = ref(false);
 const isSendingCode = ref(false);
 const isResettingPassword = ref(false);
 const resetPasswordToken = ref<string | null>(null);
+const sentViaEmail = ref(false);
+const sentViaWhatsapp = ref(false);
 
 const newPassword = ref('');
 const confirmPassword = ref('');
@@ -105,11 +106,13 @@ const handleSendCode = async () => {
   isSendingCode.value = true;
 
   try {
-    const success = await authStore.forgotPasswordSendCode({
+    const response = await authStore.forgotPasswordSendCode({
       email: email.value.trim(),
     });
 
-    if (success) {
+    if (response) {
+      sentViaEmail.value = response.sent_via_email || false;
+      sentViaWhatsapp.value = response.sent_via_whatsapp || false;
       currentStep.value = 1;
     }
   } finally {
@@ -354,22 +357,32 @@ const confirmPasswordRules = [
                   <div class="otp-card__badge">
                     <VIcon icon="tabler-shield-lock" size="18" />
                   </div>
-                  <div class="d-flex flex-column">
+                  <div class="d-flex flex-column flex-grow-1">
                     <span class="text-body-1 font-weight-semibold">
-                      {{ $t('verification_code_sent_whatsapp') }}
+                      {{ $t('verification_code') }}
                     </span>
                     <span class="text-caption text-medium-emphasis">
                       {{ $t('verification_code_subtitle') }}
                     </span>
                   </div>
-                  <VChip
-                    color="primary"
-                    size="small"
-                    variant="tonal"
-                    class="ms-auto"
-                  >
-                    {{ $t('whatsapp') }}
-                  </VChip>
+                  <div class="d-flex gap-2 ms-auto">
+                    <VChip
+                      v-if="sentViaWhatsapp"
+                      color="success"
+                      size="small"
+                      variant="tonal"
+                    >
+                      {{ $t('whatsapp') }}
+                    </VChip>
+                    <VChip
+                      v-if="sentViaEmail"
+                      color="info"
+                      size="small"
+                      variant="tonal"
+                    >
+                      {{ $t('email') }}
+                    </VChip>
+                  </div>
                 </div>
 
                 <VDivider class="my-4" />
@@ -392,7 +405,16 @@ const confirmPasswordRules = [
                 </div>
 
                 <p class="otp-hint text-caption text-medium-emphasis">
-                  {{ $t('verification_code_sent_whatsapp') }}
+                  <template v-if="sentViaEmail && sentViaWhatsapp">
+                    {{ $t('verification_code_sent_whatsapp') }} /
+                    {{ $t('email') }}
+                  </template>
+                  <template v-else-if="sentViaEmail">
+                    {{ $t('verification_code_sent_email') }}
+                  </template>
+                  <template v-else-if="sentViaWhatsapp">
+                    {{ $t('verification_code_sent_whatsapp') }}
+                  </template>
                 </p>
               </VCard>
             </VCol>
