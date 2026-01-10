@@ -47,7 +47,9 @@ import { UserMasterViewerRepository } from '@core/repositories/user/UserMasterVi
 import { UserSectorsListerRepository } from '@core/repositories/user/UserSectorsLister.repository';
 import { UserSectorsUpdaterTransactionRepository } from '@core/repositories/user/UserSectorsUpdaterTransaction.repository';
 import { EncryptService } from './encrypt.service';
+import { ForgotPasswordViewerRepository } from '@core/repositories/auth/ForgotPasswordViewer.repository';
 import { IUserSensitiveDataDecrypted } from '@core/common/interfaces/IUserSensitiveDataDecrypted';
+import { IUserDataForForgotPassword } from '@core/common/interfaces/IUserDataForForgotPassword';
 import { StorageService } from '@core/services/storage.service';
 import { UploadFileRequest } from '@core/schema/upload/request.schema';
 import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
@@ -96,7 +98,8 @@ export class UserService {
     private readonly userPasswordViewerRepository: UserPasswordViewerRepository,
     private readonly userMasterViewerRepository: UserMasterViewerRepository,
     private readonly userSectorsListerRepository: UserSectorsListerRepository,
-    private readonly userSectorsUpdaterTransactionRepository: UserSectorsUpdaterTransactionRepository
+    private readonly userSectorsUpdaterTransactionRepository: UserSectorsUpdaterTransactionRepository,
+    private readonly forgotPasswordViewerRepository: ForgotPasswordViewerRepository
   ) {}
 
   listUsers = async (
@@ -815,5 +818,13 @@ export class UserService {
     account_name: string | null;
   } | null> => {
     return this.userMasterViewerRepository.findMasterUserByAccountId(accountId);
+  };
+
+  findUserByEmailForForgotPassword = async (
+    emailC: string
+  ): Promise<IUserDataForForgotPassword | null> => {
+    return this.forgotPasswordViewerRepository.findUserByEmailForForgotPassword(
+      emailC
+    );
   };
 }

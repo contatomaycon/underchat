@@ -105,9 +105,7 @@ export class DatabaseEnvironment {
     }
 
     if (!SSL_MODE_VALUES.has(normalized as DatabaseSslMode)) {
-      throw new InvalidConfigurationError(
-        `DB_SSLMODE is invalid: ${sm}.`
-      );
+      throw new InvalidConfigurationError(`DB_SSLMODE is invalid: ${sm}.`);
     }
 
     return normalized as DatabaseSslMode;

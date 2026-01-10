@@ -850,5 +850,17 @@
   "push_vapid_not_configured": "Chaves VAPID não configuradas. Push notifications não funcionarão.",
   "push_subscription_registered_successfully": "Subscription de push notification registrada com sucesso!",
   "push_public_key_retrieved_successfully": "Chave pública VAPID obtida com sucesso!",
-  "push_subscription_deleted_successfully": "Subscription de push notification removida com sucesso!"
+  "push_subscription_deleted_successfully": "Subscription de push notification removida com sucesso!",
+  "forgot_password_code_sent": "Código de recuperação enviado com sucesso!",
+  "forgot_password_code_verified": "Código verificado com sucesso! Você foi autenticado.",
+  "forgot_password_code_invalid": "Código de recuperação inválido",
+  "forgot_password_code_expired": "Código de recuperação expirado",
+  "forgot_password_error": "Erro ao processar recuperação de senha!",
+  "forgot_password_user_not_found": "Usuário não encontrado com este email!",
+  "forgot_password_phone_not_found": "Telefone não encontrado para este usuário!",
+  "forgot_password_token_invalid": "Token de recuperação inválido ou expirado",
+  "password_reset_success": "Senha redefinida com sucesso!",
+  "password_reset_error": "Erro ao redefinir senha",
+  "passwords_do_not_match": "As senhas não coincidem",
+  "confirm_new_password_match": "As senhas não coincidem"
 }

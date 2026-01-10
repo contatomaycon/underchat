@@ -195,9 +195,9 @@ const handleLogin = async () => {
                 <div
                   class="d-flex align-center flex-wrap justify-space-between my-6"
                 >
-                  <a class="text-primary" href="javascript:void(0)">
+                  <RouterLink class="text-primary" to="/forgot-password">
                     {{ $t('forgot_password') }}
-                  </a>
+                  </RouterLink>
                 </div>
 
                 <VBtn
