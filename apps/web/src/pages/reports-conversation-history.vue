@@ -246,6 +246,7 @@ const phoneFormatted = computed({
 });
 
 const phoneDebounced = refDebounced(phoneRaw, 500);
+const clientNameDebounced = refDebounced(clientName, 500);
 
 const sectors = ref<Array<{ id: string | null; text: string }>>([]);
 const operators = ref<Array<{ id: string | null; text: string }>>([]);
@@ -384,7 +385,7 @@ const query = computed(() => {
       baseQuery.protocol = protocol.value;
       break;
     case 'client':
-      baseQuery.client_name = clientName.value;
+      baseQuery.client_name = clientNameDebounced.value;
       break;
     case 'phone':
       baseQuery.phone = phoneDebounced.value || null;
@@ -518,6 +519,12 @@ watch(
 
 watch(phoneDebounced, async () => {
   if (searchBy.value === 'phone') {
+    await loadHistory();
+  }
+});
+
+watch(clientNameDebounced, async () => {
+  if (searchBy.value === 'client') {
     await loadHistory();
   }
 });

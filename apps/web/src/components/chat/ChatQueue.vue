@@ -26,6 +26,46 @@ const isChatContactActive = computed(() => {
 const workerName = computed(() => props.user?.worker?.name ?? '');
 const showWorkerNameLabel = ref(false);
 
+const getAttendantFirstName = (fullName: string | null | undefined): string => {
+  if (!fullName?.trim()) {
+    return '';
+  }
+
+  const trimmed = fullName.trim();
+  const parts = trimmed.split(/\s+/).filter((part) => part.length > 0);
+
+  if (parts.length === 0) {
+    return '';
+  }
+
+  if (parts.length === 1) {
+    return parts[0];
+  }
+
+  const firstName = parts[0];
+  if (firstName.trim()) {
+    return firstName;
+  }
+
+  return parts[1] || '';
+};
+
+const attendantFirstName = computed(() => {
+  return getAttendantFirstName(props.user?.user?.name);
+});
+
+const hasAttendant = computed(() => {
+  return Boolean(props.user?.user?.name);
+});
+
+const attendantLabel = computed(() => {
+  if (!attendantFirstName.value) {
+    return '';
+  }
+
+  return limitCharacters(10, attendantFirstName.value);
+});
+
 const chatLabelForList = computed<{
   label: string;
   color: string;
@@ -155,6 +195,7 @@ watch(
         'chat-has-label':
           (showWorkerNameLabel && workerName) || chatLabelForList,
         'chat-has-sector': sectorName,
+        'chat-has-attendant': attendantFirstName && hasAttendant,
       }"
       :aria-disabled="props.disabled ? 'true' : undefined"
     >
@@ -196,6 +237,13 @@ watch(
         }"
       >
         {{ sectorName }}
+      </div>
+      <div
+        v-if="attendantFirstName && hasAttendant"
+        class="chat-attendant-label text-caption"
+        :title="props.user?.user?.name ?? attendantFirstName"
+      >
+        {{ attendantLabel }}
       </div>
       <VAvatar
         size="40"
@@ -286,8 +334,9 @@ watch(
 }
 
 .chat {
+  --chat-attendant-label-size: 28px;
   border-radius: vuetify.$border-radius-root;
-  padding-block: 8px;
+  padding-block: 16px;
   padding-inline: 12px;
   border: 1px solid rgba(var(--v-theme-on-surface), 0.12);
   position: relative;
@@ -321,6 +370,10 @@ watch(
   &.chat-has-sector {
     margin-bottom: 1.5rem;
   }
+
+  &.chat-has-attendant {
+    padding-inline-end: calc(12px + var(--chat-attendant-label-size));
+  }
 }
 
 .chat-sector-label {
@@ -337,6 +390,36 @@ watch(
   font-weight: 500;
   z-index: 3;
   text-align: center;
+}
+
+.chat-attendant-label {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  transform: none;
+  width: var(--chat-attendant-label-size);
+  padding-block: 6px;
+  padding-inline: 4px;
+  border-radius: 0 vuetify.$border-radius-root vuetify.$border-radius-root 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 500;
+  z-index: 2;
+  color: rgb(var(--v-theme-on-surface));
+  background-color: rgba(var(--v-theme-on-surface), 0.06);
+  border-left: 1px solid rgba(var(--v-theme-on-surface), 0.12);
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chat.chat-active .chat-attendant-label {
+  background-color: rgb(var(--v-theme-surface));
+  color: rgb(var(--v-theme-on-surface));
 }
 
 .chat-worker-label-wrapper {

@@ -75,6 +75,19 @@ export class ChatListerUseCase {
       },
     ];
 
+    if (query.filter_label_template_id) {
+      filterClauses.push({
+        nested: {
+          path: 'label',
+          query: {
+            term: {
+              'label.id': query.filter_label_template_id,
+            },
+          },
+        },
+      });
+    }
+
     const canViewOthers = this.canViewOthersChats(actions);
     const canListAll = this.canListAllChatsWithoutSectorLimit(actions);
 
@@ -162,10 +175,12 @@ export class ChatListerUseCase {
       }
     }
 
+    const sortOrder = query.sort_order === 'asc' ? 'asc' : 'desc';
+
     const queryElastic = {
       from: (currentPage - 1) * perPage,
       size: perPage,
-      sort: [{ date: { order: 'desc' } }],
+      sort: [{ date: { order: sortOrder } }],
       query: {
         bool: {
           must: mustClauses,

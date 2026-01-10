@@ -3,6 +3,7 @@ import { PerfectScrollbar } from 'vue3-perfect-scrollbar';
 import ChatQueue from './ChatQueue.vue';
 import AppAddContactChat from '@/components/chat/AppAddContactChat.vue';
 import AppEditContactChat from '@/components/chat/AppEditContactChat.vue';
+import ChatAdvancedFiltersModal from '@/components/chat/ChatAdvancedFiltersModal.vue';
 import { useChatStore } from '@/@webcore/stores/chat';
 import { useChannelsStore } from '@/@webcore/stores/channels';
 import { ListChatContactsResponse } from '@core/schema/chat/listContacts/response.schema';
@@ -78,6 +79,7 @@ const selectedSectorId = ref<string | null>(null);
 const availableWorkers = ref<TransferWorker[]>([]);
 const availableSectors = ref<TransferSector[]>([]);
 const workerConfigForChat = ref<ViewWorkerConfigForChatResponse | null>(null);
+const isAdvancedFiltersModalOpen = ref(false);
 
 const chatbotPagings = ref({
   current_page: 1,
@@ -119,7 +121,21 @@ const filteredMyChats = computed(() => {
     if (!userId) return [];
 
     const allChats = [...chatStore.listInChat, ...chatStore.listQueue];
-    return allChats.filter((chat) => chat.user?.id === userId);
+    const filtered = allChats.filter((chat) => chat.user?.id === userId);
+    const filters = getChatUserFilters();
+
+    if (filters.sort_my_chats_order) {
+      filtered.sort((a, b) => {
+        const dateA = new Date(a.date || 0).getTime();
+        const dateB = new Date(b.date || 0).getTime();
+        if (filters.sort_my_chats_order === 'asc') {
+          return dateA - dateB;
+        }
+        return dateB - dateA;
+      });
+    }
+
+    return filtered;
   }
   return [];
 });
@@ -288,18 +304,36 @@ const loadChatContacts = async (chats: ListChatsResult[]) => {
   await chatStore.getChatContactsByIds(contactIdsToLoad);
 };
 
+const getChatUserFilters = () => {
+  const chatUser = chatStore.user?.chat_user;
+  return {
+    filter_label_template_id:
+      chatUser?.filter_label_template_id ?? undefined,
+    sort_in_chat_order: chatUser?.sort_in_chat_order ?? undefined,
+    sort_my_chats_order: chatUser?.sort_my_chats_order ?? undefined,
+    sort_queue_order: chatUser?.sort_queue_order ?? undefined,
+    sort_chatbot_order: chatUser?.sort_chatbot_order ?? undefined,
+  };
+};
+
 const loadChatsByFilter = async (append = false) => {
+  const filters = getChatUserFilters();
+
   if (activeFilter.value === 'all' || activeFilter.value === 'my_chats') {
     const requestQueue: ListChatsQuery = {
       current_page: currentPageQueue.value,
       per_page: perPageQueue.value,
       status: EChatStatus.queue,
+      filter_label_template_id: filters.filter_label_template_id,
+      sort_order: filters.sort_queue_order,
     };
 
     const requestInChat: ListChatsQuery = {
       current_page: currentPageInChat.value,
       per_page: perPageInChat.value,
       status: EChatStatus.in_chat,
+      filter_label_template_id: filters.filter_label_template_id,
+      sort_order: filters.sort_in_chat_order,
     };
 
     await Promise.all([
@@ -320,6 +354,8 @@ const loadChatsByFilter = async (append = false) => {
       current_page: currentPageInChat.value,
       per_page: perPageInChat.value,
       status: EChatStatus.in_chat,
+      filter_label_template_id: filters.filter_label_template_id,
+      sort_order: filters.sort_in_chat_order,
     };
 
     await chatStore.listInChatChats(requestInChat, append);
@@ -335,6 +371,8 @@ const loadChatsByFilter = async (append = false) => {
       current_page: currentPageQueue.value,
       per_page: perPageQueue.value,
       status: EChatStatus.queue,
+      filter_label_template_id: filters.filter_label_template_id,
+      sort_order: filters.sort_queue_order,
     };
 
     await chatStore.listQueueChats(requestQueue, append);
@@ -376,10 +414,13 @@ const loadChatbotChats = async () => {
   isLoadingChatbot.value = true;
 
   try {
+    const filters = getChatUserFilters();
     const request: ListChatsQuery = {
       current_page: chatbotPagings.value.current_page,
       per_page: chatbotPagings.value.per_page,
       status: EChatStatus.ura,
+      filter_label_template_id: filters.filter_label_template_id,
+      sort_order: filters.sort_chatbot_order,
     };
 
     const result = await chatStore.listChatbotChats(request);
@@ -864,6 +905,16 @@ onMounted(async () => {
       class="ms-4 me-1 chat-list-search"
       :loading="isSearching"
     />
+
+    <IconBtn
+      class="me-1"
+      @click="isAdvancedFiltersModalOpen = true"
+    >
+      <VIcon icon="tabler-filter" class="text-medium-emphasis" />
+      <VTooltip activator="parent" location="bottom">
+        {{ $t('advanced_filters') }}
+      </VTooltip>
+    </IconBtn>
 
     <IconBtn v-if="$vuetify.display.smAndDown" @click="$emit('close')">
       <VIcon icon="tabler-x" class="text-medium-emphasis" />
@@ -1536,6 +1587,12 @@ onMounted(async () => {
       </VCardText>
     </VCard>
   </VDialog>
+
+  <ChatAdvancedFiltersModal
+    v-model="isAdvancedFiltersModalOpen"
+    @update:model-value="isAdvancedFiltersModalOpen = $event"
+    @filters-updated="loadChatsByFilter"
+  />
 </template>
 
 <style lang="scss">

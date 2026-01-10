@@ -268,8 +268,13 @@ export class ChatbotFlowRunnerService {
     t: TFunction<'translation', undefined>,
     createChat: IChat,
     customMessage?: string,
-    nodeType?: 'menu' | 'satisfaction'
+    nodeType?: 'menu' | 'satisfaction',
+    enabled?: boolean
   ): Promise<boolean> {
+    if (enabled === false) {
+      return false;
+    }
+
     let defaultMessage = t('chatbot_option_invalid');
     if (!customMessage && nodeType === 'satisfaction') {
       defaultMessage = t('chatbot_satisfaction_option_invalid');
@@ -295,8 +300,13 @@ export class ChatbotFlowRunnerService {
   private async sendInvalidEmailMessage(
     t: TFunction<'translation', undefined>,
     createChat: IChat,
-    customMessage?: string
+    customMessage?: string,
+    enabled?: boolean
   ): Promise<boolean> {
+    if (enabled === false) {
+      return false;
+    }
+
     const rawMessage = customMessage || t('email_invalid');
     const message = await this.replaceVariables(
       t,
@@ -317,8 +327,13 @@ export class ChatbotFlowRunnerService {
   private async sendInvalidCpfMessage(
     t: TFunction<'translation', undefined>,
     createChat: IChat,
-    customMessage?: string
+    customMessage?: string,
+    enabled?: boolean
   ): Promise<boolean> {
+    if (enabled === false) {
+      return false;
+    }
+
     const rawMessage = customMessage || t('cpf_invalid');
     const message = await this.replaceVariables(
       t,
@@ -339,8 +354,13 @@ export class ChatbotFlowRunnerService {
   private async sendInvalidCnpjMessage(
     t: TFunction<'translation', undefined>,
     createChat: IChat,
-    customMessage?: string
+    customMessage?: string,
+    enabled?: boolean
   ): Promise<boolean> {
+    if (enabled === false) {
+      return false;
+    }
+
     const rawMessage = customMessage || t('cnpj_invalid');
     const message = await this.replaceVariables(
       t,
@@ -696,7 +716,8 @@ export class ChatbotFlowRunnerService {
   private async sendFinishMessage(
     t: TFunction<'translation', undefined>,
     createChat: IChat,
-    customMessage?: string
+    customMessage?: string,
+    enabled?: boolean
   ): Promise<boolean> {
     const closedAt = new Date().toISOString();
     const cacheKey = this.getChatbotFlowCacheKey(
@@ -705,23 +726,7 @@ export class ChatbotFlowRunnerService {
       createChat.chat_id
     );
 
-    const rawMessage = customMessage || t('chatbot_service_finished');
-    const message = await this.replaceVariables(
-      t,
-      rawMessage,
-      createChat,
-      createChat.user,
-      createChat.sector
-    );
-
-    await Promise.all([
-      this.chatMessageService.sendMessage(t, {
-        chat: createChat,
-        accountId: createChat.account.id,
-        type: EMessageType.text,
-        message,
-        typeUser: ETypeUserChat.bot,
-      }),
+    const promises: Promise<unknown>[] = [
       this.chatService.updateChatStatus(
         createChat.chat_id,
         EChatStatus.closed,
@@ -732,7 +737,30 @@ export class ChatbotFlowRunnerService {
       this.redis.del(cacheKey),
       this.cancelInactivityCheck(createChat),
       this.invalidateChatFromCache(createChat),
-    ]);
+    ];
+
+    if (enabled !== false) {
+      const rawMessage = customMessage || t('chatbot_service_finished');
+      const message = await this.replaceVariables(
+        t,
+        rawMessage,
+        createChat,
+        createChat.user,
+        createChat.sector
+      );
+
+      promises.push(
+        this.chatMessageService.sendMessage(t, {
+          chat: createChat,
+          accountId: createChat.account.id,
+          type: EMessageType.text,
+          message,
+          typeUser: ETypeUserChat.bot,
+        })
+      );
+    }
+
+    await Promise.all(promises);
 
     return true;
   }
@@ -836,6 +864,15 @@ export class ChatbotFlowRunnerService {
       transfer_message_user?: string;
       transfer_message_sector?: string;
       transfer_message_sector_user?: string;
+      service_finished_message_enabled?: boolean;
+      invalid_menu_option_message_enabled?: boolean;
+      invalid_satisfaction_option_message_enabled?: boolean;
+      invalid_cpf_message_enabled?: boolean;
+      invalid_cnpj_message_enabled?: boolean;
+      invalid_email_message_enabled?: boolean;
+      transfer_message_user_enabled?: boolean;
+      transfer_message_sector_enabled?: boolean;
+      transfer_message_sector_user_enabled?: boolean;
     }
   ): Promise<boolean> {
     const nextFlowNode = this.getFlowNodeById(chatbotFlow, nextFlowId);
@@ -927,7 +964,13 @@ export class ChatbotFlowRunnerService {
     }
 
     if (nextFlowNode.type === 'redirect') {
-      return this.processRedirectNode(t, createChat, chatbotFlow, nextFlowId);
+      return this.processRedirectNode(
+        t,
+        createChat,
+        chatbotFlow,
+        nextFlowId,
+        customMessages
+      );
     }
 
     if (nextFlowNode.type === 'distribution') {
@@ -959,7 +1002,8 @@ export class ChatbotFlowRunnerService {
       await this.sendFinishMessage(
         t,
         createChat,
-        customMessages?.service_finished_message
+        customMessages?.service_finished_message,
+        customMessages?.service_finished_message_enabled
       );
       return true;
     }
@@ -982,6 +1026,15 @@ export class ChatbotFlowRunnerService {
       transfer_message_user?: string;
       transfer_message_sector?: string;
       transfer_message_sector_user?: string;
+      service_finished_message_enabled?: boolean;
+      invalid_menu_option_message_enabled?: boolean;
+      invalid_satisfaction_option_message_enabled?: boolean;
+      invalid_cpf_message_enabled?: boolean;
+      invalid_cnpj_message_enabled?: boolean;
+      invalid_email_message_enabled?: boolean;
+      transfer_message_user_enabled?: boolean;
+      transfer_message_sector_enabled?: boolean;
+      transfer_message_sector_user_enabled?: boolean;
     }
   ): Promise<boolean> {
     const continueType = node.data?.continueType;
@@ -1034,6 +1087,15 @@ export class ChatbotFlowRunnerService {
       transfer_message_user?: string;
       transfer_message_sector?: string;
       transfer_message_sector_user?: string;
+      service_finished_message_enabled?: boolean;
+      invalid_menu_option_message_enabled?: boolean;
+      invalid_satisfaction_option_message_enabled?: boolean;
+      invalid_cpf_message_enabled?: boolean;
+      invalid_cnpj_message_enabled?: boolean;
+      invalid_email_message_enabled?: boolean;
+      transfer_message_user_enabled?: boolean;
+      transfer_message_sector_enabled?: boolean;
+      transfer_message_sector_user_enabled?: boolean;
     }
   ): Promise<boolean> {
     const continueType = currentNode.data?.continueType;
@@ -1175,6 +1237,15 @@ export class ChatbotFlowRunnerService {
       transfer_message_user?: string;
       transfer_message_sector?: string;
       transfer_message_sector_user?: string;
+      service_finished_message_enabled?: boolean;
+      invalid_menu_option_message_enabled?: boolean;
+      invalid_satisfaction_option_message_enabled?: boolean;
+      invalid_cpf_message_enabled?: boolean;
+      invalid_cnpj_message_enabled?: boolean;
+      invalid_email_message_enabled?: boolean;
+      transfer_message_user_enabled?: boolean;
+      transfer_message_sector_enabled?: boolean;
+      transfer_message_sector_user_enabled?: boolean;
     }
   ): Promise<boolean> {
     const currentNode = this.getFlowNodeById(chatbotFlow, currentFlowId);
@@ -1227,6 +1298,15 @@ export class ChatbotFlowRunnerService {
       transfer_message_user?: string;
       transfer_message_sector?: string;
       transfer_message_sector_user?: string;
+      service_finished_message_enabled?: boolean;
+      invalid_menu_option_message_enabled?: boolean;
+      invalid_satisfaction_option_message_enabled?: boolean;
+      invalid_cpf_message_enabled?: boolean;
+      invalid_cnpj_message_enabled?: boolean;
+      invalid_email_message_enabled?: boolean;
+      transfer_message_user_enabled?: boolean;
+      transfer_message_sector_enabled?: boolean;
+      transfer_message_sector_user_enabled?: boolean;
     }
   ): Promise<boolean> {
     const currentNode = this.getFlowNodeById(chatbotFlow, currentFlowId);
@@ -1414,6 +1494,10 @@ export class ChatbotFlowRunnerService {
       transfer_message_user?: string;
       transfer_message_sector?: string;
       transfer_message_sector_user?: string;
+      service_finished_message_enabled?: boolean;
+      transfer_message_user_enabled?: boolean;
+      transfer_message_sector_enabled?: boolean;
+      transfer_message_sector_user_enabled?: boolean;
     }
   ): Promise<boolean> {
     const currentNode = this.getFlowNodeById(chatbotFlow, currentFlowId);
@@ -1511,23 +1595,27 @@ export class ChatbotFlowRunnerService {
     await this.cancelInactivityCheck(updatedChat);
 
     let rawTransferMessage: string | undefined;
+    let enabled: boolean | undefined = undefined;
     if (redirectType === 'user' && user) {
       rawTransferMessage =
         customMessages?.transfer_message_user ||
         t('chatbot_transfer_message_user_default');
+      enabled = customMessages?.transfer_message_user_enabled;
     } else if (redirectType === 'sector' && sector) {
       if (user) {
         rawTransferMessage =
           customMessages?.transfer_message_sector_user ||
           t('chatbot_transfer_message_sector_user_default');
+        enabled = customMessages?.transfer_message_sector_user_enabled;
       } else {
         rawTransferMessage =
           customMessages?.transfer_message_sector ||
           t('chatbot_transfer_message_sector_default');
+        enabled = customMessages?.transfer_message_sector_enabled;
       }
     }
 
-    if (rawTransferMessage && (user || sector)) {
+    if (rawTransferMessage && (user || sector) && enabled !== false) {
       const transferMessage = await this.replaceVariables(
         t,
         rawTransferMessage,
@@ -1574,6 +1662,15 @@ export class ChatbotFlowRunnerService {
       transfer_message_user?: string;
       transfer_message_sector?: string;
       transfer_message_sector_user?: string;
+      service_finished_message_enabled?: boolean;
+      invalid_menu_option_message_enabled?: boolean;
+      invalid_satisfaction_option_message_enabled?: boolean;
+      invalid_cpf_message_enabled?: boolean;
+      invalid_cnpj_message_enabled?: boolean;
+      invalid_email_message_enabled?: boolean;
+      transfer_message_user_enabled?: boolean;
+      transfer_message_sector_enabled?: boolean;
+      transfer_message_sector_user_enabled?: boolean;
     }
   ): Promise<boolean> {
     const nextFlowId = this.getNextFlowId(chatbotFlow, currentFlowId);
@@ -1621,6 +1718,15 @@ export class ChatbotFlowRunnerService {
       transfer_message_user?: string;
       transfer_message_sector?: string;
       transfer_message_sector_user?: string;
+      service_finished_message_enabled?: boolean;
+      invalid_menu_option_message_enabled?: boolean;
+      invalid_satisfaction_option_message_enabled?: boolean;
+      invalid_cpf_message_enabled?: boolean;
+      invalid_cnpj_message_enabled?: boolean;
+      invalid_email_message_enabled?: boolean;
+      transfer_message_user_enabled?: boolean;
+      transfer_message_sector_enabled?: boolean;
+      transfer_message_sector_user_enabled?: boolean;
     }
   ): Promise<boolean> {
     const userText = this.getTextFromUpsertMessage(data)?.trim();
@@ -1656,6 +1762,15 @@ export class ChatbotFlowRunnerService {
       transfer_message_user?: string;
       transfer_message_sector?: string;
       transfer_message_sector_user?: string;
+      service_finished_message_enabled?: boolean;
+      invalid_menu_option_message_enabled?: boolean;
+      invalid_satisfaction_option_message_enabled?: boolean;
+      invalid_cpf_message_enabled?: boolean;
+      invalid_cnpj_message_enabled?: boolean;
+      invalid_email_message_enabled?: boolean;
+      transfer_message_user_enabled?: boolean;
+      transfer_message_sector_enabled?: boolean;
+      transfer_message_sector_user_enabled?: boolean;
     }
   ): Promise<boolean> {
     const userText = this.getTextFromUpsertMessage(data)?.trim();
@@ -1693,10 +1808,24 @@ export class ChatbotFlowRunnerService {
       transfer_message_user?: string;
       transfer_message_sector?: string;
       transfer_message_sector_user?: string;
+      service_finished_message_enabled?: boolean;
+      invalid_menu_option_message_enabled?: boolean;
+      invalid_satisfaction_option_message_enabled?: boolean;
+      invalid_cpf_message_enabled?: boolean;
+      invalid_cnpj_message_enabled?: boolean;
+      invalid_email_message_enabled?: boolean;
+      transfer_message_user_enabled?: boolean;
+      transfer_message_sector_enabled?: boolean;
+      transfer_message_sector_user_enabled?: boolean;
     }
   ): Promise<boolean> {
     if (!this.isValidEmail(userText)) {
-      await this.sendInvalidEmailMessage(t, createChat, customMessage);
+      await this.sendInvalidEmailMessage(
+        t,
+        createChat,
+        customMessage,
+        customMessages?.invalid_email_message_enabled
+      );
       await this.processDataNodeQuestion(t, createChat, currentNode);
       return false;
     }
@@ -1734,10 +1863,24 @@ export class ChatbotFlowRunnerService {
       transfer_message_user?: string;
       transfer_message_sector?: string;
       transfer_message_sector_user?: string;
+      service_finished_message_enabled?: boolean;
+      invalid_menu_option_message_enabled?: boolean;
+      invalid_satisfaction_option_message_enabled?: boolean;
+      invalid_cpf_message_enabled?: boolean;
+      invalid_cnpj_message_enabled?: boolean;
+      invalid_email_message_enabled?: boolean;
+      transfer_message_user_enabled?: boolean;
+      transfer_message_sector_enabled?: boolean;
+      transfer_message_sector_user_enabled?: boolean;
     }
   ): Promise<boolean> {
     if (!this.isValidCPF(userText)) {
-      await this.sendInvalidCpfMessage(t, createChat, customMessage);
+      await this.sendInvalidCpfMessage(
+        t,
+        createChat,
+        customMessage,
+        customMessages?.invalid_cpf_message_enabled
+      );
       await this.processDataNodeQuestion(t, createChat, currentNode);
       return false;
     }
@@ -1778,10 +1921,24 @@ export class ChatbotFlowRunnerService {
       transfer_message_user?: string;
       transfer_message_sector?: string;
       transfer_message_sector_user?: string;
+      service_finished_message_enabled?: boolean;
+      invalid_menu_option_message_enabled?: boolean;
+      invalid_satisfaction_option_message_enabled?: boolean;
+      invalid_cpf_message_enabled?: boolean;
+      invalid_cnpj_message_enabled?: boolean;
+      invalid_email_message_enabled?: boolean;
+      transfer_message_user_enabled?: boolean;
+      transfer_message_sector_enabled?: boolean;
+      transfer_message_sector_user_enabled?: boolean;
     }
   ): Promise<boolean> {
     if (!this.isValidCNPJ(userText)) {
-      await this.sendInvalidCnpjMessage(t, createChat, customMessage);
+      await this.sendInvalidCnpjMessage(
+        t,
+        createChat,
+        customMessage,
+        customMessages?.invalid_cnpj_message_enabled
+      );
       await this.processDataNodeQuestion(t, createChat, currentNode);
       return false;
     }
@@ -1820,6 +1977,15 @@ export class ChatbotFlowRunnerService {
       transfer_message_user?: string;
       transfer_message_sector?: string;
       transfer_message_sector_user?: string;
+      service_finished_message_enabled?: boolean;
+      invalid_menu_option_message_enabled?: boolean;
+      invalid_satisfaction_option_message_enabled?: boolean;
+      invalid_cpf_message_enabled?: boolean;
+      invalid_cnpj_message_enabled?: boolean;
+      invalid_email_message_enabled?: boolean;
+      transfer_message_user_enabled?: boolean;
+      transfer_message_sector_enabled?: boolean;
+      transfer_message_sector_user_enabled?: boolean;
     }
   ): Promise<boolean> {
     const currentNode = this.getFlowNodeById(chatbotFlow, currentFlowId);
@@ -2007,6 +2173,15 @@ export class ChatbotFlowRunnerService {
       transfer_message_user?: string;
       transfer_message_sector?: string;
       transfer_message_sector_user?: string;
+      service_finished_message_enabled?: boolean;
+      invalid_menu_option_message_enabled?: boolean;
+      invalid_satisfaction_option_message_enabled?: boolean;
+      invalid_cpf_message_enabled?: boolean;
+      invalid_cnpj_message_enabled?: boolean;
+      invalid_email_message_enabled?: boolean;
+      transfer_message_user_enabled?: boolean;
+      transfer_message_sector_enabled?: boolean;
+      transfer_message_sector_user_enabled?: boolean;
     }
   ): Promise<boolean> {
     const currentNode = this.getFlowNodeById(chatbotFlow, currentFlowId);
@@ -2215,10 +2390,30 @@ export class ChatbotFlowRunnerService {
     inactivityData: IInactivityData,
     newAlertCount: number,
     timeMinutes: number,
-    customInactivityMessage?: string
+    customInactivityMessage?: string,
+    enabled?: boolean
   ): Promise<void> {
     if (createChat.status !== EChatStatus.ura) {
       await this.cancelInactivityCheck(createChat);
+
+      return;
+    }
+
+    if (enabled === false) {
+      const scheduleKey = this.getInactivityScheduleKey();
+      const now = Date.now();
+      const updatedData = {
+        ...inactivityData,
+        alertCount: newAlertCount,
+        lastAlertTime: now,
+      };
+
+      const nextCheckTime = now + timeMinutes * 60 * 1000;
+
+      await Promise.all([
+        this.redis.set(inactivityCacheKey, JSON.stringify(updatedData)),
+        this.redis.zadd(scheduleKey, nextCheckTime, inactivityCacheKey),
+      ]);
 
       return;
     }
@@ -2269,6 +2464,11 @@ export class ChatbotFlowRunnerService {
       transfer_message_user?: string;
       transfer_message_sector?: string;
       transfer_message_sector_user?: string;
+    },
+    enabledFlags?: {
+      transfer_message_user_enabled?: boolean;
+      transfer_message_sector_enabled?: boolean;
+      transfer_message_sector_user_enabled?: boolean;
     }
   ): Promise<boolean> {
     const redirectType = inactivityAlert.redirect_type;
@@ -2278,7 +2478,8 @@ export class ChatbotFlowRunnerService {
         t,
         createChat,
         inactivityAlert.selected_user,
-        customMessages
+        customMessages,
+        enabledFlags
       );
     }
 
@@ -2288,7 +2489,8 @@ export class ChatbotFlowRunnerService {
         createChat,
         inactivityAlert.selected_sector,
         inactivityAlert.selected_sector_user,
-        customMessages
+        customMessages,
+        enabledFlags
       );
     }
 
@@ -2303,6 +2505,11 @@ export class ChatbotFlowRunnerService {
       transfer_message_user?: string;
       transfer_message_sector?: string;
       transfer_message_sector_user?: string;
+    },
+    enabledFlags?: {
+      transfer_message_user_enabled?: boolean;
+      transfer_message_sector_enabled?: boolean;
+      transfer_message_sector_user_enabled?: boolean;
     }
   ): Promise<boolean> {
     if (!selectedUser) {
@@ -2327,7 +2534,8 @@ export class ChatbotFlowRunnerService {
       'user',
       user,
       undefined,
-      customMessages
+      customMessages,
+      enabledFlags
     );
 
     return true;
@@ -2342,6 +2550,11 @@ export class ChatbotFlowRunnerService {
       transfer_message_user?: string;
       transfer_message_sector?: string;
       transfer_message_sector_user?: string;
+    },
+    enabledFlags?: {
+      transfer_message_user_enabled?: boolean;
+      transfer_message_sector_enabled?: boolean;
+      transfer_message_sector_user_enabled?: boolean;
     }
   ): Promise<boolean> {
     if (!selectedSector) {
@@ -2373,7 +2586,8 @@ export class ChatbotFlowRunnerService {
       'sector',
       user,
       sector,
-      customMessages
+      customMessages,
+      enabledFlags
     );
 
     return true;
@@ -2400,6 +2614,13 @@ export class ChatbotFlowRunnerService {
       transfer_message_user?: string;
       transfer_message_sector?: string;
       transfer_message_sector_user?: string;
+    },
+    enabledFlags?: {
+      inactivity_message_enabled?: boolean;
+      service_finished_message_enabled?: boolean;
+      transfer_message_user_enabled?: boolean;
+      transfer_message_sector_enabled?: boolean;
+      transfer_message_sector_user_enabled?: boolean;
     }
   ): Promise<boolean> {
     const action = inactivityAlert.action;
@@ -2413,7 +2634,8 @@ export class ChatbotFlowRunnerService {
       inactivityData,
       inactivityAlert,
       createChat,
-      customInactivityMessage
+      customInactivityMessage,
+      enabledFlags?.inactivity_message_enabled
     );
 
     if (shouldSendAlert) {
@@ -2427,7 +2649,8 @@ export class ChatbotFlowRunnerService {
       action,
       inactivityAlert,
       customServiceFinishedMessage,
-      customMessages
+      customMessages,
+      enabledFlags
     );
   }
 
@@ -2440,7 +2663,8 @@ export class ChatbotFlowRunnerService {
       time?: number;
     },
     createChat: IChat,
-    customInactivityMessage?: string
+    customInactivityMessage?: string,
+    enabled?: boolean
   ): Promise<boolean> {
     const quantity = inactivityAlert.quantity ?? 1;
     const timeMinutes = inactivityAlert.time ?? 5;
@@ -2458,7 +2682,8 @@ export class ChatbotFlowRunnerService {
       inactivityData,
       newAlertCount,
       timeMinutes,
-      customInactivityMessage
+      customInactivityMessage,
+      enabled
     );
     return true;
   }
@@ -2478,10 +2703,21 @@ export class ChatbotFlowRunnerService {
       transfer_message_user?: string;
       transfer_message_sector?: string;
       transfer_message_sector_user?: string;
+    },
+    enabledFlags?: {
+      service_finished_message_enabled?: boolean;
+      transfer_message_user_enabled?: boolean;
+      transfer_message_sector_enabled?: boolean;
+      transfer_message_sector_user_enabled?: boolean;
     }
   ): Promise<boolean> {
     if (action === 'finish') {
-      await this.sendFinishMessage(t, createChat, customServiceFinishedMessage);
+      await this.sendFinishMessage(
+        t,
+        createChat,
+        customServiceFinishedMessage,
+        enabledFlags?.service_finished_message_enabled
+      );
       return true;
     }
 
@@ -2490,7 +2726,8 @@ export class ChatbotFlowRunnerService {
         t,
         createChat,
         inactivityAlert,
-        customMessages
+        customMessages,
+        enabledFlags
       );
     }
 
@@ -2511,18 +2748,38 @@ export class ChatbotFlowRunnerService {
       selected_sector_user?: string;
     },
     customMessages?: {
+      service_finished_message?: string;
+      invalid_menu_option_message?: string;
+      invalid_satisfaction_option_message?: string;
+      invalid_cpf_message?: string;
+      invalid_cnpj_message?: string;
+      invalid_email_message?: string;
       transfer_message_user?: string;
       transfer_message_sector?: string;
       transfer_message_sector_user?: string;
+      service_finished_message_enabled?: boolean;
+      invalid_menu_option_message_enabled?: boolean;
+      invalid_satisfaction_option_message_enabled?: boolean;
+      invalid_cpf_message_enabled?: boolean;
+      invalid_cnpj_message_enabled?: boolean;
+      invalid_email_message_enabled?: boolean;
+      transfer_message_user_enabled?: boolean;
+      transfer_message_sector_enabled?: boolean;
+      transfer_message_sector_user_enabled?: boolean;
     }
   ): Promise<boolean> {
     const nodeType =
       currentNode.type === 'satisfaction' ? 'satisfaction' : 'menu';
+    const enabled =
+      nodeType === 'satisfaction'
+        ? customMessages?.invalid_satisfaction_option_message_enabled
+        : customMessages?.invalid_menu_option_message_enabled;
     await this.sendTextOptionInvalidMessage(
       t,
       createChat,
       customMessage,
-      nodeType
+      nodeType,
+      enabled
     );
 
     await this.sendBuildMenuMessage(t, createChat, currentNode);
@@ -2566,7 +2823,15 @@ export class ChatbotFlowRunnerService {
       redirectFailedAttempts.redirect_type,
       user,
       sector,
-      customMessages
+      customMessages,
+      {
+        transfer_message_user_enabled:
+          customMessages?.transfer_message_user_enabled,
+        transfer_message_sector_enabled:
+          customMessages?.transfer_message_sector_enabled,
+        transfer_message_sector_user_enabled:
+          customMessages?.transfer_message_sector_user_enabled,
+      }
     );
 
     return true;
@@ -2680,17 +2945,23 @@ export class ChatbotFlowRunnerService {
       transfer_message_user?: string;
       transfer_message_sector?: string;
       transfer_message_sector_user?: string;
+    },
+    enabledFlags?: {
+      transfer_message_user_enabled?: boolean;
+      transfer_message_sector_enabled?: boolean;
+      transfer_message_sector_user_enabled?: boolean;
     }
   ): Promise<void> {
-    const rawTransferMessage = this.getTransferMessage(
+    const { rawTransferMessage, enabled } = this.getTransferMessage(
       t,
       redirectType,
       user,
       sector,
-      customMessages
+      customMessages,
+      enabledFlags
     );
 
-    if (!rawTransferMessage || (!user && !sector)) {
+    if (!rawTransferMessage || (!user && !sector) || enabled === false) {
       return;
     }
 
@@ -2720,29 +2991,40 @@ export class ChatbotFlowRunnerService {
       transfer_message_user?: string;
       transfer_message_sector?: string;
       transfer_message_sector_user?: string;
+    },
+    enabledFlags?: {
+      transfer_message_user_enabled?: boolean;
+      transfer_message_sector_enabled?: boolean;
+      transfer_message_sector_user_enabled?: boolean;
     }
-  ): string | undefined {
+  ): { rawTransferMessage: string | undefined; enabled: boolean | undefined } {
     if (redirectType === 'user' && user) {
-      return (
-        customMessages?.transfer_message_user ||
-        t('chatbot_transfer_message_user_default')
-      );
+      return {
+        rawTransferMessage:
+          customMessages?.transfer_message_user ||
+          t('chatbot_transfer_message_user_default'),
+        enabled: enabledFlags?.transfer_message_user_enabled,
+      };
     }
 
     if (redirectType === 'sector' && sector) {
       if (user) {
-        return (
-          customMessages?.transfer_message_sector_user ||
-          t('chatbot_transfer_message_sector_user_default')
-        );
+        return {
+          rawTransferMessage:
+            customMessages?.transfer_message_sector_user ||
+            t('chatbot_transfer_message_sector_user_default'),
+          enabled: enabledFlags?.transfer_message_sector_user_enabled,
+        };
       }
-      return (
-        customMessages?.transfer_message_sector ||
-        t('chatbot_transfer_message_sector_default')
-      );
+      return {
+        rawTransferMessage:
+          customMessages?.transfer_message_sector ||
+          t('chatbot_transfer_message_sector_default'),
+        enabled: enabledFlags?.transfer_message_sector_enabled,
+      };
     }
 
-    return undefined;
+    return { rawTransferMessage: undefined, enabled: undefined };
   }
 
   private async incrementFailedAttempts(createChat: IChat): Promise<number> {
@@ -2870,6 +3152,22 @@ export class ChatbotFlowRunnerService {
           }
         : undefined;
 
+      const inactivityMessageEnabled =
+        configurations?.configurations?.messages?.inactivity_message_enabled !==
+        false;
+      const serviceFinishedMessageEnabled =
+        configurations?.configurations?.messages
+          ?.service_finished_message_enabled !== false;
+      const transferMessageUserEnabled =
+        configurations?.configurations?.messages
+          ?.transfer_message_user_enabled !== false;
+      const transferMessageSectorEnabled =
+        configurations?.configurations?.messages
+          ?.transfer_message_sector_enabled !== false;
+      const transferMessageSectorUserEnabled =
+        configurations?.configurations?.messages
+          ?.transfer_message_sector_user_enabled !== false;
+
       await this.processInactivityAlert(
         t,
         inactivityCacheKey,
@@ -2878,7 +3176,15 @@ export class ChatbotFlowRunnerService {
         createChat,
         customInactivityMessage,
         customServiceFinishedMessage,
-        customMessages
+        customMessages,
+        {
+          inactivity_message_enabled: inactivityMessageEnabled,
+          service_finished_message_enabled: serviceFinishedMessageEnabled,
+          transfer_message_user_enabled: transferMessageUserEnabled,
+          transfer_message_sector_enabled: transferMessageSectorEnabled,
+          transfer_message_sector_user_enabled:
+            transferMessageSectorUserEnabled,
+        }
       );
     }
   }
@@ -3654,6 +3960,15 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       transfer_message_user?: string;
       transfer_message_sector?: string;
       transfer_message_sector_user?: string;
+      service_finished_message_enabled?: boolean;
+      invalid_menu_option_message_enabled?: boolean;
+      invalid_satisfaction_option_message_enabled?: boolean;
+      invalid_cpf_message_enabled?: boolean;
+      invalid_cnpj_message_enabled?: boolean;
+      invalid_email_message_enabled?: boolean;
+      transfer_message_user_enabled?: boolean;
+      transfer_message_sector_enabled?: boolean;
+      transfer_message_sector_user_enabled?: boolean;
     }
   ): Promise<boolean> {
     const currentNode = this.getFlowNodeById(chatbotFlow, currentFlowId);
@@ -3805,6 +4120,15 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       transfer_message_user?: string;
       transfer_message_sector?: string;
       transfer_message_sector_user?: string;
+      service_finished_message_enabled?: boolean;
+      invalid_menu_option_message_enabled?: boolean;
+      invalid_satisfaction_option_message_enabled?: boolean;
+      invalid_cpf_message_enabled?: boolean;
+      invalid_cnpj_message_enabled?: boolean;
+      invalid_email_message_enabled?: boolean;
+      transfer_message_user_enabled?: boolean;
+      transfer_message_sector_enabled?: boolean;
+      transfer_message_sector_user_enabled?: boolean;
     }
   ): Promise<boolean | null> {
     const options = currentNode.data?.options;
@@ -3862,6 +4186,15 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       transfer_message_user?: string;
       transfer_message_sector?: string;
       transfer_message_sector_user?: string;
+      service_finished_message_enabled?: boolean;
+      invalid_menu_option_message_enabled?: boolean;
+      invalid_satisfaction_option_message_enabled?: boolean;
+      invalid_cpf_message_enabled?: boolean;
+      invalid_cnpj_message_enabled?: boolean;
+      invalid_email_message_enabled?: boolean;
+      transfer_message_user_enabled?: boolean;
+      transfer_message_sector_enabled?: boolean;
+      transfer_message_sector_user_enabled?: boolean;
     }
   ): Promise<boolean | null> {
     const selectedNumber = Number.parseInt(userText, 10);
@@ -3926,6 +4259,15 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       transfer_message_user?: string;
       transfer_message_sector?: string;
       transfer_message_sector_user?: string;
+      service_finished_message_enabled?: boolean;
+      invalid_menu_option_message_enabled?: boolean;
+      invalid_satisfaction_option_message_enabled?: boolean;
+      invalid_cpf_message_enabled?: boolean;
+      invalid_cnpj_message_enabled?: boolean;
+      invalid_email_message_enabled?: boolean;
+      transfer_message_user_enabled?: boolean;
+      transfer_message_sector_enabled?: boolean;
+      transfer_message_sector_user_enabled?: boolean;
     }
   ): Promise<boolean | null> {
     const continueMessageSentKey = `${this.getChatbotFlowCacheKey(
@@ -4011,6 +4353,15 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       transfer_message_user?: string;
       transfer_message_sector?: string;
       transfer_message_sector_user?: string;
+      service_finished_message_enabled?: boolean;
+      invalid_menu_option_message_enabled?: boolean;
+      invalid_satisfaction_option_message_enabled?: boolean;
+      invalid_cpf_message_enabled?: boolean;
+      invalid_cnpj_message_enabled?: boolean;
+      invalid_email_message_enabled?: boolean;
+      transfer_message_user_enabled?: boolean;
+      transfer_message_sector_enabled?: boolean;
+      transfer_message_sector_user_enabled?: boolean;
     }
   ): Promise<boolean> {
     const aiAgent = await this.aiAgentService.viewAiAgent(
@@ -4256,6 +4607,15 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       transfer_message_user?: string;
       transfer_message_sector?: string;
       transfer_message_sector_user?: string;
+      service_finished_message_enabled?: boolean;
+      invalid_menu_option_message_enabled?: boolean;
+      invalid_satisfaction_option_message_enabled?: boolean;
+      invalid_cpf_message_enabled?: boolean;
+      invalid_cnpj_message_enabled?: boolean;
+      invalid_email_message_enabled?: boolean;
+      transfer_message_user_enabled?: boolean;
+      transfer_message_sector_enabled?: boolean;
+      transfer_message_sector_user_enabled?: boolean;
     }
   ): Promise<boolean> {
     const nextFlowId = this.getNextFlowId(chatbotFlow, currentFlowId);
@@ -4417,7 +4777,8 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       await this.sendFinishMessage(
         t,
         createChat,
-        customMessages?.service_finished_message
+        customMessages?.service_finished_message,
+        customMessages?.service_finished_message_enabled
       );
       return true;
     }
@@ -4587,6 +4948,10 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       transfer_message_user?: string;
       transfer_message_sector?: string;
       transfer_message_sector_user?: string;
+      service_finished_message_enabled?: boolean;
+      transfer_message_user_enabled?: boolean;
+      transfer_message_sector_enabled?: boolean;
+      transfer_message_sector_user_enabled?: boolean;
     }
   ): Promise<boolean> {
     const currentNode = this.getFlowNodeById(chatbotFlow, currentFlowId);
@@ -4594,6 +4959,14 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
     if (!currentNode) {
       throw new Error(t('chatbot_flow_node_not_found'));
     }
+
+    const configurations =
+      await this.chatbotService.findChatbotFlowConfigurationsByChatbotId(
+        createChat.account.id,
+        chatbotFlow.chatbot_id
+      );
+
+    const flowTransferMessages = configurations?.configurations?.messages;
 
     const responsibleAttendant = createChat.contact?.responsible_attendant;
 
@@ -4614,10 +4987,12 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       await this.cancelInactivityCheck(updatedChat);
 
       const rawTransferMessage =
-        customMessages?.transfer_message_user ||
+        flowTransferMessages?.transfer_message_user ||
         t('chatbot_transfer_message_user_default');
+      const enabled =
+        flowTransferMessages?.transfer_message_user_enabled !== false;
 
-      if (rawTransferMessage) {
+      if (rawTransferMessage && enabled !== false) {
         const transferMessage = await this.replaceVariables(
           t,
           rawTransferMessage,
@@ -4743,18 +5118,27 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
     await this.cancelInactivityCheck(updatedChat);
 
     let rawTransferMessage: string | undefined = undefined;
+    let enabled: boolean | undefined = undefined;
 
-    if (selectedUser) {
+    if (selectedUser && selectedSector) {
       rawTransferMessage =
-        customMessages?.transfer_message_user ||
+        flowTransferMessages?.transfer_message_sector_user ||
+        t('chatbot_transfer_message_sector_user_default');
+      enabled =
+        flowTransferMessages?.transfer_message_sector_user_enabled !== false;
+    } else if (selectedUser) {
+      rawTransferMessage =
+        flowTransferMessages?.transfer_message_user ||
         t('chatbot_transfer_message_user_default');
+      enabled = flowTransferMessages?.transfer_message_user_enabled !== false;
     } else if (selectedSector) {
       rawTransferMessage =
-        customMessages?.transfer_message_sector ||
+        flowTransferMessages?.transfer_message_sector ||
         t('chatbot_transfer_message_sector_default');
+      enabled = flowTransferMessages?.transfer_message_sector_enabled !== false;
     }
 
-    if (rawTransferMessage) {
+    if (rawTransferMessage && enabled !== false) {
       const transferMessage = await this.replaceVariables(
         t,
         rawTransferMessage,
@@ -4818,11 +5202,15 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       if (hasFinishTrigger) {
         const customServiceFinishedMessage =
           configurations?.configurations?.messages?.service_finished_message;
+        const serviceFinishedMessageEnabled =
+          configurations?.configurations?.messages
+            ?.service_finished_message_enabled !== false;
 
         await this.sendFinishMessage(
           t,
           createChat,
-          customServiceFinishedMessage
+          customServiceFinishedMessage,
+          serviceFinishedMessageEnabled
         );
 
         return null;
@@ -4838,7 +5226,31 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       throw new Error(t('chatbot_flow_not_found'));
     }
 
-    const customMessages = configurations?.configurations?.messages;
+    const messagesConfig = configurations?.configurations?.messages;
+    const customMessages = messagesConfig
+      ? {
+          ...messagesConfig,
+          invalid_menu_option_message_enabled:
+            messagesConfig.invalid_menu_option_message_enabled !== false,
+          invalid_satisfaction_option_message_enabled:
+            messagesConfig.invalid_satisfaction_option_message_enabled !==
+            false,
+          invalid_email_message_enabled:
+            messagesConfig.invalid_email_message_enabled !== false,
+          invalid_cpf_message_enabled:
+            messagesConfig.invalid_cpf_message_enabled !== false,
+          invalid_cnpj_message_enabled:
+            messagesConfig.invalid_cnpj_message_enabled !== false,
+          service_finished_message_enabled:
+            messagesConfig.service_finished_message_enabled !== false,
+          transfer_message_user_enabled:
+            messagesConfig.transfer_message_user_enabled !== false,
+          transfer_message_sector_enabled:
+            messagesConfig.transfer_message_sector_enabled !== false,
+          transfer_message_sector_user_enabled:
+            messagesConfig.transfer_message_sector_user_enabled !== false,
+        }
+      : undefined;
     const inactivityAlert = configurations?.configurations?.inactivity_alert;
     const redirectFailedAttempts =
       configurations?.configurations?.redirect_failed_attempts;

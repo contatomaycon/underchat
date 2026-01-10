@@ -85,11 +85,15 @@ export const initUserPresenceSubscription = async (
     const { presenceOffline } = await import('./presence');
     const { getI18n } = await import('@/plugins/i18n');
     const { EColor } = await import('@core/common/enums/EColor');
+    const { unsubscribeFromPushNotifications } =
+      await import('@/composables/useChatNotifications');
 
     const authStore = useAuthStore();
     const i18n = getI18n();
 
     await presenceOffline().catch(() => {});
+
+    await unsubscribeFromPushNotifications().catch(() => {});
 
     authStore.showSnackbar(i18n.global.t('session_ended'), EColor.warning);
 

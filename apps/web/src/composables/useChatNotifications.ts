@@ -176,6 +176,56 @@ export const useChatNotifications = () => {
     return globalThis.btoa(binary);
   }
 
+  async function unsubscribeFromPushNotificationsInternal(): Promise<void> {
+    if (!('serviceWorker' in navigator) || !('PushManager' in globalThis)) {
+      return;
+    }
+
+    try {
+      let registration: ServiceWorkerRegistration | null = null;
+
+      if (serviceWorkerRegistration.value) {
+        registration = serviceWorkerRegistration.value;
+      } else {
+        const existingRegistration =
+          await navigator.serviceWorker.getRegistration();
+        if (existingRegistration) {
+          registration = existingRegistration;
+        } else {
+          return;
+        }
+      }
+
+      if (!registration) {
+        return;
+      }
+
+      const subscription = await registration.pushManager.getSubscription();
+
+      if (!subscription) {
+        return;
+      }
+
+      const endpoint = subscription.endpoint;
+
+      try {
+        await axiosAuth.delete('/push/unsubscribe', {
+          data: { endpoint },
+        });
+      } catch {
+        return;
+      }
+
+      try {
+        await subscription.unsubscribe();
+      } catch {
+        return;
+      }
+    } catch {
+      return;
+    }
+  }
+
   async function subscribeToPushNotifications(): Promise<void> {
     if (isSubscribing.value) {
       return;
@@ -221,6 +271,14 @@ export const useChatNotifications = () => {
       const response = await axiosAuth.get('/push/public-key');
 
       const { public_key } = response.data.data;
+
+      const existingSubscription =
+        await registration.pushManager.getSubscription();
+
+      if (existingSubscription) {
+        isSubscribing.value = false;
+        return;
+      }
 
       const convertedVapidKey = urlBase64ToUint8Array(public_key);
 
@@ -371,20 +429,6 @@ export const useChatNotifications = () => {
         handleServiceWorkerMessage as EventListener
       );
     }
-
-    if (chatStore.user?.chat_user?.notifications === true) {
-      if (Notification.permission === 'default') {
-        await requestNotificationPermission();
-      }
-
-      if (Notification.permission === 'granted') {
-        if ('serviceWorker' in navigator && !serviceWorkerRegistration.value) {
-          await registerServiceWorker();
-          await new Promise((resolve) => setTimeout(resolve, 500));
-        }
-        await subscribeToPushNotifications();
-      }
-    }
   });
 
   onUnmounted(() => {
@@ -415,5 +459,44 @@ export const useChatNotifications = () => {
     handleNewMessage,
     requestNotificationPermission,
     registerServiceWorker,
+    unsubscribeFromPushNotifications: unsubscribeFromPushNotificationsInternal,
   };
 };
+
+export async function unsubscribeFromPushNotifications(): Promise<void> {
+  if (!('serviceWorker' in navigator) || !('PushManager' in globalThis)) {
+    return;
+  }
+
+  try {
+    const registration = await navigator.serviceWorker.getRegistration();
+
+    if (!registration) {
+      return;
+    }
+
+    const subscription = await registration.pushManager.getSubscription();
+
+    if (!subscription) {
+      return;
+    }
+
+    const endpoint = subscription.endpoint;
+
+    try {
+      await axiosAuth.delete('/push/unsubscribe', {
+        data: { endpoint },
+      });
+    } catch {
+      return;
+    }
+
+    try {
+      await subscription.unsubscribe();
+    } catch {
+      return;
+    }
+  } catch {
+    return;
+  }
+}

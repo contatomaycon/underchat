@@ -135,6 +135,8 @@ const isLoadingRedirectFailedAttemptsSectorUsers = ref(false);
 
 const configTab = ref('resources');
 const isVariablesSidebarOpen = ref(false);
+const isSavingConfigurations = ref(false);
+const isLoadingConfigurations = ref(false);
 
 const defaultInactivityMessage = computed(() =>
   t('chatbot_inactivity_message_default')
@@ -154,6 +156,16 @@ const defaultServiceFinishedMessage = computed(() =>
 const defaultTransferMessageUserText = ref('');
 const defaultTransferMessageSectorText = ref('');
 const defaultTransferMessageSectorUserText = ref('');
+
+const safeDefaultTransferMessageUserText = computed(() => {
+  return defaultTransferMessageUserText.value || '';
+});
+const safeDefaultTransferMessageSectorText = computed(() => {
+  return defaultTransferMessageSectorText.value || '';
+});
+const safeDefaultTransferMessageSectorUserText = computed(() => {
+  return defaultTransferMessageSectorUserText.value || '';
+});
 
 const availableVariables = computed(() => [
   {
@@ -462,7 +474,12 @@ watch(
 
 const openConfigModal = async () => {
   isConfigModalOpen.value = true;
-  await loadChatbotFlowConfigurations();
+  try {
+    isLoadingConfigurations.value = true;
+    await loadChatbotFlowConfigurations();
+  } finally {
+    isLoadingConfigurations.value = false;
+  }
 };
 
 const closeConfigModal = () => {
@@ -1746,6 +1763,7 @@ const handleSaveConfigurations = async () => {
   }
 
   try {
+    isSavingConfigurations.value = true;
     const configurations = {
       inactivity_alert:
         inactivityAlertStatus.value === 'active'
@@ -1824,6 +1842,8 @@ const handleSaveConfigurations = async () => {
     }
   } catch (error) {
     console.error('Error saving configurations:', error);
+  } finally {
+    isSavingConfigurations.value = false;
   }
 };
 
@@ -1857,13 +1877,23 @@ onMounted(() => {
   window.addEventListener('keydown', handleDeleteKey);
   document.addEventListener('click', handleDocumentClick, true);
   defaultTransferMessageUserText.value = t(
-    'chatbot_transfer_message_user_default'
+    'chatbot_transfer_message_user_default',
+    {
+      user: '{{ user }}',
+    }
   );
   defaultTransferMessageSectorText.value = t(
-    'chatbot_transfer_message_sector_default'
+    'chatbot_transfer_message_sector_default',
+    {
+      sector: '{{ sector }}',
+    }
   );
   defaultTransferMessageSectorUserText.value = t(
-    'chatbot_transfer_message_sector_user_default'
+    'chatbot_transfer_message_sector_user_default',
+    {
+      user: '{{ user }}',
+      sector: '{{ sector }}',
+    }
   );
 });
 
@@ -2225,99 +2255,122 @@ onUnmounted(() => {
         <VCardText>
           <VWindow v-model="configTab">
             <VWindowItem value="resources">
-              <VCard variant="outlined" class="mb-4">
-                <VCardTitle class="text-body-1 pa-3 pb-0 font-weight-bold">
-                  {{ t('chatbot_inactivity_alert') }}
-                </VCardTitle>
-                <VCardSubtitle
-                  class="text-caption pa-3 pb-0 pt-0 config-description"
-                >
-                  {{ t('chatbot_inactivity_alert_description') }}
-                </VCardSubtitle>
-                <VDivider />
-                <VCardText>
-                  <div class="mb-3">
-                    <VLabel class="mb-1 text-body-2">{{
-                      t('chatbot_inactivity_alert')
-                    }}</VLabel>
-                    <AppSelectSearch
-                      v-model="inactivityAlertStatus"
-                      :items="[
-                        {
-                          id: 'active',
-                          title: t('chatbot_inactivity_alert_active'),
-                        },
-                        {
-                          id: 'inactive',
-                          title: t('chatbot_inactivity_alert_inactive'),
-                        },
-                      ]"
-                      item-value="id"
-                      item-title="title"
-                      :clearable="false"
-                    />
-                  </div>
-
-                  <div v-if="showInactivityAlertFields">
+              <template v-if="isLoadingConfigurations">
+                <VCard variant="outlined" class="mb-4">
+                  <VCardTitle class="pa-3 pb-0">
+                    <VSkeletonLoader type="text" width="200" />
+                  </VCardTitle>
+                  <VCardSubtitle class="pa-3 pb-0 pt-2">
+                    <VSkeletonLoader type="text" width="80%" />
+                  </VCardSubtitle>
+                  <VDivider />
+                  <VCardText>
                     <div class="mb-3">
-                      <VLabel class="mb-1 text-body-2">{{
-                        t('chatbot_inactivity_alert_quantity')
-                      }}</VLabel>
-                      <VTextField
-                        v-model="inactivityAlertQuantityComputed"
-                        @keydown="onKeyPress"
-                        @paste.prevent="
-                          (e: ClipboardEvent) => {
-                            const pastedText =
-                              e.clipboardData?.getData('text') || '';
-                            const numericValue = onlyDigits(pastedText);
-                            if (numericValue) {
-                              inactivityAlertQuantityComputed = numericValue;
-                            }
-                          }
-                        "
-                        variant="outlined"
-                        density="compact"
-                        hide-details
-                        inputmode="numeric"
+                      <VSkeletonLoader
                         type="text"
+                        width="120"
+                        height="20"
+                        class="mb-2"
                       />
+                      <VSkeletonLoader type="text" width="100%" height="40" />
                     </div>
-
                     <div class="mb-3">
-                      <VLabel class="mb-1 text-body-2">{{
-                        t('chatbot_inactivity_alert_time')
-                      }}</VLabel>
-                      <VTextField
-                        v-model="inactivityAlertTimeComputed"
-                        @keydown="onKeyPress"
-                        @paste.prevent="
-                          (e: ClipboardEvent) => {
-                            const pastedText =
-                              e.clipboardData?.getData('text') || '';
-                            const numericValue = onlyDigits(pastedText);
-                            if (numericValue) {
-                              inactivityAlertTimeComputed = numericValue;
-                            }
-                          }
-                        "
-                        variant="outlined"
-                        density="compact"
-                        hide-details
-                        inputmode="numeric"
+                      <VSkeletonLoader
                         type="text"
+                        width="150"
+                        height="20"
+                        class="mb-2"
                       />
+                      <VSkeletonLoader type="text" width="100%" height="40" />
                     </div>
-
+                    <div class="mb-3">
+                      <VSkeletonLoader
+                        type="text"
+                        width="100"
+                        height="20"
+                        class="mb-2"
+                      />
+                      <VSkeletonLoader type="text" width="100%" height="40" />
+                    </div>
+                  </VCardText>
+                </VCard>
+                <VCard variant="outlined" class="mb-4">
+                  <VCardTitle class="pa-3 pb-0">
+                    <VSkeletonLoader type="text" width="250" />
+                  </VCardTitle>
+                  <VCardSubtitle class="pa-3 pb-0 pt-2">
+                    <VSkeletonLoader type="text" width="90%" />
+                  </VCardSubtitle>
+                  <VDivider />
+                  <VCardText>
+                    <div class="mb-3">
+                      <VSkeletonLoader
+                        type="text"
+                        width="180"
+                        height="20"
+                        class="mb-2"
+                      />
+                      <VSkeletonLoader type="text" width="100%" height="40" />
+                    </div>
+                    <div class="mb-3">
+                      <VSkeletonLoader
+                        type="text"
+                        width="120"
+                        height="20"
+                        class="mb-2"
+                      />
+                      <VSkeletonLoader type="text" width="100%" height="40" />
+                    </div>
+                  </VCardText>
+                </VCard>
+                <VCard variant="outlined" class="mb-4">
+                  <VCardTitle class="pa-3 pb-0">
+                    <VSkeletonLoader type="text" width="180" />
+                  </VCardTitle>
+                  <VCardSubtitle class="pa-3 pb-0 pt-2">
+                    <VSkeletonLoader type="text" width="85%" />
+                  </VCardSubtitle>
+                  <VDivider />
+                  <VCardText>
+                    <div class="mb-3">
+                      <VSkeletonLoader
+                        type="text"
+                        width="160"
+                        height="20"
+                        class="mb-2"
+                      />
+                      <VSkeletonLoader type="text" width="100%" height="40" />
+                    </div>
+                  </VCardText>
+                </VCard>
+              </template>
+              <template v-else>
+                <VCard variant="outlined" class="mb-4">
+                  <VCardTitle class="text-body-1 pa-3 pb-0 font-weight-bold">
+                    {{ t('chatbot_inactivity_alert') }}
+                  </VCardTitle>
+                  <VCardSubtitle
+                    class="text-caption pa-3 pb-0 pt-0 config-description"
+                  >
+                    {{ t('chatbot_inactivity_alert_description') }}
+                  </VCardSubtitle>
+                  <VDivider />
+                  <VCardText>
                     <div class="mb-3">
                       <VLabel class="mb-1 text-body-2">{{
-                        t('chatbot_action')
+                        t('chatbot_inactivity_alert')
                       }}</VLabel>
                       <AppSelectSearch
-                        v-model="inactivityAlertAction"
+                        v-model="inactivityAlertStatus"
                         :items="[
-                          { id: 'redirect', title: t('chatbot_redirect') },
-                          { id: 'finish', title: t('chatbot_finish') },
+                          {
+                            id: 'active',
+                            title: t('chatbot_inactivity_alert_active'),
+                          },
+                          {
+                            id: 'inactive',
+                            title: t('chatbot_inactivity_alert_inactive'),
+                          },
                         ]"
                         item-value="id"
                         item-title="title"
@@ -2325,18 +2378,260 @@ onUnmounted(() => {
                       />
                     </div>
 
-                    <div v-if="showInactivityAlertRedirectFields">
+                    <div v-if="showInactivityAlertFields">
+                      <div class="mb-3">
+                        <VLabel class="mb-1 text-body-2">{{
+                          t('chatbot_inactivity_alert_quantity')
+                        }}</VLabel>
+                        <VTextField
+                          v-model="inactivityAlertQuantityComputed"
+                          @keydown="onKeyPress"
+                          @paste.prevent="
+                            (e: ClipboardEvent) => {
+                              const pastedText =
+                                e.clipboardData?.getData('text') || '';
+                              const numericValue = onlyDigits(pastedText);
+                              if (numericValue) {
+                                inactivityAlertQuantityComputed = numericValue;
+                              }
+                            }
+                          "
+                          variant="outlined"
+                          density="compact"
+                          hide-details
+                          inputmode="numeric"
+                          type="text"
+                        />
+                      </div>
+
+                      <div class="mb-3">
+                        <VLabel class="mb-1 text-body-2">{{
+                          t('chatbot_inactivity_alert_time')
+                        }}</VLabel>
+                        <VTextField
+                          v-model="inactivityAlertTimeComputed"
+                          @keydown="onKeyPress"
+                          @paste.prevent="
+                            (e: ClipboardEvent) => {
+                              const pastedText =
+                                e.clipboardData?.getData('text') || '';
+                              const numericValue = onlyDigits(pastedText);
+                              if (numericValue) {
+                                inactivityAlertTimeComputed = numericValue;
+                              }
+                            }
+                          "
+                          variant="outlined"
+                          density="compact"
+                          hide-details
+                          inputmode="numeric"
+                          type="text"
+                        />
+                      </div>
+
+                      <div class="mb-3">
+                        <VLabel class="mb-1 text-body-2">{{
+                          t('chatbot_action')
+                        }}</VLabel>
+                        <AppSelectSearch
+                          v-model="inactivityAlertAction"
+                          :items="[
+                            { id: 'redirect', title: t('chatbot_redirect') },
+                            { id: 'finish', title: t('chatbot_finish') },
+                          ]"
+                          item-value="id"
+                          item-title="title"
+                          :clearable="false"
+                        />
+                      </div>
+
+                      <div v-if="showInactivityAlertRedirectFields">
+                        <div class="mb-3">
+                          <VLabel class="mb-1 text-body-2">{{
+                            t('chatbot_redirect_to')
+                          }}</VLabel>
+                          <AppSelectSearch
+                            v-model="inactivityAlertRedirectType"
+                            :items="[
+                              {
+                                id: 'user',
+                                title: t('chatbot_redirect_user'),
+                              },
+                              {
+                                id: 'sector',
+                                title: t('chatbot_redirect_sector'),
+                              },
+                            ]"
+                            item-value="id"
+                            item-title="title"
+                            :clearable="false"
+                          />
+                        </div>
+
+                        <div v-if="showInactivityAlertUserField" class="mb-3">
+                          <AppSelectSearch
+                            v-model="inactivityAlertSelectedUser"
+                            :items="inactivityUsers"
+                            :label="t('chatbot_user_label')"
+                            :placeholder="t('chatbot_search')"
+                            :loading="isLoadingInactivityUsers"
+                            :clearable="true"
+                            item-value="value"
+                            item-title="title"
+                            @select="loadInactivityUsers()"
+                          >
+                            <template #item-prepend="{ item }">
+                              <VAvatar
+                                size="32"
+                                :variant="!item.photo ? 'tonal' : undefined"
+                                color="primary"
+                              >
+                                <VImg
+                                  v-if="item.photo"
+                                  :src="item.photo"
+                                  :alt="item.title"
+                                />
+                                <VIcon v-else icon="tabler-user" size="18" />
+                              </VAvatar>
+                            </template>
+                          </AppSelectSearch>
+                        </div>
+
+                        <div v-if="showInactivityAlertSectorField" class="mb-3">
+                          <AppSelectSearch
+                            v-model="inactivityAlertSelectedSector"
+                            :items="inactivitySectors"
+                            :label="t('chatbot_sector_label')"
+                            :placeholder="t('chatbot_search')"
+                            :loading="isLoadingInactivitySectors"
+                            :clearable="true"
+                            item-value="value"
+                            item-title="title"
+                            @select="loadInactivitySectors()"
+                          >
+                            <template #item-prepend="{ item }">
+                              <VAvatar
+                                size="24"
+                                :style="{
+                                  backgroundColor: item.color || '#1976D2',
+                                }"
+                              />
+                            </template>
+                          </AppSelectSearch>
+                        </div>
+
+                        <div
+                          v-if="showInactivityAlertSectorUserField"
+                          class="mb-3"
+                        >
+                          <AppSelectSearch
+                            v-model="inactivityAlertSelectedSectorUser"
+                            :items="inactivitySectorUsers"
+                            :label="t('chatbot_sector_user_label')"
+                            :placeholder="t('chatbot_search_optional')"
+                            :loading="isLoadingInactivitySectorUsers"
+                            :clearable="true"
+                            item-value="value"
+                            item-title="title"
+                            @select="
+                              inactivityAlertSelectedSector
+                                ? loadInactivitySectorUsers(
+                                    inactivityAlertSelectedSector
+                                  )
+                                : undefined
+                            "
+                          >
+                            <template #item-prepend="{ item }">
+                              <VAvatar
+                                size="32"
+                                :variant="!item.photo ? 'tonal' : undefined"
+                                color="primary"
+                              >
+                                <VImg
+                                  v-if="item.photo"
+                                  :src="item.photo"
+                                  :alt="item.title"
+                                />
+                                <VIcon v-else icon="tabler-user" size="18" />
+                              </VAvatar>
+                            </template>
+                          </AppSelectSearch>
+                        </div>
+                      </div>
+                    </div>
+                  </VCardText>
+                </VCard>
+
+                <VCard variant="outlined" class="mb-4">
+                  <VCardTitle class="text-body-1 pa-3 pb-0 font-weight-bold">
+                    {{ t('chatbot_redirect_failed_attempts') }}
+                  </VCardTitle>
+                  <VCardSubtitle
+                    class="text-caption pa-3 pb-0 pt-0 config-description"
+                  >
+                    {{ t('chatbot_redirect_failed_attempts_description') }}
+                  </VCardSubtitle>
+                  <VDivider />
+                  <VCardText>
+                    <div class="mb-3">
+                      <VLabel class="mb-1 text-body-2">{{
+                        t('chatbot_redirect_failed_attempts')
+                      }}</VLabel>
+                      <AppSelectSearch
+                        v-model="redirectFailedAttemptsStatus"
+                        :items="[
+                          {
+                            id: 'active',
+                            title: t('chatbot_redirect_failed_attempts_active'),
+                          },
+                          {
+                            id: 'inactive',
+                            title: t(
+                              'chatbot_redirect_failed_attempts_inactive'
+                            ),
+                          },
+                        ]"
+                        item-value="id"
+                        item-title="title"
+                        :clearable="false"
+                      />
+                    </div>
+
+                    <div v-if="showRedirectFailedAttemptsFields">
+                      <div class="mb-3">
+                        <VLabel class="mb-1 text-body-2">{{
+                          t('chatbot_redirect_failed_attempts_quantity')
+                        }}</VLabel>
+                        <VTextField
+                          v-model="redirectFailedAttemptsQuantityComputed"
+                          @keydown="onKeyPress"
+                          @paste.prevent="
+                            (e: ClipboardEvent) => {
+                              const pastedText =
+                                e.clipboardData?.getData('text') || '';
+                              const numericValue = onlyDigits(pastedText);
+                              if (numericValue) {
+                                redirectFailedAttemptsQuantityComputed =
+                                  numericValue;
+                              }
+                            }
+                          "
+                          variant="outlined"
+                          density="compact"
+                          hide-details
+                          inputmode="numeric"
+                          type="text"
+                        />
+                      </div>
+
                       <div class="mb-3">
                         <VLabel class="mb-1 text-body-2">{{
                           t('chatbot_redirect_to')
                         }}</VLabel>
                         <AppSelectSearch
-                          v-model="inactivityAlertRedirectType"
+                          v-model="redirectFailedAttemptsRedirectType"
                           :items="[
-                            {
-                              id: 'user',
-                              title: t('chatbot_redirect_user'),
-                            },
+                            { id: 'user', title: t('chatbot_redirect_user') },
                             {
                               id: 'sector',
                               title: t('chatbot_redirect_sector'),
@@ -2348,17 +2643,20 @@ onUnmounted(() => {
                         />
                       </div>
 
-                      <div v-if="showInactivityAlertUserField" class="mb-3">
+                      <div
+                        v-if="showRedirectFailedAttemptsUserField"
+                        class="mb-3"
+                      >
                         <AppSelectSearch
-                          v-model="inactivityAlertSelectedUser"
-                          :items="inactivityUsers"
+                          v-model="redirectFailedAttemptsSelectedUser"
+                          :items="redirectFailedAttemptsUsers"
                           :label="t('chatbot_user_label')"
                           :placeholder="t('chatbot_search')"
-                          :loading="isLoadingInactivityUsers"
+                          :loading="isLoadingRedirectFailedAttemptsUsers"
                           :clearable="true"
                           item-value="value"
                           item-title="title"
-                          @select="loadInactivityUsers()"
+                          @select="loadRedirectFailedAttemptsUsers()"
                         >
                           <template #item-prepend="{ item }">
                             <VAvatar
@@ -2377,17 +2675,20 @@ onUnmounted(() => {
                         </AppSelectSearch>
                       </div>
 
-                      <div v-if="showInactivityAlertSectorField" class="mb-3">
+                      <div
+                        v-if="showRedirectFailedAttemptsSectorField"
+                        class="mb-3"
+                      >
                         <AppSelectSearch
-                          v-model="inactivityAlertSelectedSector"
-                          :items="inactivitySectors"
+                          v-model="redirectFailedAttemptsSelectedSector"
+                          :items="redirectFailedAttemptsSectors"
                           :label="t('chatbot_sector_label')"
                           :placeholder="t('chatbot_search')"
-                          :loading="isLoadingInactivitySectors"
+                          :loading="isLoadingRedirectFailedAttemptsSectors"
                           :clearable="true"
                           item-value="value"
                           item-title="title"
-                          @select="loadInactivitySectors()"
+                          @select="loadRedirectFailedAttemptsSectors()"
                         >
                           <template #item-prepend="{ item }">
                             <VAvatar
@@ -2401,22 +2702,22 @@ onUnmounted(() => {
                       </div>
 
                       <div
-                        v-if="showInactivityAlertSectorUserField"
+                        v-if="showRedirectFailedAttemptsSectorUserField"
                         class="mb-3"
                       >
                         <AppSelectSearch
-                          v-model="inactivityAlertSelectedSectorUser"
-                          :items="inactivitySectorUsers"
+                          v-model="redirectFailedAttemptsSelectedSectorUser"
+                          :items="redirectFailedAttemptsSectorUsers"
                           :label="t('chatbot_sector_user_label')"
                           :placeholder="t('chatbot_search_optional')"
-                          :loading="isLoadingInactivitySectorUsers"
+                          :loading="isLoadingRedirectFailedAttemptsSectorUsers"
                           :clearable="true"
                           item-value="value"
                           item-title="title"
                           @select="
-                            inactivityAlertSelectedSector
-                              ? loadInactivitySectorUsers(
-                                  inactivityAlertSelectedSector
+                            redirectFailedAttemptsSelectedSector
+                              ? loadRedirectFailedAttemptsSectorUsers(
+                                  redirectFailedAttemptsSelectedSector
                                 )
                               : undefined
                           "
@@ -2438,595 +2739,477 @@ onUnmounted(() => {
                         </AppSelectSearch>
                       </div>
                     </div>
-                  </div>
-                </VCardText>
-              </VCard>
+                  </VCardText>
+                </VCard>
 
-              <VCard variant="outlined" class="mb-4">
-                <VCardTitle class="text-body-1 pa-3 pb-0 font-weight-bold">
-                  {{ t('chatbot_redirect_failed_attempts') }}
-                </VCardTitle>
-                <VCardSubtitle
-                  class="text-caption pa-3 pb-0 pt-0 config-description"
-                >
-                  {{ t('chatbot_redirect_failed_attempts_description') }}
-                </VCardSubtitle>
-                <VDivider />
-                <VCardText>
-                  <div class="mb-3">
-                    <VLabel class="mb-1 text-body-2">{{
-                      t('chatbot_redirect_failed_attempts')
-                    }}</VLabel>
-                    <AppSelectSearch
-                      v-model="redirectFailedAttemptsStatus"
-                      :items="[
-                        {
-                          id: 'active',
-                          title: t('chatbot_redirect_failed_attempts_active'),
-                        },
-                        {
-                          id: 'inactive',
-                          title: t('chatbot_redirect_failed_attempts_inactive'),
-                        },
-                      ]"
-                      item-value="id"
-                      item-title="title"
-                      :clearable="false"
-                    />
-                  </div>
-
-                  <div v-if="showRedirectFailedAttemptsFields">
+                <VCard variant="outlined" class="mb-4">
+                  <VCardTitle class="text-body-1 pa-3 pb-0 font-weight-bold">
+                    {{ t('chatbot_finish_triggers') }}
+                  </VCardTitle>
+                  <VCardSubtitle
+                    class="text-caption pa-3 pb-0 pt-0 config-description"
+                  >
+                    {{ t('chatbot_finish_triggers_description') }}
+                  </VCardSubtitle>
+                  <VDivider />
+                  <VCardText>
                     <div class="mb-3">
                       <VLabel class="mb-1 text-body-2">{{
-                        t('chatbot_redirect_failed_attempts_quantity')
+                        t('chatbot_finish_triggers_label')
                       }}</VLabel>
                       <VTextField
-                        v-model="redirectFailedAttemptsQuantityComputed"
-                        @keydown="onKeyPress"
-                        @paste.prevent="
-                          (e: ClipboardEvent) => {
-                            const pastedText =
-                              e.clipboardData?.getData('text') || '';
-                            const numericValue = onlyDigits(pastedText);
-                            if (numericValue) {
-                              redirectFailedAttemptsQuantityComputed =
-                                numericValue;
-                            }
-                          }
-                        "
+                        v-model="finishTriggerInput"
+                        :placeholder="t('chatbot_finish_triggers_placeholder')"
                         variant="outlined"
                         density="compact"
                         hide-details
-                        inputmode="numeric"
-                        type="text"
+                        @keydown.enter.prevent="addFinishTrigger"
                       />
-                    </div>
-
-                    <div class="mb-3">
-                      <VLabel class="mb-1 text-body-2">{{
-                        t('chatbot_redirect_to')
-                      }}</VLabel>
-                      <AppSelectSearch
-                        v-model="redirectFailedAttemptsRedirectType"
-                        :items="[
-                          { id: 'user', title: t('chatbot_redirect_user') },
-                          {
-                            id: 'sector',
-                            title: t('chatbot_redirect_sector'),
-                          },
-                        ]"
-                        item-value="id"
-                        item-title="title"
-                        :clearable="false"
-                      />
+                      <div class="text-caption text-medium-emphasis mt-2">
+                        {{ t('chatbot_finish_triggers_hint') }}
+                      </div>
                     </div>
 
                     <div
-                      v-if="showRedirectFailedAttemptsUserField"
-                      class="mb-3"
+                      v-if="finishTriggers.length > 0"
+                      class="d-flex flex-wrap gap-2"
                     >
-                      <AppSelectSearch
-                        v-model="redirectFailedAttemptsSelectedUser"
-                        :items="redirectFailedAttemptsUsers"
-                        :label="t('chatbot_user_label')"
-                        :placeholder="t('chatbot_search')"
-                        :loading="isLoadingRedirectFailedAttemptsUsers"
-                        :clearable="true"
-                        item-value="value"
-                        item-title="title"
-                        @select="loadRedirectFailedAttemptsUsers()"
+                      <VChip
+                        v-for="trigger in finishTriggers"
+                        :key="trigger"
+                        closable
+                        @click:close="removeFinishTrigger(trigger)"
+                        color="primary"
+                        variant="tonal"
                       >
-                        <template #item-prepend="{ item }">
-                          <VAvatar
-                            size="32"
-                            :variant="!item.photo ? 'tonal' : undefined"
-                            color="primary"
-                          >
-                            <VImg
-                              v-if="item.photo"
-                              :src="item.photo"
-                              :alt="item.title"
-                            />
-                            <VIcon v-else icon="tabler-user" size="18" />
-                          </VAvatar>
-                        </template>
-                      </AppSelectSearch>
+                        {{ trigger }}
+                      </VChip>
                     </div>
-
-                    <div
-                      v-if="showRedirectFailedAttemptsSectorField"
-                      class="mb-3"
-                    >
-                      <AppSelectSearch
-                        v-model="redirectFailedAttemptsSelectedSector"
-                        :items="redirectFailedAttemptsSectors"
-                        :label="t('chatbot_sector_label')"
-                        :placeholder="t('chatbot_search')"
-                        :loading="isLoadingRedirectFailedAttemptsSectors"
-                        :clearable="true"
-                        item-value="value"
-                        item-title="title"
-                        @select="loadRedirectFailedAttemptsSectors()"
-                      >
-                        <template #item-prepend="{ item }">
-                          <VAvatar
-                            size="24"
-                            :style="{
-                              backgroundColor: item.color || '#1976D2',
-                            }"
-                          />
-                        </template>
-                      </AppSelectSearch>
-                    </div>
-
-                    <div
-                      v-if="showRedirectFailedAttemptsSectorUserField"
-                      class="mb-3"
-                    >
-                      <AppSelectSearch
-                        v-model="redirectFailedAttemptsSelectedSectorUser"
-                        :items="redirectFailedAttemptsSectorUsers"
-                        :label="t('chatbot_sector_user_label')"
-                        :placeholder="t('chatbot_search_optional')"
-                        :loading="isLoadingRedirectFailedAttemptsSectorUsers"
-                        :clearable="true"
-                        item-value="value"
-                        item-title="title"
-                        @select="
-                          redirectFailedAttemptsSelectedSector
-                            ? loadRedirectFailedAttemptsSectorUsers(
-                                redirectFailedAttemptsSelectedSector
-                              )
-                            : undefined
-                        "
-                      >
-                        <template #item-prepend="{ item }">
-                          <VAvatar
-                            size="32"
-                            :variant="!item.photo ? 'tonal' : undefined"
-                            color="primary"
-                          >
-                            <VImg
-                              v-if="item.photo"
-                              :src="item.photo"
-                              :alt="item.title"
-                            />
-                            <VIcon v-else icon="tabler-user" size="18" />
-                          </VAvatar>
-                        </template>
-                      </AppSelectSearch>
-                    </div>
-                  </div>
-                </VCardText>
-              </VCard>
-
-              <VCard variant="outlined" class="mb-4">
-                <VCardTitle class="text-body-1 pa-3 pb-0 font-weight-bold">
-                  {{ t('chatbot_finish_triggers') }}
-                </VCardTitle>
-                <VCardSubtitle
-                  class="text-caption pa-3 pb-0 pt-0 config-description"
-                >
-                  {{ t('chatbot_finish_triggers_description') }}
-                </VCardSubtitle>
-                <VDivider />
-                <VCardText>
-                  <div class="mb-3">
-                    <VLabel class="mb-1 text-body-2">{{
-                      t('chatbot_finish_triggers_label')
-                    }}</VLabel>
-                    <VTextField
-                      v-model="finishTriggerInput"
-                      :placeholder="t('chatbot_finish_triggers_placeholder')"
-                      variant="outlined"
-                      density="compact"
-                      hide-details
-                      @keydown.enter.prevent="addFinishTrigger"
-                    />
-                    <div class="text-caption text-medium-emphasis mt-2">
-                      {{ t('chatbot_finish_triggers_hint') }}
-                    </div>
-                  </div>
-
-                  <div
-                    v-if="finishTriggers.length > 0"
-                    class="d-flex flex-wrap gap-2"
-                  >
-                    <VChip
-                      v-for="trigger in finishTriggers"
-                      :key="trigger"
-                      closable
-                      @click:close="removeFinishTrigger(trigger)"
-                      color="primary"
-                      variant="tonal"
-                    >
-                      {{ trigger }}
-                    </VChip>
-                  </div>
-                </VCardText>
-              </VCard>
+                  </VCardText>
+                </VCard>
+              </template>
             </VWindowItem>
 
             <VWindowItem value="messages">
-              <div class="d-flex flex-column gap-4">
-                <VCard variant="outlined">
-                  <VCardTitle
-                    class="text-body-1 pa-3 pb-0 font-weight-bold d-flex align-center justify-space-between"
+              <template v-if="isLoadingConfigurations">
+                <div class="d-flex flex-column gap-4">
+                  <VCard
+                    v-for="i in 9"
+                    :key="`skeleton-message-${i}`"
+                    variant="outlined"
                   >
-                    <span>{{ t('chatbot_message_inactivity') }}</span>
-                    <VSwitch
-                      v-model="isInactivityMessageEnabled"
-                      color="primary"
-                      density="compact"
-                      hide-details
-                    />
-                  </VCardTitle>
-                  <VCardSubtitle
-                    class="text-caption pa-3 pb-0 pt-0 config-description"
-                  >
-                    {{ t('chatbot_message_inactivity_description') }}
-                  </VCardSubtitle>
-                  <VDivider />
-                  <VCardText>
-                    <VTextarea
-                      v-model="inactivityMessage"
-                      :placeholder="defaultInactivityMessage"
-                      :disabled="!isInactivityMessageEnabled"
-                      variant="outlined"
-                      density="compact"
-                      hide-details
-                      rows="3"
-                    />
-                    <div class="text-caption text-medium-emphasis mt-2">
-                      <strong>{{ t('chatbot_message_default_label') }}:</strong>
-                      {{ defaultInactivityMessage }}
-                    </div>
-                  </VCardText>
-                </VCard>
+                    <VCardTitle
+                      class="pa-3 pb-0 d-flex align-center justify-space-between"
+                    >
+                      <VSkeletonLoader type="text" width="200" />
+                      <VSkeletonLoader type="button" width="40" height="24" />
+                    </VCardTitle>
+                    <VCardSubtitle class="pa-3 pb-0 pt-2">
+                      <VSkeletonLoader type="text" width="90%" />
+                    </VCardSubtitle>
+                    <VDivider />
+                    <VCardText>
+                      <VSkeletonLoader type="sentences" class="mb-2" />
+                      <VSkeletonLoader type="text" width="60%" height="16" />
+                    </VCardText>
+                  </VCard>
+                </div>
+              </template>
+              <template v-else>
+                <div class="d-flex flex-column gap-4">
+                  <VCard variant="outlined">
+                    <VCardTitle
+                      class="text-body-1 pa-3 pb-0 font-weight-bold d-flex align-center justify-space-between"
+                    >
+                      <span>{{ t('chatbot_message_inactivity') }}</span>
+                      <VSwitch
+                        v-model="isInactivityMessageEnabled"
+                        color="primary"
+                        density="compact"
+                        hide-details
+                      />
+                    </VCardTitle>
+                    <VCardSubtitle
+                      class="text-caption pa-3 pb-0 pt-0 config-description"
+                    >
+                      {{ t('chatbot_message_inactivity_description') }}
+                    </VCardSubtitle>
+                    <VDivider />
+                    <VCardText>
+                      <VTextarea
+                        v-model="inactivityMessage"
+                        :placeholder="defaultInactivityMessage"
+                        :disabled="!isInactivityMessageEnabled"
+                        variant="outlined"
+                        density="compact"
+                        hide-details
+                        rows="3"
+                      />
+                      <div class="text-caption text-medium-emphasis mt-2">
+                        <strong
+                          >{{ t('chatbot_message_default_label') }}:
+                        </strong>
+                        {{ defaultInactivityMessage }}
+                      </div>
+                    </VCardText>
+                  </VCard>
 
-                <VCard variant="outlined">
-                  <VCardTitle
-                    class="text-body-1 pa-3 pb-0 font-weight-bold d-flex align-center justify-space-between"
-                  >
-                    <span>{{ t('chatbot_message_invalid_menu_option') }}</span>
-                    <VSwitch
-                      v-model="isInvalidMenuOptionMessageEnabled"
-                      color="primary"
-                      density="compact"
-                      hide-details
-                    />
-                  </VCardTitle>
-                  <VCardSubtitle
-                    class="text-caption pa-3 pb-0 pt-0 config-description"
-                  >
-                    {{ t('chatbot_message_invalid_menu_option_description') }}
-                  </VCardSubtitle>
-                  <VDivider />
-                  <VCardText>
-                    <VTextarea
-                      v-model="invalidMenuOptionMessage"
-                      :placeholder="defaultInvalidMenuOptionMessage"
-                      :disabled="!isInvalidMenuOptionMessageEnabled"
-                      variant="outlined"
-                      density="compact"
-                      hide-details
-                      rows="3"
-                    />
-                    <div class="text-caption text-medium-emphasis mt-2">
-                      <strong>{{ t('chatbot_message_default_label') }}:</strong>
-                      {{ defaultInvalidMenuOptionMessage }}
-                    </div>
-                  </VCardText>
-                </VCard>
+                  <VCard variant="outlined">
+                    <VCardTitle
+                      class="text-body-1 pa-3 pb-0 font-weight-bold d-flex align-center justify-space-between"
+                    >
+                      <span>{{
+                        t('chatbot_message_invalid_menu_option')
+                      }}</span>
+                      <VSwitch
+                        v-model="isInvalidMenuOptionMessageEnabled"
+                        color="primary"
+                        density="compact"
+                        hide-details
+                      />
+                    </VCardTitle>
+                    <VCardSubtitle
+                      class="text-caption pa-3 pb-0 pt-0 config-description"
+                    >
+                      {{ t('chatbot_message_invalid_menu_option_description') }}
+                    </VCardSubtitle>
+                    <VDivider />
+                    <VCardText>
+                      <VTextarea
+                        v-model="invalidMenuOptionMessage"
+                        :placeholder="defaultInvalidMenuOptionMessage"
+                        :disabled="!isInvalidMenuOptionMessageEnabled"
+                        variant="outlined"
+                        density="compact"
+                        hide-details
+                        rows="3"
+                      />
+                      <div class="text-caption text-medium-emphasis mt-2">
+                        <strong
+                          >{{ t('chatbot_message_default_label') }}:
+                        </strong>
+                        {{ defaultInvalidMenuOptionMessage }}
+                      </div>
+                    </VCardText>
+                  </VCard>
 
-                <VCard variant="outlined">
-                  <VCardTitle
-                    class="text-body-1 pa-3 pb-0 font-weight-bold d-flex align-center justify-space-between"
-                  >
-                    <span>{{
-                      t('chatbot_message_invalid_satisfaction_option')
-                    }}</span>
-                    <VSwitch
-                      v-model="isInvalidSatisfactionOptionMessageEnabled"
-                      color="primary"
-                      density="compact"
-                      hide-details
-                    />
-                  </VCardTitle>
-                  <VCardSubtitle
-                    class="text-caption pa-3 pb-0 pt-0 config-description"
-                  >
-                    {{
-                      t(
-                        'chatbot_message_invalid_satisfaction_option_description'
-                      )
-                    }}
-                  </VCardSubtitle>
-                  <VDivider />
-                  <VCardText>
-                    <VTextarea
-                      v-model="invalidSatisfactionOptionMessage"
-                      :placeholder="defaultInvalidSatisfactionOptionMessage"
-                      :disabled="!isInvalidSatisfactionOptionMessageEnabled"
-                      variant="outlined"
-                      density="compact"
-                      hide-details
-                      rows="3"
-                    />
-                    <div class="text-caption text-medium-emphasis mt-2">
-                      <strong>{{ t('chatbot_message_default_label') }}:</strong>
-                      {{ defaultInvalidSatisfactionOptionMessage }}
-                    </div>
-                  </VCardText>
-                </VCard>
+                  <VCard variant="outlined">
+                    <VCardTitle
+                      class="text-body-1 pa-3 pb-0 font-weight-bold d-flex align-center justify-space-between"
+                    >
+                      <span>{{
+                        t('chatbot_message_invalid_satisfaction_option')
+                      }}</span>
+                      <VSwitch
+                        v-model="isInvalidSatisfactionOptionMessageEnabled"
+                        color="primary"
+                        density="compact"
+                        hide-details
+                      />
+                    </VCardTitle>
+                    <VCardSubtitle
+                      class="text-caption pa-3 pb-0 pt-0 config-description"
+                    >
+                      {{
+                        t(
+                          'chatbot_message_invalid_satisfaction_option_description'
+                        )
+                      }}
+                    </VCardSubtitle>
+                    <VDivider />
+                    <VCardText>
+                      <VTextarea
+                        v-model="invalidSatisfactionOptionMessage"
+                        :placeholder="defaultInvalidSatisfactionOptionMessage"
+                        :disabled="!isInvalidSatisfactionOptionMessageEnabled"
+                        variant="outlined"
+                        density="compact"
+                        hide-details
+                        rows="3"
+                      />
+                      <div class="text-caption text-medium-emphasis mt-2">
+                        <strong
+                          >{{ t('chatbot_message_default_label') }}:
+                        </strong>
+                        {{ defaultInvalidSatisfactionOptionMessage }}
+                      </div>
+                    </VCardText>
+                  </VCard>
 
-                <VCard variant="outlined">
-                  <VCardTitle
-                    class="text-body-1 pa-3 pb-0 font-weight-bold d-flex align-center justify-space-between"
-                  >
-                    <span>{{ t('chatbot_message_invalid_cpf') }}</span>
-                    <VSwitch
-                      v-model="isInvalidCpfMessageEnabled"
-                      color="primary"
-                      density="compact"
-                      hide-details
-                    />
-                  </VCardTitle>
-                  <VCardSubtitle
-                    class="text-caption pa-3 pb-0 pt-0 config-description"
-                  >
-                    {{ t('chatbot_message_invalid_cpf_description') }}
-                  </VCardSubtitle>
-                  <VDivider />
-                  <VCardText>
-                    <VTextarea
-                      v-model="invalidCpfMessage"
-                      :placeholder="defaultInvalidCpfMessage"
-                      :disabled="!isInvalidCpfMessageEnabled"
-                      variant="outlined"
-                      density="compact"
-                      hide-details
-                      rows="3"
-                    />
-                    <div class="text-caption text-medium-emphasis mt-2">
-                      <strong>{{ t('chatbot_message_default_label') }}:</strong>
-                      {{ defaultInvalidCpfMessage }}
-                    </div>
-                  </VCardText>
-                </VCard>
+                  <VCard variant="outlined">
+                    <VCardTitle
+                      class="text-body-1 pa-3 pb-0 font-weight-bold d-flex align-center justify-space-between"
+                    >
+                      <span>{{ t('chatbot_message_invalid_cpf') }}</span>
+                      <VSwitch
+                        v-model="isInvalidCpfMessageEnabled"
+                        color="primary"
+                        density="compact"
+                        hide-details
+                      />
+                    </VCardTitle>
+                    <VCardSubtitle
+                      class="text-caption pa-3 pb-0 pt-0 config-description"
+                    >
+                      {{ t('chatbot_message_invalid_cpf_description') }}
+                    </VCardSubtitle>
+                    <VDivider />
+                    <VCardText>
+                      <VTextarea
+                        v-model="invalidCpfMessage"
+                        :placeholder="defaultInvalidCpfMessage"
+                        :disabled="!isInvalidCpfMessageEnabled"
+                        variant="outlined"
+                        density="compact"
+                        hide-details
+                        rows="3"
+                      />
+                      <div class="text-caption text-medium-emphasis mt-2">
+                        <strong
+                          >{{ t('chatbot_message_default_label') }}:
+                        </strong>
+                        {{ defaultInvalidCpfMessage }}
+                      </div>
+                    </VCardText>
+                  </VCard>
 
-                <VCard variant="outlined">
-                  <VCardTitle
-                    class="text-body-1 pa-3 pb-0 font-weight-bold d-flex align-center justify-space-between"
-                  >
-                    <span>{{ t('chatbot_message_invalid_cnpj') }}</span>
-                    <VSwitch
-                      v-model="isInvalidCnpjMessageEnabled"
-                      color="primary"
-                      density="compact"
-                      hide-details
-                    />
-                  </VCardTitle>
-                  <VCardSubtitle
-                    class="text-caption pa-3 pb-0 pt-0 config-description"
-                  >
-                    {{ t('chatbot_message_invalid_cnpj_description') }}
-                  </VCardSubtitle>
-                  <VDivider />
-                  <VCardText>
-                    <VTextarea
-                      v-model="invalidCnpjMessage"
-                      :placeholder="defaultInvalidCnpjMessage"
-                      :disabled="!isInvalidCnpjMessageEnabled"
-                      variant="outlined"
-                      density="compact"
-                      hide-details
-                      rows="3"
-                    />
-                    <div class="text-caption text-medium-emphasis mt-2">
-                      <strong>{{ t('chatbot_message_default_label') }}:</strong>
-                      {{ defaultInvalidCnpjMessage }}
-                    </div>
-                  </VCardText>
-                </VCard>
+                  <VCard variant="outlined">
+                    <VCardTitle
+                      class="text-body-1 pa-3 pb-0 font-weight-bold d-flex align-center justify-space-between"
+                    >
+                      <span>{{ t('chatbot_message_invalid_cnpj') }}</span>
+                      <VSwitch
+                        v-model="isInvalidCnpjMessageEnabled"
+                        color="primary"
+                        density="compact"
+                        hide-details
+                      />
+                    </VCardTitle>
+                    <VCardSubtitle
+                      class="text-caption pa-3 pb-0 pt-0 config-description"
+                    >
+                      {{ t('chatbot_message_invalid_cnpj_description') }}
+                    </VCardSubtitle>
+                    <VDivider />
+                    <VCardText>
+                      <VTextarea
+                        v-model="invalidCnpjMessage"
+                        :placeholder="defaultInvalidCnpjMessage"
+                        :disabled="!isInvalidCnpjMessageEnabled"
+                        variant="outlined"
+                        density="compact"
+                        hide-details
+                        rows="3"
+                      />
+                      <div class="text-caption text-medium-emphasis mt-2">
+                        <strong
+                          >{{ t('chatbot_message_default_label') }}:
+                        </strong>
+                        {{ defaultInvalidCnpjMessage }}
+                      </div>
+                    </VCardText>
+                  </VCard>
 
-                <VCard variant="outlined">
-                  <VCardTitle
-                    class="text-body-1 pa-3 pb-0 font-weight-bold d-flex align-center justify-space-between"
-                  >
-                    <span>{{ t('chatbot_message_invalid_email') }}</span>
-                    <VSwitch
-                      v-model="isInvalidEmailMessageEnabled"
-                      color="primary"
-                      density="compact"
-                      hide-details
-                    />
-                  </VCardTitle>
-                  <VCardSubtitle
-                    class="text-caption pa-3 pb-0 pt-0 config-description"
-                  >
-                    {{ t('chatbot_message_invalid_email_description') }}
-                  </VCardSubtitle>
-                  <VDivider />
-                  <VCardText>
-                    <VTextarea
-                      v-model="invalidEmailMessage"
-                      :placeholder="defaultInvalidEmailMessage"
-                      :disabled="!isInvalidEmailMessageEnabled"
-                      variant="outlined"
-                      density="compact"
-                      hide-details
-                      rows="3"
-                    />
-                    <div class="text-caption text-medium-emphasis mt-2">
-                      <strong>{{ t('chatbot_message_default_label') }}:</strong>
-                      {{ defaultInvalidEmailMessage }}
-                    </div>
-                  </VCardText>
-                </VCard>
+                  <VCard variant="outlined">
+                    <VCardTitle
+                      class="text-body-1 pa-3 pb-0 font-weight-bold d-flex align-center justify-space-between"
+                    >
+                      <span>{{ t('chatbot_message_invalid_email') }}</span>
+                      <VSwitch
+                        v-model="isInvalidEmailMessageEnabled"
+                        color="primary"
+                        density="compact"
+                        hide-details
+                      />
+                    </VCardTitle>
+                    <VCardSubtitle
+                      class="text-caption pa-3 pb-0 pt-0 config-description"
+                    >
+                      {{ t('chatbot_message_invalid_email_description') }}
+                    </VCardSubtitle>
+                    <VDivider />
+                    <VCardText>
+                      <VTextarea
+                        v-model="invalidEmailMessage"
+                        :placeholder="defaultInvalidEmailMessage"
+                        :disabled="!isInvalidEmailMessageEnabled"
+                        variant="outlined"
+                        density="compact"
+                        hide-details
+                        rows="3"
+                      />
+                      <div class="text-caption text-medium-emphasis mt-2">
+                        <strong
+                          >{{ t('chatbot_message_default_label') }}:
+                        </strong>
+                        {{ defaultInvalidEmailMessage }}
+                      </div>
+                    </VCardText>
+                  </VCard>
 
-                <VCard variant="outlined">
-                  <VCardTitle
-                    class="text-body-1 pa-3 pb-0 font-weight-bold d-flex align-center justify-space-between"
-                  >
-                    <span>{{ t('chatbot_message_service_finished') }}</span>
-                    <VSwitch
-                      v-model="isServiceFinishedMessageEnabled"
-                      color="primary"
-                      density="compact"
-                      hide-details
-                    />
-                  </VCardTitle>
-                  <VCardSubtitle
-                    class="text-caption pa-3 pb-0 pt-0 config-description"
-                  >
-                    {{ t('chatbot_message_service_finished_description') }}
-                  </VCardSubtitle>
-                  <VDivider />
-                  <VCardText>
-                    <VTextarea
-                      v-model="serviceFinishedMessage"
-                      :placeholder="defaultServiceFinishedMessage"
-                      :disabled="!isServiceFinishedMessageEnabled"
-                      variant="outlined"
-                      density="compact"
-                      hide-details
-                      rows="3"
-                    />
-                    <div class="text-caption text-medium-emphasis mt-2">
-                      <strong>{{ t('chatbot_message_default_label') }}:</strong>
-                      {{ defaultServiceFinishedMessage }}
-                    </div>
-                  </VCardText>
-                </VCard>
+                  <VCard variant="outlined">
+                    <VCardTitle
+                      class="text-body-1 pa-3 pb-0 font-weight-bold d-flex align-center justify-space-between"
+                    >
+                      <span>{{ t('chatbot_message_service_finished') }}</span>
+                      <VSwitch
+                        v-model="isServiceFinishedMessageEnabled"
+                        color="primary"
+                        density="compact"
+                        hide-details
+                      />
+                    </VCardTitle>
+                    <VCardSubtitle
+                      class="text-caption pa-3 pb-0 pt-0 config-description"
+                    >
+                      {{ t('chatbot_message_service_finished_description') }}
+                    </VCardSubtitle>
+                    <VDivider />
+                    <VCardText>
+                      <VTextarea
+                        v-model="serviceFinishedMessage"
+                        :placeholder="defaultServiceFinishedMessage"
+                        :disabled="!isServiceFinishedMessageEnabled"
+                        variant="outlined"
+                        density="compact"
+                        hide-details
+                        rows="3"
+                      />
+                      <div class="text-caption text-medium-emphasis mt-2">
+                        <strong
+                          >{{ t('chatbot_message_default_label') }}:
+                        </strong>
+                        {{ defaultServiceFinishedMessage }}
+                      </div>
+                    </VCardText>
+                  </VCard>
 
-                <VCard variant="outlined">
-                  <VCardTitle
-                    class="text-body-1 pa-3 pb-0 font-weight-bold d-flex align-center justify-space-between"
-                  >
-                    <span>{{ t('chatbot_message_transfer_user') }}</span>
-                    <VSwitch
-                      v-model="isTransferMessageUserEnabled"
-                      color="primary"
-                      density="compact"
-                      hide-details
-                    />
-                  </VCardTitle>
-                  <VCardSubtitle
-                    class="text-caption pa-3 pb-0 pt-0 config-description"
-                  >
-                    {{ t('chatbot_message_transfer_user_description') }}
-                  </VCardSubtitle>
-                  <VDivider />
-                  <VCardText>
-                    <VTextarea
-                      v-model="transferMessageUser"
-                      :placeholder="defaultTransferMessageUserText"
-                      :disabled="!isTransferMessageUserEnabled"
-                      variant="outlined"
-                      density="compact"
-                      hide-details
-                      rows="3"
-                    />
-                    <div class="text-caption text-medium-emphasis mt-2">
-                      <strong>{{ t('chatbot_message_default_label') }}:</strong>
-                      <span v-text="defaultTransferMessageUserText"></span>
-                    </div>
-                  </VCardText>
-                </VCard>
+                  <VCard variant="outlined">
+                    <VCardTitle
+                      class="text-body-1 pa-3 pb-0 font-weight-bold d-flex align-center justify-space-between"
+                    >
+                      <span>{{ t('chatbot_message_transfer_user') }}</span>
+                      <VSwitch
+                        v-model="isTransferMessageUserEnabled"
+                        color="primary"
+                        density="compact"
+                        hide-details
+                      />
+                    </VCardTitle>
+                    <VCardSubtitle
+                      class="text-caption pa-3 pb-0 pt-0 config-description"
+                    >
+                      {{ t('chatbot_message_transfer_user_description') }}
+                    </VCardSubtitle>
+                    <VDivider />
+                    <VCardText>
+                      <VTextarea
+                        v-model="transferMessageUser"
+                        v-bind:placeholder="safeDefaultTransferMessageUserText"
+                        :disabled="!isTransferMessageUserEnabled"
+                        variant="outlined"
+                        density="compact"
+                        hide-details
+                        rows="3"
+                      />
+                      <div class="text-caption text-medium-emphasis mt-2">
+                        <strong
+                          >{{ t('chatbot_message_default_label') }}:
+                        </strong>
+                        <span
+                          v-text="safeDefaultTransferMessageUserText"
+                        ></span>
+                      </div>
+                    </VCardText>
+                  </VCard>
 
-                <VCard variant="outlined">
-                  <VCardTitle
-                    class="text-body-1 pa-3 pb-0 font-weight-bold d-flex align-center justify-space-between"
-                  >
-                    <span>{{ t('chatbot_message_transfer_sector') }}</span>
-                    <VSwitch
-                      v-model="isTransferMessageSectorEnabled"
-                      color="primary"
-                      density="compact"
-                      hide-details
-                    />
-                  </VCardTitle>
-                  <VCardSubtitle
-                    class="text-caption pa-3 pb-0 pt-0 config-description"
-                  >
-                    {{ t('chatbot_message_transfer_sector_description') }}
-                  </VCardSubtitle>
-                  <VDivider />
-                  <VCardText>
-                    <VTextarea
-                      v-model="transferMessageSector"
-                      :placeholder="defaultTransferMessageSectorText"
-                      :disabled="!isTransferMessageSectorEnabled"
-                      variant="outlined"
-                      density="compact"
-                      hide-details
-                      rows="3"
-                    />
-                    <div class="text-caption text-medium-emphasis mt-2">
-                      <strong>{{ t('chatbot_message_default_label') }}:</strong>
-                      <span v-text="defaultTransferMessageSectorText"></span>
-                    </div>
-                  </VCardText>
-                </VCard>
+                  <VCard variant="outlined">
+                    <VCardTitle
+                      class="text-body-1 pa-3 pb-0 font-weight-bold d-flex align-center justify-space-between"
+                    >
+                      <span>{{ t('chatbot_message_transfer_sector') }}</span>
+                      <VSwitch
+                        v-model="isTransferMessageSectorEnabled"
+                        color="primary"
+                        density="compact"
+                        hide-details
+                      />
+                    </VCardTitle>
+                    <VCardSubtitle
+                      class="text-caption pa-3 pb-0 pt-0 config-description"
+                    >
+                      {{ t('chatbot_message_transfer_sector_description') }}
+                    </VCardSubtitle>
+                    <VDivider />
+                    <VCardText>
+                      <VTextarea
+                        v-model="transferMessageSector"
+                        v-bind:placeholder="
+                          safeDefaultTransferMessageSectorText
+                        "
+                        :disabled="!isTransferMessageSectorEnabled"
+                        variant="outlined"
+                        density="compact"
+                        hide-details
+                        rows="3"
+                      />
+                      <div class="text-caption text-medium-emphasis mt-2">
+                        <strong
+                          >{{ t('chatbot_message_default_label') }}:
+                        </strong>
+                        <span
+                          v-text="safeDefaultTransferMessageSectorText"
+                        ></span>
+                      </div>
+                    </VCardText>
+                  </VCard>
 
-                <VCard variant="outlined">
-                  <VCardTitle
-                    class="text-body-1 pa-3 pb-0 font-weight-bold d-flex align-center justify-space-between"
-                  >
-                    <span>{{ t('chatbot_message_transfer_sector_user') }}</span>
-                    <VSwitch
-                      v-model="isTransferMessageSectorUserEnabled"
-                      color="primary"
-                      density="compact"
-                      hide-details
-                    />
-                  </VCardTitle>
-                  <VCardSubtitle
-                    class="text-caption pa-3 pb-0 pt-0 config-description"
-                  >
-                    {{ t('chatbot_message_transfer_sector_user_description') }}
-                  </VCardSubtitle>
-                  <VDivider />
-                  <VCardText>
-                    <VTextarea
-                      v-model="transferMessageSectorUser"
-                      :placeholder="defaultTransferMessageSectorUserText"
-                      :disabled="!isTransferMessageSectorUserEnabled"
-                      variant="outlined"
-                      density="compact"
-                      hide-details
-                      rows="3"
-                    />
-                    <div class="text-caption text-medium-emphasis mt-2">
-                      <strong>{{ t('chatbot_message_default_label') }}:</strong>
-                      <span
-                        v-text="defaultTransferMessageSectorUserText"
-                      ></span>
-                    </div>
-                  </VCardText>
-                </VCard>
-              </div>
+                  <VCard variant="outlined">
+                    <VCardTitle
+                      class="text-body-1 pa-3 pb-0 font-weight-bold d-flex align-center justify-space-between"
+                    >
+                      <span>{{
+                        t('chatbot_message_transfer_sector_user')
+                      }}</span>
+                      <VSwitch
+                        v-model="isTransferMessageSectorUserEnabled"
+                        color="primary"
+                        density="compact"
+                        hide-details
+                      />
+                    </VCardTitle>
+                    <VCardSubtitle
+                      class="text-caption pa-3 pb-0 pt-0 config-description"
+                    >
+                      {{
+                        t('chatbot_message_transfer_sector_user_description')
+                      }}
+                    </VCardSubtitle>
+                    <VDivider />
+                    <VCardText>
+                      <VTextarea
+                        v-model="transferMessageSectorUser"
+                        v-bind:placeholder="
+                          safeDefaultTransferMessageSectorUserText
+                        "
+                        :disabled="!isTransferMessageSectorUserEnabled"
+                        variant="outlined"
+                        density="compact"
+                        hide-details
+                        rows="3"
+                      />
+                      <div class="text-caption text-medium-emphasis mt-2">
+                        <strong
+                          >{{ t('chatbot_message_default_label') }}:
+                        </strong>
+                        <span
+                          v-text="safeDefaultTransferMessageSectorUserText"
+                        ></span>
+                      </div>
+                    </VCardText>
+                  </VCard>
+                </div>
+              </template>
             </VWindowItem>
           </VWindow>
         </VCardText>
@@ -3034,10 +3217,20 @@ onUnmounted(() => {
         <VDivider />
 
         <VCardText class="d-flex justify-end flex-wrap gap-3">
-          <VBtn variant="tonal" color="secondary" @click="closeConfigModal">
+          <VBtn
+            variant="tonal"
+            color="secondary"
+            :disabled="isSavingConfigurations"
+            @click="closeConfigModal"
+          >
             {{ t('cancel') }}
           </VBtn>
-          <VBtn color="primary" @click="handleSaveConfigurations">
+          <VBtn
+            color="primary"
+            :loading="isSavingConfigurations"
+            :disabled="isSavingConfigurations"
+            @click="handleSaveConfigurations"
+          >
             {{ t('save') }}
           </VBtn>
         </VCardText>

@@ -112,14 +112,40 @@ export class ReportConversationHistoryListerUseCase {
     }
 
     if (query.client_name) {
-      filterClauses.push({
-        match: {
-          name: {
-            query: query.client_name,
-            operator: 'and',
+      const clientNameSearch = query.client_name.trim();
+
+      if (clientNameSearch.length > 0) {
+        const shouldClauses: IElasticsearchBoolClause[] = [
+          {
+            wildcard: {
+              'name.keyword': {
+                value: `*${clientNameSearch}*`,
+                case_insensitive: true,
+              },
+            },
+          } as unknown as IElasticsearchBoolClause,
+          {
+            nested: {
+              path: 'contact',
+              query: {
+                wildcard: {
+                  'contact.name.keyword': {
+                    value: `*${clientNameSearch}*`,
+                    case_insensitive: true,
+                  },
+                },
+              },
+            },
+          } as unknown as IElasticsearchBoolClause,
+        ];
+
+        filterClauses.push({
+          bool: {
+            should: shouldClauses,
+            minimum_should_match: 1,
           },
-        },
-      } as unknown as IElasticsearchBoolClause);
+        } as unknown as IElasticsearchBoolClause);
+      }
     }
 
     if (query.phone) {

@@ -183,6 +183,7 @@ declare global {
   const tryOnUnmounted: typeof import('@vueuse/core').tryOnUnmounted
   const unref: typeof import('vue').unref
   const unrefElement: typeof import('@vueuse/core').unrefElement
+  const unsubscribeFromPushNotifications: typeof import('./src/composables/useChatNotifications').unsubscribeFromPushNotifications
   const until: typeof import('@vueuse/core').until
   const updateAbility: (typeof import('./src/plugins/casl/composables/useAbility'))['updateAbility']
   const urlValidator: typeof import('./src/@webcore/utils/validators').urlValidator
@@ -590,6 +591,7 @@ declare module 'vue' {
     readonly tryOnUnmounted: UnwrapRef<typeof import('@vueuse/core')['tryOnUnmounted']>
     readonly unref: UnwrapRef<typeof import('vue')['unref']>
     readonly unrefElement: UnwrapRef<typeof import('@vueuse/core')['unrefElement']>
+    readonly unsubscribeFromPushNotifications: UnwrapRef<typeof import('./src/composables/useChatNotifications')['unsubscribeFromPushNotifications']>
     readonly until: UnwrapRef<typeof import('@vueuse/core')['until']>
     readonly urlValidator: UnwrapRef<typeof import('./src/@webcore/utils/validators')['urlValidator']>
     readonly useAbility: UnwrapRef<typeof import('./src/plugins/0.casl/composables/useAbility')['useAbility']>
