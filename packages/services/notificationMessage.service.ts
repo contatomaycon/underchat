@@ -506,4 +506,133 @@ export class NotificationMessageService {
 
     return code;
   }
+
+  async sendTwoFactorCodeByEmail(
+    email: string,
+    name: string | null = null,
+    userId: string,
+    phone?: string | null,
+    phoneDdi?: string | null
+  ): Promise<string> {
+    const notification =
+      await this.notificationMessageViewerRepository.findNotificationByTypeId(
+        ENotificationTypeId.two_factor
+      );
+
+    if (!notification) {
+      throw new Error('Two factor notification not found');
+    }
+
+    if (!notification.message_email) {
+      throw new Error('Email message template not found for two factor');
+    }
+
+    const code = this.generateCode();
+    const token = randomUUID();
+    const notificationTypeName = notification.nnt?.name || '';
+
+    const emailMessage = notification.message_email
+      .replaceAll('{{code}}', code)
+      .replaceAll('{{name}}', name || '');
+
+    const emailSubject = notification.email_subject
+      ? notification.email_subject
+          .replaceAll('{{code}}', code)
+          .replaceAll('{{name}}', name || '')
+      : null;
+
+    let whatsappMessage: string | null = null;
+    if (notification.message_whatsapp) {
+      whatsappMessage = notification.message_whatsapp
+        .replaceAll('{{code}}', code)
+        .replaceAll('{{name}}', name || '');
+    }
+
+    const emailEncrypted = this.passwordEncryptorService.encrypt(email);
+    const emailC = this.encryptService.encrypt(email);
+    const emailPartial =
+      this.encryptService.sanitize(email, ETypeSanetize.email)?.slice(0, 50) ||
+      null;
+
+    let phoneEncrypted: string | null = null;
+    let phoneC: string | null = null;
+    let phonePartial: string | null = null;
+
+    if (phone) {
+      phoneEncrypted = this.passwordEncryptorService.encrypt(phone);
+      phoneC = this.encryptService.encrypt(phone);
+      phonePartial =
+        this.encryptService
+          .sanitize(phone, ETypeSanetize.phone)
+          ?.slice(0, 15) || null;
+    }
+
+    await this.twoFactorCreatorRepository.createTwoFactor({
+      userId: userId,
+      phoneDdi: phoneDdi || null,
+      phone: phoneEncrypted,
+      phonePartial,
+      phoneC,
+      email: emailEncrypted,
+      emailPartial,
+      emailC,
+      code,
+      token,
+    });
+
+    await this.sendEmailNotification(
+      notification,
+      email,
+      emailMessage,
+      emailSubject
+    );
+
+    if (
+      phone &&
+      phoneDdi &&
+      notification.message_whatsapp &&
+      notification.worker_id &&
+      whatsappMessage
+    ) {
+      const workerName =
+        await this.workerNameViewerRepository.findWorkerNameById(
+          notification.worker_id
+        );
+
+      if (workerName) {
+        const notificationMessage: INotificationMessage = {
+          id: notification.notification_id,
+          notification_id: notification.notification_id,
+          message_key: {
+            phone_ddi: phoneDdi,
+            phone_number: phone.replaceAll(/\D/g, ''),
+          },
+          worker: {
+            id: notification.worker_id,
+            name: workerName,
+          },
+          notification_type: {
+            id: notification.notification_type_id,
+            name: notificationTypeName,
+          },
+          message_whatsapp: whatsappMessage,
+          message_email: emailMessage,
+          email_subject: emailSubject,
+          name: name || null,
+          phone: phone || null,
+          email: email || null,
+          date: new Date().toISOString(),
+        };
+
+        await this.sendWhatsAppNotification(
+          notification,
+          phone,
+          notification.worker_id,
+          notificationMessage
+        );
+      }
+    }
+
+    return code;
+  }
 }

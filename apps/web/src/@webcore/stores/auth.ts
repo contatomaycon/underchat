@@ -22,6 +22,10 @@ import {
 } from '../localStorage/user';
 import { updateAbilityPermissions } from '@/plugins/0.casl/ability';
 import { normalizeBaseUrl } from '../utils/helpers';
+import { AuthForgotPasswordSendCodeRequest } from '@core/schema/auth/forgotPassword/sendCode/request.schema';
+import { AuthForgotPasswordSendCodeResponse } from '@core/schema/auth/forgotPassword/sendCode/response.schema';
+import { AuthForgotPasswordVerifyCodeRequest } from '@core/schema/auth/forgotPassword/verifyCode/request.schema';
+import { AuthForgotPasswordVerifyCodeResponse } from '@core/schema/auth/forgotPassword/verifyCode/response.schema';
 
 export const useAuthStore = defineStore('auth', {
   state: () => ({
@@ -219,6 +223,192 @@ export const useAuthStore = defineStore('auth', {
         this.showSnackbar(errorMessage, EColor.error);
 
         return false;
+      }
+    },
+
+    setLoginData(data: AuthLoginResponse) {
+      this.user = data.user;
+      this.token = data.token;
+      this.permissions = (data.permissions ?? []) as EPermissionsRoles[];
+      this.layout = data.layout;
+      this.planIsActive = data.plan_is_active ?? false;
+
+      setUser(this.user);
+      setToken(this.token);
+      setPermissions(this.permissions);
+      setLayout(this.layout);
+      setSectors(data.sectors ?? []);
+      persistPlanStatus(this.planIsActive);
+      updateAbilityPermissions(this.permissions);
+    },
+
+    async forgotPasswordSendCode(
+      data: AuthForgotPasswordSendCodeRequest
+    ): Promise<boolean> {
+      const url = normalizeBaseUrl(import.meta.env.VITE_BACKEND_URL);
+
+      if (!url) {
+        this.showSnackbar(
+          this.i18n.global.t('backend_url_not_configured') ||
+            'Backend URL não configurada. Verifique o arquivo .env',
+          EColor.error
+        );
+        return false;
+      }
+
+      try {
+        const currentLocale = this.i18n.global.locale;
+
+        const response = await axios.post<
+          IApiResponse<AuthForgotPasswordSendCodeResponse>
+        >(`${url}/v1/auth/forgot-password/send-code`, data, {
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept-Language': currentLocale,
+          },
+        });
+
+        const responseData = response?.data;
+
+        if (!responseData?.status) {
+          this.showSnackbar(
+            responseData?.message ||
+              this.i18n.global.t('forgot_password_error'),
+            EColor.error
+          );
+          return false;
+        }
+
+        this.showSnackbar(
+          this.i18n.global.t('forgot_password_code_sent'),
+          EColor.success
+        );
+        return true;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('forgot_password_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message || errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+        return false;
+      }
+    },
+
+    async forgotPasswordVerifyCode(
+      data: AuthForgotPasswordVerifyCodeRequest
+    ): Promise<AuthForgotPasswordVerifyCodeResponse | null> {
+      const url = normalizeBaseUrl(import.meta.env.VITE_BACKEND_URL);
+
+      if (!url) {
+        this.showSnackbar(
+          this.i18n.global.t('backend_url_not_configured') ||
+            'Backend URL não configurada. Verifique o arquivo .env',
+          EColor.error
+        );
+        return null;
+      }
+
+      try {
+        const currentLocale = this.i18n.global.locale;
+
+        const response = await axios.post<
+          IApiResponse<AuthForgotPasswordVerifyCodeResponse>
+        >(
+          `${url}/v1/auth/forgot-password/verify-code`,
+          {
+            code: data.code.toUpperCase(),
+          },
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept-Language': currentLocale,
+            },
+          }
+        );
+
+        const responseData = response?.data;
+
+        if (!responseData?.status || !responseData?.data) {
+          this.showSnackbar(
+            responseData?.message ||
+              this.i18n.global.t('forgot_password_code_invalid'),
+            EColor.error
+          );
+          return null;
+        }
+
+        this.showSnackbar(
+          this.i18n.global.t('forgot_password_code_verified'),
+          EColor.success
+        );
+        return responseData.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('forgot_password_code_invalid');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message || errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+        return null;
+      }
+    },
+
+    async forgotPasswordResetPassword(
+      token: string,
+      data: { new_password: string; confirm_password: string }
+    ): Promise<AuthLoginResponse | null> {
+      const url = normalizeBaseUrl(import.meta.env.VITE_BACKEND_URL);
+
+      if (!url) {
+        this.showSnackbar(
+          this.i18n.global.t('backend_url_not_configured') ||
+            'Backend URL não configurada. Verifique o arquivo .env',
+          EColor.error
+        );
+        return null;
+      }
+
+      try {
+        const currentLocale = this.i18n.global.locale;
+
+        const response = await axios.post<IApiResponse<AuthLoginResponse>>(
+          `${url}/v1/auth/forgot-password/reset-password`,
+          data,
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept-Language': currentLocale,
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+
+        const responseData = response?.data;
+
+        if (!responseData?.status || !responseData?.data) {
+          this.showSnackbar(
+            responseData?.message || this.i18n.global.t('password_reset_error'),
+            EColor.error
+          );
+          return null;
+        }
+
+        this.setLoginData(responseData.data);
+
+        this.showSnackbar(
+          this.i18n.global.t('password_reset_success'),
+          EColor.success
+        );
+        return responseData.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('password_reset_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message || errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+        return null;
       }
     },
   },

@@ -848,5 +848,17 @@
   "push_vapid_not_configured": "VAPID keys not configured. Push notifications will not work.",
   "push_subscription_registered_successfully": "Push notification subscription registered successfully!",
   "push_public_key_retrieved_successfully": "VAPID public key retrieved successfully!",
-  "push_subscription_deleted_successfully": "Push notification subscription removed successfully!"
+  "push_subscription_deleted_successfully": "Push notification subscription removed successfully!",
+  "forgot_password_code_sent": "Password recovery code sent successfully!",
+  "forgot_password_code_verified": "Code verified successfully! You have been authenticated.",
+  "forgot_password_code_invalid": "Invalid password recovery code",
+  "forgot_password_code_expired": "Password recovery code expired",
+  "forgot_password_error": "Error processing password recovery!",
+  "forgot_password_user_not_found": "User not found with this email!",
+  "forgot_password_phone_not_found": "Phone not found for this user!",
+  "forgot_password_token_invalid": "Invalid or expired recovery token",
+  "password_reset_success": "Password reset successfully!",
+  "password_reset_error": "Error resetting password",
+  "passwords_do_not_match": "Passwords do not match",
+  "confirm_new_password_match": "Passwords do not match"
 }

@@ -1,9 +1,17 @@
 // otp input
 .v-otp-input {
-  justify-content: unset !important;
+  justify-content: center !important;
+  width: 100%;
+  max-width: 100%;
+  display: flex;
+  flex-wrap: nowrap;
 
   .v-otp-input__content {
     max-inline-size: 100%;
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    flex-wrap: nowrap;
 
     .v-field.v-field--focused {
       .v-field__outline {
