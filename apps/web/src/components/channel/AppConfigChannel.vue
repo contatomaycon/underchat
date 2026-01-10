@@ -226,13 +226,20 @@ const transferProtocolText = ref<string>('');
 const transferProtocolSectorText = ref<string>('');
 const transferProtocolSectorAndUserText = ref<string>('');
 const defaultTransferMessageUser = computed(() =>
-  t('chatbot_transfer_message_user_default')
+  t('chatbot_transfer_message_user_default', {
+    user: '{{ user }}',
+  })
 );
 const defaultTransferMessageSector = computed(() =>
-  t('chatbot_transfer_message_sector_default')
+  t('chatbot_transfer_message_sector_default', {
+    sector: '{{ sector }}',
+  })
 );
 const defaultTransferMessageSectorUser = computed(() =>
-  t('chatbot_transfer_message_sector_user_default')
+  t('chatbot_transfer_message_sector_user_default', {
+    user: '{{ user }}',
+    sector: '{{ sector }}',
+  })
 );
 
 watch(transferProtocolText, (newValue) => {

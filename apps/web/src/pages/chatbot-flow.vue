@@ -155,6 +155,16 @@ const defaultTransferMessageUserText = ref('');
 const defaultTransferMessageSectorText = ref('');
 const defaultTransferMessageSectorUserText = ref('');
 
+const safeDefaultTransferMessageUserText = computed(() => {
+  return defaultTransferMessageUserText.value || '';
+});
+const safeDefaultTransferMessageSectorText = computed(() => {
+  return defaultTransferMessageSectorText.value || '';
+});
+const safeDefaultTransferMessageSectorUserText = computed(() => {
+  return defaultTransferMessageSectorUserText.value || '';
+});
+
 const availableVariables = computed(() => [
   {
     tag: '{{ sector }}',
@@ -1857,13 +1867,23 @@ onMounted(() => {
   window.addEventListener('keydown', handleDeleteKey);
   document.addEventListener('click', handleDocumentClick, true);
   defaultTransferMessageUserText.value = t(
-    'chatbot_transfer_message_user_default'
+    'chatbot_transfer_message_user_default',
+    {
+      user: '{{ user }}',
+    }
   );
   defaultTransferMessageSectorText.value = t(
-    'chatbot_transfer_message_sector_default'
+    'chatbot_transfer_message_sector_default',
+    {
+      sector: '{{ sector }}',
+    }
   );
   defaultTransferMessageSectorUserText.value = t(
-    'chatbot_transfer_message_sector_user_default'
+    'chatbot_transfer_message_sector_user_default',
+    {
+      user: '{{ user }}',
+      sector: '{{ sector }}',
+    }
   );
 });
 
@@ -2941,7 +2961,7 @@ onUnmounted(() => {
                   <VCardText>
                     <VTextarea
                       v-model="transferMessageUser"
-                      :placeholder="defaultTransferMessageUserText"
+                      v-bind:placeholder="safeDefaultTransferMessageUserText"
                       :disabled="!isTransferMessageUserEnabled"
                       variant="outlined"
                       density="compact"
@@ -2950,7 +2970,7 @@ onUnmounted(() => {
                     />
                     <div class="text-caption text-medium-emphasis mt-2">
                       <strong>{{ t('chatbot_message_default_label') }}:</strong>
-                      <span v-text="defaultTransferMessageUserText"></span>
+                      <span v-text="safeDefaultTransferMessageUserText"></span>
                     </div>
                   </VCardText>
                 </VCard>
@@ -2976,7 +2996,7 @@ onUnmounted(() => {
                   <VCardText>
                     <VTextarea
                       v-model="transferMessageSector"
-                      :placeholder="defaultTransferMessageSectorText"
+                      v-bind:placeholder="safeDefaultTransferMessageSectorText"
                       :disabled="!isTransferMessageSectorEnabled"
                       variant="outlined"
                       density="compact"
@@ -2985,7 +3005,9 @@ onUnmounted(() => {
                     />
                     <div class="text-caption text-medium-emphasis mt-2">
                       <strong>{{ t('chatbot_message_default_label') }}:</strong>
-                      <span v-text="defaultTransferMessageSectorText"></span>
+                      <span
+                        v-text="safeDefaultTransferMessageSectorText"
+                      ></span>
                     </div>
                   </VCardText>
                 </VCard>
@@ -3011,7 +3033,9 @@ onUnmounted(() => {
                   <VCardText>
                     <VTextarea
                       v-model="transferMessageSectorUser"
-                      :placeholder="defaultTransferMessageSectorUserText"
+                      v-bind:placeholder="
+                        safeDefaultTransferMessageSectorUserText
+                      "
                       :disabled="!isTransferMessageSectorUserEnabled"
                       variant="outlined"
                       density="compact"
@@ -3021,7 +3045,7 @@ onUnmounted(() => {
                     <div class="text-caption text-medium-emphasis mt-2">
                       <strong>{{ t('chatbot_message_default_label') }}:</strong>
                       <span
-                        v-text="defaultTransferMessageSectorUserText"
+                        v-text="safeDefaultTransferMessageSectorUserText"
                       ></span>
                     </div>
                   </VCardText>
