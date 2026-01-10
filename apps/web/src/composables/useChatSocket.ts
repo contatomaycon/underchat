@@ -6,10 +6,6 @@ import {
   chatQueueAccountCentrifugo,
 } from '@core/common/functions/centrifugoQueue';
 import { useChatStore } from '@/@webcore/stores/chat';
-import { getPermissions, getSectors } from '@/@webcore/localStorage/user';
-import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
-import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
-import { EPermissionsRoles } from '@core/common/enums/EPermissions';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import type { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import type { IChat } from '@core/common/interfaces/IChat';
@@ -32,56 +28,6 @@ export const useChatSocket = () => {
 
   const isChatRoute = () => {
     return route.name === 'chat';
-  };
-
-  const canReceiveChatNotification = (chat: IChat): boolean => {
-    if (!chatStore.user?.account_id) return false;
-
-    const permissions = getPermissions();
-    const canViewOthersChats = permissions.some(
-      (perm: EPermissionsRoles) =>
-        perm === EGeneralPermissions.full_access ||
-        perm === EGeneralPermissions.full_access_group ||
-        perm === EChatPermissions.chat_group ||
-        perm === EChatPermissions.view_others_chats
-    );
-    const canListAllChatsWithoutSectorLimit = permissions.some(
-      (perm: EPermissionsRoles) =>
-        perm === EGeneralPermissions.full_access ||
-        perm === EGeneralPermissions.full_access_group ||
-        perm === EChatPermissions.chat_group ||
-        perm === EChatPermissions.list_all_chats_without_sector_limit
-    );
-
-    const hasPermissionToViewAll =
-      canViewOthersChats || canListAllChatsWithoutSectorLimit;
-
-    if (hasPermissionToViewAll) {
-      return true;
-    }
-
-    if (chat.status === EChatStatus.in_chat) {
-      return chat.user?.id === chatStore.user?.user_id;
-    }
-
-    if (chat.status === EChatStatus.queue) {
-      if (chat.user?.id) {
-        return chat.user.id === chatStore.user?.user_id;
-      }
-
-      const userSectors = getSectors();
-
-      if (userSectors.length > 0) {
-        if (!chat.sector?.id) {
-          return false;
-        }
-        return userSectors.includes(chat.sector.id);
-      }
-
-      return !chat.sector?.id;
-    }
-
-    return false;
   };
 
   const processPendingMessages = async (chatId: string) => {
@@ -151,10 +97,6 @@ export const useChatSocket = () => {
   };
 
   const handleChatUpdateEvent = async (chatData: IChat): Promise<void> => {
-    if (!canReceiveChatNotification(chatData)) {
-      return;
-    }
-
     chatStore.addChat(chatData);
 
     if (
@@ -219,10 +161,6 @@ export const useChatSocket = () => {
       );
 
       await onMessage(chatQueueAccountCentrifugo(accountId), (data: IChat) => {
-        if (!canReceiveChatNotification(data)) {
-          return;
-        }
-
         chatStore.addChat(data);
 
         if (

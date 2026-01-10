@@ -225,12 +225,12 @@ export class PushNotificationService {
     const hasPermissionToViewAll =
       canViewOthersChats || canListAllChatsWithoutSectorLimit;
 
-    if (hasPermissionToViewAll) {
-      return true;
-    }
-
     if (chat.status === EChatStatus.in_chat) {
       return chat.user?.id === userId;
+    }
+
+    if (hasPermissionToViewAll) {
+      return true;
     }
 
     if (chat.status === EChatStatus.queue) {

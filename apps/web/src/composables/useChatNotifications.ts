@@ -94,12 +94,12 @@ function canReceiveMessageNotification(
   const hasPermissionToViewAll =
     canViewOthersChats || canListAllChatsWithoutSectorLimit;
 
-  if (hasPermissionToViewAll) {
-    return true;
-  }
-
   if (chat.status === EChatStatus.in_chat) {
     return chat.user?.id === chatStore.user?.user_id;
+  }
+
+  if (hasPermissionToViewAll) {
+    return true;
   }
 
   if (chat.status === EChatStatus.queue) {

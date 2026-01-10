@@ -264,20 +264,6 @@ export const useChatStore = defineStore('chat', {
       }
     },
 
-    removeQueueChatIfNotAuthorized(chat: IChat): void {
-      const wasInQueue = this.listQueue.some((c) => c.chat_id === chat.chat_id);
-
-      this.removeFromList(this.listQueue, chat.chat_id);
-
-      if (wasInQueue && this.queuePagings.total > 0) {
-        this.queuePagings.total = Math.max(0, this.queuePagings.total - 1);
-      }
-
-      if (this.activeChat?.chat_id === chat.chat_id) {
-        this.activeChat = null;
-      }
-    },
-
     shouldRemoveQueueChat(chat: IChat, userSectors: string[]): boolean {
       if (userSectors.length > 0) {
         return !chat.sector?.id || !userSectors.includes(chat.sector.id);
@@ -305,14 +291,14 @@ export const useChatStore = defineStore('chat', {
       const hasPermissionToViewAll =
         canViewOthersChats || canListAllChatsWithoutSectorLimit;
 
-      if (!hasPermissionToViewAll) {
-        if (chat.status === EChatStatus.in_chat) {
-          if (chat.user?.id !== this.user?.user_id) {
-            this.removeChatIfNotAuthorized(chat);
-            return;
-          }
+      if (chat.status === EChatStatus.in_chat) {
+        if (!hasPermissionToViewAll && chat.user?.id !== this.user?.user_id) {
+          this.removeChatIfNotAuthorized(chat);
+          return;
         }
+      }
 
+      if (!hasPermissionToViewAll) {
         if (chat.status === EChatStatus.queue) {
           if (chat.user?.id && chat.user.id !== this.user?.user_id) {
             this.removeChatIfNotAuthorized(chat);
@@ -322,7 +308,7 @@ export const useChatStore = defineStore('chat', {
           if (!chat.user?.id) {
             const userSectors = getSectors();
             if (this.shouldRemoveQueueChat(chat, userSectors)) {
-              this.removeQueueChatIfNotAuthorized(chat);
+              this.removeChatIfNotAuthorized(chat);
               return;
             }
           }
@@ -464,6 +450,24 @@ export const useChatStore = defineStore('chat', {
           perm === EChatPermissions.view_others_chats
       );
 
+      const canListAllChatsWithoutSectorLimit = permissions.some(
+        (perm: EPermissionsRoles) =>
+          perm === EGeneralPermissions.full_access ||
+          perm === EGeneralPermissions.full_access_group ||
+          perm === EChatPermissions.chat_group ||
+          perm === EChatPermissions.list_all_chats_without_sector_limit
+      );
+
+      const hasPermissionToViewAll =
+        canViewOthersChats || canListAllChatsWithoutSectorLimit;
+
+      if (chat.status === EChatStatus.in_chat) {
+        if (hasPermissionToViewAll) {
+          return true;
+        }
+        return chat.user?.id === this.user?.user_id;
+      }
+
       const canViewChatbotMessages = permissions.some(
         (perm: EPermissionsRoles) =>
           perm === EGeneralPermissions.full_access ||
@@ -490,6 +494,32 @@ export const useChatStore = defineStore('chat', {
       const wasInInChat = this.listInChat.some(
         (c) => c.chat_id === chat.chat_id
       );
+
+      if (wasInInChat) {
+        const isStillMine = chat.user?.id === this.user?.user_id;
+
+        if (!isStillMine) {
+          this.removeFromList(this.listInChat, chat.chat_id);
+          this.removeFromList(this.listQueue, chat.chat_id);
+          this.removeFromList(this.listChatbot, chat.chat_id);
+
+          if (this.inChatPagings.total > 0) {
+            this.inChatPagings.total = Math.max(
+              0,
+              this.inChatPagings.total - 1
+            );
+          }
+
+          if (wasInQueue && this.queuePagings.total > 0) {
+            this.queuePagings.total = Math.max(0, this.queuePagings.total - 1);
+          }
+
+          if (this.activeChat?.chat_id === chat.chat_id) {
+            this.activeChat = null;
+          }
+          return;
+        }
+      }
 
       this.removeFromList(this.listInChat, chat.chat_id);
       this.removeFromList(this.listChatbot, chat.chat_id);
