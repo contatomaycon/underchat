@@ -893,7 +893,8 @@ export const useChatStore = defineStore('chat', {
             ...this.user.chat_user,
             ...input,
           };
-          this.user.chat_user = updatedChatUser as AuthUserResponse['chat_user'];
+          this.user.chat_user =
+            updatedChatUser as AuthUserResponse['chat_user'];
           setUser({ ...this.user, chat_user: updatedChatUser });
         }
       } catch {
