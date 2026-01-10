@@ -203,17 +203,10 @@ export class PushNotificationService {
     accountId: string,
     chat: IChat
   ): Promise<boolean> {
-    const [permissions, userSectors, chatExistsInUserList] = await Promise.all([
-      this.permissionAssignmentUserViewerRepository.viewPermissionByUserId(
+    const permissions =
+      await this.permissionAssignmentUserViewerRepository.viewPermissionByUserId(
         userId
-      ),
-      this.userSectorsListerRepository.listUserSectors(accountId, userId),
-      this.checkIfChatExistsInUserList(userId, accountId, chat.chat_id),
-    ]);
-
-    if (chatExistsInUserList) {
-      return true;
-    }
+      );
 
     const permissionActions = permissions.map((p) => p.action);
 
@@ -225,42 +218,15 @@ export class PushNotificationService {
         action === EChatPermissions.view_others_chats
     );
 
-    const canListAllChatsWithoutSectorLimit = permissionActions.some(
-      (action) =>
-        action === EGeneralPermissions.full_access ||
-        action === EGeneralPermissions.full_access_group ||
-        action === EChatPermissions.chat_group ||
-        action === EChatPermissions.list_all_chats_without_sector_limit
-    );
-
-    if (canListAllChatsWithoutSectorLimit || canViewOthersChats) {
+    if (canViewOthersChats) {
       return true;
     }
 
-    if (chat.user?.id) {
-      if (chat.user.id === userId) {
-        return true;
-      }
+    if (chat.user?.id && chat.user.id !== userId) {
       return false;
     }
 
-    if (
-      chat.status === EChatStatus.queue &&
-      !chat.sector?.id &&
-      !chat.user?.id
-    ) {
-      return true;
-    }
-
-    if (userSectors.length === 0) {
-      return !chat.sector?.id;
-    }
-
-    if (!chat.sector?.id) {
-      return false;
-    }
-
-    return userSectors.includes(chat.sector.id);
+    return true;
   }
 
   private async checkIfChatExistsInUserList(
