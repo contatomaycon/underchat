@@ -20,6 +20,16 @@ export class CentrifugoService {
   private readonly publishRetryMaxDelayMs = 4_000;
   private readonly connectTimeoutMs = 15_000;
   private readonly httpApiTimeoutMs = 10_000;
+  private readonly maxConcurrentTempClients = 5;
+  private readonly publishQueueMaxSize = 1000;
+
+  private activeTempClients = 0;
+  private publishQueue: Array<{
+    execute: () => Promise<PublishResult>;
+    resolve: (result: PublishResult) => void;
+    reject: (error: Error) => void;
+  }> = [];
+  private processingQueue = false;
 
   constructor(@inject('Centrifuge') private readonly client: Centrifuge) {}
 
@@ -31,6 +41,72 @@ export class CentrifugoService {
     } catch {
       return new Error(String(e));
     }
+  }
+
+  private async processPublishQueue(): Promise<void> {
+    if (this.processingQueue) {
+      return;
+    }
+
+    this.processingQueue = true;
+
+    while (this.publishQueue.length > 0) {
+      if (this.activeTempClients >= this.maxConcurrentTempClients) {
+        await this.delay(100);
+        continue;
+      }
+
+      const item = this.publishQueue.shift();
+
+      if (!item) {
+        break;
+      }
+
+      this.activeTempClients++;
+
+      item
+        .execute()
+        .then((result) => {
+          item.resolve(result);
+        })
+        .catch((error) => {
+          item.reject(this.toError(error));
+        })
+        .finally(() => {
+          this.activeTempClients--;
+        });
+    }
+
+    this.processingQueue = false;
+  }
+
+  private async queuePublishWithToken(
+    token: string,
+    channel: string,
+    data: unknown
+  ): Promise<PublishResult> {
+    if (this.publishQueue.length >= this.publishQueueMaxSize) {
+      logger.warn(
+        {
+          type: 'centrifugo_queue_full',
+          channel,
+          queueSize: this.publishQueue.length,
+        },
+        'Centrifugo publish queue is full, rejecting publish'
+      );
+
+      throw new Error('Centrifugo publish queue is full');
+    }
+
+    return new Promise<PublishResult>((resolve, reject) => {
+      this.publishQueue.push({
+        execute: () => this.publishWithToken(token, channel, data),
+        resolve,
+        reject,
+      });
+
+      this.processPublishQueue();
+    });
   }
 
   private async delay(ms: number): Promise<void> {
@@ -75,13 +151,6 @@ export class CentrifugoService {
     }
 
     return false;
-  }
-
-  private isHttpApiConfigured(): boolean {
-    return Boolean(
-      centrifugoEnvironment.centrifugoHttpApiUrl &&
-      centrifugoEnvironment.centrifugoHttpApiKey
-    );
   }
 
   private async waitForConnected(): Promise<void> {
@@ -594,20 +663,8 @@ export class CentrifugoService {
         return {} as PublishResult;
       }
 
-      if (this.isHttpApiConfigured()) {
-        return await this.withPublishRetry(
-          () => this.publishViaHttpApi(channel, data),
-          {
-            channel,
-            subId,
-          }
-        );
-      }
-
-      const token = this.generateSubToken(subId);
-
       return await this.withPublishRetry(
-        () => this.publishWithToken(token, channel, data),
+        () => this.publishViaHttpApi(channel, data),
         {
           channel,
           subId,

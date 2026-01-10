@@ -23,11 +23,27 @@ export class CentrifugoEnvironment {
     return url;
   }
 
-  public get centrifugoHttpApiUrl(): string | null {
-    return process.env.CENTRIFUGO_HTTP_API_URL ?? null;
+  public get centrifugoHttpApiUrl(): string {
+    const url = process.env.CENTRIFUGO_HTTP_API_URL;
+
+    if (!url) {
+      throw new InvalidConfigurationError(
+        'CENTRIFUGO_HTTP_API_URL is not defined.'
+      );
+    }
+
+    return url;
   }
 
-  public get centrifugoHttpApiKey(): string | null {
-    return process.env.CENTRIFUGO_HTTP_API_KEY ?? null;
+  public get centrifugoHttpApiKey(): string {
+    const key = process.env.CENTRIFUGO_HTTP_API_KEY;
+
+    if (!key) {
+      throw new InvalidConfigurationError(
+        'CENTRIFUGO_HTTP_API_KEY is not defined.'
+      );
+    }
+
+    return key;
   }
 }
