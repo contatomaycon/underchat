@@ -11,6 +11,7 @@ import { EPlanPermissions } from '@core/common/enums/EPermissions/plan';
 import { EAccountPermissions } from '@core/common/enums/EPermissions/account';
 import { useTheme } from 'vuetify';
 import { useAbility } from '@/plugins/0.casl/composables/useAbility';
+import { unsubscribeFromPushNotifications } from '@/composables/useChatNotifications';
 
 const router = useRouter();
 const chatStore = useChatStore();
@@ -623,6 +624,8 @@ const logout = async () => {
 
   try {
     await presenceOffline().catch(() => {});
+
+    await unsubscribeFromPushNotifications().catch(() => {});
 
     clearAllData();
 

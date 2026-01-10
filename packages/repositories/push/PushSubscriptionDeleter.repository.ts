@@ -49,4 +49,13 @@ export class PushSubscriptionDeleterRepository {
 
     return result.length > 0;
   };
+
+  hardDeleteByEndpoint = async (endpoint: string): Promise<boolean> => {
+    const result = await this.dbRw
+      .delete(pushSubscription)
+      .where(eq(pushSubscription.endpoint, endpoint))
+      .execute();
+
+    return (result.rowCount ?? 0) > 0;
+  };
 }

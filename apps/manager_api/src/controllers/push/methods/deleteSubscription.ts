@@ -20,7 +20,7 @@ export async function deleteSubscription(
   try {
     const { endpoint } = request.body;
 
-    await pushSubscriptionDeleterRepository.deleteByEndpoint(endpoint);
+    await pushSubscriptionDeleterRepository.hardDeleteByEndpoint(endpoint);
 
     return sendResponse(reply, {
       message: t('push_subscription_deleted_successfully'),
