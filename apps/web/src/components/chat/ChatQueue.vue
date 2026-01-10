@@ -63,7 +63,7 @@ const attendantLabel = computed(() => {
     return '';
   }
 
-  return limitCharacters(7, attendantFirstName.value);
+  return limitCharacters(10, attendantFirstName.value);
 });
 
 const chatLabelForList = computed<{
@@ -336,7 +336,7 @@ watch(
 .chat {
   --chat-attendant-label-size: 28px;
   border-radius: vuetify.$border-radius-root;
-  padding-block: 8px;
+  padding-block: 16px;
   padding-inline: 12px;
   border: 1px solid rgba(var(--v-theme-on-surface), 0.12);
   position: relative;
