@@ -209,6 +209,17 @@ const transferMessageUser = ref('');
 const transferMessageSector = ref('');
 const transferMessageSectorUser = ref('');
 
+const isInactivityMessageEnabled = ref(true);
+const isInvalidMenuOptionMessageEnabled = ref(true);
+const isInvalidSatisfactionOptionMessageEnabled = ref(true);
+const isInvalidCpfMessageEnabled = ref(true);
+const isInvalidCnpjMessageEnabled = ref(true);
+const isInvalidEmailMessageEnabled = ref(true);
+const isServiceFinishedMessageEnabled = ref(true);
+const isTransferMessageUserEnabled = ref(true);
+const isTransferMessageSectorEnabled = ref(true);
+const isTransferMessageSectorUserEnabled = ref(true);
+
 const onlyDigits = (s: string) => s.replaceAll(/\D+/g, '');
 
 const inactivityAlertQuantityComputed = computed({
@@ -1632,6 +1643,27 @@ const processConfigurations = async (configs: any): Promise<void> => {
       configs.messages.transfer_message_sector || '';
     transferMessageSectorUser.value =
       configs.messages.transfer_message_sector_user || '';
+
+    isInactivityMessageEnabled.value =
+      configs.messages.inactivity_message_enabled !== false;
+    isInvalidMenuOptionMessageEnabled.value =
+      configs.messages.invalid_menu_option_message_enabled !== false;
+    isInvalidSatisfactionOptionMessageEnabled.value =
+      configs.messages.invalid_satisfaction_option_message_enabled !== false;
+    isInvalidCpfMessageEnabled.value =
+      configs.messages.invalid_cpf_message_enabled !== false;
+    isInvalidCnpjMessageEnabled.value =
+      configs.messages.invalid_cnpj_message_enabled !== false;
+    isInvalidEmailMessageEnabled.value =
+      configs.messages.invalid_email_message_enabled !== false;
+    isServiceFinishedMessageEnabled.value =
+      configs.messages.service_finished_message_enabled !== false;
+    isTransferMessageUserEnabled.value =
+      configs.messages.transfer_message_user_enabled !== false;
+    isTransferMessageSectorEnabled.value =
+      configs.messages.transfer_message_sector_enabled !== false;
+    isTransferMessageSectorUserEnabled.value =
+      configs.messages.transfer_message_sector_user_enabled !== false;
   } else {
     inactivityMessage.value = '';
     invalidMenuOptionMessage.value = '';
@@ -1643,6 +1675,17 @@ const processConfigurations = async (configs: any): Promise<void> => {
     transferMessageUser.value = '';
     transferMessageSector.value = '';
     transferMessageSectorUser.value = '';
+
+    isInactivityMessageEnabled.value = true;
+    isInvalidMenuOptionMessageEnabled.value = true;
+    isInvalidSatisfactionOptionMessageEnabled.value = true;
+    isInvalidCpfMessageEnabled.value = true;
+    isInvalidCnpjMessageEnabled.value = true;
+    isInvalidEmailMessageEnabled.value = true;
+    isServiceFinishedMessageEnabled.value = true;
+    isTransferMessageUserEnabled.value = true;
+    isTransferMessageSectorEnabled.value = true;
+    isTransferMessageSectorUserEnabled.value = true;
   }
 };
 
@@ -1755,6 +1798,19 @@ const handleSaveConfigurations = async () => {
         transfer_message_sector: transferMessageSector.value || undefined,
         transfer_message_sector_user:
           transferMessageSectorUser.value || undefined,
+        inactivity_message_enabled: isInactivityMessageEnabled.value,
+        invalid_menu_option_message_enabled:
+          isInvalidMenuOptionMessageEnabled.value,
+        invalid_satisfaction_option_message_enabled:
+          isInvalidSatisfactionOptionMessageEnabled.value,
+        invalid_cpf_message_enabled: isInvalidCpfMessageEnabled.value,
+        invalid_cnpj_message_enabled: isInvalidCnpjMessageEnabled.value,
+        invalid_email_message_enabled: isInvalidEmailMessageEnabled.value,
+        service_finished_message_enabled: isServiceFinishedMessageEnabled.value,
+        transfer_message_user_enabled: isTransferMessageUserEnabled.value,
+        transfer_message_sector_enabled: isTransferMessageSectorEnabled.value,
+        transfer_message_sector_user_enabled:
+          isTransferMessageSectorUserEnabled.value,
       },
     };
 
@@ -2614,8 +2670,16 @@ onUnmounted(() => {
             <VWindowItem value="messages">
               <div class="d-flex flex-column gap-4">
                 <VCard variant="outlined">
-                  <VCardTitle class="text-body-1 pa-3 pb-0 font-weight-bold">
-                    {{ t('chatbot_message_inactivity') }}
+                  <VCardTitle
+                    class="text-body-1 pa-3 pb-0 font-weight-bold d-flex align-center justify-space-between"
+                  >
+                    <span>{{ t('chatbot_message_inactivity') }}</span>
+                    <VSwitch
+                      v-model="isInactivityMessageEnabled"
+                      color="primary"
+                      density="compact"
+                      hide-details
+                    />
                   </VCardTitle>
                   <VCardSubtitle
                     class="text-caption pa-3 pb-0 pt-0 config-description"
@@ -2627,6 +2691,7 @@ onUnmounted(() => {
                     <VTextarea
                       v-model="inactivityMessage"
                       :placeholder="defaultInactivityMessage"
+                      :disabled="!isInactivityMessageEnabled"
                       variant="outlined"
                       density="compact"
                       hide-details
@@ -2640,8 +2705,16 @@ onUnmounted(() => {
                 </VCard>
 
                 <VCard variant="outlined">
-                  <VCardTitle class="text-body-1 pa-3 pb-0 font-weight-bold">
-                    {{ t('chatbot_message_invalid_menu_option') }}
+                  <VCardTitle
+                    class="text-body-1 pa-3 pb-0 font-weight-bold d-flex align-center justify-space-between"
+                  >
+                    <span>{{ t('chatbot_message_invalid_menu_option') }}</span>
+                    <VSwitch
+                      v-model="isInvalidMenuOptionMessageEnabled"
+                      color="primary"
+                      density="compact"
+                      hide-details
+                    />
                   </VCardTitle>
                   <VCardSubtitle
                     class="text-caption pa-3 pb-0 pt-0 config-description"
@@ -2653,6 +2726,7 @@ onUnmounted(() => {
                     <VTextarea
                       v-model="invalidMenuOptionMessage"
                       :placeholder="defaultInvalidMenuOptionMessage"
+                      :disabled="!isInvalidMenuOptionMessageEnabled"
                       variant="outlined"
                       density="compact"
                       hide-details
@@ -2666,8 +2740,18 @@ onUnmounted(() => {
                 </VCard>
 
                 <VCard variant="outlined">
-                  <VCardTitle class="text-body-1 pa-3 pb-0 font-weight-bold">
-                    {{ t('chatbot_message_invalid_satisfaction_option') }}
+                  <VCardTitle
+                    class="text-body-1 pa-3 pb-0 font-weight-bold d-flex align-center justify-space-between"
+                  >
+                    <span>{{
+                      t('chatbot_message_invalid_satisfaction_option')
+                    }}</span>
+                    <VSwitch
+                      v-model="isInvalidSatisfactionOptionMessageEnabled"
+                      color="primary"
+                      density="compact"
+                      hide-details
+                    />
                   </VCardTitle>
                   <VCardSubtitle
                     class="text-caption pa-3 pb-0 pt-0 config-description"
@@ -2683,6 +2767,7 @@ onUnmounted(() => {
                     <VTextarea
                       v-model="invalidSatisfactionOptionMessage"
                       :placeholder="defaultInvalidSatisfactionOptionMessage"
+                      :disabled="!isInvalidSatisfactionOptionMessageEnabled"
                       variant="outlined"
                       density="compact"
                       hide-details
@@ -2696,8 +2781,16 @@ onUnmounted(() => {
                 </VCard>
 
                 <VCard variant="outlined">
-                  <VCardTitle class="text-body-1 pa-3 pb-0 font-weight-bold">
-                    {{ t('chatbot_message_invalid_cpf') }}
+                  <VCardTitle
+                    class="text-body-1 pa-3 pb-0 font-weight-bold d-flex align-center justify-space-between"
+                  >
+                    <span>{{ t('chatbot_message_invalid_cpf') }}</span>
+                    <VSwitch
+                      v-model="isInvalidCpfMessageEnabled"
+                      color="primary"
+                      density="compact"
+                      hide-details
+                    />
                   </VCardTitle>
                   <VCardSubtitle
                     class="text-caption pa-3 pb-0 pt-0 config-description"
@@ -2709,6 +2802,7 @@ onUnmounted(() => {
                     <VTextarea
                       v-model="invalidCpfMessage"
                       :placeholder="defaultInvalidCpfMessage"
+                      :disabled="!isInvalidCpfMessageEnabled"
                       variant="outlined"
                       density="compact"
                       hide-details
@@ -2722,8 +2816,16 @@ onUnmounted(() => {
                 </VCard>
 
                 <VCard variant="outlined">
-                  <VCardTitle class="text-body-1 pa-3 pb-0 font-weight-bold">
-                    {{ t('chatbot_message_invalid_cnpj') }}
+                  <VCardTitle
+                    class="text-body-1 pa-3 pb-0 font-weight-bold d-flex align-center justify-space-between"
+                  >
+                    <span>{{ t('chatbot_message_invalid_cnpj') }}</span>
+                    <VSwitch
+                      v-model="isInvalidCnpjMessageEnabled"
+                      color="primary"
+                      density="compact"
+                      hide-details
+                    />
                   </VCardTitle>
                   <VCardSubtitle
                     class="text-caption pa-3 pb-0 pt-0 config-description"
@@ -2735,6 +2837,7 @@ onUnmounted(() => {
                     <VTextarea
                       v-model="invalidCnpjMessage"
                       :placeholder="defaultInvalidCnpjMessage"
+                      :disabled="!isInvalidCnpjMessageEnabled"
                       variant="outlined"
                       density="compact"
                       hide-details
@@ -2748,8 +2851,16 @@ onUnmounted(() => {
                 </VCard>
 
                 <VCard variant="outlined">
-                  <VCardTitle class="text-body-1 pa-3 pb-0 font-weight-bold">
-                    {{ t('chatbot_message_invalid_email') }}
+                  <VCardTitle
+                    class="text-body-1 pa-3 pb-0 font-weight-bold d-flex align-center justify-space-between"
+                  >
+                    <span>{{ t('chatbot_message_invalid_email') }}</span>
+                    <VSwitch
+                      v-model="isInvalidEmailMessageEnabled"
+                      color="primary"
+                      density="compact"
+                      hide-details
+                    />
                   </VCardTitle>
                   <VCardSubtitle
                     class="text-caption pa-3 pb-0 pt-0 config-description"
@@ -2761,6 +2872,7 @@ onUnmounted(() => {
                     <VTextarea
                       v-model="invalidEmailMessage"
                       :placeholder="defaultInvalidEmailMessage"
+                      :disabled="!isInvalidEmailMessageEnabled"
                       variant="outlined"
                       density="compact"
                       hide-details
@@ -2774,8 +2886,16 @@ onUnmounted(() => {
                 </VCard>
 
                 <VCard variant="outlined">
-                  <VCardTitle class="text-body-1 pa-3 pb-0 font-weight-bold">
-                    {{ t('chatbot_message_service_finished') }}
+                  <VCardTitle
+                    class="text-body-1 pa-3 pb-0 font-weight-bold d-flex align-center justify-space-between"
+                  >
+                    <span>{{ t('chatbot_message_service_finished') }}</span>
+                    <VSwitch
+                      v-model="isServiceFinishedMessageEnabled"
+                      color="primary"
+                      density="compact"
+                      hide-details
+                    />
                   </VCardTitle>
                   <VCardSubtitle
                     class="text-caption pa-3 pb-0 pt-0 config-description"
@@ -2787,6 +2907,7 @@ onUnmounted(() => {
                     <VTextarea
                       v-model="serviceFinishedMessage"
                       :placeholder="defaultServiceFinishedMessage"
+                      :disabled="!isServiceFinishedMessageEnabled"
                       variant="outlined"
                       density="compact"
                       hide-details
@@ -2800,8 +2921,16 @@ onUnmounted(() => {
                 </VCard>
 
                 <VCard variant="outlined">
-                  <VCardTitle class="text-body-1 pa-3 pb-0 font-weight-bold">
-                    {{ t('chatbot_message_transfer_user') }}
+                  <VCardTitle
+                    class="text-body-1 pa-3 pb-0 font-weight-bold d-flex align-center justify-space-between"
+                  >
+                    <span>{{ t('chatbot_message_transfer_user') }}</span>
+                    <VSwitch
+                      v-model="isTransferMessageUserEnabled"
+                      color="primary"
+                      density="compact"
+                      hide-details
+                    />
                   </VCardTitle>
                   <VCardSubtitle
                     class="text-caption pa-3 pb-0 pt-0 config-description"
@@ -2813,6 +2942,7 @@ onUnmounted(() => {
                     <VTextarea
                       v-model="transferMessageUser"
                       :placeholder="defaultTransferMessageUserText"
+                      :disabled="!isTransferMessageUserEnabled"
                       variant="outlined"
                       density="compact"
                       hide-details
@@ -2826,8 +2956,16 @@ onUnmounted(() => {
                 </VCard>
 
                 <VCard variant="outlined">
-                  <VCardTitle class="text-body-1 pa-3 pb-0 font-weight-bold">
-                    {{ t('chatbot_message_transfer_sector') }}
+                  <VCardTitle
+                    class="text-body-1 pa-3 pb-0 font-weight-bold d-flex align-center justify-space-between"
+                  >
+                    <span>{{ t('chatbot_message_transfer_sector') }}</span>
+                    <VSwitch
+                      v-model="isTransferMessageSectorEnabled"
+                      color="primary"
+                      density="compact"
+                      hide-details
+                    />
                   </VCardTitle>
                   <VCardSubtitle
                     class="text-caption pa-3 pb-0 pt-0 config-description"
@@ -2839,6 +2977,7 @@ onUnmounted(() => {
                     <VTextarea
                       v-model="transferMessageSector"
                       :placeholder="defaultTransferMessageSectorText"
+                      :disabled="!isTransferMessageSectorEnabled"
                       variant="outlined"
                       density="compact"
                       hide-details
@@ -2852,8 +2991,16 @@ onUnmounted(() => {
                 </VCard>
 
                 <VCard variant="outlined">
-                  <VCardTitle class="text-body-1 pa-3 pb-0 font-weight-bold">
-                    {{ t('chatbot_message_transfer_sector_user') }}
+                  <VCardTitle
+                    class="text-body-1 pa-3 pb-0 font-weight-bold d-flex align-center justify-space-between"
+                  >
+                    <span>{{ t('chatbot_message_transfer_sector_user') }}</span>
+                    <VSwitch
+                      v-model="isTransferMessageSectorUserEnabled"
+                      color="primary"
+                      density="compact"
+                      hide-details
+                    />
                   </VCardTitle>
                   <VCardSubtitle
                     class="text-caption pa-3 pb-0 pt-0 config-description"
@@ -2865,6 +3012,7 @@ onUnmounted(() => {
                     <VTextarea
                       v-model="transferMessageSectorUser"
                       :placeholder="defaultTransferMessageSectorUserText"
+                      :disabled="!isTransferMessageSectorUserEnabled"
                       variant="outlined"
                       density="compact"
                       hide-details

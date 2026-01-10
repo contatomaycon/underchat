@@ -36,6 +36,18 @@ const configurationsSchema = Type.Object({
       transfer_message_user: Type.Optional(Type.String()),
       transfer_message_sector: Type.Optional(Type.String()),
       transfer_message_sector_user: Type.Optional(Type.String()),
+      inactivity_message_enabled: Type.Optional(Type.Boolean()),
+      invalid_menu_option_message_enabled: Type.Optional(Type.Boolean()),
+      invalid_satisfaction_option_message_enabled: Type.Optional(
+        Type.Boolean()
+      ),
+      invalid_cpf_message_enabled: Type.Optional(Type.Boolean()),
+      invalid_cnpj_message_enabled: Type.Optional(Type.Boolean()),
+      invalid_email_message_enabled: Type.Optional(Type.Boolean()),
+      service_finished_message_enabled: Type.Optional(Type.Boolean()),
+      transfer_message_user_enabled: Type.Optional(Type.Boolean()),
+      transfer_message_sector_enabled: Type.Optional(Type.Boolean()),
+      transfer_message_sector_user_enabled: Type.Optional(Type.Boolean()),
     })
   ),
 });

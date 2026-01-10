@@ -105,6 +105,36 @@ export const chatbotFlowMappings = () => {
                 transfer_message_sector_user: {
                   type: 'text',
                 },
+                inactivity_message_enabled: {
+                  type: 'boolean',
+                },
+                invalid_menu_option_message_enabled: {
+                  type: 'boolean',
+                },
+                invalid_satisfaction_option_message_enabled: {
+                  type: 'boolean',
+                },
+                invalid_cpf_message_enabled: {
+                  type: 'boolean',
+                },
+                invalid_cnpj_message_enabled: {
+                  type: 'boolean',
+                },
+                invalid_email_message_enabled: {
+                  type: 'boolean',
+                },
+                service_finished_message_enabled: {
+                  type: 'boolean',
+                },
+                transfer_message_user_enabled: {
+                  type: 'boolean',
+                },
+                transfer_message_sector_enabled: {
+                  type: 'boolean',
+                },
+                transfer_message_sector_user_enabled: {
+                  type: 'boolean',
+                },
               },
             },
           },
