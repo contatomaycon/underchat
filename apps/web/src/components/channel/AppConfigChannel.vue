@@ -1616,6 +1616,112 @@ const handleCardClick = (key: WorkerConfigField): void => {
   }
 };
 
+const getToggleTooltip = (key: WorkerConfigField): string | undefined => {
+  if (isSavingWorkerConfig.value) {
+    return undefined;
+  }
+
+  const isEnabled = workerConfigForm[key];
+
+  if (isEnabled) {
+    return undefined;
+  }
+
+  if (key === 'generate_protocol_at_start') {
+    if (isSavingStartProtocol.value) {
+      return undefined;
+    }
+
+    const hasValue = startProtocolText.value.trim().length > 0;
+
+    if (!hasValue) {
+      return t('toggle_disabled_start_protocol_tooltip');
+    }
+
+    return undefined;
+  }
+
+  if (key === 'simultaneous_attendance') {
+    if (isSavingSimultaneousAttendance.value) {
+      return undefined;
+    }
+
+    const hasValue =
+      simultaneousAttendance.value !== null && simultaneousAttendance.value > 0;
+
+    if (!hasValue) {
+      return t('toggle_disabled_simultaneous_attendance_tooltip');
+    }
+
+    return undefined;
+  }
+
+  if (key === 'send_message_on_finish_attendance') {
+    if (isSavingSendMessageOnFinishAttendance.value) {
+      return undefined;
+    }
+
+    const hasValue = sendMessageOnFinishAttendanceText.value.trim().length > 0;
+
+    if (!hasValue) {
+      return t('toggle_disabled_send_message_on_finish_attendance_tooltip');
+    }
+
+    return undefined;
+  }
+
+  if (key === 'generate_protocol_at_transfer') {
+    if (
+      isSavingTransferProtocol.value ||
+      isSavingTransferProtocolSector.value ||
+      isSavingTransferProtocolSectorAndUser.value
+    ) {
+      return undefined;
+    }
+
+    const hasValue =
+      transferProtocolText.value.trim().length > 0 ||
+      transferProtocolSectorText.value.trim().length > 0 ||
+      transferProtocolSectorAndUserText.value.trim().length > 0;
+
+    if (!hasValue) {
+      return t('toggle_disabled_transfer_protocol_tooltip');
+    }
+
+    return undefined;
+  }
+
+  if (key === 'show_message_on_call') {
+    if (isSavingShowMessageOnCall.value) {
+      return undefined;
+    }
+
+    const hasValue = showMessageOnCallText.value.trim().length > 0;
+
+    if (!hasValue) {
+      return t('toggle_disabled_show_message_on_call_tooltip');
+    }
+
+    return undefined;
+  }
+
+  if (key === 'chatbot') {
+    if (isSavingChatbot.value) {
+      return undefined;
+    }
+
+    const hasValue = chatbotId.value !== null && chatbotId.value !== '';
+
+    if (!hasValue) {
+      return t('toggle_disabled_chatbot_tooltip');
+    }
+
+    return undefined;
+  }
+
+  return undefined;
+};
+
 const remainingSlots = computed(() => {
   const existingCount = existingStatus.value.length;
 
@@ -2830,13 +2936,26 @@ onMounted(async () => {
                     class="general-config-card h-100 position-relative"
                     variant="outlined"
                   >
-                    <VSwitch
-                      class="general-config-toggle"
-                      :model-value="workerConfigForm[option.key]"
-                      color="primary"
-                      :disabled="getToggleDisabled(option.key)"
-                      @click.stop="handleToggleClick(option.key)"
-                    />
+                    <VTooltip
+                      :text="getToggleTooltip(option.key) || ''"
+                      location="top"
+                      :disabled="!getToggleTooltip(option.key)"
+                    >
+                      <template #activator="{ props: tooltipProps }">
+                        <div
+                          v-bind="tooltipProps"
+                          class="d-inline-block general-config-toggle-wrapper"
+                        >
+                          <VSwitch
+                            class="general-config-toggle"
+                            :model-value="workerConfigForm[option.key]"
+                            color="primary"
+                            :disabled="getToggleDisabled(option.key)"
+                            @click.stop="handleToggleClick(option.key)"
+                          />
+                        </div>
+                      </template>
+                    </VTooltip>
                     <div
                       class="general-config-content d-flex flex-column gap-2"
                     >
@@ -4278,11 +4397,19 @@ onMounted(async () => {
   padding-bottom: 48px;
 }
 
-.general-config-toggle {
+.general-config-toggle-wrapper {
   position: absolute;
   top: 8px;
   right: 12px;
   z-index: 2;
+}
+
+.general-config-toggle-wrapper :deep(.v-switch[disabled]) {
+  pointer-events: none;
+}
+
+.general-config-toggle {
+  position: relative;
 }
 
 .general-config-button {
