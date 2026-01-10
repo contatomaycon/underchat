@@ -2816,8 +2816,10 @@ onUnmounted(() => {
                       rows="3"
                     />
                     <div class="text-caption text-medium-emphasis mt-2">
-                      <strong>{{ t('chatbot_message_default_label') }}:</strong>
-                      {{ defaultTransferMessageUser }}
+                      <strong
+                        >{{ t('chatbot_message_default_label') }}:
+                      </strong>
+                      <span v-text="defaultTransferMessageUser"></span>
                     </div>
                   </VCardText>
                 </VCard>
@@ -2842,8 +2844,10 @@ onUnmounted(() => {
                       rows="3"
                     />
                     <div class="text-caption text-medium-emphasis mt-2">
-                      <strong>{{ t('chatbot_message_default_label') }}:</strong>
-                      {{ defaultTransferMessageSector }}
+                      <strong
+                        >{{ t('chatbot_message_default_label') }}:
+                      </strong>
+                      <span v-text="defaultTransferMessageSector"></span>
                     </div>
                   </VCardText>
                 </VCard>
@@ -2868,8 +2872,10 @@ onUnmounted(() => {
                       rows="3"
                     />
                     <div class="text-caption text-medium-emphasis mt-2">
-                      <strong>{{ t('chatbot_message_default_label') }}:</strong>
-                      {{ defaultTransferMessageSectorUser }}
+                      <strong
+                        >{{ t('chatbot_message_default_label') }}:
+                      </strong>
+                      <span v-text="defaultTransferMessageSectorUser"></span>
                     </div>
                   </VCardText>
                 </VCard>
