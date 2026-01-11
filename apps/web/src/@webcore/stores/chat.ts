@@ -972,6 +972,12 @@ export const useChatStore = defineStore('chat', {
         if (input.filter_date_end) {
           params.filter_date_end = input.filter_date_end;
         }
+        if (input.sort_field) {
+          params.sort_field = input.sort_field;
+        }
+        if (input.sort_order) {
+          params.sort_order = input.sort_order;
+        }
 
         const response = await axios.get<IApiResponse<SearchChatsResponse>>(
           `/chat/search`,

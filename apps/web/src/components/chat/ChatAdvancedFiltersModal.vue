@@ -28,6 +28,8 @@ interface Props {
   filterProtocol?: string | null;
   filterDateStart?: string | Date | null;
   filterDateEnd?: string | Date | null;
+  sortField?: string | null;
+  sortOrder?: string | null;
 }
 
 interface Emits {
@@ -42,6 +44,8 @@ interface Emits {
   (e: 'update:filterProtocol', value: string | null): void;
   (e: 'update:filterDateStart', value: string | null): void;
   (e: 'update:filterDateEnd', value: string | null): void;
+  (e: 'update:sortField', value: string | null): void;
+  (e: 'update:sortOrder', value: string | null): void;
   (e: 'filtersUpdated'): void;
 }
 
@@ -92,6 +96,8 @@ const filterDateStart = ref<Date | null>(
 const filterDateEnd = ref<Date | null>(
   props.filterDateEnd ? new Date(props.filterDateEnd) : null
 );
+const sortField = ref<string | null>(props.sortField ?? 'date');
+const sortOrder = ref<string | null>(props.sortOrder ?? 'desc');
 
 const statusOptions = computed(() => [
   { value: FILTER_STATUS_ALL, title: t('all', 'Todos') },
@@ -100,6 +106,23 @@ const statusOptions = computed(() => [
   { value: EChatStatus.ura, title: t('chatbot') },
   { value: EChatStatus.closed, title: t('chat_status_closed', 'Fechado') },
 ]);
+
+const sortFieldOptions = [
+  { value: 'account.name', title: t('account', 'Conta') },
+  { value: 'worker.name', title: t('channel', 'Canal') },
+  { value: 'name', title: t('name', 'Nome') },
+  { value: 'phone', title: t('phone', 'Telefone') },
+  { value: 'status', title: t('status', 'Status') },
+  { value: 'date', title: t('date', 'Data') },
+  { value: 'user.name', title: t('attendant', 'Atendente') },
+  { value: 'started_at', title: t('started_at', 'Iniciado em') },
+  { value: 'closed_at', title: t('closed_at', 'Fechado em') },
+];
+
+const sortOrderOptions = [
+  { value: 'asc', title: t('ascending', 'Crescente') },
+  { value: 'desc', title: t('descending', 'Decrescente') },
+];
 
 const formatDateForApi = (
   date: Date | string | null,
@@ -224,6 +247,8 @@ const handleSave = async () => {
       formatDateForApi(filterDateStart.value, false)
     );
     emit('update:filterDateEnd', formatDateForApi(filterDateEnd.value, true));
+    emit('update:sortField', sortField.value);
+    emit('update:sortOrder', sortOrder.value);
     isVisible.value = false;
     emit('filtersUpdated');
   } finally {
@@ -249,6 +274,8 @@ watch(isVisible, (visible) => {
     filterProtocol.value = null;
     filterDateStart.value = null;
     filterDateEnd.value = null;
+    sortField.value = 'date';
+    sortOrder.value = 'desc';
   }
 });
 
@@ -316,6 +343,20 @@ watch(
   () => props.filterDateEnd,
   (newValue) => {
     filterDateEnd.value = newValue ? new Date(newValue) : null;
+  }
+);
+
+watch(
+  () => props.sortField,
+  (newValue) => {
+    sortField.value = newValue ?? 'date';
+  }
+);
+
+watch(
+  () => props.sortOrder,
+  (newValue) => {
+    sortOrder.value = newValue ?? 'desc';
   }
 );
 </script>
@@ -537,6 +578,37 @@ watch(
               v-model="filterDateEnd"
               :placeholder="$t('select_date')"
               clearable
+            />
+          </VCol>
+        </VRow>
+
+        <VDivider class="my-4" />
+
+        <VRow>
+          <VCol cols="12" md="6">
+            <VLabel class="text-body-2 mb-1"
+              >{{ $t('sort_by', 'Ordenar por') }}:</VLabel
+            >
+            <AppSelectSearch
+              v-model="sortField"
+              :items="sortFieldOptions"
+              :placeholder="$t('select_sort_field', 'Selecione o campo')"
+              clearable
+              item-value="value"
+              item-title="title"
+            />
+          </VCol>
+
+          <VCol cols="12" md="6">
+            <VLabel class="text-body-2 mb-1"
+              >{{ $t('sort_order', 'Ordem') }}:</VLabel
+            >
+            <AppSelectSearch
+              v-model="sortOrder"
+              :items="sortOrderOptions"
+              :placeholder="$t('select_sort_order', 'Selecione a ordem')"
+              item-value="value"
+              item-title="title"
             />
           </VCol>
         </VRow>

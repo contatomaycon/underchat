@@ -484,10 +484,73 @@ export class ChatSearcherUseCase {
       );
     }
 
+    const sortField = query.sort_field || 'date';
+    const sortOrder = query.sort_order || 'desc';
+
+    const getSortField = (field: string) => {
+      const fieldMap: Record<string, string> = {
+        'account.name': 'account.name.keyword',
+        'worker.name': 'worker.name.keyword',
+        name: 'name.keyword',
+        phone: 'phone.keyword',
+        status: 'status',
+        date: 'date',
+        'user.name': 'user.name.keyword',
+        started_at: 'started_at',
+        closed_at: 'closed_at',
+      };
+      return fieldMap[field] || 'date';
+    };
+
+    const getSortConfig = () => {
+      const field = getSortField(sortField);
+
+      if (field === 'account.name.keyword') {
+        return [
+          {
+            'account.name.keyword': {
+              order: sortOrder,
+              nested: {
+                path: 'account',
+              },
+            },
+          },
+        ];
+      }
+
+      if (field === 'worker.name.keyword') {
+        return [
+          {
+            'worker.name.keyword': {
+              order: sortOrder,
+              nested: {
+                path: 'worker',
+              },
+            },
+          },
+        ];
+      }
+
+      if (field === 'user.name.keyword') {
+        return [
+          {
+            'user.name.keyword': {
+              order: sortOrder,
+              nested: {
+                path: 'user',
+              },
+            },
+          },
+        ];
+      }
+
+      return [{ [field]: { order: sortOrder } }];
+    };
+
     const queryElastic: any = {
       from: (currentPage - 1) * perPage,
       size: perPage,
-      sort: [{ date: { order: 'desc' } }],
+      sort: getSortConfig(),
       query: {
         bool: {
           must: mustClauses,

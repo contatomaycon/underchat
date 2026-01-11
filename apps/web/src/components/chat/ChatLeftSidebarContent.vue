@@ -1,4 +1,5 @@
 <script lang="ts" setup>
+import { nextTick } from 'vue';
 import { PerfectScrollbar } from 'vue3-perfect-scrollbar';
 import ChatQueue from './ChatQueue.vue';
 import AppAddContactChat from '@/components/chat/AppAddContactChat.vue';
@@ -459,6 +460,8 @@ const handleClearFilters = async () => {
   currentFilterProtocol.value = null;
   currentFilterDateStart.value = null;
   currentFilterDateEnd.value = null;
+  currentSortField.value = 'date';
+  currentSortOrder.value = 'desc';
   hasAppliedAdvancedFilters.value = false;
 
   allChatsWithFiltersPagings.value = {
@@ -485,6 +488,8 @@ const handleClearFilters = async () => {
   chatbotPagings.value.current_page = 1;
   closedPagings.value.current_page = 1;
 
+  chatStore.activeChat = null;
+
   await Promise.all([loadChatsByFilter(), loadChatbotCount()]);
 
   if (
@@ -493,6 +498,9 @@ const handleClearFilters = async () => {
   ) {
     await performSearch();
   }
+
+  await nextTick();
+  scrollToTop();
 };
 
 const loadWorkerConfigs = async (chats: ListChatsResult[]) => {
@@ -560,6 +568,8 @@ const currentFilterPhone = ref<string | null>(null);
 const currentFilterProtocol = ref<string | null>(null);
 const currentFilterDateStart = ref<string | null>(null);
 const currentFilterDateEnd = ref<string | null>(null);
+const currentSortField = ref<string | null>('date');
+const currentSortOrder = ref<string | null>('desc');
 
 const getChatUserFilters = () => {
   return {
@@ -573,6 +583,8 @@ const getChatUserFilters = () => {
     filter_protocol: currentFilterProtocol.value ?? undefined,
     filter_date_start: currentFilterDateStart.value ?? undefined,
     filter_date_end: currentFilterDateEnd.value ?? undefined,
+    sort_field: currentSortField.value ?? undefined,
+    sort_order: currentSortOrder.value ?? undefined,
   };
 };
 
@@ -2635,6 +2647,8 @@ defineExpose({
     :filter-protocol="currentFilterProtocol"
     :filter-date-start="currentFilterDateStart"
     :filter-date-end="currentFilterDateEnd"
+    :sort-field="currentSortField"
+    :sort-order="currentSortOrder"
     @update:filter-status="currentFilterStatus = $event"
     @update:filter-label="currentFilterLabelTemplateId = $event"
     @update:filter-worker="currentFilterWorkerId = $event"
@@ -2645,6 +2659,8 @@ defineExpose({
     @update:filter-protocol="currentFilterProtocol = $event"
     @update:filter-date-start="currentFilterDateStart = $event"
     @update:filter-date-end="currentFilterDateEnd = $event"
+    @update:sort-field="currentSortField = $event"
+    @update:sort-order="currentSortOrder = $event"
     @update:model-value="isAdvancedFiltersModalOpen = $event"
     @filters-updated="handleFiltersUpdated"
   />
