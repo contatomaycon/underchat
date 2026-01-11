@@ -435,7 +435,8 @@ export const useChatStore = defineStore('chat', {
     replaceOrPushInList(
       arr: ListChatsResult[],
       input: ListChatsResult,
-      isActiveChat: boolean
+      isActiveChat: boolean,
+      status?: EChatStatus
     ): void {
       const idx = arr.findIndex((c) => c.chat_id === input.chat_id);
 
@@ -450,10 +451,136 @@ export const useChatStore = defineStore('chat', {
           ...input,
           summary: summaryToUse,
         };
+        if (status) {
+          this.sortChatList(arr, status);
+        }
         return;
       }
 
       arr.push(input);
+      if (status) {
+        this.sortChatList(arr, status);
+      }
+    },
+
+    getSortForStatus(status: EChatStatus): {
+      sortBy: string;
+      sortOrder: string;
+    } {
+      const chatUser = this.user?.chat_user;
+      if (!chatUser) {
+        return { sortBy: 'date', sortOrder: 'desc' };
+      }
+
+      if (status === EChatStatus.in_chat) {
+        if (chatUser.sort_by_my_chats_order && chatUser.sort_my_chats_order) {
+          return {
+            sortBy: chatUser.sort_by_my_chats_order,
+            sortOrder: chatUser.sort_my_chats_order,
+          };
+        }
+      }
+
+      if (status === EChatStatus.queue) {
+        if (chatUser.sort_by_queue_order && chatUser.sort_queue_order) {
+          return {
+            sortBy: chatUser.sort_by_queue_order,
+            sortOrder: chatUser.sort_queue_order,
+          };
+        }
+      }
+
+      if (status === EChatStatus.ura) {
+        if (chatUser.sort_by_chatbot_order && chatUser.sort_chatbot_order) {
+          return {
+            sortBy: chatUser.sort_by_chatbot_order,
+            sortOrder: chatUser.sort_chatbot_order,
+          };
+        }
+      }
+
+      if (chatUser.sort_by_chat_order && chatUser.sort_in_chat_order) {
+        return {
+          sortBy: chatUser.sort_by_chat_order,
+          sortOrder: chatUser.sort_in_chat_order,
+        };
+      }
+
+      return { sortBy: 'date', sortOrder: 'desc' };
+    },
+
+    getFieldValue(chat: ListChatsResult, field: string): any {
+      if (field === 'summary.last_message' || field === 'summary.last_date') {
+        return chat.summary?.last_date || chat.summary?.last_message || '';
+      }
+      if (field === 'account.name') {
+        return chat.account?.name || '';
+      }
+      if (field === 'worker.name') {
+        return chat.worker?.name || '';
+      }
+      if (field === 'user.name') {
+        return chat.user?.name || '';
+      }
+      if (field === 'sector.name') {
+        return chat.sector?.name || '';
+      }
+      if (field === 'name') {
+        return chat.name || '';
+      }
+      if (field === 'phone') {
+        return chat.phone || '';
+      }
+      if (field === 'status') {
+        return chat.status || '';
+      }
+      if (field === 'date') {
+        return chat.date || '';
+      }
+      if (field === 'started_at') {
+        return chat.started_at || '';
+      }
+      if (field === 'closed_at') {
+        return chat.closed_at || '';
+      }
+      return '';
+    },
+
+    sortChatList(arr: ListChatsResult[], status: EChatStatus): void {
+      if (arr.length === 0) {
+        return;
+      }
+
+      const { sortBy, sortOrder } = this.getSortForStatus(status);
+
+      arr.sort((a, b) => {
+        const aValue = this.getFieldValue(a, sortBy);
+        const bValue = this.getFieldValue(b, sortBy);
+
+        if (aValue === bValue) {
+          return 0;
+        }
+
+        if (aValue === '' || aValue === null || aValue === undefined) {
+          return 1;
+        }
+        if (bValue === '' || bValue === null || bValue === undefined) {
+          return -1;
+        }
+
+        let comparison = 0;
+        if (typeof aValue === 'string' && typeof bValue === 'string') {
+          comparison = aValue.localeCompare(bValue);
+        } else if (typeof aValue === 'number' && typeof bValue === 'number') {
+          comparison = aValue - bValue;
+        } else {
+          const aStr = String(aValue);
+          const bStr = String(bValue);
+          comparison = aStr.localeCompare(bStr);
+        }
+
+        return sortOrder === 'asc' ? comparison : -comparison;
+      });
     },
 
     canViewChat(chat: IChat): boolean {
@@ -539,7 +666,12 @@ export const useChatStore = defineStore('chat', {
 
       this.removeFromList(this.listInChat, chat.chat_id);
       this.removeFromList(this.listChatbot, chat.chat_id);
-      this.replaceOrPushInList(this.listQueue, input, isActiveChat);
+      this.replaceOrPushInList(
+        this.listQueue,
+        input,
+        isActiveChat,
+        EChatStatus.queue
+      );
 
       if (!wasInQueue) {
         this.queuePagings.total = (this.queuePagings.total || 0) + 1;
@@ -592,7 +724,12 @@ export const useChatStore = defineStore('chat', {
 
       this.removeFromList(this.listQueue, chat.chat_id);
       this.removeFromList(this.listChatbot, chat.chat_id);
-      this.replaceOrPushInList(this.listInChat, input, isActiveChat);
+      this.replaceOrPushInList(
+        this.listInChat,
+        input,
+        isActiveChat,
+        EChatStatus.in_chat
+      );
 
       if (!wasInInChat) {
         this.inChatPagings.total = (this.inChatPagings.total || 0) + 1;
@@ -625,7 +762,12 @@ export const useChatStore = defineStore('chat', {
 
       this.removeFromList(this.listInChat, chat.chat_id);
       this.removeFromList(this.listQueue, chat.chat_id);
-      this.replaceOrPushInList(this.listChatbot, input, isActiveChat);
+      this.replaceOrPushInList(
+        this.listChatbot,
+        input,
+        isActiveChat,
+        EChatStatus.ura
+      );
 
       if (this.activeChat?.chat_id === chat.chat_id) {
         this.activeChat = this.createUpdatedActiveChat(input, isActiveChat);
