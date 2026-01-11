@@ -710,6 +710,10 @@ ${instructionsText || 'Responda à pergunta do usuário de forma clara e precisa
       '- Responda somente com base no contexto acima e nas regras. NUNCA use conhecimento externo ou suposições.\n';
     instructionsText +=
       '- Se o contexto não cobrir a pergunta, informe que não pode responder fora do contexto da empresa/agente.\n';
+    instructionsText +=
+      '- Responda de forma natural e humana, como se você fosse uma pessoa real respondendo. Evite mencionar "contexto fornecido", "com base no contexto" ou qualquer referência explícita a limitações técnicas.\n';
+    instructionsText +=
+      '- Quando não souber algo ou a pergunta estiver fora do escopo, responda de forma educada e natural, redirecionando para o que você pode ajudar, sem mencionar que é por limitação de contexto ou sistema.\n';
 
     if (bootstrapSummary && bootstrapSummary.trim().length > 0) {
       instructionsText +=
@@ -732,11 +736,15 @@ ${instructionsText || 'Responda à pergunta do usuário de forma clara e precisa
         '- Use o contexto acima para responder à pergunta do usuário. Sempre priorize as informações do contexto fornecido.\n';
       instructionsText +=
         '- IMPORTANTE: Se a pergunta do usuário estiver fora do contexto ou tema da empresa/agente (não relacionada ao assunto tratado pela empresa), você deve educadamente informar que não pode responder sobre esse assunto e orientar o usuário a fazer perguntas relacionadas ao tema da empresa/agente. Seja prestativo e sugira exemplos de perguntas relevantes ao contexto da empresa.\n';
+      instructionsText +=
+        '- Ao redirecionar para o tema da empresa, faça isso de forma natural e conversacional, como uma pessoa real faria, sem mencionar termos técnicos como "contexto", "sistema" ou "limitações".\n';
       return instructionsText;
     }
 
     instructionsText +=
       '- IMPORTANTE: Se a pergunta do usuário estiver fora do contexto ou tema da empresa/agente, você deve educadamente informar que não pode responder sobre esse assunto e orientar o usuário a fazer perguntas relacionadas ao tema da empresa/agente. Seja prestativo e sugira exemplos de perguntas relevantes ao contexto da empresa.\n';
+    instructionsText +=
+      '- Ao redirecionar para o tema da empresa, faça isso de forma natural e conversacional, como uma pessoa real faria, sem mencionar termos técnicos como "contexto", "sistema" ou "limitações".\n';
     return instructionsText;
   }
 
