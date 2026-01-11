@@ -234,7 +234,18 @@ onMounted(() => {
       </VCardTitle>
       <VDivider />
       <VCardText class="pa-4">
-        <div class="d-flex justify-end mb-4">
+        <div class="d-flex justify-end gap-3 mb-4">
+          <VBtn
+            v-if="shouldShowRefreshButton"
+            prepend-icon="tabler-refresh"
+            color="secondary"
+            variant="tonal"
+            @click="openRefreshAllDialog"
+            :disabled="isLoading || isRefreshingAll"
+            :loading="isRefreshingAll"
+          >
+            {{ $t('refresh_all') }}
+          </VBtn>
           <VBtn
             prepend-icon="tabler-plus"
             color="primary"
