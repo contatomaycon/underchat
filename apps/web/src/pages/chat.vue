@@ -208,6 +208,10 @@ const isUraStatus = computed(
   () => chatStore.activeChat?.status === EChatStatus.ura
 );
 
+const isClosedStatus = computed(
+  () => chatStore.activeChat?.status === EChatStatus.closed
+);
+
 const isQueueOrUraStatus = computed(() => {
   return (
     chatStore.activeChat?.status === EChatStatus.queue ||
@@ -268,6 +272,11 @@ const canAttendChat = computed(() => {
   return true;
 });
 
+const canReopenChat = computed(() => {
+  if (!isClosedStatus.value) return false;
+  return true;
+});
+
 const loadWorkerConfigForChat = async () => {
   const workerId = chatStore.activeChat?.worker?.id;
   if (!workerId) {
@@ -314,6 +323,19 @@ const handleAttendChat = async () => {
 
   if (success) {
     chatStore.showSnackbar(t('chat_attended_successfully'), EColor.success);
+  }
+};
+
+const handleReopenChat = async () => {
+  if (!chatStore.activeChat?.chat_id) return;
+
+  const success = await chatStore.updateChatStatus(
+    chatStore.activeChat.chat_id,
+    EChatStatus.in_chat
+  );
+
+  if (success) {
+    chatStore.showSnackbar(t('chat_reopened_successfully'), EColor.success);
   }
 };
 
@@ -5053,12 +5075,15 @@ onBeforeUnmount(() => {
 
           <ChatQueueStatusBanner
             :is-queue-status="isQueueOrUraStatus"
+            :is-closed-status="isClosedStatus"
             :can-attend-chat="canAttendChat"
+            :can-reopen-chat="canReopenChat"
             :cannot-attend-due-to-status="cannotAttendDueToStatus"
             :cannot-attend-due-to-limit="cannotAttendDueToLimit"
             :worker-config-for-chat="workerConfigForChat"
             :loading="chatStore.loading"
             @attend="handleAttendChat"
+            @reopen="handleReopenChat"
           />
 
           <VCard

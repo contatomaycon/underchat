@@ -7,7 +7,9 @@ const { t } = useI18n();
 
 const props = defineProps<{
   isQueueStatus: boolean;
+  isClosedStatus: boolean;
   canAttendChat: boolean;
+  canReopenChat: boolean;
   cannotAttendDueToStatus: boolean;
   cannotAttendDueToLimit: boolean;
   workerConfigForChat: ViewWorkerConfigForChatResponse | null;
@@ -16,9 +18,17 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   attend: [];
+  reopen: [];
 }>();
 
 const message = computed(() => {
+  if (props.isClosedStatus) {
+    return t(
+      'chat_closed_message',
+      'Para reabrir o atendimento clique em reabrir'
+    );
+  }
+
   if (props.canAttendChat) {
     return t(
       'chat_queue_message',
@@ -38,24 +48,49 @@ const message = computed(() => {
     'Para iniciar o atendimento clique em atender'
   );
 });
+
+const buttonText = computed(() => {
+  if (props.isClosedStatus) {
+    return t('reopen', 'Reabrir');
+  }
+  return t('attend', 'Atender');
+});
+
+const showButton = computed(() => {
+  if (props.isClosedStatus && props.canReopenChat) {
+    return true;
+  }
+  if (props.isQueueStatus && props.canAttendChat) {
+    return true;
+  }
+  return false;
+});
+
+const handleClick = () => {
+  if (props.isClosedStatus) {
+    emit('reopen');
+    return;
+  }
+  emit('attend');
+};
 </script>
 
 <template>
   <div
-    v-if="isQueueStatus"
+    v-if="isQueueStatus || isClosedStatus"
     class="d-flex align-center justify-space-between pa-4 bg-surface rounded mb-2"
   >
     <span class="text-body-2 text-medium-emphasis">
       {{ message }}
     </span>
     <VBtn
-      v-if="canAttendChat"
+      v-if="showButton"
       color="primary"
       size="small"
-      @click="$emit('attend')"
+      @click="handleClick"
       :loading="loading"
     >
-      {{ t('attend', 'Atender') }}
+      {{ buttonText }}
     </VBtn>
   </div>
 </template>

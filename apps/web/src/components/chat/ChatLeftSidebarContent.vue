@@ -182,6 +182,7 @@ const filteredMyChats = computed(() => {
 
 const hasActiveFilters = computed(() => {
   return !!(
+    searchQuery.value?.trim() ||
     currentFilterStatus.value ||
     currentFilterLabelTemplateId.value ||
     currentFilterWorkerId.value ||
@@ -316,6 +317,22 @@ const showQueueTitle = computed(() => {
   return activeFilter.value === 'all';
 });
 
+const expandedFilterText = computed(() => {
+  if (!expandedFilter.value) return '';
+
+  const filterTextMap: Record<FilterType, string> = {
+    new: chatStore.i18n.global.t('new', 'Novo'),
+    all: chatStore.i18n.global.t('all', 'Todos'),
+    in_chat: chatStore.i18n.global.t('in_service'),
+    queue: chatStore.i18n.global.t('waiting_for_service'),
+    my_chats: chatStore.i18n.global.t('my_chats', 'Meus atendimentos'),
+    chatbot: chatStore.i18n.global.t('chatbot', 'ChatBot'),
+    closed: chatStore.i18n.global.t('closed', 'Fechado'),
+  };
+
+  return filterTextMap[expandedFilter.value] || '';
+});
+
 const queueSelectionPermissions = [
   EGeneralPermissions.full_access,
   EGeneralPermissions.full_access_group,
@@ -427,6 +444,7 @@ const handleFiltersUpdated = async () => {
 };
 
 const handleClearFilters = async () => {
+  searchQuery.value = '';
   currentFilterStatus.value = null;
   currentFilterLabelTemplateId.value = null;
   currentFilterWorkerId.value = null;
@@ -981,7 +999,13 @@ const handleChatScroll = async (event?: Event) => {
           isLoadingMoreQueue.value = true;
           isLoadingMoreInChat.value = true;
           allChatsWithFiltersPagings.value.current_page += 1;
-          await loadChatsByFilter(true);
+
+          if (searchQuery.value && searchQuery.value.trim().length > 0) {
+            await performSearch(true);
+          } else {
+            await loadChatsByFilter(true);
+          }
+
           isLoadingMoreQueue.value = false;
           isLoadingMoreInChat.value = false;
         }
@@ -1235,13 +1259,12 @@ watch(debouncedContactSearch, () => {
   loadContacts();
 });
 
-const performSearch = async () => {
+const performSearch = async (append = false) => {
   if (
     !debouncedSearchQuery.value ||
     debouncedSearchQuery.value.trim().length === 0
   ) {
     searchResults.value = [];
-    currentFilterStatus.value = null;
     searchPagings.value = {
       current_page: 1,
       total_pages: 1,
@@ -1249,15 +1272,30 @@ const performSearch = async () => {
       count: 0,
       total: 0,
     };
+
+    if (activeFilter.value === 'all') {
+      allChatsWithFiltersPagings.value.current_page = 1;
+      await loadChatsByFilter();
+    }
     return;
   }
 
+  if (activeFilter.value !== 'all' && !append) {
+    activeFilter.value = 'all';
+  }
+
   isSearching.value = true;
+  isLoadingAllChatsWithFilters.value = true;
+
   try {
     const filters = getChatUserFilters();
+    const currentPage = append
+      ? allChatsWithFiltersPagings.value.current_page
+      : 1;
+
     const request: SearchChatsQuery = {
-      current_page: 1,
-      per_page: 20,
+      current_page: currentPage,
+      per_page: 50,
       search: debouncedSearchQuery.value.trim(),
       filter_status: filters.filter_status,
       filter_label_template_id: filters.filter_label_template_id,
@@ -1274,11 +1312,96 @@ const performSearch = async () => {
     const result = await chatStore.searchChats(request);
 
     if (result) {
-      searchResults.value = result.results;
+      if (append) {
+        searchResults.value = [...searchResults.value, ...result.results];
+      } else {
+        searchResults.value = result.results;
+      }
       searchPagings.value = result.pagings;
+      allChatsWithFiltersPagings.value = result.pagings;
+
+      if (result.counts) {
+        searchChatsCounts.value = result.counts;
+      }
+
+      const queueChats: ListChatsResult[] = [];
+      const inChatChats: ListChatsResult[] = [];
+      const chatbotChats: ListChatsResult[] = [];
+      const closedChats: ListChatsResult[] = [];
+
+      for (const chat of result.results) {
+        if (chat.status === EChatStatus.queue) {
+          queueChats.push(chat);
+        } else if (chat.status === EChatStatus.in_chat) {
+          inChatChats.push(chat);
+        } else if (chat.status === EChatStatus.ura) {
+          chatbotChats.push(chat);
+        } else if (chat.status === EChatStatus.closed) {
+          closedChats.push(chat);
+        }
+      }
+
+      if (append) {
+        chatStore.listQueue.push(...queueChats);
+        chatStore.listInChat.push(...inChatChats);
+        chatStore.listChatbot.push(...chatbotChats);
+        listClosed.value.push(...closedChats);
+        chatStore.listClosed.push(...closedChats);
+      } else {
+        chatStore.listQueue = queueChats;
+        chatStore.listInChat = inChatChats;
+        chatStore.listChatbot = chatbotChats;
+        listClosed.value = closedChats;
+        chatStore.listClosed = closedChats;
+      }
+
+      chatStore.queuePagings = {
+        current_page: allChatsWithFiltersPagings.value.current_page,
+        total_pages: allChatsWithFiltersPagings.value.total_pages,
+        per_page: allChatsWithFiltersPagings.value.per_page,
+        count: chatStore.listQueue.length,
+        total: chatStore.listQueue.length,
+      };
+
+      chatStore.inChatPagings = {
+        current_page: allChatsWithFiltersPagings.value.current_page,
+        total_pages: allChatsWithFiltersPagings.value.total_pages,
+        per_page: allChatsWithFiltersPagings.value.per_page,
+        count: chatStore.listInChat.length,
+        total: chatStore.listInChat.length,
+      };
+
+      chatbotPagings.value = {
+        current_page: allChatsWithFiltersPagings.value.current_page,
+        total_pages: allChatsWithFiltersPagings.value.total_pages,
+        per_page: allChatsWithFiltersPagings.value.per_page,
+        count: chatStore.listChatbot.length,
+        total: chatStore.listChatbot.length,
+      };
+
+      closedPagings.value = {
+        current_page: allChatsWithFiltersPagings.value.current_page,
+        total_pages: allChatsWithFiltersPagings.value.total_pages,
+        per_page: allChatsWithFiltersPagings.value.per_page,
+        count: listClosed.value.length,
+        total: listClosed.value.length,
+      };
+
+      const chatsToProcess = append
+        ? result.results
+        : [
+            ...chatStore.listQueue,
+            ...chatStore.listInChat,
+            ...chatStore.listChatbot,
+            ...listClosed.value,
+          ];
+
+      await Promise.all([
+        loadWorkerConfigs(chatsToProcess),
+        loadChatContacts(chatsToProcess),
+      ]);
     } else {
       searchResults.value = [];
-      currentFilterStatus.value = null;
       searchPagings.value = {
         current_page: 1,
         total_pages: 1,
@@ -1286,12 +1409,28 @@ const performSearch = async () => {
         count: 0,
         total: 0,
       };
+      if (!append) {
+        chatStore.listQueue = [];
+        chatStore.listInChat = [];
+        chatStore.listChatbot = [];
+        listClosed.value = [];
+        chatStore.listClosed = [];
+        searchChatsCounts.value = null;
+      }
     }
   } catch {
     searchResults.value = [];
-    currentFilterStatus.value = null;
+    if (!append) {
+      chatStore.listQueue = [];
+      chatStore.listInChat = [];
+      chatStore.listChatbot = [];
+      listClosed.value = [];
+      chatStore.listClosed = [];
+      searchChatsCounts.value = null;
+    }
   } finally {
     isSearching.value = false;
+    isLoadingAllChatsWithFilters.value = false;
   }
 };
 
@@ -1540,7 +1679,16 @@ onMounted(async () => {
       prepend-inner-icon="tabler-search"
       class="ms-4 me-1 chat-list-search"
       :loading="isSearching"
-    />
+    >
+      <template #append-inner>
+        <VIcon
+          v-if="searchQuery && searchQuery.trim().length > 0"
+          icon="tabler-x"
+          class="cursor-pointer"
+          @click="searchQuery = ''"
+        />
+      </template>
+    </AppTextField>
 
     <IconBtn class="me-1" @click="isAdvancedFiltersModalOpen = true">
       <VIcon icon="tabler-filter" class="text-medium-emphasis" />
@@ -1715,59 +1863,14 @@ onMounted(async () => {
     </div>
     <Transition name="expand">
       <div v-if="expandedFilter" class="chat-filter-expanded-full">
-        {{
-          expandedFilter === 'new'
-            ? $t('new', 'Novo')
-            : expandedFilter === 'all'
-              ? $t('all', 'Todos')
-              : expandedFilter === 'in_chat'
-                ? $t('in_service')
-                : expandedFilter === 'queue'
-                  ? $t('waiting_for_service')
-                  : expandedFilter === 'my_chats'
-                    ? $t('my_chats', 'Meus atendimentos')
-                    : expandedFilter === 'chatbot'
-                      ? $t('chatbot', 'ChatBot')
-                      : expandedFilter === 'closed'
-                        ? $t('closed', 'Fechado')
-                        : ''
-        }}
+        {{ expandedFilterText }}
       </div>
     </Transition>
   </div>
 
   <VDivider />
 
-  <template v-if="searchQuery && searchQuery.trim().length > 0">
-    <PerfectScrollbar
-      :options="{ wheelPropagation: false }"
-      class="flex-grow-1"
-    >
-      <ul class="d-flex flex-column gap-y-1 chat-list px-3 py-2 list-none">
-        <li v-if="isSearching" class="no-chat-items-text text-disabled">
-          {{ $t('searching') }}
-        </li>
-        <template v-else>
-          <ChatQueue
-            v-for="result in searchResults"
-            :key="`search-${result.chat_id || 'unknown'}`"
-            :user="result"
-            @click="
-              result.chat_id ? $emit('openChat', result.chat_id) : undefined
-            "
-          />
-          <li
-            v-if="!searchResults.length && !isSearching"
-            class="no-chat-items-text text-disabled"
-          >
-            {{ $t('no_results_found') }}
-          </li>
-        </template>
-      </ul>
-    </PerfectScrollbar>
-  </template>
-
-  <template v-else-if="activeFilter === 'new'">
+  <template v-if="activeFilter === 'new'">
     <div class="px-3 py-3">
       <div class="d-flex align-center gap-2 mb-3">
         <AppTextField
