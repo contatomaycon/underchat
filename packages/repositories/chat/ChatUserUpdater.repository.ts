@@ -29,16 +29,32 @@ export class ChatUserUpdaterRepository {
       inputUpdate.notifications = input.notifications;
     }
 
+    if (input.sort_by_chat_order !== undefined) {
+      inputUpdate.sort_by_chat_order = input.sort_by_chat_order;
+    }
+
     if (input.sort_in_chat_order !== undefined) {
       inputUpdate.sort_in_chat_order = input.sort_in_chat_order;
+    }
+
+    if (input.sort_by_my_chats_order !== undefined) {
+      inputUpdate.sort_by_my_chats_order = input.sort_by_my_chats_order;
     }
 
     if (input.sort_my_chats_order !== undefined) {
       inputUpdate.sort_my_chats_order = input.sort_my_chats_order;
     }
 
+    if (input.sort_by_queue_order !== undefined) {
+      inputUpdate.sort_by_queue_order = input.sort_by_queue_order;
+    }
+
     if (input.sort_queue_order !== undefined) {
       inputUpdate.sort_queue_order = input.sort_queue_order;
+    }
+
+    if (input.sort_by_chatbot_order !== undefined) {
+      inputUpdate.sort_by_chatbot_order = input.sort_by_chatbot_order;
     }
 
     if (input.sort_chatbot_order !== undefined) {

@@ -685,7 +685,7 @@ const updateContact = async () => {
     contact_document_type_id: contact_document_type_id.value,
     document: documentToSave,
     image_url: imageUrl,
-    user_id: { value: user_id.value },
+    user_id: { value: user_id.value ?? null },
     ignore: {
       value: (ignore.value as EContactIgnore) ?? EContactIgnore.not_ignore,
     },

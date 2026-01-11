@@ -326,6 +326,11 @@ const resetForm = () => {
     document.value = extractFieldValue(
       props.initialData.document as FieldValue
     );
+    user_id.value = extractFieldValue(props.initialData.user_id as FieldValue);
+    ignore.value =
+      (extractFieldValue(
+        props.initialData.ignore as FieldValue
+      ) as EContactIgnore) ?? EContactIgnore.not_ignore;
   } else {
     label_template_id.value = null;
     name.value = null;
@@ -338,6 +343,8 @@ const resetForm = () => {
     notes.value = null;
     contact_document_type_id.value = null;
     document.value = null;
+    user_id.value = null;
+    ignore.value = EContactIgnore.not_ignore;
   }
   photoFile.value = null;
   photoPreview.value = null;

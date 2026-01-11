@@ -18,9 +18,13 @@ export const chatUser = pgTable(
       .notNull(),
     about: varchar({ length: 200 }),
     notifications: boolean().default(true),
+    sort_by_chat_order: varchar({ length: 50 }),
     sort_in_chat_order: varchar({ length: 10 }),
+    sort_by_my_chats_order: varchar({ length: 50 }),
     sort_my_chats_order: varchar({ length: 10 }),
+    sort_by_queue_order: varchar({ length: 50 }),
     sort_queue_order: varchar({ length: 10 }),
+    sort_by_chatbot_order: varchar({ length: 50 }),
     sort_chatbot_order: varchar({ length: 10 }),
     created_at: timestamp({
       mode: 'string',

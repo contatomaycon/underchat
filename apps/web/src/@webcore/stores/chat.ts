@@ -1031,14 +1031,26 @@ export const useChatStore = defineStore('chat', {
         if (this.user?.chat_user) {
           const updatedChatUser = {
             ...this.user.chat_user,
+            sort_by_chat_order:
+              input.sort_by_chat_order ??
+              this.user.chat_user.sort_by_chat_order,
             sort_in_chat_order:
               input.sort_in_chat_order ??
               this.user.chat_user.sort_in_chat_order,
+            sort_by_my_chats_order:
+              input.sort_by_my_chats_order ??
+              this.user.chat_user.sort_by_my_chats_order,
             sort_my_chats_order:
               input.sort_my_chats_order ??
               this.user.chat_user.sort_my_chats_order,
+            sort_by_queue_order:
+              input.sort_by_queue_order ??
+              this.user.chat_user.sort_by_queue_order,
             sort_queue_order:
               input.sort_queue_order ?? this.user.chat_user.sort_queue_order,
+            sort_by_chatbot_order:
+              input.sort_by_chatbot_order ??
+              this.user.chat_user.sort_by_chatbot_order,
             sort_chatbot_order:
               input.sort_chatbot_order ??
               this.user.chat_user.sort_chatbot_order,
@@ -2004,9 +2016,10 @@ export const useChatStore = defineStore('chat', {
     },
 
     async getChatContactById(
-      contactId: string
+      contactId: string,
+      force = false
     ): Promise<ViewChatContactResponse | null> {
-      if (this.chatContacts[contactId]) {
+      if (!force && this.chatContacts[contactId]) {
         return this.chatContacts[contactId];
       }
 
@@ -2400,24 +2413,14 @@ export const useChatStore = defineStore('chat', {
           formData.append('photo', photoFile);
         }
         if (body.user_id !== undefined) {
-          if (
-            typeof body.user_id === 'object' &&
-            body.user_id !== null &&
-            'value' in body.user_id
-          ) {
-            const userIdValue = body.user_id.value;
-            formData.append('user_id', userIdValue ?? '');
-          }
+          const userIdValue = this.extractFieldValue(
+            body.user_id as FieldValue
+          );
+          formData.append('user_id', userIdValue);
         }
         if (body.ignore !== undefined) {
-          if (
-            typeof body.ignore === 'object' &&
-            body.ignore !== null &&
-            'value' in body.ignore
-          ) {
-            const ignoreValue = body.ignore.value;
-            formData.append('ignore', ignoreValue ?? '');
-          }
+          const ignoreValue = this.extractFieldValue(body.ignore as FieldValue);
+          formData.append('ignore', ignoreValue);
         }
 
         const response = await axios.patch<IApiResponse<boolean>>(
@@ -2443,7 +2446,7 @@ export const useChatStore = defineStore('chat', {
           return false;
         }
 
-        void this.getChatContactById(payload.contact_id);
+        await this.getChatContactById(payload.contact_id, true);
 
         this.showSnackbar(
           this.i18n.global.t('contact_edit_success'),

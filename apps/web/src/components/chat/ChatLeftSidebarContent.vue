@@ -1,11 +1,12 @@
 <script lang="ts" setup>
-import { nextTick, computed, ref } from 'vue';
+import { nextTick, computed, ref, watch } from 'vue';
 import { PerfectScrollbar } from 'vue3-perfect-scrollbar';
 import ChatQueue from './ChatQueue.vue';
 import AppAddContactChat from '@/components/chat/AppAddContactChat.vue';
 import AppEditContactChat from '@/components/chat/AppEditContactChat.vue';
 import ChatAdvancedFiltersModal from '@/components/chat/ChatAdvancedFiltersModal.vue';
 import ChatContactAdvancedFiltersModal from '@/components/chat/ChatContactAdvancedFiltersModal.vue';
+import ChatSortModal from '@/components/chat/ChatSortModal.vue';
 import { useChatStore } from '@/@webcore/stores/chat';
 import { useChannelsStore } from '@/@webcore/stores/channels';
 import { ListChatContactsResponse } from '@core/schema/chat/listContacts/response.schema';
@@ -421,6 +422,177 @@ const handleFilterClick = (filter: FilterType) => {
   }
 };
 
+const updateSortValuesFromChatUser = () => {
+  if (!chatStore.user?.chat_user) return;
+
+  const chatUser = chatStore.user.chat_user;
+
+  if (chatUser.sort_by_chat_order) {
+    sortInChatField.value = chatUser.sort_by_chat_order;
+    sortAllInChatField.value = chatUser.sort_by_chat_order;
+  }
+  if (chatUser.sort_in_chat_order) {
+    sortInChatOrder.value = chatUser.sort_in_chat_order;
+    sortAllInChatOrder.value = chatUser.sort_in_chat_order;
+  }
+  if (chatUser.sort_by_queue_order) {
+    sortQueueField.value = chatUser.sort_by_queue_order;
+    sortAllQueueField.value = chatUser.sort_by_queue_order;
+  }
+  if (chatUser.sort_queue_order) {
+    sortQueueOrder.value = chatUser.sort_queue_order;
+    sortAllQueueOrder.value = chatUser.sort_queue_order;
+  }
+  if (chatUser.sort_by_my_chats_order) {
+    sortMyChatsField.value = chatUser.sort_by_my_chats_order;
+  }
+  if (chatUser.sort_my_chats_order) {
+    sortMyChatsOrder.value = chatUser.sort_my_chats_order;
+  }
+  if (chatUser.sort_by_chatbot_order) {
+    sortChatbotField.value = chatUser.sort_by_chatbot_order;
+  }
+  if (chatUser.sort_chatbot_order) {
+    sortChatbotOrder.value = chatUser.sort_chatbot_order;
+  }
+};
+
+watch(
+  () => chatStore.user?.chat_user,
+  () => {
+    updateSortValuesFromChatUser();
+  },
+  { deep: true, immediate: true }
+);
+
+const openSortModal = (
+  filterType: 'all' | 'in_chat' | 'queue' | 'my_chats' | 'chatbot'
+) => {
+  sortModalFilterType.value = filterType;
+
+  updateSortValuesFromChatUser();
+
+  if (filterType === 'all') {
+    sortModalField.value =
+      chatStore.user?.chat_user?.sort_by_chat_order ??
+      sortAllInChatField.value ??
+      'summary.last_message';
+    sortModalOrder.value =
+      chatStore.user?.chat_user?.sort_in_chat_order ??
+      sortAllInChatOrder.value ??
+      'desc';
+  } else if (filterType === 'in_chat') {
+    sortModalField.value =
+      chatStore.user?.chat_user?.sort_by_chat_order ??
+      sortInChatField.value ??
+      'summary.last_message';
+    sortModalOrder.value =
+      chatStore.user?.chat_user?.sort_in_chat_order ??
+      sortInChatOrder.value ??
+      'desc';
+  } else if (filterType === 'queue') {
+    sortModalField.value =
+      chatStore.user?.chat_user?.sort_by_queue_order ??
+      sortQueueField.value ??
+      'summary.last_message';
+    sortModalOrder.value =
+      chatStore.user?.chat_user?.sort_queue_order ??
+      sortQueueOrder.value ??
+      'desc';
+  } else if (filterType === 'my_chats') {
+    sortModalField.value =
+      chatStore.user?.chat_user?.sort_by_my_chats_order ??
+      sortMyChatsField.value ??
+      'summary.last_message';
+    sortModalOrder.value =
+      chatStore.user?.chat_user?.sort_my_chats_order ??
+      sortMyChatsOrder.value ??
+      'desc';
+  } else if (filterType === 'chatbot') {
+    sortModalField.value =
+      chatStore.user?.chat_user?.sort_by_chatbot_order ??
+      sortChatbotField.value ??
+      'summary.last_message';
+    sortModalOrder.value =
+      chatStore.user?.chat_user?.sort_chatbot_order ??
+      sortChatbotOrder.value ??
+      'desc';
+  }
+
+  isSortModalOpen.value = true;
+};
+
+const handleSortSave = async (status?: 'in_chat' | 'queue') => {
+  const filterType = sortModalFilterType.value;
+  const updateData: any = {
+    notifications: chatStore.user?.chat_user?.notifications ?? false,
+  };
+
+  if (filterType === 'all') {
+    if (status === 'in_chat') {
+      sortAllInChatField.value = sortModalField.value;
+      sortAllInChatOrder.value = sortModalOrder.value;
+      updateData.sort_by_chat_order = sortModalField.value;
+      updateData.sort_in_chat_order = sortModalOrder.value;
+    } else if (status === 'queue') {
+      sortAllQueueField.value = sortModalField.value;
+      sortAllQueueOrder.value = sortModalOrder.value;
+      updateData.sort_by_queue_order = sortModalField.value;
+      updateData.sort_queue_order = sortModalOrder.value;
+    } else {
+      sortAllInChatField.value = sortModalField.value;
+      sortAllInChatOrder.value = sortModalOrder.value;
+      sortAllQueueField.value = sortModalField.value;
+      sortAllQueueOrder.value = sortModalOrder.value;
+      updateData.sort_by_chat_order = sortModalField.value;
+      updateData.sort_in_chat_order = sortModalOrder.value;
+      updateData.sort_by_queue_order = sortModalField.value;
+      updateData.sort_queue_order = sortModalOrder.value;
+    }
+  } else if (filterType === 'in_chat') {
+    sortInChatField.value = sortModalField.value;
+    sortInChatOrder.value = sortModalOrder.value;
+    updateData.sort_by_chat_order = sortModalField.value;
+    updateData.sort_in_chat_order = sortModalOrder.value;
+  } else if (filterType === 'queue') {
+    sortQueueField.value = sortModalField.value;
+    sortQueueOrder.value = sortModalOrder.value;
+    updateData.sort_by_queue_order = sortModalField.value;
+    updateData.sort_queue_order = sortModalOrder.value;
+  } else if (filterType === 'my_chats') {
+    sortMyChatsField.value = sortModalField.value;
+    sortMyChatsOrder.value = sortModalOrder.value;
+    updateData.sort_by_my_chats_order = sortModalField.value;
+    updateData.sort_my_chats_order = sortModalOrder.value;
+  } else if (filterType === 'chatbot') {
+    sortChatbotField.value = sortModalField.value;
+    sortChatbotOrder.value = sortModalOrder.value;
+    updateData.sort_by_chatbot_order = sortModalField.value;
+    updateData.sort_chatbot_order = sortModalOrder.value;
+  }
+
+  await chatStore.updateChatsUser(updateData);
+
+  if (activeFilter.value === 'all') {
+    currentPageQueue.value = 1;
+    currentPageInChat.value = 1;
+    loadChatsByFilter();
+  } else if (activeFilter.value === 'in_chat') {
+    currentPageInChat.value = 1;
+    loadChatsByFilter();
+  } else if (activeFilter.value === 'queue') {
+    currentPageQueue.value = 1;
+    loadChatsByFilter();
+  } else if (activeFilter.value === 'my_chats') {
+    currentPageQueue.value = 1;
+    currentPageInChat.value = 1;
+    loadChatsByFilter();
+  } else if (activeFilter.value === 'chatbot') {
+    chatbotPagings.value.current_page = 1;
+    loadChatbotChats();
+  }
+};
+
 const handleFiltersUpdated = async () => {
   hasAppliedAdvancedFilters.value = true;
 
@@ -586,6 +758,70 @@ const currentFilterDateEnd = ref<string | null>(null);
 const currentSortField = ref<string | null>('summary.last_message');
 const currentSortOrder = ref<string | null>('desc');
 
+const getSortFieldFromChatUser = (
+  field:
+    | 'sort_by_chat_order'
+    | 'sort_by_queue_order'
+    | 'sort_by_my_chats_order'
+    | 'sort_by_chatbot_order'
+): string | null => {
+  return chatStore.user?.chat_user?.[field] ?? 'summary.last_message';
+};
+
+const getSortOrderFromChatUser = (
+  field:
+    | 'sort_in_chat_order'
+    | 'sort_queue_order'
+    | 'sort_my_chats_order'
+    | 'sort_chatbot_order'
+): string | null => {
+  return chatStore.user?.chat_user?.[field] ?? 'desc';
+};
+
+const sortInChatField = ref<string | null>(
+  getSortFieldFromChatUser('sort_by_chat_order')
+);
+const sortInChatOrder = ref<string | null>(
+  getSortOrderFromChatUser('sort_in_chat_order')
+);
+const sortQueueField = ref<string | null>(
+  getSortFieldFromChatUser('sort_by_queue_order')
+);
+const sortQueueOrder = ref<string | null>(
+  getSortOrderFromChatUser('sort_queue_order')
+);
+const sortMyChatsField = ref<string | null>(
+  getSortFieldFromChatUser('sort_by_my_chats_order')
+);
+const sortMyChatsOrder = ref<string | null>(
+  getSortOrderFromChatUser('sort_my_chats_order')
+);
+const sortChatbotField = ref<string | null>(
+  getSortFieldFromChatUser('sort_by_chatbot_order')
+);
+const sortChatbotOrder = ref<string | null>(
+  getSortOrderFromChatUser('sort_chatbot_order')
+);
+const sortAllInChatField = ref<string | null>(
+  getSortFieldFromChatUser('sort_by_chat_order')
+);
+const sortAllInChatOrder = ref<string | null>(
+  getSortOrderFromChatUser('sort_in_chat_order')
+);
+const sortAllQueueField = ref<string | null>(
+  getSortFieldFromChatUser('sort_by_queue_order')
+);
+const sortAllQueueOrder = ref<string | null>(
+  getSortOrderFromChatUser('sort_queue_order')
+);
+
+const isSortModalOpen = ref(false);
+const sortModalFilterType = ref<
+  'all' | 'in_chat' | 'queue' | 'my_chats' | 'chatbot'
+>('all');
+const sortModalField = ref<string | null>('summary.last_message');
+const sortModalOrder = ref<string | null>('desc');
+
 const getChatUserFilters = () => {
   return {
     filter_status: currentFilterStatus.value ?? undefined,
@@ -625,8 +861,8 @@ const loadAllChatsWithFilters = async (append = false) => {
       filter_protocol: filters.filter_protocol,
       filter_date_start: filters.filter_date_start,
       filter_date_end: filters.filter_date_end,
-      sort_field: filters.sort_field,
-      sort_order: filters.sort_order,
+      sort_field: sortAllInChatField.value ?? filters.sort_field,
+      sort_order: sortAllInChatOrder.value ?? filters.sort_order,
     };
 
     const result = await chatStore.searchChats(request);
@@ -782,6 +1018,46 @@ const loadChatsByFilter = async (append = false) => {
   }
 
   if (activeFilter.value === 'in_chat') {
+    if (
+      sortInChatField.value ||
+      sortInChatOrder.value ||
+      hasActiveFilters.value
+    ) {
+      const request: SearchChatsQuery = {
+        current_page: currentPageInChat.value,
+        per_page: perPageInChat.value,
+        search: '',
+        filter_status: EChatStatus.in_chat,
+        filter_label_template_id: filters.filter_label_template_id,
+        filter_worker_id: filters.filter_worker_id,
+        filter_user_id: filters.filter_user_id,
+        filter_sector_id: filters.filter_sector_id,
+        filter_name: filters.filter_name,
+        filter_phone: filters.filter_phone,
+        filter_protocol: filters.filter_protocol,
+        filter_date_start: filters.filter_date_start,
+        filter_date_end: filters.filter_date_end,
+        sort_field: sortInChatField.value ?? filters.sort_field,
+        sort_order: sortInChatOrder.value ?? filters.sort_order,
+      };
+
+      const result = await chatStore.searchChats(request);
+      if (result) {
+        if (append) {
+          chatStore.listInChat.push(...result.results);
+        } else {
+          chatStore.listInChat = result.results;
+        }
+        chatStore.inChatPagings = result.pagings;
+        const chatsToProcess = append ? result.results : chatStore.listInChat;
+        await Promise.all([
+          loadWorkerConfigs(chatsToProcess),
+          loadChatContacts(chatsToProcess),
+        ]);
+      }
+      return;
+    }
+
     const requestInChat: ListChatsQuery = {
       current_page: currentPageInChat.value,
       per_page: perPageInChat.value,
@@ -807,6 +1083,46 @@ const loadChatsByFilter = async (append = false) => {
   }
 
   if (activeFilter.value === 'queue') {
+    if (
+      sortQueueField.value ||
+      sortQueueOrder.value ||
+      hasActiveFilters.value
+    ) {
+      const request: SearchChatsQuery = {
+        current_page: currentPageQueue.value,
+        per_page: perPageQueue.value,
+        search: '',
+        filter_status: EChatStatus.queue,
+        filter_label_template_id: filters.filter_label_template_id,
+        filter_worker_id: filters.filter_worker_id,
+        filter_user_id: filters.filter_user_id,
+        filter_sector_id: filters.filter_sector_id,
+        filter_name: filters.filter_name,
+        filter_phone: filters.filter_phone,
+        filter_protocol: filters.filter_protocol,
+        filter_date_start: filters.filter_date_start,
+        filter_date_end: filters.filter_date_end,
+        sort_field: sortQueueField.value ?? filters.sort_field,
+        sort_order: sortQueueOrder.value ?? filters.sort_order,
+      };
+
+      const result = await chatStore.searchChats(request);
+      if (result) {
+        if (append) {
+          chatStore.listQueue.push(...result.results);
+        } else {
+          chatStore.listQueue = result.results;
+        }
+        chatStore.queuePagings = result.pagings;
+        const chatsToProcess = append ? result.results : chatStore.listQueue;
+        await Promise.all([
+          loadWorkerConfigs(chatsToProcess),
+          loadChatContacts(chatsToProcess),
+        ]);
+      }
+      return;
+    }
+
     const requestQueue: ListChatsQuery = {
       current_page: currentPageQueue.value,
       per_page: perPageQueue.value,
@@ -889,6 +1205,49 @@ const loadChatbotChats = async (append = false) => {
 
   try {
     const filters = getChatUserFilters();
+
+    if (
+      sortChatbotField.value ||
+      sortChatbotOrder.value ||
+      hasActiveFilters.value
+    ) {
+      const request: SearchChatsQuery = {
+        current_page: chatbotPagings.value.current_page,
+        per_page: chatbotPagings.value.per_page,
+        search: '',
+        filter_status: EChatStatus.ura,
+        filter_label_template_id: filters.filter_label_template_id,
+        filter_worker_id: filters.filter_worker_id,
+        filter_user_id: filters.filter_user_id,
+        filter_sector_id: filters.filter_sector_id,
+        filter_name: filters.filter_name,
+        filter_phone: filters.filter_phone,
+        filter_protocol: filters.filter_protocol,
+        filter_date_start: filters.filter_date_start,
+        filter_date_end: filters.filter_date_end,
+        sort_field: sortChatbotField.value ?? filters.sort_field,
+        sort_order: sortChatbotOrder.value ?? filters.sort_order,
+      };
+
+      const result = await chatStore.searchChats(request);
+
+      if (result) {
+        chatbotPagings.value = result.pagings;
+        if (append) {
+          chatStore.listChatbot.push(...result.results);
+        } else {
+          chatStore.listChatbot = result.results;
+        }
+        const chatsToProcess = append ? result.results : chatStore.listChatbot;
+        await Promise.all([
+          loadWorkerConfigs(chatsToProcess),
+          loadChatContacts(chatsToProcess),
+        ]);
+      }
+      isLoadingChatbot.value = false;
+      return;
+    }
+
     const request: ListChatsQuery = {
       current_page: chatbotPagings.value.current_page,
       per_page: chatbotPagings.value.per_page,
@@ -1923,8 +2282,42 @@ defineExpose({
       </div>
     </div>
     <Transition name="expand">
-      <div v-if="expandedFilter" class="chat-filter-expanded-full">
-        {{ expandedFilterText }}
+      <div
+        v-if="expandedFilter"
+        class="chat-filter-expanded-full d-flex align-center justify-space-between"
+      >
+        <span>{{ expandedFilterText }}</span>
+        <IconBtn
+          v-if="
+            expandedFilter === 'in_chat' ||
+            expandedFilter === 'queue' ||
+            expandedFilter === 'my_chats' ||
+            expandedFilter === 'chatbot'
+          "
+          size="small"
+          variant="text"
+          @click="
+            openSortModal(
+              expandedFilter as 'in_chat' | 'queue' | 'my_chats' | 'chatbot'
+            )
+          "
+        >
+          <VIcon size="18">tabler-arrows-sort</VIcon>
+          <VTooltip activator="parent" location="top">
+            {{ $t('sort', 'Ordenar') }}
+          </VTooltip>
+        </IconBtn>
+        <IconBtn
+          v-if="expandedFilter === 'all'"
+          size="small"
+          variant="text"
+          @click="openSortModal('all')"
+        >
+          <VIcon size="18">tabler-arrows-sort</VIcon>
+          <VTooltip activator="parent" location="top">
+            {{ $t('sort', 'Ordenar') }}
+          </VTooltip>
+        </IconBtn>
       </div>
     </Transition>
   </div>
@@ -2435,6 +2828,123 @@ defineExpose({
     </PerfectScrollbar>
   </template>
 
+  <template v-else-if="activeFilter === 'in_chat'">
+    <PerfectScrollbar
+      ref="chatScrollContainer"
+      :options="{ wheelPropagation: false }"
+      @ps-scroll-y="handleChatScroll"
+    >
+      <ul class="d-flex flex-column gap-y-1 chat-list px-3 py-2 list-none">
+        <template v-if="chatStore.loadingChats || isLoadingWorkerConfigs">
+          <li
+            v-for="i in 5"
+            :key="`skeleton-in-chat-${i}`"
+            class="chat d-flex align-center"
+          >
+            <VSkeletonLoader type="avatar" width="40" height="40" />
+            <div class="flex-grow-1 ms-4 overflow-hidden min-w-0">
+              <VSkeletonLoader
+                type="text"
+                width="60%"
+                height="20"
+                class="mb-1"
+              />
+              <VSkeletonLoader
+                type="text"
+                width="40%"
+                height="16"
+                class="mb-1"
+              />
+              <VSkeletonLoader type="text" width="50%" height="16" />
+            </div>
+            <div class="d-flex flex-column align-self-start">
+              <VSkeletonLoader
+                type="text"
+                width="50"
+                height="16"
+                class="mb-1"
+              />
+              <VSkeletonLoader type="text" width="20" height="16" />
+            </div>
+          </li>
+        </template>
+        <template v-else>
+          <ChatQueue
+            v-for="inChat in filteredInChat"
+            :key="`chat-${inChat.chat_id}`"
+            :user="inChat"
+            @click="$emit('openChat', inChat.chat_id)"
+          />
+          <li
+            v-if="!filteredInChat.length"
+            class="no-chat-items-text text-disabled"
+          >
+            {{ $t('no_chat_in_service') }}
+          </li>
+        </template>
+      </ul>
+    </PerfectScrollbar>
+  </template>
+
+  <template v-else-if="activeFilter === 'queue'">
+    <PerfectScrollbar
+      ref="chatScrollContainer"
+      :options="{ wheelPropagation: false }"
+      @ps-scroll-y="handleChatScroll"
+    >
+      <ul class="d-flex flex-column gap-y-1 chat-list px-3 py-2 list-none">
+        <template v-if="chatStore.loadingChats || isLoadingWorkerConfigs">
+          <li
+            v-for="i in 5"
+            :key="`skeleton-queue-${i}`"
+            class="chat d-flex align-center"
+          >
+            <VSkeletonLoader type="avatar" width="40" height="40" />
+            <div class="flex-grow-1 ms-4 overflow-hidden min-w-0">
+              <VSkeletonLoader
+                type="text"
+                width="60%"
+                height="20"
+                class="mb-1"
+              />
+              <VSkeletonLoader
+                type="text"
+                width="40%"
+                height="16"
+                class="mb-1"
+              />
+              <VSkeletonLoader type="text" width="50%" height="16" />
+            </div>
+            <div class="d-flex flex-column align-self-start">
+              <VSkeletonLoader
+                type="text"
+                width="50"
+                height="16"
+                class="mb-1"
+              />
+              <VSkeletonLoader type="text" width="20" height="16" />
+            </div>
+          </li>
+        </template>
+        <template v-else>
+          <ChatQueue
+            v-for="(queue, index) in filteredQueue"
+            :key="`chat-${queue.chat_id}`"
+            :user="queue"
+            :disabled="!isQueueChatSelectable(index)"
+            @click="handleQueueClick(queue.chat_id, index)"
+          />
+          <li
+            v-if="!filteredQueue.length"
+            class="no-chat-items-text text-disabled"
+          >
+            {{ $t('no_chat_in_queue') }}
+          </li>
+        </template>
+      </ul>
+    </PerfectScrollbar>
+  </template>
+
   <PerfectScrollbar
     v-else
     ref="chatScrollContainer"
@@ -2799,6 +3309,16 @@ defineExpose({
     @update:sort-order="currentSortOrder = $event"
     @update:model-value="isAdvancedFiltersModalOpen = $event"
     @filters-updated="handleFiltersUpdated"
+  />
+
+  <ChatSortModal
+    v-model="isSortModalOpen"
+    :filter-type="sortModalFilterType"
+    :sort-field="sortModalField"
+    :sort-order="sortModalOrder"
+    @update:sort-field="sortModalField = $event"
+    @update:sort-order="sortModalOrder = $event"
+    @save="handleSortSave"
   />
 </template>
 
