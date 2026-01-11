@@ -422,49 +422,6 @@ const handleFilterClick = (filter: FilterType) => {
   }
 };
 
-const updateSortValuesFromChatUser = () => {
-  if (!chatStore.user?.chat_user) return;
-
-  const chatUser = chatStore.user.chat_user;
-
-  if (chatUser.sort_by_chat_order) {
-    sortInChatField.value = chatUser.sort_by_chat_order;
-    sortAllInChatField.value = chatUser.sort_by_chat_order;
-  }
-  if (chatUser.sort_in_chat_order) {
-    sortInChatOrder.value = chatUser.sort_in_chat_order;
-    sortAllInChatOrder.value = chatUser.sort_in_chat_order;
-  }
-  if (chatUser.sort_by_queue_order) {
-    sortQueueField.value = chatUser.sort_by_queue_order;
-    sortAllQueueField.value = chatUser.sort_by_queue_order;
-  }
-  if (chatUser.sort_queue_order) {
-    sortQueueOrder.value = chatUser.sort_queue_order;
-    sortAllQueueOrder.value = chatUser.sort_queue_order;
-  }
-  if (chatUser.sort_by_my_chats_order) {
-    sortMyChatsField.value = chatUser.sort_by_my_chats_order;
-  }
-  if (chatUser.sort_my_chats_order) {
-    sortMyChatsOrder.value = chatUser.sort_my_chats_order;
-  }
-  if (chatUser.sort_by_chatbot_order) {
-    sortChatbotField.value = chatUser.sort_by_chatbot_order;
-  }
-  if (chatUser.sort_chatbot_order) {
-    sortChatbotOrder.value = chatUser.sort_chatbot_order;
-  }
-};
-
-watch(
-  () => chatStore.user?.chat_user,
-  () => {
-    updateSortValuesFromChatUser();
-  },
-  { deep: true, immediate: true }
-);
-
 const openSortModal = (
   filterType: 'all' | 'in_chat' | 'queue' | 'my_chats' | 'chatbot'
 ) => {
@@ -813,6 +770,67 @@ const sortAllQueueField = ref<string | null>(
 );
 const sortAllQueueOrder = ref<string | null>(
   getSortOrderFromChatUser('sort_queue_order')
+);
+
+const updateSortValuesFromChatUser = () => {
+  if (!chatStore.user?.chat_user) return;
+
+  const chatUser = chatStore.user.chat_user;
+
+  if (chatUser.sort_by_chat_order) {
+    sortInChatField.value = chatUser.sort_by_chat_order;
+    sortAllInChatField.value = chatUser.sort_by_chat_order;
+  }
+  if (chatUser.sort_in_chat_order) {
+    sortInChatOrder.value = chatUser.sort_in_chat_order;
+    sortAllInChatOrder.value = chatUser.sort_in_chat_order;
+  }
+  if (chatUser.sort_by_queue_order) {
+    sortQueueField.value = chatUser.sort_by_queue_order;
+    sortAllQueueField.value = chatUser.sort_by_queue_order;
+  }
+  if (chatUser.sort_queue_order) {
+    sortQueueOrder.value = chatUser.sort_queue_order;
+    sortAllQueueOrder.value = chatUser.sort_queue_order;
+  }
+  if (chatUser.sort_by_my_chats_order) {
+    sortMyChatsField.value = chatUser.sort_by_my_chats_order;
+  }
+  if (chatUser.sort_my_chats_order) {
+    sortMyChatsOrder.value = chatUser.sort_my_chats_order;
+  }
+  if (chatUser.sort_by_chatbot_order) {
+    sortChatbotField.value = chatUser.sort_by_chatbot_order;
+  }
+  if (chatUser.sort_chatbot_order) {
+    sortChatbotOrder.value = chatUser.sort_chatbot_order;
+  }
+};
+
+watch(
+  () => chatStore.user?.chat_user,
+  () => {
+    updateSortValuesFromChatUser();
+  },
+  { deep: true, immediate: true }
+);
+
+const inChatSortFieldForModal = computed(
+  () =>
+    sortInChatField.value ?? sortAllInChatField.value ?? 'summary.last_message'
+);
+
+const inChatSortOrderForModal = computed(
+  () => sortInChatOrder.value ?? sortAllInChatOrder.value ?? 'desc'
+);
+
+const queueSortFieldForModal = computed(
+  () =>
+    sortQueueField.value ?? sortAllQueueField.value ?? 'summary.last_message'
+);
+
+const queueSortOrderForModal = computed(
+  () => sortQueueOrder.value ?? sortAllQueueOrder.value ?? 'desc'
 );
 
 const isSortModalOpen = ref(false);
@@ -3316,6 +3334,10 @@ defineExpose({
     :filter-type="sortModalFilterType"
     :sort-field="sortModalField"
     :sort-order="sortModalOrder"
+    :in-chat-sort-field="inChatSortFieldForModal"
+    :in-chat-sort-order="inChatSortOrderForModal"
+    :queue-sort-field="queueSortFieldForModal"
+    :queue-sort-order="queueSortOrderForModal"
     @update:sort-field="sortModalField = $event"
     @update:sort-order="sortModalOrder = $event"
     @save="handleSortSave"

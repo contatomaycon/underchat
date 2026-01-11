@@ -10,6 +10,10 @@ interface Props {
   sortField?: string | null;
   sortOrder?: string | null;
   filterType?: 'all' | 'in_chat' | 'queue' | 'my_chats' | 'chatbot';
+  inChatSortField?: string | null;
+  inChatSortOrder?: string | null;
+  queueSortField?: string | null;
+  queueSortOrder?: string | null;
 }
 
 interface Emits {
@@ -46,13 +50,56 @@ watch(
   }
 );
 
+const selectedStatus = ref<'in_chat' | 'queue' | null>(null);
+
 watch(
   () => props.modelValue,
   (newValue) => {
     if (newValue && props.filterType === 'all') {
       selectedStatus.value = null;
+      sortField.value = props.sortField ?? 'summary.last_message';
+      sortOrder.value = props.sortOrder ?? 'desc';
     }
   }
+);
+
+watch(
+  () => [
+    props.inChatSortField,
+    props.inChatSortOrder,
+    props.queueSortField,
+    props.queueSortOrder,
+  ],
+  () => {
+    if (props.filterType === 'all' && selectedStatus.value) {
+      if (selectedStatus.value === 'in_chat') {
+        sortField.value = props.inChatSortField ?? 'summary.last_message';
+        sortOrder.value = props.inChatSortOrder ?? 'desc';
+      } else if (selectedStatus.value === 'queue') {
+        sortField.value = props.queueSortField ?? 'summary.last_message';
+        sortOrder.value = props.queueSortOrder ?? 'desc';
+      }
+    }
+  }
+);
+
+watch(
+  () => selectedStatus.value,
+  (newStatus) => {
+    if (props.filterType === 'all') {
+      if (newStatus === 'in_chat') {
+        sortField.value = props.inChatSortField ?? 'summary.last_message';
+        sortOrder.value = props.inChatSortOrder ?? 'desc';
+      } else if (newStatus === 'queue') {
+        sortField.value = props.queueSortField ?? 'summary.last_message';
+        sortOrder.value = props.queueSortOrder ?? 'desc';
+      } else {
+        sortField.value = props.sortField ?? 'summary.last_message';
+        sortOrder.value = props.sortOrder ?? 'desc';
+      }
+    }
+  },
+  { immediate: true }
 );
 
 const sortFieldOptions = [
@@ -100,21 +147,19 @@ const showStatusSelection = computed(() => {
   return props.filterType === 'all';
 });
 
-const selectedStatus = ref<'in_chat' | 'queue' | null>(null);
-
 const handleSave = async () => {
   isSaving.value = true;
-  
+
   try {
     emit('update:sortField', sortField.value);
     emit('update:sortOrder', sortOrder.value);
-    
+
     if (props.filterType === 'all' && selectedStatus.value) {
       await emit('save', selectedStatus.value);
     } else {
       await emit('save');
     }
-    
+
     isVisible.value = false;
   } catch (error) {
     console.error('Error saving sort:', error);

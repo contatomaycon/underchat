@@ -657,11 +657,13 @@ export const useChatStore = defineStore('chat', {
     updateChatUserImmediate() {
       if (!this.user?.status) return;
 
+      const existingChatUser = this.user?.chat_user ?? undefined;
       const chatUserUpdate = {
-        chat_user_id: this.user?.chat_user?.chat_user_id ?? '',
-        status: this.user?.chat_user?.status as EChatUserStatus,
-        about: this.user?.chat_user?.about ?? '',
-        notifications: this.user?.chat_user?.notifications ?? false,
+        ...(existingChatUser ?? {}),
+        chat_user_id: existingChatUser?.chat_user_id ?? '',
+        status: existingChatUser?.status as EChatUserStatus,
+        about: existingChatUser?.about ?? '',
+        notifications: existingChatUser?.notifications ?? false,
       };
 
       setUser({ ...this.user, chat_user: chatUserUpdate });
