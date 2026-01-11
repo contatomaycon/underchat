@@ -849,7 +849,7 @@
   "import_contacts": "Importar Contatos",
   "file": "Arquivo",
   "select_file": "Selecionar Arquivo",
-  "msg_csv_or_vcard": "O arquivo deve estar no formato CSV ou vCard (.vcf) e seguir o padrão de colunas: Nome, Sobrenome, Email, DDI, Telefone, Apelido, Aniversario e Notas.",
+  "msg_csv_or_vcard": "O arquivo deve estar no formato CSV ou vCard (.vcf) e seguir o padrão de colunas: Nome, Sobrenome, Email, DDI, Telefone, Apelido, Documento, Aniversario e Notas.",
   "plan_all_list_error": "Ocorreu um erro ao listar todos os planos. Por favor, tente novamente.",
   "plans": "Planos",
   "plans_subtitle": "Escolha o plano ideal para você",

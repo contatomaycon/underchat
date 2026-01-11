@@ -3,6 +3,9 @@ import { UploadFileRequest } from '@core/schema/upload/request.schema';
 import { injectable, inject } from 'tsyringe';
 import { PasswordEncryptorService } from './passwordEncryptor.service';
 import { extractPhoneAndDdi } from '@core/common/functions/extractPhoneAndDdi';
+import { validateCpf } from '@core/common/functions/validateCpf';
+import { validateCnpj } from '@core/common/functions/validateCnpj';
+import { EContactDocumentType } from '@core/common/enums/EContactDocumentType';
 
 @injectable()
 export class CsvFileReaderService {
@@ -94,6 +97,7 @@ export class CsvFileReaderService {
       ),
       telefone: header.findIndex((h) => ['telefone', 'phone'].includes(h)),
       apelido: header.findIndex((h) => ['apelido', 'nickname'].includes(h)),
+      documento: header.findIndex((h) => ['documento', 'document'].includes(h)),
       aniversario: header.findIndex((h) =>
         ['aniversário', 'aniversario', 'birthday'].includes(h)
       ),
@@ -127,6 +131,52 @@ export class CsvFileReaderService {
     return '55';
   }
 
+  private _validateAndGetDocumentType(document: string | null | undefined): {
+    document: string | null;
+    contact_document_type_id: string | null;
+  } {
+    if (!document) {
+      return { document: null, contact_document_type_id: null };
+    }
+
+    const trimmed = document.trim();
+    if (!trimmed) {
+      return { document: null, contact_document_type_id: null };
+    }
+
+    const digitsOnly = trimmed.replaceAll(/\D/g, '');
+
+    if (!digitsOnly) {
+      return { document: null, contact_document_type_id: null };
+    }
+
+    if (validateCpf(trimmed)) {
+      return {
+        document: digitsOnly,
+        contact_document_type_id: EContactDocumentType.cpf,
+      };
+    }
+
+    if (validateCnpj(trimmed)) {
+      return {
+        document: digitsOnly,
+        contact_document_type_id: EContactDocumentType.cnpj,
+      };
+    }
+
+    if (digitsOnly.length >= 12 && digitsOnly.length < 14) {
+      const padded = digitsOnly.padStart(14, '0');
+      if (validateCnpj(padded)) {
+        return {
+          document: padded,
+          contact_document_type_id: EContactDocumentType.cnpj,
+        };
+      }
+    }
+
+    return { document: digitsOnly, contact_document_type_id: null };
+  }
+
   private _parseCsv(content: string): ICreateContact[] {
     const lines = content.split(/\r?\n/).filter((l) => l.trim().length > 0);
     if (!lines.length) return [];
@@ -155,6 +205,10 @@ export class CsvFileReaderService {
 
       const phoneDdi = this._determinePhoneDdi(ddiRaw, normalizedPhone);
 
+      const documentRaw = this._val(cols, idx.documento);
+      const { document, contact_document_type_id } =
+        this._validateAndGetDocumentType(documentRaw);
+
       out.push({
         name: this._val(cols, idx.nome),
         last_name: this._val(cols, idx.sobrenome),
@@ -162,6 +216,8 @@ export class CsvFileReaderService {
         phone: normalizedPhone ? normalizedPhone.phone : processedPhone,
         phone_ddi: phoneDdi,
         nickname: this._toNull(this._val(cols, idx.apelido)),
+        document: document ?? null,
+        contact_document_type_id,
         birthday: this._normDate(this._val(cols, idx.aniversario)),
         notes: this._toNull(this._val(cols, idx.notas)),
       });
@@ -277,6 +333,10 @@ export class CsvFileReaderService {
       ? extractPhoneAndDdi(processedPhone)
       : null;
 
+    const documentRaw = this._firstOf(map, 'X-DOCUMENT');
+    const { document, contact_document_type_id } =
+      this._validateAndGetDocumentType(documentRaw);
+
     return {
       name: firstFallback,
       last_name: lastFallback,
@@ -284,6 +344,8 @@ export class CsvFileReaderService {
       phone: normalizedPhone ? normalizedPhone.phone : processedPhone,
       phone_ddi: normalizedPhone ? normalizedPhone.phone_ddi : null,
       nickname: this._toNull(map.get('NICKNAME')?.[0]),
+      document: document ?? null,
+      contact_document_type_id,
       birthday: this._normDate(map.get('BDAY')?.[0]),
       notes: this._toNull(map.get('NOTE')?.[0]),
     };
