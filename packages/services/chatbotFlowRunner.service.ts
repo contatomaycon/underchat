@@ -3353,11 +3353,6 @@ export class ChatbotFlowRunnerService {
     currentNode: any,
     clearCache = false
   ): Promise<void> {
-    console.log('[AI Agent] sendDefaultQuestionMessage - Início', {
-      chatId: createChat.chat_id,
-      clearCache,
-    });
-
     if (clearCache) {
       const cacheKey = this.getChatbotFlowCacheKey(
         createChat.account.id,
@@ -3367,7 +3362,6 @@ export class ChatbotFlowRunnerService {
       await this.redis.del(cacheKey);
       const continueMessageSentKey = `${cacheKey}:continue-message-sent`;
       await this.redis.del(continueMessageSentKey);
-      console.log('[AI Agent] sendDefaultQuestionMessage - Cache limpo');
     }
 
     const nodeDefaultQuestion = currentNode.data?.defaultQuestion;
@@ -3375,11 +3369,6 @@ export class ChatbotFlowRunnerService {
       nodeDefaultQuestion && nodeDefaultQuestion.trim().length > 0
         ? nodeDefaultQuestion
         : t('ai_agent_default_question');
-
-    console.log('[AI Agent] sendDefaultQuestionMessage - Mensagem padrão', {
-      hasNodeDefaultQuestion: !!nodeDefaultQuestion,
-      defaultQuestion,
-    });
 
     const questionMessage = await this.replaceVariables(
       t,
@@ -3389,13 +3378,6 @@ export class ChatbotFlowRunnerService {
       createChat.sector
     );
 
-    console.log(
-      '[AI Agent] sendDefaultQuestionMessage - Enviando mensagem padrão',
-      {
-        questionMessage,
-      }
-    );
-
     await this.chatMessageService.sendMessage(t, {
       chat: createChat,
       accountId: createChat.account.id,
@@ -3403,8 +3385,6 @@ export class ChatbotFlowRunnerService {
       message: questionMessage,
       typeUser: ETypeUserChat.bot,
     });
-
-    console.log('[AI Agent] sendDefaultQuestionMessage - Mensagem enviada');
   }
 
   private async processTextResponseAnalysis(
@@ -3427,42 +3407,19 @@ export class ChatbotFlowRunnerService {
       transfer_message_sector_user?: string;
     }
   ): Promise<boolean> {
-    console.log('[AI Agent] processTextResponseAnalysis - Início', {
-      chatId: createChat.chat_id,
-      currentFlowId,
-      analysis,
-      optionsCount: options.length,
-    });
-
     if (analysis === 'question') {
-      console.log(
-        '[AI Agent] processTextResponseAnalysis - Análise é question, retornando false'
-      );
       return false;
     }
 
     if (analysis === 'human_support') {
-      console.log(
-        '[AI Agent] processTextResponseAnalysis - Análise é human_support'
-      );
       const nextFlowId = this.getNextFlowIdByHumanSupportHandle(
         chatbotFlow,
         currentFlowId
       );
 
       if (!nextFlowId) {
-        console.log(
-          '[AI Agent] processTextResponseAnalysis - Human support sem próximo nó, retornando false'
-        );
         return false;
       }
-
-      console.log(
-        '[AI Agent] processTextResponseAnalysis - Redirecionando para human support',
-        {
-          nextFlowId,
-        }
-      );
 
       await this.resetFailedAttempts(createChat);
 
@@ -3476,15 +3433,8 @@ export class ChatbotFlowRunnerService {
     }
 
     const targetOptionId = this.findTargetOptionId(t, options, analysis);
-    console.log('[AI Agent] processTextResponseAnalysis - Opção alvo', {
-      targetOptionId,
-      analysis,
-    });
 
     if (!targetOptionId) {
-      console.log(
-        '[AI Agent] processTextResponseAnalysis - Nenhuma opção alvo encontrada, retornando false'
-      );
       return false;
     }
 
@@ -3494,21 +3444,11 @@ export class ChatbotFlowRunnerService {
       targetOptionId
     );
 
-    console.log('[AI Agent] processTextResponseAnalysis - Próximo nó', {
-      nextFlowId,
-    });
-
     if (!nextFlowId) {
-      console.log(
-        '[AI Agent] processTextResponseAnalysis - Nenhum próximo nó encontrado, retornando false'
-      );
       return false;
     }
 
     if (analysis === 'positive') {
-      console.log(
-        '[AI Agent] processTextResponseAnalysis - Análise é positive, enviando mensagem padrão'
-      );
       const nodeDefaultQuestion = currentNode.data?.defaultQuestion;
       const defaultQuestion =
         nodeDefaultQuestion && nodeDefaultQuestion.trim().length > 0
@@ -3533,9 +3473,6 @@ export class ChatbotFlowRunnerService {
 
     await this.resetFailedAttempts(createChat);
 
-    console.log(
-      '[AI Agent] processTextResponseAnalysis - Processando próximo nó'
-    );
     return this.processNextNode(
       t,
       createChat,
@@ -3576,26 +3513,15 @@ export class ChatbotFlowRunnerService {
     aiAgentId: string,
     bootstrapSummaryKey: string
   ): Promise<void> {
-    console.log('[AI Agent] generateBootstrapSummaryForChat - Início', {
-      chatId: createChat.chat_id,
-      aiAgentId,
-    });
-
     const aiAgent = await this.aiAgentService.viewAiAgent(
       aiAgentId,
       createChat.account.id
     );
 
     if (!aiAgent || !aiAgent.base_url || !aiAgent.api_key || !aiAgent.model) {
-      console.log(
-        '[AI Agent] generateBootstrapSummaryForChat - Agente não configurado corretamente'
-      );
       return;
     }
 
-    console.log(
-      '[AI Agent] generateBootstrapSummaryForChat - Gerando bootstrap summary'
-    );
     const bootstrapSummary = await this.ragService.generateBootstrapSummary(
       createChat.account.id,
       aiAgentId,
@@ -3607,16 +3533,6 @@ export class ChatbotFlowRunnerService {
 
     if (bootstrapSummary && bootstrapSummary.trim().length > 0) {
       await this.redis.set(bootstrapSummaryKey, bootstrapSummary, 'EX', 86400);
-      console.log(
-        '[AI Agent] generateBootstrapSummaryForChat - Bootstrap summary salvo no Redis',
-        {
-          summaryLength: bootstrapSummary.length,
-        }
-      );
-    } else {
-      console.log(
-        '[AI Agent] generateBootstrapSummaryForChat - Bootstrap summary vazio'
-      );
     }
   }
 
@@ -3635,22 +3551,12 @@ export class ChatbotFlowRunnerService {
       ai_agent_type_id: string;
     }
   ): Promise<void> {
-    console.log('[AI Agent] updateConversationSummaryAfterResponse - Início', {
-      chatId: createChat.chat_id,
-      selectedAiAgentId,
-      hasPreviousSummary: !!previousSummary,
-      recentMessagesCount: recentMessages.length,
-    });
-
     const updatedRecentMessages = this.buildUpdatedRecentMessages(
       recentMessages,
       userText,
       aiResponse
     );
 
-    console.log(
-      '[AI Agent] updateConversationSummaryAfterResponse - Gerando/atualizando resumo da conversa'
-    );
     const updatedConversationSummary =
       await this.ragService.generateOrUpdateConversationSummary(
         previousSummary,
@@ -3670,16 +3576,6 @@ export class ChatbotFlowRunnerService {
         updatedConversationSummary,
         'EX',
         86400
-      );
-      console.log(
-        '[AI Agent] updateConversationSummaryAfterResponse - Resumo da conversa atualizado no Redis',
-        {
-          summaryLength: updatedConversationSummary.length,
-        }
-      );
-    } else {
-      console.log(
-        '[AI Agent] updateConversationSummaryAfterResponse - Resumo da conversa vazio'
       );
     }
   }
@@ -3801,12 +3697,6 @@ export class ChatbotFlowRunnerService {
     userResponse: string,
     humanSupportEnabled: boolean = false
   ): Promise<'positive' | 'negative' | 'question' | 'human_support'> {
-    console.log('[AI Agent] analyzeUserResponse - Início', {
-      continueMessage,
-      userResponse,
-      humanSupportEnabled,
-    });
-
     const analysisPrompt = this.buildAnalysisPrompt(
       continueMessage,
       userResponse,
@@ -3814,7 +3704,6 @@ export class ChatbotFlowRunnerService {
     );
 
     try {
-      console.log('[AI Agent] analyzeUserResponse - Chamando API para análise');
       const analysis = await this.callAiAgentChatApi(
         baseUrl,
         apiKey,
@@ -3824,36 +3713,14 @@ export class ChatbotFlowRunnerService {
         userResponse
       );
 
-      console.log(
-        '[AI Agent] analyzeUserResponse - Resposta da análise recebida',
-        {
-          analysis,
-        }
-      );
-
       const result = this.parseAnalysisResponse(analysis, humanSupportEnabled);
 
-      console.log('[AI Agent] analyzeUserResponse - Resultado parseado', {
-        result,
-      });
-
       return result;
-    } catch (error) {
-      console.log(
-        '[AI Agent] analyzeUserResponse - Erro na análise, usando fallback',
-        {
-          error: error instanceof Error ? error.message : String(error),
-        }
-      );
-
+    } catch {
       const fallbackResult = this.fallbackAnalysis(
         userResponse,
         humanSupportEnabled
       );
-
-      console.log('[AI Agent] analyzeUserResponse - Resultado do fallback', {
-        fallbackResult,
-      });
 
       return fallbackResult;
     }
@@ -3873,23 +3740,21 @@ export class ChatbotFlowRunnerService {
       ? 'positive, negative, question ou human_support'
       : 'positive, negative ou question';
 
-    return `Você é um analisador de respostas. Analise a resposta do usuário considerando o contexto da pergunta e classifique como:
+    return `Você é um classificador de intenção. Analise a resposta do usuário considerando o contexto da mensagem de continuidade e escolha EXATAMENTE UMA etiqueta:
 
-- "positive": se o usuário claramente PRECISA de mais ajuda, quer continuar a conversa sobre o MESMO tópico, tem mais dúvidas ou pedidos sobre o assunto já discutido. Exemplos: "sim, preciso", "tenho outra dúvida sobre isso", "quero saber mais sobre o assunto", "me ajuda com mais detalhes", "preciso de ajuda adicional"
-- "negative": se o usuário NÃO PRECISA mais de ajuda, está satisfeito, quer finalizar ou agradeceu. Exemplos: "não, obrigado", "tudo certo", "não preciso mais", "já resolvi", "está tudo bem", "obrigado", "valeu", "tudo certo, obrigado", "não preciso mais de ajuda", "já entendi"
-- "question": se o usuário fez uma PERGUNTA sobre um assunto DIFERENTE, relatou um NOVO problema, descreveu uma NOVA situação ou quer mudar de tópico. IMPORTANTE: Se a resposta contém uma pergunta (mesmo que não tenha ponto de interrogação), relata um problema específico, ou descreve uma situação diferente do assunto da mensagem de continuidade, classifique como "question". Exemplos: "mas e se eu fizer isso?", "o que acontece quando...?", "eu tenho um problema com...", "no meu caso...", "já tentei fazer X mas acontece Y", qualquer descrição de problema ou situação específica
+- "positive": o usuário quer continuar no MESMO tópico, pede mais detalhes, confirmação, passos ou esclarecimento sobre o assunto já discutido. Pode ser pergunta de continuação do mesmo tema. Exemplos: "pode explicar melhor?", "como faço isso exatamente?", "sim, quero continuar", "me dá mais detalhes", "tenho outra dúvida sobre isso"
+- "negative": o usuário está satisfeito, quer encerrar, agradece ou diz que não precisa mais. Exemplos: "não, obrigado", "tudo certo", "já resolvi", "ok, valeu", "está tudo bem", "não preciso mais"
+- "question": o usuário traz NOVO tópico/problema/situação, muda de assunto ou algo que NÃO é continuação do tema anterior. Exemplos: "tenho outro problema...", "mudando de assunto...", "e sobre X?", "no meu caso acontece Y", "agora preciso de ajuda com outra coisa"
 ${humanSupportSection}
-IMPORTANTE: 
-- Se o usuário agradecer e dizer que está tudo certo, que não precisa mais de ajuda, ou que já resolveu, classifique como "negative"
-- Se o usuário disser "tudo certo" ou "obrigado" sem indicar necessidade de mais ajuda, classifique como "negative"
-- Se o usuário fez uma PERGUNTA, relatou um PROBLEMA, descreveu uma SITUAÇÃO específica ou mencionou algo DIFERENTE do tópico da mensagem de continuidade, classifique como "question"
-- Apenas classifique como "positive" se o usuário claramente indicar que quer CONTINUAR sobre o MESMO tópico da mensagem de continuidade
-- Quando houver dúvida, prefira classificar como "question" para que a IA possa processar e responder adequadamente
-${humanSupportEnabled ? '- Se o usuário pedir explicitamente para falar com humano, atendente, operador, suporte humano ou pessoa real, classifique como "human_support"\n' : ''}
+Regras de decisão (ordem de prioridade):
+1) Se houver pedido explícito para falar com humano/pessoa real/atendente/operador, classifique como "human_support" (quando disponível), mesmo que haja outras intenções.
+2) Se a resposta indica encerramento/agradecimento/solução e NÃO há novo pedido, classifique como "negative".
+3) Se a resposta pede continuidade/mais ajuda no MESMO assunto da mensagem de continuidade, classifique como "positive" (mesmo se for uma pergunta de continuação).
+4) Se a resposta introduz NOVO assunto/problema/situação, classifique como "question".
+5) Se houver dúvida real entre "positive" e "question", prefira "question".
+
 Pergunta/Contexto da mensagem de continuidade: "${continueMessage}"
 Resposta do usuário: "${userResponse}"
-
-Analise cuidadosamente: a resposta do usuário é sobre o MESMO assunto da mensagem de continuidade (positive/negative) ou é uma NOVA pergunta/problema/situação (question)?
 
 Retorne APENAS uma das palavras: ${validOptions}.`;
   }
@@ -4055,29 +3920,13 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
     userQuery: string,
     history?: Array<{ role: 'user' | 'assistant'; content: string }>
   ): Promise<string> {
-    console.log('[AI Agent] callAiAgentChatApi - Início', {
-      baseUrl,
-      model,
-      aiAgentTypeId,
-      promptLength: prompt.length,
-      userQueryLength: userQuery.length,
-      hasHistory: !!history,
-      historyLength: history?.length ?? 0,
-    });
-
     if (!baseUrl || !apiKey || !model) {
-      console.log('[AI Agent] callAiAgentChatApi - Configuração inválida', {
-        hasBaseUrl: !!baseUrl,
-        hasApiKey: !!apiKey,
-        hasModel: !!model,
-      });
       throw new InvalidConfigurationError(
         'AI Agent base_url, api_key ou model não está configurado.'
       );
     }
 
     if (aiAgentTypeId === EAiAgentType.gemini) {
-      console.log('[AI Agent] callAiAgentChatApi - Chamando API Gemini');
       const response = await this.callGeminiChatApi(
         baseUrl,
         apiKey,
@@ -4086,13 +3935,9 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
         userQuery,
         history
       );
-      console.log('[AI Agent] callAiAgentChatApi - Resposta Gemini recebida', {
-        responseLength: response.length,
-      });
       return response;
     }
 
-    console.log('[AI Agent] callAiAgentChatApi - Chamando API OpenAI');
     const response = await this.callOpenAiChatApi(
       baseUrl,
       apiKey,
@@ -4101,9 +3946,6 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       userQuery,
       history
     );
-    console.log('[AI Agent] callAiAgentChatApi - Resposta OpenAI recebida', {
-      responseLength: response.length,
-    });
     return response;
   }
 
@@ -4134,33 +3976,17 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       transfer_message_sector_user_enabled?: boolean;
     }
   ): Promise<boolean> {
-    console.log('[AI Agent] processAiAgentNode - Início', {
-      chatId: createChat.chat_id,
-      currentFlowId,
-      accountId: createChat.account.id,
-    });
-
     const currentNode = this.getFlowNodeById(chatbotFlow, currentFlowId);
 
     if (!currentNode) {
-      console.log('[AI Agent] processAiAgentNode - Nó não encontrado', {
-        currentFlowId,
-      });
       throw new Error(t('chatbot_flow_node_not_found'));
     }
 
     const selectedAiAgentId = currentNode.data?.selectedAiAgent;
 
     if (!selectedAiAgentId) {
-      console.log(
-        '[AI Agent] processAiAgentNode - Agente de IA não selecionado'
-      );
       throw new Error(t('chatbot_flow_validation_ai_agent_required'));
     }
-
-    console.log('[AI Agent] processAiAgentNode - Agente selecionado', {
-      selectedAiAgentId,
-    });
 
     const cacheKey = this.getChatbotFlowCacheKey(
       createChat.account.id,
@@ -4170,19 +3996,10 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
     const cachedFlowId = await this.redis.get(cacheKey);
     const isFirstEntry = cachedFlowId !== currentFlowId;
 
-    console.log('[AI Agent] processAiAgentNode - Cache verificado', {
-      cachedFlowId,
-      currentFlowId,
-      isFirstEntry,
-    });
-
     const bootstrapSummaryKey = `${cacheKey}:bootstrap-summary`;
     const conversationSummaryKey = `${cacheKey}:conversation-summary`;
 
     if (isFirstEntry) {
-      console.log(
-        '[AI Agent] processAiAgentNode - Primeira entrada, chamando handleBootstrapEntry'
-      );
       return this.handleBootstrapEntry(
         t,
         createChat,
@@ -4195,15 +4012,7 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
 
     const userText = this.getTextFromUpsertMessage(data)?.trim();
 
-    console.log('[AI Agent] processAiAgentNode - Texto do usuário', {
-      userText,
-      hasText: !!userText,
-    });
-
     if (!userText) {
-      console.log(
-        '[AI Agent] processAiAgentNode - Texto vazio, retornando false'
-      );
       return false;
     }
 
@@ -4254,18 +4063,10 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       customMessages
     );
 
-    console.log('[AI Agent] processAiAgentNode - Resultado do menu', {
-      menuResult,
-    });
-
     if (menuResult !== null) {
-      console.log(
-        '[AI Agent] processAiAgentNode - Menu processado, retornando resultado'
-      );
       return menuResult;
     }
 
-    console.log('[AI Agent] processAiAgentNode - Processando resposta da IA');
     return this.processAiAgentResponse(
       t,
       createChat,
@@ -4288,21 +4089,12 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
     currentFlowId: string,
     bootstrapSummaryKey: string
   ): Promise<boolean> {
-    console.log('[AI Agent] handleBootstrapEntry - Início', {
-      chatId: createChat.chat_id,
-      selectedAiAgentId,
-      currentFlowId,
-    });
-
     await this.generateBootstrapSummaryForChat(
       createChat,
       selectedAiAgentId,
       bootstrapSummaryKey
     );
 
-    console.log('[AI Agent] handleBootstrapEntry - Bootstrap summary gerado');
-
-    console.log('[AI Agent] handleBootstrapEntry - Enviando mensagem padrão');
     await this.sendDefaultQuestionMessage(t, createChat, currentNode, false);
     await this.resetAiAgentInteractionsCount(
       createChat.account.id,
@@ -4313,7 +4105,6 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
     await this.updateCache(createChat, currentFlowId);
     await this.scheduleChatHistoryEmbedding(createChat, selectedAiAgentId);
 
-    console.log('[AI Agent] handleBootstrapEntry - Finalizado com sucesso');
     return true;
   }
 
@@ -4484,13 +4275,6 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       transfer_message_sector_user_enabled?: boolean;
     }
   ): Promise<boolean | null> {
-    console.log('[AI Agent] handleContinueMessageAnalysis - Início', {
-      chatId: createChat.chat_id,
-      currentFlowId,
-      continueMessage,
-      userText,
-    });
-
     const continueMessageSentKey = `${this.getChatbotFlowCacheKey(
       createChat.account.id,
       createChat.worker.id,
@@ -4498,35 +4282,15 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
     )}:continue-message-sent`;
     const continueMessageSent = await this.redis.get(continueMessageSentKey);
 
-    console.log(
-      '[AI Agent] handleContinueMessageAnalysis - Continue message sent',
-      {
-        continueMessageSent,
-      }
-    );
-
     if (continueMessageSent !== 'true') {
-      console.log(
-        '[AI Agent] handleContinueMessageAnalysis - Continue message não enviado, retornando null'
-      );
       return null;
     }
 
     const selectedAiAgentId = currentNode.data?.selectedAiAgent;
 
     if (!selectedAiAgentId) {
-      console.log(
-        '[AI Agent] handleContinueMessageAnalysis - Agente de IA não selecionado, retornando false'
-      );
       return false;
     }
-
-    console.log(
-      '[AI Agent] handleContinueMessageAnalysis - Buscando agente de IA',
-      {
-        selectedAiAgentId,
-      }
-    );
 
     const aiAgentForAnalysis = await this.aiAgentService.viewAiAgent(
       selectedAiAgentId,
@@ -4539,26 +4303,10 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       !aiAgentForAnalysis.api_key ||
       !aiAgentForAnalysis.model
     ) {
-      console.log(
-        '[AI Agent] handleContinueMessageAnalysis - Agente de IA não configurado corretamente',
-        {
-          hasAiAgent: !!aiAgentForAnalysis,
-          hasBaseUrl: !!aiAgentForAnalysis?.base_url,
-          hasApiKey: !!aiAgentForAnalysis?.api_key,
-          hasModel: !!aiAgentForAnalysis?.model,
-        }
-      );
       return false;
     }
 
     const humanSupportEnabled = currentNode.data?.humanSupportEnabled === true;
-
-    console.log(
-      '[AI Agent] handleContinueMessageAnalysis - Analisando resposta do usuário',
-      {
-        humanSupportEnabled,
-      }
-    );
 
     const analysis = await this.analyzeUserResponse(
       aiAgentForAnalysis.base_url,
@@ -4568,13 +4316,6 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       continueMessage,
       userText,
       humanSupportEnabled
-    );
-
-    console.log(
-      '[AI Agent] handleContinueMessageAnalysis - Análise concluída',
-      {
-        analysis,
-      }
     );
 
     await this.redis.del(continueMessageSentKey);
@@ -4590,23 +4331,10 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       customMessages
     );
 
-    console.log(
-      '[AI Agent] handleContinueMessageAnalysis - Resultado do processamento',
-      {
-        analysisResult,
-      }
-    );
-
     if (analysisResult) {
-      console.log(
-        '[AI Agent] handleContinueMessageAnalysis - Análise processada com sucesso, retornando true'
-      );
       return true;
     }
 
-    console.log(
-      '[AI Agent] handleContinueMessageAnalysis - Análise não processada, retornando null'
-    );
     return null;
   }
 
@@ -4641,61 +4369,27 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       transfer_message_sector_user_enabled?: boolean;
     }
   ): Promise<boolean> {
-    console.log('[AI Agent] processAiAgentResponse - Início', {
-      chatId: createChat.chat_id,
-      selectedAiAgentId,
-      currentFlowId,
-      userText,
-    });
-
     const aiAgent = await this.aiAgentService.viewAiAgent(
       selectedAiAgentId,
       createChat.account.id
     );
 
     if (!aiAgent) {
-      console.log(
-        '[AI Agent] processAiAgentResponse - Agente de IA não encontrado',
-        {
-          selectedAiAgentId,
-        }
-      );
       throw new Error(t('ai_agent_not_found'));
     }
 
     if (!aiAgent.base_url || !aiAgent.api_key || !aiAgent.model) {
-      console.log(
-        '[AI Agent] processAiAgentResponse - Configuração do agente inválida',
-        {
-          hasBaseUrl: !!aiAgent.base_url,
-          hasApiKey: !!aiAgent.api_key,
-          hasModel: !!aiAgent.model,
-        }
-      );
       throw new InvalidConfigurationError(
         'AI Agent base_url, api_key ou model não está configurado.'
       );
     }
 
-    console.log(
-      '[AI Agent] processAiAgentResponse - Construindo prompt aprimorado'
-    );
     const enhancedPrompt = await this.buildEnhancedPromptForAiAgent(
       createChat,
       selectedAiAgentId,
       userText,
       bootstrapSummaryKey,
       conversationSummaryKey
-    );
-
-    console.log(
-      '[AI Agent] processAiAgentResponse - Chamando API do agente de IA',
-      {
-        baseUrl: aiAgent.base_url,
-        model: aiAgent.model,
-        aiAgentTypeId: aiAgent.ai_agent_type_id,
-        promptLength: enhancedPrompt.length,
-      }
     );
 
     let aiResponse: string;
@@ -4708,31 +4402,13 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
         enhancedPrompt,
         userText
       );
-
-      console.log(
-        '[AI Agent] processAiAgentResponse - Resposta da IA recebida',
-        {
-          responseLength: aiResponse.length,
-          responsePreview: aiResponse.substring(0, 100),
-        }
-      );
     } catch (error) {
-      console.log('[AI Agent] processAiAgentResponse - Erro ao chamar API', {
-        error: error instanceof Error ? error.message : String(error),
-      });
-
       const nextFlowId = this.getNextFlowIdByFallbackHandle(
         chatbotFlow,
         currentFlowId
       );
 
       if (nextFlowId) {
-        console.log(
-          '[AI Agent] processAiAgentResponse - Redirecionando para fallback',
-          {
-            nextFlowId,
-          }
-        );
         await this.updateCache(createChat, nextFlowId);
         return this.processNextNode(
           t,
@@ -4743,13 +4419,9 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
         );
       }
 
-      console.log(
-        '[AI Agent] processAiAgentResponse - Nenhum fallback disponível, lançando erro'
-      );
       throw error;
     }
 
-    console.log('[AI Agent] processAiAgentResponse - Enviando resposta da IA');
     await this.sendAiAgentResponse(
       t,
       createChat,
@@ -4770,25 +4442,12 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       currentNode.data?.actionAfterInteractions === true;
     const interactionsQuantity = currentNode.data?.interactionsQuantity ?? 0;
 
-    console.log('[AI Agent] processAiAgentResponse - Verificando interações', {
-      actionAfterInteractions,
-      interactionsQuantity,
-    });
-
     if (actionAfterInteractions && interactionsQuantity > 0) {
       const newCount = await this.incrementAiAgentInteractionsCount(
         createChat.account.id,
         createChat.worker.id,
         createChat.chat_id,
         currentFlowId
-      );
-
-      console.log(
-        '[AI Agent] processAiAgentResponse - Contagem de interações',
-        {
-          newCount,
-          interactionsQuantity,
-        }
       );
 
       if (newCount > interactionsQuantity) {
@@ -4798,12 +4457,6 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
         );
 
         if (nextFlowId) {
-          console.log(
-            '[AI Agent] processAiAgentResponse - Limite de interações atingido, redirecionando',
-            {
-              nextFlowId,
-            }
-          );
           await this.resetAiAgentInteractionsCount(
             createChat.account.id,
             createChat.worker.id,
@@ -4823,7 +4476,6 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
     }
 
     await this.updateCache(createChat, currentFlowId);
-    console.log('[AI Agent] processAiAgentResponse - Finalizado com sucesso');
     return true;
   }
 
@@ -4834,24 +4486,10 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
     bootstrapSummaryKey: string,
     conversationSummaryKey: string
   ): Promise<string> {
-    console.log('[AI Agent] buildEnhancedPromptForAiAgent - Início', {
-      chatId: createChat.chat_id,
-      selectedAiAgentId,
-      userText,
-    });
-
     const systemPrompt = 'Você é um assistente virtual prestativo e educado.';
 
     const bootstrapSummary = await this.redis.get(bootstrapSummaryKey);
     const conversationSummary = await this.redis.get(conversationSummaryKey);
-
-    console.log(
-      '[AI Agent] buildEnhancedPromptForAiAgent - Resumos carregados',
-      {
-        hasBootstrapSummary: !!bootstrapSummary,
-        hasConversationSummary: !!conversationSummary,
-      }
-    );
 
     const recentMessages = await this.getRecentChatMessages(
       createChat.account.id,
@@ -4859,16 +4497,6 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       20
     );
 
-    console.log(
-      '[AI Agent] buildEnhancedPromptForAiAgent - Mensagens recentes',
-      {
-        recentMessagesCount: recentMessages.length,
-      }
-    );
-
-    console.log(
-      '[AI Agent] buildEnhancedPromptForAiAgent - Aprimorando prompt com RAG'
-    );
     const { enhancedPrompt } = await this.ragService.enhancePromptWithRag(
       createChat.account.id,
       selectedAiAgentId,
@@ -4884,13 +4512,6 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
         conversationSummary: conversationSummary,
         recentMessages: recentMessages,
         phone: createChat.phone,
-      }
-    );
-
-    console.log(
-      '[AI Agent] buildEnhancedPromptForAiAgent - Prompt aprimorado',
-      {
-        promptLength: enhancedPrompt.length,
       }
     );
 
@@ -4912,13 +4533,6 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       ai_agent_type_id: string;
     }
   ): Promise<void> {
-    console.log('[AI Agent] sendAiAgentResponse - Início', {
-      chatId: createChat.chat_id,
-      selectedAiAgentId,
-      responseLength: aiResponse.length,
-    });
-
-    console.log('[AI Agent] sendAiAgentResponse - Enviando mensagem da IA');
     await this.chatMessageService.sendMessage(t, {
       chat: createChat,
       accountId: createChat.account.id,
@@ -4934,14 +4548,6 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       20
     );
 
-    console.log(
-      '[AI Agent] sendAiAgentResponse - Atualizando resumo da conversa',
-      {
-        hasConversationSummary: !!conversationSummary,
-        recentMessagesCount: recentMessages.length,
-      }
-    );
-
     await this.updateConversationSummaryAfterResponse(
       createChat,
       selectedAiAgentId,
@@ -4953,12 +4559,7 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       aiAgent
     );
 
-    console.log(
-      '[AI Agent] sendAiAgentResponse - Verificando se precisa enviar mensagem de continuidade'
-    );
     await this.sendContinueMessageIfNeeded(t, createChat, currentNode);
-
-    console.log('[AI Agent] sendAiAgentResponse - Finalizado');
   }
 
   private async sendContinueMessageIfNeeded(
@@ -4966,25 +4567,11 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
     createChat: IChat,
     currentNode: ListChatbotFlowResponse['nodes'][number]
   ): Promise<void> {
-    console.log('[AI Agent] sendContinueMessageIfNeeded - Início', {
-      chatId: createChat.chat_id,
-    });
-
     const continueMessage = currentNode.data?.continueMessage;
 
     if (!continueMessage || continueMessage.trim().length === 0) {
-      console.log(
-        '[AI Agent] sendContinueMessageIfNeeded - Nenhuma mensagem de continuidade configurada'
-      );
       return;
     }
-
-    console.log(
-      '[AI Agent] sendContinueMessageIfNeeded - Mensagem de continuidade encontrada',
-      {
-        continueMessage,
-      }
-    );
 
     const continueMessageText = await this.replaceVariables(
       t,
@@ -4992,13 +4579,6 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       createChat,
       createChat.user,
       createChat.sector
-    );
-
-    console.log(
-      '[AI Agent] sendContinueMessageIfNeeded - Enviando mensagem de continuidade',
-      {
-        continueMessageText,
-      }
     );
 
     await this.chatMessageService.sendMessage(t, {
@@ -5015,13 +4595,6 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       createChat.chat_id
     )}:continue-message-sent`;
     await this.redis.set(continueMessageSentKey, 'true', 'EX', 3600);
-
-    console.log(
-      '[AI Agent] sendContinueMessageIfNeeded - Flag de continue message definida no Redis',
-      {
-        continueMessageSentKey,
-      }
-    );
   }
 
   private async processStartNode(

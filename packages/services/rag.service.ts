@@ -8,6 +8,12 @@ import { SummaryProviderFactory } from './summary/summaryProviderFactory.service
 
 @injectable()
 export class RagService {
+  private readonly maxTopK = 100;
+  private readonly maxChunkChars = 4000;
+  private readonly maxCombinedContextChars = 20000;
+  private readonly maxRecentMessageChars = 1500;
+  private readonly maxSummaryChars = 12000;
+
   constructor(
     private readonly embeddingService: EmbeddingService,
     private readonly aiAgentPromptListerRepository: AiAgentPromptListerRepository,
@@ -29,29 +35,37 @@ export class RagService {
       onlyAssistantResponses?: boolean;
     }
   ): Promise<IRagContext & { chunksCount: number }> {
-    const chunks = await this.embeddingService.searchChatHistory(
-      accountId,
-      chatId,
-      aiAgentId,
-      userQuery,
-      topK,
-      phone,
-      {
-        searchMultipleChats: options?.searchMultipleChats ?? true,
-        minQualityScore: options?.minQualityScore ?? 0.2,
-        onlyUseful: options?.onlyUseful ?? false,
-        onlyAssistantResponses: options?.onlyAssistantResponses ?? true,
-      }
-    );
+    try {
+      const chunks = await this.embeddingService.searchChatHistory(
+        accountId,
+        chatId,
+        aiAgentId,
+        userQuery,
+        topK,
+        phone,
+        {
+          searchMultipleChats: options?.searchMultipleChats ?? true,
+          minQualityScore: options?.minQualityScore ?? 0.2,
+          onlyUseful: options?.onlyUseful ?? false,
+          onlyAssistantResponses: options?.onlyAssistantResponses ?? true,
+        }
+      );
 
-    return this.processChunks(
-      chunks.map((chunk) => ({
-        text: chunk.text,
-        score: chunk.score,
-        promptId: chunk.message_id || '',
-      })),
-      minScore
-    );
+      return this.processChunks(
+        chunks.map((chunk) => ({
+          text: chunk.text,
+          score: chunk.score,
+          promptId: chunk.message_id || '',
+        })),
+        minScore
+      );
+    } catch (error) {
+      console.error(
+        '[getChatHistoryContext] Erro ao buscar histórico de conversa:',
+        error
+      );
+      return this.emptyContext();
+    }
   }
 
   async getRelevantContext(
@@ -61,30 +75,46 @@ export class RagService {
     topK = 100,
     minScore = 0.0
   ): Promise<IRagContext & { chunksCount: number }> {
-    const chunks = await this.embeddingService.searchSimilarChunks(
-      accountId,
-      aiAgentId,
-      userQuery,
-      topK
-    );
+    try {
+      const chunks = await this.embeddingService.searchSimilarChunks(
+        accountId,
+        aiAgentId,
+        userQuery,
+        topK
+      );
 
-    return this.processChunks(chunks, minScore);
+      return this.processChunks(chunks, minScore);
+    } catch (error) {
+      console.error(
+        '[getRelevantContext] Erro ao buscar contexto relevante:',
+        error
+      );
+      return this.emptyContext();
+    }
   }
 
   private processChunks(
     chunks: Array<{ text: string; score: number; promptId: string }>,
     minScore: number
   ): IRagContext & { chunksCount: number } {
-    const relevantChunks = chunks.filter((chunk) => chunk.score >= minScore);
+    const safeMinScore = this.normalizeMinScore(minScore);
+    const normalizedChunks = (Array.isArray(chunks) ? chunks : [])
+      .map((chunk) => ({
+        text: this.normalizeText(chunk?.text),
+        score: this.normalizeScore(chunk?.score),
+        promptId: typeof chunk?.promptId === 'string' ? chunk.promptId : '',
+      }))
+      .filter((chunk) => chunk.text.length > 0 && chunk.score >= safeMinScore)
+      .sort((a, b) => b.score - a.score);
 
-    const combinedContext = relevantChunks
-      .map((chunk) => chunk.text)
-      .join('\n\n---\n\n');
+    const uniqueChunks = this.dedupeChunksByText(normalizedChunks);
+    const { chunks: selectedChunks, combinedContext } =
+      this.buildCombinedContext(uniqueChunks);
 
     return {
-      chunks: relevantChunks,
+      chunks: selectedChunks,
       combinedContext,
-      chunksCount: relevantChunks.length,
+      chunksCount: selectedChunks.length,
     };
   }
 
@@ -92,10 +122,21 @@ export class RagService {
     accountId: string,
     aiAgentId: string
   ): Promise<string> {
-    const prompts = await this.aiAgentPromptListerRepository.listAiAgentPrompts(
-      { ai_agent_id: aiAgentId },
-      accountId
-    );
+    let prompts: Array<{
+      ai_agent_prompt_type: string;
+      name: string;
+      value: string;
+      status: EAiAgentStatus;
+    }> = [];
+    try {
+      prompts = await this.aiAgentPromptListerRepository.listAiAgentPrompts(
+        { ai_agent_id: aiAgentId },
+        accountId
+      );
+    } catch (error) {
+      console.error('[getAllAgentPrompts] Erro ao listar prompts:', error);
+      return '';
+    }
 
     const activePrompts = prompts.filter(
       (prompt) => prompt.status === EAiAgentStatus.active
@@ -294,10 +335,14 @@ Gere APENAS o sumário, sem introduções ou explicações adicionais.`;
     recentMessages: Array<{ role: 'user' | 'assistant'; content: string }>
   ): string {
     return recentMessages
-      .map(
-        (msg) =>
-          `${msg.role === 'user' ? 'Usuário' : 'Assistente'}: ${msg.content}`
-      )
+      .map((msg) => {
+        const content = this.normalizeText(msg.content);
+        if (!content) {
+          return '';
+        }
+        return `${msg.role === 'user' ? 'Usuário' : 'Assistente'}: ${content}`;
+      })
+      .filter(Boolean)
       .join('\n\n');
   }
 
@@ -372,13 +417,17 @@ Agora, responda à pergunta do usuário seguindo TODAS as regras e diretrizes ac
     const contextParts: string[] = [];
     let totalChunksCount = 0;
     let hasRelevantContext = false;
+    const normalizedQuery = this.normalizeText(userQuery);
 
     if (
       options?.bootstrapSummary &&
       options.bootstrapSummary.trim().length > 0
     ) {
       contextParts.push(
-        `### Regras e Conhecimento Base do Agente (Summary Inicial):\n${options.bootstrapSummary}`
+        `### Regras e Conhecimento Base do Agente (Summary Inicial):\n${this.truncateText(
+          this.normalizeText(options.bootstrapSummary),
+          this.maxSummaryChars
+        )}`
       );
     }
 
@@ -387,7 +436,10 @@ Agora, responda à pergunta do usuário seguindo TODAS as regras e diretrizes ac
       options.conversationSummary.trim().length > 0
     ) {
       contextParts.push(
-        `### Sumário da Conversa:\n${options.conversationSummary}`
+        `### Sumário da Conversa:\n${this.truncateText(
+          this.normalizeText(options.conversationSummary),
+          this.maxSummaryChars
+        )}`
       );
     }
 
@@ -395,37 +447,47 @@ Agora, responda à pergunta do usuário seguindo TODAS as regras e diretrizes ac
       const messagesText = this.formatRecentMessages(
         options.recentMessages.slice(-20)
       );
-      contextParts.push(`### Últimas Mensagens da Conversa:\n${messagesText}`);
+      if (messagesText.trim().length > 0) {
+        contextParts.push(
+          `### Últimas Mensagens da Conversa:\n${messagesText}`
+        );
+      }
     }
 
-    const topK = options?.topK ?? 12;
-    const minScore = options?.minScore ?? 0.0;
+    const topK = this.normalizeTopK(options?.topK ?? 12);
+    const minScore = this.normalizeMinScore(options?.minScore ?? 0.0);
 
-    const relevantContext = await this.getRelevantContext(
-      accountId,
-      aiAgentId,
-      userQuery,
-      topK,
-      minScore
-    );
+    if (normalizedQuery.length > 0 && topK > 0) {
+      const relevantContext = await this.getRelevantContext(
+        accountId,
+        aiAgentId,
+        normalizedQuery,
+        topK,
+        minScore
+      );
+
+      if (
+        relevantContext.combinedContext &&
+        relevantContext.combinedContext.trim().length > 0
+      ) {
+        contextParts.push(
+          `### Contexto Relevante da Base de Conhecimento (Top ${relevantContext.chunksCount} resultados):\n${relevantContext.combinedContext}`
+        );
+        totalChunksCount += relevantContext.chunksCount;
+        hasRelevantContext = true;
+      }
+    }
 
     if (
-      relevantContext.combinedContext &&
-      relevantContext.combinedContext.trim().length > 0
+      normalizedQuery.length > 0 &&
+      options?.includeChatHistory &&
+      options?.chatId
     ) {
-      contextParts.push(
-        `### Contexto Relevante da Base de Conhecimento (Top ${relevantContext.chunksCount} resultados):\n${relevantContext.combinedContext}`
-      );
-      totalChunksCount += relevantContext.chunksCount;
-      hasRelevantContext = true;
-    }
-
-    if (options?.includeChatHistory && options?.chatId) {
       const chatHistoryContext = await this.getChatHistoryContext(
         accountId,
         options.chatId,
         aiAgentId,
-        userQuery,
+        normalizedQuery,
         15,
         minScore,
         options.phone
@@ -451,10 +513,17 @@ Agora, responda à pergunta do usuário seguindo TODAS as regras e diretrizes ac
     messages: Array<{ role: 'user' | 'assistant'; content: string }>
   ): string {
     return messages
-      .map(
-        (msg) =>
-          `${msg.role === 'user' ? 'Usuário' : 'Assistente'}: ${msg.content}`
-      )
+      .map((msg) => {
+        const content = this.truncateText(
+          this.normalizeText(msg.content),
+          this.maxRecentMessageChars
+        );
+        if (!content) {
+          return '';
+        }
+        return `${msg.role === 'user' ? 'Usuário' : 'Assistente'}: ${content}`;
+      })
+      .filter(Boolean)
       .join('\n');
   }
 
@@ -516,5 +585,130 @@ ${instructionsText || 'Responda à pergunta do usuário de forma clara e precisa
     instructionsText +=
       '- IMPORTANTE: Se a pergunta do usuário estiver fora do contexto ou tema da empresa/agente, você deve educadamente informar que não pode responder sobre esse assunto e orientar o usuário a fazer perguntas relacionadas ao tema da empresa/agente. Seja prestativo e sugira exemplos de perguntas relevantes ao contexto da empresa.\n';
     return instructionsText;
+  }
+
+  private emptyContext(): IRagContext & { chunksCount: number } {
+    return {
+      chunks: [],
+      combinedContext: '',
+      chunksCount: 0,
+    };
+  }
+
+  private normalizeText(text: unknown): string {
+    if (typeof text !== 'string') {
+      return '';
+    }
+    return text.trim();
+  }
+
+  private normalizeScore(score: unknown): number {
+    if (typeof score !== 'number' || !Number.isFinite(score)) {
+      return 0;
+    }
+    return score;
+  }
+
+  private normalizeMinScore(minScore: number): number {
+    if (!Number.isFinite(minScore)) {
+      return 0;
+    }
+    return minScore;
+  }
+
+  private normalizeTopK(topK: number): number {
+    if (!Number.isFinite(topK)) {
+      return 0;
+    }
+    const normalized = Math.floor(topK);
+    if (normalized <= 0) {
+      return 0;
+    }
+    return Math.min(normalized, this.maxTopK);
+  }
+
+  private dedupeChunksByText(
+    chunks: Array<{ text: string; score: number; promptId: string }>
+  ): Array<{ text: string; score: number; promptId: string }> {
+    const seen = new Set<string>();
+    const result: Array<{ text: string; score: number; promptId: string }> = [];
+
+    for (const chunk of chunks) {
+      const key = chunk.text.replace(/\s+/g, ' ').trim().toLowerCase();
+      if (!key || seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      result.push(chunk);
+    }
+
+    return result;
+  }
+
+  private truncateText(text: string, maxChars: number): string {
+    if (maxChars <= 0) {
+      return '';
+    }
+    if (text.length <= maxChars) {
+      return text;
+    }
+    return text.slice(0, maxChars);
+  }
+
+  private buildCombinedContext(
+    chunks: Array<{ text: string; score: number; promptId: string }>
+  ): {
+    chunks: Array<{ text: string; score: number; promptId: string }>;
+    combinedContext: string;
+  } {
+    if (this.maxCombinedContextChars <= 0) {
+      return { chunks: [], combinedContext: '' };
+    }
+
+    const selectedChunks: Array<{
+      text: string;
+      score: number;
+      promptId: string;
+    }> = [];
+    const separator = '\n\n---\n\n';
+    let currentLength = 0;
+
+    for (const chunk of chunks) {
+      const text = this.truncateText(chunk.text, this.maxChunkChars);
+      if (!text) {
+        continue;
+      }
+
+      const partLength =
+        (selectedChunks.length > 0 ? separator.length : 0) + text.length;
+      if (currentLength + partLength > this.maxCombinedContextChars) {
+        const remaining = this.maxCombinedContextChars - currentLength;
+        const allowedTextLength =
+          remaining - (selectedChunks.length > 0 ? separator.length : 0);
+        if (allowedTextLength <= 0) {
+          break;
+        }
+
+        const trimmed = this.truncateText(text, allowedTextLength);
+        if (!trimmed) {
+          break;
+        }
+
+        selectedChunks.push({ ...chunk, text: trimmed });
+        currentLength +=
+          (selectedChunks.length > 1 ? separator.length : 0) + trimmed.length;
+        break;
+      }
+
+      selectedChunks.push({ ...chunk, text });
+      currentLength += partLength;
+    }
+
+    return {
+      chunks: selectedChunks,
+      combinedContext: selectedChunks
+        .map((chunk) => chunk.text)
+        .join(separator),
+    };
   }
 }
