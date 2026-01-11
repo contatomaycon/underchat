@@ -1,5 +1,6 @@
 <script lang="ts" setup>
 import { computed, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { useChatbotStore } from '@/@webcore/stores/chatbot';
 import { useChatStore } from '@/@webcore/stores/chat';
 import { ChatbotChatTagResponse } from '@core/schema/chatbot/listChatTags/response.schema';
@@ -9,9 +10,13 @@ import { ListChatSectorsResponse } from '@core/schema/chat/listChatSectors/respo
 import AppSelectSearch from '@/components/AppSelectSearch.vue';
 import AppDateTimePicker from '@/@webcore/components/app-form-elements/AppDateTimePicker.vue';
 import moment from 'moment-timezone';
+import { EChatStatus } from '@core/common/enums/EChatStatus';
+
+const { t } = useI18n();
 
 interface Props {
   modelValue: boolean;
+  filterStatus?: string | null;
   filterLabel?: string | null;
   filterWorker?: string | null;
   filterUser?: string | null;
@@ -25,6 +30,7 @@ interface Props {
 
 interface Emits {
   (e: 'update:modelValue', value: boolean): void;
+  (e: 'update:filterStatus', value: string | null): void;
   (e: 'update:filterLabel', value: string | null): void;
   (e: 'update:filterWorker', value: string | null): void;
   (e: 'update:filterUser', value: string | null): void;
@@ -37,6 +43,7 @@ interface Emits {
   (e: 'filtersUpdated'): void;
 }
 
+const FILTER_STATUS_ALL = '__all__';
 const props = defineProps<Props>();
 const emit = defineEmits<Emits>();
 
@@ -60,6 +67,9 @@ const isLoadingUsers = ref(false);
 const sectors = ref<ListChatSectorsResponse>([]);
 const isLoadingSectors = ref(false);
 
+const filterStatus = ref<string | null>(
+  props.filterStatus ?? FILTER_STATUS_ALL
+);
 const filterLabelTemplateId = ref<string | null>(props.filterLabel ?? null);
 const filterWorkerId = ref<string | null>(props.filterWorker ?? null);
 const filterUserId = ref<string | null>(props.filterUser ?? null);
@@ -73,6 +83,14 @@ const filterDateStart = ref<Date | null>(
 const filterDateEnd = ref<Date | null>(
   props.filterDateEnd ? new Date(props.filterDateEnd) : null
 );
+
+const statusOptions = computed(() => [
+  { value: FILTER_STATUS_ALL, title: t('all', 'Todos') },
+  { value: EChatStatus.queue, title: t('waiting_for_service') },
+  { value: EChatStatus.in_chat, title: t('in_service') },
+  { value: EChatStatus.ura, title: t('chatbot') },
+  { value: EChatStatus.closed, title: t('chat_status_closed', 'Fechado') },
+]);
 
 const formatDateForApi = (
   date: Date | string | null,
@@ -175,6 +193,10 @@ const isSaving = ref(false);
 const handleSave = async () => {
   isSaving.value = true;
   try {
+    emit(
+      'update:filterStatus',
+      filterStatus.value === FILTER_STATUS_ALL ? null : filterStatus.value
+    );
     emit('update:filterLabel', filterLabelTemplateId.value);
     emit('update:filterWorker', filterWorkerId.value);
     emit('update:filterUser', filterUserId.value);
@@ -200,6 +222,7 @@ watch(isVisible, (visible) => {
     loadWorkers();
     loadUsers();
     loadSectors();
+    filterStatus.value = props.filterStatus ?? FILTER_STATUS_ALL;
     filterLabelTemplateId.value = props.filterLabel ?? null;
     filterWorkerId.value = props.filterWorker ?? null;
     filterUserId.value = props.filterUser ?? null;
@@ -215,6 +238,13 @@ watch(isVisible, (visible) => {
       : null;
   }
 });
+
+watch(
+  () => props.filterStatus,
+  (newValue) => {
+    filterStatus.value = newValue ?? FILTER_STATUS_ALL;
+  }
+);
 
 watch(
   () => props.filterLabel,
@@ -287,6 +317,19 @@ watch(
 
       <VCardText class="pt-6">
         <VRow>
+          <VCol cols="12" md="6">
+            <VLabel class="text-body-2 mb-1"
+              >{{ $t('filter_by_status', 'Filtrar por status') }}:</VLabel
+            >
+            <AppSelectSearch
+              v-model="filterStatus"
+              :items="statusOptions"
+              :placeholder="$t('select_status_filter', 'Selecione um status')"
+              item-value="value"
+              item-title="title"
+            />
+          </VCol>
+
           <VCol cols="12" md="6">
             <VLabel class="text-body-2 mb-1">{{ $t('filter_by_tag') }}:</VLabel>
             <template v-if="isLoadingTags">

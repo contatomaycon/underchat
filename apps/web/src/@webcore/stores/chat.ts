@@ -105,6 +105,7 @@ export const useChatStore = defineStore('chat', {
     listQueue: [] as ListChatsResult[],
     listInChat: [] as ListChatsResult[],
     listChatbot: [] as ListChatsResult[],
+    listClosed: [] as ListChatsResult[],
     queuePagings: {
       current_page: 1,
       total_pages: 1,
@@ -116,6 +117,13 @@ export const useChatStore = defineStore('chat', {
       current_page: 1,
       total_pages: 1,
       per_page: 25,
+      count: 0,
+      total: 0,
+    },
+    closedPagings: {
+      current_page: 1,
+      total_pages: 1,
+      per_page: 50,
       count: 0,
       total: 0,
     },
@@ -688,6 +696,7 @@ export const useChatStore = defineStore('chat', {
           current_page: input.current_page,
           per_page: input.per_page,
           status: input.status,
+          filter_status: input.filter_status,
           filter_label_template_id: input.filter_label_template_id,
           filter_worker_id: input.filter_worker_id,
           filter_user_id: input.filter_user_id,
@@ -751,6 +760,7 @@ export const useChatStore = defineStore('chat', {
           current_page: input.current_page,
           per_page: input.per_page,
           status: input.status,
+          filter_status: input.filter_status,
           filter_label_template_id: input.filter_label_template_id,
           filter_worker_id: input.filter_worker_id,
           filter_user_id: input.filter_user_id,
@@ -803,7 +813,8 @@ export const useChatStore = defineStore('chat', {
     },
 
     async listChatbotChats(
-      input: ListChatsQuery
+      input: ListChatsQuery,
+      append = false
     ): Promise<ListChatsResponse | null> {
       try {
         this.loading = true;
@@ -812,6 +823,7 @@ export const useChatStore = defineStore('chat', {
           current_page: input.current_page,
           per_page: input.per_page,
           status: input.status,
+          filter_status: input.filter_status,
           filter_label_template_id: input.filter_label_template_id,
           filter_worker_id: input.filter_worker_id,
           filter_user_id: input.filter_user_id,
@@ -835,17 +847,85 @@ export const useChatStore = defineStore('chat', {
         const data = response?.data;
 
         if (!data?.status || !data?.data) {
-          this.listChatbot = [];
+          if (!append) {
+            this.listChatbot = [];
+          }
 
           return null;
+        }
+
+        if (append) {
+          this.listChatbot = [...this.listChatbot, ...data.data.results];
+          return data.data;
         }
 
         this.listChatbot = data.data.results;
 
         return data.data;
       } catch {
-        this.listChatbot = [];
+        if (!append) {
+          this.listChatbot = [];
+        }
 
+        return null;
+      }
+    },
+
+    async listClosedChats(
+      input: ListChatsQuery,
+      append = false
+    ): Promise<ListChatsResponse | null> {
+      try {
+        this.loading = true;
+
+        const request: ListChatsQuery = {
+          current_page: input.current_page,
+          per_page: input.per_page,
+          status: input.status,
+          filter_status: input.filter_status,
+          filter_label_template_id: input.filter_label_template_id,
+          filter_worker_id: input.filter_worker_id,
+          filter_user_id: input.filter_user_id,
+          filter_sector_id: input.filter_sector_id,
+          filter_name: input.filter_name,
+          filter_phone: input.filter_phone,
+          filter_protocol: input.filter_protocol,
+          filter_date_start: input.filter_date_start,
+          filter_date_end: input.filter_date_end,
+        };
+
+        const response = await axios.get<IApiResponse<ListChatsResponse>>(
+          `/chat`,
+          {
+            params: request,
+          }
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          if (!append) {
+            this.listClosed = [];
+          }
+          return null;
+        }
+
+        if (append) {
+          this.listClosed = [...this.listClosed, ...data.data.results];
+          this.closedPagings = data.data.pagings;
+          return data.data;
+        }
+
+        this.listClosed = data.data.results;
+        this.closedPagings = data.data.pagings;
+
+        return data.data;
+      } catch {
+        if (!append) {
+          this.listClosed = [];
+        }
         return null;
       }
     },
@@ -859,7 +939,8 @@ export const useChatStore = defineStore('chat', {
         const request: SearchChatsQuery = {
           current_page: input.current_page ?? 1,
           per_page: input.per_page ?? 20,
-          search: input.search,
+          search: input.search || '',
+          filter_status: input.filter_status,
           filter_label_template_id: input.filter_label_template_id,
           filter_worker_id: input.filter_worker_id,
           filter_user_id: input.filter_user_id,
