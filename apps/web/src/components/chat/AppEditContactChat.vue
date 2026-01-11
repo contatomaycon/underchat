@@ -480,7 +480,7 @@ const loadContactData = async () => {
   isLoadingData.value = true;
 
   try {
-    const contact = await chatStore.getChatContactById(contactId.value);
+    const contact = await chatStore.getChatContactById(contactId.value, true);
     if (contact) {
       label_template_id.value =
         contact.label_template?.label_template_id ?? null;
