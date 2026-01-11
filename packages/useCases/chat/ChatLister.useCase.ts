@@ -13,11 +13,13 @@ import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { hasRequiredPermission } from '@core/common/functions/hasRequiredPermission';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { IElasticsearchBoolClause } from '@core/common/interfaces/IElasticsearchQuery';
+import { ChatUserViewerRepository } from '@core/repositories/chat/ChatUserViewer.repository';
 
 @injectable()
 export class ChatListerUseCase {
   constructor(
-    private readonly elasticDatabaseService: ElasticDatabaseService
+    private readonly elasticDatabaseService: ElasticDatabaseService,
+    private readonly chatUserViewerRepository: ChatUserViewerRepository
   ) {}
 
   private canViewOthersChats(actions: IJwtGroupHierarchy[]): boolean {
@@ -42,6 +44,181 @@ export class ChatListerUseCase {
     ];
 
     return hasRequiredPermission(actions, permissions);
+  }
+
+  private async getUserSortPreferences(userId: string): Promise<{
+    sortByChatOrder: string | null;
+    sortInChatOrder: string | null;
+    sortByMyChatsOrder: string | null;
+    sortMyChatsOrder: string | null;
+    sortByQueueOrder: string | null;
+    sortQueueOrder: string | null;
+    sortByChatbotOrder: string | null;
+    sortChatbotOrder: string | null;
+  }> {
+    const chatUser = await this.chatUserViewerRepository.viewChatUser(userId);
+
+    if (!chatUser) {
+      return {
+        sortByChatOrder: null,
+        sortInChatOrder: null,
+        sortByMyChatsOrder: null,
+        sortMyChatsOrder: null,
+        sortByQueueOrder: null,
+        sortQueueOrder: null,
+        sortByChatbotOrder: null,
+        sortChatbotOrder: null,
+      };
+    }
+
+    return {
+      sortByChatOrder: chatUser.sort_by_chat_order ?? null,
+      sortInChatOrder: chatUser.sort_in_chat_order ?? null,
+      sortByMyChatsOrder: chatUser.sort_by_my_chats_order ?? null,
+      sortMyChatsOrder: chatUser.sort_my_chats_order ?? null,
+      sortByQueueOrder: chatUser.sort_by_queue_order ?? null,
+      sortQueueOrder: chatUser.sort_queue_order ?? null,
+      sortByChatbotOrder: chatUser.sort_by_chatbot_order ?? null,
+      sortChatbotOrder: chatUser.sort_chatbot_order ?? null,
+    };
+  }
+
+  private getSortForStatus(
+    status: string,
+    filterStatus: string | null | undefined,
+    preferences: {
+      sortByChatOrder: string | null;
+      sortInChatOrder: string | null;
+      sortByMyChatsOrder: string | null;
+      sortMyChatsOrder: string | null;
+      sortByQueueOrder: string | null;
+      sortQueueOrder: string | null;
+      sortByChatbotOrder: string | null;
+      sortChatbotOrder: string | null;
+    }
+  ): { sortBy: string; sortOrder: string } {
+    const isAll = filterStatus === null || filterStatus === undefined;
+    const effectiveStatus = filterStatus ?? status;
+
+    if (isAll) {
+      if (preferences.sortByChatOrder && preferences.sortInChatOrder) {
+        return {
+          sortBy: preferences.sortByChatOrder,
+          sortOrder: preferences.sortInChatOrder,
+        };
+      }
+    }
+
+    if (effectiveStatus === EChatStatus.in_chat) {
+      if (preferences.sortByMyChatsOrder && preferences.sortMyChatsOrder) {
+        return {
+          sortBy: preferences.sortByMyChatsOrder,
+          sortOrder: preferences.sortMyChatsOrder,
+        };
+      }
+    }
+
+    if (effectiveStatus === EChatStatus.queue) {
+      if (preferences.sortByQueueOrder && preferences.sortQueueOrder) {
+        return {
+          sortBy: preferences.sortByQueueOrder,
+          sortOrder: preferences.sortQueueOrder,
+        };
+      }
+    }
+
+    return {
+      sortBy: 'date',
+      sortOrder: 'desc',
+    };
+  }
+
+  private getSortField(field: string): string {
+    const fieldMap: Record<string, string> = {
+      'summary.last_message': 'summary.last_date',
+      'account.name': 'account.name.keyword',
+      'worker.name': 'worker.name.keyword',
+      name: 'name.keyword',
+      phone: 'phone.keyword',
+      status: 'status',
+      date: 'date',
+      'user.name': 'user.name.keyword',
+      'sector.name': 'sector.name.keyword',
+      started_at: 'started_at',
+      closed_at: 'closed_at',
+    };
+    return fieldMap[field] || 'date';
+  }
+
+  private buildElasticsearchSort(sortBy: string, sortOrder: string): any[] {
+    const field = this.getSortField(sortBy);
+
+    if (field === 'account.name.keyword') {
+      return [
+        {
+          'account.name.keyword': {
+            order: sortOrder,
+            nested: {
+              path: 'account',
+            },
+          },
+        },
+      ];
+    }
+
+    if (field === 'worker.name.keyword') {
+      return [
+        {
+          'worker.name.keyword': {
+            order: sortOrder,
+            nested: {
+              path: 'worker',
+            },
+          },
+        },
+      ];
+    }
+
+    if (field === 'user.name.keyword') {
+      return [
+        {
+          'user.name.keyword': {
+            order: sortOrder,
+            nested: {
+              path: 'user',
+            },
+          },
+        },
+      ];
+    }
+
+    if (field === 'sector.name.keyword') {
+      return [
+        {
+          'sector.name.keyword': {
+            order: sortOrder,
+            nested: {
+              path: 'sector',
+            },
+          },
+        },
+      ];
+    }
+
+    if (field === 'summary.last_date') {
+      return [
+        {
+          'summary.last_date': {
+            order: sortOrder,
+            nested: {
+              path: 'summary',
+            },
+          },
+        },
+      ];
+    }
+
+    return [{ [field]: { order: sortOrder } }];
   }
 
   async execute(
@@ -386,10 +563,18 @@ export class ChatListerUseCase {
       }
     }
 
+    const userPreferences = await this.getUserSortPreferences(userId);
+    const { sortBy, sortOrder } = this.getSortForStatus(
+      query.status,
+      query.filter_status,
+      userPreferences
+    );
+    const sort = this.buildElasticsearchSort(sortBy, sortOrder);
+
     const queryElastic = {
       from: (currentPage - 1) * perPage,
       size: perPage,
-      sort: [{ date: { order: 'desc' } }],
+      sort,
       query: {
         bool: {
           must: mustClauses,

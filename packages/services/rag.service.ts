@@ -13,6 +13,99 @@ export class RagService {
   private readonly maxCombinedContextChars = 20000;
   private readonly maxRecentMessageChars = 1500;
   private readonly maxSummaryChars = 12000;
+  private readonly minContextScore = 0.2;
+  private readonly minKeywordLength = 3;
+  private readonly minKeywordMatchRatio = 0.3;
+  private readonly keywordStopWords = new Set([
+    'a',
+    'o',
+    'os',
+    'as',
+    'um',
+    'uma',
+    'uns',
+    'umas',
+    'de',
+    'do',
+    'da',
+    'dos',
+    'das',
+    'e',
+    'ou',
+    'que',
+    'como',
+    'qual',
+    'quais',
+    'quando',
+    'onde',
+    'quem',
+    'por',
+    'porque',
+    'pra',
+    'para',
+    'com',
+    'sem',
+    'nao',
+    'sim',
+    'se',
+    'em',
+    'no',
+    'na',
+    'nos',
+    'nas',
+    'sobre',
+    'isso',
+    'isto',
+    'essa',
+    'esse',
+    'aquela',
+    'aquele',
+    'aqui',
+    'ali',
+    'ja',
+    'so',
+    'sou',
+    'estou',
+    'esta',
+    'estao',
+    'ser',
+    'ter',
+    'me',
+    'minha',
+    'meu',
+    'meus',
+    'minhas',
+    'sua',
+    'seu',
+    'seus',
+    'suas',
+    'nosso',
+    'nossa',
+    'voces',
+    'voce',
+    'eu',
+    'tu',
+    'ele',
+    'ela',
+    'eles',
+    'elas',
+    'tudo',
+    'mais',
+    'menos',
+    'tambem',
+    'mesmo',
+    'mesma',
+    'ainda',
+    'agora',
+    'favor',
+    'porfavor',
+    'poderia',
+    'pode',
+    'poder',
+    'quer',
+    'quero',
+    'gostaria',
+  ]);
 
   constructor(
     private readonly embeddingService: EmbeddingService,
@@ -34,7 +127,7 @@ export class RagService {
       onlyUseful?: boolean;
       onlyAssistantResponses?: boolean;
     }
-  ): Promise<IRagContext & { chunksCount: number }> {
+  ): Promise<IRagContext & { chunksCount: number; maxScore: number }> {
     try {
       const chunks = await this.embeddingService.searchChatHistory(
         accountId,
@@ -74,7 +167,7 @@ export class RagService {
     userQuery: string,
     topK = 100,
     minScore = 0.0
-  ): Promise<IRagContext & { chunksCount: number }> {
+  ): Promise<IRagContext & { chunksCount: number; maxScore: number }> {
     try {
       const chunks = await this.embeddingService.searchSimilarChunks(
         accountId,
@@ -96,7 +189,7 @@ export class RagService {
   private processChunks(
     chunks: Array<{ text: string; score: number; promptId: string }>,
     minScore: number
-  ): IRagContext & { chunksCount: number } {
+  ): IRagContext & { chunksCount: number; maxScore: number } {
     const safeMinScore = this.normalizeMinScore(minScore);
     const normalizedChunks = (Array.isArray(chunks) ? chunks : [])
       .map((chunk) => ({
@@ -110,11 +203,13 @@ export class RagService {
     const uniqueChunks = this.dedupeChunksByText(normalizedChunks);
     const { chunks: selectedChunks, combinedContext } =
       this.buildCombinedContext(uniqueChunks);
+    const maxScore = selectedChunks.length > 0 ? selectedChunks[0].score : 0;
 
     return {
       chunks: selectedChunks,
       combinedContext,
       chunksCount: selectedChunks.length,
+      maxScore,
     };
   }
 
@@ -246,15 +341,32 @@ export class RagService {
     enhancedPrompt: string;
     contextUsed: boolean;
     chunksCount: number;
+    contextAllowed: boolean;
+    contextHints: string[];
   }> {
     const isBootstrap = options?.isBootstrap ?? false;
 
     if (isBootstrap) {
-      return this.buildBootstrapPrompt(accountId, aiAgentId);
+      const bootstrapPrompt = await this.buildBootstrapPrompt(
+        accountId,
+        aiAgentId
+      );
+      return {
+        ...bootstrapPrompt,
+        contextAllowed: true,
+        contextHints: [],
+      };
     }
 
-    const { contextParts, chunksCount, hasRelevantContext } =
-      await this.buildContextParts(accountId, aiAgentId, userQuery, options);
+    const {
+      contextParts,
+      chunksCount,
+      hasRelevantContext,
+      knowledgeContextText,
+      knowledgeMaxScore,
+      historyMaxScore,
+      hasConversationContext,
+    } = await this.buildContextParts(accountId, aiAgentId, userQuery, options);
 
     const enhancedPrompt = this.buildEnhancedPrompt(
       systemPrompt,
@@ -264,10 +376,29 @@ export class RagService {
       hasRelevantContext
     );
 
+    const contextScoreThreshold = Math.max(
+      this.minContextScore,
+      this.normalizeMinScore(options?.minScore ?? this.minContextScore)
+    );
+    const contextAllowed = this.isQueryWithinContext(userQuery, {
+      bootstrapSummary: options?.bootstrapSummary,
+      knowledgeContextText,
+      knowledgeMaxScore,
+      historyMaxScore,
+      hasConversationContext,
+      scoreThreshold: contextScoreThreshold,
+    });
+    const contextHints = this.buildContextHints(
+      options?.bootstrapSummary,
+      knowledgeContextText
+    );
+
     return {
       enhancedPrompt,
       contextUsed: contextParts.length > 0,
       chunksCount,
+      contextAllowed,
+      contextHints,
     };
   }
 
@@ -413,11 +544,23 @@ Agora, responda à pergunta do usuário seguindo TODAS as regras e diretrizes ac
     contextParts: string[];
     chunksCount: number;
     hasRelevantContext: boolean;
+    knowledgeContextText: string;
+    knowledgeMaxScore: number;
+    historyMaxScore: number;
+    hasConversationContext: boolean;
   }> {
     const contextParts: string[] = [];
     let totalChunksCount = 0;
     let hasRelevantContext = false;
+    let knowledgeContextText = '';
+    let knowledgeMaxScore = 0;
+    let historyMaxScore = 0;
     const normalizedQuery = this.normalizeText(userQuery);
+    const hasConversationContext =
+      !!(
+        options?.conversationSummary &&
+        options.conversationSummary.trim().length > 0
+      ) || !!(options?.recentMessages && options.recentMessages.length > 0);
 
     if (
       options?.bootstrapSummary &&
@@ -475,6 +618,8 @@ Agora, responda à pergunta do usuário seguindo TODAS as regras e diretrizes ac
         );
         totalChunksCount += relevantContext.chunksCount;
         hasRelevantContext = true;
+        knowledgeContextText = relevantContext.combinedContext;
+        knowledgeMaxScore = relevantContext.maxScore;
       }
     }
 
@@ -499,6 +644,7 @@ Agora, responda à pergunta do usuário seguindo TODAS as regras e diretrizes ac
         );
         totalChunksCount += chatHistoryContext.chunksCount;
         hasRelevantContext = true;
+        historyMaxScore = chatHistoryContext.maxScore;
       }
     }
 
@@ -506,6 +652,10 @@ Agora, responda à pergunta do usuário seguindo TODAS as regras e diretrizes ac
       contextParts,
       chunksCount: totalChunksCount,
       hasRelevantContext,
+      knowledgeContextText,
+      knowledgeMaxScore,
+      historyMaxScore,
+      hasConversationContext,
     };
   }
 
@@ -556,7 +706,10 @@ ${instructionsText || 'Responda à pergunta do usuário de forma clara e precisa
     conversationSummary?: string | null,
     hasRelevantContext = false
   ): string {
-    let instructionsText = '';
+    let instructionsText =
+      '- Responda somente com base no contexto acima e nas regras. NUNCA use conhecimento externo ou suposições.\n';
+    instructionsText +=
+      '- Se o contexto não cobrir a pergunta, informe que não pode responder fora do contexto da empresa/agente.\n';
 
     if (bootstrapSummary && bootstrapSummary.trim().length > 0) {
       instructionsText +=
@@ -587,11 +740,135 @@ ${instructionsText || 'Responda à pergunta do usuário de forma clara e precisa
     return instructionsText;
   }
 
-  private emptyContext(): IRagContext & { chunksCount: number } {
+  private isQueryWithinContext(
+    userQuery: string,
+    options: {
+      bootstrapSummary?: string | null;
+      knowledgeContextText: string;
+      knowledgeMaxScore: number;
+      historyMaxScore: number;
+      hasConversationContext: boolean;
+      scoreThreshold: number;
+    }
+  ): boolean {
+    const queryKeywords = this.extractKeywords(userQuery);
+    const hasKnowledgeText =
+      (options.bootstrapSummary &&
+        options.bootstrapSummary.trim().length > 0) ||
+      options.knowledgeContextText.trim().length > 0;
+
+    if (queryKeywords.length === 0) {
+      return options.hasConversationContext || hasKnowledgeText;
+    }
+
+    if (options.knowledgeMaxScore >= options.scoreThreshold) {
+      return true;
+    }
+
+    if (options.historyMaxScore >= options.scoreThreshold) {
+      return true;
+    }
+
+    const contextText = [
+      options.bootstrapSummary ?? '',
+      options.knowledgeContextText ?? '',
+    ]
+      .map((text) => this.normalizeText(text))
+      .filter(Boolean)
+      .join(' ');
+
+    if (!contextText) {
+      return false;
+    }
+
+    const contextKeywords = this.extractKeywords(contextText);
+    if (contextKeywords.length === 0) {
+      return false;
+    }
+
+    const contextKeywordSet = new Set(contextKeywords);
+    if (queryKeywords.length === 1) {
+      return contextKeywordSet.has(queryKeywords[0]);
+    }
+
+    const matchCount = queryKeywords.filter((token) =>
+      contextKeywordSet.has(token)
+    ).length;
+
+    return (
+      matchCount > 0 &&
+      matchCount / queryKeywords.length >= this.minKeywordMatchRatio
+    );
+  }
+
+  private buildContextHints(
+    bootstrapSummary?: string | null,
+    knowledgeContextText?: string
+  ): string[] {
+    const baseText = [bootstrapSummary ?? '', knowledgeContextText ?? '']
+      .map((text) => this.normalizeText(text))
+      .filter(Boolean)
+      .join(' ');
+
+    if (!baseText) {
+      return [];
+    }
+
+    const keywords = this.extractKeywords(baseText);
+    const seen = new Set<string>();
+    const hints: string[] = [];
+
+    for (const keyword of keywords) {
+      if (seen.has(keyword)) {
+        continue;
+      }
+      seen.add(keyword);
+      hints.push(keyword);
+      if (hints.length >= 6) {
+        break;
+      }
+    }
+
+    return hints;
+  }
+
+  private extractKeywords(text: string): string[] {
+    const normalized = this.normalizeTextForComparison(text);
+    if (!normalized) {
+      return [];
+    }
+
+    return normalized
+      .split(' ')
+      .filter(
+        (token) =>
+          token.length >= this.minKeywordLength &&
+          !this.keywordStopWords.has(token)
+      );
+  }
+
+  private normalizeTextForComparison(text: string): string {
+    if (!text) {
+      return '';
+    }
+
+    return text
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim();
+  }
+
+  private emptyContext(): IRagContext & {
+    chunksCount: number;
+    maxScore: number;
+  } {
     return {
       chunks: [],
       combinedContext: '',
       chunksCount: 0,
+      maxScore: 0,
     };
   }
 

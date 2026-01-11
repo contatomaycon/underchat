@@ -1,4 +1,5 @@
 import { injectable, inject } from 'tsyringe';
+import { createHash } from 'crypto';
 import Redis from 'ioredis';
 import { ChatbotService } from './chatbot.service';
 import { ChatService } from './chat.service';
@@ -4384,42 +4385,111 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       );
     }
 
-    const enhancedPrompt = await this.buildEnhancedPromptForAiAgent(
-      createChat,
-      selectedAiAgentId,
-      userText,
-      bootstrapSummaryKey,
-      conversationSummaryKey
+    const recentMessages = await this.getRecentChatMessages(
+      createChat.account.id,
+      createChat.chat_id,
+      50
     );
 
+    const { enhancedPrompt, contextAllowed, contextHints } =
+      await this.buildEnhancedPromptForAiAgent(
+        createChat,
+        selectedAiAgentId,
+        userText,
+        bootstrapSummaryKey,
+        conversationSummaryKey,
+        recentMessages
+      );
+
     let aiResponse: string;
-    try {
-      aiResponse = await this.callAiAgentChatApi(
-        aiAgent.base_url,
-        aiAgent.api_key,
-        aiAgent.model,
-        aiAgent.ai_agent_type_id,
-        enhancedPrompt,
-        userText
-      );
-    } catch (error) {
-      const nextFlowId = this.getNextFlowIdByFallbackHandle(
-        chatbotFlow,
-        currentFlowId
-      );
-
-      if (nextFlowId) {
-        await this.updateCache(createChat, nextFlowId);
-        return this.processNextNode(
-          t,
-          createChat,
-          chatbotFlow,
-          nextFlowId,
-          customMessages
+    if (!contextAllowed) {
+      aiResponse = this.buildOutOfContextResponse(userText, contextHints);
+    } else {
+      try {
+        aiResponse = await this.callAiAgentChatApi(
+          aiAgent.base_url,
+          aiAgent.api_key,
+          aiAgent.model,
+          aiAgent.ai_agent_type_id,
+          enhancedPrompt,
+          userText
         );
-      }
 
-      throw error;
+        let isDuplicate =
+          this.isRepeatedResponse(aiResponse, recentMessages) ||
+          (await this.isResponseRepeatedInHistory(
+            createChat.account.id,
+            createChat.chat_id,
+            selectedAiAgentId,
+            userText,
+            aiResponse
+          ));
+
+        if (isDuplicate) {
+          const retryPrompt =
+            this.buildDiversificationRetryPrompt(enhancedPrompt);
+          const retryResponse = await this.callAiAgentChatApi(
+            aiAgent.base_url,
+            aiAgent.api_key,
+            aiAgent.model,
+            aiAgent.ai_agent_type_id,
+            retryPrompt,
+            userText
+          );
+
+          const retryIsDuplicate =
+            this.isRepeatedResponse(retryResponse, recentMessages) ||
+            (await this.isResponseRepeatedInHistory(
+              createChat.account.id,
+              createChat.chat_id,
+              selectedAiAgentId,
+              userText,
+              retryResponse
+            ));
+
+          if (!retryIsDuplicate) {
+            aiResponse = retryResponse;
+          } else {
+            aiResponse = this.appendVariationAddendum(
+              retryResponse,
+              Date.now()
+            );
+          }
+        }
+      } catch (error) {
+        const nextFlowId = this.getNextFlowIdByFallbackHandle(
+          chatbotFlow,
+          currentFlowId
+        );
+
+        if (nextFlowId) {
+          await this.updateCache(createChat, nextFlowId);
+          return this.processNextNode(
+            t,
+            createChat,
+            chatbotFlow,
+            nextFlowId,
+            customMessages
+          );
+        }
+
+        throw error;
+      }
+    }
+
+    try {
+      await this.storeResponseInHistory(
+        createChat.account.id,
+        createChat.chat_id,
+        selectedAiAgentId,
+        userText,
+        aiResponse
+      );
+    } catch (storeError) {
+      console.error(
+        '[AI Agent] Erro ao registrar histórico de respostas:',
+        storeError
+      );
     }
 
     await this.sendAiAgentResponse(
@@ -4484,38 +4554,317 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
     selectedAiAgentId: string,
     userText: string,
     bootstrapSummaryKey: string,
-    conversationSummaryKey: string
-  ): Promise<string> {
-    const systemPrompt = 'Você é um assistente virtual prestativo e educado.';
+    conversationSummaryKey: string,
+    recentMessages: Array<{ role: 'user' | 'assistant'; content: string }>
+  ): Promise<{
+    enhancedPrompt: string;
+    contextAllowed: boolean;
+    contextHints: string[];
+  }> {
+    const systemPrompt =
+      'Você é um assistente virtual prestativo e educado. Sempre entregue a melhor resposta possível com base no contexto e nas regras.';
 
     const bootstrapSummary = await this.redis.get(bootstrapSummaryKey);
     const conversationSummary = await this.redis.get(conversationSummaryKey);
 
-    const recentMessages = await this.getRecentChatMessages(
-      createChat.account.id,
-      createChat.chat_id,
-      20
-    );
+    const { enhancedPrompt, contextAllowed, contextHints } =
+      await this.ragService.enhancePromptWithRag(
+        createChat.account.id,
+        selectedAiAgentId,
+        systemPrompt,
+        userText,
+        {
+          topK: 12,
+          minScore: 0.2,
+          chatId: createChat.chat_id,
+          includeChatHistory: true,
+          isBootstrap: false,
+          bootstrapSummary: bootstrapSummary,
+          conversationSummary: conversationSummary,
+          recentMessages: recentMessages,
+          phone: createChat.phone,
+        }
+      );
 
-    const { enhancedPrompt } = await this.ragService.enhancePromptWithRag(
-      createChat.account.id,
-      selectedAiAgentId,
-      systemPrompt,
+    const additionalInstructions = this.buildAdditionalAiResponseInstructions(
       userText,
-      {
-        topK: 12,
-        minScore: 0.0,
-        chatId: createChat.chat_id,
-        includeChatHistory: true,
-        isBootstrap: false,
-        bootstrapSummary: bootstrapSummary,
-        conversationSummary: conversationSummary,
-        recentMessages: recentMessages,
-        phone: createChat.phone,
-      }
+      recentMessages
     );
 
-    return enhancedPrompt;
+    if (!additionalInstructions) {
+      return { enhancedPrompt, contextAllowed, contextHints };
+    }
+
+    return {
+      enhancedPrompt: `${enhancedPrompt}\n\n### Diretrizes Adicionais:\n${additionalInstructions}`,
+      contextAllowed,
+      contextHints,
+    };
+  }
+
+  private buildAdditionalAiResponseInstructions(
+    userText: string,
+    recentMessages: Array<{ role: 'user' | 'assistant'; content: string }>
+  ): string {
+    const instructions: string[] = [
+      '- Entregue a melhor resposta possível, escolhendo a alternativa mais adequada ao contexto e às regras. Quando houver opções, recomende a melhor e explique rapidamente o porquê.',
+      '- Responda somente com base no contexto fornecido. Se não houver contexto suficiente, informe que não pode responder.',
+    ];
+
+    const repeatedQuestionCount = this.getRepeatedQuestionCount(
+      userText,
+      recentMessages
+    );
+
+    if (repeatedQuestionCount > 0) {
+      instructions.push(
+        '- Pergunta repetida detectada. Evite repetir frases, listas e a mesma estrutura de resposta.',
+        '- Traga novos detalhes, exemplos ou passos mantendo a precisão e as regras.',
+        `- Estratégia de variação: ${this.pickVariationStrategy(
+          repeatedQuestionCount
+        )}`
+      );
+    }
+
+    return instructions.join('\n');
+  }
+
+  private buildOutOfContextResponse(
+    userText: string,
+    contextHints: string[]
+  ): string {
+    const introVariants = [
+      'Desculpe, esse assunto está fora do contexto que posso atender.',
+      'Não posso responder sobre esse tema, pois está fora do contexto disponível.',
+      'Esse pedido não está dentro do contexto da empresa/agente.',
+      'No momento, só posso ajudar com assuntos do contexto da empresa/agente.',
+    ];
+
+    const guidanceVariants = [
+      'Posso responder perguntas relacionadas ao contexto da empresa/agente. Se puder, reformule sua dúvida nesse sentido.',
+      'Se quiser, reformule a pergunta para algo dentro do contexto da empresa/agente.',
+      'Para eu ajudar melhor, traga uma pergunta relacionada ao contexto da empresa/agente.',
+      'Fico à disposição para ajudar com temas ligados ao contexto da empresa/agente.',
+    ];
+
+    const seed = `${Date.now()}:${userText}`;
+    const intro = this.pickVariant(seed, introVariants);
+    const guidance = this.pickVariant(`${seed}:g`, guidanceVariants);
+    const hintsText = this.formatContextHints(contextHints);
+
+    return [intro, guidance, hintsText].filter(Boolean).join(' ');
+  }
+
+  private pickVariant(seed: string, variants: string[]): string {
+    if (variants.length === 0) {
+      return '';
+    }
+    const hash = this.hashText(seed);
+    const index = parseInt(hash.slice(0, 8), 16) % variants.length;
+    return variants[index];
+  }
+
+  private formatContextHints(hints: string[]): string {
+    if (!hints || hints.length === 0) {
+      return '';
+    }
+
+    const uniqueHints: string[] = [];
+    const seen = new Set<string>();
+
+    for (const hint of hints) {
+      if (!hint || seen.has(hint)) {
+        continue;
+      }
+      seen.add(hint);
+      uniqueHints.push(hint);
+      if (uniqueHints.length >= 3) {
+        break;
+      }
+    }
+
+    if (uniqueHints.length === 0) {
+      return '';
+    }
+
+    return `Posso ajudar com temas como: ${uniqueHints.join(', ')}.`;
+  }
+
+  private getRepeatedQuestionCount(
+    userText: string,
+    recentMessages: Array<{ role: 'user' | 'assistant'; content: string }>
+  ): number {
+    const normalizedUserText = this.normalizeTextForComparison(userText);
+    if (!normalizedUserText) {
+      return 0;
+    }
+
+    const userMessages = recentMessages.filter((msg) => msg.role === 'user');
+    if (userMessages.length === 0) {
+      return 0;
+    }
+
+    const matchingMessages = userMessages.filter(
+      (msg) =>
+        this.normalizeTextForComparison(msg.content) === normalizedUserText
+    );
+
+    if (matchingMessages.length === 0) {
+      return 0;
+    }
+
+    const lastUserMessage = userMessages[userMessages.length - 1];
+    const includesCurrent =
+      this.normalizeTextForComparison(lastUserMessage.content) ===
+      normalizedUserText;
+
+    const repeatCount = matchingMessages.length - (includesCurrent ? 1 : 0);
+    return Math.max(0, repeatCount);
+  }
+
+  private pickVariationStrategy(repeatCount: number): string {
+    const strategies = [
+      'Responda com um passo a passo numerado.',
+      'Responda com um resumo curto seguido de detalhes.',
+      'Responda em formato de checklist.',
+      'Responda destacando erros comuns e como evitar.',
+      'Responda com um exemplo prático e depois generalize.',
+      'Responda comparando alternativas e recomendando a melhor.',
+      'Responda com foco em boas práticas e alertas importantes.',
+      'Responda com uma explicação direta e depois uma dica avançada.',
+    ];
+
+    const safeCount = Math.max(1, repeatCount);
+    const index = (safeCount - 1) % strategies.length;
+    return strategies[index];
+  }
+
+  private isRepeatedResponse(
+    response: string,
+    recentMessages: Array<{ role: 'user' | 'assistant'; content: string }>
+  ): boolean {
+    const normalizedResponse = this.normalizeTextForComparison(response);
+    if (!normalizedResponse) {
+      return false;
+    }
+
+    const assistantMessages = recentMessages.filter(
+      (msg) => msg.role === 'assistant'
+    );
+    return assistantMessages.some(
+      (msg) =>
+        this.normalizeTextForComparison(msg.content) === normalizedResponse
+    );
+  }
+
+  private buildDiversificationRetryPrompt(prompt: string): string {
+    const retryInstructions = [
+      '- Sua resposta ficou igual a uma resposta já enviada nesta conversa.',
+      '- Reescreva com outra estrutura e palavras, adicionando detalhes ou exemplos diferentes.',
+      '- Não repita frases, listas nem a ordem dos tópicos.',
+      '- Não mencione que está variando ou que houve repetição.',
+    ].join('\n');
+
+    return `${prompt}\n\n### Diretrizes de Diversificação (Repetição Detectada):\n${retryInstructions}`;
+  }
+
+  private appendVariationAddendum(response: string, seed: number): string {
+    const addendums = [
+      'Observação adicional: posso detalhar em um passo a passo se você quiser.',
+      'Observação adicional: posso trazer um exemplo prático para o seu caso.',
+      'Observação adicional: posso resumir a resposta em formato de checklist.',
+      'Observação adicional: posso comparar alternativas e indicar a mais adequada.',
+    ];
+
+    const baseIndex = Math.abs(seed) % addendums.length;
+    const normalizedResponse = this.normalizeTextForComparison(response);
+
+    for (let offset = 0; offset < addendums.length; offset++) {
+      const candidate = addendums[(baseIndex + offset) % addendums.length];
+      const normalizedCandidate = this.normalizeTextForComparison(candidate);
+      if (!normalizedResponse.includes(normalizedCandidate)) {
+        return `${response}\n\n${candidate}`;
+      }
+    }
+
+    return response;
+  }
+
+  private normalizeTextForComparison(text: string): string {
+    if (!text) {
+      return '';
+    }
+
+    return text
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim();
+  }
+
+  private hashText(text: string): string {
+    return createHash('sha256').update(text).digest('hex');
+  }
+
+  private buildResponseHistoryKey(
+    accountId: string,
+    chatId: string,
+    aiAgentId: string,
+    normalizedQuestion: string
+  ): string {
+    const questionHash = this.hashText(normalizedQuestion);
+    return `underchat:ai-response-history:${accountId}:${chatId}:${aiAgentId}:${questionHash}`;
+  }
+
+  private async isResponseRepeatedInHistory(
+    accountId: string,
+    chatId: string,
+    aiAgentId: string,
+    userText: string,
+    response: string
+  ): Promise<boolean> {
+    const normalizedQuestion = this.normalizeTextForComparison(userText);
+    const normalizedResponse = this.normalizeTextForComparison(response);
+    if (!normalizedQuestion || !normalizedResponse) {
+      return false;
+    }
+
+    const key = this.buildResponseHistoryKey(
+      accountId,
+      chatId,
+      aiAgentId,
+      normalizedQuestion
+    );
+    const responseHash = this.hashText(normalizedResponse);
+    const exists = await this.redis.sismember(key, responseHash);
+
+    return exists === 1;
+  }
+
+  private async storeResponseInHistory(
+    accountId: string,
+    chatId: string,
+    aiAgentId: string,
+    userText: string,
+    response: string
+  ): Promise<void> {
+    const normalizedQuestion = this.normalizeTextForComparison(userText);
+    const normalizedResponse = this.normalizeTextForComparison(response);
+    if (!normalizedQuestion || !normalizedResponse) {
+      return;
+    }
+
+    const key = this.buildResponseHistoryKey(
+      accountId,
+      chatId,
+      aiAgentId,
+      normalizedQuestion
+    );
+    const responseHash = this.hashText(normalizedResponse);
+
+    await this.redis.sadd(key, responseHash);
+    await this.redis.expire(key, 60 * 60 * 24 * 7);
   }
 
   private async sendAiAgentResponse(
