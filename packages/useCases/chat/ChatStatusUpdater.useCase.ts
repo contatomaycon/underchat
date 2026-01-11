@@ -163,6 +163,31 @@ export class ChatStatusUpdaterUseCase {
     await Promise.all([this.redis.del(cacheKey), this.redis.del(cacheKeyChat)]);
   }
 
+  private async validatePhoneNotInActiveChat(
+    t: TFunction<'translation', undefined>,
+    accountId: string,
+    workerId: string,
+    phone: string,
+    currentChatId: string
+  ): Promise<void> {
+    const existingChat = await this.chatService.findChatByPhone(
+      accountId,
+      workerId,
+      phone
+    );
+
+    if (existingChat && existingChat.chat_id !== currentChatId) {
+      const sectorName = existingChat.sector?.name;
+      if (sectorName) {
+        throw new Error(
+          t('chat_already_in_service_with_sector', { sector: sectorName })
+        );
+      }
+
+      throw new Error(t('chat_already_in_service'));
+    }
+  }
+
   private async validateInChatAttendance(
     t: TFunction<'translation', undefined>,
     accountId: string,
@@ -348,19 +373,41 @@ export class ChatStatusUpdaterUseCase {
     let startedAt: string | null | undefined;
     let closedAt: string | null | undefined;
 
+    const isReopeningChat =
+      chat.status === EChatStatus.closed && status === EChatStatus.closed;
+
+    let finalStatus = status;
+    if (isReopeningChat) {
+      await this.validatePhoneNotInActiveChat(
+        t,
+        accountId,
+        chat.worker.id,
+        chat.phone,
+        chat.chat_id
+      );
+
+      await this.validateInChatAttendance(t, accountId, chat.worker.id, userId);
+
+      user = await this.prepareUserForInChat(userId);
+      finalStatus = EChatStatus.in_chat;
+    }
+
     if (
-      status === EChatStatus.in_chat &&
+      finalStatus === EChatStatus.in_chat &&
       (chat.status === EChatStatus.queue || chat.status === EChatStatus.ura) &&
       !chat.started_at
     ) {
       startedAt = currentDate;
     }
 
-    if (status === EChatStatus.closed && !chat.closed_at) {
+    if (finalStatus === EChatStatus.closed && !chat.closed_at) {
       closedAt = currentDate;
     }
 
-    if (status === EChatStatus.in_chat) {
+    if (
+      finalStatus === EChatStatus.in_chat &&
+      chat.status !== EChatStatus.closed
+    ) {
       await this.validateInChatAttendance(t, accountId, chat.worker.id, userId);
 
       user = await this.prepareUserForInChat(userId);
@@ -368,7 +415,7 @@ export class ChatStatusUpdaterUseCase {
 
     const updated = await this.chatService.updateChatStatus(
       params.chat_id,
-      status,
+      finalStatus,
       user,
       startedAt,
       closedAt
@@ -380,7 +427,7 @@ export class ChatStatusUpdaterUseCase {
 
     const updatedChat = this.buildUpdatedChat(
       chat,
-      status,
+      finalStatus,
       user,
       startedAt,
       closedAt
@@ -388,13 +435,16 @@ export class ChatStatusUpdaterUseCase {
 
     await this.chatService.saveChat(updatedChat);
 
-    if (status === EChatStatus.in_chat || status === EChatStatus.closed) {
+    if (
+      finalStatus === EChatStatus.in_chat ||
+      finalStatus === EChatStatus.closed
+    ) {
       await this.invalidateChatCache(updatedChat);
     }
 
     const chatWithProtocol = await this.buildChatWithProtocol(
       updatedChat,
-      status,
+      finalStatus,
       t,
       accountId,
       params.chat_id,
@@ -403,7 +453,7 @@ export class ChatStatusUpdaterUseCase {
 
     await this.publishChatUpdate(chatWithProtocol, accountId);
 
-    if (status === EChatStatus.closed) {
+    if (finalStatus === EChatStatus.closed) {
       await this.handleClosedStatus(t, accountId, params.chat_id, chat);
     }
 

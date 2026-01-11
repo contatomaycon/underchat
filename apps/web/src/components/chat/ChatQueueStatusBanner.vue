@@ -23,6 +23,14 @@ const emit = defineEmits<{
 
 const message = computed(() => {
   if (props.isClosedStatus) {
+    if (props.cannotAttendDueToStatus) {
+      return t('attendance_only_online_required');
+    }
+    if (props.cannotAttendDueToLimit) {
+      return t('simultaneous_attendance_limit_message', {
+        limit: props.workerConfigForChat?.simultaneous_attendance,
+      });
+    }
     return t(
       'chat_closed_message',
       'Para reabrir o atendimento clique em reabrir'

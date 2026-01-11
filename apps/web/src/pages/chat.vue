@@ -241,13 +241,13 @@ const userStatus = computed(
 );
 
 const cannotAttendDueToStatus = computed(() => {
-  if (!isQueueOrUraStatus.value) return false;
+  if (!isQueueOrUraStatus.value && !isClosedStatus.value) return false;
   if (!workerConfigForChat.value?.allow_attendance_only_online) return false;
   return userStatus.value !== EChatUserStatus.online;
 });
 
 const cannotAttendDueToLimit = computed(() => {
-  if (!isQueueOrUraStatus.value) return false;
+  if (!isQueueOrUraStatus.value && !isClosedStatus.value) return false;
   if (cannotAttendDueToStatus.value) return false;
   if (!workerConfigForChat.value?.simultaneous_attendance_enabled) return false;
   if (!chatStore.activeChat?.worker?.id || !chatStore.user?.user_id)
@@ -274,6 +274,8 @@ const canAttendChat = computed(() => {
 
 const canReopenChat = computed(() => {
   if (!isClosedStatus.value) return false;
+  if (cannotAttendDueToStatus.value) return false;
+  if (cannotAttendDueToLimit.value) return false;
   return true;
 });
 
@@ -331,7 +333,7 @@ const handleReopenChat = async () => {
 
   const success = await chatStore.updateChatStatus(
     chatStore.activeChat.chat_id,
-    EChatStatus.in_chat
+    EChatStatus.closed
   );
 
   if (success) {

@@ -1406,6 +1406,8 @@
   "simultaneous_attendance_limit_reached": "You have reached the limit of simultaneous attendances allowed for this channel. Limit: {limit} attendance(s).",
   "simultaneous_attendance_limit_reached_title": "Attendance limit reached",
   "simultaneous_attendance_limit_message": "You can attend up to {limit} simultaneous attendance(s). Your limit has been reached.",
+  "chat_already_in_service": "There is already an ongoing service for this number!",
+  "chat_already_in_service_with_sector": "There is already an ongoing service for this number in the {sector} sector!",
   "attendance_only_online_required": "You need to be online to attend this chat.",
   "error_loading_chatbot_users": "An error occurred while loading chatbot users. Please try again.",
   "error_loading_chatbot_sectors": "An error occurred while loading chatbot sectors. Please try again.",
