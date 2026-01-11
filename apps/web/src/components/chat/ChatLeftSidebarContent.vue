@@ -1444,14 +1444,6 @@ watch(debouncedSearchQuery, () => {
 });
 
 watch(
-  () => activeFilter.value,
-  () => {
-    searchQuery.value = '';
-    searchResults.value = [];
-  }
-);
-
-watch(
   () => false,
   (hasAccess) => {
     if (!hasAccess && activeFilter.value === 'new') {
