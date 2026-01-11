@@ -848,7 +848,7 @@ export const useChatStore = defineStore('chat', {
 
         if (!data?.status || !data?.data) {
           if (!append) {
-          this.listChatbot = [];
+            this.listChatbot = [];
           }
 
           return null;
@@ -864,7 +864,7 @@ export const useChatStore = defineStore('chat', {
         return data.data;
       } catch {
         if (!append) {
-        this.listChatbot = [];
+          this.listChatbot = [];
         }
 
         return null;
@@ -1919,17 +1919,75 @@ export const useChatStore = defineStore('chat', {
     async listChatContacts(
       page: number = 1,
       perPage: number = 50,
-      search?: string
+      search?: string,
+      filters?: {
+        filter_label_template_id?: string;
+        filter_phone_ddi?: string;
+        filter_phone?: string;
+        filter_name?: string;
+        filter_last_name?: string;
+        filter_nickname?: string;
+        filter_email?: string;
+        filter_birthday?: string;
+        filter_document?: string;
+        filter_user_id?: string;
+        sort_field?: string;
+        sort_order?: string;
+      }
     ): Promise<ListChatContactsFinalResponse | null> {
       try {
+        const params: Record<string, any> = {
+          current_page: page,
+          per_page: perPage,
+        };
+
+        if (search) {
+          params.search = search;
+        }
+
+        if (filters) {
+          if (filters.filter_label_template_id) {
+            params.filter_label_template_id = filters.filter_label_template_id;
+          }
+          if (filters.filter_phone_ddi) {
+            params.filter_phone_ddi = filters.filter_phone_ddi;
+          }
+          if (filters.filter_phone) {
+            params.filter_phone = filters.filter_phone;
+          }
+          if (filters.filter_name) {
+            params.filter_name = filters.filter_name;
+          }
+          if (filters.filter_last_name) {
+            params.filter_last_name = filters.filter_last_name;
+          }
+          if (filters.filter_nickname) {
+            params.filter_nickname = filters.filter_nickname;
+          }
+          if (filters.filter_email) {
+            params.filter_email = filters.filter_email;
+          }
+          if (filters.filter_birthday) {
+            params.filter_birthday = filters.filter_birthday;
+          }
+          if (filters.filter_document) {
+            params.filter_document = filters.filter_document;
+          }
+          if (filters.filter_user_id) {
+            params.filter_user_id = filters.filter_user_id;
+          }
+          if (filters.sort_field) {
+            params.sort_field = filters.sort_field;
+          }
+          if (filters.sort_order) {
+            params.sort_order = filters.sort_order;
+          }
+        }
+
         const response = await axios.get<
           IApiResponse<ListChatContactsFinalResponse>
         >('/chat/contacts', {
-          params: {
-            current_page: page,
-            per_page: perPage,
-            search,
-          },
+          params,
         });
 
         const data = response?.data;

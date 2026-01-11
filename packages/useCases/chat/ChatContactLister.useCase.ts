@@ -1,6 +1,7 @@
 import { injectable } from 'tsyringe';
 import { ChatContactService } from '@core/services/chatContact.service';
 import { ListChatContactsFinalResponse } from '@core/schema/chat/listContacts/response.schema';
+import { ListChatContactsRequest } from '@core/schema/chat/listContacts/request.schema';
 import { setPaginationData } from '@core/common/functions/createPaginationData';
 
 @injectable()
@@ -11,13 +12,13 @@ export class ChatContactListerUseCase {
     perPage: number,
     currentPage: number,
     accountId: string,
-    search?: string
+    query?: ListChatContactsRequest
   ): Promise<ListChatContactsFinalResponse> {
     const [results, total] = await this.chatContactService.listChatContacts(
       perPage,
       currentPage,
       accountId,
-      search
+      query
     );
 
     const pagings = setPaginationData(

@@ -6,15 +6,18 @@ import {
   and,
   asc,
   count,
+  desc,
   eq,
   ilike,
   isNull,
   or,
+  SQL,
   SQLWrapper,
   sql,
   inArray,
 } from 'drizzle-orm';
 import { ListChatContactsResponse } from '@core/schema/chat/listContacts/response.schema';
+import { ListChatContactsRequest } from '@core/schema/chat/listContacts/request.schema';
 import { isDefinedFilter } from '@core/common/functions/isDefinedFilter';
 
 @injectable()
@@ -72,20 +75,123 @@ export class ChatContactListerRepository {
     return conditions.length > 0 ? [or(...conditions) as SQLWrapper] : [];
   };
 
+  private readonly buildAdvancedFilters = (
+    filters: Omit<ListChatContactsRequest, 'current_page' | 'per_page'>,
+    emailHash: string | null,
+    phoneHashes: string[] | null,
+    documentHash: string | null
+  ): SQLWrapper[] => {
+    const filterConditions: Array<SQLWrapper | undefined> = [];
+
+    if (filters.filter_label_template_id) {
+      filterConditions.push(
+        eq(contact.label_template_id, filters.filter_label_template_id)
+      );
+    }
+
+    if (filters.filter_phone_ddi) {
+      filterConditions.push(eq(contact.phone_ddi, filters.filter_phone_ddi));
+    }
+
+    if (filters.filter_phone && phoneHashes && phoneHashes.length > 0) {
+      filterConditions.push(inArray(contact.phone_c, phoneHashes));
+    }
+
+    if (filters.filter_name) {
+      filterConditions.push(ilike(contact.name, `%${filters.filter_name}%`));
+    }
+
+    if (filters.filter_last_name) {
+      filterConditions.push(
+        ilike(contact.last_name, `%${filters.filter_last_name}%`)
+      );
+    }
+
+    if (filters.filter_nickname) {
+      filterConditions.push(
+        ilike(contact.nickname, `%${filters.filter_nickname}%`)
+      );
+    }
+
+    if (filters.filter_email && emailHash) {
+      filterConditions.push(eq(contact.email_c, emailHash));
+    }
+
+    if (filters.filter_birthday) {
+      filterConditions.push(
+        sql`DATE(${contact.birthday}) = DATE(${sql.raw(`'${filters.filter_birthday}'`)}::timestamp)`
+      );
+    }
+
+    if (filters.filter_document && documentHash) {
+      filterConditions.push(eq(contact.document_c, documentHash));
+    }
+
+    if (filters.filter_user_id) {
+      filterConditions.push(eq(contact.user_id, filters.filter_user_id));
+    }
+
+    return filterConditions.filter(isDefinedFilter);
+  };
+
+  private readonly buildOrderBy = (
+    sortField?: string | null,
+    sortOrder?: string | null
+  ): SQL => {
+    const order = sortOrder === 'desc' ? desc : asc;
+
+    if (sortField === 'name') {
+      return order(contact.name);
+    }
+    if (sortField === 'last_name') {
+      return order(contact.last_name);
+    }
+    if (sortField === 'nickname') {
+      return order(contact.nickname);
+    }
+    if (sortField === 'email') {
+      return order(contact.email_partial);
+    }
+    if (sortField === 'phone') {
+      return order(contact.phone_partial);
+    }
+    if (sortField === 'label') {
+      return order(labelTemplate.label);
+    }
+    if (sortField === 'birthday') {
+      return order(contact.birthday);
+    }
+
+    return asc(contact.name);
+  };
+
   listChatContacts = async (
     perPage: number,
     currentPage: number,
     accountId: string,
-    search?: string
+    query?: ListChatContactsRequest,
+    emailHash?: string | null,
+    phoneHashes?: string[] | null,
+    documentHash?: string | null
   ): Promise<ListChatContactsResponse[]> => {
     const whereConditions: SQLWrapper[] = [
       eq(contact.account_id, accountId),
       isNull(contact.deleted_at),
     ];
 
-    if (search) {
-      const searchConditions = this.buildSearchConditions(search);
+    if (query?.search) {
+      const searchConditions = this.buildSearchConditions(query.search);
       whereConditions.push(...searchConditions);
+    }
+
+    if (query) {
+      const advancedFilters = this.buildAdvancedFilters(
+        query,
+        emailHash ?? null,
+        phoneHashes ?? null,
+        documentHash ?? null
+      );
+      whereConditions.push(...advancedFilters);
     }
 
     const result = await this.dbRo
@@ -109,7 +215,7 @@ export class ChatContactListerRepository {
         eq(contact.label_template_id, labelTemplate.label_template_id)
       )
       .where(and(...whereConditions))
-      .orderBy(asc(contact.name))
+      .orderBy(this.buildOrderBy(query?.sort_field, query?.sort_order))
       .limit(perPage)
       .offset((currentPage - 1) * perPage)
       .execute();
@@ -138,16 +244,29 @@ export class ChatContactListerRepository {
 
   listChatContactsTotal = async (
     accountId: string,
-    search?: string
+    query?: ListChatContactsRequest,
+    emailHash?: string | null,
+    phoneHashes?: string[] | null,
+    documentHash?: string | null
   ): Promise<number> => {
     const whereConditions: SQLWrapper[] = [
       eq(contact.account_id, accountId),
       isNull(contact.deleted_at),
     ];
 
-    if (search) {
-      const searchConditions = this.buildSearchConditions(search);
+    if (query?.search) {
+      const searchConditions = this.buildSearchConditions(query.search);
       whereConditions.push(...searchConditions);
+    }
+
+    if (query) {
+      const advancedFilters = this.buildAdvancedFilters(
+        query,
+        emailHash ?? null,
+        phoneHashes ?? null,
+        documentHash ?? null
+      );
+      whereConditions.push(...advancedFilters);
     }
 
     const result = await this.dbRo

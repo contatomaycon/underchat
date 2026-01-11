@@ -4,9 +4,13 @@ import { ChatContactViewerRepository } from '@core/repositories/contact/ChatCont
 import { ChatLabelTemplateAllListerRepository } from '@core/repositories/labelTemplate/ChatLabelTemplateAllLister.repository';
 import { ContactService } from '@core/services/contact.service';
 import { ListChatContactsResponse } from '@core/schema/chat/listContacts/response.schema';
+import { ListChatContactsRequest } from '@core/schema/chat/listContacts/request.schema';
 import { ViewChatContactResponse } from '@core/schema/chat/viewContact/response.schema';
 import { ViewChatContactsBatchResponse } from '@core/schema/chat/viewContactsBatch/response.schema';
 import { ListChatLabelTemplatesResponse } from '@core/schema/chat/listLabelTemplates/response.schema';
+import { EncryptService } from '@core/services/encrypt.service';
+import { buildCandidatesWithDdi } from '@core/common/functions/buildCandidatesBR';
+import { onlyDigits } from '@core/common/functions/onlyDigits';
 
 @injectable()
 export class ChatContactService {
@@ -14,23 +18,55 @@ export class ChatContactService {
     private readonly chatContactListerRepository: ChatContactListerRepository,
     private readonly chatContactViewerRepository: ChatContactViewerRepository,
     private readonly chatLabelTemplateAllListerRepository: ChatLabelTemplateAllListerRepository,
-    private readonly contactService: ContactService
+    private readonly contactService: ContactService,
+    private readonly encryptService: EncryptService
   ) {}
 
   listChatContacts = async (
     perPage: number,
     currentPage: number,
     accountId: string,
-    search?: string
+    query?: ListChatContactsRequest
   ): Promise<[ListChatContactsResponse[], number]> => {
+    let emailHash: string | null = null;
+    let phoneHashes: string[] | null = null;
+    let documentHash: string | null = null;
+
+    if (query?.filter_email) {
+      emailHash = this.encryptService.encrypt(query.filter_email);
+    }
+
+    if (query?.filter_phone) {
+      const phoneDigits = onlyDigits(query.filter_phone);
+      const phoneDdi = query.filter_phone_ddi ?? '55';
+      const phoneCandidates = buildCandidatesWithDdi(phoneDigits, phoneDdi);
+      phoneHashes = phoneCandidates.map((phone) =>
+        this.encryptService.encrypt(phone)
+      );
+    }
+
+    if (query?.filter_document) {
+      const documentDigits = onlyDigits(query.filter_document);
+      documentHash = this.encryptService.encrypt(documentDigits);
+    }
+
     const [result, total] = await Promise.all([
       this.chatContactListerRepository.listChatContacts(
         perPage,
         currentPage,
         accountId,
-        search
+        query,
+        emailHash,
+        phoneHashes,
+        documentHash
       ),
-      this.chatContactListerRepository.listChatContactsTotal(accountId, search),
+      this.chatContactListerRepository.listChatContactsTotal(
+        accountId,
+        query,
+        emailHash,
+        phoneHashes,
+        documentHash
+      ),
     ]);
 
     return [result, total];

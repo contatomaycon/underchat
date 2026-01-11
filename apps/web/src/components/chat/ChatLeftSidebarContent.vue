@@ -1,10 +1,11 @@
 <script lang="ts" setup>
-import { nextTick } from 'vue';
+import { nextTick, computed, ref } from 'vue';
 import { PerfectScrollbar } from 'vue3-perfect-scrollbar';
 import ChatQueue from './ChatQueue.vue';
 import AppAddContactChat from '@/components/chat/AppAddContactChat.vue';
 import AppEditContactChat from '@/components/chat/AppEditContactChat.vue';
 import ChatAdvancedFiltersModal from '@/components/chat/ChatAdvancedFiltersModal.vue';
+import ChatContactAdvancedFiltersModal from '@/components/chat/ChatContactAdvancedFiltersModal.vue';
 import { useChatStore } from '@/@webcore/stores/chat';
 import { useChannelsStore } from '@/@webcore/stores/channels';
 import { ListChatContactsResponse } from '@core/schema/chat/listContacts/response.schema';
@@ -82,6 +83,20 @@ const availableSectors = ref<TransferSector[]>([]);
 const workerConfigForChat = ref<ViewWorkerConfigForChatResponse | null>(null);
 const isAdvancedFiltersModalOpen = ref(false);
 const hasAppliedAdvancedFilters = ref(false);
+const isContactAdvancedFiltersModalOpen = ref(false);
+
+const contactFilterLabel = ref<string | null>(null);
+const contactFilterPhoneDdi = ref<string | null>(null);
+const contactFilterPhone = ref<string | null>(null);
+const contactFilterName = ref<string | null>(null);
+const contactFilterLastName = ref<string | null>(null);
+const contactFilterNickname = ref<string | null>(null);
+const contactFilterEmail = ref<string | null>(null);
+const contactFilterBirthday = ref<string | null>(null);
+const contactFilterDocument = ref<string | null>(null);
+const contactFilterUserId = ref<string | null>(null);
+const contactSortField = ref<string | null>('name');
+const contactSortOrder = ref<string | null>('asc');
 
 const chatbotPagings = ref({
   current_page: 1,
@@ -821,10 +836,37 @@ const loadContacts = async (append = false) => {
   isLoadingMoreContacts.value = true;
 
   try {
+    const filters: any = {};
+
+    if (contactFilterLabel.value)
+      filters.filter_label_template_id = contactFilterLabel.value;
+    if (contactFilterPhoneDdi.value)
+      filters.filter_phone_ddi = contactFilterPhoneDdi.value;
+    if (contactFilterPhone.value)
+      filters.filter_phone = contactFilterPhone.value;
+    if (contactFilterName.value) filters.filter_name = contactFilterName.value;
+    if (contactFilterLastName.value)
+      filters.filter_last_name = contactFilterLastName.value;
+    if (contactFilterNickname.value)
+      filters.filter_nickname = contactFilterNickname.value;
+    if (contactFilterEmail.value)
+      filters.filter_email = contactFilterEmail.value;
+    if (contactFilterBirthday.value)
+      filters.filter_birthday = contactFilterBirthday.value;
+    if (contactFilterDocument.value)
+      filters.filter_document = contactFilterDocument.value;
+    if (contactFilterUserId.value)
+      filters.filter_user_id = contactFilterUserId.value;
+    if (contactSortField.value) filters.sort_field = contactSortField.value;
+    if (contactSortOrder.value) filters.sort_order = contactSortOrder.value;
+
+    const hasFilters = Object.keys(filters).length > 0;
+
     const result = await chatStore.listChatContacts(
       currentPageContacts.value,
       perPageContacts.value,
-      debouncedContactSearch.value || undefined
+      debouncedContactSearch.value || undefined,
+      hasFilters ? filters : undefined
     );
 
     if (result) {
@@ -878,12 +920,6 @@ const loadChatbotChats = async (append = false) => {
 };
 
 const loadClosedChats = async (append = false) => {
-  console.log('🔍 loadClosedChats chamado', {
-    append,
-    currentPage: chatStore.closedPagings.current_page,
-    isLoadingClosed: isLoadingClosed.value,
-  });
-
   isLoadingClosed.value = true;
 
   try {
@@ -904,15 +940,7 @@ const loadClosedChats = async (append = false) => {
       filter_date_end: filters.filter_date_end,
     };
 
-    console.log('📤 loadClosedChats - Request:', request);
-
     const result = await chatStore.listClosedChats(request, append);
-
-    console.log('📥 loadClosedChats - Result:', {
-      hasResult: !!result,
-      resultsCount: result?.results.length,
-      pagings: result?.pagings,
-    });
 
     if (result) {
       chatStore.closedPagings = result.pagings;
@@ -922,13 +950,11 @@ const loadClosedChats = async (append = false) => {
         loadWorkerConfigs(chatsToProcess),
         loadChatContacts(chatsToProcess),
       ]);
-      console.log('✅ loadClosedChats - Processamento completo');
     }
   } catch (error) {
     console.error('❌ loadClosedChats - Erro:', error);
   } finally {
     isLoadingClosed.value = false;
-    console.log('🏁 loadClosedChats - Finalizado');
   }
 };
 
@@ -1104,14 +1130,7 @@ const handleChatScroll = async (event?: Event) => {
 };
 
 const handleClosedScroll = async (event?: Event) => {
-  console.log('🔍 handleClosedScroll chamado', {
-    activeFilter: activeFilter.value,
-    hasEvent: !!event,
-    eventTarget: event?.target,
-  });
-
   if (activeFilter.value !== 'closed') {
-    console.log('❌ ActiveFilter não é closed, retornando');
     return;
   }
 
@@ -1134,7 +1153,6 @@ const handleClosedScroll = async (event?: Event) => {
   }
 
   if (!scrollContainer) {
-    console.log('❌ ScrollContainer não encontrado');
     return;
   }
 
@@ -1144,73 +1162,39 @@ const handleClosedScroll = async (event?: Event) => {
   const hasMore =
     chatStore.closedPagings.current_page < chatStore.closedPagings.total_pages;
 
-  console.log('📊 handleClosedScroll - Dados do scroll:', {
-    scrollTop,
-    scrollHeight,
-    clientHeight,
-    threshold,
-    sum: scrollTop + clientHeight,
-    target: scrollHeight - threshold,
-    shouldTrigger: scrollTop + clientHeight >= scrollHeight - threshold,
-    currentPage: chatStore.closedPagings.current_page,
-    totalPages: chatStore.closedPagings.total_pages,
-    hasMore,
-    isLoadingClosed: isLoadingClosed.value,
-  });
-
   if (
     scrollTop + clientHeight >= scrollHeight - threshold &&
     hasMore &&
     !isLoadingClosed.value
   ) {
-    console.log('✅ Triggering closed pagination via scroll...');
     isLoadingClosed.value = true;
     chatStore.closedPagings.current_page += 1;
     await loadClosedChats(true);
     isLoadingClosed.value = false;
-    console.log('✅ Closed pagination via scroll completed');
   }
 };
 
 const handleClosedReachEnd = async () => {
-  console.log('🔍 handleClosedReachEnd chamado', {
-    activeFilter: activeFilter.value,
-    currentPage: chatStore.closedPagings.current_page,
-    totalPages: chatStore.closedPagings.total_pages,
-    isLoadingClosed: isLoadingClosed.value,
-  });
-
   if (activeFilter.value !== 'closed') {
-    console.log('❌ ActiveFilter não é closed, retornando');
     return;
   }
   if (isLoadingClosed.value) {
-    console.log('❌ Já está carregando, retornando');
     return;
   }
 
   const hasMore =
     chatStore.closedPagings.current_page < chatStore.closedPagings.total_pages;
 
-  console.log('📊 handleClosedReachEnd - Verificações:', {
-    hasMore,
-    currentPage: chatStore.closedPagings.current_page,
-    totalPages: chatStore.closedPagings.total_pages,
-  });
-
   if (!hasMore) {
-    console.log('❌ Não há mais páginas, retornando');
     return;
   }
 
-  console.log('✅ Triggering closed pagination via reach end...');
   isLoadingClosed.value = true;
   chatStore.closedPagings.current_page += 1;
 
   await loadClosedChats(true);
 
   isLoadingClosed.value = false;
-  console.log('✅ Closed pagination via reach end completed');
 };
 
 const handleAddContactModalClose = (isOpen: boolean) => {
@@ -1276,6 +1260,46 @@ watch(debouncedContactSearch, () => {
   currentPageContacts.value = 1;
   accumulatedContacts.value = [];
   loadContacts();
+});
+
+const handleContactFiltersUpdated = async () => {
+  currentPageContacts.value = 1;
+  accumulatedContacts.value = [];
+  await loadContacts();
+};
+
+const handleClearContactFilters = async () => {
+  contactSearchQuery.value = '';
+  contactFilterLabel.value = null;
+  contactFilterPhoneDdi.value = null;
+  contactFilterPhone.value = null;
+  contactFilterName.value = null;
+  contactFilterLastName.value = null;
+  contactFilterNickname.value = null;
+  contactFilterEmail.value = null;
+  contactFilterBirthday.value = null;
+  contactFilterDocument.value = null;
+  contactFilterUserId.value = null;
+  contactSortField.value = 'name';
+  contactSortOrder.value = 'asc';
+  currentPageContacts.value = 1;
+  accumulatedContacts.value = [];
+  await loadContacts();
+};
+
+const hasActiveContactFilters = computed(() => {
+  return !!(
+    contactFilterLabel.value ||
+    contactFilterPhoneDdi.value ||
+    contactFilterPhone.value ||
+    contactFilterName.value ||
+    contactFilterLastName.value ||
+    contactFilterNickname.value ||
+    contactFilterEmail.value ||
+    contactFilterBirthday.value ||
+    contactFilterDocument.value ||
+    contactFilterUserId.value
+  );
 });
 
 const performSearch = async (append = false) => {
@@ -1717,12 +1741,17 @@ defineExpose({
       </template>
     </AppTextField>
 
-    <IconBtn class="me-1" @click="isAdvancedFiltersModalOpen = true">
-      <VIcon icon="tabler-filter" class="text-medium-emphasis" />
+    <VBtn
+      icon
+      variant="flat"
+      class="me-1 filter-btn-white"
+      @click="isAdvancedFiltersModalOpen = true"
+    >
+      <VIcon icon="tabler-filter" />
       <VTooltip activator="parent" location="bottom">
         {{ $t('advanced_filters') }}
       </VTooltip>
-    </IconBtn>
+    </VBtn>
 
     <IconBtn v-if="hasActiveFilters" class="me-1" @click="handleClearFilters">
       <VIcon icon="tabler-filter-off" class="text-medium-emphasis" />
@@ -1908,13 +1937,44 @@ defineExpose({
           hide-details
           dense
           class="flex-grow-1"
-        />
-        <VBtn
-          color="primary"
-          prepend-icon="tabler-plus"
-          @click="isAddContactModalOpen = true"
         >
-          {{ $t('add') }}
+          <template #append-inner>
+            <VIcon
+              v-if="contactSearchQuery && contactSearchQuery.trim().length > 0"
+              icon="tabler-x"
+              class="cursor-pointer"
+              @click="contactSearchQuery = ''"
+            />
+          </template>
+        </AppTextField>
+        <VBtn
+          icon
+          variant="flat"
+          class="me-1 filter-btn-white"
+          @click="isContactAdvancedFiltersModalOpen = true"
+        >
+          <VIcon icon="tabler-filter" />
+          <VTooltip activator="parent" location="bottom">
+            {{ $t('advanced_filters') }}
+          </VTooltip>
+        </VBtn>
+
+        <IconBtn
+          v-if="hasActiveContactFilters"
+          class="me-1"
+          @click="handleClearContactFilters"
+        >
+          <VIcon icon="tabler-filter-off" class="text-medium-emphasis" />
+          <VTooltip activator="parent" location="bottom">
+            {{ $t('clear_filters', 'Limpar filtros') }}
+          </VTooltip>
+        </IconBtn>
+
+        <VBtn color="primary" icon @click="isAddContactModalOpen = true">
+          <VIcon icon="tabler-plus" />
+          <VTooltip activator="parent" location="bottom">
+            {{ $t('add') }}
+          </VTooltip>
         </VBtn>
       </div>
     </div>
@@ -1927,119 +1987,157 @@ defineExpose({
       @ps-scroll-y="handleContactScroll"
     >
       <ul class="d-flex flex-column gap-y-1 chat-list px-3 py-2 list-none">
-        <li
-          v-for="contact in accumulatedContacts"
-          :key="`contact-${contact.contact_id}`"
-          class="contact-item d-flex align-center gap-3 pa-3"
-          :class="{
-            'contact-item--editing':
-              editingContactId === contact.contact_id ||
-              validatingContactId === contact.contact_id ||
-              (isSelectChannelSectorModalOpen &&
-                selectedContactForChat?.contact_id === contact.contact_id),
-            'contact-item--not-validated': !contact.is_valided,
-            'cursor-pointer': contact.is_valided,
-            'cursor-not-allowed': !contact.is_valided,
-          }"
-          @click="handleContactClick(contact)"
-          @mouseenter="hoveredContactId = contact.contact_id"
-          @mouseleave="hoveredContactId = null"
+        <template
+          v-if="isLoadingMoreContacts && accumulatedContacts.length === 0"
         >
-          <VAvatar
-            size="40"
-            :variant="!contact.photo ? 'tonal' : undefined"
-            color="primary"
+          <li
+            v-for="i in 5"
+            :key="`skeleton-contact-${i}`"
+            class="contact-item d-flex align-center gap-3 pa-3"
           >
-            <VImg
-              v-if="contact.photo"
-              :src="contact.photo"
-              :alt="`${contact.name} ${contact.last_name || ''}`"
-            />
-            <VIcon v-else size="20">tabler-user</VIcon>
-          </VAvatar>
-          <div class="flex-grow-1">
-            <div class="d-flex align-center gap-2">
-              <div class="text-body-1 font-weight-medium">
-                {{ contact.name }}
-                {{ contact.last_name || '' }}
+            <VSkeletonLoader type="avatar" width="40" height="40" />
+            <div class="flex-grow-1">
+              <VSkeletonLoader
+                type="text"
+                width="60%"
+                height="20"
+                class="mb-1"
+              />
+              <VSkeletonLoader type="text" width="40%" height="16" />
+            </div>
+          </li>
+        </template>
+        <template v-else>
+          <li
+            v-for="contact in accumulatedContacts"
+            :key="`contact-${contact.contact_id}`"
+            class="contact-item d-flex align-center gap-3 pa-3"
+            :class="{
+              'contact-item--editing':
+                editingContactId === contact.contact_id ||
+                validatingContactId === contact.contact_id ||
+                (isSelectChannelSectorModalOpen &&
+                  selectedContactForChat?.contact_id === contact.contact_id),
+              'contact-item--not-validated': !contact.is_valided,
+              'cursor-pointer': contact.is_valided,
+              'cursor-not-allowed': !contact.is_valided,
+            }"
+            @click="handleContactClick(contact)"
+            @mouseenter="hoveredContactId = contact.contact_id"
+            @mouseleave="hoveredContactId = null"
+          >
+            <VAvatar
+              size="40"
+              :variant="!contact.photo ? 'tonal' : undefined"
+              color="primary"
+            >
+              <VImg
+                v-if="contact.photo"
+                :src="contact.photo"
+                :alt="`${contact.name} ${contact.last_name || ''}`"
+              />
+              <VIcon v-else size="20">tabler-user</VIcon>
+            </VAvatar>
+            <div class="flex-grow-1">
+              <div class="d-flex align-center gap-2">
+                <div class="text-body-1 font-weight-medium">
+                  {{ contact.name }}
+                  {{ contact.last_name || '' }}
+                </div>
+              </div>
+              <div
+                v-if="contact.phone_partial"
+                class="text-caption text-disabled"
+              >
+                {{ contact.phone_partial }}
               </div>
             </div>
-            <div
-              v-if="contact.phone_partial"
-              class="text-caption text-disabled"
-            >
-              {{ contact.phone_partial }}
+            <div class="d-flex align-center gap-2">
+              <template v-if="hoveredContactId === contact.contact_id">
+                <IconBtn
+                  v-if="!contact.is_valided"
+                  size="small"
+                  variant="text"
+                  color="primary"
+                  class="contact-action-btn"
+                  @click.stop="
+                    handleValidateContact(contact.contact_id, $event)
+                  "
+                >
+                  <VIcon size="18">tabler-refresh</VIcon>
+                  <VTooltip activator="parent" location="top">
+                    {{ $t('validate_contact') }}
+                  </VTooltip>
+                </IconBtn>
+                <IconBtn
+                  size="small"
+                  variant="text"
+                  color="primary"
+                  class="contact-action-btn"
+                  @click.stop="handleEditContact(contact.contact_id, $event)"
+                >
+                  <VIcon size="18">tabler-edit</VIcon>
+                  <VTooltip activator="parent" location="top">
+                    {{ $t('edit_contact') }}
+                  </VTooltip>
+                </IconBtn>
+              </template>
+
+              <template v-else>
+                <VChip
+                  v-if="contact.is_valided"
+                  size="x-small"
+                  color="success"
+                  variant="flat"
+                  class="contact-validation-chip contact-validation-chip--validated"
+                >
+                  <VIcon size="10" class="me-0">tabler-check</VIcon>
+                </VChip>
+                <VChip
+                  v-else
+                  size="x-small"
+                  color="error"
+                  variant="flat"
+                  class="contact-validation-chip contact-validation-chip--not-validated"
+                >
+                  <VIcon size="10" class="me-0">tabler-x</VIcon>
+                </VChip>
+              </template>
             </div>
-          </div>
-          <div class="d-flex align-center gap-2">
-            <template v-if="hoveredContactId === contact.contact_id">
-              <IconBtn
-                v-if="!contact.is_valided"
-                size="small"
-                variant="text"
-                color="primary"
-                class="contact-action-btn"
-                @click.stop="handleValidateContact(contact.contact_id, $event)"
-              >
-                <VIcon size="18">tabler-refresh</VIcon>
-                <VTooltip activator="parent" location="top">
-                  {{ $t('validate_contact') }}
-                </VTooltip>
-              </IconBtn>
-              <IconBtn
-                size="small"
-                variant="text"
-                color="primary"
-                class="contact-action-btn"
-                @click.stop="handleEditContact(contact.contact_id, $event)"
-              >
-                <VIcon size="18">tabler-edit</VIcon>
-                <VTooltip activator="parent" location="top">
-                  {{ $t('edit_contact') }}
-                </VTooltip>
-              </IconBtn>
-            </template>
+          </li>
 
-            <template v-else>
-              <VChip
-                v-if="contact.is_valided"
-                size="x-small"
-                color="success"
-                variant="flat"
-                class="contact-validation-chip contact-validation-chip--validated"
-              >
-                <VIcon size="10" class="me-0">tabler-check</VIcon>
-              </VChip>
-              <VChip
-                v-else
-                size="x-small"
-                color="error"
-                variant="flat"
-                class="contact-validation-chip contact-validation-chip--not-validated"
-              >
-                <VIcon size="10" class="me-0">tabler-x</VIcon>
-              </VChip>
-            </template>
-          </div>
-        </li>
+          <li
+            v-if="
+              !accumulatedContacts.length &&
+              !chatStore.loading &&
+              !isLoadingMoreContacts
+            "
+            class="no-chat-items-text text-disabled"
+          >
+            {{ $t('no_contacts_found') }}
+          </li>
 
-        <li
-          v-if="
-            !accumulatedContacts.length &&
-            !chatStore.loading &&
-            !isLoadingMoreContacts
-          "
-          class="no-chat-items-text text-disabled"
-        >
-          {{ $t('no_contacts_found') }}
-        </li>
-
-        <li
-          v-if="chatStore.loading || isLoadingMoreContacts"
-          class="d-flex justify-center pa-4"
-        >
-          <VProgressCircular indeterminate color="primary" size="32" />
-        </li>
+          <template
+            v-if="isLoadingMoreContacts && accumulatedContacts.length > 0"
+          >
+            <li
+              v-for="i in 3"
+              :key="`skeleton-contact-more-${i}`"
+              class="contact-item d-flex align-center gap-3 pa-3"
+            >
+              <VSkeletonLoader type="avatar" width="40" height="40" />
+              <div class="flex-grow-1">
+                <VSkeletonLoader
+                  type="text"
+                  width="60%"
+                  height="20"
+                  class="mb-1"
+                />
+                <VSkeletonLoader type="text" width="40%" height="16" />
+              </div>
+            </li>
+          </template>
+        </template>
       </ul>
     </PerfectScrollbar>
   </template>
@@ -2639,6 +2737,35 @@ defineExpose({
     </VCard>
   </VDialog>
 
+  <ChatContactAdvancedFiltersModal
+    v-model="isContactAdvancedFiltersModalOpen"
+    :filter-label="contactFilterLabel"
+    :filter-phone-ddi="contactFilterPhoneDdi"
+    :filter-phone="contactFilterPhone"
+    :filter-name="contactFilterName"
+    :filter-last-name="contactFilterLastName"
+    :filter-nickname="contactFilterNickname"
+    :filter-email="contactFilterEmail"
+    :filter-birthday="contactFilterBirthday"
+    :filter-document="contactFilterDocument"
+    :filter-user-id="contactFilterUserId"
+    :sort-field="contactSortField"
+    :sort-order="contactSortOrder"
+    @update:filter-label="contactFilterLabel = $event"
+    @update:filter-phone-ddi="contactFilterPhoneDdi = $event"
+    @update:filter-phone="contactFilterPhone = $event"
+    @update:filter-name="contactFilterName = $event"
+    @update:filter-last-name="contactFilterLastName = $event"
+    @update:filter-nickname="contactFilterNickname = $event"
+    @update:filter-email="contactFilterEmail = $event"
+    @update:filter-birthday="contactFilterBirthday = $event"
+    @update:filter-document="contactFilterDocument = $event"
+    @update:filter-user-id="contactFilterUserId = $event"
+    @update:sort-field="contactSortField = $event"
+    @update:sort-order="contactSortOrder = $event"
+    @filters-updated="handleContactFiltersUpdated"
+  />
+
   <ChatAdvancedFiltersModal
     :filter-status="currentFilterStatus"
     v-model="isAdvancedFiltersModalOpen"
@@ -2852,5 +2979,24 @@ defineExpose({
   opacity: 0;
   padding-top: 0;
   padding-bottom: 0;
+}
+
+.filter-btn-white {
+  background: rgb(var(--v-theme-surface)) !important;
+  border: 1px solid rgba(var(--v-border-color), 0.12) !important;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08) !important;
+
+  .v-icon {
+    color: rgba(var(--v-theme-on-surface), 0.7) !important;
+  }
+
+  &:hover {
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.12) !important;
+    background: rgb(var(--v-theme-primary)) !important;
+
+    .v-icon {
+      color: #fff !important;
+    }
+  }
 }
 </style>

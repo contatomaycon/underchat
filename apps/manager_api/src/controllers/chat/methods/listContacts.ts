@@ -18,13 +18,12 @@ export const listContacts = async (
   try {
     const perPage = request.query.per_page ?? 50;
     const currentPage = request.query.current_page ?? 1;
-    const search = request.query.search;
 
     const response = await chatContactListerUseCase.execute(
       perPage,
       currentPage,
       tokenJwtData.account_id,
-      search
+      request.query
     );
 
     return sendResponse(reply, {
