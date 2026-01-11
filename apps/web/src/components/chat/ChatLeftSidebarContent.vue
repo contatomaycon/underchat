@@ -452,6 +452,7 @@ const handleClearFilters = async () => {
   chatStore.listInChat = [];
   chatStore.listChatbot = [];
   listClosed.value = [];
+  chatStore.listClosed = [];
 
   activeFilter.value = 'all';
   expandedFilter.value = 'all';
@@ -584,6 +585,7 @@ const loadAllChatsWithFilters = async (append = false) => {
         chatStore.listInChat = [];
         chatStore.listChatbot = [];
         listClosed.value = [];
+        chatStore.listClosed = [];
       }
       return;
     }
@@ -615,11 +617,13 @@ const loadAllChatsWithFilters = async (append = false) => {
       chatStore.listInChat.push(...inChatChats);
       chatStore.listChatbot.push(...chatbotChats);
       listClosed.value.push(...closedChats);
+      chatStore.listClosed.push(...closedChats);
     } else {
       chatStore.listQueue = queueChats;
       chatStore.listInChat = inChatChats;
       chatStore.listChatbot = chatbotChats;
       listClosed.value = closedChats;
+      chatStore.listClosed = closedChats;
     }
 
     chatStore.queuePagings = {

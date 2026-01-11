@@ -1592,7 +1592,8 @@ export const useChatStore = defineStore('chat', {
 
       const chat = (this.listQueue.find((c) => c.chat_id === chatId) ??
         this.listInChat.find((c) => c.chat_id === chatId) ??
-        this.listChatbot.find((c) => c.chat_id === chatId)) as ListChatsResult;
+        this.listChatbot.find((c) => c.chat_id === chatId) ??
+        this.listClosed.find((c) => c.chat_id === chatId)) as ListChatsResult;
 
       if (!chat?.chat_id) {
         this.activeChat = null;
