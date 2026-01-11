@@ -30,6 +30,7 @@ export const searchChatsQuerySchema = Type.Object({
           'status',
           'date',
           'user.name',
+          'sector.name',
           'started_at',
           'closed_at',
         ],

@@ -496,6 +496,7 @@ export class ChatSearcherUseCase {
         status: 'status',
         date: 'date',
         'user.name': 'user.name.keyword',
+        'sector.name': 'sector.name.keyword',
         started_at: 'started_at',
         closed_at: 'closed_at',
       };
@@ -538,6 +539,19 @@ export class ChatSearcherUseCase {
               order: sortOrder,
               nested: {
                 path: 'user',
+              },
+            },
+          },
+        ];
+      }
+
+      if (field === 'sector.name.keyword') {
+        return [
+          {
+            'sector.name.keyword': {
+              order: sortOrder,
+              nested: {
+                path: 'sector',
               },
             },
           },

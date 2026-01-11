@@ -610,6 +610,8 @@ const loadAllChatsWithFilters = async (append = false) => {
       filter_protocol: filters.filter_protocol,
       filter_date_start: filters.filter_date_start,
       filter_date_end: filters.filter_date_end,
+      sort_field: filters.sort_field,
+      sort_order: filters.sort_order,
     };
 
     const result = await chatStore.searchChats(request);
@@ -1324,6 +1326,8 @@ const performSearch = async (append = false) => {
       filter_protocol: filters.filter_protocol,
       filter_date_start: filters.filter_date_start,
       filter_date_end: filters.filter_date_end,
+      sort_field: filters.sort_field,
+      sort_order: filters.sort_order,
     };
 
     const result = await chatStore.searchChats(request);

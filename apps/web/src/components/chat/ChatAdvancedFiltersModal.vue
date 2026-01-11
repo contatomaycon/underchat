@@ -115,6 +115,7 @@ const sortFieldOptions = [
   { value: 'status', title: t('status', 'Status') },
   { value: 'date', title: t('date', 'Data') },
   { value: 'user.name', title: t('attendant', 'Atendente') },
+  { value: 'sector.name', title: t('sector', 'Setor') },
   { value: 'started_at', title: t('started_at', 'Iniciado em') },
   { value: 'closed_at', title: t('closed_at', 'Fechado em') },
 ];
