@@ -140,7 +140,7 @@ export class RagService {
       return summary.trim();
     } catch (error) {
       console.error('[generateBootstrapSummary] Erro ao gerar summary:', error);
-      return allPrompts.substring(0, 2000);
+      return allPrompts.substring(0, 8000);
     }
   }
 
@@ -151,7 +151,7 @@ export class RagService {
     apiKey: string,
     model: string,
     aiAgentTypeId: string,
-    maxChars = 2000
+    maxChars = 10000
   ): Promise<string> {
     const messagesText = this.formatMessagesForSummary(recentMessages);
     const summaryPrompt = this.buildConversationSummaryPrompt(
@@ -276,7 +276,7 @@ export class RagService {
   private buildBootstrapSummaryPrompt(allPrompts: string): string {
     return `Você é um assistente especializado em criar sumários concisos e estruturados de informações.
 
-Com base nos prompts completos do agente abaixo, crie um sumário inicial estruturado (máximo 2000 tokens) que capture:
+Com base nos prompts completos do agente abaixo, crie um sumário inicial estruturado (máximo 3000 tokens) que capture:
 1. Regras essenciais e diretrizes
 2. Perfil e personalidade do agente
 3. Objetivos e responsabilidades
@@ -306,8 +306,8 @@ Gere APENAS o sumário, sem introduções ou explicações adicionais.`;
     messagesText: string
   ): string {
     const updateInstruction = previousSummary
-      ? 'Atualize o sumário anterior incorporando as novas informações. Mantenha o máximo de 2000 tokens e preserve informações importantes do sumário anterior.'
-      : 'Crie um sumário inicial da conversa (máximo 2000 tokens) capturando os pontos principais discutidos.';
+      ? 'Atualize o sumário anterior incorporando as novas informações. Mantenha o máximo de 3000 tokens e preserve informações importantes do sumário anterior.'
+      : 'Crie um sumário inicial da conversa (máximo 3000 tokens) capturando os pontos principais discutidos.';
 
     return `Você é um assistente especializado em criar e atualizar sumários de conversas.
 
@@ -398,7 +398,7 @@ Agora, responda à pergunta do usuário seguindo TODAS as regras e diretrizes ac
       contextParts.push(`### Últimas Mensagens da Conversa:\n${messagesText}`);
     }
 
-    const topK = options?.topK ?? 8;
+    const topK = options?.topK ?? 12;
     const minScore = options?.minScore ?? 0.0;
 
     const relevantContext = await this.getRelevantContext(
@@ -426,7 +426,7 @@ Agora, responda à pergunta do usuário seguindo TODAS as regras e diretrizes ac
         options.chatId,
         aiAgentId,
         userQuery,
-        10,
+        15,
         minScore,
         options.phone
       );

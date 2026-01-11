@@ -34,8 +34,8 @@ const baseUrl = ref('');
 const apiKey = ref('');
 const model = ref('');
 const embeddingModel = ref('');
-const chunkSize = ref('600');
-const chunkOverlap = ref('100');
+const chunkSize = ref('');
+const chunkOverlap = ref('');
 const status = ref<EAiAgentStatus>(EAiAgentStatus.active);
 const isUpdating = ref(false);
 const isLoading = ref(false);
@@ -201,8 +201,8 @@ const loadAiAgent = async () => {
     apiKey.value = result.api_key || '';
     model.value = result.model || '';
     embeddingModel.value = result.embedding_model || '';
-    chunkSize.value = result.chunk_size || '600';
-    chunkOverlap.value = result.chunk_overlap || '100';
+    chunkSize.value = result.chunk_size || '';
+    chunkOverlap.value = result.chunk_overlap || '';
     status.value = result.status;
   }
 };
@@ -222,8 +222,12 @@ watch(aiAgentTypeId, (newTypeId) => {
     if (!embeddingModel.value) {
       embeddingModel.value = 'text-embedding-3-small';
     }
-    chunkSize.value = '600';
-    chunkOverlap.value = '100';
+    if (!chunkSize.value) {
+      chunkSize.value = '1200';
+    }
+    if (!chunkOverlap.value) {
+      chunkOverlap.value = '200';
+    }
   } else if (newTypeId === EAiAgentType.gemini) {
     if (
       !baseUrl.value ||
@@ -238,8 +242,12 @@ watch(aiAgentTypeId, (newTypeId) => {
     if (!embeddingModel.value) {
       embeddingModel.value = 'gemini-embedding-001';
     }
-    chunkSize.value = '600';
-    chunkOverlap.value = '100';
+    if (!chunkSize.value) {
+      chunkSize.value = '1200';
+    }
+    if (!chunkOverlap.value) {
+      chunkOverlap.value = '200';
+    }
   } else if (newTypeId === EAiAgentType.deepseek) {
     if (
       !baseUrl.value ||
@@ -252,8 +260,12 @@ watch(aiAgentTypeId, (newTypeId) => {
       model.value = 'deepseek-chat';
     }
     embeddingModel.value = '';
-    chunkSize.value = '600';
-    chunkOverlap.value = '100';
+    if (!chunkSize.value) {
+      chunkSize.value = '1200';
+    }
+    if (!chunkOverlap.value) {
+      chunkOverlap.value = '200';
+    }
   } else if (newTypeId && otherTypes.value.length > 0) {
     const selectedType = types.value.find(
       (type) => type.ai_agent_type_id === newTypeId
@@ -270,8 +282,12 @@ watch(aiAgentTypeId, (newTypeId) => {
       if (!embeddingModel.value) {
         embeddingModel.value = '';
       }
-      chunkSize.value = '600';
-      chunkOverlap.value = '100';
+      if (!chunkSize.value) {
+        chunkSize.value = '1200';
+      }
+      if (!chunkOverlap.value) {
+        chunkOverlap.value = '200';
+      }
     }
   }
 });
@@ -295,8 +311,8 @@ watch(
       apiKey.value = '';
       model.value = '';
       embeddingModel.value = '';
-      chunkSize.value = '600';
-      chunkOverlap.value = '100';
+      chunkSize.value = '';
+      chunkOverlap.value = '';
       status.value = EAiAgentStatus.active;
       refForm.value?.resetValidation();
       isApiKeyVisible.value = false;
@@ -336,8 +352,8 @@ const handleUpdateAiAgent = async () => {
       api_key: apiKey.value.trim() || undefined,
       model: model.value.trim() || undefined,
       embedding_model: embeddingModel.value.trim() || undefined,
-      chunk_size: chunkSize.value.trim() || undefined,
-      chunk_overlap: chunkOverlap.value.trim() || undefined,
+      chunk_size: chunkSize.value.trim() || '1200',
+      chunk_overlap: chunkOverlap.value.trim() || '200',
       status: status.value,
     });
 

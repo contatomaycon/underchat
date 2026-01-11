@@ -3563,7 +3563,7 @@ export class ChatbotFlowRunnerService {
         aiAgent.api_key,
         aiAgent.model,
         aiAgent.ai_agent_type_id,
-        2000
+        10000
       );
 
     if (
@@ -4498,7 +4498,7 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       systemPrompt,
       userText,
       {
-        topK: 8,
+        topK: 12,
         minScore: 0.0,
         chatId: createChat.chat_id,
         includeChatHistory: true,
