@@ -33,6 +33,7 @@ const isLoadingUsers = ref(false);
 
 const { t } = useI18n();
 const isInitializingModal = ref(false);
+const isLoadingData = ref(false);
 
 const props = defineProps<{
   modelValue: boolean;
@@ -369,6 +370,7 @@ const isDeletePhotoDialogOpen = ref(false);
 const cropImageRef = ref<HTMLImageElement | null>(null);
 const cropCanvasRef = ref<HTMLCanvasElement | null>(null);
 const cropPreviewSize = 400;
+const isSaving = ref(false);
 
 const cropDialog = ref({
   imageSrc: '',
@@ -483,7 +485,11 @@ const determineDocumentToSave = (): string | null | undefined => {
     return documentValue;
   }
 
-  return undefined;
+  if (!documentValue && documentPartialOriginal.value?.includes('*')) {
+    return undefined;
+  }
+
+  return documentValue;
 };
 
 const loadContactData = async () => {
@@ -546,55 +552,64 @@ const updateContact = async () => {
     return;
   }
 
-  const payload: EditContactParamsRequest = {
-    contact_id: contactId.value,
-  };
+  isSaving.value = true;
 
-  const emailToSave = determineEmailToSave();
-  const phoneToSave = determinePhoneToSave();
-  const documentToSave = determineDocumentToSave();
+  try {
+    const payload: EditContactParamsRequest = {
+      contact_id: contactId.value,
+    };
 
-  const body: UpdateContactRequest = {
-    label_template_id: label_template_id.value,
-    name: name.value,
-    last_name: last_name.value,
-    email: emailToSave,
-    phone_ddi: phone_ddi.value,
-    phone: phoneToSave,
-    nickname: nickname.value,
-    birthday: birthday.value,
-    notes: notes.value,
-    contact_document_type_id: contact_document_type_id.value,
-    document: documentToSave,
-    user_id: { value: user_id.value ?? null },
-    ignore: { value: ignore.value ?? EContactIgnore.not_ignore },
-  };
+    const emailToSave = determineEmailToSave();
+    const phoneToSave = determinePhoneToSave();
+    const documentToSave = determineDocumentToSave();
 
-  let imageUrl: string | null = null;
+    const body: UpdateContactRequest = {
+      label_template_id: label_template_id.value,
+      name: name.value,
+      last_name: last_name.value,
+      email: emailToSave,
+      phone_ddi: phone_ddi.value,
+      phone: phoneToSave,
+      nickname: nickname.value,
+      birthday: birthday.value,
+      notes: notes.value,
+      contact_document_type_id: contact_document_type_id.value,
+      document: documentToSave,
+      user_id: { value: user_id.value ?? null },
+      ignore: { value: ignore.value ?? EContactIgnore.not_ignore },
+    };
 
-  if (!photoFile.value) {
-    if (photo.value && !photo.value.startsWith('data:')) {
-      imageUrl = photo.value;
+    let imageUrl: string | null = null;
+
+    if (!photoFile.value) {
+      if (photo.value && !photo.value.startsWith('data:')) {
+        imageUrl = photo.value;
+      } else if (
+        photoPreview.value &&
+        !photoPreview.value.startsWith('data:')
+      ) {
+        imageUrl = photoPreview.value;
+      }
     } else if (photoPreview.value && !photoPreview.value.startsWith('data:')) {
       imageUrl = photoPreview.value;
     }
-  } else if (photoPreview.value && !photoPreview.value.startsWith('data:')) {
-    imageUrl = photoPreview.value;
-  }
 
-  const result = await contactStore.updateContact(
-    payload,
-    {
-      ...body,
-      image_url: imageUrl,
-    },
-    imageUrl ? null : photoFile.value
-  );
+    const result = await contactStore.updateContact(
+      payload,
+      {
+        ...body,
+        image_url: imageUrl,
+      },
+      imageUrl ? null : photoFile.value
+    );
 
-  if (result) {
-    isVisible.value = false;
+    if (result) {
+      isVisible.value = false;
 
-    await contactStore.listContact();
+      await contactStore.listContact();
+    }
+  } finally {
+    isSaving.value = false;
   }
 };
 
@@ -1200,12 +1215,14 @@ const initializeModal = async () => {
   if (isInitializingModal.value) return;
 
   isInitializingModal.value = true;
+  isLoadingData.value = true;
 
   try {
     await Promise.all([loadLabelTemplates(), loadUsers()]);
     await loadContactData();
   } finally {
     isInitializingModal.value = false;
+    isLoadingData.value = false;
   }
 };
 
@@ -1225,14 +1242,7 @@ watch(
     <DialogCloseBtn @click="isVisible = false" />
 
     <VForm ref="refFormEditContact" @submit.prevent>
-      <VCard class="position-relative">
-        <VOverlay
-          :model-value="isInitializingModal || contactStore.loading"
-          class="align-center justify-center"
-          contained
-        >
-          <VProgressCircular color="primary" indeterminate size="64" />
-        </VOverlay>
+      <VCard>
         <VCardTitle class="d-flex align-center justify-space-between">
           <span>{{ $t('edit_contact') }}</span>
           <VChip :color="isValided ? 'success' : 'error'" size="small">
@@ -1240,268 +1250,462 @@ watch(
           </VChip>
         </VCardTitle>
         <VCardText>
-          <VRow>
-            <VCol cols="12" class="d-flex justify-center">
-              <div
-                class="photo-container position-relative"
-                @mouseenter="
-                  (e) => (e.currentTarget as HTMLElement).classList.add('hover')
-                "
-                @mouseleave="
-                  (e) =>
-                    (e.currentTarget as HTMLElement).classList.remove('hover')
-                "
-                @click="openFileSelector"
-              >
-                <VAvatar size="120" class="cursor-pointer">
-                  <VImg
-                    v-if="photoPreview || photo"
-                    :src="(photoPreview || photo) ?? undefined"
-                    alt="Foto de perfil"
+          <template v-if="isLoadingData">
+            <!-- Skeleton para foto com container similar ao real -->
+            <VRow>
+              <VCol cols="12" class="d-flex justify-center">
+                <div class="position-relative">
+                  <VSkeletonLoader
+                    type="avatar"
+                    width="120"
+                    height="120"
+                    class="mb-4"
                   />
-                  <VImg
-                    v-else
-                    :src="'/images/svg/avatar-default.svg'"
-                    alt="Avatar"
+                  <VSkeletonLoader
+                    type="avatar"
+                    width="32"
+                    height="32"
+                    class="position-absolute"
+                    style="top: -4px; right: -4px"
                   />
-                </VAvatar>
-                <div class="photo-overlay">
-                  <VIcon icon="tabler-camera" size="32" class="d-flex" />
                 </div>
-                <VBtn
-                  v-if="photoPreview || photo"
-                  icon
-                  size="x-small"
-                  color="error"
-                  variant="flat"
-                  class="photo-remove-btn"
-                  @click="removePhoto"
-                >
-                  <VIcon icon="tabler-trash" size="16" />
-                </VBtn>
-              </div>
-            </VCol>
-          </VRow>
-          <VRow>
-            <VCol cols="12" md="6">
-              <VLabel class="text-body-2 mb-1">{{ $t('name') }}:</VLabel>
-              <AppTextField
-                v-model="name"
-                :placeholder="$t('name')"
-                :rules="[requiredValidator(name, $t('name_required'))]"
-              />
-            </VCol>
+              </VCol>
+            </VRow>
 
-            <VCol cols="12" md="6">
-              <VLabel class="text-body-2 mb-1">{{ $t('last_name') }}:</VLabel>
-              <AppTextField
-                v-model="last_name"
-                :placeholder="$t('last_name')"
-              />
-            </VCol>
-          </VRow>
-          <VRow>
-            <VCol cols="12" md="6">
-              <VLabel class="text-body-2 mb-1">{{ $t('nickname') }}:</VLabel>
-              <AppTextField v-model="nickname" :placeholder="$t('nickname')" />
-            </VCol>
-
-            <VCol cols="12" md="6">
-              <VLabel class="text-body-2 mb-1">{{ $t('email') }}:</VLabel>
-              <AppTextField
-                v-model="emailFormatted"
-                type="email"
-                :placeholder="$t('email')"
-                :rules="[emailValidator]"
-              >
-                <template #append-inner>
-                  <VIcon
-                    :icon="isEmailDecrypted ? 'tabler-eye-off' : 'tabler-eye'"
-                    class="cursor-pointer"
-                    :class="{ 'opacity-50': isLoadingEmail }"
-                    @click="toggleEmailVisibility"
-                  />
-                </template>
-              </AppTextField>
-            </VCol>
-          </VRow>
-          <VRow>
-            <VCol cols="12" md="6">
-              <VLabel class="text-body-2 mb-1">{{ $t('phone_ddi') }}:</VLabel>
-              <AppSelectSearch
-                v-model="phone_ddi"
-                :items="countryCodes"
-                :placeholder="$t('select_phone_ddi')"
-                item-value="value"
-                item-title="title"
-              />
-            </VCol>
-
-            <VCol cols="12" md="6">
-              <VLabel class="text-body-2 mb-1">{{ $t('phone') }}:</VLabel>
-              <AppTextField
-                v-model="phoneFormatted"
-                type="tel"
-                :placeholder="$t('phone')"
-                maxlength="15"
-              >
-                <template #append-inner>
-                  <VIcon
-                    :icon="isPhoneDecrypted ? 'tabler-eye-off' : 'tabler-eye'"
-                    class="cursor-pointer"
-                    :class="{ 'opacity-50': isLoadingPhone }"
-                    @click="togglePhoneVisibility"
-                  />
-                </template>
-              </AppTextField>
-            </VCol>
-          </VRow>
-          <VRow>
-            <VCol cols="12" md="6">
-              <VLabel class="text-body-2 mb-1">{{ $t('birthday') }}:</VLabel>
-              <AppDateTimePicker
-                v-model="birthday"
-                :placeholder="$t('birthday')"
-              />
-            </VCol>
-
-            <VCol cols="12" md="6">
-              <VLabel class="text-body-2 mb-1">{{ $t('label') }}:</VLabel>
-              <AppSelectSearch
-                v-model="label_template_id"
-                :items="itemsLabel"
-                :placeholder="$t('select_label')"
-                :clearable="true"
-                item-value="value"
-                item-title="title"
-                class="label-select"
-              >
-                <template #prepend-inner="{ item }">
-                  <div
-                    v-if="item && !Array.isArray(item) && item.color"
-                    class="label-color-circle me-2"
-                    :style="{ backgroundColor: item.color }"
-                  />
-                </template>
-                <template #item-prepend="{ item }">
-                  <div
-                    v-if="item && item.color"
-                    class="label-color-circle"
-                    :style="{ backgroundColor: item.color }"
-                  />
-                </template>
-              </AppSelectSearch>
-            </VCol>
-          </VRow>
-          <VRow>
-            <VCol cols="12" md="6">
-              <VLabel class="text-body-2 mb-1"
-                >{{ $t('document_type') }}:</VLabel
-              >
-              <AppSelectSearch
-                v-model="contact_document_type_id"
-                :items="itemsDocumentTypes"
-                :placeholder="$t('document_type')"
-                :clearable="true"
-                item-value="value"
-                item-title="title"
-              />
-            </VCol>
-
-            <VCol v-if="showDocumentField" cols="12" md="6">
-              <VLabel class="text-body-2 mb-1">{{ docLabel }}:</VLabel>
-              <AppTextField
-                v-model="documentFormatted"
-                :placeholder="docPlaceholder"
-                :rules="[documentValidator]"
-                :maxlength="currentDocType === 'cpf' ? 14 : 18"
-                v-maska="docMaskComputed"
-                :inputmode="
-                  documentPartialOriginal?.includes('*') ? undefined : 'numeric'
-                "
-              >
-                <template #append-inner>
-                  <VIcon
-                    :icon="
-                      isDocumentDecrypted ? 'tabler-eye-off' : 'tabler-eye'
-                    "
-                    class="cursor-pointer"
-                    :class="{ 'opacity-50': isLoadingDocument }"
-                    @click="toggleDocumentVisibility"
-                  />
-                </template>
-              </AppTextField>
-            </VCol>
-          </VRow>
-          <VDivider class="my-4" />
-          <VRow>
-            <VCol cols="12" md="6">
-              <div class="d-flex align-center ga-1 mb-1">
-                <VLabel class="text-body-2"
-                  >{{ $t('responsible_attendant') }}:</VLabel
-                >
-                <AppInfoTooltip
-                  :text="$t('responsible_attendant_tooltip')"
-                  :title="$t('responsible_attendant')"
+            <!-- Skeletons para campos do formulário com tamanhos mais realistas -->
+            <VRow class="mb-4">
+              <VCol cols="12" md="6">
+                <VSkeletonLoader
+                  type="text"
+                  width="60"
+                  height="20"
+                  class="mb-2"
                 />
-              </div>
-              <AppSelectSearch
-                v-model="user_id"
-                :items="
-                  users.map((u) => ({
-                    value: u.user_id,
-                    title: u.name,
-                  }))
-                "
-                :placeholder="$t('select_responsible_attendant')"
-                :loading="isLoadingUsers"
-                :clearable="true"
-                item-value="value"
-                item-title="title"
-              />
-            </VCol>
-            <VCol cols="12" md="6">
-              <div class="d-flex align-center ga-1 mb-1">
-                <VLabel class="text-body-2">{{ $t('ignore') }}:</VLabel>
-                <AppInfoTooltip
-                  :text="$t('ignore_tooltip')"
-                  :title="$t('ignore')"
+                <VSkeletonLoader type="text" height="48" />
+              </VCol>
+              <VCol cols="12" md="6">
+                <VSkeletonLoader
+                  type="text"
+                  width="80"
+                  height="20"
+                  class="mb-2"
                 />
-              </div>
-              <AppSelectSearch
-                v-model="ignore"
-                :items="[
-                  { value: EContactIgnore.not_ignore, title: $t('not_ignore') },
-                  {
-                    value: EContactIgnore.ignore_automation,
-                    title: $t('ignore_automation'),
-                  },
-                  {
-                    value: EContactIgnore.ignore_totally,
-                    title: $t('ignore_totally'),
-                  },
-                ]"
-                :placeholder="$t('ignore')"
-                item-value="value"
-                item-title="title"
-              />
-            </VCol>
-          </VRow>
-          <VRow>
-            <VCol cols="12">
-              <label class="text-body-2 mb-1" for="notes-textarea">
-                {{ $t('notes') }}:
-              </label>
-              <VTextarea v-model="notes" :placeholder="$t('notes')" />
-            </VCol>
-          </VRow>
+                <VSkeletonLoader type="text" height="48" />
+              </VCol>
+            </VRow>
+
+            <VRow class="mb-4">
+              <VCol cols="12" md="6">
+                <VSkeletonLoader
+                  type="text"
+                  width="70"
+                  height="20"
+                  class="mb-2"
+                />
+                <VSkeletonLoader type="text" height="48" />
+              </VCol>
+              <VCol cols="12" md="6">
+                <VSkeletonLoader
+                  type="text"
+                  width="50"
+                  height="20"
+                  class="mb-2"
+                />
+                <VSkeletonLoader type="text" height="48" />
+                <VSkeletonLoader
+                  type="avatar"
+                  width="24"
+                  height="24"
+                  class="position-absolute"
+                  style="right: 12px; top: 40px"
+                />
+              </VCol>
+            </VRow>
+
+            <VRow class="mb-4">
+              <VCol cols="12" md="6">
+                <VSkeletonLoader
+                  type="text"
+                  width="90"
+                  height="20"
+                  class="mb-2"
+                />
+                <VSkeletonLoader type="text" height="48" />
+              </VCol>
+              <VCol cols="12" md="6">
+                <VSkeletonLoader
+                  type="text"
+                  width="60"
+                  height="20"
+                  class="mb-2"
+                />
+                <VSkeletonLoader type="text" height="48" />
+                <VSkeletonLoader
+                  type="avatar"
+                  width="24"
+                  height="24"
+                  class="position-absolute"
+                  style="right: 12px; top: 40px"
+                />
+              </VCol>
+            </VRow>
+
+            <VRow class="mb-4">
+              <VCol cols="12" md="6">
+                <VSkeletonLoader
+                  type="text"
+                  width="80"
+                  height="20"
+                  class="mb-2"
+                />
+                <VSkeletonLoader type="text" height="48" />
+              </VCol>
+              <VCol cols="12" md="6">
+                <VSkeletonLoader
+                  type="text"
+                  width="50"
+                  height="20"
+                  class="mb-2"
+                />
+                <VSkeletonLoader type="text" height="48" />
+                <VSkeletonLoader
+                  type="avatar"
+                  width="16"
+                  height="16"
+                  class="position-absolute"
+                  style="right: 40px; top: 40px"
+                />
+              </VCol>
+            </VRow>
+
+            <VRow class="mb-4">
+              <VCol cols="12" md="6">
+                <VSkeletonLoader
+                  type="text"
+                  width="100"
+                  height="20"
+                  class="mb-2"
+                />
+                <VSkeletonLoader type="text" height="48" />
+              </VCol>
+              <VCol cols="12" md="6">
+                <VSkeletonLoader
+                  type="text"
+                  width="120"
+                  height="20"
+                  class="mb-2"
+                />
+                <VSkeletonLoader type="text" height="48" />
+              </VCol>
+            </VRow>
+
+            <VDivider class="my-6" />
+
+            <VRow class="mb-4">
+              <VCol cols="12" md="6">
+                <div class="d-flex align-center gap-1 mb-2">
+                  <VSkeletonLoader type="text" width="140" height="20" />
+                  <VSkeletonLoader type="avatar" width="16" height="16" />
+                </div>
+                <VSkeletonLoader type="text" height="48" />
+              </VCol>
+              <VCol cols="12" md="6">
+                <div class="d-flex align-center gap-1 mb-2">
+                  <VSkeletonLoader type="text" width="60" height="20" />
+                  <VSkeletonLoader type="avatar" width="16" height="16" />
+                </div>
+                <VSkeletonLoader type="text" height="48" />
+              </VCol>
+            </VRow>
+
+            <VRow>
+              <VCol cols="12">
+                <VSkeletonLoader
+                  type="text"
+                  width="60"
+                  height="20"
+                  class="mb-2"
+                />
+                <VSkeletonLoader type="text" height="96" />
+              </VCol>
+            </VRow>
+          </template>
+
+          <template v-else>
+            <VRow>
+              <VCol cols="12" class="d-flex justify-center">
+                <div
+                  class="photo-container position-relative"
+                  @mouseenter="
+                    (e) =>
+                      (e.currentTarget as HTMLElement).classList.add('hover')
+                  "
+                  @mouseleave="
+                    (e) =>
+                      (e.currentTarget as HTMLElement).classList.remove('hover')
+                  "
+                  @click="openFileSelector"
+                >
+                  <VAvatar size="120" class="cursor-pointer">
+                    <VImg
+                      v-if="photoPreview || photo"
+                      :src="(photoPreview || photo) ?? undefined"
+                      alt="Foto de perfil"
+                    />
+                    <VImg
+                      v-else
+                      :src="'/images/svg/avatar-default.svg'"
+                      alt="Avatar"
+                    />
+                  </VAvatar>
+                  <div class="photo-overlay">
+                    <VIcon icon="tabler-camera" size="32" class="d-flex" />
+                  </div>
+                  <VBtn
+                    v-if="photoPreview || photo"
+                    icon
+                    size="x-small"
+                    color="error"
+                    variant="flat"
+                    class="photo-remove-btn"
+                    @click="removePhoto"
+                  >
+                    <VIcon icon="tabler-trash" size="16" />
+                  </VBtn>
+                </div>
+              </VCol>
+            </VRow>
+            <VRow>
+              <VCol cols="12" md="6">
+                <VLabel class="text-body-2 mb-1">{{ $t('name') }}:</VLabel>
+                <AppTextField
+                  v-model="name"
+                  :placeholder="$t('name')"
+                  :rules="[requiredValidator(name, $t('name_required'))]"
+                />
+              </VCol>
+
+              <VCol cols="12" md="6">
+                <VLabel class="text-body-2 mb-1">{{ $t('last_name') }}:</VLabel>
+                <AppTextField
+                  v-model="last_name"
+                  :placeholder="$t('last_name')"
+                />
+              </VCol>
+            </VRow>
+            <VRow>
+              <VCol cols="12" md="6">
+                <VLabel class="text-body-2 mb-1">{{ $t('nickname') }}:</VLabel>
+                <AppTextField
+                  v-model="nickname"
+                  :placeholder="$t('nickname')"
+                />
+              </VCol>
+
+              <VCol cols="12" md="6">
+                <VLabel class="text-body-2 mb-1">{{ $t('email') }}:</VLabel>
+                <AppTextField
+                  v-model="emailFormatted"
+                  type="email"
+                  :placeholder="$t('email')"
+                  :rules="[emailValidator]"
+                >
+                  <template #append-inner>
+                    <VIcon
+                      :icon="isEmailDecrypted ? 'tabler-eye-off' : 'tabler-eye'"
+                      class="cursor-pointer"
+                      :class="{ 'opacity-50': isLoadingEmail }"
+                      @click="toggleEmailVisibility"
+                    />
+                  </template>
+                </AppTextField>
+              </VCol>
+            </VRow>
+            <VRow>
+              <VCol cols="12" md="6">
+                <VLabel class="text-body-2 mb-1">{{ $t('phone_ddi') }}:</VLabel>
+                <AppSelectSearch
+                  v-model="phone_ddi"
+                  :items="countryCodes"
+                  :placeholder="$t('select_phone_ddi')"
+                  item-value="value"
+                  item-title="title"
+                />
+              </VCol>
+
+              <VCol cols="12" md="6">
+                <VLabel class="text-body-2 mb-1">{{ $t('phone') }}:</VLabel>
+                <AppTextField
+                  v-model="phoneFormatted"
+                  type="tel"
+                  :placeholder="$t('phone')"
+                  maxlength="15"
+                >
+                  <template #append-inner>
+                    <VIcon
+                      :icon="isPhoneDecrypted ? 'tabler-eye-off' : 'tabler-eye'"
+                      class="cursor-pointer"
+                      :class="{ 'opacity-50': isLoadingPhone }"
+                      @click="togglePhoneVisibility"
+                    />
+                  </template>
+                </AppTextField>
+              </VCol>
+            </VRow>
+            <VRow>
+              <VCol cols="12" md="6">
+                <VLabel class="text-body-2 mb-1">{{ $t('birthday') }}:</VLabel>
+                <AppDateTimePicker
+                  v-model="birthday"
+                  :placeholder="$t('birthday')"
+                />
+              </VCol>
+
+              <VCol cols="12" md="6">
+                <VLabel class="text-body-2 mb-1">{{ $t('label') }}:</VLabel>
+                <AppSelectSearch
+                  v-model="label_template_id"
+                  :items="itemsLabel"
+                  :placeholder="$t('select_label')"
+                  :clearable="true"
+                  item-value="value"
+                  item-title="title"
+                  class="label-select"
+                >
+                  <template #prepend-inner="{ item }">
+                    <div
+                      v-if="item && !Array.isArray(item) && item.color"
+                      class="label-color-circle me-2"
+                      :style="{ backgroundColor: item.color }"
+                    />
+                  </template>
+                  <template #item-prepend="{ item }">
+                    <div
+                      v-if="item && item.color"
+                      class="label-color-circle"
+                      :style="{ backgroundColor: item.color }"
+                    />
+                  </template>
+                </AppSelectSearch>
+              </VCol>
+            </VRow>
+            <VRow>
+              <VCol cols="12" md="6">
+                <VLabel class="text-body-2 mb-1"
+                  >{{ $t('document_type') }}:</VLabel
+                >
+                <AppSelectSearch
+                  v-model="contact_document_type_id"
+                  :items="itemsDocumentTypes"
+                  :placeholder="$t('document_type')"
+                  :clearable="true"
+                  item-value="value"
+                  item-title="title"
+                />
+              </VCol>
+
+              <VCol v-if="showDocumentField" cols="12" md="6">
+                <VLabel class="text-body-2 mb-1">{{ docLabel }}:</VLabel>
+                <AppTextField
+                  v-model="documentFormatted"
+                  :placeholder="docPlaceholder"
+                  :rules="[documentValidator]"
+                  :maxlength="currentDocType === 'cpf' ? 14 : 18"
+                  v-maska="docMaskComputed"
+                  :inputmode="
+                    documentPartialOriginal?.includes('*')
+                      ? undefined
+                      : 'numeric'
+                  "
+                >
+                  <template #append-inner>
+                    <VIcon
+                      :icon="
+                        isDocumentDecrypted ? 'tabler-eye-off' : 'tabler-eye'
+                      "
+                      class="cursor-pointer"
+                      :class="{ 'opacity-50': isLoadingDocument }"
+                      @click="toggleDocumentVisibility"
+                    />
+                  </template>
+                </AppTextField>
+              </VCol>
+            </VRow>
+            <VDivider class="my-4" />
+            <VRow>
+              <VCol cols="12" md="6">
+                <div class="d-flex align-center ga-1 mb-1">
+                  <VLabel class="text-body-2"
+                    >{{ $t('responsible_attendant') }}:</VLabel
+                  >
+                  <AppInfoTooltip
+                    :text="$t('responsible_attendant_tooltip')"
+                    :title="$t('responsible_attendant')"
+                  />
+                </div>
+                <AppSelectSearch
+                  v-model="user_id"
+                  :items="
+                    users.map((u) => ({
+                      value: u.user_id,
+                      title: u.name,
+                    }))
+                  "
+                  :placeholder="$t('select_responsible_attendant')"
+                  :loading="isLoadingUsers"
+                  :clearable="true"
+                  item-value="value"
+                  item-title="title"
+                />
+              </VCol>
+              <VCol cols="12" md="6">
+                <div class="d-flex align-center ga-1 mb-1">
+                  <VLabel class="text-body-2">{{ $t('ignore') }}:</VLabel>
+                  <AppInfoTooltip
+                    :text="$t('ignore_tooltip')"
+                    :title="$t('ignore')"
+                  />
+                </div>
+                <AppSelectSearch
+                  v-model="ignore"
+                  :items="[
+                    {
+                      value: EContactIgnore.not_ignore,
+                      title: $t('not_ignore'),
+                    },
+                    {
+                      value: EContactIgnore.ignore_automation,
+                      title: $t('ignore_automation'),
+                    },
+                    {
+                      value: EContactIgnore.ignore_totally,
+                      title: $t('ignore_totally'),
+                    },
+                  ]"
+                  :placeholder="$t('ignore')"
+                  item-value="value"
+                  item-title="title"
+                />
+              </VCol>
+            </VRow>
+            <VRow>
+              <VCol cols="12">
+                <label class="text-body-2 mb-1" for="notes-textarea">
+                  {{ $t('notes') }}:
+                </label>
+                <VTextarea v-model="notes" :placeholder="$t('notes')" />
+              </VCol>
+            </VRow>
+          </template>
         </VCardText>
 
         <VCardText class="d-flex justify-end flex-wrap gap-3">
           <VBtn variant="tonal" color="secondary" @click="isVisible = false">
             {{ $t('cancel') }}
           </VBtn>
-          <VBtn @click="updateContact"> {{ $t('save') }} </VBtn>
+          <VBtn :loading="isSaving" :disabled="isSaving" @click="updateContact">
+            {{ $t('save') }}
+          </VBtn>
         </VCardText>
       </VCard>
     </VForm>

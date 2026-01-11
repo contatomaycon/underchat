@@ -6,14 +6,12 @@ import { UpdateChatContactRequest } from '@core/schema/chat/updateContact/reques
 const isEmptyDocumentTypeId = (
   value: string | { value: string } | null | undefined
 ): boolean => {
-  if (value === '' || value === null || value === undefined) {
+  if (value === '' || value === null) {
     return true;
   }
 
   if (typeof value === 'object' && 'value' in value) {
-    return (
-      value.value === '' || value.value === null || value.value === undefined
-    );
+    return value.value === '' || value.value === null;
   }
 
   return false;

@@ -1029,16 +1029,16 @@ watch(
               >
                 <template #prepend-inner="{ item }">
                   <div
-                    v-if="item?.color"
+                    v-if="item && !Array.isArray(item) && (item as any).color"
                     class="label-color-circle me-2"
-                    :style="{ backgroundColor: item.color }"
+                    :style="{ backgroundColor: (item as any).color }"
                   />
                 </template>
                 <template #item-prepend="{ item }">
                   <div
-                    v-if="item.color"
+                    v-if="item && (item as any).color"
                     class="label-color-circle"
-                    :style="{ backgroundColor: item.color }"
+                    :style="{ backgroundColor: (item as any).color }"
                   />
                 </template>
               </AppSelectSearch>

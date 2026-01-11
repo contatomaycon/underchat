@@ -281,9 +281,7 @@ export class TransferChatUseCase {
     t: TFunction<'translation', undefined>,
     accountId: string,
     params: TransferChatParams,
-    body: TransferChatBody,
-    userId: string,
-    userSectors: string[]
+    body: TransferChatBody
   ): Promise<{ chat_id: string; status: boolean }> {
     const chat = await this.chatService.findChatByChatId(
       accountId,

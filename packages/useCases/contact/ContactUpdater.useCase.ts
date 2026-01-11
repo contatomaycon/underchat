@@ -309,6 +309,8 @@ export class ContactUpdaterUseCase {
       normalizedBody.birthday as FieldValue
     );
     const notes = this.extractFieldValue(normalizedBody.notes as FieldValue);
+    const hasContactDocumentTypeId =
+      normalizedBody.contact_document_type_id !== undefined;
     const rawContactDocumentTypeId = this.extractFieldValue(
       normalizedBody.contact_document_type_id as FieldValue
     );
@@ -316,13 +318,16 @@ export class ContactUpdaterUseCase {
       rawContactDocumentTypeId && rawContactDocumentTypeId.trim() !== ''
         ? rawContactDocumentTypeId
         : null;
+    const hasDocument = normalizedBody.document !== undefined;
     const rawDocument = this.extractFieldValue(
       normalizedBody.document as FieldValue
     );
     const document =
-      contactDocumentTypeId && rawDocument && rawDocument.trim() !== ''
-        ? rawDocument
-        : null;
+      rawDocument && rawDocument.trim() !== '' ? rawDocument : null;
+    const shouldClearDocument =
+      hasContactDocumentTypeId && !contactDocumentTypeId;
+    const shouldUpdateDocument =
+      shouldClearDocument || (hasDocument && document !== null);
 
     if (labelTemplateId) {
       const labelTemplateExists =
@@ -352,13 +357,19 @@ export class ContactUpdaterUseCase {
       nickname,
       birthday,
       notes,
-      contact_document_type_id: contactDocumentTypeId,
-      document,
       photo: normalizedBody.photo,
       image_url: normalizedBody.image_url,
       user_id: normalizedBody.user_id,
       ignore: normalizedBody.ignore,
     };
+
+    if (hasContactDocumentTypeId) {
+      bodyToUpdate.contact_document_type_id = contactDocumentTypeId;
+    }
+
+    if (shouldUpdateDocument) {
+      bodyToUpdate.document = shouldClearDocument ? null : document;
+    }
 
     const contactUpdater = await this.contactService.updateContactById(
       bodyToUpdate,
@@ -370,7 +381,6 @@ export class ContactUpdaterUseCase {
       throw new Error(t('contact_update_error'));
     }
 
-    // Se a validação foi pulada (sem worker ativo), marcar como não validado
     if (normalizedPhone && normalizedPhone.isValidated === false) {
       await this.contactService.updateContactIsValided(contactId, false);
     }

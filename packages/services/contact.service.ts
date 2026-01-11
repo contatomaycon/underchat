@@ -511,19 +511,24 @@ export class ContactService {
     const phoneC = phoneField ? this.encryptService.encrypt(phoneField) : null;
 
     const documentField = this.extractFieldValue(input.document as FieldValue);
-    const documentCEncrypted = documentField
-      ? this.passwordEncryptorService.encrypt(documentField)
+    const normalizedDocumentField =
+      documentField && documentField.trim() !== '' ? documentField : null;
+
+    const documentCEncrypted = normalizedDocumentField
+      ? this.passwordEncryptorService.encrypt(normalizedDocumentField)
       : null;
 
-    const documentPartialEncrypted = documentField
+    const documentPartialEncrypted = normalizedDocumentField
       ? (
-          this.encryptService.sanitize(documentField, ETypeSanetize.document) ??
-          ''
+          this.encryptService.sanitize(
+            normalizedDocumentField,
+            ETypeSanetize.document
+          ) ?? ''
         ).slice(0, 20)
       : null;
 
-    const documentC = documentField
-      ? this.encryptService.encrypt(documentField)
+    const documentC = normalizedDocumentField
+      ? this.encryptService.encrypt(normalizedDocumentField)
       : null;
 
     const phoneDdiField = this.extractFieldValue(input.phone_ddi as FieldValue);
@@ -565,13 +570,14 @@ export class ContactService {
         ? rawContactDocumentTypeId
         : null;
 
-    const finalDocumentCEncrypted = contactDocumentTypeId
-      ? documentCEncrypted
-      : null;
-    const finalDocumentPartialEncrypted = contactDocumentTypeId
-      ? documentPartialEncrypted
-      : null;
-    const finalDocumentC = contactDocumentTypeId ? documentC : null;
+    const hasContactDocumentTypeId =
+      input.contact_document_type_id !== undefined;
+    const hasDocumentField = input.document !== undefined;
+    const shouldClearDocument =
+      hasContactDocumentTypeId && !contactDocumentTypeId;
+    const shouldUpdateDocument =
+      shouldClearDocument ||
+      (hasDocumentField && normalizedDocumentField !== null);
 
     const rawUserId = this.extractFieldValue(input.user_id as FieldValue);
     const userId = this.normalizeUserId(rawUserId);
@@ -597,14 +603,22 @@ export class ContactService {
       photo: photoUrl,
       birthday: nullIfEmpty(birthday),
       notes,
-      contact_document_type_id: contactDocumentTypeId,
-      document: finalDocumentCEncrypted,
-      document_partial: finalDocumentPartialEncrypted,
-      document_c: finalDocumentC,
       user_id: input.user_id !== undefined ? userId : undefined,
       ignore: input.ignore !== undefined ? ignore : undefined,
       is_valided: isValided,
     };
+
+    if (hasContactDocumentTypeId) {
+      payload.contact_document_type_id = contactDocumentTypeId;
+    }
+
+    if (shouldUpdateDocument) {
+      payload.document = shouldClearDocument ? null : documentCEncrypted;
+      payload.document_partial = shouldClearDocument
+        ? null
+        : documentPartialEncrypted;
+      payload.document_c = shouldClearDocument ? null : documentC;
+    }
 
     return this.contactUpdaterRepository.updateContactById(contactId, payload);
   };

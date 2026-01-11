@@ -24,9 +24,7 @@ export const transferChat = async (
       t,
       tokenJwtData.account_id,
       request.params,
-      request.body,
-      tokenJwtData.user_id,
-      tokenJwtData.sectors
+      request.body
     );
 
     return sendResponse(reply, {

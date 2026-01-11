@@ -463,7 +463,11 @@ const determineDocumentToSave = (): string | null | undefined => {
     return documentValue;
   }
 
-  return undefined;
+  if (!documentValue && documentPartialOriginal.value?.includes('*')) {
+    return undefined;
+  }
+
+  return documentValue;
 };
 
 const loadContactData = async () => {

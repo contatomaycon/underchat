@@ -186,7 +186,7 @@ export class ChatListerUseCase {
                   },
                 },
               },
-      },
+            },
           ],
           minimum_should_match: 1,
         },

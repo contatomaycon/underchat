@@ -287,7 +287,13 @@ const documentValidator = (v: string | null | undefined) => {
   return true;
 };
 
-const itemsLabel = computed(() =>
+interface SelectItem {
+  value: string;
+  title: string;
+  color?: string;
+}
+
+const itemsLabel = computed<SelectItem[]>(() =>
   labelTemplates.value.map((item) => ({
     value: item.label_template_id,
     title: item.label,
@@ -451,7 +457,11 @@ const determineDocumentToSave = (): string | null | undefined => {
     return documentValue;
   }
 
-  return undefined;
+  if (!documentValue && documentPartialOriginal.value?.includes('*')) {
+    return undefined;
+  }
+
+  return documentValue;
 };
 
 const loadContactData = async () => {
@@ -1304,16 +1314,16 @@ onMounted(() => {
               >
                 <template #prepend-inner="{ item }">
                   <div
-                    v-if="item?.color"
+                    v-if="item && !Array.isArray(item) && (item as any).color"
                     class="label-color-circle me-2"
-                    :style="{ backgroundColor: item.color }"
+                    :style="{ backgroundColor: (item as any).color }"
                   />
                 </template>
                 <template #item-prepend="{ item }">
                   <div
-                    v-if="item.color"
+                    v-if="item && (item as any).color"
                     class="label-color-circle"
-                    :style="{ backgroundColor: item.color }"
+                    :style="{ backgroundColor: (item as any).color }"
                   />
                 </template>
               </AppSelectSearch>
