@@ -5,7 +5,6 @@ import { useAiAgentStore } from '@/@webcore/stores/aiAgent';
 import { DataTableHeader } from 'vuetify';
 import { ListAiAgentPromptResponse } from '@core/schema/aiAgent/listAiAgentPrompt/response.schema';
 import { EAiAgentPromptType } from '@core/common/enums/EAiAgentPromptType';
-import { EAiAgentType } from '@core/common/enums/EAiAgentType';
 import { ViewAiAgentResponse } from '@core/schema/aiAgent/viewAiAgent/response.schema';
 import AppAddEditAiAgentPrompt from './AppAddEditAiAgentPrompt.vue';
 import TablePagination from '@/@webcore/components/TablePagination.vue';
@@ -92,20 +91,6 @@ const loadAiAgentInfo = async () => {
   const result = await aiAgentStore.viewAiAgent(aiAgentId.value);
   aiAgentInfo.value = result;
 };
-
-const shouldShowRefreshButton = computed(() => {
-  if (!aiAgentInfo.value) return true;
-
-  const isDeepSeekOrOthers =
-    aiAgentInfo.value.ai_agent_type_id === EAiAgentType.deepseek ||
-    aiAgentInfo.value.ai_agent_type_id === EAiAgentType.others;
-
-  if (isDeepSeekOrOthers && !aiAgentInfo.value.embedding_model) {
-    return false;
-  }
-
-  return true;
-});
 
 const openAddModal = () => {
   promptToEdit.value = null;
@@ -236,7 +221,6 @@ onMounted(() => {
       <VCardText class="pa-4">
         <div class="d-flex justify-end gap-3 mb-4">
           <VBtn
-            v-if="shouldShowRefreshButton"
             prepend-icon="tabler-refresh"
             color="secondary"
             variant="tonal"
@@ -321,7 +305,7 @@ onMounted(() => {
                 />
               </IconBtn>
 
-              <IconBtn v-if="shouldShowRefreshButton">
+              <IconBtn>
                 <VTooltip
                   location="top"
                   transition="scale-transition"

@@ -27,6 +27,9 @@ export const chatHistoryEmbeddingMappings = (embeddingDimensions: number) => {
           index: true,
           similarity: 'cosine' as const,
         },
+        has_embedding: {
+          type: 'boolean' as const,
+        },
         created_at: {
           type: 'date' as const,
         },

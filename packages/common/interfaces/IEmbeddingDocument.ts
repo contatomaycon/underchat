@@ -4,6 +4,7 @@ export interface IEmbeddingDocument {
   ai_agent_prompt_id: string;
   chunk_index: number;
   chunk_text: string;
-  embedding: number[];
+  embedding?: number[] | null;
+  has_embedding?: boolean;
   created_at: string;
 }

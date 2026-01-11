@@ -296,7 +296,7 @@ export class EmbeddingService {
 
   private createEmbeddingDocuments(
     chunks: IChunk[],
-    embeddings: number[][],
+    embeddings: number[][] | null,
     accountId: string,
     aiAgentId: string,
     aiAgentPromptId: string
@@ -309,7 +309,8 @@ export class EmbeddingService {
       ai_agent_prompt_id: aiAgentPromptId,
       chunk_index: chunk.index,
       chunk_text: chunk.text,
-      embedding: embeddings[idx],
+      embedding: embeddings ? embeddings[idx] : null,
+      has_embedding: embeddings !== null,
       created_at: now,
     }));
   }
@@ -345,8 +346,33 @@ export class EmbeddingService {
     const embeddingOptional = this.isEmbeddingOptional(
       aiAgent.ai_agent_type_id
     );
-    if (embeddingOptional && !aiAgent.embedding_model) {
-      return 0;
+    const hasEmbeddingModel = !!aiAgent.embedding_model;
+
+    if (embeddingOptional && !hasEmbeddingModel) {
+      await this.deletePromptEmbeddings(aiAgentPromptId);
+
+      const { size, overlap } = this.parseChunkConfig(
+        aiAgent.chunk_size,
+        aiAgent.chunk_overlap
+      );
+
+      const chunks = this.splitTextIntoChunks(text, size, overlap);
+
+      if (chunks.length === 0) {
+        return 0;
+      }
+
+      const documents = this.createEmbeddingDocuments(
+        chunks,
+        null,
+        accountId,
+        aiAgentId,
+        aiAgentPromptId
+      );
+
+      await this.bulkIndexDocuments(documents);
+
+      return documents.length;
     }
 
     this.validateAiAgentConfig(aiAgent, true);
@@ -397,7 +423,7 @@ export class EmbeddingService {
     aiAgentId: string,
     queryVector: number[],
     topK: number
-  ) {
+  ): any {
     return {
       index: this.indexName,
       size: topK,
@@ -411,6 +437,7 @@ export class EmbeddingService {
                     filter: [
                       { term: { account_id: accountId } },
                       { term: { ai_agent_id: aiAgentId } },
+                      { term: { has_embedding: true } },
                     ],
                   },
                 },
@@ -442,6 +469,30 @@ export class EmbeddingService {
     }));
   }
 
+  private buildTextSearchQuery(
+    accountId: string,
+    aiAgentId: string,
+    topK: number
+  ): any {
+    return {
+      index: this.indexName,
+      size: topK,
+      query: {
+        bool: {
+          filter: [
+            { term: { account_id: accountId } },
+            { term: { ai_agent_id: aiAgentId } },
+            { term: { has_embedding: false } },
+          ],
+        },
+      },
+      sort: [
+        { ai_agent_prompt_id: { order: 'asc' as const } },
+        { chunk_index: { order: 'asc' as const } },
+      ] as any,
+    };
+  }
+
   async searchSimilarChunks(
     accountId: string,
     aiAgentId: string,
@@ -460,8 +511,23 @@ export class EmbeddingService {
     const embeddingOptional = this.isEmbeddingOptional(
       aiAgent.ai_agent_type_id
     );
-    if (embeddingOptional && !aiAgent.embedding_model) {
-      return [];
+    const hasEmbeddingModel = !!aiAgent.embedding_model;
+
+    if (embeddingOptional && !hasEmbeddingModel) {
+      const searchQuery = this.buildTextSearchQuery(accountId, aiAgentId, topK);
+
+      const response = await this.elasticClient.search(searchQuery);
+
+      const hits = response.hits.hits as Array<{
+        _score: number;
+        _source: IEmbeddingDocument;
+      }>;
+
+      return hits.map((hit) => ({
+        text: hit._source.chunk_text,
+        score: 1.0,
+        promptId: hit._source.ai_agent_prompt_id,
+      }));
     }
 
     this.validateAiAgentConfig(aiAgent, true);
@@ -625,8 +691,133 @@ export class EmbeddingService {
     const embeddingOptional = this.isEmbeddingOptional(
       aiAgent.ai_agent_type_id
     );
-    if (embeddingOptional && !aiAgent.embedding_model) {
-      return 0;
+    const hasEmbeddingModel = !!aiAgent.embedding_model;
+
+    if (embeddingOptional && !hasEmbeddingModel) {
+      const alreadyEmbedded = await this.hasChatHistoryEmbeddings(
+        accountId,
+        chatId,
+        aiAgentId
+      );
+
+      if (alreadyEmbedded) {
+        return 0;
+      }
+
+      await this.deleteChatHistoryEmbeddings(accountId, chatId, aiAgentId);
+
+      const queryElastic = {
+        size: 100,
+        sort: [{ date: { order: 'desc' } }],
+        query: {
+          bool: {
+            must: [
+              {
+                nested: {
+                  path: 'account',
+                  query: {
+                    term: {
+                      'account.id': accountId,
+                    },
+                  },
+                },
+              },
+            ],
+            filter: [
+              {
+                term: {
+                  chat_id: chatId,
+                },
+              },
+              {
+                terms: {
+                  'content.type': ['text', 'system', 'annotation'],
+                },
+              },
+            ],
+          },
+        },
+      };
+
+      const result = await this.elasticDatabaseService.select<IChatMessage>(
+        EElasticIndex.message,
+        queryElastic
+      );
+
+      if (!result || !result.hits.hits || result.hits.hits.length === 0) {
+        return 0;
+      }
+
+      const messages: Array<{
+        text: string;
+        message_id: string;
+        is_assistant_response: boolean;
+        phone: string | null;
+      }> = [];
+
+      for (const hit of result.hits.hits.reverse()) {
+        const message = hit._source as IChatMessage;
+        if (!message.content || !message.message_id) {
+          continue;
+        }
+
+        const text = extractMessageTextFromContent(message.content);
+        if (!text || text.trim().length === 0) {
+          continue;
+        }
+
+        const isAssistantResponse =
+          message.type_user === ETypeUserChat.bot ||
+          message.type_user === ETypeUserChat.system;
+
+        messages.push({
+          text,
+          message_id: message.message_id,
+          is_assistant_response: isAssistantResponse,
+          phone: message.phone || phone || null,
+        });
+      }
+
+      if (messages.length === 0) {
+        return 0;
+      }
+
+      const now = new Date().toISOString();
+      const documents: IChatHistoryEmbeddingDocument[] = messages.map((msg) => {
+        const isAssistantResponse = msg.is_assistant_response;
+        const initialQualityScore = isAssistantResponse ? 0.5 : 0.3;
+
+        return {
+          account_id: accountId,
+          chat_id: chatId,
+          ai_agent_id: aiAgentId,
+          message_id: msg.message_id,
+          message_text: msg.text,
+          embedding: null,
+          has_embedding: false,
+          created_at: now,
+          phone: msg.phone,
+          quality_score: initialQualityScore,
+          is_useful: isAssistantResponse ? true : null,
+          is_assistant_response: isAssistantResponse,
+        };
+      });
+
+      const body = documents.flatMap((doc) => [
+        {
+          index: {
+            _index: this.chatHistoryIndexName,
+            _id: `${accountId}:${chatId}:${aiAgentId}:${doc.message_id}`,
+          },
+        },
+        doc,
+      ]);
+
+      await this.elasticClient.bulk({ body, refresh: 'wait_for' });
+
+      await this.markChatAsEmbedded(accountId, chatId, aiAgentId);
+
+      return documents.length;
     }
 
     this.validateAiAgentConfig(aiAgent, true);
@@ -747,6 +938,7 @@ export class EmbeddingService {
           message_id: msg.message_id,
           message_text: msg.text,
           embedding: embeddings[idx],
+          has_embedding: true,
           created_at: now,
           phone: msg.phone,
           quality_score: initialQualityScore,
@@ -826,6 +1018,103 @@ export class EmbeddingService {
     return totalProcessed;
   }
 
+  private buildChatHistoryTextSearchQuery(
+    accountId: string,
+    aiAgentId: string,
+    topK: number,
+    chatIds: string[],
+    options?: {
+      minQualityScore?: number;
+      onlyUseful?: boolean;
+      onlyAssistantResponses?: boolean;
+    }
+  ): any {
+    const filterClauses: any[] = [
+      { term: { account_id: accountId } },
+      { term: { ai_agent_id: aiAgentId } },
+      { term: { has_embedding: false } },
+    ];
+
+    if (chatIds.length > 0) {
+      filterClauses.push({ terms: { chat_id: chatIds } });
+    }
+
+    const minQualityScore = options?.minQualityScore ?? 0.0;
+    if (minQualityScore > 0) {
+      filterClauses.push({
+        bool: {
+          should: [
+            {
+              range: {
+                quality_score: {
+                  gte: minQualityScore,
+                },
+              },
+            },
+            {
+              bool: {
+                must_not: {
+                  exists: {
+                    field: 'quality_score',
+                  },
+                },
+              },
+            },
+          ],
+        },
+      });
+    }
+
+    if (options?.onlyUseful) {
+      filterClauses.push({
+        bool: {
+          should: [
+            { term: { is_useful: true } },
+            {
+              bool: {
+                must_not: {
+                  exists: {
+                    field: 'is_useful',
+                  },
+                },
+              },
+            },
+          ],
+        },
+      });
+    }
+
+    if (options?.onlyAssistantResponses) {
+      filterClauses.push({
+        bool: {
+          should: [
+            { term: { is_assistant_response: true } },
+            {
+              bool: {
+                must_not: {
+                  exists: {
+                    field: 'is_assistant_response',
+                  },
+                },
+              },
+            },
+          ],
+        },
+      });
+    }
+
+    return {
+      index: this.chatHistoryIndexName,
+      size: topK * 2,
+      query: {
+        bool: {
+          filter: filterClauses,
+        },
+      },
+      sort: [{ created_at: { order: 'desc' as const } }] as any,
+    };
+  }
+
   async searchChatHistory(
     accountId: string,
     chatId: string,
@@ -854,8 +1143,56 @@ export class EmbeddingService {
     const embeddingOptional = this.isEmbeddingOptional(
       aiAgent.ai_agent_type_id
     );
-    if (embeddingOptional && !aiAgent.embedding_model) {
-      return [];
+    const hasEmbeddingModel = !!aiAgent.embedding_model;
+
+    if (embeddingOptional && !hasEmbeddingModel) {
+      const searchMultipleChats = options?.searchMultipleChats ?? true;
+      let chatIds: string[] = [chatId];
+
+      if (searchMultipleChats && phone) {
+        const foundChatIds = await this.getChatIdsByPhone(accountId, phone);
+        if (foundChatIds.length > 0) {
+          chatIds = foundChatIds;
+        }
+      }
+
+      const searchQuery = this.buildChatHistoryTextSearchQuery(
+        accountId,
+        aiAgentId,
+        topK,
+        chatIds,
+        options
+      );
+
+      try {
+        const response = await this.elasticClient.search(searchQuery);
+
+        const hits = response.hits.hits as Array<{
+          _score: number;
+          _source: IChatHistoryEmbeddingDocument;
+        }>;
+
+        const minQualityScore = options?.minQualityScore ?? 0.0;
+
+        const results = hits
+          .map((hit) => {
+            const qualityScore = hit._source.quality_score || 0.0;
+            const combinedScore = 0.7 + qualityScore * 0.3;
+
+            return {
+              text: hit._source.message_text,
+              score: Math.max(0, Math.min(1, combinedScore)),
+              message_id: hit._source.message_id,
+            };
+          })
+          .filter((result) => result.score >= minQualityScore)
+          .slice(0, topK);
+
+        return results;
+      } catch (error) {
+        console.error('[searchChatHistory] Erro ao buscar histórico:', error);
+        return [];
+      }
     }
 
     this.validateAiAgentConfig(aiAgent, false);
@@ -884,14 +1221,9 @@ export class EmbeddingService {
     const onlyAssistantResponses = options?.onlyAssistantResponses ?? false;
 
     if (searchMultipleChats && phone) {
-      const candidates = buildCandidates(phone);
-      if (Array.isArray(candidates) && candidates.length > 0) {
-        const chatIds = await this.getChatIdsByPhone(accountId, phone);
-        if (chatIds.length > 0) {
-          filterClauses.push({ terms: { chat_id: chatIds } });
-        } else {
-          filterClauses.push({ term: { chat_id: chatId } });
-        }
+      const chatIds = await this.getChatIdsByPhone(accountId, phone);
+      if (chatIds.length > 0) {
+        filterClauses.push({ terms: { chat_id: chatIds } });
       } else {
         filterClauses.push({ term: { chat_id: chatId } });
       }
@@ -962,7 +1294,9 @@ export class EmbeddingService {
       });
     }
 
-    const searchQuery = {
+    filterClauses.push({ term: { has_embedding: true } });
+
+    const searchQuery: any = {
       index: this.chatHistoryIndexName,
       size: topK * 2,
       query: {

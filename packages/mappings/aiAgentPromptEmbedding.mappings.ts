@@ -27,6 +27,9 @@ export const aiAgentPromptEmbeddingMappings = (embeddingDimensions: number) => {
           index: true,
           similarity: 'cosine',
         },
+        has_embedding: {
+          type: 'boolean',
+        },
         created_at: {
           type: 'date',
         },
