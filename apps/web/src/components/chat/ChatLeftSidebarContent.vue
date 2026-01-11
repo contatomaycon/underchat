@@ -1632,6 +1632,20 @@ watch(
 onMounted(async () => {
   await Promise.all([loadChatsByFilter(), loadChatbotCount()]);
 });
+
+const scrollToTop = () => {
+  if (chatScrollContainer.value) {
+    const psElement = chatScrollContainer.value.$el as HTMLElement;
+    if (psElement) {
+      psElement.scrollTop = 0;
+    }
+  }
+};
+
+defineExpose({
+  handleClearFilters,
+  scrollToTop,
+});
 </script>
 
 <template>

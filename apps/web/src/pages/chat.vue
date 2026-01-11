@@ -137,6 +137,7 @@ const fileDocRef = ref<HTMLInputElement | null>(null);
 const filePhotoRef = ref<HTMLInputElement | null>(null);
 const fileVideoRef = ref<HTMLInputElement | null>(null);
 const fileAudioRef = ref<HTMLInputElement | null>(null);
+const leftSidebarRef = ref<InstanceType<typeof ChatLeftSidebarContent>>();
 const isEmojiOpen = ref(false);
 const isContactPickerOpen = ref(false);
 const isLocationPickerOpen = ref(false);
@@ -325,6 +326,8 @@ const handleAttendChat = async () => {
 
   if (success) {
     chatStore.showSnackbar(t('chat_attended_successfully'), EColor.success);
+    await nextTick();
+    leftSidebarRef.value?.scrollToTop();
   }
 };
 
@@ -338,6 +341,10 @@ const handleReopenChat = async () => {
 
   if (success) {
     chatStore.showSnackbar(t('chat_reopened_successfully'), EColor.success);
+    await nextTick();
+    leftSidebarRef.value?.handleClearFilters();
+    await nextTick();
+    leftSidebarRef.value?.scrollToTop();
   }
 };
 
@@ -4409,6 +4416,7 @@ onBeforeUnmount(() => {
       :permanent="$vuetify.display.mdAndUp"
     >
       <ChatLeftSidebarContent
+        ref="leftSidebarRef"
         v-model:is-drawer-open="isLeftSidebarOpen"
         v-model:search="q"
         @open-chat="openChat"
