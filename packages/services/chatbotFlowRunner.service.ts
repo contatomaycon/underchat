@@ -4575,7 +4575,7 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
         userText,
         {
           topK: 12,
-          minScore: 0.2,
+          minScore: 0.0,
           chatId: createChat.chat_id,
           includeChatHistory: true,
           isBootstrap: false,

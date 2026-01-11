@@ -15,7 +15,7 @@ export class RagService {
   private readonly maxSummaryChars = 12000;
   private readonly minContextScore = 0.2;
   private readonly minKeywordLength = 3;
-  private readonly minKeywordMatchRatio = 0.3;
+  private readonly minKeywordMatchRatio = 0.2;
   private readonly keywordStopWords = new Set([
     'a',
     'o',
@@ -105,6 +105,10 @@ export class RagService {
     'quer',
     'quero',
     'gostaria',
+    'usuario',
+    'assistente',
+    'atendente',
+    'cliente',
   ]);
 
   constructor(
@@ -127,7 +131,9 @@ export class RagService {
       onlyUseful?: boolean;
       onlyAssistantResponses?: boolean;
     }
-  ): Promise<IRagContext & { chunksCount: number; maxScore: number }> {
+  ): Promise<
+    IRagContext & { chunksCount: number; maxScore: number; rawMaxScore: number }
+  > {
     try {
       const chunks = await this.embeddingService.searchChatHistory(
         accountId,
@@ -167,7 +173,9 @@ export class RagService {
     userQuery: string,
     topK = 100,
     minScore = 0.0
-  ): Promise<IRagContext & { chunksCount: number; maxScore: number }> {
+  ): Promise<
+    IRagContext & { chunksCount: number; maxScore: number; rawMaxScore: number }
+  > {
     try {
       const chunks = await this.embeddingService.searchSimilarChunks(
         accountId,
@@ -189,7 +197,11 @@ export class RagService {
   private processChunks(
     chunks: Array<{ text: string; score: number; promptId: string }>,
     minScore: number
-  ): IRagContext & { chunksCount: number; maxScore: number } {
+  ): IRagContext & {
+    chunksCount: number;
+    maxScore: number;
+    rawMaxScore: number;
+  } {
     const safeMinScore = this.normalizeMinScore(minScore);
     const normalizedChunks = (Array.isArray(chunks) ? chunks : [])
       .map((chunk) => ({
@@ -197,10 +209,18 @@ export class RagService {
         score: this.normalizeScore(chunk?.score),
         promptId: typeof chunk?.promptId === 'string' ? chunk.promptId : '',
       }))
-      .filter((chunk) => chunk.text.length > 0 && chunk.score >= safeMinScore)
+      .filter((chunk) => chunk.text.length > 0);
+
+    const rawMaxScore = normalizedChunks.reduce(
+      (maxScore, chunk) => Math.max(maxScore, chunk.score),
+      0
+    );
+
+    const relevantChunks = normalizedChunks
+      .filter((chunk) => chunk.score >= safeMinScore)
       .sort((a, b) => b.score - a.score);
 
-    const uniqueChunks = this.dedupeChunksByText(normalizedChunks);
+    const uniqueChunks = this.dedupeChunksByText(relevantChunks);
     const { chunks: selectedChunks, combinedContext } =
       this.buildCombinedContext(uniqueChunks);
     const maxScore = selectedChunks.length > 0 ? selectedChunks[0].score : 0;
@@ -210,6 +230,7 @@ export class RagService {
       combinedContext,
       chunksCount: selectedChunks.length,
       maxScore,
+      rawMaxScore,
     };
   }
 
@@ -364,8 +385,11 @@ export class RagService {
       hasRelevantContext,
       knowledgeContextText,
       knowledgeMaxScore,
+      knowledgeRawMaxScore,
       historyMaxScore,
+      historyRawMaxScore,
       hasConversationContext,
+      conversationContextText,
     } = await this.buildContextParts(accountId, aiAgentId, userQuery, options);
 
     const enhancedPrompt = this.buildEnhancedPrompt(
@@ -384,8 +408,11 @@ export class RagService {
       bootstrapSummary: options?.bootstrapSummary,
       knowledgeContextText,
       knowledgeMaxScore,
+      knowledgeRawMaxScore,
       historyMaxScore,
+      historyRawMaxScore,
       hasConversationContext,
+      conversationContextText,
       scoreThreshold: contextScoreThreshold,
     });
     const contextHints = this.buildContextHints(
@@ -546,15 +573,21 @@ Agora, responda à pergunta do usuário seguindo TODAS as regras e diretrizes ac
     hasRelevantContext: boolean;
     knowledgeContextText: string;
     knowledgeMaxScore: number;
+    knowledgeRawMaxScore: number;
     historyMaxScore: number;
+    historyRawMaxScore: number;
     hasConversationContext: boolean;
+    conversationContextText: string;
   }> {
     const contextParts: string[] = [];
     let totalChunksCount = 0;
     let hasRelevantContext = false;
     let knowledgeContextText = '';
     let knowledgeMaxScore = 0;
+    let knowledgeRawMaxScore = 0;
     let historyMaxScore = 0;
+    let historyRawMaxScore = 0;
+    let conversationContextText = '';
     const normalizedQuery = this.normalizeText(userQuery);
     const hasConversationContext =
       !!(
@@ -578,12 +611,16 @@ Agora, responda à pergunta do usuário seguindo TODAS as regras e diretrizes ac
       options?.conversationSummary &&
       options.conversationSummary.trim().length > 0
     ) {
+      const normalizedSummary = this.normalizeText(options.conversationSummary);
       contextParts.push(
         `### Sumário da Conversa:\n${this.truncateText(
-          this.normalizeText(options.conversationSummary),
+          normalizedSummary,
           this.maxSummaryChars
         )}`
       );
+      if (normalizedSummary) {
+        conversationContextText = normalizedSummary;
+      }
     }
 
     if (options?.recentMessages && options.recentMessages.length > 0) {
@@ -594,6 +631,9 @@ Agora, responda à pergunta do usuário seguindo TODAS as regras e diretrizes ac
         contextParts.push(
           `### Últimas Mensagens da Conversa:\n${messagesText}`
         );
+        conversationContextText = [conversationContextText, messagesText]
+          .filter(Boolean)
+          .join(' ');
       }
     }
 
@@ -608,6 +648,7 @@ Agora, responda à pergunta do usuário seguindo TODAS as regras e diretrizes ac
         topK,
         minScore
       );
+      knowledgeRawMaxScore = relevantContext.rawMaxScore;
 
       if (
         relevantContext.combinedContext &&
@@ -637,6 +678,7 @@ Agora, responda à pergunta do usuário seguindo TODAS as regras e diretrizes ac
         minScore,
         options.phone
       );
+      historyRawMaxScore = chatHistoryContext.rawMaxScore;
 
       if (chatHistoryContext.combinedContext) {
         contextParts.push(
@@ -654,8 +696,11 @@ Agora, responda à pergunta do usuário seguindo TODAS as regras e diretrizes ac
       hasRelevantContext,
       knowledgeContextText,
       knowledgeMaxScore,
+      knowledgeRawMaxScore,
       historyMaxScore,
+      historyRawMaxScore,
       hasConversationContext,
+      conversationContextText,
     };
   }
 
@@ -754,8 +799,11 @@ ${instructionsText || 'Responda à pergunta do usuário de forma clara e precisa
       bootstrapSummary?: string | null;
       knowledgeContextText: string;
       knowledgeMaxScore: number;
+      knowledgeRawMaxScore: number;
       historyMaxScore: number;
+      historyRawMaxScore: number;
       hasConversationContext: boolean;
+      conversationContextText: string;
       scoreThreshold: number;
     }
   ): boolean {
@@ -764,22 +812,32 @@ ${instructionsText || 'Responda à pergunta do usuário de forma clara e precisa
       (options.bootstrapSummary &&
         options.bootstrapSummary.trim().length > 0) ||
       options.knowledgeContextText.trim().length > 0;
+    const hasConversationText =
+      options.conversationContextText &&
+      options.conversationContextText.trim().length > 0;
 
     if (queryKeywords.length === 0) {
-      return options.hasConversationContext || hasKnowledgeText;
+      return (
+        options.hasConversationContext ||
+        hasConversationText ||
+        hasKnowledgeText
+      );
     }
 
-    if (options.knowledgeMaxScore >= options.scoreThreshold) {
-      return true;
-    }
+    const highConfidenceScore =
+      options.knowledgeMaxScore >= options.scoreThreshold ||
+      options.historyMaxScore >= options.scoreThreshold ||
+      options.knowledgeRawMaxScore >= options.scoreThreshold ||
+      options.historyRawMaxScore >= options.scoreThreshold;
 
-    if (options.historyMaxScore >= options.scoreThreshold) {
+    if (highConfidenceScore) {
       return true;
     }
 
     const contextText = [
       options.bootstrapSummary ?? '',
       options.knowledgeContextText ?? '',
+      options.conversationContextText ?? '',
     ]
       .map((text) => this.normalizeText(text))
       .filter(Boolean)
@@ -803,10 +861,20 @@ ${instructionsText || 'Responda à pergunta do usuário de forma clara e precisa
       contextKeywordSet.has(token)
     ).length;
 
-    return (
-      matchCount > 0 &&
-      matchCount / queryKeywords.length >= this.minKeywordMatchRatio
-    );
+    const matchRatio = matchCount / queryKeywords.length;
+    if (matchCount >= 2) {
+      return true;
+    }
+    if (matchCount > 0 && matchRatio >= this.minKeywordMatchRatio) {
+      return true;
+    }
+
+    const lowThreshold = Math.min(options.scoreThreshold, 0.1);
+    const hasLowSignal =
+      options.knowledgeRawMaxScore >= lowThreshold ||
+      options.historyRawMaxScore >= lowThreshold;
+
+    return hasLowSignal && matchCount > 0;
   }
 
   private buildContextHints(
@@ -871,12 +939,14 @@ ${instructionsText || 'Responda à pergunta do usuário de forma clara e precisa
   private emptyContext(): IRagContext & {
     chunksCount: number;
     maxScore: number;
+    rawMaxScore: number;
   } {
     return {
       chunks: [],
       combinedContext: '',
       chunksCount: 0,
       maxScore: 0,
+      rawMaxScore: 0,
     };
   }
 
