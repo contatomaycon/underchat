@@ -3,24 +3,32 @@ import { nextTick, computed, watch } from 'vue';
 import { PerfectScrollbar } from 'vue3-perfect-scrollbar';
 import { useChatStore } from '@/@webcore/stores/chat';
 import { VForm } from 'vuetify/components/VForm';
-import { CreateContactRequest } from '@core/schema/contact/createContact/request.schema';
+import { CreateChatContactRequest } from '@core/schema/chat/createContact/request.schema';
 import {
-  EditContactParamsRequest,
-  UpdateContactRequest,
-} from '@core/schema/contact/editContact/request.schema';
+  UpdateChatContactParamsRequest,
+  UpdateChatContactRequest,
+} from '@core/schema/chat/updateContact/request.schema';
 import { useCountryCodes } from '@/composables/useCountryCodes';
 import { requiredValidator } from '@/@webcore/utils/validators';
 import { extractPhoneAndDdi } from '@core/common/functions/extractPhoneAndDdi';
 import { EColor } from '@core/common/enums/EColor';
 import { EContactDocumentType } from '@core/common/enums/EContactDocumentType';
+import { EContactIgnore } from '@core/common/enums/EContactIgnore';
 import { validateCpf } from '@core/common/functions/validateCpf';
 import { validateCnpj } from '@core/common/functions/validateCnpj';
+import AppInfoTooltip from '@/components/AppInfoTooltip.vue';
 
 const chatStore = useChatStore();
 const { items: countryCodes } = useCountryCodes();
 const labelTemplates = ref<
   Array<{ label_template_id: string; label: string; color?: string }>
 >([]);
+const users = ref<
+  Array<{ user_id: string; name: string; photo?: string | null }>
+>([]);
+const isLoadingUsers = ref(false);
+const isLoadingData = ref(false);
+const isSaving = ref(false);
 
 const { t } = useI18n();
 
@@ -291,6 +299,8 @@ const birthday = ref<string | null>(null);
 const notes = ref<string | null>(null);
 const contact_document_type_id = ref<string | null>(null);
 const document = ref<string | null>(null);
+const user_id = ref<string | null>(null);
+const ignore = ref<string | null>(EContactIgnore.not_ignore);
 
 watch(contact_document_type_id, () => {
   if (!showDocumentField.value) {
@@ -473,46 +483,56 @@ const determineDocumentToSave = (): string | null | undefined => {
 const loadContactData = async () => {
   if (!contactId.value) return;
 
-  const contact = await chatStore.getChatContactById(contactId.value);
-  if (contact) {
-    label_template_id.value = contact.label_template?.label_template_id ?? null;
-    name.value = contact.name;
-    last_name.value = contact.last_name ?? null;
+  isLoadingData.value = true;
 
-    const emailPartial = contact.email_partial ?? '';
-    emailPartialOriginal.value = emailPartial;
-    email.value = emailPartial;
-    isEmailDecrypted.value = false;
+  try {
+    const contact = await chatStore.getChatContactById(contactId.value);
+    if (contact) {
+      label_template_id.value =
+        contact.label_template?.label_template_id ?? null;
+      name.value = contact.name;
+      last_name.value = contact.last_name ?? null;
 
-    phone_ddi.value = contact.phone_ddi ?? '55';
+      const emailPartial = contact.email_partial ?? '';
+      emailPartialOriginal.value = emailPartial;
+      email.value = emailPartial;
+      isEmailDecrypted.value = false;
 
-    const phonePartial = contact.phone_partial ?? '';
-    phonePartialOriginal.value = phonePartial;
-    if (phonePartial.includes('*')) {
-      phone.value = null;
+      phone_ddi.value = contact.phone_ddi ?? '55';
+
+      const phonePartial = contact.phone_partial ?? '';
+      phonePartialOriginal.value = phonePartial;
+      if (phonePartial.includes('*')) {
+        phone.value = null;
+      }
+
+      if (!phonePartial.includes('*')) {
+        phone.value = phonePartial.replaceAll(/\D/g, '');
+      }
+
+      isPhoneDecrypted.value = false;
+
+      nickname.value = contact.nickname ?? null;
+      birthday.value = contact.birthday ?? null;
+      notes.value = contact.notes ?? null;
+      contact_document_type_id.value =
+        contact.contact_document_type?.contact_document_type_id ?? null;
+      documentPartialOriginal.value = contact.document_partial ?? null;
+      if (documentPartialOriginal.value?.includes('*')) {
+        document.value = null;
+      } else {
+        document.value = documentPartialOriginal.value
+          ? documentPartialOriginal.value.replaceAll(/\D/g, '')
+          : null;
+      }
+      isDocumentDecrypted.value = false;
+      isValided.value = contact.is_valided ?? false;
+      user_id.value = contact.user?.user_id ?? null;
+      ignore.value =
+        (contact.ignore as EContactIgnore) ?? EContactIgnore.not_ignore;
     }
-
-    if (!phonePartial.includes('*')) {
-      phone.value = phonePartial.replaceAll(/\D/g, '');
-    }
-
-    isPhoneDecrypted.value = false;
-
-    nickname.value = contact.nickname ?? null;
-    birthday.value = contact.birthday ?? null;
-    notes.value = contact.notes ?? null;
-    contact_document_type_id.value =
-      contact.contact_document_type?.contact_document_type_id ?? null;
-    documentPartialOriginal.value = contact.document_partial ?? null;
-    if (documentPartialOriginal.value?.includes('*')) {
-      document.value = null;
-    } else {
-      document.value = documentPartialOriginal.value
-        ? documentPartialOriginal.value.replaceAll(/\D/g, '')
-        : null;
-    }
-    isDocumentDecrypted.value = false;
-    isValided.value = contact.is_valided ?? false;
+  } finally {
+    isLoadingData.value = false;
   }
 };
 
@@ -528,6 +548,8 @@ const resetFormFields = () => {
   label_template_id.value = null;
   contact_document_type_id.value = null;
   document.value = null;
+  user_id.value = null;
+  ignore.value = EContactIgnore.not_ignore;
 };
 
 const processPhoneFromContact = (
@@ -588,6 +610,7 @@ const addContact = async () => {
 
   if (!name.value) return;
 
+  isSaving.value = true;
   const phoneNumber = phone.value ? phone.value.replaceAll(/\D/g, '') : '';
   const phoneDdi = phone_ddi.value ?? '55';
 
@@ -597,7 +620,7 @@ const addContact = async () => {
       chatStore.activeChat?.photo ??
       null);
 
-  const payload: CreateContactRequest = {
+  const payload: CreateChatContactRequest = {
     label_template_id: label_template_id.value ?? null,
     name: name.value,
     last_name: last_name.value ?? null,
@@ -611,9 +634,14 @@ const addContact = async () => {
     document: document.value ? document.value.replaceAll(/\D/g, '') : null,
     image_url: imageUrl,
     chat_id: chatStore.activeChat?.chat_id ?? undefined,
+    user_id: user_id.value ? { value: user_id.value } : undefined,
+    ignore: {
+      value: (ignore.value as EContactIgnore) ?? EContactIgnore.not_ignore,
+    },
   };
 
   const result = await chatStore.createChatContact(payload, photoFile.value);
+  isSaving.value = false;
 
   if (result) {
     await nextTick();
@@ -629,7 +657,8 @@ const updateContact = async () => {
     return;
   }
 
-  const payload: EditContactParamsRequest = {
+  isSaving.value = true;
+  const payload: UpdateChatContactParamsRequest = {
     contact_id: contactId.value,
   };
 
@@ -643,7 +672,7 @@ const updateContact = async () => {
       chatStore.activeChat?.photo ??
       null);
 
-  const body: UpdateContactRequest = {
+  const body: UpdateChatContactRequest = {
     label_template_id: label_template_id.value,
     name: name.value,
     last_name: last_name.value,
@@ -656,7 +685,10 @@ const updateContact = async () => {
     contact_document_type_id: contact_document_type_id.value,
     document: documentToSave,
     image_url: imageUrl,
-    chat_id: chatStore.activeChat?.chat_id ?? undefined,
+    user_id: { value: user_id.value },
+    ignore: {
+      value: (ignore.value as EContactIgnore) ?? EContactIgnore.not_ignore,
+    },
   };
 
   const result = await chatStore.updateChatContact(
@@ -664,8 +696,10 @@ const updateContact = async () => {
     body,
     photoFile.value
   );
+  isSaving.value = false;
 
   if (result) {
+    await loadContactData();
     await nextTick();
     emit('close');
   }
@@ -682,9 +716,11 @@ const saveContact = async () => {
 watch(
   () => chatStore.activeChat,
   () => {
-    loadChatData();
+    if (props.isOpen) {
+      loadChatData();
+    }
   },
-  { immediate: true, deep: true }
+  { deep: true }
 );
 
 const openFileSelector = () => {
@@ -1243,19 +1279,33 @@ const loadLabelTemplates = async () => {
   }
 };
 
+const loadUsers = async () => {
+  if (isLoadingUsers.value) return;
+  isLoadingUsers.value = true;
+  const usersList = await chatStore.listChatUsers();
+  if (usersList) {
+    users.value = usersList.map((u) => ({
+      user_id: u.user_id,
+      name: u.name || u.user_id,
+      photo: u.photo,
+    }));
+  }
+  isLoadingUsers.value = false;
+};
+
 watch(
   () => props.isOpen,
   async (isOpen) => {
     if (isOpen) {
-      await loadLabelTemplates();
+      await Promise.all([loadLabelTemplates(), loadUsers()]);
       loadChatData();
     }
   }
 );
 
-onMounted(() => {
+onMounted(async () => {
   if (props.isOpen) {
-    loadLabelTemplates();
+    await Promise.all([loadLabelTemplates(), loadUsers()]);
     loadChatData();
   }
 });
@@ -1342,7 +1392,117 @@ onMounted(() => {
       class="ps-chat-user-profile-sidebar-content pb-6 px-6 flex-grow-1"
       :options="{ wheelPropagation: false }"
     >
-      <VForm ref="refFormContact" @submit.prevent="saveContact">
+      <template v-if="isLoadingData">
+        <VRow>
+          <VCol cols="12" md="6">
+            <VSkeletonLoader type="text" width="60" height="20" class="mb-2" />
+            <VSkeletonLoader type="text" height="48" />
+          </VCol>
+          <VCol cols="12" md="6">
+            <VSkeletonLoader type="text" width="80" height="20" class="mb-2" />
+            <VSkeletonLoader type="text" height="48" />
+          </VCol>
+        </VRow>
+        <VRow>
+          <VCol cols="12" md="6">
+            <VSkeletonLoader type="text" width="70" height="20" class="mb-2" />
+            <VSkeletonLoader type="text" height="48" />
+          </VCol>
+          <VCol cols="12" md="6">
+            <div class="position-relative">
+              <VSkeletonLoader
+                type="text"
+                width="50"
+                height="20"
+                class="mb-2"
+              />
+              <VSkeletonLoader type="text" height="48" />
+              <VSkeletonLoader
+                type="avatar"
+                width="24"
+                height="24"
+                class="position-absolute"
+                style="right: 12px; bottom: 12px"
+              />
+            </div>
+          </VCol>
+        </VRow>
+        <VRow>
+          <VCol cols="12" md="6">
+            <VSkeletonLoader type="text" width="60" height="20" class="mb-2" />
+            <VSkeletonLoader type="text" height="48" />
+          </VCol>
+          <VCol cols="12" md="6">
+            <div class="position-relative">
+              <VSkeletonLoader
+                type="text"
+                width="50"
+                height="20"
+                class="mb-2"
+              />
+              <VSkeletonLoader type="text" height="48" />
+              <VSkeletonLoader
+                type="avatar"
+                width="24"
+                height="24"
+                class="position-absolute"
+                style="right: 12px; bottom: 12px"
+              />
+            </div>
+          </VCol>
+        </VRow>
+        <VRow>
+          <VCol cols="12" md="6">
+            <VSkeletonLoader type="text" width="90" height="20" class="mb-2" />
+            <VSkeletonLoader type="text" height="48" />
+          </VCol>
+          <VCol cols="12" md="6">
+            <VSkeletonLoader type="text" width="60" height="20" class="mb-2" />
+            <VSkeletonLoader type="text" height="48" />
+          </VCol>
+        </VRow>
+        <VRow>
+          <VCol cols="12" md="6">
+            <VSkeletonLoader type="text" width="100" height="20" class="mb-2" />
+            <VSkeletonLoader type="text" height="48" />
+          </VCol>
+          <VCol cols="12" md="6">
+            <VSkeletonLoader type="text" width="50" height="20" class="mb-2" />
+            <VSkeletonLoader type="text" height="48" />
+            <VSkeletonLoader
+              type="avatar"
+              width="16"
+              height="16"
+              class="position-absolute"
+              style="right: 40px; bottom: 12px"
+            />
+          </VCol>
+        </VRow>
+        <VDivider class="my-4" />
+        <VRow>
+          <VCol cols="12" md="6">
+            <div class="d-flex align-center gap-1 mb-2">
+              <VSkeletonLoader type="text" width="140" height="20" />
+              <VSkeletonLoader type="avatar" width="16" height="16" />
+            </div>
+            <VSkeletonLoader type="text" height="48" />
+          </VCol>
+          <VCol cols="12" md="6">
+            <div class="d-flex align-center gap-1 mb-2">
+              <VSkeletonLoader type="text" width="60" height="20" />
+              <VSkeletonLoader type="avatar" width="16" height="16" />
+            </div>
+            <VSkeletonLoader type="text" height="48" />
+          </VCol>
+        </VRow>
+        <VRow>
+          <VCol cols="12">
+            <VSkeletonLoader type="text" width="60" height="20" class="mb-2" />
+            <VSkeletonLoader type="text" height="96" />
+          </VCol>
+        </VRow>
+      </template>
+      <VForm v-else ref="refFormContact" @submit.prevent="saveContact">
         <VRow>
           <VCol cols="12" md="6">
             <VLabel class="text-body-2 mb-1">{{ $t('name') }}:</VLabel>
@@ -1506,6 +1666,63 @@ onMounted(() => {
             </AppTextField>
           </VCol>
         </VRow>
+        <VDivider class="my-4" />
+        <VRow>
+          <VCol cols="12" md="6">
+            <div class="d-flex align-center ga-1 mb-1">
+              <VLabel class="text-body-2"
+                >{{ $t('responsible_attendant') }}:</VLabel
+              >
+              <AppInfoTooltip
+                :text="$t('responsible_attendant_tooltip')"
+                :title="$t('responsible_attendant')"
+              />
+            </div>
+            <AppSelectSearch
+              v-model="user_id"
+              :items="
+                users.map((u) => ({
+                  value: u.user_id,
+                  title: u.name,
+                }))
+              "
+              :placeholder="$t('select_responsible_attendant')"
+              :loading="isLoadingUsers"
+              :clearable="true"
+              item-value="value"
+              item-title="title"
+            />
+          </VCol>
+          <VCol cols="12" md="6">
+            <div class="d-flex align-center ga-1 mb-1">
+              <VLabel class="text-body-2">{{ $t('ignore') }}:</VLabel>
+              <AppInfoTooltip
+                :text="$t('ignore_tooltip')"
+                :title="$t('ignore')"
+              />
+            </div>
+            <AppSelectSearch
+              v-model="ignore"
+              :items="[
+                {
+                  value: EContactIgnore.not_ignore,
+                  title: $t('not_ignore'),
+                },
+                {
+                  value: EContactIgnore.ignore_automation,
+                  title: $t('ignore_automation'),
+                },
+                {
+                  value: EContactIgnore.ignore_totally,
+                  title: $t('ignore_totally'),
+                },
+              ]"
+              :placeholder="$t('ignore')"
+              item-value="value"
+              item-title="title"
+            />
+          </VCol>
+        </VRow>
         <VRow>
           <VCol cols="12">
             <label class="text-body-2 mb-1" for="notes-textarea">
@@ -1519,12 +1736,12 @@ onMounted(() => {
           <VBtn
             variant="tonal"
             color="secondary"
-            :disabled="chatStore.loading"
+            :disabled="isSaving"
             @click="$emit('close')"
           >
             {{ $t('cancel') }}
           </VBtn>
-          <VBtn :loading="chatStore.loading" @click="saveContact">
+          <VBtn :loading="isSaving" @click="saveContact">
             {{ isContact ? $t('save') : $t('add') }}
           </VBtn>
         </VCardText>

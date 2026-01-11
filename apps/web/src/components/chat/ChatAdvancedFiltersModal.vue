@@ -511,8 +511,8 @@ watch(
                 v-model="filterUserId"
                 :items="
                   users.map((user) => ({
-                    value: user.id,
-                    title: user.name,
+                    value: user.user_id,
+                    title: user.name ?? user.user_id,
                   }))
                 "
                 :placeholder="$t('select_attendant_filter')"

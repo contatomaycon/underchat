@@ -6,6 +6,7 @@ import { requiredValidator } from '@/@webcore/utils/validators';
 import { EColor } from '@core/common/enums/EColor';
 import { useChatStore } from '@/@webcore/stores/chat';
 import { EContactDocumentType } from '@core/common/enums/EContactDocumentType';
+import { EContactIgnore } from '@core/common/enums/EContactIgnore';
 import { validateCpf } from '@core/common/functions/validateCpf';
 import { validateCnpj } from '@core/common/functions/validateCnpj';
 
@@ -14,6 +15,11 @@ const { items: countryCodes } = useCountryCodes();
 const labelTemplates = ref<
   Array<{ label_template_id: string; label: string; color?: string }>
 >([]);
+const users = ref<
+  Array<{ user_id: string; name: string; photo?: string | null }>
+>([]);
+const isLoadingUsers = ref(false);
+const isLoadingAddContact = ref(false);
 
 const { t } = useI18n();
 
@@ -179,6 +185,8 @@ const birthday = ref<string | null>(null);
 const notes = ref<string | null>(null);
 const contact_document_type_id = ref<string | null>(null);
 const document = ref<string | null>(null);
+const user_id = ref<string | null>(null);
+const ignore = ref<string | null>(EContactIgnore.not_ignore);
 
 watch(contact_document_type_id, () => {
   if (!showDocumentField.value) {
@@ -220,6 +228,8 @@ const MAX_FILE_SIZE_BYTES = 16 * 1024 * 1024;
 const refFormAddContact = ref<VForm>();
 
 const addContact = async () => {
+  if (isLoadingAddContact.value) return;
+
   const validateForm = await refFormAddContact?.value?.validate();
   if (!validateForm?.valid) return;
 
@@ -238,29 +248,39 @@ const addContact = async () => {
   const shouldLinkToActiveChat =
     !!chatStore.activeChat?.chat_id && !chatStore.activeChat?.contact?.id;
 
-  const result = await chatStore.createChatContact(
-    {
-      label_template_id: label_template_id.value ?? null,
-      name: name.value,
-      last_name: last_name.value ?? null,
-      email: email.value ?? null,
-      phone_ddi: phone_ddi.value,
-      phone: phoneNumber,
-      nickname: nickname.value ?? null,
-      birthday: birthday.value ?? null,
-      notes: notes.value ?? null,
-      contact_document_type_id: contact_document_type_id.value ?? null,
-      document: document.value ?? null,
-      image_url: imageUrl,
-      chat_id: shouldLinkToActiveChat
-        ? chatStore.activeChat?.chat_id
-        : undefined,
-    },
-    imageUrl ? null : photoFile.value
-  );
+  isLoadingAddContact.value = true;
 
-  if (result) {
-    isVisible.value = false;
+  try {
+    const result = await chatStore.createChatContact(
+      {
+        label_template_id: label_template_id.value ?? null,
+        name: name.value,
+        last_name: last_name.value ?? null,
+        email: email.value ?? null,
+        phone_ddi: phone_ddi.value,
+        phone: phoneNumber,
+        nickname: nickname.value ?? null,
+        birthday: birthday.value ?? null,
+        notes: notes.value ?? null,
+        contact_document_type_id: contact_document_type_id.value ?? null,
+        document: document.value ?? null,
+        user_id: user_id.value ? { value: user_id.value } : undefined,
+        ignore: {
+          value: (ignore.value as EContactIgnore) ?? EContactIgnore.not_ignore,
+        },
+        image_url: imageUrl,
+        chat_id: shouldLinkToActiveChat
+          ? chatStore.activeChat?.chat_id
+          : undefined,
+      },
+      imageUrl ? null : photoFile.value
+    );
+
+    if (result) {
+      isVisible.value = false;
+    }
+  } finally {
+    isLoadingAddContact.value = false;
   }
 };
 
@@ -882,6 +902,23 @@ const loadLabelTemplates = async () => {
   }
 };
 
+const loadUsers = async () => {
+  if (isLoadingUsers.value) return;
+  isLoadingUsers.value = true;
+  const usersList = await chatStore.listChatUsers();
+  if (usersList) {
+    users.value = usersList.map((u) => {
+      const chatUserId = u.user_id;
+      return {
+        user_id: chatUserId,
+        name: u.name || chatUserId,
+        photo: u.photo,
+      };
+    });
+  }
+  isLoadingUsers.value = false;
+};
+
 onMounted(() => {
   resetForm();
 });
@@ -889,7 +926,7 @@ onMounted(() => {
 watch(isVisible, async (visible) => {
   if (visible) {
     resetForm();
-    await loadLabelTemplates();
+    await Promise.all([loadLabelTemplates(), loadUsers()]);
   }
 });
 
@@ -907,14 +944,6 @@ watch(
 <template>
   <VDialog v-model="isVisible" max-width="600">
     <DialogCloseBtn @click="isVisible = false" />
-
-    <VOverlay
-      :model-value="chatStore.loading"
-      class="align-center justify-center"
-      contained
-    >
-      <VProgressCircular color="primary" indeterminate size="64" />
-    </VOverlay>
 
     <VForm ref="refFormAddContact" @submit.prevent>
       <VCard :title="$t('add_contact')">
@@ -1079,6 +1108,62 @@ watch(
               />
             </VCol>
           </VRow>
+          <VDivider class="my-4" />
+
+          <VRow>
+            <VCol cols="12" md="6">
+              <div class="d-flex align-center ga-1 mb-1">
+                <VLabel class="text-body-2"
+                  >{{ $t('responsible_attendant') }}:</VLabel
+                >
+                <AppInfoTooltip
+                  :text="$t('responsible_attendant_tooltip')"
+                  :title="$t('responsible_attendant')"
+                />
+              </div>
+              <AppSelectSearch
+                v-model="user_id"
+                :items="
+                  users.map((u) => ({
+                    value: u.user_id,
+                    title: u.name,
+                  }))
+                "
+                :placeholder="$t('select_responsible_attendant')"
+                :loading="isLoadingUsers"
+                :clearable="true"
+                item-value="value"
+                item-title="title"
+              />
+            </VCol>
+            <VCol cols="12" md="6">
+              <div class="d-flex align-center ga-1 mb-1">
+                <VLabel class="text-body-2">{{ $t('ignore') }}:</VLabel>
+                <AppInfoTooltip
+                  :text="$t('ignore_tooltip')"
+                  :title="$t('ignore')"
+                />
+              </div>
+              <AppSelectSearch
+                v-model="ignore"
+                :items="[
+                  { value: EContactIgnore.not_ignore, title: $t('not_ignore') },
+                  {
+                    value: EContactIgnore.ignore_automation,
+                    title: $t('ignore_automation'),
+                  },
+                  {
+                    value: EContactIgnore.ignore_totally,
+                    title: $t('ignore_totally'),
+                  },
+                ]"
+                :placeholder="$t('ignore')"
+                item-value="value"
+                item-title="title"
+              />
+            </VCol>
+          </VRow>
+
           <VRow>
             <VCol cols="12">
               <label class="text-body-2 mb-1" for="notes-textarea">
@@ -1093,7 +1178,13 @@ watch(
           <VBtn variant="tonal" color="secondary" @click="isVisible = false">
             {{ $t('cancel') }}
           </VBtn>
-          <VBtn @click="addContact"> {{ $t('add') }} </VBtn>
+          <VBtn
+            :loading="isLoadingAddContact"
+            :disabled="isLoadingAddContact"
+            @click="addContact"
+          >
+            {{ $t('add') }}
+          </VBtn>
         </VCardText>
       </VCard>
     </VForm>

@@ -46,6 +46,8 @@ export class ChatContactCreatorUseCase {
       photo: normalizedInput.photo,
       image_url: normalizedInput.image_url,
       chat_id: chatId,
+      user_id: normalizedInput.user_id,
+      ignore: normalizedInput.ignore,
     };
 
     const result = await this.contactCreatorUseCase.execute(

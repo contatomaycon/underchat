@@ -11,6 +11,12 @@ const contactDocumentTypeSchema = Type.Object({
   name: Type.String(),
 });
 
+const userSchema = Type.Object({
+  user_id: Type.String({ format: 'uuid' }),
+  name: Type.Union([Type.String(), Type.Null()]),
+  photo: Type.Union([Type.String(), Type.Null()]),
+});
+
 export const viewChatContactResponseSchema = Type.Object({
   contact_id: Type.String({ format: 'uuid' }),
   name: Type.String(),
@@ -29,6 +35,8 @@ export const viewChatContactResponseSchema = Type.Object({
   contact_document_type: Type.Optional(
     Type.Union([contactDocumentTypeSchema, Type.Null()])
   ),
+  user: Type.Optional(Type.Union([userSchema, Type.Null()])),
+  ignore: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 });
 
 export type ViewChatContactResponse = Static<

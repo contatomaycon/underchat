@@ -1,5 +1,11 @@
 import * as schema from '@core/models';
-import { contact, labelTemplate, contactDocumentType } from '@core/models';
+import {
+  contact,
+  labelTemplate,
+  contactDocumentType,
+  user,
+  userInfo,
+} from '@core/models';
 import { ViewChatContactResponse } from '@core/schema/chat/viewContact/response.schema';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
@@ -32,6 +38,7 @@ export class ChatContactViewerRepository {
         document: contact.document,
         document_partial: contact.document_partial,
         is_valided: contact.is_valided,
+        ignore: contact.ignore,
         label_template: {
           label_template_id: labelTemplate.label_template_id,
           label: labelTemplate.label,
@@ -41,6 +48,13 @@ export class ChatContactViewerRepository {
           contact_document_type_id:
             contactDocumentType.contact_document_type_id,
           name: contactDocumentType.name,
+        },
+        user: {
+          user_id: user.user_id,
+          name: sql<
+            string | null
+          >`CASE WHEN ${userInfo.name} IS NULL OR ${userInfo.last_name} IS NULL THEN NULL ELSE CONCAT(${userInfo.name}, ' ', ${userInfo.last_name}) END`,
+          photo: userInfo.photo,
         },
       })
       .from(contact)
@@ -55,6 +69,8 @@ export class ChatContactViewerRepository {
           contact.contact_document_type_id
         )
       )
+      .leftJoin(user, eq(contact.user_id, user.user_id))
+      .leftJoin(userInfo, eq(user.user_id, userInfo.user_id))
       .where(
         and(
           eq(contact.contact_id, contactId),
@@ -68,7 +84,19 @@ export class ChatContactViewerRepository {
       return null;
     }
 
-    return result[0] as ViewChatContactResponse;
+    const contactData = result[0] as any;
+    const formattedResult = {
+      ...contactData,
+      user: contactData.user?.user_id
+        ? {
+            user_id: contactData.user.user_id,
+            name: contactData.user.name,
+            photo: contactData.user.photo,
+          }
+        : null,
+    };
+
+    return formattedResult as ViewChatContactResponse;
   };
 
   viewChatContactsByIds = async (
@@ -96,6 +124,7 @@ export class ChatContactViewerRepository {
         document: contact.document,
         document_partial: contact.document_partial,
         is_valided: contact.is_valided,
+        ignore: contact.ignore,
         label_template: {
           label_template_id: labelTemplate.label_template_id,
           label: labelTemplate.label,
@@ -105,6 +134,13 @@ export class ChatContactViewerRepository {
           contact_document_type_id:
             contactDocumentType.contact_document_type_id,
           name: contactDocumentType.name,
+        },
+        user: {
+          user_id: user.user_id,
+          name: sql<
+            string | null
+          >`CASE WHEN ${userInfo.name} IS NULL OR ${userInfo.last_name} IS NULL THEN NULL ELSE CONCAT(${userInfo.name}, ' ', ${userInfo.last_name}) END`,
+          photo: userInfo.photo,
         },
       })
       .from(contact)
@@ -119,6 +155,8 @@ export class ChatContactViewerRepository {
           contact.contact_document_type_id
         )
       )
+      .leftJoin(user, eq(contact.user_id, user.user_id))
+      .leftJoin(userInfo, eq(user.user_id, userInfo.user_id))
       .where(
         and(
           inArray(contact.contact_id, contactIds),
@@ -128,6 +166,15 @@ export class ChatContactViewerRepository {
       )
       .execute();
 
-    return result as ViewChatContactResponse[];
+    return result.map((contactData: any) => ({
+      ...contactData,
+      user: contactData.user?.user_id
+        ? {
+            user_id: contactData.user.user_id,
+            name: contactData.user.name,
+            photo: contactData.user.photo,
+          }
+        : null,
+    })) as ViewChatContactResponse[];
   };
 }

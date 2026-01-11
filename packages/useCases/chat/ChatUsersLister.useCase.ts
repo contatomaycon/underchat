@@ -10,8 +10,9 @@ export class ChatUsersListerUseCase {
     const users = await this.userService.listUsersForTransfer(accountId);
 
     return users.map((user) => ({
-      id: user.id,
-      name: user.name,
+      user_id: user.id,
+      name: user.name || null,
+      photo: user.photo ?? null,
     }));
   }
 }

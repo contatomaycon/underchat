@@ -1,5 +1,6 @@
 import { Static, Type } from '@sinclair/typebox';
 import { uploadFileRequestSchema } from '@core/schema/upload/request.schema';
+import { EContactIgnore } from '@core/common/enums/EContactIgnore';
 
 export const editContactParamsRequestSchema = Type.Object({
   contact_id: Type.String({ format: 'uuid' }),
@@ -134,7 +135,7 @@ export const updateContactRequestSchema = Type.Object({
   ),
   ignore: Type.Optional(
     Type.Object({
-      value: Type.Union([Type.String(), Type.Null()]),
+      value: Type.Union([Type.Enum(EContactIgnore), Type.Null()]),
     })
   ),
 });

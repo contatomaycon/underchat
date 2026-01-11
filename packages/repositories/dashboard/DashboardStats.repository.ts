@@ -2,7 +2,7 @@ import * as schema from '@core/models';
 import { user, worker, contact } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, count, eq, isNull, sql, gte, lt } from 'drizzle-orm';
+import { and, count, eq, isNull, sql, gte, SQL } from 'drizzle-orm';
 import { AccountQuantityProductViewerRepository } from '@core/repositories/account/AccountQuantityProductViewer.repository';
 import { EPlanProduct } from '@core/common/enums/EPlanProduct';
 
@@ -12,6 +12,18 @@ export class DashboardStatsRepository {
     @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>,
     private readonly accountQuantityProductViewerRepository: AccountQuantityProductViewerRepository
   ) {}
+
+  private readonly getSparklineNextDates = (): Date[] => {
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - 6);
+    startDate.setHours(0, 0, 0, 0);
+
+    return Array.from({ length: 7 }, (_, index) => {
+      const nextDate = new Date(startDate);
+      nextDate.setDate(nextDate.getDate() + index + 1);
+      return nextDate;
+    });
+  };
 
   getUsersTotal = async (accountId: string): Promise<number> => {
     const result = await this.dbRo
@@ -27,36 +39,25 @@ export class DashboardStatsRepository {
   };
 
   getUsersSparklineData = async (accountId: string): Promise<number[]> => {
-    const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
-    sevenDaysAgo.setHours(0, 0, 0, 0);
-
-    const results = await Promise.all(
-      Array.from({ length: 7 }, async (_, index) => {
-        const date = new Date(sevenDaysAgo);
-        date.setDate(date.getDate() + index);
-        const nextDate = new Date(date);
-        nextDate.setDate(nextDate.getDate() + 1);
-
-        const result = await this.dbRo
-          .select({
-            total: count(),
-          })
-          .from(user)
-          .where(
-            and(
-              eq(user.account_id, accountId),
-              isNull(user.deleted_at),
-              lt(user.created_at, nextDate.toISOString())
-            )
-          )
-          .execute();
-
-        return result[0]?.total ?? 0;
-      })
+    const nextDates = this.getSparklineNextDates();
+    const selectFields = nextDates.reduce(
+      (acc, date, index) => {
+        acc[`day_${index + 1}`] = sql<number>`
+          COUNT(*) FILTER (WHERE ${user.created_at} < ${date.toISOString()})
+        `;
+        return acc;
+      },
+      {} as Record<string, SQL<number>>
     );
 
-    return results;
+    const result = await this.dbRo
+      .select(selectFields)
+      .from(user)
+      .where(and(eq(user.account_id, accountId), isNull(user.deleted_at)))
+      .execute();
+
+    const row = result[0] ?? {};
+    return nextDates.map((_, index) => Number(row[`day_${index + 1}`] ?? 0));
   };
 
   getChannelsTotal = async (accountId: string): Promise<number> => {
@@ -90,37 +91,31 @@ export class DashboardStatsRepository {
   };
 
   getChannelsSparklineData = async (accountId: string): Promise<number[]> => {
-    const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
-    sevenDaysAgo.setHours(0, 0, 0, 0);
-
-    const results = await Promise.all(
-      Array.from({ length: 7 }, async (_, index) => {
-        const date = new Date(sevenDaysAgo);
-        date.setDate(date.getDate() + index);
-        const nextDate = new Date(date);
-        nextDate.setDate(nextDate.getDate() + 1);
-
-        const result = await this.dbRo
-          .select({
-            total: count(),
-          })
-          .from(worker)
-          .where(
-            and(
-              eq(worker.account_id, accountId),
-              isNull(worker.deleted_at),
-              sql`${worker.connection_date} IS NOT NULL`,
-              lt(worker.connection_date, nextDate.toISOString())
-            )
-          )
-          .execute();
-
-        return result[0]?.total ?? 0;
-      })
+    const nextDates = this.getSparklineNextDates();
+    const selectFields = nextDates.reduce(
+      (acc, date, index) => {
+        acc[`day_${index + 1}`] = sql<number>`
+          COUNT(*) FILTER (WHERE ${worker.connection_date} < ${date.toISOString()})
+        `;
+        return acc;
+      },
+      {} as Record<string, SQL<number>>
     );
 
-    return results;
+    const result = await this.dbRo
+      .select(selectFields)
+      .from(worker)
+      .where(
+        and(
+          eq(worker.account_id, accountId),
+          isNull(worker.deleted_at),
+          sql`${worker.connection_date} IS NOT NULL`
+        )
+      )
+      .execute();
+
+    const row = result[0] ?? {};
+    return nextDates.map((_, index) => Number(row[`day_${index + 1}`] ?? 0));
   };
 
   getContactsTotal = async (accountId: string): Promise<number> => {
@@ -158,36 +153,25 @@ export class DashboardStatsRepository {
   };
 
   getContactsSparklineData = async (accountId: string): Promise<number[]> => {
-    const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
-    sevenDaysAgo.setHours(0, 0, 0, 0);
-
-    const results = await Promise.all(
-      Array.from({ length: 7 }, async (_, index) => {
-        const date = new Date(sevenDaysAgo);
-        date.setDate(date.getDate() + index);
-        const nextDate = new Date(date);
-        nextDate.setDate(nextDate.getDate() + 1);
-
-        const result = await this.dbRo
-          .select({
-            total: count(),
-          })
-          .from(contact)
-          .where(
-            and(
-              eq(contact.account_id, accountId),
-              isNull(contact.deleted_at),
-              lt(contact.created_at, nextDate.toISOString())
-            )
-          )
-          .execute();
-
-        return result[0]?.total ?? 0;
-      })
+    const nextDates = this.getSparklineNextDates();
+    const selectFields = nextDates.reduce(
+      (acc, date, index) => {
+        acc[`day_${index + 1}`] = sql<number>`
+          COUNT(*) FILTER (WHERE ${contact.created_at} < ${date.toISOString()})
+        `;
+        return acc;
+      },
+      {} as Record<string, SQL<number>>
     );
 
-    return results;
+    const result = await this.dbRo
+      .select(selectFields)
+      .from(contact)
+      .where(and(eq(contact.account_id, accountId), isNull(contact.deleted_at)))
+      .execute();
+
+    const row = result[0] ?? {};
+    return nextDates.map((_, index) => Number(row[`day_${index + 1}`] ?? 0));
   };
 
   getChannelsAllowed = async (accountId: string): Promise<number> => {

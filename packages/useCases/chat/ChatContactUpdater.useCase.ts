@@ -34,6 +34,8 @@ export class ChatContactUpdaterUseCase {
       document: normalizedBody.document,
       photo: normalizedBody.photo,
       image_url: normalizedBody.image_url,
+      user_id: normalizedBody.user_id,
+      ignore: normalizedBody.ignore,
     };
 
     const result = await this.contactUpdaterUseCase.execute(

@@ -133,6 +133,7 @@ export const useChatStore = defineStore('chat', {
     totalPages: 1,
     localMessageState: {} as Record<string, LocalMessageState>,
     chatContacts: {} as Record<string, ViewChatContactResponse | null>,
+    loadingChatContacts: {} as Record<string, boolean>,
   }),
   actions: {
     showSnackbar(message: string, color: EColor) {
@@ -2005,6 +2006,16 @@ export const useChatStore = defineStore('chat', {
     async getChatContactById(
       contactId: string
     ): Promise<ViewChatContactResponse | null> {
+      if (this.chatContacts[contactId]) {
+        return this.chatContacts[contactId];
+      }
+
+      if (this.loadingChatContacts[contactId]) {
+        return null;
+      }
+
+      this.loadingChatContacts[contactId] = true;
+
       try {
         const response = await axios.get<IApiResponse<ViewChatContactResponse>>(
           `/chat/contacts/${contactId}`
@@ -2013,13 +2024,16 @@ export const useChatStore = defineStore('chat', {
         const data = response?.data;
 
         if (!data?.status || !data?.data) {
+          delete this.loadingChatContacts[contactId];
           return null;
         }
 
         this.chatContacts[contactId] = data.data;
+        delete this.loadingChatContacts[contactId];
 
         return data.data;
       } catch {
+        delete this.loadingChatContacts[contactId];
         return null;
       }
     },
@@ -2250,6 +2264,31 @@ export const useChatStore = defineStore('chat', {
         if (chatId) {
           formData.append('chat_id', chatId);
         }
+        if (payload.user_id !== undefined) {
+          if (
+            typeof payload.user_id === 'object' &&
+            payload.user_id !== null &&
+            'value' in payload.user_id &&
+            payload.user_id.value === null
+          ) {
+            formData.append('user_id', '');
+          } else {
+            const userId = this.extractFieldValue(
+              payload.user_id as FieldValue
+            );
+            if (userId) {
+              formData.append('user_id', userId);
+            }
+          }
+        }
+        if (payload.ignore !== undefined) {
+          const ignoreValue = this.extractFieldValue(
+            payload.ignore as FieldValue
+          );
+          if (ignoreValue) {
+            formData.append('ignore', ignoreValue);
+          }
+        }
 
         const response = await axios.post<IApiResponse<boolean>>(
           `/chat/contacts`,
@@ -2359,6 +2398,26 @@ export const useChatStore = defineStore('chat', {
           formData.append('image_url', imageUrl);
         } else if (photoFile) {
           formData.append('photo', photoFile);
+        }
+        if (body.user_id !== undefined) {
+          if (
+            typeof body.user_id === 'object' &&
+            body.user_id !== null &&
+            'value' in body.user_id
+          ) {
+            const userIdValue = body.user_id.value;
+            formData.append('user_id', userIdValue ?? '');
+          }
+        }
+        if (body.ignore !== undefined) {
+          if (
+            typeof body.ignore === 'object' &&
+            body.ignore !== null &&
+            'value' in body.ignore
+          ) {
+            const ignoreValue = body.ignore.value;
+            formData.append('ignore', ignoreValue ?? '');
+          }
         }
 
         const response = await axios.patch<IApiResponse<boolean>>(

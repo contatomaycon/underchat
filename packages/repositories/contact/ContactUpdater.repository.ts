@@ -79,8 +79,7 @@ export class ContactUpdaterRepository {
 
     if (input.ignore !== undefined) {
       inputUpdate.ignore =
-        (input.ignore as EContactIgnore) ??
-        (EContactIgnore.not_ignore as EContactIgnore);
+        input.ignore !== null ? (input.ignore as EContactIgnore) : null;
     }
 
     inputUpdate.is_valided = input.is_valided ?? false;

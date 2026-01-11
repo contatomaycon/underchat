@@ -603,10 +603,16 @@ export class ContactService {
       photo: photoUrl,
       birthday: nullIfEmpty(birthday),
       notes,
-      user_id: input.user_id !== undefined ? userId : undefined,
-      ignore: input.ignore !== undefined ? ignore : undefined,
       is_valided: isValided,
     };
+
+    if (input.user_id !== undefined) {
+      payload.user_id = userId;
+    }
+
+    if (input.ignore !== undefined) {
+      payload.ignore = ignore;
+    }
 
     if (hasContactDocumentTypeId) {
       payload.contact_document_type_id = contactDocumentTypeId;

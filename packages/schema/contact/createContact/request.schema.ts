@@ -1,5 +1,6 @@
 import { Static, Type } from '@sinclair/typebox';
 import { uploadFileRequestSchema } from '@core/schema/upload/request.schema';
+import { EContactIgnore } from '@core/common/enums/EContactIgnore';
 
 export const createContactRequestSchema = Type.Object({
   label_template_id: Type.Optional(
@@ -117,7 +118,7 @@ export const createContactRequestSchema = Type.Object({
   ),
   ignore: Type.Optional(
     Type.Object({
-      value: Type.Union([Type.String(), Type.Null()]),
+      value: Type.Union([Type.Enum(EContactIgnore), Type.Null()]),
     })
   ),
 });

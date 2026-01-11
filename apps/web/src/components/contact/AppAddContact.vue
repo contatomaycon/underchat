@@ -27,6 +27,7 @@ const users = ref<
   Array<{ user_id: string; name: string; photo?: string | null }>
 >([]);
 const isLoadingUsers = ref(false);
+const isAddingContact = ref(false);
 
 const { t } = useI18n();
 
@@ -253,6 +254,8 @@ const MAX_FILE_SIZE_BYTES = 16 * 1024 * 1024;
 const refFormAddContact = ref<VForm>();
 
 const addContact = async () => {
+  if (isAddingContact.value) return;
+
   const validateForm = await refFormAddContact?.value?.validate();
   if (!validateForm?.valid) return;
 
@@ -268,30 +271,37 @@ const addContact = async () => {
       ? photoPreview.value
       : null;
 
-  const result = await contactStore.addContact(
-    {
-      label_template_id: label_template_id.value ?? null,
-      name: name.value,
-      last_name: last_name.value ?? null,
-      email: email.value ?? null,
-      phone_ddi: phone_ddi.value,
-      phone: phoneNumber,
-      nickname: nickname.value ?? null,
-      birthday: birthday.value ?? null,
-      notes: notes.value ?? null,
-      contact_document_type_id: contact_document_type_id.value ?? null,
-      document: document.value ?? null,
-      image_url: imageUrl,
-      user_id: user_id.value ? { value: user_id.value } : undefined,
-      ignore: { value: ignore.value ?? EContactIgnore.not_ignore },
-    },
-    imageUrl ? null : photoFile.value
-  );
+  isAddingContact.value = true;
 
-  if (result) {
-    isVisible.value = false;
+  try {
+    const result = await contactStore.addContact(
+      {
+        label_template_id: label_template_id.value ?? null,
+        name: name.value,
+        last_name: last_name.value ?? null,
+        email: email.value ?? null,
+        phone_ddi: phone_ddi.value,
+        phone: phoneNumber,
+        nickname: nickname.value ?? null,
+        birthday: birthday.value ?? null,
+        notes: notes.value ?? null,
+        contact_document_type_id: contact_document_type_id.value ?? null,
+        document: document.value ?? null,
+        image_url: imageUrl,
+        user_id: user_id.value ? { value: user_id.value } : undefined,
+        ignore: {
+          value: (ignore.value as EContactIgnore) ?? EContactIgnore.not_ignore,
+        },
+      },
+      imageUrl ? null : photoFile.value
+    );
 
-    await contactStore.listContact();
+    if (result) {
+      isVisible.value = false;
+      await contactStore.listContact();
+    }
+  } finally {
+    isAddingContact.value = false;
   }
 };
 
@@ -975,14 +985,6 @@ watch(
   <VDialog v-model="isVisible" max-width="600">
     <DialogCloseBtn @click="isVisible = false" />
 
-    <VOverlay
-      :model-value="contactStore.loading"
-      class="align-center justify-center"
-      contained
-    >
-      <VProgressCircular color="primary" indeterminate size="64" />
-    </VOverlay>
-
     <VForm ref="refFormAddContact" @submit.prevent>
       <VCard :title="$t('add_contact')">
         <VCardText>
@@ -1206,7 +1208,9 @@ watch(
           <VBtn variant="tonal" color="secondary" @click="isVisible = false">
             {{ $t('cancel') }}
           </VBtn>
-          <VBtn @click="addContact"> {{ $t('add') }} </VBtn>
+          <VBtn :loading="isAddingContact" @click="addContact">
+            {{ $t('add') }}
+          </VBtn>
         </VCardText>
       </VCard>
     </VForm>
