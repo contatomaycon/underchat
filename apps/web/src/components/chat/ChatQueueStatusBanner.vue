@@ -10,6 +10,7 @@ const props = defineProps<{
   isClosedStatus: boolean;
   canAttendChat: boolean;
   canReopenChat: boolean;
+  canReopenChatPermission: boolean;
   cannotAttendDueToStatus: boolean;
   cannotAttendDueToLimit: boolean;
   workerConfigForChat: ViewWorkerConfigForChatResponse | null;
@@ -65,13 +66,20 @@ const buttonText = computed(() => {
 });
 
 const showButton = computed(() => {
-  if (props.isClosedStatus && props.canReopenChat) {
+  if (props.isClosedStatus) {
     return true;
   }
   if (props.isQueueStatus && props.canAttendChat) {
     return true;
   }
   return false;
+});
+
+const tooltipText = computed(() => {
+  if (props.isClosedStatus && !props.canReopenChatPermission) {
+    return t('reopen_chat_permission_denied');
+  }
+  return undefined;
 });
 
 const handleClick = () => {
@@ -91,14 +99,32 @@ const handleClick = () => {
     <span class="text-body-2 text-medium-emphasis">
       {{ message }}
     </span>
-    <VBtn
-      v-if="showButton"
-      color="primary"
-      size="small"
-      @click="handleClick"
-      :loading="loading"
-    >
-      {{ buttonText }}
-    </VBtn>
+    <template v-if="showButton">
+      <VTooltip v-if="tooltipText" :text="tooltipText" location="top">
+        <template #activator="{ props: tooltipProps }">
+          <span v-bind="tooltipProps" class="d-inline-block">
+            <VBtn
+              color="primary"
+              size="small"
+              :disabled="props.isClosedStatus && !props.canReopenChat"
+              @click="handleClick"
+              :loading="loading"
+            >
+              {{ buttonText }}
+            </VBtn>
+          </span>
+        </template>
+      </VTooltip>
+      <VBtn
+        v-else
+        color="primary"
+        size="small"
+        :disabled="props.isClosedStatus && !props.canReopenChat"
+        @click="handleClick"
+        :loading="loading"
+      >
+        {{ buttonText }}
+      </VBtn>
+    </template>
   </div>
 </template>

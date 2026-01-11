@@ -460,7 +460,7 @@ const handleClearFilters = async () => {
   currentFilterProtocol.value = null;
   currentFilterDateStart.value = null;
   currentFilterDateEnd.value = null;
-  currentSortField.value = 'date';
+  currentSortField.value = 'summary.last_message';
   currentSortOrder.value = 'desc';
   hasAppliedAdvancedFilters.value = false;
 
@@ -568,7 +568,7 @@ const currentFilterPhone = ref<string | null>(null);
 const currentFilterProtocol = ref<string | null>(null);
 const currentFilterDateStart = ref<string | null>(null);
 const currentFilterDateEnd = ref<string | null>(null);
-const currentSortField = ref<string | null>('date');
+const currentSortField = ref<string | null>('summary.last_message');
 const currentSortOrder = ref<string | null>('desc');
 
 const getChatUserFilters = () => {

@@ -7,4 +7,5 @@ export enum EChatPermissions {
   list_all_chats_without_sector_limit = 'list_all_chats_without_sector_limit',
   view_chatbot_messages = 'view_chatbot_messages',
   close_chat_without_attending = 'close_chat_without_attending',
+  reopen_chat = 'reopen_chat',
 }

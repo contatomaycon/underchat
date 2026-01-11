@@ -23,6 +23,7 @@ export const searchChatsQuerySchema = Type.Object({
     Type.Union([
       Type.String({
         enum: [
+          'summary.last_message',
           'account.name',
           'worker.name',
           'name',

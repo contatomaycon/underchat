@@ -96,7 +96,7 @@ const filterDateStart = ref<Date | null>(
 const filterDateEnd = ref<Date | null>(
   props.filterDateEnd ? new Date(props.filterDateEnd) : null
 );
-const sortField = ref<string | null>(props.sortField ?? 'date');
+const sortField = ref<string | null>(props.sortField ?? 'summary.last_message');
 const sortOrder = ref<string | null>(props.sortOrder ?? 'desc');
 
 const statusOptions = computed(() => [
@@ -108,6 +108,10 @@ const statusOptions = computed(() => [
 ]);
 
 const sortFieldOptions = [
+  {
+    value: 'summary.last_message',
+    title: t('last_message', 'Última mensagem'),
+  },
   { value: 'account.name', title: t('account', 'Conta') },
   { value: 'worker.name', title: t('channel', 'Canal') },
   { value: 'name', title: t('name', 'Nome') },
@@ -275,7 +279,7 @@ watch(isVisible, (visible) => {
     filterProtocol.value = null;
     filterDateStart.value = null;
     filterDateEnd.value = null;
-    sortField.value = 'date';
+    sortField.value = 'summary.last_message';
     sortOrder.value = 'desc';
   }
 });

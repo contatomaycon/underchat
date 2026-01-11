@@ -484,11 +484,12 @@ export class ChatSearcherUseCase {
       );
     }
 
-    const sortField = query.sort_field || 'date';
+    const sortField = query.sort_field || 'summary.last_message';
     const sortOrder = query.sort_order || 'desc';
 
     const getSortField = (field: string) => {
       const fieldMap: Record<string, string> = {
+        'summary.last_message': 'summary.last_date',
         'account.name': 'account.name.keyword',
         'worker.name': 'worker.name.keyword',
         name: 'name.keyword',
@@ -500,7 +501,7 @@ export class ChatSearcherUseCase {
         started_at: 'started_at',
         closed_at: 'closed_at',
       };
-      return fieldMap[field] || 'date';
+      return fieldMap[field] || 'summary.last_date';
     };
 
     const getSortConfig = () => {
@@ -552,6 +553,19 @@ export class ChatSearcherUseCase {
               order: sortOrder,
               nested: {
                 path: 'sector',
+              },
+            },
+          },
+        ];
+      }
+
+      if (field === 'summary.last_date') {
+        return [
+          {
+            'summary.last_date': {
+              order: sortOrder,
+              nested: {
+                path: 'summary',
               },
             },
           },

@@ -189,6 +189,7 @@
   "chat_already_in_service_with_sector": "¡Ya existe un servicio en curso para este número con el sector {{sector}}!",
   "chat_not_found": "¡Chat no encontrado!",
   "chat_access_denied": "¡Acceso denegado al chat!",
+  "reopen_chat_permission_denied": "¡No tiene permiso para reabrir una conversación!",
   "messages_search_success": "¡Mensajes encontrados con éxito!",
   "chats_search_success": "¡Servicios encontrados con éxito!",
   "chat_create_error": "¡Error al crear el chat!",

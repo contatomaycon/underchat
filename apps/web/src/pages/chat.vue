@@ -273,8 +273,18 @@ const canAttendChat = computed(() => {
   return true;
 });
 
+const canReopenChatPermission = computed(() => {
+  return can([
+    EGeneralPermissions.full_access,
+    EGeneralPermissions.full_access_group,
+    EChatPermissions.chat_group,
+    EChatPermissions.reopen_chat,
+  ]);
+});
+
 const canReopenChat = computed(() => {
   if (!isClosedStatus.value) return false;
+  if (!canReopenChatPermission.value) return false;
   if (cannotAttendDueToStatus.value) return false;
   if (cannotAttendDueToLimit.value) return false;
   return true;
@@ -5088,6 +5098,7 @@ onBeforeUnmount(() => {
             :is-closed-status="isClosedStatus"
             :can-attend-chat="canAttendChat"
             :can-reopen-chat="canReopenChat"
+            :can-reopen-chat-permission="canReopenChatPermission"
             :cannot-attend-due-to-status="cannotAttendDueToStatus"
             :cannot-attend-due-to-limit="cannotAttendDueToLimit"
             :worker-config-for-chat="workerConfigForChat"

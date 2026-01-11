@@ -848,7 +848,7 @@ export const useChatStore = defineStore('chat', {
 
         if (!data?.status || !data?.data) {
           if (!append) {
-            this.listChatbot = [];
+          this.listChatbot = [];
           }
 
           return null;
@@ -864,7 +864,7 @@ export const useChatStore = defineStore('chat', {
         return data.data;
       } catch {
         if (!append) {
-          this.listChatbot = [];
+        this.listChatbot = [];
         }
 
         return null;

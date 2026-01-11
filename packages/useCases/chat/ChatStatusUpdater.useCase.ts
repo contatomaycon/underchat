@@ -264,6 +264,17 @@ export class ChatStatusUpdaterUseCase {
     };
   }
 
+  private canReopenChat(actions: IJwtGroupHierarchy[]): boolean {
+    const permissions = [
+      EGeneralPermissions.full_access,
+      EGeneralPermissions.full_access_group,
+      EChatPermissions.chat_group,
+      EChatPermissions.reopen_chat,
+    ];
+
+    return hasRequiredPermission(actions, permissions);
+  }
+
   private async validateAccess(
     chat: IChat,
     userId: string,
@@ -378,6 +389,10 @@ export class ChatStatusUpdaterUseCase {
 
     let finalStatus = status;
     if (isReopeningChat) {
+      if (!this.canReopenChat(actions)) {
+        throw new Error(t('reopen_chat_permission_denied'));
+      }
+
       await this.validatePhoneNotInActiveChat(
         t,
         accountId,
