@@ -52,13 +52,32 @@ export class ChatSearcherUseCase {
   ): Promise<SearchChatsResponse> {
     const currentPage = query.current_page ?? 1;
     const perPage = query.per_page ?? 10;
-    const searchTerm = query.search.trim();
+    const searchTerm = query.search?.trim() || '';
 
-    if (!searchTerm) {
+    const hasFilters =
+      query.filter_status ||
+      query.filter_label_template_id ||
+      query.filter_worker_id ||
+      query.filter_user_id ||
+      query.filter_sector_id ||
+      query.filter_name ||
+      query.filter_phone ||
+      query.filter_protocol ||
+      query.filter_date_start ||
+      query.filter_date_end;
+
+    if (!searchTerm && !hasFilters) {
       const pagings = setPaginationData(0, 0, perPage, currentPage);
       return {
         pagings,
         results: [],
+        counts: {
+          queue: 0,
+          in_chat: 0,
+          chatbot: 0,
+          closed: 0,
+          my_chats: 0,
+        },
       };
     }
 
@@ -75,13 +94,15 @@ export class ChatSearcherUseCase {
       },
     ];
 
-    const filterClauses: IElasticsearchBoolClause[] = [
-      {
-        terms: {
-          status: [EChatStatus.queue, EChatStatus.in_chat, EChatStatus.ura],
+    const filterClauses: IElasticsearchBoolClause[] = [];
+
+    if (query.filter_status) {
+      filterClauses.push({
+        term: {
+          status: query.filter_status,
         },
-      } as unknown as IElasticsearchBoolClause,
-    ];
+      } as unknown as IElasticsearchBoolClause);
+    }
 
     if (query.filter_label_template_id) {
       filterClauses.push({
@@ -490,28 +511,58 @@ export class ChatSearcherUseCase {
       sort: [{ date: { order: 'desc' } }],
       query: {
         bool: {
-          must: [
-            ...mustClauses,
-            ...(shouldClauses.length > 0
-              ? [
-                  {
-                    bool: {
-                      should: shouldClauses,
-                      minimum_should_match: 1,
-                    },
-                  },
-                ]
-              : []),
-          ],
+          must: mustClauses,
+          ...(shouldClauses.length > 0
+            ? {
+                should: shouldClauses,
+                minimum_should_match: 1,
+              }
+            : {}),
           filter: filterClauses,
+        },
+      },
+      aggs: {
+        status_counts: {
+          terms: {
+            field: 'status',
+            size: 20,
+          },
         },
       },
     };
 
-    const result = await this.elasticDatabaseService.select(
-      EElasticIndex.chat,
-      queryElastic
-    );
+    const countQueryElastic: any = {
+      size: 0,
+      query: {
+        bool: {
+          must: mustClauses,
+          ...(shouldClauses.length > 0
+            ? {
+                should: shouldClauses,
+                minimum_should_match: 1,
+              }
+            : {}),
+          filter: [
+            ...filterClauses,
+            {
+              nested: {
+                path: 'user',
+                query: {
+                  term: {
+                    'user.id': userId,
+                  },
+                },
+              },
+            } as unknown as IElasticsearchBoolClause,
+          ],
+        },
+      },
+    };
+
+    const [result, countResult] = await Promise.all([
+      this.elasticDatabaseService.select(EElasticIndex.chat, queryElastic),
+      this.elasticDatabaseService.select(EElasticIndex.chat, countQueryElastic),
+    ]);
 
     if (!result) {
       const pagings = setPaginationData(0, 0, perPage, currentPage);
@@ -519,6 +570,13 @@ export class ChatSearcherUseCase {
       return {
         pagings,
         results: [],
+        counts: {
+          queue: 0,
+          in_chat: 0,
+          chatbot: 0,
+          closed: 0,
+          my_chats: 0,
+        },
       };
     }
 
@@ -538,9 +596,26 @@ export class ChatSearcherUseCase {
       currentPage
     );
 
+    const statusBuckets =
+      (result.aggregations?.status_counts as any)?.buckets || [];
+    const statusCounts: Record<string, number> = {};
+    for (const bucket of statusBuckets) {
+      statusCounts[bucket.key] = bucket.doc_count;
+    }
+
+    const myChatsTotal =
+      (countResult?.hits?.total as { value: number })?.value || 0;
+
     return {
       pagings,
       results: chats,
+      counts: {
+        queue: statusCounts[EChatStatus.queue] || 0,
+        in_chat: statusCounts[EChatStatus.in_chat] || 0,
+        chatbot: statusCounts[EChatStatus.ura] || 0,
+        closed: statusCounts[EChatStatus.closed] || 0,
+        my_chats: myChatsTotal,
+      },
     };
   }
 }

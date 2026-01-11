@@ -89,6 +89,31 @@ const chatbotPagings = ref({
   total: 0,
 });
 const isLoadingChatbot = ref(false);
+
+const listClosed = ref<ListChatsResult[]>([]);
+const closedPagings = ref({
+  current_page: 1,
+  total_pages: 1,
+  per_page: 50,
+  count: 0,
+  total: 0,
+});
+const isLoadingClosed = ref(false);
+const allChatsWithFiltersPagings = ref({
+  current_page: 1,
+  total_pages: 1,
+  per_page: 50,
+  count: 0,
+  total: 0,
+});
+const isLoadingAllChatsWithFilters = ref(false);
+const searchChatsCounts = ref<{
+  queue: number;
+  in_chat: number;
+  chatbot: number;
+  closed: number;
+  my_chats: number;
+} | null>(null);
 const isLoadingWorkerConfigs = ref(false);
 const isLoadingMoreQueue = ref(false);
 const isLoadingMoreInChat = ref(false);
@@ -96,20 +121,39 @@ const chatScrollContainer = ref<InstanceType<typeof PerfectScrollbar> | null>(
   null
 );
 
-type FilterType = 'new' | 'all' | 'in_chat' | 'queue' | 'chatbot' | 'my_chats';
+type FilterType =
+  | 'new'
+  | 'all'
+  | 'in_chat'
+  | 'queue'
+  | 'chatbot'
+  | 'my_chats'
+  | 'closed';
 
 const activeFilter = ref<FilterType>('all');
 const expandedFilter = ref<FilterType | null>('all');
 
 const filteredInChat = computed(() => {
-  if (activeFilter.value === 'all' || activeFilter.value === 'in_chat') {
+  if (activeFilter.value === 'in_chat') {
+    return chatStore.listInChat;
+  }
+  if (activeFilter.value === 'all' && !hasActiveFilters.value) {
+    return chatStore.listInChat;
+  }
+  if (activeFilter.value === 'all' && hasActiveFilters.value) {
     return chatStore.listInChat;
   }
   return [];
 });
 
 const filteredQueue = computed(() => {
-  if (activeFilter.value === 'all' || activeFilter.value === 'queue') {
+  if (activeFilter.value === 'queue') {
+    return chatStore.listQueue;
+  }
+  if (activeFilter.value === 'all' && !hasActiveFilters.value) {
+    return chatStore.listQueue;
+  }
+  if (activeFilter.value === 'all' && hasActiveFilters.value) {
     return chatStore.listQueue;
   }
   return [];
@@ -120,6 +164,16 @@ const filteredMyChats = computed(() => {
     const userId = chatStore.user?.user_id;
     if (!userId) return [];
 
+    if (hasActiveFilters.value) {
+      const allChats = [
+        ...chatStore.listInChat,
+        ...chatStore.listQueue,
+        ...chatStore.listChatbot,
+        ...listClosed.value,
+      ];
+      return allChats.filter((chat) => chat.user?.id === userId);
+    }
+
     const allChats = [...chatStore.listInChat, ...chatStore.listQueue];
     return allChats.filter((chat) => chat.user?.id === userId);
   }
@@ -128,6 +182,7 @@ const filteredMyChats = computed(() => {
 
 const hasActiveFilters = computed(() => {
   return !!(
+    currentFilterStatus.value ||
     currentFilterLabelTemplateId.value ||
     currentFilterWorkerId.value ||
     currentFilterUserId.value ||
@@ -154,17 +209,55 @@ const showChatbotTitle = computed(() => {
   return activeFilter.value === 'all' && hasActiveFilters.value;
 });
 
+const filteredClosed = computed(() => {
+  if (activeFilter.value === 'all' && hasActiveFilters.value) {
+    return listClosed.value;
+  }
+  return [];
+});
+
+const showClosedTitle = computed(() => {
+  return (
+    activeFilter.value === 'all' &&
+    hasActiveFilters.value &&
+    listClosed.value.length > 0
+  );
+});
+
 const allChatsCount = computed(() => {
+  if (hasActiveFilters.value) {
+    if (searchChatsCounts.value) {
+      return (
+        searchChatsCounts.value.queue +
+        searchChatsCounts.value.in_chat +
+        searchChatsCounts.value.chatbot +
+        searchChatsCounts.value.closed
+      );
+    }
+    return allChatsWithFiltersPagings.value.total || 0;
+  }
   return (
     (chatStore.inChatPagings.total || 0) + (chatStore.queuePagings.total || 0)
   );
 });
 
 const inChatCount = computed(() => {
+  if (hasActiveFilters.value) {
+    if (searchChatsCounts.value) {
+      return searchChatsCounts.value.in_chat;
+    }
+    return chatStore.listInChat.length;
+  }
   return chatStore.inChatPagings.total || 0;
 });
 
 const queueCount = computed(() => {
+  if (hasActiveFilters.value) {
+    if (searchChatsCounts.value) {
+      return searchChatsCounts.value.queue;
+    }
+    return chatStore.listQueue.length;
+  }
   return chatStore.queuePagings.total || 0;
 });
 
@@ -172,20 +265,47 @@ const myChatsCount = computed(() => {
   const userId = chatStore.user?.user_id;
   if (!userId) return 0;
 
+  if (hasActiveFilters.value) {
+    if (searchChatsCounts.value) {
+      return searchChatsCounts.value.my_chats;
+    }
+    const allChats = [
+      ...chatStore.listInChat,
+      ...chatStore.listQueue,
+      ...chatStore.listChatbot,
+      ...listClosed.value,
+    ];
+    return allChats.filter((chat) => chat.user?.id === userId).length;
+  }
+
   const allChats = [...chatStore.listInChat, ...chatStore.listQueue];
   return allChats.filter((chat) => chat.user?.id === userId).length;
 });
 
 const chatbotCount = computed(() => {
-  if (activeFilter.value === 'chatbot' && chatbotPagings.value.total > 0) {
-    return chatbotPagings.value.total;
+  if (hasActiveFilters.value) {
+    if (searchChatsCounts.value) {
+      return searchChatsCounts.value.chatbot;
+    }
+    return chatStore.listChatbot.length;
   }
-
   if (chatbotPagings.value.total > 0) {
     return chatbotPagings.value.total;
   }
-
   return chatStore.listChatbot.length;
+});
+
+const closedCount = computed(() => {
+  if (hasActiveFilters.value) {
+    if (searchChatsCounts.value) {
+      return searchChatsCounts.value.closed;
+    }
+    return listClosed.value.length;
+  }
+  if (chatStore.closedPagings.total > 0) {
+    return chatStore.closedPagings.total;
+  }
+  return listClosed.value.length;
 });
 
 const showInChatTitle = computed(() => {
@@ -242,16 +362,6 @@ const handleFilterClick = (filter: FilterType) => {
     return;
   }
 
-  currentFilterLabelTemplateId.value = null;
-  currentFilterWorkerId.value = null;
-  currentFilterUserId.value = null;
-  currentFilterSectorId.value = null;
-  currentFilterName.value = null;
-  currentFilterPhone.value = null;
-  currentFilterProtocol.value = null;
-  currentFilterDateStart.value = null;
-  currentFilterDateEnd.value = null;
-
   activeFilter.value = filter;
   expandedFilter.value = filter;
 
@@ -266,6 +376,9 @@ const handleFilterClick = (filter: FilterType) => {
   } else if (filter === 'chatbot') {
     chatbotPagings.value.current_page = 1;
     loadChatbotChats();
+  } else if (filter === 'closed') {
+    chatStore.closedPagings.current_page = 1;
+    loadClosedChats();
   } else if (filter === 'my_chats') {
     currentPageQueue.value = 1;
     currentPageInChat.value = 1;
@@ -279,7 +392,8 @@ const handleFiltersUpdated = async () => {
     activeFilter.value !== 'my_chats' &&
     activeFilter.value !== 'in_chat' &&
     activeFilter.value !== 'queue' &&
-    activeFilter.value !== 'chatbot'
+    activeFilter.value !== 'chatbot' &&
+    activeFilter.value !== 'closed'
   ) {
     activeFilter.value = 'all';
     expandedFilter.value = 'all';
@@ -289,10 +403,15 @@ const handleFiltersUpdated = async () => {
     currentPageQueue.value = 1;
     currentPageInChat.value = 1;
     chatbotPagings.value.current_page = 1;
-    await Promise.all([loadChatsByFilter(), loadChatbotChats()]);
+    closedPagings.value.current_page = 1;
+    allChatsWithFiltersPagings.value.current_page = 1;
+    await loadChatsByFilter();
   } else if (activeFilter.value === 'chatbot') {
     chatbotPagings.value.current_page = 1;
     await loadChatbotChats();
+  } else if (activeFilter.value === 'closed') {
+    closedPagings.value.current_page = 1;
+    await loadClosedChats();
   } else {
     currentPageQueue.value = 1;
     currentPageInChat.value = 1;
@@ -308,6 +427,7 @@ const handleFiltersUpdated = async () => {
 };
 
 const handleClearFilters = async () => {
+  currentFilterStatus.value = null;
   currentFilterLabelTemplateId.value = null;
   currentFilterWorkerId.value = null;
   currentFilterUserId.value = null;
@@ -318,19 +438,31 @@ const handleClearFilters = async () => {
   currentFilterDateStart.value = null;
   currentFilterDateEnd.value = null;
 
-  if (activeFilter.value === 'all') {
-    currentPageQueue.value = 1;
-    currentPageInChat.value = 1;
-    chatbotPagings.value.current_page = 1;
-    await Promise.all([loadChatsByFilter(), loadChatbotChats()]);
-  } else if (activeFilter.value === 'chatbot') {
-    chatbotPagings.value.current_page = 1;
-    await loadChatbotChats();
-  } else {
-    currentPageQueue.value = 1;
-    currentPageInChat.value = 1;
-    await loadChatsByFilter();
-  }
+  allChatsWithFiltersPagings.value = {
+    current_page: 1,
+    total_pages: 1,
+    per_page: 50,
+    count: 0,
+    total: 0,
+  };
+
+  searchChatsCounts.value = null;
+
+  chatStore.listQueue = [];
+  chatStore.listInChat = [];
+  chatStore.listChatbot = [];
+  listClosed.value = [];
+  chatStore.listClosed = [];
+
+  activeFilter.value = 'all';
+  expandedFilter.value = 'all';
+
+  currentPageQueue.value = 1;
+  currentPageInChat.value = 1;
+  chatbotPagings.value.current_page = 1;
+  closedPagings.value.current_page = 1;
+
+  await Promise.all([loadChatsByFilter(), loadChatbotCount()]);
 
   if (
     debouncedSearchQuery.value &&
@@ -395,6 +527,7 @@ const loadChatContacts = async (chats: ListChatsResult[]) => {
   await chatStore.getChatContactsByIds(contactIdsToLoad);
 };
 
+const currentFilterStatus = ref<string | null>(null);
 const currentFilterLabelTemplateId = ref<string | null>(null);
 const currentFilterWorkerId = ref<string | null>(null);
 const currentFilterUserId = ref<string | null>(null);
@@ -407,6 +540,7 @@ const currentFilterDateEnd = ref<string | null>(null);
 
 const getChatUserFilters = () => {
   return {
+    filter_status: currentFilterStatus.value ?? undefined,
     filter_label_template_id: currentFilterLabelTemplateId.value ?? undefined,
     filter_worker_id: currentFilterWorkerId.value ?? undefined,
     filter_user_id: currentFilterUserId.value ?? undefined,
@@ -419,8 +553,136 @@ const getChatUserFilters = () => {
   };
 };
 
+const loadAllChatsWithFilters = async (append = false) => {
+  if (isLoadingAllChatsWithFilters.value) return;
+
+  isLoadingAllChatsWithFilters.value = true;
+
+  try {
+    const filters = getChatUserFilters();
+
+    const request: SearchChatsQuery = {
+      current_page: allChatsWithFiltersPagings.value.current_page,
+      per_page: allChatsWithFiltersPagings.value.per_page,
+      search: '',
+      filter_status: filters.filter_status,
+      filter_label_template_id: filters.filter_label_template_id,
+      filter_worker_id: filters.filter_worker_id,
+      filter_user_id: filters.filter_user_id,
+      filter_sector_id: filters.filter_sector_id,
+      filter_name: filters.filter_name,
+      filter_phone: filters.filter_phone,
+      filter_protocol: filters.filter_protocol,
+      filter_date_start: filters.filter_date_start,
+      filter_date_end: filters.filter_date_end,
+    };
+
+    const result = await chatStore.searchChats(request);
+
+    if (!result) {
+      if (!append) {
+        chatStore.listQueue = [];
+        chatStore.listInChat = [];
+        chatStore.listChatbot = [];
+        listClosed.value = [];
+        chatStore.listClosed = [];
+      }
+      return;
+    }
+
+    allChatsWithFiltersPagings.value = result.pagings;
+    if (result.counts) {
+      searchChatsCounts.value = result.counts;
+    }
+
+    const queueChats: ListChatsResult[] = [];
+    const inChatChats: ListChatsResult[] = [];
+    const chatbotChats: ListChatsResult[] = [];
+    const closedChats: ListChatsResult[] = [];
+
+    for (const chat of result.results) {
+      if (chat.status === EChatStatus.queue) {
+        queueChats.push(chat);
+      } else if (chat.status === EChatStatus.in_chat) {
+        inChatChats.push(chat);
+      } else if (chat.status === EChatStatus.ura) {
+        chatbotChats.push(chat);
+      } else if (chat.status === EChatStatus.closed) {
+        closedChats.push(chat);
+      }
+    }
+
+    if (append) {
+      chatStore.listQueue.push(...queueChats);
+      chatStore.listInChat.push(...inChatChats);
+      chatStore.listChatbot.push(...chatbotChats);
+      listClosed.value.push(...closedChats);
+      chatStore.listClosed.push(...closedChats);
+    } else {
+      chatStore.listQueue = queueChats;
+      chatStore.listInChat = inChatChats;
+      chatStore.listChatbot = chatbotChats;
+      listClosed.value = closedChats;
+      chatStore.listClosed = closedChats;
+    }
+
+    chatStore.queuePagings = {
+      current_page: allChatsWithFiltersPagings.value.current_page,
+      total_pages: allChatsWithFiltersPagings.value.total_pages,
+      per_page: allChatsWithFiltersPagings.value.per_page,
+      count: chatStore.listQueue.length,
+      total: chatStore.listQueue.length,
+    };
+
+    chatStore.inChatPagings = {
+      current_page: allChatsWithFiltersPagings.value.current_page,
+      total_pages: allChatsWithFiltersPagings.value.total_pages,
+      per_page: allChatsWithFiltersPagings.value.per_page,
+      count: chatStore.listInChat.length,
+      total: chatStore.listInChat.length,
+    };
+
+    chatbotPagings.value = {
+      current_page: allChatsWithFiltersPagings.value.current_page,
+      total_pages: allChatsWithFiltersPagings.value.total_pages,
+      per_page: allChatsWithFiltersPagings.value.per_page,
+      count: chatStore.listChatbot.length,
+      total: chatStore.listChatbot.length,
+    };
+
+    closedPagings.value = {
+      current_page: allChatsWithFiltersPagings.value.current_page,
+      total_pages: allChatsWithFiltersPagings.value.total_pages,
+      per_page: allChatsWithFiltersPagings.value.per_page,
+      count: listClosed.value.length,
+      total: listClosed.value.length,
+    };
+
+    const allChats = append
+      ? [...queueChats, ...inChatChats, ...chatbotChats, ...closedChats]
+      : [
+          ...chatStore.listQueue,
+          ...chatStore.listInChat,
+          ...chatStore.listChatbot,
+          ...listClosed.value,
+        ];
+
+    await Promise.all([
+      loadWorkerConfigs(allChats),
+      loadChatContacts(allChats),
+    ]);
+  } finally {
+    isLoadingAllChatsWithFilters.value = false;
+  }
+};
+
 const loadChatsByFilter = async (append = false) => {
   const filters = getChatUserFilters();
+
+  if (activeFilter.value === 'all' && hasActiveFilters.value) {
+    await loadAllChatsWithFilters(append);
+    return;
+  }
 
   if (activeFilter.value === 'all' || activeFilter.value === 'my_chats') {
     const requestQueue: ListChatsQuery = {
@@ -442,6 +704,7 @@ const loadChatsByFilter = async (append = false) => {
       current_page: currentPageInChat.value,
       per_page: perPageInChat.value,
       status: EChatStatus.in_chat,
+      filter_status: filters.filter_status,
       filter_label_template_id: filters.filter_label_template_id,
       filter_worker_id: filters.filter_worker_id,
       filter_user_id: filters.filter_user_id,
@@ -471,6 +734,7 @@ const loadChatsByFilter = async (append = false) => {
       current_page: currentPageInChat.value,
       per_page: perPageInChat.value,
       status: EChatStatus.in_chat,
+      filter_status: filters.filter_status,
       filter_label_template_id: filters.filter_label_template_id,
       filter_worker_id: filters.filter_worker_id,
       filter_user_id: filters.filter_user_id,
@@ -539,7 +803,7 @@ const loadContacts = async (append = false) => {
   }
 };
 
-const loadChatbotChats = async () => {
+const loadChatbotChats = async (append = false) => {
   if (isLoadingChatbot.value) return;
 
   isLoadingChatbot.value = true;
@@ -550,6 +814,7 @@ const loadChatbotChats = async () => {
       current_page: chatbotPagings.value.current_page,
       per_page: chatbotPagings.value.per_page,
       status: EChatStatus.ura,
+      filter_status: filters.filter_status,
       filter_label_template_id: filters.filter_label_template_id,
       filter_worker_id: filters.filter_worker_id,
       filter_user_id: filters.filter_user_id,
@@ -561,16 +826,72 @@ const loadChatbotChats = async () => {
       filter_date_end: filters.filter_date_end,
     };
 
-    const result = await chatStore.listChatbotChats(request);
+    const result = await chatStore.listChatbotChats(request, append);
     if (result) {
       chatbotPagings.value = result.pagings;
+      const chatsToProcess = append ? result.results : chatStore.listChatbot;
       await Promise.all([
-        loadWorkerConfigs(chatStore.listChatbot),
-        loadChatContacts(chatStore.listChatbot),
+        loadWorkerConfigs(chatsToProcess),
+        loadChatContacts(chatsToProcess),
       ]);
     }
   } finally {
     isLoadingChatbot.value = false;
+  }
+};
+
+const loadClosedChats = async (append = false) => {
+  console.log('🔍 loadClosedChats chamado', {
+    append,
+    currentPage: chatStore.closedPagings.current_page,
+    isLoadingClosed: isLoadingClosed.value,
+  });
+
+  isLoadingClosed.value = true;
+
+  try {
+    const filters = getChatUserFilters();
+    const request: ListChatsQuery = {
+      current_page: chatStore.closedPagings.current_page || 1,
+      per_page: 50,
+      status: EChatStatus.closed,
+      filter_status: filters.filter_status,
+      filter_label_template_id: filters.filter_label_template_id,
+      filter_worker_id: filters.filter_worker_id,
+      filter_user_id: filters.filter_user_id,
+      filter_sector_id: filters.filter_sector_id,
+      filter_name: filters.filter_name,
+      filter_phone: filters.filter_phone,
+      filter_protocol: filters.filter_protocol,
+      filter_date_start: filters.filter_date_start,
+      filter_date_end: filters.filter_date_end,
+    };
+
+    console.log('📤 loadClosedChats - Request:', request);
+
+    const result = await chatStore.listClosedChats(request, append);
+
+    console.log('📥 loadClosedChats - Result:', {
+      hasResult: !!result,
+      resultsCount: result?.results.length,
+      pagings: result?.pagings,
+    });
+
+    if (result) {
+      chatStore.closedPagings = result.pagings;
+      listClosed.value = chatStore.listClosed;
+      const chatsToProcess = append ? result.results : chatStore.listClosed;
+      await Promise.all([
+        loadWorkerConfigs(chatsToProcess),
+        loadChatContacts(chatsToProcess),
+      ]);
+      console.log('✅ loadClosedChats - Processamento completo');
+    }
+  } catch (error) {
+    console.error('❌ loadClosedChats - Erro:', error);
+  } finally {
+    isLoadingClosed.value = false;
+    console.log('🏁 loadClosedChats - Finalizado');
   }
 };
 
@@ -579,12 +900,24 @@ const hasMoreContacts = computed(() => {
 });
 
 const hasMoreQueue = computed(() => {
+  if (activeFilter.value === 'all' && hasActiveFilters.value) {
+    return (
+      allChatsWithFiltersPagings.value.current_page <
+      allChatsWithFiltersPagings.value.total_pages
+    );
+  }
   return (
     chatStore.queuePagings.current_page < chatStore.queuePagings.total_pages
   );
 });
 
 const hasMoreInChat = computed(() => {
+  if (activeFilter.value === 'all' && hasActiveFilters.value) {
+    return (
+      allChatsWithFiltersPagings.value.current_page <
+      allChatsWithFiltersPagings.value.total_pages
+    );
+  }
   return (
     chatStore.inChatPagings.current_page < chatStore.inChatPagings.total_pages
   );
@@ -610,16 +943,24 @@ const handleContactScroll = (e: Event) => {
   }
 };
 
-const handleChatScroll = async () => {
-  if (!chatScrollContainer.value) return;
+const handleChatScroll = async (event?: Event) => {
+  let scrollContainer: HTMLElement | null = null;
 
-  const psElement = chatScrollContainer.value.$el as HTMLElement;
-  if (!psElement) return;
+  if (event?.target) {
+    const targetEl = event.target as HTMLElement;
+    scrollContainer =
+      (targetEl.closest('.ps') as HTMLElement) ||
+      (targetEl.closest('.ps__container') as HTMLElement) ||
+      targetEl;
+  }
 
-  let scrollContainer: HTMLElement | null =
-    (psElement.querySelector('.ps') as HTMLElement) ||
-    (psElement.querySelector('.ps__container') as HTMLElement) ||
-    psElement;
+  if (!scrollContainer && chatScrollContainer.value) {
+    const psElement = chatScrollContainer.value.$el as HTMLElement;
+    scrollContainer =
+      (psElement.querySelector('.ps') as HTMLElement) ||
+      (psElement.querySelector('.ps__container') as HTMLElement) ||
+      psElement;
+  }
 
   if (!scrollContainer) return;
 
@@ -631,8 +972,22 @@ const handleChatScroll = async () => {
       scrollTop + clientHeight >= scrollHeight - threshold &&
       !isLoadingMoreQueue.value &&
       !isLoadingMoreInChat.value &&
-      !chatStore.loadingChats
+      !chatStore.loadingChats &&
+      !isLoadingAllChatsWithFilters.value
     ) {
+      if (activeFilter.value === 'all' && hasActiveFilters.value) {
+        const hasMore = hasMoreQueue.value || hasMoreInChat.value;
+        if (hasMore) {
+          isLoadingMoreQueue.value = true;
+          isLoadingMoreInChat.value = true;
+          allChatsWithFiltersPagings.value.current_page += 1;
+          await loadChatsByFilter(true);
+          isLoadingMoreQueue.value = false;
+          isLoadingMoreInChat.value = false;
+        }
+        return;
+      }
+
       const shouldLoadQueue = hasMoreQueue.value;
       const shouldLoadInChat = hasMoreInChat.value;
 
@@ -683,7 +1038,136 @@ const handleChatScroll = async () => {
       await loadChatsByFilter(true);
       isLoadingMoreQueue.value = false;
     }
+    return;
   }
+
+  if (activeFilter.value === 'chatbot') {
+    if (
+      scrollTop + clientHeight >= scrollHeight - threshold &&
+      chatbotPagings.value.current_page < chatbotPagings.value.total_pages &&
+      !isLoadingChatbot.value
+    ) {
+      isLoadingChatbot.value = true;
+      chatbotPagings.value.current_page += 1;
+      await loadChatbotChats(true);
+      isLoadingChatbot.value = false;
+    }
+    return;
+  }
+
+  if (activeFilter.value === 'closed') {
+    return;
+  }
+};
+
+const handleClosedScroll = async (event?: Event) => {
+  console.log('🔍 handleClosedScroll chamado', {
+    activeFilter: activeFilter.value,
+    hasEvent: !!event,
+    eventTarget: event?.target,
+  });
+
+  if (activeFilter.value !== 'closed') {
+    console.log('❌ ActiveFilter não é closed, retornando');
+    return;
+  }
+
+  let scrollContainer: HTMLElement | null = null;
+
+  if (event?.target) {
+    const targetEl = event.target as HTMLElement;
+    scrollContainer =
+      (targetEl.closest('.ps') as HTMLElement) ||
+      (targetEl.closest('.ps__container') as HTMLElement) ||
+      targetEl;
+  }
+
+  if (!scrollContainer && chatScrollContainer.value) {
+    const psElement = chatScrollContainer.value.$el as HTMLElement;
+    scrollContainer =
+      (psElement.querySelector('.ps') as HTMLElement) ||
+      (psElement.querySelector('.ps__container') as HTMLElement) ||
+      psElement;
+  }
+
+  if (!scrollContainer) {
+    console.log('❌ ScrollContainer não encontrado');
+    return;
+  }
+
+  const { scrollTop, scrollHeight, clientHeight } = scrollContainer;
+  const threshold = 100;
+
+  const hasMore =
+    chatStore.closedPagings.current_page < chatStore.closedPagings.total_pages;
+
+  console.log('📊 handleClosedScroll - Dados do scroll:', {
+    scrollTop,
+    scrollHeight,
+    clientHeight,
+    threshold,
+    sum: scrollTop + clientHeight,
+    target: scrollHeight - threshold,
+    shouldTrigger: scrollTop + clientHeight >= scrollHeight - threshold,
+    currentPage: chatStore.closedPagings.current_page,
+    totalPages: chatStore.closedPagings.total_pages,
+    hasMore,
+    isLoadingClosed: isLoadingClosed.value,
+  });
+
+  if (
+    scrollTop + clientHeight >= scrollHeight - threshold &&
+    hasMore &&
+    !isLoadingClosed.value
+  ) {
+    console.log('✅ Triggering closed pagination via scroll...');
+    isLoadingClosed.value = true;
+    chatStore.closedPagings.current_page += 1;
+    await loadClosedChats(true);
+    isLoadingClosed.value = false;
+    console.log('✅ Closed pagination via scroll completed');
+  }
+};
+
+const handleClosedReachEnd = async () => {
+  console.log('🔍 handleClosedReachEnd chamado', {
+    activeFilter: activeFilter.value,
+    currentPage: chatStore.closedPagings.current_page,
+    totalPages: chatStore.closedPagings.total_pages,
+    isLoadingClosed: isLoadingClosed.value,
+  });
+
+  if (activeFilter.value !== 'closed') {
+    console.log('❌ ActiveFilter não é closed, retornando');
+    return;
+  }
+  if (isLoadingClosed.value) {
+    console.log('❌ Já está carregando, retornando');
+    return;
+  }
+
+  const hasMore =
+    chatStore.closedPagings.current_page < chatStore.closedPagings.total_pages;
+
+  console.log('📊 handleClosedReachEnd - Verificações:', {
+    hasMore,
+    currentPage: chatStore.closedPagings.current_page,
+    totalPages: chatStore.closedPagings.total_pages,
+  });
+
+  if (!hasMore) {
+    console.log('❌ Não há mais páginas, retornando');
+    return;
+  }
+
+  console.log('✅ Triggering closed pagination via reach end...');
+  isLoadingClosed.value = true;
+  chatStore.closedPagings.current_page += 1;
+
+  await loadClosedChats(true);
+
+  isLoadingClosed.value = false;
+  console.log('✅ Closed pagination via reach end completed');
 };
 
 const handleAddContactModalClose = (isOpen: boolean) => {
@@ -757,6 +1241,7 @@ const performSearch = async () => {
     debouncedSearchQuery.value.trim().length === 0
   ) {
     searchResults.value = [];
+    currentFilterStatus.value = null;
     searchPagings.value = {
       current_page: 1,
       total_pages: 1,
@@ -774,6 +1259,7 @@ const performSearch = async () => {
       current_page: 1,
       per_page: 20,
       search: debouncedSearchQuery.value.trim(),
+      filter_status: filters.filter_status,
       filter_label_template_id: filters.filter_label_template_id,
       filter_worker_id: filters.filter_worker_id,
       filter_user_id: filters.filter_user_id,
@@ -792,6 +1278,7 @@ const performSearch = async () => {
       searchPagings.value = result.pagings;
     } else {
       searchResults.value = [];
+      currentFilterStatus.value = null;
       searchPagings.value = {
         current_page: 1,
         total_pages: 1,
@@ -802,6 +1289,7 @@ const performSearch = async () => {
     }
   } catch {
     searchResults.value = [];
+    currentFilterStatus.value = null;
   } finally {
     isSearching.value = false;
   }
@@ -816,15 +1304,6 @@ watch(
   () => {
     searchQuery.value = '';
     searchResults.value = [];
-    currentFilterLabelTemplateId.value = null;
-    currentFilterWorkerId.value = null;
-    currentFilterUserId.value = null;
-    currentFilterSectorId.value = null;
-    currentFilterName.value = null;
-    currentFilterPhone.value = null;
-    currentFilterProtocol.value = null;
-    currentFilterDateStart.value = null;
-    currentFilterDateEnd.value = null;
   }
 );
 
@@ -1210,6 +1689,29 @@ onMounted(async () => {
           </span>
         </div>
       </div>
+      <div v-if="hasActiveFilters" class="chat-filter-item flex-grow-1">
+        <div class="chat-filter-btn-wrapper">
+          <VBtn
+            :variant="activeFilter === 'closed' ? 'flat' : 'text'"
+            :color="activeFilter === 'closed' ? 'primary' : undefined"
+            class="chat-filter-btn w-100"
+            @click="handleFilterClick('closed')"
+          >
+            <VIcon size="24">tabler-lock</VIcon>
+          </VBtn>
+          <span
+            v-if="closedCount > 0"
+            class="chat-filter-count-badge"
+            :class="{
+              'badge-single-digit': closedCount.toString().length === 1,
+              'badge-double-digit': closedCount.toString().length === 2,
+              'badge-triple-digit': closedCount.toString().length >= 3,
+            }"
+          >
+            {{ closedCount }}
+          </span>
+        </div>
+      </div>
     </div>
     <Transition name="expand">
       <div v-if="expandedFilter" class="chat-filter-expanded-full">
@@ -1224,7 +1726,11 @@ onMounted(async () => {
                   ? $t('waiting_for_service')
                   : expandedFilter === 'my_chats'
                     ? $t('my_chats', 'Meus atendimentos')
-                    : $t('chatbot', 'ChatBot')
+                    : expandedFilter === 'chatbot'
+                      ? $t('chatbot', 'ChatBot')
+                      : expandedFilter === 'closed'
+                        ? $t('closed', 'Fechado')
+                        : ''
         }}
       </div>
     </Transition>
@@ -1409,7 +1915,10 @@ onMounted(async () => {
   </template>
 
   <template v-else-if="activeFilter === 'chatbot'">
-    <PerfectScrollbar :options="{ wheelPropagation: false }">
+    <PerfectScrollbar
+      :options="{ wheelPropagation: false }"
+      @ps-scroll-y="handleChatScroll"
+    >
       <ul class="d-flex flex-column gap-y-1 chat-list px-3 py-2 list-none">
         <template v-if="isLoadingChatbot || isLoadingWorkerConfigs">
           <li
@@ -1459,13 +1968,146 @@ onMounted(async () => {
           >
             {{ $t('no_chat_in_ura') }}
           </li>
+
+          <template v-if="isLoadingChatbot">
+            <li
+              v-for="i in 5"
+              :key="`skeleton-chatbot-pagination-${i}`"
+              class="chat d-flex align-center"
+            >
+              <VSkeletonLoader type="avatar" width="40" height="40" />
+              <div class="flex-grow-1 ms-4 overflow-hidden min-w-0">
+                <VSkeletonLoader
+                  type="text"
+                  width="60%"
+                  height="20"
+                  class="mb-1"
+                />
+                <VSkeletonLoader
+                  type="text"
+                  width="40%"
+                  height="16"
+                  class="mb-1"
+                />
+                <VSkeletonLoader type="text" width="50%" height="16" />
+              </div>
+              <div class="d-flex flex-column align-self-start">
+                <VSkeletonLoader
+                  type="text"
+                  width="50"
+                  height="16"
+                  class="mb-1"
+                />
+                <VSkeletonLoader type="text" width="20" height="16" />
+              </div>
+            </li>
+          </template>
+        </template>
+      </ul>
+    </PerfectScrollbar>
+  </template>
+
+  <template v-else-if="activeFilter === 'closed'">
+    <PerfectScrollbar
+      ref="chatScrollContainer"
+      :options="{ wheelPropagation: false }"
+      @ps-scroll-y="handleClosedScroll"
+      @ps-y-reach-end="handleClosedReachEnd"
+    >
+      <ul class="d-flex flex-column gap-y-1 chat-list px-3 py-2 list-none">
+        <template v-if="isLoadingClosed || isLoadingWorkerConfigs">
+          <li
+            v-for="i in 5"
+            :key="`skeleton-closed-${i}`"
+            class="chat d-flex align-center"
+          >
+            <VSkeletonLoader type="avatar" width="40" height="40" />
+            <div class="flex-grow-1 ms-4 overflow-hidden min-w-0">
+              <VSkeletonLoader
+                type="text"
+                width="60%"
+                height="20"
+                class="mb-1"
+              />
+              <VSkeletonLoader
+                type="text"
+                width="40%"
+                height="16"
+                class="mb-1"
+              />
+              <VSkeletonLoader type="text" width="50%" height="16" />
+            </div>
+            <div class="d-flex flex-column align-self-start">
+              <VSkeletonLoader
+                type="text"
+                width="50"
+                height="16"
+                class="mb-1"
+              />
+              <VSkeletonLoader type="text" width="20" height="16" />
+            </div>
+          </li>
+        </template>
+
+        <template v-else>
+          <ChatQueue
+            v-for="chat in chatStore.listClosed"
+            :key="`closed-${chat.chat_id}`"
+            :user="chat"
+            @click="$emit('openChat', chat.chat_id)"
+          />
+
+          <li
+            v-if="!chatStore.listClosed.length"
+            class="no-chat-items-text text-disabled"
+          >
+            {{ $t('no_chat_closed') }}
+          </li>
+
+          <template v-if="isLoadingClosed">
+            <li
+              v-for="i in 5"
+              :key="`skeleton-closed-pagination-${i}`"
+              class="chat d-flex align-center"
+            >
+              <VSkeletonLoader type="avatar" width="40" height="40" />
+              <div class="flex-grow-1 ms-4 overflow-hidden min-w-0">
+                <VSkeletonLoader
+                  type="text"
+                  width="60%"
+                  height="20"
+                  class="mb-1"
+                />
+                <VSkeletonLoader
+                  type="text"
+                  width="40%"
+                  height="16"
+                  class="mb-1"
+                />
+                <VSkeletonLoader type="text" width="50%" height="16" />
+              </div>
+              <div class="d-flex flex-column align-self-start">
+                <VSkeletonLoader
+                  type="text"
+                  width="50"
+                  height="16"
+                  class="mb-1"
+                />
+                <VSkeletonLoader type="text" width="20" height="16" />
+              </div>
+            </li>
+          </template>
         </template>
       </ul>
     </PerfectScrollbar>
   </template>
 
   <template v-else-if="activeFilter === 'my_chats'">
-    <PerfectScrollbar :options="{ wheelPropagation: false }">
+    <PerfectScrollbar
+      ref="chatScrollContainer"
+      :options="{ wheelPropagation: false }"
+      @ps-scroll-y="handleChatScroll"
+    >
       <ul class="d-flex flex-column gap-y-1 chat-list px-3 py-2 list-none">
         <template v-if="chatStore.loadingChats || isLoadingWorkerConfigs">
           <li
@@ -1515,6 +2157,46 @@ onMounted(async () => {
           >
             {{ $t('no_my_chats', 'Nenhum atendimento encontrado') }}
           </li>
+
+          <template
+            v-if="
+              isLoadingMoreQueue ||
+              isLoadingMoreInChat ||
+              isLoadingAllChatsWithFilters
+            "
+          >
+            <li
+              v-for="i in 5"
+              :key="`skeleton-my-chats-pagination-${i}`"
+              class="chat d-flex align-center"
+            >
+              <VSkeletonLoader type="avatar" width="40" height="40" />
+              <div class="flex-grow-1 ms-4 overflow-hidden min-w-0">
+                <VSkeletonLoader
+                  type="text"
+                  width="60%"
+                  height="20"
+                  class="mb-1"
+                />
+                <VSkeletonLoader
+                  type="text"
+                  width="40%"
+                  height="16"
+                  class="mb-1"
+                />
+                <VSkeletonLoader type="text" width="50%" height="16" />
+              </div>
+              <div class="d-flex flex-column align-self-start">
+                <VSkeletonLoader
+                  type="text"
+                  width="50"
+                  height="16"
+                  class="mb-1"
+                />
+                <VSkeletonLoader type="text" width="20" height="16" />
+              </div>
+            </li>
+          </template>
         </template>
       </ul>
     </PerfectScrollbar>
@@ -1620,17 +2302,69 @@ onMounted(async () => {
           {{ $t('no_chat_in_ura') }}
         </li>
 
+        <li v-if="showClosedTitle" class="list-none pt-2">
+          <h5 class="chat-header text-primary text-h5">
+            {{ $t('chat_status_closed', 'Fechado') }}
+          </h5>
+        </li>
+
+        <ChatQueue
+          v-if="showClosedTitle"
+          v-for="closed in filteredClosed"
+          :key="`closed-all-${closed.chat_id}`"
+          :user="closed"
+          @click="$emit('openChat', closed.chat_id)"
+        />
+
         <li
+          v-if="showClosedTitle && !filteredClosed.length && !isLoadingClosed"
+          class="no-chat-items-text text-disabled"
+        >
+          Nenhum chat fechado
+        </li>
+
+        <template
           v-if="
-            (isLoadingMoreQueue || isLoadingMoreInChat) &&
+            (isLoadingMoreQueue ||
+              isLoadingMoreInChat ||
+              isLoadingAllChatsWithFilters) &&
             (activeFilter === 'all' ||
               activeFilter === 'in_chat' ||
               activeFilter === 'queue')
           "
-          class="d-flex justify-center pa-4"
         >
-          <VProgressCircular indeterminate color="primary" size="32" />
-        </li>
+          <li
+            v-for="i in 5"
+            :key="`skeleton-pagination-${i}`"
+            class="chat d-flex align-center"
+          >
+            <VSkeletonLoader type="avatar" width="40" height="40" />
+            <div class="flex-grow-1 ms-4 overflow-hidden min-w-0">
+              <VSkeletonLoader
+                type="text"
+                width="60%"
+                height="20"
+                class="mb-1"
+              />
+              <VSkeletonLoader
+                type="text"
+                width="40%"
+                height="16"
+                class="mb-1"
+              />
+              <VSkeletonLoader type="text" width="50%" height="16" />
+            </div>
+            <div class="d-flex flex-column align-self-start">
+              <VSkeletonLoader
+                type="text"
+                width="50"
+                height="16"
+                class="mb-1"
+              />
+              <VSkeletonLoader type="text" width="20" height="16" />
+            </div>
+          </li>
+        </template>
       </template>
     </ul>
   </PerfectScrollbar>
@@ -1776,6 +2510,7 @@ onMounted(async () => {
   </VDialog>
 
   <ChatAdvancedFiltersModal
+    :filter-status="currentFilterStatus"
     v-model="isAdvancedFiltersModalOpen"
     :filter-label="currentFilterLabelTemplateId"
     :filter-worker="currentFilterWorkerId"
@@ -1786,6 +2521,7 @@ onMounted(async () => {
     :filter-protocol="currentFilterProtocol"
     :filter-date-start="currentFilterDateStart"
     :filter-date-end="currentFilterDateEnd"
+    @update:filter-status="currentFilterStatus = $event"
     @update:filter-label="currentFilterLabelTemplateId = $event"
     @update:filter-worker="currentFilterWorkerId = $event"
     @update:filter-user="currentFilterUserId = $event"

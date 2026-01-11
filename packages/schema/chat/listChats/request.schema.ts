@@ -5,6 +5,9 @@ import { pagingRequestSchema } from '@core/schema/common/pagingRequestSchema';
 export const listChatsQuerySchema = Type.Object({
   ...pagingRequestSchema.properties,
   status: Type.String({ enum: Object.values(EChatStatus) }),
+  filter_status: Type.Optional(
+    Type.Union([Type.String({ enum: Object.values(EChatStatus) }), Type.Null()])
+  ),
   filter_label_template_id: Type.Optional(
     Type.Union([Type.String({ format: 'uuid' }), Type.Null()])
   ),

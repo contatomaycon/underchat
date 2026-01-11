@@ -67,13 +67,21 @@ export class ChatListerUseCase {
       },
     ];
 
-    const filterClauses: IElasticsearchBoolClause[] = [
-      {
+    const filterClauses: IElasticsearchBoolClause[] = [];
+
+    if (query.filter_status !== undefined && query.filter_status !== null) {
+      filterClauses.push({
+        term: {
+          status: query.filter_status,
+        },
+      });
+    } else if (query.filter_status === undefined) {
+      filterClauses.push({
         term: {
           status: query.status,
         },
-      },
-    ];
+      });
+    }
 
     if (query.filter_label_template_id) {
       filterClauses.push({

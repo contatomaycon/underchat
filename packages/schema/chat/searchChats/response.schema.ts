@@ -5,6 +5,13 @@ import { listChatsResultSchema } from '@core/schema/chat/listChats/response.sche
 export const searchChatsResponseSchema = Type.Object({
   ...pagingResponseSchema.properties,
   results: Type.Array(listChatsResultSchema),
+  counts: Type.Object({
+    queue: Type.Number(),
+    in_chat: Type.Number(),
+    chatbot: Type.Number(),
+    closed: Type.Number(),
+    my_chats: Type.Number(),
+  }),
 });
 
 export type SearchChatsResponse = Static<typeof searchChatsResponseSchema>;
