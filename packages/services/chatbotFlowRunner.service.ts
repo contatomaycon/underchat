@@ -3562,8 +3562,7 @@ export class ChatbotFlowRunnerService {
         aiAgent.base_url,
         aiAgent.api_key,
         aiAgent.model,
-        aiAgent.ai_agent_type_id,
-        10000
+        aiAgent.ai_agent_type_id
       );
 
     if (

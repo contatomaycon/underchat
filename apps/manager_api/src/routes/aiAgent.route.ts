@@ -19,6 +19,8 @@ import { viewAiAgentPromptSchema } from '@core/schema/aiAgent/viewAiAgentPrompt'
 import { updateAiAgentPromptSchema } from '@core/schema/aiAgent/updateAiAgentPrompt';
 import { deleteAiAgentPromptSchema } from '@core/schema/aiAgent/deleteAiAgentPrompt';
 import { viewAiAgentConfigSchema } from '@core/schema/aiAgent/viewAiAgentConfig';
+import { refreshAiAgentPromptSchema } from '@core/schema/aiAgent/refreshAiAgentPrompt';
+import { refreshAllAiAgentPromptsSchema } from '@core/schema/aiAgent/refreshAllAiAgentPrompts';
 import { planGuard } from '@/plugins/planGuard';
 import { planStatus } from '@/plugins/planStatus';
 
@@ -141,6 +143,28 @@ export default async function aiAgentRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, aiAgentDeletePermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.post('/ai-agent/prompt/:ai_agent_prompt_id/refresh', {
+    schema: refreshAiAgentPromptSchema,
+    handler: aiAgentController.refreshAiAgentPrompt,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, aiAgentUpdatePermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.post('/ai-agent/:ai_agent_id/prompt/refresh-all', {
+    schema: refreshAllAiAgentPromptsSchema,
+    handler: aiAgentController.refreshAllAiAgentPrompts,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, aiAgentUpdatePermissions),
       planGuard,
       planStatus,
     ],

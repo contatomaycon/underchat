@@ -5,7 +5,8 @@ import { useAiAgentStore } from '@/@webcore/stores/aiAgent';
 import { DataTableHeader } from 'vuetify';
 import { ListAiAgentPromptResponse } from '@core/schema/aiAgent/listAiAgentPrompt/response.schema';
 import { EAiAgentPromptType } from '@core/common/enums/EAiAgentPromptType';
-import { EAiAgentStatus } from '@core/common/enums/EAiAgentStatus';
+import { EAiAgentType } from '@core/common/enums/EAiAgentType';
+import { ViewAiAgentResponse } from '@core/schema/aiAgent/viewAiAgent/response.schema';
 import AppAddEditAiAgentPrompt from './AppAddEditAiAgentPrompt.vue';
 import TablePagination from '@/@webcore/components/TablePagination.vue';
 
@@ -29,10 +30,16 @@ const isVisible = computed({
 const aiAgentId = computed(() => props.aiAgentId);
 const isLoading = ref(false);
 const isDeleting = ref(false);
+const isRefreshing = ref(false);
 const isAddEditModalVisible = ref(false);
 const promptToEdit = ref<string | null>(null);
 const promptToDelete = ref<string | null>(null);
+const promptToRefresh = ref<string | null>(null);
 const isDeleteDialogVisible = ref(false);
+const isRefreshDialogVisible = ref(false);
+const isRefreshAllDialogVisible = ref(false);
+const isRefreshingAll = ref(false);
+const aiAgentInfo = ref<ViewAiAgentResponse | null>(null);
 
 const options = ref({
   page: 1,
@@ -47,6 +54,8 @@ const paginatedPrompts = computed(() => {
 });
 
 const totalItems = computed(() => aiAgentStore.prompts.length);
+
+const hasPrompts = computed(() => totalItems.value > 0);
 
 const handleTableChange = (o: {
   page: number;
@@ -76,6 +85,27 @@ const loadPrompts = async () => {
     isLoading.value = false;
   }
 };
+
+const loadAiAgentInfo = async () => {
+  if (!aiAgentId.value) return;
+
+  const result = await aiAgentStore.viewAiAgent(aiAgentId.value);
+  aiAgentInfo.value = result;
+};
+
+const shouldShowRefreshButton = computed(() => {
+  if (!aiAgentInfo.value) return true;
+
+  const isDeepSeekOrOthers =
+    aiAgentInfo.value.ai_agent_type_id === EAiAgentType.deepseek ||
+    aiAgentInfo.value.ai_agent_type_id === EAiAgentType.others;
+
+  if (isDeepSeekOrOthers && !aiAgentInfo.value.embedding_model) {
+    return false;
+  }
+
+  return true;
+});
 
 const openAddModal = () => {
   promptToEdit.value = null;
@@ -108,12 +138,54 @@ const deletePrompt = (promptId: string) => {
   isDeleteDialogVisible.value = true;
 };
 
+const refreshPrompt = (promptId: string) => {
+  promptToRefresh.value = promptId;
+  isRefreshDialogVisible.value = true;
+};
+
+const handleRefresh = async () => {
+  if (!promptToRefresh.value) return;
+
+  isRefreshing.value = true;
+  try {
+    const result = await aiAgentStore.refreshAiAgentPrompt(
+      promptToRefresh.value
+    );
+    if (result) {
+      await loadPrompts();
+    }
+  } finally {
+    isRefreshing.value = false;
+    promptToRefresh.value = null;
+    isRefreshDialogVisible.value = false;
+  }
+};
+
 const handleCreated = async () => {
   await loadPrompts();
 };
 
 const handleUpdated = async () => {
   await loadPrompts();
+};
+
+const openRefreshAllDialog = () => {
+  isRefreshAllDialogVisible.value = true;
+};
+
+const handleRefreshAll = async () => {
+  if (!aiAgentId.value) return;
+
+  isRefreshingAll.value = true;
+  try {
+    const result = await aiAgentStore.refreshAllAiAgentPrompts(aiAgentId.value);
+    if (result) {
+      await loadPrompts();
+    }
+  } finally {
+    isRefreshingAll.value = false;
+    isRefreshAllDialogVisible.value = false;
+  }
 };
 
 const getPromptTypeLabel = (type: EAiAgentPromptType): string => {
@@ -132,12 +204,14 @@ const truncateValue = (value: string, maxLength: number = 50): string => {
 
 watch(isVisible, (newValue) => {
   if (newValue && aiAgentId.value) {
+    loadAiAgentInfo();
     loadPrompts();
   }
 });
 
 onMounted(() => {
   if (isVisible.value && aiAgentId.value) {
+    loadAiAgentInfo();
     loadPrompts();
   }
 });
@@ -236,6 +310,20 @@ onMounted(() => {
                 />
               </IconBtn>
 
+              <IconBtn v-if="shouldShowRefreshButton">
+                <VTooltip
+                  location="top"
+                  transition="scale-transition"
+                  activator="parent"
+                >
+                  <span>{{ $t('refresh') }}</span>
+                </VTooltip>
+                <VIcon
+                  icon="tabler-refresh"
+                  @click="refreshPrompt(item.ai_agent_prompt_id)"
+                />
+              </IconBtn>
+
               <IconBtn>
                 <VTooltip
                   location="top"
@@ -292,6 +380,66 @@ onMounted(() => {
             {{ $t('cancel') }}
           </VBtn>
           <VBtn @click="handleDelete" :loading="isDeleting">
+            {{ $t('confirm') }}
+          </VBtn>
+        </VCardText>
+      </VCard>
+    </VDialog>
+
+    <VDialog
+      v-if="isRefreshDialogVisible"
+      v-model="isRefreshDialogVisible"
+      persistent
+      class="v-dialog-sm"
+    >
+      <DialogCloseBtn
+        @click="isRefreshDialogVisible = false"
+        :disabled="isRefreshing"
+      />
+
+      <VCard :title="$t('refresh') + ' ' + $t('prompt')">
+        <VCardText>{{ $t('refresh_prompt_confirmation') }}</VCardText>
+
+        <VCardText class="d-flex justify-end gap-3 flex-wrap">
+          <VBtn
+            color="secondary"
+            variant="tonal"
+            @click="isRefreshDialogVisible = false"
+            :disabled="isRefreshing"
+          >
+            {{ $t('cancel') }}
+          </VBtn>
+          <VBtn @click="handleRefresh" :loading="isRefreshing">
+            {{ $t('confirm') }}
+          </VBtn>
+        </VCardText>
+      </VCard>
+    </VDialog>
+
+    <VDialog
+      v-if="isRefreshAllDialogVisible"
+      v-model="isRefreshAllDialogVisible"
+      persistent
+      class="v-dialog-sm"
+    >
+      <DialogCloseBtn
+        @click="isRefreshAllDialogVisible = false"
+        :disabled="isRefreshingAll"
+      />
+
+      <VCard :title="$t('refresh_all') + ' ' + $t('prompt')">
+        <VCardText>{{ $t('refresh_all_prompts_confirmation') }}</VCardText>
+
+        <VCardText class="d-flex justify-end gap-3 flex-wrap">
+          <VBtn
+            color="secondary"
+            variant="tonal"
+            @click="isRefreshAllDialogVisible = false"
+            :disabled="isRefreshingAll"
+          >
+            {{ $t('cancel') }}
+          </VBtn>
+          <VBtn @click="handleRefreshAll" :loading="isRefreshingAll">
             {{ $t('confirm') }}
           </VBtn>
         </VCardText>

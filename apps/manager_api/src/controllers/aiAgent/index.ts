@@ -11,6 +11,8 @@ import { viewAiAgentPrompt } from './methods/viewAiAgentPrompt';
 import { updateAiAgentPrompt } from './methods/updateAiAgentPrompt';
 import { deleteAiAgentPrompt } from './methods/deleteAiAgentPrompt';
 import { viewAiAgentConfig } from './methods/viewAiAgentConfig';
+import { refreshAiAgentPrompt } from './methods/refreshAiAgentPrompt';
+import { refreshAllAiAgentPrompts } from './methods/refreshAllAiAgentPrompts';
 
 @injectable()
 class AiAgentController {
@@ -26,6 +28,8 @@ class AiAgentController {
   public updateAiAgentPrompt = updateAiAgentPrompt;
   public deleteAiAgentPrompt = deleteAiAgentPrompt;
   public viewAiAgentConfig = viewAiAgentConfig;
+  public refreshAiAgentPrompt = refreshAiAgentPrompt;
+  public refreshAllAiAgentPrompts = refreshAllAiAgentPrompts;
 }
 
 export default AiAgentController;
