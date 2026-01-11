@@ -1686,83 +1686,88 @@ defineExpose({
 </script>
 
 <template>
-  <div class="chat-list-header">
-    <VBadge
-      dot
-      location="bottom right"
-      offset-x="3"
-      offset-y="3"
-      bordered
-      :color="
-        resolveAvatarBadgeVariant(
-          chatStore.user?.chat_user?.status as EChatUserStatus,
-          global.name.value === 'dark'
-        )
-      "
-      class="cursor-pointer"
-    >
-      <VAvatar
-        size="40"
-        :variant="!chatStore.user?.info.photo ? 'tonal' : undefined"
+  <div class="chat-list-header px-3 py-3">
+    <div class="d-flex align-center gap-2 w-100">
+      <VBadge
+        dot
+        location="bottom right"
+        offset-x="3"
+        offset-y="3"
+        bordered
         :color="
-          !chatStore.user?.info.photo
-            ? resolveAvatarBadgeVariant(
-                chatStore.user?.chat_user?.status as EChatUserStatus
-              )
-            : undefined
+          resolveAvatarBadgeVariant(
+            chatStore.user?.chat_user?.status as EChatUserStatus,
+            global.name.value === 'dark'
+          )
         "
-        @click="$emit('showUserProfile')"
+        class="cursor-pointer"
       >
-        <VImg
-          v-if="chatStore.user?.info.photo"
-          :src="chatStore.user?.info.photo"
-        />
-        <VImg v-else :src="'/images/svg/avatar-default.svg'" alt="Avatar" />
-      </VAvatar>
-    </VBadge>
+        <VAvatar
+          size="40"
+          :variant="!chatStore.user?.info.photo ? 'tonal' : undefined"
+          :color="
+            !chatStore.user?.info.photo
+              ? resolveAvatarBadgeVariant(
+                  chatStore.user?.chat_user?.status as EChatUserStatus
+                )
+              : undefined
+          "
+          @click="$emit('showUserProfile')"
+        >
+          <VImg
+            v-if="chatStore.user?.info.photo"
+            :src="chatStore.user?.info.photo"
+          />
+          <VImg v-else :src="'/images/svg/avatar-default.svg'" alt="Avatar" />
+        </VAvatar>
+      </VBadge>
 
-    <AppTextField
-      id="search"
-      v-model="searchQuery"
-      :placeholder="
-        $t('search_service_placeholder', 'Pesquisar atendimento...')
-      "
-      prepend-inner-icon="tabler-search"
-      class="ms-4 me-1 chat-list-search"
-      :loading="isSearching"
-    >
-      <template #append-inner>
-        <VIcon
-          v-if="searchQuery && searchQuery.trim().length > 0"
-          icon="tabler-x"
-          class="cursor-pointer"
-          @click="searchQuery = ''"
-        />
-      </template>
-    </AppTextField>
+      <AppTextField
+        id="search"
+        v-model="searchQuery"
+        :placeholder="
+          $t('search_service_placeholder', 'Pesquisar atendimento...')
+        "
+        prepend-inner-icon="tabler-search"
+        single-line
+        hide-details
+        dense
+        class="flex-grow-1 chat-list-search"
+        :loading="isSearching"
+      >
+        <template #append-inner>
+          <VIcon
+            v-if="searchQuery && searchQuery.trim().length > 0"
+            icon="tabler-x"
+            class="cursor-pointer"
+            @click="searchQuery = ''"
+          />
+        </template>
+      </AppTextField>
 
-    <VBtn
-      icon
-      variant="flat"
-      class="me-1 filter-btn-white"
-      @click="isAdvancedFiltersModalOpen = true"
-    >
-      <VIcon icon="tabler-filter" />
-      <VTooltip activator="parent" location="bottom">
-        {{ $t('advanced_filters') }}
-      </VTooltip>
-    </VBtn>
+      <VBtn
+        icon
+        variant="flat"
+        class="filter-btn-white"
+        @click="isAdvancedFiltersModalOpen = true"
+      >
+        <VIcon icon="tabler-filter" />
+        <VTooltip activator="parent" location="bottom">
+          {{ $t('advanced_filters') }}
+        </VTooltip>
+      </VBtn>
 
-    <IconBtn v-if="hasActiveFilters" class="me-1" @click="handleClearFilters">
-      <VIcon icon="tabler-filter-off" class="text-medium-emphasis" />
-      <VTooltip activator="parent" location="bottom">
-        {{ $t('clear_filters', 'Limpar filtros') }}
-      </VTooltip>
-    </IconBtn>
+      <IconBtn v-if="hasActiveFilters" @click="handleClearFilters">
+        <VIcon icon="tabler-filter-off" class="text-medium-emphasis" />
+        <VTooltip activator="parent" location="bottom">
+          {{ $t('clear_filters', 'Limpar filtros') }}
+        </VTooltip>
+      </IconBtn>
 
-    <IconBtn v-if="$vuetify.display.smAndDown" @click="$emit('close')">
-      <VIcon icon="tabler-x" class="text-medium-emphasis" />
-    </IconBtn>
+      <IconBtn v-if="$vuetify.display.smAndDown" @click="$emit('close')">
+        <VIcon icon="tabler-x" class="text-medium-emphasis" />
+      </IconBtn>
+    </div>
   </div>
   <VDivider />
 
@@ -2997,6 +3002,17 @@ defineExpose({
     .v-icon {
       color: #fff !important;
     }
+  }
+}
+
+.chat-list-header {
+  .d-flex {
+    width: 100%;
+  }
+
+  .flex-grow-1 {
+    flex: 1 1 0;
+    min-width: 0;
   }
 }
 </style>
