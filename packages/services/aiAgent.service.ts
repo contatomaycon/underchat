@@ -132,6 +132,16 @@ export class AiAgentService {
     return result;
   };
 
+  deleteAiAgentPromptsByAgentId = async (
+    aiAgentId: string,
+    accountId: string
+  ): Promise<void> => {
+    await this.aiAgentDeleterRepository.deleteAiAgentPromptsByAgentId(
+      aiAgentId,
+      accountId
+    );
+  };
+
   deleteAiAgentById = async (
     aiAgentId: string,
     accountId: string

@@ -55,7 +55,8 @@ const loadTypes = async () => {
     otherTypes.value = result.filter(
       (type) =>
         type.ai_agent_type_id !== EAiAgentType.gpt &&
-        type.ai_agent_type_id !== EAiAgentType.gemini
+        type.ai_agent_type_id !== EAiAgentType.gemini &&
+        type.ai_agent_type_id !== EAiAgentType.deepseek
     );
   }
 };
@@ -64,8 +65,15 @@ const isGeminiSelected = computed(
   () => aiAgentTypeId.value === EAiAgentType.gemini
 );
 const isGptSelected = computed(() => aiAgentTypeId.value === EAiAgentType.gpt);
+const isDeepSeekSelected = computed(
+  () => aiAgentTypeId.value === EAiAgentType.deepseek
+);
 
 const geminiChatModels = [
+  {
+    title: 'gemini-2.5-pro (raciocínio avançado)',
+    value: 'gemini-2.5-pro',
+  },
   {
     title: 'gemini-2.5-flash (recomendado - mais recente)',
     value: 'gemini-2.5-flash',
@@ -80,6 +88,10 @@ const geminiChatModels = [
     title: 'gemini-2.0-flash-lite (variante menor)',
     value: 'gemini-2.0-flash-lite',
   },
+  {
+    title: 'gemini-2.0-flash-lite-001 (stable)',
+    value: 'gemini-2.0-flash-lite-001',
+  },
 ];
 
 const geminiEmbeddingModels = [
@@ -87,16 +99,25 @@ const geminiEmbeddingModels = [
     title: 'gemini-embedding-001 (recomendado)',
     value: 'gemini-embedding-001',
   },
-  { title: 'text-embedding-004 (legacy)', value: 'text-embedding-004' },
   { title: 'embedding-001 (legacy)', value: 'embedding-001' },
 ];
 
 const gptChatModels = [
-  { title: 'gpt-4', value: 'gpt-4' },
-  { title: 'gpt-4-turbo', value: 'gpt-4-turbo' },
+  { title: 'gpt-5.2 (mais recente)', value: 'gpt-5.2' },
+  { title: 'gpt-5.2-pro (mais preciso)', value: 'gpt-5.2-pro' },
+  { title: 'gpt-5.1', value: 'gpt-5.1' },
+  { title: 'gpt-5-pro', value: 'gpt-5-pro' },
+  { title: 'gpt-5', value: 'gpt-5' },
+  { title: 'gpt-5-mini (variante menor)', value: 'gpt-5-mini' },
+  { title: 'gpt-5-nano (mais econômico)', value: 'gpt-5-nano' },
+  { title: 'gpt-4.1', value: 'gpt-4.1' },
+  { title: 'gpt-4.1-mini', value: 'gpt-4.1-mini' },
+  { title: 'gpt-4.1-nano', value: 'gpt-4.1-nano' },
   { title: 'gpt-4o', value: 'gpt-4o' },
   { title: 'gpt-4o-mini', value: 'gpt-4o-mini' },
-  { title: 'gpt-3.5-turbo', value: 'gpt-3.5-turbo' },
+  { title: 'gpt-4-turbo (legacy)', value: 'gpt-4-turbo' },
+  { title: 'gpt-4 (legacy)', value: 'gpt-4' },
+  { title: 'gpt-3.5-turbo (legacy)', value: 'gpt-3.5-turbo' },
 ];
 
 const gptEmbeddingModels = [
@@ -108,12 +129,20 @@ const gptEmbeddingModels = [
   { title: 'text-embedding-ada-002 (legacy)', value: 'text-embedding-ada-002' },
 ];
 
+const deepseekChatModels = [
+  { title: 'deepseek-chat (recomendado)', value: 'deepseek-chat' },
+  { title: 'deepseek-coder', value: 'deepseek-coder' },
+];
+
 const availableChatModels = computed(() => {
   if (isGeminiSelected.value) {
     return geminiChatModels;
   }
   if (isGptSelected.value) {
     return gptChatModels;
+  }
+  if (isDeepSeekSelected.value) {
+    return deepseekChatModels;
   }
   return [];
 });
@@ -129,7 +158,8 @@ const availableEmbeddingModels = computed(() => {
 });
 
 const shouldUseSelectForModel = computed(
-  () => isGeminiSelected.value || isGptSelected.value
+  () =>
+    isGeminiSelected.value || isGptSelected.value || isDeepSeekSelected.value
 );
 
 const shouldUseSelectForEmbeddingModel = computed(
@@ -137,7 +167,8 @@ const shouldUseSelectForEmbeddingModel = computed(
 );
 
 const shouldDisableBaseUrl = computed(
-  () => isGeminiSelected.value || isGptSelected.value
+  () =>
+    isGeminiSelected.value || isGptSelected.value || isDeepSeekSelected.value
 );
 
 const apiKeyLink = computed(() => {
@@ -146,6 +177,9 @@ const apiKeyLink = computed(() => {
   }
   if (isGptSelected.value) {
     return 'https://platform.openai.com/api-keys?utm_source=chatgpt.com';
+  }
+  if (isDeepSeekSelected.value) {
+    return 'https://platform.deepseek.com/api_keys';
   }
   return null;
 });
@@ -163,6 +197,12 @@ watch(aiAgentTypeId, (newTypeId) => {
     embeddingModel.value = 'gemini-embedding-001';
     chunkSize.value = '600';
     chunkOverlap.value = '100';
+  } else if (newTypeId === EAiAgentType.deepseek) {
+    baseUrl.value = 'https://api.deepseek.com/v1';
+    model.value = 'deepseek-chat';
+    embeddingModel.value = '';
+    chunkSize.value = '600';
+    chunkOverlap.value = '100';
   } else if (newTypeId && otherTypes.value.length > 0) {
     const selectedType = types.value.find(
       (type) => type.ai_agent_type_id === newTypeId
@@ -170,7 +210,8 @@ watch(aiAgentTypeId, (newTypeId) => {
     if (
       selectedType &&
       selectedType.name.toLowerCase() !== 'gpt' &&
-      selectedType.name.toLowerCase() !== 'gemini'
+      selectedType.name.toLowerCase() !== 'gemini' &&
+      selectedType.name.toLowerCase() !== 'deepseek'
     ) {
       baseUrl.value = '';
       model.value = '';

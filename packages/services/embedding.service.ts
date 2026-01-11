@@ -106,6 +106,17 @@ export class EmbeddingService {
     return aiAgentTypeId === EAiAgentType.gemini;
   }
 
+  private isDeepSeekAgent(aiAgentTypeId: string): boolean {
+    return aiAgentTypeId === EAiAgentType.deepseek;
+  }
+
+  private isEmbeddingOptional(aiAgentTypeId: string): boolean {
+    return (
+      aiAgentTypeId === EAiAgentType.deepseek ||
+      aiAgentTypeId === EAiAgentType.others
+    );
+  }
+
   private normalizeEmbedding(embedding: number[]): number[] {
     if (embedding.length === this.embeddingDimensions) {
       return embedding;
@@ -243,14 +254,19 @@ export class EmbeddingService {
     return this.callOpenAiEmbeddingApi(baseUrl, apiKey, model, texts);
   }
 
-  private validateAiAgentConfig(aiAgent: {
-    base_url: string | null;
-    api_key: string | null;
-    embedding_model: string | null;
-  }): asserts aiAgent is {
+  private validateAiAgentConfig(
+    aiAgent: {
+      base_url: string | null;
+      api_key: string | null;
+      embedding_model: string | null;
+      ai_agent_type_id: string;
+    },
+    requireEmbedding: boolean = true
+  ): asserts aiAgent is {
     base_url: string;
     api_key: string;
     embedding_model: string;
+    ai_agent_type_id: string;
   } {
     if (!aiAgent.base_url || !aiAgent.api_key) {
       throw new InvalidConfigurationError(
@@ -258,7 +274,7 @@ export class EmbeddingService {
       );
     }
 
-    if (!aiAgent.embedding_model) {
+    if (requireEmbedding && !aiAgent.embedding_model) {
       throw new InvalidConfigurationError(
         'AI Agent embedding_model is not configured.'
       );
@@ -326,7 +342,14 @@ export class EmbeddingService {
       throw new Error('AI Agent not found.');
     }
 
-    this.validateAiAgentConfig(aiAgent);
+    const embeddingOptional = this.isEmbeddingOptional(
+      aiAgent.ai_agent_type_id
+    );
+    if (embeddingOptional && !aiAgent.embedding_model) {
+      return 0;
+    }
+
+    this.validateAiAgentConfig(aiAgent, true);
 
     if (!aiAgent.embedding_model) {
       throw new InvalidConfigurationError(
@@ -434,7 +457,14 @@ export class EmbeddingService {
       throw new Error('AI Agent not found.');
     }
 
-    this.validateAiAgentConfig(aiAgent);
+    const embeddingOptional = this.isEmbeddingOptional(
+      aiAgent.ai_agent_type_id
+    );
+    if (embeddingOptional && !aiAgent.embedding_model) {
+      return [];
+    }
+
+    this.validateAiAgentConfig(aiAgent, true);
 
     if (!aiAgent.embedding_model) {
       throw new InvalidConfigurationError(
@@ -505,29 +535,59 @@ export class EmbeddingService {
     aiAgentId: string
   ): Promise<boolean> {
     try {
-      const exists = await this.checkIndexExists();
+      const promptIndexExists = await this.checkIndexExists();
+      const chatHistoryIndexExists = await this.checkChatHistoryIndexExists();
 
-      if (!exists) {
-        return true;
+      const deletePromises: Promise<any>[] = [];
+
+      if (promptIndexExists) {
+        deletePromises.push(
+          this.elasticClient.deleteByQuery({
+            index: this.indexName,
+            query: {
+              bool: {
+                filter: [
+                  { term: { account_id: accountId } },
+                  { term: { ai_agent_id: aiAgentId } },
+                ],
+              },
+            },
+            refresh: true,
+          })
+        );
       }
 
-      await this.elasticClient.deleteByQuery({
-        index: this.indexName,
-        query: {
-          bool: {
-            filter: [
-              { term: { account_id: accountId } },
-              { term: { ai_agent_id: aiAgentId } },
-            ],
-          },
-        },
-        refresh: true,
-      });
+      if (chatHistoryIndexExists) {
+        deletePromises.push(
+          this.elasticClient.deleteByQuery({
+            index: this.chatHistoryIndexName,
+            query: {
+              bool: {
+                filter: [
+                  { term: { account_id: accountId } },
+                  { term: { ai_agent_id: aiAgentId } },
+                ],
+              },
+            },
+            refresh: true,
+          })
+        );
+      }
+
+      if (deletePromises.length > 0) {
+        await Promise.all(deletePromises);
+      }
 
       return true;
     } catch {
       return false;
     }
+  }
+
+  private async checkChatHistoryIndexExists(): Promise<boolean> {
+    return this.elasticClient.indices.exists({
+      index: this.chatHistoryIndexName,
+    });
   }
 
   private async ensureChatHistoryIndex(): Promise<void> {
@@ -562,7 +622,14 @@ export class EmbeddingService {
       throw new Error('AI Agent not found.');
     }
 
-    this.validateAiAgentConfig(aiAgent);
+    const embeddingOptional = this.isEmbeddingOptional(
+      aiAgent.ai_agent_type_id
+    );
+    if (embeddingOptional && !aiAgent.embedding_model) {
+      return 0;
+    }
+
+    this.validateAiAgentConfig(aiAgent, true);
 
     if (!aiAgent.embedding_model) {
       throw new InvalidConfigurationError(
@@ -784,7 +851,14 @@ export class EmbeddingService {
       return [];
     }
 
-    this.validateAiAgentConfig(aiAgent);
+    const embeddingOptional = this.isEmbeddingOptional(
+      aiAgent.ai_agent_type_id
+    );
+    if (embeddingOptional && !aiAgent.embedding_model) {
+      return [];
+    }
+
+    this.validateAiAgentConfig(aiAgent, false);
 
     if (!aiAgent.embedding_model) {
       return [];

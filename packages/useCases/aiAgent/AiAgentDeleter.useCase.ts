@@ -1,10 +1,14 @@
 import { injectable } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { AiAgentService } from '@core/services/aiAgent.service';
+import { EmbeddingService } from '@core/services/embedding.service';
 
 @injectable()
 export class AiAgentDeleterUseCase {
-  constructor(private readonly aiAgentService: AiAgentService) {}
+  constructor(
+    private readonly aiAgentService: AiAgentService,
+    private readonly embeddingService: EmbeddingService
+  ) {}
 
   async execute(
     t: TFunction<'translation', undefined>,
@@ -19,6 +23,13 @@ export class AiAgentDeleterUseCase {
     if (!aiAgentExists) {
       throw new Error(t('ai_agent_not_found'));
     }
+
+    await this.aiAgentService.deleteAiAgentPromptsByAgentId(
+      aiAgentId,
+      accountId
+    );
+
+    await this.embeddingService.deleteAgentEmbeddings(accountId, aiAgentId);
 
     const aiAgentDeleted = await this.aiAgentService.deleteAiAgentById(
       aiAgentId,

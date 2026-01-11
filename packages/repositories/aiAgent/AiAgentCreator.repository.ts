@@ -29,6 +29,10 @@ export class AiAgentCreatorRepository {
       return 'https://generativelanguage.googleapis.com/v1';
     }
 
+    if (aiAgentTypeId === EAiAgentType.deepseek) {
+      return 'https://api.deepseek.com/v1';
+    }
+
     return null;
   }
 

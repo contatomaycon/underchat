@@ -1,5 +1,5 @@
 import * as schema from '@core/models';
-import { aiAgent } from '@core/models';
+import { aiAgent, aiAgentPrompt } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { and, eq } from 'drizzle-orm';
@@ -9,6 +9,30 @@ export class AiAgentDeleterRepository {
   constructor(
     @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
+
+  deleteAiAgentPromptsByAgentId = async (
+    aiAgentId: string,
+    accountId: string
+  ): Promise<void> => {
+    const aiAgentExists = await this.dbRw.query.aiAgent.findFirst({
+      where: and(
+        eq(aiAgent.ai_agent_id, aiAgentId),
+        eq(aiAgent.account_id, accountId)
+      ),
+      columns: {
+        ai_agent_id: true,
+      },
+    });
+
+    if (!aiAgentExists) {
+      return;
+    }
+
+    await this.dbRw
+      .delete(aiAgentPrompt)
+      .where(eq(aiAgentPrompt.ai_agent_id, aiAgentId))
+      .execute();
+  };
 
   deleteAiAgentById = async (
     aiAgentId: string,
