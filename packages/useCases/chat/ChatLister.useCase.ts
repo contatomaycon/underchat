@@ -109,7 +109,10 @@ export class ChatListerUseCase {
       });
     }
 
-    if (query.filter_user_id) {
+    if (
+      query.filter_user_id &&
+      this.canListAllChatsWithoutSectorLimit(actions)
+    ) {
       filterClauses.push({
         nested: {
           path: 'user',
@@ -122,7 +125,10 @@ export class ChatListerUseCase {
       });
     }
 
-    if (query.filter_sector_id) {
+    if (
+      query.filter_sector_id &&
+      this.canListAllChatsWithoutSectorLimit(actions)
+    ) {
       filterClauses.push({
         nested: {
           path: 'sector',

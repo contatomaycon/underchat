@@ -936,27 +936,46 @@ export const useChatStore = defineStore('chat', {
       try {
         this.loading = true;
 
-        const request: SearchChatsQuery = {
+        const params: Record<string, any> = {
           current_page: input.current_page ?? 1,
           per_page: input.per_page ?? 20,
           search: input.search || '',
-          filter_status: input.filter_status,
-          filter_label_template_id: input.filter_label_template_id,
-          filter_worker_id: input.filter_worker_id,
-          filter_user_id: input.filter_user_id,
-          filter_sector_id: input.filter_sector_id,
-          filter_name: input.filter_name,
-          filter_phone: input.filter_phone,
-          filter_protocol: input.filter_protocol,
-          filter_date_start: input.filter_date_start,
-          filter_date_end: input.filter_date_end,
         };
+
+        if (input.filter_status) {
+          params.filter_status = input.filter_status;
+        }
+        if (input.filter_label_template_id) {
+          params.filter_label_template_id = input.filter_label_template_id;
+        }
+        if (input.filter_worker_id) {
+          params.filter_worker_id = input.filter_worker_id;
+        }
+        if (input.filter_user_id) {
+          params.filter_user_id = input.filter_user_id;
+        }
+        if (input.filter_sector_id) {
+          params.filter_sector_id = input.filter_sector_id;
+        }
+        if (input.filter_name) {
+          params.filter_name = input.filter_name;
+        }
+        if (input.filter_phone) {
+          params.filter_phone = input.filter_phone;
+        }
+        if (input.filter_protocol) {
+          params.filter_protocol = input.filter_protocol;
+        }
+        if (input.filter_date_start) {
+          params.filter_date_start = input.filter_date_start;
+        }
+        if (input.filter_date_end) {
+          params.filter_date_end = input.filter_date_end;
+        }
 
         const response = await axios.get<IApiResponse<SearchChatsResponse>>(
           `/chat/search`,
-          {
-            params: request,
-          }
+          { params }
         );
 
         this.loading = false;

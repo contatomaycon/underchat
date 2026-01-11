@@ -1,9 +1,8 @@
 <script lang="ts" setup>
-import { computed, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { useChatbotStore } from '@/@webcore/stores/chatbot';
 import { useChatStore } from '@/@webcore/stores/chat';
-import { ChatbotChatTagResponse } from '@core/schema/chatbot/listChatTags/response.schema';
+import { ListChatLabelTemplatesResponse } from '@core/schema/chat/listLabelTemplates/response.schema';
 import { ListChatWorkersResponse } from '@core/schema/chat/listChatWorkers/response.schema';
 import { ListChatUsersResponse } from '@core/schema/chat/listChatUsers/response.schema';
 import { ListChatSectorsResponse } from '@core/schema/chat/listChatSectors/response.schema';
@@ -11,6 +10,9 @@ import AppSelectSearch from '@/components/AppSelectSearch.vue';
 import AppDateTimePicker from '@/@webcore/components/app-form-elements/AppDateTimePicker.vue';
 import moment from 'moment-timezone';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
+import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
+import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
+import { can } from '@/@layouts/plugins/casl';
 
 const { t } = useI18n();
 
@@ -47,15 +49,22 @@ const FILTER_STATUS_ALL = '__all__';
 const props = defineProps<Props>();
 const emit = defineEmits<Emits>();
 
-const chatbotStore = useChatbotStore();
 const chatStore = useChatStore();
+
+const canUseUserAndSectorFilters = computed(() => {
+  return can([
+    EGeneralPermissions.full_access,
+    EGeneralPermissions.full_access_group,
+    EChatPermissions.list_all_chats_without_sector_limit,
+  ]);
+});
 
 const isVisible = computed({
   get: () => props.modelValue,
   set: (value) => emit('update:modelValue', value),
 });
 
-const tags = ref<ChatbotChatTagResponse[]>([]);
+const tags = ref<ListChatLabelTemplatesResponse[]>([]);
 const isLoadingTags = ref(false);
 
 const workers = ref<ListChatWorkersResponse>([]);
@@ -133,8 +142,8 @@ const loadTags = async () => {
 
   isLoadingTags.value = true;
   try {
-    const result = await chatbotStore.listChatbotTags();
-    tags.value = result;
+    const result = await chatStore.listLabelTemplates();
+    tags.value = result ?? [];
   } catch (error) {
     console.error('Error loading tags:', error);
     tags.value = [];
@@ -199,8 +208,14 @@ const handleSave = async () => {
     );
     emit('update:filterLabel', filterLabelTemplateId.value);
     emit('update:filterWorker', filterWorkerId.value);
-    emit('update:filterUser', filterUserId.value);
-    emit('update:filterSector', filterSectorId.value);
+    emit(
+      'update:filterUser',
+      canUseUserAndSectorFilters.value ? filterUserId.value : null
+    );
+    emit(
+      'update:filterSector',
+      canUseUserAndSectorFilters.value ? filterSectorId.value : null
+    );
     emit('update:filterName', filterName.value);
     emit('update:filterPhone', filterPhone.value);
     emit('update:filterProtocol', filterProtocol.value);
@@ -220,22 +235,20 @@ watch(isVisible, (visible) => {
   if (visible) {
     loadTags();
     loadWorkers();
-    loadUsers();
-    loadSectors();
-    filterStatus.value = props.filterStatus ?? FILTER_STATUS_ALL;
-    filterLabelTemplateId.value = props.filterLabel ?? null;
-    filterWorkerId.value = props.filterWorker ?? null;
-    filterUserId.value = props.filterUser ?? null;
-    filterSectorId.value = props.filterSector ?? null;
-    filterName.value = props.filterName ?? null;
-    filterPhone.value = props.filterPhone ?? null;
-    filterProtocol.value = props.filterProtocol ?? null;
-    filterDateStart.value = props.filterDateStart
-      ? new Date(props.filterDateStart)
-      : null;
-    filterDateEnd.value = props.filterDateEnd
-      ? new Date(props.filterDateEnd)
-      : null;
+    if (canUseUserAndSectorFilters.value) {
+      loadUsers();
+      loadSectors();
+    }
+    filterStatus.value = FILTER_STATUS_ALL;
+    filterLabelTemplateId.value = null;
+    filterWorkerId.value = null;
+    filterUserId.value = null;
+    filterSectorId.value = null;
+    filterName.value = null;
+    filterPhone.value = null;
+    filterProtocol.value = null;
+    filterDateStart.value = null;
+    filterDateEnd.value = null;
   }
 });
 
@@ -263,14 +276,18 @@ watch(
 watch(
   () => props.filterUser,
   (newValue) => {
-    filterUserId.value = newValue ?? null;
+    filterUserId.value = canUseUserAndSectorFilters.value
+      ? (newValue ?? null)
+      : null;
   }
 );
 
 watch(
   () => props.filterSector,
   (newValue) => {
-    filterSectorId.value = newValue ?? null;
+    filterSectorId.value = canUseUserAndSectorFilters.value
+      ? (newValue ?? null)
+      : null;
   }
 );
 
@@ -370,7 +387,7 @@ watch(
             </template>
           </VCol>
 
-          <VCol cols="12" md="6">
+          <VCol v-if="canUseUserAndSectorFilters" cols="12" md="6">
             <VLabel class="text-body-2 mb-1"
               >{{ $t('filter_by_sector') }}:</VLabel
             >
@@ -436,7 +453,7 @@ watch(
             </template>
           </VCol>
 
-          <VCol cols="12" md="6">
+          <VCol v-if="canUseUserAndSectorFilters" cols="12" md="6">
             <VLabel class="text-body-2 mb-1"
               >{{ $t('filter_by_attendant') }}:</VLabel
             >

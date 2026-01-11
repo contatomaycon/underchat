@@ -80,6 +80,7 @@ const availableWorkers = ref<TransferWorker[]>([]);
 const availableSectors = ref<TransferSector[]>([]);
 const workerConfigForChat = ref<ViewWorkerConfigForChatResponse | null>(null);
 const isAdvancedFiltersModalOpen = ref(false);
+const hasAppliedAdvancedFilters = ref(false);
 
 const chatbotPagings = ref({
   current_page: 1,
@@ -182,6 +183,7 @@ const filteredMyChats = computed(() => {
 
 const hasActiveFilters = computed(() => {
   return !!(
+    hasAppliedAdvancedFilters.value ||
     searchQuery.value?.trim() ||
     currentFilterStatus.value ||
     currentFilterLabelTemplateId.value ||
@@ -404,6 +406,8 @@ const handleFilterClick = (filter: FilterType) => {
 };
 
 const handleFiltersUpdated = async () => {
+  hasAppliedAdvancedFilters.value = true;
+
   if (
     activeFilter.value !== 'all' &&
     activeFilter.value !== 'my_chats' &&
@@ -455,6 +459,7 @@ const handleClearFilters = async () => {
   currentFilterProtocol.value = null;
   currentFilterDateStart.value = null;
   currentFilterDateEnd.value = null;
+  hasAppliedAdvancedFilters.value = false;
 
   allChatsWithFiltersPagings.value = {
     current_page: 1,

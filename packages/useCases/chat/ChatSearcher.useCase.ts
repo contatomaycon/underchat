@@ -54,33 +54,6 @@ export class ChatSearcherUseCase {
     const perPage = query.per_page ?? 10;
     const searchTerm = query.search?.trim() || '';
 
-    const hasFilters =
-      query.filter_status ||
-      query.filter_label_template_id ||
-      query.filter_worker_id ||
-      query.filter_user_id ||
-      query.filter_sector_id ||
-      query.filter_name ||
-      query.filter_phone ||
-      query.filter_protocol ||
-      query.filter_date_start ||
-      query.filter_date_end;
-
-    if (!searchTerm && !hasFilters) {
-      const pagings = setPaginationData(0, 0, perPage, currentPage);
-      return {
-        pagings,
-        results: [],
-        counts: {
-          queue: 0,
-          in_chat: 0,
-          chatbot: 0,
-          closed: 0,
-          my_chats: 0,
-        },
-      };
-    }
-
     const mustClauses: IElasticsearchBoolClause[] = [
       {
         nested: {
@@ -131,7 +104,10 @@ export class ChatSearcherUseCase {
       });
     }
 
-    if (query.filter_user_id) {
+    if (
+      query.filter_user_id &&
+      this.canListAllChatsWithoutSectorLimit(actions)
+    ) {
       filterClauses.push({
         nested: {
           path: 'user',
@@ -144,7 +120,10 @@ export class ChatSearcherUseCase {
       });
     }
 
-    if (query.filter_sector_id) {
+    if (
+      query.filter_sector_id &&
+      this.canListAllChatsWithoutSectorLimit(actions)
+    ) {
       filterClauses.push({
         nested: {
           path: 'sector',
