@@ -6,6 +6,7 @@ import { ContactService } from '@core/services/contact.service';
 import { ListChatContactsResponse } from '@core/schema/chat/listContacts/response.schema';
 import { ListChatContactsRequest } from '@core/schema/chat/listContacts/request.schema';
 import { ViewChatContactResponse } from '@core/schema/chat/viewContact/response.schema';
+import { ViewChatContactByPhoneResponse } from '@core/schema/chat/viewContactByPhone/response.schema';
 import { ViewChatContactsBatchResponse } from '@core/schema/chat/viewContactsBatch/response.schema';
 import { ListChatLabelTemplatesResponse } from '@core/schema/chat/listLabelTemplates/response.schema';
 import { EncryptService } from '@core/services/encrypt.service';
@@ -79,6 +80,25 @@ export class ChatContactService {
     return this.chatContactViewerRepository.viewChatContactById(
       contactId,
       accountId
+    );
+  };
+
+  viewChatContactByPhone = async (
+    accountId: string,
+    phone: string,
+    phoneDdi: string
+  ): Promise<ViewChatContactByPhoneResponse | null> => {
+    const phoneDigits = onlyDigits(phone);
+    const phoneDdiToSave = phoneDdi ?? '55';
+    const phoneCandidates = buildCandidatesWithDdi(phoneDigits, phoneDdiToSave);
+    const phonesC = phoneCandidates.map((phone) =>
+      this.encryptService.encrypt(phone)
+    );
+
+    return this.chatContactViewerRepository.viewChatContactByPhone(
+      accountId,
+      phonesC,
+      phoneDdiToSave
     );
   };
 

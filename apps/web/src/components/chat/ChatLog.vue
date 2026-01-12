@@ -247,6 +247,23 @@ const handleContactClick = async (message: ListMessageResult) => {
   const phone = contact.phone ?? contact.phone_partial;
   const phoneDdi = contact.phone_ddi ?? '55';
 
+  if (phone) {
+    const phoneSearch = phone.replaceAll(/\D/g, '');
+    const foundContact = await chatStore.getChatContactByPhone(
+      phoneSearch,
+      phoneDdi
+    );
+
+    if (foundContact) {
+      globalThis.dispatchEvent(
+        new CustomEvent('open-edit-contact-modal', {
+          detail: foundContact.contact_id,
+        })
+      );
+      return;
+    }
+  }
+
   const contactData: Partial<CreateContactRequest> = {
     name: contact.name ?? undefined,
     last_name: contact.last_name ?? undefined,
@@ -1726,24 +1743,24 @@ onUnmounted(() => {
             :class="i % 2 === 0 ? 'wrapper-operator' : 'wrapper-client'"
             style="max-width: 100%; min-width: 0; width: fit-content"
           >
-              <div
-                class="chat-content skeleton-content py-2 px-2 elevation-2"
-                :class="i % 2 === 0 ? 'chat-right' : 'chat-left'"
-                :style="{
-                  backgroundColor:
-                    i % 2 === 0
-                      ? 'rgb(217, 253, 211)'
-                      : 'rgb(var(--v-theme-surface))',
-                  maxWidth: '100%',
-                  width: 'auto',
-                  wordWrap: 'break-word',
-                  overflowWrap: 'break-word',
-                  boxSizing: 'border-box',
-                  overflow: 'visible',
-                  borderRadius: '4px',
-                  minWidth: '120px',
-                }"
-              >
+            <div
+              class="chat-content skeleton-content py-2 px-2 elevation-2"
+              :class="i % 2 === 0 ? 'chat-right' : 'chat-left'"
+              :style="{
+                backgroundColor:
+                  i % 2 === 0
+                    ? 'rgb(217, 253, 211)'
+                    : 'rgb(var(--v-theme-surface))',
+                maxWidth: '100%',
+                width: 'auto',
+                wordWrap: 'break-word',
+                overflowWrap: 'break-word',
+                boxSizing: 'border-box',
+                overflow: 'visible',
+                borderRadius: '4px',
+                minWidth: '120px',
+              }"
+            >
               <div class="skeleton-loader-wrapper">
                 <VSkeletonLoader
                   :type="i % 3 === 0 ? 'text' : 'sentences'"

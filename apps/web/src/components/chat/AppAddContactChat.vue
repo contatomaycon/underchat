@@ -9,6 +9,7 @@ import { EContactDocumentType } from '@core/common/enums/EContactDocumentType';
 import { EContactIgnore } from '@core/common/enums/EContactIgnore';
 import { validateCpf } from '@core/common/functions/validateCpf';
 import { validateCnpj } from '@core/common/functions/validateCnpj';
+import { extractPhoneAndDdi } from '@core/common/functions/extractPhoneAndDdi';
 
 const chatStore = useChatStore();
 const { items: countryCodes } = useCountryCodes();
@@ -245,8 +246,30 @@ const addContact = async () => {
       ? photoPreview.value
       : null;
 
-  const shouldLinkToActiveChat =
-    !!chatStore.activeChat?.chat_id && !chatStore.activeChat?.contact?.id;
+  const activeChat = chatStore.activeChat;
+  const hasActiveChatWithoutContact =
+    !!activeChat?.chat_id && !activeChat?.contact?.id;
+
+  let shouldLinkToActiveChat = false;
+
+  if (hasActiveChatWithoutContact && activeChat.phone) {
+    const activeChatPhoneStr = activeChat.phone.startsWith('+')
+      ? activeChat.phone
+      : `+${activeChat.phone}`;
+    const activeChatPhoneParsed = extractPhoneAndDdi(activeChatPhoneStr);
+
+    const contactPhoneStr = `+${phone_ddi.value}${phoneNumber}`;
+    const contactPhoneParsed = extractPhoneAndDdi(contactPhoneStr);
+
+    if (
+      activeChatPhoneParsed &&
+      contactPhoneParsed &&
+      activeChatPhoneParsed.phone === contactPhoneParsed.phone &&
+      activeChatPhoneParsed.phone_ddi === contactPhoneParsed.phone_ddi
+    ) {
+      shouldLinkToActiveChat = true;
+    }
+  }
 
   isLoadingAddContact.value = true;
 
@@ -269,9 +292,7 @@ const addContact = async () => {
           value: (ignore.value as EContactIgnore) ?? EContactIgnore.not_ignore,
         },
         image_url: imageUrl,
-        chat_id: shouldLinkToActiveChat
-          ? chatStore.activeChat?.chat_id
-          : undefined,
+        chat_id: shouldLinkToActiveChat ? activeChat?.chat_id : undefined,
       },
       imageUrl ? null : photoFile.value
     );

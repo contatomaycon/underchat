@@ -7,6 +7,7 @@ import {
   userInfo,
 } from '@core/models';
 import { ViewChatContactResponse } from '@core/schema/chat/viewContact/response.schema';
+import { ViewChatContactByPhoneResponse } from '@core/schema/chat/viewContactByPhone/response.schema';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
@@ -97,6 +98,34 @@ export class ChatContactViewerRepository {
     };
 
     return formattedResult as ViewChatContactResponse;
+  };
+
+  viewChatContactByPhone = async (
+    accountId: string,
+    phonesC: string[],
+    phoneDdi: string
+  ): Promise<ViewChatContactByPhoneResponse | null> => {
+    const result = await this.dbRo
+      .select({
+        contact_id: contact.contact_id,
+      })
+      .from(contact)
+      .where(
+        and(
+          eq(contact.account_id, accountId),
+          inArray(contact.phone_c, phonesC),
+          eq(contact.phone_ddi, phoneDdi),
+          isNull(contact.deleted_at)
+        )
+      )
+      .limit(1)
+      .execute();
+
+    if (!result.length) {
+      return null;
+    }
+
+    return result[0];
   };
 
   viewChatContactsByIds = async (

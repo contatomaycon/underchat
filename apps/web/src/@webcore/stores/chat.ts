@@ -43,6 +43,7 @@ import { EPermissionsRoles } from '@core/common/enums/EPermissions';
 import { SearchMessagesResponse } from '@core/schema/chat/searchMessages/response.schema';
 import { ListChatContactsFinalResponse } from '@core/schema/chat/listContacts/response.schema';
 import { ViewChatContactResponse } from '@core/schema/chat/viewContact/response.schema';
+import { ViewChatContactByPhoneResponse } from '@core/schema/chat/viewContactByPhone/response.schema';
 import { ViewChatContactEmailResponse } from '@core/schema/chat/viewContactEmail/response.schema';
 import { ViewChatContactPhoneResponse } from '@core/schema/chat/viewContactPhone/response.schema';
 import { ViewChatContactDocumentResponse } from '@core/schema/chat/viewContactDocument/response.schema';
@@ -2191,6 +2192,32 @@ export const useChatStore = defineStore('chat', {
         return data.data;
       } catch {
         delete this.loadingChatContacts[contactId];
+        return null;
+      }
+    },
+
+    async getChatContactByPhone(
+      phone: string,
+      phoneDdi: string
+    ): Promise<ViewChatContactByPhoneResponse | null> {
+      try {
+        const response = await axios.get<
+          IApiResponse<ViewChatContactByPhoneResponse>
+        >('/chat/contacts/by-phone', {
+          params: {
+            phone,
+            phone_ddi: phoneDdi,
+          },
+        });
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        return data.data;
+      } catch {
         return null;
       }
     },
