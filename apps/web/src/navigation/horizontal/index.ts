@@ -187,6 +187,7 @@ export default [
     permissions: [
       EGeneralPermissions.full_access,
       EGeneralPermissions.full_access_group,
+      EAccountPermissions.account_group,
     ],
   },
   {

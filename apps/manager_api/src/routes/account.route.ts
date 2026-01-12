@@ -1,11 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { container } from 'tsyringe';
-import {
-  accountCreatePermissions,
-  accountDeletePermissions,
-  accountUpdatePermissions,
-  accountViewPermissions,
-} from '@/permissions';
+import { accountPermissions } from '@/permissions';
 import AccountController from '@/controllers/account';
 import { listAccountSchema } from '@core/schema/account/listAccount';
 import { createAccountSchema } from '@core/schema/account/createAccount';
@@ -34,7 +29,7 @@ export default async function accountRoutes(server: FastifyInstance) {
     handler: accountController.listAllAccounts,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, accountViewPermissions),
+        server.authenticateJwt(request, reply, accountPermissions),
     ],
   });
 
@@ -43,7 +38,7 @@ export default async function accountRoutes(server: FastifyInstance) {
     handler: accountController.listAllAccountsWithDetails,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, accountViewPermissions),
+        server.authenticateJwt(request, reply, accountPermissions),
     ],
   });
 
@@ -52,7 +47,7 @@ export default async function accountRoutes(server: FastifyInstance) {
     handler: accountController.listAccount,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, accountViewPermissions),
+        server.authenticateJwt(request, reply, accountPermissions),
     ],
   });
 
@@ -61,7 +56,7 @@ export default async function accountRoutes(server: FastifyInstance) {
     handler: accountController.createAccount,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, accountCreatePermissions),
+        server.authenticateJwt(request, reply, accountPermissions),
     ],
   });
 
@@ -70,7 +65,7 @@ export default async function accountRoutes(server: FastifyInstance) {
     handler: accountController.viewAccount,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, accountViewPermissions),
+        server.authenticateJwt(request, reply, accountPermissions),
     ],
   });
 
@@ -79,7 +74,7 @@ export default async function accountRoutes(server: FastifyInstance) {
     handler: accountController.deleteAccount,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, accountDeletePermissions),
+        server.authenticateJwt(request, reply, accountPermissions),
     ],
   });
 
@@ -88,7 +83,7 @@ export default async function accountRoutes(server: FastifyInstance) {
     handler: accountController.updateAccount,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, accountUpdatePermissions),
+        server.authenticateJwt(request, reply, accountPermissions),
     ],
   });
 
@@ -97,7 +92,7 @@ export default async function accountRoutes(server: FastifyInstance) {
     handler: accountController.viewAccountInfo,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, accountViewPermissions),
+        server.authenticateJwt(request, reply, accountPermissions),
     ],
   });
 
@@ -106,7 +101,7 @@ export default async function accountRoutes(server: FastifyInstance) {
     handler: accountController.createAccountInfo,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, accountCreatePermissions),
+        server.authenticateJwt(request, reply, accountPermissions),
     ],
   });
 
@@ -115,7 +110,7 @@ export default async function accountRoutes(server: FastifyInstance) {
     handler: accountController.updateAccountInfo,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, accountUpdatePermissions),
+        server.authenticateJwt(request, reply, accountPermissions),
     ],
   });
 
@@ -124,7 +119,7 @@ export default async function accountRoutes(server: FastifyInstance) {
     handler: accountController.listAccountSubscriptions,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, accountViewPermissions),
+        server.authenticateJwt(request, reply, accountPermissions),
     ],
   });
 
@@ -133,7 +128,7 @@ export default async function accountRoutes(server: FastifyInstance) {
     handler: accountController.viewPlanAccount,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, accountViewPermissions),
+        server.authenticateJwt(request, reply, accountPermissions),
     ],
   });
 
@@ -142,7 +137,7 @@ export default async function accountRoutes(server: FastifyInstance) {
     handler: accountController.updatePlanAccount,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, accountUpdatePermissions),
+        server.authenticateJwt(request, reply, accountPermissions),
     ],
   });
 
@@ -151,7 +146,7 @@ export default async function accountRoutes(server: FastifyInstance) {
     handler: accountController.listPlanAccountExclusive,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, accountViewPermissions),
+        server.authenticateJwt(request, reply, accountPermissions),
     ],
   });
 
@@ -160,7 +155,7 @@ export default async function accountRoutes(server: FastifyInstance) {
     handler: accountController.listExclusivePlans,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, accountViewPermissions),
+        server.authenticateJwt(request, reply, accountPermissions),
     ],
   });
 
@@ -169,7 +164,7 @@ export default async function accountRoutes(server: FastifyInstance) {
     handler: accountController.createPlanAccountExclusive,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, accountUpdatePermissions),
+        server.authenticateJwt(request, reply, accountPermissions),
     ],
   });
 
@@ -178,7 +173,7 @@ export default async function accountRoutes(server: FastifyInstance) {
     handler: accountController.deletePlanAccountExclusive,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, accountUpdatePermissions),
+        server.authenticateJwt(request, reply, accountPermissions),
     ],
   });
 
@@ -187,7 +182,7 @@ export default async function accountRoutes(server: FastifyInstance) {
     handler: accountController.blockAccount,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, accountUpdatePermissions),
+        server.authenticateJwt(request, reply, accountPermissions),
     ],
   });
 
@@ -196,7 +191,7 @@ export default async function accountRoutes(server: FastifyInstance) {
     handler: accountController.unblockAccount,
     preHandler: [
       (request, reply) =>
-        server.authenticateJwt(request, reply, accountUpdatePermissions),
+        server.authenticateJwt(request, reply, accountPermissions),
     ],
   });
 }

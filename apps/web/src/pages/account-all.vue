@@ -6,7 +6,6 @@ import { useI18n } from 'vue-i18n';
 import { formatDateTime } from '@core/common/functions/formatDateTime';
 import { SortRequest } from '@core/schema/common/sortRequestSchema';
 import { DataTableHeader } from 'vuetify';
-import { EAccountPermissions } from '@core/common/enums/EPermissions/account';
 import { useAccountStore } from '@/@webcore/stores/account';
 import { useAccountSettingsStore } from '@/@webcore/stores/accountSettings';
 import { EAccountStatus } from '@core/common/enums/EAccountStatus';
@@ -25,19 +24,7 @@ definePage({
   },
 });
 
-const permissionsEdit = [
-  EGeneralPermissions.full_access,
-  EGeneralPermissions.full_access_group,
-];
-const permissionsDelete = [
-  EGeneralPermissions.full_access,
-  EGeneralPermissions.full_access_group,
-];
-const permissionsCreate = [
-  EGeneralPermissions.full_access,
-  EGeneralPermissions.full_access_group,
-];
-const permissionsCustomize = [
+const permissionsAccount = [
   EGeneralPermissions.full_access,
   EGeneralPermissions.full_access_group,
 ];
@@ -247,7 +234,7 @@ watch(
             </div>
 
             <VBtn
-              v-if="$canPermission(permissionsCreate)"
+              v-if="$canPermission(permissionsAccount)"
               prepend-icon="tabler-plus"
               @click="isAddAccountVisible = true"
             >
@@ -384,7 +371,7 @@ watch(
 
             <template #item.actions="{ item }">
               <div class="d-flex gap-1">
-                <IconBtn v-if="$canPermission(permissionsCustomize)"
+                <IconBtn v-if="$canPermission(permissionsAccount)"
                   ><VTooltip
                     location="top"
                     transition="scale-transition"
@@ -421,7 +408,7 @@ watch(
                 /></IconBtn>
 
                 <IconBtn
-                  v-if="$canPermission(permissionsEdit) && item?.account_id"
+                  v-if="$canPermission(permissionsAccount) && item?.account_id"
                   ><VTooltip
                     location="top"
                     transition="scale-transition"
@@ -435,7 +422,7 @@ watch(
 
                 <IconBtn
                   v-if="
-                    $canPermission(permissionsEdit) &&
+                    $canPermission(permissionsAccount) &&
                     item.account_id &&
                     item.account_status?.account_status_id !==
                       EAccountStatus.blocked
@@ -453,7 +440,7 @@ watch(
 
                 <IconBtn
                   v-if="
-                    $canPermission(permissionsEdit) &&
+                    $canPermission(permissionsAccount) &&
                     item.account_id &&
                     item.account_status?.account_status_id ===
                       EAccountStatus.blocked
@@ -470,7 +457,7 @@ watch(
                 /></IconBtn>
 
                 <IconBtn
-                  v-if="$canPermission(permissionsDelete) && item.account_id"
+                  v-if="$canPermission(permissionsAccount) && item.account_id"
                   ><VTooltip
                     location="top"
                     transition="scale-transition"

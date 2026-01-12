@@ -28,7 +28,8 @@ export const updateRolePermissions = async (
       request.params.permission_role_id,
       request.body.groups,
       tokenJwtData.account_id,
-      tokenJwtData.permission_role_id
+      tokenJwtData.permission_role_id,
+      tokenJwtData.actions
     );
 
     return sendResponse(reply, {

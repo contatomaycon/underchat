@@ -1,33 +1,14 @@
-import { EAccountPermissions } from '@core/common/enums/EPermissions/account';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
+import { EAccountPermissions } from '@core/common/enums/EPermissions/account';
 
-export const accountViewPermissions = [
+export const accountPermissions = [
   EGeneralPermissions.full_access,
   EGeneralPermissions.full_access_group,
-  EAccountPermissions.account_group,
-  EAccountPermissions.account_view,
 ];
-export const accountDeletePermissions = [
-  EGeneralPermissions.full_access,
-  EGeneralPermissions.full_access_group,
-  EAccountPermissions.account_group,
-  EAccountPermissions.account_delete,
-];
-export const accountUpdatePermissions = [
-  EGeneralPermissions.full_access,
-  EGeneralPermissions.full_access_group,
-  EAccountPermissions.account_group,
-  EAccountPermissions.account_update,
-];
+
 export const accountCustomizePermissions = [
   EGeneralPermissions.full_access,
   EGeneralPermissions.full_access_group,
   EAccountPermissions.account_group,
   EAccountPermissions.account_customize,
-];
-export const accountCreatePermissions = [
-  EGeneralPermissions.full_access,
-  EGeneralPermissions.full_access_group,
-  EAccountPermissions.account_group,
-  EAccountPermissions.account_create,
 ];
