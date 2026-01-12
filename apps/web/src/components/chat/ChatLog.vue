@@ -70,6 +70,8 @@ const editMessageText = ref<string>('');
 const editHistoryModalOpen = ref(false);
 const viewingEditHistory = ref<ListMessageResult | null>(null);
 
+const loadingContactCards = ref<Set<string>>(new Set());
+
 const mapStyle = computed(() => {
   return {
     version: 8,
@@ -248,21 +250,30 @@ const handleContactClick = async (message: ListMessageResult) => {
   const phoneDdi = contact.phone_ddi ?? '55';
 
   if (phone) {
-    const phoneSearch = phone.replaceAll(/\D/g, '');
-    const foundContact = await chatStore.getChatContactByPhone(
-      phoneSearch,
-      phoneDdi
-    );
+    loadingContactCards.value.add(message.message_id);
 
-    if (foundContact) {
-      globalThis.dispatchEvent(
-        new CustomEvent('open-edit-contact-modal', {
-          detail: foundContact.contact_id,
-        })
+    try {
+      const phoneSearch = phone.replaceAll(/\D/g, '');
+      const foundContact = await chatStore.getChatContactByPhone(
+        phoneSearch,
+        phoneDdi
       );
-      return;
+
+      if (foundContact) {
+        loadingContactCards.value.delete(message.message_id);
+        globalThis.dispatchEvent(
+          new CustomEvent('open-edit-contact-modal', {
+            detail: foundContact.contact_id,
+          })
+        );
+        return;
+      }
+    } catch {
+      loadingContactCards.value.delete(message.message_id);
     }
   }
+
+  loadingContactCards.value.delete(message.message_id);
 
   const contactData: Partial<CreateContactRequest> = {
     name: contact.name ?? undefined,
@@ -2732,7 +2743,7 @@ onUnmounted(() => {
                     ]"
                   >
                     <div
-                      class="contact-item d-flex align-center gap-3 pa-3"
+                      class="contact-item d-flex align-center gap-3 pa-3 position-relative"
                       :class="{
                         'contact-item--clickable': !item.message.deleted,
                       }"
@@ -2744,6 +2755,24 @@ onUnmounted(() => {
                       }"
                       @click="handleContactClick(item.message)"
                     >
+                      <VOverlay
+                        :model-value="
+                          loadingContactCards.has(item.message.message_id)
+                        "
+                        contained
+                        class="align-center justify-center"
+                        scrim="rgba(var(--v-theme-surface), 0.7)"
+                        style="border-radius: 8px"
+                      >
+                        <div class="contact-loading-wave">
+                          <div
+                            v-for="i in 5"
+                            :key="i"
+                            class="contact-loading-wave-bar"
+                            :style="{ animationDelay: `${(i - 1) * 0.1}s` }"
+                          ></div>
+                        </div>
+                      </VOverlay>
                       <VAvatar
                         size="40"
                         :variant="
@@ -4901,6 +4930,34 @@ onUnmounted(() => {
 
   &:active {
     transform: scale(0.99);
+  }
+}
+
+.contact-loading-wave {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 32px;
+}
+
+.contact-loading-wave-bar {
+  width: 3px;
+  height: 20px;
+  background: rgb(var(--v-theme-primary));
+  border-radius: 2px;
+  animation: contact-wave 1.2s ease-in-out infinite;
+}
+
+@keyframes contact-wave {
+  0%,
+  100% {
+    transform: scaleY(0.4);
+    opacity: 0.7;
+  }
+  50% {
+    transform: scaleY(1);
+    opacity: 1;
   }
 }
 

@@ -35,7 +35,7 @@ export const viewContactByPhone = async (
 
     return sendResponse(reply, {
       message: t('contact_not_found'),
-      httpStatusCode: EHTTPStatusCode.bad_request,
+      httpStatusCode: EHTTPStatusCode.not_found,
     });
   } catch (error) {
     handleControllerError(error, reply, t);
