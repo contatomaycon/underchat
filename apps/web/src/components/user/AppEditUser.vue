@@ -444,21 +444,30 @@ const rules = {
 };
 
 const getPhoneFormattedValue = (): string => {
-  if (isPhoneDecrypted.value && phone.value) {
-    return formatPhone(phone.value);
+  if (isPhoneDecrypted.value) {
+    if (phone.value) {
+      return formatPhone(phone.value);
+    }
+
+    return '';
   }
+
   if (phone.value && !isPhoneDecrypted.value) {
     return formatPhone(phone.value);
   }
+
   return phonePartialOriginal.value ?? '';
 };
 
 const setPhoneFormattedValue = (value: string) => {
   if (isPhoneDecrypted.value) {
     phone.value = value.replaceAll(/\D/g, '');
+
     return;
   }
+
   const numbers = value.replaceAll(/\D/g, '');
+
   phone.value = numbers;
   phonePartialOriginal.value = value;
 };
@@ -468,18 +477,23 @@ const phoneFormatted = computed({
   set: setPhoneFormattedValue,
 });
 
+const hasPhone = computed(() => !!phone.value || !!phonePartialOriginal.value);
+
 const getEmailFormattedValue = (): string => {
   if (isEmailDecrypted.value) {
     return email.value ?? '';
   }
+
   return emailPartialOriginal.value ?? '';
 };
 
 const setEmailFormattedValue = (value: string) => {
   if (isEmailDecrypted.value) {
     email.value = value;
+
     return;
   }
+
   emailPartialOriginal.value = value;
   email.value = value;
 };
@@ -493,14 +507,17 @@ const getAddress1FormattedValue = (): string => {
   if (isAddress1Decrypted.value) {
     return address1.value ?? '';
   }
+
   return address1PartialOriginal.value ?? '';
 };
 
 const setAddress1FormattedValue = (value: string) => {
   if (isAddress1Decrypted.value) {
     address1.value = value;
+
     return;
   }
+
   address1PartialOriginal.value = value;
   address1.value = value;
 };
@@ -514,14 +531,17 @@ const getAddress2FormattedValue = (): string => {
   if (isAddress2Decrypted.value) {
     return address2.value ?? '';
   }
+
   return address2PartialOriginal.value ?? '';
 };
 
 const setAddress2FormattedValue = (value: string) => {
   if (isAddress2Decrypted.value) {
     address2.value = value;
+
     return;
   }
+
   address2PartialOriginal.value = value;
   address2.value = value;
 };
@@ -581,6 +601,16 @@ const togglePhoneVisibility = async () => {
   }
 
   await decryptPhone();
+};
+
+const clearPhone = () => {
+  phone.value = null;
+  phonePartialOriginal.value = null;
+  if (initialValues.value.phone) {
+    isPhoneDecrypted.value = true;
+  } else {
+    isPhoneDecrypted.value = false;
+  }
 };
 
 const startEditEmail = async () => {
@@ -840,30 +870,27 @@ const determineEmailToSave = (): string | null | undefined => {
 };
 
 const determinePhoneToSave = (): string | null | undefined => {
-  const phoneValue = phone.value ? phone.value.replaceAll(/\D/g, '') : '';
   const phoneOriginalNumbers = initialValues.value.phone
     ? initialValues.value.phone.replaceAll(/\D/g, '')
     : '';
 
-  if (!phoneValue) {
-    return undefined;
-  }
-
-  if (isPhoneDecrypted.value) {
-    if (phoneValue !== phoneOriginalNumbers) {
-      return phoneValue;
+  if (!isPhoneDecrypted.value) {
+    if (!phonePartialOriginal.value?.includes('*') && phone.value) {
+      const phoneValue = phone.value.replaceAll(/\D/g, '');
+      if (phoneValue !== phoneOriginalNumbers) {
+        return phoneValue;
+      }
     }
     return undefined;
   }
 
-  if (
-    !phonePartialOriginal.value?.includes('*') &&
-    phoneValue !== phoneOriginalNumbers
-  ) {
-    return phoneValue;
-  }
+  const phoneValue = phone.value ? phone.value.replaceAll(/\D/g, '') : '';
 
-  return undefined;
+  if (phoneValue === phoneOriginalNumbers) return undefined;
+
+  if (!phoneValue) return null;
+
+  return phoneValue;
 };
 
 const determineDocumentToSave = (): string | null | undefined => {
@@ -1658,7 +1685,7 @@ const buildUpdateUserBody = (): UpdateUserRequest => {
   );
 
   const phoneToSave = determinePhoneToSave();
-  addFieldIfDefined(body, 'phone', phoneToSave);
+  addFieldIfDefinedOrNull(body, 'phone', phoneToSave);
 
   addFieldIfChanged(body, 'name', name.value, initialValues.value.name);
 
@@ -2699,14 +2726,24 @@ watch(
                       @click="startEditPhone"
                     >
                       <template #append-inner>
-                        <VIcon
-                          :icon="
-                            isPhoneDecrypted ? 'tabler-eye-off' : 'tabler-eye'
-                          "
-                          class="cursor-pointer"
-                          :class="{ 'opacity-50': isLoadingPhone }"
-                          @click.stop="togglePhoneVisibility"
-                        />
+                        <div class="d-flex align-center ga-2">
+                          <VIcon
+                            v-if="hasPhone"
+                            icon="tabler-x"
+                            class="cursor-pointer"
+                            @click.stop.prevent="clearPhone"
+                            @mousedown.stop
+                          />
+                          <VIcon
+                            :icon="
+                              isPhoneDecrypted ? 'tabler-eye-off' : 'tabler-eye'
+                            "
+                            class="cursor-pointer"
+                            :class="{ 'opacity-50': isLoadingPhone }"
+                            @click.stop.prevent="togglePhoneVisibility"
+                            @mousedown.stop
+                          />
+                        </div>
                       </template>
                     </AppTextField>
                   </VCol>
