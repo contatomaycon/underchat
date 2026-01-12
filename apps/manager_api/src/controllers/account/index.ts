@@ -18,6 +18,9 @@ import { listExclusivePlans } from './methods/listExclusivePlans';
 import { listAllAccountsWithDetails } from './methods/listAllAccountsWithDetails';
 import { blockAccount } from './methods/blockAccount';
 import { unblockAccount } from './methods/unblockAccount';
+import { listAccountPayments } from './methods/listAccountPayments';
+import { viewAccountPaymentNfse } from './methods/viewAccountPaymentNfse';
+import { generateAccountPaymentNfse } from './methods/generateAccountPaymentNfse';
 
 @injectable()
 class AccountController {
@@ -40,6 +43,9 @@ class AccountController {
   public listAllAccountsWithDetails = listAllAccountsWithDetails;
   public blockAccount = blockAccount;
   public unblockAccount = unblockAccount;
+  public listAccountPayments = listAccountPayments;
+  public viewAccountPaymentNfse = viewAccountPaymentNfse;
+  public generateAccountPaymentNfse = generateAccountPaymentNfse;
 }
 
 export default AccountController;

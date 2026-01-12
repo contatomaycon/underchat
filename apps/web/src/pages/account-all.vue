@@ -13,6 +13,7 @@ import { ListAccountResponse } from '@core/schema/account/listAccount/response.s
 import { EColor } from '@core/common/enums/EColor';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import AppAccountExclusivePlans from '@/components/account/AppAccountExclusivePlans.vue';
+import AppAccountInvoices from '@/components/account/AppAccountInvoices.vue';
 import { EAccountFilterStatus } from '@core/common/enums/EAccountFilterStatus';
 
 definePage({
@@ -92,6 +93,8 @@ const accountSubscriptions = ref<string | null>(null);
 const isDialogAccountSubscriptionsShow = ref(false);
 const accountExclusivePlans = ref<string | null>(null);
 const isDialogAccountExclusivePlansShow = ref(false);
+const accountInvoices = ref<string | null>(null);
+const isDialogAccountInvoicesShow = ref(false);
 
 const headers: DataTableHeader<ListAccountResponse>[] = [
   { title: t('name'), key: 'name' },
@@ -205,6 +208,12 @@ const openExclusivePlansDialog = (id: string) => {
   accountExclusivePlans.value = id;
 
   isDialogAccountExclusivePlansShow.value = true;
+};
+
+const openInvoicesDialog = (id: string) => {
+  accountInvoices.value = id;
+
+  isDialogAccountInvoicesShow.value = true;
 };
 
 watch(
@@ -408,6 +417,18 @@ watch(
                 /></IconBtn>
 
                 <IconBtn
+                  ><VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>{{ $t('invoices') }}</span> </VTooltip
+                  ><VIcon
+                    icon="tabler-receipt-2"
+                    @click="openInvoicesDialog(item.account_id)"
+                /></IconBtn>
+
+                <IconBtn
                   v-if="$canPermission(permissionsAccount) && item?.account_id"
                   ><VTooltip
                     location="top"
@@ -532,6 +553,12 @@ watch(
         v-if="isDialogAccountExclusivePlansShow"
         v-model="isDialogAccountExclusivePlansShow"
         :account-id="accountExclusivePlans"
+      />
+
+      <AppAccountInvoices
+        v-if="isDialogAccountInvoicesShow && accountInvoices"
+        v-model="isDialogAccountInvoicesShow"
+        :account-id="accountInvoices"
       />
 
       <AppAddAccount v-if="isAddAccountVisible" v-model="isAddAccountVisible" />

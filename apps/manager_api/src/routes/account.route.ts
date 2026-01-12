@@ -20,6 +20,9 @@ import { deletePlanAccountExclusiveSchema } from '@core/schema/planAccountExclus
 import { listExclusivePlansSchema } from '@core/schema/planAccountExclusive/listExclusivePlans';
 import { blockAccountSchema } from '@core/schema/account/blockAccount';
 import { unblockAccountSchema } from '@core/schema/account/unblockAccount';
+import { listAccountPaymentsSchema } from '@core/schema/account/listAccountPayments';
+import { viewAccountPaymentNfseSchema } from '@core/schema/account/viewAccountPaymentNfse';
+import { generateAccountPaymentNfseSchema } from '@core/schema/account/generateAccountPaymentNfse';
 
 export default async function accountRoutes(server: FastifyInstance) {
   const accountController = container.resolve(AccountController);
@@ -194,4 +197,34 @@ export default async function accountRoutes(server: FastifyInstance) {
         server.authenticateJwt(request, reply, accountPermissions),
     ],
   });
+
+  server.get('/account/:account_id/payments', {
+    schema: listAccountPaymentsSchema,
+    handler: accountController.listAccountPayments,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, accountPermissions),
+    ],
+  });
+
+  server.get('/account/:account_id/payments/:account_payment_id/nfse', {
+    schema: viewAccountPaymentNfseSchema,
+    handler: accountController.viewAccountPaymentNfse,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, accountPermissions),
+    ],
+  });
+
+  server.post(
+    '/account/:account_id/payments/:account_payment_id/generate-nfse',
+    {
+      schema: generateAccountPaymentNfseSchema,
+      handler: accountController.generateAccountPaymentNfse,
+      preHandler: [
+        (request, reply) =>
+          server.authenticateJwt(request, reply, accountPermissions),
+      ],
+    }
+  );
 }

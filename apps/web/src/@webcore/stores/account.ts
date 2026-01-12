@@ -24,6 +24,13 @@ import { ListAccountSubscriptionsResponse } from '@core/schema/account/listAccou
 import { ViewPlanAccountResponse } from '@core/schema/planAccount/viewPlanAccount/response.schema';
 import { ListPlanAccountExclusivesResponse } from '@core/schema/planAccountExclusive/listPlanAccountExclusive/response.schema';
 import { ListExclusivePlansResponseArray } from '@core/schema/planAccountExclusive/listExclusivePlans/response.schema';
+import {
+  ListAccountPaymentsFinalResponse,
+  ListAccountPaymentsResponse,
+} from '@core/schema/account/listAccountPayments/response.schema';
+import { ListAccountPaymentsRequest } from '@core/schema/account/listAccountPayments/request.schema';
+import { ViewAccountPaymentNfseResponse } from '@core/schema/account/viewAccountPaymentNfse/response.schema';
+import { GenerateAccountPaymentNfseResponse } from '@core/schema/account/generateAccountPaymentNfse/response.schema';
 
 export const useAccountStore = defineStore('account', {
   state: () => ({
@@ -42,6 +49,15 @@ export const useAccountStore = defineStore('account', {
       count: 0 as number,
       total: 0 as number,
     } as PagingResponseSchema,
+    accountPaymentsList: [] as ListAccountPaymentsResponse[],
+    accountPaymentsPagings: {
+      current_page: 1,
+      total_pages: 1,
+      per_page: 10,
+      count: 0,
+      total: 0,
+    } as PagingResponseSchema,
+    accountPaymentNfse: null as ViewAccountPaymentNfseResponse | null,
   }),
   actions: {
     showSnackbar(message: string, color: EColor) {
@@ -834,6 +850,122 @@ export const useAccountStore = defineStore('account', {
         this.loading = false;
 
         return [];
+      }
+    },
+
+    async listAccountPayments(
+      accountId: string,
+      query?: ListAccountPaymentsRequest
+    ): Promise<ListAccountPaymentsFinalResponse | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.get<
+          IApiResponse<ListAccountPaymentsFinalResponse>
+        >(`/account/${accountId}/payments`, {
+          params: query,
+        });
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        this.accountPaymentsList = data.data.results;
+        this.accountPaymentsPagings = data.data.pagings;
+
+        return data.data;
+      } catch {
+        this.loading = false;
+        return null;
+      }
+    },
+
+    async viewAccountPaymentNfse(
+      accountId: string,
+      accountPaymentId: string
+    ): Promise<ViewAccountPaymentNfseResponse | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.get<
+          IApiResponse<ViewAccountPaymentNfseResponse>
+        >(`/account/${accountId}/payments/${accountPaymentId}/nfse`);
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        this.accountPaymentNfse = data.data;
+
+        return data.data;
+      } catch (error) {
+        this.loading = false;
+        let errorMessage = this.i18n.global.t(
+          'account_payment_nfse_view_error'
+        );
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        return null;
+      }
+    },
+
+    async generateAccountPaymentNfse(
+      accountId: string,
+      accountPaymentId: string,
+      query?: ListAccountPaymentsRequest
+    ): Promise<GenerateAccountPaymentNfseResponse | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.post<
+          IApiResponse<GenerateAccountPaymentNfseResponse>
+        >(`/account/${accountId}/payments/${accountPaymentId}/generate-nfse`);
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const message =
+            data?.message ??
+            this.i18n.global.t('account_payment_nfse_generation_error');
+
+          this.showSnackbar(message, EColor.error);
+
+          return null;
+        }
+
+        this.showSnackbar(data.message ?? data.data.message, EColor.success);
+
+        if (query) {
+          await this.listAccountPayments(accountId, query);
+        }
+
+        return data.data;
+      } catch (error) {
+        this.loading = false;
+        let errorMessage = this.i18n.global.t(
+          'account_payment_nfse_generation_error'
+        );
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        return null;
       }
     },
   },
