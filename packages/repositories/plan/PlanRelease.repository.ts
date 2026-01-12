@@ -810,4 +810,17 @@ export class PlanReleaseRepository {
 
     return nfseRecord || null;
   };
+
+  findAccountGenerateInvoiceById = async (
+    accountId: string
+  ): Promise<boolean | null> => {
+    const accountData = await this.dbRo.query.account.findFirst({
+      where: eq(account.account_id, accountId),
+      columns: {
+        generate_invoice: true,
+      },
+    });
+
+    return accountData?.generate_invoice ?? null;
+  };
 }

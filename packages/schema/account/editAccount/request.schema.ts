@@ -15,6 +15,7 @@ const accountStatusSchema = Type.Object({
 export const updateAccountRequestSchema = Type.Object({
   name: Type.Union([Type.String(), Type.Null()]),
   account_status: Type.Optional(Type.Union([accountStatusSchema, Type.Null()])),
+  generate_invoice: Type.Optional(Type.Union([Type.Boolean(), Type.Null()])),
 });
 
 export type UpdateAccountRequest = Static<typeof updateAccountRequestSchema>;

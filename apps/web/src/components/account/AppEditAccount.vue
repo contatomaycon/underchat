@@ -26,6 +26,7 @@ const isVisible = computed({
 const accountId = toRef(props, 'accountId');
 const name = ref<string | null>(null);
 const accountStatus = ref<string | null>(null);
+const generate_invoice = ref<boolean>(false);
 const accountStatusOptions = Object.entries(EAccountStatus).map(
   ([key, value]) => ({
     name: t(`${key}`) || key,
@@ -53,6 +54,7 @@ const updateAccount = async () => {
     account_status: {
       account_status_id: accountStatus.value,
     },
+    generate_invoice: generate_invoice.value,
   };
 
   const result = await accountStore.updateAccount(payload, body);
@@ -75,6 +77,7 @@ const initializeModal = async () => {
     if (account) {
       name.value = account.name;
       accountStatus.value = account.account_status?.account_status_id ?? null;
+      generate_invoice.value = account.generate_invoice ?? false;
     }
   } finally {
     isInitializingModal.value = false;
@@ -127,6 +130,19 @@ watch(
                 item-title="name"
                 item-value="id"
                 :placeholder="$t('account_status')"
+              />
+            </VCol>
+            <VCol cols="12" md="6">
+              <VLabel class="text-body-2 mb-1"
+                >{{ $t('generate_invoice') }}:</VLabel
+              >
+              <AppSelect
+                v-model="generate_invoice"
+                :items="[
+                  { value: false, title: $t('no') },
+                  { value: true, title: $t('yes') },
+                ]"
+                :placeholder="$t('generate_invoice')"
               />
             </VCol>
           </VRow>

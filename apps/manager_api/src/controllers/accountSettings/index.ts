@@ -24,6 +24,7 @@ import { cancelPlanAccount } from './methods/cancelPlanAccount';
 import { reactivatePlanAccount } from './methods/reactivatePlanAccount';
 import { viewAccountCustomization } from './methods/viewAccountCustomization';
 import { upsertAccountCustomization } from './methods/upsertAccountCustomization';
+import { generateAccountPaymentNfse } from './methods/generateAccountPaymentNfse';
 
 @injectable()
 class AccountSettingsController {
@@ -48,6 +49,7 @@ class AccountSettingsController {
   public updateUserCardDefault = updateUserCardDefault;
   public createUserCard = createUserCard;
   public viewAccountPaymentNfse = viewAccountPaymentNfse;
+  public generateAccountPaymentNfse = generateAccountPaymentNfse;
   public cancelPlanAccount = cancelPlanAccount;
   public reactivatePlanAccount = reactivatePlanAccount;
   public viewAccountCustomization = viewAccountCustomization;

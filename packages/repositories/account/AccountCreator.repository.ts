@@ -32,6 +32,7 @@ export class AccountCreatorRepository {
         account_id: accountId,
         account_status_id: input.account_status.account_status_id,
         name: input.name,
+        generate_invoice: input.generate_invoice ?? false,
       })
       .execute();
 
@@ -52,6 +53,7 @@ export class AccountCreatorRepository {
         account_id: accountId,
         account_status_id: input.account_status.account_status_id,
         name: input.name,
+        generate_invoice: input.generate_invoice ?? false,
       });
 
       if (input.plan) {

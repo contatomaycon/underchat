@@ -21,6 +21,7 @@ export const viewAccountResponseSchema = Type.Object({
   name: Type.String(),
   account_status: Type.Union([accountStatusSchema, Type.Null()]),
   plan: Type.Union([planSchema, Type.Null()]),
+  generate_invoice: Type.Optional(Type.Union([Type.Boolean(), Type.Null()])),
   created_at: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 });
 

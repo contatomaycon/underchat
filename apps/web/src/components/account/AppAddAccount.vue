@@ -47,6 +47,7 @@ const name = ref<string | null>(null);
 const account_status_id = ref<string | null>(EAccountStatus.active);
 const plan_id = ref<string | null>(null);
 const billing_period = ref<'monthly' | 'annual' | null>(null);
+const generate_invoice = ref<boolean>(false);
 
 const refFormAddAccount = ref<VForm>();
 
@@ -74,6 +75,7 @@ const addAccount = async () => {
     account_status: {
       account_status_id: account_status_id.value,
     },
+    generate_invoice: generate_invoice.value,
   };
 
   if (plan_id.value) {
@@ -104,6 +106,7 @@ const resetForm = () => {
   account_status_id.value = EAccountStatus.active;
   plan_id.value = null;
   billing_period.value = null;
+  generate_invoice.value = false;
   refFormAddAccount.value?.resetValidation();
 };
 
@@ -190,6 +193,19 @@ watch(isVisible, async (visible) => {
                 :clearable="true"
                 item-value="value"
                 item-title="text"
+              />
+            </VCol>
+            <VCol cols="12" md="6">
+              <VLabel class="text-body-2 mb-1"
+                >{{ $t('generate_invoice') }}:</VLabel
+              >
+              <AppSelect
+                v-model="generate_invoice"
+                :items="[
+                  { value: false, title: $t('no') },
+                  { value: true, title: $t('yes') },
+                ]"
+                :placeholder="$t('generate_invoice')"
               />
             </VCol>
           </VRow>

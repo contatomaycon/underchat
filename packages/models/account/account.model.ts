@@ -1,4 +1,11 @@
-import { pgTable, uuid, timestamp, varchar, index } from 'drizzle-orm/pg-core';
+import {
+  pgTable,
+  uuid,
+  timestamp,
+  varchar,
+  boolean,
+  index,
+} from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 import {
   accountInfo,
@@ -27,6 +34,7 @@ export const account = pgTable(
       .references(() => accountStatus.account_status_id)
       .notNull(),
     name: varchar({ length: 10 }).notNull(),
+    generate_invoice: boolean().default(false),
     created_at: timestamp({
       mode: 'string',
       withTimezone: true,

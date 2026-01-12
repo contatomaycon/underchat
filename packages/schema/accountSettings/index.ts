@@ -9,6 +9,7 @@ export * from './viewAddress2';
 export * from './viewAdditionalInfo';
 export * from './viewCurrentPlanInvoice';
 export * from './viewAccountPaymentNfse';
+export * from './generateAccountPaymentNfse';
 export * from './cancelPlanAccount';
 export * from './viewAccountCustomization';
 export * from './upsertAccountCustomization';

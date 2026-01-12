@@ -13,6 +13,7 @@ export const createAccountRequestSchema = Type.Object({
   name: Type.String(),
   account_status: accountStatusSchema,
   plan: Type.Optional(planSchema),
+  generate_invoice: Type.Optional(Type.Boolean()),
 });
 
 export type CreateAccountRequest = Static<typeof createAccountRequestSchema>;

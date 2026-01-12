@@ -1,4 +1,5 @@
 import { inject, injectable } from 'tsyringe';
+import { TFunction } from 'i18next';
 import { PlanReleaseRepository } from '@core/repositories/plan/PlanRelease.repository';
 import { EPaymentStatus } from '@core/common/enums/EPaymentStatus';
 import { EBillingPeriod } from '@core/common/enums/EBillingPeriod';
@@ -564,93 +565,115 @@ export class PlanReleaseService {
 
   createInvoiceForPayment = async (
     accountPaymentId: string,
-    paymentAsaasId: string
+    paymentAsaasId: string,
+    t?: TFunction<'translation', undefined>
   ): Promise<void> => {
-    try {
-      const paymentData =
-        await this.planReleaseRepository.findAccountPaymentById(
-          accountPaymentId
-        );
-      if (!paymentData) return;
+    const paymentData =
+      await this.planReleaseRepository.findAccountPaymentById(accountPaymentId);
 
-      const planData = await this.planReleaseRepository.findPlanById(
-        paymentData.plan_id
-      );
-      if (!planData) return;
-
-      const userCustomerData =
-        await this.planReleaseRepository.findUserCustomerByAccountPaymentId(
-          accountPaymentId
-        );
-      if (!userCustomerData) return;
-
-      const existingNfse =
-        await this.planReleaseRepository.findNfSeByAccountPaymentId(
-          accountPaymentId
-        );
-      if (existingNfse) return;
-
-      const nfseData = await this.planReleaseRepository.findDefaultNfse();
-      if (!nfseData) return;
-
-      const effectiveDate = paymentData.payment_date
-        ? new Date(paymentData.payment_date).toISOString().split('T')[0]
-        : new Date().toISOString().split('T')[0];
-
-      const serviceDescription = this.sanitizeTextForInvoice(
-        `Nota fiscal da Fatura ${paymentAsaasId}. Descrição dos Serviços: ${planData.name}`
-      );
-
-      const observations = this.sanitizeTextForInvoice(
-        planData.description || `Pagamento referente ao plano ${planData.name}`
-      );
-
-      const invoiceRequest: ICreateAsaasInvoiceRequest = {
-        payment: paymentAsaasId,
-        customer: userCustomerData.user_customer,
-        serviceDescription,
-        observations,
-        value: Number(paymentData.value),
-        deductions: Number(nfseData.deductions || 0),
-        effectiveDate,
-        municipalServiceId: nfseData.external_id?.toString(),
-        municipalServiceCode: nfseData.municipal_service_code || undefined,
-        municipalServiceName: nfseData.name,
-        taxes: {
-          retainIss: nfseData.retain_iss,
-          iss: Number(nfseData.iss_value || 0),
-          cofins: Number(nfseData.cofins_value || 0),
-          csll: Number(nfseData.csll_value || 0),
-          inss: Number(nfseData.inss_value || 0),
-          ir: Number(nfseData.ir_value || 0),
-          pis: Number(nfseData.pis_value || 0),
-        },
-      };
-
-      const invoice = await this.asaasService.createInvoice(invoiceRequest);
-
-      if (!invoice) {
-        console.error(
-          `Erro ao criar nota fiscal para pagamento: ${paymentAsaasId}`
-        );
-        return;
+    if (!paymentData) {
+      if (t) {
+        throw new Error(t('account_payment_not_found'));
       }
-
-      const invoiceDataForSave = {
-        ...invoice,
-        status: 'SCHEDULED' as const,
-      };
-
-      await this.accountPaymentNfSeUpserterRepository.upsertAccountPaymentNfSe(
-        accountPaymentId,
-        invoiceDataForSave
-      );
-    } catch (error) {
-      console.error(
-        'Erro ao criar nota fiscal após pagamento aprovado:',
-        error
-      );
+      return;
     }
+
+    const planData = await this.planReleaseRepository.findPlanById(
+      paymentData.plan_id
+    );
+
+    if (!planData) {
+      if (t) {
+        throw new Error(t('plan_not_found'));
+      }
+      return;
+    }
+
+    const userCustomerData =
+      await this.planReleaseRepository.findUserCustomerByAccountPaymentId(
+        accountPaymentId
+      );
+
+    if (!userCustomerData) {
+      if (t) {
+        throw new Error(t('user_customer_not_found'));
+      }
+      return;
+    }
+
+    const existingNfse =
+      await this.planReleaseRepository.findNfSeByAccountPaymentId(
+        accountPaymentId
+      );
+
+    if (existingNfse) {
+      if (t) {
+        throw new Error(t('account_payment_nfse_already_generated'));
+      }
+      return;
+    }
+
+    const nfseData = await this.planReleaseRepository.findDefaultNfse();
+
+    if (!nfseData) {
+      if (t) {
+        throw new Error(t('nfse_configuration_not_found'));
+      }
+      return;
+    }
+
+    const effectiveDate = paymentData.payment_date
+      ? new Date(paymentData.payment_date).toISOString().split('T')[0]
+      : new Date().toISOString().split('T')[0];
+
+    const serviceDescription = this.sanitizeTextForInvoice(
+      `Nota fiscal da Fatura ${paymentAsaasId}. Descrição dos Serviços: ${planData.name}`
+    );
+
+    const observations = this.sanitizeTextForInvoice(
+      planData.description || `Pagamento referente ao plano ${planData.name}`
+    );
+
+    const invoiceRequest: ICreateAsaasInvoiceRequest = {
+      payment: paymentAsaasId,
+      customer: userCustomerData.user_customer,
+      serviceDescription,
+      observations,
+      value: Number(paymentData.value),
+      deductions: Number(nfseData.deductions || 0),
+      effectiveDate,
+      municipalServiceId: nfseData.external_id?.toString(),
+      municipalServiceCode: nfseData.municipal_service_code || undefined,
+      municipalServiceName: nfseData.name,
+      taxes: {
+        retainIss: nfseData.retain_iss,
+        iss: Number(nfseData.iss_value || 0),
+        cofins: Number(nfseData.cofins_value || 0),
+        csll: Number(nfseData.csll_value || 0),
+        inss: Number(nfseData.inss_value || 0),
+        ir: Number(nfseData.ir_value || 0),
+        pis: Number(nfseData.pis_value || 0),
+      },
+    };
+
+    const invoice = await this.asaasService.createInvoice(invoiceRequest);
+
+    if (!invoice) {
+      const errorMessage = t
+        ? t('account_payment_nfse_generation_error')
+        : 'Erro ao criar nota fiscal para pagamento';
+      throw new Error(errorMessage);
+    }
+
+    const invoiceDataForSave = {
+      ...invoice,
+      status: 'SCHEDULED' as const,
+    };
+
+    await this.accountPaymentNfSeUpserterRepository.upsertAccountPaymentNfSe(
+      accountPaymentId,
+      invoiceDataForSave
+    );
   };
 
   private readonly notifyPaymentStatusUpdate = async (

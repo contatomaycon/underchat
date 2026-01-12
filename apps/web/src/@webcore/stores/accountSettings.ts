@@ -38,6 +38,7 @@ import {
 import { CreateUserCardRequest } from '@core/schema/accountSettings/createUserCard/request.schema';
 import { CreateUserCardResponse } from '@core/schema/accountSettings/createUserCard/response.schema';
 import { ViewAccountPaymentNfseResponse } from '@core/schema/accountSettings/viewAccountPaymentNfse/response.schema';
+import { GenerateAccountPaymentNfseResponse } from '@core/schema/accountSettings/generateAccountPaymentNfse/response.schema';
 import { CancelPlanAccountResponse } from '@core/schema/accountSettings/cancelPlanAccount/response.schema';
 import { ReactivatePlanAccountResponse } from '@core/schema/accountSettings/reactivatePlanAccount/response.schema';
 import { getUser } from '@/@webcore/localStorage/user';
@@ -795,6 +796,52 @@ export const useAccountSettingsStore = defineStore('accountSettings', {
         this.loading = false;
         let errorMessage = this.i18n.global.t(
           'account_payment_nfse_view_error'
+        );
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        return null;
+      }
+    },
+    async generateAccountPaymentNfse(
+      accountPaymentId: string,
+      query?: ListAccountPaymentsRequest
+    ): Promise<GenerateAccountPaymentNfseResponse | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.post<
+          IApiResponse<GenerateAccountPaymentNfseResponse>
+        >(`/account-settings/payments/${accountPaymentId}/generate-nfse`);
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const message =
+            data?.message ??
+            this.i18n.global.t('account_payment_nfse_generation_error');
+
+          this.showSnackbar(message, EColor.error);
+
+          return null;
+        }
+
+        this.showSnackbar(data.message ?? data.data.message, EColor.success);
+
+        if (query) {
+          await this.listAccountPayments(query);
+        }
+
+        return data.data;
+      } catch (error) {
+        this.loading = false;
+        let errorMessage = this.i18n.global.t(
+          'account_payment_nfse_generation_error'
         );
         if (error instanceof AxiosError) {
           errorMessage = error?.response?.data?.message ?? errorMessage;

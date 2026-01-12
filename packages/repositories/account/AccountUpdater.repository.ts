@@ -25,6 +25,13 @@ export class AccountUpdaterRepository {
       inputUpdate.account_status_id = input.account_status.account_status_id;
     }
 
+    if (
+      input.generate_invoice !== undefined &&
+      input.generate_invoice !== null
+    ) {
+      inputUpdate.generate_invoice = input.generate_invoice;
+    }
+
     return inputUpdate;
   }
 

@@ -2,10 +2,13 @@
 import { ref, computed, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useAccountSettingsStore } from '@/@webcore/stores/accountSettings';
+import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import TablePagination from '@/@webcore/components/TablePagination.vue';
+import VDialogHandler from '@/components/VDialogHandler.vue';
 
 const { t } = useI18n();
 const accountSettingsStore = useAccountSettingsStore();
+useSnackbarCleanup(accountSettingsStore);
 
 const options = ref({
   page: 1,
@@ -114,14 +117,50 @@ const closeNfseModal = () => {
 
 const downloadPdf = () => {
   if (accountSettingsStore.accountPaymentNfse?.pdf_url) {
-    window.open(accountSettingsStore.accountPaymentNfse.pdf_url, '_blank');
+    globalThis.open(accountSettingsStore.accountPaymentNfse.pdf_url, '_blank');
   }
 };
 
 const downloadXml = () => {
   if (accountSettingsStore.accountPaymentNfse?.xml_url) {
-    window.open(accountSettingsStore.accountPaymentNfse.xml_url, '_blank');
+    globalThis.open(accountSettingsStore.accountPaymentNfse.xml_url, '_blank');
   }
+};
+
+const isPaymentPaid = (statusName: string): boolean => {
+  const paidStatuses = [
+    'RECEIVED',
+    'CONFIRMED',
+    'RECEIVED_IN_CASH',
+    'DUNNING_RECEIVED',
+  ];
+  return paidStatuses.includes(statusName);
+};
+
+const canGenerateNfse = (item: {
+  payment_status_name: string;
+  has_nfse: boolean;
+}): boolean => {
+  return isPaymentPaid(item.payment_status_name) && !item.has_nfse;
+};
+
+const generateNfseDialog = ref(false);
+const selectedPaymentIdForGeneration = ref<string | null>(null);
+
+const openGenerateNfseDialog = (accountPaymentId: string) => {
+  selectedPaymentIdForGeneration.value = accountPaymentId;
+  generateNfseDialog.value = true;
+};
+
+const confirmGenerateNfse = async () => {
+  if (!selectedPaymentIdForGeneration.value) return;
+
+  await accountSettingsStore.generateAccountPaymentNfse(
+    selectedPaymentIdForGeneration.value,
+    query.value
+  );
+
+  selectedPaymentIdForGeneration.value = null;
 };
 
 watch(
@@ -284,6 +323,18 @@ watch(
                 </td>
                 <td v-else-if="column.key === 'actions'">
                   <div class="d-flex align-center gap-2">
+                    <VBtn
+                      v-if="canGenerateNfse(item)"
+                      icon
+                      variant="text"
+                      size="small"
+                      @click="openGenerateNfseDialog(item.account_payment_id)"
+                    >
+                      <VIcon icon="tabler-file-plus" size="20" />
+                      <VTooltip activator="parent" location="top">
+                        {{ $t('generate_nfse') }}
+                      </VTooltip>
+                    </VBtn>
                     <VBtn
                       v-if="item.has_nfse"
                       icon
@@ -547,6 +598,24 @@ watch(
         </VCardActions>
       </VCard>
     </VDialog>
+
+    <VDialogHandler
+      v-model="generateNfseDialog"
+      :title="$t('generate_nfse')"
+      :message="$t('generate_invoice')"
+      :confirm-text="$t('confirm')"
+      :cancel-text="$t('cancel')"
+      @confirm="confirmGenerateNfse"
+    />
+
+    <VSnackbar
+      v-model="accountSettingsStore.snackbar.status"
+      transition="scroll-y-reverse-transition"
+      location="top end"
+      :color="accountSettingsStore.snackbar.color"
+    >
+      {{ accountSettingsStore.snackbar.message }}
+    </VSnackbar>
   </div>
 </template>
 
