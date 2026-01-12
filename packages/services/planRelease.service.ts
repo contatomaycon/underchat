@@ -552,6 +552,16 @@ export class PlanReleaseService {
     });
   };
 
+  private readonly sanitizeTextForInvoice = (text: string): string => {
+    return text
+      .replace(/\n/g, ' ')
+      .replace(/\r/g, ' ')
+      .replace(/—/g, '-')
+      .replace(/–/g, '-')
+      .replace(/\s+/g, ' ')
+      .trim();
+  };
+
   createInvoiceForPayment = async (
     accountPaymentId: string,
     paymentAsaasId: string
@@ -587,13 +597,19 @@ export class PlanReleaseService {
         ? new Date(paymentData.payment_date).toISOString().split('T')[0]
         : new Date().toISOString().split('T')[0];
 
+      const serviceDescription = this.sanitizeTextForInvoice(
+        `Nota fiscal da Fatura ${paymentAsaasId}. Descrição dos Serviços: ${planData.name}`
+      );
+
+      const observations = this.sanitizeTextForInvoice(
+        planData.description || `Pagamento referente ao plano ${planData.name}`
+      );
+
       const invoiceRequest: ICreateAsaasInvoiceRequest = {
         payment: paymentAsaasId,
         customer: userCustomerData.user_customer,
-        serviceDescription: `Nota fiscal da Fatura ${paymentAsaasId}.\nDescrição dos Serviços: ${planData.name}`,
-        observations:
-          planData.description ||
-          `Pagamento referente ao plano ${planData.name}`,
+        serviceDescription,
+        observations,
         value: Number(paymentData.value),
         deductions: Number(nfseData.deductions || 0),
         effectiveDate,
