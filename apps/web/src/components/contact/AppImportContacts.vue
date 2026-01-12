@@ -343,6 +343,10 @@ const statusChipsSecondRow = computed(() => {
   return statusOrder.slice(3, 5);
 });
 
+const dialogMaxWidth = computed(() => {
+  return isCompleted.value ? '1200' : '600';
+});
+
 onMounted(async () => {
   resetForm();
   await contactGroupStore.listContactGroupAll();
@@ -366,7 +370,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <VDialog v-model="isVisible" max-width="1200" scrollable>
+  <VDialog v-model="isVisible" :max-width="dialogMaxWidth" scrollable>
     <DialogCloseBtn @click="isVisible = false" />
 
     <VForm ref="refFormAddContact" @submit.prevent>
