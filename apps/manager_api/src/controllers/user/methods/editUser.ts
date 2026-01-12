@@ -41,6 +41,13 @@ export const editUser = async (
       delete request.body.permission_role_id;
     }
 
+    if (
+      request.params.user_id === tokenJwtData.user_id &&
+      request.body.user_status_id !== undefined
+    ) {
+      delete request.body.user_status_id;
+    }
+
     const accountIdToUse = request.body.account_id?.value
       ? request.body.account_id.value
       : tokenJwtData.account_id;

@@ -1641,12 +1641,14 @@ const buildUpdateUserBody = (): UpdateUserRequest => {
 
   addFieldIfDefined(body, 'password', password.value);
 
-  addFieldIfChanged(
-    body,
-    'user_status_id',
-    user_status_id.value,
-    initialValues.value.user_status_id
-  );
+  if (!isEditingOwnUser.value) {
+    addFieldIfChanged(
+      body,
+      'user_status_id',
+      user_status_id.value,
+      initialValues.value.user_status_id
+    );
+  }
 
   addFieldIfChanged(
     body,
@@ -2492,6 +2494,7 @@ watch(
                           :items="itemsStatus"
                           :placeholder="$t('select_state')"
                           :clearable="true"
+                          :disabled="isEditingOwnUser"
                           item-value="id"
                           item-title="text"
                         />
