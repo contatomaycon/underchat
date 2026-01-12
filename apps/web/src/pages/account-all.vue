@@ -21,11 +21,6 @@ definePage({
     permissions: [
       EGeneralPermissions.full_access,
       EGeneralPermissions.full_access_group,
-      EAccountPermissions.account_group,
-      EAccountPermissions.account_view,
-      EAccountPermissions.account_create,
-      EAccountPermissions.account_update,
-      EAccountPermissions.account_delete,
     ],
   },
 });
@@ -33,26 +28,18 @@ definePage({
 const permissionsEdit = [
   EGeneralPermissions.full_access,
   EGeneralPermissions.full_access_group,
-  EAccountPermissions.account_group,
-  EAccountPermissions.account_update,
 ];
 const permissionsDelete = [
   EGeneralPermissions.full_access,
   EGeneralPermissions.full_access_group,
-  EAccountPermissions.account_group,
-  EAccountPermissions.account_delete,
 ];
 const permissionsCreate = [
   EGeneralPermissions.full_access,
   EGeneralPermissions.full_access_group,
-  EAccountPermissions.account_group,
-  EAccountPermissions.account_create,
 ];
 const permissionsCustomize = [
   EGeneralPermissions.full_access,
   EGeneralPermissions.full_access_group,
-  EAccountPermissions.account_group,
-  EAccountPermissions.account_customize,
 ];
 
 const { t } = useI18n();
