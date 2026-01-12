@@ -1,7 +1,9 @@
 import { injectable } from 'tsyringe';
+import { TFunction } from 'i18next';
 import { UserCustomerRepository } from '@core/repositories/payment/UserCustomer.repository';
 import { AsaasService } from './asaas';
 import { UserService } from './user.service';
+import { createI18nInstance } from '@core/common/functions/createI18nInstance';
 import {
   ICreateAsaasCustomerRequest,
   IGetAsaasCustomerResponse,
@@ -39,12 +41,10 @@ export class PaymentService {
   ) {}
 
   getOrCreateCustomer = async (
+    t: TFunction<'translation', undefined>,
     accountId: string
-  ): Promise<{ user_customer_id: string; user_customer: string } | null> => {
-    const userId = await this.getUserIdByAccountId(accountId);
-    if (!userId) {
-      return null;
-    }
+  ): Promise<{ user_customer_id: string; user_customer: string }> => {
+    const userId = await this.getUserIdByAccountId(t, accountId);
 
     const existingUserCustomer =
       await this.userCustomerRepository.getUserCustomerByUserId(userId);
@@ -55,16 +55,17 @@ export class PaymentService {
     const sensitiveData =
       await this.userService.getUserSensitiveDataDecrypted(userId);
     if (!sensitiveData?.document) {
-      return null;
+      throw new Error(t('sensitive_data_document_not_found'));
     }
 
     const asaasCustomer = await this.findOrCreateAsaasCustomer(
+      t,
       userId,
       accountId,
       sensitiveData
     );
     if (!asaasCustomer) {
-      return null;
+      throw new Error(t('asaas_customer_creation_failed'));
     }
 
     return this.userCustomerRepository.createUserCustomer(
@@ -74,21 +75,23 @@ export class PaymentService {
   };
 
   private readonly getUserIdByAccountId = async (
+    t: TFunction<'translation', undefined>,
     accountId: string
-  ): Promise<string | null> => {
+  ): Promise<string> => {
     const masterUser =
       await this.userMasterViewerRepository.findMasterUserByAccountId(
         accountId
       );
 
     if (!masterUser) {
-      return null;
+      throw new Error(t('master_user_not_found'));
     }
 
     return masterUser.user_id;
   };
 
   private readonly findOrCreateAsaasCustomer = async (
+    t: TFunction<'translation', undefined>,
     userId: string,
     accountId: string,
     sensitiveData: {
@@ -100,7 +103,7 @@ export class PaymentService {
     }
   ): Promise<IGetAsaasCustomerResponse | null> => {
     if (!sensitiveData.document) {
-      return null;
+      throw new Error(t('sensitive_data_document_not_found'));
     }
     const existingCustomer = await this.findExistingAsaasCustomer(
       sensitiveData.document,
@@ -110,7 +113,7 @@ export class PaymentService {
       return existingCustomer;
     }
 
-    return this.createNewAsaasCustomer(userId, accountId, sensitiveData);
+    return this.createNewAsaasCustomer(t, userId, accountId, sensitiveData);
   };
 
   private readonly findExistingAsaasCustomer = async (
@@ -139,6 +142,7 @@ export class PaymentService {
   };
 
   private readonly createNewAsaasCustomer = async (
+    t: TFunction<'translation', undefined>,
     userId: string,
     accountId: string,
     sensitiveData: {
@@ -149,10 +153,14 @@ export class PaymentService {
       address2: string | null;
     }
   ): Promise<IGetAsaasCustomerResponse | null> => {
-    if (!sensitiveData.document) return null;
+    if (!sensitiveData.document) {
+      throw new Error(t('sensitive_data_document_not_found'));
+    }
 
     const userView = await this.userService.viewUserById(userId, accountId);
-    if (!userView) return null;
+    if (!userView) {
+      throw new Error(t('user_view_not_found'));
+    }
 
     const createCustomerRequest = this.buildCreateCustomerRequest(
       userId,
@@ -164,7 +172,7 @@ export class PaymentService {
       createCustomerRequest
     );
     if (!createdCustomer) {
-      return null;
+      throw new Error(t('asaas_customer_creation_failed'));
     }
 
     return this.mapCreatedCustomerToResponse(createdCustomer);
@@ -448,10 +456,8 @@ export class PaymentService {
     userCardId?: string;
     paymentId?: string;
   }> => {
-    const userId = await this.getUserIdByAccountId(accountId);
-    if (!userId) {
-      return { payment: null };
-    }
+    const t = await createI18nInstance('pt');
+    const userId = await this.getUserIdByAccountId(t, accountId);
 
     const { creditCardToken, userCardId } = await this.getCreditCardToken(
       userId,

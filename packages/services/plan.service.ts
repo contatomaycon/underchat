@@ -1,4 +1,5 @@
 import { injectable } from 'tsyringe';
+import { TFunction } from 'i18next';
 import { ListPlanRequest } from '@core/schema/plan/listPlan/request.schema';
 import { ListPlanResponse } from '@core/schema/plan/listPlan/response.schema';
 import { PlanListerRepository } from '@core/repositories/plan/PlanLister.repository';
@@ -148,8 +149,11 @@ export class PlanService {
     );
   };
 
-  getOrCreateCustomer = async (accountId: string) => {
-    return this.paymentService.getOrCreateCustomer(accountId);
+  getOrCreateCustomer = async (
+    t: TFunction<'translation', undefined>,
+    accountId: string
+  ) => {
+    return this.paymentService.getOrCreateCustomer(t, accountId);
   };
 
   listAvailableCrossSells = async (): Promise<

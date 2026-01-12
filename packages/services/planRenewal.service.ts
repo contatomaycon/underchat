@@ -15,6 +15,7 @@ import { NotificationMessageService } from './notificationMessage.service';
 import { ENotificationTypeId } from '@core/common/enums/ENotificationType';
 import Redis from 'ioredis';
 import { withLock } from '@core/common/functions/withLock';
+import { createI18nInstance } from '@core/common/functions/createI18nInstance';
 
 @injectable()
 export class PlanRenewalService {
@@ -94,12 +95,12 @@ export class PlanRenewalService {
   private readonly processRenewal = async (
     planAccount: IPlanAccountRenewal
   ): Promise<void> => {
-    const [masterUser, customer] = await Promise.all([
-      this.userMasterViewerRepository.findMasterUserByAccountId(
+    const t = await createI18nInstance('pt');
+
+    const masterUser =
+      await this.userMasterViewerRepository.findMasterUserByAccountId(
         planAccount.account_id
-      ),
-      this.paymentService.getOrCreateCustomer(planAccount.account_id),
-    ]);
+      );
 
     if (!masterUser) {
       console.warn(
@@ -121,9 +122,16 @@ export class PlanRenewalService {
       return;
     }
 
-    if (!customer) {
+    let customer;
+    try {
+      customer = await this.paymentService.getOrCreateCustomer(
+        t,
+        planAccount.account_id
+      );
+    } catch (error) {
       console.warn(
-        `Cliente não encontrado ou não pôde ser criado para account_id: ${planAccount.account_id}`
+        `Cliente não encontrado ou não pôde ser criado para account_id: ${planAccount.account_id}`,
+        error
       );
 
       await Promise.all([

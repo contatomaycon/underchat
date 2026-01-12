@@ -142,10 +142,10 @@ export class OrderPaymentCreatorUseCase {
     input: CreateOrderPaymentRequest,
     remoteIp: string
   ): Promise<CreateOrderPaymentResponse> {
-    const customer = await this.paymentService.getOrCreateCustomer(accountId);
-    if (!customer) {
-      throw new Error(t('customer_not_found_or_could_not_create'));
-    }
+    const customer = await this.paymentService.getOrCreateCustomer(
+      t,
+      accountId
+    );
 
     const orderCalculation = await this.planService.calculateOrderPayment(
       accountId,

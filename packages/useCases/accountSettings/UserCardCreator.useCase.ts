@@ -19,12 +19,10 @@ export class UserCardCreatorUseCase {
     remoteIp: string,
     input: CreateUserCardRequest
   ): Promise<CreateUserCardResponse> => {
-    const userCustomer =
-      await this.paymentService.getOrCreateCustomer(accountId);
-
-    if (!userCustomer) {
-      throw new Error(t('user_customer_not_found'));
-    }
+    const userCustomer = await this.paymentService.getOrCreateCustomer(
+      t,
+      accountId
+    );
 
     const result = await this.paymentService.tokenizeAndSaveNewCard(
       userId,
