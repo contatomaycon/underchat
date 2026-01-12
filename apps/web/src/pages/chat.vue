@@ -158,8 +158,10 @@ const isViewEmailDecrypted = ref(false);
 const isViewPhoneDecrypted = ref(false);
 const isLoadingViewEmail = ref(false);
 const isLoadingViewPhone = ref(false);
-const isTyping = ref(false);
-const typingTimeout = ref<NodeJS.Timeout | null>(null);
+const typingStates = ref(
+  new Map<string, { isTyping: boolean; timestamp: number }>()
+);
+const typingTimeouts = ref(new Map<string, NodeJS.Timeout>());
 const selectedPhotos = ref<ISelectedPhotoPreview[]>([]);
 const selectedDocuments = ref<ISelectedDocumentPreview[]>([]);
 const selectedVideos = ref<ISelectedVideoPreview[]>([]);
@@ -4065,12 +4067,64 @@ const onRetryMessage = async (e: Event) => {
   }
 };
 
-const clearTypingTimeout = () => {
-  if (typingTimeout.value) {
-    clearTimeout(typingTimeout.value);
-    typingTimeout.value = null;
+const TYPING_TIMEOUT_MS = 5000;
+
+const clearTypingTimeout = (chatId?: string) => {
+  if (chatId) {
+    const timeout = typingTimeouts.value.get(chatId);
+    if (timeout) {
+      clearTimeout(timeout);
+      typingTimeouts.value.delete(chatId);
+    }
+    return;
+  }
+
+  for (const timeout of typingTimeouts.value.values()) {
+    clearTimeout(timeout);
+  }
+  typingTimeouts.value.clear();
+};
+
+const setTypingState = (chatId: string, isTyping: boolean) => {
+  const now = Date.now();
+  typingStates.value.set(chatId, { isTyping, timestamp: now });
+
+  clearTypingTimeout(chatId);
+
+  if (isTyping) {
+    const timeout = setTimeout(() => {
+      typingStates.value.delete(chatId);
+      typingTimeouts.value.delete(chatId);
+    }, TYPING_TIMEOUT_MS);
+    typingTimeouts.value.set(chatId, timeout);
+  } else {
+    typingStates.value.delete(chatId);
   }
 };
+
+const getTypingState = (chatId: string): boolean => {
+  const state = typingStates.value.get(chatId);
+  if (!state) {
+    return false;
+  }
+
+  const elapsed = Date.now() - state.timestamp;
+  if (elapsed >= TYPING_TIMEOUT_MS) {
+    typingStates.value.delete(chatId);
+    clearTypingTimeout(chatId);
+    return false;
+  }
+
+  return state.isTyping;
+};
+
+const isTyping = computed(() => {
+  const activeChatId = chatStore.activeChat?.chat_id;
+  if (!activeChatId) {
+    return false;
+  }
+  return getTypingState(activeChatId);
+});
 
 const checkJidMatches = (
   eventJid: string,
@@ -4104,9 +4158,9 @@ const checkJidMatches = (
 
 const handleTypingEvent = (data: IChatTyping | IChatMessage) => {
   if ('message_id' in data) {
-    if (isTyping.value) {
-      clearTypingTimeout();
-      isTyping.value = false;
+    const chatId = data.chat_id;
+    if (chatId) {
+      setTypingState(chatId, false);
     }
     return;
   }
@@ -4129,19 +4183,7 @@ const handleTypingEvent = (data: IChatTyping | IChatMessage) => {
     return;
   }
 
-  clearTypingTimeout();
-
-  if (!typingData.is_typing) {
-    isTyping.value = false;
-    return;
-  }
-
-  isTyping.value = true;
-
-  typingTimeout.value = setTimeout(() => {
-    isTyping.value = false;
-    typingTimeout.value = null;
-  }, 5000);
+  setTypingState(activeChat.chat_id, typingData.is_typing);
 };
 
 const clearChatSummaryIfNeeded = async (chatId: string) => {
@@ -4308,7 +4350,6 @@ onMounted(async () => {
 
 onUnmounted(async () => {
   clearTypingTimeout();
-  isTyping.value = false;
 
   globalThis.removeEventListener('chat-message', handleGlobalMessage);
   globalThis.removeEventListener('chat-typing', handleGlobalTyping);
