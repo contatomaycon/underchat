@@ -93,6 +93,34 @@ export class ChatbotFlowSaverUseCase {
     if (!hasStartNode) {
       errors.push(t('chatbot_flow_validation_no_start_node'));
     }
+
+    const nodesWithoutOutput: any[] = [];
+
+    for (const node of requestData.nodes) {
+      if (node.type === 'finish' || node.type === 'annotation') {
+        continue;
+      }
+
+      const hasOutput = requestData.edges.some(
+        (edge) => edge.source === node.id
+      );
+
+      if (!hasOutput) {
+        nodesWithoutOutput.push(node);
+      }
+    }
+
+    if (nodesWithoutOutput.length > 0) {
+      const nodeLabels: string[] = [];
+      for (const node of nodesWithoutOutput) {
+        nodeLabels.push(this.getNodeLabel(t, node));
+      }
+      errors.push(
+        t('chatbot_flow_validation_node_not_connected', {
+          nodeLabel: nodeLabels.join(', '),
+        })
+      );
+    }
   }
 
   private getNodeLabel(

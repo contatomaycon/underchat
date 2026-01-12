@@ -1197,12 +1197,47 @@ const prepareNodesForSave = (
   });
 };
 
+const validateAllNodesConnected = (): string | null => {
+  const nodesWithoutOutput: Node[] = [];
+
+  for (const node of nodes.value) {
+    if (node.type === 'finish' || node.type === 'annotation') {
+      continue;
+    }
+
+    const hasOutput = edges.value.some((edge) => edge.source === node.id);
+
+    if (!hasOutput) {
+      nodesWithoutOutput.push(node);
+    }
+  }
+
+  if (nodesWithoutOutput.length > 0) {
+    const nodeLabels: string[] = [];
+    for (const node of nodesWithoutOutput) {
+      const label = node.data?.title || node.label || node.id;
+      nodeLabels.push(label);
+    }
+    return t('chatbot_flow_validation_node_not_connected', {
+      nodeLabel: nodeLabels.join(', '),
+    });
+  }
+
+  return null;
+};
+
 const handleSave = async () => {
   if (!chatbotId.value) {
     chatbotStore.showSnackbar(
       t('chatbot_flow_validation_chatbot_id_required'),
       EColor.error
     );
+    return;
+  }
+
+  const validationError = validateAllNodesConnected();
+  if (validationError) {
+    chatbotStore.showSnackbar(validationError, EColor.error);
     return;
   }
 

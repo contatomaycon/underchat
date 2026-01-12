@@ -13,7 +13,6 @@ export class ChatbotFlowConfigurationsSaverUseCase {
 
   async validate(
     t: TFunction<'translation', undefined>,
-    input: SaveChatbotFlowConfigurationsRequest,
     accountId: string
   ): Promise<void> {
     const accountExists =
@@ -28,7 +27,7 @@ export class ChatbotFlowConfigurationsSaverUseCase {
     input: SaveChatbotFlowConfigurationsRequest,
     accountId: string
   ): Promise<string | null> {
-    await this.validate(t, input, accountId);
+    await this.validate(t, accountId);
 
     const chatbotConfigurationsId =
       await this.chatbotService.saveChatbotFlowConfigurations(input, accountId);
