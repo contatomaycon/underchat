@@ -995,6 +995,7 @@
   "no_valid_contacts_found": "Nenhum contato válido encontrado!",
   "processing_import": "Processando importação...",
   "import_completed": "Importação concluída!",
+  "view_results": "Ver Resultados",
   "last_imported": "Último importado",
   "please_wait": "Por favor, aguarde",
   "command_no_slash": "Não é permitido usar / ou \\ no comando.",

@@ -990,6 +990,7 @@
   "no_valid_contacts_found": "¡No se encontraron contactos válidos!",
   "processing_import": "Procesando importación...",
   "import_completed": "¡Importación completada!",
+  "view_results": "Ver Resultados",
   "last_imported": "Último importado",
   "please_wait": "Por favor, espere",
   "command_no_slash": "No se permite usar / o \\ en el comando.",

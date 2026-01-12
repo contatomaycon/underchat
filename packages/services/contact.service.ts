@@ -337,7 +337,7 @@ export class ContactService {
   createContactWithGroup = async (
     t: TFunction<'translation', undefined>,
     input: ICreateContact,
-    contactGroupId: string,
+    contactGroupId: string | null,
     accountId: string,
     isValidated: boolean = false
   ): Promise<boolean | null> => {

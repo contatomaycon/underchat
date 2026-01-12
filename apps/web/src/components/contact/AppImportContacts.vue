@@ -49,6 +49,8 @@ const lastContact = ref<ContactImportStatus | null>(null);
 const importSessionId = ref<string | null>(null);
 const socketSubscription = ref<Subscription | null>(null);
 const isCompleted = ref<boolean>(false);
+const showResults = ref<boolean>(false);
+const selectedStatusFilter = ref<string | null>(null);
 let closeTimer: ReturnType<typeof setTimeout> | null = null;
 
 const progressPercentage = computed(() => {
@@ -132,6 +134,7 @@ const subscribeToImportProgress = async (sessionId: string) => {
 
       isCompleted.value = true;
       contactGroupStore.loading = false;
+      showResults.value = true;
 
       if (subscription) {
         unsubscribe(channel).catch(() => {});
@@ -140,24 +143,14 @@ const subscribeToImportProgress = async (sessionId: string) => {
 
       if (closeTimer) {
         clearTimeout(closeTimer);
+        closeTimer = null;
       }
-
-      closeTimer = setTimeout(() => {
-        isCompleted.value = false;
-        isVisible.value = false;
-        resetForm();
-      }, 2000);
     };
 
     const subscription = await onMessage(channel, (data: any) => {
       if (data.processed !== undefined && data.total !== undefined) {
         processedCount.value = data.processed;
         totalCount.value = data.total;
-
-        if (data.processed === data.total && data.total > 0) {
-          emit('importCompleted');
-          handleCompletion();
-        }
       }
 
       if (data.lastContact) {
@@ -165,7 +158,9 @@ const subscribeToImportProgress = async (sessionId: string) => {
       }
 
       if (data.completed && data.results) {
-        importResults.value = data.results;
+        importResults.value = data.results || [];
+        showResults.value = true;
+        isCompleted.value = true;
 
         const validCount = data.results.filter(
           (r: ContactImportStatus) => r.status === 'valid'
@@ -241,6 +236,8 @@ const resetForm = () => {
   lastContact.value = null;
   importSessionId.value = null;
   isCompleted.value = false;
+  showResults.value = false;
+  selectedStatusFilter.value = null;
 
   if (closeTimer) {
     clearTimeout(closeTimer);
@@ -293,6 +290,59 @@ const getStatusText = (status: ContactImportStatus['status']) => {
   }
 };
 
+const statusOptions = computed(() => [
+  { value: null, title: t('all') },
+  { value: 'valid', title: t('valid') },
+  { value: 'invalid', title: t('invalid') },
+  { value: 'duplicate', title: t('duplicate') },
+  { value: 'error', title: t('error') },
+  { value: 'no_phone', title: t('no_phone') },
+]);
+
+const filteredResults = computed(() => {
+  if (!selectedStatusFilter.value) {
+    return importResults.value;
+  }
+  return importResults.value.filter(
+    (result) => result.status === selectedStatusFilter.value
+  );
+});
+
+const statusCounts = computed(() => {
+  const counts: Record<string, number> = {
+    valid: 0,
+    invalid: 0,
+    duplicate: 0,
+    error: 0,
+    no_phone: 0,
+  };
+
+  for (const result of importResults.value) {
+    if (result.status in counts) {
+      counts[result.status]++;
+    }
+  }
+
+  return counts;
+});
+
+const formatPhoneComplete = (
+  phoneComplete: string | null | undefined
+): string => {
+  if (!phoneComplete) return '';
+  return formatPhone(phoneComplete);
+};
+
+const statusChipsFirstRow = computed(() => {
+  const statusOrder = ['valid', 'invalid', 'duplicate', 'error', 'no_phone'];
+  return statusOrder.slice(0, 3);
+});
+
+const statusChipsSecondRow = computed(() => {
+  const statusOrder = ['valid', 'invalid', 'duplicate', 'error', 'no_phone'];
+  return statusOrder.slice(3, 5);
+});
+
 onMounted(async () => {
   resetForm();
   await contactGroupStore.listContactGroupAll();
@@ -316,13 +366,13 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <VDialog v-model="isVisible" max-width="600">
+  <VDialog v-model="isVisible" max-width="1200" scrollable>
     <DialogCloseBtn @click="isVisible = false" />
 
     <VForm ref="refFormAddContact" @submit.prevent>
       <VCard :title="$t('import_contacts')">
         <VOverlay
-          :model-value="contactGroupStore.loading || isCompleted"
+          :model-value="contactGroupStore.loading && !isCompleted"
           class="align-center justify-center"
           contained
         >
@@ -383,7 +433,7 @@ onUnmounted(() => {
           </VCard>
         </VOverlay>
 
-        <VCardText>
+        <VCardText v-if="!isCompleted">
           <VRow>
             <VCol cols="12">
               <VLabel class="text-body-2 mb-1"
@@ -426,30 +476,164 @@ onUnmounted(() => {
           </VRow>
         </VCardText>
 
-        <VCardText v-if="importResults.length > 0">
+        <VCardText v-if="isCompleted && !showResults" class="text-center">
+          <VAlert type="success" variant="tonal" class="mb-4">
+            {{ $t('import_completed') }}
+          </VAlert>
+          <VBtn color="primary" @click="showResults = true">
+            {{ $t('view_results') }}
+          </VBtn>
+        </VCardText>
+
+        <VCardText v-if="showResults && isCompleted">
           <VCard variant="outlined">
-            <VCardTitle class="text-body-1">
-              {{ $t('import_results') }}
+            <VCardTitle class="d-flex align-center justify-space-between mb-4">
+              <span class="text-body-1">{{ $t('import_results') }}</span>
+              <VBtn
+                icon
+                variant="text"
+                size="small"
+                @click="showResults = false"
+              >
+                <VIcon icon="tabler-x" />
+              </VBtn>
             </VCardTitle>
+
             <VCardText>
-              <VList density="compact">
-                <VListItem
-                  v-for="(result, index) in importResults"
-                  :key="index"
-                  :title="result.phone_complete"
-                  :subtitle="result.message || ''"
-                >
-                  <template #prepend>
-                    <VChip
-                      :color="getStatusColor(result.status)"
-                      size="small"
-                      class="mr-2"
+              <VRow class="mb-4" v-if="importResults.length > 0">
+                <VCol cols="12" md="6" class="d-flex">
+                  <VCard
+                    variant="outlined"
+                    class="pa-4 w-100 d-flex flex-column"
+                  >
+                    <VLabel class="text-body-2 mb-2 d-block"
+                      >{{ $t('filter_by_status') }}:</VLabel
                     >
-                      {{ getStatusText(result.status) }}
-                    </VChip>
-                  </template>
-                </VListItem>
-              </VList>
+                    <AppSelectSearch
+                      v-model="selectedStatusFilter"
+                      :items="statusOptions"
+                      :placeholder="$t('all')"
+                      :clearable="true"
+                      item-value="value"
+                      item-title="title"
+                    />
+                  </VCard>
+                </VCol>
+                <VCol cols="12" md="6" class="d-flex">
+                  <VCard
+                    variant="outlined"
+                    class="pa-4 w-100 d-flex flex-column"
+                  >
+                    <VLabel class="text-body-2 mb-2 d-block"
+                      >{{ $t('status') }}:</VLabel
+                    >
+                    <div class="d-flex flex-column gap-2 flex-grow-1">
+                      <div class="d-flex flex-wrap gap-2">
+                        <VChip
+                          v-for="status in statusChipsFirstRow"
+                          :key="status"
+                          :color="
+                            getStatusColor(
+                              status as ContactImportStatus['status']
+                            )
+                          "
+                          size="small"
+                          variant="tonal"
+                        >
+                          {{
+                            getStatusText(
+                              status as ContactImportStatus['status']
+                            )
+                          }}: {{ statusCounts[status] }}
+                        </VChip>
+                      </div>
+                      <div class="d-flex flex-wrap gap-2">
+                        <VChip
+                          v-for="status in statusChipsSecondRow"
+                          :key="status"
+                          :color="
+                            getStatusColor(
+                              status as ContactImportStatus['status']
+                            )
+                          "
+                          size="small"
+                          variant="tonal"
+                        >
+                          {{
+                            getStatusText(
+                              status as ContactImportStatus['status']
+                            )
+                          }}: {{ statusCounts[status] }}
+                        </VChip>
+                      </div>
+                    </div>
+                  </VCard>
+                </VCol>
+              </VRow>
+
+              <VTable density="compact" v-if="importResults.length > 0">
+                <thead>
+                  <tr>
+                    <th class="text-left">{{ $t('phone') }}</th>
+                    <th class="text-left">{{ $t('name') }}</th>
+                    <th class="text-left">{{ $t('status') }}</th>
+                    <th class="text-left">{{ $t('message') }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="(result, index) in filteredResults" :key="index">
+                    <td>
+                      <div class="font-weight-medium">
+                        {{ formatPhoneComplete(result.phone_complete) }}
+                      </div>
+                    </td>
+                    <td>
+                      <div v-if="result.name || result.last_name">
+                        {{ result.name ?? '' }} {{ result.last_name ?? '' }}
+                      </div>
+                      <span v-else class="text-medium-emphasis">-</span>
+                    </td>
+                    <td>
+                      <VChip
+                        :color="getStatusColor(result.status)"
+                        size="small"
+                        variant="tonal"
+                      >
+                        {{ getStatusText(result.status) }}
+                      </VChip>
+                    </td>
+                    <td>
+                      <span
+                        v-if="result.message"
+                        class="text-body-2"
+                        :class="
+                          result.status === 'valid'
+                            ? 'text-success'
+                            : 'text-error'
+                        "
+                      >
+                        {{ result.message }}
+                      </span>
+                      <span v-else class="text-medium-emphasis">-</span>
+                    </td>
+                  </tr>
+                  <tr
+                    v-if="
+                      filteredResults.length === 0 && importResults.length > 0
+                    "
+                  >
+                    <td
+                      colspan="4"
+                      class="text-center text-medium-emphasis py-4"
+                    >
+                      {{ $t('no_results_found') }}
+                    </td>
+                  </tr>
+                </tbody>
+              </VTable>
+              <VAlert v-else type="info" variant="tonal" class="mt-4">
+                {{ $t('no_results_found') }}
+              </VAlert>
             </VCardText>
           </VCard>
         </VCardText>
@@ -459,17 +643,24 @@ onUnmounted(() => {
             variant="tonal"
             color="secondary"
             @click="isVisible = false"
-            :disabled="contactGroupStore.loading"
+            :disabled="contactGroupStore.loading && !isCompleted"
           >
-            {{ $t('cancel') }}
+            {{ $t('close') }}
           </VBtn>
           <VBtn
-            v-if="contactFile && importResults.length === 0"
+            v-if="contactFile && importResults.length === 0 && !isCompleted"
             @click="addContactGroupAssignment"
             :loading="contactGroupStore.loading"
             :disabled="contactGroupStore.loading"
           >
             {{ $t('save') }}
+          </VBtn>
+          <VBtn
+            v-if="isCompleted && !showResults && importResults.length > 0"
+            color="primary"
+            @click="showResults = true"
+          >
+            {{ $t('view_results') }}
           </VBtn>
         </VCardText>
       </VCard>

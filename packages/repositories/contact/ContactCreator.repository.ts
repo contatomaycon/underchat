@@ -110,7 +110,7 @@ export class ContactCreatorRepository {
   createContactWithGroup = async (
     t: TFunction<'translation', undefined>,
     input: ICreateContact,
-    contactGroupId: string
+    contactGroupId: string | null
   ): Promise<boolean | null> => {
     try {
       return await this.dbRw.transaction(async (tx) => {
@@ -120,7 +120,7 @@ export class ContactCreatorRepository {
           return null;
         }
 
-        if (contactGroupId) {
+        if (contactGroupId && contactGroupId.trim() !== '') {
           const contactGroupAssignmentId =
             await this.contactGroupAssignmentCreatorRepository.createContactGroupAssignment(
               tx,

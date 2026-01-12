@@ -98,7 +98,7 @@ export class ContactGroupAssignmentCreatorUseCase {
     contact: ICreateContact,
     phonesC: string[],
     accountId: string,
-    contactGroupId: string
+    contactGroupId: string | null
   ): Promise<IContactImportStatus> {
     try {
       const phoneExists = await this.contactService.existsContactByPhone(
@@ -153,7 +153,11 @@ export class ContactGroupAssignmentCreatorUseCase {
           t('contact_field_too_long')
         );
       }
-      throw error;
+      return this.createStatusResult(
+        contact,
+        'invalid',
+        (error as Error).message || t('contact_creation_failed')
+      );
     }
   }
 
@@ -172,7 +176,7 @@ export class ContactGroupAssignmentCreatorUseCase {
       throw new Error(t('no_contacts_found_in_file'));
     }
 
-    const contactGroupId = input?.contact_group_id?.value ?? '';
+    const contactGroupId = input?.contact_group_id?.value || null;
     const results: IContactImportStatus[] = [];
     const total = contacts.length;
 
@@ -206,18 +210,21 @@ export class ContactGroupAssignmentCreatorUseCase {
           'no_phone',
           t('phone_required_for_validation')
         );
+
         results.push(result);
         await sendProgressUpdate(index + 1, result);
         continue;
       }
 
       const validation = this.validateBrazilianPhone(t, phone, phoneDdi);
+
       if (!validation.isValid) {
         const result = this.createStatusResult(
           contact,
           'invalid',
           validation.message || t('invalid_phone_format')
         );
+
         results.push(result);
         await sendProgressUpdate(index + 1, result);
         continue;
@@ -226,16 +233,31 @@ export class ContactGroupAssignmentCreatorUseCase {
       const phones = buildCandidatesWithDdi(phone, phoneDdi);
       const phonesC = phones.map((phone) => this.encryptService.encrypt(phone));
 
-      const result = await this.processContact(
-        t,
-        contact,
-        phonesC,
-        accountId,
-        contactGroupId
-      );
+      try {
+        const result = await this.processContact(
+          t,
+          contact,
+          phonesC,
+          accountId,
+          contactGroupId
+        );
 
-      results.push(result);
-      await sendProgressUpdate(index + 1, result);
+        results.push(result);
+
+        await sendProgressUpdate(index + 1, result);
+      } catch (error) {
+        console.error(`Error processing contact at index ${index}:`, error);
+
+        const errorResult = this.createStatusResult(
+          contact,
+          'invalid',
+          (error as Error).message || t('contact_creation_failed')
+        );
+
+        results.push(errorResult);
+
+        await sendProgressUpdate(index + 1, errorResult);
+      }
     }
 
     if (this.centrifugoService && importSessionId && userId) {
