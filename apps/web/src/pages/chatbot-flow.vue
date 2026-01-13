@@ -27,6 +27,7 @@ import ChatbotContactNode from '@/components/chatbot/ChatbotContactNode.vue';
 import ChatbotAiAgentNode from '@/components/chatbot/ChatbotAiAgentNode.vue';
 import ChatbotAnnotationNode from '@/components/chatbot/ChatbotAnnotationNode.vue';
 import ChatbotDistributionNode from '@/components/chatbot/ChatbotDistributionNode.vue';
+import ChatbotConditionalNode from '@/components/chatbot/ChatbotConditionalNode.vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter, useRoute } from 'vue-router';
 import DialogCloseBtn from '@/@webcore/components/DialogCloseBtn.vue';
@@ -58,6 +59,7 @@ const nodeTypes = {
   aiAgent: markRaw(ChatbotAiAgentNode),
   annotation: markRaw(ChatbotAnnotationNode),
   distribution: markRaw(ChatbotDistributionNode),
+  conditional: markRaw(ChatbotConditionalNode),
 };
 
 const { t } = useI18n();
@@ -919,6 +921,24 @@ const addDistributionNode = (position?: { x: number; y: number }) => {
   nodes.value.push(newNode);
 };
 
+const addConditionalNode = (position?: { x: number; y: number }) => {
+  const nodeId = `conditional-${nodeIdCounter++}`;
+  const newNode: Node = {
+    id: nodeId,
+    type: 'conditional',
+    position: position || {
+      x: getSecureRandom(400) + 100,
+      y: getSecureRandom(300) + 100,
+    },
+    data: {
+      conditionType: null,
+      conditionTerm: '',
+      onRemove: () => removeNode(nodeId),
+    },
+  };
+  nodes.value.push(newNode);
+};
+
 const addAiAgentNode = (position?: { x: number; y: number }) => {
   const nodeId = `aiAgent-${nodeIdCounter++}`;
   const positiveOptionId = crypto.randomUUID();
@@ -1116,6 +1136,9 @@ const onDrop = (event: DragEvent) => {
       break;
     case 'distribution':
       addDistributionNode(position);
+      break;
+    case 'conditional':
+      addConditionalNode(position);
       break;
   }
 
@@ -1449,6 +1472,11 @@ const processDistributionNodeData = (nodeData: any): void => {
     nodeData.distributionSelectedSector = null;
 };
 
+const processConditionalNodeData = (nodeData: any): void => {
+  if (nodeData.conditionType === undefined) nodeData.conditionType = null;
+  if (nodeData.conditionTerm === undefined) nodeData.conditionTerm = '';
+};
+
 const processNodeDataByType = (node: Node): void => {
   if (!node.data) {
     node.data = {};
@@ -1484,6 +1512,9 @@ const processNodeDataByType = (node: Node): void => {
       break;
     case 'distribution':
       processDistributionNodeData(node.data);
+      break;
+    case 'conditional':
+      processConditionalNodeData(node.data);
       break;
   }
 };
@@ -2205,6 +2236,26 @@ onUnmounted(() => {
                 >
                   <VIcon icon="tabler-note" class="me-2" />
                   {{ t('chatbot_annotation_node_title') }}
+                </VBtn>
+                <VBtn
+                  color="success"
+                  draggable="true"
+                  @dragstart.stop="
+                    (e: DragEvent) => {
+                      draggedNodeType = 'conditional';
+                      e.dataTransfer!.effectAllowed = 'move';
+                      e.dataTransfer!.dropEffect = 'move';
+                    }
+                  "
+                  @dragend="
+                    () => {
+                      draggedNodeType = null;
+                    }
+                  "
+                  style="cursor: grab"
+                >
+                  <VIcon icon="tabler-code" class="me-2" />
+                  {{ t('chatbot_conditional') }}
                 </VBtn>
               </div>
             </div>

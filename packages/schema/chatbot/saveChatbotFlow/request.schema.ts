@@ -34,6 +34,8 @@ const nodeDataSchema = Type.Object({
   distributionType: Type.Optional(Type.String()),
   distributionHasSector: Type.Optional(Type.Boolean()),
   distributionSelectedSector: Type.Optional(Type.String()),
+  conditionType: Type.Optional(Type.String()),
+  conditionTerm: Type.Optional(Type.String()),
   options: Type.Optional(
     Type.Array(
       Type.Object({

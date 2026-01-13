@@ -999,6 +999,20 @@ export class ChatbotFlowRunnerService {
       );
     }
 
+    if (nextFlowNode.type === 'conditional') {
+      const nextConditionalFlowId = this.getNextFlowId(chatbotFlow, nextFlowId);
+      if (nextConditionalFlowId) {
+        return this.processNextNode(
+          t,
+          createChat,
+          chatbotFlow,
+          nextConditionalFlowId,
+          customMessages
+        );
+      }
+      return true;
+    }
+
     if (nextFlowNode.type === 'finish') {
       await this.sendFinishMessage(
         t,
@@ -5133,6 +5147,17 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       );
     }
 
+    if (currentNode.type === 'conditional') {
+      return this.processConditionalNode(
+        t,
+        data,
+        createChat,
+        chatbotFlow,
+        currentFlowId,
+        customMessages
+      );
+    }
+
     if (currentNode.type === 'finish') {
       await this.sendFinishMessage(
         t,
@@ -5144,6 +5169,92 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
     }
 
     return false;
+  }
+
+  private async processConditionalNode(
+    t: TFunction<'translation', undefined>,
+    data: IUpsertMessage,
+    createChat: IChat,
+    chatbotFlow: ListChatbotFlowResponse,
+    currentFlowId: string,
+    customMessages?: {
+      service_finished_message?: string;
+      invalid_menu_option_message?: string;
+      invalid_satisfaction_option_message?: string;
+      invalid_cpf_message?: string;
+      invalid_cnpj_message?: string;
+      invalid_email_message?: string;
+      transfer_message_user?: string;
+      transfer_message_sector?: string;
+      transfer_message_sector_user?: string;
+      service_finished_message_enabled?: boolean;
+      invalid_menu_option_message_enabled?: boolean;
+      invalid_satisfaction_option_message_enabled?: boolean;
+      invalid_cpf_message_enabled?: boolean;
+      invalid_cnpj_message_enabled?: boolean;
+      invalid_email_message_enabled?: boolean;
+      transfer_message_user_enabled?: boolean;
+      transfer_message_sector_enabled?: boolean;
+      transfer_message_sector_user_enabled?: boolean;
+    }
+  ): Promise<boolean> {
+    const currentNode = this.getFlowNodeById(chatbotFlow, currentFlowId);
+
+    if (!currentNode) {
+      throw new Error(t('chatbot_flow_node_not_found'));
+    }
+
+    const conditionType = currentNode.data?.conditionType;
+    const conditionTerm = currentNode.data?.conditionTerm;
+
+    if (!conditionType || !conditionTerm) {
+      return false;
+    }
+
+    const userText = this.getTextFromUpsertMessage(data)?.trim().toLowerCase();
+
+    if (!userText) {
+      return false;
+    }
+
+    const term = conditionTerm.trim().toLowerCase();
+    let conditionMet = false;
+
+    switch (conditionType) {
+      case 'contains':
+        conditionMet = userText.includes(term);
+        break;
+      case 'equals':
+        conditionMet = userText === term;
+        break;
+      case 'not_contains':
+        conditionMet = !userText.includes(term);
+        break;
+      case 'starts_with':
+        conditionMet = userText.startsWith(term);
+        break;
+      case 'ends_with':
+        conditionMet = userText.endsWith(term);
+        break;
+    }
+
+    if (!conditionMet) {
+      return false;
+    }
+
+    const nextFlowId = this.getNextFlowId(chatbotFlow, currentFlowId);
+
+    if (!nextFlowId) {
+      return false;
+    }
+
+    return this.processNextNode(
+      t,
+      createChat,
+      chatbotFlow,
+      nextFlowId,
+      customMessages
+    );
   }
 
   private getDistributionCacheKey(accountId: string, workerId: string): string {
