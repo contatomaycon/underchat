@@ -443,18 +443,12 @@ const openLabelModal = () => {
 };
 
 const removeLabel = async () => {
-  console.log('🔴 [removeLabel] Iniciando remoção de etiqueta');
-
   if (!chatStore.activeChat?.chat_id) return;
 
   const currentLabels = activeChatLabels.value;
-  console.log('🔴 [removeLabel] Etiquetas atuais:', currentLabels);
-
   if (currentLabels.length === 0) return;
 
   const remainingLabels = currentLabels.slice(1);
-  console.log('🔴 [removeLabel] Etiquetas restantes:', remainingLabels);
-
   const remainingLabelData = remainingLabels.map((label) => ({
     label_template_id: label.label_template_id,
     label: label.label,
@@ -465,19 +459,10 @@ const removeLabel = async () => {
       ? remainingLabelData.map((label) => label.label_template_id)
       : null;
 
-  console.log('🔴 [removeLabel] remainingLabelIds:', remainingLabelIds);
-  console.log('🔴 [removeLabel] remainingLabelData:', remainingLabelData);
-
   const success = await chatStore.updateChatLabel(
     chatStore.activeChat.chat_id,
     remainingLabelIds,
     remainingLabelData.length > 0 ? remainingLabelData : null
-  );
-
-  console.log('🔴 [removeLabel] Success:', success);
-  console.log(
-    '🔴 [removeLabel] activeChat.label após updateChatLabel:',
-    chatStore.activeChat?.label
   );
 
   if (!success) {
@@ -485,10 +470,6 @@ const removeLabel = async () => {
   }
 
   await nextTick();
-  console.log(
-    '🔴 [removeLabel] activeChat.label após nextTick:',
-    chatStore.activeChat?.label
-  );
 };
 
 watch(
@@ -670,46 +651,32 @@ const canTransfer = computed(() => {
 });
 
 const activeChatLabels = computed(() => {
-  const labels = !chatStore.activeChat?.label
-    ? []
-    : Array.isArray(chatStore.activeChat.label)
-      ? chatStore.activeChat.label
-      : [];
-  console.log('🔵 [computed activeChatLabels] recalculado:', labels);
-  return labels;
+  if (!chatStore.activeChat?.label) return [];
+  if (Array.isArray(chatStore.activeChat.label)) {
+    return chatStore.activeChat.label;
+  }
+  return [];
 });
 
 const activeChatLabelTemplate = computed(() => {
-  const template =
-    activeChatLabels.value.length === 0
-      ? null
-      : {
-          label: activeChatLabels.value[0].label,
-          color: activeChatLabels.value[0].color,
-        };
-  console.log('🔵 [computed activeChatLabelTemplate] recalculado:', template);
-  return template;
+  if (activeChatLabels.value.length === 0) return null;
+  return {
+    label: activeChatLabels.value[0].label,
+    color: activeChatLabels.value[0].color,
+  };
 });
 
 const activeChatLabelTemplates = computed(() => {
-  const templates = activeChatLabels.value;
-  console.log('🔵 [computed activeChatLabelTemplates] recalculado:', templates);
-  return templates;
+  return activeChatLabels.value;
 });
 
 const remainingChatLabels = computed(() => {
-  const remaining =
-    activeChatLabelTemplates.value.length <= 1
-      ? []
-      : activeChatLabelTemplates.value.slice(1);
-  console.log('🔵 [computed remainingChatLabels] recalculado:', remaining);
-  return remaining;
+  if (activeChatLabelTemplates.value.length <= 1) return [];
+  return activeChatLabelTemplates.value.slice(1);
 });
 
 const remainingChatLabelsText = computed(() => {
-  const text = remainingChatLabels.value.map((lt) => lt.label).join(', ');
-  console.log('🔵 [computed remainingChatLabelsText] recalculado:', text);
-  return text;
+  return remainingChatLabels.value.map((lt) => lt.label).join(', ');
 });
 
 const hasAttachmentsOrContent = computed(

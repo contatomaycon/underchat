@@ -12,6 +12,7 @@ import {
   chatQueueAccountCentrifugo,
 } from '@core/common/functions/centrifugoQueue';
 import { IChat } from '@core/common/interfaces/IChat';
+import { extractArrayFieldValue } from '@core/common/functions/extractArrayFieldValue';
 
 @injectable()
 export class ChatLabelUpdaterUseCase {
@@ -39,17 +40,7 @@ export class ChatLabelUpdaterUseCase {
     let label: IChat['label'] | null = null;
 
     if (body.label_template_ids) {
-      const labelTemplateIds: string[] = [];
-
-      if (Array.isArray(body.label_template_ids)) {
-        for (const item of body.label_template_ids) {
-          if (item.value) {
-            labelTemplateIds.push(item.value);
-          }
-        }
-      } else if (body.label_template_ids.value) {
-        labelTemplateIds.push(body.label_template_ids.value);
-      }
+      const labelTemplateIds = extractArrayFieldValue(body.label_template_ids);
 
       if (labelTemplateIds.length > 0) {
         const labelTemplates =

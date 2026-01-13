@@ -2897,15 +2897,6 @@ export const useChatStore = defineStore('chat', {
       labelData?: ListChatsResult['label'] | null
     ): Promise<boolean> {
       try {
-        console.log('🟢 [updateChatLabel] Iniciando atualização');
-        console.log('🟢 [updateChatLabel] chatId:', chatId);
-        console.log('🟢 [updateChatLabel] labelTemplateIds:', labelTemplateIds);
-        console.log('🟢 [updateChatLabel] labelData:', labelData);
-        console.log(
-          '🟢 [updateChatLabel] activeChat.label ANTES:',
-          this.activeChat?.label
-        );
-
         this.loading = true;
 
         const body: {
@@ -2925,8 +2916,6 @@ export const useChatStore = defineStore('chat', {
           }));
         }
 
-        console.log('🟢 [updateChatLabel] body para API:', body);
-
         const response = await axios.patch<IApiResponse<{ success: boolean }>>(
           `/chat/${chatId}/label`,
           body
@@ -2944,17 +2933,10 @@ export const useChatStore = defineStore('chat', {
           return false;
         }
 
-        console.log('🟢 [updateChatLabel] API retornou sucesso');
-
         if (this.activeChat?.chat_id === chatId) {
-          console.log(
-            '🟢 [updateChatLabel] Chat ativo é o chat sendo atualizado'
-          );
-
           let label: ListChatsResult['label'] | null = null;
 
           if (labelData !== undefined && labelData !== null) {
-            console.log('🟢 [updateChatLabel] Usando labelData fornecido');
             label =
               labelData.length > 0
                 ? labelData.map((lt) => ({
@@ -2964,7 +2946,6 @@ export const useChatStore = defineStore('chat', {
                   }))
                 : null;
           } else if (labelTemplateIds && labelTemplateIds.length > 0) {
-            console.log('🟢 [updateChatLabel] Buscando labels da API');
             const labels = await this.listLabelTemplates();
             const labelTemplates = labels?.filter((l) =>
               labelTemplateIds.includes(l.label_template_id)
@@ -2980,10 +2961,8 @@ export const useChatStore = defineStore('chat', {
           }
 
           const normalizedLabel = label && label.length > 0 ? [...label] : null;
-          console.log('🟢 [updateChatLabel] normalizedLabel:', normalizedLabel);
 
           if (this.activeChat?.chat_id === chatId) {
-            console.log('🟢 [updateChatLabel] Atualizando activeChat');
             const updated: ListChatsResult = {
               chat_id: this.activeChat.chat_id,
               summary: this.activeChat.summary,
@@ -3002,10 +2981,6 @@ export const useChatStore = defineStore('chat', {
               label: normalizedLabel,
             };
             this.activeChat = updated;
-            console.log(
-              '🟢 [updateChatLabel] activeChat.label DEPOIS da atualização:',
-              this.activeChat.label
-            );
           }
 
           const updateChatInList = (
@@ -3014,9 +2989,6 @@ export const useChatStore = defineStore('chat', {
           ) => {
             const idx = list.findIndex((c) => c.chat_id === chatId);
             if (idx !== -1) {
-              console.log(
-                `🟢 [updateChatLabel] Atualizando chat na lista, index: ${idx}`
-              );
               const updatedChat = {
                 ...list[idx],
                 label: normalizedLabel,
@@ -3025,7 +2997,6 @@ export const useChatStore = defineStore('chat', {
             }
           };
 
-          console.log('🟢 [updateChatLabel] Atualizando chat nas listas');
           updateChatInList(this.listQueue, chatId);
           updateChatInList(this.listInChat, chatId);
           updateChatInList(this.listChatbot, chatId);
@@ -3037,10 +3008,8 @@ export const useChatStore = defineStore('chat', {
           EColor.success
         );
 
-        console.log('🟢 [updateChatLabel] Finalizado com sucesso');
         return true;
       } catch (error) {
-        console.error('🟢 [updateChatLabel] ERRO:', error);
         this.loading = false;
 
         let errorMessage = this.i18n.global.t('chat_label_update_error');
