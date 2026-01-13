@@ -269,18 +269,22 @@ watch(isVisible, (visible) => {
       loadUsers();
       loadSectors();
     }
-    filterStatus.value = FILTER_STATUS_ALL;
-    filterLabelTemplateId.value = null;
-    filterWorkerId.value = null;
-    filterUserId.value = null;
-    filterSectorId.value = null;
-    filterName.value = null;
-    filterPhone.value = null;
-    filterProtocol.value = null;
-    filterDateStart.value = null;
-    filterDateEnd.value = null;
-    sortField.value = 'summary.last_message';
-    sortOrder.value = 'desc';
+    filterStatus.value = props.filterStatus ?? FILTER_STATUS_ALL;
+    filterLabelTemplateId.value = props.filterLabel ?? null;
+    filterWorkerId.value = props.filterWorker ?? null;
+    filterUserId.value = props.filterUser ?? null;
+    filterSectorId.value = props.filterSector ?? null;
+    filterName.value = props.filterName ?? null;
+    filterPhone.value = props.filterPhone ?? null;
+    filterProtocol.value = props.filterProtocol ?? null;
+    filterDateStart.value = props.filterDateStart
+      ? new Date(props.filterDateStart)
+      : null;
+    filterDateEnd.value = props.filterDateEnd
+      ? new Date(props.filterDateEnd)
+      : null;
+    sortField.value = props.sortField ?? 'summary.last_message';
+    sortOrder.value = props.sortOrder ?? 'desc';
   }
 });
 
@@ -295,6 +299,21 @@ watch(
   () => props.filterLabel,
   (newValue) => {
     filterLabelTemplateId.value = newValue ?? null;
+  },
+  { immediate: true }
+);
+
+watch(
+  () => tags.value.length,
+  () => {
+    if (props.filterLabel && tags.value.length > 0) {
+      const tagExists = tags.value.some(
+        (tag) => tag.label_template_id === props.filterLabel
+      );
+      if (!tagExists) {
+        filterLabelTemplateId.value = null;
+      }
+    }
   }
 );
 
