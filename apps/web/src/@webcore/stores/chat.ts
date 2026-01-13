@@ -345,11 +345,7 @@ export const useChatStore = defineStore('chat', {
         date: chat.date,
         started_at: chat.started_at,
         closed_at: chat.closed_at,
-        label: Array.isArray(chat.label)
-          ? chat.label
-          : chat.label
-            ? [chat.label]
-            : null,
+        label: chat.label ?? null,
       };
 
       const isActiveChat = this.activeChat?.chat_id === chat.chat_id;
@@ -1354,11 +1350,7 @@ export const useChatStore = defineStore('chat', {
               user: data.data.user,
               started_at: data.data.started_at,
               closed_at: data.data.closed_at,
-              label: Array.isArray(data.data.label)
-                ? data.data.label
-                : data.data.label
-                  ? [data.data.label]
-                  : null,
+              label: data.data.label ?? null,
             };
           }
         }
@@ -1806,11 +1798,7 @@ export const useChatStore = defineStore('chat', {
         phone: chat.phone,
         status: chat.status,
         date: chat.date,
-        label: Array.isArray(chat.label)
-          ? chat.label
-          : chat.label
-            ? [chat.label]
-            : null,
+        label: chat.label ?? null,
       };
     },
 

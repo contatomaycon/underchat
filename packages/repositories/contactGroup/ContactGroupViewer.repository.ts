@@ -33,7 +33,6 @@ export class ContactGroupViewerRepository {
           name: contact.name,
           phone_partial: contact.phone_partial,
         },
-        created_at: contactGroup.created_at,
       })
       .from(contactGroup)
       .innerJoin(account, eq(contactGroup.account_id, account.account_id))
@@ -75,8 +74,6 @@ export class ContactGroupViewerRepository {
             phone_partial: item.contacts?.phone_partial,
           }))
         : [],
-      label_template: null,
-      created_at: result[0].created_at,
     } as ViewContactGroupResponse;
   };
 }
