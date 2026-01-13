@@ -15,7 +15,7 @@ export const listChatContactsResponseSchema = Type.Object({
   phone_partial: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   photo: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   is_valided: Type.Optional(Type.Union([Type.Boolean(), Type.Null()])),
-  label_template: Type.Optional(Type.Union([labelTemplateSchema, Type.Null()])),
+  label_templates: Type.Array(labelTemplateSchema),
 });
 
 export const listChatContactsFinalResponseSchema = Type.Object({

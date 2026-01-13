@@ -3,13 +3,16 @@ import { uploadFileRequestSchema } from '@core/schema/upload/request.schema';
 import { EContactIgnore } from '@core/common/enums/EContactIgnore';
 
 export const createChatContactRequestSchema = Type.Object({
-  label_template_id: Type.Optional(
+  label_template_ids: Type.Optional(
     Type.Union([
-      Type.String({ format: 'uuid' }),
+      Type.Array(
+        Type.Object({
+          value: Type.String({ format: 'uuid' }),
+        })
+      ),
       Type.Object({
-        value: Type.String({ format: 'uuid' }),
+        value: Type.Union([Type.String({ format: 'uuid' }), Type.Null()]),
       }),
-      Type.Null(),
     ])
   ),
   name: Type.Union([

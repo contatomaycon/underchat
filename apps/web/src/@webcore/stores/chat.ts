@@ -62,6 +62,8 @@ import { TransferUserResponse } from '@core/schema/chat/listTransferUsers/respon
 import { TransferSectorResponse } from '@core/schema/chat/listTransferSectors/response.schema';
 import { TransferSectorUserResponse } from '@core/schema/chat/listTransferSectorUsers/response.schema';
 import { ListTransferOptionsResponse } from '@core/schema/chat/listTransferOptions/response.schema';
+import { extractFieldValue } from '@core/common/functions/extractFieldValue';
+import { extractArrayFieldValue } from '@core/common/functions/extractArrayFieldValue';
 
 type FieldValue = string | { value: string } | null;
 
@@ -2360,22 +2362,6 @@ export const useChatStore = defineStore('chat', {
       }
     },
 
-    extractFieldValue(field: FieldValue | undefined): string {
-      if (field === null || field === undefined) {
-        return '';
-      }
-
-      if (typeof field === 'object' && 'value' in field) {
-        return field.value ?? '';
-      }
-
-      if (typeof field === 'string') {
-        return field;
-      }
-
-      return '';
-    },
-
     async createChatContact(
       payload: CreateContactRequest,
       photoFile?: File | null
@@ -2384,67 +2370,67 @@ export const useChatStore = defineStore('chat', {
         this.loading = true;
 
         const formData = new FormData();
-        const labelTemplateId = this.extractFieldValue(
-          payload.label_template_id as FieldValue
+        const labelTemplateIds = extractArrayFieldValue(
+          payload.label_template_ids as
+            | string[]
+            | Array<{ value: string }>
+            | { value: string }
+            | { value: string[] }
+            | null
+            | undefined
         );
-        if (labelTemplateId) {
-          formData.append('label_template_id', labelTemplateId);
+        for (const labelTemplateId of labelTemplateIds) {
+          formData.append('label_template_ids', labelTemplateId);
         }
         formData.append(
           'name',
-          this.extractFieldValue(payload.name as string | { value: string })
+          extractFieldValue(payload.name as string | { value: string })
         );
-        const lastName = this.extractFieldValue(
-          payload.last_name as FieldValue
-        );
+        const lastName = extractFieldValue(payload.last_name as FieldValue);
         if (lastName) {
           formData.append('last_name', lastName);
         }
-        const email = this.extractFieldValue(payload.email as FieldValue);
+        const email = extractFieldValue(payload.email as FieldValue);
         if (email) {
           formData.append('email', email);
         }
         formData.append(
           'phone_ddi',
-          this.extractFieldValue(
-            payload.phone_ddi as string | { value: string }
-          )
+          extractFieldValue(payload.phone_ddi as string | { value: string })
         );
         formData.append(
           'phone',
-          this.extractFieldValue(payload.phone as string | { value: string })
+          extractFieldValue(payload.phone as string | { value: string })
         );
-        const nickname = this.extractFieldValue(payload.nickname as FieldValue);
+        const nickname = extractFieldValue(payload.nickname as FieldValue);
         if (nickname) {
           formData.append('nickname', nickname);
         }
-        const birthday = this.extractFieldValue(payload.birthday as FieldValue);
+        const birthday = extractFieldValue(payload.birthday as FieldValue);
         if (birthday) {
           formData.append('birthday', birthday);
         }
-        const notes = this.extractFieldValue(payload.notes as FieldValue);
+        const notes = extractFieldValue(payload.notes as FieldValue);
         if (notes) {
           formData.append('notes', notes);
         }
-        const contactDocumentTypeId = this.extractFieldValue(
+        const contactDocumentTypeId = extractFieldValue(
           payload.contact_document_type_id as FieldValue
         );
         if (contactDocumentTypeId) {
           formData.append('contact_document_type_id', contactDocumentTypeId);
         }
-        const document = this.extractFieldValue(payload.document as FieldValue);
+        const document = extractFieldValue(payload.document as FieldValue);
         if (document) {
           formData.append('document', document);
         }
-        const imageUrl = this.extractFieldValue(
-          payload.image_url as FieldValue
-        );
+        const imageUrl = extractFieldValue(payload.image_url as FieldValue);
         if (imageUrl) {
           formData.append('image_url', imageUrl);
         } else if (photoFile) {
           formData.append('photo', photoFile);
         }
-        const chatId = this.extractFieldValue(payload.chat_id as FieldValue);
+        const chatId = extractFieldValue(payload.chat_id as FieldValue);
         if (chatId) {
           formData.append('chat_id', chatId);
         }
@@ -2457,18 +2443,14 @@ export const useChatStore = defineStore('chat', {
           ) {
             formData.append('user_id', '');
           } else {
-            const userId = this.extractFieldValue(
-              payload.user_id as FieldValue
-            );
+            const userId = extractFieldValue(payload.user_id as FieldValue);
             if (userId) {
               formData.append('user_id', userId);
             }
           }
         }
         if (payload.ignore !== undefined) {
-          const ignoreValue = this.extractFieldValue(
-            payload.ignore as FieldValue
-          );
+          const ignoreValue = extractFieldValue(payload.ignore as FieldValue);
           if (ignoreValue) {
             formData.append('ignore', ignoreValue);
           }
@@ -2526,45 +2508,57 @@ export const useChatStore = defineStore('chat', {
         this.loading = true;
 
         const formData = new FormData();
-        const labelTemplateId = this.extractFieldValue(
-          body.label_template_id as FieldValue
-        );
-        if (labelTemplateId) {
-          formData.append('label_template_id', labelTemplateId);
+        if (body.label_template_ids !== undefined) {
+          const labelTemplateIds = extractArrayFieldValue(
+            body.label_template_ids as
+              | string[]
+              | Array<{ value: string }>
+              | { value: string }
+              | { value: string[] }
+              | null
+              | undefined
+          );
+          if (labelTemplateIds.length === 0) {
+            formData.append('label_template_ids', '');
+          } else {
+            for (const labelTemplateId of labelTemplateIds) {
+              formData.append('label_template_ids', labelTemplateId);
+            }
+          }
         }
-        const name = this.extractFieldValue(body.name as FieldValue);
+        const name = extractFieldValue(body.name as FieldValue);
         if (name) {
           formData.append('name', name);
         }
-        const lastName = this.extractFieldValue(body.last_name as FieldValue);
+        const lastName = extractFieldValue(body.last_name as FieldValue);
         if (lastName) {
           formData.append('last_name', lastName);
         }
-        const email = this.extractFieldValue(body.email as FieldValue);
+        const email = extractFieldValue(body.email as FieldValue);
         if (email) {
           formData.append('email', email);
         }
-        const phoneDdi = this.extractFieldValue(body.phone_ddi as FieldValue);
+        const phoneDdi = extractFieldValue(body.phone_ddi as FieldValue);
         if (phoneDdi) {
           formData.append('phone_ddi', phoneDdi);
         }
-        const phone = this.extractFieldValue(body.phone as FieldValue);
+        const phone = extractFieldValue(body.phone as FieldValue);
         if (phone) {
           formData.append('phone', phone);
         }
-        const nickname = this.extractFieldValue(body.nickname as FieldValue);
+        const nickname = extractFieldValue(body.nickname as FieldValue);
         if (nickname) {
           formData.append('nickname', nickname);
         }
-        const birthday = this.extractFieldValue(body.birthday as FieldValue);
+        const birthday = extractFieldValue(body.birthday as FieldValue);
         if (birthday) {
           formData.append('birthday', birthday);
         }
-        const notes = this.extractFieldValue(body.notes as FieldValue);
+        const notes = extractFieldValue(body.notes as FieldValue);
         if (notes) {
           formData.append('notes', notes);
         }
-        const contactDocumentTypeId = this.extractFieldValue(
+        const contactDocumentTypeId = extractFieldValue(
           body.contact_document_type_id as FieldValue
         );
         if (
@@ -2573,24 +2567,22 @@ export const useChatStore = defineStore('chat', {
         ) {
           formData.append('contact_document_type_id', contactDocumentTypeId);
         }
-        const document = this.extractFieldValue(body.document as FieldValue);
+        const document = extractFieldValue(body.document as FieldValue);
         if (document !== undefined && document !== null) {
           formData.append('document', document);
         }
-        const imageUrl = this.extractFieldValue(body.image_url as FieldValue);
+        const imageUrl = extractFieldValue(body.image_url as FieldValue);
         if (imageUrl) {
           formData.append('image_url', imageUrl);
         } else if (photoFile) {
           formData.append('photo', photoFile);
         }
         if (body.user_id !== undefined) {
-          const userIdValue = this.extractFieldValue(
-            body.user_id as FieldValue
-          );
+          const userIdValue = extractFieldValue(body.user_id as FieldValue);
           formData.append('user_id', userIdValue);
         }
         if (body.ignore !== undefined) {
-          const ignoreValue = this.extractFieldValue(body.ignore as FieldValue);
+          const ignoreValue = extractFieldValue(body.ignore as FieldValue);
           formData.append('ignore', ignoreValue);
         }
 

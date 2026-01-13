@@ -4,6 +4,7 @@ import {
   labelTemplate,
   account,
   contactDocumentType,
+  contactLabelTemplate,
   user,
   userInfo,
 } from '@core/models';
@@ -22,6 +23,22 @@ export class ContactViewerRepository {
     contactId: string,
     accountId?: string
   ): Promise<(ViewContactResponse & { phone: string }) | null> => {
+    const [contactData, labels] = await Promise.all([
+      this.findContactById(contactId, accountId),
+      this.findLabelsByContactId(contactId),
+    ]);
+
+    if (!contactData) {
+      return null;
+    }
+
+    return this.buildViewContactResponse(contactData, labels);
+  };
+
+  private readonly findContactById = async (
+    contactId: string,
+    accountId?: string
+  ) => {
     const conditions = [
       eq(contact.contact_id, contactId),
       isNull(contact.deleted_at),
@@ -37,11 +54,6 @@ export class ContactViewerRepository {
         account: {
           account_id: account.account_id,
           name: account.name,
-        },
-        label_template: {
-          label_template_id: labelTemplate.label_template_id,
-          label: labelTemplate.label,
-          color: labelTemplate.color,
         },
         contact_document_type: {
           contact_document_type_id:
@@ -76,10 +88,6 @@ export class ContactViewerRepository {
       .from(contact)
       .leftJoin(account, eq(contact.account_id, account.account_id))
       .leftJoin(
-        labelTemplate,
-        eq(labelTemplate.label_template_id, contact.label_template_id)
-      )
-      .leftJoin(
         contactDocumentType,
         eq(
           contactDocumentType.contact_document_type_id,
@@ -89,25 +97,66 @@ export class ContactViewerRepository {
       .leftJoin(user, eq(contact.user_id, user.user_id))
       .leftJoin(userInfo, eq(user.user_id, userInfo.user_id))
       .where(and(...conditions))
+      .limit(1)
       .execute();
 
-    if (!result.length) {
-      return null;
+    return result[0] ?? null;
+  };
+
+  private readonly findLabelsByContactId = async (contactId: string) => {
+    const result = await this.dbRo
+      .select({
+        label_template_id: labelTemplate.label_template_id,
+        label: labelTemplate.label,
+        color: labelTemplate.color,
+      })
+      .from(contactLabelTemplate)
+      .innerJoin(
+        labelTemplate,
+        eq(
+          labelTemplate.label_template_id,
+          contactLabelTemplate.label_template_id
+        )
+      )
+      .where(eq(contactLabelTemplate.contact_id, contactId))
+      .execute();
+
+    return result;
+  };
+
+  private readonly buildViewContactResponse = (
+    contactData: NonNullable<Awaited<ReturnType<typeof this.findContactById>>>,
+    labels: Awaited<ReturnType<typeof this.findLabelsByContactId>>
+  ): ViewContactResponse & { phone: string } => {
+    if (!contactData.account) {
+      throw new Error('Account is required');
     }
 
-    const contactData = result[0] as any;
-    const formattedResult = {
-      ...contactData,
-      user: contactData.user?.user_id
-        ? {
-            user_id: contactData.user.user_id,
-            name: contactData.user.name,
-            photo: contactData.user.photo,
-          }
-        : null,
-    };
+    const labelTemplates = this.formatLabels(labels);
+    const formattedUser = this.formatUser(contactData.user);
 
-    return formattedResult as (ViewContactResponse & { phone: string }) | null;
+    return {
+      contact_id: contactData.contact_id,
+      account: contactData.account,
+      contact_document_type: contactData.contact_document_type,
+      label_templates: labelTemplates,
+      name: contactData.name,
+      last_name: contactData.last_name ?? null,
+      email_partial: contactData.email_partial ?? null,
+      phone_ddi: contactData.phone_ddi ?? null,
+      phone_partial: contactData.phone_partial ?? null,
+      phone: contactData.phone ?? '',
+      created_at: contactData.created_at ?? null,
+      nickname: contactData.nickname ?? null,
+      birthday: contactData.birthday ?? null,
+      notes: contactData.notes ?? null,
+      document: contactData.document ?? null,
+      document_partial: contactData.document_partial ?? null,
+      is_valided: contactData.is_valided ?? null,
+      photo: contactData.photo ?? null,
+      user: formattedUser,
+      ignore: contactData.ignore ?? null,
+    };
   };
 
   viewContactByPhone = async (
@@ -115,6 +164,26 @@ export class ContactViewerRepository {
     phonesC: string[],
     phoneDdi: string
   ): Promise<ViewContactResponse | null> => {
+    const contactData = await this.findContactByPhone(
+      accountId,
+      phonesC,
+      phoneDdi
+    );
+
+    if (!contactData) {
+      return null;
+    }
+
+    const labels = await this.findLabelsByContactId(contactData.contact_id);
+
+    return this.buildViewContactResponseByPhone(contactData, labels);
+  };
+
+  private readonly findContactByPhone = async (
+    accountId: string,
+    phonesC: string[],
+    phoneDdi: string
+  ) => {
     const conditions = [
       isNull(contact.deleted_at),
       eq(contact.account_id, accountId),
@@ -128,11 +197,6 @@ export class ContactViewerRepository {
         account: {
           account_id: account.account_id,
           name: account.name,
-        },
-        label_template: {
-          label_template_id: labelTemplate.label_template_id,
-          label: labelTemplate.label,
-          color: labelTemplate.color,
         },
         contact_document_type: {
           contact_document_type_id:
@@ -166,10 +230,6 @@ export class ContactViewerRepository {
       .from(contact)
       .leftJoin(account, eq(contact.account_id, account.account_id))
       .leftJoin(
-        labelTemplate,
-        eq(labelTemplate.label_template_id, contact.label_template_id)
-      )
-      .leftJoin(
         contactDocumentType,
         eq(
           contactDocumentType.contact_document_type_id,
@@ -182,22 +242,70 @@ export class ContactViewerRepository {
       .limit(1)
       .execute();
 
-    if (!result.length) {
+    return result[0] ?? null;
+  };
+
+  private readonly buildViewContactResponseByPhone = (
+    contactData: NonNullable<
+      Awaited<ReturnType<typeof this.findContactByPhone>>
+    >,
+    labels: Awaited<ReturnType<typeof this.findLabelsByContactId>>
+  ): ViewContactResponse => {
+    if (!contactData.account) {
+      throw new Error('Account is required');
+    }
+
+    const labelTemplates = this.formatLabels(labels);
+    const formattedUser = this.formatUser(contactData.user);
+
+    return {
+      contact_id: contactData.contact_id,
+      account: contactData.account,
+      contact_document_type: contactData.contact_document_type,
+      label_templates: labelTemplates,
+      name: contactData.name,
+      last_name: contactData.last_name ?? null,
+      email_partial: contactData.email_partial ?? null,
+      phone_ddi: contactData.phone_ddi ?? null,
+      phone_partial: contactData.phone_partial ?? null,
+      created_at: contactData.created_at ?? null,
+      nickname: contactData.nickname ?? null,
+      birthday: contactData.birthday ?? null,
+      notes: contactData.notes ?? null,
+      document: contactData.document ?? null,
+      document_partial: contactData.document_partial ?? null,
+      is_valided: contactData.is_valided ?? null,
+      photo: contactData.photo ?? null,
+      user: formattedUser,
+      ignore: contactData.ignore ?? null,
+    };
+  };
+
+  private readonly formatLabels = (
+    labels: Awaited<ReturnType<typeof this.findLabelsByContactId>>
+  ): Array<{ label_template_id: string; label: string; color: string }> => {
+    return labels.map((label) => ({
+      label_template_id: label.label_template_id,
+      label: label.label,
+      color: label.color,
+    }));
+  };
+
+  private readonly formatUser = (
+    userData: {
+      user_id: string | null;
+      name: string | null;
+      photo: string | null;
+    } | null
+  ): ViewContactResponse['user'] => {
+    if (!userData?.user_id) {
       return null;
     }
 
-    const contactData = result[0] as any;
-    const formattedResult = {
-      ...contactData,
-      user: contactData.user?.user_id
-        ? {
-            user_id: contactData.user.user_id,
-            name: contactData.user.name,
-            photo: contactData.user.photo,
-          }
-        : null,
+    return {
+      user_id: userData.user_id,
+      name: userData.name,
+      photo: userData.photo,
     };
-
-    return formattedResult as ViewContactResponse;
   };
 }

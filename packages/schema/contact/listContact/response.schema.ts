@@ -15,7 +15,7 @@ const accountSchema = Type.Object({
 export const listContactResponseSchema = Type.Object({
   contact_id: Type.String({ format: 'uuid' }),
   account: accountSchema,
-  label_template: Type.Optional(Type.Union([labelTemplateSchema, Type.Null()])),
+  label_templates: Type.Array(labelTemplateSchema),
   name: Type.String(),
   last_name: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   email_partial: Type.Optional(Type.Union([Type.String(), Type.Null()])),

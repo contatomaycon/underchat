@@ -16,19 +16,19 @@ export class UserInfoUpdaterRepository {
   ): Partial<typeof userInfo.$inferInsert> {
     const inputUpdate: Partial<typeof userInfo.$inferInsert> = {};
 
-    if (input.phone_ddi) {
+    if (input.phone_ddi !== undefined) {
       inputUpdate.phone_ddi = input.phone_ddi;
     }
 
-    if (input.phone) {
+    if (input.phone !== undefined) {
       inputUpdate.phone = input.phone;
     }
 
-    if (input.phone_partial) {
+    if (input.phone_partial !== undefined) {
       inputUpdate.phone_partial = input.phone_partial;
     }
 
-    if (input.phone_c) {
+    if (input.phone_c !== undefined) {
       inputUpdate.phone_c = input.phone_c;
     }
 

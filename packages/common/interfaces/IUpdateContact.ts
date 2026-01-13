@@ -1,5 +1,5 @@
 export interface IUpdateContact {
-  label_template_id?: string | null;
+  label_template_ids?: string[] | null;
   name?: string | null;
   last_name?: string | null;
   email?: string | null;

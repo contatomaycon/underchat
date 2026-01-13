@@ -1,5 +1,10 @@
 import * as schema from '@core/models';
-import { contact, labelTemplate, account } from '@core/models';
+import {
+  contact,
+  labelTemplate,
+  account,
+  contactLabelTemplate,
+} from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import {
@@ -91,10 +96,17 @@ export class ContactListerRepository {
       searchHashes ? eq(contact.phone_c, searchHashes) : undefined,
       searchTerm
         ? inArray(
-            labelTemplate.label_template_id,
+            contact.contact_id,
             this.dbRo
-              .select({ label_template_id: labelTemplate.label_template_id })
-              .from(labelTemplate)
+              .select({ contact_id: contactLabelTemplate.contact_id })
+              .from(contactLabelTemplate)
+              .innerJoin(
+                labelTemplate,
+                eq(
+                  labelTemplate.label_template_id,
+                  contactLabelTemplate.label_template_id
+                )
+              )
               .where(ilike(labelTemplate.label, `%${searchTerm}%`))
           )
         : undefined,
@@ -120,6 +132,31 @@ export class ContactListerRepository {
     const filters = this.setFilters(query, searchHashes);
     const orders = this.setOrders(query);
 
+    const contactsResult = await this.findContacts(
+      accountId,
+      filters,
+      orders,
+      perPage,
+      currentPage
+    );
+
+    if (!contactsResult?.length) {
+      return [] as ListContactResponse[];
+    }
+
+    const contactIds = contactsResult.map((c) => c.contact_id);
+    const labelsByContactId = await this.findLabelsByContactIds(contactIds);
+
+    return this.buildListContactResponse(contactsResult, labelsByContactId);
+  };
+
+  private readonly findContacts = async (
+    accountId: string,
+    filters: SQLWrapper[],
+    orders: SQL[],
+    perPage: number,
+    currentPage: number
+  ) => {
     const whereConditions = [
       eq(contact.account_id, accountId),
       isNull(contact.deleted_at),
@@ -132,11 +169,6 @@ export class ContactListerRepository {
         account: {
           account_id: account.account_id,
           name: account.name,
-        },
-        label_template: {
-          label_template_id: labelTemplate.label_template_id,
-          label: labelTemplate.label,
-          color: labelTemplate.color,
         },
         name: contact.name,
         last_name: contact.last_name,
@@ -154,49 +186,119 @@ export class ContactListerRepository {
       })
       .from(contact)
       .leftJoin(account, eq(contact.account_id, account.account_id))
-      .leftJoin(
-        labelTemplate,
-        eq(contact.label_template_id, labelTemplate.label_template_id)
-      )
       .where(and(...whereConditions));
 
     if (orders.length) {
       queryBuilder.orderBy(...orders);
     }
 
-    const result = await queryBuilder
+    return queryBuilder
       .limit(perPage)
       .offset((currentPage - 1) * perPage)
       .execute();
+  };
 
-    if (!result?.length) {
-      return [] as ListContactResponse[];
+  private readonly findLabelsByContactIds = async (
+    contactIds: string[]
+  ): Promise<
+    Map<
+      string,
+      Array<{ label_template_id: string; label: string; color: string }>
+    >
+  > => {
+    if (contactIds.length === 0) {
+      return new Map();
     }
 
-    return result.map((contact) => ({
-      contact_id: contact.contact_id,
+    const labelsResult = await this.dbRo
+      .select({
+        contact_id: contactLabelTemplate.contact_id,
+        label_template_id: labelTemplate.label_template_id,
+        label: labelTemplate.label,
+        color: labelTemplate.color,
+      })
+      .from(contactLabelTemplate)
+      .innerJoin(
+        labelTemplate,
+        eq(
+          labelTemplate.label_template_id,
+          contactLabelTemplate.label_template_id
+        )
+      )
+      .where(inArray(contactLabelTemplate.contact_id, contactIds))
+      .execute();
+
+    return this.buildLabelsMap(labelsResult);
+  };
+
+  private readonly buildLabelsMap = (
+    labelsResult: Array<{
+      contact_id: string;
+      label_template_id: string;
+      label: string;
+      color: string;
+    }>
+  ): Map<
+    string,
+    Array<{ label_template_id: string; label: string; color: string }>
+  > => {
+    const labelsByContactId = new Map<
+      string,
+      Array<{ label_template_id: string; label: string; color: string }>
+    >();
+
+    for (const label of labelsResult) {
+      const existing = labelsByContactId.get(label.contact_id) ?? [];
+      existing.push({
+        label_template_id: label.label_template_id,
+        label: label.label,
+        color: label.color,
+      });
+      labelsByContactId.set(label.contact_id, existing);
+    }
+
+    return labelsByContactId;
+  };
+
+  private readonly buildListContactResponse = (
+    contactsResult: Array<{
+      contact_id: string;
+      account: { account_id: string; name: string } | null;
+      name: string;
+      last_name: string | null;
+      email_partial: string | null;
+      phone_ddi: string | null;
+      phone_partial: string | null;
+      nickname: string | null;
+      birthday: string | null;
+      notes: string | null;
+      created_at: string | null;
+      is_valided: boolean | null;
+      photo: string | null;
+    }>,
+    labelsByContactId: Map<
+      string,
+      Array<{ label_template_id: string; label: string; color: string }>
+    >
+  ): ListContactResponse[] => {
+    return contactsResult.map((contactItem) => ({
+      contact_id: contactItem.contact_id,
       account: {
-        account_id: contact.account?.account_id,
-        name: contact.account?.name,
+        account_id: contactItem.account?.account_id,
+        name: contactItem.account?.name,
       },
-      label_template: contact.label_template?.label_template_id
-        ? {
-            label_template_id: contact.label_template.label_template_id,
-            label: contact.label_template.label,
-            color: contact.label_template.color,
-          }
-        : null,
-      name: contact.name,
-      last_name: contact.last_name ?? null,
-      email_partial: contact.email_partial ?? null,
-      phone_ddi: contact.phone_ddi ?? null,
-      phone_partial: contact.phone_partial ?? null,
-      created_at: contact.created_at ?? null,
-      nickname: contact.nickname ?? null,
-      birthday: contact.birthday,
-      notes: contact.notes ?? null,
-      is_valided: contact.is_valided ?? null,
-      photo: contact.photo ?? null,
+      label_templates: labelsByContactId.get(contactItem.contact_id) ?? [],
+      name: contactItem.name,
+      last_name: contactItem.last_name ?? null,
+      email_partial: contactItem.email_partial ?? null,
+      phone_ddi: contactItem.phone_ddi ?? null,
+      phone_partial: contactItem.phone_partial ?? null,
+      created_at: contactItem.created_at ?? null,
+      nickname: contactItem.nickname ?? null,
+      birthday: contactItem.birthday,
+      notes: contactItem.notes ?? null,
+      is_valided: contactItem.is_valided ?? null,
+      photo: contactItem.photo ?? null,
     })) as ListContactResponse[];
   };
 
@@ -219,10 +321,6 @@ export class ContactListerRepository {
       })
       .from(contact)
       .leftJoin(account, eq(contact.account_id, account.account_id))
-      .leftJoin(
-        labelTemplate,
-        eq(contact.label_template_id, labelTemplate.label_template_id)
-      )
       .where(and(...whereConditions))
       .execute();
 

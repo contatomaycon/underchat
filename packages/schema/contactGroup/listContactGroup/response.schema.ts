@@ -16,7 +16,7 @@ const contactSchema = Type.Object({
   contact_id: Type.String({ format: 'uuid' }),
   name: Type.String(),
   phone_partial: Type.Optional(Type.Union([Type.String(), Type.Null()])),
-  label_template: Type.Optional(Type.Union([labelTemplateSchema, Type.Null()])),
+  label_templates: Type.Array(labelTemplateSchema),
 });
 
 export const listContactGroupResponseSchema = Type.Object({

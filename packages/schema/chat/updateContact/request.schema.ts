@@ -11,13 +11,16 @@ export type UpdateChatContactParamsRequest = Static<
 >;
 
 export const updateChatContactRequestSchema = Type.Object({
-  label_template_id: Type.Optional(
+  label_template_ids: Type.Optional(
     Type.Union([
-      Type.String({ format: 'uuid' }),
+      Type.Array(
+        Type.Object({
+          value: Type.String({ format: 'uuid' }),
+        })
+      ),
       Type.Object({
-        value: Type.String({ format: 'uuid' }),
+        value: Type.Union([Type.String({ format: 'uuid' }), Type.Null()]),
       }),
-      Type.Null(),
     ])
   ),
   name: Type.Optional(

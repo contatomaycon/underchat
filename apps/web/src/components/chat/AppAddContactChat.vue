@@ -176,7 +176,7 @@ const itemsLabel = computed(() =>
   }))
 );
 
-const label_template_id = ref<string | null>(null);
+const label_template_ids = ref<string[]>([]);
 const name = ref<string | null>(null);
 const last_name = ref<string | null>(null);
 const email = ref<string | null>(null);
@@ -276,7 +276,10 @@ const addContact = async () => {
   try {
     const result = await chatStore.createChatContact(
       {
-        label_template_id: label_template_id.value ?? null,
+        label_template_ids:
+          label_template_ids.value.length > 0
+            ? label_template_ids.value.map((id) => ({ value: id }))
+            : undefined,
         name: name.value,
         last_name: last_name.value ?? null,
         email: email.value ?? null,
@@ -323,9 +326,21 @@ const extractFieldValue = (field: FieldValue | undefined): string | null => {
 
 const resetForm = () => {
   if (props.initialData) {
-    label_template_id.value = extractFieldValue(
-      props.initialData.label_template_id as FieldValue
-    );
+    const labelTemplateIdsValue = props.initialData.label_template_ids;
+    if (Array.isArray(labelTemplateIdsValue)) {
+      label_template_ids.value = labelTemplateIdsValue.map(
+        (item) => item.value
+      );
+    } else if (
+      labelTemplateIdsValue &&
+      typeof labelTemplateIdsValue === 'object' &&
+      'value' in labelTemplateIdsValue &&
+      Array.isArray(labelTemplateIdsValue.value)
+    ) {
+      label_template_ids.value = labelTemplateIdsValue.value;
+    } else {
+      label_template_ids.value = [];
+    }
     name.value = extractFieldValue(props.initialData.name as FieldValue);
     last_name.value = extractFieldValue(
       props.initialData.last_name as FieldValue
@@ -353,7 +368,7 @@ const resetForm = () => {
         props.initialData.ignore as FieldValue
       ) as EContactIgnore) ?? EContactIgnore.not_ignore;
   } else {
-    label_template_id.value = null;
+    label_template_ids.value = [];
     name.value = null;
     last_name.value = null;
     email.value = null;
@@ -1076,14 +1091,27 @@ watch(
             <VCol cols="12" md="6">
               <VLabel class="text-body-2 mb-1">{{ $t('label') }}:</VLabel>
               <AppSelectSearch
-                v-model="label_template_id"
+                v-model="label_template_ids"
                 :items="itemsLabel"
                 :placeholder="$t('select_label')"
                 :clearable="true"
+                multiple
+                chips
+                closable-chips
                 item-value="value"
                 item-title="title"
                 class="label-select"
               >
+                <template #chip="{ item }">
+                  <div class="d-flex align-center gap-1">
+                    <div
+                      v-if="item && item.color"
+                      class="label-color-circle"
+                      :style="{ backgroundColor: item.color }"
+                    />
+                    <span>{{ item?.title }}</span>
+                  </div>
+                </template>
                 <template #prepend-inner="{ item }">
                   <div
                     v-if="item && !Array.isArray(item) && (item as any).color"

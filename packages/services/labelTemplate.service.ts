@@ -63,6 +63,14 @@ export class LabelTemplateService {
     );
   };
 
+  existsLabelTemplatesByIds = async (
+    labelTemplateIds: string[]
+  ): Promise<Set<string>> => {
+    return this.labelTemplateViewerExistsRepository.existsLabelTemplatesByIds(
+      labelTemplateIds
+    );
+  };
+
   createLabelTemplate = async (
     input: CreateLabelTemplateRequest,
     accountId: string

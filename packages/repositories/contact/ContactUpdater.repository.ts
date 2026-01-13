@@ -1,26 +1,30 @@
 import * as schema from '@core/models';
 import { contact } from '@core/models';
-import { NodePgDatabase } from 'drizzle-orm/node-postgres';
+import {
+  NodePgDatabase,
+  NodePgQueryResultHKT,
+} from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { eq } from 'drizzle-orm';
+import { eq, ExtractTablesWithRelations } from 'drizzle-orm';
+import { PgTransaction } from 'drizzle-orm/pg-core';
 import { IUpdateContact } from '@core/common/interfaces/IUpdateContact';
 import { nullIfEmpty } from '@core/common/functions/nullIfEmpty';
 import { EContactIgnore } from '@core/common/enums/EContactIgnore';
+import { ContactLabelTemplateDeleterRepository } from './ContactLabelTemplateDeleter.repository';
+import { ContactLabelTemplateCreatorRepository } from './ContactLabelTemplateCreator.repository';
 
 @injectable()
 export class ContactUpdaterRepository {
   constructor(
-    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>,
+    private readonly contactLabelTemplateDeleterRepository: ContactLabelTemplateDeleterRepository,
+    private readonly contactLabelTemplateCreatorRepository: ContactLabelTemplateCreatorRepository
   ) {}
 
   private updateInput(
     input: IUpdateContact
   ): Partial<typeof contact.$inferInsert> {
     const inputUpdate: Partial<typeof contact.$inferInsert> = {};
-
-    if ('label_template_id' in input) {
-      inputUpdate.label_template_id = input.label_template_id ?? null;
-    }
 
     if (input?.name) {
       inputUpdate.name = input.name;
@@ -87,7 +91,54 @@ export class ContactUpdaterRepository {
     return inputUpdate;
   }
 
-  updateContactById = async (
+  private syncLabelTemplatesInTransaction = async (
+    tx: PgTransaction<
+      NodePgQueryResultHKT,
+      typeof schema,
+      ExtractTablesWithRelations<typeof schema>
+    >,
+    contactId: string,
+    labelTemplateIds: string[]
+  ): Promise<void> => {
+    await this.contactLabelTemplateDeleterRepository.deleteContactLabelTemplatesByContactId(
+      tx,
+      contactId
+    );
+
+    if (labelTemplateIds.length > 0) {
+      await Promise.all(
+        labelTemplateIds.map((labelTemplateId) =>
+          this.contactLabelTemplateCreatorRepository.createContactLabelTemplate(
+            tx,
+            contactId,
+            labelTemplateId
+          )
+        )
+      );
+    }
+  };
+
+  private updateContactInTransaction = async (
+    tx: PgTransaction<
+      NodePgQueryResultHKT,
+      typeof schema,
+      ExtractTablesWithRelations<typeof schema>
+    >,
+    contactId: string,
+    input: IUpdateContact
+  ): Promise<boolean> => {
+    const updateInput = this.updateInput(input);
+
+    const result = await tx
+      .update(contact)
+      .set(updateInput)
+      .where(eq(contact.contact_id, contactId))
+      .execute();
+
+    return result.rowCount === 1;
+  };
+
+  private updateContactWithoutTransaction = async (
     contactId: string,
     input: IUpdateContact
   ): Promise<boolean> => {
@@ -100,6 +151,29 @@ export class ContactUpdaterRepository {
       .execute();
 
     return result.rowCount === 1;
+  };
+
+  updateContactById = async (
+    contactId: string,
+    input: IUpdateContact
+  ): Promise<boolean> => {
+    const hasLabelTemplates = input.label_template_ids !== undefined;
+
+    if (hasLabelTemplates) {
+      return this.dbRw.transaction(async (tx) => {
+        const labelTemplateIds = input.label_template_ids ?? [];
+
+        await this.syncLabelTemplatesInTransaction(
+          tx,
+          contactId,
+          labelTemplateIds
+        );
+
+        return this.updateContactInTransaction(tx, contactId, input);
+      });
+    }
+
+    return this.updateContactWithoutTransaction(contactId, input);
   };
 
   validateContact = async (

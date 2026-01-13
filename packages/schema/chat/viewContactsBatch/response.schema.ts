@@ -25,7 +25,7 @@ const viewChatContactBatchItemResponseSchema = Type.Object({
   document_partial: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   photo: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   is_valided: Type.Optional(Type.Union([Type.Boolean(), Type.Null()])),
-  label_template: Type.Optional(Type.Union([labelTemplateSchema, Type.Null()])),
+  label_templates: Type.Array(labelTemplateSchema),
   contact_document_type: Type.Optional(
     Type.Union([contactDocumentTypeSchema, Type.Null()])
   ),

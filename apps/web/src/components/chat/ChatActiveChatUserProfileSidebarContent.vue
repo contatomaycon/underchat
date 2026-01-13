@@ -290,7 +290,7 @@ const itemsLabel = computed(() =>
   }))
 );
 
-const label_template_id = ref<string | null>(null);
+const label_template_ids = ref<string[]>([]);
 const name = ref<string | null>(null);
 const last_name = ref<string | null>(null);
 const email = ref<string | null>(null);
@@ -488,8 +488,8 @@ const loadContactData = async () => {
   try {
     const contact = await chatStore.getChatContactById(contactId.value, true);
     if (contact) {
-      label_template_id.value =
-        contact.label_template?.label_template_id ?? null;
+      label_template_ids.value =
+        contact.label_templates?.map((lt) => lt.label_template_id) ?? [];
       name.value = contact.name;
       last_name.value = contact.last_name ?? null;
 
@@ -545,7 +545,7 @@ const resetFormFields = () => {
   nickname.value = null;
   birthday.value = null;
   notes.value = null;
-  label_template_id.value = null;
+  label_template_ids.value = [];
   contact_document_type_id.value = null;
   document.value = null;
   user_id.value = null;
@@ -621,7 +621,10 @@ const addContact = async () => {
       null);
 
   const payload: CreateChatContactRequest = {
-    label_template_id: label_template_id.value ?? null,
+    label_template_ids:
+      label_template_ids.value.length > 0
+        ? label_template_ids.value.map((id) => ({ value: id }))
+        : undefined,
     name: name.value,
     last_name: last_name.value ?? null,
     email: email.value ?? null,
@@ -673,7 +676,7 @@ const updateContact = async () => {
       null);
 
   const body: UpdateChatContactRequest = {
-    label_template_id: label_template_id.value,
+    label_template_ids: label_template_ids.value.map((id) => ({ value: id })),
     name: name.value,
     last_name: last_name.value,
     email: emailToSave,
@@ -1589,39 +1592,43 @@ onMounted(async () => {
 
           <VCol cols="12" md="6">
             <VLabel class="text-body-2 mb-1">{{ $t('label') }}:</VLabel>
-            <AppSelect
-              class="label-select"
-              v-model="label_template_id"
+            <AppSelectSearch
+              v-model="label_template_ids"
               :items="itemsLabel"
-              item-title="title"
-              item-value="value"
               :placeholder="$t('select_label')"
-              clearable
-              clear-icon="tabler-x"
-              @click:clear="label_template_id = null"
+              :clearable="true"
+              multiple
+              chips
+              closable-chips
+              item-value="value"
+              item-title="title"
+              class="label-select"
             >
-              <template #item="{ props, item }">
-                <VListItem v-bind="props">
-                  <template #prepend>
-                    <div
-                      v-if="item.raw.color"
-                      class="label-color-circle"
-                      :style="{ backgroundColor: item.raw.color }"
-                    />
-                  </template>
-                </VListItem>
-              </template>
-              <template #selection="{ item }">
-                <div v-if="item.raw" class="d-flex align-center gap-2">
+              <template #chip="{ item }">
+                <div class="d-flex align-center gap-1">
                   <div
-                    v-if="item.raw.color"
+                    v-if="item && item.color"
                     class="label-color-circle"
-                    :style="{ backgroundColor: item.raw.color }"
+                    :style="{ backgroundColor: item.color }"
                   />
-                  <span>{{ item.raw.title }}</span>
+                  <span>{{ item?.title }}</span>
                 </div>
               </template>
-            </AppSelect>
+              <template #prepend-inner="{ item }">
+                <div
+                  v-if="item && !Array.isArray(item) && (item as any).color"
+                  class="label-color-circle me-2"
+                  :style="{ backgroundColor: (item as any).color }"
+                />
+              </template>
+              <template #item-prepend="{ item }">
+                <div
+                  v-if="item && (item as any).color"
+                  class="label-color-circle"
+                  :style="{ backgroundColor: (item as any).color }"
+                />
+              </template>
+            </AppSelectSearch>
           </VCol>
         </VRow>
         <VRow>

@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { ref, computed, watch, nextTick } from 'vue';
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 
 const { t } = useI18n();
@@ -63,8 +63,11 @@ const emit = defineEmits<{
 
 const isMenuOpen = ref(false);
 const internalSearch = ref(props.search || '');
-const maxVisibleChips = ref(2);
+const maxVisibleChips = ref(1);
 const selectedItemsCache = ref<SelectItem[]>([]);
+const fieldWrapperRef = ref<HTMLElement | null>(null);
+const isFieldSmall = ref(false);
+const SMALL_FIELD_THRESHOLD = 200;
 
 const getItemValue = (item: SelectItem): string | number | boolean => {
   return item[props.itemValue] ?? item.value ?? item.id ?? '';
@@ -122,6 +125,9 @@ const selectedItems = computed(() => {
 });
 
 const visibleChips = computed(() => {
+  if (isFieldSmall.value && selectedItems.value.length > 0) {
+    return [];
+  }
   if (selectedItems.value.length <= maxVisibleChips.value) {
     return selectedItems.value;
   }
@@ -129,6 +135,9 @@ const visibleChips = computed(() => {
 });
 
 const remainingChipsCount = computed(() => {
+  if (isFieldSmall.value && selectedItems.value.length > 0) {
+    return selectedItems.value.length;
+  }
   const remaining = selectedItems.value.length - maxVisibleChips.value;
   return remaining > 0 ? remaining : 0;
 });
@@ -259,6 +268,30 @@ const handleClear = () => {
   }
   emit('clear');
 };
+
+const checkFieldSize = () => {
+  if (!fieldWrapperRef.value) return;
+  const width = fieldWrapperRef.value.offsetWidth;
+  isFieldSmall.value = width < SMALL_FIELD_THRESHOLD;
+};
+
+let resizeObserver: ResizeObserver | null = null;
+
+onMounted(() => {
+  if (fieldWrapperRef.value) {
+    checkFieldSize();
+    resizeObserver = new ResizeObserver(() => {
+      checkFieldSize();
+    });
+    resizeObserver.observe(fieldWrapperRef.value);
+  }
+});
+
+onUnmounted(() => {
+  if (resizeObserver) {
+    resizeObserver.disconnect();
+  }
+});
 </script>
 
 <template>
@@ -274,7 +307,7 @@ const handleClear = () => {
       :z-index="9999"
     >
       <template #activator="{ props: menuProps }">
-        <div class="select-field-wrapper">
+        <div ref="fieldWrapperRef" class="select-field-wrapper">
           <VTextField
             v-bind="menuProps"
             :model-value="inputValue"
@@ -308,7 +341,10 @@ const handleClear = () => {
                   class="cursor-pointer clear-icon"
                   @click.stop="handleClear"
                 />
-                <VIcon icon="tabler-chevron-down" class="chevron-icon" />
+                <VIcon
+                  icon="tabler-chevron-down"
+                  class="chevron-icon cursor-pointer"
+                />
               </div>
             </template>
           </VTextField>
@@ -330,14 +366,30 @@ const handleClear = () => {
                 {{ getItemTitle(item) }}
               </template>
             </VChip>
-            <VChip
+            <VTooltip
               v-if="remainingChipsCount > 0"
-              size="small"
-              color="primary"
-              variant="tonal"
+              location="top"
+              :text="
+                isFieldSmall
+                  ? selectedItems.map((item) => getItemTitle(item)).join(', ')
+                  : selectedItems
+                      .slice(maxVisibleChips)
+                      .map((item) => getItemTitle(item))
+                      .join(', ')
+              "
             >
-              +{{ remainingChipsCount }}
-            </VChip>
+              <template #activator="{ props: tooltipProps }">
+                <VChip
+                  v-bind="tooltipProps"
+                  size="small"
+                  color="primary"
+                  variant="tonal"
+                  class="remaining-chips-count"
+                >
+                  {{ isFieldSmall ? '+' : '+' }}{{ remainingChipsCount }}
+                </VChip>
+              </template>
+            </VTooltip>
           </div>
         </div>
       </template>
@@ -415,6 +467,10 @@ const handleClear = () => {
 
   &:hover .append-inner-icons .clear-icon {
     opacity: 1;
+  }
+
+  .append-inner-icons .chevron-icon {
+    cursor: pointer;
   }
 }
 
@@ -502,5 +558,12 @@ const handleClear = () => {
 
 .select-options-list::-webkit-scrollbar-thumb:hover {
   background: rgba(var(--v-theme-on-surface), 0.3);
+}
+
+.chips-container :deep(.remaining-chips-count) {
+  height: 18px;
+  min-width: auto;
+  padding: 0 6px;
+  font-size: 11px;
 }
 </style>

@@ -40,6 +40,19 @@ export class UserUpdaterUseCase {
     return value;
   }
 
+  private extractOptionalStringValue(
+    field: { value: string | null } | null | undefined
+  ): string | null | undefined {
+    if (field === undefined) {
+      return undefined;
+    }
+    const value = field?.value ?? null;
+    if (value === '') {
+      return null;
+    }
+    return value;
+  }
+
   private extractPhotoUrlValue(
     field: { value: string | null } | null | undefined
   ): string | null {
@@ -314,20 +327,24 @@ export class UserUpdaterUseCase {
     body: UpdateUserRequest,
     photoUrl: string | null
   ): IUpdateUserInfo {
-    const phoneValue = this.extractStringValue(body.phone);
-    const phoneData = this.encryptPhoneData(phoneValue);
-    const birthDateValue = this.extractStringValue(body.birth_date);
-    const birthDate = birthDateValue
-      ? this.validateBirthDate(t, birthDateValue)
-      : null;
+    const phoneValue = this.extractOptionalStringValue(body.phone);
+    const phoneData =
+      phoneValue === undefined ? undefined : this.encryptPhoneData(phoneValue);
+    const birthDateValue = this.extractOptionalStringValue(body.birth_date);
+    const birthDate =
+      birthDateValue === undefined
+        ? undefined
+        : birthDateValue
+          ? this.validateBirthDate(t, birthDateValue)
+          : null;
 
     return {
-      phone_ddi: this.extractStringValue(body.phone_ddi),
-      phone: phoneData.phoneCEncrypted,
-      phone_partial: phoneData.phonePartialEncrypted,
-      phone_c: phoneData.phoneC,
-      name: this.extractStringValue(body.name),
-      last_name: this.extractStringValue(body.last_name),
+      phone_ddi: this.extractOptionalStringValue(body.phone_ddi),
+      phone: phoneData?.phoneCEncrypted,
+      phone_partial: phoneData?.phonePartialEncrypted,
+      phone_c: phoneData?.phoneC,
+      name: this.extractOptionalStringValue(body.name),
+      last_name: this.extractOptionalStringValue(body.last_name),
       birth_date: birthDate,
       photo: photoUrl,
     };
@@ -713,12 +730,12 @@ export class UserUpdaterUseCase {
   }
 
   private hasUserInfoFields(body: UpdateUserRequest): boolean {
-    return !!(
-      body.phone_ddi?.value ||
-      body.phone?.value ||
-      body.name?.value ||
-      body.last_name?.value ||
-      body.birth_date?.value ||
+    return (
+      body.phone_ddi !== undefined ||
+      body.phone !== undefined ||
+      body.name !== undefined ||
+      body.last_name !== undefined ||
+      body.birth_date !== undefined ||
       body.photo_url !== undefined ||
       body.photo !== undefined
     );

@@ -16,6 +16,8 @@ import {
 } from '@core/common/functions/centrifugoQueue';
 import { IChat } from '@core/common/interfaces/IChat';
 import { normalizeContactRequest } from '@core/common/functions/normalizeContactRequest';
+import { extractFieldValue } from '@core/common/functions/extractFieldValue';
+import { extractArrayFieldValue } from '@core/common/functions/extractArrayFieldValue';
 
 type FieldValue = string | { value: string } | null;
 
@@ -252,23 +254,24 @@ export class ContactUpdaterUseCase {
     }
   }
 
-  private extractFieldValue(
-    field: string | { value: string } | null | undefined
-  ): string | null {
-    if (field === null || field === undefined) {
-      return null;
+  private async validateLabelTemplates(
+    t: TFunction<'translation', undefined>,
+    labelTemplateIds?: string[] | null
+  ): Promise<void> {
+    if (!labelTemplateIds || labelTemplateIds.length === 0) {
+      return;
     }
 
-    if (typeof field === 'object' && 'value' in field) {
-      const value = field.value ?? null;
-      return value && value.trim() !== '' ? value : null;
-    }
+    const existingLabelTemplateIds =
+      await this.labelTemplateService.existsLabelTemplatesByIds(
+        labelTemplateIds
+      );
 
-    if (typeof field === 'string') {
-      return field.trim() !== '' ? field : null;
+    for (const id of labelTemplateIds) {
+      if (!existingLabelTemplateIds.has(id)) {
+        throw new Error(t('label_template_not_found'));
+      }
     }
-
-    return null;
   }
 
   async execute(
@@ -286,32 +289,24 @@ export class ContactUpdaterUseCase {
       throw new Error(t('contact_not_found'));
     }
 
-    const rawLabelTemplateId = this.extractFieldValue(
-      normalizedBody.label_template_id as FieldValue
-    );
-    const labelTemplateId =
-      rawLabelTemplateId && rawLabelTemplateId.trim() !== ''
-        ? rawLabelTemplateId
-        : null;
-    const name = this.extractFieldValue(normalizedBody.name as FieldValue);
-    const lastName = this.extractFieldValue(
-      normalizedBody.last_name as FieldValue
-    );
-    const email = this.extractFieldValue(normalizedBody.email as FieldValue);
-    const phoneDdi = this.extractFieldValue(
-      normalizedBody.phone_ddi as FieldValue
-    );
-    const phone = this.extractFieldValue(normalizedBody.phone as FieldValue);
-    const nickname = this.extractFieldValue(
-      normalizedBody.nickname as FieldValue
-    );
-    const birthday = this.extractFieldValue(
-      normalizedBody.birthday as FieldValue
-    );
-    const notes = this.extractFieldValue(normalizedBody.notes as FieldValue);
+    const hasLabelTemplateIds = normalizedBody.label_template_ids !== undefined;
+    const extractedLabelTemplateIds = hasLabelTemplateIds
+      ? extractArrayFieldValue(normalizedBody.label_template_ids)
+      : null;
+    const labelTemplateIds = hasLabelTemplateIds
+      ? (extractedLabelTemplateIds ?? [])
+      : null;
+    const name = extractFieldValue(normalizedBody.name as FieldValue);
+    const lastName = extractFieldValue(normalizedBody.last_name as FieldValue);
+    const email = extractFieldValue(normalizedBody.email as FieldValue);
+    const phoneDdi = extractFieldValue(normalizedBody.phone_ddi as FieldValue);
+    const phone = extractFieldValue(normalizedBody.phone as FieldValue);
+    const nickname = extractFieldValue(normalizedBody.nickname as FieldValue);
+    const birthday = extractFieldValue(normalizedBody.birthday as FieldValue);
+    const notes = extractFieldValue(normalizedBody.notes as FieldValue);
     const hasContactDocumentTypeId =
       normalizedBody.contact_document_type_id !== undefined;
-    const rawContactDocumentTypeId = this.extractFieldValue(
+    const rawContactDocumentTypeId = extractFieldValue(
       normalizedBody.contact_document_type_id as FieldValue
     );
     const contactDocumentTypeId =
@@ -319,7 +314,7 @@ export class ContactUpdaterUseCase {
         ? rawContactDocumentTypeId
         : null;
     const hasDocument = normalizedBody.document !== undefined;
-    const rawDocument = this.extractFieldValue(
+    const rawDocument = extractFieldValue(
       normalizedBody.document as FieldValue
     );
     const document =
@@ -329,16 +324,7 @@ export class ContactUpdaterUseCase {
     const shouldUpdateDocument =
       shouldClearDocument || (hasDocument && document !== null);
 
-    if (labelTemplateId) {
-      const labelTemplateExists =
-        await this.labelTemplateService.existsLabelTemplateById(
-          labelTemplateId
-        );
-
-      if (!labelTemplateExists) {
-        throw new Error(t('label_template_not_found'));
-      }
-    }
+    await this.validateLabelTemplates(t, labelTemplateIds);
 
     this.validateBirthDate(t, birthday);
 
@@ -348,7 +334,10 @@ export class ContactUpdaterUseCase {
     ]);
 
     const bodyToUpdate: UpdateContactRequest = {
-      label_template_id: labelTemplateId,
+      label_template_ids:
+        hasLabelTemplateIds && labelTemplateIds !== null
+          ? labelTemplateIds.map((id) => ({ value: id }))
+          : undefined,
       name,
       last_name: lastName,
       email,
@@ -385,11 +374,10 @@ export class ContactUpdaterUseCase {
       await this.contactService.updateContactIsValided(contactId, false);
     }
 
-    const chatId = this.extractFieldValue(normalizedBody.chat_id as FieldValue);
+    const chatId = extractFieldValue(normalizedBody.chat_id as FieldValue);
 
     if (chatId) {
       await this.updateSpecificChatWithContactData(
-        t,
         accountId,
         chatId,
         contactId
@@ -403,7 +391,6 @@ export class ContactUpdaterUseCase {
   }
 
   private async updateSpecificChatWithContactData(
-    t: TFunction<'translation', undefined>,
     accountId: string,
     chatId: string,
     contactId: string

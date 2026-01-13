@@ -9,7 +9,6 @@ import {
 import { relations } from 'drizzle-orm';
 import { labelStatus } from './labelStatus.model';
 import { account } from '../account';
-import { contact } from '../contact';
 
 export const labelTemplate = pgTable(
   'label_template',
@@ -44,17 +43,13 @@ export const labelTemplate = pgTable(
   ]
 );
 
-export const labelTemplateRelations = relations(
-  labelTemplate,
-  ({ one, many }) => ({
-    lta: one(account, {
-      fields: [labelTemplate.account_id],
-      references: [account.account_id],
-    }),
-    lts: one(labelStatus, {
-      fields: [labelTemplate.label_status_id],
-      references: [labelStatus.label_status_id],
-    }),
-    ltc: many(contact),
-  })
-);
+export const labelTemplateRelations = relations(labelTemplate, ({ one }) => ({
+  lta: one(account, {
+    fields: [labelTemplate.account_id],
+    references: [account.account_id],
+  }),
+  lts: one(labelStatus, {
+    fields: [labelTemplate.label_status_id],
+    references: [labelStatus.label_status_id],
+  }),
+}));

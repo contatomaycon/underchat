@@ -3,7 +3,6 @@ import {
   contactGroup,
   contactGroupAssignment,
   contact,
-  labelTemplate,
   account,
 } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
@@ -114,10 +113,14 @@ export class ContactGroupListerRepository {
               },
               with: {
                 clt: {
-                  columns: {
-                    label_template_id: true,
-                    label: true,
-                    color: true,
+                  with: {
+                    ltt: {
+                      columns: {
+                        label_template_id: true,
+                        label: true,
+                        color: true,
+                      },
+                    },
                   },
                 },
               },
@@ -139,7 +142,34 @@ export class ContactGroupListerRepository {
       return [];
     }
 
-    return result.map((item) => ({
+    return result.map((item) => this.buildContactGroupResponse(item as any));
+  };
+
+  private readonly buildContactGroupResponse = (item: {
+    contact_group_id: string;
+    name: string;
+    description: string | null;
+    created_at: string | null;
+    cga: {
+      account_id: string;
+      name: string;
+    };
+    cgt: Array<{
+      cga: {
+        contact_id: string;
+        name: string;
+        phone_partial: string | null;
+        clt: Array<{
+          ltt: {
+            label_template_id: string;
+            label: string;
+            color: string;
+          } | null;
+        }>;
+      };
+    }>;
+  }): ListContactGroupResponse => {
+    return {
       contact_group_id: item.contact_group_id,
       account: {
         account_id: item.cga.account_id,
@@ -147,21 +177,68 @@ export class ContactGroupListerRepository {
       },
       name: item.name,
       description: item.description,
-      contacts: item.cgt.map((contactGroupAssignment) => ({
-        contact_id: contactGroupAssignment.cga.contact_id,
-        name: contactGroupAssignment.cga.name,
-        phone_partial: contactGroupAssignment.cga.phone_partial,
-        label_template: contactGroupAssignment.cga.clt
-          ? {
-              label_template_id:
-                contactGroupAssignment.cga.clt.label_template_id,
-              label: contactGroupAssignment.cga.clt.label,
-              color: contactGroupAssignment.cga.clt.color,
-            }
-          : null,
-      })),
+      contacts: item.cgt.map((contactGroupAssignmentItem) =>
+        this.buildContactResponse(contactGroupAssignmentItem)
+      ),
       created_at: item.created_at,
-    }));
+    };
+  };
+
+  private readonly buildContactResponse = (contactGroupAssignmentItem: {
+    cga: {
+      contact_id: string;
+      name: string;
+      phone_partial: string | null;
+      clt: Array<{
+        ltt: {
+          label_template_id: string;
+          label: string;
+          color: string;
+        } | null;
+      }>;
+    };
+  }): {
+    contact_id: string;
+    name: string;
+    phone_partial: string | null;
+    label_templates: Array<{
+      label_template_id: string;
+      label: string;
+      color: string;
+    }>;
+  } => {
+    return {
+      contact_id: contactGroupAssignmentItem.cga.contact_id,
+      name: contactGroupAssignmentItem.cga.name,
+      phone_partial: contactGroupAssignmentItem.cga.phone_partial,
+      label_templates: this.formatLabelTemplates(
+        contactGroupAssignmentItem.cga.clt
+      ),
+    };
+  };
+
+  private readonly formatLabelTemplates = (
+    cltItems: Array<{
+      ltt: {
+        label_template_id: string;
+        label: string;
+        color: string;
+      } | null;
+    }>
+  ): Array<{ label_template_id: string; label: string; color: string }> => {
+    return cltItems
+      .map((cltItem) => cltItem.ltt)
+      .filter(
+        (
+          ltt
+        ): ltt is { label_template_id: string; label: string; color: string } =>
+          ltt !== null && ltt !== undefined
+      )
+      .map((ltt) => ({
+        label_template_id: ltt.label_template_id,
+        label: ltt.label,
+        color: ltt.color,
+      }));
   };
 
   listContactGroupTotal = async (
@@ -186,10 +263,6 @@ export class ContactGroupListerRepository {
       .leftJoin(
         contact,
         eq(contactGroupAssignment.contact_id, contact.contact_id)
-      )
-      .leftJoin(
-        labelTemplate,
-        eq(contact.label_template_id, labelTemplate.label_template_id)
       )
       .where(
         and(

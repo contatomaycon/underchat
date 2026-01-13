@@ -464,17 +464,43 @@ watch(
             </template>
 
             <template #item.label_template="{ item }">
-              <VChip
-                v-if="item.label_template"
-                class="uc-chip"
-                size="small"
-                :style="{
-                  backgroundColor: backgroundColor(item.label_template.color),
-                  color: textColor(item.label_template.color),
-                }"
+              <div
+                v-if="item.label_templates && item.label_templates.length > 0"
+                class="d-flex align-center gap-1"
               >
-                {{ item.label_template.label }}
-              </VChip>
+                <VChip
+                  class="uc-chip"
+                  size="small"
+                  :style="{
+                    backgroundColor: backgroundColor(
+                      item.label_templates[0].color
+                    ),
+                    color: textColor(item.label_templates[0].color),
+                  }"
+                >
+                  {{ item.label_templates[0].label }}
+                </VChip>
+                <span v-if="item.label_templates.length > 1">
+                  <VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>{{
+                      item.label_templates
+                        .slice(1)
+                        .map((lt) => lt.label)
+                        .join(', ')
+                    }}</span>
+                  </VTooltip>
+                  <VChip
+                    class="uc-chip uc-badge--muted uc-chip-count"
+                    size="x-small"
+                  >
+                    +{{ item.label_templates.length - 1 }}
+                  </VChip>
+                </span>
+              </div>
 
               <VChip v-else class="uc-chip uc-badge--muted" size="small"
                 >-</VChip
@@ -662,6 +688,13 @@ watch(
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.uc-chip-count {
+  height: 18px;
+  min-width: auto;
+  padding: 0 6px;
+  font-size: 11px;
 }
 
 .contact-photo-square {

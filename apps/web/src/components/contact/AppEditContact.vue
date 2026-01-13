@@ -335,7 +335,7 @@ const isVisible = computed({
 
 const contactId = toRef(props, 'contactId');
 
-const label_template_id = ref<string | null>(null);
+const label_template_ids = ref<string[]>([]);
 const name = ref<string | null>(null);
 const last_name = ref<string | null>(null);
 const email = ref<string | null>(null);
@@ -497,7 +497,8 @@ const loadContactData = async () => {
 
   const contact = await contactStore.getContactById(contactId.value);
   if (contact) {
-    label_template_id.value = contact.label_template?.label_template_id ?? null;
+    label_template_ids.value =
+      contact.label_templates?.map((lt) => lt.label_template_id) ?? [];
     name.value = contact.name;
     last_name.value = contact.last_name ?? null;
 
@@ -564,7 +565,7 @@ const updateContact = async () => {
     const documentToSave = determineDocumentToSave();
 
     const body: UpdateContactRequest = {
-      label_template_id: label_template_id.value,
+      label_template_ids: label_template_ids.value.map((id) => ({ value: id })),
       name: name.value,
       last_name: last_name.value,
       email: emailToSave,
@@ -1566,10 +1567,13 @@ watch(
               <VCol cols="12" md="6">
                 <VLabel class="text-body-2 mb-1">{{ $t('label') }}:</VLabel>
                 <AppSelectSearch
-                  v-model="label_template_id"
+                  v-model="label_template_ids"
                   :items="itemsLabel"
                   :placeholder="$t('select_label')"
                   :clearable="true"
+                  multiple
+                  chips
+                  closable-chips
                   item-value="value"
                   item-title="title"
                   class="label-select"

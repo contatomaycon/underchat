@@ -66,6 +66,14 @@ const attendantLabel = computed(() => {
   return limitCharacters(10, attendantFirstName.value);
 });
 
+const isChatLabel = computed(() => {
+  const chatLabel = props.user.label as
+    | { label?: string | null; color?: string | null }
+    | null
+    | undefined;
+  return Boolean(chatLabel?.label && chatLabel.color);
+});
+
 const chatLabelForList = computed<{
   label: string;
   color: string;
@@ -85,15 +93,32 @@ const chatLabelForList = computed<{
   const contactId = props.user.contact?.id;
   if (contactId) {
     const contact = chatStore.chatContacts[contactId];
-    if (contact?.label_template) {
+    if (contact?.label_templates && contact.label_templates.length > 0) {
+      const firstLabel = contact.label_templates[0];
       return {
-        label: contact.label_template.label,
-        color: contact.label_template.color,
+        label: firstLabel.label,
+        color: firstLabel.color,
       };
     }
   }
 
   return null;
+});
+
+const contactLabelTemplates = computed(() => {
+  const contactId = props.user.contact?.id;
+  if (!contactId) return [];
+  const contact = chatStore.chatContacts[contactId];
+  return contact?.label_templates ?? [];
+});
+
+const remainingLabels = computed(() => {
+  if (contactLabelTemplates.value.length <= 1) return [];
+  return contactLabelTemplates.value.slice(1);
+});
+
+const remainingLabelsText = computed(() => {
+  return remainingLabels.value.map((lt) => lt.label).join(', ');
 });
 
 const sectorName = computed(() => {
@@ -219,6 +244,10 @@ watch(
           :class="{
             'chat-label-tag--standalone': !(showWorkerNameLabel && workerName),
             'chat-label-tag--with-worker': showWorkerNameLabel && workerName,
+            'chat-label-tag--with-count':
+              !isChatLabel &&
+              contactLabelTemplates.length > 1 &&
+              props.user.contact?.id,
           }"
           :style="{
             backgroundColor: chatLabelForList.color,
@@ -227,6 +256,26 @@ watch(
         >
           {{ chatLabelForList.label }}
         </div>
+        <span
+          v-if="
+            !isChatLabel &&
+            contactLabelTemplates.length > 1 &&
+            props.user.contact?.id
+          "
+          class="chat-label-count-wrapper"
+        >
+          <VTooltip
+            v-if="remainingLabelsText"
+            location="top"
+            transition="scale-transition"
+            activator="parent"
+          >
+            <span>{{ remainingLabelsText }}</span>
+          </VTooltip>
+          <VChip class="chat-label-count text-caption" size="x-small">
+            +{{ contactLabelTemplates.length - 1 }}
+          </VChip>
+        </span>
       </div>
       <div
         v-if="sectorName"
@@ -492,5 +541,28 @@ watch(
   height: 16px !important;
   opacity: 0.7;
   flex-shrink: 0;
+}
+
+.chat-label-count-wrapper {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 0;
+}
+
+.chat-label-tag--with-count {
+  border-top-right-radius: 0 !important;
+  border-bottom-right-radius: 0 !important;
+}
+
+.chat-label-count {
+  height: 18px;
+  min-width: auto;
+  padding: 0 6px;
+  font-size: 11px;
+  background-color: rgba(var(--v-theme-on-surface), 0.12) !important;
+  color: rgb(var(--v-theme-on-surface)) !important;
+  border-top-left-radius: 0 !important;
+  border-bottom-left-radius: 0 !important;
+  margin-left: 0 !important;
 }
 </style>

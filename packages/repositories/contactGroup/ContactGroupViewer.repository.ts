@@ -4,7 +4,6 @@ import {
   contact,
   contactGroupAssignment,
   account,
-  labelTemplate,
 } from '@core/models';
 import { ViewContactGroupResponse } from '@core/schema/contactGroup/viewContactGroup/response.schema';
 import { and, eq, isNull } from 'drizzle-orm';
@@ -34,11 +33,6 @@ export class ContactGroupViewerRepository {
           name: contact.name,
           phone_partial: contact.phone_partial,
         },
-        label_template: {
-          label_template_id: labelTemplate.label_template_id,
-          label: labelTemplate.label,
-          color: labelTemplate.color,
-        },
         created_at: contactGroup.created_at,
       })
       .from(contactGroup)
@@ -53,10 +47,6 @@ export class ContactGroupViewerRepository {
       .leftJoin(
         contact,
         eq(contact.contact_id, contactGroupAssignment.contact_id)
-      )
-      .leftJoin(
-        labelTemplate,
-        eq(contact.label_template_id, labelTemplate.label_template_id)
       )
       .where(
         and(
@@ -85,13 +75,7 @@ export class ContactGroupViewerRepository {
             phone_partial: item.contacts?.phone_partial,
           }))
         : [],
-      label_template: result[0].label_template
-        ? {
-            label_template_id: result[0].label_template.label_template_id,
-            label: result[0].label_template.label,
-            color: result[0].label_template.color,
-          }
-        : null,
+      label_template: null,
       created_at: result[0].created_at,
     } as ViewContactGroupResponse;
   };

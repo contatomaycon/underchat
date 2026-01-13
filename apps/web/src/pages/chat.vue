@@ -411,14 +411,31 @@ const activeContactLabelTemplate = computed<{
   }
 
   const contact = chatStore.chatContacts[contactId];
-  if (contact?.label_template) {
+  if (contact?.label_templates && contact.label_templates.length > 0) {
+    const firstLabel = contact.label_templates[0];
     return {
-      label: contact.label_template.label,
-      color: contact.label_template.color,
+      label: firstLabel.label,
+      color: firstLabel.color,
     };
   }
 
   return null;
+});
+
+const activeContactLabelTemplates = computed(() => {
+  const contactId = chatStore.activeChat?.contact?.id;
+  if (!contactId) return [];
+  const contact = chatStore.chatContacts[contactId];
+  return contact?.label_templates ?? [];
+});
+
+const remainingContactLabels = computed(() => {
+  if (activeContactLabelTemplates.value.length <= 1) return [];
+  return activeContactLabelTemplates.value.slice(1);
+});
+
+const remainingContactLabelsText = computed(() => {
+  return remainingContactLabels.value.map((lt) => lt.label).join(', ');
 });
 
 watch(
@@ -4556,20 +4573,49 @@ onBeforeUnmount(() => {
                 >
                   {{ $t('contact_label') }}
                 </VChip>
-                <VChip
+                <div
                   v-if="activeContactLabelTemplate"
-                  size="x-small"
-                  variant="outlined"
-                  :color="activeContactLabelTemplate.color"
-                  class="contact-label"
-                  :title="activeContactLabelTemplate.label"
+                  class="d-flex align-center contact-labels-group"
                 >
-                  {{
-                    activeContactLabelTemplate.label.length > 15
-                      ? `${activeContactLabelTemplate.label.slice(0, 15)}…`
-                      : activeContactLabelTemplate.label
-                  }}
-                </VChip>
+                  <VChip
+                    size="x-small"
+                    variant="outlined"
+                    :color="activeContactLabelTemplate.color"
+                    class="contact-label"
+                    :class="{
+                      'contact-label--with-count':
+                        activeContactLabelTemplates.length > 1,
+                    }"
+                    :title="activeContactLabelTemplate.label"
+                  >
+                    {{
+                      activeContactLabelTemplate.label.length > 15
+                        ? `${activeContactLabelTemplate.label.slice(0, 15)}…`
+                        : activeContactLabelTemplate.label
+                    }}
+                  </VChip>
+                  <span
+                    v-if="activeContactLabelTemplates.length > 1"
+                    class="contact-label-count-wrapper"
+                  >
+                    <VTooltip
+                      v-if="remainingContactLabelsText"
+                      location="top"
+                      transition="scale-transition"
+                      activator="parent"
+                    >
+                      <span>{{ remainingContactLabelsText }}</span>
+                    </VTooltip>
+                    <VChip
+                      class="contact-label-count"
+                      size="x-small"
+                      variant="outlined"
+                      :color="activeContactLabelTemplate.color"
+                    >
+                      +{{ activeContactLabelTemplates.length - 1 }}
+                    </VChip>
+                  </span>
+                </div>
               </div>
               <p class="text-truncate mb-0 text-body-2">
                 {{
@@ -6557,6 +6603,36 @@ $chat-app-header-height: 76px;
 .contact-label {
   font-size: 0.625rem !important;
   height: 16px !important;
+  opacity: 0.7;
+  flex-shrink: 0;
+}
+
+.contact-labels-group {
+  gap: 0;
+}
+
+.contact-label--with-count {
+  border-top-right-radius: 0 !important;
+  border-bottom-right-radius: 0 !important;
+  margin-right: 0 !important;
+}
+
+.contact-label-count-wrapper {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 0;
+}
+
+.contact-label-count {
+  height: 16px !important;
+  min-width: auto;
+  padding: 0 6px;
+  font-size: 0.625rem !important;
+  border-top-left-radius: 0 !important;
+  border-bottom-left-radius: 0 !important;
+  border-top-right-radius: 4px !important;
+  border-bottom-right-radius: 4px !important;
+  margin-left: 0 !important;
   opacity: 0.7;
   flex-shrink: 0;
 }

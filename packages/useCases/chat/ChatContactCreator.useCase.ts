@@ -32,7 +32,7 @@ export class ChatContactCreatorUseCase {
     const chatId = this.extractChatId(normalizedInput.chat_id);
 
     const contactRequest: CreateContactRequest = {
-      label_template_id: normalizedInput.label_template_id,
+      label_template_ids: normalizedInput.label_template_ids,
       name: normalizedInput.name,
       last_name: normalizedInput.last_name,
       email: normalizedInput.email,

@@ -4,6 +4,7 @@ import { UpdateChatContactRequest } from '@core/schema/chat/updateContact/reques
 import { UpdateContactRequest } from '@core/schema/contact/editContact/request.schema';
 import { ContactUpdaterUseCase } from '@core/useCases/contact/ContactUpdater.useCase';
 import { normalizeContactRequest } from '@core/common/functions/normalizeContactRequest';
+import { extractArrayFieldValue } from '@core/common/functions/extractArrayFieldValue';
 
 @injectable()
 export class ChatContactUpdaterUseCase {
@@ -17,11 +18,14 @@ export class ChatContactUpdaterUseCase {
   ): Promise<boolean> {
     const normalizedBody = normalizeContactRequest(body);
 
+    const labelTemplateIds = extractArrayFieldValue(
+      normalizedBody.label_template_ids
+    );
+
     const contactRequest: UpdateContactRequest = {
-      label_template_id:
-        normalizedBody.label_template_id === undefined
-          ? null
-          : normalizedBody.label_template_id,
+      label_template_ids: labelTemplateIds
+        ? labelTemplateIds.map((id) => ({ value: id }))
+        : undefined,
       name: normalizedBody.name,
       last_name: normalizedBody.last_name,
       email: normalizedBody.email,

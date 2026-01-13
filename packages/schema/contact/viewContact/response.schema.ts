@@ -25,7 +25,7 @@ const userSchema = Type.Object({
 export const viewContactResponseSchema = Type.Object({
   contact_id: Type.String({ format: 'uuid' }),
   account: accountSchema,
-  label_template: Type.Union([labelTemplateSchema, Type.Null()]),
+  label_templates: Type.Array(labelTemplateSchema),
   contact_document_type: Type.Union([contactDocumentTypeSchema, Type.Null()]),
   name: Type.String(),
   last_name: Type.Optional(Type.Union([Type.String(), Type.Null()])),

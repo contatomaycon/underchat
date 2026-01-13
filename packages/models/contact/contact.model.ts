@@ -9,11 +9,11 @@ import {
 } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 import { account } from '../account';
-import { labelTemplate } from '../label';
 import { contactGroupAssignment } from './contactGroupAssignment.model';
 import { workerProfileStatusContact } from '../worker/workerProfileStatusContact.model';
 import { scheduledContact } from '../schedule';
 import { contactDocumentType } from './contactDocumentType.model';
+import { contactLabelTemplate } from './contactLabelTemplate.model';
 import { user } from '../user/user.model';
 import { EContactIgnore } from '@core/common/enums/EContactIgnore';
 
@@ -22,7 +22,6 @@ export const contact = pgTable(
   {
     contact_id: uuid().primaryKey().notNull(),
     account_id: uuid().references(() => account.account_id),
-    label_template_id: uuid().references(() => labelTemplate.label_template_id),
     contact_document_type_id: uuid().references(
       () => contactDocumentType.contact_document_type_id
     ),
@@ -63,7 +62,6 @@ export const contact = pgTable(
   (table) => [
     index('contact_user_id_idx').on(table.user_id),
     index('contact_account_id_idx').on(table.account_id),
-    index('contact_label_template_id_idx').on(table.label_template_id),
     index('contact_contact_document_type_id_idx').on(
       table.contact_document_type_id
     ),
@@ -103,10 +101,6 @@ export const contactRelations = relations(contact, ({ one, many }) => ({
     fields: [contact.account_id],
     references: [account.account_id],
   }),
-  clt: one(labelTemplate, {
-    fields: [contact.label_template_id],
-    references: [labelTemplate.label_template_id],
-  }),
   cdt: one(contactDocumentType, {
     fields: [contact.contact_document_type_id],
     references: [contactDocumentType.contact_document_type_id],
@@ -116,6 +110,7 @@ export const contactRelations = relations(contact, ({ one, many }) => ({
     references: [user.user_id],
   }),
   cga: many(contactGroupAssignment),
+  clt: many(contactLabelTemplate),
   cpc: many(workerProfileStatusContact),
   csc: many(scheduledContact),
 }));

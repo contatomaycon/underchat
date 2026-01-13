@@ -1,5 +1,5 @@
 import * as schema from '@core/models';
-import { contact, labelTemplate } from '@core/models';
+import { contact, labelTemplate, contactLabelTemplate } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import {
@@ -61,10 +61,17 @@ export class ChatContactListerRepository {
       searchTerm ? ilike(contact.phone_partial, `%${searchTerm}%`) : undefined,
       searchTerm
         ? inArray(
-            labelTemplate.label_template_id,
+            contact.contact_id,
             this.dbRo
-              .select({ label_template_id: labelTemplate.label_template_id })
-              .from(labelTemplate)
+              .select({ contact_id: contactLabelTemplate.contact_id })
+              .from(contactLabelTemplate)
+              .innerJoin(
+                labelTemplate,
+                eq(
+                  labelTemplate.label_template_id,
+                  contactLabelTemplate.label_template_id
+                )
+              )
               .where(ilike(labelTemplate.label, `%${searchTerm}%`))
           )
         : undefined,
@@ -85,7 +92,18 @@ export class ChatContactListerRepository {
 
     if (filters.filter_label_template_id) {
       filterConditions.push(
-        eq(contact.label_template_id, filters.filter_label_template_id)
+        inArray(
+          contact.contact_id,
+          this.dbRo
+            .select({ contact_id: contactLabelTemplate.contact_id })
+            .from(contactLabelTemplate)
+            .where(
+              eq(
+                contactLabelTemplate.label_template_id,
+                filters.filter_label_template_id
+              )
+            )
+        )
       );
     }
 
@@ -155,9 +173,6 @@ export class ChatContactListerRepository {
     if (sortField === 'phone') {
       return order(contact.phone_partial);
     }
-    if (sortField === 'label') {
-      return order(labelTemplate.label);
-    }
     if (sortField === 'birthday') {
       return order(contact.birthday);
     }
@@ -174,25 +189,42 @@ export class ChatContactListerRepository {
     phoneHashes?: string[] | null,
     documentHash?: string | null
   ): Promise<ListChatContactsResponse[]> => {
-    const whereConditions: SQLWrapper[] = [
-      eq(contact.account_id, accountId),
-      isNull(contact.deleted_at),
-    ];
+    const contacts = await this.findContacts(
+      accountId,
+      perPage,
+      currentPage,
+      query,
+      emailHash,
+      phoneHashes,
+      documentHash
+    );
 
-    if (query?.search) {
-      const searchConditions = this.buildSearchConditions(query.search);
-      whereConditions.push(...searchConditions);
+    if (!contacts.length) {
+      return [];
     }
 
-    if (query) {
-      const advancedFilters = this.buildAdvancedFilters(
-        query,
-        emailHash ?? null,
-        phoneHashes ?? null,
-        documentHash ?? null
-      );
-      whereConditions.push(...advancedFilters);
-    }
+    const contactIds = contacts.map((c) => c.contact_id);
+    const labelsByContactId = await this.findLabelsByContactIds(contactIds);
+
+    return this.buildListChatContactsResponse(contacts, labelsByContactId);
+  };
+
+  private readonly findContacts = async (
+    accountId: string,
+    perPage: number,
+    currentPage: number,
+    query: ListChatContactsRequest | undefined,
+    emailHash: string | null | undefined,
+    phoneHashes: string[] | null | undefined,
+    documentHash: string | null | undefined
+  ) => {
+    const whereConditions = this.buildWhereConditions(
+      accountId,
+      query,
+      emailHash,
+      phoneHashes,
+      documentHash
+    );
 
     const result = await this.dbRo
       .select({
@@ -203,52 +235,24 @@ export class ChatContactListerRepository {
         phone_partial: contact.phone_partial,
         photo: contact.photo,
         is_valided: contact.is_valided,
-        label_template: {
-          label_template_id: labelTemplate.label_template_id,
-          label: labelTemplate.label,
-          color: labelTemplate.color,
-        },
       })
       .from(contact)
-      .leftJoin(
-        labelTemplate,
-        eq(contact.label_template_id, labelTemplate.label_template_id)
-      )
       .where(and(...whereConditions))
       .orderBy(this.buildOrderBy(query?.sort_field, query?.sort_order))
       .limit(perPage)
       .offset((currentPage - 1) * perPage)
       .execute();
 
-    if (!result?.length) {
-      return [];
-    }
-
-    return result.map((contact) => ({
-      contact_id: contact.contact_id,
-      name: contact.name,
-      last_name: contact.last_name ?? null,
-      email_partial: contact.email_partial ?? null,
-      phone_partial: contact.phone_partial ?? null,
-      photo: contact.photo ?? null,
-      is_valided: contact.is_valided ?? null,
-      label_template: contact.label_template?.label_template_id
-        ? {
-            label_template_id: contact.label_template.label_template_id,
-            label: contact.label_template.label,
-            color: contact.label_template.color,
-          }
-        : null,
-    }));
+    return result;
   };
 
-  listChatContactsTotal = async (
+  private readonly buildWhereConditions = (
     accountId: string,
-    query?: ListChatContactsRequest,
-    emailHash?: string | null,
-    phoneHashes?: string[] | null,
-    documentHash?: string | null
-  ): Promise<number> => {
+    query: ListChatContactsRequest | undefined,
+    emailHash: string | null | undefined,
+    phoneHashes: string[] | null | undefined,
+    documentHash: string | null | undefined
+  ): SQLWrapper[] => {
     const whereConditions: SQLWrapper[] = [
       eq(contact.account_id, accountId),
       isNull(contact.deleted_at),
@@ -269,15 +273,118 @@ export class ChatContactListerRepository {
       whereConditions.push(...advancedFilters);
     }
 
+    return whereConditions;
+  };
+
+  private readonly findLabelsByContactIds = async (
+    contactIds: string[]
+  ): Promise<
+    Map<
+      string,
+      Array<{ label_template_id: string; label: string; color: string }>
+    >
+  > => {
+    if (contactIds.length === 0) {
+      return new Map();
+    }
+
+    const labelsResult = await this.dbRo
+      .select({
+        contact_id: contactLabelTemplate.contact_id,
+        label_template_id: labelTemplate.label_template_id,
+        label: labelTemplate.label,
+        color: labelTemplate.color,
+      })
+      .from(contactLabelTemplate)
+      .innerJoin(
+        labelTemplate,
+        eq(
+          labelTemplate.label_template_id,
+          contactLabelTemplate.label_template_id
+        )
+      )
+      .where(inArray(contactLabelTemplate.contact_id, contactIds))
+      .execute();
+
+    return this.buildLabelsMap(labelsResult);
+  };
+
+  private readonly buildLabelsMap = (
+    labelsResult: Array<{
+      contact_id: string;
+      label_template_id: string;
+      label: string;
+      color: string;
+    }>
+  ): Map<
+    string,
+    Array<{ label_template_id: string; label: string; color: string }>
+  > => {
+    const labelsByContactId = new Map<
+      string,
+      Array<{ label_template_id: string; label: string; color: string }>
+    >();
+
+    for (const label of labelsResult) {
+      const existing = labelsByContactId.get(label.contact_id) ?? [];
+      existing.push({
+        label_template_id: label.label_template_id,
+        label: label.label,
+        color: label.color,
+      });
+      labelsByContactId.set(label.contact_id, existing);
+    }
+
+    return labelsByContactId;
+  };
+
+  private readonly buildListChatContactsResponse = (
+    contacts: Array<{
+      contact_id: string;
+      name: string;
+      last_name: string | null;
+      email_partial: string | null;
+      phone_partial: string | null;
+      photo: string | null;
+      is_valided: boolean | null;
+    }>,
+    labelsByContactId: Map<
+      string,
+      Array<{ label_template_id: string; label: string; color: string }>
+    >
+  ): ListChatContactsResponse[] => {
+    return contacts.map((contactItem) => ({
+      contact_id: contactItem.contact_id,
+      name: contactItem.name,
+      last_name: contactItem.last_name ?? null,
+      email_partial: contactItem.email_partial ?? null,
+      phone_partial: contactItem.phone_partial ?? null,
+      photo: contactItem.photo ?? null,
+      is_valided: contactItem.is_valided ?? null,
+      label_templates: labelsByContactId.get(contactItem.contact_id) ?? [],
+    }));
+  };
+
+  listChatContactsTotal = async (
+    accountId: string,
+    query?: ListChatContactsRequest,
+    emailHash?: string | null,
+    phoneHashes?: string[] | null,
+    documentHash?: string | null
+  ): Promise<number> => {
+    const whereConditions = this.buildWhereConditions(
+      accountId,
+      query,
+      emailHash,
+      phoneHashes,
+      documentHash
+    );
+
     const result = await this.dbRo
       .select({
         count: count(),
       })
       .from(contact)
-      .leftJoin(
-        labelTemplate,
-        eq(contact.label_template_id, labelTemplate.label_template_id)
-      )
       .where(and(...whereConditions))
       .execute();
 

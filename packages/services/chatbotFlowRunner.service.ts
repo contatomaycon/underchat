@@ -1208,15 +1208,12 @@ export class ChatbotFlowRunnerService {
       throw new Error(t('contact_not_found'));
     }
 
-    const updated = await this.contactService.updateContactById(
-      {
-        label_template_id: labelTemplateId,
-      },
+    const added = await this.contactService.addContactLabelTemplateIfNotExists(
       createChat.contact.id,
-      createChat.account.id
+      labelTemplateId
     );
 
-    if (!updated) {
+    if (!added) {
       throw new Error(t('contact_update_error'));
     }
 

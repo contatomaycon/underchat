@@ -873,10 +873,18 @@ const determinePhoneToSave = (): string | null | undefined => {
   const phoneOriginalNumbers = initialValues.value.phone
     ? initialValues.value.phone.replaceAll(/\D/g, '')
     : '';
+  const hasOriginalPhone = Boolean(initialValues.value.phone);
 
   if (!isPhoneDecrypted.value) {
+    const phoneValue = phone.value ? phone.value.replaceAll(/\D/g, '') : '';
+    const wasCleared =
+      !phonePartialOriginal.value && !phoneValue && hasOriginalPhone;
+
+    if (wasCleared) {
+      return null;
+    }
+
     if (!phonePartialOriginal.value?.includes('*') && phone.value) {
-      const phoneValue = phone.value.replaceAll(/\D/g, '');
       if (phoneValue !== phoneOriginalNumbers) {
         return phoneValue;
       }

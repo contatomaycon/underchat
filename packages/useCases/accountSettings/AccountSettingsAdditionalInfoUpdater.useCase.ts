@@ -25,6 +25,15 @@ export class AccountSettingsAdditionalInfoUpdaterUseCase {
     return normalized === '' ? null : normalized;
   }
 
+  private extractOptionalStringValue(
+    field: string | null | undefined
+  ): string | null | undefined {
+    if (field === undefined) {
+      return undefined;
+    }
+    return field === '' ? null : field;
+  }
+
   private encryptPhoneData(phone: string | null | undefined) {
     if (!phone) {
       return {
@@ -85,20 +94,24 @@ export class AccountSettingsAdditionalInfoUpdaterUseCase {
     t: TFunction<'translation', undefined>,
     body: UpdateAdditionalInfoRequest
   ): IUpdateUserInfo {
-    const phoneValue = this.extractStringValue(body.phone);
-    const phoneData = this.encryptPhoneData(phoneValue);
-    const birthDateValue = this.extractStringValue(body.birth_date);
-    const birthDate = birthDateValue
-      ? this.validateBirthDate(t, birthDateValue)
-      : null;
+    const phoneValue = this.extractOptionalStringValue(body.phone);
+    const phoneData =
+      phoneValue === undefined ? undefined : this.encryptPhoneData(phoneValue);
+    const birthDateValue = this.extractOptionalStringValue(body.birth_date);
+    const birthDate =
+      birthDateValue === undefined
+        ? undefined
+        : birthDateValue
+          ? this.validateBirthDate(t, birthDateValue)
+          : null;
 
     return {
-      phone_ddi: this.extractStringValue(body.phone_ddi),
-      phone: phoneData.phoneCEncrypted,
-      phone_partial: phoneData.phonePartialEncrypted,
-      phone_c: phoneData.phoneC,
-      name: this.extractStringValue(body.name),
-      last_name: this.extractStringValue(body.last_name),
+      phone_ddi: this.extractOptionalStringValue(body.phone_ddi),
+      phone: phoneData?.phoneCEncrypted,
+      phone_partial: phoneData?.phonePartialEncrypted,
+      phone_c: phoneData?.phoneC,
+      name: this.extractOptionalStringValue(body.name),
+      last_name: this.extractOptionalStringValue(body.last_name),
       birth_date: birthDate,
     };
   }

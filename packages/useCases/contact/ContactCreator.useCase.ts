@@ -18,6 +18,8 @@ import {
 import { IChat } from '@core/common/interfaces/IChat';
 import { PlanAccountService } from '@core/services/planAccount.service';
 import { normalizeContactRequest } from '@core/common/functions/normalizeContactRequest';
+import { extractFieldValue } from '@core/common/functions/extractFieldValue';
+import { extractArrayFieldValue } from '@core/common/functions/extractArrayFieldValue';
 
 type FieldValue = string | { value: string } | null;
 
@@ -55,10 +57,10 @@ export class ContactCreatorUseCase {
     }
   }
 
-  private async validateAccountAndLabelTemplate(
+  private async validateAccountAndLabelTemplates(
     t: TFunction<'translation', undefined>,
     accountId: string,
-    labelTemplateId?: string | null
+    labelTemplateIds?: string[] | null
   ): Promise<void> {
     const accountExists =
       await this.accountService.existsAccountById(accountId);
@@ -67,14 +69,16 @@ export class ContactCreatorUseCase {
       throw new Error(t('account_not_found'));
     }
 
-    if (labelTemplateId) {
-      const labelTemplateExists =
-        await this.labelTemplateService.existsLabelTemplateById(
-          labelTemplateId
+    if (labelTemplateIds && labelTemplateIds.length > 0) {
+      const existingLabelTemplateIds =
+        await this.labelTemplateService.existsLabelTemplatesByIds(
+          labelTemplateIds
         );
 
-      if (!labelTemplateExists) {
-        throw new Error(t('label_template_not_found'));
+      for (const id of labelTemplateIds) {
+        if (!existingLabelTemplateIds.has(id)) {
+          throw new Error(t('label_template_not_found'));
+        }
       }
     }
   }
@@ -200,25 +204,6 @@ export class ContactCreatorUseCase {
     }
   }
 
-  private extractFieldValue(
-    field: string | { value: string } | null | undefined
-  ): string | null {
-    if (field === null || field === undefined) {
-      return null;
-    }
-
-    if (typeof field === 'object' && 'value' in field) {
-      const value = field.value ?? null;
-      return value && value.trim() !== '' ? value : null;
-    }
-
-    if (typeof field === 'string') {
-      return field.trim() !== '' ? field : null;
-    }
-
-    return null;
-  }
-
   async execute(
     t: TFunction<'translation', undefined>,
     input: CreateContactRequest,
@@ -226,25 +211,17 @@ export class ContactCreatorUseCase {
   ): Promise<boolean> {
     const normalizedInput = normalizeContactRequest(input);
 
-    const labelTemplateId = this.extractFieldValue(
-      normalizedInput.label_template_id as FieldValue
+    const labelTemplateIds = extractArrayFieldValue(
+      normalizedInput.label_template_ids
     );
-    const name = this.extractFieldValue(normalizedInput.name as FieldValue);
-    const lastName = this.extractFieldValue(
-      normalizedInput.last_name as FieldValue
-    );
-    const email = this.extractFieldValue(normalizedInput.email as FieldValue);
-    const phoneDdi = this.extractFieldValue(
-      normalizedInput.phone_ddi as FieldValue
-    );
-    const phone = this.extractFieldValue(normalizedInput.phone as FieldValue);
-    const nickname = this.extractFieldValue(
-      normalizedInput.nickname as FieldValue
-    );
-    const birthday = this.extractFieldValue(
-      normalizedInput.birthday as FieldValue
-    );
-    const notes = this.extractFieldValue(normalizedInput.notes as FieldValue);
+    const name = extractFieldValue(normalizedInput.name as FieldValue);
+    const lastName = extractFieldValue(normalizedInput.last_name as FieldValue);
+    const email = extractFieldValue(normalizedInput.email as FieldValue);
+    const phoneDdi = extractFieldValue(normalizedInput.phone_ddi as FieldValue);
+    const phone = extractFieldValue(normalizedInput.phone as FieldValue);
+    const nickname = extractFieldValue(normalizedInput.nickname as FieldValue);
+    const birthday = extractFieldValue(normalizedInput.birthday as FieldValue);
+    const notes = extractFieldValue(normalizedInput.notes as FieldValue);
 
     if (!name) {
       throw new Error(t('name_required'));
@@ -258,7 +235,7 @@ export class ContactCreatorUseCase {
       throw new Error(t('phone_required'));
     }
 
-    await this.validateAccountAndLabelTemplate(t, accountId, labelTemplateId);
+    await this.validateAccountAndLabelTemplates(t, accountId, labelTemplateIds);
     await this.planAccountService.validateCanCreateContact(t, accountId);
 
     this.validateBirthdayIfPresent(t, birthday);
@@ -290,14 +267,14 @@ export class ContactCreatorUseCase {
       isValidated = normalized.isValidated;
     }
 
-    const rawContactDocumentTypeId = this.extractFieldValue(
+    const rawContactDocumentTypeId = extractFieldValue(
       normalizedInput.contact_document_type_id as FieldValue
     );
     const contactDocumentTypeId =
       rawContactDocumentTypeId && rawContactDocumentTypeId.trim() !== ''
         ? rawContactDocumentTypeId
         : null;
-    const rawDocument = this.extractFieldValue(
+    const rawDocument = extractFieldValue(
       normalizedInput.document as FieldValue
     );
     const document =
@@ -306,7 +283,9 @@ export class ContactCreatorUseCase {
         : null;
 
     const contactToCreate: CreateContactRequest = {
-      label_template_id: labelTemplateId,
+      label_template_ids: labelTemplateIds
+        ? labelTemplateIds.map((id) => ({ value: id }))
+        : undefined,
       name,
       last_name: lastName,
       email,
@@ -333,9 +312,7 @@ export class ContactCreatorUseCase {
       throw new Error(t('contact_creation_failed'));
     }
 
-    const chatId = this.extractFieldValue(
-      normalizedInput.chat_id as FieldValue
-    );
+    const chatId = extractFieldValue(normalizedInput.chat_id as FieldValue);
 
     if (chatId) {
       await this.updateChatWithContactData(
