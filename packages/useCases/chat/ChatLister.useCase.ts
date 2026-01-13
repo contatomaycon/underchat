@@ -266,7 +266,7 @@ export class ChatListerUseCase {
           path: 'label',
           query: {
             term: {
-              'label.label_template_id': query.filter_label_template_id,
+              'label.id': query.filter_label_template_id,
             },
           },
         },
