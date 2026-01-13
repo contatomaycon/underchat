@@ -36,6 +36,8 @@ export class AudioFfmpegConverter {
 
     try {
       await writeFile(inputPath, inputBuffer);
+      await this.validateInputFile(inputPath, currentFormat);
+
       await this.runConversion(inputPath, outputPath, ptt);
       const outputBuffer = await readFile(outputPath);
 
@@ -47,6 +49,21 @@ export class AudioFfmpegConverter {
         extension: config.extension,
         duration,
       };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+
+      if (
+        errorMessage.includes('Invalid data found') ||
+        errorMessage.includes('code 1') ||
+        errorMessage.includes('codec not found')
+      ) {
+        throw new Error(
+          `Arquivo de áudio inválido ou corrompido: ${errorMessage}`
+        );
+      }
+
+      throw error;
     } finally {
       await FileUtils.safeUnlink(inputPath);
       await FileUtils.safeUnlink(outputPath);
@@ -75,6 +92,8 @@ export class AudioFfmpegConverter {
     ptt: boolean
   ): Promise<void> {
     return new Promise((resolve, reject) => {
+      let stderrOutput = '';
+
       const command = ffmpeg(inputPath).noVideo();
 
       if (ptt) {
@@ -87,8 +106,33 @@ export class AudioFfmpegConverter {
 
       command
         .output(outputPath)
+        .on('start', () => {
+          stderrOutput = '';
+        })
+        .on('stderr', (stderrLine) => {
+          stderrOutput += stderrLine + '\n';
+        })
         .on('end', () => resolve())
-        .on('error', (err) => reject(err))
+        .on('error', (err) => {
+          const errorMessage = err.message || String(err);
+
+          if (
+            errorMessage.includes('code 1') ||
+            errorMessage.includes('Invalid data') ||
+            stderrOutput.includes('Invalid data') ||
+            stderrOutput.includes('codec not found')
+          ) {
+            reject(
+              new Error(
+                `Falha ao processar arquivo de áudio: ${errorMessage}. ` +
+                  `Detalhes: ${stderrOutput.slice(0, 200)}`
+              )
+            );
+            return;
+          }
+
+          reject(err);
+        })
         .run();
     });
   }
@@ -111,5 +155,28 @@ export class AudioFfmpegConverter {
       .audioFrequency(44100)
       .audioChannels(2)
       .audioBitrate('128k');
+  }
+
+  private async validateInputFile(
+    inputPath: string,
+    expectedFormat: string
+  ): Promise<void> {
+    try {
+      await this.audioProbeService.probeDuration(inputPath);
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+
+      if (
+        errorMessage.includes('Invalid data') ||
+        errorMessage.includes('code 1') ||
+        errorMessage.includes('Invalid data found')
+      ) {
+        throw new Error(
+          `Arquivo de áudio inválido ou corrompido. Formato esperado: ${expectedFormat}. ` +
+            `O arquivo pode estar corrompido ou em um formato não suportado.`
+        );
+      }
+    }
   }
 }

@@ -32,6 +32,9 @@ export const planCrossSellAccount = pgTable(
       table.account_id,
       table.deleted_at
     ),
+    index(
+      'plan_cross_sell_account_account_id_plan_cross_sell_id_deleted_at_idx'
+    ).on(table.account_id, table.plan_cross_sell_id, table.deleted_at),
   ]
 );
 

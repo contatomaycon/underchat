@@ -27,10 +27,12 @@ export class ConverterService {
     inputMimetype?: string | null,
     ptt: boolean = true
   ): Promise<IConvertAudioResult> {
-    const currentFormat =
-      this.audioFormatDetector.detectFromBuffer(inputBuffer) ||
-      this.audioFormatDetector.getExtensionFromMimetype(inputMimetype) ||
-      'webm';
+    const detectedFromBuffer =
+      this.audioFormatDetector.detectFromBuffer(inputBuffer);
+    const detectedFromMimetype =
+      this.audioFormatDetector.getExtensionFromMimetype(inputMimetype);
+
+    const currentFormat = detectedFromBuffer || detectedFromMimetype || 'webm';
 
     return this.audioFfmpegConverter.convert(inputBuffer, currentFormat, ptt);
   }

@@ -710,42 +710,62 @@ export class ChatMessageService {
     Array<UploadFileResponse & { duration?: number; waveform?: string }>
   > {
     const uploadPromises = audios.map(async (audio) => {
-      const originalBuffer = await audio.toBuffer();
-      const originalMimetype = audio.mimetype || null;
+      try {
+        const originalBuffer = await audio.toBuffer();
+        const originalMimetype = audio.mimetype || null;
 
-      const converted = await this.converterService.convertAudio(
-        originalBuffer,
-        originalMimetype,
-        isPtt
-      );
+        const converted = await this.converterService.convertAudio(
+          originalBuffer,
+          originalMimetype,
+          isPtt
+        );
 
-      const filename = audio.filename.replace(/\.[^.]+$/, '') || 'audio';
-      const newFilename = `${filename}.${converted.extension}`;
+        const filename = audio.filename.replace(/\.[^.]+$/, '') || 'audio';
+        const newFilename = `${filename}.${converted.extension}`;
 
-      const [uploadResult, waveformBase64] = await Promise.all([
-        this.storageService.uploadAudioFromBuffer(
-          converted.buffer,
-          newFilename,
-          converted.mimetype,
-          accountId
-        ),
-        this.converterService
-          .generateWaveformWithFfmpeg(converted.buffer)
-          .catch(() => {
-            return undefined;
-          }),
-      ]);
+        const [uploadResult, waveformBase64] = await Promise.all([
+          this.storageService.uploadAudioFromBuffer(
+            converted.buffer,
+            newFilename,
+            converted.mimetype,
+            accountId
+          ),
+          this.converterService
+            .generateWaveformWithFfmpeg(converted.buffer)
+            .catch(() => {
+              return undefined;
+            }),
+        ]);
 
-      if (!uploadResult) {
-        return null;
+        if (!uploadResult) {
+          return null;
+        }
+
+        return {
+          ...uploadResult,
+          mimetype: converted.mimetype,
+          duration: converted.duration,
+          waveform: waveformBase64 ?? undefined,
+        };
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+
+        if (
+          errorMessage.includes('inválido') ||
+          errorMessage.includes('corrompido') ||
+          errorMessage.includes('Invalid data') ||
+          errorMessage.includes('code 1')
+        ) {
+          console.error(
+            `Erro ao converter áudio ${audio.filename}:`,
+            errorMessage
+          );
+          return null;
+        }
+
+        throw error;
       }
-
-      return {
-        ...uploadResult,
-        mimetype: converted.mimetype,
-        duration: converted.duration,
-        waveform: waveformBase64 ?? undefined,
-      };
     });
 
     const uploadedAudios = await Promise.all(uploadPromises);
