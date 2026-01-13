@@ -366,6 +366,8 @@
   "contact_deleter_error": "Error deleting contact!",
   "contact_update_successfully": "Contact updated successfully!",
   "contact_update_error": "Error updating contact!",
+  "contact_label_template_removed_successfully": "Label removed from contact successfully!",
+  "contact_label_template_remove_error": "Error removing label from contact!",
   "label_template_all_successfully": "Label templates retrieved successfully!",
   "label_template_all_not_found": "No label templates found!",
   "contact_group_list_successfully": "Contact group list retrieved successfully!",

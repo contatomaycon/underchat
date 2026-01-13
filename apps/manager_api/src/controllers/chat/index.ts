@@ -35,6 +35,7 @@ import { updateChatLabel } from './methods/updateChatLabel';
 import { listChatWorkers } from './methods/listChatWorkers';
 import { listChatUsers } from './methods/listChatUsers';
 import { listChatSectors } from './methods/listChatSectors';
+import { removeChatContactLabelTemplate } from './methods/removeContactLabelTemplate';
 
 @injectable()
 class ChatController {
@@ -74,6 +75,7 @@ class ChatController {
   public listChatWorkers = listChatWorkers;
   public listChatUsers = listChatUsers;
   public listChatSectors = listChatSectors;
+  public removeContactLabelTemplate = removeChatContactLabelTemplate;
 }
 
 export default ChatController;

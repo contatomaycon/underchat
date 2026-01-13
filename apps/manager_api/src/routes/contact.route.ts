@@ -19,6 +19,7 @@ import { exportContactSchema } from '@core/schema/contact/exportContact';
 import { validateContactSchema } from '@core/schema/contact/validateContact';
 import { deleteContactPhotoSchema } from '@core/schema/contact/deletePhoto';
 import { listContactUsersSchema } from '@core/schema/contact/listUsers';
+import { removeContactLabelTemplateSchema } from '@core/schema/contact/removeContactLabelTemplate';
 import { planGuard } from '@/plugins/planGuard';
 import { planStatus } from '@/plugins/planStatus';
 
@@ -152,6 +153,17 @@ export default async function contactRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, contactViewPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.delete('/contact/:contact_id/labels/:label_template_id', {
+    schema: removeContactLabelTemplateSchema,
+    handler: contactController.removeContactLabelTemplate,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, contactUpdatePermissions),
       planGuard,
       planStatus,
     ],

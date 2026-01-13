@@ -2672,6 +2672,55 @@ export const useChatStore = defineStore('chat', {
       }
     },
 
+    async removeChatContactLabelTemplate(
+      contactId: string,
+      labelTemplateId: string
+    ): Promise<boolean> {
+      try {
+        this.loading = true;
+
+        const response = await axios.delete<IApiResponse<boolean>>(
+          `/chat/contacts/${contactId}/labels/${labelTemplateId}`
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          const mensage =
+            data?.message ??
+            this.i18n.global.t('contact_label_template_remove_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return false;
+        }
+
+        await this.getChatContactById(contactId, true);
+
+        this.showSnackbar(
+          this.i18n.global.t('contact_label_template_removed_successfully'),
+          EColor.success
+        );
+
+        return true;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t(
+          'contact_label_template_remove_error'
+        );
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return false;
+      }
+    },
+
     async validateChatContact(contactId: string): Promise<boolean> {
       try {
         this.loading = true;

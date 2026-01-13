@@ -40,6 +40,7 @@ import { updateChatLabelSchema } from '@core/schema/chat/updateChatLabel';
 import { listChatWorkersSchema } from '@core/schema/chat/listChatWorkers';
 import { listChatUsersSchema } from '@core/schema/chat/listChatUsers';
 import { listChatSectorsSchema } from '@core/schema/chat/listChatSectors';
+import { removeChatContactLabelTemplateSchema } from '@core/schema/chat/removeContactLabelTemplate';
 
 export default function chatRoutes(server: FastifyInstance) {
   const chatController = container.resolve(ChatController);
@@ -377,6 +378,17 @@ export default function chatRoutes(server: FastifyInstance) {
   server.post('/chat/contacts/:contact_id/validate', {
     schema: validateChatContactSchema,
     handler: chatController.validateContact,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, chatPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.delete('/chat/contacts/:contact_id/labels/:label_template_id', {
+    schema: removeChatContactLabelTemplateSchema,
+    handler: chatController.removeContactLabelTemplate,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, chatPermissions),

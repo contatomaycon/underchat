@@ -811,6 +811,8 @@
   "contact_deleted_success": "¡Contacto eliminado con éxito!",
   "contact_photo_deleted_successfully": "¡Foto del contacto eliminada con éxito!",
   "contact_photo_delete_error": "Ocurrió un error al eliminar la foto del contacto. Por favor, inténtalo de nuevo.",
+  "contact_label_template_removed_successfully": "¡Etiqueta eliminada del contacto con éxito!",
+  "contact_label_template_remove_error": "Ocurrió un error al eliminar la etiqueta del contacto. Por favor, inténtalo de nuevo.",
   "contact_export_error": "Ocurrió un error al exportar los contactos. Por favor, inténtalo de nuevo.",
   "nickname": "Apodo",
   "contacts": "Contactos",

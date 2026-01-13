@@ -1173,6 +1173,29 @@ const loadLabelTemplates = async () => {
   }
 };
 
+const removeLabel = async (labelTemplateId: string) => {
+  if (!contactId.value) {
+    const index = label_template_ids.value.indexOf(labelTemplateId);
+    if (index > -1) {
+      label_template_ids.value.splice(index, 1);
+    }
+    return;
+  }
+
+  const result = await chatStore.removeChatContactLabelTemplate(
+    contactId.value,
+    labelTemplateId
+  );
+
+  if (result) {
+    const index = label_template_ids.value.indexOf(labelTemplateId);
+    if (index > -1) {
+      label_template_ids.value.splice(index, 1);
+    }
+    await loadContactData();
+  }
+};
+
 const loadUsers = async () => {
   if (isLoadingUsers.value) return;
   isLoadingUsers.value = true;
@@ -1387,6 +1410,24 @@ onMounted(() => {
               </VCol>
             </VRow>
 
+            <VRow class="mb-4">
+              <VCol cols="12">
+                <VSkeletonLoader
+                  type="text"
+                  width="60"
+                  height="20"
+                  class="mb-2"
+                />
+                <VSkeletonLoader type="text" height="48" />
+                <VSkeletonLoader
+                  type="chip"
+                  width="80"
+                  height="32"
+                  class="mt-2"
+                />
+              </VCol>
+            </VRow>
+
             <VRow>
               <VCol cols="12">
                 <VSkeletonLoader
@@ -1472,6 +1513,15 @@ onMounted(() => {
               </VCol>
 
               <VCol cols="12" md="6">
+                <VLabel class="text-body-2 mb-1">{{ $t('birthday') }}:</VLabel>
+                <AppDateTimePicker
+                  v-model="birthday"
+                  :placeholder="$t('birthday')"
+                />
+              </VCol>
+            </VRow>
+            <VRow>
+              <VCol cols="12">
                 <VLabel class="text-body-2 mb-1">{{ $t('email') }}:</VLabel>
                 <AppTextField
                   v-model="emailFormatted"
@@ -1519,56 +1569,6 @@ onMounted(() => {
                     />
                   </template>
                 </AppTextField>
-              </VCol>
-            </VRow>
-            <VRow>
-              <VCol cols="12" md="6">
-                <VLabel class="text-body-2 mb-1">{{ $t('birthday') }}:</VLabel>
-                <AppDateTimePicker
-                  v-model="birthday"
-                  :placeholder="$t('birthday')"
-                />
-              </VCol>
-
-              <VCol cols="12" md="6">
-                <VLabel class="text-body-2 mb-1">{{ $t('label') }}:</VLabel>
-                <AppSelectSearch
-                  v-model="label_template_ids"
-                  :items="itemsLabel"
-                  :placeholder="$t('select_label')"
-                  :clearable="true"
-                  multiple
-                  chips
-                  closable-chips
-                  item-value="value"
-                  item-title="title"
-                  class="label-select"
-                >
-                  <template #chip="{ item }">
-                    <div class="d-flex align-center gap-1">
-                      <div
-                        v-if="item && item.color"
-                        class="label-color-circle"
-                        :style="{ backgroundColor: item.color }"
-                      />
-                      <span>{{ item?.title }}</span>
-                    </div>
-                  </template>
-                  <template #prepend-inner="{ item }">
-                    <div
-                      v-if="item && !Array.isArray(item) && (item as any).color"
-                      class="label-color-circle me-2"
-                      :style="{ backgroundColor: (item as any).color }"
-                    />
-                  </template>
-                  <template #item-prepend="{ item }">
-                    <div
-                      v-if="item && (item as any).color"
-                      class="label-color-circle"
-                      :style="{ backgroundColor: (item as any).color }"
-                    />
-                  </template>
-                </AppSelectSearch>
               </VCol>
             </VRow>
             <VRow>
@@ -1679,7 +1679,77 @@ onMounted(() => {
                 />
               </VCol>
             </VRow>
-
+            <VDivider class="my-4" />
+            <VRow>
+              <VCol cols="12">
+                <VLabel class="text-body-2 mb-1">{{ $t('label') }}:</VLabel>
+                <AppSelectSearch
+                  v-model="label_template_ids"
+                  :items="itemsLabel"
+                  :placeholder="$t('select_label')"
+                  :clearable="true"
+                  multiple
+                  chips
+                  closable-chips
+                  item-value="value"
+                  item-title="title"
+                  class="label-select"
+                >
+                  <template #chip="{ item }">
+                    <div class="d-flex align-center gap-1">
+                      <div
+                        v-if="item && item.color"
+                        class="label-color-circle"
+                        :style="{ backgroundColor: item.color }"
+                      />
+                      <span>{{ item?.title }}</span>
+                    </div>
+                  </template>
+                  <template #prepend-inner="{ item }">
+                    <div
+                      v-if="item && !Array.isArray(item) && (item as any).color"
+                      class="label-color-circle me-2"
+                      :style="{ backgroundColor: (item as any).color }"
+                    />
+                  </template>
+                  <template #item-prepend="{ item }">
+                    <div
+                      v-if="item && (item as any).color"
+                      class="label-color-circle"
+                      :style="{ backgroundColor: (item as any).color }"
+                    />
+                  </template>
+                </AppSelectSearch>
+                <div
+                  v-if="label_template_ids.length > 0"
+                  class="d-flex flex-wrap align-center gap-2 mt-2"
+                >
+                  <VChip
+                    v-for="labelId in label_template_ids"
+                    :key="labelId"
+                    size="small"
+                    closable
+                    @click:close="removeLabel(labelId)"
+                  >
+                    <template #prepend>
+                      <div
+                        v-if="
+                          itemsLabel.find((l) => l.value === labelId)?.color
+                        "
+                        class="label-color-circle me-1"
+                        :style="{
+                          backgroundColor: itemsLabel.find(
+                            (l) => l.value === labelId
+                          )?.color,
+                        }"
+                      />
+                    </template>
+                    {{ itemsLabel.find((l) => l.value === labelId)?.title }}
+                  </VChip>
+                </div>
+              </VCol>
+            </VRow>
+            <VDivider class="my-4" />
             <VRow>
               <VCol cols="12">
                 <label class="text-body-2 mb-1" for="notes-textarea">

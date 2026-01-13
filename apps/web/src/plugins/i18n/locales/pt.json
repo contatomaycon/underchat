@@ -815,6 +815,8 @@
   "contact_deleted_success": "Contato excluído com sucesso!",
   "contact_photo_deleted_successfully": "Foto do contato removida com sucesso!",
   "contact_photo_delete_error": "Ocorreu um erro ao remover a foto do contato. Por favor, tente novamente.",
+  "contact_label_template_removed_successfully": "Etiqueta removida do contato com sucesso!",
+  "contact_label_template_remove_error": "Ocorreu um erro ao remover a etiqueta do contato. Por favor, tente novamente.",
   "contact_export_error": "Ocorreu um erro ao exportar os contatos. Por favor, tente novamente.",
   "nickname": "Apelido",
   "contacts": "Contatos",

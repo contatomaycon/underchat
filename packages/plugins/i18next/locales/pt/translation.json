@@ -365,6 +365,8 @@
   "contact_deleter_error": "Erro ao excluir o contato!",
   "contact_update_successfully": "Contato atualizado com sucesso!",
   "contact_update_error": "Erro ao atualizar o contato!",
+  "contact_label_template_removed_successfully": "Etiqueta removida do contato com sucesso!",
+  "contact_label_template_remove_error": "Erro ao remover a etiqueta do contato!",
   "label_template_all_successfully": "Modelos de etiqueta recuperados com sucesso!",
   "label_template_all_not_found": "Nenhum modelo de etiqueta encontrado!",
   "contact_group_list_successfully": "Lista de grupos de contatos obtida com sucesso!",

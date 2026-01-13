@@ -11,6 +11,7 @@ import { exportContact } from './methods/exportContact';
 import { validateContact } from './methods/validateContact';
 import { deletePhoto } from './methods/deletePhoto';
 import { listUsers } from './methods/listUsers';
+import { removeContactLabelTemplate } from './methods/removeContactLabelTemplate';
 
 @injectable()
 class ContactController {
@@ -26,6 +27,7 @@ class ContactController {
   public validateContact = validateContact;
   public deletePhoto = deletePhoto;
   public listUsers = listUsers;
+  public removeContactLabelTemplate = removeContactLabelTemplate;
 }
 
 export default ContactController;

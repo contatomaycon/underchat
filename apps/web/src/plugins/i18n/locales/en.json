@@ -811,6 +811,8 @@
   "contact_deleted_success": "Contact deleted successfully!",
   "contact_photo_deleted_successfully": "Contact photo deleted successfully!",
   "contact_photo_delete_error": "An error occurred while deleting the contact photo. Please try again.",
+  "contact_label_template_removed_successfully": "Label removed from contact successfully!",
+  "contact_label_template_remove_error": "An error occurred while removing the label from the contact. Please try again.",
   "contact_export_error": "An error occurred while exporting contacts. Please try again.",
   "nickname": "Nickname",
   "contacts": "Contacts",

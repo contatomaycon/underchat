@@ -366,6 +366,8 @@
   "contact_deleter_error": "Error al eliminar el contacto!",
   "contact_update_successfully": "¡Contacto actualizado con éxito!",
   "contact_update_error": "Error al actualizar el contacto!",
+  "contact_label_template_removed_successfully": "¡Etiqueta eliminada del contacto con éxito!",
+  "contact_label_template_remove_error": "¡Error al eliminar la etiqueta del contacto!",
   "label_template_all_successfully": "¡Plantillas de etiquetas obtenidas con éxito!",
   "label_template_all_not_found": "¡No se encontraron plantillas de etiquetas!",
   "contact_group_list_successfully": "¡Lista de grupos de contactos obtenida con éxito!",

@@ -192,6 +192,25 @@ const toggleViewDocumentVisibility = async () => {
   }
 };
 
+const removeLabelTemplate = async (labelTemplateId: string) => {
+  if (!props.contact?.contact_id) return;
+
+  if (props.useReportStore) {
+    return;
+  }
+
+  const result = await chatStore.removeChatContactLabelTemplate(
+    props.contact.contact_id,
+    labelTemplateId
+  );
+
+  if (result && props.contact && props.contact.label_templates) {
+    props.contact.label_templates = props.contact.label_templates.filter(
+      (label) => label.label_template_id !== labelTemplateId
+    );
+  }
+};
+
 watch(
   () => props.contact,
   (contact) => {
@@ -309,7 +328,7 @@ watch(
           </VCol>
         </VRow>
         <VRow>
-          <VCol cols="12" md="6">
+          <VCol cols="12">
             <VLabel class="text-body-2 mb-1">{{ $t('birthday') }}:</VLabel>
             <AppTextField
               :model-value="
@@ -333,28 +352,18 @@ watch(
               "
               class="d-flex flex-wrap align-center gap-2 mt-1"
             >
-              <div
+              <VChip
                 v-for="labelTemplate in contact.label_templates"
                 :key="labelTemplate.label_template_id"
-                class="d-flex align-center"
+                :color="labelTemplate.color"
+                size="small"
+                :closable="!useReportStore"
+                @click:close="
+                  removeLabelTemplate(labelTemplate.label_template_id)
+                "
               >
-                <div
-                  class="label-color-circle"
-                  :style="{
-                    backgroundColor: labelTemplate.color,
-                  }"
-                />
-                <span
-                  class="ms-2 text-body-2 text-medium-emphasis"
-                  :title="labelTemplate.label"
-                >
-                  {{
-                    labelTemplate.label.length > 15
-                      ? `${labelTemplate.label.slice(0, 15)}…`
-                      : labelTemplate.label
-                  }}
-                </span>
-              </div>
+                {{ labelTemplate.label }}
+              </VChip>
             </div>
             <div v-else class="text-body-2 text-medium-emphasis mt-1">-</div>
           </VCol>

@@ -389,6 +389,13 @@ const resetForm = () => {
   refFormAddContact.value?.resetValidation();
 };
 
+const removeLabel = (labelTemplateId: string) => {
+  const index = label_template_ids.value.indexOf(labelTemplateId);
+  if (index > -1) {
+    label_template_ids.value.splice(index, 1);
+  }
+};
+
 const loadUsers = async () => {
   if (isLoadingUsers.value) return;
   isLoadingUsers.value = true;
@@ -1059,6 +1066,15 @@ watch(
             </VCol>
 
             <VCol cols="12" md="6">
+              <VLabel class="text-body-2 mb-1">{{ $t('birthday') }}:</VLabel>
+              <AppDateTimePicker
+                v-model="birthday"
+                :placeholder="$t('birthday')"
+              />
+            </VCol>
+          </VRow>
+          <VRow>
+            <VCol cols="12">
               <VLabel class="text-body-2 mb-1">{{ $t('email') }}:</VLabel>
               <AppTextField
                 v-model="email"
@@ -1089,56 +1105,6 @@ watch(
                 maxlength="15"
                 :rules="[requiredValidator(phone, $t('phone_required'))]"
               />
-            </VCol>
-          </VRow>
-          <VRow>
-            <VCol cols="12" md="6">
-              <VLabel class="text-body-2 mb-1">{{ $t('birthday') }}:</VLabel>
-              <AppDateTimePicker
-                v-model="birthday"
-                :placeholder="$t('birthday')"
-              />
-            </VCol>
-
-            <VCol cols="12" md="6">
-              <VLabel class="text-body-2 mb-1">{{ $t('label') }}:</VLabel>
-              <AppSelectSearch
-                v-model="label_template_ids"
-                :items="itemsLabel"
-                :placeholder="$t('select_label')"
-                :clearable="true"
-                multiple
-                chips
-                closable-chips
-                item-value="value"
-                item-title="title"
-                class="label-select"
-              >
-                <template #chip="{ item }">
-                  <div class="d-flex align-center gap-1">
-                    <div
-                      v-if="item && item.color"
-                      class="label-color-circle"
-                      :style="{ backgroundColor: item.color }"
-                    />
-                    <span>{{ item?.title }}</span>
-                  </div>
-                </template>
-                <template #prepend-inner="{ item }">
-                  <div
-                    v-if="item && !Array.isArray(item) && item.color"
-                    class="label-color-circle me-2"
-                    :style="{ backgroundColor: item.color }"
-                  />
-                </template>
-                <template #item-prepend="{ item }">
-                  <div
-                    v-if="item && item.color"
-                    class="label-color-circle"
-                    :style="{ backgroundColor: item.color }"
-                  />
-                </template>
-              </AppSelectSearch>
             </VCol>
           </VRow>
           <VRow>
@@ -1222,6 +1188,65 @@ watch(
               />
             </VCol>
           </VRow>
+          <VDivider class="my-4" />
+          <VRow>
+            <VCol cols="12">
+              <VLabel class="text-body-2 mb-1">{{ $t('label') }}:</VLabel>
+              <AppSelectSearch
+                v-model="label_template_ids"
+                :items="itemsLabel"
+                :placeholder="$t('select_label')"
+                :clearable="true"
+                multiple
+                chips
+                closable-chips
+                item-value="value"
+                item-title="title"
+                class="label-select"
+              >
+                <template #chip="{ item }">
+                  <div class="d-flex align-center gap-1">
+                    <div
+                      v-if="item && item.color"
+                      class="label-color-circle"
+                      :style="{ backgroundColor: item.color }"
+                    />
+                    <span>{{ item?.title }}</span>
+                  </div>
+                </template>
+                <template #prepend-inner="{ item }">
+                  <div
+                    v-if="item && !Array.isArray(item) && (item as any).color"
+                    class="label-color-circle me-2"
+                    :style="{ backgroundColor: (item as any).color }"
+                  />
+                </template>
+                <template #item-prepend="{ item }">
+                  <div
+                    v-if="item && (item as any).color"
+                    class="label-color-circle"
+                    :style="{ backgroundColor: (item as any).color }"
+                  />
+                </template>
+              </AppSelectSearch>
+              <div
+                v-if="label_template_ids.length > 0"
+                class="d-flex flex-wrap align-center gap-2 mt-2"
+              >
+                <VChip
+                  v-for="labelId in label_template_ids"
+                  :key="labelId"
+                  :color="itemsLabel.find((l) => l.value === labelId)?.color"
+                  size="small"
+                  closable
+                  @click:close="removeLabel(labelId)"
+                >
+                  {{ itemsLabel.find((l) => l.value === labelId)?.title }}
+                </VChip>
+              </div>
+            </VCol>
+          </VRow>
+          <VDivider class="my-4" />
           <VRow>
             <VCol cols="12">
               <label class="text-body-2 mb-1" for="notes-textarea">
@@ -1427,5 +1452,41 @@ watch(
   bottom: -6px;
   right: -6px;
   cursor: nwse-resize;
+}
+
+.label-select {
+  .v-field__input {
+    > .v-select__selection {
+      margin: 0;
+      display: flex;
+      align-items: center;
+
+      > span:not(.label-color-circle):not(:has(.label-color-circle)),
+      > .v-select__selection-text {
+        display: none !important;
+      }
+    }
+  }
+
+  .v-select__selection {
+    .v-select__selection-text {
+      display: none !important;
+    }
+
+    > span:not(:has(.label-color-circle)):not(.label-color-circle) {
+      display: none !important;
+    }
+  }
+
+  .v-list-item__prepend {
+    margin-inline-end: 12px;
+  }
+}
+
+.label-color-circle {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  flex-shrink: 0;
 }
 </style>

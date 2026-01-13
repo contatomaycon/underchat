@@ -26,6 +26,7 @@ import { buildCandidatesWithDdi } from '@core/common/functions/buildCandidatesBR
 import { extractPhoneAndDdi } from '@core/common/functions/extractPhoneAndDdi';
 import { ContactLabelTemplateViewerExistsRepository } from '@core/repositories/contact/ContactLabelTemplateViewerExists.repository';
 import { ContactLabelTemplateCreatorRepository } from '@core/repositories/contact/ContactLabelTemplateCreator.repository';
+import { ContactLabelTemplateDeleterRepository } from '@core/repositories/contact/ContactLabelTemplateDeleter.repository';
 import { extractFieldValue } from '@core/common/functions/extractFieldValue';
 import { extractArrayFieldValue } from '@core/common/functions/extractArrayFieldValue';
 
@@ -47,7 +48,8 @@ export class ContactService {
     private readonly contactUsersListerRepository: ContactUsersListerRepository,
     private readonly storageService: StorageService,
     private readonly contactLabelTemplateViewerExistsRepository: ContactLabelTemplateViewerExistsRepository,
-    private readonly contactLabelTemplateCreatorRepository: ContactLabelTemplateCreatorRepository
+    private readonly contactLabelTemplateCreatorRepository: ContactLabelTemplateCreatorRepository,
+    private readonly contactLabelTemplateDeleterRepository: ContactLabelTemplateDeleterRepository
   ) {}
 
   listContacts = async (
@@ -803,5 +805,15 @@ export class ContactService {
       );
 
     return result !== null;
+  };
+
+  removeContactLabelTemplate = async (
+    contactId: string,
+    labelTemplateId: string
+  ): Promise<boolean> => {
+    return this.contactLabelTemplateDeleterRepository.deleteContactLabelTemplateByContactIdAndLabelTemplateId(
+      contactId,
+      labelTemplateId
+    );
   };
 }
