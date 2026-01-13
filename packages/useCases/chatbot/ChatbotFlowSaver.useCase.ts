@@ -608,26 +608,42 @@ export class ChatbotFlowSaverUseCase {
     }
 
     const data = node.data;
-    if (!data.conditionType) {
+    const conditions = data.conditions;
+
+    if (!Array.isArray(conditions) || conditions.length === 0) {
       const nodeLabel = this.getNodeLabel(t, node);
       errors.push(
-        t('chatbot_flow_validation_conditional_type_required', {
+        t('chatbot_flow_validation_conditional_required', {
           nodeLabel,
         })
       );
+      return;
     }
 
-    if (
-      !data.conditionTerm ||
-      (typeof data.conditionTerm === 'string' &&
-        data.conditionTerm.trim().length === 0)
-    ) {
-      const nodeLabel = this.getNodeLabel(t, node);
-      errors.push(
-        t('chatbot_flow_validation_conditional_term_required', {
-          nodeLabel,
-        })
-      );
+    const nodeLabel = this.getNodeLabel(t, node);
+
+    for (let i = 0; i < conditions.length; i++) {
+      const condition = conditions[i];
+
+      if (!condition.conditionType) {
+        errors.push(
+          t('chatbot_flow_validation_conditional_type_required', {
+            nodeLabel,
+          })
+        );
+      }
+
+      if (
+        !condition.conditionTerm ||
+        (typeof condition.conditionTerm === 'string' &&
+          condition.conditionTerm.trim().length === 0)
+      ) {
+        errors.push(
+          t('chatbot_flow_validation_conditional_term_required', {
+            nodeLabel,
+          })
+        );
+      }
     }
   }
 

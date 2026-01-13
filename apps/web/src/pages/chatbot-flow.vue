@@ -690,6 +690,13 @@ const removeOptionEdge = (nodeId: string, optionId: string) => {
   );
 };
 
+const removeConditionEdge = (nodeId: string, conditionId: string) => {
+  const sourceHandle = `condition-${conditionId}-source`;
+  edges.value = edges.value.filter(
+    (e) => !(e.source === nodeId && e.sourceHandle === sourceHandle)
+  );
+};
+
 const removeInteractionsEdge = (nodeId: string) => {
   const sourceHandle = 'interactions-quantity-source';
   const normalizedHandle = 'interactions-quantity';
@@ -931,9 +938,10 @@ const addConditionalNode = (position?: { x: number; y: number }) => {
       y: getSecureRandom(300) + 100,
     },
     data: {
-      conditionType: null,
-      conditionTerm: '',
+      conditions: [],
       onRemove: () => removeNode(nodeId),
+      onRemoveCondition: (conditionId: string) =>
+        removeConditionEdge(nodeId, conditionId),
     },
   };
   nodes.value.push(newNode);
@@ -1473,8 +1481,9 @@ const processDistributionNodeData = (nodeData: any): void => {
 };
 
 const processConditionalNodeData = (nodeData: any): void => {
-  if (nodeData.conditionType === undefined) nodeData.conditionType = null;
-  if (nodeData.conditionTerm === undefined) nodeData.conditionTerm = '';
+  if (!Array.isArray(nodeData.conditions)) {
+    nodeData.conditions = [];
+  }
 };
 
 const processNodeDataByType = (node: Node): void => {
@@ -1540,6 +1549,11 @@ const processLoadedNode = (node: Node): Node => {
     ) {
       node.data.onRemoveOption = (optionId: string) =>
         removeOptionEdge(node.id, optionId);
+    }
+
+    if (node.type === 'conditional') {
+      node.data.onRemoveCondition = (conditionId: string) =>
+        removeConditionEdge(node.id, conditionId);
     }
 
     if (node.type === 'aiAgent') {
@@ -3484,6 +3498,14 @@ onUnmounted(() => {
 
 .flow-area {
   flex: 1;
+  height: 100%;
+  min-height: 600px;
+  min-width: 400px;
+  position: relative;
+}
+
+.flow-area :deep(.vue-flow) {
+  width: 100%;
   height: 100%;
 }
 

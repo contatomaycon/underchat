@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, nextTick } from 'vue';
 import type { NodeProps } from '@vue-flow/core';
-import { Handle, Position } from '@vue-flow/core';
+import { Handle, Position, useVueFlow } from '@vue-flow/core';
 import { useI18n } from 'vue-i18n';
 
 type ConditionType =
@@ -12,20 +12,32 @@ type ConditionType =
   | 'ends_with'
   | null;
 
-interface ConditionalData {
+interface Condition {
+  id: string;
   conditionType: ConditionType;
   conditionTerm: string;
+}
+
+interface ConditionalData {
+  conditions: Condition[];
   onRemove?: () => void;
+  onRemoveCondition?: (conditionId: string) => void;
 }
 
 const props = defineProps<NodeProps>();
 const { t } = useI18n();
+const { updateNodeInternals } = useVueFlow();
 
 const getInitialData = (): ConditionalData => {
   const data = props.data as ConditionalData | undefined;
   return {
-    conditionType: data?.conditionType || null,
-    conditionTerm: data?.conditionTerm || '',
+    conditions: Array.isArray(data?.conditions)
+      ? data.conditions.map((c) => ({
+          id: c.id || crypto.randomUUID(),
+          conditionType: c.conditionType || null,
+          conditionTerm: c.conditionTerm || '',
+        }))
+      : [],
   };
 };
 
@@ -54,20 +66,69 @@ const conditionTypeOptions = computed(() => [
   },
 ]);
 
-const conditionTermRules = computed(() => [
-  (v: string | null | undefined) => {
-    if (!conditionalData.value.conditionType) return true;
-    const s = (v ?? '').trim();
-    return !!s || t('chatbot_conditional_term_required');
-  },
-]);
+const getNextConditionId = () => {
+  return crypto.randomUUID();
+};
+
+const buildConditionHandleId = (conditionId: string) => {
+  return `condition-${conditionId}-source`;
+};
 
 const updateNodeData = () => {
   if (props.data) {
     const data = props.data as ConditionalData;
-    data.conditionType = conditionalData.value.conditionType;
-    data.conditionTerm = conditionalData.value.conditionTerm;
+    data.conditions = [...conditionalData.value.conditions];
   }
+  nextTick(() => {
+    updateNodeInternals();
+  });
+};
+
+const addCondition = () => {
+  const newCondition: Condition = {
+    id: getNextConditionId(),
+    conditionType: null,
+    conditionTerm: '',
+  };
+  conditionalData.value.conditions.push(newCondition);
+  updateNodeData();
+};
+
+const removeCondition = (index: number) => {
+  const condition = conditionalData.value.conditions[index];
+
+  if (!condition) {
+    return;
+  }
+
+  const data = props.data as ConditionalData;
+
+  if (data?.onRemoveCondition && condition.id) {
+    data.onRemoveCondition(condition.id);
+  }
+
+  conditionalData.value.conditions.splice(index, 1);
+  updateNodeData();
+};
+
+const updateConditionType = (index: number, conditionType: ConditionType) => {
+  conditionalData.value.conditions[index].conditionType = conditionType;
+  updateNodeData();
+};
+
+const updateConditionTerm = (index: number, conditionTerm: string) => {
+  conditionalData.value.conditions[index].conditionTerm = conditionTerm;
+  updateNodeData();
+};
+
+const getConditionTermRules = (condition: Condition) => {
+  return [
+    (v: string | null | undefined) => {
+      if (!condition.conditionType) return true;
+      const s = (v ?? '').trim();
+      return !!s || t('chatbot_conditional_term_required');
+    },
+  ];
 };
 
 const handleRemove = () => {
@@ -89,7 +150,6 @@ watch(
 <template>
   <div class="chatbot-conditional-node">
     <Handle type="target" :position="Position.Top" class="handle-target" />
-    <Handle type="source" :position="Position.Bottom" class="handle-source" />
 
     <VCard class="conditional-card" elevation="2">
       <VCardTitle
@@ -112,25 +172,65 @@ watch(
       </VCardTitle>
 
       <VCardText class="pa-3">
-        <VSelect
-          v-model="conditionalData.conditionType"
-          :items="conditionTypeOptions"
-          :label="t('chatbot_conditional_type')"
-          variant="outlined"
-          density="compact"
-          class="mb-3"
-          hide-details
-        />
+        <div
+          v-for="(condition, index) in conditionalData.conditions"
+          :key="condition.id"
+          class="condition-item mb-3"
+        >
+          <div class="d-flex align-center gap-2 mb-2">
+            <VSelect
+              :model-value="condition.conditionType"
+              @update:model-value="updateConditionType(index, $event)"
+              :items="conditionTypeOptions"
+              :label="t('chatbot_conditional_type')"
+              variant="outlined"
+              density="compact"
+              class="flex-grow-1"
+              hide-details
+            />
+            <VBtn
+              icon
+              variant="text"
+              color="error"
+              size="small"
+              @click="removeCondition(index)"
+            >
+              <VIcon icon="tabler-trash" size="18" />
+            </VBtn>
+          </div>
+          <div class="d-flex align-center gap-2 condition-term-wrapper">
+            <VTextField
+              :model-value="condition.conditionTerm"
+              @update:model-value="updateConditionTerm(index, $event)"
+              :label="t('chatbot_conditional_term')"
+              :placeholder="t('chatbot_conditional_term_placeholder')"
+              variant="outlined"
+              density="compact"
+              :rules="getConditionTermRules(condition)"
+              class="flex-grow-1"
+              hide-details="auto"
+            />
+            <Handle
+              :id="buildConditionHandleId(condition.id)"
+              type="source"
+              :position="Position.Right"
+              class="condition-handle handle-source"
+              @mousedown.stop
+              @touchstart.stop
+            />
+          </div>
+        </div>
 
-        <VTextField
-          v-model="conditionalData.conditionTerm"
-          :label="t('chatbot_conditional_term')"
-          :placeholder="t('chatbot_conditional_term_placeholder')"
+        <VBtn
+          color="primary"
           variant="outlined"
-          density="compact"
-          :rules="conditionTermRules"
-          hide-details="auto"
-        />
+          size="small"
+          block
+          @click="addCondition"
+        >
+          <VIcon icon="tabler-plus" class="me-2" />
+          {{ t('chatbot_conditional_add') }}
+        </VBtn>
       </VCardText>
     </VCard>
   </div>
@@ -156,5 +256,23 @@ watch(
 
 .cursor-pointer {
   cursor: pointer;
+}
+
+.condition-item {
+  padding: 12px;
+  border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+  border-radius: 8px;
+  background-color: rgba(var(--v-theme-surface), 0.5);
+}
+
+.condition-term-wrapper {
+  position: relative;
+}
+
+.condition-handle {
+  position: absolute;
+  right: -25px;
+  top: 50%;
+  transform: translateY(-150%);
 }
 </style>

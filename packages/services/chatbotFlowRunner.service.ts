@@ -142,6 +142,22 @@ export class ChatbotFlowRunnerService {
     return edge?.target ?? null;
   }
 
+  private getNextFlowIdByCondition(
+    chatbotFlow: ListChatbotFlowResponse,
+    currentFlowId: string,
+    conditionId: string
+  ): string | null {
+    const expectedSourceHandle = `condition-${conditionId}-source`;
+
+    const edge = chatbotFlow.edges.find(
+      (currentEdge) =>
+        currentEdge.source === currentFlowId &&
+        currentEdge.sourceHandle === expectedSourceHandle
+    );
+
+    return edge?.target ?? null;
+  }
+
   private getNextFlowIdByInteractionsHandle(
     chatbotFlow: ListChatbotFlowResponse,
     currentFlowId: string
@@ -1000,16 +1016,7 @@ export class ChatbotFlowRunnerService {
     }
 
     if (nextFlowNode.type === 'conditional') {
-      const nextConditionalFlowId = this.getNextFlowId(chatbotFlow, nextFlowId);
-      if (nextConditionalFlowId) {
-        return this.processNextNode(
-          t,
-          createChat,
-          chatbotFlow,
-          nextConditionalFlowId,
-          customMessages
-        );
-      }
+      await this.updateCache(createChat, nextFlowId);
       return true;
     }
 
@@ -5204,10 +5211,9 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       throw new Error(t('chatbot_flow_node_not_found'));
     }
 
-    const conditionType = currentNode.data?.conditionType;
-    const conditionTerm = currentNode.data?.conditionTerm;
+    const conditions = currentNode.data?.conditions;
 
-    if (!conditionType || !conditionTerm) {
+    if (!Array.isArray(conditions) || conditions.length === 0) {
       return false;
     }
 
@@ -5217,44 +5223,55 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       return false;
     }
 
-    const term = conditionTerm.trim().toLowerCase();
-    let conditionMet = false;
+    for (const condition of conditions) {
+      const conditionType = condition.conditionType;
+      const conditionTerm = condition.conditionTerm;
 
-    switch (conditionType) {
-      case 'contains':
-        conditionMet = userText.includes(term);
-        break;
-      case 'equals':
-        conditionMet = userText === term;
-        break;
-      case 'not_contains':
-        conditionMet = !userText.includes(term);
-        break;
-      case 'starts_with':
-        conditionMet = userText.startsWith(term);
-        break;
-      case 'ends_with':
-        conditionMet = userText.endsWith(term);
-        break;
+      if (!conditionType || !conditionTerm) {
+        continue;
+      }
+
+      const term = conditionTerm.trim().toLowerCase();
+      let conditionMet = false;
+
+      switch (conditionType) {
+        case 'contains':
+          conditionMet = userText.includes(term);
+          break;
+        case 'equals':
+          conditionMet = userText === term;
+          break;
+        case 'not_contains':
+          conditionMet = !userText.includes(term);
+          break;
+        case 'starts_with':
+          conditionMet = userText.startsWith(term);
+          break;
+        case 'ends_with':
+          conditionMet = userText.endsWith(term);
+          break;
+      }
+
+      if (conditionMet) {
+        const nextFlowId = this.getNextFlowIdByCondition(
+          chatbotFlow,
+          currentFlowId,
+          condition.id
+        );
+
+        if (nextFlowId) {
+          return this.processNextNode(
+            t,
+            createChat,
+            chatbotFlow,
+            nextFlowId,
+            customMessages
+          );
+        }
+      }
     }
 
-    if (!conditionMet) {
-      return false;
-    }
-
-    const nextFlowId = this.getNextFlowId(chatbotFlow, currentFlowId);
-
-    if (!nextFlowId) {
-      return false;
-    }
-
-    return this.processNextNode(
-      t,
-      createChat,
-      chatbotFlow,
-      nextFlowId,
-      customMessages
-    );
+    return false;
   }
 
   private getDistributionCacheKey(accountId: string, workerId: string): string {
