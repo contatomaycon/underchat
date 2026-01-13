@@ -144,37 +144,6 @@ export class ChatbotService {
     return saved ? chatbotFlowId : null;
   };
 
-  private normalizeChatbotFlowData(
-    flow: ListChatbotFlowResponse
-  ): ListChatbotFlowResponse {
-    if (!flow.nodes || !Array.isArray(flow.nodes)) {
-      return flow;
-    }
-
-    for (const node of flow.nodes) {
-      if (!node.data || typeof node.data !== 'object') {
-        node.data = {};
-      }
-
-      const selectedTag = node.data.selectedTag;
-      if (selectedTag === undefined || selectedTag === null) {
-        node.data.selectedTag = undefined;
-        continue;
-      }
-
-      if (typeof selectedTag === 'string') {
-        node.data.selectedTag = [selectedTag];
-        continue;
-      }
-
-      if (!Array.isArray(selectedTag)) {
-        node.data.selectedTag = [];
-      }
-    }
-
-    return flow;
-  }
-
   findChatbotFlowByChatbotId = async (
     accountId: string,
     chatbotId: string
@@ -221,7 +190,7 @@ export class ChatbotService {
       return null;
     }
 
-    return this.normalizeChatbotFlowData(hit._source);
+    return hit._source;
   };
 
   saveChatbotFlowConfigurations = async (
