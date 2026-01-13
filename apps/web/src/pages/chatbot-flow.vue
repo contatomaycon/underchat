@@ -1201,7 +1201,12 @@ const validateAllNodesConnected = (): string | null => {
   const nodesWithoutOutput: Node[] = [];
 
   for (const node of nodes.value) {
-    if (node.type === 'finish' || node.type === 'annotation') {
+    if (
+      node.type === 'finish' ||
+      node.type === 'annotation' ||
+      node.type === 'redirect' ||
+      node.type === 'distribution'
+    ) {
       continue;
     }
 

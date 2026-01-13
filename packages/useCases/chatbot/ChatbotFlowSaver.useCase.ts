@@ -97,7 +97,12 @@ export class ChatbotFlowSaverUseCase {
     const nodesWithoutOutput: any[] = [];
 
     for (const node of requestData.nodes) {
-      if (node.type === 'finish' || node.type === 'annotation') {
+      if (
+        node.type === 'finish' ||
+        node.type === 'annotation' ||
+        node.type === 'redirect' ||
+        node.type === 'distribution'
+      ) {
         continue;
       }
 
