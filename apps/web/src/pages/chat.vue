@@ -397,7 +397,7 @@ const isLabelModalOpen = ref(false);
 const labelTemplates = ref<
   Array<{ label_template_id: string; label: string; color: string }>
 >([]);
-const selectedLabelTemplateId = ref<string | null>(null);
+const selectedLabelTemplateIds = ref<string[]>([]);
 const isLoadingLabels = ref(false);
 const isSavingLabel = ref(false);
 
@@ -437,6 +437,38 @@ const remainingContactLabels = computed(() => {
 const remainingContactLabelsText = computed(() => {
   return remainingContactLabels.value.map((lt) => lt.label).join(', ');
 });
+
+const openLabelModal = () => {
+  isLabelModalOpen.value = true;
+};
+
+const removeLabel = async () => {
+  if (!chatStore.activeChat?.chat_id) return;
+
+  const currentLabels = activeChatLabels.value;
+  if (currentLabels.length === 0) return;
+
+  isSavingLabel.value = true;
+
+  const remainingLabels = currentLabels.slice(1);
+  const remainingLabelIds =
+    remainingLabels.length > 0
+      ? remainingLabels.map((label) => label.label_template_id)
+      : null;
+
+  const success = await chatStore.updateChatLabel(
+    chatStore.activeChat.chat_id,
+    remainingLabelIds
+  );
+
+  if (success) {
+    await nextTick();
+
+    isLabelModalOpen.value = false;
+  }
+
+  isSavingLabel.value = false;
+};
 
 watch(
   () => chatStore.activeChat?.contact?.id,
@@ -616,37 +648,34 @@ const canTransfer = computed(() => {
   return true;
 });
 
-const openLabelModal = async () => {
-  isLabelModalOpen.value = true;
-  isLoadingLabels.value = true;
-
-  const labels = await chatStore.listLabelTemplates();
-
-  if (labels) {
-    labelTemplates.value = labels;
+const activeChatLabels = computed(() => {
+  if (!chatStore.activeChat?.label) return [];
+  if (Array.isArray(chatStore.activeChat.label)) {
+    return chatStore.activeChat.label;
   }
+  return [];
+});
 
-  selectedLabelTemplateId.value =
-    chatStore.activeChat?.label?.label_template_id || null;
-  isLoadingLabels.value = false;
-};
+const activeChatLabelTemplate = computed(() => {
+  if (activeChatLabels.value.length === 0) return null;
+  return {
+    label: activeChatLabels.value[0].label,
+    color: activeChatLabels.value[0].color,
+  };
+});
 
-const removeLabel = async () => {
-  if (!chatStore.activeChat?.chat_id) return;
+const activeChatLabelTemplates = computed(() => {
+  return activeChatLabels.value;
+});
 
-  isSavingLabel.value = true;
+const remainingChatLabels = computed(() => {
+  if (activeChatLabelTemplates.value.length <= 1) return [];
+  return activeChatLabelTemplates.value.slice(1);
+});
 
-  const success = await chatStore.updateChatLabel(
-    chatStore.activeChat.chat_id,
-    null
-  );
-
-  if (success) {
-    isLabelModalOpen.value = false;
-  }
-
-  isSavingLabel.value = false;
-};
+const remainingChatLabelsText = computed(() => {
+  return remainingChatLabels.value.map((lt) => lt.label).join(', ');
+});
 
 const hasAttachmentsOrContent = computed(
   () =>
@@ -4633,25 +4662,55 @@ onBeforeUnmount(() => {
           <VSpacer />
 
           <div class="d-sm-flex align-center d-none text-medium-emphasis">
-            <VChip
-              v-if="isInChatStatus && chatStore.activeChat?.label"
-              class="me-2"
-              size="small"
-              variant="flat"
-              :color="chatStore.activeChat.label.color"
-              text-color="white"
-              closable
-              @click="openLabelModal"
-              @click:close.stop="removeLabel"
-              :title="chatStore.activeChat.label.label"
+            <div
+              v-if="isInChatStatus && activeChatLabelTemplate"
+              class="d-flex align-center me-2 chat-labels-group"
             >
-              <VIcon icon="tabler-tag" start size="16" />
-              {{
-                chatStore.activeChat.label.label.length > 15
-                  ? `${chatStore.activeChat.label.label.slice(0, 15)}…`
-                  : chatStore.activeChat.label.label
-              }}
-            </VChip>
+              <VChip
+                class="chat-label-chip"
+                :class="{
+                  'chat-label-chip--with-count':
+                    activeChatLabelTemplates.length > 1,
+                }"
+                size="small"
+                variant="flat"
+                :color="activeChatLabelTemplate.color"
+                text-color="white"
+                closable
+                @click="openLabelModal"
+                @click:close.stop="removeLabel"
+                :title="activeChatLabelTemplate.label"
+              >
+                <VIcon icon="tabler-tag" start size="16" />
+                {{
+                  activeChatLabelTemplate.label.length > 15
+                    ? `${activeChatLabelTemplate.label.slice(0, 15)}…`
+                    : activeChatLabelTemplate.label
+                }}
+              </VChip>
+              <span
+                v-if="activeChatLabelTemplates.length > 1"
+                class="chat-label-count-wrapper"
+              >
+                <VTooltip
+                  v-if="remainingChatLabelsText"
+                  location="top"
+                  transition="scale-transition"
+                  activator="parent"
+                >
+                  <span>{{ remainingChatLabelsText }}</span>
+                </VTooltip>
+                <VChip
+                  class="chat-label-count"
+                  size="small"
+                  variant="flat"
+                  :color="activeChatLabelTemplate.color"
+                  text-color="white"
+                >
+                  +{{ activeChatLabelTemplates.length - 1 }}
+                </VChip>
+              </span>
+            </div>
             <IconBtn
               v-else-if="isInChatStatus"
               class="me-1"
@@ -6635,5 +6694,33 @@ $chat-app-header-height: 76px;
   margin-left: 0 !important;
   opacity: 0.7;
   flex-shrink: 0;
+}
+
+.chat-labels-group {
+  gap: 0;
+}
+
+.chat-label-chip--with-count {
+  border-top-right-radius: 0 !important;
+  border-bottom-right-radius: 0 !important;
+  margin-right: 0 !important;
+}
+
+.chat-label-count-wrapper {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 0;
+}
+
+.chat-label-count {
+  height: 28px;
+  min-width: auto;
+  padding: 0 8px;
+  font-size: 0.75rem;
+  border-top-left-radius: 0 !important;
+  border-bottom-left-radius: 0 !important;
+  border-top-right-radius: 4px !important;
+  border-bottom-right-radius: 4px !important;
+  margin-left: 0 !important;
 }
 </style>

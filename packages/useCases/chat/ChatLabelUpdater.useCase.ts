@@ -38,22 +38,36 @@ export class ChatLabelUpdaterUseCase {
 
     let label: IChat['label'] | null = null;
 
-    if (body.label_template_id) {
-      const labelTemplate =
-        await this.labelTemplateViewerRepository.viewLabelTemplateById(
-          body.label_template_id,
-          accountId
-        );
+    if (body.label_template_ids) {
+      const labelTemplateIds: string[] = [];
 
-      if (!labelTemplate) {
-        throw new Error(t('label_template_not_found'));
+      if (Array.isArray(body.label_template_ids)) {
+        for (const item of body.label_template_ids) {
+          if (item.value) {
+            labelTemplateIds.push(item.value);
+          }
+        }
+      } else if (body.label_template_ids.value) {
+        labelTemplateIds.push(body.label_template_ids.value);
       }
 
-      label = {
-        label_template_id: labelTemplate.label_template_id,
-        label: labelTemplate.label,
-        color: labelTemplate.color,
-      };
+      if (labelTemplateIds.length > 0) {
+        const labelTemplates =
+          await this.labelTemplateViewerRepository.viewLabelTemplatesByIds(
+            labelTemplateIds,
+            accountId
+          );
+
+        if (labelTemplates.length !== labelTemplateIds.length) {
+          throw new Error(t('label_template_not_found'));
+        }
+
+        label = labelTemplates.map((labelTemplate) => ({
+          label_template_id: labelTemplate.label_template_id,
+          label: labelTemplate.label,
+          color: labelTemplate.color,
+        }));
+      }
     }
 
     const updated = await this.chatService.updateChatLabel(

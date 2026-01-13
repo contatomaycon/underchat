@@ -68,7 +68,7 @@ export const listChatsResultSchema = Type.Object({
   protocol_transfer: Type.Optional(
     Type.Union([Type.Array(Type.String()), Type.Null()])
   ),
-  label: Type.Optional(Type.Union([labelSchema, Type.Null()])),
+  label: Type.Optional(Type.Union([Type.Array(labelSchema), Type.Null()])),
 });
 
 export const listChatsResponseSchema = Type.Object({

@@ -68,6 +68,6 @@ export interface IChat {
   protocol_ura?: string[] | null;
   protocol_start?: string[] | null;
   protocol_transfer?: string[] | null;
-  label?: ILabel | null;
+  label?: ILabel[] | null;
   embedded_for_ai_agents?: string[] | null;
 }

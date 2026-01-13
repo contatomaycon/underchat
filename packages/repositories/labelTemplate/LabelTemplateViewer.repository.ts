@@ -1,7 +1,7 @@
 import * as schema from '@core/models';
 import { labelTemplate, labelStatus, account } from '@core/models';
 import { ViewLabelTemplateResponse } from '@core/schema/labelTemplate/viewLabelTemplate/response.schema';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 
@@ -53,5 +53,49 @@ export class LabelTemplateViewerRepository {
     }
 
     return result[0] as ViewLabelTemplateResponse;
+  };
+
+  viewLabelTemplatesByIds = async (
+    labelTemplateIds: string[],
+    accountId?: string
+  ): Promise<ViewLabelTemplateResponse[]> => {
+    if (labelTemplateIds.length === 0) {
+      return [];
+    }
+
+    const conditions = [
+      inArray(labelTemplate.label_template_id, labelTemplateIds),
+      isNull(labelTemplate.deleted_at),
+    ];
+
+    if (accountId) {
+      conditions.push(eq(labelTemplate.account_id, accountId));
+    }
+
+    const result = await this.dbRo
+      .select({
+        label_template_id: labelTemplate.label_template_id,
+        account: {
+          account_id: account.account_id,
+          name: account.name,
+        },
+        label_status: {
+          label_status_id: labelStatus.label_status_id,
+          name: labelStatus.name,
+        },
+        label: labelTemplate.label,
+        color: labelTemplate.color,
+        created_at: labelTemplate.created_at,
+      })
+      .from(labelTemplate)
+      .innerJoin(account, eq(labelTemplate.account_id, account.account_id))
+      .innerJoin(
+        labelStatus,
+        eq(labelTemplate.label_status_id, labelStatus.label_status_id)
+      )
+      .where(and(...conditions))
+      .execute();
+
+    return result as ViewLabelTemplateResponse[];
   };
 }

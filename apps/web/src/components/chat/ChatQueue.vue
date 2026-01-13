@@ -66,27 +66,27 @@ const attendantLabel = computed(() => {
   return limitCharacters(10, attendantFirstName.value);
 });
 
+const chatLabels = computed(() => {
+  if (!props.user.label) return [];
+  if (Array.isArray(props.user.label)) {
+    return props.user.label;
+  }
+  return [];
+});
+
 const isChatLabel = computed(() => {
-  const chatLabel = props.user.label as
-    | { label?: string | null; color?: string | null }
-    | null
-    | undefined;
-  return Boolean(chatLabel?.label && chatLabel.color);
+  return chatLabels.value.length > 0;
 });
 
 const chatLabelForList = computed<{
   label: string;
   color: string;
 } | null>(() => {
-  const chatLabel = props.user.label as
-    | { label?: string | null; color?: string | null }
-    | null
-    | undefined;
-
-  if (chatLabel?.label && chatLabel.color) {
+  if (chatLabels.value.length > 0) {
+    const firstLabel = chatLabels.value[0];
     return {
-      label: chatLabel.label,
-      color: chatLabel.color,
+      label: firstLabel.label,
+      color: firstLabel.color,
     };
   }
 
@@ -103,6 +103,15 @@ const chatLabelForList = computed<{
   }
 
   return null;
+});
+
+const remainingChatLabels = computed(() => {
+  if (chatLabels.value.length <= 1) return [];
+  return chatLabels.value.slice(1);
+});
+
+const remainingChatLabelsText = computed(() => {
+  return remainingChatLabels.value.map((lt) => lt.label).join(', ');
 });
 
 const contactLabelTemplates = computed(() => {
@@ -245,9 +254,10 @@ watch(
             'chat-label-tag--standalone': !(showWorkerNameLabel && workerName),
             'chat-label-tag--with-worker': showWorkerNameLabel && workerName,
             'chat-label-tag--with-count':
-              !isChatLabel &&
-              contactLabelTemplates.length > 1 &&
-              props.user.contact?.id,
+              (isChatLabel && chatLabels.length > 1) ||
+              (!isChatLabel &&
+                contactLabelTemplates.length > 1 &&
+                props.user.contact?.id),
           }"
           :style="{
             backgroundColor: chatLabelForList.color,
@@ -256,6 +266,22 @@ watch(
         >
           {{ chatLabelForList.label }}
         </div>
+        <span
+          v-if="isChatLabel && chatLabels.length > 1"
+          class="chat-label-count-wrapper"
+        >
+          <VTooltip
+            v-if="remainingChatLabelsText"
+            location="top"
+            transition="scale-transition"
+            activator="parent"
+          >
+            <span>{{ remainingChatLabelsText }}</span>
+          </VTooltip>
+          <VChip class="chat-label-count text-caption" size="x-small">
+            +{{ chatLabels.length - 1 }}
+          </VChip>
+        </span>
         <span
           v-if="
             !isChatLabel &&

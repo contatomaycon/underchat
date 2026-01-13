@@ -345,7 +345,11 @@ export const useChatStore = defineStore('chat', {
         date: chat.date,
         started_at: chat.started_at,
         closed_at: chat.closed_at,
-        label: chat.label,
+        label: Array.isArray(chat.label)
+          ? chat.label
+          : chat.label
+            ? [chat.label]
+            : null,
       };
 
       const isActiveChat = this.activeChat?.chat_id === chat.chat_id;
@@ -1350,7 +1354,11 @@ export const useChatStore = defineStore('chat', {
               user: data.data.user,
               started_at: data.data.started_at,
               closed_at: data.data.closed_at,
-              label: data.data.label,
+              label: Array.isArray(data.data.label)
+                ? data.data.label
+                : data.data.label
+                  ? [data.data.label]
+                  : null,
             };
           }
         }
@@ -1798,7 +1806,11 @@ export const useChatStore = defineStore('chat', {
         phone: chat.phone,
         status: chat.status,
         date: chat.date,
-        label: chat.label,
+        label: Array.isArray(chat.label)
+          ? chat.label
+          : chat.label
+            ? [chat.label]
+            : null,
       };
     },
 
@@ -2881,16 +2893,31 @@ export const useChatStore = defineStore('chat', {
 
     async updateChatLabel(
       chatId: string,
-      labelTemplateId?: string | null
+      labelTemplateIds?: string[] | null
     ): Promise<boolean> {
       try {
         this.loading = true;
 
+        const body: {
+          label_template_ids?:
+            | Array<{ value: string }>
+            | { value: string | null }
+            | undefined;
+        } = {};
+
+        if (labelTemplateIds === null || labelTemplateIds === undefined) {
+          body.label_template_ids = { value: null };
+        } else if (labelTemplateIds.length === 0) {
+          body.label_template_ids = { value: null };
+        } else {
+          body.label_template_ids = labelTemplateIds.map((id) => ({
+            value: id,
+          }));
+        }
+
         const response = await axios.patch<IApiResponse<{ success: boolean }>>(
           `/chat/${chatId}/label`,
-          {
-            label_template_id: labelTemplateId ?? null,
-          }
+          body
         );
 
         this.loading = false;
@@ -2908,24 +2935,24 @@ export const useChatStore = defineStore('chat', {
         if (this.activeChat?.chat_id === chatId) {
           let label: ListChatsResult['label'] = null;
 
-          if (labelTemplateId) {
+          if (labelTemplateIds && labelTemplateIds.length > 0) {
             const labels = await this.listLabelTemplates();
-            const labelTemplate = labels?.find(
-              (l) => l.label_template_id === labelTemplateId
+            const labelTemplates = labels?.filter((l) =>
+              labelTemplateIds.includes(l.label_template_id)
             );
 
-            if (labelTemplate) {
-              label = {
-                label_template_id: labelTemplate.label_template_id,
-                label: labelTemplate.label,
-                color: labelTemplate.color,
-              };
+            if (labelTemplates && labelTemplates.length > 0) {
+              label = labelTemplates.map((lt) => ({
+                label_template_id: lt.label_template_id,
+                label: lt.label,
+                color: lt.color,
+              }));
             }
           }
 
           this.activeChat = {
             ...this.activeChat,
-            label,
+            label: label ? [...label] : null,
           } as ListChatsResult;
         }
 

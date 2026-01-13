@@ -23,9 +23,17 @@ const labelTemplates = ref<
   Array<{ label_template_id: string; label: string; color: string }>
 >([]);
 
-const selectedLabelTemplateId = ref<string | null>(null);
+const selectedLabelTemplateIds = ref<string[]>([]);
 const isLoadingLabels = ref(false);
 const isSavingLabel = ref(false);
+
+const itemsLabel = computed(() =>
+  labelTemplates.value.map((item) => ({
+    value: item.label_template_id,
+    title: item.label,
+    color: item.color,
+  }))
+);
 
 const openLabelModal = async () => {
   isOpen.value = true;
@@ -37,15 +45,15 @@ const openLabelModal = async () => {
     labelTemplates.value = labels;
   }
 
-  selectedLabelTemplateId.value =
-    chatStore.activeChat?.label?.label_template_id || null;
+  selectedLabelTemplateIds.value =
+    chatStore.activeChat?.label?.map((l) => l.label_template_id) ?? [];
   isLoadingLabels.value = false;
 };
 
 const closeLabelModal = () => {
   if (isSavingLabel.value) return;
   isOpen.value = false;
-  selectedLabelTemplateId.value = null;
+  selectedLabelTemplateIds.value = [];
 };
 
 const saveLabel = async () => {
@@ -55,7 +63,9 @@ const saveLabel = async () => {
 
   const success = await chatStore.updateChatLabel(
     chatStore.activeChat.chat_id,
-    selectedLabelTemplateId.value || null
+    selectedLabelTemplateIds.value.length > 0
+      ? selectedLabelTemplateIds.value
+      : null
   );
 
   if (success) {
@@ -112,26 +122,40 @@ watch(
     <VCard :title="t('label')">
       <VCardText>
         <AppSelectSearch
-          v-model="selectedLabelTemplateId"
-          :items="labelTemplates"
+          v-model="selectedLabelTemplateIds"
+          :items="itemsLabel"
           :label="t('label')"
           :placeholder="t('select_label')"
           :clearable="true"
-          item-value="label_template_id"
-          item-title="label"
+          multiple
+          chips
+          closable-chips
+          item-value="value"
+          item-title="title"
           class="label-select"
         >
+          <template #chip="{ item }">
+            <div class="d-flex align-center gap-1">
+              <div
+                v-if="item && item.color"
+                class="label-color-circle"
+                :style="{ backgroundColor: item.color }"
+              />
+              <span>{{ item?.title }}</span>
+            </div>
+          </template>
           <template #prepend-inner="{ item }">
             <div
-              v-if="item"
+              v-if="item && !Array.isArray(item) && (item as any).color"
               class="label-color-circle me-2"
-              :style="{ backgroundColor: item.color }"
+              :style="{ backgroundColor: (item as any).color }"
             />
           </template>
           <template #item-prepend="{ item }">
             <div
+              v-if="item && (item as any).color"
               class="label-color-circle"
-              :style="{ backgroundColor: item.color }"
+              :style="{ backgroundColor: (item as any).color }"
             />
           </template>
         </AppSelectSearch>
@@ -139,7 +163,11 @@ watch(
 
       <VCardText class="d-flex justify-space-between flex-wrap gap-3">
         <VBtn
-          v-if="chatStore.activeChat?.label"
+          v-if="
+            chatStore.activeChat?.label &&
+            Array.isArray(chatStore.activeChat.label) &&
+            chatStore.activeChat.label.length > 0
+          "
           variant="tonal"
           color="error"
           :loading="isSavingLabel"

@@ -5,8 +5,17 @@ export const updateChatLabelParamsSchema = Type.Object({
 });
 
 export const updateChatLabelBodySchema = Type.Object({
-  label_template_id: Type.Optional(
-    Type.Union([Type.String({ format: 'uuid' }), Type.Null()])
+  label_template_ids: Type.Optional(
+    Type.Union([
+      Type.Array(
+        Type.Object({
+          value: Type.String({ format: 'uuid' }),
+        })
+      ),
+      Type.Object({
+        value: Type.Union([Type.String({ format: 'uuid' }), Type.Null()]),
+      }),
+    ])
   ),
 });
 
