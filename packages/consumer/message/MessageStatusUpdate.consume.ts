@@ -1,5 +1,5 @@
 import { singleton, inject } from 'tsyringe';
-import { KafkaConsumer } from 'node-rdkafka';
+import { KafkaConsumer, type LibrdKafkaError } from 'node-rdkafka';
 import { KafkaClient } from '@core/plugins/kafkaStreams';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { IMessageStatusUpdate } from '@core/common/interfaces/IMessageStatusUpdate';
@@ -136,12 +136,32 @@ export class MessageStatusUpdateConsume {
     partition: number,
     offset: number
   ): Promise<void> {
-    this.consumerOrThrow.commitSync([
-      {
-        topic,
-        partition,
-        offset: offset + 1,
-      },
-    ]);
+    try {
+      this.consumerOrThrow.commitSync([
+        {
+          topic,
+          partition,
+          offset: offset + 1,
+        },
+      ]);
+    } catch (error: unknown) {
+      if (
+        MessageStatusUpdateConsume.isLibrdKafkaError(error) &&
+        error.code === 22
+      ) {
+        return;
+      }
+
+      throw error;
+    }
+  }
+
+  private static isLibrdKafkaError(error: unknown): error is LibrdKafkaError {
+    return (
+      typeof error === 'object' &&
+      error !== null &&
+      'code' in error &&
+      typeof (error as { code: unknown }).code === 'number'
+    );
   }
 }
