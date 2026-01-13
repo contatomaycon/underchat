@@ -135,9 +135,9 @@ const handleRemove = () => {
       </VCardTitle>
 
       <VCardText class="pa-3">
-        <VLabel class="text-body-2 mb-1"
-          >{{ t('chatbot_tag_type_label') }}:</VLabel
-        >
+        <VLabel class="text-body-2 mb-1">{{
+          t('chatbot_tag_type_label')
+        }}</VLabel>
         <VSelect
           v-model="tagData.tagType"
           :items="[
@@ -152,9 +152,7 @@ const handleRemove = () => {
         />
 
         <div v-if="tagData.tagType" class="mb-3">
-          <VLabel class="text-body-2 mb-1"
-            >{{ t('chatbot_tag_label') }}:</VLabel
-          >
+          <VLabel class="text-body-2 mb-1">{{ t('chatbot_tag_label') }}</VLabel>
           <AppSelectSearch
             v-model="tagData.selectedTag"
             :items="tags"
