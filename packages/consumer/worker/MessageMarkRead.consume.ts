@@ -60,7 +60,12 @@ export class MessageMarkReadConsume {
 
     const topic = this.kafkaServiceQueueService.markMessageRead();
 
-    await ensureKafkaTopic(this.kafka, topic);
+    await ensureKafkaTopic(
+      this.kafka,
+      topic,
+      this.kafkaServiceQueueService.getNumPartitions(),
+      this.kafkaServiceQueueService.getReplicationFactor()
+    );
 
     this.consumer = createConsumer(
       this.kafka,

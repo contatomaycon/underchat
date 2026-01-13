@@ -60,7 +60,12 @@ export class UserPhoneJidUpdateConsume {
 
     const topic = this.kafkaBaileysQueueService.userPhoneJidUpdate();
 
-    await ensureKafkaTopic(this.kafka, topic);
+    await ensureKafkaTopic(
+      this.kafka,
+      topic,
+      this.kafkaBaileysQueueService.getNumPartitions(),
+      this.kafkaBaileysQueueService.getReplicationFactor()
+    );
 
     this.consumer = createConsumer(
       this.kafka,

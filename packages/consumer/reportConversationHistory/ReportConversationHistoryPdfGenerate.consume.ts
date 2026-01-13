@@ -41,7 +41,12 @@ export class ReportConversationHistoryPdfGenerateConsume {
     const topic =
       this.kafkaServiceQueueService.reportConversationHistoryPdfGenerate();
 
-    await ensureKafkaTopic(this.kafka, topic);
+    await ensureKafkaTopic(
+      this.kafka,
+      topic,
+      this.kafkaServiceQueueService.getNumPartitions(),
+      this.kafkaServiceQueueService.getReplicationFactor()
+    );
 
     this.consumer = createConsumer(
       this.kafka,

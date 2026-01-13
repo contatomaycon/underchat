@@ -44,7 +44,12 @@ export class WorkerConnectionStatusConsume {
 
     const topic = this.getWorkerConnectionTopic();
 
-    await ensureKafkaTopic(this.kafka, topic);
+    await ensureKafkaTopic(
+      this.kafka,
+      topic,
+      this.kafkaBaileysQueueService.getNumPartitions(),
+      this.kafkaBaileysQueueService.getReplicationFactor()
+    );
 
     this.consumer = createConsumer(
       this.kafka,

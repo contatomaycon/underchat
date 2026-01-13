@@ -58,7 +58,12 @@ export class WorkerConsume {
 
     const topic = this.getTopic();
 
-    await ensureKafkaTopic(this.kafka, topic);
+    await ensureKafkaTopic(
+      this.kafka,
+      topic,
+      this.kafkaBalanceQueueService.getNumPartitions(),
+      this.kafkaBalanceQueueService.getReplicationFactor()
+    );
 
     this.consumer = createConsumer(
       this.kafka,

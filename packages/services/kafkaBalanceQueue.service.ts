@@ -3,7 +3,18 @@ import { KafkaService } from './kafka.service';
 
 @injectable()
 export class KafkaBalanceQueueService {
+  static readonly NUM_PARTITIONS = 2;
+  static readonly REPLICATION_FACTOR = 1;
+
   constructor(private readonly kafkaService: KafkaService) {}
+
+  getNumPartitions(): number {
+    return KafkaBalanceQueueService.NUM_PARTITIONS;
+  }
+
+  getReplicationFactor(): number {
+    return KafkaBalanceQueueService.REPLICATION_FACTOR;
+  }
 
   all = (serverId: string): string[] => {
     const worker = this.worker(serverId);

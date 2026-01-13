@@ -54,7 +54,12 @@ export class MessageStatusUpdateConsume {
 
     const topic = this.kafkaServiceQueueService.updateMessageStatus();
 
-    await ensureKafkaTopic(this.kafka, topic);
+    await ensureKafkaTopic(
+      this.kafka,
+      topic,
+      this.kafkaServiceQueueService.getNumPartitions(),
+      this.kafkaServiceQueueService.getReplicationFactor()
+    );
 
     this.consumer = createConsumer(
       this.kafka,

@@ -54,7 +54,12 @@ export class ContactValidationUpdateConsume {
 
     const topic = this.kafkaServiceQueueService.contactValidationUpdate();
 
-    await ensureKafkaTopic(this.kafka, topic);
+    await ensureKafkaTopic(
+      this.kafka,
+      topic,
+      this.kafkaServiceQueueService.getNumPartitions(),
+      this.kafkaServiceQueueService.getReplicationFactor()
+    );
 
     this.consumer = createConsumer(
       this.kafka,

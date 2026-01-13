@@ -69,7 +69,12 @@ export class MessageSendConsume {
       baileysEnvironment.baileysWorkerId
     );
 
-    await ensureKafkaTopic(this.kafka, topic);
+    await ensureKafkaTopic(
+      this.kafka,
+      topic,
+      this.kafkaBaileysQueueService.getNumPartitions(),
+      this.kafkaBaileysQueueService.getReplicationFactor()
+    );
 
     this.consumer = createConsumer(
       this.kafka,

@@ -43,7 +43,12 @@ export class NotificationMessageSendConsume {
       const topic =
         this.kafkaBaileysQueueService.workerNotificationMessage(workerId);
 
-      await ensureKafkaTopic(this.kafka, topic);
+      await ensureKafkaTopic(
+        this.kafka,
+        topic,
+        this.kafkaBaileysQueueService.getNumPartitions(),
+        this.kafkaBaileysQueueService.getReplicationFactor()
+      );
 
       this.consumer = createConsumer(this.kafka, groupId);
 

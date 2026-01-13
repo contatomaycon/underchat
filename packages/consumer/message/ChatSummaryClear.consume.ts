@@ -76,7 +76,12 @@ export class ChatSummaryClearConsume {
 
     const topic = this.kafkaServiceQueueService.clearChatSummary();
 
-    await ensureKafkaTopic(this.kafka, topic);
+    await ensureKafkaTopic(
+      this.kafka,
+      topic,
+      this.kafkaServiceQueueService.getNumPartitions(),
+      this.kafkaServiceQueueService.getReplicationFactor()
+    );
 
     this.consumer = createConsumer(
       this.kafka,

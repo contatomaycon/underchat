@@ -42,7 +42,12 @@ export class ScheduleStatusUpdateConsume {
 
     const topic = this.kafkaServiceQueueService.scheduleStatusUpdate();
 
-    await ensureKafkaTopic(this.kafka, topic);
+    await ensureKafkaTopic(
+      this.kafka,
+      topic,
+      this.kafkaServiceQueueService.getNumPartitions(),
+      this.kafkaServiceQueueService.getReplicationFactor()
+    );
 
     this.consumer = createConsumer(
       this.kafka,

@@ -72,7 +72,7 @@ async function createTopic(
 export async function ensureKafkaTopic(
   kafka: KafkaClient,
   topic: string,
-  numPartitions = 1,
+  numPartitions: number,
   replicationFactor = 1,
   timeoutMs = 60000
 ): Promise<void> {

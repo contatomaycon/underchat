@@ -55,7 +55,12 @@ export class ScheduleMessageConsume {
     const topic = this.kafkaBaileysQueueService.workerSendMessage(workerId);
     const groupId = `group-underchat-schedule-message-${workerId}`;
 
-    await ensureKafkaTopic(this.kafka, topic);
+    await ensureKafkaTopic(
+      this.kafka,
+      topic,
+      this.kafkaBaileysQueueService.getNumPartitions(),
+      this.kafkaBaileysQueueService.getReplicationFactor()
+    );
 
     this.consumer = createConsumer(this.kafka, groupId);
 
