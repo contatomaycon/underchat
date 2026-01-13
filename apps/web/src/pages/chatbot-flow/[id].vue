@@ -171,7 +171,7 @@ const addTagNode = () => {
     },
     data: {
       tagType: null,
-      selectedTag: null,
+      selectedTag: [],
       onRemove: () => removeNode(newNode.id),
     },
   };

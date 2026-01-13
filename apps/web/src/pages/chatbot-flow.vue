@@ -729,7 +729,7 @@ const addMenuNode = (position?: { x: number; y: number }) => {
       onRemoveOption: (optionId: string) => removeOptionEdge(nodeId, optionId),
     },
   };
-  nodes.value.push(newNode as Node);
+  nodes.value.push(newNode);
 };
 
 const addContactMenuNode = (position?: { x: number; y: number }) => {
@@ -760,7 +760,7 @@ const addContactMenuNode = (position?: { x: number; y: number }) => {
       onRemoveOption: (optionId: string) => removeOptionEdge(nodeId, optionId),
     },
   };
-  nodes.value.push(newNode as Node);
+  nodes.value.push(newNode);
 };
 
 const addSatisfactionNode = (position?: { x: number; y: number }) => {
@@ -780,7 +780,7 @@ const addSatisfactionNode = (position?: { x: number; y: number }) => {
       onRemoveOption: (optionId: string) => removeOptionEdge(nodeId, optionId),
     },
   };
-  nodes.value.push(newNode as Node);
+  nodes.value.push(newNode);
 };
 
 const addRedirectNode = (position?: { x: number; y: number }) => {
@@ -800,7 +800,7 @@ const addRedirectNode = (position?: { x: number; y: number }) => {
       onRemove: () => removeNode(nodeId),
     },
   };
-  nodes.value.push(newNode as Node);
+  nodes.value.push(newNode);
 };
 
 const addFinishNode = (position?: { x: number; y: number }) => {
@@ -816,7 +816,7 @@ const addFinishNode = (position?: { x: number; y: number }) => {
       onRemove: () => removeNode(nodeId),
     },
   };
-  nodes.value.push(newNode as Node);
+  nodes.value.push(newNode);
 };
 
 const addTagNode = (position?: { x: number; y: number }) => {
@@ -830,11 +830,11 @@ const addTagNode = (position?: { x: number; y: number }) => {
     },
     data: {
       tagType: null,
-      selectedTag: null,
+      selectedTag: [],
       onRemove: () => removeNode(nodeId),
     },
   };
-  nodes.value.push(newNode as Node);
+  nodes.value.push(newNode);
 };
 
 const addAnnotationNode = (position?: { x: number; y: number }) => {
@@ -851,7 +851,7 @@ const addAnnotationNode = (position?: { x: number; y: number }) => {
       onRemove: () => removeNode(nodeId),
     },
   };
-  nodes.value.push(newNode as Node);
+  nodes.value.push(newNode);
 };
 
 const addMessageNode = (position?: { x: number; y: number }) => {
@@ -876,7 +876,7 @@ const addMessageNode = (position?: { x: number; y: number }) => {
       onRemove: () => removeNode(nodeId),
     },
   };
-  nodes.value.push(newNode as Node);
+  nodes.value.push(newNode);
 };
 
 const addDataNode = (position?: { x: number; y: number }) => {
@@ -897,7 +897,7 @@ const addDataNode = (position?: { x: number; y: number }) => {
       onRemove: () => removeNode(nodeId),
     },
   };
-  nodes.value.push(newNode as Node);
+  nodes.value.push(newNode);
 };
 
 const addDistributionNode = (position?: { x: number; y: number }) => {
@@ -916,7 +916,7 @@ const addDistributionNode = (position?: { x: number; y: number }) => {
       onRemove: () => removeNode(nodeId),
     },
   };
-  nodes.value.push(newNode as Node);
+  nodes.value.push(newNode);
 };
 
 const addAiAgentNode = (position?: { x: number; y: number }) => {
@@ -954,7 +954,7 @@ const addAiAgentNode = (position?: { x: number; y: number }) => {
       onRemoveHumanSupportEdge: () => removeHumanSupportEdge(nodeId),
     },
   };
-  nodes.value.push(newNode as Node);
+  nodes.value.push(newNode);
 };
 
 const onConnect = (connection: Connection) => {
@@ -1379,7 +1379,9 @@ const processRedirectNodeData = (nodeData: any): void => {
 
 const processTagNodeData = (nodeData: any): void => {
   if (nodeData.tagType === undefined) nodeData.tagType = null;
-  if (nodeData.selectedTag === undefined) nodeData.selectedTag = null;
+  if (nodeData.selectedTag === undefined) {
+    nodeData.selectedTag = [];
+  }
 };
 
 const processAnnotationNodeData = (nodeData: any): void => {

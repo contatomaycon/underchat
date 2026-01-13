@@ -7,7 +7,7 @@ import { useI18n } from 'vue-i18n';
 
 interface TagData {
   tagType: 'chat' | 'contact' | null;
-  selectedTag: string | null;
+  selectedTag: string[];
   onRemove?: () => void;
 }
 
@@ -19,7 +19,7 @@ const getInitialData = (): TagData => {
   const data = props.data as TagData | undefined;
   return {
     tagType: data?.tagType || null,
-    selectedTag: data?.selectedTag || null,
+    selectedTag: Array.isArray(data?.selectedTag) ? data.selectedTag : [],
   };
 };
 
@@ -29,11 +29,6 @@ const tags = ref<Array<{ value: string; title: string; color: string | null }>>(
   []
 );
 const isLoadingTags = ref(false);
-
-const selectedTagTitle = computed(() => {
-  const current = tags.value.find((t) => t.value === tagData.value.selectedTag);
-  return current?.title || '';
-});
 
 const updateNodeData = () => {
   if (props.data) {
@@ -56,15 +51,14 @@ const loadTags = async () => {
       color: tag.color || null,
     }));
 
-    if (
-      tagData.value.selectedTag &&
-      !tags.value.some((t) => t.value === tagData.value.selectedTag)
-    ) {
-      tags.value.unshift({
-        value: tagData.value.selectedTag,
-        title: tagData.value.selectedTag,
-        color: null,
-      });
+    for (const selectedTagId of tagData.value.selectedTag) {
+      if (selectedTagId && !tags.value.some((t) => t.value === selectedTagId)) {
+        tags.value.unshift({
+          value: selectedTagId,
+          title: selectedTagId,
+          color: null,
+        });
+      }
     }
   } catch (error) {
     console.error('Error loading tags:', error);
@@ -84,7 +78,7 @@ watch(
   () => tagData.value.tagType,
   (newType) => {
     if (!newType) {
-      tagData.value.selectedTag = null;
+      tagData.value.selectedTag = [];
       tags.value = [];
     } else if (tags.value.length === 0) {
       loadTags();
@@ -158,15 +152,36 @@ const handleRemove = () => {
             :items="tags"
             :placeholder="t('chatbot_tag_search_placeholder')"
             :loading="isLoadingTags"
+            :clearable="true"
+            multiple
+            chips
+            closable-chips
             item-value="value"
             item-title="title"
+            class="label-select"
           >
+            <template #chip="{ item }">
+              <div class="d-flex align-center gap-1">
+                <div
+                  v-if="item && item.color"
+                  class="label-color-circle"
+                  :style="{ backgroundColor: item.color }"
+                />
+                <span>{{ item?.title }}</span>
+              </div>
+            </template>
+            <template #prepend-inner="{ item }">
+              <div
+                v-if="item && !Array.isArray(item) && (item as any).color"
+                class="label-color-circle me-2"
+                :style="{ backgroundColor: (item as any).color }"
+              />
+            </template>
             <template #item-prepend="{ item }">
-              <VAvatar
-                size="24"
-                :style="{
-                  backgroundColor: item.color || '#1976D2',
-                }"
+              <div
+                v-if="item && (item as any).color"
+                class="label-color-circle"
+                :style="{ backgroundColor: (item as any).color }"
               />
             </template>
           </AppSelectSearch>
@@ -201,5 +216,42 @@ const handleRemove = () => {
 .max-height-300 {
   max-height: 300px;
   overflow-y: auto;
+}
+
+.label-select {
+  .v-field__input {
+    > .v-select__selection {
+      margin: 0;
+      display: flex;
+      align-items: center;
+
+      > span:not(.label-color-circle):not(:has(.label-color-circle)),
+      > .v-select__selection-text {
+        display: none !important;
+      }
+    }
+  }
+
+  .v-select__selection {
+    .v-select__selection-text {
+      display: none !important;
+    }
+
+    > span:not(:has(.label-color-circle)):not(.label-color-circle) {
+      display: none !important;
+    }
+  }
+
+  .v-list-item__prepend {
+    margin-inline-end: 12px;
+  }
+}
+
+.label-color-circle {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-inline-end: 8px;
 }
 </style>

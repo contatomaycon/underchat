@@ -443,31 +443,52 @@ const openLabelModal = () => {
 };
 
 const removeLabel = async () => {
+  console.log('🔴 [removeLabel] Iniciando remoção de etiqueta');
+
   if (!chatStore.activeChat?.chat_id) return;
 
   const currentLabels = activeChatLabels.value;
+  console.log('🔴 [removeLabel] Etiquetas atuais:', currentLabels);
+
   if (currentLabels.length === 0) return;
 
-  isSavingLabel.value = true;
-
   const remainingLabels = currentLabels.slice(1);
+  console.log('🔴 [removeLabel] Etiquetas restantes:', remainingLabels);
+
+  const remainingLabelData = remainingLabels.map((label) => ({
+    label_template_id: label.label_template_id,
+    label: label.label,
+    color: label.color,
+  }));
   const remainingLabelIds =
-    remainingLabels.length > 0
-      ? remainingLabels.map((label) => label.label_template_id)
+    remainingLabelData.length > 0
+      ? remainingLabelData.map((label) => label.label_template_id)
       : null;
+
+  console.log('🔴 [removeLabel] remainingLabelIds:', remainingLabelIds);
+  console.log('🔴 [removeLabel] remainingLabelData:', remainingLabelData);
 
   const success = await chatStore.updateChatLabel(
     chatStore.activeChat.chat_id,
-    remainingLabelIds
+    remainingLabelIds,
+    remainingLabelData.length > 0 ? remainingLabelData : null
   );
 
-  if (success) {
-    await nextTick();
+  console.log('🔴 [removeLabel] Success:', success);
+  console.log(
+    '🔴 [removeLabel] activeChat.label após updateChatLabel:',
+    chatStore.activeChat?.label
+  );
 
-    isLabelModalOpen.value = false;
+  if (!success) {
+    return;
   }
 
-  isSavingLabel.value = false;
+  await nextTick();
+  console.log(
+    '🔴 [removeLabel] activeChat.label após nextTick:',
+    chatStore.activeChat?.label
+  );
 };
 
 watch(
@@ -649,32 +670,46 @@ const canTransfer = computed(() => {
 });
 
 const activeChatLabels = computed(() => {
-  if (!chatStore.activeChat?.label) return [];
-  if (Array.isArray(chatStore.activeChat.label)) {
-    return chatStore.activeChat.label;
-  }
-  return [];
+  const labels = !chatStore.activeChat?.label
+    ? []
+    : Array.isArray(chatStore.activeChat.label)
+      ? chatStore.activeChat.label
+      : [];
+  console.log('🔵 [computed activeChatLabels] recalculado:', labels);
+  return labels;
 });
 
 const activeChatLabelTemplate = computed(() => {
-  if (activeChatLabels.value.length === 0) return null;
-  return {
-    label: activeChatLabels.value[0].label,
-    color: activeChatLabels.value[0].color,
-  };
+  const template =
+    activeChatLabels.value.length === 0
+      ? null
+      : {
+          label: activeChatLabels.value[0].label,
+          color: activeChatLabels.value[0].color,
+        };
+  console.log('🔵 [computed activeChatLabelTemplate] recalculado:', template);
+  return template;
 });
 
 const activeChatLabelTemplates = computed(() => {
-  return activeChatLabels.value;
+  const templates = activeChatLabels.value;
+  console.log('🔵 [computed activeChatLabelTemplates] recalculado:', templates);
+  return templates;
 });
 
 const remainingChatLabels = computed(() => {
-  if (activeChatLabelTemplates.value.length <= 1) return [];
-  return activeChatLabelTemplates.value.slice(1);
+  const remaining =
+    activeChatLabelTemplates.value.length <= 1
+      ? []
+      : activeChatLabelTemplates.value.slice(1);
+  console.log('🔵 [computed remainingChatLabels] recalculado:', remaining);
+  return remaining;
 });
 
 const remainingChatLabelsText = computed(() => {
-  return remainingChatLabels.value.map((lt) => lt.label).join(', ');
+  const text = remainingChatLabels.value.map((lt) => lt.label).join(', ');
+  console.log('🔵 [computed remainingChatLabelsText] recalculado:', text);
+  return text;
 });
 
 const hasAttachmentsOrContent = computed(
@@ -4664,6 +4699,7 @@ onBeforeUnmount(() => {
           <div class="d-sm-flex align-center d-none text-medium-emphasis">
             <div
               v-if="isInChatStatus && activeChatLabelTemplate"
+              :key="activeChatLabelTemplate.label"
               class="d-flex align-center me-2 chat-labels-group"
             >
               <VChip

@@ -1140,23 +1140,27 @@ export class ChatbotFlowRunnerService {
   private async updateChatTag(
     t: TFunction<'translation', undefined>,
     createChat: IChat,
-    labelTemplateId: string
+    labelTemplateIds: string[]
   ): Promise<void> {
-    const labelTemplate =
-      await this.labelTemplateViewerRepository.viewLabelTemplateById(
-        labelTemplateId,
+    if (labelTemplateIds.length === 0) {
+      return;
+    }
+
+    const labelTemplates =
+      await this.labelTemplateViewerRepository.viewLabelTemplatesByIds(
+        labelTemplateIds,
         createChat.account.id
       );
 
-    if (!labelTemplate) {
+    if (labelTemplates.length !== labelTemplateIds.length) {
       throw new Error(t('label_template_not_found'));
     }
 
-    const label = {
+    const label = labelTemplates.map((labelTemplate) => ({
       label_template_id: labelTemplate.label_template_id,
       label: labelTemplate.label,
       color: labelTemplate.color,
-    };
+    }));
 
     const updated = await this.chatService.updateChatLabel(
       createChat.chat_id,
@@ -1194,7 +1198,7 @@ export class ChatbotFlowRunnerService {
   private async updateContactTag(
     t: TFunction<'translation', undefined>,
     createChat: IChat,
-    labelTemplateId: string
+    labelTemplateIds: string[]
   ): Promise<void> {
     if (!createChat.contact?.id) {
       throw new Error(t('contact_not_found'));
@@ -1208,13 +1212,16 @@ export class ChatbotFlowRunnerService {
       throw new Error(t('contact_not_found'));
     }
 
-    const added = await this.contactService.addContactLabelTemplateIfNotExists(
-      createChat.contact.id,
-      labelTemplateId
-    );
+    for (const labelTemplateId of labelTemplateIds) {
+      const added =
+        await this.contactService.addContactLabelTemplateIfNotExists(
+          createChat.contact.id,
+          labelTemplateId
+        );
 
-    if (!added) {
-      throw new Error(t('contact_update_error'));
+      if (!added) {
+        throw new Error(t('contact_update_error'));
+      }
     }
 
     await this.invalidateChatFromCache(createChat);
@@ -1253,9 +1260,11 @@ export class ChatbotFlowRunnerService {
     }
 
     const tagType = currentNode.data?.tagType;
-    const selectedTag = currentNode.data?.selectedTag;
+    const selectedTag = Array.isArray(currentNode.data?.selectedTag)
+      ? currentNode.data.selectedTag
+      : [];
 
-    if (!selectedTag) {
+    if (selectedTag.length === 0) {
       throw new Error(t('tag_not_selected'));
     }
 

@@ -535,7 +535,10 @@ export class ChatbotFlowSaverUseCase {
       );
     }
 
-    if (!data.selectedTag) {
+    const hasSelectedTag =
+      Array.isArray(data.selectedTag) && data.selectedTag.length > 0;
+
+    if (!hasSelectedTag) {
       errors.push(
         t('chatbot_flow_validation_tag_required', {
           nodeLabel: node.data?.title || node.label || node.id,
