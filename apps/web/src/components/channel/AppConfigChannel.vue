@@ -664,8 +664,6 @@ const onWorkerConfigCheckboxChange = async (
   field: WorkerConfigField,
   value: boolean | null
 ) => {
-  workerConfigForm[field] = Boolean(value);
-
   const fieldsToUpdateViaConfigEndpoint: WorkerConfigField[] = [
     'show_attendee_name',
     'show_worker_name',
@@ -691,7 +689,7 @@ const onWorkerConfigCheckboxChange = async (
     );
 
     if (result) {
-      applyWorkerConfig(result);
+      workerConfigForm[field] = Boolean(value);
       workerConfigLoadedFor.value = channelId.value;
     }
   } finally {
