@@ -80,11 +80,10 @@ export class ChatSearcherUseCase {
     if (query.filter_label_template_id) {
       filterClauses.push({
         nested: {
-          path: 'label_templates',
+          path: 'label',
           query: {
             term: {
-              'label_templates.label_template_id':
-                query.filter_label_template_id,
+              'label.label_template_id': query.filter_label_template_id,
             },
           },
         },
