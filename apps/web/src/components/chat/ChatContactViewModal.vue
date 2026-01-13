@@ -327,23 +327,34 @@ watch(
             <span class="text-body-2 mb-1 d-inline-block">
               {{ $t('label') + ':' }}
             </span>
-            <div v-if="contact.label_template" class="d-flex align-center mt-1">
+            <div
+              v-if="
+                contact.label_templates && contact.label_templates.length > 0
+              "
+              class="d-flex flex-wrap align-center gap-2 mt-1"
+            >
               <div
-                class="label-color-circle"
-                :style="{
-                  backgroundColor: contact.label_template.color,
-                }"
-              />
-              <span
-                class="ms-2 text-body-2 text-medium-emphasis"
-                :title="contact.label_template.label"
+                v-for="labelTemplate in contact.label_templates"
+                :key="labelTemplate.label_template_id"
+                class="d-flex align-center"
               >
-                {{
-                  contact.label_template.label.length > 15
-                    ? `${contact.label_template.label.slice(0, 15)}…`
-                    : contact.label_template.label
-                }}
-              </span>
+                <div
+                  class="label-color-circle"
+                  :style="{
+                    backgroundColor: labelTemplate.color,
+                  }"
+                />
+                <span
+                  class="ms-2 text-body-2 text-medium-emphasis"
+                  :title="labelTemplate.label"
+                >
+                  {{
+                    labelTemplate.label.length > 15
+                      ? `${labelTemplate.label.slice(0, 15)}…`
+                      : labelTemplate.label
+                  }}
+                </span>
+              </div>
             </div>
             <div v-else class="text-body-2 text-medium-emphasis mt-1">-</div>
           </VCol>
@@ -409,5 +420,6 @@ watch(
   height: 16px;
   border-radius: 50%;
   flex-shrink: 0;
+  margin-inline-end: 8px;
 }
 </style>
