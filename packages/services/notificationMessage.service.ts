@@ -100,7 +100,7 @@ export class NotificationMessageService {
 
     await this.elasticDatabaseService.update(
       EElasticIndex.notification,
-      notificationMessage,
+      notificationMessage as unknown as Record<string, unknown>,
       notificationId
     );
   }

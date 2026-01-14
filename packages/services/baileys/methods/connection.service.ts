@@ -872,7 +872,7 @@ export class BaileysConnectionService {
 
     return this.elasticDatabaseService.update(
       EElasticIndex.wpp_connection,
-      wppLog,
+      wppLog as unknown as Record<string, unknown>,
       uuidv7()
     );
   };
