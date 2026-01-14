@@ -640,6 +640,9 @@ export const useChatStore = defineStore('chat', {
       const wasInInChat = this.listInChat.some(
         (c) => c.chat_id === chat.chat_id
       );
+      const wasInChatbot = this.listChatbot.some(
+        (c) => c.chat_id === chat.chat_id
+      );
 
       if (wasInInChat) {
         const isStillMine = chat.user?.id === this.user?.user_id;
@@ -684,6 +687,12 @@ export const useChatStore = defineStore('chat', {
         this.inChatPagings.total = Math.max(0, this.inChatPagings.total - 1);
       }
 
+      if (wasInChatbot || wasInInChat) {
+        globalThis.dispatchEvent(
+          new CustomEvent('chat-status-changed', { detail: chat })
+        );
+      }
+
       if (this.activeChat?.chat_id === chat.chat_id) {
         this.activeChat = this.createUpdatedActiveChat(input, isActiveChat);
       }
@@ -724,6 +733,9 @@ export const useChatStore = defineStore('chat', {
       const wasInInChat = this.listInChat.some(
         (c) => c.chat_id === chat.chat_id
       );
+      const wasInChatbot = this.listChatbot.some(
+        (c) => c.chat_id === chat.chat_id
+      );
 
       this.removeFromList(this.listQueue, chat.chat_id);
       this.removeFromList(this.listChatbot, chat.chat_id);
@@ -740,6 +752,12 @@ export const useChatStore = defineStore('chat', {
 
       if (wasInQueue && this.queuePagings.total > 0) {
         this.queuePagings.total = Math.max(0, this.queuePagings.total - 1);
+      }
+
+      if (wasInQueue || wasInChatbot) {
+        globalThis.dispatchEvent(
+          new CustomEvent('chat-status-changed', { detail: chat })
+        );
       }
 
       if (this.activeChat?.chat_id === chat.chat_id) {
@@ -763,6 +781,11 @@ export const useChatStore = defineStore('chat', {
         return;
       }
 
+      const wasInQueue = this.listQueue.some((c) => c.chat_id === chat.chat_id);
+      const wasInInChat = this.listInChat.some(
+        (c) => c.chat_id === chat.chat_id
+      );
+
       this.removeFromList(this.listInChat, chat.chat_id);
       this.removeFromList(this.listQueue, chat.chat_id);
       this.replaceOrPushInList(
@@ -771,6 +794,12 @@ export const useChatStore = defineStore('chat', {
         isActiveChat,
         EChatStatus.ura
       );
+
+      if (wasInQueue || wasInInChat) {
+        globalThis.dispatchEvent(
+          new CustomEvent('chat-status-changed', { detail: chat })
+        );
+      }
 
       if (this.activeChat?.chat_id === chat.chat_id) {
         this.activeChat = this.createUpdatedActiveChat(input, isActiveChat);
@@ -782,6 +811,9 @@ export const useChatStore = defineStore('chat', {
         (c) => c.chat_id === chat.chat_id
       );
       const wasInQueue = this.listQueue.some((c) => c.chat_id === chat.chat_id);
+      const wasInChatbot = this.listChatbot.some(
+        (c) => c.chat_id === chat.chat_id
+      );
 
       this.removeFromList(this.listInChat, chat.chat_id);
       this.removeFromList(this.listQueue, chat.chat_id);
@@ -793,6 +825,12 @@ export const useChatStore = defineStore('chat', {
 
       if (wasInQueue && this.queuePagings.total > 0) {
         this.queuePagings.total = Math.max(0, this.queuePagings.total - 1);
+      }
+
+      if (wasInInChat || wasInQueue || wasInChatbot) {
+        globalThis.dispatchEvent(
+          new CustomEvent('chat-status-changed', { detail: chat })
+        );
       }
 
       if (this.activeChat?.chat_id === chat.chat_id) {

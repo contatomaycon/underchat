@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { nextTick, computed, ref, watch } from 'vue';
+import { nextTick, computed, ref, watch, onMounted, onUnmounted } from 'vue';
 import { PerfectScrollbar } from 'vue3-perfect-scrollbar';
 import ChatQueue from './ChatQueue.vue';
 import AppAddContactChat from '@/components/chat/AppAddContactChat.vue';
@@ -2043,8 +2043,20 @@ watch(
   }
 );
 
+const handleChatStatusChanged = async () => {
+  await Promise.all([loadChatsByFilter(), loadChatbotCount()]);
+};
+
 onMounted(async () => {
   await Promise.all([loadChatsByFilter(), loadChatbotCount()]);
+  globalThis.addEventListener('chat-status-changed', handleChatStatusChanged);
+});
+
+onUnmounted(() => {
+  globalThis.removeEventListener(
+    'chat-status-changed',
+    handleChatStatusChanged
+  );
 });
 
 const scrollToTop = () => {
