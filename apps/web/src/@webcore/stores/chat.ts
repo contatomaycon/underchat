@@ -103,6 +103,7 @@ export const useChatStore = defineStore('chat', {
     loading: false,
     loadingChats: false,
     loadingMoreMessages: false,
+    pendingStatusUpdateChatId: null as string | null,
     activeChat: null as ListChatsResult | null,
     listMessages: [] as ListMessageResult[],
     listQueue: [] as ListChatsResult[],
@@ -350,6 +351,11 @@ export const useChatStore = defineStore('chat', {
 
       const isActiveChat = this.activeChat?.chat_id === chat.chat_id;
       this.updateActiveChatSummaryIfNeeded(chat, isActiveChat);
+
+      if (this.pendingStatusUpdateChatId === chat.chat_id) {
+        this.loading = false;
+        this.pendingStatusUpdateChatId = null;
+      }
 
       if (chat.status === EChatStatus.queue) {
         this.handleQueueStatusChat(input, chat, isActiveChat);
@@ -1360,17 +1366,18 @@ export const useChatStore = defineStore('chat', {
     async updateChatStatus(chatId: string, status: string): Promise<boolean> {
       try {
         this.loading = true;
+        this.pendingStatusUpdateChatId = chatId;
 
         const response = await axios.patch<IApiResponse<IChat>>(
           `/chat/${chatId}/status`,
           { status }
         );
 
-        this.loading = false;
-
         const data = response?.data;
 
         if (!data?.status) {
+          this.loading = false;
+          this.pendingStatusUpdateChatId = null;
           const errorMessage =
             data?.message || this.i18n.global.t('chat_status_update_error');
           this.showSnackbar(errorMessage, EColor.error);
@@ -1406,9 +1413,17 @@ export const useChatStore = defineStore('chat', {
           }
         }
 
+        setTimeout(() => {
+          if (this.pendingStatusUpdateChatId === chatId) {
+            this.loading = false;
+            this.pendingStatusUpdateChatId = null;
+          }
+        }, 3000);
+
         return true;
       } catch (error) {
         this.loading = false;
+        this.pendingStatusUpdateChatId = null;
 
         let errorMessage = this.i18n.global.t('chat_status_update_error');
         if (error instanceof AxiosError) {
