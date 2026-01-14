@@ -90,6 +90,12 @@ export const scheduleMappings = () => {
         updated_at: {
           type: 'date',
         },
+        updated_at_epoch_millis: {
+          type: 'long',
+        },
+        last_event_id: {
+          type: 'keyword',
+        },
         send_log: {
           type: 'object',
           properties: {

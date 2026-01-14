@@ -15,6 +15,10 @@ import { ScheduleStatusUpdaterRepository } from '@core/repositories/schedule/Sch
 import { IScheduleTracker } from '@core/common/interfaces/IScheduleTracker';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 import { commitOffset } from '@core/common/functions/commitOffset';
+import {
+  ScheduleStatusUpdateScriptParams,
+  ScheduleDocumentBaseline,
+} from '@core/common/interfaces/IScheduleStatusUpdateScript';
 
 @singleton()
 export class ScheduleStatusUpdateConsume {
@@ -69,7 +73,7 @@ export class ScheduleStatusUpdateConsume {
 
       const stop = startHeartbeat(heartbeat);
       try {
-        await this.handleStatusUpdate(data);
+        await this.handleStatusUpdate(data, message);
       } catch (error) {
         console.error(
           `Error processing schedule status update for schedule ${data.schedule_id}, contact ${data.contact_id}:`,
@@ -160,8 +164,11 @@ export class ScheduleStatusUpdateConsume {
     }
   }
 
-  private async handleStatusUpdate(data: IScheduleStatusUpdate): Promise<void> {
-    await this.updateMessageStatusInElasticsearch(data);
+  private async handleStatusUpdate(
+    data: IScheduleStatusUpdate,
+    message: { partition: number; offset: number; timestamp?: number }
+  ): Promise<void> {
+    await this.updateMessageStatusInElasticsearch(data, message);
 
     const tracker = await this.getOrCreateTracker(data.schedule_id);
 
@@ -254,12 +261,19 @@ export class ScheduleStatusUpdateConsume {
     const pendingMessages = await this.getPendingMessages(tracker.scheduleId);
 
     for (const message of pendingMessages) {
-      await this.updateMessageStatusInElasticsearch({
-        schedule_id: tracker.scheduleId,
-        contact_id: message.contact_id,
-        message_id: message.message_id,
-        status: EScheduleStatus.failed,
-      });
+      await this.updateMessageStatusInElasticsearch(
+        {
+          schedule_id: tracker.scheduleId,
+          contact_id: message.contact_id,
+          message_id: message.message_id,
+          status: EScheduleStatus.failed,
+        },
+        {
+          partition: 0,
+          offset: 0,
+          timestamp: Date.now(),
+        }
+      );
 
       const messageKey = `${message.contact_id}:${message.message_id}`;
       tracker.failedMessages.add(messageKey);
@@ -353,23 +367,110 @@ export class ScheduleStatusUpdateConsume {
     this.scheduleTrackers.delete(tracker.scheduleId);
   }
 
+  private extractEventTimestamp(
+    message: { timestamp?: number },
+    data: IScheduleStatusUpdate & { created_at?: string; date?: string }
+  ): number {
+    if (message.timestamp) {
+      return message.timestamp;
+    }
+
+    if (data.created_at) {
+      return new Date(data.created_at).getTime();
+    }
+
+    if (data.date) {
+      return new Date(data.date).getTime();
+    }
+
+    return Date.now();
+  }
+
+  private buildLastEventId(
+    partition: number,
+    offset: number,
+    messageId: string
+  ): string {
+    return `${partition}:${offset}:${messageId}`;
+  }
+
   private async updateMessageStatusInElasticsearch(
-    data: IScheduleStatusUpdate
+    data: IScheduleStatusUpdate & { created_at?: string; date?: string },
+    message: { partition: number; offset: number; timestamp?: number }
   ): Promise<void> {
     await this.elasticDatabaseService.indices(
       EElasticIndex.schedule,
       scheduleMappings()
     );
 
-    const document = {
+    const eventTimeEpochMillis = this.extractEventTimestamp(message, data);
+    const eventTimeIso = new Date(eventTimeEpochMillis).toISOString();
+    const lastEventId = this.buildLastEventId(
+      message.partition,
+      message.offset,
+      data.message_id
+    );
+
+    const params: ScheduleStatusUpdateScriptParams = {
       status: data.status,
-      updated_at: new Date().toISOString(),
+      event_time_iso: eventTimeIso,
+      event_time_epoch_millis: eventTimeEpochMillis,
+      last_event_id: lastEventId,
     };
 
-    await this.elasticDatabaseService.update(
+    const baseline: ScheduleDocumentBaseline = {
+      status: data.status,
+      updated_at: eventTimeIso,
+      updated_at_epoch_millis: eventTimeEpochMillis,
+      last_event_id: lastEventId,
+    };
+
+    const scriptSource = `
+      if (ctx._source == null) {
+        ctx._source = [:];
+      }
+      
+      def currentEpoch = ctx._source.updated_at_epoch_millis != null 
+        ? ctx._source.updated_at_epoch_millis 
+        : 0;
+      
+      def eventEpoch = params.event_time_epoch_millis;
+      
+      if (eventEpoch < currentEpoch) {
+        ctx.op = 'noop';
+        return;
+      }
+      
+      if (eventEpoch == currentEpoch) {
+        def currentEventId = ctx._source.last_event_id != null 
+          ? ctx._source.last_event_id 
+          : '';
+        
+        def eventId = params.last_event_id;
+        
+        if (eventId.compareTo(currentEventId) <= 0) {
+          ctx.op = 'noop';
+          return;
+        }
+      }
+      
+      ctx._source.status = params.status;
+      ctx._source.updated_at = params.event_time_iso;
+      ctx._source.updated_at_epoch_millis = params.event_time_epoch_millis;
+      ctx._source.last_event_id = params.last_event_id;
+    `;
+
+    await this.elasticDatabaseService.updateWithScript(
       EElasticIndex.schedule,
-      document,
-      data.message_id
+      data.message_id,
+      {
+        source: scriptSource,
+        params,
+      },
+      {
+        retry_on_conflict: 10,
+        upsert: baseline,
+      }
     );
   }
 }

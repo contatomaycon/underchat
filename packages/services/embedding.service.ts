@@ -1,9 +1,9 @@
 import { injectable, inject } from 'tsyringe';
 import { Client } from '@elastic/elasticsearch';
+import { createHash } from 'crypto';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { EAiAgentType } from '@core/common/enums/EAiAgentType';
 import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
-import { v7 as uuidv7 } from 'uuid';
 import { IChunk } from '@core/common/interfaces/IChunk';
 import { IEmbeddingDocument } from '@core/common/interfaces/IEmbeddingDocument';
 import { IEmbeddingResponse } from '@core/common/interfaces/IEmbeddingResponse';
@@ -11,6 +11,10 @@ import { IGeminiBatchEmbedContentsResponse } from '@core/common/interfaces/IGemi
 import { IChatHistoryEmbeddingDocument } from '@core/common/interfaces/IChatHistoryEmbeddingDocument';
 import { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import { IChat } from '@core/common/interfaces/IChat';
+import {
+  IElasticBulkResponse,
+  IElasticBulkCreateItem,
+} from '@core/common/interfaces/IElasticBulk';
 import { aiAgentPromptEmbeddingMappings } from '@core/mappings/aiAgentPromptEmbedding.mappings';
 import { chatHistoryEmbeddingMappings } from '@core/mappings/chatHistoryEmbedding.mappings';
 import { AiAgentViewerRepository } from '@core/repositories/aiAgent/AiAgentViewer.repository';
@@ -315,15 +319,79 @@ export class EmbeddingService {
     }));
   }
 
+  private buildEmbeddingDocumentId(doc: IEmbeddingDocument): string {
+    const payload = `${doc.account_id}:${doc.ai_agent_id}:${doc.ai_agent_prompt_id}:${doc.chunk_index}`;
+    return createHash('sha256').update(payload).digest('hex').substring(0, 32);
+  }
+
+  private buildBulkCreateBody(
+    documents: IEmbeddingDocument[]
+  ): Array<Record<string, unknown>> {
+    const body: Array<Record<string, unknown> | IEmbeddingDocument> = [];
+
+    for (const doc of documents) {
+      const documentId = this.buildEmbeddingDocumentId(doc);
+      body.push({
+        create: {
+          _index: this.indexName,
+          _id: documentId,
+        },
+      });
+      body.push(doc);
+    }
+
+    return body as Array<Record<string, unknown>>;
+  }
+
+  private throwIfBulkHasErrors(response: IElasticBulkResponse): void {
+    if (!response.errors) {
+      return;
+    }
+
+    let failed = 0;
+    const errorMessages: string[] = [];
+
+    for (const item of response.items) {
+      const createItem = item as IElasticBulkCreateItem;
+      if (!createItem.create) {
+        continue;
+      }
+
+      if (createItem.create.error) {
+        if (createItem.create.status === 409) {
+          continue;
+        }
+
+        failed++;
+        if (errorMessages.length < 5) {
+          errorMessages.push(
+            `${createItem.create.error.type}: ${createItem.create.error.reason}`
+          );
+        }
+      }
+    }
+
+    if (failed > 0) {
+      throw new Error(
+        `Bulk index failed: ${failed} errors. ${JSON.stringify(errorMessages)}`
+      );
+    }
+  }
+
   private async bulkIndexDocuments(
     documents: IEmbeddingDocument[]
   ): Promise<void> {
-    const body = documents.flatMap((doc) => [
-      { index: { _index: this.indexName, _id: uuidv7() } },
-      doc,
-    ]);
+    if (documents.length === 0) {
+      return;
+    }
 
-    await this.elasticClient.bulk({ body, refresh: 'wait_for' });
+    const body = this.buildBulkCreateBody(documents);
+    const response = (await this.elasticClient.bulk({
+      body,
+      refresh: 'wait_for',
+    })) as IElasticBulkResponse;
+
+    this.throwIfBulkHasErrors(response);
   }
 
   async processAndStoreEmbeddings(

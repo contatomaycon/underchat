@@ -17,6 +17,7 @@ import { WAMessageKey } from '@whiskeysockets/baileys';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 import { commitOffset } from '@core/common/functions/commitOffset';
 import { createChatCacheKeyChatId } from '@core/common/functions/createCacheKey';
+import { MessageKeyUpdateScriptParams } from '@core/common/interfaces/IMessageKeyUpdateScript';
 
 @singleton()
 export class MessageUpdateConsume {
@@ -89,26 +90,132 @@ export class MessageUpdateConsume {
     await this.redis.del(cacheKey);
   }
 
-  private async updateMessageIfMissingKey(data: IUpdateMessage): Promise<void> {
-    const hasId = Boolean(data.data?.message_key?.id);
-
-    const hasRemote = Boolean(data.data?.message_key?.remote_jid);
-    if (hasId && hasRemote) return;
-
+  private buildMessageKeyUpdate(
+    data: IUpdateMessage
+  ): Partial<IChatMessage['message_key']> {
     const jid = remoteJid(data.message?.key);
     const key = data.message?.key as WAMessageKey | undefined;
-    const messageKeyUpdate: IChatMessage['message_key'] = {
-      remote_jid: jid,
-      from_me: data.message?.key?.fromMe ?? false,
-      id: data.message?.key?.id ?? null,
-      participant: data.message?.key?.participant ?? null,
-      is_view_once: key?.isViewOnce ?? false,
-    };
 
-    await this.elasticDatabaseService.update(
+    const patch: Partial<IChatMessage['message_key']> = {};
+
+    if (jid) {
+      patch.remote_jid = jid;
+    }
+
+    if (data.message?.key?.id) {
+      patch.id = data.message.key.id;
+    }
+
+    if (data.message?.key?.fromMe !== undefined) {
+      patch.from_me = data.message.key.fromMe;
+    }
+
+    if (data.message?.key?.participant !== undefined) {
+      patch.participant = data.message.key.participant;
+    }
+
+    if (key?.isViewOnce !== undefined) {
+      patch.is_view_once = key.isViewOnce;
+    }
+
+    return patch;
+  }
+
+  private buildMessageKeyUpdateScriptSource(): string {
+    return `
+      if (ctx._source == null) {
+        ctx.op = 'noop';
+        return;
+      }
+      
+      if (ctx._source.message_key == null) {
+        ctx._source.message_key = [:];
+      }
+      
+      def changed = false;
+      def patch = params.patch;
+      
+      if (patch.containsKey('remote_jid') && patch.remote_jid != null) {
+        if (ctx._source.message_key.remote_jid == null) {
+          ctx._source.message_key.remote_jid = patch.remote_jid;
+          changed = true;
+        }
+      }
+      
+      if (patch.containsKey('id') && patch.id != null) {
+        if (ctx._source.message_key.id == null) {
+          ctx._source.message_key.id = patch.id;
+          changed = true;
+        }
+      }
+      
+      if (patch.containsKey('from_me') && patch.from_me != null) {
+        if (ctx._source.message_key.from_me == null) {
+          ctx._source.message_key.from_me = patch.from_me;
+          changed = true;
+        }
+      }
+      
+      if (patch.containsKey('participant') && patch.participant != null) {
+        if (ctx._source.message_key.participant == null) {
+          ctx._source.message_key.participant = patch.participant;
+          changed = true;
+        }
+      }
+      
+      if (patch.containsKey('is_view_once') && patch.is_view_once != null) {
+        if (ctx._source.message_key.is_view_once == null) {
+          ctx._source.message_key.is_view_once = patch.is_view_once;
+          changed = true;
+        }
+      }
+      
+      if (!changed) {
+        ctx.op = 'noop';
+      }
+    `;
+  }
+
+  private buildMessageKeyUpdateScriptParams(
+    messageKeyUpdate: Partial<IChatMessage['message_key']>
+  ): MessageKeyUpdateScriptParams {
+    return {
+      patch: messageKeyUpdate,
+    };
+  }
+
+  private async updateMessageIfMissingKey(data: IUpdateMessage): Promise<void> {
+    const messageId = data.data?.message_id;
+    if (!messageId) {
+      return;
+    }
+
+    const hasId = Boolean(data.data?.message_key?.id);
+    const hasRemote = Boolean(data.data?.message_key?.remote_jid);
+    if (hasId && hasRemote) {
+      return;
+    }
+
+    const jid = remoteJid(data.message?.key);
+    if (!jid && !data.message?.key?.id) {
+      return;
+    }
+
+    const messageKeyUpdate = this.buildMessageKeyUpdate(data);
+    const scriptSource = this.buildMessageKeyUpdateScriptSource();
+    const scriptParams =
+      this.buildMessageKeyUpdateScriptParams(messageKeyUpdate);
+
+    await this.elasticDatabaseService.updateWithScript(
       EElasticIndex.message,
-      { message_key: messageKeyUpdate },
-      data.data?.message_id ?? ''
+      messageId,
+      {
+        source: scriptSource,
+        params: scriptParams,
+      },
+      {
+        retry_on_conflict: 10,
+      }
     );
   }
 
