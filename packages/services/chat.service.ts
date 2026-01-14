@@ -414,8 +414,6 @@ export class ChatService {
     chatId: string,
     summary: IChat['summary']
   ): Promise<boolean> => {
-    console.log('updateChatSummary', chatId, summary);
-
     try {
       const summaryToUpdate = Array.isArray(summary) ? summary[0] : summary;
 
