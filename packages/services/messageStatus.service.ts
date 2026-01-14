@@ -311,7 +311,7 @@ export class MessageStatusService {
     const scriptSource = this.buildMessageSummaryScriptSource();
 
     try {
-      const result = await this.elasticDatabaseService.updateWithScript(
+      const result = await this.elasticDatabaseService.updateWithScriptOCC(
         EElasticIndex.message,
         messageId,
         {
@@ -322,7 +322,8 @@ export class MessageStatusService {
           },
         },
         {
-          retryOnConflict: 10,
+          upsert: true,
+          maxRetries: 5,
         }
       );
 

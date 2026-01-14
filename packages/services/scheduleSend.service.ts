@@ -579,7 +579,7 @@ export class ScheduleSendService {
       patch,
     };
 
-    const result = await this.elasticDatabaseService.updateWithScript(
+    const result = await this.elasticDatabaseService.updateWithScriptOCC(
       EElasticIndex.schedule,
       scheduleId,
       {
@@ -587,7 +587,7 @@ export class ScheduleSendService {
         params: scriptParams,
       },
       {
-        retryOnConflict: 10,
+        maxRetries: 5,
       }
     );
 

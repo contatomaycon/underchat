@@ -186,7 +186,7 @@ export class MessageUpdateConsume {
     const scriptSource = this.buildMessageKeyUpdateScriptSource();
     const scriptParams = this.buildMessageKeyUpdateScriptParams(patch);
 
-    await this.elasticDatabaseService.updateWithScript(
+    await this.elasticDatabaseService.updateWithScriptOCC(
       EElasticIndex.chat,
       chatId,
       {
@@ -194,7 +194,7 @@ export class MessageUpdateConsume {
         params: scriptParams,
       },
       {
-        retryOnConflict: 10,
+        maxRetries: 5,
       }
     );
 
@@ -225,7 +225,7 @@ export class MessageUpdateConsume {
     const scriptSource = this.buildMessageKeyUpdateScriptSource();
     const scriptParams = this.buildMessageKeyUpdateScriptParams(patch);
 
-    await this.elasticDatabaseService.updateWithScript(
+    await this.elasticDatabaseService.updateWithScriptOCC(
       EElasticIndex.message,
       messageId,
       {
@@ -233,7 +233,7 @@ export class MessageUpdateConsume {
         params: scriptParams,
       },
       {
-        retryOnConflict: 10,
+        maxRetries: 5,
       }
     );
   }

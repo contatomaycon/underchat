@@ -470,7 +470,7 @@ export class ScheduleStatusUpdateConsume {
       }
     `;
 
-    await this.elasticDatabaseService.updateWithScript(
+    await this.elasticDatabaseService.updateWithScriptOCC(
       EElasticIndex.schedule,
       data.message_id,
       {
@@ -480,7 +480,8 @@ export class ScheduleStatusUpdateConsume {
         scriptedUpsert: true,
       },
       {
-        retryOnConflict: 10,
+        upsert: true,
+        maxRetries: 5,
       }
     );
   }

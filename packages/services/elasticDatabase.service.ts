@@ -139,31 +139,56 @@ export class ElasticDatabaseService {
     id: string,
     retryOnConflict?: number
   ): Promise<boolean> => {
-    try {
-      const updateParams: {
-        index: string;
-        id: string;
-        doc: Record<string, unknown>;
-        doc_as_upsert: boolean;
-        retry_on_conflict: number;
-      } = {
-        index,
-        id,
-        doc: document,
-        doc_as_upsert: true,
-        retry_on_conflict: retryOnConflict ?? 5,
-      };
+    const maxRetries = retryOnConflict ?? 5;
+    let attempt = 0;
 
-      const result = await this.client.update(updateParams);
+    while (attempt < maxRetries) {
+      try {
+        const meta = await this.getDocumentMeta(index, id);
 
-      return (
-        result.result === 'updated' ||
-        result.result === 'created' ||
-        result.result === 'noop'
-      );
-    } catch (error) {
-      throw new Error(`Failed to update document with ID: ${error}`);
+        if (!meta) {
+          const createResult = await this.tryCreateDocument(
+            index,
+            id,
+            document
+          );
+
+          if (createResult === 'created') {
+            return true;
+          }
+
+          attempt++;
+          continue;
+        }
+
+        const updateResult = await this.tryUpdateWithMeta(
+          index,
+          id,
+          document,
+          meta
+        );
+
+        if (updateResult !== 'conflict') {
+          return (
+            updateResult === 'updated' ||
+            updateResult === 'created' ||
+            updateResult === 'noop'
+          );
+        }
+
+        attempt++;
+      } catch (error) {
+        if (attempt >= maxRetries - 1) {
+          throw new Error(`Failed to update document with ID: ${error}`);
+        }
+
+        attempt++;
+      }
     }
+
+    throw new Error(
+      `Failed to update document with ID after ${maxRetries} retries`
+    );
   };
 
   private async tryCreateDocument<T extends Record<string, unknown>>(
@@ -412,6 +437,183 @@ export class ElasticDatabaseService {
     } catch (error) {
       throw new Error(`Failed to update with script: ${error}`);
     }
+  };
+
+  private async tryUpdateWithScriptAndMeta<
+    TParams extends Record<string, unknown>,
+  >(
+    index: string,
+    id: string,
+    input: {
+      source: string;
+      params: TParams;
+      upsert?: Record<string, unknown>;
+      scriptedUpsert?: boolean;
+    },
+    meta: { seqNo: number; primaryTerm: number }
+  ): Promise<'updated' | 'created' | 'noop' | 'conflict'> {
+    try {
+      const updateParams: {
+        index: string;
+        id: string;
+        script: {
+          source: string;
+          params: TParams;
+        };
+        if_seq_no: number;
+        if_primary_term: number;
+        upsert?: Record<string, unknown>;
+        scripted_upsert?: boolean;
+      } = {
+        index,
+        id,
+        script: {
+          source: input.source,
+          params: input.params,
+        },
+        if_seq_no: meta.seqNo,
+        if_primary_term: meta.primaryTerm,
+      };
+
+      if (input.upsert) {
+        updateParams.upsert = input.upsert;
+        updateParams.scripted_upsert = input.scriptedUpsert ?? true;
+      }
+
+      const result = await this.client.update(updateParams);
+
+      if (result.result === 'updated') {
+        return 'updated';
+      }
+
+      if (result.result === 'created') {
+        return 'created';
+      }
+
+      return 'noop';
+    } catch (updateError: unknown) {
+      if (
+        typeof updateError === 'object' &&
+        updateError !== null &&
+        'statusCode' in updateError &&
+        updateError.statusCode === 409
+      ) {
+        return 'conflict';
+      }
+
+      throw updateError;
+    }
+  }
+
+  private async tryCreateWithScript<TParams extends Record<string, unknown>>(
+    index: string,
+    id: string,
+    input: {
+      source: string;
+      params: TParams;
+      upsert?: Record<string, unknown>;
+      scriptedUpsert?: boolean;
+    }
+  ): Promise<'created' | 'updated' | 'noop' | 'conflict'> {
+    try {
+      const updateParams: {
+        index: string;
+        id: string;
+        script: {
+          source: string;
+          params: TParams;
+        };
+        upsert: Record<string, unknown>;
+        scripted_upsert: boolean;
+      } = {
+        index,
+        id,
+        script: {
+          source: input.source,
+          params: input.params,
+        },
+        upsert: input.upsert ?? {},
+        scripted_upsert: input.scriptedUpsert ?? true,
+      };
+
+      const result = await this.client.update(updateParams);
+
+      if (result.result === 'created' || result.result === 'updated') {
+        return result.result === 'created' ? 'created' : 'updated';
+      }
+
+      return 'noop';
+    } catch (createError: unknown) {
+      if (
+        typeof createError === 'object' &&
+        createError !== null &&
+        'statusCode' in createError &&
+        createError.statusCode === 409
+      ) {
+        return 'conflict';
+      }
+
+      throw createError;
+    }
+  }
+
+  updateWithScriptOCC = async <TParams extends Record<string, unknown>>(
+    index: string,
+    id: string,
+    input: {
+      source: string;
+      params: TParams;
+      upsert?: Record<string, unknown>;
+      scriptedUpsert?: boolean;
+    },
+    options?: { upsert?: boolean; maxRetries?: number }
+  ): Promise<'updated' | 'created' | 'noop' | 'conflict' | 'not_found'> => {
+    const maxRetries = options?.maxRetries ?? 5;
+    let attempt = 0;
+
+    while (attempt < maxRetries) {
+      try {
+        const meta = await this.getDocumentMeta(index, id);
+
+        if (!meta) {
+          if (options?.upsert !== true && !input.upsert) {
+            return 'not_found';
+          }
+
+          const createResult = await this.tryCreateWithScript(index, id, input);
+
+          if (createResult !== 'conflict') {
+            return createResult;
+          }
+
+          attempt++;
+          continue;
+        }
+
+        const updateResult = await this.tryUpdateWithScriptAndMeta(
+          index,
+          id,
+          input,
+          meta
+        );
+
+        if (updateResult !== 'conflict') {
+          return updateResult;
+        }
+
+        attempt++;
+      } catch (error) {
+        if (attempt >= maxRetries - 1) {
+          throw new Error(
+            `Failed to update with script OCC after retries: ${error}`
+          );
+        }
+
+        attempt++;
+      }
+    }
+
+    return 'conflict';
   };
 
   updateByQueryWithScript = async <TParams extends object>(

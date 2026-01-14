@@ -102,7 +102,7 @@ export class ChatService {
     const scriptSource = this.buildPatchMessageMissingFieldsScript();
     const scriptParams = this.buildPatchMessageMissingFieldsParams(messageChat);
 
-    const result = await this.elasticDatabaseService.updateWithScript(
+    const result = await this.elasticDatabaseService.updateWithScriptOCC(
       EElasticIndex.message,
       documentId,
       {
@@ -110,7 +110,7 @@ export class ChatService {
         params: scriptParams,
       },
       {
-        retryOnConflict: 10,
+        maxRetries: 5,
       }
     );
 
@@ -238,7 +238,7 @@ export class ChatService {
     const scriptParams = this.buildChatPatchParams(patch, options);
     const upsert = this.buildChatPatchUpsert(patch);
 
-    const result = await this.elasticDatabaseService.updateWithScript(
+    const result = await this.elasticDatabaseService.updateWithScriptOCC(
       EElasticIndex.chat,
       chatId,
       {
@@ -248,7 +248,8 @@ export class ChatService {
         scriptedUpsert: options?.allowCreate !== false,
       },
       {
-        retryOnConflict: 10,
+        upsert: options?.allowCreate !== false,
+        maxRetries: 5,
       }
     );
 
@@ -304,6 +305,11 @@ export class ChatService {
         ctx._source.meta = [:];
       }
       
+      def hasStatusUpdate = patch.containsKey('status') && patch.status != null;
+      def hasUserUpdate = patch.containsKey('user');
+      def hasSectorUpdate = patch.containsKey('sector');
+      def hasStatusAndUserUpdate = hasStatusUpdate && hasUserUpdate;
+      
       def shouldApplyPatch = true;
       
       if (eventEpochMillis != null) {
@@ -346,6 +352,37 @@ export class ChatService {
       if (!shouldApplyPatch) {
         ctx.op = 'noop';
         return;
+      }
+      
+      if (hasStatusAndUserUpdate && eventEpochMillis == null) {
+        def currentStatus = ctx._source.status;
+        def currentUser = ctx._source.user;
+        def newStatus = patch.status;
+        def newUser = patch.user;
+        
+        if (currentStatus != null && currentStatus == newStatus) {
+          if (currentUser != null && newUser != null) {
+            def currentUserId = currentUser.id != null ? currentUser.id : '';
+            def newUserId = newUser.id != null ? newUser.id : '';
+            
+            if (currentUserId != '' && currentUserId != newUserId && (newStatus == 'in_chat' || newStatus == 'queue')) {
+              ctx.op = 'noop';
+              return;
+            }
+          } else if (currentUser != null && newUser == null && (newStatus == 'in_chat' || newStatus == 'queue')) {
+            ctx.op = 'noop';
+            return;
+          } else if (currentUser == null && newUser != null && currentStatus == 'in_chat') {
+            def currentStatusEpoch = ctx._source.meta.status_epoch != null ? ctx._source.meta.status_epoch : 0;
+            if (currentStatusEpoch > 0) {
+              def nowEpoch = params.event_epoch_millis != null ? params.event_epoch_millis : 0;
+              if (nowEpoch < currentStatusEpoch) {
+                ctx.op = 'noop';
+                return;
+              }
+            }
+          }
+        }
       }
       
       if (patch.containsKey('message_key') && patch.message_key != null) {
@@ -470,7 +507,7 @@ export class ChatService {
         changed = true;
       }
       
-      if (patch.containsKey('user') && patch.user != null) {
+      if (patch.containsKey('user') && patch.user != null && !hasStatusAndUserUpdate) {
         if (eventEpochMillis != null) {
           ctx._source.meta.assignment_epoch = eventEpochMillis;
           if (eventId != null) {
@@ -502,11 +539,18 @@ export class ChatService {
       patch,
     };
 
+    const hasStatusUpdate = patch.status !== null && patch.status !== undefined;
+    const hasUserUpdate = patch.user !== null && patch.user !== undefined;
+    const hasStatusAndUserUpdate = hasStatusUpdate && hasUserUpdate;
+
     if (
       options?.eventEpochMillis !== null &&
       options?.eventEpochMillis !== undefined
     ) {
       params.event_epoch_millis = options.eventEpochMillis;
+    } else if (hasStatusAndUserUpdate) {
+      params.event_epoch_millis = Date.now();
+      params.event_id = `${Date.now()}-${Math.random().toString(36).substring(7)}`;
     }
 
     if (options?.eventId !== null && options?.eventId !== undefined) {
@@ -514,10 +558,10 @@ export class ChatService {
     }
 
     let domain: string | null = null;
-    if (patch.status !== null && patch.status !== undefined) {
+    if (hasStatusUpdate) {
       domain = 'status';
     } else if (
-      (patch.user !== null && patch.user !== undefined) ||
+      hasUserUpdate ||
       (patch.sector !== null && patch.sector !== undefined)
     ) {
       domain = 'assignment';
@@ -977,7 +1021,7 @@ export class ChatService {
         this.buildUpdateChatSummaryScriptParams(summaryToUpdate);
       const upsert = this.buildUpdateChatSummaryUpsert(summaryToUpdate);
 
-      const result = await this.elasticDatabaseService.updateWithScript(
+      const result = await this.elasticDatabaseService.updateWithScriptOCC(
         EElasticIndex.chat,
         chatId,
         {
@@ -986,7 +1030,8 @@ export class ChatService {
           upsert,
         },
         {
-          retryOnConflict: 10,
+          upsert: true,
+          maxRetries: 5,
         }
       );
 
@@ -1101,12 +1146,13 @@ export class ChatService {
     const scriptSource = this.buildChatSummaryAtomicUpdateScript();
 
     const result =
-      await this.elasticDatabaseService.updateWithScript<ChatSummaryAtomicUpdateParams>(
+      await this.elasticDatabaseService.updateWithScriptOCC<ChatSummaryAtomicUpdateParams>(
         EElasticIndex.chat,
         chatId,
         { source: scriptSource, params: scriptParams, upsert },
         {
-          retryOnConflict: 10,
+          upsert: true,
+          maxRetries: 5,
         }
       );
 
