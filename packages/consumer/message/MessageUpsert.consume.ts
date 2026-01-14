@@ -1614,17 +1614,14 @@ export class MessageUpsertConsume {
       }
 
       const messageText = extractMessageTextFromContent(content);
-      const currentUnreadCount = getChat.summary?.unread_count ?? 0;
+      const incrementUnreadCount = !isFromMe;
 
-      const newUnreadCount = isFromMe ? 0 : currentUnreadCount + 1;
-
-      const summaryUpdate: IChat['summary'] = {
-        last_message: messageText,
-        last_date: inputChatMessage.date,
-        unread_count: newUnreadCount,
-      };
-
-      await this.chatService.updateChatSummary(getChat.chat_id, summaryUpdate);
+      await this.chatService.updateChatSummaryAtomically(
+        getChat.chat_id,
+        messageText,
+        inputChatMessage.date,
+        incrementUnreadCount
+      );
 
       const updatedChat = await this.chatService.findChatByChatId(
         data.account_id,

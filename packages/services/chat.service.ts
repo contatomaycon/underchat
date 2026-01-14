@@ -414,6 +414,8 @@ export class ChatService {
     chatId: string,
     summary: IChat['summary']
   ): Promise<boolean> => {
+    console.log('updateChatSummary', chatId, summary);
+
     try {
       const summaryToUpdate = Array.isArray(summary) ? summary[0] : summary;
 
@@ -427,6 +429,151 @@ export class ChatService {
       return false;
     }
   };
+
+  updateChatSummaryAtomically = async (
+    chatId: string,
+    lastMessage: string | null,
+    lastDate: string,
+    incrementUnreadCount: boolean
+  ): Promise<boolean> => {
+    const scriptSource = this.buildChatSummaryUpdateScript();
+    const baseline = this.createChatSummaryBaseline(lastMessage, lastDate);
+    const scriptParams = this.buildChatSummaryScriptParams(
+      baseline,
+      lastMessage,
+      lastDate,
+      incrementUnreadCount
+    );
+
+    const updated = await this.executeChatSummaryScriptUpdate(
+      chatId,
+      scriptSource,
+      scriptParams
+    );
+
+    if (updated) {
+      return true;
+    }
+
+    return this.fallbackChatSummaryUpdate(
+      chatId,
+      lastMessage,
+      lastDate,
+      incrementUnreadCount
+    );
+  };
+
+  private buildChatSummaryUpdateScript(): string {
+    return `
+      if (ctx._source.summary == null) {
+        ctx._source.summary = params.baseline;
+      }
+      
+      def summary = ctx._source.summary;
+      def changed = false;
+      
+      def currentLastDate = summary.last_date;
+      def newLastDate = params.last_date;
+      
+      if (currentLastDate == null || newLastDate == null || 
+          (currentLastDate instanceof String && newLastDate instanceof String && 
+           newLastDate.compareTo(currentLastDate) > 0)) {
+        summary.last_message = params.last_message;
+        summary.last_date = newLastDate;
+        changed = true;
+      }
+      
+      if (params.increment_unread_count) {
+        def currentUnreadCount = summary.unread_count != null ? summary.unread_count : 0;
+        summary.unread_count = currentUnreadCount + 1;
+        changed = true;
+      } else {
+        if (summary.unread_count == null) {
+          summary.unread_count = 0;
+        }
+      }
+    `;
+  }
+
+  private createChatSummaryBaseline(
+    lastMessage: string | null,
+    lastDate: string
+  ): IChat['summary'] {
+    return {
+      last_message: lastMessage,
+      last_date: lastDate,
+      unread_count: 0,
+    };
+  }
+
+  private buildChatSummaryScriptParams(
+    baseline: IChat['summary'],
+    lastMessage: string | null,
+    lastDate: string,
+    incrementUnreadCount: boolean
+  ): Record<string, any> {
+    return {
+      baseline,
+      last_message: lastMessage,
+      last_date: lastDate,
+      increment_unread_count: incrementUnreadCount,
+    };
+  }
+
+  private async executeChatSummaryScriptUpdate(
+    chatId: string,
+    scriptSource: string,
+    scriptParams: Record<string, any>
+  ): Promise<boolean> {
+    try {
+      const client = (this.elasticDatabaseService as any).client;
+      const result = await client.update({
+        index: EElasticIndex.chat,
+        id: chatId,
+        script: {
+          source: scriptSource,
+          params: scriptParams,
+        },
+        retry_on_conflict: 10,
+      });
+
+      return this.isUpdateResultSuccessful(result);
+    } catch {
+      return false;
+    }
+  }
+
+  private isUpdateResultSuccessful(result: any): boolean {
+    return (
+      result.result === 'updated' ||
+      result.result === 'created' ||
+      result.result === 'noop'
+    );
+  }
+
+  private async fallbackChatSummaryUpdate(
+    chatId: string,
+    lastMessage: string | null,
+    lastDate: string,
+    incrementUnreadCount: boolean
+  ): Promise<boolean> {
+    const summaryToUpdate: IChat['summary'] = {
+      last_message: lastMessage,
+      last_date: lastDate,
+      unread_count: incrementUnreadCount ? 1 : 0,
+    };
+
+    try {
+      return await this.elasticDatabaseService.update(
+        EElasticIndex.chat,
+        { summary: summaryToUpdate },
+        chatId,
+        10
+      );
+    } catch {
+      return false;
+    }
+  }
 
   clearChatSummary = async (
     chatId: string,
