@@ -29,25 +29,27 @@ export class MessageStatusService {
       return null;
     }
 
-    const message = await this.findMessageByWhatsAppId(accountId, messageId);
+    const message = await this.findMessageByWhatsAppIdWithRetry(
+      accountId,
+      messageId
+    );
     if (!message?.message_id) {
       return null;
     }
 
-    const mergedSummary = this.mergeSummary(message.summary, patch);
-    if (!mergedSummary) {
+    const updated = await this.updateSummaryAtomically(
+      message.message_id,
+      message.summary,
+      patch
+    );
+
+    if (!updated) {
       return null;
     }
 
-    await this.elasticDatabaseService.update(
-      EElasticIndex.message,
-      { summary: mergedSummary },
-      message.message_id
-    );
-
     const updatedMessage: IChatMessage = {
       ...message,
-      summary: mergedSummary,
+      summary: this.mergeSummary(message.summary, patch) ?? message.summary,
     };
 
     const channelAccountId = updatedMessage.account?.id ?? accountId;
@@ -137,5 +139,108 @@ export class MessageStatusService {
 
     const hit = result?.hits?.hits?.[0] as ElasticHit<IChatMessage> | undefined;
     return hit?._source ?? null;
+  }
+
+  private async findMessageByWhatsAppIdWithRetry(
+    accountId: string,
+    messageId: string,
+    maxRetries = 5
+  ): Promise<IChatMessage | null> {
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      const message = await this.findMessageByWhatsAppId(accountId, messageId);
+      if (message?.message_id) {
+        return message;
+      }
+
+      if (attempt < maxRetries - 1) {
+        const backoffMs = Math.min(100 * Math.pow(2, attempt), 1000);
+        await new Promise((resolve) => setTimeout(resolve, backoffMs));
+      }
+    }
+
+    return null;
+  }
+
+  private async updateSummaryAtomically(
+    messageId: string,
+    currentSummary: IChatMessage['summary'],
+    patch: MessageSummaryPatch
+  ): Promise<boolean> {
+    const scriptSource = `
+      if (ctx._source.summary == null) {
+        ctx._source.summary = params.baseline;
+      }
+      
+      def summary = ctx._source.summary;
+      def changed = false;
+      
+      if (params.patch_is_sent != null && params.patch_is_sent && (!summary.containsKey('is_sent') || !summary.is_sent)) {
+        summary.is_sent = true;
+        changed = true;
+      }
+      
+      if (params.patch_is_delivered != null && params.patch_is_delivered && (!summary.containsKey('is_delivered') || !summary.is_delivered)) {
+        summary.is_delivered = true;
+        changed = true;
+      }
+      
+      if (params.patch_is_seen != null && params.patch_is_seen && (!summary.containsKey('is_seen') || !summary.is_seen)) {
+        summary.is_seen = true;
+        changed = true;
+      }
+      
+      if (!summary.containsKey('is_sent_to_internal')) {
+        summary.is_sent_to_internal = params.baseline.is_sent_to_internal;
+      }
+    `;
+
+    const baseline: IChatMessage['summary'] = {
+      is_sent: currentSummary?.is_sent ?? false,
+      is_delivered: currentSummary?.is_delivered ?? false,
+      is_seen: currentSummary?.is_seen ?? false,
+      is_sent_to_internal: currentSummary?.is_sent_to_internal ?? false,
+    };
+
+    const scriptParams: Record<string, any> = {
+      baseline,
+      patch_is_sent: patch.is_sent ?? null,
+      patch_is_delivered: patch.is_delivered ?? null,
+      patch_is_seen: patch.is_seen ?? null,
+    };
+
+    try {
+      const client = (this.elasticDatabaseService as any).client;
+      const result = await client.update({
+        index: EElasticIndex.message,
+        id: messageId,
+        script: {
+          source: scriptSource,
+          params: scriptParams,
+        },
+        retry_on_conflict: 10,
+      });
+
+      return (
+        result.result === 'updated' ||
+        result.result === 'created' ||
+        result.result === 'noop'
+      );
+    } catch {
+      const mergedSummary = this.mergeSummary(currentSummary, patch);
+      if (!mergedSummary) {
+        return false;
+      }
+
+      try {
+        return await this.elasticDatabaseService.update(
+          EElasticIndex.message,
+          { summary: mergedSummary },
+          messageId,
+          10
+        );
+      } catch {
+        return false;
+      }
+    }
   }
 }

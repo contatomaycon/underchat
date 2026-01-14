@@ -69,7 +69,6 @@ export class MessageStatusUpdateConsume {
 
     this.consumer.on('data', async (message) => {
       const data = this.parseMessage(message.value);
-
       if (!data) {
         await this.commitNext(topic, message.partition, message.offset);
         return;
@@ -93,6 +92,11 @@ export class MessageStatusUpdateConsume {
             data.account_id,
             data.message_id,
             data.patch
+          );
+        } catch (error) {
+          console.error(
+            `Erro ao processar atualização de status da mensagem ${data.message_id}:`,
+            error
           );
         } finally {
           stop();

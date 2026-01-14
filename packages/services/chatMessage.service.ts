@@ -15,7 +15,6 @@ import { ConverterService } from './converter';
 import { ContactService } from './contact.service';
 import { ContactViewerRepository } from '@core/repositories/contact/ContactViewer.repository';
 import { WorkerService } from './worker.service';
-import { PushNotificationService } from './pushNotification.service';
 import { v7 as uuidv7 } from 'uuid';
 import {
   IChatMessage,
@@ -56,8 +55,7 @@ export class ChatMessageService {
     private readonly converterService: ConverterService,
     private readonly contactService: ContactService,
     private readonly contactViewerRepository: ContactViewerRepository,
-    private readonly workerService: WorkerService,
-    private readonly pushNotificationService: PushNotificationService
+    private readonly workerService: WorkerService
   ) {}
 
   private async getChat(

@@ -158,6 +158,34 @@ export class ElasticDatabaseService {
     }
   };
 
+  updateByQueryWithScript = async (
+    index: string,
+    query: QueryDslQueryContainer,
+    scriptSource: string,
+    scriptParams?: Record<string, any>
+  ): Promise<{ updated: number }> => {
+    try {
+      const updateParams: any = {
+        index,
+        query,
+        script: {
+          source: scriptSource,
+          params: scriptParams ?? {},
+        },
+        conflicts: 'proceed',
+        refresh: false,
+      };
+
+      const result = await this.client.updateByQuery(updateParams);
+
+      return {
+        updated: result.updated ?? 0,
+      };
+    } catch (error) {
+      throw new Error(`Failed to update by query with script: ${error}`);
+    }
+  };
+
   bulkUpdate = async <T extends object>(
     index: string,
     documents: T[],
