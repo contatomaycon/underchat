@@ -240,11 +240,13 @@ export class ServerService {
       return false;
     }
 
-    return this.elasticDatabaseService.bulkUpdate(
+    const bulkResult = await this.elasticDatabaseService.bulkCreateIdempotent(
       EElasticIndex.install_server,
       documents,
       () => uuidv7()
     );
+
+    return bulkResult.created > 0 || bulkResult.conflicts > 0;
   };
 
   deleteLogInstallServer = async (serverId: string): Promise<boolean> => {

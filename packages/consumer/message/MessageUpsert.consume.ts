@@ -1632,7 +1632,8 @@ export class MessageUpsertConsume {
         getChat.chat_id,
         messageText,
         inputChatMessage.date,
-        incrementUnreadCount
+        incrementUnreadCount,
+        inputChatMessage.message_id
       );
 
       const updatedChat = await this.chatService.findChatByChatId(

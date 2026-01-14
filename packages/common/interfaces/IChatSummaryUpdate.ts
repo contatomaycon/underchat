@@ -1,6 +1,8 @@
 export interface IChatSummary {
   last_message: string | null;
   last_date: string | null;
+  last_date_epoch_millis?: number | null;
+  last_message_id?: string | null;
   unread_count: number;
 }
 
@@ -11,9 +13,19 @@ export interface IChatSummaryUpdateParams {
   unread_count_absolute?: number;
 }
 
-export interface IChatSummaryScriptParams {
+export interface ChatSummaryBaseline extends Record<string, unknown> {
   last_message: string | null;
   last_date: string;
+  last_date_epoch_millis: number;
+  last_message_id: string | null;
+  unread_count: number;
+}
+
+export interface ChatSummaryScriptParams extends Record<string, unknown> {
+  last_message: string | null;
+  last_date: string;
+  last_date_epoch_millis: number;
+  last_message_id: string | null;
   increment_unread_count: boolean;
-  baseline: IChatSummary;
+  baseline: ChatSummaryBaseline;
 }

@@ -5,6 +5,11 @@ import type {
   QueryDslQueryContainer,
   SearchResponse,
 } from '@elastic/elasticsearch/lib/api/types';
+import type {
+  IElasticBulkCreateItem,
+  IElasticBulkResponse,
+  IElasticBulkUpdateItem,
+} from '@core/common/interfaces/IElasticBulk';
 
 @injectable()
 export class ElasticDatabaseService {
@@ -266,40 +271,171 @@ export class ElasticDatabaseService {
     }
   };
 
-  bulkUpdate = async <T extends object>(
+  bulkCreateIdempotent = async <T extends object>(
     index: string,
     documents: T[],
     getId: (doc: T) => string | null
-  ): Promise<boolean> => {
+  ): Promise<{ created: number; conflicts: number; failed: number }> => {
     const body = documents.flatMap((doc) => {
       const id = getId(doc);
       if (!id) return [];
 
-      return [
-        { update: { _index: index, _id: id, retry_on_conflict: 5 } },
-        { doc, doc_as_upsert: true },
-      ];
+      return [{ create: { _index: index, _id: id } }, doc];
     });
 
     if (body.length === 0) {
-      return false;
+      return { created: 0, conflicts: 0, failed: 0 };
     }
 
     try {
-      const response = await this.client.bulk({ body });
+      const response = (await this.client.bulk({
+        body,
+      })) as IElasticBulkResponse;
 
-      if (response.errors) {
-        const errorMessages = response.items
-          .filter((item: any) => item.update?.error)
-          .map((item: any) => item.update.error)
-          .slice(0, 5);
+      let created = 0;
+      let conflicts = 0;
+      let failed = 0;
+      const errorMessages: string[] = [];
 
-        throw new Error(`Bulk update failed: ${JSON.stringify(errorMessages)}`);
+      for (const item of response.items) {
+        const createItem = item as IElasticBulkCreateItem;
+        if (!createItem.create) continue;
+
+        if (createItem.create.error) {
+          if (createItem.create.status === 409) {
+            conflicts++;
+            continue;
+          }
+
+          failed++;
+          if (errorMessages.length < 5) {
+            errorMessages.push(
+              `${createItem.create.error.type}: ${createItem.create.error.reason}`
+            );
+          }
+          continue;
+        }
+
+        if (createItem.create.result === 'created') {
+          created++;
+        }
       }
 
-      return true;
+      if (failed > 0) {
+        throw new Error(
+          `Bulk create failed: ${failed} errors. ${JSON.stringify(errorMessages)}`
+        );
+      }
+
+      return { created, conflicts, failed };
     } catch (error) {
-      throw new Error(`Failed to bulk update documents: ${error}`);
+      if (error instanceof Error) {
+        throw error;
+      }
+
+      throw new Error(`Failed to bulk create documents: ${error}`);
+    }
+  };
+
+  bulkUpdateWithScript = async <TParams extends Record<string, unknown>>(
+    index: string,
+    operations: Array<{
+      id: string;
+      script: { source: string; params: TParams };
+      upsert?: Record<string, unknown>;
+      retryOnConflict?: number;
+    }>
+  ): Promise<{ updated: number; noop: number; failed: number }> => {
+    if (operations.length === 0) {
+      return { updated: 0, noop: 0, failed: 0 };
+    }
+
+    const body = operations.flatMap((op) => {
+      const action: {
+        update: {
+          _index: string;
+          _id: string;
+          retry_on_conflict: number;
+        };
+      } = {
+        update: {
+          _index: index,
+          _id: op.id,
+          retry_on_conflict: op.retryOnConflict ?? 5,
+        },
+      };
+
+      const payload: {
+        script: { source: string; params: TParams };
+        scripted_upsert?: boolean;
+        upsert?: Record<string, unknown>;
+      } = {
+        script: {
+          source: op.script.source,
+          params: op.script.params,
+        },
+      };
+
+      if (op.upsert) {
+        payload.scripted_upsert = true;
+        payload.upsert = op.upsert;
+      }
+
+      return [action, payload];
+    });
+
+    try {
+      const response = (await this.client.bulk({
+        body,
+      })) as IElasticBulkResponse;
+
+      let updated = 0;
+      let noop = 0;
+      let failed = 0;
+      const errorMessages: string[] = [];
+
+      for (const item of response.items) {
+        const updateItem = item as IElasticBulkUpdateItem;
+        if (!updateItem.update) continue;
+
+        if (updateItem.update.error) {
+          failed++;
+          if (errorMessages.length < 5) {
+            errorMessages.push(
+              `${updateItem.update.error.type}: ${updateItem.update.error.reason}`
+            );
+          }
+          continue;
+        }
+
+        if (updateItem.update.result === 'updated') {
+          updated++;
+          continue;
+        }
+
+        if (updateItem.update.result === 'noop') {
+          noop++;
+          continue;
+        }
+
+        if (updateItem.update.result === 'created') {
+          updated++;
+        }
+      }
+
+      if (failed > 0) {
+        throw new Error(
+          `Bulk update with script failed: ${failed} errors. ${JSON.stringify(errorMessages)}`
+        );
+      }
+
+      return { updated, noop, failed };
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+
+      throw new Error(`Failed to bulk update with script: ${error}`);
     }
   };
 

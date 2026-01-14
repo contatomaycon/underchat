@@ -3,6 +3,8 @@ import { EChatStatus } from '../enums/EChatStatus';
 interface ISummary {
   last_message: string | null;
   last_date: string | null;
+  last_date_epoch_millis?: number | null;
+  last_message_id?: string | null;
   unread_count: number;
 }
 
