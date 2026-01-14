@@ -277,6 +277,7 @@ export class BaileysIncomingMessageService {
         callUpsert
       );
     } catch (error) {
+      console.error('Error sending call event message:', error);
       this.processedCalls.delete(callKey);
       throw error;
     }
@@ -384,7 +385,10 @@ export class BaileysIncomingMessageService {
         statusUpdate
       );
     } catch (error) {
-      throw error;
+      console.error('Error sending message status update to queue', {
+        messageId: key.id,
+        error,
+      });
     }
   }
 

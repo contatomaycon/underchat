@@ -3641,9 +3641,7 @@ export class ChatbotFlowRunnerService {
         payload,
         `${createChat.account.id}:${createChat.phone}:${aiAgentId}`
       );
-    } catch (error) {
-      throw error;
-    }
+    } catch {}
   }
 
   private async getRecentChatMessages(

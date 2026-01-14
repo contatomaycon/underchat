@@ -8,7 +8,6 @@ import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.servi
 import { IContactValidationUpdate } from '@core/common/interfaces/IContactValidationUpdate';
 import { startHeartbeat } from '@core/common/functions/startHeartbeat';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
-import { commitOffset } from '@core/common/functions/commitOffset';
 import { ContactService } from '@core/services/contact.service';
 
 @singleton()
@@ -109,7 +108,13 @@ export class ContactValidationUpdateConsume {
     partition: number,
     offset: number
   ): Promise<void> {
-    await commitOffset(this.consumerOrThrow, topic, partition, offset);
+    this.consumerOrThrow.commitSync([
+      {
+        topic,
+        partition,
+        offset: offset + 1,
+      },
+    ]);
   }
 
   public async close(): Promise<void> {

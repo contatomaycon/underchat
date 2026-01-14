@@ -13,7 +13,6 @@ import { StreamProducerService } from '@core/services/streamProducer.service';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { startHeartbeat } from '@core/common/functions/startHeartbeat';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
-import { commitOffset } from '@core/common/functions/commitOffset';
 
 @singleton()
 export class PhoneValidationConsume {
@@ -147,7 +146,13 @@ export class PhoneValidationConsume {
     partition: number,
     offset: number
   ): Promise<void> {
-    await commitOffset(this.consumerOrThrow, topic, partition, offset);
+    this.consumerOrThrow.commitSync([
+      {
+        topic,
+        partition,
+        offset: offset + 1,
+      },
+    ]);
   }
 
   public async close(): Promise<void> {

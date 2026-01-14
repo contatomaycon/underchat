@@ -336,7 +336,7 @@ export class WorkerProfileStatusService {
 
       await this.streamProducerService.send(topic, deleteMessage);
     } catch (error) {
-      throw error;
+      console.error('Error sending delete status to Kafka:', error);
     }
   }
 
@@ -395,7 +395,7 @@ export class WorkerProfileStatusService {
 
       await this.streamProducerService.send(topic, statusMessage);
     } catch (error) {
-      throw error;
+      console.error('Error sending profile status to Kafka:', error);
     }
   }
 

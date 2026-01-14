@@ -284,7 +284,9 @@ export class ChatMessageService {
       const kafkaTopic = this.kafkaBaileysQueueService.workerSendMessage(
         message.worker.id
       );
-      promises.push(this.streamProducerService.send(kafkaTopic, message));
+      this.streamProducerService.send(kafkaTopic, message).catch((error) => {
+        console.error('Failed to send message to Kafka:', error);
+      });
     }
 
     const [result] = await Promise.all(promises);

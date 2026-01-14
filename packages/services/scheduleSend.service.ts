@@ -452,7 +452,20 @@ export class ScheduleSendService {
     const workerId = message.worker.id;
     const topic = this.kafkaBaileysQueueService.workerSendMessage(workerId);
 
-    await this.streamProducerService.send(topic, scheduleMessage);
+    try {
+      await this.streamProducerService.send(topic, scheduleMessage);
+    } catch (error) {
+      console.error(
+        '[ScheduleSendService] Erro ao enviar mensagem para Kafka',
+        {
+          scheduleId: schedule.schedule_id,
+          contactId: contact.contact_id,
+          messageId: message.message_id,
+          error,
+        }
+      );
+      throw error;
+    }
   }
 
   private async validateContactPhone(

@@ -79,10 +79,14 @@ export class WorkerConfigService {
         reject_call: input.reject_call,
       };
 
-      await this.streamProducerService.send(
-        this.kafkaServiceQueueService.workerConfigUpdate(),
-        updateEvent
-      );
+      try {
+        await this.streamProducerService.send(
+          this.kafkaServiceQueueService.workerConfigUpdate(),
+          updateEvent
+        );
+      } catch (error) {
+        console.error('Error sending worker config update event:', error);
+      }
     }
 
     return this.mapToWorkerConfig(result);

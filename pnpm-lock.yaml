@@ -237,9 +237,6 @@ importers:
       typescript-eslint:
         specifier: ^8.50.1
         version: 8.53.0(eslint@9.39.2)(typescript@5.9.3)
-      ulid:
-        specifier: ^3.0.2
-        version: 3.0.2
       uuid:
         specifier: ^13.0.0
         version: 13.0.0
@@ -4465,7 +4462,7 @@ packages:
     resolution: {integrity: sha512-kPSSXE6De1XOR820C90RIo2ogvZG+c3KiHzqUoO/F34Y2shGzesfqv7o57xrxovZJH/MetF5UjroJ/R/3isoiw==}
 
   '@whiskeysockets/baileys@https://gitea.devunder.com/underchat/-/packages/npm/@whiskeysockets%2Fbaileys/8.1.2026/files/58':
-    resolution: {tarball: https://gitea.devunder.com/underchat/-/packages/npm/@whiskeysockets%2Fbaileys/8.1.2026/files/58}
+    resolution: {integrity: sha512-18QTnXsRRKQ2Zdxj1wSbutXdvOaZl4nV/fCWPWs6sAIsgD1R878daVWE4X2z85FsWxZ9JcbSdqtM8t6TdUsMnA==, tarball: https://gitea.devunder.com/underchat/-/packages/npm/@whiskeysockets%2Fbaileys/8.1.2026/files/58}
     version: 8.1.2026
     engines: {node: '>=20.0.0'}
     peerDependencies:
@@ -9606,10 +9603,6 @@ packages:
   uint8array-extras@1.5.0:
     resolution: {integrity: sha512-rvKSBiC5zqCCiDZ9kAOszZcDvdAHwwIKJG33Ykj43OKcWsnmcBRL09YTU4nOeHZ8Y2a7l1MgTd08SBe9A8Qj6A==}
     engines: {node: '>=18'}
-
-  ulid@3.0.2:
-    resolution: {integrity: sha512-yu26mwteFYzBAot7KVMqFGCVpsF6g8wXfJzQUHvu1no3+rRRSFcSV2nKeYvNPLD2J4b08jYBDhHUjeH0ygIl9w==}
-    hasBin: true
 
   unbox-primitive@1.1.0:
     resolution: {integrity: sha512-nWJ91DjeOkej/TA8pXQ3myruKpKEYgqvpw9lz4OPHj/NWFNluYrjbz9j01CJ8yKQd2g4jFoOkINCTW2I5LEEyw==}
@@ -21043,8 +21036,6 @@ snapshots:
   uid2@1.0.0: {}
 
   uint8array-extras@1.5.0: {}
-
-  ulid@3.0.2: {}
 
   unbox-primitive@1.1.0:
     dependencies:

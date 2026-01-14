@@ -7,7 +7,6 @@ import { createConsumer } from '@core/common/functions/createConsumer';
 import { connectConsumer } from '@core/common/functions/connectConsumer';
 import { handleConsumerError } from '@core/common/functions/handleConsumerError';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
-import { commitOffset } from '@core/common/functions/commitOffset';
 import { EmbeddingService } from '@core/services/embedding.service';
 import { IChatHistoryEmbeddingRequest } from '@core/common/interfaces/IChatHistoryEmbeddingRequest';
 
@@ -61,10 +60,15 @@ export class ChatHistoryEmbeddingConsume {
           '[ChatHistoryEmbedding] Erro ao processar embedding:',
           error
         );
-      } finally {
         stop();
         await this.commitNext(topic, message.partition, message.offset);
+        return;
+      } finally {
+        stop();
       }
+
+      stop();
+      await this.commitNext(topic, message.partition, message.offset);
     });
 
     this.consumer.on('event.error', (err) => {
@@ -151,7 +155,11 @@ export class ChatHistoryEmbeddingConsume {
     }
 
     try {
-      await commitOffset(this.consumer, topic, partition, offset);
+      this.consumer.commitMessage({
+        topic,
+        partition,
+        offset,
+      });
     } catch (error) {
       console.error('Erro ao commitar mensagem:', error);
     }

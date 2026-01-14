@@ -9,13 +9,12 @@ import { createConsumer } from '@core/common/functions/createConsumer';
 import { connectConsumer } from '@core/common/functions/connectConsumer';
 import { handleConsumerError } from '@core/common/functions/handleConsumerError';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
-import { commitOffset } from '@core/common/functions/commitOffset';
 
 @singleton()
 export class ProfileStatusExternalIdUpdateConsume {
   private consumer: KafkaConsumer | null = null;
   private isRunning = false;
-  private partitionChains: Map<number, Promise<void>> = new Map();
+  private processingChain: Promise<void> = Promise.resolve();
 
   constructor(
     @inject('Kafka') private readonly kafka: KafkaClient,
@@ -90,13 +89,9 @@ export class ProfileStatusExternalIdUpdateConsume {
         return;
       }
 
-      const partition = message.partition;
       const offset = message.offset;
 
-      const previousChain =
-        this.partitionChains.get(partition) ?? Promise.resolve();
-
-      const currentChain = previousChain.then(async () => {
+      this.processingChain = this.processingChain.then(async () => {
         const heartbeat = async () => {
           this.consumer?.commit();
         };
@@ -105,13 +100,14 @@ export class ProfileStatusExternalIdUpdateConsume {
 
         try {
           await this.processUpdate(data);
+        } catch {
+          await this.commitNext(topic, message.partition, message.offset);
         } finally {
           stop();
-          await this.commitNext(topic, partition, offset);
         }
-      });
 
-      this.partitionChains.set(partition, currentChain);
+        await this.commitNext(topic, message.partition, offset);
+      });
     });
 
     this.consumer.on('event.error', (err) => {
@@ -133,11 +129,17 @@ export class ProfileStatusExternalIdUpdateConsume {
     partition: number,
     offset: number
   ): Promise<void> {
-    await commitOffset(this.consumerOrThrow, topic, partition, offset);
+    this.consumerOrThrow.commitSync([
+      {
+        topic,
+        partition,
+        offset: offset + 1,
+      },
+    ]);
   }
 
   public async close(): Promise<void> {
-    await Promise.all(this.partitionChains.values());
+    await this.processingChain;
 
     if (!this.consumer) {
       return;
@@ -156,7 +158,6 @@ export class ProfileStatusExternalIdUpdateConsume {
       });
     } finally {
       this.consumer = null;
-      this.partitionChains.clear();
     }
   }
 }

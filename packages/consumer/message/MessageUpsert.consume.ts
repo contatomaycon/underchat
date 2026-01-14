@@ -64,7 +64,6 @@ import { replaceMessageTags } from '@core/common/functions/replaceMessageTags';
 import { WorkerConfigService } from '@core/services/workerConfig.service';
 import { PlanAccountService } from '@core/services/planAccount.service';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
-import { commitOffset } from '@core/common/functions/commitOffset';
 import { PushNotificationService } from '@core/services/pushNotification.service';
 import { EContactIgnore } from '@core/common/enums/EContactIgnore';
 
@@ -72,7 +71,7 @@ import { EContactIgnore } from '@core/common/enums/EContactIgnore';
 export class MessageUpsertConsume {
   private consumer: KafkaConsumer | null = null;
   private isRunning = false;
-  private partitionChains: Map<number, Promise<void>> = new Map();
+  private processingChain: Promise<void> = Promise.resolve();
 
   constructor(
     @inject('Redis') private readonly redis: Redis,
@@ -209,16 +208,25 @@ export class MessageUpsertConsume {
     workerId: string,
     key: WAMessageKey
   ): Promise<void> {
-    const markReadData: IMessageMarkRead = {
-      account_id: accountId,
-      worker_id: workerId,
-      keys: [key],
-    };
+    try {
+      const markReadData: IMessageMarkRead = {
+        account_id: accountId,
+        worker_id: workerId,
+        keys: [key],
+      };
 
-    await this.streamProducerService.send(
-      this.kafkaServiceQueueService.markMessageRead(),
-      markReadData
-    );
+      await this.streamProducerService.send(
+        this.kafkaServiceQueueService.markMessageRead(),
+        markReadData
+      );
+    } catch (error) {
+      console.error('Error sending mark read to queue', {
+        accountId,
+        workerId,
+        messageId: key.id,
+        error,
+      });
+    }
   }
 
   private async getChat(
@@ -2013,13 +2021,9 @@ export class MessageUpsertConsume {
         return;
       }
 
-      const partition = message.partition;
       const offset = message.offset;
 
-      const previousChain =
-        this.partitionChains.get(partition) ?? Promise.resolve();
-
-      const currentChain = previousChain.then(async () => {
+      this.processingChain = this.processingChain.then(async () => {
         const heartbeat = async () => {
           this.consumer?.commit();
         };
@@ -2028,6 +2032,7 @@ export class MessageUpsertConsume {
         try {
           if (data.is_call_event) {
             await this.handleCallEvent(t, data);
+            await this.commitNext(topic, message.partition, offset);
             return;
           }
 
@@ -2040,6 +2045,7 @@ export class MessageUpsertConsume {
             );
 
             if (exists) {
+              await this.commitNext(topic, message.partition, offset);
               return;
             }
           }
@@ -2056,13 +2062,14 @@ export class MessageUpsertConsume {
             throw new Error('Received message without valid phone');
           }
           await this.createOrUpdateChat(t, data, phone, jid, jidAlt);
+        } catch {
+          await this.commitNext(topic, message.partition, message.offset);
         } finally {
           stop();
-          await this.commitNext(topic, partition, offset);
         }
-      });
 
-      this.partitionChains.set(partition, currentChain);
+        await this.commitNext(topic, message.partition, offset);
+      });
     });
 
     this.consumer.on('event.error', (err) => {
@@ -2080,7 +2087,7 @@ export class MessageUpsertConsume {
   }
 
   public async close(): Promise<void> {
-    await Promise.all(this.partitionChains.values());
+    await this.processingChain;
 
     if (!this.consumer) {
       return;
@@ -2099,7 +2106,6 @@ export class MessageUpsertConsume {
       });
     } finally {
       this.consumer = null;
-      this.partitionChains.clear();
     }
   }
 
@@ -2109,9 +2115,18 @@ export class MessageUpsertConsume {
     offset: number
   ): Promise<void> {
     try {
-      await commitOffset(this.consumerOrThrow, topic, partition, offset);
+      this.consumerOrThrow.commitSync([
+        {
+          topic,
+          partition,
+          offset: offset + 1,
+        },
+      ]);
     } catch (error: unknown) {
-      if (MessageUpsertConsume.isLibrdKafkaError(error) && error.code === 22) {
+      if (
+        MessageUpsertConsume.isLibrdKafkaError(error) &&
+        error.code === 22 /* Specified group generation id is not valid */
+      ) {
         return;
       }
 

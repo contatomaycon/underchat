@@ -7,7 +7,6 @@ import { createConsumer } from '@core/common/functions/createConsumer';
 import { connectConsumer } from '@core/common/functions/connectConsumer';
 import { handleConsumerError } from '@core/common/functions/handleConsumerError';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
-import { commitOffset } from '@core/common/functions/commitOffset';
 import { EmbeddingService } from '@core/services/embedding.service';
 import { IAiAgentPromptEmbeddingRequest } from '@core/common/interfaces/IAiAgentPromptEmbeddingRequest';
 import { EAiAgentPromptType } from '@core/common/enums/EAiAgentPromptType';
@@ -70,10 +69,15 @@ export class AiAgentPromptEmbeddingConsume {
         await this.processEmbedding(data);
       } catch (error) {
         console.error('Erro ao processar embedding:', error);
-      } finally {
         stop();
         await this.commitNext(topic, message.partition, message.offset);
+        return;
+      } finally {
+        stop();
       }
+
+      stop();
+      await this.commitNext(topic, message.partition, message.offset);
     });
 
     this.consumer.on('event.error', (err) => {
@@ -304,6 +308,12 @@ export class AiAgentPromptEmbeddingConsume {
     partition: number,
     offset: number
   ): Promise<void> {
-    await commitOffset(this.consumerOrThrow, topic, partition, offset);
+    this.consumerOrThrow.commitSync([
+      {
+        topic,
+        partition,
+        offset: offset + 1,
+      },
+    ]);
   }
 }

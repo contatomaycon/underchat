@@ -31,7 +31,6 @@ import { convertWaveformBase64ToUint8Array } from '@core/common/functions/conver
 import { webcrypto } from 'node:crypto';
 import { EWorkerProfileStatusType } from '@core/common/enums/EWorkerProfileStatusType';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
-import { commitOffset } from '@core/common/functions/commitOffset';
 
 @singleton()
 export class MessageSendConsume {
@@ -83,9 +82,12 @@ export class MessageSendConsume {
     );
 
     this.consumer.on('data', async (message) => {
-      const payload = this.parseRawMessage(message.value);
+      const data = this.parseMessage(message.value);
+      const statusData = this.parseStatusMessage(message.value);
+      const deleteStatusData = this.parseDeleteStatusMessage(message.value);
+      const profileInfoData = this.parseProfileInfoMessage(message.value);
 
-      if (!payload) {
+      if (!data && !statusData && !deleteStatusData && !profileInfoData) {
         await this.commitNext(topic, message.partition, message.offset);
         return;
       }
@@ -96,37 +98,53 @@ export class MessageSendConsume {
 
       const stop = startHeartbeat(heartbeat);
       try {
-        if (this.isDeleteStatusMessage(payload)) {
-          await this.processDeleteStatus(payload);
+        if (deleteStatusData) {
+          await this.processDeleteStatus(deleteStatusData);
+          stop();
+          await this.commitNext(topic, message.partition, message.offset);
           return;
         }
 
-        if (this.isStatusMessage(payload)) {
-          await this.processProfileStatus(payload);
+        if (statusData) {
+          await this.processProfileStatus(statusData);
+          stop();
+          await this.commitNext(topic, message.partition, message.offset);
           return;
         }
 
-        if (this.isProfileInfoMessage(payload)) {
-          await this.processProfileInfo(payload);
+        if (profileInfoData) {
+          await this.processProfileInfo(profileInfoData);
+          stop();
+          await this.commitNext(topic, message.partition, message.offset);
           return;
         }
 
-        if (!this.isSendMessage(payload)) {
+        if (!data) {
+          stop();
+          await this.commitNext(topic, message.partition, message.offset);
           return;
         }
 
-        const chatId = this.resolveChatId(payload);
+        const chatId = this.resolveChatId(data);
         if (!chatId) {
+          stop();
+          await this.commitNext(topic, message.partition, message.offset);
           return;
         }
 
         await this.enqueueByChatId(chatId, async () => {
-          await this.processMessage(payload);
+          await this.processMessage(data);
         });
-      } finally {
+      } catch {
         stop();
         await this.commitNext(topic, message.partition, message.offset);
+        return;
+      } finally {
+        stop();
       }
+
+      stop();
+      await this.commitNext(topic, message.partition, message.offset);
     });
 
     this.consumer.on('event.error', (err) => {
@@ -171,10 +189,16 @@ export class MessageSendConsume {
     partition: number,
     offset: number
   ): Promise<void> {
-    await commitOffset(this.consumerOrThrow, topic, partition, offset);
+    this.consumerOrThrow.commitSync([
+      {
+        topic,
+        partition,
+        offset: offset + 1,
+      },
+    ]);
   }
 
-  private parseRawMessage(value: Buffer | null): unknown {
+  private parseMessage(value: Buffer | null): IChatMessage | null {
     if (!value) {
       return null;
     }
@@ -185,54 +209,93 @@ export class MessageSendConsume {
     }
 
     try {
-      return JSON.parse(raw);
+      const parsed = JSON.parse(raw) as IChatMessage;
+      if (parsed && 'message_id' in parsed && 'chat_id' in parsed) {
+        return parsed;
+      }
+      return null;
     } catch {
       return null;
     }
   }
 
-  private isDeleteStatusMessage(
-    payload: unknown
-  ): payload is IProfileStatusDeleteMessage {
-    if (!payload || typeof payload !== 'object') {
-      return false;
+  private parseStatusMessage(
+    value: Buffer | null
+  ): IProfileStatusMessage | null {
+    if (!value) {
+      return null;
     }
 
-    return (
-      'worker_profile_status_id' in payload &&
-      'worker_id' in payload &&
-      'external_id' in payload
-    );
+    const raw = value.toString('utf8').trim();
+    if (!raw) {
+      return null;
+    }
+
+    try {
+      const parsed = JSON.parse(raw) as IProfileStatusMessage;
+      if (
+        parsed &&
+        'worker_profile_status_id' in parsed &&
+        'worker_id' in parsed &&
+        !('external_id' in parsed)
+      ) {
+        return parsed;
+      }
+      return null;
+    } catch {
+      return null;
+    }
   }
 
-  private isStatusMessage(payload: unknown): payload is IProfileStatusMessage {
-    if (!payload || typeof payload !== 'object') {
-      return false;
+  private parseDeleteStatusMessage(
+    value: Buffer | null
+  ): IProfileStatusDeleteMessage | null {
+    if (!value) {
+      return null;
     }
 
-    return (
-      'worker_profile_status_id' in payload &&
-      'worker_id' in payload &&
-      !('external_id' in payload)
-    );
+    const raw = value.toString('utf8').trim();
+    if (!raw) {
+      return null;
+    }
+
+    try {
+      const parsed = JSON.parse(raw) as IProfileStatusDeleteMessage;
+      if (
+        parsed &&
+        'worker_profile_status_id' in parsed &&
+        'worker_id' in parsed &&
+        'external_id' in parsed
+      ) {
+        return parsed;
+      }
+      return null;
+    } catch {
+      return null;
+    }
   }
 
-  private isProfileInfoMessage(
-    payload: unknown
-  ): payload is IProfileInfoMessage {
-    if (!payload || typeof payload !== 'object') {
-      return false;
+  private parseProfileInfoMessage(
+    value: Buffer | null
+  ): IProfileInfoMessage | null {
+    if (!value) {
+      return null;
     }
 
-    return 'worker_id' in payload && 'account_id' in payload;
-  }
-
-  private isSendMessage(payload: unknown): payload is IChatMessage {
-    if (!payload || typeof payload !== 'object') {
-      return false;
+    const raw = value.toString('utf8').trim();
+    if (!raw) {
+      return null;
     }
 
-    return 'message_id' in payload && 'chat_id' in payload;
+    try {
+      const parsed = JSON.parse(raw) as IProfileInfoMessage;
+      if (parsed && 'worker_id' in parsed && 'account_id' in parsed) {
+        return parsed;
+      }
+      return null;
+    } catch {
+      return null;
+    }
   }
 
   private resolveChatId(data: IChatMessage): string | null {
@@ -1293,12 +1356,17 @@ export class MessageSendConsume {
     workerProfileStatusId: string,
     externalId: string
   ): Promise<void> {
-    const updateMessage: IUpdateProfileStatusExternalId = {
-      worker_profile_status_id: workerProfileStatusId,
-      external_id: externalId,
-    };
+    try {
+      const updateMessage: IUpdateProfileStatusExternalId = {
+        worker_profile_status_id: workerProfileStatusId,
+        external_id: externalId,
+      };
 
-    const topic = this.kafkaServiceQueueService.updateProfileStatusExternalId();
-    await this.streamProducerService.send(topic, updateMessage);
+      const topic =
+        this.kafkaServiceQueueService.updateProfileStatusExternalId();
+      await this.streamProducerService.send(topic, updateMessage);
+    } catch (error) {
+      console.error('Error sending external ID update to Kafka:', error);
+    }
   }
 }
