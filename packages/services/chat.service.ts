@@ -454,14 +454,20 @@ export class ChatService {
         this.buildUpdateChatSummaryScriptParams(summaryToUpdate);
       const upsert = this.buildUpdateChatSummaryUpsert(summaryToUpdate);
 
-      return await this.elasticDatabaseService.updateWithScript(
+      const result = await this.elasticDatabaseService.updateWithScript(
         EElasticIndex.chat,
         chatId,
-        scriptSource,
-        scriptParams,
-        upsert,
-        10
+        {
+          source: scriptSource,
+          params: scriptParams,
+        },
+        {
+          retry_on_conflict: 10,
+          upsert,
+        }
       );
+
+      return result === 'updated' || result === 'created' || result === 'noop';
     } catch (error) {
       console.error('Error updating chat summary:', error);
       return false;
@@ -563,15 +569,20 @@ export class ChatService {
         lastDate,
         incrementUnreadCount
       );
-
-      return await this.elasticDatabaseService.updateWithScript(
+      const result = await this.elasticDatabaseService.updateWithScript(
         EElasticIndex.chat,
         chatId,
-        scriptSource,
-        scriptParams,
-        upsert,
-        10
+        {
+          source: scriptSource,
+          params: scriptParams,
+        },
+        {
+          retry_on_conflict: 10,
+          upsert,
+        }
       );
+
+      return result === 'updated' || result === 'created' || result === 'noop';
     } catch (error) {
       console.error('Error updating chat summary atomically:', error);
       return false;

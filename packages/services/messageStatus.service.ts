@@ -4,6 +4,10 @@ import { CentrifugoService } from './centrifugo.service';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import { chatAccountCentrifugo } from '@core/common/functions/centrifugoQueue';
+import {
+  MessageSummaryBaseline,
+  MessageSummaryScriptParams,
+} from '@core/common/interfaces/IMessageSummaryUpdate';
 
 export type MessageSummaryPatch = Partial<
   Pick<IChatMessage['summary'], 'is_sent' | 'is_delivered' | 'is_seen'>
@@ -234,12 +238,31 @@ export class MessageStatusService {
     return hit?._source ?? null;
   }
 
-  private async updateSummaryAtomically(
-    messageId: string,
-    currentSummary: IChatMessage['summary'],
+  private buildMessageSummaryBaseline(
+    currentSummary: IChatMessage['summary'] | null | undefined
+  ): MessageSummaryBaseline {
+    return {
+      is_sent: currentSummary?.is_sent ?? false,
+      is_delivered: currentSummary?.is_delivered ?? false,
+      is_seen: currentSummary?.is_seen ?? false,
+      is_sent_to_internal: currentSummary?.is_sent_to_internal ?? false,
+    };
+  }
+
+  private buildMessageSummaryScriptParams(
+    baseline: MessageSummaryBaseline,
     patch: MessageSummaryPatch
-  ): Promise<boolean> {
-    const scriptSource = `
+  ): MessageSummaryScriptParams {
+    return {
+      baseline,
+      patch_is_sent: patch.is_sent ?? null,
+      patch_is_delivered: patch.is_delivered ?? null,
+      patch_is_seen: patch.is_seen ?? null,
+    };
+  }
+
+  private buildMessageSummaryScriptSource(): string {
+    return `
       if (ctx._source.summary == null) {
         ctx._source.summary = params.baseline;
       }
@@ -247,73 +270,65 @@ export class MessageStatusService {
       def summary = ctx._source.summary;
       def changed = false;
       
-      if (params.patch_is_sent != null && params.patch_is_sent && (!summary.containsKey('is_sent') || !summary.is_sent)) {
-        summary.is_sent = true;
-        changed = true;
+      if (params.patch_is_sent != null && params.patch_is_sent) {
+        if (!summary.containsKey('is_sent') || !summary.is_sent) {
+          summary.is_sent = true;
+          changed = true;
+        }
       }
       
-      if (params.patch_is_delivered != null && params.patch_is_delivered && (!summary.containsKey('is_delivered') || !summary.is_delivered)) {
-        summary.is_delivered = true;
-        changed = true;
+      if (params.patch_is_delivered != null && params.patch_is_delivered) {
+        if (!summary.containsKey('is_delivered') || !summary.is_delivered) {
+          summary.is_delivered = true;
+          changed = true;
+        }
       }
       
-      if (params.patch_is_seen != null && params.patch_is_seen && (!summary.containsKey('is_seen') || !summary.is_seen)) {
-        summary.is_seen = true;
-        changed = true;
+      if (params.patch_is_seen != null && params.patch_is_seen) {
+        if (!summary.containsKey('is_seen') || !summary.is_seen) {
+          summary.is_seen = true;
+          changed = true;
+        }
       }
       
       if (!summary.containsKey('is_sent_to_internal')) {
         summary.is_sent_to_internal = params.baseline.is_sent_to_internal;
       }
+      
+      if (!changed) {
+        ctx.op = 'noop';
+      }
     `;
+  }
 
-    const baseline: IChatMessage['summary'] = {
-      is_sent: currentSummary?.is_sent ?? false,
-      is_delivered: currentSummary?.is_delivered ?? false,
-      is_seen: currentSummary?.is_seen ?? false,
-      is_sent_to_internal: currentSummary?.is_sent_to_internal ?? false,
-    };
-
-    const scriptParams: Record<string, any> = {
-      baseline,
-      patch_is_sent: patch.is_sent ?? null,
-      patch_is_delivered: patch.is_delivered ?? null,
-      patch_is_seen: patch.is_seen ?? null,
-    };
+  private async updateSummaryAtomically(
+    messageId: string,
+    currentSummary: IChatMessage['summary'],
+    patch: MessageSummaryPatch
+  ): Promise<boolean> {
+    const baseline = this.buildMessageSummaryBaseline(currentSummary);
+    const scriptParams = this.buildMessageSummaryScriptParams(baseline, patch);
+    const scriptSource = this.buildMessageSummaryScriptSource();
 
     try {
-      const client = (this.elasticDatabaseService as any).client;
-      const result = await client.update({
-        index: EElasticIndex.message,
-        id: messageId,
-        script: {
+      const result = await this.elasticDatabaseService.updateWithScript(
+        EElasticIndex.message,
+        messageId,
+        {
           source: scriptSource,
           params: scriptParams,
         },
-        retry_on_conflict: 10,
-      });
-
-      return (
-        result.result === 'updated' ||
-        result.result === 'created' ||
-        result.result === 'noop'
+        {
+          retry_on_conflict: 10,
+          upsert: {
+            summary: baseline,
+          },
+        }
       );
-    } catch {
-      const mergedSummary = this.mergeSummary(currentSummary, patch);
-      if (!mergedSummary) {
-        return false;
-      }
 
-      try {
-        return await this.elasticDatabaseService.update(
-          EElasticIndex.message,
-          { summary: mergedSummary },
-          messageId,
-          10
-        );
-      } catch {
-        return false;
-      }
+      return result === 'updated' || result === 'created' || result === 'noop';
+    } catch {
+      return false;
     }
   }
 }

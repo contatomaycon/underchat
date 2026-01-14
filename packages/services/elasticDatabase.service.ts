@@ -190,45 +190,49 @@ export class ElasticDatabaseService {
     }
   };
 
-  updateWithScript = async (
+  updateWithScript = async <TParams extends Record<string, unknown>>(
     index: string,
     id: string,
-    scriptSource: string,
-    scriptParams: Record<string, unknown>,
-    upsert?: Record<string, unknown>,
-    retryOnConflict?: number
-  ): Promise<boolean> => {
+    script: { source: string; params: TParams },
+    options?: { retry_on_conflict?: number; upsert?: Record<string, unknown> }
+  ): Promise<'updated' | 'created' | 'noop'> => {
     try {
       const updateParams: {
         index: string;
         id: string;
         script: {
           source: string;
-          params: Record<string, unknown>;
+          params: TParams;
         };
         upsert?: Record<string, unknown>;
+        scripted_upsert?: boolean;
         retry_on_conflict: number;
       } = {
         index,
         id,
         script: {
-          source: scriptSource,
-          params: scriptParams,
+          source: script.source,
+          params: script.params,
         },
-        retry_on_conflict: retryOnConflict ?? 10,
+        retry_on_conflict: options?.retry_on_conflict ?? 10,
       };
 
-      if (upsert) {
-        updateParams.upsert = upsert;
+      if (options?.upsert) {
+        updateParams.upsert = options.upsert;
+        updateParams.scripted_upsert = true;
       }
 
       const result = await this.client.update(updateParams);
 
-      return (
-        result.result === 'updated' ||
-        result.result === 'created' ||
-        result.result === 'noop'
-      );
+      if (result.result === 'updated') {
+        return 'updated';
+      }
+
+      if (result.result === 'created') {
+        return 'created';
+      }
+
+      return 'noop';
     } catch (error) {
       throw new Error(`Failed to update with script: ${error}`);
     }
