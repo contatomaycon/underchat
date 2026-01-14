@@ -47,10 +47,20 @@ export class ElasticDatabaseService {
         index,
         id,
         document,
+        op_type: 'create',
       });
 
       return result.result === 'created';
-    } catch (error) {
+    } catch (error: unknown) {
+      if (
+        typeof error === 'object' &&
+        error !== null &&
+        'statusCode' in error &&
+        error.statusCode === 409
+      ) {
+        return false;
+      }
+
       throw new Error(`Failed to create document with ID: ${error}`);
     }
   };
@@ -489,46 +499,81 @@ export class ElasticDatabaseService {
     },
     options?: { retryOnConflict?: number }
   ): Promise<'updated' | 'created' | 'noop'> => {
-    try {
-      const updateParams: {
-        index: string;
-        id: string;
-        script: {
-          source: string;
-          params: TParams;
-        };
-        upsert?: Record<string, unknown>;
-        scripted_upsert?: boolean;
-        retry_on_conflict: number;
-      } = {
-        index,
-        id,
-        script: {
-          source: input.source,
-          params: input.params,
-        },
-        retry_on_conflict: options?.retryOnConflict ?? 10,
-      };
+    const maxRetries = options?.retryOnConflict ?? 5;
+    let attempt = 0;
 
-      if (input.upsert) {
-        updateParams.upsert = input.upsert;
-        updateParams.scripted_upsert = input.scriptedUpsert ?? true;
+    while (attempt < maxRetries) {
+      const meta = await this.getDocumentMeta(index, id);
+
+      if (!meta) {
+        if (!input.upsert) {
+          throw new Error(`Failed to update with script: document not found`);
+        }
+
+        try {
+          const createResult = await this.tryCreateWithScript(index, id, input);
+
+          if (createResult !== 'conflict') {
+            return createResult;
+          }
+
+          attempt++;
+          continue;
+        } catch (error: unknown) {
+          if (
+            typeof error === 'object' &&
+            error !== null &&
+            'statusCode' in error &&
+            error.statusCode === 409
+          ) {
+            attempt++;
+            continue;
+          }
+
+          if (attempt >= maxRetries - 1) {
+            throw new Error(`Failed to update with script: ${error}`);
+          }
+
+          attempt++;
+          continue;
+        }
       }
 
-      const result = await this.client.update(updateParams);
+      try {
+        const updateResult = await this.tryUpdateWithScriptAndMeta(
+          index,
+          id,
+          input,
+          meta
+        );
 
-      if (result.result === 'updated') {
-        return 'updated';
+        if (updateResult !== 'conflict') {
+          return updateResult;
+        }
+
+        attempt++;
+      } catch (error: unknown) {
+        if (
+          typeof error === 'object' &&
+          error !== null &&
+          'statusCode' in error &&
+          error.statusCode === 409
+        ) {
+          attempt++;
+          continue;
+        }
+
+        if (attempt >= maxRetries - 1) {
+          throw new Error(`Failed to update with script: ${error}`);
+        }
+
+        attempt++;
       }
-
-      if (result.result === 'created') {
-        return 'created';
-      }
-
-      return 'noop';
-    } catch (error) {
-      throw new Error(`Failed to update with script: ${error}`);
     }
+
+    throw new Error(
+      `Failed to update with script after ${maxRetries} attempts: conflict`
+    );
   };
 
   private async tryUpdateWithScriptAndMeta<

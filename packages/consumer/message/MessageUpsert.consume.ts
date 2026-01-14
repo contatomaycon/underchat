@@ -72,6 +72,7 @@ import { commitOffset } from '@core/common/functions/commitOffset';
 import { PushNotificationService } from '@core/services/pushNotification.service';
 import { EContactIgnore } from '@core/common/enums/EContactIgnore';
 import { withLock } from '@core/common/functions/withLock';
+import { delay } from '@core/common/functions/delay';
 
 @singleton()
 export class MessageUpsertConsume {
@@ -1529,6 +1530,40 @@ export class MessageUpsertConsume {
     return inputChatMessage;
   }
 
+  private async updateChatSummaryWithRetry(
+    chatId: string,
+    messageText: string | null,
+    lastDate: string,
+    lastDateEpochMillis: number,
+    lastMessageId: string | null,
+    processedMessageId: string | null,
+    incrementUnreadCount: boolean,
+    maxRetries = 3
+  ): Promise<boolean> {
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      const success = await this.chatService.updateChatSummaryAtomically(
+        chatId,
+        messageText,
+        lastDate,
+        lastDateEpochMillis,
+        lastMessageId,
+        processedMessageId,
+        incrementUnreadCount
+      );
+
+      if (success) {
+        return true;
+      }
+
+      if (attempt < maxRetries - 1) {
+        const backoffMs = Math.min(50 * Math.pow(2, attempt), 200);
+        await delay(backoffMs);
+      }
+    }
+
+    return false;
+  }
+
   private async createChatMessage(
     getChat: IChat,
     data: IUpsertMessage
@@ -1668,7 +1703,7 @@ export class MessageUpsertConsume {
         this.redis,
         lockKey,
         async () => {
-          await this.chatService.updateChatSummaryAtomically(
+          await this.updateChatSummaryWithRetry(
             getChat.chat_id,
             messageText,
             inputChatMessage.date,

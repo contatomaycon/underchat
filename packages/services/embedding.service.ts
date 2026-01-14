@@ -11,10 +11,6 @@ import { IGeminiBatchEmbedContentsResponse } from '@core/common/interfaces/IGemi
 import { IChatHistoryEmbeddingDocument } from '@core/common/interfaces/IChatHistoryEmbeddingDocument';
 import { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import { IChat } from '@core/common/interfaces/IChat';
-import {
-  IElasticBulkResponse,
-  IElasticBulkUpdateItem,
-} from '@core/common/interfaces/IElasticBulk';
 import { aiAgentPromptEmbeddingMappings } from '@core/mappings/aiAgentPromptEmbedding.mappings';
 import { chatHistoryEmbeddingMappings } from '@core/mappings/chatHistoryEmbedding.mappings';
 import { AiAgentViewerRepository } from '@core/repositories/aiAgent/AiAgentViewer.repository';
@@ -22,6 +18,8 @@ import { ElasticDatabaseService } from './elasticDatabase.service';
 import { extractMessageTextFromContent } from '@core/common/functions/extractMessageTextFromContent';
 import InvalidConfigurationError from '@core/common/exceptions/InvalidConfigurationError';
 import { buildCandidates } from '@core/common/functions/buildCandidatesBR';
+import Redis from 'ioredis';
+import { withLock } from '@core/common/functions/withLock';
 
 type ElasticHit<T> = {
   _source?: T;
@@ -36,7 +34,8 @@ export class EmbeddingService {
   constructor(
     @inject('DatabaseElasticClient') private readonly elasticClient: Client,
     private readonly aiAgentViewerRepository: AiAgentViewerRepository,
-    private readonly elasticDatabaseService: ElasticDatabaseService
+    private readonly elasticDatabaseService: ElasticDatabaseService,
+    @inject('Redis') private readonly redis: Redis
   ) {}
 
   private async ensureIndex(): Promise<void> {
@@ -357,98 +356,41 @@ export class EmbeddingService {
     return createHash('sha256').update(payload).digest('hex').substring(0, 32);
   }
 
-  private buildBulkUpsertBody(
-    documents: IEmbeddingDocument[]
-  ): Array<Record<string, unknown>> {
-    const body: Array<Record<string, unknown>> = [];
-
-    for (const doc of documents) {
-      const documentId = this.buildEmbeddingDocumentId(doc);
-      const scriptSource = `
-        if (ctx._source != null && ctx._source.containsKey('content_fingerprint') && ctx._source.content_fingerprint == params.content_fingerprint) {
-          ctx.op = 'noop';
-        } else {
-          ctx._source = params.doc;
-        }
-      `;
-
-      body.push({
-        update: {
-          _index: this.indexName,
-          _id: documentId,
-        },
-      });
-      body.push({
-        script: {
-          source: scriptSource,
-          params: {
-            doc: doc,
-            content_fingerprint: doc.content_fingerprint,
-          },
-        },
-        scripted_upsert: true,
-        upsert: doc,
-      });
-    }
-
-    return body;
-  }
-
-  private throwIfBulkHasErrors(response: IElasticBulkResponse): void {
-    if (!response.errors) {
-      return;
-    }
-
-    let failed = 0;
-    const errorMessages: string[] = [];
-
-    for (const item of response.items) {
-      const updateItem = item as IElasticBulkUpdateItem;
-      if (!updateItem.update) {
-        continue;
-      }
-
-      if (updateItem.update.error) {
-        failed++;
-        if (errorMessages.length < 5) {
-          errorMessages.push(
-            `${updateItem.update.error.type}: ${updateItem.update.error.reason}`
-          );
-        }
-      }
-    }
-
-    if (failed > 0) {
-      throw new Error(
-        `Bulk upsert failed: ${failed} errors. ${JSON.stringify(errorMessages)}`
-      );
-    }
-  }
-
   private async bulkIndexDocuments(
-    documents: IEmbeddingDocument[],
-    options?: {
-      refresh?: boolean | 'wait_for';
-    }
+    documents: IEmbeddingDocument[]
   ): Promise<void> {
     if (documents.length === 0) {
       return;
     }
 
-    const refreshOption = options?.refresh ?? false;
+    const scriptSource = `
+      if (ctx._source != null && ctx._source.containsKey('content_fingerprint') && ctx._source.content_fingerprint == params.content_fingerprint) {
+        ctx.op = 'noop';
+      } else {
+        ctx._source = params.doc;
+      }
+    `;
 
-    const body = this.buildBulkUpsertBody(documents);
-    const bulkOptions: { refresh?: boolean | 'wait_for' } = {};
-    if (refreshOption !== false) {
-      bulkOptions.refresh = refreshOption;
-    }
+    const operations = documents.map((doc) => {
+      const documentId = this.buildEmbeddingDocumentId(doc);
 
-    const response = (await this.elasticClient.bulk({
-      body,
-      ...bulkOptions,
-    })) as IElasticBulkResponse;
+      return {
+        id: documentId,
+        script: {
+          source: scriptSource,
+          params: {
+            doc: doc as unknown as Record<string, unknown>,
+            content_fingerprint: doc.content_fingerprint,
+          },
+        },
+        upsert: doc as unknown as Record<string, unknown>,
+      };
+    });
 
-    this.throwIfBulkHasErrors(response);
+    await this.elasticDatabaseService.bulkUpdateWithScript(
+      this.indexName,
+      operations
+    );
   }
 
   async processAndStoreEmbeddings(
@@ -804,6 +746,24 @@ export class EmbeddingService {
     aiAgentId: string,
     phone?: string | null
   ): Promise<number> {
+    const lockKey = `chat-history-embedding:${accountId}:${chatId}:${aiAgentId}`;
+
+    return withLock(this.redis, lockKey, () =>
+      this.processChatHistoryEmbeddingsInternal(
+        accountId,
+        chatId,
+        aiAgentId,
+        phone
+      )
+    );
+  }
+
+  private async processChatHistoryEmbeddingsInternal(
+    accountId: string,
+    chatId: string,
+    aiAgentId: string,
+    phone?: string | null
+  ): Promise<number> {
     await this.ensureChatHistoryIndex();
 
     const aiAgent = await this.aiAgentViewerRepository.viewAiAgent(
@@ -932,7 +892,7 @@ export class EmbeddingService {
 
       const body = documents.flatMap((doc) => [
         {
-          create: {
+          index: {
             _index: this.chatHistoryIndexName,
             _id: `${accountId}:${chatId}:${aiAgentId}:${doc.message_id}`,
           },
@@ -1077,7 +1037,7 @@ export class EmbeddingService {
 
     const body = documents.flatMap((doc) => [
       {
-        create: {
+        index: {
           _index: this.chatHistoryIndexName,
           _id: `${accountId}:${chatId}:${aiAgentId}:${doc.message_id}`,
         },

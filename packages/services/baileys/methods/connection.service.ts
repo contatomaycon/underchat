@@ -21,7 +21,6 @@ import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
 import { EWppConnection } from '@core/common/enums/EWppConnection';
 import { wppConnectionMappings } from '@core/mappings/wppConnection.mappings';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
-import { v7 as uuidv7 } from 'uuid';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { IBaileysConnection } from '@core/common/interfaces/IBaileysConnection';
 import { EBaileysConnectionType } from '@core/common/enums/EBaileysConnectionType';
@@ -30,6 +29,7 @@ import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 import { BaileysIncomingMessageService } from './incoming.service';
 import { getPhoneNumber } from '@core/common/functions/getPhoneNumber';
+import { buildWppConnectionDocumentId } from '@core/common/functions/buildWppConnectionDocumentId';
 
 const FOLDER = `/app/data/storage/${baileysEnvironment.baileysWorkerId}`;
 const CHANNEL = workerCentrifugoQueue(baileysEnvironment.baileysAccountId);
@@ -870,10 +870,22 @@ export class BaileysConnectionService {
       return false;
     }
 
-    return this.elasticDatabaseService.update(
+    const documentId = buildWppConnectionDocumentId(ACCOUNT, wppLog.worker_id);
+
+    const updateResult = await this.elasticDatabaseService.updateWithOCC(
       EElasticIndex.wpp_connection,
+      documentId,
       wppLog as unknown as Record<string, unknown>,
-      uuidv7()
+      {
+        upsert: true,
+        maxRetries: 5,
+      }
+    );
+
+    return (
+      updateResult === 'updated' ||
+      updateResult === 'created' ||
+      updateResult === 'noop'
     );
   };
 }
