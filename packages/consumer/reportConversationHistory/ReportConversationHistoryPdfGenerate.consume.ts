@@ -14,6 +14,7 @@ import { IReportConversationHistoryPdfNotification } from '@core/common/interfac
 import { reportConversationHistoryPdfAccountCentrifugo } from '@core/common/functions/centrifugoQueue';
 import { createI18nInstance } from '@core/common/functions/createI18nInstance';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
+import { commitOffset } from '@core/common/functions/commitOffset';
 
 @singleton()
 export class ReportConversationHistoryPdfGenerateConsume {
@@ -141,13 +142,7 @@ export class ReportConversationHistoryPdfGenerateConsume {
     partition: number,
     offset: number
   ): Promise<void> {
-    this.consumerOrThrow.commitSync([
-      {
-        topic,
-        partition,
-        offset: offset + 1,
-      },
-    ]);
+    await commitOffset(this.consumerOrThrow, topic, partition, offset);
   }
 
   private async handleMessage(

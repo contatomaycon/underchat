@@ -13,12 +13,13 @@ import { MessageStatusService } from '@core/services/messageStatus.service';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { IMessageStatusUpdate } from '@core/common/interfaces/IMessageStatusUpdate';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
+import { commitOffset } from '@core/common/functions/commitOffset';
 
 @singleton()
 export class MessageMarkReadConsume {
   private consumer: KafkaConsumer | null = null;
   private isRunning = false;
-  private processingChain: Promise<void> = Promise.resolve();
+  private partitionChains: Map<number, Promise<void>> = new Map();
 
   constructor(
     @inject('Kafka') private readonly kafka: KafkaClient,
@@ -87,9 +88,13 @@ export class MessageMarkReadConsume {
         return;
       }
 
+      const partition = message.partition;
       const offset = message.offset;
 
-      this.processingChain = this.processingChain.then(async () => {
+      const previousChain =
+        this.partitionChains.get(partition) ?? Promise.resolve();
+
+      const currentChain = previousChain.then(async () => {
         const heartbeat = async () => {
           this.consumer?.commit();
         };
@@ -116,20 +121,13 @@ export class MessageMarkReadConsume {
               );
             })
           );
-        } catch (error) {
-          console.error('Error marking message as read', {
-            accountId: data.account_id,
-            workerId: data.worker_id,
-            keysCount: data.keys.length,
-            error,
-          });
-          await this.commitNext(topic, message.partition, message.offset);
         } finally {
           stop();
+          await this.commitNext(topic, partition, offset);
         }
-
-        await this.commitNext(topic, message.partition, offset);
       });
+
+      this.partitionChains.set(partition, currentChain);
     });
 
     this.consumer.on('event.error', (err) => {
@@ -147,7 +145,7 @@ export class MessageMarkReadConsume {
   }
 
   public async close(): Promise<void> {
-    await this.processingChain;
+    await Promise.all(this.partitionChains.values());
 
     if (!this.consumer) {
       return;
@@ -166,6 +164,7 @@ export class MessageMarkReadConsume {
       });
     } finally {
       this.consumer = null;
+      this.partitionChains.clear();
     }
   }
 
@@ -174,12 +173,6 @@ export class MessageMarkReadConsume {
     partition: number,
     offset: number
   ): Promise<void> {
-    this.consumerOrThrow.commitSync([
-      {
-        topic,
-        partition,
-        offset: offset + 1,
-      },
-    ]);
+    await commitOffset(this.consumerOrThrow, topic, partition, offset);
   }
 }

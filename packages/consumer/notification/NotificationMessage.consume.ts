@@ -9,6 +9,7 @@ import { handleConsumerError } from '@core/common/functions/handleConsumerError'
 import { NotificationMessageService } from '@core/services/notificationMessage.service';
 import { INotificationMessageRequest } from '@core/common/interfaces/INotificationMessageRequest';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
+import { commitOffset } from '@core/common/functions/commitOffset';
 
 @singleton()
 export class NotificationMessageConsume {
@@ -143,12 +144,6 @@ export class NotificationMessageConsume {
     partition: number,
     offset: number
   ): Promise<void> {
-    this.consumerOrThrow.commitSync([
-      {
-        topic,
-        partition,
-        offset: offset + 1,
-      },
-    ]);
+    await commitOffset(this.consumerOrThrow, topic, partition, offset);
   }
 }

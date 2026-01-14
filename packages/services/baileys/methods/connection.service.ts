@@ -256,7 +256,7 @@ export class BaileysConnectionService {
 
     this.publishSub(payload);
 
-    this.streamProducerService.send(
+    await this.streamProducerService.send(
       this.kafkaServiceQueueService.workerStatus(),
       payload,
       WORKER
@@ -371,7 +371,7 @@ export class BaileysConnectionService {
           opened = true;
           this.retryCount = 0;
 
-          return this.onOpen(resolve);
+          return void this.onOpen(resolve);
         }
 
         if (connection === 'close') {
@@ -420,7 +420,9 @@ export class BaileysConnectionService {
     this.pendingResolve = undefined;
   }
 
-  private onOpen(resolve: (s: IBaileysConnectionState) => void): void {
+  private async onOpen(
+    resolve: (s: IBaileysConnectionState) => void
+  ): Promise<void> {
     this.qrHash = undefined;
     this.setStatus(Status.connected, ECodeMessage.connectionEstablished);
     this.connectionEstablished = true;
@@ -437,7 +439,7 @@ export class BaileysConnectionService {
     this.publishSub(payload);
     this.lastStatusPayload = JSON.stringify(payload);
 
-    this.streamProducerService.send(
+    await this.streamProducerService.send(
       this.kafkaServiceQueueService.workerStatus(),
       payload,
       WORKER
@@ -474,7 +476,7 @@ export class BaileysConnectionService {
         this.publishSub(payload);
         this.lastStatusPayload = payloadStr;
 
-        this.streamProducerService.send(
+        await this.streamProducerService.send(
           this.kafkaServiceQueueService.workerStatus(),
           payload,
           WORKER
@@ -511,7 +513,7 @@ export class BaileysConnectionService {
         worker_status_id: EWorkerStatus.mismatched,
       };
 
-      this.streamProducerService.send(
+      await this.streamProducerService.send(
         this.kafkaServiceQueueService.workerStatus(),
         payload,
         WORKER
@@ -613,25 +615,21 @@ export class BaileysConnectionService {
   }
 
   private async updateWorkerMismatchedStatus(): Promise<void> {
-    try {
-      const payload: IBaileysConnectionState = {
-        code: ECodeMessage.info,
-        status: Status.disconnected,
-        worker_id: WORKER,
-        account_id: ACCOUNT,
-        worker_status_id: EWorkerStatus.mismatched,
-      };
+    const payload: IBaileysConnectionState = {
+      code: ECodeMessage.info,
+      status: Status.disconnected,
+      worker_id: WORKER,
+      account_id: ACCOUNT,
+      worker_status_id: EWorkerStatus.mismatched,
+    };
 
-      this.publishSub(payload);
+    this.publishSub(payload);
 
-      await this.streamProducerService.send(
-        this.kafkaServiceQueueService.workerStatus(),
-        payload,
-        WORKER
-      );
-    } catch (error) {
-      console.error('Error updating worker mismatched status:', error);
-    }
+    await this.streamProducerService.send(
+      this.kafkaServiceQueueService.workerStatus(),
+      payload,
+      WORKER
+    );
   }
 
   private async safeLogout(forceLogout = false): Promise<void> {

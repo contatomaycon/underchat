@@ -12,6 +12,7 @@ import { INotificationMessage } from '@core/common/interfaces/INotificationMessa
 import { BaileysPhoneValidationService } from '@core/services/baileys/methods/phoneValidation.service';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
+import { commitOffset } from '@core/common/functions/commitOffset';
 
 @singleton()
 export class NotificationMessageSendConsume {
@@ -69,15 +70,10 @@ export class NotificationMessageSendConsume {
           await this.processNotificationMessage(data);
         } catch (error) {
           console.error('Erro ao processar mensagem:', error);
-          stop();
-          await this.commitNext(topic, message.partition, message.offset);
-          return;
         } finally {
           stop();
+          await this.commitNext(topic, message.partition, message.offset);
         }
-
-        stop();
-        await this.commitNext(topic, message.partition, message.offset);
       });
 
       this.consumer.on('event.error', (err) => {
@@ -186,16 +182,12 @@ export class NotificationMessageSendConsume {
     userId: string,
     phoneJid: string
   ): Promise<void> {
-    try {
-      const topic = this.kafkaBaileysQueueService.userPhoneJidUpdate();
+    const topic = this.kafkaBaileysQueueService.userPhoneJidUpdate();
 
-      await this.streamProducerService.send(topic, {
-        user_id: userId,
-        phone_jid: phoneJid,
-      });
-    } catch (error) {
-      console.error('Erro ao enviar atualização de phone_jid:', error);
-    }
+    await this.streamProducerService.send(topic, {
+      user_id: userId,
+      phone_jid: phoneJid,
+    });
   }
 
   private async commitNext(
@@ -203,12 +195,6 @@ export class NotificationMessageSendConsume {
     partition: number,
     offset: number
   ): Promise<void> {
-    this.consumerOrThrow.commitSync([
-      {
-        topic,
-        partition,
-        offset: offset + 1,
-      },
-    ]);
+    await commitOffset(this.consumerOrThrow, topic, partition, offset);
   }
 }
