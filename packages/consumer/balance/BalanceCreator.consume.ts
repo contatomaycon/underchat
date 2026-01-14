@@ -19,6 +19,7 @@ import { connectConsumer } from '@core/common/functions/connectConsumer';
 import { handleConsumerError } from '@core/common/functions/handleConsumerError';
 import { getErrorMessage } from '@core/common/functions/toError';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
+import { commitOffset } from '@core/common/functions/commitOffset';
 
 @singleton()
 export class BalanceCreatorConsume {
@@ -119,13 +120,7 @@ export class BalanceCreatorConsume {
     partition: number,
     offset: number
   ): Promise<void> {
-    this.consumerOrThrow.commitSync([
-      {
-        topic,
-        partition,
-        offset: offset + 1,
-      },
-    ]);
+    await commitOffset(this.consumerOrThrow, topic, partition, offset);
   }
 
   private async handleCreateServerMessage(

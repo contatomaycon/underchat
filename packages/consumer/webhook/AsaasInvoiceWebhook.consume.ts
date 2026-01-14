@@ -10,6 +10,7 @@ import { handleConsumerError } from '@core/common/functions/handleConsumerError'
 import { FastifyInstance } from 'fastify';
 import { PlanReleaseService } from '@core/services/planRelease.service';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
+import { commitOffset } from '@core/common/functions/commitOffset';
 
 @singleton()
 export class AsaasInvoiceWebhookConsume {
@@ -112,13 +113,7 @@ export class AsaasInvoiceWebhookConsume {
     partition: number,
     offset: number
   ): Promise<void> {
-    this.consumerOrThrow.commitSync([
-      {
-        topic,
-        partition,
-        offset: offset + 1,
-      },
-    ]);
+    await commitOffset(this.consumerOrThrow, topic, partition, offset);
   }
 
   private async handleWebhookEvent(

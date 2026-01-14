@@ -9,12 +9,13 @@ import { createConsumer } from '@core/common/functions/createConsumer';
 import { connectConsumer } from '@core/common/functions/connectConsumer';
 import { handleConsumerError } from '@core/common/functions/handleConsumerError';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
+import { commitOffset } from '@core/common/functions/commitOffset';
 
 @singleton()
 export class MessageStatusUpdateConsume {
   private consumer: KafkaConsumer | null = null;
   private isRunning = false;
-  private processingChain: Promise<void> = Promise.resolve();
+  private partitionChains: Map<number, Promise<void>> = new Map();
 
   constructor(
     @inject('Kafka') private readonly kafka: KafkaClient,
@@ -74,9 +75,13 @@ export class MessageStatusUpdateConsume {
         return;
       }
 
+      const partition = message.partition;
       const offset = message.offset;
 
-      this.processingChain = this.processingChain.then(async () => {
+      const previousChain =
+        this.partitionChains.get(partition) ?? Promise.resolve();
+
+      const currentChain = previousChain.then(async () => {
         const heartbeat = async () => {
           this.consumer?.commit();
         };
@@ -89,14 +94,13 @@ export class MessageStatusUpdateConsume {
             data.message_id,
             data.patch
           );
-        } catch {
-          await this.commitNext(topic, message.partition, message.offset);
         } finally {
           stop();
+          await this.commitNext(topic, partition, offset);
         }
-
-        await this.commitNext(topic, message.partition, offset);
       });
+
+      this.partitionChains.set(partition, currentChain);
     });
 
     this.consumer.on('event.error', (err) => {
@@ -114,7 +118,7 @@ export class MessageStatusUpdateConsume {
   }
 
   public async close(): Promise<void> {
-    await this.processingChain;
+    await Promise.all(this.partitionChains.values());
 
     if (!this.consumer) {
       return;
@@ -133,6 +137,7 @@ export class MessageStatusUpdateConsume {
       });
     } finally {
       this.consumer = null;
+      this.partitionChains.clear();
     }
   }
 
@@ -142,13 +147,7 @@ export class MessageStatusUpdateConsume {
     offset: number
   ): Promise<void> {
     try {
-      this.consumerOrThrow.commitSync([
-        {
-          topic,
-          partition,
-          offset: offset + 1,
-        },
-      ]);
+      await commitOffset(this.consumerOrThrow, topic, partition, offset);
     } catch (error: unknown) {
       if (
         MessageStatusUpdateConsume.isLibrdKafkaError(error) &&

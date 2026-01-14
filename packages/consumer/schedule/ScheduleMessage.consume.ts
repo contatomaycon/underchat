@@ -20,6 +20,7 @@ import { EMessageType } from '@core/common/enums/EMessageType';
 import { selectJidChat } from '@core/common/functions/selectJidChat';
 import { IUpdateMessage } from '@core/common/interfaces/IUpdateMessage';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
+import { commitOffset } from '@core/common/functions/commitOffset';
 import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { scheduleMappings } from '@core/mappings/schedule.mappings';
@@ -138,13 +139,7 @@ export class ScheduleMessageConsume {
     partition: number,
     offset: number
   ): Promise<void> {
-    this.consumerOrThrow.commitSync([
-      {
-        topic,
-        partition,
-        offset: offset + 1,
-      },
-    ]);
+    await commitOffset(this.consumerOrThrow, topic, partition, offset);
   }
 
   private parseMessage(value: Buffer | null): IScheduleMessage | null {
@@ -220,10 +215,7 @@ export class ScheduleMessageConsume {
           await this.streamProducerService.send(topic, contactUpdate);
         }
       } catch (error) {
-        console.error(
-          `[ScheduleMessageConsume] Erro ao validar contato. Schedule: ${data.schedule_id}, Contact: ${data.contact_id}:`,
-          error
-        );
+        throw error;
       }
     }
 

@@ -9,6 +9,7 @@ import { createConsumer } from '@core/common/functions/createConsumer';
 import { connectConsumer } from '@core/common/functions/connectConsumer';
 import { handleConsumerError } from '@core/common/functions/handleConsumerError';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
+import { commitOffset } from '@core/common/functions/commitOffset';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { IUpdateWorker } from '@core/common/interfaces/IUpdateWorker';
 
@@ -170,12 +171,6 @@ export class WorkerConnectionConsume {
     partition: number,
     offset: number
   ): Promise<void> {
-    this.consumerOrThrow.commitSync([
-      {
-        topic,
-        partition,
-        offset: offset + 1,
-      },
-    ]);
+    await commitOffset(this.consumerOrThrow, topic, partition, offset);
   }
 }

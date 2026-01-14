@@ -60,4 +60,20 @@ export class KafkaEnvironment {
 
     return saslMechanism.toUpperCase();
   }
+
+  public get queueBufferingMaxMs(): number {
+    return 50;
+  }
+
+  public get batchNumMessages(): number {
+    return 100;
+  }
+
+  public get queueBufferingMaxMessages(): number {
+    return 100000;
+  }
+
+  public get queueBufferingMaxKbytes(): number {
+    return 1048576;
+  }
 }

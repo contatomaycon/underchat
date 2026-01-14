@@ -9,6 +9,7 @@ import { IPhoneValidationResponse } from '@core/common/interfaces/IPhoneValidati
 import Redis from 'ioredis';
 import { startHeartbeat } from '@core/common/functions/startHeartbeat';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
+import { commitOffset } from '@core/common/functions/commitOffset';
 
 @singleton()
 export class PhoneValidationResponseConsume {
@@ -103,13 +104,7 @@ export class PhoneValidationResponseConsume {
     partition: number,
     offset: number
   ): Promise<void> {
-    this.consumerOrThrow.commitSync([
-      {
-        topic,
-        partition,
-        offset: offset + 1,
-      },
-    ]);
+    await commitOffset(this.consumerOrThrow, topic, partition, offset);
   }
 
   public async close(): Promise<void> {

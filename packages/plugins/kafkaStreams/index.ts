@@ -23,6 +23,10 @@ class KafkaStreamsClient implements KafkaClient {
   private readonly password: string | undefined;
   private readonly securityProtocol: string;
   private readonly saslMechanism: string | undefined;
+  private readonly queueBufferingMaxMs: number;
+  private readonly batchNumMessages: number;
+  private readonly queueBufferingMaxMessages: number;
+  private readonly queueBufferingMaxKbytes: number;
 
   constructor(
     broker: string,
@@ -30,7 +34,11 @@ class KafkaStreamsClient implements KafkaClient {
     username: string | undefined,
     password: string | undefined,
     securityProtocol: string,
-    saslMechanism: string | undefined
+    saslMechanism: string | undefined,
+    queueBufferingMaxMs: number,
+    batchNumMessages: number,
+    queueBufferingMaxMessages: number,
+    queueBufferingMaxKbytes: number
   ) {
     this.broker = broker;
     this.clientId = clientId;
@@ -38,6 +46,10 @@ class KafkaStreamsClient implements KafkaClient {
     this.password = password;
     this.securityProtocol = securityProtocol;
     this.saslMechanism = saslMechanism;
+    this.queueBufferingMaxMs = queueBufferingMaxMs;
+    this.batchNumMessages = batchNumMessages;
+    this.queueBufferingMaxMessages = queueBufferingMaxMessages;
+    this.queueBufferingMaxKbytes = queueBufferingMaxKbytes;
   }
 
   getBroker(): string {
@@ -85,7 +97,7 @@ class KafkaStreamsClient implements KafkaClient {
       'metadata.max.age.ms': 300000,
       'fetch.wait.max.ms': 500,
       'fetch.message.max.bytes': 1048576,
-      'fetch.min.bytes': 1,
+      'fetch.min.bytes': 128,
       'queued.min.messages': 100000,
       'queued.max.messages.kbytes': 1048576,
       ...securityConfig,
@@ -104,33 +116,35 @@ class KafkaStreamsClient implements KafkaClient {
     return new KafkaConsumer(consumerConfig, opicConf);
   }
 
-  createProducer(): Producer {
+  private getProducerConfig(): Record<string, string | number | boolean> {
     const securityConfig = this.getSecurityConfig();
 
-    return new Producer(
-      {
-        'metadata.broker.list': this.broker,
-        'client.id': this.clientId,
-        'retry.backoff.ms': 300,
-        'message.send.max.retries': 8,
-        'socket.timeout.ms': 10000,
-        'socket.keepalive.enable': true,
-        'api.version.request': true,
-        'api.version.request.timeout.ms': 10000,
-        'metadata.max.age.ms': 300000,
-        'socket.connection.setup.timeout.ms': 10000,
-        'enable.idempotence': true,
-        'max.in.flight.requests.per.connection': 5,
-        'compression.type': 'snappy',
-        'batch.num.messages': 100,
-        'queue.buffering.max.messages': 100000,
-        'queue.buffering.max.kbytes': 1048576,
-        'queue.buffering.max.ms': 5,
-        ...securityConfig,
-        dr_cb: true,
-      },
-      {}
-    );
+    return {
+      'metadata.broker.list': this.broker,
+      'client.id': this.clientId,
+      'retry.backoff.ms': 300,
+      'message.send.max.retries': 8,
+      'socket.timeout.ms': 10000,
+      'socket.keepalive.enable': true,
+      'api.version.request': true,
+      'api.version.request.timeout.ms': 10000,
+      'metadata.max.age.ms': 300000,
+      'socket.connection.setup.timeout.ms': 10000,
+      'enable.idempotence': true,
+      'max.in.flight.requests.per.connection': 5,
+      'compression.type': 'snappy',
+      'batch.num.messages': this.batchNumMessages,
+      'queue.buffering.max.messages': this.queueBufferingMaxMessages,
+      'queue.buffering.max.kbytes': this.queueBufferingMaxKbytes,
+      'queue.buffering.max.ms': this.queueBufferingMaxMs,
+      ...securityConfig,
+      dr_cb: true,
+    };
+  }
+
+  createProducer(): Producer {
+    const config = this.getProducerConfig();
+    return new Producer(config, {});
   }
 }
 
@@ -150,7 +164,11 @@ const kafkaPlugin: FastifyPluginAsync<KafkaPluginOptions> = async (
     kafkaEnvironment.kafkaUsername,
     kafkaEnvironment.kafkaPassword,
     kafkaEnvironment.securityProtocol,
-    kafkaEnvironment.saslMechanism
+    kafkaEnvironment.saslMechanism,
+    kafkaEnvironment.queueBufferingMaxMs,
+    kafkaEnvironment.batchNumMessages,
+    kafkaEnvironment.queueBufferingMaxMessages,
+    kafkaEnvironment.queueBufferingMaxKbytes
   );
 
   container.register('Kafka', { useValue: kafka });

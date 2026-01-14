@@ -14,6 +14,7 @@ import { scheduleMappings } from '@core/mappings/schedule.mappings';
 import { ScheduleStatusUpdaterRepository } from '@core/repositories/schedule/ScheduleStatusUpdater.repository';
 import { IScheduleTracker } from '@core/common/interfaces/IScheduleTracker';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
+import { commitOffset } from '@core/common/functions/commitOffset';
 
 @singleton()
 export class ScheduleStatusUpdateConsume {
@@ -129,13 +130,7 @@ export class ScheduleStatusUpdateConsume {
     partition: number,
     offset: number
   ): Promise<void> {
-    this.consumerOrThrow.commitSync([
-      {
-        topic,
-        partition,
-        offset: offset + 1,
-      },
-    ]);
+    await commitOffset(this.consumerOrThrow, topic, partition, offset);
   }
 
   private parseMessage(value: Buffer | null): IScheduleStatusUpdate | null {

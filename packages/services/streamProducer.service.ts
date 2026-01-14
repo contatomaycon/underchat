@@ -2,109 +2,201 @@ import { injectable, inject } from 'tsyringe';
 import { Producer, LibrdKafkaError } from 'node-rdkafka';
 import { KafkaClient } from '@core/plugins/kafkaStreams';
 import { toError, getErrorMessage } from '@core/common/functions/toError';
+import { ulid } from 'ulid';
+import { IPendingMessage } from '@core/common/interfaces/IPendingMessage';
 
 @injectable()
 export class StreamProducerService {
   private producer: Producer | null = null;
+  private pollingInterval: NodeJS.Timeout | null = null;
+  private pendingMessages: Map<string, IPendingMessage> = new Map();
   private static readonly MAX_RETRIES = 3;
   private static readonly INITIAL_BACKOFF_MS = 100;
+  private static readonly POLL_INTERVAL_MS = 100;
+  private static readonly DELIVERY_TIMEOUT_MS = 5000;
+  private static readonly MAX_QUEUE_FULL_RETRIES = 3;
+  private static readonly QUEUE_FULL_BACKOFF_MS = 50;
 
   constructor(@inject('Kafka') private readonly kafka: KafkaClient) {}
 
-  private async ensureProducer(): Promise<Producer> {
-    if (!this.producer) {
-      this.producer = this.kafka.createProducer();
+  private setupDeliveryReportListener(producer: Producer): void {
+    producer.on(
+      'delivery-report',
+      (err: LibrdKafkaError | null, report: any) => {
+        const correlationId = report?.opaque;
+        if (!correlationId) {
+          return;
+        }
 
-      const producer = this.producer;
-      if (!producer) {
-        throw new Error('Producer not initialized');
-      }
+        const pending = this.pendingMessages.get(correlationId);
+        if (!pending) {
+          return;
+        }
 
-      await new Promise<void>((resolve, reject) => {
-        let isResolved = false;
-        const timeout = setTimeout(() => {
-          if (!isResolved) {
-            isResolved = true;
-            this.producer = null;
-            producer.removeAllListeners();
-            try {
-              producer.disconnect(() => {});
-            } catch {}
-            const broker = this.kafka.getBroker();
-            reject(
-              new Error(
-                `Kafka producer connection timeout after 60s. Broker: ${broker}. Verifique se o Kafka está acessível e se as configurações estão corretas.`
-              )
-            );
-          }
-        }, 60000);
+        this.pendingMessages.delete(correlationId);
+        clearTimeout(pending.timeoutHandle);
 
-        const cleanup = () => {
-          if (timeout) {
-            clearTimeout(timeout);
-          }
-          producer.removeAllListeners('ready');
-          producer.removeAllListeners('event.error');
-        };
-
-        const errorHandler = (err: LibrdKafkaError) => {
-          if (!isResolved) {
-            isResolved = true;
-            cleanup();
-            this.producer = null;
-            try {
-              producer.disconnect(() => {});
-            } catch {}
-            reject(toError(err));
-          }
-        };
-
-        const readyHandler = () => {
-          if (!isResolved) {
-            isResolved = true;
-            cleanup();
-            resolve();
-          }
-        };
-
-        producer.once('ready', readyHandler);
-        producer.once('event.error', errorHandler);
-
-        producer.on('event.error', (err: LibrdKafkaError) => {
-          console.error('Kafka producer error:', err);
+        if (err) {
           if (this.isDisconnectedError(err)) {
             this.invalidateProducer();
           }
-        });
+          pending.reject(toError(err));
+          return;
+        }
 
-        producer.connect({}, (err) => {
-          if (err) {
-            if (!isResolved) {
-              isResolved = true;
-              cleanup();
-              this.producer = null;
-              reject(toError(err));
-            }
-          }
-        });
-      });
+        pending.resolve();
+      }
+    );
+  }
+
+  private startPolling(producer: Producer): void {
+    if (this.pollingInterval) {
+      return;
     }
+
+    this.pollingInterval = setInterval(() => {
+      try {
+        producer.poll();
+      } catch (error) {
+        console.error('Error during producer polling:', error);
+      }
+    }, StreamProducerService.POLL_INTERVAL_MS);
+  }
+
+  private stopPolling(): void {
+    if (!this.pollingInterval) {
+      return;
+    }
+
+    clearInterval(this.pollingInterval);
+    this.pollingInterval = null;
+  }
+
+  private async ensureProducer(): Promise<Producer> {
+    if (this.producer) {
+      return this.producer;
+    }
+
+    this.producer = this.kafka.createProducer();
+
+    const producer = this.producer;
+    if (!producer) {
+      throw new Error('Producer not initialized');
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      let isResolved = false;
+      const timeout = setTimeout(() => {
+        if (isResolved) {
+          return;
+        }
+
+        isResolved = true;
+        this.producer = null;
+        producer.removeAllListeners();
+        try {
+          producer.disconnect(() => {});
+        } catch {}
+        const broker = this.kafka.getBroker();
+        reject(
+          new Error(
+            `Kafka producer connection timeout after 60s. Broker: ${broker}. Verifique se o Kafka está acessível e se as configurações estão corretas.`
+          )
+        );
+      }, 60000);
+
+      const cleanup = () => {
+        if (timeout) {
+          clearTimeout(timeout);
+        }
+        producer.removeAllListeners('ready');
+        producer.removeAllListeners('event.error');
+      };
+
+      const errorHandler = (err: LibrdKafkaError) => {
+        if (isResolved) {
+          return;
+        }
+
+        isResolved = true;
+        cleanup();
+        this.producer = null;
+        try {
+          producer.disconnect(() => {});
+        } catch {}
+        reject(toError(err));
+      };
+
+      const readyHandler = () => {
+        if (isResolved) {
+          return;
+        }
+
+        isResolved = true;
+        cleanup();
+        this.setupDeliveryReportListener(producer);
+        this.startPolling(producer);
+        resolve();
+      };
+
+      producer.once('ready', readyHandler);
+      producer.once('event.error', errorHandler);
+
+      producer.on('event.error', (err: LibrdKafkaError) => {
+        console.error('Kafka producer error:', err);
+        if (this.isDisconnectedError(err)) {
+          this.invalidateProducer();
+        }
+      });
+
+      producer.connect({}, (err) => {
+        if (!err) {
+          return;
+        }
+
+        if (isResolved) {
+          return;
+        }
+
+        isResolved = true;
+        cleanup();
+        this.producer = null;
+        reject(toError(err));
+      });
+    });
 
     return this.producer;
   }
 
   private invalidateProducer(): void {
-    if (this.producer) {
-      try {
-        const producer = this.producer;
-        producer.removeAllListeners();
-        producer.disconnect(() => {});
-      } catch {}
-      this.producer = null;
+    this.rejectAllPendingMessages(
+      new Error('Producer invalidated due to disconnection')
+    );
+    this.stopPolling();
+    if (!this.producer) {
+      return;
+    }
+
+    try {
+      const producer = this.producer;
+      producer.removeAllListeners();
+      producer.disconnect(() => {});
+    } catch {}
+    this.producer = null;
+  }
+
+  private rejectAllPendingMessages(error: Error): void {
+    const pending = Array.from(this.pendingMessages.values());
+    this.pendingMessages.clear();
+
+    for (const message of pending) {
+      clearTimeout(message.timeoutHandle);
+      message.reject(error);
     }
   }
 
   private async reconnectProducer(): Promise<Producer> {
+    this.stopPolling();
     if (this.producer) {
       try {
         const producer = this.producer;
@@ -145,20 +237,21 @@ export class StreamProducerService {
     );
   }
 
-  private getErrorMessage(err: unknown): string {
-    if (err instanceof Error) {
-      return err.message;
+  private isQueueFullError(error: unknown): boolean {
+    if (!error) {
+      return false;
     }
 
-    if (typeof err === 'string') {
-      return err;
-    }
+    const errorMessage = getErrorMessage(error);
+    const errorCode =
+      typeof error === 'object' && 'code' in error ? error.code : null;
 
-    if (typeof err === 'number') {
-      return `Flush error code: ${err}`;
-    }
-
-    return `Flush error: ${JSON.stringify(err)}`;
+    return (
+      errorCode === -184 ||
+      errorMessage.includes('Local: Queue full') ||
+      errorMessage.includes('queue full') ||
+      errorMessage.includes('ERR__QUEUE_FULL')
+    );
   }
 
   private async produceMessage(
@@ -168,54 +261,27 @@ export class StreamProducerService {
     keyBuffer: Buffer | undefined
   ): Promise<void> {
     return new Promise<void>((resolve, reject) => {
-      let isResolved = false;
-      let lastError: LibrdKafkaError | null = null;
-      let flushTimeout: NodeJS.Timeout | null = null;
-      let overallTimeout: NodeJS.Timeout | null = null;
-      let errorListenerRemoved = false;
+      const correlationId = ulid();
 
-      const FLUSH_TIMEOUT_MS = 3000;
-      const OVERALL_TIMEOUT_MS = 4000;
-
-      let cleanup: (() => void) | null = null;
-
-      const errorHandler = (err: LibrdKafkaError) => {
-        lastError = err;
-        const errorMessage = err.message || 'Unknown Kafka error';
-
-        if (
-          errorMessage.includes('broker transport failure') ||
-          errorMessage.includes('all broker connections are down')
-        ) {
-          if (!isResolved) {
-            isResolved = true;
-            if (cleanup) {
-              cleanup();
-            }
-            this.invalidateProducer();
-            reject(new Error(`Kafka connection error: ${errorMessage}`));
-          }
+      const timeoutHandle = setTimeout(() => {
+        const pending = this.pendingMessages.get(correlationId);
+        if (!pending) {
+          return;
         }
-      };
 
-      cleanup = () => {
-        if (flushTimeout) {
-          clearTimeout(flushTimeout);
-          flushTimeout = null;
-        }
-        if (overallTimeout) {
-          clearTimeout(overallTimeout);
-          overallTimeout = null;
-        }
-        if (!errorListenerRemoved) {
-          try {
-            producer.removeListener('event.error', errorHandler);
-            errorListenerRemoved = true;
-          } catch {}
-        }
-      };
+        this.pendingMessages.delete(correlationId);
+        reject(
+          new Error(
+            `Message delivery timeout after ${StreamProducerService.DELIVERY_TIMEOUT_MS}ms`
+          )
+        );
+      }, StreamProducerService.DELIVERY_TIMEOUT_MS);
 
-      producer.once('event.error', errorHandler);
+      this.pendingMessages.set(correlationId, {
+        resolve,
+        reject,
+        timeoutHandle,
+      });
 
       const produceError = producer.produce(
         topic,
@@ -223,128 +289,85 @@ export class StreamProducerService {
         value,
         keyBuffer,
         Date.now(),
-        (err: LibrdKafkaError | null) => {
-          if (isResolved) {
-            return;
-          }
-
-          if (err) {
-            isResolved = true;
-            cleanup();
-            if (this.isDisconnectedError(err)) {
-              this.invalidateProducer();
-            }
-            reject(toError(err));
-          }
-        }
+        correlationId
       );
 
-      if (produceError !== null && produceError !== undefined) {
-        if (typeof produceError === 'number' && produceError < 0) {
-          cleanup();
-          const error = new Error(
-            `Failed to produce message: librdkafka error code ${produceError}`
-          );
-          if (this.isDisconnectedError(error)) {
-            this.invalidateProducer();
-          }
-          reject(error);
-          return;
-        }
-
-        if (produceError instanceof Error) {
-          cleanup();
-          if (this.isDisconnectedError(produceError)) {
-            this.invalidateProducer();
-          }
-          reject(produceError);
-          return;
-        }
-
-        if (typeof produceError === 'string') {
-          cleanup();
-          const error = new Error(produceError);
-          if (this.isDisconnectedError(error)) {
-            this.invalidateProducer();
-          }
-          reject(error);
-          return;
-        }
-
-        if (typeof produceError === 'number' && produceError >= 0) {
-          return;
-        }
+      if (produceError === null || produceError === undefined) {
+        return;
       }
 
-      producer.poll();
+      const pending = this.pendingMessages.get(correlationId);
+      if (!pending) {
+        return;
+      }
 
-      overallTimeout = setTimeout(() => {
-        if (!isResolved) {
-          isResolved = true;
-          cleanup();
+      this.pendingMessages.delete(correlationId);
+      clearTimeout(pending.timeoutHandle);
 
-          if (lastError) {
-            reject(
-              new Error(
-                `Flush timeout: ${lastError.message || 'Kafka connection error'}`
-              )
-            );
-            return;
-          }
-
-          reject(
-            new Error(
-              `Flush timeout: message not sent within ${OVERALL_TIMEOUT_MS}ms`
-            )
-          );
+      if (typeof produceError === 'number' && produceError < 0) {
+        const error = new Error(
+          `Failed to produce message: librdkafka error code ${produceError}`
+        );
+        if (this.isDisconnectedError(error)) {
+          this.invalidateProducer();
         }
-      }, OVERALL_TIMEOUT_MS);
+        reject(error);
+        return;
+      }
 
-      flushTimeout = setTimeout(() => {
-        if (!isResolved) {
-          try {
-            producer.poll();
-          } catch {}
+      if (produceError instanceof Error) {
+        if (this.isDisconnectedError(produceError)) {
+          this.invalidateProducer();
         }
-      }, FLUSH_TIMEOUT_MS - 500);
+        reject(produceError);
+        return;
+      }
 
-      producer.flush(FLUSH_TIMEOUT_MS, (err) => {
-        if (isResolved) {
-          return;
+      if (typeof produceError === 'string') {
+        const error = new Error(produceError);
+        if (this.isDisconnectedError(error)) {
+          this.invalidateProducer();
         }
-
-        isResolved = true;
-        cleanup();
-
-        if (err) {
-          const errorMessage = this.getErrorMessage(err);
-          const isTimeoutError =
-            errorMessage.includes('timed out') ||
-            errorMessage.includes('timeout') ||
-            errorMessage.includes('Flush timeout');
-
-          if (isTimeoutError) {
-            const timeoutError = new Error(
-              `Kafka flush timeout after ${FLUSH_TIMEOUT_MS}ms`
-            );
-            if (this.isDisconnectedError(timeoutError)) {
-              this.invalidateProducer();
-            }
-            reject(timeoutError);
-            return;
-          }
-
-          const error = new Error(errorMessage);
-          if (this.isDisconnectedError(error)) {
-            this.invalidateProducer();
-          }
-          reject(error);
-          return;
-        }
-
-        resolve();
-      });
+        reject(error);
+        return;
+      }
     });
+  }
+
+  private async produceWithQueueFullRetry(
+    producer: Producer,
+    topic: string,
+    value: Buffer,
+    keyBuffer: Buffer | undefined,
+    attempt = 0
+  ): Promise<void> {
+    try {
+      await this.produceMessage(producer, topic, value, keyBuffer);
+    } catch (error) {
+      const isQueueFull = this.isQueueFullError(error);
+
+      if (!isQueueFull) {
+        throw error;
+      }
+
+      if (attempt >= StreamProducerService.MAX_QUEUE_FULL_RETRIES) {
+        throw new Error(
+          `Kafka queue full after ${StreamProducerService.MAX_QUEUE_FULL_RETRIES} retries. Backpressure exceeded.`
+        );
+      }
+
+      const backoffMs =
+        StreamProducerService.QUEUE_FULL_BACKOFF_MS * (attempt + 1);
+      await this.delay(backoffMs);
+
+      return this.produceWithQueueFullRetry(
+        producer,
+        topic,
+        value,
+        keyBuffer,
+        attempt + 1
+      );
+    }
   }
 
   private calculateBackoff(attempt: number): number {
@@ -369,7 +392,7 @@ export class StreamProducerService {
 
     try {
       const producer = await this.ensureProducer();
-      await this.produceMessage(producer, topic, value, keyBuffer);
+      await this.produceWithQueueFullRetry(producer, topic, value, keyBuffer);
     } catch (error) {
       const isDisconnected = this.isDisconnectedError(error);
 
@@ -400,19 +423,49 @@ export class StreamProducerService {
       return [];
     }
 
+    const producer = this.producer;
+
     try {
-      const producer = this.producer;
-      if (!producer) {
-        return [];
+      await new Promise<void>((resolve, reject) => {
+        const flushTimeout = setTimeout(() => {
+          reject(new Error('Flush timeout during shutdown'));
+        }, 10000);
+
+        producer.flush(10000, (err) => {
+          clearTimeout(flushTimeout);
+
+          if (err) {
+            this.rejectAllPendingMessages(
+              new Error('Producer shutdown: flush failed')
+            );
+            reject(
+              new Error(`Flush error during shutdown: ${getErrorMessage(err)}`)
+            );
+            return;
+          }
+
+          resolve();
+        });
+      });
+    } catch (error) {
+      console.error('Error during producer flush on shutdown:', error);
+      this.rejectAllPendingMessages(
+        new Error('Producer shutdown with flush error')
+      );
+    } finally {
+      this.stopPolling();
+
+      try {
+        await new Promise<void>((resolve) => {
+          producer.disconnect(resolve);
+        });
+      } catch (error) {
+        console.error('Error during producer disconnect:', error);
       }
 
-      await new Promise<void>((resolve) => {
-        producer.disconnect(resolve);
-      });
-
-      return [true];
-    } finally {
       this.producer = null;
     }
+
+    return [true];
   }
 }
