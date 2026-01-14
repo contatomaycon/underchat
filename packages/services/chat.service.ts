@@ -287,7 +287,7 @@ export class ChatService {
 
     const scriptSource = this.buildChatPatchScript();
     const scriptParams = this.buildChatPatchParams(patch, options);
-    const upsert = this.buildChatPatchUpsert(patch);
+    const upsert = this.buildChatPatchUpsert(chatId, patch);
 
     const result = await this.elasticDatabaseService.updateWithScriptOCC(
       EElasticIndex.chat,
@@ -627,8 +627,13 @@ export class ChatService {
     return params;
   }
 
-  private buildChatPatchUpsert(patch: ChatPatch): Record<string, unknown> {
-    const upsert: Record<string, unknown> = {};
+  private buildChatPatchUpsert(
+    chatId: string,
+    patch: ChatPatch
+  ): Record<string, unknown> {
+    const upsert: Record<string, unknown> = {
+      chat_id: chatId,
+    };
 
     if (patch.message_key !== null && patch.message_key !== undefined) {
       upsert.message_key = patch.message_key;
