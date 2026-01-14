@@ -597,8 +597,8 @@ export class ElasticDatabaseService {
           source: string;
           params: TParams;
         };
-        if_seq_no: number;
-        if_primary_term: number;
+        if_seq_no?: number;
+        if_primary_term?: number;
         upsert?: Record<string, unknown>;
         scripted_upsert?: boolean;
       } = {
@@ -608,13 +608,14 @@ export class ElasticDatabaseService {
           source: input.source,
           params: input.params,
         },
-        if_seq_no: meta.seqNo,
-        if_primary_term: meta.primaryTerm,
       };
 
       if (input.upsert) {
         updateParams.upsert = input.upsert;
         updateParams.scripted_upsert = input.scriptedUpsert ?? true;
+      } else {
+        updateParams.if_seq_no = meta.seqNo;
+        updateParams.if_primary_term = meta.primaryTerm;
       }
 
       const result = await this.client.update(updateParams);
