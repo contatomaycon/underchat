@@ -133,6 +133,43 @@ export class ElasticDatabaseService {
     }
   };
 
+  private async getBulkDocumentMeta(
+    index: string,
+    ids: string[]
+  ): Promise<Map<string, { seqNo: number; primaryTerm: number }>> {
+    if (ids.length === 0) {
+      return new Map();
+    }
+
+    try {
+      const docs = ids.map((id) => ({ _index: index, _id: id }));
+      const result = await this.client.mget({ docs });
+
+      const metaMap = new Map<string, { seqNo: number; primaryTerm: number }>();
+
+      for (const doc of result.docs) {
+        if ('error' in doc) {
+          continue;
+        }
+
+        if (
+          doc.found &&
+          typeof doc._seq_no === 'number' &&
+          typeof doc._primary_term === 'number'
+        ) {
+          metaMap.set(doc._id, {
+            seqNo: doc._seq_no,
+            primaryTerm: doc._primary_term,
+          });
+        }
+      }
+
+      return metaMap;
+    } catch (error) {
+      throw new Error(`Failed to get bulk document meta: ${error}`);
+    }
+  }
+
   update = async (
     index: string,
     document: Record<string, unknown>,
@@ -836,20 +873,11 @@ export class ElasticDatabaseService {
       return { updated: 0, noop: 0, failed: 0 };
     }
 
+    const ids = operations.map((op) => op.id);
+    const metaMap = await this.getBulkDocumentMeta(index, ids);
+
     const body = operations.flatMap((op) => {
-      const action: {
-        update: {
-          _index: string;
-          _id: string;
-          retry_on_conflict: number;
-        };
-      } = {
-        update: {
-          _index: index,
-          _id: op.id,
-          retry_on_conflict: op.retryOnConflict ?? 5,
-        },
-      };
+      const meta = metaMap.get(op.id);
 
       const payload: {
         script: { source: string; params: TParams };
@@ -867,7 +895,29 @@ export class ElasticDatabaseService {
         payload.upsert = op.upsert;
       }
 
-      return [action, payload];
+      if (meta) {
+        return [
+          {
+            update: {
+              _index: index,
+              _id: op.id,
+              if_seq_no: meta.seqNo,
+              if_primary_term: meta.primaryTerm,
+            },
+          },
+          payload,
+        ];
+      }
+
+      return [
+        {
+          update: {
+            _index: index,
+            _id: op.id,
+          },
+        },
+        payload,
+      ];
     });
 
     try {
@@ -933,18 +983,36 @@ export class ElasticDatabaseService {
       return true;
     }
 
-    const body = updates.flatMap((update) => [
-      { update: { _index: index, _id: update.id, retry_on_conflict: 5 } },
-      { doc: update.document, doc_as_upsert: true },
-    ]);
+    const ids = updates.map((update) => update.id);
+    const metaMap = await this.getBulkDocumentMeta(index, ids);
+
+    const body = updates.flatMap((update) => {
+      const meta = metaMap.get(update.id);
+
+      if (meta) {
+        return [
+          {
+            update: {
+              _index: index,
+              _id: update.id,
+              if_seq_no: meta.seqNo,
+              if_primary_term: meta.primaryTerm,
+            },
+          },
+          { doc: update.document },
+        ];
+      }
+
+      return [{ create: { _index: index, _id: update.id } }, update.document];
+    });
 
     try {
       const response = await this.client.bulk({ body });
 
       if (response.errors) {
         const errorMessages = response.items
-          .filter((item: any) => item.update?.error)
-          .map((item: any) => item.update.error)
+          .filter((item: any) => (item.update || item.create)?.error)
+          .map((item: any) => (item.update || item.create)?.error)
           .slice(0, 5);
 
         throw new Error(

@@ -432,42 +432,21 @@ export class ScheduleStatusUpdateConsume {
         ctx._source = [:];
       }
       
-      def currentEpoch = ctx._source.updated_at_epoch_millis != null 
-        ? ctx._source.updated_at_epoch_millis 
-        : 0;
-      
       def currentSort = ctx._source.last_event_sort_key != null 
         ? ctx._source.last_event_sort_key 
         : '';
       
-      def eventEpoch = params.event_time_epoch_millis;
       def eventSort = params.last_event_sort_key;
       
-      if (eventEpoch < currentEpoch) {
+      if (eventSort.compareTo(currentSort) <= 0) {
         ctx.op = 'noop';
         return;
       }
       
-      if (eventEpoch > currentEpoch) {
-        ctx._source.status = params.status;
-        ctx._source.updated_at = params.event_time_iso;
-        ctx._source.updated_at_epoch_millis = params.event_time_epoch_millis;
-        ctx._source.last_event_sort_key = params.last_event_sort_key;
-        return;
-      }
-      
-      if (eventEpoch == currentEpoch) {
-        if (eventSort.compareTo(currentSort) <= 0) {
-          ctx.op = 'noop';
-          return;
-        }
-        
-        ctx._source.status = params.status;
-        ctx._source.updated_at = params.event_time_iso;
-        ctx._source.updated_at_epoch_millis = params.event_time_epoch_millis;
-        ctx._source.last_event_sort_key = params.last_event_sort_key;
-        return;
-      }
+      ctx._source.status = params.status;
+      ctx._source.updated_at = params.event_time_iso;
+      ctx._source.updated_at_epoch_millis = params.event_time_epoch_millis;
+      ctx._source.last_event_sort_key = params.last_event_sort_key;
     `;
 
     await this.elasticDatabaseService.updateWithScriptOCC(
