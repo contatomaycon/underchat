@@ -1379,17 +1379,30 @@ export const useChatStore = defineStore('chat', {
         }
 
         if (data.data) {
+          const isActiveChat = this.activeChat?.chat_id === chatId;
+
           this.addChat(data.data);
 
-          if (this.activeChat?.chat_id === chatId) {
-            this.activeChat = {
-              ...this.activeChat,
-              status: data.data.status,
+          if (isActiveChat) {
+            const input: ListChatsResult = {
+              chat_id: data.data.chat_id,
+              summary: data.data.summary,
+              account: data.data.account,
+              worker: data.data.worker,
+              sector: data.data.sector,
               user: data.data.user,
+              contact: data.data.contact,
+              photo: data.data.photo,
+              name: data.data.name,
+              phone: data.data.phone,
+              status: data.data.status,
+              date: data.data.date,
               started_at: data.data.started_at,
               closed_at: data.data.closed_at,
               label: data.data.label ?? null,
             };
+
+            this.activeChat = this.createUpdatedActiveChat(input, true);
           }
         }
 
