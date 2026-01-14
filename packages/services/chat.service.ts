@@ -23,6 +23,7 @@ import {
   ChatPatch,
   ChatPatchOptions,
 } from '@core/common/interfaces/IChatPatch';
+import { metricsCount } from '@core/plugins/telemetry/sentry';
 
 type ElasticHit<T> = {
   _source?: T;
@@ -1153,9 +1154,15 @@ export class ChatService {
         { source: scriptSource, params: scriptParams, upsert },
         {
           upsert: true,
-          maxRetries: 5,
+          maxRetries: 12,
         }
       );
+
+    if (result === 'conflict') {
+      metricsCount('chat.summary.update.conflict', 1, {
+        chat_id: chatId,
+      });
+    }
 
     return result === 'updated' || result === 'created' || result === 'noop';
   };

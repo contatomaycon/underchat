@@ -10,6 +10,7 @@ import type {
   IElasticBulkResponse,
   IElasticBulkUpdateItem,
 } from '@core/common/interfaces/IElasticBulk';
+import { metricsCount } from '@core/plugins/telemetry/sentry';
 
 @injectable()
 export class ElasticDatabaseService {
@@ -176,23 +177,56 @@ export class ElasticDatabaseService {
     id: string,
     retryOnConflict?: number
   ): Promise<boolean> => {
-    try {
-      const result = await this.client.update({
-        index,
-        id,
-        doc: document,
-        upsert: document,
-        retry_on_conflict: retryOnConflict ?? 5,
-      });
+    const maxRetries = retryOnConflict ?? 5;
+    let attempt = 0;
 
-      return (
-        result.result === 'updated' ||
-        result.result === 'created' ||
-        result.result === 'noop'
-      );
-    } catch (error) {
-      throw new Error(`Failed to update document with ID: ${error}`);
+    while (attempt < maxRetries) {
+      try {
+        const meta = await this.getDocumentMeta(index, id);
+
+        if (!meta) {
+          const createResult = await this.tryCreateDocument(
+            index,
+            id,
+            document
+          );
+
+          if (createResult === 'created') {
+            return true;
+          }
+
+          attempt++;
+          continue;
+        }
+
+        const updateResult = await this.tryUpdateWithMeta(
+          index,
+          id,
+          document,
+          meta,
+          document
+        );
+
+        if (updateResult === 'conflict') {
+          attempt++;
+          continue;
+        }
+
+        return (
+          updateResult === 'updated' ||
+          updateResult === 'created' ||
+          updateResult === 'noop'
+        );
+      } catch (error) {
+        if (attempt >= maxRetries - 1) {
+          throw new Error(`Failed to update document with ID: ${error}`);
+        }
+
+        attempt++;
+      }
     }
+
+    return false;
   };
 
   private async tryCreateDocument<T extends Record<string, unknown>>(
@@ -231,7 +265,8 @@ export class ElasticDatabaseService {
     index: string,
     id: string,
     doc: T,
-    meta: { seqNo: number; primaryTerm: number }
+    meta: { seqNo: number; primaryTerm: number },
+    upsert?: T
   ): Promise<'updated' | 'created' | 'noop' | 'conflict'> {
     try {
       const updateParams: {
@@ -240,6 +275,7 @@ export class ElasticDatabaseService {
         doc: T;
         if_seq_no: number;
         if_primary_term: number;
+        upsert?: T;
       } = {
         index,
         id,
@@ -247,6 +283,10 @@ export class ElasticDatabaseService {
         if_seq_no: meta.seqNo,
         if_primary_term: meta.primaryTerm,
       };
+
+      if (upsert) {
+        updateParams.upsert = upsert;
+      }
 
       const result = await this.client.update(updateParams);
 
@@ -650,12 +690,22 @@ export class ElasticDatabaseService {
         );
 
         if (updateResult !== 'conflict') {
+          if (attempt > 0) {
+            metricsCount('elastic.update.script.occ.retry', attempt, {
+              index,
+              result: updateResult,
+            });
+          }
           return updateResult;
         }
 
         attempt++;
       } catch (error) {
         if (attempt >= maxRetries - 1) {
+          metricsCount('elastic.update.script.occ.max_retries_exceeded', 1, {
+            index,
+            max_retries: maxRetries,
+          });
           throw new Error(
             `Failed to update with script OCC after retries: ${error}`
           );
@@ -664,6 +714,11 @@ export class ElasticDatabaseService {
         attempt++;
       }
     }
+
+    metricsCount('elastic.update.script.occ.conflict_after_retries', 1, {
+      index,
+      max_retries: maxRetries,
+    });
 
     return 'conflict';
   };
@@ -1010,55 +1065,131 @@ export class ElasticDatabaseService {
     }
   };
 
+  private processBulkUpdateResponse(
+    response: IElasticBulkResponse,
+    updates: Array<{ id: string; document: object }>
+  ): {
+    failedUpdates: Array<{ id: string; document: object }>;
+    errorMessages: string[];
+  } {
+    const failedUpdates: Array<{ id: string; document: object }> = [];
+    const errorMessages: string[] = [];
+
+    for (let i = 0; i < response.items.length; i++) {
+      const item = response.items[i];
+      const updateItem = item as IElasticBulkUpdateItem;
+      const createItem = item as IElasticBulkCreateItem;
+
+      if (updateItem.update?.error) {
+        if (updateItem.update.status === 409) {
+          failedUpdates.push(updates[i]);
+          continue;
+        }
+
+        if (errorMessages.length < 5) {
+          errorMessages.push(
+            `${updateItem.update.error.type}: ${updateItem.update.error.reason}`
+          );
+        }
+        continue;
+      }
+
+      if (createItem.create?.error) {
+        if (createItem.create.status === 409) {
+          failedUpdates.push(updates[i]);
+          continue;
+        }
+
+        if (errorMessages.length < 5) {
+          errorMessages.push(
+            `${createItem.create.error.type}: ${createItem.create.error.reason}`
+          );
+        }
+      }
+    }
+
+    return { failedUpdates, errorMessages };
+  }
+
   bulkUpdateFields = async (
     index: string,
-    updates: Array<{ id: string; document: object }>
+    updates: Array<{ id: string; document: object }>,
+    options?: { maxRetries?: number }
   ): Promise<boolean> => {
     if (updates.length === 0) {
       return true;
     }
 
-    const ids = updates.map((update) => update.id);
-    const metaMap = await this.getBulkDocumentMeta(index, ids);
+    const maxRetries = options?.maxRetries ?? 5;
+    let remainingUpdates = [...updates];
+    let attempt = 0;
 
-    const body = updates.flatMap((update) => {
-      const meta = metaMap.get(update.id);
+    while (remainingUpdates.length > 0 && attempt < maxRetries) {
+      const ids = remainingUpdates.map((update) => update.id);
+      const metaMap = await this.getBulkDocumentMeta(index, ids);
 
-      if (meta) {
-        return [
-          {
-            update: {
-              _index: index,
-              _id: update.id,
-              if_seq_no: meta.seqNo,
-              if_primary_term: meta.primaryTerm,
+      const body = remainingUpdates.flatMap((update) => {
+        const meta = metaMap.get(update.id);
+
+        if (meta) {
+          return [
+            {
+              update: {
+                _index: index,
+                _id: update.id,
+                if_seq_no: meta.seqNo,
+                if_primary_term: meta.primaryTerm,
+              },
             },
-          },
-          { doc: update.document },
-        ];
-      }
+            { doc: update.document },
+          ];
+        }
 
-      return [{ create: { _index: index, _id: update.id } }, update.document];
-    });
+        return [{ create: { _index: index, _id: update.id } }, update.document];
+      });
 
-    try {
-      const response = await this.client.bulk({ body });
+      try {
+        const response = (await this.client.bulk({
+          body,
+        })) as IElasticBulkResponse;
 
-      if (response.errors) {
-        const errorMessages = response.items
-          .filter((item: any) => (item.update || item.create)?.error)
-          .map((item: any) => (item.update || item.create)?.error)
-          .slice(0, 5);
+        if (!response.errors) {
+          return true;
+        }
 
-        throw new Error(
-          `Bulk update fields failed: ${JSON.stringify(errorMessages)}`
+        const { failedUpdates, errorMessages } = this.processBulkUpdateResponse(
+          response,
+          remainingUpdates
         );
-      }
 
-      return true;
-    } catch (error) {
-      throw new Error(`Failed to bulk update fields: ${error}`);
+        if (errorMessages.length > 0) {
+          throw new Error(
+            `Bulk update fields failed: ${JSON.stringify(errorMessages)}`
+          );
+        }
+
+        if (failedUpdates.length === 0) {
+          return true;
+        }
+
+        remainingUpdates = failedUpdates;
+        attempt++;
+      } catch (error) {
+        if (attempt >= maxRetries - 1) {
+          throw new Error(`Failed to bulk update fields: ${error}`);
+        }
+
+        attempt++;
+      }
     }
+
+    if (remainingUpdates.length > 0) {
+      throw new Error(
+        `Bulk update fields failed: ${remainingUpdates.length} documents could not be updated after ${maxRetries} retries`
+      );
+    }
+
+    return true;
   };
 
   deleteIndex = async (index: string): Promise<boolean> => {

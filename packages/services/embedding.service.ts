@@ -13,7 +13,7 @@ import { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import { IChat } from '@core/common/interfaces/IChat';
 import {
   IElasticBulkResponse,
-  IElasticBulkCreateItem,
+  IElasticBulkUpdateItem,
 } from '@core/common/interfaces/IElasticBulk';
 import { aiAgentPromptEmbeddingMappings } from '@core/mappings/aiAgentPromptEmbedding.mappings';
 import { chatHistoryEmbeddingMappings } from '@core/mappings/chatHistoryEmbedding.mappings';
@@ -26,8 +26,6 @@ import { buildCandidates } from '@core/common/functions/buildCandidatesBR';
 type ElasticHit<T> = {
   _source?: T;
 };
-
-type EmbeddingWritePolicy = 'skip_on_conflict' | 'update_if_newer';
 
 @injectable()
 export class EmbeddingService {
@@ -359,171 +357,44 @@ export class EmbeddingService {
     return createHash('sha256').update(payload).digest('hex').substring(0, 32);
   }
 
-  private buildBulkCreateBody(
+  private buildBulkUpsertBody(
     documents: IEmbeddingDocument[]
   ): Array<Record<string, unknown>> {
-    const body: Array<Record<string, unknown> | IEmbeddingDocument> = [];
+    const body: Array<Record<string, unknown>> = [];
 
     for (const doc of documents) {
       const documentId = this.buildEmbeddingDocumentId(doc);
+      const scriptSource = `
+        if (ctx._source != null && ctx._source.containsKey('content_fingerprint') && ctx._source.content_fingerprint == params.content_fingerprint) {
+          ctx.op = 'noop';
+        } else {
+          ctx._source = params.doc;
+        }
+      `;
+
       body.push({
-        create: {
+        update: {
           _index: this.indexName,
           _id: documentId,
         },
       });
-      body.push(doc);
+      body.push({
+        script: {
+          source: scriptSource,
+          params: {
+            doc: doc,
+            content_fingerprint: doc.content_fingerprint,
+          },
+        },
+        scripted_upsert: true,
+        upsert: doc,
+      });
     }
 
-    return body as Array<Record<string, unknown>>;
+    return body;
   }
 
-  private extractConflictIds(response: IElasticBulkResponse): string[] {
-    const conflictIds: string[] = [];
-
-    for (const item of response.items) {
-      const createItem = item as IElasticBulkCreateItem;
-      if (!createItem.create) {
-        continue;
-      }
-
-      if (createItem.create.error && createItem.create.status === 409) {
-        if (createItem.create._id) {
-          conflictIds.push(createItem.create._id);
-        }
-      }
-    }
-
-    return conflictIds;
-  }
-
-  private async fetchExistingFingerprints(
-    ids: string[]
-  ): Promise<Map<string, IEmbeddingDocument>> {
-    if (ids.length === 0) {
-      return new Map();
-    }
-
-    const docs: Array<{ _id: string; _source: IEmbeddingDocument }> = [];
-
-    for (const id of ids) {
-      try {
-        const result = await this.elasticClient.get({
-          index: this.indexName,
-          id,
-          _source: [
-            'content_fingerprint',
-            'embedding_model',
-            'updated_at_epoch_millis',
-          ],
-        });
-        if (result._source) {
-          docs.push({ _id: id, _source: result._source as IEmbeddingDocument });
-        }
-      } catch (error: unknown) {
-        if (
-          typeof error === 'object' &&
-          error !== null &&
-          'statusCode' in error &&
-          error.statusCode === 404
-        ) {
-          continue;
-        }
-      }
-    }
-
-    const map = new Map<string, IEmbeddingDocument>();
-    for (const doc of docs) {
-      map.set(doc._id, doc._source);
-    }
-
-    return map;
-  }
-
-  private async handleEmbeddingConflicts(
-    conflicts: string[],
-    documentsById: Map<string, IEmbeddingDocument>,
-    policy: EmbeddingWritePolicy
-  ): Promise<number> {
-    if (conflicts.length === 0) {
-      return 0;
-    }
-
-    const existingDocs = await this.fetchExistingFingerprints(conflicts);
-    let divergenceCount = 0;
-
-    for (const conflictId of conflicts) {
-      const newDoc = documentsById.get(conflictId);
-      const existingDoc = existingDocs.get(conflictId);
-
-      if (!newDoc) {
-        continue;
-      }
-
-      if (!existingDoc) {
-        continue;
-      }
-
-      const existingFingerprint = existingDoc.content_fingerprint;
-      const newFingerprint = newDoc.content_fingerprint;
-
-      if (existingFingerprint === newFingerprint) {
-        continue;
-      }
-
-      divergenceCount++;
-
-      if (policy === 'update_if_newer') {
-        const existingEpoch = existingDoc.updated_at_epoch_millis ?? 0;
-        const newEpoch = newDoc.updated_at_epoch_millis ?? 0;
-
-        if (newEpoch > existingEpoch) {
-          await this.updateEmbeddingDocument(conflictId, newDoc);
-        }
-      }
-    }
-
-    return divergenceCount;
-  }
-
-  private async updateEmbeddingDocument(
-    id: string,
-    doc: IEmbeddingDocument
-  ): Promise<void> {
-    const scriptSource = `
-      ctx._source.embedding = params.embedding;
-      ctx._source.content_fingerprint = params.content_fingerprint;
-      ctx._source.embedding_model = params.embedding_model;
-      ctx._source.updated_at = params.updated_at;
-      ctx._source.updated_at_epoch_millis = params.updated_at_epoch_millis;
-      ctx._source.has_embedding = params.has_embedding;
-    `;
-
-    const scriptParams = {
-      embedding: doc.embedding,
-      content_fingerprint: doc.content_fingerprint,
-      embedding_model: doc.embedding_model,
-      updated_at: doc.updated_at,
-      updated_at_epoch_millis: doc.updated_at_epoch_millis,
-      has_embedding: doc.has_embedding,
-    };
-
-    await this.elasticDatabaseService.updateWithScriptOCC(
-      this.indexName,
-      id,
-      {
-        source: scriptSource,
-        params: scriptParams,
-      },
-      {
-        maxRetries: 10,
-      }
-    );
-  }
-
-  private throwIfBulkHasNonConflictErrors(
-    response: IElasticBulkResponse
-  ): void {
+  private throwIfBulkHasErrors(response: IElasticBulkResponse): void {
     if (!response.errors) {
       return;
     }
@@ -532,20 +403,16 @@ export class EmbeddingService {
     const errorMessages: string[] = [];
 
     for (const item of response.items) {
-      const createItem = item as IElasticBulkCreateItem;
-      if (!createItem.create) {
+      const updateItem = item as IElasticBulkUpdateItem;
+      if (!updateItem.update) {
         continue;
       }
 
-      if (createItem.create.error) {
-        if (createItem.create.status === 409) {
-          continue;
-        }
-
+      if (updateItem.update.error) {
         failed++;
         if (errorMessages.length < 5) {
           errorMessages.push(
-            `${createItem.create.error.type}: ${createItem.create.error.reason}`
+            `${updateItem.update.error.type}: ${updateItem.update.error.reason}`
           );
         }
       }
@@ -553,7 +420,7 @@ export class EmbeddingService {
 
     if (failed > 0) {
       throw new Error(
-        `Bulk index failed: ${failed} errors. ${JSON.stringify(errorMessages)}`
+        `Bulk upsert failed: ${failed} errors. ${JSON.stringify(errorMessages)}`
       );
     }
   }
@@ -562,7 +429,6 @@ export class EmbeddingService {
     documents: IEmbeddingDocument[],
     options?: {
       refresh?: boolean | 'wait_for';
-      writePolicy?: EmbeddingWritePolicy;
     }
   ): Promise<void> {
     if (documents.length === 0) {
@@ -570,15 +436,8 @@ export class EmbeddingService {
     }
 
     const refreshOption = options?.refresh ?? false;
-    const writePolicy = options?.writePolicy ?? 'skip_on_conflict';
 
-    const documentsById = new Map<string, IEmbeddingDocument>();
-    for (const doc of documents) {
-      const documentId = this.buildEmbeddingDocumentId(doc);
-      documentsById.set(documentId, doc);
-    }
-
-    const body = this.buildBulkCreateBody(documents);
+    const body = this.buildBulkUpsertBody(documents);
     const bulkOptions: { refresh?: boolean | 'wait_for' } = {};
     if (refreshOption !== false) {
       bulkOptions.refresh = refreshOption;
@@ -589,16 +448,7 @@ export class EmbeddingService {
       ...bulkOptions,
     })) as IElasticBulkResponse;
 
-    this.throwIfBulkHasNonConflictErrors(response);
-
-    if (response.errors) {
-      const conflictIds = this.extractConflictIds(response);
-      await this.handleEmbeddingConflicts(
-        conflictIds,
-        documentsById,
-        writePolicy
-      );
-    }
+    this.throwIfBulkHasErrors(response);
   }
 
   async processAndStoreEmbeddings(

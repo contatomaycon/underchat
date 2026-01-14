@@ -71,6 +71,7 @@ import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 import { commitOffset } from '@core/common/functions/commitOffset';
 import { PushNotificationService } from '@core/services/pushNotification.service';
 import { EContactIgnore } from '@core/common/enums/EContactIgnore';
+import { withLock } from '@core/common/functions/withLock';
 
 @singleton()
 export class MessageUpsertConsume {
@@ -1662,47 +1663,55 @@ export class MessageUpsertConsume {
       const incrementUnreadCount = !isFromMe;
       const lastDateEpochMillis = new Date(inputChatMessage.date).getTime();
 
-      await this.chatService.updateChatSummaryAtomically(
-        getChat.chat_id,
-        messageText,
-        inputChatMessage.date,
-        lastDateEpochMillis,
-        inputChatMessage.message_id,
-        inputChatMessage.message_id,
-        incrementUnreadCount
+      const lockKey = `chat-summary:${getChat.chat_id}`;
+      await withLock(
+        this.redis,
+        lockKey,
+        async () => {
+          await this.chatService.updateChatSummaryAtomically(
+            getChat.chat_id,
+            messageText,
+            inputChatMessage.date,
+            lastDateEpochMillis,
+            inputChatMessage.message_id,
+            inputChatMessage.message_id,
+            incrementUnreadCount
+          );
+
+          const updatedChat = await this.chatService.findChatByChatId(
+            data.account_id,
+            getChat.chat_id
+          );
+
+          if (!updatedChat) {
+            return;
+          }
+
+          const channelAccountId = updatedChat.account.id;
+
+          await Promise.all([
+            this.centrifugoService.publishSub(
+              chatAccountCentrifugo(channelAccountId),
+              updatedChat
+            ),
+            this.centrifugoService.publishSub(
+              chatQueueAccountCentrifugo(channelAccountId),
+              updatedChat
+            ),
+          ]);
+
+          if (inputChatMessage.type_user !== ETypeUserChat.operator) {
+            const isFromMe = inputChatMessage.message_key?.from_me === true;
+
+            if (!isFromMe) {
+              await this.pushNotificationService
+                .sendNotificationForChatMessage(updatedChat, inputChatMessage)
+                .catch(() => {});
+            }
+          }
+        },
+        { ttlMs: 20000 }
       );
-
-      const updatedChat = await this.chatService.findChatByChatId(
-        data.account_id,
-        getChat.chat_id
-      );
-
-      if (!updatedChat) {
-        return true;
-      }
-
-      const channelAccountId = updatedChat.account.id;
-
-      await Promise.all([
-        this.centrifugoService.publishSub(
-          chatAccountCentrifugo(channelAccountId),
-          updatedChat
-        ),
-        this.centrifugoService.publishSub(
-          chatQueueAccountCentrifugo(channelAccountId),
-          updatedChat
-        ),
-      ]);
-
-      if (inputChatMessage.type_user !== ETypeUserChat.operator) {
-        const isFromMe = inputChatMessage.message_key?.from_me === true;
-
-        if (!isFromMe) {
-          await this.pushNotificationService
-            .sendNotificationForChatMessage(updatedChat, inputChatMessage)
-            .catch(() => {});
-        }
-      }
 
       return true;
     } catch {
