@@ -14,6 +14,7 @@ import { ListMessageChatsQuery } from '@core/schema/chat/listMessageChats/reques
 import { useChatNotifications } from '@/composables/useChatNotifications';
 
 let isInitialized = false;
+let initializationPromise: Promise<void> | null = null;
 let subscriptions: Array<{
   channel: string;
   unsubscribe: () => Promise<void>;
@@ -75,8 +76,7 @@ export const useChatSocket = () => {
   const handleMessageEvent = async (
     messageData: IChatMessage
   ): Promise<void> => {
-    const isActiveChat =
-      isChatRoute() && chatStore.activeChat?.chat_id === messageData.chat_id;
+    const isActiveChat = chatStore.activeChat?.chat_id === messageData.chat_id;
 
     if (isActiveChat) {
       chatStore.addMessageActiveChat(messageData);
@@ -131,79 +131,90 @@ export const useChatSocket = () => {
       return;
     }
 
+    if (initializationPromise) {
+      return initializationPromise;
+    }
+
     const accountId = chatStore.user.account_id;
 
-    try {
-      await onMessage(
-        chatAccountCentrifugo(accountId),
-        async (data: IChatMessage | IChatTyping | IChat | any) => {
-          if ('type' in data && data.type === 'typing') {
+    initializationPromise = (async () => {
+      try {
+        const chatAccountChannel = chatAccountCentrifugo(accountId);
+        const chatQueueChannel = chatQueueAccountCentrifugo(accountId);
+
+        await Promise.all([
+          unsubscribe(chatAccountChannel),
+          unsubscribe(chatQueueChannel),
+        ]);
+
+        await onMessage(
+          chatAccountChannel,
+          async (data: IChatMessage | IChatTyping | IChat | any) => {
+            if ('type' in data && data.type === 'typing') {
+              globalThis.dispatchEvent(
+                new CustomEvent('chat-typing', { detail: data })
+              );
+              return;
+            }
+
+            if ('message_id' in data) {
+              await handleMessageEvent(data as IChatMessage);
+              return;
+            }
+          }
+        );
+
+        await onMessage(chatQueueChannel, async (data: IChat) => {
+          console.log('data', data);
+
+          await handleChatUpdateEvent(data);
+
+          if (isChatRoute()) {
             globalThis.dispatchEvent(
-              new CustomEvent('chat-typing', { detail: data })
+              new CustomEvent('chat-update', { detail: data })
             );
-            return;
           }
 
-          if ('message_id' in data) {
-            handleMessageEvent(data as IChatMessage);
-            if (isChatRoute()) {
-              globalThis.dispatchEvent(
-                new CustomEvent('chat-message', { detail: data })
-              );
-            }
-            return;
+          if (
+            chatStore.user?.account_id &&
+            chatStore.activeChat?.chat_id === data.chat_id &&
+            data.status === EChatStatus.in_chat
+          ) {
+            globalThis.dispatchEvent(
+              new CustomEvent('chat-queue-update', { detail: data })
+            );
           }
+        });
 
-          if ('chat_id' in data && !('message_id' in data)) {
-            await handleChatUpdateEvent(data as IChat);
-            if (isChatRoute()) {
-              globalThis.dispatchEvent(
-                new CustomEvent('chat-update', { detail: data })
-              );
-            }
+        subscriptions.push(
+          {
+            channel: chatAccountChannel,
+            unsubscribe: () => unsubscribe(chatAccountChannel),
+          },
+          {
+            channel: chatQueueChannel,
+            unsubscribe: () => unsubscribe(chatQueueChannel),
           }
-        }
-      );
+        );
 
-      await onMessage(chatQueueAccountCentrifugo(accountId), (data: IChat) => {
-        const isActiveChat =
-          isChatRoute() && chatStore.activeChat?.chat_id === data.chat_id;
+        isInitialized = true;
+      } catch (error) {
+        console.error('Erro ao inicializar socket de chat:', error);
+        throw error;
+      } finally {
+        initializationPromise = null;
+      }
+    })();
 
-        chatStore.addChat(data);
-
-        if (isActiveChat && data.status === EChatStatus.in_chat) {
-          chatStore.clearActiveChatUnreadCountLocally();
-        }
-
-        if (
-          chatStore.user?.account_id &&
-          chatStore.activeChat?.chat_id === data.chat_id &&
-          data.status === EChatStatus.in_chat
-        ) {
-          globalThis.dispatchEvent(
-            new CustomEvent('chat-queue-update', { detail: data })
-          );
-        }
-      });
-
-      subscriptions.push(
-        {
-          channel: chatAccountCentrifugo(accountId),
-          unsubscribe: () => unsubscribe(chatAccountCentrifugo(accountId)),
-        },
-        {
-          channel: chatQueueAccountCentrifugo(accountId),
-          unsubscribe: () => unsubscribe(chatQueueAccountCentrifugo(accountId)),
-        }
-      );
-
-      isInitialized = true;
-    } catch (error) {
-      console.error('Erro ao inicializar socket de chat:', error);
-    }
+    return initializationPromise;
   };
 
   const cleanup = async () => {
+    if (initializationPromise) {
+      await initializationPromise.catch(() => {});
+      initializationPromise = null;
+    }
+
     const unsubscribePromises = subscriptions.map((sub) =>
       sub.unsubscribe().catch((error) => {
         console.error('Erro ao fazer unsubscribe:', error);

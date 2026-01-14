@@ -97,6 +97,7 @@ export const onMessage = async (
   const sub =
     client.getSubscription(channel) ?? client.newSubscription(channel);
 
+  sub.removeAllListeners('publication');
   sub.on('publication', (ctx) => handler(ctx.data, ctx));
 
   if (sub.state !== SubscriptionState.Subscribed) {
