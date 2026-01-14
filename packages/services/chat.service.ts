@@ -1263,7 +1263,7 @@ export class ChatService {
         changed = true;
       }
       
-      if (params.increment_unread_count && params.processed_message_id != null) {
+      if (params.processed_message_id != null && params.increment_unread_count) {
         def lastProcessed = summary.last_processed_message_id;
         if (lastProcessed == null || lastProcessed != params.processed_message_id) {
           summary.unread_count = summary.unread_count + 1;
@@ -1332,13 +1332,21 @@ export class ChatService {
 
       if (!chat) return false;
 
-      const summary: IChat['summary'] = {
-        last_message: chat.summary?.last_message ?? null,
-        last_date: chat.summary?.last_date ?? new Date().toISOString(),
-        unread_count: 0,
-      };
+      const lastMessage = chat.summary?.last_message ?? null;
+      const lastDate = chat.summary?.last_date ?? new Date().toISOString();
+      const lastDateEpochMillis =
+        chat.summary?.last_date_epoch_millis ?? new Date(lastDate).getTime();
+      const lastMessageId = chat.summary?.last_message_id ?? null;
 
-      return await this.updateChatSummary(chatId, summary);
+      return await this.updateChatSummaryAtomically(
+        chatId,
+        lastMessage,
+        lastDate,
+        lastDateEpochMillis,
+        lastMessageId,
+        null,
+        false
+      );
     } catch (error) {
       console.error('Error clearing chat summary:', error);
       return false;
