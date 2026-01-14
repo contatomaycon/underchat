@@ -37,7 +37,7 @@ export class MessageStatusService {
       return null;
     }
 
-    const updated = await this.updateSummaryAtomically(
+    const updated = await this.updateSummaryAtomicallyWithRetry(
       message.message_id,
       message.summary,
       patch
@@ -159,6 +159,79 @@ export class MessageStatusService {
     }
 
     return null;
+  }
+
+  private async updateSummaryAtomicallyWithRetry(
+    messageId: string,
+    currentSummary: IChatMessage['summary'],
+    patch: MessageSummaryPatch,
+    maxRetries = 5
+  ): Promise<boolean> {
+    return this.attemptUpdateWithRetry(
+      messageId,
+      currentSummary,
+      patch,
+      0,
+      maxRetries
+    );
+  }
+
+  private async attemptUpdateWithRetry(
+    messageId: string,
+    summary: IChatMessage['summary'],
+    patch: MessageSummaryPatch,
+    attempt: number,
+    maxRetries: number
+  ): Promise<boolean> {
+    if (attempt >= maxRetries) {
+      return false;
+    }
+
+    const updated = await this.updateSummaryAtomically(
+      messageId,
+      summary,
+      patch
+    );
+    if (updated) {
+      return true;
+    }
+
+    if (attempt >= maxRetries - 1) {
+      return false;
+    }
+
+    const backoffMs = Math.min(100 * Math.pow(2, attempt), 1000);
+    await new Promise((resolve) => setTimeout(resolve, backoffMs));
+
+    const refreshedMessage = await this.findMessageByMessageId(messageId);
+    const nextSummary = refreshedMessage?.summary ?? summary;
+
+    return this.attemptUpdateWithRetry(
+      messageId,
+      nextSummary,
+      patch,
+      attempt + 1,
+      maxRetries
+    );
+  }
+
+  private async findMessageByMessageId(
+    messageId: string
+  ): Promise<IChatMessage | null> {
+    const queryElastic = {
+      size: 1,
+      query: {
+        term: { message_id: messageId },
+      },
+    };
+
+    const result = await this.elasticDatabaseService.select<IChatMessage>(
+      EElasticIndex.message,
+      queryElastic
+    );
+
+    const hit = result?.hits?.hits?.[0] as ElasticHit<IChatMessage> | undefined;
+    return hit?._source ?? null;
   }
 
   private async updateSummaryAtomically(
