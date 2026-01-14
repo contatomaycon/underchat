@@ -892,7 +892,7 @@ export class EmbeddingService {
 
       const body = documents.flatMap((doc) => [
         {
-          index: {
+          create: {
             _index: this.chatHistoryIndexName,
             _id: `${accountId}:${chatId}:${aiAgentId}:${doc.message_id}`,
           },
@@ -1037,7 +1037,7 @@ export class EmbeddingService {
 
     const body = documents.flatMap((doc) => [
       {
-        index: {
+        create: {
           _index: this.chatHistoryIndexName,
           _id: `${accountId}:${chatId}:${aiAgentId}:${doc.message_id}`,
         },

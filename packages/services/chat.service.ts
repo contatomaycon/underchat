@@ -119,7 +119,6 @@ export class ChatService {
   createMessageIdempotent = async (
     messageChat: IChatMessage,
     accountId: string,
-    workerId: string,
     messageId: string
   ): Promise<{ created: boolean; conflict: boolean; id: string }> => {
     const mappings = mensageMappings();
@@ -131,16 +130,6 @@ export class ChatService {
 
     if (!indicesResult || !messageChat) {
       return { created: false, conflict: false, id: '' };
-    }
-
-    const existing = await this.findMessageByWhatsAppId(accountId, messageId);
-
-    if (existing.message && existing.documentId) {
-      return {
-        created: false,
-        conflict: true,
-        id: existing.documentId,
-      };
     }
 
     const documentId = buildMessageDocumentId(accountId, messageId);
@@ -1214,7 +1203,7 @@ export class ChatService {
         { source: scriptSource, params: scriptParams, upsert },
         {
           upsert: true,
-          maxRetries: 20,
+          maxRetries: 5,
         }
       );
 

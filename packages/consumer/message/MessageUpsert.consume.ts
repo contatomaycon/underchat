@@ -1667,7 +1667,6 @@ export class MessageUpsertConsume {
       const createResult = await this.chatService.createMessageIdempotent(
         inputChatMessage,
         data.account_id,
-        data.worker_id,
         messageId
       );
 
