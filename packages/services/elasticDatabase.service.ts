@@ -73,12 +73,8 @@ export class ElasticDatabaseService {
         id,
         doc: document,
         doc_as_upsert: true,
-        refresh: 'wait_for',
+        retry_on_conflict: retryOnConflict ?? 5,
       };
-
-      if (retryOnConflict !== undefined) {
-        updateParams.retry_on_conflict = retryOnConflict;
-      }
 
       const result = await this.client.update(updateParams);
 
@@ -117,7 +113,7 @@ export class ElasticDatabaseService {
         upsert: {
           [field]: [value],
         },
-        refresh: 'wait_for',
+        retry_on_conflict: 5,
       });
 
       return (
@@ -147,12 +143,8 @@ export class ElasticDatabaseService {
             value,
           },
         },
-        refresh: 'wait_for',
+        retry_on_conflict: retryOnConflict ?? 5,
       };
-
-      if (retryOnConflict !== undefined) {
-        updateParams.retry_on_conflict = retryOnConflict;
-      }
 
       const result = await this.client.update(updateParams);
 
@@ -176,7 +168,7 @@ export class ElasticDatabaseService {
       if (!id) return [];
 
       return [
-        { update: { _index: index, _id: id } },
+        { update: { _index: index, _id: id, retry_on_conflict: 5 } },
         { doc, doc_as_upsert: true },
       ];
     });
@@ -188,9 +180,51 @@ export class ElasticDatabaseService {
     try {
       const response = await this.client.bulk({ body });
 
-      return !response.errors;
+      if (response.errors) {
+        const errorMessages = response.items
+          .filter((item: any) => item.update?.error)
+          .map((item: any) => item.update.error)
+          .slice(0, 5);
+
+        throw new Error(`Bulk update failed: ${JSON.stringify(errorMessages)}`);
+      }
+
+      return true;
     } catch (error) {
       throw new Error(`Failed to bulk update documents: ${error}`);
+    }
+  };
+
+  bulkUpdateFields = async (
+    index: string,
+    updates: Array<{ id: string; document: object }>
+  ): Promise<boolean> => {
+    if (updates.length === 0) {
+      return true;
+    }
+
+    const body = updates.flatMap((update) => [
+      { update: { _index: index, _id: update.id, retry_on_conflict: 5 } },
+      { doc: update.document, doc_as_upsert: true },
+    ]);
+
+    try {
+      const response = await this.client.bulk({ body });
+
+      if (response.errors) {
+        const errorMessages = response.items
+          .filter((item: any) => item.update?.error)
+          .map((item: any) => item.update.error)
+          .slice(0, 5);
+
+        throw new Error(
+          `Bulk update fields failed: ${JSON.stringify(errorMessages)}`
+        );
+      }
+
+      return true;
+    } catch (error) {
+      throw new Error(`Failed to bulk update fields: ${error}`);
     }
   };
 
