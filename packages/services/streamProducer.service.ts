@@ -703,10 +703,15 @@ export class StreamProducerService {
           this.signalPendingDrain();
         }
 
-        const queueFullError: any = new Error('Local: Queue full');
-        queueFullError.code = -184;
+        const error = new Error(
+          `Failed to produce message to topic "${topic}": unexpected false return from produce()`
+        );
 
-        reject(queueFullError);
+        if (this.isDisconnectedError(error)) {
+          this.invalidateProducerForReconnect(error);
+        }
+
+        reject(error);
         return;
       }
 
@@ -1114,7 +1119,9 @@ export class StreamProducerService {
           0,
           producer
         )
-          .then(message.resolve)
+          .then(() => {
+            message.resolve();
+          })
           .catch((err) => {
             message.reject(toError(err));
           });
