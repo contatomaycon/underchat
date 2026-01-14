@@ -386,12 +386,14 @@ export class ScheduleStatusUpdateConsume {
     return Date.now();
   }
 
-  private buildLastEventId(
+  private buildLastEventSortKey(
+    eventTimeEpochMillis: number,
     partition: number,
-    offset: number,
-    messageId: string
+    offset: number
   ): string {
-    return `${partition}:${offset}:${messageId}`;
+    const partitionPadded = partition.toString().padStart(10, '0');
+    const offsetPadded = offset.toString().padStart(20, '0');
+    return `${eventTimeEpochMillis}:${partitionPadded}:${offsetPadded}`;
   }
 
   private async updateMessageStatusInElasticsearch(
@@ -405,24 +407,24 @@ export class ScheduleStatusUpdateConsume {
 
     const eventTimeEpochMillis = this.extractEventTimestamp(message, data);
     const eventTimeIso = new Date(eventTimeEpochMillis).toISOString();
-    const lastEventId = this.buildLastEventId(
+    const lastEventSortKey = this.buildLastEventSortKey(
+      eventTimeEpochMillis,
       message.partition,
-      message.offset,
-      data.message_id
+      message.offset
     );
 
     const params: ScheduleStatusUpdateScriptParams = {
       status: data.status,
       event_time_iso: eventTimeIso,
       event_time_epoch_millis: eventTimeEpochMillis,
-      last_event_id: lastEventId,
+      last_event_sort_key: lastEventSortKey,
     };
 
     const baseline: ScheduleDocumentBaseline = {
       status: data.status,
       updated_at: eventTimeIso,
       updated_at_epoch_millis: eventTimeEpochMillis,
-      last_event_id: lastEventId,
+      last_event_sort_key: lastEventSortKey,
     };
 
     const scriptSource = `
@@ -434,30 +436,38 @@ export class ScheduleStatusUpdateConsume {
         ? ctx._source.updated_at_epoch_millis 
         : 0;
       
+      def currentSort = ctx._source.last_event_sort_key != null 
+        ? ctx._source.last_event_sort_key 
+        : '';
+      
       def eventEpoch = params.event_time_epoch_millis;
+      def eventSort = params.last_event_sort_key;
       
       if (eventEpoch < currentEpoch) {
         ctx.op = 'noop';
         return;
       }
       
+      if (eventEpoch > currentEpoch) {
+        ctx._source.status = params.status;
+        ctx._source.updated_at = params.event_time_iso;
+        ctx._source.updated_at_epoch_millis = params.event_time_epoch_millis;
+        ctx._source.last_event_sort_key = params.last_event_sort_key;
+        return;
+      }
+      
       if (eventEpoch == currentEpoch) {
-        def currentEventId = ctx._source.last_event_id != null 
-          ? ctx._source.last_event_id 
-          : '';
-        
-        def eventId = params.last_event_id;
-        
-        if (eventId.compareTo(currentEventId) <= 0) {
+        if (eventSort.compareTo(currentSort) <= 0) {
           ctx.op = 'noop';
           return;
         }
+        
+        ctx._source.status = params.status;
+        ctx._source.updated_at = params.event_time_iso;
+        ctx._source.updated_at_epoch_millis = params.event_time_epoch_millis;
+        ctx._source.last_event_sort_key = params.last_event_sort_key;
+        return;
       }
-      
-      ctx._source.status = params.status;
-      ctx._source.updated_at = params.event_time_iso;
-      ctx._source.updated_at_epoch_millis = params.event_time_epoch_millis;
-      ctx._source.last_event_id = params.last_event_id;
     `;
 
     await this.elasticDatabaseService.updateWithScript(
@@ -466,10 +476,11 @@ export class ScheduleStatusUpdateConsume {
       {
         source: scriptSource,
         params,
+        upsert: baseline,
+        scriptedUpsert: true,
       },
       {
-        retry_on_conflict: 10,
-        upsert: baseline,
+        retryOnConflict: 10,
       }
     );
   }

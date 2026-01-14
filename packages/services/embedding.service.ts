@@ -27,6 +27,8 @@ type ElasticHit<T> = {
   _source?: T;
 };
 
+type EmbeddingWritePolicy = 'skip_on_conflict' | 'update_if_newer';
+
 @injectable()
 export class EmbeddingService {
   private readonly indexName = EElasticIndex.ai_agent_prompt_embedding;
@@ -298,25 +300,58 @@ export class EmbeddingService {
     };
   }
 
+  private computeContentFingerprint(
+    chunkText: string,
+    sourceId: string,
+    embeddingModel: string | null,
+    embeddingDimensions: number
+  ): string {
+    const normalizedText = chunkText.trim().toLowerCase();
+    const payload = JSON.stringify({
+      text: normalizedText,
+      source_id: sourceId,
+      embedding_model: embeddingModel || '',
+      embedding_dimensions: embeddingDimensions,
+    });
+
+    return createHash('sha256').update(payload).digest('hex');
+  }
+
   private createEmbeddingDocuments(
     chunks: IChunk[],
     embeddings: number[][] | null,
     accountId: string,
     aiAgentId: string,
-    aiAgentPromptId: string
+    aiAgentPromptId: string,
+    embeddingModel: string | null
   ): IEmbeddingDocument[] {
     const now = new Date().toISOString();
+    const nowEpochMillis = Date.now();
 
-    return chunks.map((chunk, idx) => ({
-      account_id: accountId,
-      ai_agent_id: aiAgentId,
-      ai_agent_prompt_id: aiAgentPromptId,
-      chunk_index: chunk.index,
-      chunk_text: chunk.text,
-      embedding: embeddings ? embeddings[idx] : null,
-      has_embedding: embeddings !== null,
-      created_at: now,
-    }));
+    return chunks.map((chunk, idx) => {
+      const sourceId = `${accountId}:${aiAgentId}:${aiAgentPromptId}:${chunk.index}`;
+      const contentFingerprint = this.computeContentFingerprint(
+        chunk.text,
+        sourceId,
+        embeddingModel,
+        this.embeddingDimensions
+      );
+
+      return {
+        account_id: accountId,
+        ai_agent_id: aiAgentId,
+        ai_agent_prompt_id: aiAgentPromptId,
+        chunk_index: chunk.index,
+        chunk_text: chunk.text,
+        embedding: embeddings ? embeddings[idx] : null,
+        has_embedding: embeddings !== null,
+        created_at: now,
+        content_fingerprint: contentFingerprint,
+        embedding_model: embeddingModel,
+        updated_at: now,
+        updated_at_epoch_millis: nowEpochMillis,
+      };
+    });
   }
 
   private buildEmbeddingDocumentId(doc: IEmbeddingDocument): string {
@@ -343,7 +378,152 @@ export class EmbeddingService {
     return body as Array<Record<string, unknown>>;
   }
 
-  private throwIfBulkHasErrors(response: IElasticBulkResponse): void {
+  private extractConflictIds(response: IElasticBulkResponse): string[] {
+    const conflictIds: string[] = [];
+
+    for (const item of response.items) {
+      const createItem = item as IElasticBulkCreateItem;
+      if (!createItem.create) {
+        continue;
+      }
+
+      if (createItem.create.error && createItem.create.status === 409) {
+        if (createItem.create._id) {
+          conflictIds.push(createItem.create._id);
+        }
+      }
+    }
+
+    return conflictIds;
+  }
+
+  private async fetchExistingFingerprints(
+    ids: string[]
+  ): Promise<Map<string, IEmbeddingDocument>> {
+    if (ids.length === 0) {
+      return new Map();
+    }
+
+    const docs: Array<{ _id: string; _source: IEmbeddingDocument }> = [];
+
+    for (const id of ids) {
+      try {
+        const result = await this.elasticClient.get({
+          index: this.indexName,
+          id,
+          _source: [
+            'content_fingerprint',
+            'embedding_model',
+            'updated_at_epoch_millis',
+          ],
+        });
+        if (result._source) {
+          docs.push({ _id: id, _source: result._source as IEmbeddingDocument });
+        }
+      } catch (error: unknown) {
+        if (
+          typeof error === 'object' &&
+          error !== null &&
+          'statusCode' in error &&
+          error.statusCode === 404
+        ) {
+          continue;
+        }
+      }
+    }
+
+    const map = new Map<string, IEmbeddingDocument>();
+    for (const doc of docs) {
+      map.set(doc._id, doc._source);
+    }
+
+    return map;
+  }
+
+  private async handleEmbeddingConflicts(
+    conflicts: string[],
+    documentsById: Map<string, IEmbeddingDocument>,
+    policy: EmbeddingWritePolicy
+  ): Promise<number> {
+    if (conflicts.length === 0) {
+      return 0;
+    }
+
+    const existingDocs = await this.fetchExistingFingerprints(conflicts);
+    let divergenceCount = 0;
+
+    for (const conflictId of conflicts) {
+      const newDoc = documentsById.get(conflictId);
+      const existingDoc = existingDocs.get(conflictId);
+
+      if (!newDoc) {
+        continue;
+      }
+
+      if (!existingDoc) {
+        continue;
+      }
+
+      const existingFingerprint = existingDoc.content_fingerprint;
+      const newFingerprint = newDoc.content_fingerprint;
+
+      if (existingFingerprint === newFingerprint) {
+        continue;
+      }
+
+      divergenceCount++;
+
+      if (policy === 'update_if_newer') {
+        const existingEpoch = existingDoc.updated_at_epoch_millis ?? 0;
+        const newEpoch = newDoc.updated_at_epoch_millis ?? 0;
+
+        if (newEpoch > existingEpoch) {
+          await this.updateEmbeddingDocument(conflictId, newDoc);
+        }
+      }
+    }
+
+    return divergenceCount;
+  }
+
+  private async updateEmbeddingDocument(
+    id: string,
+    doc: IEmbeddingDocument
+  ): Promise<void> {
+    const scriptSource = `
+      ctx._source.embedding = params.embedding;
+      ctx._source.content_fingerprint = params.content_fingerprint;
+      ctx._source.embedding_model = params.embedding_model;
+      ctx._source.updated_at = params.updated_at;
+      ctx._source.updated_at_epoch_millis = params.updated_at_epoch_millis;
+      ctx._source.has_embedding = params.has_embedding;
+    `;
+
+    const scriptParams = {
+      embedding: doc.embedding,
+      content_fingerprint: doc.content_fingerprint,
+      embedding_model: doc.embedding_model,
+      updated_at: doc.updated_at,
+      updated_at_epoch_millis: doc.updated_at_epoch_millis,
+      has_embedding: doc.has_embedding,
+    };
+
+    await this.elasticDatabaseService.updateWithScript(
+      this.indexName,
+      id,
+      {
+        source: scriptSource,
+        params: scriptParams,
+      },
+      {
+        retryOnConflict: 10,
+      }
+    );
+  }
+
+  private throwIfBulkHasNonConflictErrors(
+    response: IElasticBulkResponse
+  ): void {
     if (!response.errors) {
       return;
     }
@@ -379,19 +559,46 @@ export class EmbeddingService {
   }
 
   private async bulkIndexDocuments(
-    documents: IEmbeddingDocument[]
+    documents: IEmbeddingDocument[],
+    options?: {
+      refresh?: boolean | 'wait_for';
+      writePolicy?: EmbeddingWritePolicy;
+    }
   ): Promise<void> {
     if (documents.length === 0) {
       return;
     }
 
+    const refreshOption = options?.refresh ?? false;
+    const writePolicy = options?.writePolicy ?? 'skip_on_conflict';
+
+    const documentsById = new Map<string, IEmbeddingDocument>();
+    for (const doc of documents) {
+      const documentId = this.buildEmbeddingDocumentId(doc);
+      documentsById.set(documentId, doc);
+    }
+
     const body = this.buildBulkCreateBody(documents);
+    const bulkOptions: { refresh?: boolean | 'wait_for' } = {};
+    if (refreshOption !== false) {
+      bulkOptions.refresh = refreshOption;
+    }
+
     const response = (await this.elasticClient.bulk({
       body,
-      refresh: 'wait_for',
+      ...bulkOptions,
     })) as IElasticBulkResponse;
 
-    this.throwIfBulkHasErrors(response);
+    this.throwIfBulkHasNonConflictErrors(response);
+
+    if (response.errors) {
+      const conflictIds = this.extractConflictIds(response);
+      await this.handleEmbeddingConflicts(
+        conflictIds,
+        documentsById,
+        writePolicy
+      );
+    }
   }
 
   async processAndStoreEmbeddings(
@@ -435,7 +642,8 @@ export class EmbeddingService {
         null,
         accountId,
         aiAgentId,
-        aiAgentPromptId
+        aiAgentPromptId,
+        null
       );
 
       await this.bulkIndexDocuments(documents);
@@ -478,7 +686,8 @@ export class EmbeddingService {
       embeddings,
       accountId,
       aiAgentId,
-      aiAgentPromptId
+      aiAgentPromptId,
+      aiAgent.embedding_model
     );
 
     await this.bulkIndexDocuments(documents);
@@ -1755,11 +1964,23 @@ export class EmbeddingService {
         embedded_for_ai_agents: updatedEmbeddedAgents,
       };
 
-      await this.elasticDatabaseService.update(
+      const updateResult = await this.elasticDatabaseService.updateWithOCC(
         EElasticIndex.chat,
-        updatedChat,
-        chatId
+        chatId,
+        updatedChat as unknown as Record<string, unknown>,
+        {
+          upsert: true,
+          maxRetries: 5,
+        }
       );
+
+      if (
+        updateResult !== 'updated' &&
+        updateResult !== 'created' &&
+        updateResult !== 'noop'
+      ) {
+        return false;
+      }
 
       return true;
     } catch (error) {

@@ -317,12 +317,12 @@ export class MessageStatusService {
         {
           source: scriptSource,
           params: scriptParams,
-        },
-        {
-          retry_on_conflict: 10,
           upsert: {
             summary: baseline,
           },
+        },
+        {
+          retryOnConflict: 10,
         }
       );
 

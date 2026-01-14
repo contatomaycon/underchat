@@ -25,6 +25,11 @@ import { PlanAccountService } from './planAccount.service';
 import moment from 'moment-timezone';
 import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
 import { generateProtocol } from '@core/common/functions/generateProtocol';
+import {
+  ScheduleDocument,
+  ScheduleCreateResult,
+  SchedulePatchScriptParams,
+} from '@core/common/interfaces/IScheduleDocument';
 
 @injectable()
 export class ScheduleSendService {
@@ -377,12 +382,228 @@ export class ScheduleSendService {
     };
   }
 
+  private async createScheduleIdempotent(
+    document: ScheduleDocument,
+    scheduleId: string
+  ): Promise<ScheduleCreateResult> {
+    const result = await this.elasticDatabaseService.createDocument(
+      EElasticIndex.schedule,
+      scheduleId,
+      document
+    );
+
+    return {
+      created: result === 'created',
+    };
+  }
+
+  private buildPatchScheduleMissingFieldsScript(): string {
+    return `
+      if (ctx._source == null) {
+        ctx.op = 'noop';
+        return;
+      }
+      
+      def changed = false;
+      def patch = params.patch;
+      
+      if (patch.containsKey('schedule_id') && patch.schedule_id != null) {
+        if (ctx._source.schedule_id == null) {
+          ctx._source.schedule_id = patch.schedule_id;
+          changed = true;
+        }
+      }
+      
+      if (patch.containsKey('message_key') && patch.message_key != null) {
+        if (ctx._source.message_key == null) {
+          ctx._source.message_key = patch.message_key;
+          changed = true;
+        } else {
+          def messageKey = patch.message_key;
+          if (messageKey.containsKey('remote_jid') && messageKey.remote_jid != null) {
+            if (ctx._source.message_key.remote_jid == null) {
+              ctx._source.message_key.remote_jid = messageKey.remote_jid;
+              changed = true;
+            }
+          }
+        }
+      }
+      
+      if (patch.containsKey('contact') && patch.contact != null) {
+        if (ctx._source.contact == null) {
+          ctx._source.contact = patch.contact;
+          changed = true;
+        } else {
+          def contact = patch.contact;
+          if (contact.containsKey('id') && contact.id != null) {
+            if (ctx._source.contact.id == null) {
+              ctx._source.contact.id = contact.id;
+              changed = true;
+            }
+          }
+          if (contact.containsKey('name') && contact.name != null) {
+            if (ctx._source.contact.name == null) {
+              ctx._source.contact.name = contact.name;
+              changed = true;
+            }
+          }
+          if (contact.containsKey('phone') && contact.phone != null) {
+            if (ctx._source.contact.phone == null) {
+              ctx._source.contact.phone = contact.phone;
+              changed = true;
+            }
+          }
+          if (contact.containsKey('phone_ddi') && contact.phone_ddi != null) {
+            if (ctx._source.contact.phone_ddi == null) {
+              ctx._source.contact.phone_ddi = contact.phone_ddi;
+              changed = true;
+            }
+          }
+          if (contact.containsKey('phone_partial') && contact.phone_partial != null) {
+            if (ctx._source.contact.phone_partial == null) {
+              ctx._source.contact.phone_partial = contact.phone_partial;
+              changed = true;
+            }
+          }
+        }
+      }
+      
+      if (patch.containsKey('account') && patch.account != null) {
+        if (ctx._source.account == null) {
+          ctx._source.account = patch.account;
+          changed = true;
+        } else {
+          def account = patch.account;
+          if (account.containsKey('id') && account.id != null) {
+            if (ctx._source.account.id == null) {
+              ctx._source.account.id = account.id;
+              changed = true;
+            }
+          }
+          if (account.containsKey('name') && account.name != null) {
+            if (ctx._source.account.name == null) {
+              ctx._source.account.name = account.name;
+              changed = true;
+            }
+          }
+        }
+      }
+      
+      if (patch.containsKey('worker') && patch.worker != null) {
+        if (ctx._source.worker == null) {
+          ctx._source.worker = patch.worker;
+          changed = true;
+        } else {
+          def worker = patch.worker;
+          if (worker.containsKey('id') && worker.id != null) {
+            if (ctx._source.worker.id == null) {
+              ctx._source.worker.id = worker.id;
+              changed = true;
+            }
+          }
+          if (worker.containsKey('name') && worker.name != null) {
+            if (ctx._source.worker.name == null) {
+              ctx._source.worker.name = worker.name;
+              changed = true;
+            }
+          }
+        }
+      }
+      
+      if (patch.containsKey('type') && patch.type != null) {
+        if (ctx._source.type == null) {
+          ctx._source.type = patch.type;
+          changed = true;
+        }
+      }
+      
+      if (patch.containsKey('message') && patch.message != null) {
+        if (ctx._source.message == null) {
+          ctx._source.message = patch.message;
+          changed = true;
+        }
+      }
+      
+      if (patch.containsKey('url') && patch.url != null) {
+        if (ctx._source.url == null) {
+          ctx._source.url = patch.url;
+          changed = true;
+        }
+      }
+      
+      if (patch.containsKey('send_date') && patch.send_date != null) {
+        if (ctx._source.send_date == null) {
+          ctx._source.send_date = patch.send_date;
+          changed = true;
+        }
+      }
+      
+      if (patch.containsKey('send_log') && patch.send_log != null) {
+        if (ctx._source.send_log == null) {
+          ctx._source.send_log = patch.send_log;
+          changed = true;
+        }
+      }
+      
+      if (!changed) {
+        ctx.op = 'noop';
+      }
+    `;
+  }
+
+  private buildPatchScheduleMissingFieldsParams(
+    document: ScheduleDocument
+  ): SchedulePatchScriptParams {
+    return {
+      patch: {
+        schedule_id: document.schedule_id,
+        message_key: document.message_key,
+        contact: document.contact,
+        account: document.account,
+        worker: document.worker,
+        type: document.type,
+        message: document.message,
+        url: document.url,
+        send_date: document.send_date,
+        send_log: document.send_log,
+      },
+    };
+  }
+
+  private async patchExistingScheduleMissingFields(
+    scheduleId: string,
+    patch: Partial<ScheduleDocument>
+  ): Promise<boolean> {
+    const scriptSource = this.buildPatchScheduleMissingFieldsScript();
+    const scriptParams: SchedulePatchScriptParams = {
+      patch,
+    };
+
+    const result = await this.elasticDatabaseService.updateWithScript(
+      EElasticIndex.schedule,
+      scheduleId,
+      {
+        source: scriptSource,
+        params: scriptParams,
+      },
+      {
+        retryOnConflict: 10,
+      }
+    );
+
+    return result === 'updated' || result === 'noop';
+  }
+
   private async saveToElasticsearch(
     schedule: ISchedulePendingData,
     contact: IScheduleContactValidated,
     message: IChatMessage,
     status: EScheduleStatus | string
   ): Promise<boolean> {
+    if (!message.message_id) {
+      return false;
+    }
+
     try {
       await this.elasticDatabaseService.indices(
         EElasticIndex.schedule,
@@ -391,8 +612,9 @@ export class ScheduleSendService {
 
       const phone = this.contactService.getContactPhoneDecrypted(contact.phone);
       const jid = normalizePhoneToJid(phone, contact.phone_ddi);
+      const now = new Date().toISOString();
 
-      const document = {
+      const document: ScheduleDocument = {
         id: message.message_id,
         schedule_id: schedule.schedule_id,
         message_key: {
@@ -413,20 +635,29 @@ export class ScheduleSendService {
           id: schedule.worker_id,
           name: schedule.worker_name,
         },
-        type: schedule.type,
-        message: message.content?.message || schedule.message,
+        type: schedule.type as EScheduleType,
+        message: message.content?.message || schedule.message || '',
         url: schedule.url,
         status,
         send_date: new Date(schedule.send_date).toISOString(),
         send_log: null,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
+        created_at: now,
+        updated_at: now,
       };
 
-      return this.elasticDatabaseService.update(
-        EElasticIndex.schedule,
+      const createResult = await this.createScheduleIdempotent(
         document,
         message.message_id
+      );
+
+      if (createResult.created) {
+        return true;
+      }
+
+      const patchParams = this.buildPatchScheduleMissingFieldsParams(document);
+      return await this.patchExistingScheduleMissingFields(
+        message.message_id,
+        patchParams.patch
       );
     } catch (error) {
       console.error(

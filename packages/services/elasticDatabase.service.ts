@@ -98,14 +98,55 @@ export class ElasticDatabaseService {
     }
   };
 
+  getDocumentMeta = async (
+    index: string,
+    id: string
+  ): Promise<{ seqNo: number; primaryTerm: number } | null> => {
+    try {
+      const result = await this.client.get({
+        index,
+        id,
+      });
+
+      if (
+        typeof result._seq_no === 'number' &&
+        typeof result._primary_term === 'number'
+      ) {
+        return {
+          seqNo: result._seq_no,
+          primaryTerm: result._primary_term,
+        };
+      }
+
+      return null;
+    } catch (error: unknown) {
+      if (
+        typeof error === 'object' &&
+        error !== null &&
+        'statusCode' in error &&
+        error.statusCode === 404
+      ) {
+        return null;
+      }
+
+      throw new Error(`Failed to get document meta with ID: ${error}`);
+    }
+  };
+
   update = async (
     index: string,
-    document: object,
+    document: Record<string, unknown>,
     id: string,
     retryOnConflict?: number
   ): Promise<boolean> => {
     try {
-      const updateParams: any = {
+      const updateParams: {
+        index: string;
+        id: string;
+        doc: Record<string, unknown>;
+        doc_as_upsert: boolean;
+        retry_on_conflict: number;
+      } = {
         index,
         id,
         doc: document,
@@ -123,6 +164,131 @@ export class ElasticDatabaseService {
     } catch (error) {
       throw new Error(`Failed to update document with ID: ${error}`);
     }
+  };
+
+  private async tryCreateDocument<T extends Record<string, unknown>>(
+    index: string,
+    id: string,
+    doc: T
+  ): Promise<'created' | 'conflict'> {
+    try {
+      const createResult = await this.client.index({
+        index,
+        id,
+        document: doc,
+        op_type: 'create',
+      });
+
+      if (createResult.result === 'created') {
+        return 'created';
+      }
+
+      return 'conflict';
+    } catch (createError: unknown) {
+      if (
+        typeof createError === 'object' &&
+        createError !== null &&
+        'statusCode' in createError &&
+        createError.statusCode === 409
+      ) {
+        return 'conflict';
+      }
+
+      throw createError;
+    }
+  }
+
+  private async tryUpdateWithMeta<T extends Record<string, unknown>>(
+    index: string,
+    id: string,
+    doc: T,
+    meta: { seqNo: number; primaryTerm: number }
+  ): Promise<'updated' | 'created' | 'noop' | 'conflict'> {
+    try {
+      const updateParams: {
+        index: string;
+        id: string;
+        doc: T;
+        if_seq_no: number;
+        if_primary_term: number;
+      } = {
+        index,
+        id,
+        doc,
+        if_seq_no: meta.seqNo,
+        if_primary_term: meta.primaryTerm,
+      };
+
+      const result = await this.client.update(updateParams);
+
+      if (result.result === 'updated') {
+        return 'updated';
+      }
+
+      if (result.result === 'created') {
+        return 'created';
+      }
+
+      return 'noop';
+    } catch (updateError: unknown) {
+      if (
+        typeof updateError === 'object' &&
+        updateError !== null &&
+        'statusCode' in updateError &&
+        updateError.statusCode === 409
+      ) {
+        return 'conflict';
+      }
+
+      throw updateError;
+    }
+  }
+
+  updateWithOCC = async <T extends Record<string, unknown>>(
+    index: string,
+    id: string,
+    doc: T,
+    options?: { upsert?: boolean; maxRetries?: number }
+  ): Promise<'updated' | 'created' | 'noop' | 'conflict' | 'not_found'> => {
+    const maxRetries = options?.maxRetries ?? 5;
+    let attempt = 0;
+
+    while (attempt < maxRetries) {
+      try {
+        const meta = await this.getDocumentMeta(index, id);
+
+        if (!meta) {
+          if (options?.upsert !== true) {
+            return 'not_found';
+          }
+
+          const createResult = await this.tryCreateDocument(index, id, doc);
+
+          if (createResult === 'created') {
+            return 'created';
+          }
+
+          attempt++;
+          continue;
+        }
+
+        const updateResult = await this.tryUpdateWithMeta(index, id, doc, meta);
+
+        if (updateResult !== 'conflict') {
+          return updateResult;
+        }
+
+        attempt++;
+      } catch (error) {
+        if (attempt >= maxRetries - 1) {
+          throw new Error(`Failed to update with OCC after retries: ${error}`);
+        }
+
+        attempt++;
+      }
+    }
+
+    return 'conflict';
   };
 
   updateArrayField = async (
@@ -198,8 +364,13 @@ export class ElasticDatabaseService {
   updateWithScript = async <TParams extends Record<string, unknown>>(
     index: string,
     id: string,
-    script: { source: string; params: TParams },
-    options?: { retry_on_conflict?: number; upsert?: Record<string, unknown> }
+    input: {
+      source: string;
+      params: TParams;
+      upsert?: Record<string, unknown>;
+      scriptedUpsert?: boolean;
+    },
+    options?: { retryOnConflict?: number }
   ): Promise<'updated' | 'created' | 'noop'> => {
     try {
       const updateParams: {
@@ -216,15 +387,15 @@ export class ElasticDatabaseService {
         index,
         id,
         script: {
-          source: script.source,
-          params: script.params,
+          source: input.source,
+          params: input.params,
         },
-        retry_on_conflict: options?.retry_on_conflict ?? 10,
+        retry_on_conflict: options?.retryOnConflict ?? 10,
       };
 
-      if (options?.upsert) {
-        updateParams.upsert = options.upsert;
-        updateParams.scripted_upsert = true;
+      if (input.upsert) {
+        updateParams.upsert = input.upsert;
+        updateParams.scripted_upsert = input.scriptedUpsert ?? true;
       }
 
       const result = await this.client.update(updateParams);
@@ -243,30 +414,143 @@ export class ElasticDatabaseService {
     }
   };
 
-  updateByQueryWithScript = async (
+  updateByQueryWithScript = async <TParams extends object>(
     index: string,
     query: QueryDslQueryContainer,
-    scriptSource: string,
-    scriptParams?: Record<string, any>
-  ): Promise<{ updated: number }> => {
-    try {
-      const updateParams: any = {
+    script: { source: string; params: TParams },
+    options?: {
+      conflicts?: 'abort' | 'proceed';
+      refresh?: boolean;
+      waitForCompletion?: boolean;
+      requestsPerSecond?: number;
+      slices?: number | 'auto';
+      maxRetries?: number;
+    }
+  ): Promise<{
+    updated: number;
+    total: number;
+    versionConflicts: number;
+    failures: Array<{ id?: string; cause: string }>;
+  }> => {
+    const conflictsPolicy = options?.conflicts ?? 'abort';
+    const refresh = options?.refresh ?? false;
+    const waitForCompletion = options?.waitForCompletion ?? true;
+    const maxRetries = options?.maxRetries ?? 0;
+
+    const executeUpdateByQuery = async () => {
+      const updateParams: {
+        index: string;
+        query: QueryDslQueryContainer;
+        script: { source: string; params: TParams };
+        conflicts: 'abort' | 'proceed';
+        refresh: boolean;
+        wait_for_completion?: boolean;
+        requests_per_second?: number;
+        slices?: number | 'auto';
+      } = {
         index,
         query,
         script: {
-          source: scriptSource,
-          params: scriptParams ?? {},
+          source: script.source,
+          params: script.params,
         },
-        conflicts: 'proceed',
-        refresh: false,
+        conflicts: conflictsPolicy,
+        refresh,
       };
 
-      const result = await this.client.updateByQuery(updateParams);
+      if (waitForCompletion !== undefined) {
+        updateParams.wait_for_completion = waitForCompletion;
+      }
+
+      if (options?.requestsPerSecond !== undefined) {
+        updateParams.requests_per_second = options.requestsPerSecond;
+      }
+
+      if (options?.slices !== undefined) {
+        updateParams.slices = options.slices;
+      }
+
+      return this.client.updateByQuery(updateParams);
+    };
+
+    try {
+      let result = await executeUpdateByQuery();
+
+      const versionConflicts = result.version_conflicts ?? 0;
+
+      if (
+        conflictsPolicy === 'proceed' &&
+        versionConflicts > 0 &&
+        maxRetries > 0
+      ) {
+        let retryCount = 0;
+        let currentResult = result;
+
+        while (
+          (currentResult.version_conflicts ?? 0) > 0 &&
+          retryCount < maxRetries
+        ) {
+          retryCount++;
+          currentResult = await executeUpdateByQuery();
+          result = currentResult;
+
+          if ((currentResult.version_conflicts ?? 0) === 0) {
+            break;
+          }
+        }
+      }
+
+      const finalVersionConflicts = result.version_conflicts ?? 0;
+
+      if (conflictsPolicy === 'abort' && finalVersionConflicts > 0) {
+        throw new Error(
+          `Update by query failed with ${finalVersionConflicts} version conflicts. Updated: ${result.updated}, Total: ${result.total}`
+        );
+      }
+
+      const failures: Array<{ id?: string; cause: string }> = [];
+
+      if (result.failures) {
+        for (const failure of result.failures) {
+          let causeReason = 'Unknown error';
+
+          if (
+            typeof failure.cause === 'object' &&
+            failure.cause !== null &&
+            'reason' in failure.cause
+          ) {
+            const reason = failure.cause.reason;
+            causeReason = typeof reason === 'string' ? reason : 'Unknown error';
+          }
+
+          if (
+            typeof failure.cause === 'object' &&
+            failure.cause !== null &&
+            'type' in failure.cause &&
+            causeReason === 'Unknown error'
+          ) {
+            const type = failure.cause.type;
+            causeReason = typeof type === 'string' ? type : 'Unknown error';
+          }
+
+          failures.push({
+            id: failure.id,
+            cause: causeReason,
+          });
+        }
+      }
 
       return {
         updated: result.updated ?? 0,
+        total: result.total ?? 0,
+        versionConflicts: result.version_conflicts ?? 0,
+        failures,
       };
-    } catch (error) {
+    } catch (error: unknown) {
+      if (error instanceof Error) {
+        throw error;
+      }
+
       throw new Error(`Failed to update by query with script: ${error}`);
     }
   };

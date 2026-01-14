@@ -33,6 +33,18 @@ export const aiAgentPromptEmbeddingMappings = (embeddingDimensions: number) => {
         created_at: {
           type: 'date',
         },
+        content_fingerprint: {
+          type: 'keyword',
+        },
+        embedding_model: {
+          type: 'keyword',
+        },
+        updated_at: {
+          type: 'date',
+        },
+        updated_at_epoch_millis: {
+          type: 'long',
+        },
       },
     },
   };

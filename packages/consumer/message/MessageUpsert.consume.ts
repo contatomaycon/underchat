@@ -1611,8 +1611,17 @@ export class MessageUpsertConsume {
         messageId
       );
 
-      if (!createResult.created) {
+      if (!createResult.created && !createResult.conflict) {
         return false;
+      }
+
+      if (createResult.conflict) {
+        await this.chatService.patchExistingMessageMissingFields(
+          createResult.id,
+          inputChatMessage
+        );
+
+        return true;
       }
 
       await this.centrifugoChatPublish(inputChatMessage);
@@ -1627,13 +1636,16 @@ export class MessageUpsertConsume {
 
       const messageText = extractMessageTextFromContent(content);
       const incrementUnreadCount = !isFromMe;
+      const lastDateEpochMillis = new Date(inputChatMessage.date).getTime();
 
       await this.chatService.updateChatSummaryAtomically(
         getChat.chat_id,
         messageText,
         inputChatMessage.date,
-        incrementUnreadCount,
-        inputChatMessage.message_id
+        lastDateEpochMillis,
+        inputChatMessage.message_id,
+        inputChatMessage.message_id,
+        incrementUnreadCount
       );
 
       const updatedChat = await this.chatService.findChatByChatId(

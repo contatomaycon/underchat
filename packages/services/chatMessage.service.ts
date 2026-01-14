@@ -297,34 +297,18 @@ export class ChatMessageService {
     }
 
     const messageText = extractMessageTextFromContent(message.content);
-    const isOperatorMessage = message.type_user === ETypeUserChat.operator;
+    const lastDateEpochMillis = new Date(message.date).getTime();
+    const incrementUnreadCount = false;
 
-    const chat = await this.chatService.findChatByChatId(
-      message.account.id,
-      message.chat_id
-    );
-
-    if (!chat) {
-      return false;
-    }
-
-    const currentUnreadCount = chat.summary?.unread_count ?? 0;
-    const newUnreadCount = isOperatorMessage ? 0 : currentUnreadCount;
-
-    const summaryUpdate: IChat['summary'] = {
-      last_message: messageText,
-      last_date: message.date,
-      unread_count: newUnreadCount,
-    };
-
-    const summaryUpdated = await this.chatService.updateChatSummary(
+    await this.chatService.updateChatSummaryAtomically(
       message.chat_id,
-      summaryUpdate
+      messageText,
+      message.date,
+      lastDateEpochMillis,
+      message.message_id,
+      message.message_id,
+      incrementUnreadCount
     );
-
-    if (!summaryUpdated) {
-      return false;
-    }
 
     const updatedChat = await this.chatService.findChatByChatId(
       message.account.id,

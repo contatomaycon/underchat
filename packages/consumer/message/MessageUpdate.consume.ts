@@ -3,10 +3,12 @@ import { KafkaConsumer } from 'node-rdkafka';
 import { KafkaClient } from '@core/plugins/kafkaStreams';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { IUpdateMessage } from '@core/common/interfaces/IUpdateMessage';
-import { IChat } from '@core/common/interfaces/IChat';
 import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
-import { IChatMessage } from '@core/common/interfaces/IChatMessage';
+import {
+  IChatMessage,
+  IMessageKey,
+} from '@core/common/interfaces/IChatMessage';
 import Redis from 'ioredis';
 import { remoteJid } from '@core/common/functions/remoteJid';
 import { startHeartbeat } from '@core/common/functions/startHeartbeat';
@@ -18,6 +20,11 @@ import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 import { commitOffset } from '@core/common/functions/commitOffset';
 import { createChatCacheKeyChatId } from '@core/common/functions/createCacheKey';
 import { MessageKeyUpdateScriptParams } from '@core/common/interfaces/IMessageKeyUpdateScript';
+
+type MessageKeyPatch = Pick<
+  IMessageKey,
+  'remote_jid' | 'id' | 'from_me' | 'participant' | 'is_view_once'
+>;
 
 @singleton()
 export class MessageUpdateConsume {
@@ -63,40 +70,11 @@ export class MessageUpdateConsume {
     }
   }
 
-  private async updateChatIfMissingRemoteJid(
-    data: IUpdateMessage
-  ): Promise<void> {
-    const hasRemote = Boolean(data.data?.message_key?.remote_jid);
-    if (hasRemote) {
-      return;
-    }
-
-    const jid = remoteJid(data.message?.key);
-    const messageKey: IChat['message_key'] = {
-      remote_jid: jid,
-    };
-
-    await this.elasticDatabaseService.update(
-      EElasticIndex.chat,
-      { message_key: messageKey },
-      data.data?.chat_id ?? ''
-    );
-
-    const cacheKey = this.cacheChatKey(
-      data.data?.account?.id ?? '',
-      data.data?.chat_id ?? ''
-    );
-
-    await this.redis.del(cacheKey);
-  }
-
-  private buildMessageKeyUpdate(
-    data: IUpdateMessage
-  ): Partial<IChatMessage['message_key']> {
+  private buildMessageKeyPatch(data: IUpdateMessage): MessageKeyPatch {
     const jid = remoteJid(data.message?.key);
     const key = data.message?.key as WAMessageKey | undefined;
 
-    const patch: Partial<IChatMessage['message_key']> = {};
+    const patch: MessageKeyPatch = {} as MessageKeyPatch;
 
     if (jid) {
       patch.remote_jid = jid;
@@ -177,11 +155,52 @@ export class MessageUpdateConsume {
   }
 
   private buildMessageKeyUpdateScriptParams(
-    messageKeyUpdate: Partial<IChatMessage['message_key']>
+    patch: MessageKeyPatch
   ): MessageKeyUpdateScriptParams {
     return {
-      patch: messageKeyUpdate,
+      patch: patch as Partial<IChatMessage['message_key']>,
     };
+  }
+
+  private async updateChatIfMissingRemoteJid(
+    data: IUpdateMessage
+  ): Promise<void> {
+    const chatId = data.data?.chat_id;
+    if (!chatId) {
+      return;
+    }
+
+    const patch = this.buildMessageKeyPatch(data);
+    const hasAnyValue = Boolean(
+      patch.remote_jid ||
+      patch.id ||
+      patch.from_me !== undefined ||
+      patch.participant ||
+      patch.is_view_once !== undefined
+    );
+
+    if (!hasAnyValue) {
+      return;
+    }
+
+    const scriptSource = this.buildMessageKeyUpdateScriptSource();
+    const scriptParams = this.buildMessageKeyUpdateScriptParams(patch);
+
+    await this.elasticDatabaseService.updateWithScript(
+      EElasticIndex.chat,
+      chatId,
+      {
+        source: scriptSource,
+        params: scriptParams,
+      },
+      {
+        retryOnConflict: 10,
+      }
+    );
+
+    const cacheKey = this.cacheChatKey(data.data?.account?.id ?? '', chatId);
+
+    await this.redis.del(cacheKey);
   }
 
   private async updateMessageIfMissingKey(data: IUpdateMessage): Promise<void> {
@@ -190,21 +209,21 @@ export class MessageUpdateConsume {
       return;
     }
 
-    const hasId = Boolean(data.data?.message_key?.id);
-    const hasRemote = Boolean(data.data?.message_key?.remote_jid);
-    if (hasId && hasRemote) {
+    const patch = this.buildMessageKeyPatch(data);
+    const hasAnyValue = Boolean(
+      patch.remote_jid ||
+      patch.id ||
+      patch.from_me !== undefined ||
+      patch.participant ||
+      patch.is_view_once !== undefined
+    );
+
+    if (!hasAnyValue) {
       return;
     }
 
-    const jid = remoteJid(data.message?.key);
-    if (!jid && !data.message?.key?.id) {
-      return;
-    }
-
-    const messageKeyUpdate = this.buildMessageKeyUpdate(data);
     const scriptSource = this.buildMessageKeyUpdateScriptSource();
-    const scriptParams =
-      this.buildMessageKeyUpdateScriptParams(messageKeyUpdate);
+    const scriptParams = this.buildMessageKeyUpdateScriptParams(patch);
 
     await this.elasticDatabaseService.updateWithScript(
       EElasticIndex.message,
@@ -214,7 +233,7 @@ export class MessageUpdateConsume {
         params: scriptParams,
       },
       {
-        retry_on_conflict: 10,
+        retryOnConflict: 10,
       }
     );
   }

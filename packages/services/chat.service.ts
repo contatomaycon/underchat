@@ -15,9 +15,13 @@ import { ListQuickMessageTemplatesRequest } from '@core/schema/chat/listQuickMes
 import {
   IChatSummary,
   ChatSummaryBaseline,
-  ChatSummaryScriptParams,
+  ChatSummaryAtomicUpdateParams,
 } from '@core/common/interfaces/IChatSummaryUpdate';
 import { buildMessageDocumentId } from '@core/common/functions/buildMessageDocumentId';
+import {
+  ChatPatch,
+  ChatPatchOptions,
+} from '@core/common/interfaces/IChatPatch';
 
 type ElasticHit<T> = {
   _source?: T;
@@ -43,10 +47,20 @@ export class ChatService {
       return false;
     }
 
-    return this.elasticDatabaseService.update(
+    const updateResult = await this.elasticDatabaseService.updateWithOCC(
       EElasticIndex.message,
-      messageChat,
-      messageChat.message_id
+      messageChat.message_id,
+      messageChat as unknown as Record<string, unknown>,
+      {
+        upsert: true,
+        maxRetries: 5,
+      }
+    );
+
+    return (
+      updateResult === 'updated' ||
+      updateResult === 'created' ||
+      updateResult === 'noop'
     );
   };
 
@@ -55,7 +69,7 @@ export class ChatService {
     accountId: string,
     workerId: string,
     messageId: string
-  ): Promise<{ created: boolean }> => {
+  ): Promise<{ created: boolean; conflict: boolean; id: string }> => {
     const mappings = mensageMappings();
 
     const indicesResult = await this.elasticDatabaseService.indices(
@@ -64,7 +78,7 @@ export class ChatService {
     );
 
     if (!indicesResult || !messageChat) {
-      return { created: false };
+      return { created: false, conflict: false, id: '' };
     }
 
     const documentId = buildMessageDocumentId(accountId, workerId, messageId);
@@ -74,26 +88,535 @@ export class ChatService {
       messageChat
     );
 
-    return { created: createResult === 'created' };
+    return {
+      created: createResult === 'created',
+      conflict: createResult === 'conflict',
+      id: documentId,
+    };
   };
-  saveChat = async (chat: IChat): Promise<boolean> => {
+
+  patchExistingMessageMissingFields = async (
+    documentId: string,
+    messageChat: IChatMessage
+  ): Promise<boolean> => {
+    const scriptSource = this.buildPatchMessageMissingFieldsScript();
+    const scriptParams = this.buildPatchMessageMissingFieldsParams(messageChat);
+
+    const result = await this.elasticDatabaseService.updateWithScript(
+      EElasticIndex.message,
+      documentId,
+      {
+        source: scriptSource,
+        params: scriptParams,
+      },
+      {
+        retryOnConflict: 10,
+      }
+    );
+
+    return result === 'updated' || result === 'noop';
+  };
+
+  private buildPatchMessageMissingFieldsScript(): string {
+    return `
+      if (ctx._source == null) {
+        ctx.op = 'noop';
+        return;
+      }
+      
+      def changed = false;
+      def patch = params.patch;
+      
+      if (ctx._source.message_key == null) {
+        ctx._source.message_key = [:];
+      }
+      
+      if (patch.containsKey('message_key') && patch.message_key != null) {
+        def messageKey = patch.message_key;
+        
+        if (messageKey.containsKey('remote_jid') && messageKey.remote_jid != null) {
+          if (ctx._source.message_key.remote_jid == null) {
+            ctx._source.message_key.remote_jid = messageKey.remote_jid;
+            changed = true;
+          }
+        }
+        
+        if (messageKey.containsKey('remote_jid_alt') && messageKey.remote_jid_alt != null) {
+          if (ctx._source.message_key.remote_jid_alt == null) {
+            ctx._source.message_key.remote_jid_alt = messageKey.remote_jid_alt;
+            changed = true;
+          }
+        }
+        
+        if (messageKey.containsKey('id') && messageKey.id != null) {
+          if (ctx._source.message_key.id == null) {
+            ctx._source.message_key.id = messageKey.id;
+            changed = true;
+          }
+        }
+        
+        if (messageKey.containsKey('from_me') && messageKey.from_me != null) {
+          if (ctx._source.message_key.from_me == null) {
+            ctx._source.message_key.from_me = messageKey.from_me;
+            changed = true;
+          }
+        }
+        
+        if (messageKey.containsKey('participant') && messageKey.participant != null) {
+          if (ctx._source.message_key.participant == null) {
+            ctx._source.message_key.participant = messageKey.participant;
+            changed = true;
+          }
+        }
+        
+        if (messageKey.containsKey('participant_alt') && messageKey.participant_alt != null) {
+          if (ctx._source.message_key.participant_alt == null) {
+            ctx._source.message_key.participant_alt = messageKey.participant_alt;
+            changed = true;
+          }
+        }
+        
+        if (messageKey.containsKey('addressing_mode') && messageKey.addressing_mode != null) {
+          if (ctx._source.message_key.addressing_mode == null) {
+            ctx._source.message_key.addressing_mode = messageKey.addressing_mode;
+            changed = true;
+          }
+        }
+        
+        if (messageKey.containsKey('is_view_once') && messageKey.is_view_once != null) {
+          if (ctx._source.message_key.is_view_once == null) {
+            ctx._source.message_key.is_view_once = messageKey.is_view_once;
+            changed = true;
+          }
+        }
+      }
+      
+      if (!changed) {
+        ctx.op = 'noop';
+      }
+    `;
+  }
+
+  private buildPatchMessageMissingFieldsParams(
+    messageChat: IChatMessage
+  ): Record<string, unknown> {
+    const patch: Record<string, unknown> = {};
+
+    if (messageChat.message_key) {
+      patch.message_key = {
+        remote_jid: messageChat.message_key.remote_jid ?? null,
+        remote_jid_alt: messageChat.message_key.remote_jid_alt ?? null,
+        id: messageChat.message_key.id ?? null,
+        from_me: messageChat.message_key.from_me ?? null,
+        participant: messageChat.message_key.participant ?? null,
+        participant_alt: messageChat.message_key.participant_alt ?? null,
+        addressing_mode: messageChat.message_key.addressing_mode ?? null,
+        is_view_once: messageChat.message_key.is_view_once ?? null,
+      };
+    }
+
+    return { patch };
+  }
+
+  applyChatPatch = async (
+    chatId: string,
+    patch: ChatPatch,
+    options?: ChatPatchOptions
+  ): Promise<boolean> => {
     const mappings = chatMappings();
 
-    const result = await this.elasticDatabaseService.indices(
+    const indicesResult = await this.elasticDatabaseService.indices(
       EElasticIndex.chat,
       mappings
     );
 
-    if (!result || !chat) {
+    if (!indicesResult) {
       return false;
     }
 
-    return this.elasticDatabaseService.update(
+    const scriptSource = this.buildChatPatchScript();
+    const scriptParams = this.buildChatPatchParams(patch, options);
+    const upsert = this.buildChatPatchUpsert(patch);
+
+    const result = await this.elasticDatabaseService.updateWithScript(
       EElasticIndex.chat,
-      chat,
-      chat.chat_id
+      chatId,
+      {
+        source: scriptSource,
+        params: scriptParams,
+        upsert: options?.allowCreate !== false ? upsert : undefined,
+        scriptedUpsert: options?.allowCreate !== false,
+      },
+      {
+        retryOnConflict: 10,
+      }
     );
+
+    return result === 'updated' || result === 'created' || result === 'noop';
   };
+
+  saveChat = async (chat: IChat): Promise<boolean> => {
+    if (!chat) {
+      return false;
+    }
+
+    const patch: ChatPatch = {
+      message_key: chat.message_key,
+      account: chat.account,
+      worker: chat.worker,
+      sector: chat.sector,
+      user: chat.user,
+      contact: chat.contact,
+      photo: chat.photo,
+      name: chat.name,
+      phone: chat.phone,
+      status: chat.status,
+      date: chat.date,
+      started_at: chat.started_at,
+      closed_at: chat.closed_at,
+      protocol_ura: chat.protocol_ura,
+      protocol_start: chat.protocol_start,
+      protocol_transfer: chat.protocol_transfer,
+      label: chat.label,
+      embedded_for_ai_agents: chat.embedded_for_ai_agents,
+    };
+
+    return this.applyChatPatch(chat.chat_id, patch, { allowCreate: true });
+  };
+
+  private buildChatPatchScript(): string {
+    return `
+      if (ctx._source == null) {
+        if (params.upsert != null) {
+          ctx._source = params.upsert;
+          return;
+        }
+        ctx.op = 'noop';
+        return;
+      }
+      
+      def changed = false;
+      def patch = params.patch;
+      def eventEpochMillis = params.event_epoch_millis;
+      def eventId = params.event_id;
+      
+      if (ctx._source.meta == null) {
+        ctx._source.meta = [:];
+      }
+      
+      def shouldApplyPatch = true;
+      
+      if (eventEpochMillis != null) {
+        def domain = params.domain;
+        def currentEpoch = 0;
+        def currentEventId = null;
+        
+        if (domain == 'status') {
+          if (ctx._source.meta.status_epoch != null) {
+            currentEpoch = ctx._source.meta.status_epoch;
+          }
+          if (ctx._source.meta.status_event_id != null) {
+            currentEventId = ctx._source.meta.status_event_id;
+          }
+        } else if (domain == 'assignment') {
+          if (ctx._source.meta.assignment_epoch != null) {
+            currentEpoch = ctx._source.meta.assignment_epoch;
+          }
+          if (ctx._source.meta.assignment_event_id != null) {
+            currentEventId = ctx._source.meta.assignment_event_id;
+          }
+        } else if (domain == 'labels') {
+          if (ctx._source.meta.labels_epoch != null) {
+            currentEpoch = ctx._source.meta.labels_epoch;
+          }
+          if (ctx._source.meta.labels_event_id != null) {
+            currentEventId = ctx._source.meta.labels_event_id;
+          }
+        }
+        
+        if (eventEpochMillis < currentEpoch) {
+          shouldApplyPatch = false;
+        } else if (eventEpochMillis == currentEpoch && eventId != null && currentEventId != null) {
+          if (eventId.compareTo(currentEventId) <= 0) {
+            shouldApplyPatch = false;
+          }
+        }
+      }
+      
+      if (!shouldApplyPatch) {
+        ctx.op = 'noop';
+        return;
+      }
+      
+      if (patch.containsKey('message_key') && patch.message_key != null) {
+        if (ctx._source.message_key == null) {
+          ctx._source.message_key = [:];
+        }
+        def messageKey = patch.message_key;
+        if (messageKey.containsKey('remote_jid')) {
+          ctx._source.message_key.remote_jid = messageKey.remote_jid;
+          changed = true;
+        }
+        if (messageKey.containsKey('remote_jid_alt')) {
+          ctx._source.message_key.remote_jid_alt = messageKey.remote_jid_alt;
+          changed = true;
+        }
+      }
+      
+      if (patch.containsKey('account') && patch.account != null) {
+        ctx._source.account = patch.account;
+        changed = true;
+      }
+      
+      if (patch.containsKey('worker') && patch.worker != null) {
+        ctx._source.worker = patch.worker;
+        changed = true;
+      }
+      
+      if (patch.containsKey('sector')) {
+        ctx._source.sector = patch.sector;
+        changed = true;
+      }
+      
+      if (patch.containsKey('user')) {
+        ctx._source.user = patch.user;
+        changed = true;
+      }
+      
+      if (patch.containsKey('contact')) {
+        ctx._source.contact = patch.contact;
+        changed = true;
+      }
+      
+      if (patch.containsKey('photo')) {
+        ctx._source.photo = patch.photo;
+        changed = true;
+      }
+      
+      if (patch.containsKey('name')) {
+        ctx._source.name = patch.name;
+        changed = true;
+      }
+      
+      if (patch.containsKey('phone') && patch.phone != null) {
+        ctx._source.phone = patch.phone;
+        changed = true;
+      }
+      
+      if (patch.containsKey('status') && patch.status != null) {
+        ctx._source.status = patch.status;
+        changed = true;
+        if (eventEpochMillis != null) {
+          ctx._source.meta.status_epoch = eventEpochMillis;
+          if (eventId != null) {
+            ctx._source.meta.status_event_id = eventId;
+          }
+        }
+      }
+      
+      if (patch.containsKey('date') && patch.date != null) {
+        ctx._source.date = patch.date;
+        changed = true;
+      }
+      
+      if (patch.containsKey('started_at')) {
+        ctx._source.started_at = patch.started_at;
+        changed = true;
+      }
+      
+      if (patch.containsKey('closed_at')) {
+        ctx._source.closed_at = patch.closed_at;
+        changed = true;
+      }
+      
+      if (patch.containsKey('protocol_ura')) {
+        ctx._source.protocol_ura = patch.protocol_ura;
+        changed = true;
+      }
+      
+      if (patch.containsKey('protocol_start')) {
+        ctx._source.protocol_start = patch.protocol_start;
+        changed = true;
+      }
+      
+      if (patch.containsKey('protocol_transfer')) {
+        ctx._source.protocol_transfer = patch.protocol_transfer;
+        changed = true;
+      }
+      
+      if (patch.containsKey('label')) {
+        def domain = params.domain;
+        if (domain == 'labels' && eventEpochMillis != null) {
+          def currentEpoch = 0;
+          if (ctx._source.meta.labels_epoch != null) {
+            currentEpoch = ctx._source.meta.labels_epoch;
+          }
+          if (eventEpochMillis >= currentEpoch) {
+            ctx._source.label = patch.label;
+            ctx._source.meta.labels_epoch = eventEpochMillis;
+            if (eventId != null) {
+              ctx._source.meta.labels_event_id = eventId;
+            }
+            changed = true;
+          }
+        } else {
+          ctx._source.label = patch.label;
+          changed = true;
+        }
+      }
+      
+      if (patch.containsKey('embedded_for_ai_agents')) {
+        ctx._source.embedded_for_ai_agents = patch.embedded_for_ai_agents;
+        changed = true;
+      }
+      
+      if (patch.containsKey('user') && patch.user != null) {
+        if (eventEpochMillis != null) {
+          ctx._source.meta.assignment_epoch = eventEpochMillis;
+          if (eventId != null) {
+            ctx._source.meta.assignment_event_id = eventId;
+          }
+        }
+      }
+      
+      if (patch.containsKey('sector') && patch.sector != null) {
+        if (eventEpochMillis != null) {
+          ctx._source.meta.assignment_epoch = eventEpochMillis;
+          if (eventId != null) {
+            ctx._source.meta.assignment_event_id = eventId;
+          }
+        }
+      }
+      
+      if (!changed) {
+        ctx.op = 'noop';
+      }
+    `;
+  }
+
+  private buildChatPatchParams(
+    patch: ChatPatch,
+    options?: ChatPatchOptions
+  ): Record<string, unknown> {
+    const params: Record<string, unknown> = {
+      patch,
+    };
+
+    if (
+      options?.eventEpochMillis !== null &&
+      options?.eventEpochMillis !== undefined
+    ) {
+      params.event_epoch_millis = options.eventEpochMillis;
+    }
+
+    if (options?.eventId !== null && options?.eventId !== undefined) {
+      params.event_id = options.eventId;
+    }
+
+    let domain: string | null = null;
+    if (patch.status !== null && patch.status !== undefined) {
+      domain = 'status';
+    } else if (
+      (patch.user !== null && patch.user !== undefined) ||
+      (patch.sector !== null && patch.sector !== undefined)
+    ) {
+      domain = 'assignment';
+    } else if (patch.label !== null && patch.label !== undefined) {
+      domain = 'labels';
+    }
+
+    if (domain !== null) {
+      params.domain = domain;
+    }
+
+    return params;
+  }
+
+  private buildChatPatchUpsert(patch: ChatPatch): Record<string, unknown> {
+    const upsert: Record<string, unknown> = {};
+
+    if (patch.message_key !== null && patch.message_key !== undefined) {
+      upsert.message_key = patch.message_key;
+    }
+
+    if (patch.account !== null && patch.account !== undefined) {
+      upsert.account = patch.account;
+    }
+
+    if (patch.worker !== null && patch.worker !== undefined) {
+      upsert.worker = patch.worker;
+    }
+
+    if (patch.sector !== null && patch.sector !== undefined) {
+      upsert.sector = patch.sector;
+    }
+
+    if (patch.user !== null && patch.user !== undefined) {
+      upsert.user = patch.user;
+    }
+
+    if (patch.contact !== null && patch.contact !== undefined) {
+      upsert.contact = patch.contact;
+    }
+
+    if (patch.photo !== null && patch.photo !== undefined) {
+      upsert.photo = patch.photo;
+    }
+
+    if (patch.name !== null && patch.name !== undefined) {
+      upsert.name = patch.name;
+    }
+
+    if (patch.phone !== null && patch.phone !== undefined) {
+      upsert.phone = patch.phone;
+    }
+
+    if (patch.status !== null && patch.status !== undefined) {
+      upsert.status = patch.status;
+    }
+
+    if (patch.date !== null && patch.date !== undefined) {
+      upsert.date = patch.date;
+    }
+
+    if (patch.started_at !== null && patch.started_at !== undefined) {
+      upsert.started_at = patch.started_at;
+    }
+
+    if (patch.closed_at !== null && patch.closed_at !== undefined) {
+      upsert.closed_at = patch.closed_at;
+    }
+
+    if (patch.protocol_ura !== null && patch.protocol_ura !== undefined) {
+      upsert.protocol_ura = patch.protocol_ura;
+    }
+
+    if (patch.protocol_start !== null && patch.protocol_start !== undefined) {
+      upsert.protocol_start = patch.protocol_start;
+    }
+
+    if (
+      patch.protocol_transfer !== null &&
+      patch.protocol_transfer !== undefined
+    ) {
+      upsert.protocol_transfer = patch.protocol_transfer;
+    }
+
+    if (patch.label !== null && patch.label !== undefined) {
+      upsert.label = patch.label;
+    }
+
+    if (
+      patch.embedded_for_ai_agents !== null &&
+      patch.embedded_for_ai_agents !== undefined
+    ) {
+      upsert.embedded_for_ai_agents = patch.embedded_for_ai_agents;
+    }
+
+    upsert.meta = {};
+
+    return upsert;
+  }
 
   findChatByChatId = async (
     accountId: string,
@@ -147,78 +670,74 @@ export class ChatService {
     status: IChat['status'],
     user?: IChat['user'] | null,
     startedAt?: string | null,
-    closedAt?: string | null
+    closedAt?: string | null,
+    eventEpochMillis?: number,
+    eventId?: string
   ): Promise<boolean> => {
-    const updateData: {
-      status: IChat['status'];
-      user?: IChat['user'] | null;
-      started_at?: string | null;
-      closed_at?: string | null;
-    } = {
+    const patch: ChatPatch = {
       status,
     };
 
     if (user !== undefined) {
-      updateData.user = user;
+      patch.user = user;
     }
 
     if (startedAt !== undefined) {
-      updateData.started_at = startedAt;
+      patch.started_at = startedAt;
     }
 
     if (closedAt !== undefined) {
-      updateData.closed_at = closedAt;
+      patch.closed_at = closedAt;
     }
 
-    return this.elasticDatabaseService.update(
-      EElasticIndex.chat,
-      updateData,
-      chatId
-    );
+    return this.applyChatPatch(chatId, patch, {
+      eventEpochMillis,
+      eventId,
+      allowCreate: false,
+    });
   };
 
   updateChatUserAndSector = async (
     chatId: string,
     user?: IChat['user'] | null,
-    sector?: IChat['sector'] | null
+    sector?: IChat['sector'] | null,
+    eventEpochMillis?: number,
+    eventId?: string
   ): Promise<boolean> => {
-    const updateData: {
-      user?: IChat['user'] | null;
-      sector?: IChat['sector'] | null;
-    } = {};
+    const patch: ChatPatch = {};
 
     if (user !== undefined) {
-      updateData.user = user;
+      patch.user = user;
     }
 
     if (sector !== undefined) {
-      updateData.sector = sector;
+      patch.sector = sector;
     }
 
-    return this.elasticDatabaseService.update(
-      EElasticIndex.chat,
-      updateData,
-      chatId
-    );
+    return this.applyChatPatch(chatId, patch, {
+      eventEpochMillis,
+      eventId,
+      allowCreate: false,
+    });
   };
 
   updateChatLabel = async (
     chatId: string,
-    label?: IChat['label'] | null
+    label?: IChat['label'] | null,
+    eventEpochMillis?: number,
+    eventId?: string
   ): Promise<boolean> => {
-    const updateData: {
-      label?: IChat['label'] | null;
-    } = {};
+    const patch: ChatPatch = {};
 
     if (label !== undefined) {
-      updateData.label = label;
+      patch.label = label;
     }
 
-    return this.elasticDatabaseService.update(
-      EElasticIndex.chat,
-      updateData,
-      chatId
-    );
+    return this.applyChatPatch(chatId, patch, {
+      eventEpochMillis,
+      eventId,
+      allowCreate: false,
+    });
   };
 
   updateChatProtocol = async (
@@ -464,10 +983,10 @@ export class ChatService {
         {
           source: scriptSource,
           params: scriptParams,
+          upsert,
         },
         {
-          retry_on_conflict: 10,
-          upsert,
+          retryOnConflict: 10,
         }
       );
 
@@ -557,80 +1076,45 @@ export class ChatService {
     chatId: string,
     lastMessage: string | null,
     lastDate: string,
-    incrementUnreadCount: boolean,
-    lastMessageId: string | null = null
+    lastDateEpochMillis: number,
+    lastMessageId: string | null,
+    processedMessageId: string | null,
+    incrementUnreadCount: boolean
   ): Promise<boolean> => {
-    const lastDateEpochMillis = new Date(lastDate).getTime();
+    const baseline = this.createChatSummaryBaseline(
+      lastMessage,
+      lastDate,
+      lastDateEpochMillis,
+      lastMessageId,
+      processedMessageId
+    );
+    const scriptParams = this.buildChatSummaryAtomicScriptParams(
+      baseline,
+      lastMessage,
+      lastDate,
+      lastDateEpochMillis,
+      lastMessageId,
+      processedMessageId,
+      incrementUnreadCount
+    );
+    const upsert = this.buildChatSummaryAtomicUpsert(baseline);
+    const scriptSource = this.buildChatSummaryAtomicUpdateScript();
 
-    if (isNaN(lastDateEpochMillis)) {
-      console.error('Invalid lastDate provided:', lastDate);
-      return false;
-    }
-
-    const maxRetries = 3;
-    let attempt = 0;
-
-    while (attempt < maxRetries) {
-      try {
-        const baseline = this.createChatSummaryBaseline(
-          lastMessage,
-          lastDate,
-          lastDateEpochMillis,
-          lastMessageId
-        );
-        const scriptParams = this.buildChatSummaryAtomicScriptParams(
-          baseline,
-          lastMessage,
-          lastDate,
-          lastDateEpochMillis,
-          lastMessageId,
-          incrementUnreadCount
-        );
-        const upsert = this.buildChatSummaryAtomicUpsert(
-          lastMessage,
-          lastDate,
-          lastDateEpochMillis,
-          lastMessageId,
-          incrementUnreadCount
-        );
-        const scriptSource = this.buildChatSummaryAtomicUpdateScript();
-
-        const result =
-          await this.elasticDatabaseService.updateWithScript<ChatSummaryScriptParams>(
-            EElasticIndex.chat,
-            chatId,
-            { source: scriptSource, params: scriptParams },
-            {
-              retry_on_conflict: 10,
-              upsert,
-            }
-          );
-
-        return (
-          result === 'updated' || result === 'created' || result === 'noop'
-        );
-      } catch (error) {
-        attempt++;
-        if (attempt >= maxRetries) {
-          console.error(
-            'Error updating chat summary atomically after retries:',
-            error
-          );
-          return false;
+    const result =
+      await this.elasticDatabaseService.updateWithScript<ChatSummaryAtomicUpdateParams>(
+        EElasticIndex.chat,
+        chatId,
+        { source: scriptSource, params: scriptParams, upsert },
+        {
+          retryOnConflict: 10,
         }
+      );
 
-        const backoffMs = Math.min(100 * Math.pow(2, attempt - 1), 1000);
-        await new Promise((resolve) => setTimeout(resolve, backoffMs));
-      }
-    }
-
-    return false;
+    return result === 'updated' || result === 'created' || result === 'noop';
   };
 
   private buildChatSummaryAtomicUpdateScript(): string {
     return `
-      def changed = false;
-      
       if (ctx._source.summary == null) {
         ctx._source.summary = params.baseline;
         return;
@@ -642,16 +1126,26 @@ export class ChatService {
         summary.unread_count = 0;
       }
       
-      def shouldUpdateMessage = false;
-      def currentEpoch = summary.last_date_epoch_millis != null ? summary.last_date_epoch_millis : 0;
+      if (summary.last_date_epoch_millis == null) {
+        summary.last_date_epoch_millis = 0;
+      }
+      
+      if (summary.last_processed_message_id == null) {
+        summary.last_processed_message_id = null;
+      }
+      
+      def changed = false;
+      
+      def currentEpoch = summary.last_date_epoch_millis;
       def newEpoch = params.last_date_epoch_millis;
+      def shouldUpdateMessage = false;
       
       if (newEpoch > currentEpoch) {
         shouldUpdateMessage = true;
       } else if (newEpoch == currentEpoch && params.last_message_id != null) {
         def currentMessageId = summary.last_message_id != null ? summary.last_message_id : '';
         def newMessageId = params.last_message_id;
-        if (newMessageId.compareTo(currentMessageId) > 0 || currentMessageId == '') {
+        if (currentMessageId == '' || newMessageId.compareTo(currentMessageId) > 0) {
           shouldUpdateMessage = true;
         }
       }
@@ -666,10 +1160,14 @@ export class ChatService {
         changed = true;
       }
       
-      if (params.increment_unread_count) {
-        def currentUnreadCount = summary.unread_count != null ? summary.unread_count : 0;
-        summary.unread_count = currentUnreadCount + 1;
-        changed = true;
+      if (params.increment_unread_count && params.processed_message_id != null) {
+        def lastProcessed = summary.last_processed_message_id;
+        if (lastProcessed == null || lastProcessed != params.processed_message_id) {
+          def currentUnreadCount = summary.unread_count;
+          summary.unread_count = currentUnreadCount + 1;
+          summary.last_processed_message_id = params.processed_message_id;
+          changed = true;
+        }
       }
       
       if (!changed) {
@@ -682,13 +1180,15 @@ export class ChatService {
     lastMessage: string | null,
     lastDate: string,
     lastDateEpochMillis: number,
-    lastMessageId: string | null
+    lastMessageId: string | null,
+    processedMessageId: string | null
   ): ChatSummaryBaseline {
     return {
       last_message: lastMessage,
       last_date: lastDate,
       last_date_epoch_millis: lastDateEpochMillis,
       last_message_id: lastMessageId,
+      last_processed_message_id: processedMessageId,
       unread_count: 0,
     };
   }
@@ -699,33 +1199,25 @@ export class ChatService {
     lastDate: string,
     lastDateEpochMillis: number,
     lastMessageId: string | null,
+    processedMessageId: string | null,
     incrementUnreadCount: boolean
-  ): ChatSummaryScriptParams {
+  ): ChatSummaryAtomicUpdateParams {
     return {
       baseline,
       last_message: lastMessage,
       last_date: lastDate,
       last_date_epoch_millis: lastDateEpochMillis,
       last_message_id: lastMessageId,
+      processed_message_id: processedMessageId,
       increment_unread_count: incrementUnreadCount,
     };
   }
 
   private buildChatSummaryAtomicUpsert(
-    lastMessage: string | null,
-    lastDate: string,
-    lastDateEpochMillis: number,
-    lastMessageId: string | null,
-    incrementUnreadCount: boolean
+    baseline: ChatSummaryBaseline
   ): Record<string, unknown> {
     return {
-      summary: {
-        last_message: lastMessage,
-        last_date: lastDate,
-        last_date_epoch_millis: lastDateEpochMillis,
-        last_message_id: lastMessageId,
-        unread_count: incrementUnreadCount ? 1 : 0,
-      },
+      summary: baseline,
     };
   }
 
@@ -819,24 +1311,36 @@ export class ChatService {
 
   updateChatSector = async (
     chatId: string,
-    sector: IChat['sector']
+    sector: IChat['sector'],
+    eventEpochMillis?: number,
+    eventId?: string
   ): Promise<boolean> => {
-    return this.elasticDatabaseService.update(
-      EElasticIndex.chat,
-      { sector },
-      chatId
-    );
+    const patch: ChatPatch = {
+      sector,
+    };
+
+    return this.applyChatPatch(chatId, patch, {
+      eventEpochMillis,
+      eventId,
+      allowCreate: false,
+    });
   };
 
   updateChatWorker = async (
     chatId: string,
-    worker: IChat['worker']
+    worker: IChat['worker'],
+    eventEpochMillis?: number,
+    eventId?: string
   ): Promise<boolean> => {
-    return this.elasticDatabaseService.update(
-      EElasticIndex.chat,
-      { worker },
-      chatId
-    );
+    const patch: ChatPatch = {
+      worker,
+    };
+
+    return this.applyChatPatch(chatId, patch, {
+      eventEpochMillis,
+      eventId,
+      allowCreate: false,
+    });
   };
 
   findQueueChatsByWorkerId = async (

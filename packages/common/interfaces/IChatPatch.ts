@@ -1,14 +1,5 @@
 import { EChatStatus } from '../enums/EChatStatus';
 
-interface ISummary {
-  last_message: string | null;
-  last_date: string | null;
-  last_date_epoch_millis?: number | null;
-  last_message_id?: string | null;
-  last_processed_message_id?: string | null;
-  unread_count: number;
-}
-
 interface IAccount {
   id: string;
   name: string;
@@ -52,20 +43,18 @@ interface IMessageKey {
   remote_jid_alt?: string | null;
 }
 
-export interface IChat {
-  chat_id: string;
+export interface ChatPatch {
   message_key?: IMessageKey | null;
-  summary?: ISummary | null;
-  account: IAccount;
-  worker: IWorker;
+  account?: IAccount;
+  worker?: IWorker;
   sector?: ISector | null;
   user?: IUser | null;
   contact?: IContact | null;
   photo?: string | null;
-  name: string | null;
-  phone: string;
-  status: EChatStatus;
-  date: string;
+  name?: string | null;
+  phone?: string;
+  status?: EChatStatus;
+  date?: string;
   started_at?: string | null;
   closed_at?: string | null;
   protocol_ura?: string[] | null;
@@ -73,4 +62,10 @@ export interface IChat {
   protocol_transfer?: string[] | null;
   label?: ILabel[] | null;
   embedded_for_ai_agents?: string[] | null;
+}
+
+export interface ChatPatchOptions {
+  eventEpochMillis?: number;
+  eventId?: string;
+  allowCreate?: boolean;
 }
