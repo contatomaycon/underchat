@@ -675,7 +675,7 @@ export class StreamProducerService {
           topic,
           null,
           value,
-          keyBuffer ?? null,
+          keyBuffer,
           Date.now(),
           correlationId
         );
@@ -716,6 +716,22 @@ export class StreamProducerService {
       }
 
       if (produceResult === null || produceResult === undefined) {
+        const pending = this.pendingMessages.get(correlationId);
+        if (pending) {
+          this.pendingMessages.delete(correlationId);
+          clearTimeout(pending.timeoutHandle);
+          this.signalPendingDrain();
+        }
+
+        const error = new Error(
+          `Failed to produce message to topic "${topic}": unexpected null/undefined return from produce()`
+        );
+
+        if (this.isDisconnectedError(error)) {
+          this.invalidateProducerForReconnect(error);
+        }
+
+        reject(error);
         return;
       }
 
