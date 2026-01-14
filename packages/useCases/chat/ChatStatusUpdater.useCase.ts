@@ -440,18 +440,6 @@ export class ChatStatusUpdaterUseCase {
       user = await this.prepareUserForInChat(userId);
     }
 
-    const updated = await this.chatService.updateChatStatus(
-      params.chat_id,
-      finalStatus,
-      user,
-      startedAt,
-      closedAt
-    );
-
-    if (!updated) {
-      throw new Error(t('chat_status_update_failed'));
-    }
-
     const updatedChat = this.buildUpdatedChat(
       chat,
       finalStatus,
@@ -460,7 +448,10 @@ export class ChatStatusUpdaterUseCase {
       closedAt
     );
 
-    await this.chatService.saveChat(updatedChat);
+    const updated = await this.chatService.saveChat(updatedChat);
+    if (!updated) {
+      throw new Error(t('chat_status_update_failed'));
+    }
 
     if (
       finalStatus === EChatStatus.in_chat ||
