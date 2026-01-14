@@ -16,6 +16,7 @@ import { handleConsumerError } from '@core/common/functions/handleConsumerError'
 import { WAMessageKey } from '@whiskeysockets/baileys';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 import { commitOffset } from '@core/common/functions/commitOffset';
+import { createChatCacheKeyChatId } from '@core/common/functions/createCacheKey';
 
 @singleton()
 export class MessageUpdateConsume {
@@ -39,7 +40,7 @@ export class MessageUpdateConsume {
   }
 
   private cacheChatKey(accountId: string, chatId: string): string {
-    return `chat:${accountId}:${chatId}`;
+    return createChatCacheKeyChatId(accountId, chatId);
   }
 
   private parseMessage(value: Buffer | null): IUpdateMessage | null {

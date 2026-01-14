@@ -41,6 +41,7 @@ import {
   ISendLocationMessageOptions,
   ISendContactMessageOptions,
 } from '@core/common/interfaces/ISendMessageOptions';
+import { createChatCacheKeyChatId } from '@core/common/functions/createCacheKey';
 
 @injectable()
 export class ChatMessageService {
@@ -62,7 +63,7 @@ export class ChatMessageService {
     accountId: string,
     chatId: string
   ): Promise<IChat | null> {
-    const cacheKey = `chat:${accountId}:${chatId}`;
+    const cacheKey = createChatCacheKeyChatId(accountId, chatId);
     const cache = await this.redis.get(cacheKey);
 
     if (cache) {

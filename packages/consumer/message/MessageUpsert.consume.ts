@@ -38,6 +38,10 @@ import { connectConsumer } from '@core/common/functions/connectConsumer';
 import { handleConsumerError } from '@core/common/functions/handleConsumerError';
 import { remoteJidAlt } from '@core/common/functions/remoteJidAlt';
 import { convertWaveformToBase64 } from '@core/common/functions/convertWaveform';
+import {
+  createChatCacheKey,
+  createChatCacheKeyChatId,
+} from '@core/common/functions/createCacheKey';
 import Redis from 'ioredis';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import {
@@ -156,7 +160,8 @@ export class MessageUpsertConsume {
       return chat;
     }
 
-    const newChat = await this.createChat(t, data, EChatStatus.ura);
+    const newChat = await this.createChat(data, EChatStatus.ura);
+
     if (!newChat) {
       throw new Error('Failed to create chat');
     }
@@ -164,6 +169,7 @@ export class MessageUpsertConsume {
     const jid = remoteJid(data.message?.key);
     const jidAlt = remoteJidAlt(data.message?.key);
     const phone = getPhoneFromJid(jid, jidAlt);
+
     if (!phone) {
       throw new Error('Received message without valid phone');
     }
@@ -187,15 +193,13 @@ export class MessageUpsertConsume {
           closed_at: new Date().toISOString(),
         };
 
-        await this.cacheChat(closedChat);
-        await this.chatService.saveChat(closedChat);
+        await this.saveChatWithCaches(closedChat);
 
         return null;
       }
 
       if (ignoreResult === 'ignore_automation') {
-        await this.cacheChat(newChat);
-        await this.chatService.saveChat(newChat);
+        await this.saveChatWithCaches(newChat);
       }
     }
 
@@ -1495,12 +1499,7 @@ export class MessageUpsertConsume {
         inputChatMessage.contact?.photo ?? photoResult?.url ?? null;
     }
 
-    await this.cacheChat(inputChatMessage);
-
-    const result = await this.chatService.saveChat(inputChatMessage);
-    if (!result) {
-      return null;
-    }
+    await this.saveChatWithCaches(inputChatMessage);
 
     return inputChatMessage;
   }
@@ -1771,7 +1770,6 @@ export class MessageUpsertConsume {
   }
 
   private async createChat(
-    t: TFunction<'translation', undefined>,
     data: IUpsertMessage,
     status: EChatStatus
   ): Promise<IChat> {
@@ -1851,12 +1849,7 @@ export class MessageUpsertConsume {
         inputChatMessage.contact?.photo ?? photoResult?.url ?? null;
     }
 
-    await this.cacheChat(inputChatMessage);
-
-    const result = await this.chatService.saveChat(inputChatMessage);
-    if (!result) {
-      throw new Error('Failed to create chat');
-    }
+    await this.saveChatWithCaches(inputChatMessage);
 
     return inputChatMessage;
   }
@@ -1892,6 +1885,7 @@ export class MessageUpsertConsume {
   ) {
     const jid = remoteJid(data.message?.key);
     const jidAlt = remoteJidAlt(data.message?.key);
+
     if (!jid && !jidAlt) {
       throw new Error('Received message without remoteJid');
     }
@@ -1902,7 +1896,6 @@ export class MessageUpsertConsume {
     }
 
     const chat = await this.ensureChatAndHandleMessage(t, data, getChat);
-
     if (!chat) {
       return;
     }
@@ -1916,7 +1909,7 @@ export class MessageUpsertConsume {
     data: IUpsertMessage
   ): Promise<void> {
     if (!getChat) {
-      const createChat = await this.createChat(t, data, EChatStatus.queue);
+      const createChat = await this.createChat(data, EChatStatus.queue);
       if (!createChat) {
         throw new Error('Failed to create chat');
       }
@@ -1947,8 +1940,7 @@ export class MessageUpsertConsume {
             closed_at: new Date().toISOString(),
           };
 
-          await this.cacheChat(closedChat);
-          await this.chatService.saveChat(closedChat);
+          await this.saveChatWithCaches(closedChat);
 
           return;
         }
@@ -2125,13 +2117,31 @@ export class MessageUpsertConsume {
     );
   }
 
-  private cacheKeyChat(accountId: string, workerId: string, phone: string) {
-    return `underchat:chat:${accountId}:${workerId}:${phone}`;
+  private async cacheChat(chat: IChat): Promise<void> {
+    const key = createChatCacheKey(chat.account.id, chat.worker.id, chat.phone);
+    await this.redis.set(key, JSON.stringify(chat), 'PX', 60_000);
   }
 
-  private async cacheChat(chat: IChat): Promise<void> {
-    const key = this.cacheKeyChat(chat.account.id, chat.worker.id, chat.phone);
+  private async cacheChatById(chat: IChat): Promise<void> {
+    const key = createChatCacheKeyChatId(chat.account.id, chat.chat_id);
     await this.redis.set(key, JSON.stringify(chat), 'PX', 60_000);
+  }
+
+  private async saveChatWithCaches(chat: IChat): Promise<boolean> {
+    await Promise.all([this.cacheChat(chat), this.cacheChatById(chat)]);
+
+    const result = await this.chatService.saveChat(chat);
+
+    if (!result) {
+      await Promise.all([
+        this.redis.del(
+          createChatCacheKey(chat.account.id, chat.worker.id, chat.phone)
+        ),
+        this.redis.del(createChatCacheKeyChatId(chat.account.id, chat.chat_id)),
+      ]);
+    }
+
+    return result ?? false;
   }
 
   private async getChatFromCache(
@@ -2139,7 +2149,7 @@ export class MessageUpsertConsume {
     workerId: string,
     phone: string
   ): Promise<IChat | null> {
-    const key = this.cacheKeyChat(accountId, workerId, phone);
+    const key = createChatCacheKey(accountId, workerId, phone);
     const raw = await this.redis.get(key);
 
     return raw ? (JSON.parse(raw) as IChat) : null;

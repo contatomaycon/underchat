@@ -27,6 +27,7 @@ import { IJwtGroupHierarchy } from '@core/common/interfaces/IJwtGroupHierarchy';
 import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { hasRequiredPermission } from '@core/common/functions/hasRequiredPermission';
+import { createChatCacheKeyChatId } from '@core/common/functions/createCacheKey';
 
 @injectable()
 export class ChatMessageCreatorUseCase {
@@ -56,7 +57,7 @@ export class ChatMessageCreatorUseCase {
     accountId: string,
     chatId: string
   ): Promise<IChat | null> {
-    const cacheKey = `chat:${accountId}:${chatId}`;
+    const cacheKey = createChatCacheKeyChatId(accountId, chatId);
     const cache = await this.redis.get(cacheKey);
 
     if (cache) {

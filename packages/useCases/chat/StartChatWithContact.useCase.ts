@@ -19,28 +19,20 @@ import { SectorService } from '@core/services/sector.service';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { EncryptService } from '@core/services/encrypt.service';
 import { ETypeSanetize } from '@core/common/enums/ETypeSanetize';
-import { ViewContactResponse } from '@core/schema/contact/viewContact/response.schema';
-import { IViewWorkerNameAndId } from '@core/common/interfaces/IViewWorkerNameAndId';
-import { IViewAccountName } from '@core/common/interfaces/IViewAccountName';
-import { IViewUserNamePhoto } from '@core/common/interfaces/IViewUserNamePhoto';
+import {
+  IContactData,
+  IRequiredData,
+} from '@core/common/interfaces/IStartChatData';
 import { normalizePhoneToJid } from '@core/common/functions/normalizePhoneToJid';
+import {
+  createChatCacheKey,
+  createChatCacheKeyChatId,
+  createChatbotFlowCacheKey,
+  createChatbotInactivityCacheKey,
+  createChatbotFailedAttemptsCacheKey,
+} from '@core/common/functions/createCacheKey';
 import { ChatUserViewerRepository } from '@core/repositories/chat/ChatUserViewer.repository';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
-
-interface ContactData {
-  contact: ViewContactResponse;
-  sensitiveData: { phone: string | null; email: string | null } | null;
-  contactName: string;
-  phonePartial: string;
-  fullPhone: string;
-}
-
-interface RequiredData {
-  user: IViewUserNamePhoto;
-  account: IViewAccountName;
-  worker: IViewWorkerNameAndId;
-  sector: { id: string; name: string; color?: string } | null;
-}
 
 @injectable()
 export class StartChatWithContactUseCase {
@@ -128,7 +120,7 @@ export class StartChatWithContactUseCase {
     t: TFunction<'translation', undefined>,
     contactId: string,
     accountId: string
-  ): Promise<ContactData> {
+  ): Promise<IContactData> {
     const contact = await this.contactService.viewContactById(
       contactId,
       accountId
@@ -171,7 +163,7 @@ export class StartChatWithContactUseCase {
     userId: string,
     workerId: string,
     sectorId: string | undefined
-  ): Promise<RequiredData> {
+  ): Promise<IRequiredData> {
     const [user, account, worker] = await Promise.all([
       this.userService.viewUserNamePhoto(userId),
       this.accountService.viewAccountName(accountId),
@@ -232,8 +224,8 @@ export class StartChatWithContactUseCase {
   private async updateExistingChat(
     t: TFunction<'translation', undefined>,
     existingChat: IChat,
-    contactData: ContactData,
-    requiredData: RequiredData
+    contactData: IContactData,
+    requiredData: IRequiredData
   ): Promise<IChat> {
     const currentDate = new Date().toISOString();
     const userData = requiredData.user;
@@ -298,12 +290,24 @@ export class StartChatWithContactUseCase {
       return;
     }
 
-    const chatbotFlowCacheKey = `underchat:chatbot-flow:${accountId}:${workerId}:${chatId}`;
-    const inactivityCacheKey = `underchat:chatbot-inactivity:${accountId}:${workerId}:${chatId}`;
+    const chatbotFlowCacheKey = createChatbotFlowCacheKey(
+      accountId,
+      workerId,
+      chatId
+    );
+    const inactivityCacheKey = createChatbotInactivityCacheKey(
+      accountId,
+      workerId,
+      chatId
+    );
     const inactivityScheduleKey = 'underchat:chatbot-inactivity-schedule';
-    const failedAttemptsCacheKey = `underchat:chatbot-failed-attempts:${accountId}:${workerId}:${chatId}`;
-    const chatCacheKey = `underchat:chat:${accountId}:${workerId}:${phone}`;
-    const chatCacheKeyById = `chat:${accountId}:${chatId}`;
+    const failedAttemptsCacheKey = createChatbotFailedAttemptsCacheKey(
+      accountId,
+      workerId,
+      chatId
+    );
+    const chatCacheKey = createChatCacheKey(accountId, workerId, phone);
+    const chatCacheKeyById = createChatCacheKeyChatId(accountId, chatId);
 
     await Promise.all([
       this.redis.del(chatbotFlowCacheKey),
@@ -317,8 +321,8 @@ export class StartChatWithContactUseCase {
 
   private buildUpdatedChat(
     existingChat: IChat,
-    contactData: ContactData,
-    requiredData: RequiredData,
+    contactData: IContactData,
+    requiredData: IRequiredData,
     currentDate: string
   ): IChat {
     const userData = requiredData.user;
@@ -370,8 +374,8 @@ export class StartChatWithContactUseCase {
 
   private async createNewChat(
     t: TFunction<'translation', undefined>,
-    contactData: ContactData,
-    requiredData: RequiredData
+    contactData: IContactData,
+    requiredData: IRequiredData
   ): Promise<IChat> {
     const userData = requiredData.user;
 

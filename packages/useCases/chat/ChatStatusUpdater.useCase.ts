@@ -28,6 +28,10 @@ import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import Redis from 'ioredis';
 import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 import { PresenceService } from '@core/services/presence.service';
+import {
+  createChatCacheKey,
+  createChatCacheKeyChatId,
+} from '@core/common/functions/createCacheKey';
 
 @injectable()
 export class ChatStatusUpdaterUseCase {
@@ -158,8 +162,16 @@ export class ChatStatusUpdaterUseCase {
   }
 
   private async invalidateChatCache(chat: IChat): Promise<void> {
-    const cacheKey = `underchat:chat:${chat.account.id}:${chat.worker.id}:${chat.phone}`;
-    const cacheKeyChat = `chat:${chat.account.id}:${chat.chat_id}`;
+    const cacheKey = createChatCacheKey(
+      chat.account.id,
+      chat.worker.id,
+      chat.phone
+    );
+    const cacheKeyChat = createChatCacheKeyChatId(
+      chat.account.id,
+      chat.chat_id
+    );
+
     await Promise.all([this.redis.del(cacheKey), this.redis.del(cacheKeyChat)]);
   }
 

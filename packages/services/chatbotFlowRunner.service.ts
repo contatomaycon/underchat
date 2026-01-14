@@ -28,6 +28,13 @@ import { IInactivityData } from '@core/common/interfaces/IInactivityData';
 import { IProcessFlowNodeOptions } from '@core/common/interfaces/IProcessFlowNodeOptions';
 import { generateProtocol } from '@core/common/functions/generateProtocol';
 import { extractPhoneAndDdi } from '@core/common/functions/extractPhoneAndDdi';
+import {
+  createChatCacheKey,
+  createChatbotFlowCacheKey,
+  createChatbotInactivityCacheKey,
+  createChatbotFailedAttemptsCacheKey,
+  createAiResponseHistoryCacheKey,
+} from '@core/common/functions/createCacheKey';
 import { proto } from '@whiskeysockets/baileys';
 import { EContactDocumentType } from '@core/common/enums/EContactDocumentType';
 import { UpdateContactRequest } from '@core/schema/contact/editContact/request.schema';
@@ -64,7 +71,7 @@ export class ChatbotFlowRunnerService {
     workerId: string,
     chatId: string
   ): string {
-    return `underchat:chatbot-flow:${accountId}:${workerId}:${chatId}`;
+    return createChatbotFlowCacheKey(accountId, workerId, chatId);
   }
 
   private getInactivityCacheKey(
@@ -72,7 +79,7 @@ export class ChatbotFlowRunnerService {
     workerId: string,
     chatId: string
   ): string {
-    return `underchat:chatbot-inactivity:${accountId}:${workerId}:${chatId}`;
+    return createChatbotInactivityCacheKey(accountId, workerId, chatId);
   }
 
   private getInactivityScheduleKey(): string {
@@ -84,7 +91,7 @@ export class ChatbotFlowRunnerService {
     workerId: string,
     chatId: string
   ): string {
-    return `underchat:chatbot-failed-attempts:${accountId}:${workerId}:${chatId}`;
+    return createChatbotFailedAttemptsCacheKey(accountId, workerId, chatId);
   }
 
   private getBaileysChatCacheKey(
@@ -92,7 +99,7 @@ export class ChatbotFlowRunnerService {
     workerId: string,
     phone: string
   ): string {
-    return `underchat:chat:${accountId}:${workerId}:${phone}`;
+    return createChatCacheKey(accountId, workerId, phone);
   }
 
   private async invalidateChatFromCache(chat: IChat): Promise<void> {
@@ -4843,7 +4850,12 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
     normalizedQuestion: string
   ): string {
     const questionHash = this.hashText(normalizedQuestion);
-    return `underchat:ai-response-history:${accountId}:${chatId}:${aiAgentId}:${questionHash}`;
+    return createAiResponseHistoryCacheKey(
+      accountId,
+      chatId,
+      aiAgentId,
+      questionHash
+    );
   }
 
   private async isResponseRepeatedInHistory(

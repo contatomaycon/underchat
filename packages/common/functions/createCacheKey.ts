@@ -56,3 +56,142 @@ export function createJwtSessionKey(accountId: string, userId: string): string {
 
   return joinParts(['jwtSession', accountId, userId]);
 }
+
+export function createChatCacheKey(
+  accountId: string,
+  workerId: string,
+  phone: string
+): string {
+  if (!accountId) {
+    throw new Error('account id is required');
+  }
+
+  if (!workerId) {
+    throw new Error('worker id is required');
+  }
+
+  if (!phone) {
+    throw new Error('phone is required');
+  }
+
+  return joinParts(['underchat', 'chat', accountId, workerId, phone]);
+}
+
+export function createChatCacheKeyChatId(
+  accountId: string,
+  chatId: string
+): string {
+  if (!accountId) {
+    throw new Error('account id is required');
+  }
+
+  if (!chatId) {
+    throw new Error('chat id is required');
+  }
+
+  return joinParts(['chat', accountId, chatId]);
+}
+
+export function createChatbotFlowCacheKey(
+  accountId: string,
+  workerId: string,
+  chatId: string
+): string {
+  if (!accountId) {
+    throw new Error('account id is required');
+  }
+
+  if (!workerId) {
+    throw new Error('worker id is required');
+  }
+
+  if (!chatId) {
+    throw new Error('chat id is required');
+  }
+
+  return joinParts(['underchat', 'chatbot-flow', accountId, workerId, chatId]);
+}
+
+export function createChatbotInactivityCacheKey(
+  accountId: string,
+  workerId: string,
+  chatId: string
+): string {
+  if (!accountId) {
+    throw new Error('account id is required');
+  }
+
+  if (!workerId) {
+    throw new Error('worker id is required');
+  }
+
+  if (!chatId) {
+    throw new Error('chat id is required');
+  }
+
+  return joinParts([
+    'underchat',
+    'chatbot-inactivity',
+    accountId,
+    workerId,
+    chatId,
+  ]);
+}
+
+export function createChatbotFailedAttemptsCacheKey(
+  accountId: string,
+  workerId: string,
+  chatId: string
+): string {
+  if (!accountId) {
+    throw new Error('account id is required');
+  }
+
+  if (!workerId) {
+    throw new Error('worker id is required');
+  }
+
+  if (!chatId) {
+    throw new Error('chat id is required');
+  }
+
+  return joinParts([
+    'underchat',
+    'chatbot-failed-attempts',
+    accountId,
+    workerId,
+    chatId,
+  ]);
+}
+
+export function createAiResponseHistoryCacheKey(
+  accountId: string,
+  chatId: string,
+  aiAgentId: string,
+  questionHash: string
+): string {
+  if (!accountId) {
+    throw new Error('account id is required');
+  }
+
+  if (!chatId) {
+    throw new Error('chat id is required');
+  }
+
+  if (!aiAgentId) {
+    throw new Error('ai agent id is required');
+  }
+
+  if (!questionHash) {
+    throw new Error('question hash is required');
+  }
+
+  return joinParts([
+    'underchat',
+    'ai-response-history',
+    accountId,
+    chatId,
+    aiAgentId,
+    questionHash,
+  ]);
+}
