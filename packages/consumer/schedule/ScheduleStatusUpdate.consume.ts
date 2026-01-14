@@ -26,6 +26,7 @@ export class ScheduleStatusUpdateConsume {
   private isRunning = false;
   private readonly scheduleTrackers: Map<string, IScheduleTracker> = new Map();
   private readonly TIMEOUT_MS = 5 * 60 * 1000;
+  private eventCounter = 0;
 
   constructor(
     @inject('Kafka') private readonly kafka: KafkaClient,
@@ -391,9 +392,11 @@ export class ScheduleStatusUpdateConsume {
     partition: number,
     offset: number
   ): string {
+    this.eventCounter = (this.eventCounter + 1) % 1000000;
     const partitionPadded = partition.toString().padStart(10, '0');
     const offsetPadded = offset.toString().padStart(20, '0');
-    return `${eventTimeEpochMillis}:${partitionPadded}:${offsetPadded}`;
+    const counterPadded = this.eventCounter.toString().padStart(10, '0');
+    return `${eventTimeEpochMillis}:${partitionPadded}:${offsetPadded}:${counterPadded}`;
   }
 
   private async updateMessageStatusInElasticsearch(

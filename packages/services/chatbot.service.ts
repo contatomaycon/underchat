@@ -135,13 +135,25 @@ export class ChatbotService {
       updated_at: now,
     };
 
-    const saved = await this.elasticDatabaseService.update(
+    const updateResult = await this.elasticDatabaseService.updateWithOCC(
       EElasticIndex.chatbot_flow,
-      chatbotFlow,
-      chatbotFlowId
+      chatbotFlowId,
+      chatbotFlow as Record<string, unknown>,
+      {
+        upsert: true,
+        maxRetries: 5,
+      }
     );
 
-    return saved ? chatbotFlowId : null;
+    if (
+      updateResult === 'updated' ||
+      updateResult === 'created' ||
+      updateResult === 'noop'
+    ) {
+      return chatbotFlowId;
+    }
+
+    return null;
   };
 
   findChatbotFlowByChatbotId = async (
@@ -220,13 +232,25 @@ export class ChatbotService {
       updated_at: now,
     };
 
-    const saved = await this.elasticDatabaseService.update(
+    const updateResult = await this.elasticDatabaseService.updateWithOCC(
       EElasticIndex.chatbot_flow_configurations,
-      chatbotFlowConfigurations,
-      chatbotConfigurationsId
+      chatbotConfigurationsId,
+      chatbotFlowConfigurations as Record<string, unknown>,
+      {
+        upsert: true,
+        maxRetries: 5,
+      }
     );
 
-    return saved ? chatbotConfigurationsId : null;
+    if (
+      updateResult === 'updated' ||
+      updateResult === 'created' ||
+      updateResult === 'noop'
+    ) {
+      return chatbotConfigurationsId;
+    }
+
+    return null;
   };
 
   findChatbotFlowConfigurationsByChatbotId = async (

@@ -1,4 +1,5 @@
 import { injectable } from 'tsyringe';
+import { v7 as uuidv7 } from 'uuid';
 import { ElasticDatabaseService } from './elasticDatabase.service';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { IChatMessage } from '@core/common/interfaces/IChatMessage';
@@ -550,7 +551,7 @@ export class ChatService {
       params.event_epoch_millis = options.eventEpochMillis;
     } else if (hasStatusAndUserUpdate) {
       params.event_epoch_millis = Date.now();
-      params.event_id = `${Date.now()}-${Math.random().toString(36).substring(7)}`;
+      params.event_id = uuidv7();
     }
 
     if (options?.eventId !== null && options?.eventId !== undefined) {
@@ -1209,8 +1210,7 @@ export class ChatService {
       if (params.increment_unread_count && params.processed_message_id != null) {
         def lastProcessed = summary.last_processed_message_id;
         if (lastProcessed == null || lastProcessed != params.processed_message_id) {
-          def currentUnreadCount = summary.unread_count;
-          summary.unread_count = currentUnreadCount + 1;
+          summary.unread_count = summary.unread_count + 1;
           summary.last_processed_message_id = params.processed_message_id;
           changed = true;
         }
@@ -1578,11 +1578,13 @@ export class ChatService {
     messageId: string,
     content: IChatMessage['content']
   ): Promise<boolean> => {
-    return this.elasticDatabaseService.update(
+    const result = await this.elasticDatabaseService.updateWithOCC(
       EElasticIndex.message,
-      { content },
-      messageId
+      messageId,
+      { content }
     );
+
+    return result === 'updated' || result === 'created' || result === 'noop';
   };
 
   viewWorkerConfigForChat = async (

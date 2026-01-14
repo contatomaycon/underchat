@@ -688,18 +688,39 @@ export class MessageUpsertConsume {
     }
 
     const name = this.nameChat(data);
+    if (!name) {
+      return;
+    }
 
-    await this.elasticDatabaseService.updateWithOCC(
+    const scriptSource = `
+      if (ctx._source == null) {
+        ctx.op = 'noop';
+        return;
+      }
+      
+      if (ctx._source.name == null || ctx._source.name == '') {
+        ctx._source.name = params.name;
+      } else {
+        ctx.op = 'noop';
+      }
+    `;
+
+    const result = await this.elasticDatabaseService.updateWithScriptOCC(
       EElasticIndex.chat,
       getChat.chat_id,
-      { name },
+      {
+        source: scriptSource,
+        params: { name },
+      },
       {
         maxRetries: 5,
       }
     );
-    getChat.name = name;
 
-    await this.centrifugoChatQueuePublish(getChat);
+    if (result === 'updated' || result === 'created') {
+      getChat.name = name;
+      await this.centrifugoChatQueuePublish(getChat);
+    }
   }
 
   private async handleImageMessage(

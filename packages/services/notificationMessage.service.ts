@@ -98,10 +98,13 @@ export class NotificationMessageService {
       notificationMappings()
     );
 
-    await this.elasticDatabaseService.update(
+    await this.elasticDatabaseService.updateWithOCC(
       EElasticIndex.notification,
+      notificationId,
       notificationMessage as unknown as Record<string, unknown>,
-      notificationId
+      {
+        upsert: true,
+      }
     );
   }
 
