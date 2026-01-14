@@ -284,7 +284,7 @@ const handleContactClick = async (message: ListMessageResult) => {
     nickname: undefined,
     birthday: undefined,
     notes: undefined,
-    label_template_id: undefined,
+    label_template_ids: undefined,
   };
 
   globalThis.dispatchEvent(

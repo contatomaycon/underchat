@@ -6,6 +6,7 @@ import { ChatService } from './chat.service';
 import { ChatMessageService } from './chatMessage.service';
 import { ContactService } from './contact.service';
 import { LabelTemplateViewerRepository } from '@core/repositories/labelTemplate/LabelTemplateViewer.repository';
+import { CentrifugoService } from './centrifugo.service';
 import { UserService } from './user.service';
 import { SectorService } from './sector.service';
 import { RagService } from './rag.service';
@@ -19,6 +20,10 @@ import { EMessageType } from '@core/common/enums/EMessageType';
 import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 import { IUpsertMessage } from '@core/common/interfaces/IUpsertMessage';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
+import {
+  chatAccountCentrifugo,
+  chatQueueAccountCentrifugo,
+} from '@core/common/functions/centrifugoQueue';
 import { IInactivityData } from '@core/common/interfaces/IInactivityData';
 import { IProcessFlowNodeOptions } from '@core/common/interfaces/IProcessFlowNodeOptions';
 import { generateProtocol } from '@core/common/functions/generateProtocol';
@@ -51,6 +56,7 @@ export class ChatbotFlowRunnerService {
     private readonly chatMessageService: ChatMessageService,
     private readonly contactService: ContactService,
     private readonly labelTemplateViewerRepository: LabelTemplateViewerRepository,
+    private readonly centrifugoService: CentrifugoService,
     private readonly userService: UserService,
     private readonly sectorService: SectorService,
     private readonly ragService: RagService,
@@ -1202,6 +1208,19 @@ export class ChatbotFlowRunnerService {
       this.chatService.saveChat(updatedChat),
       this.invalidateChatFromCache(updatedChat),
     ]);
+
+    const channelAccountId = updatedChat.account?.id ?? createChat.account.id;
+
+    await Promise.all([
+      this.centrifugoService.publishSub(
+        chatAccountCentrifugo(channelAccountId),
+        updatedChat
+      ),
+      this.centrifugoService.publishSub(
+        chatQueueAccountCentrifugo(channelAccountId),
+        updatedChat
+      ),
+    ]);
   }
 
   private async updateContactTag(
@@ -1482,6 +1501,19 @@ export class ChatbotFlowRunnerService {
     await Promise.all([
       this.chatService.saveChat(updatedChat),
       this.invalidateChatFromCache(updatedChat),
+    ]);
+
+    const channelAccountId = updatedChat.account?.id ?? createChat.account.id;
+
+    await Promise.all([
+      this.centrifugoService.publishSub(
+        chatAccountCentrifugo(channelAccountId),
+        updatedChat
+      ),
+      this.centrifugoService.publishSub(
+        chatQueueAccountCentrifugo(channelAccountId),
+        updatedChat
+      ),
     ]);
 
     return updatedChat;
