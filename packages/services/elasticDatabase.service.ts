@@ -49,6 +49,38 @@ export class ElasticDatabaseService {
     }
   };
 
+  createDocument = async <T extends object>(
+    index: string,
+    id: string,
+    document: T
+  ): Promise<'created' | 'conflict'> => {
+    try {
+      const result = await this.client.index({
+        index,
+        id,
+        document,
+        op_type: 'create',
+      });
+
+      if (result.result === 'created') {
+        return 'created';
+      }
+
+      return 'conflict';
+    } catch (error: unknown) {
+      if (
+        typeof error === 'object' &&
+        error !== null &&
+        'statusCode' in error &&
+        error.statusCode === 409
+      ) {
+        return 'conflict';
+      }
+
+      throw new Error(`Failed to create document with ID: ${error}`);
+    }
+  };
+
   view = async (index: string, id: string): Promise<object | null> => {
     try {
       const result = await this.client.get({

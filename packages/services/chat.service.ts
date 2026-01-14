@@ -13,6 +13,7 @@ import { ChatQuickMessageTemplatesListerRepository } from '@core/repositories/ch
 import { ListQuickMessageTemplatesResponse } from '@core/schema/chat/listQuickMessageTemplates/response.schema';
 import { ListQuickMessageTemplatesRequest } from '@core/schema/chat/listQuickMessageTemplates/request.schema';
 import { IChatSummary } from '@core/common/interfaces/IChatSummaryUpdate';
+import { buildMessageDocumentId } from '@core/common/functions/buildMessageDocumentId';
 
 type ElasticHit<T> = {
   _source?: T;
@@ -45,6 +46,32 @@ export class ChatService {
     );
   };
 
+  createMessageIdempotent = async (
+    messageChat: IChatMessage,
+    accountId: string,
+    workerId: string,
+    messageId: string
+  ): Promise<{ created: boolean }> => {
+    const mappings = mensageMappings();
+
+    const indicesResult = await this.elasticDatabaseService.indices(
+      EElasticIndex.message,
+      mappings
+    );
+
+    if (!indicesResult || !messageChat) {
+      return { created: false };
+    }
+
+    const documentId = buildMessageDocumentId(accountId, workerId, messageId);
+    const createResult = await this.elasticDatabaseService.createDocument(
+      EElasticIndex.message,
+      documentId,
+      messageChat
+    );
+
+    return { created: createResult === 'created' };
+  };
   saveChat = async (chat: IChat): Promise<boolean> => {
     const mappings = chatMappings();
 

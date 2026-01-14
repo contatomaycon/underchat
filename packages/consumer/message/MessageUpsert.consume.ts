@@ -1599,10 +1599,23 @@ export class MessageUpsertConsume {
         hash: uuidv7(),
       };
 
-      const [, result] = await Promise.all([
-        this.centrifugoChatPublish(inputChatMessage),
-        this.chatService.saveMessageChat(inputChatMessage),
-      ]);
+      const messageId = data.message?.key?.id;
+      if (!messageId) {
+        return false;
+      }
+
+      const createResult = await this.chatService.createMessageIdempotent(
+        inputChatMessage,
+        data.account_id,
+        data.worker_id,
+        messageId
+      );
+
+      if (!createResult.created) {
+        return false;
+      }
+
+      await this.centrifugoChatPublish(inputChatMessage);
 
       if (!data.message?.key?.fromMe && data.message?.key) {
         await this.markIncomingMessageAsRead(
@@ -1628,7 +1641,7 @@ export class MessageUpsertConsume {
       );
 
       if (!updatedChat) {
-        return result;
+        return true;
       }
 
       const channelAccountId = updatedChat.account.id;
@@ -1654,7 +1667,7 @@ export class MessageUpsertConsume {
         }
       }
 
-      return result;
+      return true;
     } catch {
       return false;
     }
@@ -2018,19 +2031,6 @@ export class MessageUpsertConsume {
           if (data.is_call_event) {
             await this.handleCallEvent(t, data);
             return;
-          }
-
-          const messageId = data.message?.key?.id;
-          if (messageId) {
-            const exists = await this.messageIdExists(
-              data.account_id,
-              data.worker_id,
-              messageId
-            );
-
-            if (exists) {
-              return;
-            }
           }
 
           const jid = remoteJid(data.message?.key);
