@@ -111,11 +111,14 @@ export class MessageSendConsume {
           return;
         }
 
-        if (!this.isSendMessage(payload)) {
+        const isSend = this.isSendMessage(payload);
+
+        if (!isSend) {
           return;
         }
 
         const chatId = this.resolveChatId(payload);
+
         if (!chatId) {
           return;
         }
@@ -123,6 +126,7 @@ export class MessageSendConsume {
         await this.enqueueByChatId(chatId, async () => {
           await this.processMessage(payload);
         });
+      } catch {
       } finally {
         stop();
         await this.commitNext(topic, message.partition, message.offset);
@@ -511,6 +515,7 @@ export class MessageSendConsume {
     }
 
     const chatId = this.resolveChatId(data);
+
     if (!chatId) {
       throw new Error('Received message without chatId');
     }
@@ -1285,7 +1290,6 @@ export class MessageSendConsume {
 
   private async pushUpdate(input: IUpdateMessage): Promise<void> {
     const topic = this.kafkaServiceQueueService.updateMessage();
-
     await this.streamProducerService.send(topic, input);
   }
 

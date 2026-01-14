@@ -5,208 +5,545 @@ import { toError, getErrorMessage } from '@core/common/functions/toError';
 import { ulid } from 'ulid';
 import { IPendingMessage } from '@core/common/interfaces/IPendingMessage';
 
+type QueuedMessage = {
+  topic: string;
+  value: Buffer;
+  keyBuffer: Buffer | undefined;
+  resolve: () => void;
+  reject: (error: Error) => void;
+};
+
+type Deferred = {
+  promise: Promise<void>;
+  resolve: () => void;
+};
+
+type PendingMessageWithTimestamp = IPendingMessage & {
+  startTime: number;
+  timeoutFired: boolean;
+};
+
 @injectable()
 export class StreamProducerService {
   private producer: Producer | null = null;
-  private pollingInterval: NodeJS.Timeout | null = null;
-  private pendingMessages: Map<string, IPendingMessage> = new Map();
+  private producerReady: Promise<Producer> | null = null;
+
+  private pollTimeout: NodeJS.Timeout | null = null;
+  private pollToken = 0;
+
+  private flushTimeout: NodeJS.Timeout | null = null;
+  private flushLoop: Promise<void> | null = null;
+  private flushFailureCount = 0;
+
+  private reconnecting: Promise<Producer> | null = null;
+
+  private pendingMessages: Map<string, PendingMessageWithTimestamp> = new Map();
+  private pendingDrain: Deferred | null = null;
+
+  private inflight: Set<Promise<void>> = new Set();
+  private inflightDrain: Deferred | null = null;
+
+  private sendQueue: QueuedMessage[] = [];
+
+  private closing = false;
+  private closePromise: Promise<boolean[]> | null = null;
+
+  private metrics = {
+    messagesSent: 0,
+    messagesFailed: 0,
+    messagesRejected: 0,
+    reconnections: 0,
+    connectionErrors: 0,
+    queueFullErrors: 0,
+    deliveryTimeouts: 0,
+    totalLatencyMs: 0,
+    lastMessageTime: 0,
+  };
+
   private static readonly MAX_RETRIES = 3;
   private static readonly INITIAL_BACKOFF_MS = 100;
-  private static readonly POLL_INTERVAL_MS = 100;
+  private static readonly MAX_BACKOFF_MS = 2000;
+
+  private static readonly POLL_INTERVAL_MS = 10;
   private static readonly DELIVERY_TIMEOUT_MS = 5000;
+
   private static readonly MAX_QUEUE_FULL_RETRIES = 3;
-  private static readonly QUEUE_FULL_BACKOFF_MS = 50;
+  private static readonly QUEUE_FULL_BACKOFF_BASE_MS = 25;
+  private static readonly QUEUE_FULL_BACKOFF_MAX_MS = 1000;
+
+  private static readonly MAX_INFLIGHT_MESSAGES = 5000;
+  private static readonly MAX_BATCH_SIZE = 100;
+  private static readonly BATCH_FLUSH_MS = 5;
+  private static readonly MAX_CONCURRENT_SENDS = 50;
+
+  private static readonly CONNECTION_TIMEOUT_MS = 15000;
+  private static readonly SHUTDOWN_FLUSH_TIMEOUT_MS = 10000;
+  private static readonly RECONNECT_TIMEOUT_MS = 10000;
 
   constructor(@inject('Kafka') private readonly kafka: KafkaClient) {}
 
+  private readonly deliveryReportHandler = (
+    err: LibrdKafkaError | null,
+    report: any
+  ): void => {
+    const correlationId = report?.opaque;
+    if (!correlationId) {
+      return;
+    }
+
+    const pending = this.pendingMessages.get(correlationId);
+    if (!pending) {
+      return;
+    }
+
+    if (pending.timeoutFired) {
+      return;
+    }
+
+    const startTime = pending.startTime;
+    this.pendingMessages.delete(correlationId);
+    clearTimeout(pending.timeoutHandle);
+
+    if (err) {
+      if (this.isDisconnectedError(err)) {
+        this.invalidateProducerForReconnect(toError(err));
+      }
+      this.metrics.messagesFailed += 1;
+      pending.reject(toError(err));
+      this.signalPendingDrain();
+      return;
+    }
+
+    const latency = Date.now() - startTime;
+    this.metrics.messagesSent += 1;
+    this.metrics.totalLatencyMs += latency;
+    this.metrics.lastMessageTime = Date.now();
+    pending.resolve();
+    this.signalPendingDrain();
+  };
+
+  private readonly runtimeErrorHandler = (err: LibrdKafkaError): void => {
+    this.metrics.connectionErrors += 1;
+    console.error('Kafka producer error:', {
+      error: getErrorMessage(err),
+      code: 'code' in err ? (err as any).code : null,
+      metrics: this.getMetrics(),
+    });
+    if (!this.isDisconnectedError(err)) {
+      return;
+    }
+
+    this.invalidateProducerForReconnect(toError(err));
+  };
+
   private setupDeliveryReportListener(producer: Producer): void {
-    producer.on(
-      'delivery-report',
-      (err: LibrdKafkaError | null, report: any) => {
-        const correlationId = report?.opaque;
-        if (!correlationId) {
-          return;
-        }
-
-        const pending = this.pendingMessages.get(correlationId);
-        if (!pending) {
-          return;
-        }
-
-        this.pendingMessages.delete(correlationId);
-        clearTimeout(pending.timeoutHandle);
-
-        if (err) {
-          if (this.isDisconnectedError(err)) {
-            this.invalidateProducer();
-          }
-          pending.reject(toError(err));
-          return;
-        }
-
-        pending.resolve();
-      }
-    );
+    producer.removeListener('delivery-report', this.deliveryReportHandler);
+    producer.on('delivery-report', this.deliveryReportHandler);
   }
 
-  private startPolling(producer: Producer): void {
-    if (this.pollingInterval) {
+  private setupRuntimeErrorListener(producer: Producer): void {
+    producer.removeListener('event.error', this.runtimeErrorHandler);
+    producer.on('event.error', this.runtimeErrorHandler);
+  }
+
+  private schedulePoll(immediate = false): void {
+    if (this.closing) {
       return;
     }
 
-    this.pollingInterval = setInterval(() => {
-      try {
-        producer.poll();
-      } catch (error) {
-        console.error('Error during producer polling:', error);
-      }
-    }, StreamProducerService.POLL_INTERVAL_MS);
-  }
-
-  private stopPolling(): void {
-    if (!this.pollingInterval) {
+    const existingTimeout = this.pollTimeout;
+    if (existingTimeout) {
       return;
     }
-
-    clearInterval(this.pollingInterval);
-    this.pollingInterval = null;
-  }
-
-  private async ensureProducer(): Promise<Producer> {
-    if (this.producer) {
-      return this.producer;
-    }
-
-    this.producer = this.kafka.createProducer();
 
     const producer = this.producer;
     if (!producer) {
-      throw new Error('Producer not initialized');
+      return;
     }
 
-    await new Promise<void>((resolve, reject) => {
-      let isResolved = false;
-      const timeout = setTimeout(() => {
-        if (isResolved) {
+    const token = this.pollToken;
+    const delay = immediate ? 0 : StreamProducerService.POLL_INTERVAL_MS;
+
+    const timeoutId = setTimeout(() => {
+      if (this.pollTimeout !== timeoutId) {
+        return;
+      }
+
+      this.pollTimeout = null;
+
+      if (this.closing) {
+        return;
+      }
+
+      if (token !== this.pollToken) {
+        return;
+      }
+
+      const currentProducer = this.producer;
+      if (!currentProducer) {
+        return;
+      }
+
+      try {
+        currentProducer.poll();
+      } catch (error) {
+        console.error('[schedulePoll.timeout] ERRO durante polling:', error);
+      }
+
+      if (this.closing) {
+        return;
+      }
+
+      if (this.pendingMessages.size > 0) {
+        this.schedulePoll();
+      } else {
+        this.stopPolling();
+      }
+    }, delay);
+
+    if (this.pollTimeout === existingTimeout) {
+      this.pollTimeout = timeoutId;
+    } else {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  private stopPolling(): void {
+    this.pollToken += 1;
+
+    if (!this.pollTimeout) {
+      return;
+    }
+
+    clearTimeout(this.pollTimeout);
+    this.pollTimeout = null;
+  }
+
+  private createDeferred(): Deferred {
+    let resolve!: () => void;
+    const promise = new Promise<void>((resolver) => {
+      resolve = resolver;
+    });
+
+    return { promise, resolve };
+  }
+
+  private getPendingDrainPromise(): Promise<void> {
+    if (this.pendingMessages.size === 0) {
+      return Promise.resolve();
+    }
+
+    let existing = this.pendingDrain;
+    if (existing) {
+      return existing.promise;
+    }
+
+    const newDeferred = this.createDeferred();
+    if (this.pendingDrain === null) {
+      this.pendingDrain = newDeferred;
+      return newDeferred.promise;
+    }
+
+    return this.pendingDrain.promise;
+  }
+
+  private signalPendingDrain(): void {
+    if (this.pendingMessages.size !== 0) {
+      return;
+    }
+
+    const deferred = this.pendingDrain;
+    if (!deferred) {
+      return;
+    }
+
+    this.pendingDrain = null;
+    deferred.resolve();
+  }
+
+  private getInflightDrainPromise(): Promise<void> {
+    if (this.inflight.size === 0) {
+      return Promise.resolve();
+    }
+
+    let existing = this.inflightDrain;
+    if (existing) {
+      return existing.promise;
+    }
+
+    const newDeferred = this.createDeferred();
+    if (this.inflightDrain === null) {
+      this.inflightDrain = newDeferred;
+      return newDeferred.promise;
+    }
+
+    return this.inflightDrain.promise;
+  }
+
+  private signalInflightDrain(): void {
+    if (this.inflight.size !== 0) {
+      return;
+    }
+
+    const deferred = this.inflightDrain;
+    if (!deferred) {
+      return;
+    }
+
+    this.inflightDrain = null;
+    deferred.resolve();
+  }
+
+  private trackInflight(task: Promise<void>): Promise<void> {
+    const tracked = task.finally(() => {
+      this.inflight.delete(tracked);
+      this.signalInflightDrain();
+    });
+
+    this.inflight.add(tracked);
+    return tracked;
+  }
+
+  private async ensureProducer(): Promise<Producer> {
+    if (this.closing) {
+      throw new Error('Cannot create producer during shutdown');
+    }
+
+    const existing = this.producerReady;
+    if (existing) {
+      if (this.closing) {
+        throw new Error('Cannot create producer during shutdown');
+      }
+      return existing;
+    }
+
+    const producer = this.kafka.createProducer();
+    this.producer = producer;
+
+    const producerPromise = new Promise<Producer>((resolve, reject) => {
+      let completed = false;
+
+      let cleanup: () => void;
+      let timeout: NodeJS.Timeout;
+
+      const finalizeError = (err: unknown) => {
+        if (completed) {
           return;
         }
 
-        isResolved = true;
-        this.producer = null;
-        producer.removeAllListeners();
-        try {
-          producer.disconnect(() => {});
-        } catch {}
-        const broker = this.kafka.getBroker();
-        reject(
-          new Error(
-            `Kafka producer connection timeout after 60s. Broker: ${broker}. Verifique se o Kafka está acessível e se as configurações estão corretas.`
-          )
-        );
-      }, 60000);
-
-      const cleanup = () => {
-        if (timeout) {
-          clearTimeout(timeout);
-        }
-        producer.removeAllListeners('ready');
-        producer.removeAllListeners('event.error');
-      };
-
-      const errorHandler = (err: LibrdKafkaError) => {
-        if (isResolved) {
-          return;
-        }
-
-        isResolved = true;
+        completed = true;
         cleanup();
-        this.producer = null;
+
+        if (this.producer === producer) {
+          this.producer = null;
+        }
+        if (this.producerReady === producerPromise) {
+          this.producerReady = null;
+        }
+
         try {
+          producer.removeAllListeners();
           producer.disconnect(() => {});
         } catch {}
+
         reject(toError(err));
       };
 
-      const readyHandler = () => {
-        if (isResolved) {
+      const finalizeReady = () => {
+        if (completed) {
           return;
         }
 
-        isResolved = true;
+        if (this.closing) {
+          finalizeError(new Error('Cannot create producer during shutdown'));
+          return;
+        }
+
+        completed = true;
         cleanup();
+
         this.setupDeliveryReportListener(producer);
-        this.startPolling(producer);
-        resolve();
+        this.setupRuntimeErrorListener(producer);
+
+        resolve(producer);
       };
+
+      const readyHandler = () => {
+        clearTimeout(timeout);
+        finalizeReady();
+      };
+
+      const errorHandler = (err: LibrdKafkaError) => {
+        clearTimeout(timeout);
+        finalizeError(err);
+      };
+
+      cleanup = () => {
+        producer.removeListener('ready', readyHandler);
+        producer.removeListener('event.error', errorHandler);
+      };
+
+      timeout = setTimeout(() => {
+        const broker = this.kafka.getBroker();
+        finalizeError(
+          new Error(
+            `Kafka producer connection timeout after ${StreamProducerService.CONNECTION_TIMEOUT_MS}ms. Broker: ${broker}. Verifique se o Kafka está acessível e se as configurações estão corretas.`
+          )
+        );
+      }, StreamProducerService.CONNECTION_TIMEOUT_MS);
 
       producer.once('ready', readyHandler);
       producer.once('event.error', errorHandler);
-
-      producer.on('event.error', (err: LibrdKafkaError) => {
-        console.error('Kafka producer error:', err);
-        if (this.isDisconnectedError(err)) {
-          this.invalidateProducer();
-        }
-      });
 
       producer.connect({}, (err) => {
         if (!err) {
           return;
         }
 
-        if (isResolved) {
-          return;
-        }
-
-        isResolved = true;
-        cleanup();
-        this.producer = null;
-        reject(toError(err));
+        errorHandler(toError(err) as unknown as LibrdKafkaError);
       });
     });
 
-    return this.producer;
+    if (this.producerReady === null) {
+      this.producerReady = producerPromise;
+    } else {
+      this.producer = null;
+      try {
+        producer.removeAllListeners();
+        producer.disconnect(() => {});
+      } catch {}
+      return this.producerReady;
+    }
+
+    if (this.closing) {
+      this.producerReady = null;
+      this.producer = null;
+      try {
+        producer.removeAllListeners();
+        producer.disconnect(() => {});
+      } catch {}
+      throw new Error('Cannot create producer during shutdown');
+    }
+
+    return producerPromise;
   }
 
-  private invalidateProducer(): void {
-    this.rejectAllPendingMessages(
-      new Error('Producer invalidated due to disconnection')
-    );
+  private invalidateProducerForReconnect(error: Error): void {
+    this.rejectAllPendingMessages(error);
+    this.rejectAllInflightTasks();
     this.stopPolling();
-    if (!this.producer) {
+
+    this.producerReady = null;
+
+    if (this.reconnecting) {
+      this.reconnecting.catch(() => {});
+      this.reconnecting = null;
+    }
+
+    if (this.flushTimeout) {
+      clearTimeout(this.flushTimeout);
+      this.flushTimeout = null;
+    }
+
+    const producer = this.producer;
+    if (!producer) {
+      this.producer = null;
+      if (this.sendQueue.length > 0 && !this.closing) {
+        this.scheduleFlush();
+      }
       return;
     }
 
     try {
-      const producer = this.producer;
-      producer.removeAllListeners();
+      producer.removeListener('delivery-report', this.deliveryReportHandler);
+      producer.removeListener('event.error', this.runtimeErrorHandler);
       producer.disconnect(() => {});
     } catch {}
+
     this.producer = null;
+
+    if (this.sendQueue.length > 0 && !this.closing) {
+      this.scheduleFlush();
+    }
   }
 
   private rejectAllPendingMessages(error: Error): void {
     const pending = Array.from(this.pendingMessages.values());
     this.pendingMessages.clear();
+    this.stopPolling();
 
     for (const message of pending) {
       clearTimeout(message.timeoutHandle);
+      this.metrics.messagesRejected += 1;
+      message.reject(error);
+    }
+
+    this.signalPendingDrain();
+  }
+
+  private rejectAllInflightTasks(): void {
+    const tasks = Array.from(this.inflight);
+    this.inflight.clear();
+
+    for (const task of tasks) {
+      task.catch(() => {});
+    }
+
+    this.signalInflightDrain();
+  }
+
+  private rejectQueuedMessages(error: Error): void {
+    if (this.flushTimeout) {
+      clearTimeout(this.flushTimeout);
+      this.flushTimeout = null;
+    }
+
+    const queued = this.sendQueue.splice(0);
+    for (const message of queued) {
+      this.metrics.messagesRejected += 1;
       message.reject(error);
     }
   }
 
   private async reconnectProducer(): Promise<Producer> {
+    const existing = this.reconnecting;
+    if (existing) {
+      return existing;
+    }
+
+    const reconnectPromise = this.performReconnect().finally(() => {
+      if (this.reconnecting === reconnectPromise) {
+        this.reconnecting = null;
+      }
+    });
+
+    if (this.reconnecting === null) {
+      this.reconnecting = reconnectPromise;
+      return reconnectPromise;
+    }
+
+    return this.reconnecting;
+  }
+
+  private async performReconnect(): Promise<Producer> {
+    if (this.closing) {
+      throw new Error('Cannot reconnect during shutdown');
+    }
+
+    this.metrics.reconnections += 1;
     this.stopPolling();
-    if (this.producer) {
+
+    const producer = this.producer;
+    this.producer = null;
+    this.producerReady = null;
+
+    if (producer) {
       try {
-        const producer = this.producer;
-        if (producer) {
-          await new Promise<void>((resolve) => {
-            producer.disconnect(resolve);
-          });
-        }
+        producer.removeAllListeners();
+        await new Promise<void>((resolve) => {
+          producer.disconnect(resolve);
+        });
       } catch {}
-      this.producer = null;
     }
 
     return this.ensureProducer();
@@ -218,10 +555,11 @@ export class StreamProducerService {
     }
 
     const errorMessage = getErrorMessage(error);
-    const errorCode = 'code' in error ? error.code : null;
+    const errorCode = 'code' in error ? (error as any).code : null;
 
     return (
       errorMessage.includes('disconnected') ||
+      errorMessage.includes('disconnection') ||
       errorCode === 'ECONNREFUSED' ||
       errorMessage.includes('NOT_CONNECTED') ||
       errorMessage.includes('not connected') ||
@@ -244,7 +582,7 @@ export class StreamProducerService {
 
     const errorMessage = getErrorMessage(error);
     const errorCode =
-      typeof error === 'object' && 'code' in error ? error.code : null;
+      typeof error === 'object' && 'code' in error ? (error as any).code : null;
 
     return (
       errorCode === -184 ||
@@ -260,16 +598,46 @@ export class StreamProducerService {
     value: Buffer,
     keyBuffer: Buffer | undefined
   ): Promise<void> {
+    if (this.closing) {
+      throw new Error('Cannot produce message during shutdown');
+    }
+
+    if (!topic || typeof topic !== 'string' || topic.trim().length === 0) {
+      throw new Error('Invalid topic: topic must be a non-empty string');
+    }
+
+    const currentProducer = this.producer;
+    if (!currentProducer || currentProducer !== producer) {
+      throw new Error('Producer was invalidated');
+    }
+
     return new Promise<void>((resolve, reject) => {
+      if (this.closing || this.producer !== producer) {
+        reject(new Error('Producer was invalidated or is closing'));
+        return;
+      }
+
       const correlationId = ulid();
 
+      const startTime = Date.now();
       const timeoutHandle = setTimeout(() => {
         const pending = this.pendingMessages.get(correlationId);
         if (!pending) {
           return;
         }
 
+        pending.timeoutFired = true;
         this.pendingMessages.delete(correlationId);
+
+        if (this.pendingMessages.size === 0) {
+          this.stopPolling();
+        }
+
+        this.signalPendingDrain();
+
+        this.metrics.deliveryTimeouts += 1;
+        this.metrics.messagesFailed += 1;
+
         reject(
           new Error(
             `Message delivery timeout after ${StreamProducerService.DELIVERY_TIMEOUT_MS}ms`
@@ -281,56 +649,117 @@ export class StreamProducerService {
         resolve,
         reject,
         timeoutHandle,
+        startTime,
+        timeoutFired: false,
       });
 
-      const produceError = producer.produce(
-        topic,
-        null,
-        value,
-        keyBuffer,
-        Date.now(),
-        correlationId
-      );
+      if (this.pendingMessages.size === 1) {
+        this.schedulePoll(true);
+      }
 
-      if (produceError === null || produceError === undefined) {
+      if (this.closing || this.producer !== producer) {
+        const pending = this.pendingMessages.get(correlationId);
+        if (pending) {
+          this.pendingMessages.delete(correlationId);
+          clearTimeout(pending.timeoutHandle);
+          this.signalPendingDrain();
+        }
+
+        reject(new Error('Producer was invalidated or is closing'));
+        return;
+      }
+
+      let produceResult: unknown;
+      try {
+        produceResult = producer.produce(
+          topic,
+          null,
+          value,
+          keyBuffer ?? null,
+          Date.now(),
+          correlationId
+        );
+      } catch (error) {
+        const pending = this.pendingMessages.get(correlationId);
+        if (pending) {
+          this.pendingMessages.delete(correlationId);
+          clearTimeout(pending.timeoutHandle);
+          this.signalPendingDrain();
+        }
+
+        reject(toError(error));
+        return;
+      }
+
+      if (typeof produceResult === 'boolean') {
+        if (produceResult) {
+          return;
+        }
+
+        const pending = this.pendingMessages.get(correlationId);
+        if (pending) {
+          this.pendingMessages.delete(correlationId);
+          clearTimeout(pending.timeoutHandle);
+          this.signalPendingDrain();
+        }
+
+        const queueFullError: any = new Error('Local: Queue full');
+        queueFullError.code = -184;
+
+        reject(queueFullError);
+        return;
+      }
+
+      if (produceResult === null || produceResult === undefined) {
         return;
       }
 
       const pending = this.pendingMessages.get(correlationId);
-      if (!pending) {
-        return;
+      if (pending) {
+        this.pendingMessages.delete(correlationId);
+        clearTimeout(pending.timeoutHandle);
+        this.signalPendingDrain();
       }
 
-      this.pendingMessages.delete(correlationId);
-      clearTimeout(pending.timeoutHandle);
-
-      if (typeof produceError === 'number' && produceError < 0) {
+      if (typeof produceResult === 'number' && produceResult < 0) {
         const error = new Error(
-          `Failed to produce message: librdkafka error code ${produceError}`
+          `Failed to produce message: librdkafka error code ${produceResult}`
         );
+
         if (this.isDisconnectedError(error)) {
-          this.invalidateProducer();
+          this.invalidateProducerForReconnect(error);
+        }
+
+        reject(error);
+        return;
+      }
+
+      if (produceResult instanceof Error) {
+        if (this.isDisconnectedError(produceResult)) {
+          this.invalidateProducerForReconnect(produceResult);
+        }
+        reject(produceResult);
+        return;
+      }
+
+      if (typeof produceResult === 'string') {
+        const error = new Error(produceResult);
+        if (this.isDisconnectedError(error)) {
+          this.invalidateProducerForReconnect(error);
         }
         reject(error);
         return;
       }
 
-      if (produceError instanceof Error) {
-        if (this.isDisconnectedError(produceError)) {
-          this.invalidateProducer();
-        }
-        reject(produceError);
-        return;
+      const error = new Error(
+        `Failed to produce message to topic "${topic}": unexpected return: ${String(produceResult)} (type: ${typeof produceResult})`
+      );
+
+      if (this.isDisconnectedError(error)) {
+        this.invalidateProducerForReconnect(error);
       }
 
-      if (typeof produceError === 'string') {
-        const error = new Error(produceError);
-        if (this.isDisconnectedError(error)) {
-          this.invalidateProducer();
-        }
-        reject(error);
-        return;
-      }
+      reject(error);
     });
   }
 
@@ -341,9 +770,17 @@ export class StreamProducerService {
     keyBuffer: Buffer | undefined,
     attempt = 0
   ): Promise<void> {
+    if (this.closing) {
+      throw new Error('Cannot produce message during shutdown');
+    }
+
     try {
       await this.produceMessage(producer, topic, value, keyBuffer);
     } catch (error) {
+      if (this.closing) {
+        throw new Error('Producer is closing');
+      }
+
       const isQueueFull = this.isQueueFullError(error);
 
       if (!isQueueFull) {
@@ -351,16 +788,28 @@ export class StreamProducerService {
       }
 
       if (attempt >= StreamProducerService.MAX_QUEUE_FULL_RETRIES) {
+        this.metrics.queueFullErrors += 1;
         throw new Error(
           `Kafka queue full after ${StreamProducerService.MAX_QUEUE_FULL_RETRIES} retries. Backpressure exceeded.`
         );
       }
 
-      const backoffMs =
-        StreamProducerService.QUEUE_FULL_BACKOFF_MS * (attempt + 1);
+      const backoffMs = this.calculateBackoff(
+        attempt,
+        StreamProducerService.QUEUE_FULL_BACKOFF_BASE_MS,
+        StreamProducerService.QUEUE_FULL_BACKOFF_MAX_MS
+      );
       await this.delay(backoffMs);
 
-      return this.produceWithQueueFullRetry(
+      if (this.closing) {
+        throw new Error('Producer is closing');
+      }
+
+      if (this.producer !== producer || !this.producer) {
+        throw new Error('Producer was invalidated during backoff');
+      }
+
+      await this.produceWithQueueFullRetry(
         producer,
         topic,
         value,
@@ -370,20 +819,325 @@ export class StreamProducerService {
     }
   }
 
-  private calculateBackoff(attempt: number): number {
-    return StreamProducerService.INITIAL_BACKOFF_MS * (attempt + 1);
+  private calculateBackoff(
+    attempt: number,
+    baseMs: number,
+    maxMs: number
+  ): number {
+    const exponential = Math.min(maxMs, baseMs * 2 ** attempt);
+    const jitter = Math.floor(Math.random() * baseMs);
+    return exponential + jitter;
   }
 
   private async delay(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
+  private async withTimeout<T>(
+    promise: Promise<T>,
+    timeoutMs: number
+  ): Promise<T> {
+    let timeoutHandle: NodeJS.Timeout | null = null;
+
+    const timeout = new Promise<T>((_, reject) => {
+      timeoutHandle = setTimeout(() => reject(new Error('Timeout')), timeoutMs);
+    });
+
+    try {
+      return await Promise.race([promise, timeout]);
+    } finally {
+      if (timeoutHandle) {
+        clearTimeout(timeoutHandle);
+      }
+    }
+  }
+
+  private serializePayload(payload: unknown): Buffer {
+    if (Buffer.isBuffer(payload)) {
+      return payload;
+    }
+
+    if (typeof payload === 'string') {
+      return Buffer.from(payload, 'utf-8');
+    }
+
+    if (payload instanceof Uint8Array) {
+      return Buffer.from(payload);
+    }
+
+    if (payload instanceof ArrayBuffer) {
+      return Buffer.from(payload);
+    }
+
+    try {
+      return Buffer.from(JSON.stringify(payload), 'utf-8');
+    } catch (error) {
+      throw new Error(`Failed to serialize payload: ${getErrorMessage(error)}`);
+    }
+  }
+
+  private serializeKey(key?: string | Buffer): Buffer | undefined {
+    if (!key) {
+      return undefined;
+    }
+
+    return Buffer.isBuffer(key) ? key : Buffer.from(key, 'utf-8');
+  }
+
+  private enqueueSend(
+    topic: string,
+    value: Buffer,
+    keyBuffer: Buffer | undefined
+  ): Promise<void> {
+    if (!topic || typeof topic !== 'string' || topic.trim().length === 0) {
+      return Promise.reject(
+        new Error('Invalid topic: topic must be a non-empty string')
+      );
+    }
+
+    return new Promise((resolve, reject) => {
+      if (this.closing) {
+        reject(new Error('Producer is closing'));
+        return;
+      }
+
+      const bufferedCount = this.pendingMessages.size + this.sendQueue.length;
+
+      if (bufferedCount >= StreamProducerService.MAX_INFLIGHT_MESSAGES) {
+        this.metrics.messagesRejected += 1;
+        reject(
+          new Error(
+            `Producer backpressure: ${bufferedCount} buffered messages exceeds limit ${StreamProducerService.MAX_INFLIGHT_MESSAGES}`
+          )
+        );
+        return;
+      }
+
+      this.sendQueue.push({ topic, value, keyBuffer, resolve, reject });
+      this.scheduleFlush();
+    });
+  }
+
+  private scheduleFlush(delayOverrideMs?: number): void {
+    if (this.closing) {
+      return;
+    }
+
+    if (this.flushTimeout) {
+      return;
+    }
+
+    if (this.flushLoop) {
+      return;
+    }
+
+    const delay =
+      typeof delayOverrideMs === 'number'
+        ? delayOverrideMs
+        : this.sendQueue.length >= StreamProducerService.MAX_BATCH_SIZE
+          ? 0
+          : StreamProducerService.BATCH_FLUSH_MS;
+
+    this.flushTimeout = setTimeout(() => {
+      this.flushTimeout = null;
+      if (!this.closing) {
+        void this.flushQueue();
+      }
+    }, delay);
+  }
+
+  private async flushQueue(): Promise<void> {
+    if (this.flushLoop) {
+      await this.flushLoop;
+      return;
+    }
+
+    this.flushLoop = this.runFlushLoop().finally(() => {
+      this.flushLoop = null;
+
+      if (this.sendQueue.length > 0 && !this.closing) {
+        this.scheduleFlush();
+      }
+    });
+
+    await this.flushLoop;
+  }
+
+  private async runFlushLoop(): Promise<void> {
+    while (this.sendQueue.length > 0 && !this.closing) {
+      const batch = this.sendQueue.splice(
+        0,
+        StreamProducerService.MAX_BATCH_SIZE
+      );
+
+      let producer: Producer;
+      try {
+        if (this.closing) {
+          for (const message of batch) {
+            this.metrics.messagesRejected += 1;
+            message.reject(new Error('Producer is closing'));
+          }
+          return;
+        }
+
+        producer = await this.ensureProducer();
+        this.flushFailureCount = 0;
+      } catch {
+        if (this.closing) {
+          for (const message of batch) {
+            this.metrics.messagesRejected += 1;
+            message.reject(new Error('Producer is closing'));
+          }
+          return;
+        }
+
+        this.flushFailureCount += 1;
+
+        if (this.flushFailureCount > StreamProducerService.MAX_RETRIES) {
+          for (const message of batch) {
+            this.metrics.messagesRejected += 1;
+            message.reject(
+              new Error(
+                `Failed to establish producer connection after ${StreamProducerService.MAX_RETRIES} attempts`
+              )
+            );
+          }
+          const queued = this.sendQueue.splice(0);
+          for (const message of queued) {
+            this.metrics.messagesRejected += 1;
+            message.reject(
+              new Error('Producer connection failed, rejecting queued messages')
+            );
+          }
+          this.rejectAllInflightTasks();
+          return;
+        }
+
+        this.sendQueue.unshift(...batch);
+
+        const backoffMs = this.calculateBackoff(
+          Math.min(
+            this.flushFailureCount - 1,
+            StreamProducerService.MAX_RETRIES - 1
+          ),
+          StreamProducerService.INITIAL_BACKOFF_MS,
+          StreamProducerService.MAX_BACKOFF_MS
+        );
+
+        this.scheduleFlush(backoffMs);
+        return;
+      }
+
+      if (this.closing) {
+        for (const message of batch) {
+          this.metrics.messagesRejected += 1;
+          message.reject(new Error('Producer is closing'));
+        }
+        return;
+      }
+
+      await this.processBatchInParallel(batch, producer);
+
+      if (this.sendQueue.length > 0 && !this.closing) {
+        await this.nextTick();
+      }
+    }
+  }
+
+  private async nextTick(): Promise<void> {
+    return new Promise((resolve) => setImmediate(resolve));
+  }
+
+  private async processBatchInParallel(
+    batch: QueuedMessage[],
+    producer: Producer
+  ): Promise<void> {
+    if (batch.length === 0) {
+      return;
+    }
+
+    if (batch.length <= StreamProducerService.MAX_CONCURRENT_SENDS) {
+      if (this.closing) {
+        for (const message of batch) {
+          this.metrics.messagesRejected += 1;
+          message.reject(new Error('Producer is closing'));
+        }
+        return;
+      }
+
+      const tasks: Promise<void>[] = [];
+      for (const message of batch) {
+        const task = this.sendWithRetry(
+          message.topic,
+          message.value,
+          message.keyBuffer,
+          0,
+          producer
+        )
+          .then(() => {
+            message.resolve();
+          })
+          .catch((err) => {
+            message.reject(toError(err));
+          });
+
+        const tracked = this.trackInflight(task);
+        tasks.push(tracked);
+      }
+
+      await Promise.allSettled(tasks);
+      return;
+    }
+
+    const concurrency = StreamProducerService.MAX_CONCURRENT_SENDS;
+    const chunks: QueuedMessage[][] = [];
+
+    for (let i = 0; i < batch.length; i += concurrency) {
+      chunks.push(batch.slice(i, i + concurrency));
+    }
+
+    for (const chunk of chunks) {
+      if (this.closing) {
+        for (const message of chunk) {
+          this.metrics.messagesRejected += 1;
+          message.reject(new Error('Producer is closing'));
+        }
+        return;
+      }
+
+      const tasks: Promise<void>[] = [];
+      for (const message of chunk) {
+        const task = this.sendWithRetry(
+          message.topic,
+          message.value,
+          message.keyBuffer,
+          0,
+          producer
+        )
+          .then(message.resolve)
+          .catch((err) => {
+            message.reject(toError(err));
+          });
+
+        const tracked = this.trackInflight(task);
+        tasks.push(tracked);
+      }
+
+      await Promise.allSettled(tasks);
+    }
+  }
+
   private async sendWithRetry(
     topic: string,
     value: Buffer,
     keyBuffer: Buffer | undefined,
-    attempt = 0
+    attempt = 0,
+    producer?: Producer
   ): Promise<void> {
+    if (this.closing) {
+      throw new Error('Producer is closing');
+    }
+
     if (attempt >= StreamProducerService.MAX_RETRIES) {
       throw new Error(
         `Failed to send message after ${StreamProducerService.MAX_RETRIES} attempts`
@@ -391,61 +1145,163 @@ export class StreamProducerService {
     }
 
     try {
-      const producer = await this.ensureProducer();
-      await this.produceWithQueueFullRetry(producer, topic, value, keyBuffer);
+      const resolvedProducer = producer ?? (await this.ensureProducer());
+      await this.produceWithQueueFullRetry(
+        resolvedProducer,
+        topic,
+        value,
+        keyBuffer
+      );
     } catch (error) {
+      if (this.closing) {
+        throw new Error('Producer is closing');
+      }
+
       const isDisconnected = this.isDisconnectedError(error);
 
       if (!isDisconnected) {
         throw error;
       }
 
-      if (attempt < StreamProducerService.MAX_RETRIES - 1) {
-        await this.reconnectProducer();
-        const backoffMs = this.calculateBackoff(attempt);
-        await this.delay(backoffMs);
-        return this.sendWithRetry(topic, value, keyBuffer, attempt + 1);
+      const reconnectedProducer = await this.reconnectProducer();
+
+      if (this.closing) {
+        throw new Error('Producer is closing');
       }
 
-      throw error;
+      if (!reconnectedProducer || this.producer !== reconnectedProducer) {
+        throw new Error('Producer reconnection failed or was invalidated');
+      }
+
+      const backoffMs = this.calculateBackoff(
+        attempt,
+        StreamProducerService.INITIAL_BACKOFF_MS,
+        StreamProducerService.MAX_BACKOFF_MS
+      );
+      await this.delay(backoffMs);
+
+      if (this.closing) {
+        throw new Error('Producer is closing');
+      }
+
+      await this.sendWithRetry(
+        topic,
+        value,
+        keyBuffer,
+        attempt + 1,
+        reconnectedProducer
+      );
     }
   }
 
-  async send(topic: string, payload: unknown, key?: string): Promise<void> {
-    const value = Buffer.from(JSON.stringify(payload));
-    const keyBuffer = key ? Buffer.from(key) : undefined;
-
-    await this.sendWithRetry(topic, value, keyBuffer);
+  async send(
+    topic: string,
+    payload: unknown,
+    key?: string | Buffer
+  ): Promise<void> {
+    const value = this.serializePayload(payload);
+    const keyBuffer = this.serializeKey(key);
+    return this.enqueueSend(topic, value, keyBuffer);
   }
 
   async close(): Promise<boolean[]> {
-    if (!this.producer) {
-      return [];
+    if (this.closePromise) {
+      return this.closePromise;
     }
 
+    this.closePromise = this.performClose();
+    return this.closePromise;
+  }
+
+  private async performClose(): Promise<boolean[]> {
+    this.closing = true;
+
+    if (this.flushTimeout) {
+      clearTimeout(this.flushTimeout);
+      this.flushTimeout = null;
+    }
+
+    if (this.reconnecting) {
+      try {
+        await Promise.race([
+          this.reconnecting,
+          new Promise<void>((resolve, reject) =>
+            setTimeout(() => {
+              reject(new Error('Reconnection timeout during shutdown'));
+            }, StreamProducerService.RECONNECT_TIMEOUT_MS)
+          ),
+        ]);
+      } catch (error) {
+        console.error('Error waiting for reconnection during shutdown:', error);
+      }
+      this.reconnecting = null;
+    }
+
+    const flushLoopPromise = this.flushLoop;
+    if (flushLoopPromise) {
+      try {
+        await this.withTimeout(
+          flushLoopPromise,
+          StreamProducerService.SHUTDOWN_FLUSH_TIMEOUT_MS
+        );
+      } catch {
+        this.rejectQueuedMessages(
+          new Error('Producer shutdown: flush loop timeout')
+        );
+        this.flushLoop = null;
+      }
+    }
+
+    try {
+      await this.withTimeout(
+        Promise.all([
+          this.getInflightDrainPromise(),
+          this.getPendingDrainPromise(),
+        ]).then(() => undefined),
+        StreamProducerService.SHUTDOWN_FLUSH_TIMEOUT_MS
+      );
+    } catch {
+      this.rejectAllInflightTasks();
+      this.rejectAllPendingMessages(
+        new Error('Producer shutdown: pending drain timeout')
+      );
+    }
+
+    this.rejectQueuedMessages(
+      new Error('Producer shutdown: rejecting queued messages')
+    );
+
     const producer = this.producer;
+    if (!producer) {
+      return [true];
+    }
 
     try {
       await new Promise<void>((resolve, reject) => {
         const flushTimeout = setTimeout(() => {
           reject(new Error('Flush timeout during shutdown'));
-        }, 10000);
+        }, StreamProducerService.SHUTDOWN_FLUSH_TIMEOUT_MS);
 
-        producer.flush(10000, (err) => {
-          clearTimeout(flushTimeout);
+        producer.flush(
+          StreamProducerService.SHUTDOWN_FLUSH_TIMEOUT_MS,
+          (err) => {
+            clearTimeout(flushTimeout);
 
-          if (err) {
-            this.rejectAllPendingMessages(
-              new Error('Producer shutdown: flush failed')
-            );
-            reject(
-              new Error(`Flush error during shutdown: ${getErrorMessage(err)}`)
-            );
-            return;
+            if (err) {
+              this.rejectAllPendingMessages(
+                new Error('Producer shutdown: flush failed')
+              );
+              reject(
+                new Error(
+                  `Flush error during shutdown: ${getErrorMessage(err)}`
+                )
+              );
+              return;
+            }
+
+            resolve();
           }
-
-          resolve();
-        });
+        );
       });
     } catch (error) {
       console.error('Error during producer flush on shutdown:', error);
@@ -464,8 +1320,57 @@ export class StreamProducerService {
       }
 
       this.producer = null;
+      this.producerReady = null;
+      this.reconnecting = null;
     }
 
     return [true];
+  }
+
+  getMetrics(): {
+    messagesSent: number;
+    messagesFailed: number;
+    messagesRejected: number;
+    reconnections: number;
+    connectionErrors: number;
+    queueFullErrors: number;
+    deliveryTimeouts: number;
+    averageLatencyMs: number;
+    queueSize: number;
+    pendingMessages: number;
+    inflightMessages: number;
+  } {
+    const averageLatencyMs =
+      this.metrics.messagesSent > 0
+        ? Math.round(this.metrics.totalLatencyMs / this.metrics.messagesSent)
+        : 0;
+
+    return {
+      messagesSent: this.metrics.messagesSent,
+      messagesFailed: this.metrics.messagesFailed,
+      messagesRejected: this.metrics.messagesRejected,
+      reconnections: this.metrics.reconnections,
+      connectionErrors: this.metrics.connectionErrors,
+      queueFullErrors: this.metrics.queueFullErrors,
+      deliveryTimeouts: this.metrics.deliveryTimeouts,
+      averageLatencyMs,
+      queueSize: this.sendQueue.length,
+      pendingMessages: this.pendingMessages.size,
+      inflightMessages: this.inflight.size,
+    };
+  }
+
+  resetMetrics(): void {
+    this.metrics = {
+      messagesSent: 0,
+      messagesFailed: 0,
+      messagesRejected: 0,
+      reconnections: 0,
+      connectionErrors: 0,
+      queueFullErrors: 0,
+      deliveryTimeouts: 0,
+      totalLatencyMs: 0,
+      lastMessageTime: 0,
+    };
   }
 }
