@@ -176,56 +176,23 @@ export class ElasticDatabaseService {
     id: string,
     retryOnConflict?: number
   ): Promise<boolean> => {
-    const maxRetries = retryOnConflict ?? 5;
-    let attempt = 0;
+    try {
+      const result = await this.client.update({
+        index,
+        id,
+        doc: document,
+        upsert: document,
+        retry_on_conflict: retryOnConflict ?? 5,
+      });
 
-    while (attempt < maxRetries) {
-      try {
-        const meta = await this.getDocumentMeta(index, id);
-
-        if (!meta) {
-          const createResult = await this.tryCreateDocument(
-            index,
-            id,
-            document
-          );
-
-          if (createResult === 'created') {
-            return true;
-          }
-
-          attempt++;
-          continue;
-        }
-
-        const updateResult = await this.tryUpdateWithMeta(
-          index,
-          id,
-          document,
-          meta
-        );
-
-        if (updateResult !== 'conflict') {
-          return (
-            updateResult === 'updated' ||
-            updateResult === 'created' ||
-            updateResult === 'noop'
-          );
-        }
-
-        attempt++;
-      } catch (error) {
-        if (attempt >= maxRetries - 1) {
-          throw new Error(`Failed to update document with ID: ${error}`);
-        }
-
-        attempt++;
-      }
+      return (
+        result.result === 'updated' ||
+        result.result === 'created' ||
+        result.result === 'noop'
+      );
+    } catch (error) {
+      throw new Error(`Failed to update document with ID: ${error}`);
     }
-
-    throw new Error(
-      `Failed to update document with ID after ${maxRetries} retries`
-    );
   };
 
   private async tryCreateDocument<T extends Record<string, unknown>>(
@@ -357,38 +324,62 @@ export class ElasticDatabaseService {
     index: string,
     id: string,
     field: string,
-    value: string
+    value: string,
+    retryOnConflict?: number
   ): Promise<boolean> => {
-    try {
-      const result = await this.client.update({
-        index,
-        id,
-        script: {
-          source: `
-            if (ctx._source.${field} == null) {
-              ctx._source.${field} = [params.value];
-            } else {
-              ctx._source.${field}.add(params.value);
-            }
-          `,
-          params: {
-            value,
-          },
-        },
-        upsert: {
-          [field]: [value],
-        },
-        retry_on_conflict: 5,
-      });
+    const maxRetries = retryOnConflict ?? 5;
+    let attempt = 0;
 
-      return (
-        result.result === 'updated' ||
-        result.result === 'created' ||
-        result.result === 'noop'
-      );
-    } catch (error) {
-      throw new Error(`Failed to update array field: ${error}`);
+    while (attempt < maxRetries) {
+      const meta = await this.getDocumentMeta(index, id);
+
+      if (!meta) {
+        return false;
+      }
+
+      try {
+        const result = await this.client.update({
+          index,
+          id,
+          if_seq_no: meta.seqNo,
+          if_primary_term: meta.primaryTerm,
+          script: {
+            source: `
+              if (ctx._source.${field} == null) {
+                ctx._source.${field} = [params.value];
+              } else if (!ctx._source.${field}.contains(params.value)) {
+                ctx._source.${field}.add(params.value);
+              }
+            `,
+            params: {
+              value,
+            },
+          },
+        });
+
+        if (
+          result.result === 'updated' ||
+          result.result === 'created' ||
+          result.result === 'noop'
+        ) {
+          return true;
+        }
+      } catch (error: unknown) {
+        if (
+          typeof error === 'object' &&
+          error !== null &&
+          'statusCode' in error &&
+          error.statusCode === 409
+        ) {
+          attempt++;
+          continue;
+        }
+
+        throw new Error(`Failed to update array field: ${error}`);
+      }
     }
+
+    return false;
   };
 
   updateField = async (
@@ -398,29 +389,53 @@ export class ElasticDatabaseService {
     value: any,
     retryOnConflict?: number
   ): Promise<boolean> => {
-    try {
-      const updateParams: any = {
-        index,
-        id,
-        script: {
-          source: `ctx._source.${field} = params.value`,
-          params: {
-            value,
+    const maxRetries = retryOnConflict ?? 5;
+    let attempt = 0;
+
+    while (attempt < maxRetries) {
+      const meta = await this.getDocumentMeta(index, id);
+
+      if (!meta) {
+        return false;
+      }
+
+      try {
+        const result = await this.client.update({
+          index,
+          id,
+          if_seq_no: meta.seqNo,
+          if_primary_term: meta.primaryTerm,
+          script: {
+            source: `ctx._source.${field} = params.value`,
+            params: {
+              value,
+            },
           },
-        },
-        retry_on_conflict: retryOnConflict ?? 5,
-      };
+        });
 
-      const result = await this.client.update(updateParams);
+        if (
+          result.result === 'updated' ||
+          result.result === 'created' ||
+          result.result === 'noop'
+        ) {
+          return true;
+        }
+      } catch (error: unknown) {
+        if (
+          typeof error === 'object' &&
+          error !== null &&
+          'statusCode' in error &&
+          error.statusCode === 409
+        ) {
+          attempt++;
+          continue;
+        }
 
-      return (
-        result.result === 'updated' ||
-        result.result === 'created' ||
-        result.result === 'noop'
-      );
-    } catch (error) {
-      throw new Error(`Failed to update field: ${error}`);
+        throw new Error(`Failed to update field: ${error}`);
+      }
     }
+
+    return false;
   };
 
   updateWithScript = async <TParams extends Record<string, unknown>>(
@@ -653,7 +668,7 @@ export class ElasticDatabaseService {
     return 'conflict';
   };
 
-  updateByQueryWithScript = async <TParams extends object>(
+  updateByQueryWithScript = async <TParams extends Record<string, unknown>>(
     index: string,
     query: QueryDslQueryContainer,
     script: { source: string; params: TParams },
@@ -664,6 +679,7 @@ export class ElasticDatabaseService {
       requestsPerSecond?: number;
       slices?: number | 'auto';
       maxRetries?: number;
+      batchSize?: number;
     }
   ): Promise<{
     updated: number;
@@ -672,117 +688,123 @@ export class ElasticDatabaseService {
     failures: Array<{ id?: string; cause: string }>;
   }> => {
     const conflictsPolicy = options?.conflicts ?? 'abort';
-    const refresh = options?.refresh ?? false;
-    const waitForCompletion = options?.waitForCompletion ?? true;
-    const maxRetries = options?.maxRetries ?? 0;
+    const maxRetries = options?.maxRetries ?? 5;
+    const batchSize = options?.batchSize ?? 100;
 
-    const executeUpdateByQuery = async () => {
-      const updateParams: {
-        index: string;
-        query: QueryDslQueryContainer;
-        script: { source: string; params: TParams };
-        conflicts: 'abort' | 'proceed';
-        refresh: boolean;
-        wait_for_completion?: boolean;
-        requests_per_second?: number;
-        slices?: number | 'auto';
-      } = {
-        index,
-        query,
-        script: {
-          source: script.source,
-          params: script.params,
-        },
-        conflicts: conflictsPolicy,
-        refresh,
-      };
-
-      if (waitForCompletion !== undefined) {
-        updateParams.wait_for_completion = waitForCompletion;
-      }
-
-      if (options?.requestsPerSecond !== undefined) {
-        updateParams.requests_per_second = options.requestsPerSecond;
-      }
-
-      if (options?.slices !== undefined) {
-        updateParams.slices = options.slices;
-      }
-
-      return this.client.updateByQuery(updateParams);
-    };
+    let total = 0;
+    let updated = 0;
+    let versionConflicts = 0;
+    const failures: Array<{ id?: string; cause: string }> = [];
 
     try {
-      let result = await executeUpdateByQuery();
+      let scrollId: string | undefined;
+      let hasMore = true;
 
-      const versionConflicts = result.version_conflicts ?? 0;
+      while (hasMore) {
+        const searchResponse = scrollId
+          ? await this.client.scroll({
+              scroll_id: scrollId,
+              scroll: '1m',
+            })
+          : await this.client.search({
+              index,
+              body: { query } as any,
+              scroll: '1m',
+              size: batchSize,
+              _source: false,
+            });
 
-      if (
-        conflictsPolicy === 'proceed' &&
-        versionConflicts > 0 &&
-        maxRetries > 0
-      ) {
-        let retryCount = 0;
-        let currentResult = result;
+        const hits = searchResponse.hits.hits ?? [];
+        total += hits.length;
 
-        while (
-          (currentResult.version_conflicts ?? 0) > 0 &&
-          retryCount < maxRetries
-        ) {
-          retryCount++;
-          currentResult = await executeUpdateByQuery();
-          result = currentResult;
-
-          if ((currentResult.version_conflicts ?? 0) === 0) {
-            break;
+        if (hits.length === 0) {
+          hasMore = false;
+          if (scrollId) {
+            await this.client.clearScroll({ scroll_id: scrollId });
           }
+          break;
         }
-      }
 
-      const finalVersionConflicts = result.version_conflicts ?? 0;
+        const ids = hits
+          .map((hit) => hit._id)
+          .filter((id): id is string => !!id);
 
-      if (conflictsPolicy === 'abort' && finalVersionConflicts > 0) {
-        throw new Error(
-          `Update by query failed with ${finalVersionConflicts} version conflicts. Updated: ${result.updated}, Total: ${result.total}`
-        );
-      }
+        if (ids.length === 0) {
+          scrollId = (searchResponse as any)._scroll_id;
+          hasMore = !!scrollId && hits.length === batchSize;
+          continue;
+        }
 
-      const failures: Array<{ id?: string; cause: string }> = [];
+        const updatePromises = ids.map(async (id) => {
+          const result = await this.updateWithScriptOCC(
+            index,
+            id,
+            {
+              source: script.source,
+              params: script.params as Record<string, unknown>,
+            },
+            { maxRetries }
+          );
 
-      if (result.failures) {
-        for (const failure of result.failures) {
-          let causeReason = 'Unknown error';
-
-          if (
-            typeof failure.cause === 'object' &&
-            failure.cause !== null &&
-            'reason' in failure.cause
-          ) {
-            const reason = failure.cause.reason;
-            causeReason = typeof reason === 'string' ? reason : 'Unknown error';
+          if (result === 'updated' || result === 'created') {
+            return { id, success: true };
           }
 
-          if (
-            typeof failure.cause === 'object' &&
-            failure.cause !== null &&
-            'type' in failure.cause &&
-            causeReason === 'Unknown error'
-          ) {
-            const type = failure.cause.type;
-            causeReason = typeof type === 'string' ? type : 'Unknown error';
+          if (result === 'conflict') {
+            return { id, success: false, conflict: true };
+          }
+
+          return { id, success: false, conflict: false };
+        });
+
+        const results = await Promise.all(updatePromises);
+
+        for (const result of results) {
+          if (result.success) {
+            updated++;
+            continue;
+          }
+
+          if (result.conflict) {
+            versionConflicts++;
+            failures.push({
+              id: result.id,
+              cause: 'Version conflict',
+            });
+            continue;
           }
 
           failures.push({
-            id: failure.id,
-            cause: causeReason,
+            id: result.id,
+            cause: 'Update failed',
           });
         }
+
+        if (options?.requestsPerSecond && options.requestsPerSecond > 0) {
+          const delay = Math.ceil(
+            (ids.length / options.requestsPerSecond) * 1000
+          );
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        }
+
+        scrollId = (searchResponse as any)._scroll_id;
+        hasMore = !!scrollId && hits.length === batchSize;
+      }
+
+      if (conflictsPolicy === 'abort' && versionConflicts > 0) {
+        throw new Error(
+          `Update by query failed with ${versionConflicts} version conflicts. Updated: ${updated}, Total: ${total}`
+        );
+      }
+
+      if (options?.refresh) {
+        await this.client.indices.refresh({ index });
       }
 
       return {
-        updated: result.updated ?? 0,
-        total: result.total ?? 0,
-        versionConflicts: result.version_conflicts ?? 0,
+        updated,
+        total,
+        versionConflicts,
         failures,
       };
     } catch (error: unknown) {
@@ -876,7 +898,7 @@ export class ElasticDatabaseService {
     const ids = operations.map((op) => op.id);
     const metaMap = await this.getBulkDocumentMeta(index, ids);
 
-    const body = operations.flatMap((op) => {
+    const body = operations.flatMap((op): any => {
       const meta = metaMap.get(op.id);
 
       const payload: {
@@ -909,6 +931,19 @@ export class ElasticDatabaseService {
         ];
       }
 
+      const createPayload: {
+        script: { source: string; params: TParams };
+        scripted_upsert: boolean;
+        upsert: Record<string, unknown>;
+      } = {
+        script: {
+          source: op.script.source,
+          params: op.script.params,
+        },
+        scripted_upsert: true,
+        upsert: op.upsert ?? {},
+      };
+
       return [
         {
           update: {
@@ -916,13 +951,13 @@ export class ElasticDatabaseService {
             _id: op.id,
           },
         },
-        payload,
+        createPayload,
       ];
-    });
+    }) as any;
 
     try {
       const response = (await this.client.bulk({
-        body,
+        body: body as any,
       })) as IElasticBulkResponse;
 
       let updated = 0;

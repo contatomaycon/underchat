@@ -508,7 +508,7 @@ export class EmbeddingService {
       has_embedding: doc.has_embedding,
     };
 
-    await this.elasticDatabaseService.updateWithScript(
+    await this.elasticDatabaseService.updateWithScriptOCC(
       this.indexName,
       id,
       {
@@ -516,7 +516,7 @@ export class EmbeddingService {
         params: scriptParams,
       },
       {
-        retryOnConflict: 10,
+        maxRetries: 10,
       }
     );
   }

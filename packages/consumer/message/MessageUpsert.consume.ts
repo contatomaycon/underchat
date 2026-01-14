@@ -689,10 +689,13 @@ export class MessageUpsertConsume {
 
     const name = this.nameChat(data);
 
-    await this.elasticDatabaseService.update(
+    await this.elasticDatabaseService.updateWithOCC(
       EElasticIndex.chat,
+      getChat.chat_id,
       { name },
-      getChat.chat_id
+      {
+        maxRetries: 5,
+      }
     );
     getChat.name = name;
 
