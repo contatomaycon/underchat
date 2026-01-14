@@ -158,6 +158,50 @@ export class ElasticDatabaseService {
     }
   };
 
+  updateWithScript = async (
+    index: string,
+    id: string,
+    scriptSource: string,
+    scriptParams: Record<string, unknown>,
+    upsert?: Record<string, unknown>,
+    retryOnConflict?: number
+  ): Promise<boolean> => {
+    try {
+      const updateParams: {
+        index: string;
+        id: string;
+        script: {
+          source: string;
+          params: Record<string, unknown>;
+        };
+        upsert?: Record<string, unknown>;
+        retry_on_conflict: number;
+      } = {
+        index,
+        id,
+        script: {
+          source: scriptSource,
+          params: scriptParams,
+        },
+        retry_on_conflict: retryOnConflict ?? 10,
+      };
+
+      if (upsert) {
+        updateParams.upsert = upsert;
+      }
+
+      const result = await this.client.update(updateParams);
+
+      return (
+        result.result === 'updated' ||
+        result.result === 'created' ||
+        result.result === 'noop'
+      );
+    } catch (error) {
+      throw new Error(`Failed to update with script: ${error}`);
+    }
+  };
+
   updateByQueryWithScript = async (
     index: string,
     query: QueryDslQueryContainer,

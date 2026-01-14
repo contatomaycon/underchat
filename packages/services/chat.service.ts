@@ -12,6 +12,7 @@ import { ViewWorkerConfigForChatResponse } from '@core/schema/chat/viewWorkerCon
 import { ChatQuickMessageTemplatesListerRepository } from '@core/repositories/chat/ChatQuickMessageTemplatesLister.repository';
 import { ListQuickMessageTemplatesResponse } from '@core/schema/chat/listQuickMessageTemplates/response.schema';
 import { ListQuickMessageTemplatesRequest } from '@core/schema/chat/listQuickMessageTemplates/request.schema';
+import { IChatSummary } from '@core/common/interfaces/IChatSummaryUpdate';
 
 type ElasticHit<T> = {
   _source?: T;
@@ -417,10 +418,22 @@ export class ChatService {
     try {
       const summaryToUpdate = Array.isArray(summary) ? summary[0] : summary;
 
-      return await this.elasticDatabaseService.update(
+      if (!summaryToUpdate) {
+        return false;
+      }
+
+      const scriptSource = this.buildUpdateChatSummaryScript();
+      const scriptParams =
+        this.buildUpdateChatSummaryScriptParams(summaryToUpdate);
+      const upsert = this.buildUpdateChatSummaryUpsert(summaryToUpdate);
+
+      return await this.elasticDatabaseService.updateWithScript(
         EElasticIndex.chat,
-        { summary: summaryToUpdate },
-        chatId
+        chatId,
+        scriptSource,
+        scriptParams,
+        upsert,
+        10
       );
     } catch (error) {
       console.error('Error updating chat summary:', error);
@@ -428,63 +441,146 @@ export class ChatService {
     }
   };
 
+  private buildUpdateChatSummaryScript(): string {
+    return `
+      if (ctx._source.summary == null) {
+        ctx._source.summary = params.baseline;
+        return;
+      }
+      
+      def summary = ctx._source.summary;
+      
+      if (params.last_message != null || params.last_date != null) {
+        def currentLastDate = summary.last_date;
+        def newLastDate = params.last_date;
+        
+        def shouldUpdateMessage = false;
+        
+        if (currentLastDate == null || newLastDate == null) {
+          shouldUpdateMessage = newLastDate != null;
+        } else {
+          if (currentLastDate instanceof String && newLastDate instanceof String) {
+            shouldUpdateMessage = newLastDate.compareTo(currentLastDate) > 0;
+          }
+        }
+        
+        if (shouldUpdateMessage) {
+          summary.last_message = params.last_message;
+          summary.last_date = newLastDate;
+        }
+      }
+      
+      if (params.unread_count_absolute != null) {
+        def newUnreadCount = params.unread_count_absolute;
+        if (newUnreadCount < 0) {
+          newUnreadCount = 0;
+        }
+        summary.unread_count = newUnreadCount;
+      } else if (params.unread_count_delta != null) {
+        def currentUnreadCount = summary.unread_count != null ? summary.unread_count : 0;
+        def newUnreadCount = currentUnreadCount + params.unread_count_delta;
+        if (newUnreadCount < 0) {
+          newUnreadCount = 0;
+        }
+        summary.unread_count = newUnreadCount;
+      }
+    `;
+  }
+
+  private buildUpdateChatSummaryScriptParams(
+    summary: IChatSummary
+  ): Record<string, unknown> {
+    const baseline: IChatSummary = {
+      last_message: summary.last_message,
+      last_date: summary.last_date,
+      unread_count: summary.unread_count,
+    };
+
+    return {
+      baseline,
+      last_message: summary.last_message,
+      last_date: summary.last_date,
+      unread_count_absolute: summary.unread_count,
+    };
+  }
+
+  private buildUpdateChatSummaryUpsert(
+    summary: IChatSummary
+  ): Record<string, unknown> {
+    return {
+      summary: {
+        last_message: summary.last_message,
+        last_date: summary.last_date,
+        unread_count: summary.unread_count,
+      },
+    };
+  }
+
   updateChatSummaryAtomically = async (
     chatId: string,
     lastMessage: string | null,
     lastDate: string,
     incrementUnreadCount: boolean
   ): Promise<boolean> => {
-    const scriptSource = this.buildChatSummaryUpdateScript();
-    const baseline = this.createChatSummaryBaseline(lastMessage, lastDate);
-    const scriptParams = this.buildChatSummaryScriptParams(
-      baseline,
-      lastMessage,
-      lastDate,
-      incrementUnreadCount
-    );
+    try {
+      const scriptSource = this.buildChatSummaryAtomicUpdateScript();
+      const baseline = this.createChatSummaryBaseline(lastMessage, lastDate);
+      const scriptParams = this.buildChatSummaryAtomicScriptParams(
+        baseline,
+        lastMessage,
+        lastDate,
+        incrementUnreadCount
+      );
+      const upsert = this.buildChatSummaryAtomicUpsert(
+        lastMessage,
+        lastDate,
+        incrementUnreadCount
+      );
 
-    const updated = await this.executeChatSummaryScriptUpdate(
-      chatId,
-      scriptSource,
-      scriptParams
-    );
-
-    if (updated) {
-      return true;
+      return await this.elasticDatabaseService.updateWithScript(
+        EElasticIndex.chat,
+        chatId,
+        scriptSource,
+        scriptParams,
+        upsert,
+        10
+      );
+    } catch (error) {
+      console.error('Error updating chat summary atomically:', error);
+      return false;
     }
-
-    return this.fallbackChatSummaryUpdate(
-      chatId,
-      lastMessage,
-      lastDate,
-      incrementUnreadCount
-    );
   };
 
-  private buildChatSummaryUpdateScript(): string {
+  private buildChatSummaryAtomicUpdateScript(): string {
     return `
       if (ctx._source.summary == null) {
         ctx._source.summary = params.baseline;
+        return;
       }
       
       def summary = ctx._source.summary;
-      def changed = false;
       
       def currentLastDate = summary.last_date;
       def newLastDate = params.last_date;
       
-      if (currentLastDate == null || newLastDate == null || 
-          (currentLastDate instanceof String && newLastDate instanceof String && 
-           newLastDate.compareTo(currentLastDate) > 0)) {
+      def shouldUpdateMessage = false;
+      
+      if (currentLastDate == null || newLastDate == null) {
+        shouldUpdateMessage = newLastDate != null;
+      } else {
+        if (currentLastDate instanceof String && newLastDate instanceof String) {
+          shouldUpdateMessage = newLastDate.compareTo(currentLastDate) > 0;
+        }
+      }
+      
+      if (shouldUpdateMessage) {
         summary.last_message = params.last_message;
         summary.last_date = newLastDate;
-        changed = true;
       }
       
       if (params.increment_unread_count) {
         def currentUnreadCount = summary.unread_count != null ? summary.unread_count : 0;
         summary.unread_count = currentUnreadCount + 1;
-        changed = true;
       } else {
         if (summary.unread_count == null) {
           summary.unread_count = 0;
@@ -496,7 +592,7 @@ export class ChatService {
   private createChatSummaryBaseline(
     lastMessage: string | null,
     lastDate: string
-  ): IChat['summary'] {
+  ): IChatSummary {
     return {
       last_message: lastMessage,
       last_date: lastDate,
@@ -504,17 +600,31 @@ export class ChatService {
     };
   }
 
-  private buildChatSummaryScriptParams(
-    baseline: IChat['summary'],
+  private buildChatSummaryAtomicScriptParams(
+    baseline: IChatSummary,
     lastMessage: string | null,
     lastDate: string,
     incrementUnreadCount: boolean
-  ): Record<string, any> {
+  ): Record<string, unknown> {
     return {
       baseline,
       last_message: lastMessage,
       last_date: lastDate,
       increment_unread_count: incrementUnreadCount,
+    };
+  }
+
+  private buildChatSummaryAtomicUpsert(
+    lastMessage: string | null,
+    lastDate: string,
+    incrementUnreadCount: boolean
+  ): Record<string, unknown> {
+    return {
+      summary: {
+        last_message: lastMessage,
+        last_date: lastDate,
+        unread_count: incrementUnreadCount ? 1 : 0,
+      },
     };
   }
 
