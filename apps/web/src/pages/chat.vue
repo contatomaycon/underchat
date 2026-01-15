@@ -4234,15 +4234,6 @@ const handleTypingEvent = (data: IChatTyping | IChatMessage) => {
   setTypingState(activeChat.chat_id, typingData.is_typing);
 };
 
-const clearChatSummaryIfNeeded = async (chatId: string) => {
-  if (
-    chatStore.activeChat?.chat_id === chatId &&
-    chatStore.activeChat?.status === EChatStatus.in_chat
-  ) {
-    await chatStore.clearChatSummary(chatId);
-  }
-};
-
 const handleGlobalMessage = (e: Event) => {
   const messageData = (e as CustomEvent<IChatMessage>).detail;
   if (chatStore.activeChat?.chat_id !== messageData.chat_id) {
@@ -4353,24 +4344,12 @@ const handleGlobalChatUpdate = async (e: Event) => {
   }
 };
 
-const handleGlobalQueueUpdate = (e: Event) => {
-  const chatData = (e as CustomEvent<IChat>).detail;
-  if (
-    chatStore.user?.account_id &&
-    chatStore.activeChat?.chat_id === chatData.chat_id &&
-    chatData.status === EChatStatus.in_chat
-  ) {
-    clearChatSummaryIfNeeded(chatData.chat_id).catch(() => {});
-  }
-};
-
 onMounted(async () => {
   await chatSocket.refreshActiveChat();
 
   globalThis.addEventListener('chat-message', handleGlobalMessage);
   globalThis.addEventListener('chat-typing', handleGlobalTyping);
   globalThis.addEventListener('chat-update', handleGlobalChatUpdate);
-  globalThis.addEventListener('chat-queue-update', handleGlobalQueueUpdate);
 
   globalThis.addEventListener('focus-composer', focusComposer);
   globalThis.addEventListener(
@@ -4402,7 +4381,6 @@ onUnmounted(async () => {
   globalThis.removeEventListener('chat-message', handleGlobalMessage);
   globalThis.removeEventListener('chat-typing', handleGlobalTyping);
   globalThis.removeEventListener('chat-update', handleGlobalChatUpdate);
-  globalThis.removeEventListener('chat-queue-update', handleGlobalQueueUpdate);
 
   globalThis.removeEventListener('focus-composer', focusComposer);
   globalThis.removeEventListener(

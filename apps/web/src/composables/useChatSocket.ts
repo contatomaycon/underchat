@@ -178,16 +178,6 @@ export const useChatSocket = () => {
         if (isActiveChat && data.status === EChatStatus.in_chat) {
           chatStore.clearActiveChatUnreadCountLocally();
         }
-
-        if (
-          chatStore.user?.account_id &&
-          chatStore.activeChat?.chat_id === data.chat_id &&
-          data.status === EChatStatus.in_chat
-        ) {
-          globalThis.dispatchEvent(
-            new CustomEvent('chat-queue-update', { detail: data })
-          );
-        }
       });
 
       subscriptions.push(

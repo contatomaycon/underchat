@@ -453,6 +453,8 @@ export class ChatStatusUpdaterUseCase {
       throw new Error(t('chat_status_update_failed'));
     }
 
+    await this.chatService.clearChatSummary(params.chat_id, accountId);
+
     if (
       finalStatus === EChatStatus.in_chat ||
       finalStatus === EChatStatus.closed

@@ -344,6 +344,8 @@ export class TransferChatUseCase {
       throw new Error(t('chat_transfer_failed'));
     }
 
+    await this.chatService.clearChatSummary(params.chat_id, accountId);
+
     await this.invalidateChatCache(updatedChat);
 
     const chatWithProtocol = await this.buildChatWithProtocol(
