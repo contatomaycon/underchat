@@ -147,6 +147,9 @@ export const useChatStore = defineStore('chat', {
     localMessageState: {} as Record<string, LocalMessageState>,
     chatContacts: {} as Record<string, ViewChatContactResponse | null>,
     loadingChatContacts: {} as Record<string, boolean>,
+    reloadAllChatListsDebounceTimeout: null as ReturnType<
+      typeof setTimeout
+    > | null,
   }),
   actions: {
     showSnackbar(message: string, color: EColor) {
@@ -1715,38 +1718,48 @@ export const useChatStore = defineStore('chat', {
     },
 
     async reloadAllChatLists(hasAppliedAdvancedFilters = false): Promise<void> {
-      await Promise.all([
-        this.loadQueueChats(
-          {
-            current_page: 1,
-            per_page: this.queuePagings.per_page,
-          },
-          hasAppliedAdvancedFilters,
-          undefined,
-          undefined,
-          false
-        ),
-        this.loadInChatChats(
-          {
-            current_page: 1,
-            per_page: this.inChatPagings.per_page,
-          },
-          hasAppliedAdvancedFilters,
-          undefined,
-          undefined,
-          false
-        ),
-        this.loadChatbotChatsWithFilters(
-          {
-            current_page: 1,
-            per_page: this.chatbotPagings.per_page,
-          },
-          hasAppliedAdvancedFilters,
-          undefined,
-          undefined,
-          false
-        ),
-      ]);
+      if (this.reloadAllChatListsDebounceTimeout) {
+        clearTimeout(this.reloadAllChatListsDebounceTimeout);
+      }
+
+      return new Promise((resolve) => {
+        this.reloadAllChatListsDebounceTimeout = setTimeout(async () => {
+          this.reloadAllChatListsDebounceTimeout = null;
+          await Promise.all([
+            this.loadQueueChats(
+              {
+                current_page: 1,
+                per_page: this.queuePagings.per_page,
+              },
+              hasAppliedAdvancedFilters,
+              undefined,
+              undefined,
+              false
+            ),
+            this.loadInChatChats(
+              {
+                current_page: 1,
+                per_page: this.inChatPagings.per_page,
+              },
+              hasAppliedAdvancedFilters,
+              undefined,
+              undefined,
+              false
+            ),
+            this.loadChatbotChatsWithFilters(
+              {
+                current_page: 1,
+                per_page: this.chatbotPagings.per_page,
+              },
+              hasAppliedAdvancedFilters,
+              undefined,
+              undefined,
+              false
+            ),
+          ]);
+          resolve();
+        }, 300);
+      });
     },
 
     async updateChatsUser(input: UpdateChatsUserRequest): Promise<void> {
