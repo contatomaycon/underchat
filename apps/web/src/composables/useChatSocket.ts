@@ -137,8 +137,6 @@ export const useChatSocket = () => {
       await onMessage(
         chatAccountCentrifugo(accountId),
         async (data: IChatMessage | IChatTyping | IChat | any) => {
-          console.log('data 1:', data);
-
           if ('type' in data && data.type === 'typing') {
             globalThis.dispatchEvent(
               new CustomEvent('chat-typing', { detail: data })
@@ -168,8 +166,6 @@ export const useChatSocket = () => {
       );
 
       await onMessage(chatQueueAccountCentrifugo(accountId), (data: IChat) => {
-        console.log('data 2:', data);
-
         const isActiveChat =
           isChatRoute() && chatStore.activeChat?.chat_id === data.chat_id;
 
