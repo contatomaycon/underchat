@@ -519,8 +519,11 @@ export const useChatStore = defineStore('chat', {
     },
 
     getFieldValue(chat: ListChatsResult, field: string): any {
-      if (field === 'summary.last_message' || field === 'summary.last_date') {
-        return chat.summary?.last_date || chat.summary?.last_message || '';
+      if (field === 'summary.last_message') {
+        return chat.summary?.last_message || '';
+      }
+      if (field === 'summary.last_date') {
+        return chat.summary?.last_date || '';
       }
       if (field === 'account.name') {
         return chat.account?.name || '';
