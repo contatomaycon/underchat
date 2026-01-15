@@ -1451,21 +1451,6 @@ export class ChatbotFlowRunnerService {
     user: IChat['user'] | null | undefined,
     sector: IChat['sector'] | null | undefined
   ): Promise<IChat> {
-    const updated = await this.chatService.updateChatUserAndSector(
-      createChat.chat_id,
-      user,
-      sector
-    );
-
-    if (!updated) {
-      throw new Error(t('chat_update_failed'));
-    }
-
-    await this.chatService.updateChatStatus(
-      createChat.chat_id,
-      EChatStatus.queue
-    );
-
     const updatedChat: IChat = {
       ...createChat,
       user,
@@ -1473,7 +1458,10 @@ export class ChatbotFlowRunnerService {
       status: EChatStatus.queue,
     };
 
-    await this.chatService.saveChat(updatedChat);
+    const saved = await this.chatService.saveChat(updatedChat);
+    if (!saved) {
+      throw new Error(t('chat_update_failed'));
+    }
 
     const channelAccountId = updatedChat.account?.id ?? createChat.account.id;
 
