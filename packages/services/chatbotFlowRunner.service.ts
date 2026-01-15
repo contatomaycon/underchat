@@ -29,7 +29,6 @@ import { IProcessFlowNodeOptions } from '@core/common/interfaces/IProcessFlowNod
 import { generateProtocol } from '@core/common/functions/generateProtocol';
 import { extractPhoneAndDdi } from '@core/common/functions/extractPhoneAndDdi';
 import {
-  createChatCacheKey,
   createChatbotFlowCacheKey,
   createChatbotInactivityCacheKey,
   createChatbotFailedAttemptsCacheKey,
@@ -92,27 +91,6 @@ export class ChatbotFlowRunnerService {
     chatId: string
   ): string {
     return createChatbotFailedAttemptsCacheKey(accountId, workerId, chatId);
-  }
-
-  private getBaileysChatCacheKey(
-    accountId: string,
-    workerId: string,
-    phone: string
-  ): string {
-    return createChatCacheKey(accountId, workerId, phone);
-  }
-
-  private async invalidateChatFromCache(chat: IChat): Promise<void> {
-    const accountId = chat.account?.id;
-    const workerId = chat.worker?.id;
-    const phone = chat.phone;
-
-    if (!accountId || !workerId || !phone) {
-      return;
-    }
-
-    const key = this.getBaileysChatCacheKey(accountId, workerId, phone);
-    await this.redis.del(key);
   }
 
   private getFlowNodeById(
@@ -760,7 +738,7 @@ export class ChatbotFlowRunnerService {
       ),
       this.redis.del(cacheKey),
       this.cancelInactivityCheck(createChat),
-      this.invalidateChatFromCache(createChat),
+      this.chatService.invalidateChatCache(createChat),
     ];
 
     if (enabled !== false) {
@@ -1204,10 +1182,7 @@ export class ChatbotFlowRunnerService {
       label,
     };
 
-    await Promise.all([
-      this.chatService.saveChat(updatedChat),
-      this.invalidateChatFromCache(updatedChat),
-    ]);
+    await this.chatService.saveChat(updatedChat);
 
     const channelAccountId = updatedChat.account?.id ?? createChat.account.id;
 
@@ -1252,7 +1227,7 @@ export class ChatbotFlowRunnerService {
       }
     }
 
-    await this.invalidateChatFromCache(createChat);
+    await this.chatService.invalidateChatCache(createChat);
   }
 
   private async processTagNode(
@@ -1498,10 +1473,7 @@ export class ChatbotFlowRunnerService {
       status: EChatStatus.queue,
     };
 
-    await Promise.all([
-      this.chatService.saveChat(updatedChat),
-      this.invalidateChatFromCache(updatedChat),
-    ]);
+    await this.chatService.saveChat(updatedChat);
 
     const channelAccountId = updatedChat.account?.id ?? createChat.account.id;
 

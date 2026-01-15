@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { inject, injectable } from 'tsyringe';
 import { v7 as uuidv7 } from 'uuid';
 import { ElasticDatabaseService } from './elasticDatabase.service';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
@@ -24,6 +24,11 @@ import {
   ChatPatchOptions,
 } from '@core/common/interfaces/IChatPatch';
 import { metricsCount } from '@core/plugins/telemetry/sentry';
+import {
+  createChatCacheKey,
+  createChatCacheKeyChatId,
+} from '@core/common/functions/createCacheKey';
+import Redis from 'ioredis';
 
 type ElasticHit<T> = {
   _source?: T;
@@ -32,6 +37,7 @@ type ElasticHit<T> = {
 @injectable()
 export class ChatService {
   constructor(
+    @inject('Redis') private readonly redis: Redis,
     private readonly elasticDatabaseService: ElasticDatabaseService,
     private readonly workerConfigForChatViewerRepository: WorkerConfigForChatViewerRepository,
     private readonly chatQuickMessageTemplatesListerRepository: ChatQuickMessageTemplatesListerRepository
@@ -307,10 +313,34 @@ export class ChatService {
     return result === 'updated' || result === 'created' || result === 'noop';
   };
 
+  async invalidateChatCache(chat: IChat): Promise<void> {
+    const cacheKey = createChatCacheKey(
+      chat.account.id,
+      chat.worker.id,
+      chat.phone
+    );
+    const cacheKeyChat = createChatCacheKeyChatId(
+      chat.account.id,
+      chat.chat_id
+    );
+
+    await Promise.all([this.redis.del(cacheKey), this.redis.del(cacheKeyChat)]);
+  }
+
+  private async cacheChat(chat: IChat): Promise<void> {
+    const key = createChatCacheKey(chat.account.id, chat.worker.id, chat.phone);
+    await this.redis.set(key, JSON.stringify(chat), 'PX', 60_000);
+  }
+
+  private async cacheChatById(chat: IChat): Promise<void> {
+    const key = createChatCacheKeyChatId(chat.account.id, chat.chat_id);
+    await this.redis.set(key, JSON.stringify(chat), 'PX', 60_000);
+  }
+
   saveChat = async (chat: IChat): Promise<boolean> => {
-    if (!chat) {
-      return false;
-    }
+    if (!chat) return false;
+
+    await Promise.all([this.cacheChat(chat), this.cacheChatById(chat)]);
 
     const patch: ChatPatch = {
       message_key: chat.message_key,

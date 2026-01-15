@@ -501,7 +501,6 @@ const loadTransferUsers = async () => {
       status: user.status || null,
     }));
   } catch (error) {
-    console.error('Error loading transfer users:', error);
   } finally {
     isLoadingTransferUsers.value = false;
   }
@@ -519,7 +518,6 @@ const loadTransferSectors = async () => {
       color: sector.color || null,
     }));
   } catch (error) {
-    console.error('Error loading transfer sectors:', error);
   } finally {
     isLoadingTransferSectors.value = false;
   }
@@ -539,7 +537,6 @@ const loadTransferSectorUsers = async (sectorId: string) => {
     }));
   } catch (error) {
     transferSectorUsers.value = [];
-    console.error('Error loading transfer sector users:', error);
   } finally {
     isLoadingTransferSectorUsers.value = false;
   }
@@ -612,7 +609,8 @@ const handleTransfer = async () => {
     chatStore.activeChat.chat_id,
     userId,
     sectorId,
-    annotation
+    annotation,
+    leftSidebarRef.value?.hasAppliedAdvancedFilters ?? false
   );
 
   if (success) {
@@ -3353,7 +3351,6 @@ const downloadPreviewImage = async (url: string, filename?: string | null) => {
       globalThis.URL.revokeObjectURL(blobUrl);
     }, 100);
   } catch (error) {
-    console.error('Erro ao baixar imagem:', error);
     const anchor = document.createElement('a');
     anchor.href = url;
     anchor.target = '_blank';
@@ -3383,7 +3380,6 @@ const downloadPreviewVideo = async (url: string, filename?: string | null) => {
       globalThis.URL.revokeObjectURL(blobUrl);
     }, 100);
   } catch (error) {
-    console.error('Erro ao baixar vídeo:', error);
     const anchor = document.createElement('a');
     anchor.href = url;
     anchor.target = '_blank';
@@ -3890,7 +3886,6 @@ const retryImageMessage = async (
       markUploadError(hash);
     }
   } catch (error) {
-    console.error('Erro ao reenviar mensagem:', error);
     markUploadError(hash);
   }
 };
@@ -3939,7 +3934,6 @@ const retryVideoMessage = async (
       markUploadError(hash);
     }
   } catch (error) {
-    console.error('Erro ao reenviar mensagem:', error);
     markUploadError(hash);
   }
 };
@@ -3981,7 +3975,6 @@ const retryAudioMessage = async (
       markUploadError(hash);
     }
   } catch (error) {
-    console.error('Erro ao reenviar mensagem:', error);
     markUploadError(hash);
   }
 };
@@ -4030,7 +4023,6 @@ const retryDocumentMessage = async (
       markUploadError(hash);
     }
   } catch (error) {
-    console.error('Erro ao reenviar mensagem:', error);
     markUploadError(hash);
   }
 };

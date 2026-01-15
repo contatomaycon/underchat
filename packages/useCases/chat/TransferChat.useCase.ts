@@ -19,10 +19,6 @@ import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { WorkerService } from '@core/services/worker.service';
 import { generateProtocol } from '@core/common/functions/generateProtocol';
 import { replaceMessageTags } from '@core/common/functions/replaceMessageTags';
-import {
-  createChatCacheKey,
-  createChatCacheKeyChatId,
-} from '@core/common/functions/createCacheKey';
 import { ChatUserViewerRepository } from '@core/repositories/chat/ChatUserViewer.repository';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import Redis from 'ioredis';
@@ -169,20 +165,6 @@ export class TransferChatUseCase {
     ]);
 
     return protocol;
-  }
-
-  private async invalidateChatCache(chat: IChat): Promise<void> {
-    const cacheKey = createChatCacheKey(
-      chat.account.id,
-      chat.worker.id,
-      chat.phone
-    );
-    const cacheKeyChat = createChatCacheKeyChatId(
-      chat.account.id,
-      chat.chat_id
-    );
-
-    await Promise.all([this.redis.del(cacheKey), this.redis.del(cacheKeyChat)]);
   }
 
   private async validateTransferTarget(
@@ -346,7 +328,7 @@ export class TransferChatUseCase {
 
     await this.chatService.clearChatSummary(params.chat_id, accountId);
 
-    await this.invalidateChatCache(updatedChat);
+    await this.chatService.invalidateChatCache(updatedChat);
 
     const chatWithProtocol = await this.buildChatWithProtocol(
       updatedChat,

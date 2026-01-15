@@ -99,13 +99,6 @@ const contactFilterUserId = ref<string | null>(null);
 const contactSortField = ref<string | null>('name');
 const contactSortOrder = ref<string | null>('asc');
 
-const chatbotPagings = ref({
-  current_page: 1,
-  total_pages: 1,
-  per_page: 50,
-  count: 0,
-  total: 0,
-});
 const isLoadingChatbot = ref(false);
 
 const listClosed = ref<ListChatsResult[]>([]);
@@ -309,8 +302,8 @@ const chatbotCount = computed(() => {
     }
     return chatStore.listChatbot.length;
   }
-  if (chatbotPagings.value.total > 0) {
-    return chatbotPagings.value.total;
+  if (chatStore.chatbotPagings.total > 0) {
+    return chatStore.chatbotPagings.total;
   }
   return chatStore.listChatbot.length;
 });
@@ -410,7 +403,7 @@ const handleFilterClick = (filter: FilterType) => {
     accumulatedContacts.value = [];
     loadContacts();
   } else if (filter === 'chatbot') {
-    chatbotPagings.value.current_page = 1;
+    chatStore.chatbotPagings.current_page = 1;
     loadChatbotChats();
   } else if (filter === 'closed') {
     chatStore.closedPagings.current_page = 1;
@@ -545,7 +538,7 @@ const handleSortSave = async (status?: 'in_chat' | 'queue') => {
     currentPageInChat.value = 1;
     loadChatsByFilter();
   } else if (activeFilter.value === 'chatbot') {
-    chatbotPagings.value.current_page = 1;
+    chatStore.chatbotPagings.current_page = 1;
     loadChatbotChats();
   }
 };
@@ -568,12 +561,12 @@ const handleFiltersUpdated = async () => {
   if (activeFilter.value === 'all') {
     currentPageQueue.value = 1;
     currentPageInChat.value = 1;
-    chatbotPagings.value.current_page = 1;
+    chatStore.chatbotPagings.current_page = 1;
     closedPagings.value.current_page = 1;
     allChatsWithFiltersPagings.value.current_page = 1;
     await loadChatsByFilter();
   } else if (activeFilter.value === 'chatbot') {
-    chatbotPagings.value.current_page = 1;
+    chatStore.chatbotPagings.current_page = 1;
     await loadChatbotChats();
   } else if (activeFilter.value === 'closed') {
     closedPagings.value.current_page = 1;
@@ -629,7 +622,7 @@ const handleClearFilters = async () => {
 
   currentPageQueue.value = 1;
   currentPageInChat.value = 1;
-  chatbotPagings.value.current_page = 1;
+  chatStore.chatbotPagings.current_page = 1;
   closedPagings.value.current_page = 1;
 
   chatStore.activeChat = null;
@@ -858,7 +851,9 @@ const getChatUserFilters = () => {
 };
 
 const loadAllChatsWithFilters = async (append = false) => {
-  if (isLoadingAllChatsWithFilters.value) return;
+  if (isLoadingAllChatsWithFilters.value) {
+    return;
+  }
 
   isLoadingAllChatsWithFilters.value = true;
 
@@ -948,7 +943,7 @@ const loadAllChatsWithFilters = async (append = false) => {
       total: chatStore.listInChat.length,
     };
 
-    chatbotPagings.value = {
+    chatStore.chatbotPagings = {
       current_page: allChatsWithFiltersPagings.value.current_page,
       total_pages: allChatsWithFiltersPagings.value.total_pages,
       per_page: allChatsWithFiltersPagings.value.per_page,
@@ -982,34 +977,20 @@ const loadAllChatsWithFilters = async (append = false) => {
   }
 };
 
-const loadChatsByFilter = async (append = false) => {
+const loadAllChats = async (append = false) => {
   const filters = getChatUserFilters();
 
-  if (activeFilter.value === 'all' && hasActiveFilters.value) {
+  if (hasAppliedAdvancedFilters.value) {
     await loadAllChatsWithFilters(append);
     return;
   }
 
-  if (activeFilter.value === 'all' || activeFilter.value === 'my_chats') {
-    const requestQueue: ListChatsQuery = {
-      current_page: currentPageQueue.value,
-      per_page: perPageQueue.value,
-      status: EChatStatus.queue,
-      filter_label_template_id: filters.filter_label_template_id,
-      filter_worker_id: filters.filter_worker_id,
-      filter_user_id: filters.filter_user_id,
-      filter_sector_id: filters.filter_sector_id,
-      filter_name: filters.filter_name,
-      filter_phone: filters.filter_phone,
-      filter_protocol: filters.filter_protocol,
-      filter_date_start: filters.filter_date_start,
-      filter_date_end: filters.filter_date_end,
-    };
-
-    const requestInChat: ListChatsQuery = {
-      current_page: currentPageInChat.value,
-      per_page: perPageInChat.value,
-      status: EChatStatus.in_chat,
+  await chatStore.loadAllChats(
+    {
+      current_page_queue: currentPageQueue.value,
+      per_page_queue: perPageQueue.value,
+      current_page_in_chat: currentPageInChat.value,
+      per_page_in_chat: perPageInChat.value,
       filter_status: filters.filter_status,
       filter_label_template_id: filters.filter_label_template_id,
       filter_worker_id: filters.filter_worker_id,
@@ -1020,147 +1001,130 @@ const loadChatsByFilter = async (append = false) => {
       filter_protocol: filters.filter_protocol,
       filter_date_start: filters.filter_date_start,
       filter_date_end: filters.filter_date_end,
-    };
+    },
+    hasAppliedAdvancedFilters.value,
+    append
+  );
 
-    await Promise.all([
-      chatStore.listQueueChats(requestQueue, append),
-      chatStore.listInChatChats(requestInChat, append),
-    ]);
+  const allChats = [...chatStore.listQueue, ...chatStore.listInChat];
+  await Promise.all([loadWorkerConfigs(allChats), loadChatContacts(allChats)]);
+};
 
-    const allChats = [...chatStore.listQueue, ...chatStore.listInChat];
-    await Promise.all([
-      loadWorkerConfigs(allChats),
-      loadChatContacts(allChats),
-    ]);
+const loadInChatChats = async (append = false) => {
+  const filters = getChatUserFilters();
+
+  await chatStore.loadInChatChats(
+    {
+      current_page: currentPageInChat.value,
+      per_page: perPageInChat.value,
+      filter_status: filters.filter_status,
+      filter_label_template_id: filters.filter_label_template_id,
+      filter_worker_id: filters.filter_worker_id,
+      filter_user_id: filters.filter_user_id,
+      filter_sector_id: filters.filter_sector_id,
+      filter_name: filters.filter_name,
+      filter_phone: filters.filter_phone,
+      filter_protocol: filters.filter_protocol,
+      filter_date_start: filters.filter_date_start,
+      filter_date_end: filters.filter_date_end,
+      sort_field: filters.sort_field,
+      sort_order: filters.sort_order,
+    },
+    hasAppliedAdvancedFilters.value,
+    sortInChatField.value,
+    sortInChatOrder.value,
+    append
+  );
+
+  await Promise.all([
+    loadWorkerConfigs(chatStore.listInChat),
+    loadChatContacts(chatStore.listInChat),
+  ]);
+};
+
+const loadMyChats = async (append = false) => {
+  const filters = getChatUserFilters();
+
+  await chatStore.loadMyChats(
+    {
+      current_page_queue: currentPageQueue.value,
+      per_page_queue: perPageQueue.value,
+      current_page_in_chat: currentPageInChat.value,
+      per_page_in_chat: perPageInChat.value,
+      filter_status: filters.filter_status,
+      filter_label_template_id: filters.filter_label_template_id,
+      filter_worker_id: filters.filter_worker_id,
+      filter_user_id: filters.filter_user_id,
+      filter_sector_id: filters.filter_sector_id,
+      filter_name: filters.filter_name,
+      filter_phone: filters.filter_phone,
+      filter_protocol: filters.filter_protocol,
+      filter_date_start: filters.filter_date_start,
+      filter_date_end: filters.filter_date_end,
+    },
+    hasAppliedAdvancedFilters.value,
+    append
+  );
+
+  const allChats = [...chatStore.listQueue, ...chatStore.listInChat];
+  await Promise.all([loadWorkerConfigs(allChats), loadChatContacts(allChats)]);
+};
+
+const loadQueueChats = async (append = false) => {
+  const filters = getChatUserFilters();
+
+  await chatStore.loadQueueChats(
+    {
+      current_page: currentPageQueue.value,
+      per_page: perPageQueue.value,
+      filter_label_template_id: filters.filter_label_template_id,
+      filter_worker_id: filters.filter_worker_id,
+      filter_user_id: filters.filter_user_id,
+      filter_sector_id: filters.filter_sector_id,
+      filter_name: filters.filter_name,
+      filter_phone: filters.filter_phone,
+      filter_protocol: filters.filter_protocol,
+      filter_date_start: filters.filter_date_start,
+      filter_date_end: filters.filter_date_end,
+      sort_field: filters.sort_field,
+      sort_order: filters.sort_order,
+    },
+    hasAppliedAdvancedFilters.value,
+    sortQueueField.value,
+    sortQueueOrder.value,
+    append
+  );
+
+  await Promise.all([
+    loadWorkerConfigs(chatStore.listQueue),
+    loadChatContacts(chatStore.listQueue),
+  ]);
+};
+
+const loadChatsByFilter = async (append = false) => {
+  if (activeFilter.value === 'all') {
+    await loadAllChats(append);
     return;
   }
 
   if (activeFilter.value === 'in_chat') {
-    if (
-      sortInChatField.value ||
-      sortInChatOrder.value ||
-      hasActiveFilters.value
-    ) {
-      const request: SearchChatsQuery = {
-        current_page: currentPageInChat.value,
-        per_page: perPageInChat.value,
-        search: '',
-        filter_status: EChatStatus.in_chat,
-        filter_label_template_id: filters.filter_label_template_id,
-        filter_worker_id: filters.filter_worker_id,
-        filter_user_id: filters.filter_user_id,
-        filter_sector_id: filters.filter_sector_id,
-        filter_name: filters.filter_name,
-        filter_phone: filters.filter_phone,
-        filter_protocol: filters.filter_protocol,
-        filter_date_start: filters.filter_date_start,
-        filter_date_end: filters.filter_date_end,
-        sort_field: sortInChatField.value ?? filters.sort_field,
-        sort_order: sortInChatOrder.value ?? filters.sort_order,
-      };
+    await loadInChatChats(append);
+    return;
+  }
 
-      const result = await chatStore.searchChats(request);
-      if (result) {
-        if (append) {
-          chatStore.listInChat.push(...result.results);
-        } else {
-          chatStore.listInChat = result.results;
-        }
-        chatStore.inChatPagings = result.pagings;
-        const chatsToProcess = append ? result.results : chatStore.listInChat;
-        await Promise.all([
-          loadWorkerConfigs(chatsToProcess),
-          loadChatContacts(chatsToProcess),
-        ]);
-      }
-      return;
-    }
-
-    const requestInChat: ListChatsQuery = {
-      current_page: currentPageInChat.value,
-      per_page: perPageInChat.value,
-      status: EChatStatus.in_chat,
-      filter_status: filters.filter_status,
-      filter_label_template_id: filters.filter_label_template_id,
-      filter_worker_id: filters.filter_worker_id,
-      filter_user_id: filters.filter_user_id,
-      filter_sector_id: filters.filter_sector_id,
-      filter_name: filters.filter_name,
-      filter_phone: filters.filter_phone,
-      filter_protocol: filters.filter_protocol,
-      filter_date_start: filters.filter_date_start,
-      filter_date_end: filters.filter_date_end,
-    };
-
-    await chatStore.listInChatChats(requestInChat, append);
-    await Promise.all([
-      loadWorkerConfigs(chatStore.listInChat),
-      loadChatContacts(chatStore.listInChat),
-    ]);
+  if (activeFilter.value === 'my_chats') {
+    await loadMyChats(append);
     return;
   }
 
   if (activeFilter.value === 'queue') {
-    if (
-      sortQueueField.value ||
-      sortQueueOrder.value ||
-      hasActiveFilters.value
-    ) {
-      const request: SearchChatsQuery = {
-        current_page: currentPageQueue.value,
-        per_page: perPageQueue.value,
-        search: '',
-        filter_status: EChatStatus.queue,
-        filter_label_template_id: filters.filter_label_template_id,
-        filter_worker_id: filters.filter_worker_id,
-        filter_user_id: filters.filter_user_id,
-        filter_sector_id: filters.filter_sector_id,
-        filter_name: filters.filter_name,
-        filter_phone: filters.filter_phone,
-        filter_protocol: filters.filter_protocol,
-        filter_date_start: filters.filter_date_start,
-        filter_date_end: filters.filter_date_end,
-        sort_field: sortQueueField.value ?? filters.sort_field,
-        sort_order: sortQueueOrder.value ?? filters.sort_order,
-      };
+    await loadQueueChats(append);
+    return;
+  }
 
-      const result = await chatStore.searchChats(request);
-      if (result) {
-        if (append) {
-          chatStore.listQueue.push(...result.results);
-        } else {
-          chatStore.listQueue = result.results;
-        }
-        chatStore.queuePagings = result.pagings;
-        const chatsToProcess = append ? result.results : chatStore.listQueue;
-        await Promise.all([
-          loadWorkerConfigs(chatsToProcess),
-          loadChatContacts(chatsToProcess),
-        ]);
-      }
-      return;
-    }
-
-    const requestQueue: ListChatsQuery = {
-      current_page: currentPageQueue.value,
-      per_page: perPageQueue.value,
-      status: EChatStatus.queue,
-      filter_label_template_id: filters.filter_label_template_id,
-      filter_worker_id: filters.filter_worker_id,
-      filter_user_id: filters.filter_user_id,
-      filter_sector_id: filters.filter_sector_id,
-      filter_name: filters.filter_name,
-      filter_phone: filters.filter_phone,
-      filter_protocol: filters.filter_protocol,
-      filter_date_start: filters.filter_date_start,
-      filter_date_end: filters.filter_date_end,
-    };
-
-    await chatStore.listQueueChats(requestQueue, append);
-    await Promise.all([
-      loadWorkerConfigs(chatStore.listQueue),
-      loadChatContacts(chatStore.listQueue),
-    ]);
+  if (activeFilter.value === 'chatbot') {
+    await loadChatbotChats(append);
+    return;
   }
 };
 
@@ -1224,16 +1188,10 @@ const loadChatbotChats = async (append = false) => {
   try {
     const filters = getChatUserFilters();
 
-    if (
-      sortChatbotField.value ||
-      sortChatbotOrder.value ||
-      hasActiveFilters.value
-    ) {
-      const request: SearchChatsQuery = {
-        current_page: chatbotPagings.value.current_page,
-        per_page: chatbotPagings.value.per_page,
-        search: '',
-        filter_status: EChatStatus.ura,
+    await chatStore.loadChatbotChatsWithFilters(
+      {
+        current_page: chatStore.chatbotPagings.current_page,
+        per_page: chatStore.chatbotPagings.per_page,
         filter_label_template_id: filters.filter_label_template_id,
         filter_worker_id: filters.filter_worker_id,
         filter_user_id: filters.filter_user_id,
@@ -1243,54 +1201,22 @@ const loadChatbotChats = async (append = false) => {
         filter_protocol: filters.filter_protocol,
         filter_date_start: filters.filter_date_start,
         filter_date_end: filters.filter_date_end,
-        sort_field: sortChatbotField.value ?? filters.sort_field,
-        sort_order: sortChatbotOrder.value ?? filters.sort_order,
-      };
+        sort_field: filters.sort_field,
+        sort_order: filters.sort_order,
+      },
+      hasAppliedAdvancedFilters.value,
+      sortChatbotField.value,
+      sortChatbotOrder.value,
+      append
+    );
 
-      const result = await chatStore.searchChats(request);
-
-      if (result) {
-        chatbotPagings.value = result.pagings;
-        if (append) {
-          chatStore.listChatbot.push(...result.results);
-        } else {
-          chatStore.listChatbot = result.results;
-        }
-        const chatsToProcess = append ? result.results : chatStore.listChatbot;
-        await Promise.all([
-          loadWorkerConfigs(chatsToProcess),
-          loadChatContacts(chatsToProcess),
-        ]);
-      }
-      isLoadingChatbot.value = false;
-      return;
-    }
-
-    const request: ListChatsQuery = {
-      current_page: chatbotPagings.value.current_page,
-      per_page: chatbotPagings.value.per_page,
-      status: EChatStatus.ura,
-      filter_status: filters.filter_status,
-      filter_label_template_id: filters.filter_label_template_id,
-      filter_worker_id: filters.filter_worker_id,
-      filter_user_id: filters.filter_user_id,
-      filter_sector_id: filters.filter_sector_id,
-      filter_name: filters.filter_name,
-      filter_phone: filters.filter_phone,
-      filter_protocol: filters.filter_protocol,
-      filter_date_start: filters.filter_date_start,
-      filter_date_end: filters.filter_date_end,
-    };
-
-    const result = await chatStore.listChatbotChats(request, append);
-    if (result) {
-      chatbotPagings.value = result.pagings;
-      const chatsToProcess = append ? result.results : chatStore.listChatbot;
-      await Promise.all([
-        loadWorkerConfigs(chatsToProcess),
-        loadChatContacts(chatsToProcess),
-      ]);
-    }
+    const chatsToProcess = append
+      ? chatStore.listChatbot.slice(-chatStore.chatbotPagings.per_page)
+      : chatStore.listChatbot;
+    await Promise.all([
+      loadWorkerConfigs(chatsToProcess),
+      loadChatContacts(chatsToProcess),
+    ]);
   } finally {
     isLoadingChatbot.value = false;
   }
@@ -1301,33 +1227,34 @@ const loadClosedChats = async (append = false) => {
 
   try {
     const filters = getChatUserFilters();
-    const request: ListChatsQuery = {
-      current_page: chatStore.closedPagings.current_page || 1,
-      per_page: 50,
-      status: EChatStatus.closed,
-      filter_status: filters.filter_status,
-      filter_label_template_id: filters.filter_label_template_id,
-      filter_worker_id: filters.filter_worker_id,
-      filter_user_id: filters.filter_user_id,
-      filter_sector_id: filters.filter_sector_id,
-      filter_name: filters.filter_name,
-      filter_phone: filters.filter_phone,
-      filter_protocol: filters.filter_protocol,
-      filter_date_start: filters.filter_date_start,
-      filter_date_end: filters.filter_date_end,
-    };
 
-    const result = await chatStore.listClosedChats(request, append);
+    await chatStore.loadClosedChatsWithFilters(
+      {
+        current_page: chatStore.closedPagings.current_page || 1,
+        per_page: 50,
+        filter_status: filters.filter_status,
+        filter_label_template_id: filters.filter_label_template_id,
+        filter_worker_id: filters.filter_worker_id,
+        filter_user_id: filters.filter_user_id,
+        filter_sector_id: filters.filter_sector_id,
+        filter_name: filters.filter_name,
+        filter_phone: filters.filter_phone,
+        filter_protocol: filters.filter_protocol,
+        filter_date_start: filters.filter_date_start,
+        filter_date_end: filters.filter_date_end,
+      },
+      hasAppliedAdvancedFilters.value,
+      append
+    );
 
-    if (result) {
-      chatStore.closedPagings = result.pagings;
-      listClosed.value = chatStore.listClosed;
-      const chatsToProcess = append ? result.results : chatStore.listClosed;
-      await Promise.all([
-        loadWorkerConfigs(chatsToProcess),
-        loadChatContacts(chatsToProcess),
-      ]);
-    }
+    listClosed.value = chatStore.listClosed;
+    const chatsToProcess = append
+      ? chatStore.listClosed.slice(-50)
+      : chatStore.listClosed;
+    await Promise.all([
+      loadWorkerConfigs(chatsToProcess),
+      loadChatContacts(chatsToProcess),
+    ]);
   } catch (error) {
     console.error('❌ loadClosedChats - Erro:', error);
   } finally {
@@ -1490,11 +1417,12 @@ const handleChatScroll = async (event?: Event) => {
   if (activeFilter.value === 'chatbot') {
     if (
       scrollTop + clientHeight >= scrollHeight - threshold &&
-      chatbotPagings.value.current_page < chatbotPagings.value.total_pages &&
+      chatStore.chatbotPagings.current_page <
+        chatStore.chatbotPagings.total_pages &&
       !isLoadingChatbot.value
     ) {
       isLoadingChatbot.value = true;
-      chatbotPagings.value.current_page += 1;
+      chatStore.chatbotPagings.current_page += 1;
       await loadChatbotChats(true);
       isLoadingChatbot.value = false;
     }
@@ -1793,7 +1721,7 @@ const performSearch = async (append = false) => {
         total: chatStore.listInChat.length,
       };
 
-      chatbotPagings.value = {
+      chatStore.chatbotPagings = {
         current_page: allChatsWithFiltersPagings.value.current_page,
         total_pages: allChatsWithFiltersPagings.value.total_pages,
         per_page: allChatsWithFiltersPagings.value.per_page,
@@ -2005,18 +1933,21 @@ const loadChatbotCount = async () => {
 
     const result = await chatStore.listChatbotChats(request);
     if (result) {
-      chatbotPagings.value.total = result.pagings.total;
+      chatStore.chatbotPagings.total = result.pagings.total;
     }
   } catch {
-    chatbotPagings.value.total = 0;
+    chatStore.chatbotPagings.total = 0;
   }
 };
 
 watch(
   () => chatStore.listChatbot.length,
   (newLength, oldLength) => {
-    if (chatbotPagings.value.total > 0 && newLength < oldLength) {
-      chatbotPagings.value.total = Math.max(0, chatbotPagings.value.total - 1);
+    if (chatStore.chatbotPagings.total > 0 && newLength < oldLength) {
+      chatStore.chatbotPagings.total = Math.max(
+        0,
+        chatStore.chatbotPagings.total - 1
+      );
     }
   }
 );
@@ -2043,19 +1974,58 @@ watch(
   }
 );
 
+let isHandlingChatStatusChanged = false;
+let chatStatusChangedTimeout: ReturnType<typeof setTimeout> | null = null;
+
 const handleChatStatusChanged = async () => {
-  await Promise.all([loadChatsByFilter(), loadChatbotCount()]);
+  if (isHandlingChatStatusChanged) {
+    return;
+  }
+
+  if (chatStatusChangedTimeout) {
+    clearTimeout(chatStatusChangedTimeout);
+    chatStatusChangedTimeout = null;
+  }
+
+  isHandlingChatStatusChanged = true;
+
+  chatStatusChangedTimeout = setTimeout(async () => {
+    try {
+      if (activeFilter.value === 'chatbot') {
+        await loadChatbotChats();
+      } else {
+        await Promise.all([loadChatsByFilter(), loadChatbotCount()]);
+      }
+    } finally {
+      isHandlingChatStatusChanged = false;
+      chatStatusChangedTimeout = null;
+    }
+  }, 100);
+};
+
+const handleReloadAllChatListsOnStatusChange = async () => {
+  await chatStore.reloadAllChatLists(hasAppliedAdvancedFilters.value);
+  await loadChatbotCount();
 };
 
 onMounted(async () => {
   await Promise.all([loadChatsByFilter(), loadChatbotCount()]);
+
   globalThis.addEventListener('chat-status-changed', handleChatStatusChanged);
+  globalThis.addEventListener(
+    'reload-all-chat-lists-on-status-change',
+    handleReloadAllChatListsOnStatusChange
+  );
 });
 
 onUnmounted(() => {
   globalThis.removeEventListener(
     'chat-status-changed',
     handleChatStatusChanged
+  );
+  globalThis.removeEventListener(
+    'reload-all-chat-lists-on-status-change',
+    handleReloadAllChatListsOnStatusChange
   );
 });
 
@@ -2071,6 +2041,7 @@ const scrollToTop = () => {
 defineExpose({
   handleClearFilters,
   scrollToTop,
+  hasAppliedAdvancedFilters,
 });
 </script>
 
@@ -2578,7 +2549,7 @@ defineExpose({
       <ul class="d-flex flex-column gap-y-1 chat-list px-3 py-2 list-none">
         <template v-if="isLoadingChatbot || isLoadingWorkerConfigs">
           <li
-            v-for="i in 5"
+            v-for="i in chatStore.chatbotPagings.per_page"
             :key="`skeleton-chatbot-${i}`"
             class="chat d-flex align-center"
           >
@@ -2627,7 +2598,7 @@ defineExpose({
 
           <template v-if="isLoadingChatbot">
             <li
-              v-for="i in 5"
+              v-for="i in chatStore.chatbotPagings.per_page"
               :key="`skeleton-chatbot-pagination-${i}`"
               class="chat d-flex align-center"
             >

@@ -25,8 +25,6 @@ import {
 } from '@core/common/interfaces/IStartChatData';
 import { normalizePhoneToJid } from '@core/common/functions/normalizePhoneToJid';
 import {
-  createChatCacheKey,
-  createChatCacheKeyChatId,
   createChatbotFlowCacheKey,
   createChatbotInactivityCacheKey,
   createChatbotFailedAttemptsCacheKey,
@@ -284,7 +282,6 @@ export class StartChatWithContactUseCase {
     const accountId = chat.account?.id;
     const workerId = chat.worker?.id;
     const chatId = chat.chat_id;
-    const phone = chat.phone;
 
     if (!accountId || !workerId || !chatId) {
       return;
@@ -306,16 +303,13 @@ export class StartChatWithContactUseCase {
       workerId,
       chatId
     );
-    const chatCacheKey = createChatCacheKey(accountId, workerId, phone);
-    const chatCacheKeyById = createChatCacheKeyChatId(accountId, chatId);
 
     await Promise.all([
       this.redis.del(chatbotFlowCacheKey),
       this.redis.del(inactivityCacheKey),
       this.redis.zrem(inactivityScheduleKey, inactivityCacheKey),
       this.redis.del(failedAttemptsCacheKey),
-      this.redis.del(chatCacheKey),
-      this.redis.del(chatCacheKeyById),
+      this.chatService.invalidateChatCache(chat),
     ]);
   }
 

@@ -85,7 +85,9 @@ const revokeIfBlob = (url?: string | null) => {
 };
 
 const cleanupMessageMedia = (message?: ListMessageResult) => {
-  if (!message?.content) return;
+  if (!message?.content) {
+    return;
+  }
   revokeIfBlob(message.content.image?.url ?? undefined);
   revokeIfBlob(message.content.video?.url ?? undefined);
   revokeIfBlob(message.content.audio?.url ?? undefined);
@@ -118,6 +120,13 @@ export const useChatStore = defineStore('chat', {
       total: 0,
     },
     inChatPagings: {
+      current_page: 1,
+      total_pages: 1,
+      per_page: 25,
+      count: 0,
+      total: 0,
+    },
+    chatbotPagings: {
       current_page: 1,
       total_pages: 1,
       per_page: 25,
@@ -159,20 +168,28 @@ export const useChatStore = defineStore('chat', {
       this.user = null;
     },
     initializeLocalMessageState(hash: string) {
-      if (!hash) return;
+      if (!hash) {
+        return;
+      }
       this.localMessageState[hash] = {
         status: 'uploading',
         progress: 0,
       };
     },
     updateLocalMessageProgress(hash: string, progress: number) {
-      if (!hash) return;
+      if (!hash) {
+        return;
+      }
       const target = this.localMessageState[hash];
-      if (!target) return;
+      if (!target) {
+        return;
+      }
       target.progress = Math.max(0, Math.min(progress, 100));
     },
     markLocalMessageError(hash: string, errorMessage?: string) {
-      if (!hash) return;
+      if (!hash) {
+        return;
+      }
       const target = this.localMessageState[hash];
       if (!target) {
         this.localMessageState[hash] = {
@@ -186,7 +203,9 @@ export const useChatStore = defineStore('chat', {
       target.errorMessage = errorMessage;
     },
     clearLocalMessageState(hash?: string | null) {
-      if (!hash) return;
+      if (!hash) {
+        return;
+      }
       delete this.localMessageState[hash];
     },
     upsertLocalMessage(message: ListMessageResult) {
@@ -206,7 +225,9 @@ export const useChatStore = defineStore('chat', {
       this.listMessages.push(message);
     },
     removeMessageByHash(hash: string) {
-      if (!hash) return;
+      if (!hash) {
+        return;
+      }
       const idx = this.listMessages.findIndex((item) => item.hash === hash);
       if (idx !== -1) {
         const [removed] = this.listMessages.splice(idx, 1);
@@ -282,9 +303,12 @@ export const useChatStore = defineStore('chat', {
 
     shouldRemoveQueueChat(chat: IChat, userSectors: string[]): boolean {
       if (userSectors.length > 0) {
-        return !chat.sector?.id || !userSectors.includes(chat.sector.id);
+        const result =
+          !chat.sector?.id || !userSectors.includes(chat.sector.id);
+        return result;
       }
-      return !!chat.sector?.id;
+      const result = !!chat.sector?.id;
+      return result;
     },
 
     addChat(chat: IChat) {
@@ -398,7 +422,7 @@ export const useChatStore = defineStore('chat', {
         return input.summary;
       }
 
-      return {
+      const result = {
         ...existingSummary,
         last_date: input.summary?.last_date ?? existingSummary.last_date,
         last_message:
@@ -406,13 +430,14 @@ export const useChatStore = defineStore('chat', {
         unread_count:
           input.summary?.unread_count ?? existingSummary.unread_count,
       };
+      return result;
     },
 
     createUpdatedActiveChat(
       input: ListChatsResult,
       isActiveChat: boolean
     ): ListChatsResult {
-      return {
+      const result = {
         chat_id: input.chat_id,
         summary:
           isActiveChat && this.activeChat?.summary
@@ -432,6 +457,7 @@ export const useChatStore = defineStore('chat', {
         label: input.label,
         closed_at: input.closed_at,
       };
+      return result;
     },
 
     removeFromList(arr: ListChatsResult[], chatId: string): void {
@@ -700,6 +726,9 @@ export const useChatStore = defineStore('chat', {
         globalThis.dispatchEvent(
           new CustomEvent('chat-status-changed', { detail: chat })
         );
+        globalThis.dispatchEvent(
+          new CustomEvent('reload-all-chat-lists-on-status-change')
+        );
       }
 
       if (this.activeChat?.chat_id === chat.chat_id) {
@@ -767,6 +796,9 @@ export const useChatStore = defineStore('chat', {
         globalThis.dispatchEvent(
           new CustomEvent('chat-status-changed', { detail: chat })
         );
+        globalThis.dispatchEvent(
+          new CustomEvent('reload-all-chat-lists-on-status-change')
+        );
       }
 
       if (this.activeChat?.chat_id === chat.chat_id) {
@@ -808,6 +840,9 @@ export const useChatStore = defineStore('chat', {
         globalThis.dispatchEvent(
           new CustomEvent('chat-status-changed', { detail: chat })
         );
+        globalThis.dispatchEvent(
+          new CustomEvent('reload-all-chat-lists-on-status-change')
+        );
       }
 
       if (this.activeChat?.chat_id === chat.chat_id) {
@@ -840,6 +875,9 @@ export const useChatStore = defineStore('chat', {
         globalThis.dispatchEvent(
           new CustomEvent('chat-status-changed', { detail: chat })
         );
+        globalThis.dispatchEvent(
+          new CustomEvent('reload-all-chat-lists-on-status-change')
+        );
       }
 
       if (this.activeChat?.chat_id === chat.chat_id) {
@@ -847,7 +885,9 @@ export const useChatStore = defineStore('chat', {
       }
     },
     updateChatUserImmediate() {
-      if (!this.user?.status) return;
+      if (!this.user?.status) {
+        return;
+      }
 
       const existingChatUser = this.user?.chat_user ?? undefined;
       const chatUserUpdate = {
@@ -863,7 +903,9 @@ export const useChatStore = defineStore('chat', {
     },
 
     async updateChatUserDebounce() {
-      if (!this.user?.status) return;
+      if (!this.user?.status) {
+        return;
+      }
 
       const chatUserUpdate = {
         chat_user_id: this.user?.chat_user?.chat_user_id ?? '',
@@ -950,7 +992,6 @@ export const useChatStore = defineStore('chat', {
 
             return true;
           });
-
           this.listQueue = filteredResults;
         }
 
@@ -1084,6 +1125,8 @@ export const useChatStore = defineStore('chat', {
 
           return null;
         }
+
+        this.chatbotPagings = data.data.pagings;
 
         if (append) {
           this.listChatbot = [...this.listChatbot, ...data.data.results];
@@ -1227,14 +1270,483 @@ export const useChatStore = defineStore('chat', {
           (result) => result.chat_id && result.chat_id.trim().length > 0
         );
 
-        return {
+        const searchResponse = {
           ...data.data,
           results,
         };
+        return searchResponse;
       } catch {
         this.loading = false;
         return null;
       }
+    },
+
+    async loadAllChats(
+      filters: {
+        current_page_queue: number;
+        per_page_queue: number;
+        current_page_in_chat: number;
+        per_page_in_chat: number;
+        filter_status?: string | null;
+        filter_label_template_id?: string | null;
+        filter_worker_id?: string | null;
+        filter_user_id?: string | null;
+        filter_sector_id?: string | null;
+        filter_name?: string | null;
+        filter_phone?: string | null;
+        filter_protocol?: string | null;
+        filter_date_start?: string | null;
+        filter_date_end?: string | null;
+      },
+      hasAppliedAdvancedFilters: boolean,
+      append = false
+    ): Promise<void> {
+      if (hasAppliedAdvancedFilters) {
+        return;
+      }
+
+      const requestQueue: ListChatsQuery = {
+        current_page: filters.current_page_queue,
+        per_page: filters.per_page_queue,
+        status: EChatStatus.queue,
+        filter_label_template_id: filters.filter_label_template_id ?? undefined,
+        filter_worker_id: filters.filter_worker_id ?? undefined,
+        filter_user_id: filters.filter_user_id ?? undefined,
+        filter_sector_id: filters.filter_sector_id ?? undefined,
+        filter_name: filters.filter_name ?? undefined,
+        filter_phone: filters.filter_phone ?? undefined,
+        filter_protocol: filters.filter_protocol ?? undefined,
+        filter_date_start: filters.filter_date_start ?? undefined,
+        filter_date_end: filters.filter_date_end ?? undefined,
+      };
+
+      const requestInChat: ListChatsQuery = {
+        current_page: filters.current_page_in_chat,
+        per_page: filters.per_page_in_chat,
+        status: EChatStatus.in_chat,
+        filter_status: filters.filter_status ?? undefined,
+        filter_label_template_id: filters.filter_label_template_id ?? undefined,
+        filter_worker_id: filters.filter_worker_id ?? undefined,
+        filter_user_id: filters.filter_user_id ?? undefined,
+        filter_sector_id: filters.filter_sector_id ?? undefined,
+        filter_name: filters.filter_name ?? undefined,
+        filter_phone: filters.filter_phone ?? undefined,
+        filter_protocol: filters.filter_protocol ?? undefined,
+        filter_date_start: filters.filter_date_start ?? undefined,
+        filter_date_end: filters.filter_date_end ?? undefined,
+      };
+
+      await Promise.all([
+        this.listQueueChats(requestQueue, append),
+        this.listInChatChats(requestInChat, append),
+      ]);
+    },
+
+    async loadInChatChats(
+      filters: {
+        current_page: number;
+        per_page: number;
+        filter_status?: string | null;
+        filter_label_template_id?: string | null;
+        filter_worker_id?: string | null;
+        filter_user_id?: string | null;
+        filter_sector_id?: string | null;
+        filter_name?: string | null;
+        filter_phone?: string | null;
+        filter_protocol?: string | null;
+        filter_date_start?: string | null;
+        filter_date_end?: string | null;
+        sort_field?: string | null;
+        sort_order?: string | null;
+      },
+      hasAppliedAdvancedFilters: boolean,
+      sortField?: string | null,
+      sortOrder?: string | null,
+      append = false
+    ): Promise<void> {
+      if (hasAppliedAdvancedFilters) {
+        const request: SearchChatsQuery = {
+          current_page: filters.current_page,
+          per_page: filters.per_page,
+          search: '',
+          filter_status: EChatStatus.in_chat,
+          filter_label_template_id:
+            filters.filter_label_template_id ?? undefined,
+          filter_worker_id: filters.filter_worker_id ?? undefined,
+          filter_user_id: filters.filter_user_id ?? undefined,
+          filter_sector_id: filters.filter_sector_id ?? undefined,
+          filter_name: filters.filter_name ?? undefined,
+          filter_phone: filters.filter_phone ?? undefined,
+          filter_protocol: filters.filter_protocol ?? undefined,
+          filter_date_start: filters.filter_date_start ?? undefined,
+          filter_date_end: filters.filter_date_end ?? undefined,
+          sort_field: sortField ?? filters.sort_field ?? undefined,
+          sort_order: sortOrder ?? filters.sort_order ?? undefined,
+        };
+
+        const result = await this.searchChats(request);
+        if (result) {
+          if (append) {
+            this.listInChat.push(...result.results);
+          } else {
+            this.listInChat = result.results;
+          }
+          this.inChatPagings = result.pagings;
+        }
+        return;
+      }
+
+      const request: ListChatsQuery = {
+        current_page: filters.current_page,
+        per_page: filters.per_page,
+        status: EChatStatus.in_chat,
+        filter_status: filters.filter_status ?? undefined,
+        filter_label_template_id: filters.filter_label_template_id ?? undefined,
+        filter_worker_id: filters.filter_worker_id ?? undefined,
+        filter_user_id: filters.filter_user_id ?? undefined,
+        filter_sector_id: filters.filter_sector_id ?? undefined,
+        filter_name: filters.filter_name ?? undefined,
+        filter_phone: filters.filter_phone ?? undefined,
+        filter_protocol: filters.filter_protocol ?? undefined,
+        filter_date_start: filters.filter_date_start ?? undefined,
+        filter_date_end: filters.filter_date_end ?? undefined,
+      };
+
+      await this.listInChatChats(request, append);
+    },
+
+    async loadMyChats(
+      filters: {
+        current_page_queue: number;
+        per_page_queue: number;
+        current_page_in_chat: number;
+        per_page_in_chat: number;
+        filter_status?: string | null;
+        filter_label_template_id?: string | null;
+        filter_worker_id?: string | null;
+        filter_user_id?: string | null;
+        filter_sector_id?: string | null;
+        filter_name?: string | null;
+        filter_phone?: string | null;
+        filter_protocol?: string | null;
+        filter_date_start?: string | null;
+        filter_date_end?: string | null;
+      },
+      hasAppliedAdvancedFilters: boolean,
+      append = false
+    ): Promise<void> {
+      if (hasAppliedAdvancedFilters) {
+        const request: SearchChatsQuery = {
+          current_page: filters.current_page_queue,
+          per_page: filters.per_page_queue,
+          search: '',
+          filter_status: EChatStatus.queue,
+          filter_label_template_id:
+            filters.filter_label_template_id ?? undefined,
+          filter_worker_id: filters.filter_worker_id ?? undefined,
+          filter_user_id: filters.filter_user_id ?? undefined,
+          filter_sector_id: filters.filter_sector_id ?? undefined,
+          filter_name: filters.filter_name ?? undefined,
+          filter_phone: filters.filter_phone ?? undefined,
+          filter_protocol: filters.filter_protocol ?? undefined,
+          filter_date_start: filters.filter_date_start ?? undefined,
+          filter_date_end: filters.filter_date_end ?? undefined,
+        };
+
+        const result = await this.searchChats(request);
+        if (result) {
+          if (append) {
+            this.listQueue.push(...result.results);
+            this.listInChat.push(...result.results);
+          } else {
+            this.listQueue = result.results;
+            this.listInChat = result.results;
+          }
+          this.queuePagings = result.pagings;
+          this.inChatPagings = result.pagings;
+        }
+        return;
+      }
+
+      const requestQueue: ListChatsQuery = {
+        current_page: filters.current_page_queue,
+        per_page: filters.per_page_queue,
+        status: EChatStatus.queue,
+        filter_label_template_id: filters.filter_label_template_id ?? undefined,
+        filter_worker_id: filters.filter_worker_id ?? undefined,
+        filter_user_id: filters.filter_user_id ?? undefined,
+        filter_sector_id: filters.filter_sector_id ?? undefined,
+        filter_name: filters.filter_name ?? undefined,
+        filter_phone: filters.filter_phone ?? undefined,
+        filter_protocol: filters.filter_protocol ?? undefined,
+        filter_date_start: filters.filter_date_start ?? undefined,
+        filter_date_end: filters.filter_date_end ?? undefined,
+      };
+
+      const requestInChat: ListChatsQuery = {
+        current_page: filters.current_page_in_chat,
+        per_page: filters.per_page_in_chat,
+        status: EChatStatus.in_chat,
+        filter_status: filters.filter_status ?? undefined,
+        filter_label_template_id: filters.filter_label_template_id ?? undefined,
+        filter_worker_id: filters.filter_worker_id ?? undefined,
+        filter_user_id: filters.filter_user_id ?? undefined,
+        filter_sector_id: filters.filter_sector_id ?? undefined,
+        filter_name: filters.filter_name ?? undefined,
+        filter_phone: filters.filter_phone ?? undefined,
+        filter_protocol: filters.filter_protocol ?? undefined,
+        filter_date_start: filters.filter_date_start ?? undefined,
+        filter_date_end: filters.filter_date_end ?? undefined,
+      };
+
+      await Promise.all([
+        this.listQueueChats(requestQueue, append),
+        this.listInChatChats(requestInChat, append),
+      ]);
+    },
+
+    async loadQueueChats(
+      filters: {
+        current_page: number;
+        per_page: number;
+        filter_label_template_id?: string | null;
+        filter_worker_id?: string | null;
+        filter_user_id?: string | null;
+        filter_sector_id?: string | null;
+        filter_name?: string | null;
+        filter_phone?: string | null;
+        filter_protocol?: string | null;
+        filter_date_start?: string | null;
+        filter_date_end?: string | null;
+        sort_field?: string | null;
+        sort_order?: string | null;
+      },
+      hasAppliedAdvancedFilters: boolean,
+      sortField?: string | null,
+      sortOrder?: string | null,
+      append = false
+    ): Promise<void> {
+      if (hasAppliedAdvancedFilters) {
+        const request: SearchChatsQuery = {
+          current_page: filters.current_page,
+          per_page: filters.per_page,
+          search: '',
+          filter_status: EChatStatus.queue,
+          filter_label_template_id:
+            filters.filter_label_template_id ?? undefined,
+          filter_worker_id: filters.filter_worker_id ?? undefined,
+          filter_user_id: filters.filter_user_id ?? undefined,
+          filter_sector_id: filters.filter_sector_id ?? undefined,
+          filter_name: filters.filter_name ?? undefined,
+          filter_phone: filters.filter_phone ?? undefined,
+          filter_protocol: filters.filter_protocol ?? undefined,
+          filter_date_start: filters.filter_date_start ?? undefined,
+          filter_date_end: filters.filter_date_end ?? undefined,
+          sort_field: sortField ?? filters.sort_field ?? undefined,
+          sort_order: sortOrder ?? filters.sort_order ?? undefined,
+        };
+
+        const result = await this.searchChats(request);
+        if (result) {
+          if (append) {
+            this.listQueue.push(...result.results);
+          } else {
+            this.listQueue = result.results;
+          }
+          this.queuePagings = result.pagings;
+        }
+        return;
+      }
+
+      const request: ListChatsQuery = {
+        current_page: filters.current_page,
+        per_page: filters.per_page,
+        status: EChatStatus.queue,
+        filter_label_template_id: filters.filter_label_template_id ?? undefined,
+        filter_worker_id: filters.filter_worker_id ?? undefined,
+        filter_user_id: filters.filter_user_id ?? undefined,
+        filter_sector_id: filters.filter_sector_id ?? undefined,
+        filter_name: filters.filter_name ?? undefined,
+        filter_phone: filters.filter_phone ?? undefined,
+        filter_protocol: filters.filter_protocol ?? undefined,
+        filter_date_start: filters.filter_date_start ?? undefined,
+        filter_date_end: filters.filter_date_end ?? undefined,
+      };
+
+      await this.listQueueChats(request, append);
+    },
+
+    async loadChatbotChatsWithFilters(
+      filters: {
+        current_page: number;
+        per_page: number;
+        filter_label_template_id?: string | null;
+        filter_worker_id?: string | null;
+        filter_user_id?: string | null;
+        filter_sector_id?: string | null;
+        filter_name?: string | null;
+        filter_phone?: string | null;
+        filter_protocol?: string | null;
+        filter_date_start?: string | null;
+        filter_date_end?: string | null;
+        sort_field?: string | null;
+        sort_order?: string | null;
+      },
+      hasAppliedAdvancedFilters: boolean,
+      sortField?: string | null,
+      sortOrder?: string | null,
+      append = false
+    ): Promise<void> {
+      if (hasAppliedAdvancedFilters) {
+        const request: SearchChatsQuery = {
+          current_page: filters.current_page,
+          per_page: filters.per_page,
+          search: '',
+          filter_status: EChatStatus.ura,
+          filter_label_template_id:
+            filters.filter_label_template_id ?? undefined,
+          filter_worker_id: filters.filter_worker_id ?? undefined,
+          filter_user_id: filters.filter_user_id ?? undefined,
+          filter_sector_id: filters.filter_sector_id ?? undefined,
+          filter_name: filters.filter_name ?? undefined,
+          filter_phone: filters.filter_phone ?? undefined,
+          filter_protocol: filters.filter_protocol ?? undefined,
+          filter_date_start: filters.filter_date_start ?? undefined,
+          filter_date_end: filters.filter_date_end ?? undefined,
+          sort_field: sortField ?? filters.sort_field ?? undefined,
+          sort_order: sortOrder ?? filters.sort_order ?? undefined,
+        };
+
+        const result = await this.searchChats(request);
+        if (result) {
+          if (append) {
+            this.listChatbot.push(...result.results);
+          } else {
+            this.listChatbot = result.results;
+          }
+          this.chatbotPagings = result.pagings;
+        }
+        return;
+      }
+
+      const request: ListChatsQuery = {
+        current_page: filters.current_page,
+        per_page: filters.per_page,
+        status: EChatStatus.ura,
+        filter_label_template_id: filters.filter_label_template_id ?? undefined,
+        filter_worker_id: filters.filter_worker_id ?? undefined,
+        filter_user_id: filters.filter_user_id ?? undefined,
+        filter_sector_id: filters.filter_sector_id ?? undefined,
+        filter_name: filters.filter_name ?? undefined,
+        filter_phone: filters.filter_phone ?? undefined,
+        filter_protocol: filters.filter_protocol ?? undefined,
+        filter_date_start: filters.filter_date_start ?? undefined,
+        filter_date_end: filters.filter_date_end ?? undefined,
+      };
+
+      await this.listChatbotChats(request, append);
+    },
+
+    async loadClosedChatsWithFilters(
+      filters: {
+        current_page: number;
+        per_page: number;
+        filter_status?: string | null;
+        filter_label_template_id?: string | null;
+        filter_worker_id?: string | null;
+        filter_user_id?: string | null;
+        filter_sector_id?: string | null;
+        filter_name?: string | null;
+        filter_phone?: string | null;
+        filter_protocol?: string | null;
+        filter_date_start?: string | null;
+        filter_date_end?: string | null;
+      },
+      hasAppliedAdvancedFilters: boolean,
+      append = false
+    ): Promise<void> {
+      if (hasAppliedAdvancedFilters) {
+        const request: SearchChatsQuery = {
+          current_page: filters.current_page,
+          per_page: filters.per_page,
+          search: '',
+          filter_status: EChatStatus.closed,
+          filter_label_template_id:
+            filters.filter_label_template_id ?? undefined,
+          filter_worker_id: filters.filter_worker_id ?? undefined,
+          filter_user_id: filters.filter_user_id ?? undefined,
+          filter_sector_id: filters.filter_sector_id ?? undefined,
+          filter_name: filters.filter_name ?? undefined,
+          filter_phone: filters.filter_phone ?? undefined,
+          filter_protocol: filters.filter_protocol ?? undefined,
+          filter_date_start: filters.filter_date_start ?? undefined,
+          filter_date_end: filters.filter_date_end ?? undefined,
+        };
+
+        const result = await this.searchChats(request);
+        if (result) {
+          if (append) {
+            this.listClosed.push(...result.results);
+          } else {
+            this.listClosed = result.results;
+          }
+          this.closedPagings = result.pagings;
+        }
+        return;
+      }
+
+      const request: ListChatsQuery = {
+        current_page: filters.current_page,
+        per_page: filters.per_page,
+        status: EChatStatus.closed,
+        filter_status: filters.filter_status ?? undefined,
+        filter_label_template_id: filters.filter_label_template_id ?? undefined,
+        filter_worker_id: filters.filter_worker_id ?? undefined,
+        filter_user_id: filters.filter_user_id ?? undefined,
+        filter_sector_id: filters.filter_sector_id ?? undefined,
+        filter_name: filters.filter_name ?? undefined,
+        filter_phone: filters.filter_phone ?? undefined,
+        filter_protocol: filters.filter_protocol ?? undefined,
+        filter_date_start: filters.filter_date_start ?? undefined,
+        filter_date_end: filters.filter_date_end ?? undefined,
+      };
+
+      await this.listClosedChats(request, append);
+    },
+
+    async reloadAllChatLists(hasAppliedAdvancedFilters = false): Promise<void> {
+      await Promise.all([
+        this.loadQueueChats(
+          {
+            current_page: 1,
+            per_page: this.queuePagings.per_page,
+          },
+          hasAppliedAdvancedFilters,
+          undefined,
+          undefined,
+          false
+        ),
+        this.loadInChatChats(
+          {
+            current_page: 1,
+            per_page: this.inChatPagings.per_page,
+          },
+          hasAppliedAdvancedFilters,
+          undefined,
+          undefined,
+          false
+        ),
+        this.loadChatbotChatsWithFilters(
+          {
+            current_page: 1,
+            per_page: this.chatbotPagings.per_page,
+          },
+          hasAppliedAdvancedFilters,
+          undefined,
+          undefined,
+          false
+        ),
+      ]);
     },
 
     async updateChatsUser(input: UpdateChatsUserRequest): Promise<void> {
@@ -1479,7 +1991,8 @@ export const useChatStore = defineStore('chat', {
       chatId: string,
       userId?: string | null,
       sectorId?: string | null,
-      annotation?: string | null
+      annotation?: string | null,
+      hasAppliedAdvancedFilters = false
     ): Promise<boolean> {
       try {
         this.loading = true;
@@ -1503,6 +2016,40 @@ export const useChatStore = defineStore('chat', {
 
           return false;
         }
+
+        await Promise.all([
+          this.loadQueueChats(
+            {
+              current_page: 1,
+              per_page: this.queuePagings.per_page,
+            },
+            hasAppliedAdvancedFilters,
+            undefined,
+            undefined,
+            false
+          ),
+          this.loadInChatChats(
+            {
+              current_page: 1,
+              per_page: this.inChatPagings.per_page,
+            },
+            hasAppliedAdvancedFilters,
+            undefined,
+            undefined,
+            false
+          ),
+          this.loadChatbotChatsWithFilters(
+            {
+              current_page: 1,
+              per_page: this.chatbotPagings.per_page,
+            },
+            hasAppliedAdvancedFilters,
+            undefined,
+            undefined,
+            false
+          ),
+        ]);
+
         return true;
       } catch (error) {
         this.loading = false;

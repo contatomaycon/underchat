@@ -38,10 +38,7 @@ import { connectConsumer } from '@core/common/functions/connectConsumer';
 import { handleConsumerError } from '@core/common/functions/handleConsumerError';
 import { remoteJidAlt } from '@core/common/functions/remoteJidAlt';
 import { convertWaveformToBase64 } from '@core/common/functions/convertWaveform';
-import {
-  createChatCacheKey,
-  createChatCacheKeyChatId,
-} from '@core/common/functions/createCacheKey';
+import { createChatCacheKey } from '@core/common/functions/createCacheKey';
 import Redis from 'ioredis';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import {
@@ -2197,28 +2194,11 @@ export class MessageUpsertConsume {
     );
   }
 
-  private async cacheChat(chat: IChat): Promise<void> {
-    const key = createChatCacheKey(chat.account.id, chat.worker.id, chat.phone);
-    await this.redis.set(key, JSON.stringify(chat), 'PX', 60_000);
-  }
-
-  private async cacheChatById(chat: IChat): Promise<void> {
-    const key = createChatCacheKeyChatId(chat.account.id, chat.chat_id);
-    await this.redis.set(key, JSON.stringify(chat), 'PX', 60_000);
-  }
-
   private async saveChatWithCaches(chat: IChat): Promise<boolean> {
-    await Promise.all([this.cacheChat(chat), this.cacheChatById(chat)]);
-
     const result = await this.chatService.saveChat(chat);
 
     if (!result) {
-      await Promise.all([
-        this.redis.del(
-          createChatCacheKey(chat.account.id, chat.worker.id, chat.phone)
-        ),
-        this.redis.del(createChatCacheKeyChatId(chat.account.id, chat.chat_id)),
-      ]);
+      await this.chatService.invalidateChatCache(chat);
     }
 
     return result ?? false;
