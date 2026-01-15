@@ -926,7 +926,32 @@ export const useChatStore = defineStore('chat', {
         if (append) {
           this.listQueue = [...this.listQueue, ...data.data.results];
         } else {
-          this.listQueue = data.data.results;
+          const filteredResults = data.data.results.filter((chat) => {
+            const existingInQueue = this.listQueue.find(
+              (c) => c.chat_id === chat.chat_id
+            );
+            const existingInInChat = this.listInChat.find(
+              (c) => c.chat_id === chat.chat_id
+            );
+
+            if (
+              existingInInChat &&
+              existingInInChat.status === EChatStatus.in_chat
+            ) {
+              return false;
+            }
+
+            if (
+              existingInQueue &&
+              existingInQueue.status !== EChatStatus.queue
+            ) {
+              return false;
+            }
+
+            return true;
+          });
+
+          this.listQueue = filteredResults;
         }
 
         this.queuePagings = data.data.pagings;
@@ -990,7 +1015,18 @@ export const useChatStore = defineStore('chat', {
         if (append) {
           this.listInChat = [...this.listInChat, ...data.data.results];
         } else {
-          this.listInChat = data.data.results;
+          const existingInChatChats = this.listInChat.filter(
+            (c) => c.status === EChatStatus.in_chat
+          );
+          const existingInChatIds = new Set(
+            existingInChatChats.map((c) => c.chat_id)
+          );
+
+          const newInChatChats = data.data.results.filter(
+            (c) => !existingInChatIds.has(c.chat_id)
+          );
+
+          this.listInChat = [...existingInChatChats, ...newInChatChats];
         }
 
         this.inChatPagings = data.data.pagings;
