@@ -750,7 +750,7 @@ export class MessageSendConsume {
     }
 
     const messageKey = {
-      remoteJid: data.message_key.remote_jid ?? '',
+      remoteJid: jid,
       fromMe: data.message_key.from_me ?? false,
       id: data.message_key.id,
       participant: data.message_key.participant ?? undefined,

@@ -26,8 +26,21 @@ export class BaileysHelpersService {
   ): Promise<WAMessage | undefined> {
     const sock = this.socket();
 
+    console.log('address');
+    console.dir(address, { depth: null, colors: true });
+
+    console.log('content');
+    console.dir(content, { depth: null, colors: true });
+
+    console.log('options');
+    console.dir(options, { depth: null, colors: true });
+
+    const shouldSimulateTyping = !this.isReactionOrEdit(content);
+
     if (address.includes('@')) {
-      await this.simulateHumanTyping(address, content);
+      if (shouldSimulateTyping) {
+        await this.simulateHumanTyping(address, content);
+      }
       return sock.sendMessage(address, content, options);
     }
 
@@ -36,7 +49,9 @@ export class BaileysHelpersService {
       throw new Error(`Number not found on WhatsApp: ${address}`);
     }
 
-    await this.simulateHumanTyping(jid, content);
+    if (shouldSimulateTyping) {
+      await this.simulateHumanTyping(jid, content);
+    }
     return sock.sendMessage(jid, content, options);
   }
 
@@ -110,6 +125,10 @@ export class BaileysHelpersService {
 
   private countGraphemes(str: string) {
     return Array.from(str ?? '').length;
+  }
+
+  private isReactionOrEdit(content: AnyMessageContent): boolean {
+    return !!(content as any)?.react || !!(content as any)?.edit;
   }
 
   private extractText(content: AnyMessageContent) {
