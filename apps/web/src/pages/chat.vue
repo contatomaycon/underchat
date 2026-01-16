@@ -1940,7 +1940,10 @@ const openChat = async (chatId: ListChatsResult['chat_id']) => {
 
   await chatStore.getChatById(requestQueue);
 
-  if (chatStore.activeChat?.status === EChatStatus.in_chat) {
+  if (
+    chatStore.activeChat?.status === EChatStatus.in_chat &&
+    chatStore.activeChat?.user?.id === chatStore.user?.user_id
+  ) {
     await chatStore.clearChatSummary(chatId);
   }
 

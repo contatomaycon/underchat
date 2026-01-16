@@ -23,6 +23,7 @@ export const clearChatSummary = async (
     const response = await chatSummaryClearUseCase.execute(
       t,
       tokenJwtData.account_id,
+      tokenJwtData.user_id,
       request.params
     );
 

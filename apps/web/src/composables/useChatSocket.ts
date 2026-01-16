@@ -101,7 +101,11 @@ const createChatSocket = () => {
 
     chatStore.addChat(chatData);
 
-    if (isActiveChat && chatData.status === EChatStatus.in_chat) {
+    if (
+      isActiveChat &&
+      chatData.status === EChatStatus.in_chat &&
+      chatData.user?.id === chatStore.user?.user_id
+    ) {
       chatStore.clearActiveChatUnreadCountLocally();
     }
 
@@ -179,7 +183,11 @@ const createChatSocket = () => {
 
             chatStore.addChat(data);
 
-            if (isActiveChat && data.status === EChatStatus.in_chat) {
+            if (
+              isActiveChat &&
+              data.status === EChatStatus.in_chat &&
+              data.user?.id === chatStore.user?.user_id
+            ) {
               chatStore.clearActiveChatUnreadCountLocally();
             }
           }

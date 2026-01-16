@@ -1258,6 +1258,7 @@ export class ChatService {
         {
           upsert: true,
           maxRetries: 5,
+          refresh: true,
         }
       );
 
