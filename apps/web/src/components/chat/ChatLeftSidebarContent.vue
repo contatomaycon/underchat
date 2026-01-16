@@ -34,7 +34,11 @@ type OpenChatOptions = {
 };
 
 const emit = defineEmits<{
-  (e: 'openChat', id: ListChatsResult['chat_id'], options?: OpenChatOptions): void;
+  (
+    e: 'openChat',
+    id: ListChatsResult['chat_id'],
+    options?: OpenChatOptions
+  ): void;
   (e: 'showUserProfile'): void;
   (e: 'close'): void;
   (e: 'update:search', value: string): void;
@@ -887,13 +891,35 @@ const applyCounts = (counts: {
   closed?: number;
   my_chats: number;
 }) => {
-  searchChatsCounts.value = counts;
-  chatStore.myChatsTotal = counts.my_chats;
-  chatStore.queuePagings.total = counts.queue;
-  chatStore.inChatPagings.total = counts.in_chat;
-  chatStore.chatbotPagings.total = counts.chatbot;
-  if (counts.closed !== undefined) {
-    chatStore.closedPagings.total = counts.closed;
+  let nextCounts = counts;
+
+  if (chatStore.isCountsOptimisticActive()) {
+    const merged = {
+      ...counts,
+      queue: chatStore.queuePagings.total,
+      in_chat: chatStore.inChatPagings.total,
+      chatbot: chatStore.chatbotPagings.total,
+      my_chats:
+        chatStore.myChatsTotal === null
+          ? counts.my_chats
+          : chatStore.myChatsTotal,
+    };
+
+    if (counts.closed !== undefined) {
+      merged.closed = chatStore.closedPagings.total;
+    }
+
+    merged.total = merged.queue + merged.in_chat;
+    nextCounts = merged;
+  }
+
+  searchChatsCounts.value = nextCounts;
+  chatStore.myChatsTotal = nextCounts.my_chats;
+  chatStore.queuePagings.total = nextCounts.queue;
+  chatStore.inChatPagings.total = nextCounts.in_chat;
+  chatStore.chatbotPagings.total = nextCounts.chatbot;
+  if (nextCounts.closed !== undefined) {
+    chatStore.closedPagings.total = nextCounts.closed;
   }
 };
 

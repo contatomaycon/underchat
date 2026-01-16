@@ -161,6 +161,7 @@ export const useChatStore = defineStore('chat', {
     loading: false,
     loadingChats: false,
     skipChatStatusEventsUntil: {} as Record<string, number>,
+    countsOptimisticUntil: 0,
     loadingMoreMessages: false,
     pendingStatusUpdateChatId: null as string | null,
     activeChat: null as ListChatsResult | null,
@@ -783,6 +784,17 @@ export const useChatStore = defineStore('chat', {
         return;
       }
       delete this.skipChatStatusEventsUntil[chatId];
+    },
+
+    markCountsOptimistic(timeoutMs = 5000): void {
+      const next = Date.now() + timeoutMs;
+      if (next > this.countsOptimisticUntil) {
+        this.countsOptimisticUntil = next;
+      }
+    },
+
+    isCountsOptimisticActive(): boolean {
+      return this.countsOptimisticUntil > Date.now();
     },
 
     replaceOrPushInList(
@@ -3812,6 +3824,9 @@ export const useChatStore = defineStore('chat', {
           this.showSnackbar(errorMessage, EColor.error);
           return null;
         }
+
+        this.addChat(data.data);
+        this.markCountsOptimistic();
 
         return data.data;
       } catch (error) {

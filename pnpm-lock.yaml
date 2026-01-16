@@ -94,8 +94,8 @@ importers:
         specifier: ^3.6.4
         version: 3.6.4
       '@whiskeysockets/baileys':
-        specifier: https://gitea.devunder.com/underchat/-/packages/npm/@whiskeysockets%2Fbaileys/8.1.2026/files/58
-        version: https://gitea.devunder.com/underchat/-/packages/npm/@whiskeysockets%2Fbaileys/8.1.2026/files/58(audio-decode@2.2.3)(link-preview-js@4.0.0)(sharp@0.34.5)
+        specifier: https://gitea.devunder.com/underchat/-/packages/npm/@whiskeysockets%2Fbaileys/14.1.2026/files/59
+        version: https://gitea.devunder.com/underchat/-/packages/npm/@whiskeysockets%2Fbaileys/14.1.2026/files/59(audio-decode@2.2.3)(link-preview-js@4.0.0)(sharp@0.34.5)
       audio-decode:
         specifier: ^2.2.3
         version: 2.2.3
@@ -4464,9 +4464,9 @@ packages:
   '@webassemblyjs/wast-printer@1.14.1':
     resolution: {integrity: sha512-kPSSXE6De1XOR820C90RIo2ogvZG+c3KiHzqUoO/F34Y2shGzesfqv7o57xrxovZJH/MetF5UjroJ/R/3isoiw==}
 
-  '@whiskeysockets/baileys@https://gitea.devunder.com/underchat/-/packages/npm/@whiskeysockets%2Fbaileys/8.1.2026/files/58':
-    resolution: {tarball: https://gitea.devunder.com/underchat/-/packages/npm/@whiskeysockets%2Fbaileys/8.1.2026/files/58}
-    version: 8.1.2026
+  '@whiskeysockets/baileys@https://gitea.devunder.com/underchat/-/packages/npm/@whiskeysockets%2Fbaileys/14.1.2026/files/59':
+    resolution: {integrity: sha512-ke9B2hNPTfPHQgjn/PgvscQlWuJWtwOERtKB2edMwsQy3tbs50G8WXFKBbldBwUuJrx/veNao4eIkzlGSaTktA==, tarball: https://gitea.devunder.com/underchat/-/packages/npm/@whiskeysockets%2Fbaileys/14.1.2026/files/59}
+    version: 14.1.2026
     engines: {node: '>=20.0.0'}
     peerDependencies:
       audio-decode: ^2.1.3
@@ -14963,7 +14963,7 @@ snapshots:
       '@webassemblyjs/ast': 1.14.1
       '@xtuc/long': 4.2.2
 
-  '@whiskeysockets/baileys@https://gitea.devunder.com/underchat/-/packages/npm/@whiskeysockets%2Fbaileys/8.1.2026/files/58(audio-decode@2.2.3)(link-preview-js@4.0.0)(sharp@0.34.5)':
+  '@whiskeysockets/baileys@https://gitea.devunder.com/underchat/-/packages/npm/@whiskeysockets%2Fbaileys/14.1.2026/files/59(audio-decode@2.2.3)(link-preview-js@4.0.0)(sharp@0.34.5)':
     dependencies:
       '@cacheable/node-cache': 1.7.6
       '@hapi/boom': 9.1.4
