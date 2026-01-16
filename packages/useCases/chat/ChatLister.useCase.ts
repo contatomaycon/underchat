@@ -86,29 +86,69 @@ export class ChatListerUseCase {
       sortChatbotOrder: string;
     }
   ): { sortBy: string; sortOrder: string } {
-    const isAll = filterStatus === null || filterStatus === undefined;
     const statusArray = Array.isArray(status) ? status : [status];
-    const effectiveStatus =
-      filterStatus ?? (statusArray.length === 1 ? statusArray[0] : null);
 
-    if (isAll && statusArray.length > 1) {
-      return {
-        sortBy: preferences.sortByChatOrder,
-        sortOrder: preferences.sortInChatOrder,
-      };
-    }
+    const isMyChats =
+      statusArray.length === 2 &&
+      statusArray.includes(EChatStatus.in_chat) &&
+      statusArray.includes(EChatStatus.queue) &&
+      (filterStatus === null || filterStatus === undefined);
 
-    if (effectiveStatus === EChatStatus.in_chat) {
+    if (isMyChats) {
       return {
         sortBy: preferences.sortByMyChatsOrder,
         sortOrder: preferences.sortMyChatsOrder,
       };
     }
 
-    if (effectiveStatus === EChatStatus.queue) {
+    if (filterStatus !== undefined && filterStatus !== null) {
+      if (filterStatus === EChatStatus.queue) {
+        return {
+          sortBy: preferences.sortByQueueOrder,
+          sortOrder: preferences.sortQueueOrder,
+        };
+      }
+
+      if (filterStatus === EChatStatus.ura) {
+        return {
+          sortBy: preferences.sortByChatbotOrder,
+          sortOrder: preferences.sortChatbotOrder,
+        };
+      }
+
+      return {
+        sortBy: preferences.sortByChatOrder,
+        sortOrder: preferences.sortInChatOrder,
+      };
+    }
+
+    if (statusArray.length > 1) {
+      return {
+        sortBy: preferences.sortByChatOrder,
+        sortOrder: preferences.sortInChatOrder,
+      };
+    }
+
+    const singleStatus = statusArray[0];
+
+    if (singleStatus === EChatStatus.in_chat) {
+      return {
+        sortBy: preferences.sortByChatOrder,
+        sortOrder: preferences.sortInChatOrder,
+      };
+    }
+
+    if (singleStatus === EChatStatus.queue) {
       return {
         sortBy: preferences.sortByQueueOrder,
         sortOrder: preferences.sortQueueOrder,
+      };
+    }
+
+    if (singleStatus === EChatStatus.ura) {
+      return {
+        sortBy: preferences.sortByChatbotOrder,
+        sortOrder: preferences.sortChatbotOrder,
       };
     }
 

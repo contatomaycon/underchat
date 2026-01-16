@@ -837,15 +837,17 @@ export const useChatStore = defineStore('chat', {
         return { sortBy: 'date', sortOrder: 'desc' };
       }
 
+      // "Em Atendimento" individual - usa preferências de "Todos"
       if (status === EChatStatus.in_chat) {
-        if (chatUser.sort_by_my_chats_order && chatUser.sort_my_chats_order) {
+        if (chatUser.sort_by_chat_order && chatUser.sort_in_chat_order) {
           return {
-            sortBy: chatUser.sort_by_my_chats_order,
-            sortOrder: chatUser.sort_my_chats_order,
+            sortBy: chatUser.sort_by_chat_order,
+            sortOrder: chatUser.sort_in_chat_order,
           };
         }
       }
 
+      // "Aguardando atendimento"
       if (status === EChatStatus.queue) {
         if (chatUser.sort_by_queue_order && chatUser.sort_queue_order) {
           return {
@@ -855,6 +857,7 @@ export const useChatStore = defineStore('chat', {
         }
       }
 
+      // "ChatBot"
       if (status === EChatStatus.ura) {
         if (chatUser.sort_by_chatbot_order && chatUser.sort_chatbot_order) {
           return {
@@ -864,6 +867,7 @@ export const useChatStore = defineStore('chat', {
         }
       }
 
+      // Fallback para preferências de "Todos"
       if (chatUser.sort_by_chat_order && chatUser.sort_in_chat_order) {
         return {
           sortBy: chatUser.sort_by_chat_order,

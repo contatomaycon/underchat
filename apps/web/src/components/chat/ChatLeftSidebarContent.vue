@@ -552,6 +552,10 @@ const handleSortSave = async (status?: 'in_chat' | 'queue') => {
 
   await chatStore.updateChatsUser(updateData);
 
+  // Atualiza currentSortField e currentSortOrder para serem usados no endpoint
+  currentSortField.value = sortModalField.value;
+  currentSortOrder.value = sortModalOrder.value;
+
   if (activeFilter.value === 'all') {
     currentPageQueue.value = 1;
     currentPageInChat.value = 1;
@@ -802,10 +806,14 @@ const updateSortValuesFromChatUser = () => {
   if (chatUser.sort_by_chat_order) {
     sortInChatField.value = chatUser.sort_by_chat_order;
     sortAllInChatField.value = chatUser.sort_by_chat_order;
+    // Atualiza currentSortField com a preferência de "Todos" como padrão
+    currentSortField.value = chatUser.sort_by_chat_order;
   }
   if (chatUser.sort_in_chat_order) {
     sortInChatOrder.value = chatUser.sort_in_chat_order;
     sortAllInChatOrder.value = chatUser.sort_in_chat_order;
+    // Atualiza currentSortOrder com a preferência de "Todos" como padrão
+    currentSortOrder.value = chatUser.sort_in_chat_order;
   }
   if (chatUser.sort_by_queue_order) {
     sortQueueField.value = chatUser.sort_by_queue_order;
