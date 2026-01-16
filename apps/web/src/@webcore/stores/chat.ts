@@ -924,7 +924,7 @@ export const useChatStore = defineStore('chat', {
     async listQueueChats(
       input: ListChatsQuery,
       append = false
-    ): Promise<ListChatsResult[]> {
+    ): Promise<ListChatsResponse | null> {
       try {
         this.loading = true;
         this.loadingChats = true;
@@ -936,7 +936,6 @@ export const useChatStore = defineStore('chat', {
           filter_status: input.filter_status,
           filter_label_template_id: input.filter_label_template_id,
           filter_worker_id: input.filter_worker_id,
-          filter_user_id: input.filter_user_id,
           filter_sector_id: input.filter_sector_id,
           filter_name: input.filter_name,
           filter_phone: input.filter_phone,
@@ -962,7 +961,7 @@ export const useChatStore = defineStore('chat', {
             this.listQueue = [];
           }
 
-          return [] as ListChatsResult[];
+          return null;
         }
 
         if (append) {
@@ -997,7 +996,7 @@ export const useChatStore = defineStore('chat', {
 
         this.queuePagings = data.data.pagings;
 
-        return data.data.results;
+        return data.data;
       } catch {
         if (!append) {
           this.listQueue = [];
@@ -1005,14 +1004,14 @@ export const useChatStore = defineStore('chat', {
         this.loading = false;
         this.loadingChats = false;
 
-        return [] as ListChatsResult[];
+        return null;
       }
     },
 
     async listInChatChats(
       input: ListChatsQuery,
       append = false
-    ): Promise<ListChatsResult[]> {
+    ): Promise<ListChatsResponse | null> {
       try {
         this.loading = true;
         this.loadingChats = true;
@@ -1024,7 +1023,6 @@ export const useChatStore = defineStore('chat', {
           filter_status: input.filter_status,
           filter_label_template_id: input.filter_label_template_id,
           filter_worker_id: input.filter_worker_id,
-          filter_user_id: input.filter_user_id,
           filter_sector_id: input.filter_sector_id,
           filter_name: input.filter_name,
           filter_phone: input.filter_phone,
@@ -1050,7 +1048,7 @@ export const useChatStore = defineStore('chat', {
             this.listInChat = [];
           }
 
-          return [] as ListChatsResult[];
+          return null;
         }
 
         if (append) {
@@ -1072,7 +1070,7 @@ export const useChatStore = defineStore('chat', {
 
         this.inChatPagings = data.data.pagings;
 
-        return data.data.results;
+        return data.data;
       } catch {
         if (!append) {
           this.listInChat = [];
@@ -1080,7 +1078,7 @@ export const useChatStore = defineStore('chat', {
         this.loading = false;
         this.loadingChats = false;
 
-        return [] as ListChatsResult[];
+        return null;
       }
     },
 
@@ -1098,7 +1096,6 @@ export const useChatStore = defineStore('chat', {
           filter_status: input.filter_status,
           filter_label_template_id: input.filter_label_template_id,
           filter_worker_id: input.filter_worker_id,
-          filter_user_id: input.filter_user_id,
           filter_sector_id: input.filter_sector_id,
           filter_name: input.filter_name,
           filter_phone: input.filter_phone,
@@ -1159,7 +1156,6 @@ export const useChatStore = defineStore('chat', {
           filter_status: input.filter_status,
           filter_label_template_id: input.filter_label_template_id,
           filter_worker_id: input.filter_worker_id,
-          filter_user_id: input.filter_user_id,
           filter_sector_id: input.filter_sector_id,
           filter_name: input.filter_name,
           filter_phone: input.filter_phone,
@@ -1281,71 +1277,9 @@ export const useChatStore = defineStore('chat', {
       }
     },
 
-    async loadAllChats(
+    async resolveChatEndpoint(
+      status: EChatStatus | EChatStatus[],
       filters: {
-        current_page_queue: number;
-        per_page_queue: number;
-        current_page_in_chat: number;
-        per_page_in_chat: number;
-        filter_status?: string | null;
-        filter_label_template_id?: string | null;
-        filter_worker_id?: string | null;
-        filter_user_id?: string | null;
-        filter_sector_id?: string | null;
-        filter_name?: string | null;
-        filter_phone?: string | null;
-        filter_protocol?: string | null;
-        filter_date_start?: string | null;
-        filter_date_end?: string | null;
-      },
-      hasAppliedAdvancedFilters: boolean,
-      append = false
-    ): Promise<void> {
-      if (hasAppliedAdvancedFilters) {
-        return;
-      }
-
-      const requestQueue: ListChatsQuery = {
-        current_page: filters.current_page_queue,
-        per_page: filters.per_page_queue,
-        status: EChatStatus.queue,
-        filter_label_template_id: filters.filter_label_template_id ?? undefined,
-        filter_worker_id: filters.filter_worker_id ?? undefined,
-        filter_user_id: filters.filter_user_id ?? undefined,
-        filter_sector_id: filters.filter_sector_id ?? undefined,
-        filter_name: filters.filter_name ?? undefined,
-        filter_phone: filters.filter_phone ?? undefined,
-        filter_protocol: filters.filter_protocol ?? undefined,
-        filter_date_start: filters.filter_date_start ?? undefined,
-        filter_date_end: filters.filter_date_end ?? undefined,
-      };
-
-      const requestInChat: ListChatsQuery = {
-        current_page: filters.current_page_in_chat,
-        per_page: filters.per_page_in_chat,
-        status: EChatStatus.in_chat,
-        filter_status: filters.filter_status ?? undefined,
-        filter_label_template_id: filters.filter_label_template_id ?? undefined,
-        filter_worker_id: filters.filter_worker_id ?? undefined,
-        filter_user_id: filters.filter_user_id ?? undefined,
-        filter_sector_id: filters.filter_sector_id ?? undefined,
-        filter_name: filters.filter_name ?? undefined,
-        filter_phone: filters.filter_phone ?? undefined,
-        filter_protocol: filters.filter_protocol ?? undefined,
-        filter_date_start: filters.filter_date_start ?? undefined,
-        filter_date_end: filters.filter_date_end ?? undefined,
-      };
-
-      await Promise.all([
-        this.listQueueChats(requestQueue, append),
-        this.listInChatChats(requestInChat, append),
-      ]);
-    },
-
-    async loadInChatChats(
-      filters: {
-        current_page: number;
-        per_page: number;
         filter_status?: string | null;
         filter_label_template_id?: string | null;
         filter_worker_id?: string | null;
@@ -1360,390 +1294,201 @@ export const useChatStore = defineStore('chat', {
         sort_order?: string | null;
       },
       hasAppliedAdvancedFilters: boolean,
-      sortField?: string | null,
-      sortOrder?: string | null,
+      pagination: { current_page: number; per_page: number },
       append = false
-    ): Promise<void> {
+    ): Promise<{
+      results: ListChatsResult[];
+      counts: {
+        queue: number;
+        in_chat: number;
+        chatbot: number;
+        closed?: number;
+        my_chats: number;
+      } | null;
+    }> {
+      const statusArray = Array.isArray(status) ? status : [status];
+
+      if (statusArray.length > 1) {
+        try {
+          this.loading = true;
+
+          const params: Record<string, any> = {
+            current_page: pagination.current_page,
+            per_page: pagination.per_page,
+            status: statusArray,
+          };
+
+          if (filters.filter_label_template_id) {
+            params.filter_label_template_id = filters.filter_label_template_id;
+          }
+          if (filters.filter_worker_id) {
+            params.filter_worker_id = filters.filter_worker_id;
+          }
+          if (filters.filter_sector_id) {
+            params.filter_sector_id = filters.filter_sector_id;
+          }
+          if (filters.filter_name) {
+            params.filter_name = filters.filter_name;
+          }
+          if (filters.filter_phone) {
+            params.filter_phone = filters.filter_phone;
+          }
+          if (filters.filter_protocol) {
+            params.filter_protocol = filters.filter_protocol;
+          }
+          if (filters.filter_date_start) {
+            params.filter_date_start = filters.filter_date_start;
+          }
+          if (filters.filter_date_end) {
+            params.filter_date_end = filters.filter_date_end;
+          }
+
+          const response = await axios.get<IApiResponse<ListChatsResponse>>(
+            `/chat`,
+            { params }
+          );
+
+          this.loading = false;
+
+          const data = response?.data;
+
+          if (!data?.status || !data?.data) {
+            return { results: [], counts: null };
+          }
+
+          if (statusArray.includes(EChatStatus.queue)) {
+            if (append) {
+              this.listQueue.push(
+                ...data.data.results.filter(
+                  (c) => c.status === EChatStatus.queue
+                )
+              );
+            } else {
+              this.listQueue = data.data.results.filter(
+                (c) => c.status === EChatStatus.queue
+              );
+            }
+            this.queuePagings = data.data.pagings;
+          }
+
+          if (statusArray.includes(EChatStatus.in_chat)) {
+            if (append) {
+              this.listInChat.push(
+                ...data.data.results.filter(
+                  (c) => c.status === EChatStatus.in_chat
+                )
+              );
+            } else {
+              this.listInChat = data.data.results.filter(
+                (c) => c.status === EChatStatus.in_chat
+              );
+            }
+            this.inChatPagings = data.data.pagings;
+          }
+
+          return { results: data.data.results, counts: data.data.counts };
+        } catch {
+          this.loading = false;
+          return { results: [], counts: null };
+        }
+      }
+
+      const singleStatus = statusArray[0];
+
       if (hasAppliedAdvancedFilters) {
         const request: SearchChatsQuery = {
-          current_page: filters.current_page,
-          per_page: filters.per_page,
+          current_page: pagination.current_page,
+          per_page: pagination.per_page,
           search: '',
-          filter_status: EChatStatus.in_chat,
-          filter_label_template_id:
-            filters.filter_label_template_id ?? undefined,
-          filter_worker_id: filters.filter_worker_id ?? undefined,
-          filter_user_id: filters.filter_user_id ?? undefined,
-          filter_sector_id: filters.filter_sector_id ?? undefined,
-          filter_name: filters.filter_name ?? undefined,
-          filter_phone: filters.filter_phone ?? undefined,
-          filter_protocol: filters.filter_protocol ?? undefined,
-          filter_date_start: filters.filter_date_start ?? undefined,
-          filter_date_end: filters.filter_date_end ?? undefined,
-          sort_field: sortField ?? filters.sort_field ?? undefined,
-          sort_order: sortOrder ?? filters.sort_order ?? undefined,
+          filter_status: singleStatus,
+          filter_label_template_id: filters.filter_label_template_id,
+          filter_worker_id: filters.filter_worker_id,
+          filter_user_id: filters.filter_user_id,
+          filter_sector_id: filters.filter_sector_id,
+          filter_name: filters.filter_name,
+          filter_phone: filters.filter_phone,
+          filter_protocol: filters.filter_protocol,
+          filter_date_start: filters.filter_date_start,
+          filter_date_end: filters.filter_date_end,
+          sort_field: filters.sort_field,
+          sort_order: filters.sort_order,
         };
 
         const result = await this.searchChats(request);
-        if (result) {
-          if (append) {
-            this.listInChat.push(...result.results);
-          } else {
-            this.listInChat = result.results;
-          }
-          this.inChatPagings = result.pagings;
+        if (!result) {
+          return { results: [], counts: null };
         }
-        return;
+
+        return { results: result.results, counts: result.counts };
       }
 
       const request: ListChatsQuery = {
-        current_page: filters.current_page,
-        per_page: filters.per_page,
-        status: EChatStatus.in_chat,
-        filter_status: filters.filter_status ?? undefined,
-        filter_label_template_id: filters.filter_label_template_id ?? undefined,
-        filter_worker_id: filters.filter_worker_id ?? undefined,
-        filter_user_id: filters.filter_user_id ?? undefined,
-        filter_sector_id: filters.filter_sector_id ?? undefined,
-        filter_name: filters.filter_name ?? undefined,
-        filter_phone: filters.filter_phone ?? undefined,
-        filter_protocol: filters.filter_protocol ?? undefined,
-        filter_date_start: filters.filter_date_start ?? undefined,
-        filter_date_end: filters.filter_date_end ?? undefined,
+        current_page: pagination.current_page,
+        per_page: pagination.per_page,
+        status: singleStatus,
+        filter_label_template_id: filters.filter_label_template_id,
+        filter_worker_id: filters.filter_worker_id,
+        filter_sector_id: filters.filter_sector_id,
+        filter_name: filters.filter_name,
+        filter_phone: filters.filter_phone,
+        filter_protocol: filters.filter_protocol,
+        filter_date_start: filters.filter_date_start,
+        filter_date_end: filters.filter_date_end,
       };
 
-      await this.listInChatChats(request, append);
-    },
-
-    async loadMyChats(
-      filters: {
-        current_page_queue: number;
-        per_page_queue: number;
-        current_page_in_chat: number;
-        per_page_in_chat: number;
-        filter_status?: string | null;
-        filter_label_template_id?: string | null;
-        filter_worker_id?: string | null;
-        filter_user_id?: string | null;
-        filter_sector_id?: string | null;
-        filter_name?: string | null;
-        filter_phone?: string | null;
-        filter_protocol?: string | null;
-        filter_date_start?: string | null;
-        filter_date_end?: string | null;
-      },
-      hasAppliedAdvancedFilters: boolean,
-      append = false
-    ): Promise<void> {
-      if (hasAppliedAdvancedFilters) {
-        const request: SearchChatsQuery = {
-          current_page: filters.current_page_queue,
-          per_page: filters.per_page_queue,
-          search: '',
-          filter_status: EChatStatus.queue,
-          filter_label_template_id:
-            filters.filter_label_template_id ?? undefined,
-          filter_worker_id: filters.filter_worker_id ?? undefined,
-          filter_user_id: filters.filter_user_id ?? undefined,
-          filter_sector_id: filters.filter_sector_id ?? undefined,
-          filter_name: filters.filter_name ?? undefined,
-          filter_phone: filters.filter_phone ?? undefined,
-          filter_protocol: filters.filter_protocol ?? undefined,
-          filter_date_start: filters.filter_date_start ?? undefined,
-          filter_date_end: filters.filter_date_end ?? undefined,
-        };
-
-        const result = await this.searchChats(request);
-        if (result) {
-          if (append) {
-            this.listQueue.push(...result.results);
-            this.listInChat.push(...result.results);
-          } else {
-            this.listQueue = result.results;
-            this.listInChat = result.results;
-          }
-          this.queuePagings = result.pagings;
-          this.inChatPagings = result.pagings;
-        }
-        return;
+      if (singleStatus === EChatStatus.queue) {
+        const response = await this.listQueueChats(request, append);
+        return { results: this.listQueue, counts: response?.counts ?? null };
       }
 
-      const requestQueue: ListChatsQuery = {
-        current_page: filters.current_page_queue,
-        per_page: filters.per_page_queue,
-        status: EChatStatus.queue,
-        filter_label_template_id: filters.filter_label_template_id ?? undefined,
-        filter_worker_id: filters.filter_worker_id ?? undefined,
-        filter_user_id: filters.filter_user_id ?? undefined,
-        filter_sector_id: filters.filter_sector_id ?? undefined,
-        filter_name: filters.filter_name ?? undefined,
-        filter_phone: filters.filter_phone ?? undefined,
-        filter_protocol: filters.filter_protocol ?? undefined,
-        filter_date_start: filters.filter_date_start ?? undefined,
-        filter_date_end: filters.filter_date_end ?? undefined,
-      };
-
-      const requestInChat: ListChatsQuery = {
-        current_page: filters.current_page_in_chat,
-        per_page: filters.per_page_in_chat,
-        status: EChatStatus.in_chat,
-        filter_status: filters.filter_status ?? undefined,
-        filter_label_template_id: filters.filter_label_template_id ?? undefined,
-        filter_worker_id: filters.filter_worker_id ?? undefined,
-        filter_user_id: filters.filter_user_id ?? undefined,
-        filter_sector_id: filters.filter_sector_id ?? undefined,
-        filter_name: filters.filter_name ?? undefined,
-        filter_phone: filters.filter_phone ?? undefined,
-        filter_protocol: filters.filter_protocol ?? undefined,
-        filter_date_start: filters.filter_date_start ?? undefined,
-        filter_date_end: filters.filter_date_end ?? undefined,
-      };
-
-      await Promise.all([
-        this.listQueueChats(requestQueue, append),
-        this.listInChatChats(requestInChat, append),
-      ]);
-    },
-
-    async loadQueueChats(
-      filters: {
-        current_page: number;
-        per_page: number;
-        filter_label_template_id?: string | null;
-        filter_worker_id?: string | null;
-        filter_user_id?: string | null;
-        filter_sector_id?: string | null;
-        filter_name?: string | null;
-        filter_phone?: string | null;
-        filter_protocol?: string | null;
-        filter_date_start?: string | null;
-        filter_date_end?: string | null;
-        sort_field?: string | null;
-        sort_order?: string | null;
-      },
-      hasAppliedAdvancedFilters: boolean,
-      sortField?: string | null,
-      sortOrder?: string | null,
-      append = false
-    ): Promise<void> {
-      if (hasAppliedAdvancedFilters) {
-        const request: SearchChatsQuery = {
-          current_page: filters.current_page,
-          per_page: filters.per_page,
-          search: '',
-          filter_status: EChatStatus.queue,
-          filter_label_template_id:
-            filters.filter_label_template_id ?? undefined,
-          filter_worker_id: filters.filter_worker_id ?? undefined,
-          filter_user_id: filters.filter_user_id ?? undefined,
-          filter_sector_id: filters.filter_sector_id ?? undefined,
-          filter_name: filters.filter_name ?? undefined,
-          filter_phone: filters.filter_phone ?? undefined,
-          filter_protocol: filters.filter_protocol ?? undefined,
-          filter_date_start: filters.filter_date_start ?? undefined,
-          filter_date_end: filters.filter_date_end ?? undefined,
-          sort_field: sortField ?? filters.sort_field ?? undefined,
-          sort_order: sortOrder ?? filters.sort_order ?? undefined,
-        };
-
-        const result = await this.searchChats(request);
-        if (result) {
-          if (append) {
-            this.listQueue.push(...result.results);
-          } else {
-            this.listQueue = result.results;
-          }
-          this.queuePagings = result.pagings;
-        }
-        return;
+      if (singleStatus === EChatStatus.in_chat) {
+        const response = await this.listInChatChats(request, append);
+        return { results: this.listInChat, counts: response?.counts ?? null };
       }
 
-      const request: ListChatsQuery = {
-        current_page: filters.current_page,
-        per_page: filters.per_page,
-        status: EChatStatus.queue,
-        filter_label_template_id: filters.filter_label_template_id ?? undefined,
-        filter_worker_id: filters.filter_worker_id ?? undefined,
-        filter_user_id: filters.filter_user_id ?? undefined,
-        filter_sector_id: filters.filter_sector_id ?? undefined,
-        filter_name: filters.filter_name ?? undefined,
-        filter_phone: filters.filter_phone ?? undefined,
-        filter_protocol: filters.filter_protocol ?? undefined,
-        filter_date_start: filters.filter_date_start ?? undefined,
-        filter_date_end: filters.filter_date_end ?? undefined,
-      };
-
-      await this.listQueueChats(request, append);
-    },
-
-    async loadChatbotChatsWithFilters(
-      filters: {
-        current_page: number;
-        per_page: number;
-        filter_label_template_id?: string | null;
-        filter_worker_id?: string | null;
-        filter_user_id?: string | null;
-        filter_sector_id?: string | null;
-        filter_name?: string | null;
-        filter_phone?: string | null;
-        filter_protocol?: string | null;
-        filter_date_start?: string | null;
-        filter_date_end?: string | null;
-        sort_field?: string | null;
-        sort_order?: string | null;
-      },
-      hasAppliedAdvancedFilters: boolean,
-      sortField?: string | null,
-      sortOrder?: string | null,
-      append = false
-    ): Promise<void> {
-      if (hasAppliedAdvancedFilters) {
-        const request: SearchChatsQuery = {
-          current_page: filters.current_page,
-          per_page: filters.per_page,
-          search: '',
-          filter_status: EChatStatus.ura,
-          filter_label_template_id:
-            filters.filter_label_template_id ?? undefined,
-          filter_worker_id: filters.filter_worker_id ?? undefined,
-          filter_user_id: filters.filter_user_id ?? undefined,
-          filter_sector_id: filters.filter_sector_id ?? undefined,
-          filter_name: filters.filter_name ?? undefined,
-          filter_phone: filters.filter_phone ?? undefined,
-          filter_protocol: filters.filter_protocol ?? undefined,
-          filter_date_start: filters.filter_date_start ?? undefined,
-          filter_date_end: filters.filter_date_end ?? undefined,
-          sort_field: sortField ?? filters.sort_field ?? undefined,
-          sort_order: sortOrder ?? filters.sort_order ?? undefined,
-        };
-
-        const result = await this.searchChats(request);
-        if (result) {
-          if (append) {
-            this.listChatbot.push(...result.results);
-          } else {
-            this.listChatbot = result.results;
-          }
-          this.chatbotPagings = result.pagings;
-        }
-        return;
+      if (singleStatus === EChatStatus.ura) {
+        const response = await this.listChatbotChats(request, append);
+        return { results: this.listChatbot, counts: response?.counts ?? null };
       }
 
-      const request: ListChatsQuery = {
-        current_page: filters.current_page,
-        per_page: filters.per_page,
-        status: EChatStatus.ura,
-        filter_label_template_id: filters.filter_label_template_id ?? undefined,
-        filter_worker_id: filters.filter_worker_id ?? undefined,
-        filter_user_id: filters.filter_user_id ?? undefined,
-        filter_sector_id: filters.filter_sector_id ?? undefined,
-        filter_name: filters.filter_name ?? undefined,
-        filter_phone: filters.filter_phone ?? undefined,
-        filter_protocol: filters.filter_protocol ?? undefined,
-        filter_date_start: filters.filter_date_start ?? undefined,
-        filter_date_end: filters.filter_date_end ?? undefined,
-      };
-
-      await this.listChatbotChats(request, append);
-    },
-
-    async loadClosedChatsWithFilters(
-      filters: {
-        current_page: number;
-        per_page: number;
-        filter_status?: string | null;
-        filter_label_template_id?: string | null;
-        filter_worker_id?: string | null;
-        filter_user_id?: string | null;
-        filter_sector_id?: string | null;
-        filter_name?: string | null;
-        filter_phone?: string | null;
-        filter_protocol?: string | null;
-        filter_date_start?: string | null;
-        filter_date_end?: string | null;
-      },
-      hasAppliedAdvancedFilters: boolean,
-      append = false
-    ): Promise<void> {
-      if (hasAppliedAdvancedFilters) {
-        const request: SearchChatsQuery = {
-          current_page: filters.current_page,
-          per_page: filters.per_page,
-          search: '',
-          filter_status: EChatStatus.closed,
-          filter_label_template_id:
-            filters.filter_label_template_id ?? undefined,
-          filter_worker_id: filters.filter_worker_id ?? undefined,
-          filter_user_id: filters.filter_user_id ?? undefined,
-          filter_sector_id: filters.filter_sector_id ?? undefined,
-          filter_name: filters.filter_name ?? undefined,
-          filter_phone: filters.filter_phone ?? undefined,
-          filter_protocol: filters.filter_protocol ?? undefined,
-          filter_date_start: filters.filter_date_start ?? undefined,
-          filter_date_end: filters.filter_date_end ?? undefined,
-        };
-
-        const result = await this.searchChats(request);
-        if (result) {
-          if (append) {
-            this.listClosed.push(...result.results);
-          } else {
-            this.listClosed = result.results;
-          }
-          this.closedPagings = result.pagings;
-        }
-        return;
+      if (singleStatus === EChatStatus.closed) {
+        const response = await this.listClosedChats(request, append);
+        return { results: this.listClosed, counts: response?.counts ?? null };
       }
 
-      const request: ListChatsQuery = {
-        current_page: filters.current_page,
-        per_page: filters.per_page,
-        status: EChatStatus.closed,
-        filter_status: filters.filter_status ?? undefined,
-        filter_label_template_id: filters.filter_label_template_id ?? undefined,
-        filter_worker_id: filters.filter_worker_id ?? undefined,
-        filter_user_id: filters.filter_user_id ?? undefined,
-        filter_sector_id: filters.filter_sector_id ?? undefined,
-        filter_name: filters.filter_name ?? undefined,
-        filter_phone: filters.filter_phone ?? undefined,
-        filter_protocol: filters.filter_protocol ?? undefined,
-        filter_date_start: filters.filter_date_start ?? undefined,
-        filter_date_end: filters.filter_date_end ?? undefined,
-      };
-
-      await this.listClosedChats(request, append);
+      return { results: [], counts: null };
     },
 
     async reloadAllChatLists(hasAppliedAdvancedFilters = false): Promise<void> {
       await Promise.all([
-        this.loadQueueChats(
+        this.resolveChatEndpoint(
+          EChatStatus.queue,
+          {},
+          hasAppliedAdvancedFilters,
           {
             current_page: 1,
             per_page: this.queuePagings.per_page,
           },
-          hasAppliedAdvancedFilters,
-          undefined,
-          undefined,
           false
         ),
-        this.loadInChatChats(
+        this.resolveChatEndpoint(
+          EChatStatus.in_chat,
+          {},
+          hasAppliedAdvancedFilters,
           {
             current_page: 1,
             per_page: this.inChatPagings.per_page,
           },
-          hasAppliedAdvancedFilters,
-          undefined,
-          undefined,
           false
         ),
-        this.loadChatbotChatsWithFilters(
+        this.resolveChatEndpoint(
+          EChatStatus.ura,
+          {},
+          hasAppliedAdvancedFilters,
           {
             current_page: 1,
             per_page: this.chatbotPagings.per_page,
           },
-          hasAppliedAdvancedFilters,
-          undefined,
-          undefined,
           false
         ),
       ]);
@@ -2018,34 +1763,34 @@ export const useChatStore = defineStore('chat', {
         }
 
         await Promise.all([
-          this.loadQueueChats(
+          this.resolveChatEndpoint(
+            EChatStatus.queue,
+            {},
+            hasAppliedAdvancedFilters,
             {
               current_page: 1,
               per_page: this.queuePagings.per_page,
             },
-            hasAppliedAdvancedFilters,
-            undefined,
-            undefined,
             false
           ),
-          this.loadInChatChats(
+          this.resolveChatEndpoint(
+            EChatStatus.in_chat,
+            {},
+            hasAppliedAdvancedFilters,
             {
               current_page: 1,
               per_page: this.inChatPagings.per_page,
             },
-            hasAppliedAdvancedFilters,
-            undefined,
-            undefined,
             false
           ),
-          this.loadChatbotChatsWithFilters(
+          this.resolveChatEndpoint(
+            EChatStatus.ura,
+            {},
+            hasAppliedAdvancedFilters,
             {
               current_page: 1,
               per_page: this.chatbotPagings.per_page,
             },
-            hasAppliedAdvancedFilters,
-            undefined,
-            undefined,
             false
           ),
         ]);

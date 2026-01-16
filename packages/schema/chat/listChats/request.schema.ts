@@ -4,7 +4,10 @@ import { pagingRequestSchema } from '@core/schema/common/pagingRequestSchema';
 
 export const listChatsQuerySchema = Type.Object({
   ...pagingRequestSchema.properties,
-  status: Type.String({ enum: Object.values(EChatStatus) }),
+  status: Type.Union([
+    Type.String({ enum: Object.values(EChatStatus) }),
+    Type.Array(Type.String({ enum: Object.values(EChatStatus) })),
+  ]),
   filter_status: Type.Optional(
     Type.Union([Type.String({ enum: Object.values(EChatStatus) }), Type.Null()])
   ),
@@ -12,9 +15,6 @@ export const listChatsQuerySchema = Type.Object({
     Type.Union([Type.String({ format: 'uuid' }), Type.Null()])
   ),
   filter_worker_id: Type.Optional(
-    Type.Union([Type.String({ format: 'uuid' }), Type.Null()])
-  ),
-  filter_user_id: Type.Optional(
     Type.Union([Type.String({ format: 'uuid' }), Type.Null()])
   ),
   filter_sector_id: Type.Optional(

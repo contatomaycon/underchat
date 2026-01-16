@@ -78,7 +78,6 @@ export const listChatsResponseSchema = Type.Object({
     queue: Type.Number(),
     in_chat: Type.Number(),
     chatbot: Type.Number(),
-    closed: Type.Number(),
     my_chats: Type.Number(),
   }),
 });

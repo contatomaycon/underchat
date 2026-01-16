@@ -122,7 +122,7 @@ const searchChatsCounts = ref<{
   queue: number;
   in_chat: number;
   chatbot: number;
-  closed: number;
+  closed?: number;
   my_chats: number;
 } | null>(null);
 const isLoadingWorkerConfigs = ref(false);
@@ -244,7 +244,7 @@ const allChatsCount = computed(() => {
         searchChatsCounts.value.queue +
         searchChatsCounts.value.in_chat +
         searchChatsCounts.value.chatbot +
-        searchChatsCounts.value.closed
+        (searchChatsCounts.value.closed ?? 0)
       );
     }
     return allChatsWithFiltersPagings.value.total || 0;
@@ -311,7 +311,7 @@ const chatbotCount = computed(() => {
 const closedCount = computed(() => {
   if (hasActiveFilters.value) {
     if (searchChatsCounts.value) {
-      return searchChatsCounts.value.closed;
+      return searchChatsCounts.value.closed ?? 0;
     }
     return listClosed.value.length;
   }
@@ -627,7 +627,7 @@ const handleClearFilters = async () => {
 
   chatStore.activeChat = null;
 
-  await Promise.all([loadChatsByFilter(), loadChatbotCount()]);
+  await loadChatsByFilter();
 
   if (
     debouncedSearchQuery.value &&
@@ -850,161 +850,49 @@ const getChatUserFilters = () => {
   };
 };
 
-const loadAllChatsWithFilters = async (append = false) => {
-  if (isLoadingAllChatsWithFilters.value) {
-    return;
-  }
-
-  isLoadingAllChatsWithFilters.value = true;
-
-  try {
-    const filters = getChatUserFilters();
-
-    const request: SearchChatsQuery = {
-      current_page: allChatsWithFiltersPagings.value.current_page,
-      per_page: allChatsWithFiltersPagings.value.per_page,
-      search: '',
-      filter_status: filters.filter_status,
-      filter_label_template_id: filters.filter_label_template_id,
-      filter_worker_id: filters.filter_worker_id,
-      filter_user_id: filters.filter_user_id,
-      filter_sector_id: filters.filter_sector_id,
-      filter_name: filters.filter_name,
-      filter_phone: filters.filter_phone,
-      filter_protocol: filters.filter_protocol,
-      filter_date_start: filters.filter_date_start,
-      filter_date_end: filters.filter_date_end,
-      sort_field: sortAllInChatField.value ?? filters.sort_field,
-      sort_order: sortAllInChatOrder.value ?? filters.sort_order,
-    };
-
-    const result = await chatStore.searchChats(request);
-
-    if (!result) {
-      if (!append) {
-        chatStore.listQueue = [];
-        chatStore.listInChat = [];
-        chatStore.listChatbot = [];
-        listClosed.value = [];
-        chatStore.listClosed = [];
-      }
-      return;
-    }
-
-    allChatsWithFiltersPagings.value = result.pagings;
-    if (result.counts) {
-      searchChatsCounts.value = result.counts;
-    }
-
-    const queueChats: ListChatsResult[] = [];
-    const inChatChats: ListChatsResult[] = [];
-    const chatbotChats: ListChatsResult[] = [];
-    const closedChats: ListChatsResult[] = [];
-
-    for (const chat of result.results) {
-      if (chat.status === EChatStatus.queue) {
-        queueChats.push(chat);
-      } else if (chat.status === EChatStatus.in_chat) {
-        inChatChats.push(chat);
-      } else if (chat.status === EChatStatus.ura) {
-        chatbotChats.push(chat);
-      } else if (chat.status === EChatStatus.closed) {
-        closedChats.push(chat);
-      }
-    }
-
-    if (append) {
-      chatStore.listQueue.push(...queueChats);
-      chatStore.listInChat.push(...inChatChats);
-      chatStore.listChatbot.push(...chatbotChats);
-      listClosed.value.push(...closedChats);
-      chatStore.listClosed.push(...closedChats);
-    } else {
-      chatStore.listQueue = queueChats;
-      chatStore.listInChat = inChatChats;
-      chatStore.listChatbot = chatbotChats;
-      listClosed.value = closedChats;
-      chatStore.listClosed = closedChats;
-    }
-
-    chatStore.queuePagings = {
-      current_page: allChatsWithFiltersPagings.value.current_page,
-      total_pages: allChatsWithFiltersPagings.value.total_pages,
-      per_page: allChatsWithFiltersPagings.value.per_page,
-      count: chatStore.listQueue.length,
-      total: chatStore.listQueue.length,
-    };
-
-    chatStore.inChatPagings = {
-      current_page: allChatsWithFiltersPagings.value.current_page,
-      total_pages: allChatsWithFiltersPagings.value.total_pages,
-      per_page: allChatsWithFiltersPagings.value.per_page,
-      count: chatStore.listInChat.length,
-      total: chatStore.listInChat.length,
-    };
-
-    chatStore.chatbotPagings = {
-      current_page: allChatsWithFiltersPagings.value.current_page,
-      total_pages: allChatsWithFiltersPagings.value.total_pages,
-      per_page: allChatsWithFiltersPagings.value.per_page,
-      count: chatStore.listChatbot.length,
-      total: chatStore.listChatbot.length,
-    };
-
-    closedPagings.value = {
-      current_page: allChatsWithFiltersPagings.value.current_page,
-      total_pages: allChatsWithFiltersPagings.value.total_pages,
-      per_page: allChatsWithFiltersPagings.value.per_page,
-      count: listClosed.value.length,
-      total: listClosed.value.length,
-    };
-
-    const allChats = append
-      ? [...queueChats, ...inChatChats, ...chatbotChats, ...closedChats]
-      : [
-          ...chatStore.listQueue,
-          ...chatStore.listInChat,
-          ...chatStore.listChatbot,
-          ...listClosed.value,
-        ];
-
-    await Promise.all([
-      loadWorkerConfigs(allChats),
-      loadChatContacts(allChats),
-    ]);
-  } finally {
-    isLoadingAllChatsWithFilters.value = false;
-  }
-};
-
 const loadAllChats = async (append = false) => {
   const filters = getChatUserFilters();
 
-  if (hasAppliedAdvancedFilters.value) {
-    await loadAllChatsWithFilters(append);
-    return;
-  }
+  const [inChatResponse, queueResponse] = await Promise.all([
+    chatStore.resolveChatEndpoint(
+      EChatStatus.in_chat,
+      filters,
+      hasAppliedAdvancedFilters.value,
+      {
+        current_page: currentPageInChat.value,
+        per_page: perPageInChat.value,
+      },
+      append
+    ),
+    chatStore.resolveChatEndpoint(
+      EChatStatus.queue,
+      filters,
+      hasAppliedAdvancedFilters.value,
+      {
+        current_page: currentPageQueue.value,
+        per_page: perPageQueue.value,
+      },
+      append
+    ),
+  ]);
 
-  await chatStore.loadAllChats(
-    {
-      current_page_queue: currentPageQueue.value,
-      per_page_queue: perPageQueue.value,
-      current_page_in_chat: currentPageInChat.value,
-      per_page_in_chat: perPageInChat.value,
-      filter_status: filters.filter_status,
-      filter_label_template_id: filters.filter_label_template_id,
-      filter_worker_id: filters.filter_worker_id,
-      filter_user_id: filters.filter_user_id,
-      filter_sector_id: filters.filter_sector_id,
-      filter_name: filters.filter_name,
-      filter_phone: filters.filter_phone,
-      filter_protocol: filters.filter_protocol,
-      filter_date_start: filters.filter_date_start,
-      filter_date_end: filters.filter_date_end,
-    },
-    hasAppliedAdvancedFilters.value,
-    append
-  );
+  if (inChatResponse.counts || queueResponse.counts) {
+    const combinedCounts = {
+      queue: queueResponse.counts?.queue ?? 0,
+      in_chat: inChatResponse.counts?.in_chat ?? 0,
+      chatbot:
+        inChatResponse.counts?.chatbot ?? queueResponse.counts?.chatbot ?? 0,
+      closed:
+        inChatResponse.counts?.closed ?? queueResponse.counts?.closed ?? 0,
+      my_chats:
+        inChatResponse.counts?.my_chats ?? queueResponse.counts?.my_chats ?? 0,
+    };
+    searchChatsCounts.value = combinedCounts;
+
+    if (combinedCounts.chatbot !== undefined) {
+      chatStore.chatbotPagings.total = combinedCounts.chatbot;
+    }
+  }
 
   const allChats = [...chatStore.listQueue, ...chatStore.listInChat];
   await Promise.all([loadWorkerConfigs(allChats), loadChatContacts(allChats)]);
@@ -1013,28 +901,24 @@ const loadAllChats = async (append = false) => {
 const loadInChatChats = async (append = false) => {
   const filters = getChatUserFilters();
 
-  await chatStore.loadInChatChats(
+  const response = await chatStore.resolveChatEndpoint(
+    EChatStatus.in_chat,
+    filters,
+    hasAppliedAdvancedFilters.value,
     {
       current_page: currentPageInChat.value,
       per_page: perPageInChat.value,
-      filter_status: filters.filter_status,
-      filter_label_template_id: filters.filter_label_template_id,
-      filter_worker_id: filters.filter_worker_id,
-      filter_user_id: filters.filter_user_id,
-      filter_sector_id: filters.filter_sector_id,
-      filter_name: filters.filter_name,
-      filter_phone: filters.filter_phone,
-      filter_protocol: filters.filter_protocol,
-      filter_date_start: filters.filter_date_start,
-      filter_date_end: filters.filter_date_end,
-      sort_field: filters.sort_field,
-      sort_order: filters.sort_order,
     },
-    hasAppliedAdvancedFilters.value,
-    sortInChatField.value,
-    sortInChatOrder.value,
     append
   );
+
+  if (response.counts) {
+    searchChatsCounts.value = response.counts;
+
+    if (response.counts.chatbot !== undefined) {
+      chatStore.chatbotPagings.total = response.counts.chatbot;
+    }
+  }
 
   await Promise.all([
     loadWorkerConfigs(chatStore.listInChat),
@@ -1045,26 +929,24 @@ const loadInChatChats = async (append = false) => {
 const loadMyChats = async (append = false) => {
   const filters = getChatUserFilters();
 
-  await chatStore.loadMyChats(
-    {
-      current_page_queue: currentPageQueue.value,
-      per_page_queue: perPageQueue.value,
-      current_page_in_chat: currentPageInChat.value,
-      per_page_in_chat: perPageInChat.value,
-      filter_status: filters.filter_status,
-      filter_label_template_id: filters.filter_label_template_id,
-      filter_worker_id: filters.filter_worker_id,
-      filter_user_id: filters.filter_user_id,
-      filter_sector_id: filters.filter_sector_id,
-      filter_name: filters.filter_name,
-      filter_phone: filters.filter_phone,
-      filter_protocol: filters.filter_protocol,
-      filter_date_start: filters.filter_date_start,
-      filter_date_end: filters.filter_date_end,
-    },
+  const response = await chatStore.resolveChatEndpoint(
+    [EChatStatus.queue, EChatStatus.in_chat],
+    filters,
     hasAppliedAdvancedFilters.value,
+    {
+      current_page: currentPageQueue.value,
+      per_page: perPageQueue.value,
+    },
     append
   );
+
+  if (response.counts) {
+    searchChatsCounts.value = response.counts;
+
+    if (response.counts.chatbot !== undefined) {
+      chatStore.chatbotPagings.total = response.counts.chatbot;
+    }
+  }
 
   const allChats = [...chatStore.listQueue, ...chatStore.listInChat];
   await Promise.all([loadWorkerConfigs(allChats), loadChatContacts(allChats)]);
@@ -1073,27 +955,24 @@ const loadMyChats = async (append = false) => {
 const loadQueueChats = async (append = false) => {
   const filters = getChatUserFilters();
 
-  await chatStore.loadQueueChats(
+  const response = await chatStore.resolveChatEndpoint(
+    EChatStatus.queue,
+    filters,
+    hasAppliedAdvancedFilters.value,
     {
       current_page: currentPageQueue.value,
       per_page: perPageQueue.value,
-      filter_label_template_id: filters.filter_label_template_id,
-      filter_worker_id: filters.filter_worker_id,
-      filter_user_id: filters.filter_user_id,
-      filter_sector_id: filters.filter_sector_id,
-      filter_name: filters.filter_name,
-      filter_phone: filters.filter_phone,
-      filter_protocol: filters.filter_protocol,
-      filter_date_start: filters.filter_date_start,
-      filter_date_end: filters.filter_date_end,
-      sort_field: filters.sort_field,
-      sort_order: filters.sort_order,
     },
-    hasAppliedAdvancedFilters.value,
-    sortQueueField.value,
-    sortQueueOrder.value,
     append
   );
+
+  if (response.counts) {
+    searchChatsCounts.value = response.counts;
+
+    if (response.counts.chatbot !== undefined) {
+      chatStore.chatbotPagings.total = response.counts.chatbot;
+    }
+  }
 
   await Promise.all([
     loadWorkerConfigs(chatStore.listQueue),
@@ -1188,27 +1067,24 @@ const loadChatbotChats = async (append = false) => {
   try {
     const filters = getChatUserFilters();
 
-    await chatStore.loadChatbotChatsWithFilters(
+    const response = await chatStore.resolveChatEndpoint(
+      EChatStatus.ura,
+      filters,
+      hasAppliedAdvancedFilters.value,
       {
         current_page: chatStore.chatbotPagings.current_page,
         per_page: chatStore.chatbotPagings.per_page,
-        filter_label_template_id: filters.filter_label_template_id,
-        filter_worker_id: filters.filter_worker_id,
-        filter_user_id: filters.filter_user_id,
-        filter_sector_id: filters.filter_sector_id,
-        filter_name: filters.filter_name,
-        filter_phone: filters.filter_phone,
-        filter_protocol: filters.filter_protocol,
-        filter_date_start: filters.filter_date_start,
-        filter_date_end: filters.filter_date_end,
-        sort_field: filters.sort_field,
-        sort_order: filters.sort_order,
       },
-      hasAppliedAdvancedFilters.value,
-      sortChatbotField.value,
-      sortChatbotOrder.value,
       append
     );
+
+    if (response.counts) {
+      searchChatsCounts.value = response.counts;
+
+      if (response.counts.chatbot !== undefined) {
+        chatStore.chatbotPagings.total = response.counts.chatbot;
+      }
+    }
 
     const chatsToProcess = append
       ? chatStore.listChatbot.slice(-chatStore.chatbotPagings.per_page)
@@ -1228,24 +1104,24 @@ const loadClosedChats = async (append = false) => {
   try {
     const filters = getChatUserFilters();
 
-    await chatStore.loadClosedChatsWithFilters(
+    const response = await chatStore.resolveChatEndpoint(
+      EChatStatus.closed,
+      filters,
+      hasAppliedAdvancedFilters.value,
       {
         current_page: chatStore.closedPagings.current_page || 1,
         per_page: 50,
-        filter_status: filters.filter_status,
-        filter_label_template_id: filters.filter_label_template_id,
-        filter_worker_id: filters.filter_worker_id,
-        filter_user_id: filters.filter_user_id,
-        filter_sector_id: filters.filter_sector_id,
-        filter_name: filters.filter_name,
-        filter_phone: filters.filter_phone,
-        filter_protocol: filters.filter_protocol,
-        filter_date_start: filters.filter_date_start,
-        filter_date_end: filters.filter_date_end,
       },
-      hasAppliedAdvancedFilters.value,
       append
     );
+
+    if (response.counts) {
+      searchChatsCounts.value = response.counts;
+
+      if (response.counts.chatbot !== undefined) {
+        chatStore.chatbotPagings.total = response.counts.chatbot;
+      }
+    }
 
     listClosed.value = chatStore.listClosed;
     const chatsToProcess = append
@@ -1921,37 +1797,6 @@ const handleCancelSelectChannelSector = () => {
   selectedSectorId.value = null;
 };
 
-const loadChatbotCount = async () => {
-  if (!canViewChatbotTab.value) return;
-
-  try {
-    const request: ListChatsQuery = {
-      current_page: 1,
-      per_page: 1,
-      status: EChatStatus.ura,
-    };
-
-    const result = await chatStore.listChatbotChats(request);
-    if (result) {
-      chatStore.chatbotPagings.total = result.pagings.total;
-    }
-  } catch {
-    chatStore.chatbotPagings.total = 0;
-  }
-};
-
-watch(
-  () => chatStore.listChatbot.length,
-  (newLength, oldLength) => {
-    if (chatStore.chatbotPagings.total > 0 && newLength < oldLength) {
-      chatStore.chatbotPagings.total = Math.max(
-        0,
-        chatStore.chatbotPagings.total - 1
-      );
-    }
-  }
-);
-
 watch(
   () => chatStore.activeChat?.status,
   (newStatus, oldStatus) => {
@@ -1994,7 +1839,7 @@ const handleChatStatusChanged = async () => {
       if (activeFilter.value === 'chatbot') {
         await loadChatbotChats();
       } else {
-        await Promise.all([loadChatsByFilter(), loadChatbotCount()]);
+        await loadChatsByFilter();
       }
     } finally {
       isHandlingChatStatusChanged = false;
@@ -2005,11 +1850,10 @@ const handleChatStatusChanged = async () => {
 
 const handleReloadAllChatListsOnStatusChange = async () => {
   await chatStore.reloadAllChatLists(hasAppliedAdvancedFilters.value);
-  await loadChatbotCount();
 };
 
 onMounted(async () => {
-  await Promise.all([loadChatsByFilter(), loadChatbotCount()]);
+  await loadChatsByFilter();
 
   globalThis.addEventListener('chat-status-changed', handleChatStatusChanged);
   globalThis.addEventListener(
