@@ -1365,6 +1365,21 @@ const handleChatScroll = async (event?: Event) => {
         return;
       }
 
+      if (activeFilter.value === 'my_chats' && hasActiveFilters.value) {
+        const hasMore = hasMoreQueue.value || hasMoreInChat.value;
+        if (hasMore) {
+          isLoadingMoreQueue.value = true;
+          isLoadingMoreInChat.value = true;
+          currentPageQueue.value += 1;
+
+          await loadChatsByFilter(true);
+
+          isLoadingMoreQueue.value = false;
+          isLoadingMoreInChat.value = false;
+        }
+        return;
+      }
+
       const shouldLoadQueue = hasMoreQueue.value;
       const shouldLoadInChat = hasMoreInChat.value;
 
