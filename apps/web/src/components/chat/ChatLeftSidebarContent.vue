@@ -1838,6 +1838,8 @@ const handleChatStatusChanged = async () => {
     try {
       if (activeFilter.value === 'chatbot') {
         await loadChatbotChats();
+      } else if (activeFilter.value === 'closed') {
+        await loadClosedChats();
       } else {
         await loadChatsByFilter();
       }
