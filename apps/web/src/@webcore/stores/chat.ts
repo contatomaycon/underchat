@@ -647,6 +647,20 @@ export const useChatStore = defineStore('chat', {
         return false;
       }
 
+      const existingStatus = existingChat.status ?? null;
+      const incomingStatus = incomingChat.status ?? null;
+
+      if (
+        incomingStatus &&
+        (incomingStatus === EChatStatus.ura ||
+          incomingStatus === EChatStatus.transmission) &&
+        (existingStatus === EChatStatus.queue ||
+          existingStatus === EChatStatus.in_chat ||
+          existingStatus === EChatStatus.closed)
+      ) {
+        return true;
+      }
+
       const existingRank = this.getStatusRank(existingChat.status);
       const incomingRank = this.getStatusRank(incomingChat.status);
 
