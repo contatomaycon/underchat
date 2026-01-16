@@ -848,6 +848,7 @@ export class ChatListerUseCase {
         pagings,
         results: [],
         counts: {
+          total: 0,
           queue: 0,
           in_chat: 0,
           chatbot: 0,
@@ -880,26 +881,13 @@ export class ChatListerUseCase {
       (chatbotCountResult?.hits?.total as { value: number })?.value || 0;
     const myChatsTotal =
       (myChatsCountResult?.hits?.total as { value: number })?.value || 0;
-
-    console.log('chats');
-    console.dir(chats, { depth: null, colors: true });
-
-    console.log('queueTotal');
-    console.dir(queueTotal, { depth: null, colors: true });
-
-    console.log('inChatTotal');
-    console.dir(inChatTotal, { depth: null, colors: true });
-
-    console.log('chatbotTotal');
-    console.dir(chatbotTotal, { depth: null, colors: true });
-
-    console.log('myChatsTotal');
-    console.dir(myChatsTotal, { depth: null, colors: true });
+    const totalCount = queueTotal + inChatTotal;
 
     return {
       pagings,
       results: chats,
       counts: {
+        total: totalCount,
         queue: queueTotal,
         in_chat: inChatTotal,
         chatbot: chatbotTotal,

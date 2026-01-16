@@ -908,6 +908,7 @@ export class ChatSearcherUseCase {
         pagings,
         results: [],
         counts: {
+          total: 0,
           queue: 0,
           in_chat: 0,
           chatbot: 0,
@@ -943,11 +944,13 @@ export class ChatSearcherUseCase {
       (closedCountResult?.hits?.total as { value: number })?.value || 0;
     const myChatsTotal =
       (myChatsCountResult?.hits?.total as { value: number })?.value || 0;
+    const totalCount = queueTotal + inChatTotal;
 
     return {
       pagings,
       results: chats,
       counts: {
+        total: totalCount,
         queue: queueTotal,
         in_chat: inChatTotal,
         chatbot: chatbotTotal,

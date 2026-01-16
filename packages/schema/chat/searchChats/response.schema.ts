@@ -6,6 +6,7 @@ export const searchChatsResponseSchema = Type.Object({
   ...pagingResponseSchema.properties,
   results: Type.Array(listChatsResultSchema),
   counts: Type.Object({
+    total: Type.Number(),
     queue: Type.Number(),
     in_chat: Type.Number(),
     chatbot: Type.Number(),

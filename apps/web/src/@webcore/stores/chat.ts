@@ -1474,6 +1474,7 @@ export const useChatStore = defineStore('chat', {
     ): Promise<{
       results: ListChatsResult[];
       counts: {
+        total: number;
         queue: number;
         in_chat: number;
         chatbot: number;

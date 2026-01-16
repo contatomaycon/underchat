@@ -120,6 +120,7 @@ const allChatsWithFiltersPagings = ref({
 });
 const isLoadingAllChatsWithFilters = ref(false);
 const searchChatsCounts = ref<{
+  total: number;
   queue: number;
   in_chat: number;
   chatbot: number;
@@ -239,15 +240,10 @@ const showClosedTitle = computed(() => {
 });
 
 const allChatsCount = computed(() => {
+  if (searchChatsCounts.value) {
+    return searchChatsCounts.value.total;
+  }
   if (hasActiveFilters.value) {
-    if (searchChatsCounts.value) {
-      return (
-        searchChatsCounts.value.queue +
-        searchChatsCounts.value.in_chat +
-        searchChatsCounts.value.chatbot +
-        (searchChatsCounts.value.closed ?? 0)
-      );
-    }
     return allChatsWithFiltersPagings.value.total || 0;
   }
   return (
@@ -256,20 +252,20 @@ const allChatsCount = computed(() => {
 });
 
 const inChatCount = computed(() => {
+  if (searchChatsCounts.value) {
+    return searchChatsCounts.value.in_chat;
+  }
   if (hasActiveFilters.value) {
-    if (searchChatsCounts.value) {
-      return searchChatsCounts.value.in_chat;
-    }
     return chatStore.listInChat.length;
   }
   return chatStore.inChatPagings.total || 0;
 });
 
 const queueCount = computed(() => {
+  if (searchChatsCounts.value) {
+    return searchChatsCounts.value.queue;
+  }
   if (hasActiveFilters.value) {
-    if (searchChatsCounts.value) {
-      return searchChatsCounts.value.queue;
-    }
     return chatStore.listQueue.length;
   }
   return chatStore.queuePagings.total || 0;
@@ -279,10 +275,11 @@ const myChatsCount = computed(() => {
   const userId = chatStore.user?.user_id;
   if (!userId) return 0;
 
+  if (searchChatsCounts.value) {
+    return searchChatsCounts.value.my_chats;
+  }
+
   if (hasActiveFilters.value) {
-    if (searchChatsCounts.value) {
-      return searchChatsCounts.value.my_chats;
-    }
     const allChats = [
       ...chatStore.listInChat,
       ...chatStore.listQueue,
@@ -301,10 +298,10 @@ const myChatsCount = computed(() => {
 });
 
 const chatbotCount = computed(() => {
+  if (searchChatsCounts.value) {
+    return searchChatsCounts.value.chatbot;
+  }
   if (hasActiveFilters.value) {
-    if (searchChatsCounts.value) {
-      return searchChatsCounts.value.chatbot;
-    }
     return chatStore.listChatbot.length;
   }
   if (chatStore.chatbotPagings.total > 0) {
@@ -314,10 +311,10 @@ const chatbotCount = computed(() => {
 });
 
 const closedCount = computed(() => {
+  if (searchChatsCounts.value) {
+    return searchChatsCounts.value.closed ?? 0;
+  }
   if (hasActiveFilters.value) {
-    if (searchChatsCounts.value) {
-      return searchChatsCounts.value.closed ?? 0;
-    }
     return chatStore.listClosed.length;
   }
   if (chatStore.closedPagings.total > 0) {
@@ -856,6 +853,7 @@ const getChatUserFilters = () => {
 };
 
 const applyCounts = (counts: {
+  total: number;
   queue: number;
   in_chat: number;
   chatbot: number;
@@ -970,9 +968,17 @@ const loadAllChats = async (append = false) => {
   ]);
 
   if (inChatResponse.counts || queueResponse.counts) {
+    const queueCount =
+      queueResponse.counts?.queue ?? inChatResponse.counts?.queue ?? 0;
+    const inChatCount =
+      inChatResponse.counts?.in_chat ?? queueResponse.counts?.in_chat ?? 0;
     const combinedCounts = {
-      queue: queueResponse.counts?.queue ?? inChatResponse.counts?.queue ?? 0,
-      in_chat: inChatResponse.counts?.in_chat ?? queueResponse.counts?.in_chat ?? 0,
+      total:
+        inChatResponse.counts?.total ??
+        queueResponse.counts?.total ??
+        queueCount + inChatCount,
+      queue: queueCount,
+      in_chat: inChatCount,
       chatbot:
         inChatResponse.counts?.chatbot ?? queueResponse.counts?.chatbot ?? 0,
       closed: inChatResponse.counts?.closed ?? queueResponse.counts?.closed,
