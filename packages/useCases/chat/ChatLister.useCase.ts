@@ -862,6 +862,9 @@ export class ChatListerUseCase {
       if (!source.chat_id && hit._id) {
         source.chat_id = hit._id;
       }
+      if (Array.isArray(source.summary)) {
+        source.summary = source.summary[0] ?? null;
+      }
       return source;
     }) as ListChatsResult[];
     const total = result.hits.total as { value: number; relation: string };

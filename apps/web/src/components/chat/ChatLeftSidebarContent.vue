@@ -858,6 +858,10 @@ const getChatUserFilters = () => {
   };
 };
 
+const getSearchTerm = () => {
+  return debouncedSearchQuery.value?.trim() || '';
+};
+
 const applyCounts = (counts: {
   total: number;
   queue: number;
@@ -888,6 +892,7 @@ const buildLoadKey = (append: boolean): string | null => {
     filter: activeFilter.value,
     hasAppliedAdvancedFilters: hasAppliedAdvancedFilters.value,
     filters: getChatUserFilters(),
+    search: getSearchTerm(),
   };
 
   if (activeFilter.value === 'all' || activeFilter.value === 'my_chats') {
@@ -949,6 +954,7 @@ const buildLoadKey = (append: boolean): string | null => {
 
 const loadAllChats = async (append = false) => {
   const filters = getChatUserFilters();
+  const searchTerm = getSearchTerm();
 
   const [inChatResponse, queueResponse] = await Promise.all([
     chatStore.resolveChatEndpoint(
@@ -959,7 +965,8 @@ const loadAllChats = async (append = false) => {
         current_page: currentPageInChat.value,
         per_page: perPageInChat.value,
       },
-      append
+      append,
+      searchTerm
     ),
     chatStore.resolveChatEndpoint(
       EChatStatus.queue,
@@ -969,7 +976,8 @@ const loadAllChats = async (append = false) => {
         current_page: currentPageQueue.value,
         per_page: perPageQueue.value,
       },
-      append
+      append,
+      searchTerm
     ),
   ]);
 
@@ -1000,6 +1008,7 @@ const loadAllChats = async (append = false) => {
 
 const loadInChatChats = async (append = false) => {
   const filters = getChatUserFilters();
+  const searchTerm = getSearchTerm();
 
   const response = await chatStore.resolveChatEndpoint(
     EChatStatus.in_chat,
@@ -1009,7 +1018,8 @@ const loadInChatChats = async (append = false) => {
       current_page: currentPageInChat.value,
       per_page: perPageInChat.value,
     },
-    append
+    append,
+    searchTerm
   );
 
   if (response.counts) {
@@ -1028,6 +1038,7 @@ const loadMyChats = async (append = false) => {
 
 const loadQueueChats = async (append = false) => {
   const filters = getChatUserFilters();
+  const searchTerm = getSearchTerm();
 
   const response = await chatStore.resolveChatEndpoint(
     EChatStatus.queue,
@@ -1037,7 +1048,8 @@ const loadQueueChats = async (append = false) => {
       current_page: currentPageQueue.value,
       per_page: perPageQueue.value,
     },
-    append
+    append,
+    searchTerm
   );
 
   if (response.counts) {
@@ -1157,6 +1169,7 @@ const loadChatbotChats = async (append = false) => {
 
   try {
     const filters = getChatUserFilters();
+    const searchTerm = getSearchTerm();
 
     const response = await chatStore.resolveChatEndpoint(
       EChatStatus.ura,
@@ -1166,7 +1179,8 @@ const loadChatbotChats = async (append = false) => {
         current_page: chatStore.chatbotPagings.current_page,
         per_page: chatStore.chatbotPagings.per_page,
       },
-      append
+      append,
+      searchTerm
     );
 
     if (response.counts) {
@@ -1190,6 +1204,7 @@ const loadClosedChats = async (append = false) => {
 
   try {
     const filters = getChatUserFilters();
+    const searchTerm = getSearchTerm();
 
     const response = await chatStore.resolveChatEndpoint(
       EChatStatus.closed,
@@ -1199,7 +1214,8 @@ const loadClosedChats = async (append = false) => {
         current_page: chatStore.closedPagings.current_page || 1,
         per_page: 50,
       },
-      append
+      append,
+      searchTerm
     );
 
     if (response.counts) {

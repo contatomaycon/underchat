@@ -1703,7 +1703,8 @@ export const useChatStore = defineStore('chat', {
       },
       hasAppliedAdvancedFilters: boolean,
       pagination: { current_page: number; per_page: number },
-      append = false
+      append = false,
+      search?: string | null
     ): Promise<{
       results: ListChatsResult[];
       counts: {
@@ -1716,6 +1717,9 @@ export const useChatStore = defineStore('chat', {
       } | null;
     }> {
       const statusArray = Array.isArray(status) ? status : [status];
+      const normalizedSearch = typeof search === 'string' ? search.trim() : '';
+      const shouldUseSearchEndpoint =
+        hasAppliedAdvancedFilters || normalizedSearch.length > 0;
 
       if (statusArray.length > 1) {
         try {
@@ -1804,11 +1808,11 @@ export const useChatStore = defineStore('chat', {
 
       const singleStatus = statusArray[0];
 
-      if (hasAppliedAdvancedFilters) {
+      if (shouldUseSearchEndpoint) {
         const request: SearchChatsQuery = {
           current_page: pagination.current_page,
           per_page: pagination.per_page,
-          search: '',
+          search: normalizedSearch,
           filter_status: singleStatus,
           filter_label_template_id: filters.filter_label_template_id,
           filter_worker_id: filters.filter_worker_id,
