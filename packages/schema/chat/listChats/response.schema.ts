@@ -74,6 +74,13 @@ export const listChatsResultSchema = Type.Object({
 export const listChatsResponseSchema = Type.Object({
   ...pagingResponseSchema.properties,
   results: Type.Array(listChatsResultSchema),
+  counts: Type.Object({
+    queue: Type.Number(),
+    in_chat: Type.Number(),
+    chatbot: Type.Number(),
+    closed: Type.Number(),
+    my_chats: Type.Number(),
+  }),
 });
 
 export type ListChatsResult = Static<typeof listChatsResultSchema>;

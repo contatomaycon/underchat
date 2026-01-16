@@ -581,12 +581,47 @@ export class ChatListerUseCase {
           filter: filterClauses,
         },
       },
+      aggs: {
+        status_counts: {
+          terms: {
+            field: 'status',
+            size: 20,
+          },
+        },
+      },
     };
 
-    const result = await this.elasticDatabaseService.select(
-      EElasticIndex.chat,
-      queryElastic
-    );
+    const countQueryElastic: any = {
+      size: 0,
+      query: {
+        bool: {
+          must: mustClauses,
+          filter: [
+            ...filterClauses.filter((clause) => !(clause as any).term?.status),
+            {
+              terms: {
+                status: [EChatStatus.queue, EChatStatus.in_chat],
+              },
+            } as unknown as IElasticsearchBoolClause,
+            {
+              nested: {
+                path: 'user',
+                query: {
+                  term: {
+                    'user.id': userId,
+                  },
+                },
+              },
+            } as unknown as IElasticsearchBoolClause,
+          ],
+        },
+      },
+    };
+
+    const [result, countResult] = await Promise.all([
+      this.elasticDatabaseService.select(EElasticIndex.chat, queryElastic),
+      this.elasticDatabaseService.select(EElasticIndex.chat, countQueryElastic),
+    ]);
 
     if (!result) {
       const pagings = setPaginationData(0, 0, perPage, currentPage);
@@ -594,6 +629,13 @@ export class ChatListerUseCase {
       return {
         pagings,
         results: [],
+        counts: {
+          queue: 0,
+          in_chat: 0,
+          chatbot: 0,
+          closed: 0,
+          my_chats: 0,
+        },
       };
     }
 
@@ -613,9 +655,26 @@ export class ChatListerUseCase {
       currentPage
     );
 
+    const statusBuckets =
+      (result.aggregations?.status_counts as any)?.buckets || [];
+    const statusCounts: Record<string, number> = {};
+    for (const bucket of statusBuckets) {
+      statusCounts[bucket.key] = bucket.doc_count;
+    }
+
+    const myChatsTotal =
+      (countResult?.hits?.total as { value: number })?.value || 0;
+
     return {
       pagings,
       results: chats,
+      counts: {
+        queue: statusCounts[EChatStatus.queue] || 0,
+        in_chat: statusCounts[EChatStatus.in_chat] || 0,
+        chatbot: statusCounts[EChatStatus.ura] || 0,
+        closed: statusCounts[EChatStatus.closed] || 0,
+        my_chats: myChatsTotal,
+      },
     };
   }
 }
