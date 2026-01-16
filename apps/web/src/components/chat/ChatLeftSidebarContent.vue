@@ -1800,6 +1800,9 @@ const handleCancelSelectChannelSector = () => {
 watch(
   () => chatStore.activeChat?.status,
   (newStatus, oldStatus) => {
+    if (chatStore.skipActiveChatStatusReload) {
+      return;
+    }
     if (newStatus === EChatStatus.in_chat) {
       if (oldStatus === EChatStatus.ura && activeFilter.value === 'chatbot') {
         activeFilter.value = 'in_chat';
