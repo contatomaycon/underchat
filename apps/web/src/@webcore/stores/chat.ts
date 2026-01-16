@@ -134,6 +134,7 @@ export const useChatStore = defineStore('chat', {
       count: 0,
       total: 0,
     },
+    myChatsTotal: null as number | null,
     closedPagings: {
       current_page: 1,
       total_pages: 1,
@@ -472,6 +473,13 @@ export const useChatStore = defineStore('chat', {
       if (idx !== -1) {
         arr.splice(idx, 1);
       }
+    },
+
+    updateMyChatsTotal(delta: number): void {
+      if (this.myChatsTotal === null) {
+        return;
+      }
+      this.myChatsTotal = Math.max(0, this.myChatsTotal + delta);
     },
 
     isChatInAnyList(chatId: string): boolean {
@@ -1005,6 +1013,17 @@ export const useChatStore = defineStore('chat', {
       const wasInClosed = this.listClosed.some(
         (c) => c.chat_id === chat.chat_id
       );
+      const wasActiveChat = this.activeChat?.chat_id === chat.chat_id;
+      const previousStatus = wasActiveChat ? this.activeChat?.status : null;
+      const previousWasInInChat =
+        wasInInChat || previousStatus === EChatStatus.in_chat;
+      const previousWasInQueue =
+        wasInQueue || previousStatus === EChatStatus.queue;
+      const previousWasInChatbot =
+        wasInChatbot || previousStatus === EChatStatus.ura;
+      const shouldDecrementMyChats =
+        chat.user?.id === this.user?.user_id &&
+        (previousWasInInChat || previousWasInQueue);
 
       this.removeFromList(this.listInChat, chat.chat_id);
       this.removeFromList(this.listQueue, chat.chat_id);
@@ -1020,16 +1039,20 @@ export const useChatStore = defineStore('chat', {
         this.closedPagings.total = (this.closedPagings.total || 0) + 1;
       }
 
-      if (wasInInChat && this.inChatPagings.total > 0) {
+      if (previousWasInInChat && this.inChatPagings.total > 0) {
         this.inChatPagings.total = Math.max(0, this.inChatPagings.total - 1);
       }
 
-      if (wasInQueue && this.queuePagings.total > 0) {
+      if (previousWasInQueue && this.queuePagings.total > 0) {
         this.queuePagings.total = Math.max(0, this.queuePagings.total - 1);
       }
 
-      if (wasInChatbot && this.chatbotPagings.total > 0) {
+      if (previousWasInChatbot && this.chatbotPagings.total > 0) {
         this.chatbotPagings.total = Math.max(0, this.chatbotPagings.total - 1);
+      }
+
+      if (shouldDecrementMyChats) {
+        this.updateMyChatsTotal(-1);
       }
 
       if (this.activeChat?.chat_id === chat.chat_id) {
@@ -1816,6 +1839,7 @@ export const useChatStore = defineStore('chat', {
         this.loading = true;
         this.pendingStatusUpdateChatId = chatId;
         const shouldSkipStatusEvents = status === EChatStatus.in_chat;
+        const isClosing = status === EChatStatus.closed;
 
         if (shouldSkipStatusEvents) {
           this.markSkipChatStatusEvents(chatId);
@@ -1847,7 +1871,7 @@ export const useChatStore = defineStore('chat', {
 
           this.addChat(data.data, true);
 
-          if (isActiveChat) {
+          if (isActiveChat && !isClosing) {
             const input: ListChatsResult = {
               chat_id: data.data.chat_id,
               summary: data.data.summary,

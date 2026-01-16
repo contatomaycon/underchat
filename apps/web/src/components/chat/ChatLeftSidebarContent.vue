@@ -279,11 +279,10 @@ const myChatsCount = computed(() => {
   const userId = chatStore.user?.user_id;
   if (!userId) return 0;
 
-  if (searchChatsCounts.value) {
-    return searchChatsCounts.value.my_chats;
-  }
-
   if (hasActiveFilters.value) {
+    if (searchChatsCounts.value) {
+      return searchChatsCounts.value.my_chats;
+    }
     const allChats = [
       ...chatStore.listInChat,
       ...chatStore.listQueue,
@@ -291,6 +290,10 @@ const myChatsCount = computed(() => {
       ...chatStore.listClosed,
     ];
     return allChats.filter((chat) => chat.user?.id === userId).length;
+  }
+
+  if (chatStore.myChatsTotal !== null) {
+    return chatStore.myChatsTotal;
   }
 
   const allChats = [...chatStore.listInChat, ...chatStore.listQueue];
@@ -860,6 +863,7 @@ const applyCounts = (counts: {
   my_chats: number;
 }) => {
   searchChatsCounts.value = counts;
+  chatStore.myChatsTotal = counts.my_chats;
   chatStore.queuePagings.total = counts.queue;
   chatStore.inChatPagings.total = counts.in_chat;
   chatStore.chatbotPagings.total = counts.chatbot;
