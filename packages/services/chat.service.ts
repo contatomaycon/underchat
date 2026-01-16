@@ -307,6 +307,7 @@ export class ChatService {
       {
         upsert: options?.allowCreate !== false,
         maxRetries: 5,
+        refresh: options?.refresh,
       }
     );
 
@@ -337,7 +338,10 @@ export class ChatService {
     await this.redis.set(key, JSON.stringify(chat), 'PX', 60_000);
   }
 
-  saveChat = async (chat: IChat): Promise<boolean> => {
+  saveChat = async (
+    chat: IChat,
+    options?: { refresh?: boolean }
+  ): Promise<boolean> => {
     if (!chat) return false;
 
     await Promise.all([this.cacheChat(chat), this.cacheChatById(chat)]);
@@ -363,7 +367,10 @@ export class ChatService {
       embedded_for_ai_agents: chat.embedded_for_ai_agents,
     };
 
-    return this.applyChatPatch(chat.chat_id, patch, { allowCreate: true });
+    return this.applyChatPatch(chat.chat_id, patch, {
+      allowCreate: true,
+      refresh: options?.refresh,
+    });
   };
 
   private buildChatPatchScript(): string {

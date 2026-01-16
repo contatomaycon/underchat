@@ -68,4 +68,5 @@ export interface ChatPatchOptions {
   eventEpochMillis?: number;
   eventId?: string;
   allowCreate?: boolean;
+  refresh?: boolean;
 }

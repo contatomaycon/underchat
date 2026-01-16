@@ -1255,12 +1255,8 @@ export class MessageSendConsume {
         id: q?.key.id ?? '',
         participant: q?.key.participant ?? undefined,
       },
-      message: (q?.message as proto.IMessage | null) ?? null,
+      message: null,
     };
-
-    if (quoted.message) {
-      return quoted;
-    }
 
     if (!q) {
       return quoted;

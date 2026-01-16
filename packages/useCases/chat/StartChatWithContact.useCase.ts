@@ -264,7 +264,9 @@ export class StartChatWithContactUseCase {
       throw new Error(t('chat_status_update_failed'));
     }
 
-    const saved = await this.chatService.saveChat(updatedChat);
+    const saved = await this.chatService.saveChat(updatedChat, {
+      refresh: true,
+    });
     if (!saved) {
       throw new Error(t('chat_update_failed'));
     }
@@ -427,7 +429,7 @@ export class StartChatWithContactUseCase {
       started_at: currentDate,
     };
 
-    const result = await this.chatService.saveChat(newChat);
+    const result = await this.chatService.saveChat(newChat, { refresh: true });
     if (!result) {
       throw new Error('chat_create_error');
     }
