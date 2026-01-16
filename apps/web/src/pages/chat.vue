@@ -331,40 +331,30 @@ watch(
 const handleAttendChat = async () => {
   if (!chatStore.activeChat?.chat_id) return;
 
-  chatStore.skipActiveChatStatusReload = true;
-  try {
-    const success = await chatStore.updateChatStatus(
-      chatStore.activeChat.chat_id,
-      EChatStatus.in_chat
-    );
+  const success = await chatStore.updateChatStatus(
+    chatStore.activeChat.chat_id,
+    EChatStatus.in_chat
+  );
 
-    if (success) {
-      chatStore.showSnackbar(t('chat_attended_successfully'), EColor.success);
-      await nextTick();
-      leftSidebarRef.value?.scrollToTop();
-    }
-  } finally {
-    chatStore.skipActiveChatStatusReload = false;
+  if (success) {
+    chatStore.showSnackbar(t('chat_attended_successfully'), EColor.success);
+    await nextTick();
+    leftSidebarRef.value?.scrollToTop();
   }
 };
 
 const handleReopenChat = async () => {
   if (!chatStore.activeChat?.chat_id) return;
 
-  chatStore.skipActiveChatStatusReload = true;
-  try {
-    const success = await chatStore.updateChatStatus(
-      chatStore.activeChat.chat_id,
-      EChatStatus.in_chat
-    );
+  const success = await chatStore.updateChatStatus(
+    chatStore.activeChat.chat_id,
+    EChatStatus.in_chat
+  );
 
-    if (success) {
-      chatStore.showSnackbar(t('chat_reopened_successfully'), EColor.success);
-      await nextTick();
-      leftSidebarRef.value?.scrollToTop();
-    }
-  } finally {
-    chatStore.skipActiveChatStatusReload = false;
+  if (success) {
+    chatStore.showSnackbar(t('chat_reopened_successfully'), EColor.success);
+    await nextTick();
+    leftSidebarRef.value?.scrollToTop();
   }
 };
 

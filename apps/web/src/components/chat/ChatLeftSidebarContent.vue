@@ -13,6 +13,7 @@ import { ListChatContactsResponse } from '@core/schema/chat/listContacts/respons
 import { ListChatsQuery } from '@core/schema/chat/listChats/request.schema';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { ListChatsResult } from '@core/schema/chat/listChats/response.schema';
+import type { IChat } from '@core/common/interfaces/IChat';
 import { SearchChatsQuery } from '@core/schema/chat/searchChats/request.schema';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import { ViewWorkerConfigForChatResponse } from '@core/schema/chat/viewWorkerConfigForChat/response.schema';
@@ -180,7 +181,7 @@ const filteredMyChats = computed(() => {
         ...chatStore.listInChat,
         ...chatStore.listQueue,
         ...chatStore.listChatbot,
-        ...listClosed.value,
+        ...chatStore.listClosed,
       ];
       return allChats.filter((chat) => chat.user?.id === userId);
     }
@@ -224,7 +225,7 @@ const showChatbotTitle = computed(() => {
 
 const filteredClosed = computed(() => {
   if (activeFilter.value === 'all' && hasActiveFilters.value) {
-    return listClosed.value;
+    return chatStore.listClosed;
   }
   return [];
 });
@@ -233,7 +234,7 @@ const showClosedTitle = computed(() => {
   return (
     activeFilter.value === 'all' &&
     hasActiveFilters.value &&
-    listClosed.value.length > 0
+    chatStore.listClosed.length > 0
   );
 });
 
@@ -286,7 +287,7 @@ const myChatsCount = computed(() => {
       ...chatStore.listInChat,
       ...chatStore.listQueue,
       ...chatStore.listChatbot,
-      ...listClosed.value,
+      ...chatStore.listClosed,
     ];
     return allChats.filter((chat) => chat.user?.id === userId).length;
   }
@@ -313,12 +314,12 @@ const closedCount = computed(() => {
     if (searchChatsCounts.value) {
       return searchChatsCounts.value.closed ?? 0;
     }
-    return listClosed.value.length;
+    return chatStore.listClosed.length;
   }
   if (chatStore.closedPagings.total > 0) {
     return chatStore.closedPagings.total;
   }
-  return listClosed.value.length;
+  return chatStore.listClosed.length;
 });
 
 const showInChatTitle = computed(() => {
@@ -1800,14 +1801,10 @@ const handleCancelSelectChannelSector = () => {
 watch(
   () => chatStore.activeChat?.status,
   (newStatus, oldStatus) => {
-    if (chatStore.skipActiveChatStatusReload) {
-      return;
-    }
     if (newStatus === EChatStatus.in_chat) {
       if (oldStatus === EChatStatus.ura && activeFilter.value === 'chatbot') {
         activeFilter.value = 'in_chat';
         expandedFilter.value = 'in_chat';
-        loadChatsByFilter().catch(() => {});
       } else if (
         oldStatus === EChatStatus.queue &&
         (activeFilter.value === 'queue' || activeFilter.value === 'all')
@@ -1816,7 +1813,6 @@ watch(
           activeFilter.value = 'in_chat';
           expandedFilter.value = 'in_chat';
         }
-        loadChatsByFilter().catch(() => {});
       }
     }
   }
@@ -1824,8 +1820,17 @@ watch(
 
 let isHandlingChatStatusChanged = false;
 let chatStatusChangedTimeout: ReturnType<typeof setTimeout> | null = null;
+let pendingResolveStatus: EChatStatus | null = null;
 
-const handleChatStatusChanged = async () => {
+const handleChatStatusChanged = async (event: Event) => {
+  const detail = (event as CustomEvent<{ chat: IChat; reason?: string }>)
+    .detail;
+  if (!detail || detail.reason !== 'new') {
+    return;
+  }
+
+  pendingResolveStatus = detail.chat.status;
+
   if (isHandlingChatStatusChanged) {
     return;
   }
@@ -1839,12 +1844,17 @@ const handleChatStatusChanged = async () => {
 
   chatStatusChangedTimeout = setTimeout(async () => {
     try {
-      if (activeFilter.value === 'chatbot') {
+      const statusToResolve = pendingResolveStatus;
+      pendingResolveStatus = null;
+
+      if (statusToResolve === EChatStatus.queue) {
+        await loadQueueChats();
+      } else if (statusToResolve === EChatStatus.in_chat) {
+        await loadInChatChats();
+      } else if (statusToResolve === EChatStatus.ura) {
         await loadChatbotChats();
-      } else if (activeFilter.value === 'closed') {
+      } else if (statusToResolve === EChatStatus.closed) {
         await loadClosedChats();
-      } else {
-        await loadChatsByFilter();
       }
     } finally {
       isHandlingChatStatusChanged = false;
@@ -1853,28 +1863,16 @@ const handleChatStatusChanged = async () => {
   }, 100);
 };
 
-const handleReloadAllChatListsOnStatusChange = async () => {
-  await chatStore.reloadAllChatLists(hasAppliedAdvancedFilters.value);
-};
-
 onMounted(async () => {
   await loadChatsByFilter();
 
   globalThis.addEventListener('chat-status-changed', handleChatStatusChanged);
-  globalThis.addEventListener(
-    'reload-all-chat-lists-on-status-change',
-    handleReloadAllChatListsOnStatusChange
-  );
 });
 
 onUnmounted(() => {
   globalThis.removeEventListener(
     'chat-status-changed',
     handleChatStatusChanged
-  );
-  globalThis.removeEventListener(
-    'reload-all-chat-lists-on-status-change',
-    handleReloadAllChatListsOnStatusChange
   );
 });
 

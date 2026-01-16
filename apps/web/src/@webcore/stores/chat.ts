@@ -104,7 +104,6 @@ export const useChatStore = defineStore('chat', {
     i18n: getI18n(),
     loading: false,
     loadingChats: false,
-    skipActiveChatStatusReload: false,
     skipChatStatusEventsUntil: {} as Record<string, number>,
     loadingMoreMessages: false,
     pendingStatusUpdateChatId: null as string | null,
@@ -289,6 +288,8 @@ export const useChatStore = defineStore('chat', {
 
       this.removeFromList(this.listQueue, chat.chat_id);
       this.removeFromList(this.listInChat, chat.chat_id);
+      this.removeFromList(this.listChatbot, chat.chat_id);
+      this.removeFromList(this.listClosed, chat.chat_id);
 
       if (wasInQueue && this.queuePagings.total > 0) {
         this.queuePagings.total = Math.max(0, this.queuePagings.total - 1);
@@ -315,6 +316,7 @@ export const useChatStore = defineStore('chat', {
 
     addChat(chat: IChat, skipEvents = false) {
       const permissions = getPermissions();
+      const wasInAnyList = this.isChatInAnyList(chat.chat_id);
       const shouldSkipEvents = skipEvents
         ? true
         : this.shouldSkipChatStatusEvents(chat.chat_id);
@@ -387,27 +389,22 @@ export const useChatStore = defineStore('chat', {
       }
 
       if (chat.status === EChatStatus.queue) {
-        this.handleQueueStatusChat(input, chat, isActiveChat, shouldSkipEvents);
-        return;
+        this.handleQueueStatusChat(input, chat, isActiveChat);
+      } else if (chat.status === EChatStatus.in_chat) {
+        this.handleInChatStatusChat(input, chat, isActiveChat);
+      } else if (chat.status === EChatStatus.ura) {
+        this.handleUraStatusChat(input, chat, isActiveChat);
+      } else if (chat.status === EChatStatus.closed) {
+        this.handleClosedStatusChat(input, chat, isActiveChat);
       }
 
-      if (chat.status === EChatStatus.in_chat) {
-        this.handleInChatStatusChat(
-          input,
-          chat,
-          isActiveChat,
-          shouldSkipEvents
+      const isInAnyListNow = this.isChatInAnyList(chat.chat_id);
+      if (!shouldSkipEvents && !wasInAnyList && isInAnyListNow) {
+        globalThis.dispatchEvent(
+          new CustomEvent('chat-status-changed', {
+            detail: { chat, reason: 'new' },
+          })
         );
-        return;
-      }
-
-      if (chat.status === EChatStatus.ura) {
-        this.handleUraStatusChat(input, chat, isActiveChat, shouldSkipEvents);
-        return;
-      }
-
-      if (chat.status === EChatStatus.closed) {
-        this.handleClosedStatusChat(input, chat, shouldSkipEvents);
       }
     },
 
@@ -475,6 +472,15 @@ export const useChatStore = defineStore('chat', {
       if (idx !== -1) {
         arr.splice(idx, 1);
       }
+    },
+
+    isChatInAnyList(chatId: string): boolean {
+      return (
+        this.listQueue.some((c) => c.chat_id === chatId) ||
+        this.listInChat.some((c) => c.chat_id === chatId) ||
+        this.listChatbot.some((c) => c.chat_id === chatId) ||
+        this.listClosed.some((c) => c.chat_id === chatId)
+      );
     },
 
     markSkipChatStatusEvents(chatId: string, timeoutMs = 3000): void {
@@ -717,11 +723,13 @@ export const useChatStore = defineStore('chat', {
     handleQueueStatusChat(
       input: ListChatsResult,
       chat: IChat,
-      isActiveChat: boolean,
-      skipEvents = false
+      isActiveChat: boolean
     ): void {
       const wasInQueue = this.listQueue.some((c) => c.chat_id === chat.chat_id);
       const wasInInChat = this.listInChat.some(
+        (c) => c.chat_id === chat.chat_id
+      );
+      const wasInChatbot = this.listChatbot.some(
         (c) => c.chat_id === chat.chat_id
       );
       const wasInClosed = this.listClosed.some(
@@ -746,6 +754,13 @@ export const useChatStore = defineStore('chat', {
 
           if (wasInQueue && this.queuePagings.total > 0) {
             this.queuePagings.total = Math.max(0, this.queuePagings.total - 1);
+          }
+
+          if (wasInChatbot && this.chatbotPagings.total > 0) {
+            this.chatbotPagings.total = Math.max(
+              0,
+              this.chatbotPagings.total - 1
+            );
           }
 
           if (wasInClosed && this.closedPagings.total > 0) {
@@ -780,17 +795,12 @@ export const useChatStore = defineStore('chat', {
         this.inChatPagings.total = Math.max(0, this.inChatPagings.total - 1);
       }
 
-      if (wasInClosed && this.closedPagings.total > 0) {
-        this.closedPagings.total = Math.max(0, this.closedPagings.total - 1);
+      if (wasInChatbot && this.chatbotPagings.total > 0) {
+        this.chatbotPagings.total = Math.max(0, this.chatbotPagings.total - 1);
       }
 
-      if (!skipEvents) {
-        globalThis.dispatchEvent(
-          new CustomEvent('chat-status-changed', { detail: chat })
-        );
-        globalThis.dispatchEvent(
-          new CustomEvent('reload-all-chat-lists-on-status-change')
-        );
+      if (wasInClosed && this.closedPagings.total > 0) {
+        this.closedPagings.total = Math.max(0, this.closedPagings.total - 1);
       }
 
       if (this.activeChat?.chat_id === chat.chat_id) {
@@ -801,14 +811,16 @@ export const useChatStore = defineStore('chat', {
     handleInChatStatusChat(
       input: ListChatsResult,
       chat: IChat,
-      isActiveChat: boolean,
-      skipEvents = false
+      isActiveChat: boolean
     ): void {
       if (!this.canViewChat(chat)) {
         const wasInInChat = this.listInChat.some(
           (c) => c.chat_id === chat.chat_id
         );
         const wasInQueue = this.listQueue.some(
+          (c) => c.chat_id === chat.chat_id
+        );
+        const wasInChatbot = this.listChatbot.some(
           (c) => c.chat_id === chat.chat_id
         );
         const wasInClosed = this.listClosed.some(
@@ -828,6 +840,13 @@ export const useChatStore = defineStore('chat', {
           this.queuePagings.total = Math.max(0, this.queuePagings.total - 1);
         }
 
+        if (wasInChatbot && this.chatbotPagings.total > 0) {
+          this.chatbotPagings.total = Math.max(
+            0,
+            this.chatbotPagings.total - 1
+          );
+        }
+
         if (wasInClosed && this.closedPagings.total > 0) {
           this.closedPagings.total = Math.max(0, this.closedPagings.total - 1);
         }
@@ -840,6 +859,9 @@ export const useChatStore = defineStore('chat', {
 
       const wasInQueue = this.listQueue.some((c) => c.chat_id === chat.chat_id);
       const wasInInChat = this.listInChat.some(
+        (c) => c.chat_id === chat.chat_id
+      );
+      const wasInChatbot = this.listChatbot.some(
         (c) => c.chat_id === chat.chat_id
       );
       const wasInClosed = this.listClosed.some(
@@ -864,17 +886,12 @@ export const useChatStore = defineStore('chat', {
         this.queuePagings.total = Math.max(0, this.queuePagings.total - 1);
       }
 
-      if (wasInClosed && this.closedPagings.total > 0) {
-        this.closedPagings.total = Math.max(0, this.closedPagings.total - 1);
+      if (wasInChatbot && this.chatbotPagings.total > 0) {
+        this.chatbotPagings.total = Math.max(0, this.chatbotPagings.total - 1);
       }
 
-      if (!skipEvents) {
-        globalThis.dispatchEvent(
-          new CustomEvent('chat-status-changed', { detail: chat })
-        );
-        globalThis.dispatchEvent(
-          new CustomEvent('reload-all-chat-lists-on-status-change')
-        );
+      if (wasInClosed && this.closedPagings.total > 0) {
+        this.closedPagings.total = Math.max(0, this.closedPagings.total - 1);
       }
 
       if (this.activeChat?.chat_id === chat.chat_id) {
@@ -885,10 +902,18 @@ export const useChatStore = defineStore('chat', {
     handleUraStatusChat(
       input: ListChatsResult,
       chat: IChat,
-      isActiveChat: boolean,
-      skipEvents = false
+      isActiveChat: boolean
     ): void {
       if (!this.canViewChat(chat)) {
+        const wasInInChat = this.listInChat.some(
+          (c) => c.chat_id === chat.chat_id
+        );
+        const wasInQueue = this.listQueue.some(
+          (c) => c.chat_id === chat.chat_id
+        );
+        const wasInChatbot = this.listChatbot.some(
+          (c) => c.chat_id === chat.chat_id
+        );
         const wasInClosed = this.listClosed.some(
           (c) => c.chat_id === chat.chat_id
         );
@@ -897,6 +922,21 @@ export const useChatStore = defineStore('chat', {
         this.removeFromList(this.listInChat, chat.chat_id);
         this.removeFromList(this.listQueue, chat.chat_id);
         this.removeFromList(this.listClosed, chat.chat_id);
+
+        if (wasInInChat && this.inChatPagings.total > 0) {
+          this.inChatPagings.total = Math.max(0, this.inChatPagings.total - 1);
+        }
+
+        if (wasInQueue && this.queuePagings.total > 0) {
+          this.queuePagings.total = Math.max(0, this.queuePagings.total - 1);
+        }
+
+        if (wasInChatbot && this.chatbotPagings.total > 0) {
+          this.chatbotPagings.total = Math.max(
+            0,
+            this.chatbotPagings.total - 1
+          );
+        }
 
         if (wasInClosed && this.closedPagings.total > 0) {
           this.closedPagings.total = Math.max(0, this.closedPagings.total - 1);
@@ -908,6 +948,13 @@ export const useChatStore = defineStore('chat', {
         return;
       }
 
+      const wasInInChat = this.listInChat.some(
+        (c) => c.chat_id === chat.chat_id
+      );
+      const wasInQueue = this.listQueue.some((c) => c.chat_id === chat.chat_id);
+      const wasInChatbot = this.listChatbot.some(
+        (c) => c.chat_id === chat.chat_id
+      );
       const wasInClosed = this.listClosed.some(
         (c) => c.chat_id === chat.chat_id
       );
@@ -922,13 +969,16 @@ export const useChatStore = defineStore('chat', {
         EChatStatus.ura
       );
 
-      if (!skipEvents) {
-        globalThis.dispatchEvent(
-          new CustomEvent('chat-status-changed', { detail: chat })
-        );
-        globalThis.dispatchEvent(
-          new CustomEvent('reload-all-chat-lists-on-status-change')
-        );
+      if (!wasInChatbot) {
+        this.chatbotPagings.total = (this.chatbotPagings.total || 0) + 1;
+      }
+
+      if (wasInInChat && this.inChatPagings.total > 0) {
+        this.inChatPagings.total = Math.max(0, this.inChatPagings.total - 1);
+      }
+
+      if (wasInQueue && this.queuePagings.total > 0) {
+        this.queuePagings.total = Math.max(0, this.queuePagings.total - 1);
       }
 
       if (wasInClosed && this.closedPagings.total > 0) {
@@ -943,16 +993,32 @@ export const useChatStore = defineStore('chat', {
     handleClosedStatusChat(
       input: ListChatsResult,
       chat: IChat,
-      skipEvents = false
+      isActiveChat: boolean
     ): void {
       const wasInInChat = this.listInChat.some(
         (c) => c.chat_id === chat.chat_id
       );
       const wasInQueue = this.listQueue.some((c) => c.chat_id === chat.chat_id);
+      const wasInChatbot = this.listChatbot.some(
+        (c) => c.chat_id === chat.chat_id
+      );
+      const wasInClosed = this.listClosed.some(
+        (c) => c.chat_id === chat.chat_id
+      );
 
       this.removeFromList(this.listInChat, chat.chat_id);
       this.removeFromList(this.listQueue, chat.chat_id);
       this.removeFromList(this.listChatbot, chat.chat_id);
+      this.replaceOrPushInList(
+        this.listClosed,
+        input,
+        isActiveChat,
+        EChatStatus.closed
+      );
+
+      if (!wasInClosed) {
+        this.closedPagings.total = (this.closedPagings.total || 0) + 1;
+      }
 
       if (wasInInChat && this.inChatPagings.total > 0) {
         this.inChatPagings.total = Math.max(0, this.inChatPagings.total - 1);
@@ -962,13 +1028,8 @@ export const useChatStore = defineStore('chat', {
         this.queuePagings.total = Math.max(0, this.queuePagings.total - 1);
       }
 
-      if (!skipEvents) {
-        globalThis.dispatchEvent(
-          new CustomEvent('chat-status-changed', { detail: chat })
-        );
-        globalThis.dispatchEvent(
-          new CustomEvent('reload-all-chat-lists-on-status-change')
-        );
+      if (wasInChatbot && this.chatbotPagings.total > 0) {
+        this.chatbotPagings.total = Math.max(0, this.chatbotPagings.total - 1);
       }
 
       if (this.activeChat?.chat_id === chat.chat_id) {
