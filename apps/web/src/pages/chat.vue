@@ -663,12 +663,15 @@ const handleTransfer = async () => {
         }
       }
 
-      chatStore.addChat({
+      chatStore.addChat(
+        {
         ...activeChat,
         status: EChatStatus.queue,
         user: nextUser,
         sector: nextSector,
-      });
+        },
+        true
+      );
 
       chatStore.showSnackbar(t('transfer_successfully'), EColor.success);
     }

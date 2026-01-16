@@ -351,6 +351,12 @@ export const useChatStore = defineStore('chat', {
       const shouldSkipEvents = skipEvents
         ? true
         : this.shouldSkipChatStatusEvents(chat.chat_id);
+      const isActiveChat = this.activeChat?.chat_id === chat.chat_id;
+      const existingSnapshot = isActiveChat ? this.activeChat : previousChat;
+
+      if (this.shouldIgnoreChatUpdate(existingSnapshot, chat, skipEvents)) {
+        return;
+      }
       const canViewOthersChats = permissions.some(
         (perm: EPermissionsRoles) =>
           perm === EGeneralPermissions.full_access ||
@@ -393,7 +399,6 @@ export const useChatStore = defineStore('chat', {
         }
       }
 
-      const isActiveChat = this.activeChat?.chat_id === chat.chat_id;
       const previousStatus = isActiveChat
         ? (this.activeChat?.status ?? previousChat?.status ?? null)
         : (previousChat?.status ?? null);
@@ -565,6 +570,102 @@ export const useChatStore = defineStore('chat', {
       }
 
       this.updateMyChatsTotal(isMyChatNow ? 1 : -1);
+    },
+
+    getChatUpdateTimestamp(
+      chat:
+        | {
+            summary?: { last_date?: string | null } | null;
+            date?: string | null;
+          }
+        | null
+        | undefined
+    ): number | null {
+      if (!chat) {
+        return null;
+      }
+
+      const summary = (chat as any).summary as
+        | {
+            last_date?: string | null;
+            last_date_epoch_millis?: number | string;
+          }
+        | null
+        | undefined;
+
+      const epoch = summary?.last_date_epoch_millis;
+      if (typeof epoch === 'number' && Number.isFinite(epoch)) {
+        return epoch;
+      }
+      if (typeof epoch === 'string') {
+        const parsedEpoch = Number(epoch);
+        if (Number.isFinite(parsedEpoch)) {
+          return parsedEpoch;
+        }
+      }
+
+      if (summary?.last_date) {
+        const parsedDate = Date.parse(summary.last_date);
+        if (!Number.isNaN(parsedDate)) {
+          return parsedDate;
+        }
+      }
+
+      if (chat.date) {
+        const parsedDate = Date.parse(chat.date);
+        if (!Number.isNaN(parsedDate)) {
+          return parsedDate;
+        }
+      }
+
+      return null;
+    },
+
+    getStatusRank(status: string | null | undefined): number | null {
+      if (!status) {
+        return null;
+      }
+
+      const ranks: Record<string, number> = {
+        [EChatStatus.ura]: 0,
+        [EChatStatus.queue]: 1,
+        [EChatStatus.in_chat]: 2,
+        [EChatStatus.closed]: 3,
+        [EChatStatus.transmission]: 0,
+      };
+
+      const rank = ranks[status];
+      return typeof rank === 'number' ? rank : null;
+    },
+
+    shouldIgnoreChatUpdate(
+      existingChat: ListChatsResult | null,
+      incomingChat: IChat,
+      skipEvents: boolean
+    ): boolean {
+      if (skipEvents || !existingChat) {
+        return false;
+      }
+
+      const existingRank = this.getStatusRank(existingChat.status);
+      const incomingRank = this.getStatusRank(incomingChat.status);
+
+      if (existingRank === null || incomingRank === null) {
+        return false;
+      }
+
+      if (incomingRank >= existingRank) {
+        return false;
+      }
+
+      const existingTimestamp = this.getChatUpdateTimestamp(existingChat);
+      const incomingTimestamp = this.getChatUpdateTimestamp(incomingChat);
+
+      if (existingTimestamp === null || incomingTimestamp === null) {
+        return false;
+      }
+
+      return incomingTimestamp <= existingTimestamp;
     },
 
     isChatInAnyList(chatId: string): boolean {
