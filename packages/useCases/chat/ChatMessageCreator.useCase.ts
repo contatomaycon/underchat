@@ -13,6 +13,7 @@ import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { IChat } from '@core/common/interfaces/IChat';
 import { EMessageType } from '@core/common/enums/EMessageType';
+import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.service';
 import { CentrifugoService } from '@core/services/centrifugo.service';
@@ -839,8 +840,10 @@ export class ChatMessageCreatorUseCase {
       return actionResult;
     }
 
+    let result = false;
+
     if (normalizedFields.contacts.length > 0) {
-      return this.sendContactMessage(
+      result = await this.sendContactMessage(
         { t, hash: normalizedFields.hash, typeUser },
         chat,
         accountId,
@@ -853,11 +856,12 @@ export class ChatMessageCreatorUseCase {
     }
 
     if (
+      !result &&
       type === EMessageType.location &&
       normalizedFields.locationLatitude !== null &&
       normalizedFields.locationLongitude !== null
     ) {
-      return this.sendLocationMessage(
+      result = await this.sendLocationMessage(
         { t, hash: normalizedFields.hash, typeUser },
         chat,
         accountId,
@@ -874,8 +878,8 @@ export class ChatMessageCreatorUseCase {
       );
     }
 
-    if (type === EMessageType.document) {
-      return this.sendDocumentMessage(
+    if (!result && type === EMessageType.document) {
+      result = await this.sendDocumentMessage(
         { t, hash: normalizedFields.hash, typeUser },
         chat,
         accountId,
@@ -892,8 +896,8 @@ export class ChatMessageCreatorUseCase {
       );
     }
 
-    if (type === EMessageType.video) {
-      return this.sendVideoMessage(
+    if (!result && type === EMessageType.video) {
+      result = await this.sendVideoMessage(
         { t, hash: normalizedFields.hash, typeUser },
         chat,
         accountId,
@@ -914,8 +918,8 @@ export class ChatMessageCreatorUseCase {
       );
     }
 
-    if (type === EMessageType.audio) {
-      return this.sendAudioMessage(
+    if (!result && type === EMessageType.audio) {
+      result = await this.sendAudioMessage(
         { t, hash: normalizedFields.hash, typeUser },
         chat,
         accountId,
@@ -937,10 +941,11 @@ export class ChatMessageCreatorUseCase {
     }
 
     if (
-      normalizedFields.images.length > 0 ||
-      (isQuickMessage && quickMessageUrl && type === EMessageType.image)
+      !result &&
+      (normalizedFields.images.length > 0 ||
+        (isQuickMessage && quickMessageUrl && type === EMessageType.image))
     ) {
-      return this.sendImageMessage(
+      result = await this.sendImageMessage(
         { t, hash: normalizedFields.hash, typeUser },
         chat,
         accountId,
@@ -959,17 +964,25 @@ export class ChatMessageCreatorUseCase {
       );
     }
 
-    return this.sendTextMessage(
-      { t, hash: normalizedFields.hash, typeUser },
-      chat,
-      accountId,
-      {
-        message: normalizedFields.message,
-        messageQuotedId: normalizedFields.messageQuotedId,
-      },
-      type,
-      body.link_preview
-    );
+    if (!result) {
+      result = await this.sendTextMessage(
+        { t, hash: normalizedFields.hash, typeUser },
+        chat,
+        accountId,
+        {
+          message: normalizedFields.message,
+          messageQuotedId: normalizedFields.messageQuotedId,
+        },
+        type,
+        body.link_preview
+      );
+    }
+
+    if (result && chat.status === EChatStatus.in_chat) {
+      await this.chatService.clearChatSummary(params.chat_id, accountId);
+    }
+
+    return result;
   }
 
   private async resolveQuickMessageTemplate(
@@ -991,7 +1004,10 @@ export class ChatMessageCreatorUseCase {
 
     if (typeof quickMessageTemplateIdRaw === 'string') {
       quickMessageTemplateId = quickMessageTemplateIdRaw;
-    } else if (
+    }
+
+    if (
+      !quickMessageTemplateId &&
       quickMessageTemplateIdRaw &&
       typeof quickMessageTemplateIdRaw === 'object' &&
       'value' in quickMessageTemplateIdRaw

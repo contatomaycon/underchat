@@ -665,10 +665,10 @@ const handleTransfer = async () => {
 
       chatStore.addChat(
         {
-        ...activeChat,
-        status: EChatStatus.queue,
-        user: nextUser,
-        sector: nextSector,
+          ...activeChat,
+          status: EChatStatus.queue,
+          user: nextUser,
+          sector: nextSector,
         },
         true
       );
@@ -1822,13 +1822,6 @@ const onTransferAnnotationEmojiSelect = (emoji: any) => {
 };
 
 const finalizeSend = async () => {
-  if (
-    chatStore.activeChat?.chat_id &&
-    chatStore.activeChat?.status === EChatStatus.in_chat
-  ) {
-    await chatStore.clearChatSummary(chatStore.activeChat.chat_id);
-  }
-
   nextTick(() => {
     const scrollEl = chatLogPS.value?.$el || chatLogPS.value;
     if (scrollEl) {
