@@ -13,13 +13,13 @@ import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { hasRequiredPermission } from '@core/common/functions/hasRequiredPermission';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { IElasticsearchBoolClause } from '@core/common/interfaces/IElasticsearchQuery';
-import { ChatUserViewerRepository } from '@core/repositories/chat/ChatUserViewer.repository';
+import { ChatUserService } from '@core/services/chatUser.service';
 
 @injectable()
 export class ChatListerUseCase {
   constructor(
     private readonly elasticDatabaseService: ElasticDatabaseService,
-    private readonly chatUserViewerRepository: ChatUserViewerRepository
+    private readonly chatUserService: ChatUserService
   ) {}
 
   private canViewOthersChats(actions: IJwtGroupHierarchy[]): boolean {
@@ -47,39 +47,28 @@ export class ChatListerUseCase {
   }
 
   private async getUserSortPreferences(userId: string): Promise<{
-    sortByChatOrder: string | null;
-    sortInChatOrder: string | null;
-    sortByMyChatsOrder: string | null;
-    sortMyChatsOrder: string | null;
-    sortByQueueOrder: string | null;
-    sortQueueOrder: string | null;
-    sortByChatbotOrder: string | null;
-    sortChatbotOrder: string | null;
+    sortByChatOrder: string;
+    sortInChatOrder: string;
+    sortByMyChatsOrder: string;
+    sortMyChatsOrder: string;
+    sortByQueueOrder: string;
+    sortQueueOrder: string;
+    sortByChatbotOrder: string;
+    sortChatbotOrder: string;
   }> {
-    const chatUser = await this.chatUserViewerRepository.viewChatUser(userId);
-
-    if (!chatUser) {
-      return {
-        sortByChatOrder: null,
-        sortInChatOrder: null,
-        sortByMyChatsOrder: null,
-        sortMyChatsOrder: null,
-        sortByQueueOrder: null,
-        sortQueueOrder: null,
-        sortByChatbotOrder: null,
-        sortChatbotOrder: null,
-      };
-    }
+    const chatUser = await this.chatUserService.viewChatUser(userId);
 
     return {
-      sortByChatOrder: chatUser.sort_by_chat_order ?? null,
-      sortInChatOrder: chatUser.sort_in_chat_order ?? null,
-      sortByMyChatsOrder: chatUser.sort_by_my_chats_order ?? null,
-      sortMyChatsOrder: chatUser.sort_my_chats_order ?? null,
-      sortByQueueOrder: chatUser.sort_by_queue_order ?? null,
-      sortQueueOrder: chatUser.sort_queue_order ?? null,
-      sortByChatbotOrder: chatUser.sort_by_chatbot_order ?? null,
-      sortChatbotOrder: chatUser.sort_chatbot_order ?? null,
+      sortByChatOrder: chatUser?.sort_by_chat_order ?? 'summary.last_message',
+      sortInChatOrder: chatUser?.sort_in_chat_order ?? 'desc',
+      sortByMyChatsOrder:
+        chatUser?.sort_by_my_chats_order ?? 'summary.last_message',
+      sortMyChatsOrder: chatUser?.sort_my_chats_order ?? 'desc',
+      sortByQueueOrder: chatUser?.sort_by_queue_order ?? 'summary.last_message',
+      sortQueueOrder: chatUser?.sort_queue_order ?? 'desc',
+      sortByChatbotOrder:
+        chatUser?.sort_by_chatbot_order ?? 'summary.last_message',
+      sortChatbotOrder: chatUser?.sort_chatbot_order ?? 'desc',
     };
   }
 
@@ -87,14 +76,14 @@ export class ChatListerUseCase {
     status: string | string[],
     filterStatus: string | null | undefined,
     preferences: {
-      sortByChatOrder: string | null;
-      sortInChatOrder: string | null;
-      sortByMyChatsOrder: string | null;
-      sortMyChatsOrder: string | null;
-      sortByQueueOrder: string | null;
-      sortQueueOrder: string | null;
-      sortByChatbotOrder: string | null;
-      sortChatbotOrder: string | null;
+      sortByChatOrder: string;
+      sortInChatOrder: string;
+      sortByMyChatsOrder: string;
+      sortMyChatsOrder: string;
+      sortByQueueOrder: string;
+      sortQueueOrder: string;
+      sortByChatbotOrder: string;
+      sortChatbotOrder: string;
     }
   ): { sortBy: string; sortOrder: string } {
     const isAll = filterStatus === null || filterStatus === undefined;
@@ -103,34 +92,28 @@ export class ChatListerUseCase {
       filterStatus ?? (statusArray.length === 1 ? statusArray[0] : null);
 
     if (isAll && statusArray.length > 1) {
-      if (preferences.sortByChatOrder && preferences.sortInChatOrder) {
-        return {
-          sortBy: preferences.sortByChatOrder,
-          sortOrder: preferences.sortInChatOrder,
-        };
-      }
+      return {
+        sortBy: preferences.sortByChatOrder,
+        sortOrder: preferences.sortInChatOrder,
+      };
     }
 
     if (effectiveStatus === EChatStatus.in_chat) {
-      if (preferences.sortByMyChatsOrder && preferences.sortMyChatsOrder) {
-        return {
-          sortBy: preferences.sortByMyChatsOrder,
-          sortOrder: preferences.sortMyChatsOrder,
-        };
-      }
+      return {
+        sortBy: preferences.sortByMyChatsOrder,
+        sortOrder: preferences.sortMyChatsOrder,
+      };
     }
 
     if (effectiveStatus === EChatStatus.queue) {
-      if (preferences.sortByQueueOrder && preferences.sortQueueOrder) {
-        return {
-          sortBy: preferences.sortByQueueOrder,
-          sortOrder: preferences.sortQueueOrder,
-        };
-      }
+      return {
+        sortBy: preferences.sortByQueueOrder,
+        sortOrder: preferences.sortQueueOrder,
+      };
     }
 
     return {
-      sortBy: 'date',
+      sortBy: 'summary.last_message',
       sortOrder: 'desc',
     };
   }

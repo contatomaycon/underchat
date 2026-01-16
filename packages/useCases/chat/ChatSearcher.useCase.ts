@@ -12,11 +12,13 @@ import { hasRequiredPermission } from '@core/common/functions/hasRequiredPermiss
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { IElasticsearchBoolClause } from '@core/common/interfaces/IElasticsearchQuery';
 import { buildCandidates } from '@core/common/functions/buildCandidatesBR';
+import { ChatUserService } from '@core/services/chatUser.service';
 
 @injectable()
 export class ChatSearcherUseCase {
   constructor(
-    private readonly elasticDatabaseService: ElasticDatabaseService
+    private readonly elasticDatabaseService: ElasticDatabaseService,
+    private readonly chatUserService: ChatUserService
   ) {}
 
   private canViewOthersChats(actions: IJwtGroupHierarchy[]): boolean {
@@ -41,6 +43,23 @@ export class ChatSearcherUseCase {
     ];
 
     return hasRequiredPermission(actions, permissions);
+  }
+
+  private async getUserSortPreferences(userId: string): Promise<{
+    sortByMyChatsOrder: string;
+    sortMyChatsOrder: string;
+    sortByQueueOrder: string;
+    sortQueueOrder: string;
+  }> {
+    const chatUser = await this.chatUserService.viewChatUser(userId);
+
+    return {
+      sortByMyChatsOrder:
+        chatUser?.sort_by_my_chats_order ?? 'summary.last_message',
+      sortMyChatsOrder: chatUser?.sort_my_chats_order ?? 'desc',
+      sortByQueueOrder: chatUser?.sort_by_queue_order ?? 'summary.last_message',
+      sortQueueOrder: chatUser?.sort_queue_order ?? 'desc',
+    };
   }
 
   async execute(
@@ -70,11 +89,23 @@ export class ChatSearcherUseCase {
     const filterClauses: IElasticsearchBoolClause[] = [];
 
     if (query.filter_status) {
-      filterClauses.push({
-        term: {
-          status: query.filter_status,
-        },
-      } as unknown as IElasticsearchBoolClause);
+      const statusArray = Array.isArray(query.filter_status)
+        ? query.filter_status
+        : [query.filter_status];
+
+      if (statusArray.length === 1) {
+        filterClauses.push({
+          term: {
+            status: statusArray[0],
+          },
+        } as unknown as IElasticsearchBoolClause);
+      } else if (statusArray.length > 1) {
+        filterClauses.push({
+          terms: {
+            status: statusArray,
+          },
+        } as unknown as IElasticsearchBoolClause);
+      }
     }
 
     if (query.filter_label_template_id) {
@@ -483,8 +514,41 @@ export class ChatSearcherUseCase {
       );
     }
 
-    const sortField = query.sort_field || 'summary.last_message';
-    const sortOrder = query.sort_order || 'desc';
+    const isMyChatsFilter =
+      query.filter_status &&
+      Array.isArray(query.filter_status) &&
+      query.filter_status.length === 2 &&
+      query.filter_status.includes(EChatStatus.queue) &&
+      query.filter_status.includes(EChatStatus.in_chat);
+
+    let sortField = query.sort_field;
+    let sortOrder = query.sort_order;
+
+    if (!sortField || !sortOrder) {
+      const userPreferences = await this.getUserSortPreferences(userId);
+
+      if (isMyChatsFilter) {
+        sortField = userPreferences.sortByMyChatsOrder;
+        sortOrder = userPreferences.sortMyChatsOrder;
+      } else if (query.filter_status) {
+        const statusArray = Array.isArray(query.filter_status)
+          ? query.filter_status
+          : [query.filter_status];
+        const singleStatus = statusArray.length === 1 ? statusArray[0] : null;
+
+        if (singleStatus === EChatStatus.queue) {
+          sortField = userPreferences.sortByQueueOrder;
+          sortOrder = userPreferences.sortQueueOrder;
+        }
+      }
+
+      if (!sortField) {
+        sortField = 'summary.last_message';
+      }
+      if (!sortOrder) {
+        sortOrder = 'desc';
+      }
+    }
 
     const getSortField = (field: string) => {
       const fieldMap: Record<string, string> = {
@@ -602,7 +666,8 @@ export class ChatSearcherUseCase {
 
     const buildQueueCountFilter = (): IElasticsearchBoolClause[] => {
       const baseFilters = filterClauses.filter(
-        (clause) => !(clause as any).term?.status
+        (clause) =>
+          !(clause as any).term?.status && !(clause as any).terms?.status
       );
 
       if (hasPermissionToViewAll) {
@@ -688,7 +753,8 @@ export class ChatSearcherUseCase {
 
     const buildInChatCountFilter = (): IElasticsearchBoolClause[] => {
       const baseFilters = filterClauses.filter(
-        (clause) => !(clause as any).term?.status
+        (clause) =>
+          !(clause as any).term?.status && !(clause as any).terms?.status
       );
 
       if (hasPermissionToViewAll) {
@@ -724,7 +790,8 @@ export class ChatSearcherUseCase {
 
     const buildChatbotCountFilter = (): IElasticsearchBoolClause[] => {
       const baseFilters = filterClauses.filter(
-        (clause) => !(clause as any).term?.status
+        (clause) =>
+          !(clause as any).term?.status && !(clause as any).terms?.status
       );
 
       const canViewChatbotMessages = hasRequiredPermission(actions, [
@@ -767,7 +834,8 @@ export class ChatSearcherUseCase {
 
     const buildClosedCountFilter = (): IElasticsearchBoolClause[] => {
       const baseFilters = filterClauses.filter(
-        (clause) => !(clause as any).term?.status
+        (clause) =>
+          !(clause as any).term?.status && !(clause as any).terms?.status
       );
 
       return [
@@ -782,7 +850,8 @@ export class ChatSearcherUseCase {
 
     const buildMyChatsCountFilter = (): IElasticsearchBoolClause[] => {
       const baseFilters = filterClauses.filter(
-        (clause) => !(clause as any).term?.status
+        (clause) =>
+          !(clause as any).term?.status && !(clause as any).terms?.status
       );
 
       return [

@@ -78,6 +78,62 @@ type UploadOptions = {
   skipLoading?: boolean;
 };
 
+type ChatFilters = {
+  filter_status?: string | null;
+  filter_label_template_id?: string | null;
+  filter_worker_id?: string | null;
+  filter_user_id?: string | null;
+  filter_sector_id?: string | null;
+  filter_name?: string | null;
+  filter_phone?: string | null;
+  filter_protocol?: string | null;
+  filter_date_start?: string | null;
+  filter_date_end?: string | null;
+  sort_field?: string | null;
+  sort_order?: string | null;
+};
+
+type ChatCounts = {
+  total: number;
+  queue: number;
+  in_chat: number;
+  chatbot: number;
+  closed?: number;
+  my_chats: number;
+};
+
+type ResolveChatEndpointResult = {
+  results: ListChatsResult[];
+  counts: ChatCounts | null;
+};
+
+const pickDefinedFilters = <T extends Record<string, unknown>>(
+  filters: T,
+  keys: (keyof T)[]
+): Partial<T> => {
+  const result: Partial<T> = {};
+  for (const key of keys) {
+    if (filters[key] !== null && filters[key] !== undefined) {
+      result[key] = filters[key];
+    }
+  }
+  return result;
+};
+
+const FILTER_KEYS = [
+  'filter_label_template_id',
+  'filter_worker_id',
+  'filter_user_id',
+  'filter_sector_id',
+  'filter_name',
+  'filter_phone',
+  'filter_protocol',
+  'filter_date_start',
+  'filter_date_end',
+] as const;
+
+const LIST_FILTER_KEYS = FILTER_KEYS.filter((k) => k !== 'filter_user_id');
+
 const revokeIfBlob = (url?: string | null) => {
   if (url && typeof url === 'string' && url.startsWith('blob:')) {
     URL.revokeObjectURL(url);
@@ -1687,189 +1743,232 @@ export const useChatStore = defineStore('chat', {
 
     async resolveChatEndpoint(
       status: EChatStatus | EChatStatus[],
-      filters: {
-        filter_status?: string | null;
-        filter_label_template_id?: string | null;
-        filter_worker_id?: string | null;
-        filter_user_id?: string | null;
-        filter_sector_id?: string | null;
-        filter_name?: string | null;
-        filter_phone?: string | null;
-        filter_protocol?: string | null;
-        filter_date_start?: string | null;
-        filter_date_end?: string | null;
-        sort_field?: string | null;
-        sort_order?: string | null;
-      },
+      filters: ChatFilters,
       hasAppliedAdvancedFilters: boolean,
       pagination: { current_page: number; per_page: number },
       append = false,
       search?: string | null
-    ): Promise<{
-      results: ListChatsResult[];
-      counts: {
-        total: number;
-        queue: number;
-        in_chat: number;
-        chatbot: number;
-        closed?: number;
-        my_chats: number;
-      } | null;
-    }> {
+    ): Promise<ResolveChatEndpointResult> {
       const statusArray = Array.isArray(status) ? status : [status];
       const normalizedSearch = typeof search === 'string' ? search.trim() : '';
       const shouldUseSearchEndpoint =
         hasAppliedAdvancedFilters || normalizedSearch.length > 0;
 
-      if (statusArray.length > 1) {
-        try {
-          this.loading = true;
-
-          const params: Record<string, any> = {
-            current_page: pagination.current_page,
-            per_page: pagination.per_page,
-            status: statusArray,
-          };
-
-          if (filters.filter_label_template_id) {
-            params.filter_label_template_id = filters.filter_label_template_id;
-          }
-          if (filters.filter_worker_id) {
-            params.filter_worker_id = filters.filter_worker_id;
-          }
-          if (filters.filter_sector_id) {
-            params.filter_sector_id = filters.filter_sector_id;
-          }
-          if (filters.filter_name) {
-            params.filter_name = filters.filter_name;
-          }
-          if (filters.filter_phone) {
-            params.filter_phone = filters.filter_phone;
-          }
-          if (filters.filter_protocol) {
-            params.filter_protocol = filters.filter_protocol;
-          }
-          if (filters.filter_date_start) {
-            params.filter_date_start = filters.filter_date_start;
-          }
-          if (filters.filter_date_end) {
-            params.filter_date_end = filters.filter_date_end;
-          }
-
-          const response = await axios.get<IApiResponse<ListChatsResponse>>(
-            `/chat`,
-            { params }
-          );
-
-          this.loading = false;
-
-          const data = response?.data;
-
-          if (!data?.status || !data?.data) {
-            return { results: [], counts: null };
-          }
-
-          if (statusArray.includes(EChatStatus.queue)) {
-            if (append) {
-              this.listQueue.push(
-                ...data.data.results.filter(
-                  (c) => c.status === EChatStatus.queue
-                )
-              );
-            } else {
-              this.listQueue = data.data.results.filter(
-                (c) => c.status === EChatStatus.queue
-              );
-            }
-            this.queuePagings = data.data.pagings;
-          }
-
-          if (statusArray.includes(EChatStatus.in_chat)) {
-            if (append) {
-              this.listInChat.push(
-                ...data.data.results.filter(
-                  (c) => c.status === EChatStatus.in_chat
-                )
-              );
-            } else {
-              this.listInChat = data.data.results.filter(
-                (c) => c.status === EChatStatus.in_chat
-              );
-            }
-            this.inChatPagings = data.data.pagings;
-          }
-
-          return { results: data.data.results, counts: data.data.counts };
-        } catch {
-          this.loading = false;
-          return { results: [], counts: null };
-        }
-      }
-
-      const singleStatus = statusArray[0];
+      const baseFilters = pickDefinedFilters(filters, [...FILTER_KEYS]);
 
       if (shouldUseSearchEndpoint) {
-        const request: SearchChatsQuery = {
+        return this.handleSearchEndpoint(
+          statusArray,
+          normalizedSearch,
+          baseFilters,
+          pagination,
+          append
+        );
+      }
+
+      if (statusArray.length > 1) {
+        return this.handleMultiStatusListEndpoint(
+          statusArray,
+          baseFilters,
+          pagination,
+          append
+        );
+      }
+
+      return this.handleSingleStatusListEndpoint(
+        statusArray[0],
+        baseFilters,
+        pagination,
+        append
+      );
+    },
+
+    async handleSearchEndpoint(
+      statusArray: EChatStatus[],
+      search: string,
+      filters: Partial<ChatFilters>,
+      pagination: { current_page: number; per_page: number },
+      append: boolean
+    ): Promise<ResolveChatEndpointResult> {
+      const request: SearchChatsQuery = {
+        current_page: pagination.current_page,
+        per_page: pagination.per_page,
+        search,
+        filter_status: statusArray.length > 1 ? statusArray : statusArray[0],
+        ...pickDefinedFilters(filters, [...FILTER_KEYS]),
+      };
+
+      const result = await this.searchChats(request);
+      if (!result) {
+        return { results: [], counts: null };
+      }
+
+      this.updateListsByStatus(statusArray, result.results, append);
+      this.updatePagingsByStatus(statusArray, result.pagings);
+
+      return { results: result.results, counts: result.counts };
+    },
+
+    updatePagingsByStatus(
+      statusArray: EChatStatus[],
+      pagings: {
+        current_page: number;
+        total_pages: number;
+        per_page: number;
+        count: number;
+        total: number;
+      }
+    ): void {
+      if (statusArray.includes(EChatStatus.queue)) {
+        this.queuePagings = pagings;
+      }
+      if (statusArray.includes(EChatStatus.in_chat)) {
+        this.inChatPagings = pagings;
+      }
+      if (statusArray.includes(EChatStatus.ura)) {
+        this.chatbotPagings = pagings;
+      }
+      if (statusArray.includes(EChatStatus.closed)) {
+        this.closedPagings = pagings;
+      }
+    },
+
+    async handleMultiStatusListEndpoint(
+      statusArray: EChatStatus[],
+      filters: Partial<ChatFilters>,
+      pagination: { current_page: number; per_page: number },
+      append: boolean
+    ): Promise<ResolveChatEndpointResult> {
+      try {
+        this.loading = true;
+
+        const params = {
           current_page: pagination.current_page,
           per_page: pagination.per_page,
-          search: normalizedSearch,
-          filter_status: singleStatus,
-          filter_label_template_id: filters.filter_label_template_id,
-          filter_worker_id: filters.filter_worker_id,
-          filter_user_id: filters.filter_user_id,
-          filter_sector_id: filters.filter_sector_id,
-          filter_name: filters.filter_name,
-          filter_phone: filters.filter_phone,
-          filter_protocol: filters.filter_protocol,
-          filter_date_start: filters.filter_date_start,
-          filter_date_end: filters.filter_date_end,
-          sort_field: filters.sort_field,
-          sort_order: filters.sort_order,
+          status: statusArray,
+          ...pickDefinedFilters(filters, [...LIST_FILTER_KEYS]),
         };
 
-        const result = await this.searchChats(request);
-        if (!result) {
+        const response = await axios.get<IApiResponse<ListChatsResponse>>(
+          `/chat`,
+          { params }
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+        if (!data?.status || !data?.data) {
           return { results: [], counts: null };
         }
 
-        return { results: result.results, counts: result.counts };
-      }
+        this.updateListsByStatus(statusArray, data.data.results, append);
 
+        if (statusArray.includes(EChatStatus.queue)) {
+          this.queuePagings = data.data.pagings;
+        }
+        if (statusArray.includes(EChatStatus.in_chat)) {
+          this.inChatPagings = data.data.pagings;
+        }
+
+        return { results: data.data.results, counts: data.data.counts };
+      } catch {
+        this.loading = false;
+        return { results: [], counts: null };
+      }
+    },
+
+    async handleSingleStatusListEndpoint(
+      status: EChatStatus,
+      filters: Partial<ChatFilters>,
+      pagination: { current_page: number; per_page: number },
+      append: boolean
+    ): Promise<ResolveChatEndpointResult> {
       const request: ListChatsQuery = {
         current_page: pagination.current_page,
         per_page: pagination.per_page,
-        status: singleStatus,
-        filter_label_template_id: filters.filter_label_template_id,
-        filter_worker_id: filters.filter_worker_id,
-        filter_sector_id: filters.filter_sector_id,
-        filter_name: filters.filter_name,
-        filter_phone: filters.filter_phone,
-        filter_protocol: filters.filter_protocol,
-        filter_date_start: filters.filter_date_start,
-        filter_date_end: filters.filter_date_end,
+        status,
+        ...pickDefinedFilters(filters, [...LIST_FILTER_KEYS]),
       };
 
-      if (singleStatus === EChatStatus.queue) {
-        const response = await this.listQueueChats(request, append);
-        return { results: this.listQueue, counts: response?.counts ?? null };
+      const handlers: Partial<
+        Record<
+          EChatStatus,
+          {
+            fetch: (
+              req: ListChatsQuery,
+              append: boolean
+            ) => Promise<ListChatsResponse | null>;
+            getList: () => ListChatsResult[];
+          }
+        >
+      > = {
+        [EChatStatus.queue]: {
+          fetch: (req, app) => this.listQueueChats(req, app),
+          getList: () => this.listQueue,
+        },
+        [EChatStatus.in_chat]: {
+          fetch: (req, app) => this.listInChatChats(req, app),
+          getList: () => this.listInChat,
+        },
+        [EChatStatus.ura]: {
+          fetch: (req, app) => this.listChatbotChats(req, app),
+          getList: () => this.listChatbot,
+        },
+        [EChatStatus.closed]: {
+          fetch: (req, app) => this.listClosedChats(req, app),
+          getList: () => this.listClosed,
+        },
+      };
+
+      const handler = handlers[status];
+      if (!handler) {
+        return { results: [], counts: null };
       }
 
-      if (singleStatus === EChatStatus.in_chat) {
-        const response = await this.listInChatChats(request, append);
-        return { results: this.listInChat, counts: response?.counts ?? null };
-      }
+      const response = await handler.fetch(request, append);
+      return { results: handler.getList(), counts: response?.counts ?? null };
+    },
 
-      if (singleStatus === EChatStatus.ura) {
-        const response = await this.listChatbotChats(request, append);
-        return { results: this.listChatbot, counts: response?.counts ?? null };
-      }
+    updateListsByStatus(
+      statusArray: EChatStatus[],
+      results: ListChatsResult[],
+      append: boolean
+    ): void {
+      const updateList = (
+        targetStatus: EChatStatus,
+        getCurrentList: () => ListChatsResult[],
+        setList: (items: ListChatsResult[]) => void
+      ) => {
+        if (!statusArray.includes(targetStatus)) return;
 
-      if (singleStatus === EChatStatus.closed) {
-        const response = await this.listClosedChats(request, append);
-        return { results: this.listClosed, counts: response?.counts ?? null };
-      }
+        const filtered = results.filter((c) => c.status === targetStatus);
+        if (append) {
+          getCurrentList().push(...filtered);
+        } else {
+          setList(filtered);
+        }
+      };
 
-      return { results: [], counts: null };
+      updateList(
+        EChatStatus.queue,
+        () => this.listQueue,
+        (items) => (this.listQueue = items)
+      );
+      updateList(
+        EChatStatus.in_chat,
+        () => this.listInChat,
+        (items) => (this.listInChat = items)
+      );
+      updateList(
+        EChatStatus.ura,
+        () => this.listChatbot,
+        (items) => (this.listChatbot = items)
+      );
+      updateList(
+        EChatStatus.closed,
+        () => this.listClosed,
+        (items) => (this.listClosed = items)
+      );
     },
 
     async reloadAllChatLists(hasAppliedAdvancedFilters = false): Promise<void> {

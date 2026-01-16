@@ -6,7 +6,11 @@ export const searchChatsQuerySchema = Type.Object({
   ...pagingRequestSchema.properties,
   search: Type.String(),
   filter_status: Type.Optional(
-    Type.Union([Type.String({ enum: Object.values(EChatStatus) }), Type.Null()])
+    Type.Union([
+      Type.String({ enum: Object.values(EChatStatus) }),
+      Type.Array(Type.String({ enum: Object.values(EChatStatus) })),
+      Type.Null(),
+    ])
   ),
   filter_label_template_id: Type.Optional(
     Type.Union([Type.String(), Type.Null()])

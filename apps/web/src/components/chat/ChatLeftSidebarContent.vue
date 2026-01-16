@@ -956,6 +956,35 @@ const loadAllChats = async (append = false) => {
   const filters = getChatUserFilters();
   const searchTerm = getSearchTerm();
 
+  const shouldUseCombinedSearch =
+    activeFilter.value === 'my_chats' &&
+    (hasAppliedAdvancedFilters.value || searchTerm);
+
+  if (shouldUseCombinedSearch) {
+    const response = await chatStore.resolveChatEndpoint(
+      [EChatStatus.queue, EChatStatus.in_chat],
+      filters,
+      hasAppliedAdvancedFilters.value,
+      {
+        current_page: currentPageQueue.value,
+        per_page: perPageQueue.value,
+      },
+      append,
+      searchTerm
+    );
+
+    if (response.counts) {
+      applyCounts(response.counts);
+    }
+
+    const allChats = [...chatStore.listQueue, ...chatStore.listInChat];
+    await Promise.all([
+      loadWorkerConfigs(allChats),
+      loadChatContacts(allChats),
+    ]);
+    return;
+  }
+
   const [inChatResponse, queueResponse] = await Promise.all([
     chatStore.resolveChatEndpoint(
       EChatStatus.in_chat,
