@@ -1918,7 +1918,14 @@ const sendMessage = async () => {
   finalizeSend();
 };
 
-const openChat = async (chatId: ListChatsResult['chat_id']) => {
+type OpenChatOptions = {
+  skipClearSummary?: boolean;
+};
+
+const openChat = async (
+  chatId: ListChatsResult['chat_id'],
+  options?: OpenChatOptions
+) => {
   if (chatStore.activeChat?.chat_id === chatId) return;
 
   linkPreview.value = null;
@@ -1942,7 +1949,8 @@ const openChat = async (chatId: ListChatsResult['chat_id']) => {
 
   if (
     chatStore.activeChat?.status === EChatStatus.in_chat &&
-    chatStore.activeChat?.user?.id === chatStore.user?.user_id
+    chatStore.activeChat?.user?.id === chatStore.user?.user_id &&
+    !options?.skipClearSummary
   ) {
     await chatStore.clearChatSummary(chatId);
   }

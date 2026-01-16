@@ -42,6 +42,13 @@ export const listMessageChats = async (
       httpStatusCode: EHTTPStatusCode.bad_request,
     });
   } catch (error) {
+    if (error instanceof Error && error.message === t('chat_not_found')) {
+      return sendResponse(reply, {
+        message: error.message,
+        httpStatusCode: EHTTPStatusCode.not_found,
+      });
+    }
+
     handleControllerError(error, reply, t);
   }
 };

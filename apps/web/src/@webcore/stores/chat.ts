@@ -2099,6 +2099,15 @@ export const useChatStore = defineStore('chat', {
         this.loading = false;
         this.listMessages = [];
 
+        if (error instanceof AxiosError) {
+          if (error.response?.status === 404) {
+            return;
+          }
+          const errorMessage = error.response?.data?.message ?? error.message;
+          this.showSnackbar(errorMessage, EColor.error);
+          return;
+        }
+
         if (error instanceof Error) {
           this.showSnackbar(error.message, EColor.error);
         }
@@ -3126,11 +3135,25 @@ export const useChatStore = defineStore('chat', {
         return [];
       }
 
+      const uniqueIds = Array.from(new Set(contactIds)).filter(Boolean);
+      const contactIdsToLoad = uniqueIds.filter(
+        (contactId) =>
+          !this.chatContacts[contactId] && !this.loadingChatContacts[contactId]
+      );
+
+      if (!contactIdsToLoad.length) {
+        return [];
+      }
+
+      for (const contactId of contactIdsToLoad) {
+        this.loadingChatContacts[contactId] = true;
+      }
+
       try {
         const response = await axios.post<
           IApiResponse<ViewChatContactResponse[]>
         >('/chat/contacts/batch', {
-          contact_ids: contactIds,
+          contact_ids: contactIdsToLoad,
         });
 
         const data = response?.data;
@@ -3146,6 +3169,10 @@ export const useChatStore = defineStore('chat', {
         return data.data;
       } catch {
         return [];
+      } finally {
+        for (const contactId of contactIdsToLoad) {
+          delete this.loadingChatContacts[contactId];
+        }
       }
     },
 

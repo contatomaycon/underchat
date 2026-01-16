@@ -29,8 +29,12 @@ import {
   TransferSector,
 } from '@core/schema/chat/listTransferOptions/response.schema';
 
+type OpenChatOptions = {
+  skipClearSummary?: boolean;
+};
+
 const emit = defineEmits<{
-  (e: 'openChat', id: ListChatsResult['chat_id']): void;
+  (e: 'openChat', id: ListChatsResult['chat_id'], options?: OpenChatOptions): void;
   (e: 'showUserProfile'): void;
   (e: 'close'): void;
   (e: 'update:search', value: string): void;
@@ -1948,7 +1952,7 @@ const handleOpenConversation = async () => {
     expandedFilter.value = 'in_chat';
     await loadChatsByFilter();
 
-    emit('openChat', chat.chat_id);
+    emit('openChat', chat.chat_id, { skipClearSummary: true });
   } catch (error: any) {
     console.error('Error starting chat with contact:', error);
   }
