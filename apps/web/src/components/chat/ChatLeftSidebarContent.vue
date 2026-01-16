@@ -213,7 +213,11 @@ const hasActiveFilters = computed(() => {
 });
 
 const filteredChatbot = computed(() => {
-  if (activeFilter.value === 'all' && hasActiveFilters.value) {
+  if (
+    activeFilter.value === 'all' &&
+    hasActiveFilters.value &&
+    !hasAppliedAdvancedFilters.value
+  ) {
     return chatStore.listChatbot;
   }
   if (activeFilter.value === 'chatbot') {
@@ -223,11 +227,19 @@ const filteredChatbot = computed(() => {
 });
 
 const showChatbotTitle = computed(() => {
-  return activeFilter.value === 'all' && hasActiveFilters.value;
+  return (
+    activeFilter.value === 'all' &&
+    hasActiveFilters.value &&
+    !hasAppliedAdvancedFilters.value
+  );
 });
 
 const filteredClosed = computed(() => {
-  if (activeFilter.value === 'all' && hasActiveFilters.value) {
+  if (
+    activeFilter.value === 'all' &&
+    hasActiveFilters.value &&
+    !hasAppliedAdvancedFilters.value
+  ) {
     return chatStore.listClosed;
   }
   return [];
@@ -237,6 +249,7 @@ const showClosedTitle = computed(() => {
   return (
     activeFilter.value === 'all' &&
     hasActiveFilters.value &&
+    !hasAppliedAdvancedFilters.value &&
     chatStore.listClosed.length > 0
   );
 });
