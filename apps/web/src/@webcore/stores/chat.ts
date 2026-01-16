@@ -1908,6 +1908,7 @@ export const useChatStore = defineStore('chat', {
       void hasAppliedAdvancedFilters;
       try {
         this.loading = true;
+        this.markSkipChatStatusEvents(chatId);
 
         const response = await axios.post<
           IApiResponse<{ chat_id: string; status: boolean }>
@@ -1925,6 +1926,7 @@ export const useChatStore = defineStore('chat', {
           const errorMessage =
             data?.message || this.i18n.global.t('chat_transfer_error');
           this.showSnackbar(errorMessage, EColor.error);
+          this.clearSkipChatStatusEvents(chatId);
 
           return false;
         }
@@ -1932,6 +1934,7 @@ export const useChatStore = defineStore('chat', {
         return true;
       } catch (error) {
         this.loading = false;
+        this.clearSkipChatStatusEvents(chatId);
 
         let errorMessage = this.i18n.global.t('chat_transfer_error');
         if (error instanceof AxiosError) {

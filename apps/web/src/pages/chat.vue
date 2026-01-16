@@ -612,6 +612,56 @@ const handleTransfer = async () => {
   );
 
   if (success) {
+    const activeChat = chatStore.activeChat as IChat;
+    let nextUser: IChat['user'] | null = activeChat.user ?? null;
+    let nextSector: IChat['sector'] | null = activeChat.sector ?? null;
+
+    if (transferType.value === 'user') {
+      const selected = transferUsers.value.find(
+        (user) => user.value === userId
+      );
+      nextUser = selected
+        ? {
+            id: selected.value,
+            name: selected.title,
+            photo: selected.photo ?? null,
+          }
+        : null;
+      nextSector = null;
+    } else {
+      const selected = transferSectors.value.find(
+        (sector) => sector.value === sectorId
+      );
+      nextSector = selected
+        ? {
+            id: selected.value,
+            name: selected.title,
+            color: selected.color ?? undefined,
+          }
+        : null;
+      if (userId) {
+        const selectedUser = transferSectorUsers.value.find(
+          (user) => user.value === userId
+        );
+        nextUser = selectedUser
+          ? {
+              id: selectedUser.value,
+              name: selectedUser.title,
+              photo: selectedUser.photo ?? null,
+            }
+          : null;
+      } else {
+        nextUser = null;
+      }
+    }
+
+    chatStore.addChat({
+      ...activeChat,
+      status: EChatStatus.queue,
+      user: nextUser,
+      sector: nextSector,
+    });
+
     isTransferModalOpen.value = false;
     chatStore.showSnackbar(t('transfer_successfully'), EColor.success);
   }
