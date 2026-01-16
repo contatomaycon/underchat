@@ -24,8 +24,8 @@ const labelTemplates = ref<
 >([]);
 
 const selectedLabelTemplateIds = ref<string[]>([]);
-const isLoadingLabels = ref(false);
-const isSavingLabel = ref(false);
+const isLoadingLabelModal = ref(false);
+const isSavingLabelModal = ref(false);
 
 const itemsLabel = computed(() =>
   labelTemplates.value.map((item) => ({
@@ -37,7 +37,7 @@ const itemsLabel = computed(() =>
 
 const openLabelModal = async () => {
   isOpen.value = true;
-  isLoadingLabels.value = true;
+  isLoadingLabelModal.value = true;
 
   const labels = await chatStore.listLabelTemplates();
 
@@ -47,11 +47,11 @@ const openLabelModal = async () => {
 
   selectedLabelTemplateIds.value =
     chatStore.activeChat?.label?.map((l) => l.label_template_id) ?? [];
-  isLoadingLabels.value = false;
+  isLoadingLabelModal.value = false;
 };
 
 const closeLabelModal = () => {
-  if (isSavingLabel.value) return;
+  if (isSavingLabelModal.value) return;
   isOpen.value = false;
   selectedLabelTemplateIds.value = [];
 };
@@ -59,7 +59,7 @@ const closeLabelModal = () => {
 const saveLabel = async () => {
   if (!chatStore.activeChat?.chat_id) return;
 
-  isSavingLabel.value = true;
+  isSavingLabelModal.value = true;
 
   const success = await chatStore.updateChatLabel(
     chatStore.activeChat.chat_id,
@@ -72,13 +72,13 @@ const saveLabel = async () => {
     isOpen.value = false;
   }
 
-  isSavingLabel.value = false;
+  isSavingLabelModal.value = false;
 };
 
 const removeLabel = async () => {
   if (!chatStore.activeChat?.chat_id) return;
 
-  isSavingLabel.value = true;
+  isSavingLabelModal.value = true;
 
   const success = await chatStore.updateChatLabel(
     chatStore.activeChat.chat_id,
@@ -89,7 +89,7 @@ const removeLabel = async () => {
     isOpen.value = false;
   }
 
-  isSavingLabel.value = false;
+  isSavingLabelModal.value = false;
 };
 
 watch(
@@ -106,21 +106,18 @@ watch(
   <VDialog
     :model-value="isOpen"
     max-width="500"
-    :persistent="isSavingLabel"
+    :persistent="isSavingLabelModal"
     @update:model-value="isOpen = $event"
   >
-    <DialogCloseBtn :disabled="isSavingLabel" @click="closeLabelModal" />
-
-    <VOverlay
-      :model-value="isLoadingLabels || isSavingLabel"
-      class="align-center justify-center"
-      contained
-    >
-      <VProgressCircular color="primary" indeterminate size="64" />
-    </VOverlay>
+    <DialogCloseBtn :disabled="isSavingLabelModal" @click="closeLabelModal" />
 
     <VCard :title="t('label')">
-      <VCardText>
+      <VCardText v-if="isLoadingLabelModal">
+        <VSkeletonLoader type="text" width="60" height="20" class="mb-2" />
+        <VSkeletonLoader type="text" height="56" />
+      </VCardText>
+
+      <VCardText v-else>
         <AppSelectSearch
           v-model="selectedLabelTemplateIds"
           :items="itemsLabel"
@@ -164,31 +161,35 @@ watch(
       <VCardText class="d-flex justify-space-between flex-wrap gap-3">
         <VBtn
           v-if="
+            !isLoadingLabelModal &&
+            !isSavingLabelModal &&
             chatStore.activeChat?.label &&
             Array.isArray(chatStore.activeChat.label) &&
             chatStore.activeChat.label.length > 0
           "
           variant="tonal"
           color="error"
-          :loading="isSavingLabel"
-          :disabled="isSavingLabel"
+          :loading="isSavingLabelModal"
+          :disabled="isSavingLabelModal"
           @click="removeLabel"
         >
           {{ t('remove') }}
         </VBtn>
         <VSpacer />
         <VBtn
+          v-if="!isLoadingLabelModal"
           variant="tonal"
           color="secondary"
-          :disabled="isSavingLabel"
+          :disabled="isSavingLabelModal"
           @click="closeLabelModal"
         >
           {{ t('cancel') }}
         </VBtn>
         <VBtn
+          v-if="!isLoadingLabelModal"
           color="primary"
-          :loading="isSavingLabel"
-          :disabled="isSavingLabel"
+          :loading="isSavingLabelModal"
+          :disabled="isSavingLabelModal"
           @click="saveLabel"
         >
           {{ t('save') }}
