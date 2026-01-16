@@ -398,8 +398,8 @@ export const useChatStore = defineStore('chat', {
         this.handleClosedStatusChat(input, chat, isActiveChat);
       }
 
-      const isInAnyListNow = this.isChatInAnyList(chat.chat_id);
-      if (!shouldSkipEvents && !wasInAnyList && isInAnyListNow) {
+      if (!shouldSkipEvents && !wasInAnyList) {
+        this.markSkipChatStatusEvents(chat.chat_id);
         globalThis.dispatchEvent(
           new CustomEvent('chat-status-changed', {
             detail: { chat, reason: 'new' },
@@ -1905,6 +1905,7 @@ export const useChatStore = defineStore('chat', {
       annotation?: string | null,
       hasAppliedAdvancedFilters = false
     ): Promise<boolean> {
+      void hasAppliedAdvancedFilters;
       try {
         this.loading = true;
 
@@ -1927,39 +1928,6 @@ export const useChatStore = defineStore('chat', {
 
           return false;
         }
-
-        await Promise.all([
-          this.resolveChatEndpoint(
-            EChatStatus.queue,
-            {},
-            hasAppliedAdvancedFilters,
-            {
-              current_page: 1,
-              per_page: this.queuePagings.per_page,
-            },
-            false
-          ),
-          this.resolveChatEndpoint(
-            EChatStatus.in_chat,
-            {},
-            hasAppliedAdvancedFilters,
-            {
-              current_page: 1,
-              per_page: this.inChatPagings.per_page,
-            },
-            false
-          ),
-          this.resolveChatEndpoint(
-            EChatStatus.ura,
-            {},
-            hasAppliedAdvancedFilters,
-            {
-              current_page: 1,
-              per_page: this.chatbotPagings.per_page,
-            },
-            false
-          ),
-        ]);
 
         return true;
       } catch (error) {

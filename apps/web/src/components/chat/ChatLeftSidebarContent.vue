@@ -1820,7 +1820,7 @@ watch(
 
 let isHandlingChatStatusChanged = false;
 let chatStatusChangedTimeout: ReturnType<typeof setTimeout> | null = null;
-let pendingResolveStatus: EChatStatus | null = null;
+const pendingResolveStatuses = new Set<EChatStatus>();
 
 const handleChatStatusChanged = async (event: Event) => {
   const detail = (event as CustomEvent<{ chat: IChat; reason?: string }>)
@@ -1829,7 +1829,7 @@ const handleChatStatusChanged = async (event: Event) => {
     return;
   }
 
-  pendingResolveStatus = detail.chat.status;
+  pendingResolveStatuses.add(detail.chat.status);
 
   if (isHandlingChatStatusChanged) {
     return;
@@ -1844,17 +1844,19 @@ const handleChatStatusChanged = async (event: Event) => {
 
   chatStatusChangedTimeout = setTimeout(async () => {
     try {
-      const statusToResolve = pendingResolveStatus;
-      pendingResolveStatus = null;
+      const statusesToResolve = Array.from(pendingResolveStatuses);
+      pendingResolveStatuses.clear();
 
-      if (statusToResolve === EChatStatus.queue) {
-        await loadQueueChats();
-      } else if (statusToResolve === EChatStatus.in_chat) {
-        await loadInChatChats();
-      } else if (statusToResolve === EChatStatus.ura) {
-        await loadChatbotChats();
-      } else if (statusToResolve === EChatStatus.closed) {
-        await loadClosedChats();
+      for (const statusToResolve of statusesToResolve) {
+        if (statusToResolve === EChatStatus.queue) {
+          await loadQueueChats();
+        } else if (statusToResolve === EChatStatus.in_chat) {
+          await loadInChatChats();
+        } else if (statusToResolve === EChatStatus.ura) {
+          await loadChatbotChats();
+        } else if (statusToResolve === EChatStatus.closed) {
+          await loadClosedChats();
+        }
       }
     } finally {
       isHandlingChatStatusChanged = false;
