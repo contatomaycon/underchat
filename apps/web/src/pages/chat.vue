@@ -226,6 +226,7 @@ const isQueueOrUraStatus = computed(() => {
 });
 
 const workerConfigForChat = ref<ViewWorkerConfigForChatResponse>(null);
+const isLoadingWorkerConfig = ref(false);
 
 const getStatusColor = (status: EChatUserStatus): string => {
   const isDark = global.name.value === 'dark';
@@ -299,11 +300,19 @@ const loadWorkerConfigForChat = async () => {
   const workerId = chatStore.activeChat?.worker?.id;
   if (!workerId) {
     workerConfigForChat.value = null;
+    isLoadingWorkerConfig.value = false;
     return;
   }
 
-  const config = await channelStore.fetchWorkerConfigForChat(workerId);
-  workerConfigForChat.value = config;
+  isLoadingWorkerConfig.value = true;
+  try {
+    const config = await channelStore.fetchWorkerConfigForChat(workerId);
+    workerConfigForChat.value = config;
+  } catch (error) {
+    workerConfigForChat.value = null;
+  } finally {
+    isLoadingWorkerConfig.value = false;
+  }
 };
 
 watch(
@@ -1915,6 +1924,9 @@ const sendMessage = async () => {
 
 const openChat = async (chatId: ListChatsResult['chat_id']) => {
   if (chatStore.activeChat?.chat_id === chatId) return;
+
+  linkPreview.value = null;
+  isLoadingLinkPreview.value = false;
 
   if (chatLogPS.value) {
     const scrollEl = chatLogPS.value.$el || chatLogPS.value;
@@ -3536,26 +3548,37 @@ const formatFileSize = (bytes: number): string => {
 };
 
 const debouncedMsg = refDebounced(msg, 250);
-watch(
-  debouncedMsg,
-  async (val) => {
-    const firstUrl = extractFirstUrl(val as string);
-    if (firstUrl) {
-      isLoadingLinkPreview.value = true;
-      linkPreview.value = null;
+watch(debouncedMsg, async (val) => {
+  const firstUrl = extractFirstUrl(val as string);
+  if (firstUrl) {
+    isLoadingLinkPreview.value = true;
+    linkPreview.value = null;
+    try {
       const linkPreviewResponse = await chatStore.generateLinkPreview({
         url: firstUrl,
       });
-      isLoadingLinkPreview.value = false;
       if (linkPreviewResponse?.title !== 'Error') {
         linkPreview.value = linkPreviewResponse as ViewLinkPreviewResponse;
+      } else {
+        linkPreview.value = null;
       }
-      return;
+    } catch (error) {
+      linkPreview.value = null;
+    } finally {
+      isLoadingLinkPreview.value = false;
     }
-    isLoadingLinkPreview.value = false;
+    return;
+  }
+  isLoadingLinkPreview.value = false;
+  linkPreview.value = null;
+});
+
+watch(
+  () => chatStore.activeChat?.chat_id,
+  () => {
     linkPreview.value = null;
-  },
-  { immediate: true }
+    isLoadingLinkPreview.value = false;
+  }
 );
 
 watch(msg, async (val) => {
@@ -5271,7 +5294,7 @@ onBeforeUnmount(() => {
             :cannot-attend-due-to-status="cannotAttendDueToStatus"
             :cannot-attend-due-to-limit="cannotAttendDueToLimit"
             :worker-config-for-chat="workerConfigForChat"
-            :loading="chatStore.loading"
+            :loading="isLoadingWorkerConfig"
             @attend="handleAttendChat"
             @reopen="handleReopenChat"
           />
