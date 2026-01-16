@@ -143,6 +143,8 @@ type FilterType =
   | 'my_chats'
   | 'closed';
 
+type ChatExtrasSource = Pick<ListChatsResult, 'worker' | 'contact'>;
+
 const activeFilter = ref<FilterType>('all');
 const expandedFilter = ref<FilterType | null>('all');
 
@@ -239,8 +241,12 @@ const showClosedTitle = computed(() => {
   );
 });
 
+const shouldUseEndpointCounts = computed(() => {
+  return hasActiveFilters.value || activeFilter.value === 'my_chats';
+});
+
 const allChatsCount = computed(() => {
-  if (searchChatsCounts.value) {
+  if (shouldUseEndpointCounts.value && searchChatsCounts.value) {
     return searchChatsCounts.value.total;
   }
   if (hasActiveFilters.value) {
@@ -252,7 +258,7 @@ const allChatsCount = computed(() => {
 });
 
 const inChatCount = computed(() => {
-  if (searchChatsCounts.value) {
+  if (shouldUseEndpointCounts.value && searchChatsCounts.value) {
     return searchChatsCounts.value.in_chat;
   }
   if (hasActiveFilters.value) {
@@ -262,7 +268,7 @@ const inChatCount = computed(() => {
 });
 
 const queueCount = computed(() => {
-  if (searchChatsCounts.value) {
+  if (shouldUseEndpointCounts.value && searchChatsCounts.value) {
     return searchChatsCounts.value.queue;
   }
   if (hasActiveFilters.value) {
@@ -275,7 +281,7 @@ const myChatsCount = computed(() => {
   const userId = chatStore.user?.user_id;
   if (!userId) return 0;
 
-  if (searchChatsCounts.value) {
+  if (shouldUseEndpointCounts.value && searchChatsCounts.value) {
     return searchChatsCounts.value.my_chats;
   }
 
@@ -298,7 +304,7 @@ const myChatsCount = computed(() => {
 });
 
 const chatbotCount = computed(() => {
-  if (searchChatsCounts.value) {
+  if (shouldUseEndpointCounts.value && searchChatsCounts.value) {
     return searchChatsCounts.value.chatbot;
   }
   if (hasActiveFilters.value) {
@@ -311,7 +317,7 @@ const chatbotCount = computed(() => {
 });
 
 const closedCount = computed(() => {
-  if (searchChatsCounts.value) {
+  if (shouldUseEndpointCounts.value && searchChatsCounts.value) {
     return searchChatsCounts.value.closed ?? 0;
   }
   if (hasActiveFilters.value) {
@@ -642,7 +648,7 @@ const handleClearFilters = async () => {
   scrollToTop();
 };
 
-const loadWorkerConfigs = async (chats: ListChatsResult[]) => {
+const loadWorkerConfigs = async (chats: ChatExtrasSource[]) => {
   const workerIds = new Set<string>();
 
   for (const chat of chats) {
@@ -673,7 +679,7 @@ const loadWorkerConfigs = async (chats: ListChatsResult[]) => {
   }
 };
 
-const loadChatContacts = async (chats: ListChatsResult[]) => {
+const loadChatContacts = async (chats: ChatExtrasSource[]) => {
   const contactIds = new Set<string>();
 
   for (const chat of chats) {
@@ -1922,7 +1928,7 @@ watch(
 
 let isHandlingChatStatusChanged = false;
 let chatStatusChangedTimeout: ReturnType<typeof setTimeout> | null = null;
-const pendingResolveStatuses = new Set<EChatStatus>();
+const pendingNewChats = new Map<string, ChatExtrasSource>();
 
 const handleChatStatusChanged = async (event: Event) => {
   const detail = (event as CustomEvent<{ chat: IChat; reason?: string }>)
@@ -1931,7 +1937,9 @@ const handleChatStatusChanged = async (event: Event) => {
     return;
   }
 
-  pendingResolveStatuses.add(detail.chat.status);
+  if (detail.chat?.chat_id) {
+    pendingNewChats.set(detail.chat.chat_id, detail.chat);
+  }
 
   if (isHandlingChatStatusChanged) {
     return;
@@ -1946,20 +1954,17 @@ const handleChatStatusChanged = async (event: Event) => {
 
   chatStatusChangedTimeout = setTimeout(async () => {
     try {
-      const statusesToResolve = Array.from(pendingResolveStatuses);
-      pendingResolveStatuses.clear();
+      const chatsToLoad = Array.from(pendingNewChats.values());
+      pendingNewChats.clear();
 
-      for (const statusToResolve of statusesToResolve) {
-        if (statusToResolve === EChatStatus.queue) {
-          await loadQueueChats();
-        } else if (statusToResolve === EChatStatus.in_chat) {
-          await loadInChatChats();
-        } else if (statusToResolve === EChatStatus.ura) {
-          await loadChatbotChats();
-        } else if (statusToResolve === EChatStatus.closed) {
-          await loadClosedChats();
-        }
+      if (chatsToLoad.length === 0) {
+        return;
       }
+
+      await Promise.all([
+        loadWorkerConfigs(chatsToLoad),
+        loadChatContacts(chatsToLoad),
+      ]);
     } finally {
       isHandlingChatStatusChanged = false;
       chatStatusChangedTimeout = null;

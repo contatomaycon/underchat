@@ -282,8 +282,20 @@ export const useChatStore = defineStore('chat', {
     },
 
     removeChatIfNotAuthorized(chat: IChat): void {
+      const previousChat =
+        this.activeChat?.chat_id === chat.chat_id
+          ? this.activeChat
+          : this.findChatInLists(chat.chat_id);
+      const previousStatus = previousChat?.status ?? null;
+      const previousUserId = previousChat?.user?.id ?? null;
       const wasInQueue = this.listQueue.some((c) => c.chat_id === chat.chat_id);
       const wasInInChat = this.listInChat.some(
+        (c) => c.chat_id === chat.chat_id
+      );
+      const wasInChatbot = this.listChatbot.some(
+        (c) => c.chat_id === chat.chat_id
+      );
+      const wasInClosed = this.listClosed.some(
         (c) => c.chat_id === chat.chat_id
       );
 
@@ -298,6 +310,23 @@ export const useChatStore = defineStore('chat', {
 
       if (wasInInChat && this.inChatPagings.total > 0) {
         this.inChatPagings.total = Math.max(0, this.inChatPagings.total - 1);
+      }
+
+      if (wasInChatbot && this.chatbotPagings.total > 0) {
+        this.chatbotPagings.total = Math.max(0, this.chatbotPagings.total - 1);
+      }
+
+      if (wasInClosed && this.closedPagings.total > 0) {
+        this.closedPagings.total = Math.max(0, this.closedPagings.total - 1);
+      }
+
+      if (previousStatus) {
+        this.updateMyChatsTotalFromTransition(
+          previousStatus,
+          previousUserId,
+          '',
+          null
+        );
       }
 
       if (this.activeChat?.chat_id === chat.chat_id) {
@@ -317,7 +346,8 @@ export const useChatStore = defineStore('chat', {
 
     addChat(chat: IChat, skipEvents = false) {
       const permissions = getPermissions();
-      const wasInAnyList = this.isChatInAnyList(chat.chat_id);
+      const previousChat = this.findChatInLists(chat.chat_id);
+      const wasInAnyList = !!previousChat;
       const shouldSkipEvents = skipEvents
         ? true
         : this.shouldSkipChatStatusEvents(chat.chat_id);
@@ -363,6 +393,14 @@ export const useChatStore = defineStore('chat', {
         }
       }
 
+      const isActiveChat = this.activeChat?.chat_id === chat.chat_id;
+      const previousStatus = isActiveChat
+        ? (this.activeChat?.status ?? previousChat?.status ?? null)
+        : (previousChat?.status ?? null);
+      const previousUserId = isActiveChat
+        ? (this.activeChat?.user?.id ?? previousChat?.user?.id ?? null)
+        : (previousChat?.user?.id ?? null);
+
       const input: ListChatsResult = {
         chat_id: chat.chat_id,
         summary: chat.summary,
@@ -381,7 +419,6 @@ export const useChatStore = defineStore('chat', {
         label: chat.label ?? null,
       };
 
-      const isActiveChat = this.activeChat?.chat_id === chat.chat_id;
       this.updateActiveChatSummaryIfNeeded(chat, isActiveChat);
 
       if (this.pendingStatusUpdateChatId === chat.chat_id) {
@@ -390,14 +427,21 @@ export const useChatStore = defineStore('chat', {
       }
 
       if (chat.status === EChatStatus.queue) {
-        this.handleQueueStatusChat(input, chat, isActiveChat);
+        this.handleQueueStatusChat(input, chat, isActiveChat, previousStatus);
       } else if (chat.status === EChatStatus.in_chat) {
-        this.handleInChatStatusChat(input, chat, isActiveChat);
+        this.handleInChatStatusChat(input, chat, isActiveChat, previousStatus);
       } else if (chat.status === EChatStatus.ura) {
-        this.handleUraStatusChat(input, chat, isActiveChat);
+        this.handleUraStatusChat(input, chat, isActiveChat, previousStatus);
       } else if (chat.status === EChatStatus.closed) {
-        this.handleClosedStatusChat(input, chat, isActiveChat);
+        this.handleClosedStatusChat(input, chat, isActiveChat, previousStatus);
       }
+
+      this.updateMyChatsTotalFromTransition(
+        previousStatus,
+        previousUserId,
+        chat.status,
+        chat.user?.id ?? null
+      );
 
       if (!shouldSkipEvents && !wasInAnyList) {
         this.markSkipChatStatusEvents(chat.chat_id);
@@ -480,6 +524,47 @@ export const useChatStore = defineStore('chat', {
         return;
       }
       this.myChatsTotal = Math.max(0, this.myChatsTotal + delta);
+    },
+
+    isMyChatStatus(status: string | null | undefined): boolean {
+      return status === EChatStatus.queue || status === EChatStatus.in_chat;
+    },
+
+    findChatInLists(chatId: string): ListChatsResult | null {
+      return (
+        this.listQueue.find((c) => c.chat_id === chatId) ||
+        this.listInChat.find((c) => c.chat_id === chatId) ||
+        this.listChatbot.find((c) => c.chat_id === chatId) ||
+        this.listClosed.find((c) => c.chat_id === chatId) ||
+        null
+      );
+    },
+
+    updateMyChatsTotalFromTransition(
+      previousStatus: string | null,
+      previousUserId: string | null,
+      nextStatus: string,
+      nextUserId: string | null
+    ): void {
+      if (this.myChatsTotal === null) {
+        return;
+      }
+
+      const currentUserId = this.user?.user_id ?? null;
+      if (!currentUserId) {
+        return;
+      }
+
+      const wasMyChat =
+        previousUserId === currentUserId && this.isMyChatStatus(previousStatus);
+      const isMyChatNow =
+        nextUserId === currentUserId && this.isMyChatStatus(nextStatus);
+
+      if (wasMyChat === isMyChatNow) {
+        return;
+      }
+
+      this.updateMyChatsTotal(isMyChatNow ? 1 : -1);
     },
 
     isChatInAnyList(chatId: string): boolean {
@@ -731,23 +816,56 @@ export const useChatStore = defineStore('chat', {
     handleQueueStatusChat(
       input: ListChatsResult,
       chat: IChat,
-      isActiveChat: boolean
+      isActiveChat: boolean,
+      previousStatus: string | null
     ): void {
-      const wasInQueue = this.listQueue.some((c) => c.chat_id === chat.chat_id);
-      const wasInInChat = this.listInChat.some(
+      const permissions = getPermissions();
+      const canViewOthersChats = permissions.some(
+        (perm: EPermissionsRoles) =>
+          perm === EGeneralPermissions.full_access ||
+          perm === EGeneralPermissions.full_access_group ||
+          perm === EChatPermissions.chat_group ||
+          perm === EChatPermissions.view_others_chats
+      );
+      const canListAllChatsWithoutSectorLimit = permissions.some(
+        (perm: EPermissionsRoles) =>
+          perm === EGeneralPermissions.full_access ||
+          perm === EGeneralPermissions.full_access_group ||
+          perm === EChatPermissions.chat_group ||
+          perm === EChatPermissions.list_all_chats_without_sector_limit
+      );
+      const hasPermissionToViewAll =
+        canViewOthersChats || canListAllChatsWithoutSectorLimit;
+      const existingInQueue = this.listQueue.find(
         (c) => c.chat_id === chat.chat_id
       );
-      const wasInChatbot = this.listChatbot.some(
+      const existingInInChat = this.listInChat.find(
         (c) => c.chat_id === chat.chat_id
       );
-      const wasInClosed = this.listClosed.some(
+      const existingInChatbot = this.listChatbot.find(
         (c) => c.chat_id === chat.chat_id
       );
+      const existingInClosed = this.listClosed.find(
+        (c) => c.chat_id === chat.chat_id
+      );
+
+      const wasInQueue = !!existingInQueue;
+      const wasInInChat = !!existingInInChat;
+      const wasInChatbot = !!existingInChatbot;
+      const wasInClosed = !!existingInClosed;
+      const previousWasInQueue =
+        wasInQueue || previousStatus === EChatStatus.queue;
+      const previousWasInInChat =
+        wasInInChat || previousStatus === EChatStatus.in_chat;
+      const previousWasInChatbot =
+        wasInChatbot || previousStatus === EChatStatus.ura;
+      const previousWasInClosed =
+        wasInClosed || previousStatus === EChatStatus.closed;
 
       if (wasInInChat) {
         const isStillMine = chat.user?.id === this.user?.user_id;
 
-        if (!isStillMine) {
+        if (!isStillMine && !hasPermissionToViewAll) {
           this.removeFromList(this.listInChat, chat.chat_id);
           this.removeFromList(this.listQueue, chat.chat_id);
           this.removeFromList(this.listChatbot, chat.chat_id);
@@ -760,18 +878,18 @@ export const useChatStore = defineStore('chat', {
             );
           }
 
-          if (wasInQueue && this.queuePagings.total > 0) {
+          if (previousWasInQueue && this.queuePagings.total > 0) {
             this.queuePagings.total = Math.max(0, this.queuePagings.total - 1);
           }
 
-          if (wasInChatbot && this.chatbotPagings.total > 0) {
+          if (previousWasInChatbot && this.chatbotPagings.total > 0) {
             this.chatbotPagings.total = Math.max(
               0,
               this.chatbotPagings.total - 1
             );
           }
 
-          if (wasInClosed && this.closedPagings.total > 0) {
+          if (previousWasInClosed && this.closedPagings.total > 0) {
             this.closedPagings.total = Math.max(
               0,
               this.closedPagings.total - 1
@@ -795,19 +913,19 @@ export const useChatStore = defineStore('chat', {
         EChatStatus.queue
       );
 
-      if (!wasInQueue) {
+      if (!previousWasInQueue) {
         this.queuePagings.total = (this.queuePagings.total || 0) + 1;
       }
 
-      if (wasInInChat && this.inChatPagings.total > 0) {
+      if (previousWasInInChat && this.inChatPagings.total > 0) {
         this.inChatPagings.total = Math.max(0, this.inChatPagings.total - 1);
       }
 
-      if (wasInChatbot && this.chatbotPagings.total > 0) {
+      if (previousWasInChatbot && this.chatbotPagings.total > 0) {
         this.chatbotPagings.total = Math.max(0, this.chatbotPagings.total - 1);
       }
 
-      if (wasInClosed && this.closedPagings.total > 0) {
+      if (previousWasInClosed && this.closedPagings.total > 0) {
         this.closedPagings.total = Math.max(0, this.closedPagings.total - 1);
       }
 
@@ -819,43 +937,57 @@ export const useChatStore = defineStore('chat', {
     handleInChatStatusChat(
       input: ListChatsResult,
       chat: IChat,
-      isActiveChat: boolean
+      isActiveChat: boolean,
+      previousStatus: string | null
     ): void {
-      if (!this.canViewChat(chat)) {
-        const wasInInChat = this.listInChat.some(
-          (c) => c.chat_id === chat.chat_id
-        );
-        const wasInQueue = this.listQueue.some(
-          (c) => c.chat_id === chat.chat_id
-        );
-        const wasInChatbot = this.listChatbot.some(
-          (c) => c.chat_id === chat.chat_id
-        );
-        const wasInClosed = this.listClosed.some(
-          (c) => c.chat_id === chat.chat_id
-        );
+      const existingInQueue = this.listQueue.find(
+        (c) => c.chat_id === chat.chat_id
+      );
+      const existingInInChat = this.listInChat.find(
+        (c) => c.chat_id === chat.chat_id
+      );
+      const existingInChatbot = this.listChatbot.find(
+        (c) => c.chat_id === chat.chat_id
+      );
+      const existingInClosed = this.listClosed.find(
+        (c) => c.chat_id === chat.chat_id
+      );
 
+      const wasInQueue = !!existingInQueue;
+      const wasInInChat = !!existingInInChat;
+      const wasInChatbot = !!existingInChatbot;
+      const wasInClosed = !!existingInClosed;
+      const previousWasInQueue =
+        wasInQueue || previousStatus === EChatStatus.queue;
+      const previousWasInInChat =
+        wasInInChat || previousStatus === EChatStatus.in_chat;
+      const previousWasInChatbot =
+        wasInChatbot || previousStatus === EChatStatus.ura;
+      const previousWasInClosed =
+        wasInClosed || previousStatus === EChatStatus.closed;
+
+      if (!this.canViewChat(chat)) {
         this.removeFromList(this.listInChat, chat.chat_id);
         this.removeFromList(this.listQueue, chat.chat_id);
         this.removeFromList(this.listChatbot, chat.chat_id);
         this.removeFromList(this.listClosed, chat.chat_id);
 
-        if (wasInInChat && this.inChatPagings.total > 0) {
+        if (previousWasInInChat && this.inChatPagings.total > 0) {
           this.inChatPagings.total = Math.max(0, this.inChatPagings.total - 1);
         }
 
-        if (wasInQueue && this.queuePagings.total > 0) {
+        if (previousWasInQueue && this.queuePagings.total > 0) {
           this.queuePagings.total = Math.max(0, this.queuePagings.total - 1);
         }
 
-        if (wasInChatbot && this.chatbotPagings.total > 0) {
+        if (previousWasInChatbot && this.chatbotPagings.total > 0) {
           this.chatbotPagings.total = Math.max(
             0,
             this.chatbotPagings.total - 1
           );
         }
 
-        if (wasInClosed && this.closedPagings.total > 0) {
+        if (previousWasInClosed && this.closedPagings.total > 0) {
           this.closedPagings.total = Math.max(0, this.closedPagings.total - 1);
         }
 
@@ -864,17 +996,6 @@ export const useChatStore = defineStore('chat', {
         }
         return;
       }
-
-      const wasInQueue = this.listQueue.some((c) => c.chat_id === chat.chat_id);
-      const wasInInChat = this.listInChat.some(
-        (c) => c.chat_id === chat.chat_id
-      );
-      const wasInChatbot = this.listChatbot.some(
-        (c) => c.chat_id === chat.chat_id
-      );
-      const wasInClosed = this.listClosed.some(
-        (c) => c.chat_id === chat.chat_id
-      );
 
       this.removeFromList(this.listQueue, chat.chat_id);
       this.removeFromList(this.listChatbot, chat.chat_id);
@@ -886,19 +1007,19 @@ export const useChatStore = defineStore('chat', {
         EChatStatus.in_chat
       );
 
-      if (!wasInInChat) {
+      if (!previousWasInInChat) {
         this.inChatPagings.total = (this.inChatPagings.total || 0) + 1;
       }
 
-      if (wasInQueue && this.queuePagings.total > 0) {
+      if (previousWasInQueue && this.queuePagings.total > 0) {
         this.queuePagings.total = Math.max(0, this.queuePagings.total - 1);
       }
 
-      if (wasInChatbot && this.chatbotPagings.total > 0) {
+      if (previousWasInChatbot && this.chatbotPagings.total > 0) {
         this.chatbotPagings.total = Math.max(0, this.chatbotPagings.total - 1);
       }
 
-      if (wasInClosed && this.closedPagings.total > 0) {
+      if (previousWasInClosed && this.closedPagings.total > 0) {
         this.closedPagings.total = Math.max(0, this.closedPagings.total - 1);
       }
 
@@ -910,43 +1031,57 @@ export const useChatStore = defineStore('chat', {
     handleUraStatusChat(
       input: ListChatsResult,
       chat: IChat,
-      isActiveChat: boolean
+      isActiveChat: boolean,
+      previousStatus: string | null
     ): void {
-      if (!this.canViewChat(chat)) {
-        const wasInInChat = this.listInChat.some(
-          (c) => c.chat_id === chat.chat_id
-        );
-        const wasInQueue = this.listQueue.some(
-          (c) => c.chat_id === chat.chat_id
-        );
-        const wasInChatbot = this.listChatbot.some(
-          (c) => c.chat_id === chat.chat_id
-        );
-        const wasInClosed = this.listClosed.some(
-          (c) => c.chat_id === chat.chat_id
-        );
+      const existingInInChat = this.listInChat.find(
+        (c) => c.chat_id === chat.chat_id
+      );
+      const existingInQueue = this.listQueue.find(
+        (c) => c.chat_id === chat.chat_id
+      );
+      const existingInChatbot = this.listChatbot.find(
+        (c) => c.chat_id === chat.chat_id
+      );
+      const existingInClosed = this.listClosed.find(
+        (c) => c.chat_id === chat.chat_id
+      );
 
+      const wasInInChat = !!existingInInChat;
+      const wasInQueue = !!existingInQueue;
+      const wasInChatbot = !!existingInChatbot;
+      const wasInClosed = !!existingInClosed;
+      const previousWasInInChat =
+        wasInInChat || previousStatus === EChatStatus.in_chat;
+      const previousWasInQueue =
+        wasInQueue || previousStatus === EChatStatus.queue;
+      const previousWasInChatbot =
+        wasInChatbot || previousStatus === EChatStatus.ura;
+      const previousWasInClosed =
+        wasInClosed || previousStatus === EChatStatus.closed;
+
+      if (!this.canViewChat(chat)) {
         this.removeFromList(this.listChatbot, chat.chat_id);
         this.removeFromList(this.listInChat, chat.chat_id);
         this.removeFromList(this.listQueue, chat.chat_id);
         this.removeFromList(this.listClosed, chat.chat_id);
 
-        if (wasInInChat && this.inChatPagings.total > 0) {
+        if (previousWasInInChat && this.inChatPagings.total > 0) {
           this.inChatPagings.total = Math.max(0, this.inChatPagings.total - 1);
         }
 
-        if (wasInQueue && this.queuePagings.total > 0) {
+        if (previousWasInQueue && this.queuePagings.total > 0) {
           this.queuePagings.total = Math.max(0, this.queuePagings.total - 1);
         }
 
-        if (wasInChatbot && this.chatbotPagings.total > 0) {
+        if (previousWasInChatbot && this.chatbotPagings.total > 0) {
           this.chatbotPagings.total = Math.max(
             0,
             this.chatbotPagings.total - 1
           );
         }
 
-        if (wasInClosed && this.closedPagings.total > 0) {
+        if (previousWasInClosed && this.closedPagings.total > 0) {
           this.closedPagings.total = Math.max(0, this.closedPagings.total - 1);
         }
 
@@ -955,17 +1090,6 @@ export const useChatStore = defineStore('chat', {
         }
         return;
       }
-
-      const wasInInChat = this.listInChat.some(
-        (c) => c.chat_id === chat.chat_id
-      );
-      const wasInQueue = this.listQueue.some((c) => c.chat_id === chat.chat_id);
-      const wasInChatbot = this.listChatbot.some(
-        (c) => c.chat_id === chat.chat_id
-      );
-      const wasInClosed = this.listClosed.some(
-        (c) => c.chat_id === chat.chat_id
-      );
 
       this.removeFromList(this.listInChat, chat.chat_id);
       this.removeFromList(this.listQueue, chat.chat_id);
@@ -977,19 +1101,19 @@ export const useChatStore = defineStore('chat', {
         EChatStatus.ura
       );
 
-      if (!wasInChatbot) {
+      if (!previousWasInChatbot) {
         this.chatbotPagings.total = (this.chatbotPagings.total || 0) + 1;
       }
 
-      if (wasInInChat && this.inChatPagings.total > 0) {
+      if (previousWasInInChat && this.inChatPagings.total > 0) {
         this.inChatPagings.total = Math.max(0, this.inChatPagings.total - 1);
       }
 
-      if (wasInQueue && this.queuePagings.total > 0) {
+      if (previousWasInQueue && this.queuePagings.total > 0) {
         this.queuePagings.total = Math.max(0, this.queuePagings.total - 1);
       }
 
-      if (wasInClosed && this.closedPagings.total > 0) {
+      if (previousWasInClosed && this.closedPagings.total > 0) {
         this.closedPagings.total = Math.max(0, this.closedPagings.total - 1);
       }
 
@@ -1001,7 +1125,8 @@ export const useChatStore = defineStore('chat', {
     handleClosedStatusChat(
       input: ListChatsResult,
       chat: IChat,
-      isActiveChat: boolean
+      isActiveChat: boolean,
+      previousStatus: string | null
     ): void {
       const wasInInChat = this.listInChat.some(
         (c) => c.chat_id === chat.chat_id
@@ -1013,17 +1138,14 @@ export const useChatStore = defineStore('chat', {
       const wasInClosed = this.listClosed.some(
         (c) => c.chat_id === chat.chat_id
       );
-      const wasActiveChat = this.activeChat?.chat_id === chat.chat_id;
-      const previousStatus = wasActiveChat ? this.activeChat?.status : null;
       const previousWasInInChat =
         wasInInChat || previousStatus === EChatStatus.in_chat;
       const previousWasInQueue =
         wasInQueue || previousStatus === EChatStatus.queue;
       const previousWasInChatbot =
         wasInChatbot || previousStatus === EChatStatus.ura;
-      const shouldDecrementMyChats =
-        chat.user?.id === this.user?.user_id &&
-        (previousWasInInChat || previousWasInQueue);
+      const previousWasInClosed =
+        wasInClosed || previousStatus === EChatStatus.closed;
 
       this.removeFromList(this.listInChat, chat.chat_id);
       this.removeFromList(this.listQueue, chat.chat_id);
@@ -1035,7 +1157,7 @@ export const useChatStore = defineStore('chat', {
         EChatStatus.closed
       );
 
-      if (!wasInClosed) {
+      if (!previousWasInClosed) {
         this.closedPagings.total = (this.closedPagings.total || 0) + 1;
       }
 
@@ -1049,10 +1171,6 @@ export const useChatStore = defineStore('chat', {
 
       if (previousWasInChatbot && this.chatbotPagings.total > 0) {
         this.chatbotPagings.total = Math.max(0, this.chatbotPagings.total - 1);
-      }
-
-      if (shouldDecrementMyChats) {
-        this.updateMyChatsTotal(-1);
       }
 
       if (this.activeChat?.chat_id === chat.chat_id) {
