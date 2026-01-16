@@ -851,6 +851,77 @@ const getChatUserFilters = () => {
   };
 };
 
+let inFlightLoadKey: string | null = null;
+let inFlightLoadPromise: Promise<void> | null = null;
+
+const buildLoadKey = (append: boolean): string | null => {
+  if (append) {
+    return null;
+  }
+
+  const base = {
+    filter: activeFilter.value,
+    hasAppliedAdvancedFilters: hasAppliedAdvancedFilters.value,
+    filters: getChatUserFilters(),
+  };
+
+  if (activeFilter.value === 'all') {
+    return JSON.stringify({
+      ...base,
+      queue: {
+        current_page: currentPageQueue.value,
+        per_page: perPageQueue.value,
+      },
+      in_chat: {
+        current_page: currentPageInChat.value,
+        per_page: perPageInChat.value,
+      },
+    });
+  }
+
+  if (activeFilter.value === 'in_chat') {
+    return JSON.stringify({
+      ...base,
+      in_chat: {
+        current_page: currentPageInChat.value,
+        per_page: perPageInChat.value,
+      },
+    });
+  }
+
+  if (activeFilter.value === 'queue' || activeFilter.value === 'my_chats') {
+    return JSON.stringify({
+      ...base,
+      queue: {
+        current_page: currentPageQueue.value,
+        per_page: perPageQueue.value,
+      },
+    });
+  }
+
+  if (activeFilter.value === 'chatbot') {
+    return JSON.stringify({
+      ...base,
+      chatbot: {
+        current_page: chatStore.chatbotPagings.current_page,
+        per_page: chatStore.chatbotPagings.per_page,
+      },
+    });
+  }
+
+  if (activeFilter.value === 'closed') {
+    return JSON.stringify({
+      ...base,
+      closed: {
+        current_page: chatStore.closedPagings.current_page,
+        per_page: chatStore.closedPagings.per_page,
+      },
+    });
+  }
+
+  return JSON.stringify(base);
+};
+
 const loadAllChats = async (append = false) => {
   const filters = getChatUserFilters();
 
@@ -982,30 +1053,51 @@ const loadQueueChats = async (append = false) => {
 };
 
 const loadChatsByFilter = async (append = false) => {
-  if (activeFilter.value === 'all') {
-    await loadAllChats(append);
-    return;
+  const loadKey = buildLoadKey(append);
+  if (loadKey && inFlightLoadKey === loadKey && inFlightLoadPromise) {
+    return inFlightLoadPromise;
   }
 
-  if (activeFilter.value === 'in_chat') {
-    await loadInChatChats(append);
-    return;
+  const runLoad = async () => {
+    if (activeFilter.value === 'all') {
+      await loadAllChats(append);
+      return;
+    }
+
+    if (activeFilter.value === 'in_chat') {
+      await loadInChatChats(append);
+      return;
+    }
+
+    if (activeFilter.value === 'my_chats') {
+      await loadMyChats(append);
+      return;
+    }
+
+    if (activeFilter.value === 'queue') {
+      await loadQueueChats(append);
+      return;
+    }
+
+    if (activeFilter.value === 'chatbot') {
+      await loadChatbotChats(append);
+      return;
+    }
+  };
+
+  if (!loadKey) {
+    return runLoad();
   }
 
-  if (activeFilter.value === 'my_chats') {
-    await loadMyChats(append);
-    return;
-  }
-
-  if (activeFilter.value === 'queue') {
-    await loadQueueChats(append);
-    return;
-  }
-
-  if (activeFilter.value === 'chatbot') {
-    await loadChatbotChats(append);
-    return;
-  }
+  inFlightLoadKey = loadKey;
+  const nextPromise = runLoad().finally(() => {
+    if (inFlightLoadPromise === nextPromise) {
+      inFlightLoadPromise = null;
+      inFlightLoadKey = null;
+    }
+  });
+  inFlightLoadPromise = nextPromise;
+  return nextPromise;
 };
 
 const loadContacts = async (append = false) => {

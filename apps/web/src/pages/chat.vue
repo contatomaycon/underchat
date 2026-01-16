@@ -388,16 +388,11 @@ const transferSectorUsers = ref<any[]>([]);
 const isLoadingTransferUsers = ref(false);
 const isLoadingTransferSectors = ref(false);
 const isLoadingTransferSectorUsers = ref(false);
+const isTransferring = ref(false);
 const transferAnnotationText = ref('');
 const isTransferAnnotationEmojiOpen = ref(false);
 
 const isLabelModalOpen = ref(false);
-const labelTemplates = ref<
-  Array<{ label_template_id: string; label: string; color: string }>
->([]);
-const selectedLabelTemplateIds = ref<string[]>([]);
-const isLoadingLabels = ref(false);
-const isSavingLabel = ref(false);
 
 const activeContactLabelTemplate = computed<{
   label: string;
@@ -480,12 +475,6 @@ watch(
   { immediate: true }
 );
 
-watch(selectedTransferSector, (sectorId) => {
-  if (sectorId) {
-    loadTransferSectorUsers(sectorId);
-  }
-});
-
 const loadTransferUsers = async () => {
   if (!chatStore.user?.account_id) return;
 
@@ -564,6 +553,8 @@ watch(selectedTransferSector, (sectorId) => {
 
 watch(isTransferModalOpen, async (isOpen) => {
   if (isOpen) {
+    isLoadingTransferUsers.value = true;
+    isLoadingTransferSectors.value = true;
     await loadWorkerConfigForChat();
     nextTick(() => {
       try {
@@ -595,75 +586,83 @@ const handleTransfer = async () => {
     return;
   }
 
-  const userId =
-    transferType.value === 'user'
-      ? selectedTransferUser.value
-      : selectedTransferSectorUser.value || null;
-  const sectorId =
-    transferType.value === 'sector' ? selectedTransferSector.value : null;
-  const annotation = transferAnnotationText.value.trim() || null;
+  isTransferring.value = true;
 
-  const success = await chatStore.transferChat(
-    chatStore.activeChat.chat_id,
-    userId,
-    sectorId,
-    annotation,
-    leftSidebarRef.value?.hasAppliedAdvancedFilters ?? false
-  );
+  try {
+    const userId =
+      transferType.value === 'user'
+        ? selectedTransferUser.value
+        : selectedTransferSectorUser.value || null;
+    const sectorId =
+      transferType.value === 'sector' ? selectedTransferSector.value : null;
+    const annotation = transferAnnotationText.value.trim() || null;
 
-  if (success) {
-    const activeChat = chatStore.activeChat as IChat;
-    let nextUser: IChat['user'] | null = activeChat.user ?? null;
-    let nextSector: IChat['sector'] | null = activeChat.sector ?? null;
+    const success = await chatStore.transferChat(
+      chatStore.activeChat.chat_id,
+      userId,
+      sectorId,
+      annotation,
+      leftSidebarRef.value?.hasAppliedAdvancedFilters ?? false
+    );
 
-    if (transferType.value === 'user') {
-      const selected = transferUsers.value.find(
-        (user) => user.value === userId
-      );
-      nextUser = selected
-        ? {
-            id: selected.value,
-            name: selected.title,
-            photo: selected.photo ?? null,
-          }
-        : null;
-      nextSector = null;
-    } else {
-      const selected = transferSectors.value.find(
-        (sector) => sector.value === sectorId
-      );
-      nextSector = selected
-        ? {
-            id: selected.value,
-            name: selected.title,
-            color: selected.color ?? undefined,
-          }
-        : null;
-      if (userId) {
-        const selectedUser = transferSectorUsers.value.find(
+    if (success) {
+      isTransferModalOpen.value = false;
+
+      const activeChat = chatStore.activeChat as IChat;
+      let nextUser: IChat['user'] | null = activeChat.user ?? null;
+      let nextSector: IChat['sector'] | null = activeChat.sector ?? null;
+
+      if (transferType.value === 'user') {
+        const selected = transferUsers.value.find(
           (user) => user.value === userId
         );
-        nextUser = selectedUser
+        nextUser = selected
           ? {
-              id: selectedUser.value,
-              name: selectedUser.title,
-              photo: selectedUser.photo ?? null,
+              id: selected.value,
+              name: selected.title,
+              photo: selected.photo ?? null,
             }
           : null;
+        nextSector = null;
       } else {
-        nextUser = null;
+        const selected = transferSectors.value.find(
+          (sector) => sector.value === sectorId
+        );
+        nextSector = selected
+          ? {
+              id: selected.value,
+              name: selected.title,
+              color: selected.color ?? undefined,
+            }
+          : null;
+        if (userId) {
+          const selectedUser = transferSectorUsers.value.find(
+            (user) => user.value === userId
+          );
+          nextUser = selectedUser
+            ? {
+                id: selectedUser.value,
+                name: selectedUser.title,
+                photo: selectedUser.photo ?? null,
+              }
+            : null;
+        } else {
+          nextUser = null;
+        }
       }
+
+      chatStore.addChat({
+        ...activeChat,
+        status: EChatStatus.queue,
+        user: nextUser,
+        sector: nextSector,
+      });
+
+      chatStore.showSnackbar(t('transfer_successfully'), EColor.success);
     }
-
-    chatStore.addChat({
-      ...activeChat,
-      status: EChatStatus.queue,
-      user: nextUser,
-      sector: nextSector,
-    });
-
-    isTransferModalOpen.value = false;
-    chatStore.showSnackbar(t('transfer_successfully'), EColor.success);
+  } catch (error) {
+  } finally {
+    isTransferring.value = false;
   }
 };
 
@@ -5696,7 +5695,20 @@ onBeforeUnmount(() => {
     <DialogCloseBtn @click="isTransferModalOpen = false" />
     <VCard :title="$t('transfer')">
       <VCardText>
-        <VRow>
+        <template v-if="isLoadingTransferUsers || isLoadingTransferSectors">
+          <VRow>
+            <VCol cols="12">
+              <VSkeletonLoader type="text" width="100%" />
+            </VCol>
+            <VCol cols="12">
+              <VSkeletonLoader type="text" width="100%" />
+            </VCol>
+            <VCol cols="12">
+              <VSkeletonLoader type="text" width="100%" />
+            </VCol>
+          </VRow>
+        </template>
+        <VRow v-else>
           <VCol cols="12">
             <VLabel class="text-body-2 mb-1">{{ $t('transfer_to') }}:</VLabel>
             <AppSelectSearch
@@ -5720,7 +5732,6 @@ onBeforeUnmount(() => {
               :loading="isLoadingTransferUsers"
               item-value="value"
               item-title="title"
-              @select="loadTransferUsers()"
             >
               <template #item-prepend="{ item }">
                 <VAvatar
@@ -5776,7 +5787,6 @@ onBeforeUnmount(() => {
                 :loading="isLoadingTransferSectors"
                 item-value="value"
                 item-title="title"
-                @select="loadTransferSectors()"
               >
                 <template #item-prepend="{ item }">
                   <VAvatar
@@ -5800,7 +5810,6 @@ onBeforeUnmount(() => {
                 :loading="isLoadingTransferSectorUsers"
                 item-value="value"
                 item-title="title"
-                @select="loadTransferSectorUsers(selectedTransferSector)"
               >
                 <template #item-prepend="{ item }">
                   <VAvatar
@@ -5915,7 +5924,7 @@ onBeforeUnmount(() => {
               ? !selectedTransferUser
               : !selectedTransferSector
           "
-          :loading="chatStore.loading"
+          :loading="isTransferring"
           @click="handleTransfer"
         >
           {{ t('transfer') }}
