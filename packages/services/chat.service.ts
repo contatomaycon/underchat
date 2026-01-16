@@ -1118,6 +1118,7 @@ export class ChatService {
         {
           upsert: true,
           maxRetries: 5,
+          refresh: true,
         }
       );
 
@@ -1130,19 +1131,20 @@ export class ChatService {
 
   private buildUpdateChatSummaryScript(): string {
     return `
-      if (ctx._source.summary == null) {
-        ctx._source.summary = params.baseline;
+      if (ctx._source.summary == null || ctx._source.summary.size() == 0) {
+        ctx._source.summary = [params.baseline];
         return;
       }
-      
-      def summary = ctx._source.summary;
-      
+
+      def isList = ctx._source.summary instanceof List;
+      def summaryIndex = isList ? 0 : null;
+
       if (params.last_message != null || params.last_date != null) {
-        def currentLastDate = summary.last_date;
+        def currentLastDate = isList ? ctx._source.summary[summaryIndex].last_date : ctx._source.summary.last_date;
         def newLastDate = params.last_date;
-        
+
         def shouldUpdateMessage = false;
-        
+
         if (currentLastDate == null || newLastDate == null) {
           shouldUpdateMessage = newLastDate != null;
         } else {
@@ -1150,26 +1152,41 @@ export class ChatService {
             shouldUpdateMessage = newLastDate.compareTo(currentLastDate) > 0;
           }
         }
-        
+
         if (shouldUpdateMessage) {
-          summary.last_message = params.last_message;
-          summary.last_date = newLastDate;
+          if (isList) {
+            ctx._source.summary[summaryIndex].last_message = params.last_message;
+            ctx._source.summary[summaryIndex].last_date = newLastDate;
+          } else {
+            ctx._source.summary.last_message = params.last_message;
+            ctx._source.summary.last_date = newLastDate;
+          }
         }
       }
-      
+
       if (params.unread_count_absolute != null) {
         def newUnreadCount = params.unread_count_absolute;
         if (newUnreadCount < 0) {
           newUnreadCount = 0;
         }
-        summary.unread_count = newUnreadCount;
+        if (isList) {
+          ctx._source.summary[summaryIndex].unread_count = newUnreadCount;
+        } else {
+          ctx._source.summary.unread_count = newUnreadCount;
+        }
       } else if (params.unread_count_delta != null) {
-        def currentUnreadCount = summary.unread_count != null ? summary.unread_count : 0;
+        def currentUnreadCount = isList
+          ? (ctx._source.summary[summaryIndex].unread_count != null ? ctx._source.summary[summaryIndex].unread_count : 0)
+          : (ctx._source.summary.unread_count != null ? ctx._source.summary.unread_count : 0);
         def newUnreadCount = currentUnreadCount + params.unread_count_delta;
         if (newUnreadCount < 0) {
           newUnreadCount = 0;
         }
-        summary.unread_count = newUnreadCount;
+        if (isList) {
+          ctx._source.summary[summaryIndex].unread_count = newUnreadCount;
+        } else {
+          ctx._source.summary.unread_count = newUnreadCount;
+        }
       }
     `;
   }
@@ -1195,11 +1212,13 @@ export class ChatService {
     summary: IChatSummary
   ): Record<string, unknown> {
     return {
-      summary: {
-        last_message: summary.last_message,
-        last_date: summary.last_date,
-        unread_count: summary.unread_count,
-      },
+      summary: [
+        {
+          last_message: summary.last_message,
+          last_date: summary.last_date,
+          unread_count: summary.unread_count,
+        },
+      ],
     };
   }
 
@@ -1253,31 +1272,33 @@ export class ChatService {
 
   private buildChatSummaryAtomicUpdateScript(): string {
     return `
-      if (ctx._source.summary == null) {
-        ctx._source.summary = params.baseline;
+      if (ctx._source.summary == null || ctx._source.summary.size() == 0) {
+        ctx._source.summary = [params.baseline];
         return;
       }
-      
-      def summary = ctx._source.summary;
-      
+
+      def isList = ctx._source.summary instanceof List;
+      def summaryIndex = isList ? 0 : null;
+      def summary = isList ? ctx._source.summary[summaryIndex] : ctx._source.summary;
+
       if (summary.unread_count == null) {
         summary.unread_count = 0;
       }
-      
+
       if (summary.last_date_epoch_millis == null) {
         summary.last_date_epoch_millis = 0;
       }
-      
+
       if (summary.last_processed_message_id == null) {
         summary.last_processed_message_id = null;
       }
-      
+
       def changed = false;
-      
+
       def currentEpoch = summary.last_date_epoch_millis;
       def newEpoch = params.last_date_epoch_millis;
       def shouldUpdateMessage = false;
-      
+
       if (newEpoch > currentEpoch) {
         shouldUpdateMessage = true;
       } else if (newEpoch == currentEpoch && params.last_message_id != null) {
@@ -1287,7 +1308,7 @@ export class ChatService {
           shouldUpdateMessage = true;
         }
       }
-      
+
       if (shouldUpdateMessage) {
         summary.last_message = params.last_message;
         summary.last_date = params.last_date;
@@ -1297,7 +1318,7 @@ export class ChatService {
         }
         changed = true;
       }
-      
+
       if (params.processed_message_id != null && params.increment_unread_count) {
         def lastProcessed = summary.last_processed_message_id;
         if (lastProcessed == null || lastProcessed != params.processed_message_id) {
@@ -1306,7 +1327,7 @@ export class ChatService {
           changed = true;
         }
       }
-      
+
       if (!changed) {
         ctx.op = 'noop';
       }
@@ -1354,7 +1375,7 @@ export class ChatService {
     baseline: ChatSummaryBaseline
   ): Record<string, unknown> {
     return {
-      summary: baseline,
+      summary: [baseline],
     };
   }
 
@@ -1369,19 +1390,12 @@ export class ChatService {
 
       const lastMessage = chat.summary?.last_message ?? null;
       const lastDate = chat.summary?.last_date ?? new Date().toISOString();
-      const lastDateEpochMillis =
-        chat.summary?.last_date_epoch_millis ?? new Date(lastDate).getTime();
-      const lastMessageId = chat.summary?.last_message_id ?? null;
 
-      return await this.updateChatSummaryAtomically(
-        chatId,
-        lastMessage,
-        lastDate,
-        lastDateEpochMillis,
-        lastMessageId,
-        null,
-        false
-      );
+      return await this.updateChatSummary(chatId, {
+        last_message: lastMessage,
+        last_date: lastDate,
+        unread_count: 0,
+      });
     } catch (error) {
       console.error('Error clearing chat summary:', error);
       return false;

@@ -497,7 +497,7 @@ export class ElasticDatabaseService {
       upsert?: Record<string, unknown>;
       scriptedUpsert?: boolean;
     },
-    options?: { retryOnConflict?: number }
+    options?: { retryOnConflict?: number; refresh?: boolean }
   ): Promise<'updated' | 'created' | 'noop'> => {
     const maxRetries = options?.retryOnConflict ?? 5;
     let attempt = 0;
@@ -511,7 +511,12 @@ export class ElasticDatabaseService {
         }
 
         try {
-          const createResult = await this.tryCreateWithScript(index, id, input);
+          const createResult = await this.tryCreateWithScript(
+            index,
+            id,
+            input,
+            options?.refresh
+          );
 
           if (createResult !== 'conflict') {
             return createResult;
@@ -544,7 +549,8 @@ export class ElasticDatabaseService {
           index,
           id,
           input,
-          meta
+          meta,
+          options?.refresh
         );
 
         if (updateResult !== 'conflict') {
@@ -587,7 +593,8 @@ export class ElasticDatabaseService {
       upsert?: Record<string, unknown>;
       scriptedUpsert?: boolean;
     },
-    meta: { seqNo: number; primaryTerm: number }
+    meta: { seqNo: number; primaryTerm: number },
+    refresh?: boolean
   ): Promise<'updated' | 'created' | 'noop' | 'conflict'> {
     try {
       const updateParams: {
@@ -601,6 +608,7 @@ export class ElasticDatabaseService {
         if_primary_term?: number;
         upsert?: Record<string, unknown>;
         scripted_upsert?: boolean;
+        refresh?: boolean | 'wait_for';
       } = {
         index,
         id,
@@ -616,6 +624,10 @@ export class ElasticDatabaseService {
       } else {
         updateParams.if_seq_no = meta.seqNo;
         updateParams.if_primary_term = meta.primaryTerm;
+      }
+
+      if (refresh) {
+        updateParams.refresh = true;
       }
 
       const result = await this.client.update(updateParams);
@@ -651,7 +663,8 @@ export class ElasticDatabaseService {
       params: TParams;
       upsert?: Record<string, unknown>;
       scriptedUpsert?: boolean;
-    }
+    },
+    refresh?: boolean
   ): Promise<'created' | 'updated' | 'noop' | 'conflict'> {
     try {
       const updateParams: {
@@ -663,6 +676,7 @@ export class ElasticDatabaseService {
         };
         upsert: Record<string, unknown>;
         scripted_upsert: boolean;
+        refresh?: boolean | 'wait_for';
       } = {
         index,
         id,
@@ -673,6 +687,10 @@ export class ElasticDatabaseService {
         upsert: input.upsert ?? {},
         scripted_upsert: input.scriptedUpsert ?? true,
       };
+
+      if (refresh) {
+        updateParams.refresh = true;
+      }
 
       const result = await this.client.update(updateParams);
 
@@ -704,7 +722,7 @@ export class ElasticDatabaseService {
       upsert?: Record<string, unknown>;
       scriptedUpsert?: boolean;
     },
-    options?: { upsert?: boolean; maxRetries?: number }
+    options?: { upsert?: boolean; maxRetries?: number; refresh?: boolean }
   ): Promise<'updated' | 'created' | 'noop' | 'conflict' | 'not_found'> => {
     const maxRetries = options?.maxRetries ?? 5;
     let attempt = 0;
@@ -718,7 +736,12 @@ export class ElasticDatabaseService {
             return 'not_found';
           }
 
-          const createResult = await this.tryCreateWithScript(index, id, input);
+          const createResult = await this.tryCreateWithScript(
+            index,
+            id,
+            input,
+            options?.refresh
+          );
 
           if (createResult !== 'conflict') {
             return createResult;
@@ -732,7 +755,8 @@ export class ElasticDatabaseService {
           index,
           id,
           input,
-          meta
+          meta,
+          options?.refresh
         );
 
         if (updateResult !== 'conflict') {

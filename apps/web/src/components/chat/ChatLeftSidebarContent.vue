@@ -876,33 +876,6 @@ const applyCounts = (counts: {
   }
 };
 
-const syncCountsWithStore = () => {
-  if (!searchChatsCounts.value) {
-    return;
-  }
-
-  const queueTotal = chatStore.queuePagings.total || 0;
-  const inChatTotal = chatStore.inChatPagings.total || 0;
-  const chatbotTotal = chatStore.chatbotPagings.total || 0;
-  const myChatsTotal = chatStore.myChatsTotal;
-
-  const nextCounts = {
-    ...searchChatsCounts.value,
-    total: queueTotal + inChatTotal + chatbotTotal,
-    queue: queueTotal,
-    in_chat: inChatTotal,
-    chatbot: chatbotTotal,
-    my_chats:
-      myChatsTotal !== null ? myChatsTotal : searchChatsCounts.value.my_chats,
-  };
-
-  if (searchChatsCounts.value.closed !== undefined) {
-    nextCounts.closed = chatStore.closedPagings.total || 0;
-  }
-
-  searchChatsCounts.value = nextCounts;
-};
-
 let inFlightLoadKey: string | null = null;
 let inFlightLoadPromise: Promise<void> | null = null;
 
@@ -917,7 +890,7 @@ const buildLoadKey = (append: boolean): string | null => {
     filters: getChatUserFilters(),
   };
 
-  if (activeFilter.value === 'all') {
+  if (activeFilter.value === 'all' || activeFilter.value === 'my_chats') {
     return JSON.stringify({
       ...base,
       queue: {
@@ -941,7 +914,7 @@ const buildLoadKey = (append: boolean): string | null => {
     });
   }
 
-  if (activeFilter.value === 'queue' || activeFilter.value === 'my_chats') {
+  if (activeFilter.value === 'queue') {
     return JSON.stringify({
       ...base,
       queue: {
@@ -1050,25 +1023,7 @@ const loadInChatChats = async (append = false) => {
 };
 
 const loadMyChats = async (append = false) => {
-  const filters = getChatUserFilters();
-
-  const response = await chatStore.resolveChatEndpoint(
-    [EChatStatus.queue, EChatStatus.in_chat],
-    filters,
-    hasAppliedAdvancedFilters.value,
-    {
-      current_page: currentPageQueue.value,
-      per_page: perPageQueue.value,
-    },
-    append
-  );
-
-  if (response.counts) {
-    applyCounts(response.counts);
-  }
-
-  const allChats = [...chatStore.listQueue, ...chatStore.listInChat];
-  await Promise.all([loadWorkerConfigs(allChats), loadChatContacts(allChats)]);
+  await loadAllChats(append);
 };
 
 const loadQueueChats = async (append = false) => {
@@ -1570,24 +1525,6 @@ watch(debouncedContactSearch, () => {
   accumulatedContacts.value = [];
   loadContacts();
 });
-
-watch(
-  [
-    () => chatStore.queuePagings.total,
-    () => chatStore.inChatPagings.total,
-    () => chatStore.chatbotPagings.total,
-    () => chatStore.myChatsTotal,
-    () => chatStore.closedPagings.total,
-    () => activeFilter.value,
-    () => hasActiveFilters.value,
-  ],
-  () => {
-    if (activeFilter.value !== 'my_chats' || hasActiveFilters.value) {
-      return;
-    }
-    syncCountsWithStore();
-  }
-);
 
 const handleContactFiltersUpdated = async () => {
   currentPageContacts.value = 1;
