@@ -279,10 +279,11 @@ const myChatsCount = computed(() => {
   const userId = chatStore.user?.user_id;
   if (!userId) return 0;
 
+  if (searchChatsCounts.value) {
+    return searchChatsCounts.value.my_chats;
+  }
+
   if (hasActiveFilters.value) {
-    if (searchChatsCounts.value) {
-      return searchChatsCounts.value.my_chats;
-    }
     const allChats = [
       ...chatStore.listInChat,
       ...chatStore.listQueue,
@@ -851,6 +852,22 @@ const getChatUserFilters = () => {
   };
 };
 
+const applyCounts = (counts: {
+  queue: number;
+  in_chat: number;
+  chatbot: number;
+  closed?: number;
+  my_chats: number;
+}) => {
+  searchChatsCounts.value = counts;
+  chatStore.queuePagings.total = counts.queue;
+  chatStore.inChatPagings.total = counts.in_chat;
+  chatStore.chatbotPagings.total = counts.chatbot;
+  if (counts.closed !== undefined) {
+    chatStore.closedPagings.total = counts.closed;
+  }
+};
+
 let inFlightLoadKey: string | null = null;
 let inFlightLoadPromise: Promise<void> | null = null;
 
@@ -950,20 +967,15 @@ const loadAllChats = async (append = false) => {
 
   if (inChatResponse.counts || queueResponse.counts) {
     const combinedCounts = {
-      queue: queueResponse.counts?.queue ?? 0,
-      in_chat: inChatResponse.counts?.in_chat ?? 0,
+      queue: queueResponse.counts?.queue ?? inChatResponse.counts?.queue ?? 0,
+      in_chat: inChatResponse.counts?.in_chat ?? queueResponse.counts?.in_chat ?? 0,
       chatbot:
         inChatResponse.counts?.chatbot ?? queueResponse.counts?.chatbot ?? 0,
-      closed:
-        inChatResponse.counts?.closed ?? queueResponse.counts?.closed ?? 0,
+      closed: inChatResponse.counts?.closed ?? queueResponse.counts?.closed,
       my_chats:
         inChatResponse.counts?.my_chats ?? queueResponse.counts?.my_chats ?? 0,
     };
-    searchChatsCounts.value = combinedCounts;
-
-    if (combinedCounts.chatbot !== undefined) {
-      chatStore.chatbotPagings.total = combinedCounts.chatbot;
-    }
+    applyCounts(combinedCounts);
   }
 
   const allChats = [...chatStore.listQueue, ...chatStore.listInChat];
@@ -985,11 +997,7 @@ const loadInChatChats = async (append = false) => {
   );
 
   if (response.counts) {
-    searchChatsCounts.value = response.counts;
-
-    if (response.counts.chatbot !== undefined) {
-      chatStore.chatbotPagings.total = response.counts.chatbot;
-    }
+    applyCounts(response.counts);
   }
 
   await Promise.all([
@@ -1013,11 +1021,7 @@ const loadMyChats = async (append = false) => {
   );
 
   if (response.counts) {
-    searchChatsCounts.value = response.counts;
-
-    if (response.counts.chatbot !== undefined) {
-      chatStore.chatbotPagings.total = response.counts.chatbot;
-    }
+    applyCounts(response.counts);
   }
 
   const allChats = [...chatStore.listQueue, ...chatStore.listInChat];
@@ -1039,11 +1043,7 @@ const loadQueueChats = async (append = false) => {
   );
 
   if (response.counts) {
-    searchChatsCounts.value = response.counts;
-
-    if (response.counts.chatbot !== undefined) {
-      chatStore.chatbotPagings.total = response.counts.chatbot;
-    }
+    applyCounts(response.counts);
   }
 
   await Promise.all([
@@ -1172,11 +1172,7 @@ const loadChatbotChats = async (append = false) => {
     );
 
     if (response.counts) {
-      searchChatsCounts.value = response.counts;
-
-      if (response.counts.chatbot !== undefined) {
-        chatStore.chatbotPagings.total = response.counts.chatbot;
-      }
+      applyCounts(response.counts);
     }
 
     const chatsToProcess = append
@@ -1209,11 +1205,7 @@ const loadClosedChats = async (append = false) => {
     );
 
     if (response.counts) {
-      searchChatsCounts.value = response.counts;
-
-      if (response.counts.chatbot !== undefined) {
-        chatStore.chatbotPagings.total = response.counts.chatbot;
-      }
+      applyCounts(response.counts);
     }
 
     listClosed.value = chatStore.listClosed;
@@ -1753,7 +1745,15 @@ const performSearch = async (append = false) => {
   }
 };
 
-watch(debouncedSearchQuery, () => {
+let hasInitializedSearchWatcher = false;
+watch(debouncedSearchQuery, (newValue) => {
+  if (!hasInitializedSearchWatcher) {
+    hasInitializedSearchWatcher = true;
+    if (!newValue || newValue.trim().length === 0) {
+      return;
+    }
+  }
+
   performSearch();
 });
 

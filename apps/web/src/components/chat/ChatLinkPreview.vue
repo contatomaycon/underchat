@@ -43,7 +43,7 @@ const previewImage = computed(() => {
 
 <template>
   <Transition name="fade">
-    <div v-if="preview || loading" class="mx-5 mt-3">
+    <div v-if="preview || (loading && !preview)" class="mx-5 mt-3">
       <VCard class="link-preview-card">
         <VBtn
           class="link-preview-close"

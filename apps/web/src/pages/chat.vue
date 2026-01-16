@@ -131,6 +131,9 @@ const isActiveChatUserProfileSidebarOpen = ref(false);
 const isSearchSidebarOpen = ref(false);
 const linkPreview = ref<ViewLinkPreviewResponse | null>(null);
 const isLoadingLinkPreview = ref(false);
+const hasUrlInMessage = computed(() => {
+  return !!extractFirstUrl(msg.value as string);
+});
 const composerRef = ref();
 
 const fileDocRef = ref<HTMLInputElement | null>(null);
@@ -4786,7 +4789,7 @@ onBeforeUnmount(() => {
 
         <ChatLinkPreview
           :preview="linkPreview"
-          :loading="isLoadingLinkPreview"
+          :loading="isLoadingLinkPreview && hasUrlInMessage"
           @close="
             linkPreview = null;
             isLoadingLinkPreview = false;

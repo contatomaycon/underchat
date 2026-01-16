@@ -14,6 +14,7 @@ import { ListMessageChatsQuery } from '@core/schema/chat/listMessageChats/reques
 import { useChatNotifications } from '@/composables/useChatNotifications';
 
 let isInitialized = false;
+let initializingPromise: Promise<void> | null = null;
 let subscriptions: Array<{
   channel: string;
   unsubscribe: () => Promise<void>;
@@ -21,7 +22,7 @@ let subscriptions: Array<{
 const pendingMessages = ref<Map<string, IChatMessage[]>>(new Map());
 const pendingChatUpdates = ref<Map<string, IChat[]>>(new Map());
 
-export const useChatSocket = () => {
+const createChatSocket = () => {
   const chatStore = useChatStore();
   const route = useRoute();
   const { handleNewMessage } = useChatNotifications();
@@ -131,66 +132,76 @@ export const useChatSocket = () => {
       return;
     }
 
+    if (initializingPromise) {
+      return initializingPromise;
+    }
+
     const accountId = chatStore.user.account_id;
 
-    try {
-      await onMessage(
-        chatAccountCentrifugo(accountId),
-        async (data: IChatMessage | IChatTyping | IChat | any) => {
-          if ('type' in data && data.type === 'typing') {
-            globalThis.dispatchEvent(
-              new CustomEvent('chat-typing', { detail: data })
-            );
-            return;
-          }
-
-          if ('message_id' in data) {
-            handleMessageEvent(data as IChatMessage);
-            if (isChatRoute()) {
+    initializingPromise = (async () => {
+      try {
+        await onMessage(
+          chatAccountCentrifugo(accountId),
+          async (data: IChatMessage | IChatTyping | IChat | any) => {
+            if ('type' in data && data.type === 'typing') {
               globalThis.dispatchEvent(
-                new CustomEvent('chat-message', { detail: data })
+                new CustomEvent('chat-typing', { detail: data })
               );
+              return;
             }
-            return;
-          }
 
-          if ('chat_id' in data && !('message_id' in data)) {
-            await handleChatUpdateEvent(data as IChat);
-            if (isChatRoute()) {
-              globalThis.dispatchEvent(
-                new CustomEvent('chat-update', { detail: data })
-              );
+            if ('message_id' in data) {
+              handleMessageEvent(data as IChatMessage);
+              if (isChatRoute()) {
+                globalThis.dispatchEvent(
+                  new CustomEvent('chat-message', { detail: data })
+                );
+              }
+              return;
+            }
+
+            if ('chat_id' in data && !('message_id' in data)) {
+              await handleChatUpdateEvent(data as IChat);
+              if (isChatRoute()) {
+                globalThis.dispatchEvent(
+                  new CustomEvent('chat-update', { detail: data })
+                );
+              }
             }
           }
-        }
-      );
+        );
 
-      await onMessage(chatQueueAccountCentrifugo(accountId), (data: IChat) => {
-        const isActiveChat =
-          isChatRoute() && chatStore.activeChat?.chat_id === data.chat_id;
+        await onMessage(chatQueueAccountCentrifugo(accountId), (data: IChat) => {
+          const isActiveChat =
+            isChatRoute() && chatStore.activeChat?.chat_id === data.chat_id;
 
-        chatStore.addChat(data);
+          chatStore.addChat(data);
 
-        if (isActiveChat && data.status === EChatStatus.in_chat) {
-          chatStore.clearActiveChatUnreadCountLocally();
-        }
-      });
+          if (isActiveChat && data.status === EChatStatus.in_chat) {
+            chatStore.clearActiveChatUnreadCountLocally();
+          }
+        });
 
-      subscriptions.push(
-        {
-          channel: chatAccountCentrifugo(accountId),
-          unsubscribe: () => unsubscribe(chatAccountCentrifugo(accountId)),
-        },
-        {
-          channel: chatQueueAccountCentrifugo(accountId),
-          unsubscribe: () => unsubscribe(chatQueueAccountCentrifugo(accountId)),
-        }
-      );
+        subscriptions.push(
+          {
+            channel: chatAccountCentrifugo(accountId),
+            unsubscribe: () => unsubscribe(chatAccountCentrifugo(accountId)),
+          },
+          {
+            channel: chatQueueAccountCentrifugo(accountId),
+            unsubscribe: () => unsubscribe(chatQueueAccountCentrifugo(accountId)),
+          }
+        );
 
-      isInitialized = true;
-    } catch (error) {
-      console.error('Erro ao inicializar socket de chat:', error);
-    }
+        isInitialized = true;
+      } catch (error) {
+        console.error('Erro ao inicializar socket de chat:', error);
+      } finally {
+        initializingPromise = null;
+      }
+    })();
+
+    return initializingPromise;
   };
 
   const cleanup = async () => {
@@ -204,6 +215,7 @@ export const useChatSocket = () => {
 
     subscriptions = [];
     isInitialized = false;
+    initializingPromise = null;
     pendingMessages.value.clear();
     pendingChatUpdates.value.clear();
   };
@@ -216,4 +228,13 @@ export const useChatSocket = () => {
     processPendingChatUpdates,
     isInitialized: () => isInitialized,
   };
+};
+
+let socketInstance: ReturnType<typeof createChatSocket> | null = null;
+
+export const useChatSocket = () => {
+  if (!socketInstance) {
+    socketInstance = createChatSocket();
+  }
+  return socketInstance;
 };
