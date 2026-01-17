@@ -48,6 +48,8 @@ import { EContactIgnore } from '@core/common/enums/EContactIgnore';
 
 @injectable()
 export class ChatbotFlowRunnerService {
+  private menuDebounceTimers: Map<string, NodeJS.Timeout> = new Map();
+
   constructor(
     @inject('Redis') private readonly redis: Redis,
     private readonly chatbotService: ChatbotService,
@@ -687,8 +689,55 @@ export class ChatbotFlowRunnerService {
   private async sendBuildMenuMessage(
     t: TFunction<'translation', undefined>,
     createChat: IChat,
-    node: ListChatbotFlowResponse['nodes'][number]
+    node: ListChatbotFlowResponse['nodes'][number],
+    useDebounce = false
   ): Promise<boolean> {
+    const debounceKey = `${createChat.account.id}:${createChat.worker.id}:${createChat.chat_id}`;
+
+    if (useDebounce) {
+      const existingTimer = this.menuDebounceTimers.get(debounceKey);
+      if (existingTimer) {
+        clearTimeout(existingTimer);
+
+        return true;
+      }
+
+      return new Promise<boolean>((resolve) => {
+        const timer = setTimeout(async () => {
+          this.menuDebounceTimers.delete(debounceKey);
+
+          const rawBaseMessage = node.data?.message || '';
+          const baseMessage = await this.replaceVariables(
+            t,
+            rawBaseMessage,
+            createChat,
+            createChat.user,
+            createChat.sector
+          );
+          const options = node.data?.options ?? [];
+
+          const lines = options.map((option, index) => {
+            const number = index + 1;
+            return `*${number}.* ${option.text}`;
+          });
+
+          const menuMessage = [baseMessage, '', ...lines].join('\n');
+
+          const result = await this.chatMessageService.sendMessage(t, {
+            chat: createChat,
+            accountId: createChat.account.id,
+            type: EMessageType.text,
+            message: menuMessage,
+            typeUser: ETypeUserChat.bot,
+          });
+
+          resolve(result);
+        }, 3000);
+
+        this.menuDebounceTimers.set(debounceKey, timer);
+      });
+    }
+
     const rawBaseMessage = node.data?.message || '';
     const baseMessage = await this.replaceVariables(
       t,
@@ -932,7 +981,7 @@ export class ChatbotFlowRunnerService {
     await this.updateCache(createChat, nextFlowId);
 
     if (nextFlowNode.type === 'menu' || nextFlowNode.type === 'satisfaction') {
-      return this.sendBuildMenuMessage(t, createChat, nextFlowNode);
+      return this.sendBuildMenuMessage(t, createChat, nextFlowNode, true);
     }
 
     if (nextFlowNode.type === 'contact') {
@@ -2089,6 +2138,13 @@ export class ChatbotFlowRunnerService {
       throw new Error(t('chatbot_flow_node_not_found'));
     }
 
+    const debounceKey = `${createChat.account.id}:${createChat.worker.id}:${createChat.chat_id}`;
+    const existingTimer = this.menuDebounceTimers.get(debounceKey);
+
+    if (existingTimer) {
+      return true;
+    }
+
     const text = this.getTextFromUpsertMessage(data)?.trim();
     if (!text) {
       return this.handleInvalidMenuAttempt(
@@ -2769,6 +2825,7 @@ export class ChatbotFlowRunnerService {
       nodeType === 'satisfaction'
         ? customMessages?.invalid_satisfaction_option_message_enabled
         : customMessages?.invalid_menu_option_message_enabled;
+
     await this.sendTextOptionInvalidMessage(
       t,
       createChat,
@@ -5031,6 +5088,7 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
         currentNode.type === 'menu'
           ? customMessages?.invalid_menu_option_message
           : customMessages?.invalid_satisfaction_option_message;
+
       return this.processMenuNode(
         t,
         data,
