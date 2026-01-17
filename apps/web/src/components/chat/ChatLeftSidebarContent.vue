@@ -779,6 +779,21 @@ const handleClearFilters = async () => {
   scrollToTop();
 };
 
+const clearAdvancedFilters = async () => {
+  currentFilterLabelTemplateId.value = null;
+  currentFilterWorkerId.value = null;
+  currentFilterUserId.value = null;
+  currentFilterSectorId.value = null;
+  currentFilterName.value = null;
+  currentFilterPhone.value = null;
+  currentFilterProtocol.value = null;
+  currentFilterDateStart.value = null;
+  currentFilterDateEnd.value = null;
+  hasAppliedAdvancedFilters.value = false;
+
+  await loadChatsByFilter();
+};
+
 const loadWorkerConfigs = async (chats: ChatExtrasSource[]) => {
   const workerIds = new Set<string>();
 
@@ -2196,6 +2211,7 @@ const scrollToTop = () => {
 
 defineExpose({
   handleClearFilters,
+  clearAdvancedFilters,
   scrollToTop,
   hasAppliedAdvancedFilters,
 });

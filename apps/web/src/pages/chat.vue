@@ -365,6 +365,7 @@ const handleReopenChat = async () => {
 
   if (success) {
     chatStore.showSnackbar(t('chat_reopened_successfully'), EColor.success);
+    await leftSidebarRef.value?.clearAdvancedFilters();
     await nextTick();
     leftSidebarRef.value?.scrollToTop();
   }
