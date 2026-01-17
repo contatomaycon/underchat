@@ -3,7 +3,8 @@ import { worker } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { IWorkerMonitor } from '@core/common/interfaces/IWorkerMonitor';
-import { eq } from 'drizzle-orm';
+import { and, eq, isNull, ne, sql } from 'drizzle-orm';
+import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 
 @injectable()
 export class WorkerMonitorViewerRepository {
@@ -25,6 +26,13 @@ export class WorkerMonitorViewerRepository {
         last_connection_check_at: worker.last_connection_check_at,
       })
       .from(worker)
+      .where(
+        and(
+          isNull(worker.deleted_at),
+          ne(worker.worker_status_id, EWorkerStatus.stopped)
+        )
+      )
+      .orderBy(sql`CASE WHEN ${worker.updated_at} IS NULL THEN 0 ELSE 1 END`)
       .execute();
 
     if (!result?.length) {

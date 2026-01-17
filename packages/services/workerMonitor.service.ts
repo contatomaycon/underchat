@@ -120,7 +120,11 @@ export class WorkerMonitorService {
       return;
     }
 
-    if (worker.worker_status_id === EWorkerStatus.stopped) {
+    if (
+      this.shouldCheckConnectionTimeout(worker) &&
+      this.isConnectionCheckTimeout(worker)
+    ) {
+      await this.handleStop(worker, server, sshConfig);
       return;
     }
 
@@ -182,11 +186,6 @@ export class WorkerMonitorService {
       sshConfig
     );
 
-    if (!connectionHealthy && this.isConnectionCheckTimeout(worker)) {
-      await this.handleStop(worker, server, sshConfig);
-      return;
-    }
-
     await this.syncConnectionStatusWithFailureTracking(
       worker,
       connectionHealthy,
@@ -200,10 +199,6 @@ export class WorkerMonitorService {
     server: IBalanceMonitorServer,
     sshConfig: ConnectConfig
   ): Promise<void> => {
-    if (worker.worker_status_id === EWorkerStatus.stopped) {
-      return;
-    }
-
     await this.workerService.updateWorkerUpdatedAt(worker.worker_id);
 
     if (worker.deleted_at) {
@@ -663,6 +658,18 @@ export class WorkerMonitorService {
     const statuses = [
       EWorkerStatus.online,
       EWorkerStatus.offline,
+      EWorkerStatus.mismatched,
+    ];
+
+    return statuses.includes(worker.worker_status_id);
+  };
+
+  private readonly shouldCheckConnectionTimeout = (
+    worker: IWorkerMonitor
+  ): boolean => {
+    const statuses = [
+      EWorkerStatus.disponible,
+      EWorkerStatus.error,
       EWorkerStatus.mismatched,
     ];
 
