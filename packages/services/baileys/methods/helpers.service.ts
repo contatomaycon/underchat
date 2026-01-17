@@ -26,15 +26,6 @@ export class BaileysHelpersService {
   ): Promise<WAMessage | undefined> {
     const sock = this.socket();
 
-    console.log('address');
-    console.dir(address, { depth: null, colors: true });
-
-    console.log('content');
-    console.dir(content, { depth: null, colors: true });
-
-    console.log('options');
-    console.dir(options, { depth: null, colors: true });
-
     const shouldSimulateTyping = !this.isReactionOrEdit(content);
 
     if (address.includes('@')) {
