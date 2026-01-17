@@ -15,6 +15,18 @@ const databaseElasticPlugin = async (fastify: FastifyInstance) => {
       accept: 'application/vnd.elasticsearch+json;',
       'content-type': 'application/vnd.elasticsearch+json;',
     },
+
+    // Retry - recuperação rápida de falhas transientes
+    maxRetries: 3,
+
+    // Timeout - adequado para operações de chat
+    requestTimeout: 30000,
+
+    // Compressão - reduz bandwidth e melhora throughput
+    compression: true,
+
+    // Resurrect - estratégia otimista para recuperar nós mais rápido
+    resurrectStrategy: 'optimistic',
   });
 
   try {
