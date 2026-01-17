@@ -379,7 +379,7 @@ export class ChatStatusUpdaterUseCase {
     let closedAt: string | null | undefined;
 
     const isReopeningChat =
-      chat.status === EChatStatus.closed && status === EChatStatus.closed;
+      chat.status === EChatStatus.closed && status === EChatStatus.in_chat;
 
     let finalStatus = status;
     if (isReopeningChat) {
