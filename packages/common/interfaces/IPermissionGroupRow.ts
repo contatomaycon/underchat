@@ -5,6 +5,7 @@ export interface IPermissionGroupRow {
   group_action: string;
   group_created_at: string;
   group_updated_at: string;
+  group_selected: boolean;
   permission_action_id: string | null;
   action: string | null;
   name: string | null;

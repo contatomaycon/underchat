@@ -106,6 +106,10 @@ export class PermissionGroupsListerRepository {
           fg.group_action,
           fg.group_created_at,
           fg.group_updated_at,
+          CASE 
+            WHEN hfa.has_full_access = true OR hfag.has_full_access_group = true THEN true
+            ELSE false
+          END AS group_selected,
           paa.permission_action_id,
           paa.action,
           paa.name,
@@ -127,6 +131,7 @@ export class PermissionGroupsListerRepository {
           fg.group_action,
           fg.group_created_at,
           fg.group_updated_at,
+          true AS group_selected,
           paa.permission_action_id,
           paa.action,
           paa.name,
@@ -154,6 +159,7 @@ export class PermissionGroupsListerRepository {
           fg.group_action,
           fg.group_created_at,
           fg.group_updated_at,
+          false AS group_selected,
           paa.permission_action_id,
           paa.action,
           paa.name,
@@ -178,6 +184,7 @@ export class PermissionGroupsListerRepository {
         gp.group_action,
         gp.group_created_at,
         gp.group_updated_at,
+        gp.group_selected,
         gp.permission_action_id,
         gp.action,
         gp.name,
@@ -203,6 +210,7 @@ export class PermissionGroupsListerRepository {
         action: string;
         created_at: string;
         updated_at: string;
+        selected: boolean;
         permissions: Array<{
           permission_action_id: string;
           action: string;
@@ -225,6 +233,7 @@ export class PermissionGroupsListerRepository {
           action: row.group_action,
           created_at: row.group_created_at,
           updated_at: row.group_updated_at,
+          selected: row.group_selected,
           permissions: [],
         });
       }

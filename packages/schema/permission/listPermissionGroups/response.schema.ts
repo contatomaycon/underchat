@@ -16,6 +16,7 @@ const permissionActionGroupSchema = Type.Object({
   action: Type.String(),
   created_at: Type.String(),
   updated_at: Type.String(),
+  selected: Type.Boolean(),
   permissions: Type.Array(permissionActionSchema),
 });
 

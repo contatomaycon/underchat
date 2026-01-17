@@ -146,13 +146,6 @@ const togglePermission = (
     return;
   }
 
-  const allSelected = group.permissions.every((item) => item.selected);
-
-  if (allSelected) {
-    toggleGroup(group, true);
-    return;
-  }
-
   group.selected = false;
   for (const item of group.permissions) {
     item.disabled = false;
@@ -192,9 +185,11 @@ const applyGroupWithoutPermissions = (
 };
 
 const applyGroupWithOnlyGroupPermission = (
-  group: PermissionGroupWithState
+  group: PermissionGroupWithState,
+  roleGroup: PermissionActionGroupResponse
 ): void => {
-  toggleGroup(group, true);
+  group.selected = roleGroup.selected ?? true;
+  group.disabled = false;
 };
 
 const applyIndividualPermissions = (
@@ -212,16 +207,7 @@ const applyIndividualPermissions = (
     permission.disabled = false;
   }
 
-  const allSelected = group.permissions.every(
-    (permission) => permission.selected
-  );
-
-  if (allSelected) {
-    toggleGroup(group, true);
-    return;
-  }
-
-  group.selected = false;
+  group.selected = roleGroup.selected ?? false;
   group.disabled = false;
 };
 
@@ -230,12 +216,13 @@ const applyGroupSelections = (
   roleGroup: PermissionActionGroupResponse
 ): void => {
   if (!group.permissions.length) {
-    applyGroupWithoutPermissions(group);
+    group.selected = roleGroup.selected ?? true;
+    group.disabled = false;
     return;
   }
 
   if (!roleGroup.permissions.length) {
-    applyGroupWithOnlyGroupPermission(group);
+    applyGroupWithOnlyGroupPermission(group, roleGroup);
     return;
   }
 
