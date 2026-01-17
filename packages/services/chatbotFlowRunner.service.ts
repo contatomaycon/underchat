@@ -48,7 +48,7 @@ import { EContactIgnore } from '@core/common/enums/EContactIgnore';
 
 @injectable()
 export class ChatbotFlowRunnerService {
-  private menuDebounceTimers: Map<string, NodeJS.Timeout> = new Map();
+  private readonly MENU_DEBOUNCE_SECONDS = 3;
 
   constructor(
     @inject('Redis') private readonly redis: Redis,
@@ -93,6 +93,110 @@ export class ChatbotFlowRunnerService {
     chatId: string
   ): string {
     return createChatbotFailedAttemptsCacheKey(accountId, workerId, chatId);
+  }
+
+  private getMenuDebounceCacheKey(
+    accountId: string,
+    workerId: string,
+    chatId: string
+  ): string {
+    return `underchat:menu-debounce:${accountId}:${workerId}:${chatId}`;
+  }
+
+  private async setMenuDebounce(
+    createChat: IChat,
+    nodeData: { message: string; options: { id: string; text: string }[] }
+  ): Promise<void> {
+    const key = this.getMenuDebounceCacheKey(
+      createChat.account.id,
+      createChat.worker.id,
+      createChat.chat_id
+    );
+
+    const expiresAt = Date.now() + this.MENU_DEBOUNCE_SECONDS * 1000;
+
+    await this.redis.set(
+      key,
+      JSON.stringify({ expiresAt, nodeData }),
+      'EX',
+      this.MENU_DEBOUNCE_SECONDS + 2 // TTL um pouco maior que o debounce
+    );
+  }
+
+  private async getMenuDebounce(createChat: IChat): Promise<{
+    expiresAt: number;
+    nodeData: { message: string; options: { id: string; text: string }[] };
+  } | null> {
+    const key = this.getMenuDebounceCacheKey(
+      createChat.account.id,
+      createChat.worker.id,
+      createChat.chat_id
+    );
+
+    const data = await this.redis.get(key);
+    if (!data) return null;
+
+    return JSON.parse(data);
+  }
+
+  private async deleteMenuDebounce(createChat: IChat): Promise<void> {
+    const key = this.getMenuDebounceCacheKey(
+      createChat.account.id,
+      createChat.worker.id,
+      createChat.chat_id
+    );
+
+    await this.redis.del(key);
+  }
+
+  private scheduleMenuSend(
+    t: TFunction<'translation', undefined>,
+    createChat: IChat,
+    nodeData: { message: string; options: { id: string; text: string }[] }
+  ): void {
+    setTimeout(
+      async () => {
+        const debounceData = await this.getMenuDebounce(createChat);
+
+        if (!debounceData) {
+          return;
+        }
+
+        const now = Date.now();
+        if (now < debounceData.expiresAt) {
+          return;
+        }
+
+        await this.deleteMenuDebounce(createChat);
+
+        const rawBaseMessage = nodeData.message;
+        const baseMessage = await this.replaceVariables(
+          t,
+          rawBaseMessage,
+          createChat,
+          createChat.user,
+          createChat.sector
+        );
+
+        const lines = nodeData.options.map(
+          (option: { text: string }, index: number) => {
+            const number = index + 1;
+            return `*${number}.* ${option.text}`;
+          }
+        );
+
+        const menuMessage = [baseMessage, '', ...lines].join('\n');
+
+        await this.chatMessageService.sendMessage(t, {
+          chat: createChat,
+          accountId: createChat.account.id,
+          type: EMessageType.text,
+          message: menuMessage,
+          typeUser: ETypeUserChat.bot,
+        });
+      },
+      (this.MENU_DEBOUNCE_SECONDS + 0.5) * 1000
+    );
   }
 
   private getFlowNodeById(
@@ -692,43 +796,15 @@ export class ChatbotFlowRunnerService {
     node: ListChatbotFlowResponse['nodes'][number],
     useDebounce = false
   ): Promise<boolean> {
-    const debounceKey = `${createChat.account.id}:${createChat.worker.id}:${createChat.chat_id}`;
-
     if (useDebounce) {
-      const existingTimer = this.menuDebounceTimers.get(debounceKey);
-      if (existingTimer) {
-        clearTimeout(existingTimer);
-      }
-      const timer = setTimeout(async () => {
-        this.menuDebounceTimers.delete(debounceKey);
+      const nodeData = {
+        message: node.data?.message || '',
+        options: node.data?.options ?? [],
+      };
 
-        const rawBaseMessage = node.data?.message || '';
-        const baseMessage = await this.replaceVariables(
-          t,
-          rawBaseMessage,
-          createChat,
-          createChat.user,
-          createChat.sector
-        );
-        const options = node.data?.options ?? [];
+      await this.setMenuDebounce(createChat, nodeData);
 
-        const lines = options.map((option, index) => {
-          const number = index + 1;
-          return `*${number}.* ${option.text}`;
-        });
-
-        const menuMessage = [baseMessage, '', ...lines].join('\n');
-
-        await this.chatMessageService.sendMessage(t, {
-          chat: createChat,
-          accountId: createChat.account.id,
-          type: EMessageType.text,
-          message: menuMessage,
-          typeUser: ETypeUserChat.bot,
-        });
-      }, 3000);
-
-      this.menuDebounceTimers.set(debounceKey, timer);
+      this.scheduleMenuSend(t, createChat, nodeData);
 
       return true;
     }
@@ -2133,21 +2209,47 @@ export class ChatbotFlowRunnerService {
       throw new Error(t('chatbot_flow_node_not_found'));
     }
 
-    const debounceKey = `${createChat.account.id}:${createChat.worker.id}:${createChat.chat_id}`;
-    const existingTimer = this.menuDebounceTimers.get(debounceKey);
+    const debounceData = await this.getMenuDebounce(createChat);
 
-    if (existingTimer) {
-      clearTimeout(existingTimer);
+    if (debounceData) {
+      const now = Date.now();
+      const { expiresAt, nodeData } = debounceData;
 
-      const newTimer = setTimeout(async () => {
-        this.menuDebounceTimers.delete(debounceKey);
+      if (now < expiresAt) {
+        await this.setMenuDebounce(createChat, nodeData);
 
-        await this.sendBuildMenuMessage(t, createChat, currentNode, false);
-      }, 3000);
+        this.scheduleMenuSend(t, createChat, nodeData);
 
-      this.menuDebounceTimers.set(debounceKey, newTimer);
+        return true;
+      }
 
-      return true;
+      await this.deleteMenuDebounce(createChat);
+
+      const rawBaseMessage = nodeData.message;
+      const baseMessage = await this.replaceVariables(
+        t,
+        rawBaseMessage,
+        createChat,
+        createChat.user,
+        createChat.sector
+      );
+
+      const lines = nodeData.options.map(
+        (option: { text: string }, index: number) => {
+          const number = index + 1;
+          return `*${number}.* ${option.text}`;
+        }
+      );
+
+      const menuMessage = [baseMessage, '', ...lines].join('\n');
+
+      await this.chatMessageService.sendMessage(t, {
+        chat: createChat,
+        accountId: createChat.account.id,
+        type: EMessageType.text,
+        message: menuMessage,
+        typeUser: ETypeUserChat.bot,
+      });
     }
 
     const text = this.getTextFromUpsertMessage(data)?.trim();

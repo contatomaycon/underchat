@@ -1,7 +1,7 @@
 import { inject, injectable } from 'tsyringe';
 import Redis from 'ioredis';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
-import { PresenceCentrifugoService } from '@core/services/presence-centrifugo.service';
+import { PresenceCentrifugoService } from '@core/services/presenceCentrifugo.service';
 import { UserAccountViewerRepository } from '@core/repositories/user/UserAccountViewer.repository';
 import { chatAccountCentrifugo } from '@core/common/functions/centrifugoQueue';
 
