@@ -41,28 +41,53 @@ export class MessageStatusService {
       return null;
     }
 
-    const updated = await this.updateSummaryAtomicallyWithRetry(
-      message.message_id,
-      message.summary,
-      patch
-    );
-
-    if (!updated) {
-      return null;
-    }
-
     const updatedMessage: IChatMessage = {
       ...message,
       summary: this.mergeSummary(message.summary, patch) ?? message.summary,
     };
 
     const channelAccountId = updatedMessage.account?.id ?? accountId;
-    await this.centrifugoService.publishSub(
-      chatAccountCentrifugo(channelAccountId),
-      updatedMessage
-    );
+
+    const [centrifugoResult] = await Promise.allSettled([
+      this.publishCentrifugoWithRetry(
+        chatAccountCentrifugo(channelAccountId),
+        updatedMessage
+      ),
+      this.updateSummaryAtomicallyWithRetry(
+        message.message_id,
+        message.summary,
+        patch
+      ),
+    ]);
+
+    if (centrifugoResult.status === 'rejected') {
+      await this.publishCentrifugoWithRetry(
+        chatAccountCentrifugo(channelAccountId),
+        updatedMessage
+      );
+    }
 
     return updatedMessage;
+  }
+
+  private async publishCentrifugoWithRetry(
+    channel: string,
+    message: IChatMessage,
+    maxRetries = 3
+  ): Promise<void> {
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        await this.centrifugoService.publishSub(channel, message);
+        return;
+      } catch (error) {
+        if (attempt === maxRetries - 1) {
+          throw error;
+        }
+
+        const backoffMs = Math.min(100 * Math.pow(2, attempt), 1000);
+        await new Promise((resolve) => setTimeout(resolve, backoffMs));
+      }
+    }
   }
 
   private hasPatch(patch: MessageSummaryPatch): boolean {
