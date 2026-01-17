@@ -93,6 +93,7 @@ const itemsStatus = ref([
   { id: EWorkerStatus.creating, text: t('creating') },
   { id: EWorkerStatus.error, text: t('error') },
   { id: EWorkerStatus.mismatched, text: t('mismatched') },
+  { id: EWorkerStatus.stopped, text: t('stopped') },
 ]);
 
 const itemsType = ref([
@@ -140,6 +141,8 @@ const resolveStatusVariant = (s: string | undefined | null) => {
     return { color: EColor.error, text: t('error') };
   if (s === EWorkerStatus.mismatched)
     return { color: EColor.error, text: t('mismatched') };
+  if (s === EWorkerStatus.stopped)
+    return { color: EColor.warning, text: t('stopped') };
 
   return { color: EColor.primary, text: t('unknown') };
 };
@@ -445,10 +448,11 @@ onUnmounted(async () => {
               <div class="d-flex gap-1">
                 <IconBtn
                   v-if="
-                    EWorkerStatus.disponible === item.status?.id ||
-                    EWorkerStatus.online === item.status?.id ||
-                    EWorkerStatus.offline === item.status?.id ||
-                    EWorkerStatus.mismatched === item.status?.id
+                    item.status?.id !== EWorkerStatus.stopped &&
+                    (EWorkerStatus.disponible === item.status?.id ||
+                      EWorkerStatus.online === item.status?.id ||
+                      EWorkerStatus.offline === item.status?.id ||
+                      EWorkerStatus.mismatched === item.status?.id)
                   "
                   ><VTooltip
                     location="top"

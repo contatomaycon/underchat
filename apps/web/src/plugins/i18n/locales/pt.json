@@ -384,6 +384,7 @@
   "worker_recreate_success": "Canal recriado com sucesso!",
   "deleting": "Excluindo",
   "recreating": "Recriando",
+  "stopped": "Parado",
   "recreate": "Recriar",
   "recreate_all": "Recriar Todos",
   "recreate_all_channels_confirmation": "Tem certeza que deseja recriar todos os canais não deletados?",

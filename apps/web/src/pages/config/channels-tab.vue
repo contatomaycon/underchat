@@ -49,6 +49,7 @@ const itemsStatus = ref([
   { id: EWorkerStatus.mismatched, text: t('mismatched') },
   { id: EWorkerStatus.deleting, text: t('deleting') },
   { id: EWorkerStatus.recreating, text: t('recreating') },
+  { id: EWorkerStatus.stopped, text: t('stopped') },
 ]);
 
 const itemsType = ref([
@@ -95,6 +96,8 @@ const resolveStatusVariant = (s: string | undefined | null) => {
     return { color: EColor.error, text: t('deleting') };
   if (s === EWorkerStatus.recreating)
     return { color: EColor.info, text: t('recreating') };
+  if (s === EWorkerStatus.stopped)
+    return { color: EColor.warning, text: t('stopped') };
 
   return { color: EColor.primary, text: t('unknown') };
 };
