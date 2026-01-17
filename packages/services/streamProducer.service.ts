@@ -3,25 +3,9 @@ import { Producer, LibrdKafkaError } from 'node-rdkafka';
 import { KafkaClient } from '@core/plugins/kafkaStreams';
 import { toError, getErrorMessage } from '@core/common/functions/toError';
 import { ulid } from 'ulid';
-import { IPendingMessage } from '@core/common/interfaces/IPendingMessage';
-
-type QueuedMessage = {
-  topic: string;
-  value: Buffer;
-  keyBuffer: Buffer | undefined;
-  resolve: () => void;
-  reject: (error: Error) => void;
-};
-
-type Deferred = {
-  promise: Promise<void>;
-  resolve: () => void;
-};
-
-type PendingMessageWithTimestamp = IPendingMessage & {
-  startTime: number;
-  timeoutFired: boolean;
-};
+import { IPendingMessageWithTimestamp } from '@core/common/interfaces/IPendingMessageWithTimestamp';
+import { IQueuedMessage } from '@core/common/interfaces/IQueuedMessage';
+import { IDeferred } from '@core/common/interfaces/IDeferred';
 
 @injectable()
 export class StreamProducerService {
@@ -37,13 +21,14 @@ export class StreamProducerService {
 
   private reconnecting: Promise<Producer> | null = null;
 
-  private pendingMessages: Map<string, PendingMessageWithTimestamp> = new Map();
-  private pendingDrain: Deferred | null = null;
+  private pendingMessages: Map<string, IPendingMessageWithTimestamp> =
+    new Map();
+  private pendingDrain: IDeferred | null = null;
 
   private inflight: Set<Promise<void>> = new Set();
-  private inflightDrain: Deferred | null = null;
+  private inflightDrain: IDeferred | null = null;
 
-  private sendQueue: QueuedMessage[] = [];
+  private sendQueue: IQueuedMessage[] = [];
 
   private closing = false;
   private closePromise: Promise<boolean[]> | null = null;
@@ -224,7 +209,7 @@ export class StreamProducerService {
     this.pollTimeout = null;
   }
 
-  private createDeferred(): Deferred {
+  private createDeferred(): IDeferred {
     let resolve!: () => void;
     const promise = new Promise<void>((resolver) => {
       resolve = resolver;
@@ -1075,7 +1060,7 @@ export class StreamProducerService {
   }
 
   private async processBatchInParallel(
-    batch: QueuedMessage[],
+    batch: IQueuedMessage[],
     producer: Producer
   ): Promise<void> {
     if (batch.length === 0) {
@@ -1116,7 +1101,7 @@ export class StreamProducerService {
     }
 
     const concurrency = StreamProducerService.MAX_CONCURRENT_SENDS;
-    const chunks: QueuedMessage[][] = [];
+    const chunks: IQueuedMessage[][] = [];
 
     for (let i = 0; i < batch.length; i += concurrency) {
       chunks.push(batch.slice(i, i + concurrency));
