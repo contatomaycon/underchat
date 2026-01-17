@@ -46,13 +46,13 @@ export class StreamProducerService {
   };
 
   // Retry - alinhado com producer config (retry.backoff.ms: 100, retry.backoff.max.ms: 1000)
-  private static readonly MAX_RETRIES = 3;
+  private static readonly MAX_RETRIES = 10;
   private static readonly INITIAL_BACKOFF_MS = 100;
   private static readonly MAX_BACKOFF_MS = 1000;
 
   // Polling - otimizado para chat real-time
   private static readonly POLL_INTERVAL_MS = 5;
-  private static readonly DELIVERY_TIMEOUT_MS = 5000;
+  private static readonly DELIVERY_TIMEOUT_MS = 30000;
 
   // Queue full handling
   private static readonly MAX_QUEUE_FULL_RETRIES = 3;
@@ -60,14 +60,14 @@ export class StreamProducerService {
   private static readonly QUEUE_FULL_BACKOFF_MAX_MS = 500;
 
   // Batching - alinhado com environment (batchNumMessages: 50)
-  private static readonly MAX_INFLIGHT_MESSAGES = 2000;
+  private static readonly MAX_INFLIGHT_MESSAGES = 10000;
   private static readonly MAX_BATCH_SIZE = 50;
   private static readonly BATCH_FLUSH_MS = 5;
   private static readonly MAX_CONCURRENT_SENDS = 50;
 
   // Timeouts - alinhado com socket.timeout.ms (10000)
   private static readonly CONNECTION_TIMEOUT_MS = 10000;
-  private static readonly SHUTDOWN_FLUSH_TIMEOUT_MS = 10000;
+  private static readonly SHUTDOWN_FLUSH_TIMEOUT_MS = 60000;
   private static readonly RECONNECT_TIMEOUT_MS = 10000;
 
   constructor(@inject('Kafka') private readonly kafka: KafkaClient) {}
