@@ -120,6 +120,10 @@ export class WorkerMonitorService {
       return;
     }
 
+    if (worker.worker_status_id === EWorkerStatus.stopped) {
+      return;
+    }
+
     await this.workerService.updateWorkerUpdatedAt(workerId);
 
     if (worker.deleted_at) {
@@ -139,10 +143,6 @@ export class WorkerMonitorService {
 
     if (this.isDeletingTimeout(worker)) {
       await this.handleDeleting(worker, server, sshConfig);
-      return;
-    }
-
-    if (worker.worker_status_id === EWorkerStatus.stopped) {
       return;
     }
 
@@ -200,6 +200,10 @@ export class WorkerMonitorService {
     server: IBalanceMonitorServer,
     sshConfig: ConnectConfig
   ): Promise<void> => {
+    if (worker.worker_status_id === EWorkerStatus.stopped) {
+      return;
+    }
+
     await this.workerService.updateWorkerUpdatedAt(worker.worker_id);
 
     if (worker.deleted_at) {
@@ -226,11 +230,6 @@ export class WorkerMonitorService {
 
     const isOffline = worker.worker_status_id === EWorkerStatus.offline;
     if (isOffline) {
-      return;
-    }
-
-    const isStopped = worker.worker_status_id === EWorkerStatus.stopped;
-    if (isStopped) {
       return;
     }
 
@@ -351,7 +350,10 @@ export class WorkerMonitorService {
         worker.worker_id
       );
 
-      if (worker.worker_status_id === EWorkerStatus.offline) {
+      if (
+        worker.worker_status_id === EWorkerStatus.offline ||
+        worker.worker_status_id === EWorkerStatus.mismatched
+      ) {
         await this.updateWorkerStatus(
           worker,
           EWorkerStatus.online,
@@ -412,7 +414,8 @@ export class WorkerMonitorService {
 
     if (
       currentWorker.worker_status_id !== EWorkerStatus.online &&
-      currentWorker.worker_status_id !== EWorkerStatus.offline
+      currentWorker.worker_status_id !== EWorkerStatus.offline &&
+      currentWorker.worker_status_id !== EWorkerStatus.mismatched
     ) {
       this.connectionFailureTrackers.delete(workerId);
       return false;
@@ -430,7 +433,10 @@ export class WorkerMonitorService {
 
     await this.workerService.updateWorkerLastConnectionCheckAt(workerId);
 
-    if (currentWorker.worker_status_id === EWorkerStatus.offline) {
+    if (
+      currentWorker.worker_status_id === EWorkerStatus.offline ||
+      currentWorker.worker_status_id === EWorkerStatus.mismatched
+    ) {
       await this.updateWorkerStatus(
         currentWorker,
         EWorkerStatus.online,
@@ -654,7 +660,11 @@ export class WorkerMonitorService {
   private readonly shouldCheckConnection = (
     worker: IWorkerMonitor
   ): boolean => {
-    const statuses = [EWorkerStatus.online, EWorkerStatus.offline];
+    const statuses = [
+      EWorkerStatus.online,
+      EWorkerStatus.offline,
+      EWorkerStatus.mismatched,
+    ];
 
     return statuses.includes(worker.worker_status_id);
   };
