@@ -698,44 +698,39 @@ export class ChatbotFlowRunnerService {
       const existingTimer = this.menuDebounceTimers.get(debounceKey);
       if (existingTimer) {
         clearTimeout(existingTimer);
-
-        return true;
       }
+      const timer = setTimeout(async () => {
+        this.menuDebounceTimers.delete(debounceKey);
 
-      return new Promise<boolean>((resolve) => {
-        const timer = setTimeout(async () => {
-          this.menuDebounceTimers.delete(debounceKey);
+        const rawBaseMessage = node.data?.message || '';
+        const baseMessage = await this.replaceVariables(
+          t,
+          rawBaseMessage,
+          createChat,
+          createChat.user,
+          createChat.sector
+        );
+        const options = node.data?.options ?? [];
 
-          const rawBaseMessage = node.data?.message || '';
-          const baseMessage = await this.replaceVariables(
-            t,
-            rawBaseMessage,
-            createChat,
-            createChat.user,
-            createChat.sector
-          );
-          const options = node.data?.options ?? [];
+        const lines = options.map((option, index) => {
+          const number = index + 1;
+          return `*${number}.* ${option.text}`;
+        });
 
-          const lines = options.map((option, index) => {
-            const number = index + 1;
-            return `*${number}.* ${option.text}`;
-          });
+        const menuMessage = [baseMessage, '', ...lines].join('\n');
 
-          const menuMessage = [baseMessage, '', ...lines].join('\n');
+        await this.chatMessageService.sendMessage(t, {
+          chat: createChat,
+          accountId: createChat.account.id,
+          type: EMessageType.text,
+          message: menuMessage,
+          typeUser: ETypeUserChat.bot,
+        });
+      }, 3000);
 
-          const result = await this.chatMessageService.sendMessage(t, {
-            chat: createChat,
-            accountId: createChat.account.id,
-            type: EMessageType.text,
-            message: menuMessage,
-            typeUser: ETypeUserChat.bot,
-          });
+      this.menuDebounceTimers.set(debounceKey, timer);
 
-          resolve(result);
-        }, 3000);
-
-        this.menuDebounceTimers.set(debounceKey, timer);
-      });
+      return true;
     }
 
     const rawBaseMessage = node.data?.message || '';
@@ -2142,6 +2137,16 @@ export class ChatbotFlowRunnerService {
     const existingTimer = this.menuDebounceTimers.get(debounceKey);
 
     if (existingTimer) {
+      clearTimeout(existingTimer);
+
+      const newTimer = setTimeout(async () => {
+        this.menuDebounceTimers.delete(debounceKey);
+
+        await this.sendBuildMenuMessage(t, createChat, currentNode, false);
+      }, 3000);
+
+      this.menuDebounceTimers.set(debounceKey, newTimer);
+
       return true;
     }
 

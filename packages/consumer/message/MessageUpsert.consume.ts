@@ -70,6 +70,7 @@ import { EContactIgnore } from '@core/common/enums/EContactIgnore';
 import { withLock } from '@core/common/functions/withLock';
 import { delay } from '@core/common/functions/delay';
 import { extractReactionMessage } from '@core/common/functions/extractReactionMessage';
+import { buildCandidates } from '@core/common/functions/buildCandidatesBR';
 
 @singleton()
 export class MessageUpsertConsume {
@@ -103,6 +104,11 @@ export class MessageUpsertConsume {
     }
 
     return this.consumer;
+  }
+
+  private normalizePhoneForLock(phone: string): string {
+    const candidates = buildCandidates(phone);
+    return candidates.sort()[0] ?? phone;
   }
 
   private centrifugoChatPublish(
@@ -1261,35 +1267,48 @@ export class MessageUpsertConsume {
       return;
     }
 
-    let chat = await this.chatService.findChatByPhone(
-      data.account_id,
-      data.worker_id,
-      data.call_phone
+    const normalizedPhone = this.normalizePhoneForLock(data.call_phone);
+    const lockKey = `chat-create:${data.account_id}:${data.worker_id}:${normalizedPhone}`;
+
+    await withLock(
+      this.redis,
+      lockKey,
+      async () => {
+        const callPhone = data.call_phone;
+        if (!callPhone) return;
+
+        let chat = await this.chatService.findChatByPhone(
+          data.account_id,
+          data.worker_id,
+          callPhone
+        );
+
+        if (!chat) {
+          chat = await this.createChatFromCallEvent(data);
+
+          if (!chat) return;
+        }
+
+        if (chat) {
+          await this.updateChatPhotoIfNeeded(chat, data);
+        }
+
+        const message = replaceMessageTags({
+          message: workerConfig.show_message_on_call,
+          chat,
+          t,
+        });
+
+        await this.chatMessageService.sendMessage(t, {
+          chat,
+          accountId: data.account_id,
+          type: EMessageType.system,
+          message,
+          typeUser: ETypeUserChat.system,
+        });
+      },
+      { ttlMs: 30000, retryMs: 100 }
     );
-
-    if (!chat) {
-      chat = await this.createChatFromCallEvent(data);
-
-      if (!chat) return;
-    }
-
-    if (chat) {
-      await this.updateChatPhotoIfNeeded(chat, data);
-    }
-
-    const message = replaceMessageTags({
-      message: workerConfig.show_message_on_call,
-      chat,
-      t,
-    });
-
-    await this.chatMessageService.sendMessage(t, {
-      chat,
-      accountId: data.account_id,
-      type: EMessageType.system,
-      message,
-      typeUser: ETypeUserChat.system,
-    });
   }
 
   private async createChatFromCallEvent(
@@ -1892,23 +1911,37 @@ export class MessageUpsertConsume {
     data: IUpsertMessage,
     phone: string
   ): Promise<void> {
-    const [chatbotConfig, getChat] = await Promise.all([
-      this.workerConfigService.viewChatbot(data.worker_id),
-      this.chatService.findChatByPhone(data.account_id, data.worker_id, phone),
-    ]);
+    const normalizedPhone = this.normalizePhoneForLock(phone);
+    const lockKey = `chat-create:${data.account_id}:${data.worker_id}:${normalizedPhone}`;
 
-    const chatbotId =
-      chatbotConfig.enabled && chatbotConfig.chatbot_id
-        ? chatbotConfig.chatbot_id
-        : null;
+    await withLock(
+      this.redis,
+      lockKey,
+      async () => {
+        const [chatbotConfig, getChat] = await Promise.all([
+          this.workerConfigService.viewChatbot(data.worker_id),
+          this.chatService.findChatByPhone(
+            data.account_id,
+            data.worker_id,
+            phone
+          ),
+        ]);
 
-    if (chatbotId && (!getChat || getChat.status === EChatStatus.ura)) {
-      await this.createOrUpdateChatBotFlow(t, getChat, data, chatbotId);
+        const chatbotId =
+          chatbotConfig.enabled && chatbotConfig.chatbot_id
+            ? chatbotConfig.chatbot_id
+            : null;
 
-      return;
-    }
+        if (chatbotId && (!getChat || getChat.status === EChatStatus.ura)) {
+          await this.createOrUpdateChatBotFlow(t, getChat, data, chatbotId);
 
-    await this.createOrUpdateChatQueue(t, getChat, data);
+          return;
+        }
+
+        await this.createOrUpdateChatQueue(t, getChat, data);
+      },
+      { ttlMs: 30000, retryMs: 100 }
+    );
   }
 
   public async execute(t: TFunction<'translation', undefined>): Promise<void> {
