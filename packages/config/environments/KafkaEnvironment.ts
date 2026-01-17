@@ -61,19 +61,36 @@ export class KafkaEnvironment {
     return saslMechanism.toUpperCase();
   }
 
+  /**
+   * Tempo máximo de espera para acumular mensagens antes de enviar (linger.ms)
+   * Valor baixo = menor latência, ideal para chat real-time
+   * Valor 5ms oferece bom equilíbrio entre latência e eficiência
+   */
   public get queueBufferingMaxMs(): number {
+    return 5;
+  }
+
+  /**
+   * Número máximo de mensagens por batch
+   * Valor moderado para chat real-time
+   */
+  public get batchNumMessages(): number {
     return 50;
   }
 
-  public get batchNumMessages(): number {
-    return 100;
-  }
-
+  /**
+   * Número máximo de mensagens na fila do producer
+   * Otimizado para chat: menor consumo de memória
+   */
   public get queueBufferingMaxMessages(): number {
-    return 100000;
+    return 10000;
   }
 
+  /**
+   * Tamanho máximo da fila do producer em KB (64MB)
+   * Otimizado para chat: menor consumo de memória
+   */
   public get queueBufferingMaxKbytes(): number {
-    return 1048576;
+    return 65536;
   }
 }

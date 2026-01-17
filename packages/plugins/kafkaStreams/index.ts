@@ -88,18 +88,31 @@ class KafkaStreamsClient implements KafkaClient {
       'group.id': groupId,
       'metadata.broker.list': this.broker,
       'enable.auto.commit': false,
-      'session.timeout.ms': 30000,
+
+      // Session e heartbeat - otimizado para detecção rápida de falhas
+      'session.timeout.ms': 10000,
       'heartbeat.interval.ms': 3000,
-      'socket.timeout.ms': 30000,
+
+      // Socket - otimizado para baixa latência
+      'socket.timeout.ms': 10000,
       'socket.keepalive.enable': true,
+      'socket.nagle.disable': true, // Desabilita Nagle para menor latência
+
+      // API e metadata
       'api.version.request': true,
       'api.version.request.timeout.ms': 10000,
-      'metadata.max.age.ms': 300000,
-      'fetch.wait.max.ms': 500,
+      'metadata.max.age.ms': 180000,
+
+      // Fetch - otimizado para chat real-time (baixa latência)
+      'fetch.wait.max.ms': 50, // Reduzido de 500ms para 50ms
       'fetch.message.max.bytes': 1048576,
-      'fetch.min.bytes': 128,
-      'queued.min.messages': 100000,
-      'queued.max.messages.kbytes': 1048576,
+      'fetch.min.bytes': 1, // Responde imediatamente com qualquer dado
+      'fetch.error.backoff.ms': 100, // Backoff curto para fetch.wait.max.ms baixo
+
+      // Queue - otimizado para menor consumo de memória
+      'queued.min.messages': 1000,
+      'queued.max.messages.kbytes': 65536, // 64MB ao invés de 1GB
+
       ...securityConfig,
     };
 
@@ -122,21 +135,37 @@ class KafkaStreamsClient implements KafkaClient {
     return {
       'metadata.broker.list': this.broker,
       'client.id': this.clientId,
-      'retry.backoff.ms': 300,
-      'message.send.max.retries': 8,
+
+      // Retry - otimizado para recuperação rápida
+      'retry.backoff.ms': 100,
+      'retry.backoff.max.ms': 1000,
+      'message.send.max.retries': 5,
+      'message.timeout.ms': 30000, // Timeout local para mensagens
+
+      // Socket - otimizado para baixa latência
       'socket.timeout.ms': 10000,
       'socket.keepalive.enable': true,
+      'socket.nagle.disable': true, // Desabilita Nagle para menor latência
+      'socket.connection.setup.timeout.ms': 10000,
+
+      // API e metadata
       'api.version.request': true,
       'api.version.request.timeout.ms': 10000,
-      'metadata.max.age.ms': 300000,
-      'socket.connection.setup.timeout.ms': 10000,
+      'metadata.max.age.ms': 180000,
+
+      // Idempotência e ordering
       'enable.idempotence': true,
       'max.in.flight.requests.per.connection': 5,
+
+      // Compressão - snappy é ideal para baixa latência
       'compression.type': 'snappy',
+
+      // Batching - valores do environment (deve ser baixo para real-time)
       'batch.num.messages': this.batchNumMessages,
       'queue.buffering.max.messages': this.queueBufferingMaxMessages,
       'queue.buffering.max.kbytes': this.queueBufferingMaxKbytes,
-      'queue.buffering.max.ms': this.queueBufferingMaxMs,
+      'queue.buffering.max.ms': this.queueBufferingMaxMs, // Deve ser 0-5ms para real-time
+
       ...securityConfig,
       dr_cb: true,
     };

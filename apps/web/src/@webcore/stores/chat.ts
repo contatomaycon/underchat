@@ -1763,10 +1763,22 @@ export const useChatStore = defineStore('chat', {
       const baseFilters = pickDefinedFilters(filters, [...FILTER_KEYS]);
 
       if (shouldUseSearchEndpoint) {
+        const searchFilters: Partial<ChatFilters> = { ...baseFilters };
+
+        if (hasAppliedAdvancedFilters) {
+          if (filters.sort_field !== null && filters.sort_field !== undefined) {
+            searchFilters.sort_field = filters.sort_field;
+          }
+
+          if (filters.sort_order !== null && filters.sort_order !== undefined) {
+            searchFilters.sort_order = filters.sort_order;
+          }
+        }
+
         return this.handleSearchEndpoint(
           statusArray,
           normalizedSearch,
-          baseFilters,
+          searchFilters,
           pagination,
           append
         );
@@ -1803,6 +1815,14 @@ export const useChatStore = defineStore('chat', {
         filter_status: statusArray.length > 1 ? statusArray : statusArray[0],
         ...pickDefinedFilters(filters, [...FILTER_KEYS]),
       };
+
+      if (filters.sort_field !== null && filters.sort_field !== undefined) {
+        request.sort_field = filters.sort_field;
+      }
+
+      if (filters.sort_order !== null && filters.sort_order !== undefined) {
+        request.sort_order = filters.sort_order;
+      }
 
       const result = await this.searchChats(request);
       if (!result) {
