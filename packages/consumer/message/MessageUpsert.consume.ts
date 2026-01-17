@@ -70,6 +70,7 @@ import { PushNotificationService } from '@core/services/pushNotification.service
 import { EContactIgnore } from '@core/common/enums/EContactIgnore';
 import { withLock } from '@core/common/functions/withLock';
 import { delay } from '@core/common/functions/delay';
+import { extractReactionMessage } from '@core/common/functions/extractReactionMessage';
 
 @singleton()
 export class MessageUpsertConsume {
@@ -427,18 +428,16 @@ export class MessageUpsertConsume {
     getChat: IChat,
     data: IUpsertMessage
   ): Promise<boolean | null> {
-    if (
-      data.type !== EMessageType.react ||
-      !data.message?.message?.reactionMessage?.key?.id
-    ) {
+    if (data.type !== EMessageType.react) {
       return null;
     }
 
-    const reactionMsg = data.message.message.reactionMessage;
-    const targetMessageId = reactionMsg.key?.id;
-    if (!targetMessageId) {
-      return true;
+    const reactionMsg = extractReactionMessage(data.message?.message);
+    if (!reactionMsg?.key?.id) {
+      return null;
     }
+
+    const targetMessageId = reactionMsg.key.id;
 
     const targetMessage = await this.findMessageByKeyId(
       data.account_id,

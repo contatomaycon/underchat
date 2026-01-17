@@ -51,8 +51,34 @@ function getViewOnceInner(msg: proto.IMessage): proto.IMessage | undefined {
   return v1 || v2 || v3;
 }
 
+function unwrapMessage(msg: proto.IMessage): proto.IMessage {
+  const ephemeral = (msg as any).ephemeralMessage?.message as
+    | proto.IMessage
+    | undefined;
+  if (ephemeral) return unwrapMessage(ephemeral);
+
+  const viewOnce = (msg as any).viewOnceMessage?.message as
+    | proto.IMessage
+    | undefined;
+  if (viewOnce) return unwrapMessage(viewOnce);
+
+  const viewOnceV2 = (msg as any).viewOnceMessageV2?.message as
+    | proto.IMessage
+    | undefined;
+  if (viewOnceV2) return unwrapMessage(viewOnceV2);
+
+  const viewOnceV2Ext = (msg as any).viewOnceMessageV2Extension?.message as
+    | proto.IMessage
+    | undefined;
+  if (viewOnceV2Ext) return unwrapMessage(viewOnceV2Ext);
+
+  return msg;
+}
+
 function detectReactionOrPin({ msg }: IMapCtx): EMessageType | undefined {
-  if (msg.reactionMessage) return EMessageType.react;
+  const unwrapped = unwrapMessage(msg);
+  if (unwrapped.reactionMessage) return EMessageType.react;
+  if ((unwrapped as any).encReactionMessage) return EMessageType.react;
 }
 
 function detectMedia({ msg }: IMapCtx): EMessageType | undefined {
