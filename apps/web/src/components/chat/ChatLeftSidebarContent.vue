@@ -2118,6 +2118,10 @@ watch(
           activeFilter.value = 'in_chat';
           expandedFilter.value = 'in_chat';
         }
+      } else if (oldStatus === EChatStatus.closed) {
+        hasAppliedAdvancedFilters.value = false;
+        activeFilter.value = 'all';
+        expandedFilter.value = 'all';
       }
     }
   }
