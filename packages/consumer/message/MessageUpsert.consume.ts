@@ -492,7 +492,7 @@ export class MessageUpsertConsume {
     };
 
     await Promise.all([
-      this.chatService.saveMessageChat(updatedMessage),
+      this.chatService.updateMessageChat(updatedMessage),
       this.centrifugoChatPublish(updatedMessage),
     ]);
 
@@ -555,7 +555,7 @@ export class MessageUpsertConsume {
     };
 
     await Promise.all([
-      this.chatService.saveMessageChat(updatedMessage),
+      this.chatService.updateMessageChat(updatedMessage),
       this.centrifugoChatPublish(updatedMessage),
     ]);
 
@@ -617,7 +617,7 @@ export class MessageUpsertConsume {
     };
 
     await Promise.all([
-      this.chatService.saveMessageChat(updatedMessage),
+      this.chatService.updateMessageChat(updatedMessage),
       this.centrifugoChatPublish(updatedMessage),
     ]);
 
@@ -1660,11 +1660,8 @@ export class MessageUpsertConsume {
         return false;
       }
 
-      const createResult = await this.chatService.createMessageIdempotent(
-        inputChatMessage,
-        data.account_id,
-        messageId
-      );
+      const createResult =
+        await this.chatService.createMessageIdempotent(inputChatMessage);
 
       if (!createResult.created && !createResult.conflict) {
         return false;

@@ -18,7 +18,6 @@ import {
   ChatSummaryBaseline,
   ChatSummaryAtomicUpdateParams,
 } from '@core/common/interfaces/IChatSummaryUpdate';
-import { buildMessageDocumentId } from '@core/common/functions/buildMessageDocumentId';
 import {
   ChatPatch,
   ChatPatchOptions,
@@ -72,10 +71,33 @@ export class ChatService {
     );
   };
 
+  updateMessageChat = async (messageChat: IChatMessage): Promise<boolean> => {
+    const mappings = mensageMappings();
+
+    const result = await this.elasticDatabaseService.indices(
+      EElasticIndex.message,
+      mappings
+    );
+
+    if (!result || !messageChat || !messageChat.message_id) {
+      return false;
+    }
+
+    const updateResult = await this.elasticDatabaseService.updateWithOCC(
+      EElasticIndex.message,
+      messageChat.message_id,
+      messageChat as unknown as Record<string, unknown>,
+      {
+        upsert: false,
+        maxRetries: 5,
+      }
+    );
+
+    return updateResult === 'updated' || updateResult === 'noop';
+  };
+
   createMessageIdempotent = async (
-    messageChat: IChatMessage,
-    accountId: string,
-    messageId: string
+    messageChat: IChatMessage
   ): Promise<{ created: boolean; conflict: boolean; id: string }> => {
     const mappings = mensageMappings();
 
@@ -84,11 +106,11 @@ export class ChatService {
       mappings
     );
 
-    if (!indicesResult || !messageChat) {
+    if (!indicesResult || !messageChat || !messageChat.message_id) {
       return { created: false, conflict: false, id: '' };
     }
 
-    const documentId = buildMessageDocumentId(accountId, messageId);
+    const documentId = messageChat.message_id;
     const createResult = await this.elasticDatabaseService.createDocument(
       EElasticIndex.message,
       documentId,
