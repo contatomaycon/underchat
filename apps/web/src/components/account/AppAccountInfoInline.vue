@@ -138,10 +138,54 @@ const navbar = ref<string | null>(null);
 const footer = ref<string | null>(null);
 const isVerticalNavCollapsed = ref<boolean | null>(null);
 const isVerticalNavSemiDark = ref<boolean | null>(null);
-const lightPrimaryColor = ref<string | null>(null);
-const lightSecondaryColor = ref<string | null>(null);
-const darkPrimaryColor = ref<string | null>(null);
-const darkSecondaryColor = ref<string | null>(null);
+const lightPrimaryColorRaw = ref<string | null>(null);
+const lightSecondaryColorRaw = ref<string | null>(null);
+const darkPrimaryColorRaw = ref<string | null>(null);
+const darkSecondaryColorRaw = ref<string | null>(null);
+
+const lightPrimaryColor = computed({
+  get: () => {
+    const value = lightPrimaryColorRaw.value;
+    if (!value || value.trim() === '') return null;
+    return value;
+  },
+  set: (val: string | null) => {
+    lightPrimaryColorRaw.value = val && val.trim() !== '' ? val : null;
+  },
+});
+
+const lightSecondaryColor = computed({
+  get: () => {
+    const value = lightSecondaryColorRaw.value;
+    if (!value || value.trim() === '') return null;
+    return value;
+  },
+  set: (val: string | null) => {
+    lightSecondaryColorRaw.value = val && val.trim() !== '' ? val : null;
+  },
+});
+
+const darkPrimaryColor = computed({
+  get: () => {
+    const value = darkPrimaryColorRaw.value;
+    if (!value || value.trim() === '') return null;
+    return value;
+  },
+  set: (val: string | null) => {
+    darkPrimaryColorRaw.value = val && val.trim() !== '' ? val : null;
+  },
+});
+
+const darkSecondaryColor = computed({
+  get: () => {
+    const value = darkSecondaryColorRaw.value;
+    if (!value || value.trim() === '') return null;
+    return value;
+  },
+  set: (val: string | null) => {
+    darkSecondaryColorRaw.value = val && val.trim() !== '' ? val : null;
+  },
+});
 
 const hasAccountInfo = computed(() => !!accountInfoId.value);
 
@@ -810,10 +854,22 @@ watch(
       footer.value = account.footer;
       isVerticalNavCollapsed.value = account.is_vertical_nav_collapsed;
       isVerticalNavSemiDark.value = account.is_vertical_nav_semi_dark;
-      lightPrimaryColor.value = account.light_primary_color;
-      lightSecondaryColor.value = account.light_secondary_color;
-      darkPrimaryColor.value = account.dark_primary_color;
-      darkSecondaryColor.value = account.dark_secondary_color;
+      lightPrimaryColorRaw.value =
+        account.light_primary_color && account.light_primary_color.trim()
+          ? account.light_primary_color
+          : null;
+      lightSecondaryColorRaw.value =
+        account.light_secondary_color && account.light_secondary_color.trim()
+          ? account.light_secondary_color
+          : null;
+      darkPrimaryColorRaw.value =
+        account.dark_primary_color && account.dark_primary_color.trim()
+          ? account.dark_primary_color
+          : null;
+      darkSecondaryColorRaw.value =
+        account.dark_secondary_color && account.dark_secondary_color.trim()
+          ? account.dark_secondary_color
+          : null;
     }
   },
   { immediate: true }
@@ -1044,7 +1100,8 @@ watch(
                   <input
                     id="light-primary-color"
                     type="color"
-                    v-model="lightPrimaryColor"
+                    :value="lightPrimaryColor || '#000000'"
+                    @input="lightPrimaryColor = ($event.target as HTMLInputElement).value"
                     :disabled="!canEdit"
                     class="color-input"
                     aria-label="seletor de cor"
@@ -1073,7 +1130,8 @@ watch(
                   <input
                     id="light-secondary-color"
                     type="color"
-                    v-model="lightSecondaryColor"
+                    :value="lightSecondaryColor || '#000000'"
+                    @input="lightSecondaryColor = ($event.target as HTMLInputElement).value"
                     :disabled="!canEdit"
                     class="color-input"
                     aria-label="seletor de cor"
@@ -1102,7 +1160,8 @@ watch(
                   <input
                     id="dark-primary-color"
                     type="color"
-                    v-model="darkPrimaryColor"
+                    :value="darkPrimaryColor || '#000000'"
+                    @input="darkPrimaryColor = ($event.target as HTMLInputElement).value"
                     :disabled="!canEdit"
                     class="color-input"
                     aria-label="seletor de cor"
@@ -1131,7 +1190,8 @@ watch(
                   <input
                     id="dark-secondary-color"
                     type="color"
-                    v-model="darkSecondaryColor"
+                    :value="darkSecondaryColor || '#000000'"
+                    @input="darkSecondaryColor = ($event.target as HTMLInputElement).value"
                     :disabled="!canEdit"
                     class="color-input"
                     aria-label="seletor de cor"
