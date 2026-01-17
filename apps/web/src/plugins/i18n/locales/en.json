@@ -1364,6 +1364,8 @@
   "value_required": "Value is required",
   "plan_required": "Plan is required",
   "recurring_payment_required": "Recurring payment is required",
+  "form_validation_error": "Please fix the errors in the form",
+  "error_updating_plan": "An error occurred while updating the plan",
   "annual_revenue": "Annual Revenue",
   "annual_expense": "Annual Expense",
   "annual_net": "Annual Net",

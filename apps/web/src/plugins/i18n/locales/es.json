@@ -1364,6 +1364,8 @@
   "value_required": "El valor es obligatorio",
   "plan_required": "El plan es obligatorio",
   "recurring_payment_required": "El pago recurrente es obligatorio",
+  "form_validation_error": "Por favor, corrija los errores en el formulario",
+  "error_updating_plan": "Ocurrió un error al actualizar el plan",
   "annual_revenue": "Ingresos Anuales",
   "annual_expense": "Gastos Anuales",
   "annual_net": "Neto Anual",

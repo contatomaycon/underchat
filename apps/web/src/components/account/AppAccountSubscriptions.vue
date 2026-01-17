@@ -1,8 +1,10 @@
 <script lang="ts" setup>
+import { nextTick } from 'vue';
 import { useAccountStore } from '@/@webcore/stores/account';
 import { usePlanStore } from '@/@webcore/stores/plan';
 import { VForm } from 'vuetify/components/VForm';
 import { EBillingPeriod } from '@core/common/enums/EBillingPeriod';
+import { EColor } from '@core/common/enums/EColor';
 import { UpdatePlanAccountRequest } from '@core/schema/planAccount/updatePlanAccount/request.schema';
 import { requiredValidator } from '@/@webcore/utils/validators';
 
@@ -51,7 +53,11 @@ const selectedPlan = computed(() => {
   return planStore.listAll.find((p) => p.plan_id === plan_id.value);
 });
 
-const isTestPlan = computed(() => selectedPlan.value?.is_test ?? false);
+const isTestPlan = computed(() => {
+  if (!selectedPlan.value) return false;
+  const isTest = Boolean(selectedPlan.value.is_test);
+  return isTest;
+});
 
 const itemsRecurringPayment = [
   { value: true, text: t('yes') },
@@ -168,23 +174,65 @@ const formatDateForApi = (date: Date | string | null): string | null => {
 };
 
 const updatePlanAccount = async () => {
-  const validateForm = await refFormPlanAccount?.value?.validate();
-  if (!validateForm?.valid) return;
-
   if (!plan_id.value) {
+    accountStore.showSnackbar(
+      t('plan_required'),
+      EColor.error
+    );
     return;
   }
 
-  if (!isTestPlan.value) {
-    if (
-      recurring_payment.value === null ||
-      recurring_payment.value === undefined ||
-      !billing_period_id.value ||
-      valueRaw.value === null ||
-      valueRaw.value === undefined
-    ) {
+  if (!planStore.listAll.length) {
+    await planStore.listPlanAll();
+  }
+
+  const currentPlan = planStore.listAll.find((p) => p.plan_id === plan_id.value);
+  const isTest = Boolean(currentPlan?.is_test);
+
+  if (!isTest) {
+    const validateForm = await refFormPlanAccount?.value?.validate();
+    if (!validateForm?.valid) {
       return;
     }
+  } else {
+    refFormPlanAccount.value?.resetValidation();
+  }
+
+  if (!isTest) {
+    if (
+      recurring_payment.value === null ||
+      recurring_payment.value === undefined
+    ) {
+      accountStore.showSnackbar(
+        t('recurring_payment_required'),
+        EColor.error
+      );
+      return;
+    }
+
+    if (!billing_period_id.value) {
+      accountStore.showSnackbar(
+        t('billing_period_required'),
+        EColor.error
+      );
+      return;
+    }
+
+    if (valueRaw.value === null || valueRaw.value === undefined) {
+      accountStore.showSnackbar(
+        t('value_required'),
+        EColor.error
+      );
+      return;
+    }
+  }
+
+  if (!accountId.value) {
+    accountStore.showSnackbar(
+      t('account_id_required'),
+      EColor.error
+    );
+    return;
   }
 
   isSaving.value = true;
@@ -192,14 +240,14 @@ const updatePlanAccount = async () => {
   try {
     const payload: UpdatePlanAccountRequest = {
       plan_id: plan_id.value,
-      recurring_payment: isTestPlan.value ? undefined : recurring_payment.value,
-      billing_period_id: isTestPlan.value
+      recurring_payment: isTest ? undefined : recurring_payment.value,
+      billing_period_id: isTest
         ? undefined
         : billing_period_id.value || undefined,
       last_payment_date: formatDateForApi(last_payment_date.value),
       next_payment_date: formatDateForApi(next_payment_date.value),
       cancellation_date: formatDateForApi(cancellation_date.value),
-      value: isTestPlan.value
+      value: isTest
         ? undefined
         : valueRaw.value?.toString() || undefined,
     };
@@ -213,6 +261,11 @@ const updatePlanAccount = async () => {
       isVisible.value = false;
       await accountStore.listAccount();
     }
+  } catch (error) {
+    accountStore.showSnackbar(
+      t('plan_account_update_error'),
+      EColor.error
+    );
   } finally {
     isSaving.value = false;
   }
@@ -256,17 +309,27 @@ const loadPlanAccountData = async () => {
     valueRaw.value = planAccountData.value
       ? Number.parseFloat(planAccountData.value)
       : null;
+
+    nextTick(() => {
+      refFormPlanAccount.value?.resetValidation();
+    });
   }
 };
 
-watch(plan_id, (newPlanId) => {
+watch(plan_id, async (newPlanId) => {
   if (newPlanId) {
+    if (!planStore.listAll.length) {
+      await planStore.listPlanAll();
+    }
     const plan = planStore.listAll.find((p) => p.plan_id === newPlanId);
     if (plan?.is_test) {
       recurring_payment.value = false;
       billing_period_id.value = null;
       valueDisplay.value = '';
       valueRaw.value = null;
+      nextTick(() => {
+        refFormPlanAccount.value?.resetValidation();
+      });
     }
   }
 });
@@ -333,12 +396,16 @@ onMounted(async () => {
                 :clearable="true"
                 item-value="value"
                 item-title="text"
-                :rules="[
-                  (value) =>
-                    value !== null && value !== undefined
-                      ? true
-                      : $t('recurring_payment_required'),
-                ]"
+                :rules="
+                  isTestPlan
+                    ? []
+                    : [
+                        (value) =>
+                          value !== null && value !== undefined
+                            ? true
+                            : $t('recurring_payment_required'),
+                      ]
+                "
               />
             </VCol>
 
@@ -353,10 +420,17 @@ onMounted(async () => {
                 :clearable="true"
                 item-value="value"
                 item-title="text"
-                :rules="[
-                  (value) =>
-                    requiredValidator(value, $t('billing_period_required')),
-                ]"
+                :rules="
+                  isTestPlan
+                    ? []
+                    : [
+                        (value) =>
+                          requiredValidator(
+                            value,
+                            $t('billing_period_required')
+                          ),
+                      ]
+                "
               />
             </VCol>
 
@@ -366,13 +440,17 @@ onMounted(async () => {
                 :model-value="valueDisplay"
                 @input="handleValueInput"
                 :placeholder="$t('value')"
-                :rules="[
-                  () =>
-                    requiredValidator(
-                      valueRaw !== null && valueRaw !== undefined,
-                      $t('value_required')
-                    ),
-                ]"
+                :rules="
+                  isTestPlan
+                    ? []
+                    : [
+                        () =>
+                          requiredValidator(
+                            valueRaw !== null && valueRaw !== undefined,
+                            $t('value_required')
+                          ),
+                      ]
+                "
               />
             </VCol>
 

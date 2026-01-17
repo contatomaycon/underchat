@@ -1307,6 +1307,8 @@
   "value_required": "Valor é obrigatório",
   "plan_required": "Plano é obrigatório",
   "recurring_payment_required": "Pagamento recorrente é obrigatório",
+  "form_validation_error": "Por favor, corrija os erros no formulário",
+  "error_updating_plan": "Ocorreu um erro ao atualizar o plano",
   "annual_revenue": "Receita Anual",
   "annual_expense": "Despesa Anual",
   "annual_net": "Líquido Anual",
