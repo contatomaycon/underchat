@@ -1897,9 +1897,6 @@ export class MessageUpsertConsume {
       this.chatService.findChatByPhone(data.account_id, data.worker_id, phone),
     ]);
 
-    console.log('getChat', getChat);
-    console.log('chatbotConfig', chatbotConfig);
-
     const chatbotId =
       chatbotConfig.enabled && chatbotConfig.chatbot_id
         ? chatbotConfig.chatbot_id
