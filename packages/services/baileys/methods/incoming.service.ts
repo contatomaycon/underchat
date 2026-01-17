@@ -410,7 +410,7 @@ export class BaileysIncomingMessageService {
 
   async markRead(keys: WAMessageKey[]) {
     if (!this.currentSocket) {
-      throw new Error('Socket not connected');
+      return;
     }
 
     await this.currentSocket.readMessages(keys);
