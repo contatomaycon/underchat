@@ -97,26 +97,6 @@ export class ChatSearcherUseCase {
 
     const filterClauses: IElasticsearchBoolClause[] = [];
 
-    if (query.filter_status) {
-      const statusArray = Array.isArray(query.filter_status)
-        ? query.filter_status
-        : [query.filter_status];
-
-      if (statusArray.length === 1) {
-        filterClauses.push({
-          term: {
-            status: statusArray[0],
-          },
-        } as unknown as IElasticsearchBoolClause);
-      } else if (statusArray.length > 1) {
-        filterClauses.push({
-          terms: {
-            status: statusArray,
-          },
-        } as unknown as IElasticsearchBoolClause);
-      }
-    }
-
     if (query.filter_label_template_id) {
       filterClauses.push({
         nested: {
@@ -523,45 +503,14 @@ export class ChatSearcherUseCase {
       );
     }
 
-    const isMyChatsFilter =
-      query.filter_status &&
-      Array.isArray(query.filter_status) &&
-      query.filter_status.length === 2 &&
-      query.filter_status.includes(EChatStatus.queue) &&
-      query.filter_status.includes(EChatStatus.in_chat);
-
     let sortField = query.sort_field;
     let sortOrder = query.sort_order;
 
     if (!sortField || !sortOrder) {
       const userPreferences = await this.getUserSortPreferences(userId);
 
-      if (isMyChatsFilter) {
-        sortField = sortField || userPreferences.sortByMyChatsOrder;
-        sortOrder = sortOrder || userPreferences.sortMyChatsOrder;
-      } else if (query.filter_status) {
-        const statusArray = Array.isArray(query.filter_status)
-          ? query.filter_status
-          : [query.filter_status];
-        const singleStatus = statusArray.length === 1 ? statusArray[0] : null;
-
-        if (singleStatus === EChatStatus.queue) {
-          sortField = sortField || userPreferences.sortByQueueOrder;
-          sortOrder = sortOrder || userPreferences.sortQueueOrder;
-        } else if (singleStatus === EChatStatus.ura) {
-          sortField = sortField || userPreferences.sortByChatbotOrder;
-          sortOrder = sortOrder || userPreferences.sortChatbotOrder;
-        } else if (singleStatus === EChatStatus.in_chat) {
-          sortField = sortField || userPreferences.sortByChatOrder;
-          sortOrder = sortOrder || userPreferences.sortInChatOrder;
-        } else {
-          sortField = sortField || userPreferences.sortByChatOrder;
-          sortOrder = sortOrder || userPreferences.sortInChatOrder;
-        }
-      } else {
-        sortField = sortField || userPreferences.sortByChatOrder;
-        sortOrder = sortOrder || userPreferences.sortInChatOrder;
-      }
+      sortField = sortField || userPreferences.sortByChatOrder;
+      sortOrder = sortOrder || userPreferences.sortInChatOrder;
 
       if (!sortField) {
         sortField = 'summary.last_message';

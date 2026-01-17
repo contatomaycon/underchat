@@ -271,30 +271,22 @@ export class ChatListerUseCase {
 
     const filterClauses: IElasticsearchBoolClause[] = [];
 
-    if (query.filter_status !== undefined && query.filter_status !== null) {
+    const statusArray = Array.isArray(query.status)
+      ? query.status
+      : [query.status];
+
+    if (statusArray.length === 1) {
       filterClauses.push({
         term: {
-          status: query.filter_status,
+          status: statusArray[0],
         },
       });
-    } else if (query.filter_status === undefined) {
-      const statusArray = Array.isArray(query.status)
-        ? query.status
-        : [query.status];
-
-      if (statusArray.length === 1) {
-        filterClauses.push({
-          term: {
-            status: statusArray[0],
-          },
-        });
-      } else {
-        filterClauses.push({
-          terms: {
-            status: statusArray,
-          },
-        } as unknown as IElasticsearchBoolClause);
-      }
+    } else {
+      filterClauses.push({
+        terms: {
+          status: statusArray,
+        },
+      } as unknown as IElasticsearchBoolClause);
     }
 
     if (query.filter_label_template_id) {
@@ -591,7 +583,7 @@ export class ChatListerUseCase {
     const userPreferences = await this.getUserSortPreferences(userId);
     const { sortBy, sortOrder } = this.getSortForStatus(
       query.status,
-      query.filter_status,
+      null,
       userPreferences
     );
     const sort = this.buildElasticsearchSort(sortBy, sortOrder);

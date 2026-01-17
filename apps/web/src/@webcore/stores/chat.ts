@@ -79,7 +79,6 @@ type UploadOptions = {
 };
 
 type ChatFilters = {
-  filter_status?: string | null;
   filter_label_template_id?: string | null;
   filter_worker_id?: string | null;
   filter_user_id?: string | null;
@@ -1403,7 +1402,6 @@ export const useChatStore = defineStore('chat', {
           current_page: input.current_page,
           per_page: input.per_page,
           status: input.status,
-          filter_status: input.filter_status,
           filter_label_template_id: input.filter_label_template_id,
           filter_worker_id: input.filter_worker_id,
           filter_sector_id: input.filter_sector_id,
@@ -1490,7 +1488,6 @@ export const useChatStore = defineStore('chat', {
           current_page: input.current_page,
           per_page: input.per_page,
           status: input.status,
-          filter_status: input.filter_status,
           filter_label_template_id: input.filter_label_template_id,
           filter_worker_id: input.filter_worker_id,
           filter_sector_id: input.filter_sector_id,
@@ -1563,7 +1560,6 @@ export const useChatStore = defineStore('chat', {
           current_page: input.current_page,
           per_page: input.per_page,
           status: input.status,
-          filter_status: input.filter_status,
           filter_label_template_id: input.filter_label_template_id,
           filter_worker_id: input.filter_worker_id,
           filter_sector_id: input.filter_sector_id,
@@ -1623,7 +1619,6 @@ export const useChatStore = defineStore('chat', {
           current_page: input.current_page,
           per_page: input.per_page,
           status: input.status,
-          filter_status: input.filter_status,
           filter_label_template_id: input.filter_label_template_id,
           filter_worker_id: input.filter_worker_id,
           filter_sector_id: input.filter_sector_id,
@@ -1682,9 +1677,6 @@ export const useChatStore = defineStore('chat', {
           search: input.search || '',
         };
 
-        if (input.filter_status) {
-          params.filter_status = input.filter_status;
-        }
         if (input.filter_label_template_id) {
           params.filter_label_template_id = input.filter_label_template_id;
         }
@@ -1812,7 +1804,6 @@ export const useChatStore = defineStore('chat', {
         current_page: pagination.current_page,
         per_page: pagination.per_page,
         search,
-        filter_status: statusArray.length > 1 ? statusArray : statusArray[0],
         ...pickDefinedFilters(filters, [...FILTER_KEYS]),
       };
 

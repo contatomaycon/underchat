@@ -304,7 +304,6 @@ const hasActiveFilters = computed(() => {
   return !!(
     hasAppliedAdvancedFilters.value ||
     searchQuery.value?.trim() ||
-    currentFilterStatus.value ||
     currentFilterLabelTemplateId.value ||
     currentFilterWorkerId.value ||
     currentFilterUserId.value ||
@@ -321,7 +320,8 @@ const filteredChatbot = computed(() => {
   if (
     activeFilter.value === 'all' &&
     hasActiveFilters.value &&
-    !hasAppliedAdvancedFilters.value
+    !hasAppliedAdvancedFilters.value &&
+    !hasSearchTerm.value
   ) {
     return chatStore.listChatbot;
   }
@@ -342,7 +342,8 @@ const showChatbotTitle = computed(() => {
   return (
     activeFilter.value === 'all' &&
     hasActiveFilters.value &&
-    !hasAppliedAdvancedFilters.value
+    !hasAppliedAdvancedFilters.value &&
+    !hasSearchTerm.value
   );
 });
 
@@ -350,7 +351,8 @@ const filteredClosed = computed(() => {
   if (
     activeFilter.value === 'all' &&
     hasActiveFilters.value &&
-    !hasAppliedAdvancedFilters.value
+    !hasAppliedAdvancedFilters.value &&
+    !hasSearchTerm.value
   ) {
     return chatStore.listClosed;
   }
@@ -362,6 +364,7 @@ const showClosedTitle = computed(() => {
     activeFilter.value === 'all' &&
     hasActiveFilters.value &&
     !hasAppliedAdvancedFilters.value &&
+    !hasSearchTerm.value &&
     chatStore.listClosed.length > 0
   );
 });
@@ -724,7 +727,6 @@ const handleFiltersUpdated = async () => {
 
 const handleClearFilters = async () => {
   searchQuery.value = '';
-  currentFilterStatus.value = null;
   currentFilterLabelTemplateId.value = null;
   currentFilterWorkerId.value = null;
   currentFilterUserId.value = null;
@@ -832,7 +834,6 @@ const loadChatContacts = async (chats: ChatExtrasSource[]) => {
   await chatStore.getChatContactsByIds(contactIdsToLoad);
 };
 
-const currentFilterStatus = ref<string | null>(null);
 const currentFilterLabelTemplateId = ref<string | null>(null);
 const currentFilterWorkerId = ref<string | null>(null);
 const currentFilterUserId = ref<string | null>(null);
@@ -976,7 +977,6 @@ const sortModalOrder = ref<string | null>('desc');
 
 const getChatUserFilters = () => {
   return {
-    filter_status: currentFilterStatus.value ?? undefined,
     filter_label_template_id: currentFilterLabelTemplateId.value ?? undefined,
     filter_worker_id: currentFilterWorkerId.value ?? undefined,
     filter_user_id: currentFilterUserId.value ?? undefined,
@@ -1819,7 +1819,6 @@ const performSearch = async (append = false) => {
       current_page: currentPage,
       per_page: 50,
       search: debouncedSearchQuery.value.trim(),
-      filter_status: filters.filter_status,
       filter_label_template_id: filters.filter_label_template_id,
       filter_worker_id: filters.filter_worker_id,
       filter_user_id: filters.filter_user_id,
@@ -3440,7 +3439,6 @@ defineExpose({
   />
 
   <ChatAdvancedFiltersModal
-    :filter-status="currentFilterStatus"
     v-model="isAdvancedFiltersModalOpen"
     :filter-label="currentFilterLabelTemplateId"
     :filter-worker="currentFilterWorkerId"
@@ -3453,7 +3451,6 @@ defineExpose({
     :filter-date-end="currentFilterDateEnd"
     :sort-field="currentSortField"
     :sort-order="currentSortOrder"
-    @update:filter-status="currentFilterStatus = $event"
     @update:filter-label="currentFilterLabelTemplateId = $event"
     @update:filter-worker="currentFilterWorkerId = $event"
     @update:filter-user="currentFilterUserId = $event"
