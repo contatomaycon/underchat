@@ -547,7 +547,7 @@ export class MessageSendConsume {
       remoteJid: data.message_key.remote_jid ?? '',
       fromMe: data.message_key.from_me ?? false,
       id: data.message_key.id,
-      participant: data.message_key.participant ?? undefined,
+      participant: data.message_key.participant || undefined,
     };
 
     await this.baileysMessageEditDeleteService.deleteMessage(jid, messageKey);
@@ -753,7 +753,7 @@ export class MessageSendConsume {
       remoteJid: jid,
       fromMe: data.message_key.from_me ?? false,
       id: data.message_key.id,
-      participant: data.message_key.participant ?? undefined,
+      participant: data.message_key.participant || undefined,
     };
 
     const result = await this.baileysMessageReactionsInteractionsService.react(
@@ -780,7 +780,7 @@ export class MessageSendConsume {
         remoteJid: data.message_key.remote_jid ?? '',
         fromMe: data.message_key.from_me ?? false,
         id: data.message_key.id,
-        participant: data.message_key.participant ?? undefined,
+        participant: data.message_key.participant || undefined,
       };
 
       const latestVersion = data.content.version
@@ -1253,7 +1253,7 @@ export class MessageSendConsume {
         remoteJid: q?.key.remote_jid ?? '',
         fromMe: q?.key.from_me ?? false,
         id: q?.key.id ?? '',
-        participant: q?.key.participant ?? undefined,
+        participant: q?.key.participant || undefined,
       },
       message: null,
     };

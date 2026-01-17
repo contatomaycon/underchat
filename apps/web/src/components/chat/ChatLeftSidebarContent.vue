@@ -153,31 +153,116 @@ type FilterType =
 
 type ChatExtrasSource = Pick<ListChatsResult, 'worker' | 'contact'>;
 
+const sortChatsByField = (
+  chats: ListChatsResult[],
+  sortField: string,
+  sortOrder: string
+): ListChatsResult[] => {
+  if (chats.length <= 1) {
+    return chats;
+  }
+
+  const order = sortOrder === 'asc' ? 'asc' : 'desc';
+
+  return [...chats].sort((a, b) => {
+    const aValue = chatStore.getFieldValue(a, sortField);
+    const bValue = chatStore.getFieldValue(b, sortField);
+
+    if (aValue === bValue) {
+      return 0;
+    }
+
+    if (aValue === '' || aValue === null || aValue === undefined) {
+      return 1;
+    }
+    if (bValue === '' || bValue === null || bValue === undefined) {
+      return -1;
+    }
+
+    let comparison = 0;
+    if (typeof aValue === 'string' && typeof bValue === 'string') {
+      comparison = aValue.localeCompare(bValue);
+    } else if (typeof aValue === 'number' && typeof bValue === 'number') {
+      comparison = aValue - bValue;
+    } else {
+      comparison = String(aValue).localeCompare(String(bValue));
+    }
+
+    return order === 'asc' ? comparison : -comparison;
+  });
+};
+
 const activeFilter = ref<FilterType>('all');
 const expandedFilter = ref<FilterType | null>('all');
+const hasSearchTerm = computed(() => !!debouncedSearchQuery.value?.trim());
+const shouldApplyPerFilterSort = computed(
+  () => !hasAppliedAdvancedFilters.value && !hasSearchTerm.value
+);
 
 const filteredInChat = computed(() => {
   if (activeFilter.value === 'in_chat') {
-    return chatStore.listInChat;
+    if (!shouldApplyPerFilterSort.value) {
+      return chatStore.listInChat;
+    }
+    return sortChatsByField(
+      chatStore.listInChat,
+      inChatSortFieldForModal.value,
+      inChatSortOrderForModal.value
+    );
   }
   if (activeFilter.value === 'all' && !hasActiveFilters.value) {
-    return chatStore.listInChat;
+    if (!shouldApplyPerFilterSort.value) {
+      return chatStore.listInChat;
+    }
+    return sortChatsByField(
+      chatStore.listInChat,
+      inChatSortFieldForModal.value,
+      inChatSortOrderForModal.value
+    );
   }
   if (activeFilter.value === 'all' && hasActiveFilters.value) {
-    return chatStore.listInChat;
+    if (!shouldApplyPerFilterSort.value) {
+      return chatStore.listInChat;
+    }
+    return sortChatsByField(
+      chatStore.listInChat,
+      inChatSortFieldForModal.value,
+      inChatSortOrderForModal.value
+    );
   }
   return [];
 });
 
 const filteredQueue = computed(() => {
   if (activeFilter.value === 'queue') {
-    return chatStore.listQueue;
+    if (!shouldApplyPerFilterSort.value) {
+      return chatStore.listQueue;
+    }
+    return sortChatsByField(
+      chatStore.listQueue,
+      queueSortFieldForModal.value,
+      queueSortOrderForModal.value
+    );
   }
   if (activeFilter.value === 'all' && !hasActiveFilters.value) {
-    return chatStore.listQueue;
+    if (!shouldApplyPerFilterSort.value) {
+      return chatStore.listQueue;
+    }
+    return sortChatsByField(
+      chatStore.listQueue,
+      queueSortFieldForModal.value,
+      queueSortOrderForModal.value
+    );
   }
   if (activeFilter.value === 'all' && hasActiveFilters.value) {
-    return chatStore.listQueue;
+    if (!shouldApplyPerFilterSort.value) {
+      return chatStore.listQueue;
+    }
+    return sortChatsByField(
+      chatStore.listQueue,
+      queueSortFieldForModal.value,
+      queueSortOrderForModal.value
+    );
   }
   return [];
 });
@@ -194,11 +279,23 @@ const filteredMyChats = computed(() => {
         ...chatStore.listChatbot,
         ...chatStore.listClosed,
       ];
-      return allChats.filter((chat) => chat.user?.id === userId);
+      const myChats = allChats.filter((chat) => chat.user?.id === userId);
+      const sortField = sortMyChatsField.value ?? 'summary.last_message';
+      const sortOrder = sortMyChatsOrder.value ?? 'desc';
+      if (!shouldApplyPerFilterSort.value) {
+        return myChats;
+      }
+      return sortChatsByField(myChats, sortField, sortOrder);
     }
 
     const allChats = [...chatStore.listInChat, ...chatStore.listQueue];
-    return allChats.filter((chat) => chat.user?.id === userId);
+    const myChats = allChats.filter((chat) => chat.user?.id === userId);
+    const sortField = sortMyChatsField.value ?? 'summary.last_message';
+    const sortOrder = sortMyChatsOrder.value ?? 'desc';
+    if (!shouldApplyPerFilterSort.value) {
+      return myChats;
+    }
+    return sortChatsByField(myChats, sortField, sortOrder);
   }
   return [];
 });
@@ -229,7 +326,14 @@ const filteredChatbot = computed(() => {
     return chatStore.listChatbot;
   }
   if (activeFilter.value === 'chatbot') {
-    return chatStore.listChatbot;
+    if (!shouldApplyPerFilterSort.value) {
+      return chatStore.listChatbot;
+    }
+    return sortChatsByField(
+      chatStore.listChatbot,
+      sortChatbotField.value ?? 'summary.last_message',
+      sortChatbotOrder.value ?? 'desc'
+    );
   }
   return [];
 });

@@ -833,54 +833,44 @@ export const useChatStore = defineStore('chat', {
       sortOrder: string;
     } {
       const chatUser = this.user?.chat_user;
+      const fallbackSort = {
+        sortBy: 'summary.last_message',
+        sortOrder: 'desc',
+      };
       if (!chatUser) {
-        return { sortBy: 'date', sortOrder: 'desc' };
+        return fallbackSort;
       }
 
       // "Em Atendimento" individual - usa preferências de "Todos"
       if (status === EChatStatus.in_chat) {
-        if (chatUser.sort_by_chat_order && chatUser.sort_in_chat_order) {
-          return {
-            sortBy: chatUser.sort_by_chat_order,
-            sortOrder: chatUser.sort_in_chat_order,
-          };
-        }
+        return {
+          sortBy: chatUser.sort_by_chat_order ?? fallbackSort.sortBy,
+          sortOrder: chatUser.sort_in_chat_order ?? fallbackSort.sortOrder,
+        };
       }
 
       // "Aguardando atendimento"
       if (status === EChatStatus.queue) {
-        if (chatUser.sort_by_queue_order && chatUser.sort_queue_order) {
-          return {
-            sortBy: chatUser.sort_by_queue_order,
-            sortOrder: chatUser.sort_queue_order,
-          };
-        }
+        return {
+          sortBy: chatUser.sort_by_queue_order ?? fallbackSort.sortBy,
+          sortOrder: chatUser.sort_queue_order ?? fallbackSort.sortOrder,
+        };
       }
 
       // "ChatBot"
       if (status === EChatStatus.ura) {
-        if (chatUser.sort_by_chatbot_order && chatUser.sort_chatbot_order) {
-          return {
-            sortBy: chatUser.sort_by_chatbot_order,
-            sortOrder: chatUser.sort_chatbot_order,
-          };
-        }
-      }
-
-      // Fallback para preferências de "Todos"
-      if (chatUser.sort_by_chat_order && chatUser.sort_in_chat_order) {
         return {
-          sortBy: chatUser.sort_by_chat_order,
-          sortOrder: chatUser.sort_in_chat_order,
+          sortBy: chatUser.sort_by_chatbot_order ?? fallbackSort.sortBy,
+          sortOrder: chatUser.sort_chatbot_order ?? fallbackSort.sortOrder,
         };
       }
 
-      return { sortBy: 'date', sortOrder: 'desc' };
+      return fallbackSort;
     },
 
     getFieldValue(chat: ListChatsResult, field: string): any {
       if (field === 'summary.last_message') {
-        return chat.summary?.last_message || '';
+        return chat.summary?.last_date || chat.summary?.last_message || '';
       }
       if (field === 'summary.last_date') {
         return chat.summary?.last_date || '';
