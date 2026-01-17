@@ -72,56 +72,6 @@ export class ChatService {
     );
   };
 
-  private findMessageByWhatsAppId = async (
-    accountId: string,
-    messageId: string
-  ): Promise<{ message: IChatMessage | null; documentId: string | null }> => {
-    if (!messageId) {
-      return { message: null, documentId: null };
-    }
-
-    const queryElastic = {
-      size: 1,
-      query: {
-        bool: {
-          must: [
-            {
-              nested: {
-                path: 'account',
-                query: {
-                  term: { 'account.id': accountId },
-                },
-              },
-            },
-            {
-              nested: {
-                path: 'message_key',
-                query: {
-                  term: { 'message_key.id': messageId },
-                },
-              },
-            },
-          ],
-        },
-      },
-    };
-
-    const result = await this.elasticDatabaseService.select<IChatMessage>(
-      EElasticIndex.message,
-      queryElastic
-    );
-
-    const hit = result?.hits?.hits?.[0] as ElasticHit<IChatMessage> | undefined;
-    const message = hit?._source ?? null;
-
-    if (!message) {
-      return { message: null, documentId: null };
-    }
-
-    const documentId = buildMessageDocumentId(accountId, messageId);
-    return { message, documentId };
-  };
-
   createMessageIdempotent = async (
     messageChat: IChatMessage,
     accountId: string,
