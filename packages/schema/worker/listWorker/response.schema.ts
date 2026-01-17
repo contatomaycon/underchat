@@ -30,6 +30,7 @@ export const listWorkerResponseSchema = Type.Object({
   server: Type.Optional(Type.Union([workerServerSchema, Type.Null()])),
   account: Type.Optional(Type.Union([workerAccountSchema, Type.Null()])),
   connection_date: Type.Union([Type.String(), Type.Null()]),
+  last_connection_check_at: Type.Union([Type.String(), Type.Null()]),
   created_at: Type.Union([Type.String(), Type.Null()]),
   updated_at: Type.Union([Type.String(), Type.Null()]),
 });

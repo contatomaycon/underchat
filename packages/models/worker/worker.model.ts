@@ -34,6 +34,10 @@ export const worker = pgTable(
       mode: 'string',
       withTimezone: true,
     }),
+    last_connection_check_at: timestamp({
+      mode: 'string',
+      withTimezone: true,
+    }),
     created_at: timestamp({
       mode: 'string',
       withTimezone: true,

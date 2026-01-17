@@ -29,6 +29,7 @@ export class WorkerMonitorService {
   private readonly timeoutMinutes = 5;
   private readonly maxConnectionFailures = 3;
   private readonly connectionCheckIntervalMs = 60 * 1000;
+  private readonly stoppedTimeoutMinutes = 30;
   private readonly connectionFailureTrackers = new Map<
     string,
     IConnectionFailureTracker
@@ -141,6 +142,10 @@ export class WorkerMonitorService {
       return;
     }
 
+    if (worker.worker_status_id === EWorkerStatus.stopped) {
+      return;
+    }
+
     if (this.isStuck(worker)) {
       await this.handleRecreate(worker, server);
       return;
@@ -176,6 +181,11 @@ export class WorkerMonitorService {
       server.server_id,
       sshConfig
     );
+
+    if (!connectionHealthy && this.isConnectionCheckTimeout(worker)) {
+      await this.handleStop(worker, server, sshConfig);
+      return;
+    }
 
     await this.syncConnectionStatusWithFailureTracking(
       worker,
@@ -219,6 +229,11 @@ export class WorkerMonitorService {
       return;
     }
 
+    const isStopped = worker.worker_status_id === EWorkerStatus.stopped;
+    if (isStopped) {
+      return;
+    }
+
     const isError = worker.worker_status_id === EWorkerStatus.error;
     if (isError) {
       await this.handleRecreate(worker, server);
@@ -255,6 +270,31 @@ export class WorkerMonitorService {
       worker_id: worker.worker_id,
       account_id: worker.account_id,
       worker_status_id: EWorkerStatus.delete,
+    };
+
+    await this.centrifugoService.publishSub(
+      workerCentrifugoQueue(worker.account_id),
+      payload
+    );
+  };
+
+  private readonly handleStop = async (
+    worker: IWorkerMonitor,
+    server: IBalanceMonitorServer,
+    sshConfig: ConnectConfig
+  ): Promise<void> => {
+    await this.removeContainer(worker.worker_id, server.server_id, sshConfig);
+    await this.workerService.updateStatusWorker(
+      worker.worker_id,
+      EWorkerStatus.stopped
+    );
+
+    const payload: IBaileysConnectionState = {
+      code: ECodeMessage.info,
+      status: EBaileysConnectionStatus.info,
+      worker_id: worker.worker_id,
+      account_id: worker.account_id,
+      worker_status_id: EWorkerStatus.stopped,
     };
 
     await this.centrifugoService.publishSub(
@@ -306,6 +346,10 @@ export class WorkerMonitorService {
       if (tracker) {
         this.connectionFailureTrackers.delete(worker.worker_id);
       }
+
+      await this.workerService.updateWorkerLastConnectionCheckAt(
+        worker.worker_id
+      );
 
       if (worker.worker_status_id === EWorkerStatus.offline) {
         await this.updateWorkerStatus(
@@ -383,6 +427,8 @@ export class WorkerMonitorService {
   ): Promise<void> => {
     this.connectionFailureTrackers.delete(workerId);
     this.activeContinuousChecks.delete(workerId);
+
+    await this.workerService.updateWorkerLastConnectionCheckAt(workerId);
 
     if (currentWorker.worker_status_id === EWorkerStatus.offline) {
       await this.updateWorkerStatus(
@@ -692,5 +738,23 @@ export class WorkerMonitorService {
     const minutes = diff / 1000 / 60;
 
     return minutes > this.timeoutMinutes;
+  };
+
+  private readonly isConnectionCheckTimeout = (
+    worker: IWorkerMonitor
+  ): boolean => {
+    if (!worker.last_connection_check_at) {
+      return false;
+    }
+
+    const parsed = new Date(worker.last_connection_check_at);
+    if (Number.isNaN(parsed.getTime())) {
+      return false;
+    }
+
+    const diff = Date.now() - parsed.getTime();
+    const minutes = diff / 1000 / 60;
+
+    return minutes > this.stoppedTimeoutMinutes;
   };
 }

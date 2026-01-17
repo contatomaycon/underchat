@@ -113,6 +113,7 @@ export class ChannelsListerRepository {
           name: account.name,
         },
         connection_date: worker.connection_date,
+        last_connection_check_at: worker.last_connection_check_at,
         created_at: worker.created_at,
         updated_at: worker.updated_at,
       })
@@ -153,6 +154,7 @@ export class ChannelsListerRepository {
       server: item.server,
       account: item.account,
       connection_date: item.connection_date,
+      last_connection_check_at: item.last_connection_check_at,
       created_at: item.created_at,
       updated_at: item.updated_at,
     }));

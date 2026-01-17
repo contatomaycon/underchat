@@ -319,6 +319,7 @@
   "connection_removed_in_phone": "Conexión eliminada en el teléfono, por favor reconecta.",
   "connection_date": "Fecha de conexión",
   "updated_date": "Fecha de actualización",
+  "verification_date": "Fecha de Verificación",
   "role": "Grupo de Acceso",
   "roles": "Grupos de Acceso",
   "access_group": "Grupo de Acceso",

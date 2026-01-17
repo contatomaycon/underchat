@@ -16,12 +16,18 @@ export class WorkerStatusUpdaterRepository {
     workerId: string,
     workerStatusId: EWorkerStatus
   ): Promise<boolean> => {
+    const updateData: Partial<typeof worker.$inferInsert> = {
+      worker_status_id: workerStatusId,
+      updated_at: currentTime(),
+    };
+
+    if (workerStatusId === EWorkerStatus.online) {
+      updateData.last_connection_check_at = currentTime();
+    }
+
     const result = await this.dbRw
       .update(worker)
-      .set({
-        worker_status_id: workerStatusId,
-        updated_at: currentTime(),
-      })
+      .set(updateData)
       .where(and(eq(worker.worker_id, workerId)))
       .execute();
 

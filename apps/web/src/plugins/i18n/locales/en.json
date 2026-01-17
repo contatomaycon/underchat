@@ -319,6 +319,7 @@
   "connection_removed_in_phone": "Connection removed in phone, please reconnect.",
   "connection_date": "Connection Date",
   "updated_date": "Updated Date",
+  "verification_date": "Verification Date",
   "role": "Access Group",
   "roles": "Access Groups",
   "access_group": "Access Group",
