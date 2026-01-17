@@ -24,7 +24,6 @@ import {
   chatAccountCentrifugo,
   chatQueueAccountCentrifugo,
 } from '@core/common/functions/centrifugoQueue';
-import { buildCandidates } from '@core/common/functions/buildCandidatesBR';
 import { remoteJid } from '@core/common/functions/remoteJid';
 import { StorageService } from '@core/services/storage.service';
 import {
@@ -150,7 +149,6 @@ export class MessageUpsertConsume {
   }
 
   private async ensureChatAndHandleMessage(
-    t: TFunction<'translation', undefined>,
     data: IUpsertMessage,
     chat: IChat | null
   ): Promise<IChat | null> {
@@ -223,153 +221,6 @@ export class MessageUpsertConsume {
       this.kafkaServiceQueueService.markMessageRead(),
       markReadData
     );
-  }
-
-  private async getChat(
-    accountId: string,
-    workerId: string,
-    phone: string,
-    jid?: string | null,
-    jidAlt?: string | null
-  ): Promise<IChat | null> {
-    const cached = await this.getChatFromCache(accountId, workerId, phone);
-    if (cached && cached.status !== EChatStatus.closed) {
-      return cached;
-    }
-
-    const candidates = buildCandidates(phone);
-    const shouldClauses: any[] = [];
-
-    if (Array.isArray(candidates) && candidates.length) {
-      shouldClauses.push({ terms: { phone: candidates } });
-    }
-
-    if (jid || jidAlt) {
-      const messageKeyQueries: any[] = [];
-
-      if (jid) {
-        messageKeyQueries.push({
-          term: { 'message_key.remote_jid': jid },
-        });
-      }
-
-      if (jidAlt) {
-        messageKeyQueries.push({
-          term: { 'message_key.remote_jid_alt': jidAlt },
-        });
-      }
-
-      if (messageKeyQueries.length > 0) {
-        shouldClauses.push({
-          nested: {
-            path: 'message_key',
-            query: {
-              bool: {
-                should: messageKeyQueries,
-                minimum_should_match: 1,
-              },
-            },
-          },
-        });
-      }
-    }
-
-    const queryElastic = {
-      query: {
-        bool: {
-          filter: [
-            {
-              nested: {
-                path: 'account',
-                query: { term: { 'account.id': accountId } },
-              },
-            },
-            {
-              nested: {
-                path: 'worker',
-                query: { term: { 'worker.id': workerId } },
-              },
-            },
-            {
-              terms: {
-                status: [
-                  EChatStatus.in_chat,
-                  EChatStatus.queue,
-                  EChatStatus.ura,
-                ],
-              },
-            },
-          ],
-          ...(shouldClauses.length
-            ? {
-                must: [
-                  { bool: { should: shouldClauses, minimum_should_match: 1 } },
-                ],
-              }
-            : {}),
-        },
-      },
-    };
-
-    const result = await this.elasticDatabaseService.select(
-      EElasticIndex.chat,
-      queryElastic
-    );
-    const data = result?.hits.hits[0]?._source as IChat | null;
-
-    if (!data) {
-      return null;
-    }
-
-    return data;
-  }
-
-  private async messageIdExists(
-    accountId: string,
-    workerId: string,
-    messageId: string
-  ): Promise<boolean> {
-    if (!messageId) return false;
-
-    const queryElastic = {
-      query: {
-        bool: {
-          must: [
-            {
-              nested: {
-                path: 'account',
-                query: {
-                  term: { 'account.id': accountId },
-                },
-              },
-            },
-            {
-              nested: {
-                path: 'worker',
-                query: {
-                  term: { 'worker.id': workerId },
-                },
-              },
-            },
-            {
-              nested: {
-                path: 'message_key',
-                query: {
-                  term: { 'message_key.id': messageId },
-                },
-              },
-            },
-          ],
-        },
-      },
-    };
-
-    const result = await this.elasticDatabaseService.select(
-      EElasticIndex.message,
-      queryElastic
-    );
-
-    return (result?.hits.total as { value: number })?.value > 0;
   }
 
   private async findMessageByKeyId(
@@ -1410,12 +1261,10 @@ export class MessageUpsertConsume {
       return;
     }
 
-    let chat = await this.getChat(
+    let chat = await this.chatService.findChatByPhone(
       data.account_id,
       data.worker_id,
-      data.call_phone,
-      data.call_jid ?? null,
-      data.call_jid_alt ?? null
+      data.call_phone
     );
 
     if (!chat) {
@@ -1981,7 +1830,7 @@ export class MessageUpsertConsume {
       throw new Error('Failed to get phone from jid');
     }
 
-    const chat = await this.ensureChatAndHandleMessage(t, data, getChat);
+    const chat = await this.ensureChatAndHandleMessage(data, getChat);
     if (!chat) {
       return;
     }
@@ -2041,14 +1890,15 @@ export class MessageUpsertConsume {
   private async createOrUpdateChat(
     t: TFunction<'translation', undefined>,
     data: IUpsertMessage,
-    phone: string,
-    jid?: string | null,
-    jidAlt?: string | null
+    phone: string
   ): Promise<void> {
     const [chatbotConfig, getChat] = await Promise.all([
       this.workerConfigService.viewChatbot(data.worker_id),
-      this.getChat(data.account_id, data.worker_id, phone, jid, jidAlt),
+      this.chatService.findChatByPhone(data.account_id, data.worker_id, phone),
     ]);
+
+    console.log('getChat', getChat);
+    console.log('chatbotConfig', chatbotConfig);
 
     const chatbotId =
       chatbotConfig.enabled && chatbotConfig.chatbot_id
@@ -2117,7 +1967,7 @@ export class MessageUpsertConsume {
           if (!phone) {
             throw new Error('Received message without valid phone');
           }
-          await this.createOrUpdateChat(t, data, phone, jid, jidAlt);
+          await this.createOrUpdateChat(t, data, phone);
         } finally {
           stop();
           await this.commitNext(topic, partition, offset);

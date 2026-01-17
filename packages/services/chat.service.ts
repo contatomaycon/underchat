@@ -1387,6 +1387,13 @@ export class ChatService {
     workerId: string,
     phone: string
   ): Promise<IChat | null> => {
+    const cacheKey = createChatCacheKey(accountId, workerId, phone);
+    const cache = await this.redis.get(cacheKey);
+
+    if (cache) {
+      return JSON.parse(cache) as IChat;
+    }
+
     const candidates = buildCandidates(phone);
     const shouldClauses: any[] = [];
 
@@ -1441,9 +1448,15 @@ export class ChatService {
     const hit = result?.hits?.hits?.[0] as ElasticHit<IChat> | undefined;
     const chat = hit?._source ?? null;
 
+    if (!chat) {
+      return null;
+    }
+
     if (chat && Array.isArray(chat.summary)) {
       chat.summary = chat.summary[0] as IChat['summary'];
     }
+
+    await this.cacheChat(chat);
 
     return chat;
   };
