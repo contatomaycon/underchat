@@ -43,6 +43,7 @@ import { WorkerAllListerRepository } from '@core/repositories/worker/WorkerAllLi
 import { WorkerMonitorViewerRepository } from '@core/repositories/worker/WorkerMonitorViewer.repository';
 import { IWorkerMonitor } from '@core/common/interfaces/IWorkerMonitor';
 import { TransferWorker } from '@core/schema/chat/listTransferOptions/response.schema';
+import { WorkerUpdatedAtUpdaterRepository } from '@core/repositories/worker/WorkerUpdatedAtUpdater.repository';
 import Redis from 'ioredis';
 
 @injectable()
@@ -73,6 +74,7 @@ export class WorkerService {
     private readonly workerConfigFieldsViewerRepository: WorkerConfigFieldsViewerRepository,
     private readonly workerAllListerRepository: WorkerAllListerRepository,
     private readonly workerMonitorViewerRepository: WorkerMonitorViewerRepository,
+    private readonly workerUpdatedAtUpdaterRepository: WorkerUpdatedAtUpdaterRepository,
     @inject('Redis') private readonly redis: Redis
   ) {
     this.docker = new Docker({ socketPath: '/var/run/docker.sock' });
@@ -413,5 +415,9 @@ export class WorkerService {
     workerId: string
   ): Promise<IWorkerMonitor | null> => {
     return this.workerMonitorViewerRepository.viewWorker(workerId);
+  };
+
+  updateWorkerUpdatedAt = async (workerId: string): Promise<boolean> => {
+    return this.workerUpdatedAtUpdaterRepository.updateUpdatedAt(workerId);
   };
 }

@@ -119,6 +119,8 @@ export class WorkerMonitorService {
       return;
     }
 
+    await this.workerService.updateWorkerUpdatedAt(workerId);
+
     if (worker.deleted_at) {
       await this.removeContainer(workerId, server.server_id, sshConfig);
       return;
@@ -144,6 +146,11 @@ export class WorkerMonitorService {
       return;
     }
 
+    if (worker.worker_status_id === EWorkerStatus.error) {
+      await this.handleRecreate(worker, server);
+      return;
+    }
+
     const checkFastify = this.shouldCheckFastify(worker);
     if (checkFastify) {
       const healthy = await this.checkFastify(
@@ -151,6 +158,7 @@ export class WorkerMonitorService {
         server.server_id,
         sshConfig
       );
+
       if (!healthy) {
         await this.handleRecreate(worker, server);
         return;
@@ -182,6 +190,8 @@ export class WorkerMonitorService {
     server: IBalanceMonitorServer,
     sshConfig: ConnectConfig
   ): Promise<void> => {
+    await this.workerService.updateWorkerUpdatedAt(worker.worker_id);
+
     if (worker.deleted_at) {
       return;
     }
@@ -206,6 +216,12 @@ export class WorkerMonitorService {
 
     const isOffline = worker.worker_status_id === EWorkerStatus.offline;
     if (isOffline) {
+      return;
+    }
+
+    const isError = worker.worker_status_id === EWorkerStatus.error;
+    if (isError) {
+      await this.handleRecreate(worker, server);
       return;
     }
 
@@ -429,6 +445,7 @@ export class WorkerMonitorService {
         serverId,
         sshConfig
       );
+      await this.workerService.updateWorkerUpdatedAt(worker.worker_id);
 
       if (connectionHealthy) {
         await this.handleHealthyConnection(worker.worker_id, currentWorker);
