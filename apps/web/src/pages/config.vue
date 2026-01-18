@@ -36,7 +36,7 @@ watch(tab, (v) => {
           $t('nfse')
         }}</VTab>
         <VTab value="creditcard" prepend-icon="tabler-credit-card">{{
-          $t('credit_card')
+          $t('payments')
         }}</VTab>
         <VTab value="channels" prepend-icon="tabler-message">{{
           $t('channels')

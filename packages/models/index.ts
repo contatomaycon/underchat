@@ -20,5 +20,6 @@ export * from './reportConversationHistory';
 export * from './schedule';
 export * from './twoFactor';
 export * from './creditcard';
+export * from './payment';
 export * from './aiAgent';
 export * from './push';

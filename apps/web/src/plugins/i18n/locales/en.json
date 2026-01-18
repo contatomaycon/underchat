@@ -1994,6 +1994,7 @@
   "nfse_status_error": "Error",
   "nfse_status_synchronized": "Synchronized",
   "nfse": "NFSe",
+  "payments": "Payments",
   "credit_card": "Credit Card",
   "credit_card_installment_rate": "Installment {number}x fee (%)",
   "credit_card_installment_option": "{number}x (Installment: {installmentValue} - Total: {totalWithFee})",
