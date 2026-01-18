@@ -51,9 +51,7 @@ export class WorkerMonitorService {
     const servers = await this.serverService.listBalanceServers();
     const workers = await this.workerService.listWorkersForMonitor();
 
-    if (!servers.length) {
-      return;
-    }
+    if (!servers.length) return;
 
     const workersById = new Map<string, IWorkerMonitor>(
       workers.map((worker) => [worker.worker_id, worker])
@@ -117,6 +115,11 @@ export class WorkerMonitorService {
 
     if (!worker) {
       await this.removeContainer(workerId, server.server_id, sshConfig);
+      return;
+    }
+
+    if (worker.worker_status_id === EWorkerStatus.mismatched) {
+      await this.handleStop(worker, server, sshConfig);
       return;
     }
 
@@ -667,11 +670,7 @@ export class WorkerMonitorService {
   private readonly shouldCheckConnectionTimeout = (
     worker: IWorkerMonitor
   ): boolean => {
-    const statuses = [
-      EWorkerStatus.disponible,
-      EWorkerStatus.error,
-      EWorkerStatus.mismatched,
-    ];
+    const statuses = [EWorkerStatus.disponible, EWorkerStatus.error];
 
     return statuses.includes(worker.worker_status_id);
   };
