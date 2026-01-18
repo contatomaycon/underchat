@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { ElasticDatabaseService } from './elasticDatabase.service';
 import { CentrifugoService } from './centrifugo.service';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
@@ -8,6 +8,10 @@ import {
   MessageSummaryBaseline,
   MessageSummaryScriptParams,
 } from '@core/common/interfaces/IMessageSummaryUpdate';
+import Redis from 'ioredis';
+import { createHash } from 'node:crypto';
+import { logger } from '@core/plugins/telemetry/logger';
+import { captureException } from '@core/plugins/telemetry/sentry';
 
 export type MessageSummaryPatch = Partial<
   Pick<IChatMessage['summary'], 'is_sent' | 'is_delivered' | 'is_seen'>
@@ -19,9 +23,20 @@ type ElasticHit<T> = {
 
 @injectable()
 export class MessageStatusService {
+  private readonly cacheTtlSeconds = 3600;
+  private readonly lockTtlSeconds = 10;
+  private readonly messageCachePrefix = 'msg:';
+  private readonly lockPrefix = 'lock:update-status:';
+  private readonly circuitBreakerThreshold = 20;
+  private readonly circuitBreakerResetMs = 25_000;
+
+  private circuitBreakerFailures = 0;
+  private circuitBreakerOpenUntil = 0;
+
   constructor(
     private readonly elasticDatabaseService: ElasticDatabaseService,
-    private readonly centrifugoService: CentrifugoService
+    private readonly centrifugoService: CentrifugoService,
+    @inject('Redis') private readonly redis: Redis
   ) {}
 
   async updateSummaryByWhatsAppId(
@@ -33,7 +48,7 @@ export class MessageStatusService {
       return null;
     }
 
-    const message = await this.findMessageByWhatsAppIdWithRetry(
+    const message = await this.findMessageByWhatsAppIdCached(
       accountId,
       messageId
     );
@@ -48,15 +63,20 @@ export class MessageStatusService {
 
     const channelAccountId = updatedMessage.account?.id ?? accountId;
 
+    const updated = await this.updateSummaryAtomicallyWithLock(
+      message.message_id,
+      message.summary,
+      patch
+    );
+
+    if (updated) {
+      await this.invalidateMessageCache(accountId, messageId);
+    }
+
     const [centrifugoResult] = await Promise.allSettled([
       this.publishCentrifugoWithRetry(
         chatAccountCentrifugo(channelAccountId),
         updatedMessage
-      ),
-      this.updateSummaryAtomicallyWithRetry(
-        message.message_id,
-        message.summary,
-        patch
       ),
     ]);
 
@@ -131,43 +151,208 @@ export class MessageStatusService {
     return changed ? next : null;
   }
 
+  private isCircuitOpen(): boolean {
+    const now = Date.now();
+
+    if (this.circuitBreakerOpenUntil && now < this.circuitBreakerOpenUntil) {
+      return true;
+    }
+
+    if (this.circuitBreakerOpenUntil && now >= this.circuitBreakerOpenUntil) {
+      this.circuitBreakerFailures = 0;
+      this.circuitBreakerOpenUntil = 0;
+    }
+
+    return false;
+  }
+
+  private recordCircuitFailure(): void {
+    this.circuitBreakerFailures++;
+
+    if (this.circuitBreakerFailures >= this.circuitBreakerThreshold) {
+      this.circuitBreakerOpenUntil = Date.now() + this.circuitBreakerResetMs;
+
+      logger.error(
+        {
+          type: 'elasticsearch_circuit_breaker_open',
+          failures: this.circuitBreakerFailures,
+          resetMs: this.circuitBreakerResetMs,
+        },
+        'Elasticsearch circuit breaker opened'
+      );
+
+      captureException(new Error('Elasticsearch circuit breaker opened'), {
+        level: 'error',
+        elasticsearch: {
+          type: 'circuit_breaker_open',
+          failures: this.circuitBreakerFailures,
+        },
+      });
+    }
+  }
+
+  private recordCircuitSuccess(): void {
+    if (this.circuitBreakerFailures > 0) {
+      this.circuitBreakerFailures = Math.max(
+        0,
+        this.circuitBreakerFailures - 1
+      );
+    }
+  }
+
   private async findMessageByWhatsAppId(
     accountId: string,
     messageId: string
   ): Promise<IChatMessage | null> {
-    const queryElastic = {
-      size: 1,
-      query: {
-        bool: {
-          must: [
-            {
-              nested: {
-                path: 'account',
-                query: {
-                  term: { 'account.id': accountId },
-                },
-              },
-            },
-            {
-              nested: {
-                path: 'message_key',
-                query: {
-                  term: { 'message_key.id': messageId },
-                },
-              },
-            },
-          ],
-        },
-      },
-    };
+    if (this.isCircuitOpen()) {
+      throw new Error('Elasticsearch circuit breaker is open');
+    }
 
-    const result = await this.elasticDatabaseService.select<IChatMessage>(
-      EElasticIndex.message,
-      queryElastic
+    try {
+      const queryElastic = {
+        size: 1,
+        query: {
+          bool: {
+            must: [
+              {
+                nested: {
+                  path: 'account',
+                  query: {
+                    term: { 'account.id': accountId },
+                  },
+                },
+              },
+              {
+                nested: {
+                  path: 'message_key',
+                  query: {
+                    term: { 'message_key.id': messageId },
+                  },
+                },
+              },
+            ],
+          },
+        },
+      };
+
+      const result = await this.elasticDatabaseService.select<IChatMessage>(
+        EElasticIndex.message,
+        queryElastic
+      );
+
+      const hit = result?.hits?.hits?.[0] as
+        | ElasticHit<IChatMessage>
+        | undefined;
+      this.recordCircuitSuccess();
+      return hit?._source ?? null;
+    } catch (error) {
+      this.recordCircuitFailure();
+      throw error;
+    }
+  }
+
+  private async findMessageByWhatsAppIdCached(
+    accountId: string,
+    messageId: string
+  ): Promise<IChatMessage | null> {
+    const cacheKey = `${this.messageCachePrefix}${accountId}:${messageId}`;
+
+    try {
+      const cached = await this.redis.get(cacheKey);
+      if (cached) {
+        return JSON.parse(cached) as IChatMessage;
+      }
+    } catch {}
+
+    const message = await this.findMessageByWhatsAppIdWithRetry(
+      accountId,
+      messageId
     );
 
-    const hit = result?.hits?.hits?.[0] as ElasticHit<IChatMessage> | undefined;
-    return hit?._source ?? null;
+    if (message) {
+      try {
+        await this.redis.setex(
+          cacheKey,
+          this.cacheTtlSeconds,
+          JSON.stringify(message)
+        );
+      } catch {}
+    }
+
+    return message;
+  }
+
+  private async invalidateMessageCache(
+    accountId: string,
+    messageId: string
+  ): Promise<void> {
+    const cacheKey = `${this.messageCachePrefix}${accountId}:${messageId}`;
+    try {
+      await this.redis.del(cacheKey);
+    } catch {}
+  }
+
+  private async updateSummaryAtomicallyWithLock(
+    messageId: string,
+    currentSummary: IChatMessage['summary'],
+    patch: MessageSummaryPatch,
+    maxRetries = 5
+  ): Promise<boolean> {
+    const lockKey = `${this.lockPrefix}${messageId}`;
+
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        const lockAcquired = await this.redis.set(
+          lockKey,
+          '1',
+          'EX',
+          this.lockTtlSeconds,
+          'NX'
+        );
+
+        if (!lockAcquired) {
+          if (attempt < maxRetries - 1) {
+            const backoffMs = Math.min(100 * Math.pow(2, attempt), 1000);
+            await new Promise((resolve) => setTimeout(resolve, backoffMs));
+            continue;
+          }
+          return false;
+        }
+
+        const refreshInterval = setInterval(
+          async () => {
+            try {
+              await this.redis.expire(lockKey, this.lockTtlSeconds);
+            } catch {}
+          },
+          (this.lockTtlSeconds * 1000) / 3
+        );
+
+        try {
+          const result = await this.updateSummaryAtomicallyWithRetry(
+            messageId,
+            currentSummary,
+            patch,
+            3
+          );
+          return result;
+        } finally {
+          clearInterval(refreshInterval);
+          await this.redis.del(lockKey);
+        }
+      } catch {
+        try {
+          await this.redis.del(lockKey);
+        } catch {}
+
+        if (attempt < maxRetries - 1) {
+          const backoffMs = Math.min(100 * Math.pow(2, attempt), 1000);
+          await new Promise((resolve) => setTimeout(resolve, backoffMs));
+        }
+      }
+    }
+
+    return false;
   }
 
   private async findMessageByWhatsAppIdWithRetry(
@@ -247,20 +432,32 @@ export class MessageStatusService {
   private async findMessageByMessageId(
     messageId: string
   ): Promise<IChatMessage | null> {
-    const queryElastic = {
-      size: 1,
-      query: {
-        term: { message_id: messageId },
-      },
-    };
+    if (this.isCircuitOpen()) {
+      throw new Error('Elasticsearch circuit breaker is open');
+    }
 
-    const result = await this.elasticDatabaseService.select<IChatMessage>(
-      EElasticIndex.message,
-      queryElastic
-    );
+    try {
+      const queryElastic = {
+        size: 1,
+        query: {
+          term: { message_id: messageId },
+        },
+      };
 
-    const hit = result?.hits?.hits?.[0] as ElasticHit<IChatMessage> | undefined;
-    return hit?._source ?? null;
+      const result = await this.elasticDatabaseService.select<IChatMessage>(
+        EElasticIndex.message,
+        queryElastic
+      );
+
+      const hit = result?.hits?.hits?.[0] as
+        | ElasticHit<IChatMessage>
+        | undefined;
+      this.recordCircuitSuccess();
+      return hit?._source ?? null;
+    } catch (error) {
+      this.recordCircuitFailure();
+      throw error;
+    }
   }
 
   private buildMessageSummaryBaseline(
@@ -293,12 +490,14 @@ export class MessageStatusService {
       }
       
       def summary = ctx._source.summary;
+      def shouldUpdate = false;
       def changed = false;
       
       if (params.patch_is_sent != null && params.patch_is_sent) {
         if (!summary.containsKey('is_sent') || !summary.is_sent) {
           summary.is_sent = true;
           changed = true;
+          shouldUpdate = true;
         }
       }
       
@@ -306,6 +505,7 @@ export class MessageStatusService {
         if (!summary.containsKey('is_delivered') || !summary.is_delivered) {
           summary.is_delivered = true;
           changed = true;
+          shouldUpdate = true;
         }
       }
       
@@ -313,14 +513,16 @@ export class MessageStatusService {
         if (!summary.containsKey('is_seen') || !summary.is_seen) {
           summary.is_seen = true;
           changed = true;
+          shouldUpdate = true;
         }
       }
       
       if (!summary.containsKey('is_sent_to_internal')) {
         summary.is_sent_to_internal = params.baseline.is_sent_to_internal;
+        shouldUpdate = true;
       }
       
-      if (!changed) {
+      if (!shouldUpdate) {
         ctx.op = 'noop';
       }
     `;
@@ -331,6 +533,10 @@ export class MessageStatusService {
     currentSummary: IChatMessage['summary'],
     patch: MessageSummaryPatch
   ): Promise<boolean> {
+    if (this.isCircuitOpen()) {
+      throw new Error('Elasticsearch circuit breaker is open');
+    }
+
     const baseline = this.buildMessageSummaryBaseline(currentSummary);
     const scriptParams = this.buildMessageSummaryScriptParams(baseline, patch);
     const scriptSource = this.buildMessageSummaryScriptSource();
@@ -352,9 +558,16 @@ export class MessageStatusService {
         }
       );
 
+      this.recordCircuitSuccess();
       return result === 'updated' || result === 'created' || result === 'noop';
     } catch {
+      this.recordCircuitFailure();
       return false;
     }
+  }
+
+  static hashPatch(patch: MessageSummaryPatch): string {
+    const sorted = JSON.stringify(patch, Object.keys(patch).sort());
+    return createHash('sha256').update(sorted).digest('hex').substring(0, 16);
   }
 }

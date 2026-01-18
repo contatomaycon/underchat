@@ -9,11 +9,11 @@ import { startHeartbeat } from '@core/common/functions/startHeartbeat';
 import { createConsumer } from '@core/common/functions/createConsumer';
 import { connectConsumer } from '@core/common/functions/connectConsumer';
 import { handleConsumerError } from '@core/common/functions/handleConsumerError';
-import { MessageStatusService } from '@core/services/messageStatus.service';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { IMessageStatusUpdate } from '@core/common/interfaces/IMessageStatusUpdate';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 import { commitOffset } from '@core/common/functions/commitOffset';
+import { MessageStatusService } from '@core/services/messageStatus.service';
 
 @singleton()
 export class MessageMarkReadConsume {
@@ -25,7 +25,6 @@ export class MessageMarkReadConsume {
     @inject('Kafka') private readonly kafka: KafkaClient,
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
     private readonly baileysIncomingMessageService: BaileysIncomingMessageService,
-    private readonly messageStatusService: MessageStatusService,
     private readonly streamProducerService: StreamProducerService
   ) {}
 
@@ -75,16 +74,13 @@ export class MessageMarkReadConsume {
 
     this.consumer.on('data', async (message) => {
       const data = this.parseMessage(message.value);
-
       if (!data) {
         await this.commitNext(topic, message.partition, message.offset);
-
         return;
       }
 
       if (data.worker_id !== baileysEnvironment.baileysWorkerId) {
         await this.commitNext(topic, message.partition, message.offset);
-
         return;
       }
 
@@ -115,17 +111,27 @@ export class MessageMarkReadConsume {
                 key,
               };
 
+              const kafkaKey = `${data.account_id}:${key.id}:${MessageStatusService.hashPatch(statusUpdate.patch)}`;
+
               await this.streamProducerService.send(
                 this.kafkaServiceQueueService.updateMessageStatus(),
-                statusUpdate
+                statusUpdate,
+                kafkaKey
               );
             })
           );
+        } catch (error) {
+          throw error;
         } finally {
           stop();
-          await this.commitNext(topic, partition, offset);
         }
       });
+
+      currentChain
+        .then(() => {
+          return this.commitNext(topic, partition, offset);
+        })
+        .catch(() => {});
 
       this.partitionChains.set(partition, currentChain);
     });

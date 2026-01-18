@@ -26,7 +26,10 @@ import { remoteJidAlt } from '@core/common/functions/remoteJidAlt';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { chatAccountCentrifugo } from '@core/common/functions/centrifugoQueue';
 import { IChatTyping } from '@core/common/interfaces/IChatTyping';
-import { MessageSummaryPatch } from '@core/services/messageStatus.service';
+import {
+  MessageSummaryPatch,
+  MessageStatusService,
+} from '@core/services/messageStatus.service';
 import { IMessageStatusUpdate } from '@core/common/interfaces/IMessageStatusUpdate';
 import { getPhoneFromJid } from '@core/common/functions/getPhoneFromJid';
 import { EMessageType } from '@core/common/enums/EMessageType';
@@ -93,9 +96,6 @@ export class BaileysIncomingMessageService {
         const chatKind = getChatKind(m);
         const upsertType = e.type;
 
-        console.dir(upsertType, { depth: null, colors: true });
-        console.dir(chatKind, { depth: null, colors: true });
-
         if (
           chatKind === EChatKind.user &&
           upsertType === EMessageUpsertType.notify
@@ -107,18 +107,14 @@ export class BaileysIncomingMessageService {
             continue;
           }
 
-          this.processedMessages.add(messageKey);
-
           const type = mapIncomingToType(m);
           const hasQuoted = messageHasQuoted(m);
 
-          console.dir(m, { depth: null, colors: true });
-          console.dir(type, { depth: null, colors: true });
-
           if (!type) {
-            this.processedMessages.delete(messageKey);
             continue;
           }
+
+          this.processedMessages.add(messageKey);
 
           const senderPic = await getSenderPhotoUrl(socket, m);
 
@@ -133,7 +129,8 @@ export class BaileysIncomingMessageService {
 
           await this.streamProducerService.send(
             this.kafkaServiceQueueService.upsertMessage(),
-            inputUpsert
+            inputUpsert,
+            messageKey
           );
         }
       }
@@ -180,15 +177,11 @@ export class BaileysIncomingMessageService {
             chatAccountCentrifugo(baileysEnvironment.baileysAccountId),
             typingEvent
           );
-        } catch (error) {
-          console.error('Error publishing typing event:', error);
-        }
+        } catch {}
       }
     });
 
-    socket.ev.on('messaging-history.set', (data) => {
-      console.log('data:', data);
-    });
+    socket.ev.on('messaging-history.set', () => {});
 
     socket.ev.on('call', async (callEvents: WACallEvent[]) => {
       if (!callEvents) return;
@@ -291,21 +284,28 @@ export class BaileysIncomingMessageService {
     if (callId && jid) {
       try {
         await socket.rejectCall(callId, jid);
-      } catch (error) {
-        console.error('Error rejecting call:', error);
-      }
+      } catch {}
     }
   }
 
   private async handleMessagesUpdate(events: WAMessageUpdate[]) {
     if (!events?.length) return;
 
-    await Promise.all(
-      events.map(async (event) => {
-        const patch = this.mapStatusToPatch(event.update?.status);
-        await this.applyStatusPatch(event.key, patch);
-      })
-    );
+    const BATCH_SIZE = 10;
+    const batches: WAMessageUpdate[][] = [];
+
+    for (let i = 0; i < events.length; i += BATCH_SIZE) {
+      batches.push(events.slice(i, i + BATCH_SIZE));
+    }
+
+    for (const batch of batches) {
+      await Promise.all(
+        batch.map(async (event) => {
+          const patch = this.mapStatusToPatch(event.update?.status);
+          await this.applyStatusPatch(event.key, patch);
+        })
+      );
+    }
   }
 
   private async handleMessageReceiptUpdate(events: MessageUserReceiptUpdate[]) {
@@ -379,9 +379,12 @@ export class BaileysIncomingMessageService {
         key,
       };
 
+      const kafkaKey = `${baileysEnvironment.baileysAccountId}:${key.id}:${MessageStatusService.hashPatch(patch)}`;
+
       await this.streamProducerService.send(
         this.kafkaServiceQueueService.updateMessageStatus(),
-        statusUpdate
+        statusUpdate,
+        kafkaKey
       );
     } catch (error) {
       throw error;
