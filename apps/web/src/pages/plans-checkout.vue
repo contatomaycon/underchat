@@ -113,6 +113,7 @@ const step4Loaded = ref(false);
 const expiryError = ref<string | null>(null);
 const pixModalOpen = ref(false);
 const pixPaymentInitiated = ref(false);
+const paymentInitiated = ref(false);
 const processingPayment = ref(false);
 const pixPaymentData = ref<{
   payment_id: string;
@@ -1184,6 +1185,8 @@ const processPayment = async () => {
   }
 
   if (!selectedPaymentMethod.value) return;
+
+  paymentInitiated.value = true;
 
   const isPixPayment = selectedPaymentMethod.value === 'pix';
   const isCreditCardPayment = selectedPaymentMethod.value === 'credit_card';
@@ -2312,7 +2315,7 @@ onMounted(async () => {
 
                 <!-- Tela de Pagamento para Planos Normais -->
                 <div v-else>
-                  <h4 class="text-h6 mb-4">
+                  <h4 v-if="!paymentInitiated" class="text-h6 mb-4">
                     {{ $t('select_payment_method') }}
                   </h4>
 
@@ -2348,7 +2351,7 @@ onMounted(async () => {
                     </div>
                   </VAlert>
 
-                  <VRow>
+                  <VRow v-if="!paymentInitiated">
                     <!-- Boleto -->
                     <VCol cols="12" md="4">
                       <VCard
