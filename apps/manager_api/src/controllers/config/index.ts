@@ -14,6 +14,8 @@ import { channelsStatistics } from './methods/channelsStatistics';
 import { listCreditCardFee } from './methods/listCreditCardFee';
 import { updateCreditCardFee } from './methods/updateCreditCardFee';
 import { checkChannelOpenConversations } from './methods/checkChannelOpenConversations';
+import { listMethodPayments } from './methods/listMethodPayments';
+import { updateMethodPayment } from './methods/updateMethodPayment';
 
 @injectable()
 class ConfigController {
@@ -32,6 +34,8 @@ class ConfigController {
   public listCreditCardFee = listCreditCardFee;
   public updateCreditCardFee = updateCreditCardFee;
   public checkChannelOpenConversations = checkChannelOpenConversations;
+  public listMethodPayments = listMethodPayments;
+  public updateMethodPayment = updateMethodPayment;
 }
 
 export default ConfigController;

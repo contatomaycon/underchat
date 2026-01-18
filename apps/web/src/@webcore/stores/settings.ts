@@ -19,6 +19,9 @@ import { IAccountBasic } from '@core/common/interfaces/IAccountBasic';
 import { ListCreditCardFeeResponse } from '@core/schema/config/listCreditCardFee/response.schema';
 import { UpdateCreditCardFeeRequest } from '@core/schema/config/updateCreditCardFee/request.schema';
 import { UpdateCreditCardFeeResponse } from '@core/schema/config/updateCreditCardFee/response.schema';
+import { ListMethodPaymentsResponse } from '@core/schema/config/listMethodPayments/response.schema';
+import { UpdateMethodPaymentRequest } from '@core/schema/config/updateMethodPayment/request.schema';
+import { UpdateMethodPaymentResponse } from '@core/schema/config/updateMethodPayment/response.schema';
 
 export const useSettingsStore = defineStore('settings', {
   state: () => ({
@@ -33,6 +36,7 @@ export const useSettingsStore = defineStore('settings', {
     nfse: null as ListNfseResponse | null,
     channels: null as ListChannelsFinalResponse | null,
     creditCardFee: null as ListCreditCardFeeResponse | null,
+    methodPayments: null as ListMethodPaymentsResponse | null,
   }),
   actions: {
     showSnackbar(message: string, color: EColor) {
@@ -273,6 +277,81 @@ export const useSettingsStore = defineStore('settings', {
       } catch (error) {
         this.loading = false;
         let errorMessage = this.i18n.global.t('credit_card_fee_update_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        return null;
+      }
+    },
+    async getMethodPayments(): Promise<ListMethodPaymentsResponse | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.get<
+          IApiResponse<ListMethodPaymentsResponse>
+        >('/config/method-payments');
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        this.methodPayments = data.data;
+
+        return data.data;
+      } catch {
+        this.loading = false;
+        return null;
+      }
+    },
+    async updateMethodPayment(
+      input: UpdateMethodPaymentRequest
+    ): Promise<UpdateMethodPaymentResponse | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.patch<
+          IApiResponse<UpdateMethodPaymentResponse>
+        >('/config/method-payment', input);
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const message =
+            data?.message ?? this.i18n.global.t('method_payment_update_error');
+
+          this.showSnackbar(message, EColor.error);
+
+          return null;
+        }
+
+        this.showSnackbar(
+          data.message ??
+            this.i18n.global.t('method_payment_updated_successfully'),
+          EColor.success
+        );
+
+        if (this.methodPayments) {
+          const index = this.methodPayments.findIndex(
+            (mp) => mp.method_payment_id === data.data.method_payment_id
+          );
+          if (index !== -1) {
+            this.methodPayments[index] = data.data;
+          }
+        }
+
+        return data.data;
+      } catch (error) {
+        this.loading = false;
+        let errorMessage = this.i18n.global.t('method_payment_update_error');
         if (error instanceof AxiosError) {
           errorMessage = error?.response?.data?.message ?? errorMessage;
         }

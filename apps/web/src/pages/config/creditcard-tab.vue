@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { onMounted, ref, computed, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { VForm } from 'vuetify/components/VForm';
 import { useSettingsStore } from '@/@webcore/stores/settings';
@@ -7,6 +7,8 @@ import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import { requiredValidator } from '@/@webcore/utils/validators';
 import { ListCreditCardFeeResponse } from '@core/schema/config/listCreditCardFee/response.schema';
 import { UpdateCreditCardFeeRequest } from '@core/schema/config/updateCreditCardFee/request.schema';
+import { EMethodPayment } from '@core/common/enums/EMethodPayment';
+import MethodPaymentsTab from './method-payments-tab.vue';
 
 const { t } = useI18n();
 const settingsStore = useSettingsStore();
@@ -37,6 +39,23 @@ const installments = ref<number[]>([]);
 for (let i = 1; i <= 12; i += 1) {
   installments.value.push(i);
 }
+
+const creditCardEnabled = computed(() => {
+  const creditCard = settingsStore.methodPayments?.find(
+    (mp) => mp.type === EMethodPayment.credit_card
+  );
+  return creditCard?.status ?? false;
+});
+
+watch(
+  () => settingsStore.methodPayments,
+  () => {
+    if (creditCardEnabled.value) {
+      loadCreditCardFee();
+    }
+  },
+  { deep: true }
+);
 
 const getInstallmentKey = (
   installment: number
@@ -83,19 +102,34 @@ const saveCreditCardFee = async () => {
 };
 
 onMounted(() => {
-  loadCreditCardFee();
+  if (!settingsStore.methodPayments) {
+    settingsStore.getMethodPayments();
+  }
+  if (creditCardEnabled.value) {
+    loadCreditCardFee();
+  }
 });
 </script>
 
 <template>
   <div>
-    <VRow v-if="loading">
+    <MethodPaymentsTab />
+
+    <VRow v-if="!creditCardEnabled" class="mt-6">
+      <VCol cols="12">
+        <VAlert type="info" variant="tonal">
+          {{ $t('credit_card_method_disabled_message') }}
+        </VAlert>
+      </VCol>
+    </VRow>
+
+    <VRow v-if="creditCardEnabled && loading" class="mt-6">
       <VCol cols="12" class="text-center">
         <VProgressCircular indeterminate color="primary" />
       </VCol>
     </VRow>
 
-    <VRow v-else>
+    <VRow v-else-if="creditCardEnabled">
       <VCol cols="12">
         <VCard>
           <VCardTitle class="text-h6 pa-6 pb-4">

@@ -139,6 +139,7 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       | 'config-channels-tab'
       | 'config-creditcard-tab'
+      | 'config-method-payments-tab'
       | 'config-nfse-tab'
       | 'config-notifications-tab'
     >,
@@ -152,6 +153,13 @@ declare module 'vue-router/auto-routes' {
     'config-creditcard-tab': RouteRecordInfo<
       'config-creditcard-tab',
       '/config/creditcard-tab',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
+    'config-method-payments-tab': RouteRecordInfo<
+      'config-method-payments-tab',
+      '/config/method-payments-tab',
       Record<never, never>,
       Record<never, never>,
       | never
@@ -466,6 +474,7 @@ declare module 'vue-router/auto-routes' {
         | 'config'
         | 'config-channels-tab'
         | 'config-creditcard-tab'
+        | 'config-method-payments-tab'
         | 'config-nfse-tab'
         | 'config-notifications-tab'
       views:
@@ -480,6 +489,12 @@ declare module 'vue-router/auto-routes' {
     'src/pages/config/creditcard-tab.vue': {
       routes:
         | 'config-creditcard-tab'
+      views:
+        | never
+    }
+    'src/pages/config/method-payments-tab.vue': {
+      routes:
+        | 'config-method-payments-tab'
       views:
         | never
     }
