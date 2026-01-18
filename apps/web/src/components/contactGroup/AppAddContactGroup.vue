@@ -7,6 +7,7 @@ import { VForm } from 'vuetify/components/VForm';
 import { ref, computed, watch } from 'vue';
 import { refDebounced } from '@vueuse/core';
 import { EColor } from '@core/common/enums/EColor';
+import { SortRequest } from '@core/schema/common/sortRequestSchema';
 
 const contactGroupStore = useContactGroupStore();
 const contactStore = useContactStore();
@@ -60,13 +61,44 @@ const headers = [
   { title: t('label'), key: 'label_template' },
 ];
 
+const itemsPerPage = ref([
+  { value: 5, title: '5' },
+  { value: 10, title: '10' },
+  { value: 25, title: '25' },
+  { value: 50, title: '50' },
+  { value: 100, title: '100' },
+  { value: 200, title: '200' },
+]);
+
 const search = ref<string>('');
 const searchDebounced = refDebounced(search, 500);
 
+type ContactRow = Pick<
+  ListContactResponse,
+  'contact_id' | 'name' | 'phone_partial' | 'label_templates'
+>;
+
 const contactItems = computed(() => contactStore.list);
-const selectedContacts = ref<ListContactResponse[]>([]);
+const selectedContactIds = ref<Set<string>>(new Set());
+const selectedContactsMap = ref<Map<string, ContactRow>>(new Map());
+const selectedContactsCount = computed(() => selectedContactIds.value.size);
 const name = ref<string | null>(null);
 const description = ref<string | null>(null);
+const isLoadingContacts = ref(false);
+
+const options = ref({
+  page: 1,
+  itemsPerPage: 10,
+  sortBy: [] as SortRequest[],
+  search: null as string | null,
+});
+
+const query = computed(() => ({
+  page: options.value.page,
+  per_page: options.value.itemsPerPage,
+  sort_by: options.value.sortBy,
+  search: searchDebounced.value || null,
+}));
 
 const refFormAddContactGroup = ref<VForm>();
 
@@ -81,8 +113,8 @@ const addContact = async () => {
   const payload: CreateContactGroupRequest = {
     name: name.value,
     description: description.value ?? null,
-    contacts: selectedContacts.value.map((contact) => ({
-      contact_id: contact.contact_id,
+    contacts: Array.from(selectedContactIds.value).map((contact_id) => ({
+      contact_id,
     })),
   };
 
@@ -99,39 +131,90 @@ const resetForm = () => {
   name.value = null;
   description.value = null;
   search.value = '';
-  selectedContacts.value = [];
+  selectedContactIds.value = new Set();
+  selectedContactsMap.value = new Map();
+  options.value.page = 1;
   refFormAddContactGroup.value?.resetValidation();
 };
 
 onMounted(async () => {
   resetForm();
-  await contactStore.listContact();
 });
 
 watch(isVisible, async (visible) => {
-  if (visible) {
-    resetForm();
-    await contactStore.listContact({
-      page: 1,
-      per_page: 10,
-      sort_by: [],
-      search: undefined,
-    });
-  }
+  if (!visible) return;
+
+  resetForm();
+  await loadContacts();
 });
 
-watch(searchDebounced, async (value) => {
-  await contactStore.listContact({
-    page: 1,
-    per_page: 10,
-    sort_by: [],
-    search: value ?? undefined,
-  });
+watch(searchDebounced, async () => {
+  options.value.page = 1;
 });
+
+async function loadContacts() {
+  if (isLoadingContacts.value) return;
+
+  isLoadingContacts.value = true;
+  await contactStore.listContact(query.value);
+  isLoadingContacts.value = false;
+}
+
+watch(
+  query,
+  async () => {
+    await loadContacts();
+  },
+  { immediate: true, deep: true }
+);
+
+const handleTableChange = (o: {
+  page: number;
+  itemsPerPage: number;
+  sortBy: SortRequest[];
+}) => {
+  options.value.page = o.page;
+  options.value.itemsPerPage = Number(o.itemsPerPage);
+  options.value.sortBy = o.sortBy;
+  loadContacts();
+};
+
+const isContactSelected = (contactId: string): boolean => {
+  return selectedContactIds.value.has(contactId);
+};
+
+const addSelectedContact = (contact: ContactRow) => {
+  const nextIds = new Set(selectedContactIds.value);
+  nextIds.add(contact.contact_id);
+  selectedContactIds.value = nextIds;
+
+  const nextMap = new Map(selectedContactsMap.value);
+  nextMap.set(contact.contact_id, contact);
+  selectedContactsMap.value = nextMap;
+};
+
+const removeSelectedContact = (contactId: string) => {
+  const nextIds = new Set(selectedContactIds.value);
+  nextIds.delete(contactId);
+  selectedContactIds.value = nextIds;
+
+  const nextMap = new Map(selectedContactsMap.value);
+  nextMap.delete(contactId);
+  selectedContactsMap.value = nextMap;
+};
+
+const toggleContact = (contact: ContactRow) => {
+  if (isContactSelected(contact.contact_id)) {
+    removeSelectedContact(contact.contact_id);
+    return;
+  }
+
+  addSelectedContact(contact);
+};
 </script>
 
 <template>
-  <VDialog v-model="isVisible" max-width="600">
+  <VDialog v-model="isVisible" max-width="900">
     <DialogCloseBtn @click="isVisible = false" />
 
     <VOverlay
@@ -166,26 +249,39 @@ watch(searchDebounced, async (value) => {
 
           <VRow>
             <VCol cols="12">
-              <VCardText
-                class="d-flex align-center justify-space-between px-0 flex-wrap gap-4"
-              >
+              <VCardText class="d-flex flex-column px-0 gap-3">
                 <div class="d-flex align-center gap-2">
                   <span class="text-caption text-medium-emphasis">
-                    {{ $t('selected') }} ({{ selectedContacts.length }}):
+                    {{ $t('selected') }} ({{ selectedContactsCount }}):
                   </span>
                 </div>
 
-                <div class="invoice-list-filter d-flex align-center gap-2">
-                  <VLabel>{{ $t('search') }}:</VLabel>
-                  <AppTextField
-                    v-model="search"
-                    :placeholder="$t('search') + '...'"
-                    append-inner-icon="tabler-search"
-                    single-line
-                    hide-details
-                    dense
-                    outlined
-                  />
+                <div class="d-flex align-center justify-space-between flex-wrap gap-4">
+                  <div class="d-flex align-center gap-x-2">
+                    <div>{{ $t('show') }}</div>
+                    <AppSelect
+                      :model-value="options.itemsPerPage"
+                      :items="itemsPerPage"
+                      @update:model-value="
+                        options.itemsPerPage = parseInt($event, 10)
+                      "
+                    />
+                  </div>
+
+                  <div class="invoice-list-filter d-flex align-center gap-2">
+                    <VLabel>{{ $t('search') }}:</VLabel>
+                    <AppTextField
+                      v-model="search"
+                      :placeholder="$t('search') + '...'"
+                      append-inner-icon="tabler-search"
+                      single-line
+                      hide-details
+                      dense
+                      outlined
+                      class="flex-grow-1"
+                      style="min-width: 280px;"
+                    />
+                  </div>
                 </div>
               </VCardText>
             </VCol>
@@ -193,19 +289,29 @@ watch(searchDebounced, async (value) => {
 
           <VRow>
             <VCol cols="12">
-              <VDataTable
-                v-model="selectedContacts"
+              <VDataTableServer
+                v-model:page="options.page"
+                v-model:items-per-page="options.itemsPerPage"
                 :headers="headers"
                 :items="contactItems"
-                item-value="contact_id"
-                show-select
-                return-object
-                :items-per-page="10"
+                :items-length="contactStore.pagings.total"
+                :loading="isLoadingContacts"
+                :sort-by="options.sortBy"
+                @update:options="handleTableChange"
+                :loading-text="$t('loading_text')"
               >
                 <template #item.name="{ item }">
-                  <span class="font-weight-medium">
-                    {{ item.name }}
-                  </span>
+                  <div class="d-flex align-center gap-2">
+                    <VCheckbox
+                      :model-value="isContactSelected(item.contact_id)"
+                      @update:model-value="toggleContact(item)"
+                      hide-details
+                      density="compact"
+                    />
+                    <span class="font-weight-medium">
+                      {{ item.name }}
+                    </span>
+                  </div>
                 </template>
 
                 <template #item.phone_partial="{ item }">
@@ -257,7 +363,18 @@ watch(searchDebounced, async (value) => {
                     >-</VChip
                   >
                 </template>
-              </VDataTable>
+                <template #no-data>
+                  {{ $t('no_data_available') }}
+                </template>
+
+                <template #bottom>
+                  <TablePagination
+                    v-model:page="options.page"
+                    :items-per-page="options.itemsPerPage"
+                    :total-items="contactStore.pagings.total"
+                  />
+                </template>
+              </VDataTableServer>
             </VCol>
           </VRow>
         </VCardText>

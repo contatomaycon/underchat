@@ -10,6 +10,7 @@ import {
   UpdateContactGroupRequest,
 } from '@core/schema/contactGroup/editContactGroup/request.schema';
 import { EColor } from '@core/common/enums/EColor';
+import { SortRequest } from '@core/schema/common/sortRequestSchema';
 
 const contactGroupStore = useContactGroupStore();
 const contactStore = useContactStore();
@@ -20,18 +21,6 @@ const props = defineProps<{
   modelValue: boolean;
   contactGroupId: string | null;
 }>();
-
-function uniqueById(list: ListContactResponse[]): ListContactResponse[] {
-  const seen = new Set<string>();
-  const out: ListContactResponse[] = [];
-  for (const c of list) {
-    if (!seen.has(c.contact_id)) {
-      seen.add(c.contact_id);
-      out.push(c);
-    }
-  }
-  return out;
-}
 
 const emit = defineEmits<(e: 'update:modelValue', visible: boolean) => void>();
 
@@ -76,33 +65,74 @@ const headers = [
   { title: t('label'), key: 'label_template' },
 ];
 
+const itemsPerPage = ref([
+  { value: 5, title: '5' },
+  { value: 10, title: '10' },
+  { value: 25, title: '25' },
+  { value: 50, title: '50' },
+  { value: 100, title: '100' },
+  { value: 200, title: '200' },
+]);
+
+type ContactRow = Pick<
+  ListContactResponse,
+  'contact_id' | 'name' | 'phone_partial' | 'label_templates'
+>;
+
 const search = ref<string>('');
 const searchDebounced = refDebounced(search, 500);
 const onlyGroup = ref(false);
-const groupContactIds = ref<Set<string>>(new Set());
+const isLoadingContacts = ref(false);
 
-const isSearching = computed(
-  () => (searchDebounced.value ?? '').trim().length > 0
+const options = ref({
+  page: 1,
+  itemsPerPage: 10,
+  sortBy: [] as SortRequest[],
+  search: null as string | null,
+});
+
+const query = computed(() => ({
+  page: options.value.page,
+  per_page: options.value.itemsPerPage,
+  sort_by: options.value.sortBy,
+  search: searchDebounced.value || null,
+}));
+
+const normalizedSearch = computed(() =>
+  (searchDebounced.value ?? '').trim().toLowerCase()
 );
+
+const selectedContactIds = ref<Set<string>>(new Set());
+const selectedContactsMap = ref<Map<string, ContactRow>>(new Map());
+const selectedContactsList = computed(() =>
+  Array.from(selectedContactsMap.value.values())
+);
+const selectedContactsCount = computed(() => selectedContactIds.value.size);
+
+const selectedContactsFiltered = computed(() => {
+  const term = normalizedSearch.value;
+  if (!term) return selectedContactsList.value;
+
+  return selectedContactsList.value.filter((contact) => {
+    const name = contact.name?.toLowerCase() ?? '';
+    const phone = contact.phone_partial?.toLowerCase() ?? '';
+    return name.includes(term) || phone.includes(term);
+  });
+});
 
 const contactGroupId = toRef(props, 'contactGroupId');
 
 const contactItems = computed(() => {
-  const base = contactStore.list;
-  let items = base;
+  if (onlyGroup.value) return selectedContactsFiltered.value;
 
-  if (onlyGroup.value) {
-    items = items.filter((c) => groupContactIds.value.has(c.contact_id));
-  }
-
-  if (!isSearching.value) {
-    items = uniqueById([...items, ...selectedContacts.value]);
-  }
-
-  return items;
+  return contactStore.list;
 });
 
-const selectedContacts = ref<ListContactResponse[]>([]);
+const contactItemsLength = computed(() => {
+  if (onlyGroup.value) return selectedContactsFiltered.value.length;
+
+  return contactStore.pagings.total;
+});
 const name = ref<string | null>(null);
 const description = ref<string | null>(null);
 
@@ -123,8 +153,8 @@ const addContactGroup = async () => {
   const body: UpdateContactGroupRequest = {
     name: name.value,
     description: description.value ?? undefined,
-    contacts: selectedContacts.value.map((contact) => ({
-      contact_id: contact.contact_id,
+    contacts: Array.from(selectedContactIds.value).map((contact_id) => ({
+      contact_id,
     })),
   };
 
@@ -141,75 +171,142 @@ const resetForm = () => {
   name.value = null;
   description.value = null;
   search.value = '';
-  selectedContacts.value = [];
+  onlyGroup.value = false;
+  selectedContactIds.value = new Set();
+  selectedContactsMap.value = new Map();
+  options.value.page = 1;
   refFormAddContactGroup.value?.resetValidation();
 };
 
 onMounted(async () => {
-  await contactStore.listContact();
-
   resetForm();
-  if (!contactGroupId.value) return;
-
-  const contactGroup = await contactGroupStore.getContactGroupById(
-    contactGroupId.value
-  );
-  if (contactGroup) {
-    name.value = contactGroup.name;
-    description.value = contactGroup.description ?? null;
-
-    const groupContacts = contactGroup.contacts ?? [];
-    groupContactIds.value = new Set(groupContacts.map((gc) => gc.contact_id));
-
-    selectedContacts.value = contactStore.list.filter((contact) =>
-      groupContacts.some((cg) => cg.contact_id === contact.contact_id)
-    );
-  }
+  await loadGroupContacts();
 });
 
 watch(isVisible, async (visible) => {
   if (!visible) return;
 
   resetForm();
+  await loadContacts();
+  await loadGroupContacts();
+});
 
-  await contactStore.listContact({
-    page: 1,
-    per_page: 10,
-    sort_by: [],
-    search: undefined,
-  });
+watch(searchDebounced, async () => {
+  options.value.page = 1;
+  if (onlyGroup.value) return;
+});
 
-  if (contactGroupId.value) {
-    const contactGroup = await contactGroupStore.getContactGroupById(
-      contactGroupId.value
-    );
+watch(onlyGroup, async (value) => {
+  options.value.page = 1;
+  if (value) return;
 
-    if (contactGroup) {
-      name.value = contactGroup.name;
-      description.value = contactGroup.description ?? null;
+  await loadContacts();
+});
 
-      const groupContacts = contactGroup.contacts ?? [];
-      groupContactIds.value = new Set(groupContacts.map((gc) => gc.contact_id));
+async function loadContacts() {
+  if (isLoadingContacts.value) return;
 
-      selectedContacts.value = contactStore.list.filter((contact) =>
-        groupContacts.some((cg) => cg.contact_id === contact.contact_id)
-      );
-    }
+  isLoadingContacts.value = true;
+  await contactStore.listContact(query.value);
+  isLoadingContacts.value = false;
+  syncSelectedWithList();
+}
+
+watch(
+  query,
+  async () => {
+    if (onlyGroup.value) return;
+
+    await loadContacts();
+  },
+  { immediate: true, deep: true }
+);
+
+function syncSelectedWithList() {
+  const nextMap = new Map(selectedContactsMap.value);
+
+  for (const contact of contactStore.list) {
+    if (!selectedContactIds.value.has(contact.contact_id)) continue;
+
+    nextMap.set(contact.contact_id, contact);
   }
-});
 
-watch(searchDebounced, async (value) => {
-  await contactStore.listContact({
-    page: 1,
-    per_page: 10,
-    sort_by: [],
-    search: value ?? undefined,
-  });
-});
+  selectedContactsMap.value = nextMap;
+}
+
+async function loadGroupContacts() {
+  if (!contactGroupId.value) return;
+
+  const contactGroup = await contactGroupStore.getContactGroupById(
+    contactGroupId.value
+  );
+  if (!contactGroup) return;
+
+  name.value = contactGroup.name;
+  description.value = contactGroup.description ?? null;
+
+  const groupContacts = contactGroup.contacts ?? [];
+  for (const groupContact of groupContacts) {
+    addSelectedContact({
+      contact_id: groupContact.contact_id,
+      name: groupContact.name,
+      phone_partial: groupContact.phone_partial ?? null,
+      label_templates: [],
+    });
+  }
+
+  syncSelectedWithList();
+}
+
+const handleTableChange = (o: {
+  page: number;
+  itemsPerPage: number;
+  sortBy: SortRequest[];
+}) => {
+  options.value.page = o.page;
+  options.value.itemsPerPage = Number(o.itemsPerPage);
+  options.value.sortBy = o.sortBy;
+  if (onlyGroup.value) return;
+
+  loadContacts();
+};
+
+const isContactSelected = (contactId: string): boolean => {
+  return selectedContactIds.value.has(contactId);
+};
+
+const addSelectedContact = (contact: ContactRow) => {
+  const nextIds = new Set(selectedContactIds.value);
+  nextIds.add(contact.contact_id);
+  selectedContactIds.value = nextIds;
+
+  const nextMap = new Map(selectedContactsMap.value);
+  nextMap.set(contact.contact_id, contact);
+  selectedContactsMap.value = nextMap;
+};
+
+const removeSelectedContact = (contactId: string) => {
+  const nextIds = new Set(selectedContactIds.value);
+  nextIds.delete(contactId);
+  selectedContactIds.value = nextIds;
+
+  const nextMap = new Map(selectedContactsMap.value);
+  nextMap.delete(contactId);
+  selectedContactsMap.value = nextMap;
+};
+
+const toggleContact = (contact: ContactRow) => {
+  if (isContactSelected(contact.contact_id)) {
+    removeSelectedContact(contact.contact_id);
+    return;
+  }
+
+  addSelectedContact(contact);
+};
 </script>
 
 <template>
-  <VDialog v-model="isVisible" max-width="600">
+  <VDialog v-model="isVisible" max-width="900">
     <DialogCloseBtn @click="isVisible = false" />
 
     <VOverlay
@@ -244,27 +341,40 @@ watch(searchDebounced, async (value) => {
 
           <VRow>
             <VCol cols="12">
-              <VCardText
-                class="d-flex align-center justify-space-between px-0 flex-wrap gap-4"
-              >
+              <VCardText class="d-flex flex-column px-0 gap-3">
                 <VCheckbox
                   v-model="onlyGroup"
-                  :label="`${$t('selected_contacts')} (${selectedContacts.length})`"
+                  :label="`${$t('selected_contacts')} (${selectedContactsCount})`"
                   hide-details
                   density="compact"
                 />
 
-                <div class="invoice-list-filter d-flex align-center gap-2">
-                  <VLabel>{{ $t('search') }}:</VLabel>
-                  <AppTextField
-                    v-model="search"
-                    :placeholder="$t('search') + '...'"
-                    append-inner-icon="tabler-search"
-                    single-line
-                    hide-details
-                    dense
-                    outlined
-                  />
+                <div class="d-flex align-center justify-space-between flex-wrap gap-4">
+                  <div class="d-flex align-center gap-x-2">
+                    <div>{{ $t('show') }}</div>
+                    <AppSelect
+                      :model-value="options.itemsPerPage"
+                      :items="itemsPerPage"
+                      @update:model-value="
+                        options.itemsPerPage = parseInt($event, 10)
+                      "
+                    />
+                  </div>
+
+                  <div class="invoice-list-filter d-flex align-center gap-2">
+                    <VLabel>{{ $t('search') }}:</VLabel>
+                    <AppTextField
+                      v-model="search"
+                      :placeholder="$t('search') + '...'"
+                      append-inner-icon="tabler-search"
+                      single-line
+                      hide-details
+                      dense
+                      outlined
+                      class="flex-grow-1"
+                      style="min-width: 280px;"
+                    />
+                  </div>
                 </div>
               </VCardText>
             </VCol>
@@ -272,19 +382,29 @@ watch(searchDebounced, async (value) => {
 
           <VRow>
             <VCol cols="12">
-              <VDataTable
-                v-model="selectedContacts"
+              <VDataTableServer
+                v-model:page="options.page"
+                v-model:items-per-page="options.itemsPerPage"
                 :headers="headers"
                 :items="contactItems"
-                item-value="contact_id"
-                show-select
-                return-object
-                :items-per-page="10"
+                :items-length="contactItemsLength"
+                :loading="isLoadingContacts"
+                :sort-by="options.sortBy"
+                @update:options="handleTableChange"
+                :loading-text="$t('loading_text')"
               >
                 <template #item.name="{ item }">
-                  <span class="font-weight-medium">
-                    {{ item.name }}
-                  </span>
+                  <div class="d-flex align-center gap-2">
+                    <VCheckbox
+                      :model-value="isContactSelected(item.contact_id)"
+                      @update:model-value="toggleContact(item)"
+                      hide-details
+                      density="compact"
+                    />
+                    <span class="font-weight-medium">
+                      {{ item.name }}
+                    </span>
+                  </div>
                 </template>
 
                 <template #item.phone_partial="{ item }">
@@ -336,7 +456,18 @@ watch(searchDebounced, async (value) => {
                     >-</VChip
                   >
                 </template>
-              </VDataTable>
+                <template #no-data>
+                  {{ $t('no_data_available') }}
+                </template>
+
+                <template #bottom>
+                  <TablePagination
+                    v-model:page="options.page"
+                    :items-per-page="options.itemsPerPage"
+                    :total-items="contactItemsLength"
+                  />
+                </template>
+              </VDataTableServer>
             </VCol>
           </VRow>
         </VCardText>
