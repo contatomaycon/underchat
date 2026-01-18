@@ -359,9 +359,75 @@ onMounted(() => {
           </div>
         </div>
 
-        <VRow v-if="loading">
-          <VCol cols="12" class="text-center">
-            <VProgressCircular indeterminate color="primary" />
+        <VRow v-if="loading" class="plans-row" justify="center">
+          <VCol
+            v-for="n in 3"
+            :key="n"
+            cols="12"
+            sm="6"
+            md="4"
+            class="plan-col"
+          >
+            <VCard variant="outlined" class="plan-card w-100">
+              <VCardText>
+                <div class="text-center mb-4">
+                  <VSkeletonLoader
+                    type="avatar"
+                    class="mx-auto mb-4"
+                    width="80"
+                    height="80"
+                  />
+                  <VSkeletonLoader
+                    type="heading"
+                    class="mx-auto mb-2"
+                    width="120"
+                  />
+                  <VSkeletonLoader
+                    type="text"
+                    class="mx-auto"
+                    width="180"
+                  />
+                </div>
+
+                <div class="text-center mb-6">
+                  <VSkeletonLoader
+                    type="heading"
+                    class="mx-auto mb-2"
+                    width="140"
+                  />
+                  <VSkeletonLoader
+                    type="text"
+                    class="mx-auto"
+                    width="80"
+                  />
+                </div>
+
+                <VDivider class="mb-4" />
+
+                <div class="d-flex flex-column gap-3 mb-6">
+                  <div
+                    v-for="i in 4"
+                    :key="i"
+                    class="d-flex align-center gap-2"
+                  >
+                    <VSkeletonLoader
+                      type="avatar"
+                      width="20"
+                      height="20"
+                    />
+                    <VSkeletonLoader
+                      type="text"
+                      width="150"
+                    />
+                  </div>
+                </div>
+
+                <VSkeletonLoader
+                  type="button"
+                  class="w-100"
+                />
+              </VCardText>
+            </VCard>
           </VCol>
         </VRow>
 

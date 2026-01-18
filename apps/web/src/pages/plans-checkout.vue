@@ -1537,8 +1537,81 @@ onMounted(async () => {
   <div>
     <VCard :title="$t('checkout')" no-padding>
       <VCardText>
-        <div v-if="loading" class="text-center py-8">
-          <VProgressCircular indeterminate color="primary" size="64" />
+        <div v-if="loading">
+          <div class="d-flex align-center gap-3 mb-4">
+            <VSkeletonLoader type="avatar" width="40" height="40" />
+          </div>
+
+          <VSkeletonLoader type="heading" width="200" class="mx-auto mb-2" />
+          <VSkeletonLoader type="text" width="300" class="mx-auto mb-6" />
+
+          <div class="d-flex justify-center align-center gap-4 mb-8">
+            <VSkeletonLoader type="text" width="60" />
+            <VSkeletonLoader type="chip" width="50" />
+            <VSkeletonLoader type="text" width="60" />
+          </div>
+
+          <VRow class="plans-row" justify="center">
+            <VCol
+              v-for="n in 3"
+              :key="n"
+              cols="12"
+              sm="6"
+              md="4"
+              class="plan-col"
+            >
+              <VCard variant="outlined" class="plan-card w-100">
+                <VCardText>
+                  <div class="text-center mb-4">
+                    <VSkeletonLoader
+                      type="avatar"
+                      class="mx-auto mb-4"
+                      width="80"
+                      height="80"
+                    />
+                    <VSkeletonLoader
+                      type="heading"
+                      class="mx-auto mb-2"
+                      width="120"
+                    />
+                    <VSkeletonLoader
+                      type="text"
+                      class="mx-auto"
+                      width="180"
+                    />
+                  </div>
+
+                  <div class="text-center mb-6">
+                    <VSkeletonLoader
+                      type="heading"
+                      class="mx-auto mb-2"
+                      width="140"
+                    />
+                    <VSkeletonLoader
+                      type="text"
+                      class="mx-auto"
+                      width="80"
+                    />
+                  </div>
+
+                  <VDivider class="mb-4" />
+
+                  <div class="d-flex flex-column gap-3 mb-6">
+                    <div
+                      v-for="i in 4"
+                      :key="i"
+                      class="d-flex align-center gap-2"
+                    >
+                      <VSkeletonLoader type="avatar" width="20" height="20" />
+                      <VSkeletonLoader type="text" width="150" />
+                    </div>
+                  </div>
+
+                  <VSkeletonLoader type="button" class="w-100" />
+                </VCardText>
+              </VCard>
+            </VCol>
+          </VRow>
         </div>
 
         <div v-else>
@@ -1952,19 +2025,42 @@ onMounted(async () => {
                     <VCol cols="12" md="6" class="d-flex flex-column">
                       <h4 class="text-h6 mb-4">{{ $t('addons') }}</h4>
                       <div class="addons-container">
-                        <VCard
+                        <div
                           v-if="loadingProducts"
-                          variant="outlined"
-                          class="h-100"
+                          class="d-flex flex-column gap-4"
                         >
-                          <VCardText class="text-center py-4">
-                            <VProgressCircular
-                              indeterminate
-                              color="primary"
-                              size="32"
-                            />
-                          </VCardText>
-                        </VCard>
+                          <VCard
+                            v-for="n in 2"
+                            :key="n"
+                            variant="outlined"
+                          >
+                            <VCardText>
+                              <div class="d-flex flex-column gap-3">
+                                <div>
+                                  <VSkeletonLoader
+                                    type="text"
+                                    width="150"
+                                    class="mb-1"
+                                  />
+                                  <VSkeletonLoader
+                                    type="text"
+                                    width="250"
+                                  />
+                                </div>
+                                <div class="d-flex align-center gap-2">
+                                  <VSkeletonLoader
+                                    type="text"
+                                    class="flex-grow-1"
+                                  />
+                                  <VSkeletonLoader
+                                    type="button"
+                                    width="80"
+                                  />
+                                </div>
+                              </div>
+                            </VCardText>
+                          </VCard>
+                        </div>
 
                         <div
                           v-else-if="groupedCrossSells.length > 0"
@@ -2260,8 +2356,40 @@ onMounted(async () => {
                     </VCol>
                   </VRow>
                 </div>
-                <div v-else-if="loadingUser" class="text-center py-8">
-                  <VProgressCircular indeterminate color="primary" size="64" />
+                <div v-else-if="loadingUser">
+                  <VRow>
+                    <!-- Skeleton Informações Pessoais -->
+                    <VCol cols="12" md="6">
+                      <VSkeletonLoader type="heading" width="180" class="mb-4" />
+                      <VCard variant="outlined">
+                        <VCardText>
+                          <div class="d-flex flex-column gap-3">
+                            <div v-for="i in 4" :key="i">
+                              <VSkeletonLoader type="text" width="80" class="mb-1" />
+                              <VSkeletonLoader type="text" width="200" />
+                              <VDivider v-if="i < 4" class="mt-3" />
+                            </div>
+                          </div>
+                        </VCardText>
+                      </VCard>
+                    </VCol>
+
+                    <!-- Skeleton Endereço -->
+                    <VCol cols="12" md="6">
+                      <VSkeletonLoader type="heading" width="120" class="mb-4" />
+                      <VCard variant="outlined">
+                        <VCardText>
+                          <div class="d-flex flex-column gap-3">
+                            <div v-for="i in 5" :key="i">
+                              <VSkeletonLoader type="text" width="80" class="mb-1" />
+                              <VSkeletonLoader type="text" width="180" />
+                              <VDivider v-if="i < 5" class="mt-3" />
+                            </div>
+                          </div>
+                        </VCardText>
+                      </VCard>
+                    </VCol>
+                  </VRow>
                 </div>
               </VStepperWindowItem>
 
@@ -2719,12 +2847,11 @@ onMounted(async () => {
                         >{{ $t('select_credit_card') }}:</VLabel
                       >
 
-                      <VProgressCircular
+                      <VSkeletonLoader
                         v-if="loadingCards"
-                        indeterminate
-                        color="primary"
-                        size="32"
-                        class="mb-4"
+                        type="text"
+                        height="56"
+                        class="mb-4 rounded"
                       />
 
                       <VSelect
