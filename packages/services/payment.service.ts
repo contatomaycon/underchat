@@ -217,6 +217,7 @@ export class PaymentService {
       municipalInscription: fiscalData.cityFiscalCode,
       stateInscription: fiscalData.stateFiscalCode,
       externalReference: userId,
+      notificationDisabled: true,
     };
   };
 
