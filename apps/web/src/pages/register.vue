@@ -22,6 +22,7 @@ import { ListRegisterPlanWithItemsResponse } from '@core/schema/register/listPla
 import { ListRegisterAvailableCrossSellResponse } from '@core/schema/register/listAvailableCrossSell/response.schema';
 import { ListCreditCardFeeResponse } from '@core/schema/config/listCreditCardFee/response.schema';
 import { CreateRegisterOrderPaymentRequest } from '@core/schema/register/createOrderPayment/request.schema';
+import { ListMethodPaymentsResponse } from '@core/schema/register/listMethodPayments/response.schema';
 import { EColor } from '@core/common/enums/EColor';
 import visaSvg from '@images/icons/payments/card/visa.svg?url';
 import mastercardSvg from '@images/icons/payments/card/mastercard.svg?url';
@@ -216,7 +217,9 @@ const selectedAddons = ref<
 const selectedCrossSellByType = ref<Record<string, string | null>>({});
 const loadingPlans = ref(false);
 const loadingCrossSells = ref(false);
+const loadingPaymentMethods = ref(false);
 const creditCardFee = ref<ListCreditCardFeeResponse | null>(null);
+const methodPayments = ref<ListMethodPaymentsResponse>([]);
 const selectedPaymentMethod = ref<PaymentMethod>('credit_card');
 const cardForm = ref({
   cardholder_name: '',
@@ -425,6 +428,14 @@ const loadCreditCardFee = async () => {
 watch(selectedPaymentMethod, (method) => {
   if (method === 'credit_card' && billingPeriod.value === 'annual') {
     loadCreditCardFee();
+  }
+});
+
+watch(currentStep, async (step) => {
+  if (step === LAST_STEP_INDEX.value && !isTestPlan(selectedPlanForCheckout.value)) {
+    if (methodPayments.value.length === 0) {
+      await loadPaymentMethods();
+    }
   }
 });
 
@@ -1694,6 +1705,35 @@ const loadCrossSells = async () => {
   loadingCrossSells.value = false;
 };
 
+const loadPaymentMethods = async () => {
+  loadingPaymentMethods.value = true;
+  const result = await registerStore.listMethodPayments();
+  if (result) {
+    methodPayments.value = result;
+    const enabledMethods = result.filter((m) => m.status === true);
+    if (enabledMethods.length > 0) {
+      const firstMethod = enabledMethods[0].type;
+      if (['boleto', 'credit_card', 'pix'].includes(firstMethod)) {
+        selectedPaymentMethod.value = firstMethod as PaymentMethod;
+      }
+    }
+  }
+  loadingPaymentMethods.value = false;
+};
+
+const enabledPaymentMethods = computed(() => {
+  return methodPayments.value.filter(
+    (m) => m.status === true && ['boleto', 'credit_card', 'pix'].includes(m.type)
+  );
+});
+
+const paymentMethodColumns = computed(() => {
+  const count = enabledPaymentMethods.value.length;
+  if (count === 1) return '12';
+  if (count === 2) return '6';
+  return '4';
+});
+
 const groupedCrossSells = computed(() => {
   const groups: Record<
     string,
@@ -2361,8 +2401,35 @@ watch(currentStep, async (newStep) => {
                   {{ $t('plans_subtitle') }}
                 </p>
 
-                <div v-if="loadingPlans" class="text-center py-8">
-                  <VProgressCircular indeterminate color="primary" size="64" />
+                <div v-if="loadingPlans">
+                  <VRow>
+                    <VCol
+                      v-for="n in 3"
+                      :key="n"
+                      cols="12"
+                      sm="6"
+                      md="4"
+                    >
+                      <VCard variant="outlined" class="plan-card">
+                        <VSkeletonLoader type="image" height="200" />
+                        <VCardText>
+                          <VSkeletonLoader
+                            type="text"
+                            width="60%"
+                            height="24"
+                            class="mb-2"
+                          />
+                          <VSkeletonLoader
+                            type="text"
+                            width="100%"
+                            height="16"
+                            class="mb-2"
+                          />
+                          <VSkeletonLoader type="text" width="80%" height="16" />
+                        </VCardText>
+                      </VCard>
+                    </VCol>
+                  </VRow>
                 </div>
 
                 <div v-else>
@@ -2552,8 +2619,28 @@ watch(currentStep, async (newStep) => {
                   {{ $t('addons_description') }}
                 </p>
 
-                <div v-if="loadingCrossSells" class="text-center py-8">
-                  <VProgressCircular indeterminate color="primary" size="64" />
+                <div v-if="loadingCrossSells">
+                  <VRow>
+                    <VCol cols="12" md="6" v-for="n in 4" :key="n">
+                      <VCard variant="outlined" class="mb-4">
+                        <VCardText>
+                          <VSkeletonLoader
+                            type="text"
+                            width="40%"
+                            height="24"
+                            class="mb-3"
+                          />
+                          <VSkeletonLoader
+                            type="text"
+                            width="80%"
+                            height="16"
+                            class="mb-2"
+                          />
+                          <VSkeletonLoader type="text" width="60%" height="16" />
+                        </VCardText>
+                      </VCard>
+                    </VCol>
+                  </VRow>
                 </div>
 
                 <div
@@ -2795,8 +2882,46 @@ watch(currentStep, async (newStep) => {
                       {{ $t('select_payment_method') }}
                     </h5>
 
-                    <VRow>
-                      <VCol cols="12" md="4">
+                    <VRow v-if="loadingPaymentMethods">
+                      <VCol
+                        v-for="n in 3"
+                        :key="n"
+                        cols="12"
+                        :md="paymentMethodColumns"
+                      >
+                        <VCard variant="outlined">
+                          <VCardText class="text-center">
+                            <VSkeletonLoader
+                              type="image"
+                              width="48"
+                              height="48"
+                              class="mb-3 mx-auto"
+                            />
+                            <VSkeletonLoader
+                              type="text"
+                              width="100"
+                              height="24"
+                              class="mb-2 mx-auto"
+                            />
+                            <VSkeletonLoader
+                              type="text"
+                              width="100%"
+                              height="16"
+                              class="mx-auto"
+                            />
+                          </VCardText>
+                        </VCard>
+                      </VCol>
+                    </VRow>
+
+                    <VRow v-else>
+                      <VCol
+                        v-if="
+                          enabledPaymentMethods.some((m) => m.type === 'boleto')
+                        "
+                        cols="12"
+                        :md="paymentMethodColumns"
+                      >
                         <VCard
                           :class="[
                             'payment-method-card',
@@ -2830,7 +2955,15 @@ watch(currentStep, async (newStep) => {
                         </VCard>
                       </VCol>
 
-                      <VCol cols="12" md="4">
+                      <VCol
+                        v-if="
+                          enabledPaymentMethods.some(
+                            (m) => m.type === 'credit_card'
+                          )
+                        "
+                        cols="12"
+                        :md="paymentMethodColumns"
+                      >
                         <VCard
                           :class="[
                             'payment-method-card',
@@ -2866,7 +2999,13 @@ watch(currentStep, async (newStep) => {
                         </VCard>
                       </VCol>
 
-                      <VCol cols="12" md="4">
+                      <VCol
+                        v-if="
+                          enabledPaymentMethods.some((m) => m.type === 'pix')
+                        "
+                        cols="12"
+                        :md="paymentMethodColumns"
+                      >
                         <VCard
                           :class="[
                             'payment-method-card',

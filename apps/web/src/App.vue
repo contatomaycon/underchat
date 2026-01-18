@@ -15,10 +15,13 @@ const { global } = useTheme();
 initCore();
 initConfigStore();
 
+const route = useRoute();
 const configStore = useConfigStore();
 const chatSocket = useChatSocket();
 const chatStore = useChatStore();
 const { activeNotification, hideToast } = useChatNotificationToast();
+
+const isRegisterPage = computed(() => route.path.startsWith('/register'));
 
 watch(
   () => chatStore.user?.account_id,
@@ -53,7 +56,7 @@ onUnmounted(async () => {
     >
       <RouterView />
 
-      <ScrollToTop />
+      <ScrollToTop v-if="!isRegisterPage" />
 
       <ChatNotificationToast
         v-if="activeNotification"

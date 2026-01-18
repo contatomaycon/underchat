@@ -20,6 +20,7 @@ import { ListCreditCardFeeResponse } from '@core/schema/config/listCreditCardFee
 import { CreateRegisterOrderPaymentRequest } from '@core/schema/register/createOrderPayment/request.schema';
 import { CreateRegisterOrderPaymentResponse } from '@core/schema/register/createOrderPayment/response.schema';
 import { RegisterCentrifugoTokenResponse } from '@core/schema/register/centrifugoToken/response.schema';
+import { ListMethodPaymentsResponse } from '@core/schema/register/listMethodPayments/response.schema';
 import { normalizeBaseUrl } from '../utils/helpers';
 
 export const useRegisterStore = defineStore('register', {
@@ -33,6 +34,7 @@ export const useRegisterStore = defineStore('register', {
     isLoading: false,
     registerToken: null as string | null,
     creditCardFee: null as ListCreditCardFeeResponse | null,
+    methodPayments: [] as ListMethodPaymentsResponse,
   }),
   actions: {
     showSnackbar(message: string, color: EColor) {
@@ -515,6 +517,43 @@ export const useRegisterStore = defineStore('register', {
         }
 
         this.showSnackbar(errorMessage, EColor.error);
+        return null;
+      }
+    },
+    async listMethodPayments(): Promise<ListMethodPaymentsResponse | null> {
+      const url = normalizeBaseUrl(import.meta.env.VITE_BACKEND_URL);
+
+      if (!url) {
+        return null;
+      }
+
+      try {
+        const currentLocale = this.i18n.global.locale;
+        const tokenCookie = useCookie<string>('register_token');
+
+        if (!tokenCookie.value) {
+          return null;
+        }
+
+        const response = await axios.get<
+          IApiResponse<ListMethodPaymentsResponse>
+        >(`${url}/v1/register/method-payments`, {
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept-Language': currentLocale,
+            Authorization: `Bearer ${tokenCookie.value}`,
+          },
+        });
+
+        const responseData = response?.data;
+
+        if (!responseData?.status || !responseData?.data) {
+          return null;
+        }
+
+        this.methodPayments = responseData.data;
+        return responseData.data;
+      } catch {
         return null;
       }
     },
