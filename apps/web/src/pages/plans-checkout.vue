@@ -386,6 +386,21 @@ const isPaymentMethodEnabled = (method: 'boleto' | 'credit_card' | 'pix'): boole
   );
 };
 
+const enabledPaymentMethodsCount = computed(() => {
+  return enabledPaymentMethods.value.filter((mp) => mp.status === true).length;
+});
+
+const getPaymentMethodColClasses = computed(() => {
+  const count = enabledPaymentMethodsCount.value;
+  if (count === 1) {
+    return { cols: '12', md: '12' };
+  }
+  if (count === 2) {
+    return { cols: '12', md: '6' };
+  }
+  return { cols: '12', md: '4' };
+});
+
 const isPlanExpired = computed(() => {
   if (!currentPlanInvoiceData.value?.next_payment_date) {
     return false;
@@ -2415,8 +2430,8 @@ onMounted(async () => {
                     <!-- Boleto -->
                     <VCol
                       v-else-if="isPaymentMethodEnabled('boleto')"
-                      cols="12"
-                      md="4"
+                      :cols="getPaymentMethodColClasses.cols"
+                      :md="getPaymentMethodColClasses.md"
                     >
                       <VCard
                         :class="[
@@ -2452,8 +2467,8 @@ onMounted(async () => {
                     <!-- Cartão de Crédito -->
                     <VCol
                       v-if="!loadingPaymentMethods && isPaymentMethodEnabled('credit_card')"
-                      cols="12"
-                      md="4"
+                      :cols="getPaymentMethodColClasses.cols"
+                      :md="getPaymentMethodColClasses.md"
                     >
                       <VCard
                         :class="[
@@ -2493,8 +2508,8 @@ onMounted(async () => {
                     <!-- PIX -->
                     <VCol
                       v-if="!loadingPaymentMethods && isPaymentMethodEnabled('pix')"
-                      cols="12"
-                      md="4"
+                      :cols="getPaymentMethodColClasses.cols"
+                      :md="getPaymentMethodColClasses.md"
                     >
                       <VCard
                         :class="[
