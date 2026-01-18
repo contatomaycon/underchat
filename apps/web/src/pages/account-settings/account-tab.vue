@@ -1282,78 +1282,257 @@ watch(zip_code, () => {
 
 <template>
   <div class="d-flex flex-column account-tab-container">
-    <VCard variant="elevated" class="account-settings-card">
-      <VCardTitle class="text-h6 pa-6 pb-4">
-        {{ $t('profile_details') }}
-      </VCardTitle>
-      <VDivider />
-      <VCardText>
-        <div class="d-flex align-center gap-6 pa-4">
-          <div
-            class="d-flex align-center justify-center"
-            style="min-width: 120px"
-          >
-            <VAvatar
-              size="120"
-              class="cursor-pointer"
-              @click="openFileSelector"
-            >
-              <VImg
-                v-if="photoPreview || chatStore.user?.info.photo"
-                :src="photoPreview || chatStore.user?.info.photo || ''"
-              />
-              <VImg
-                v-if="!photoPreview && !chatStore.user?.info.photo"
-                :src="'/images/svg/avatar-default.svg'"
-                alt="Avatar"
-              />
-              <div class="photo-overlay d-flex align-center justify-center">
-                <VIcon icon="tabler-camera" size="24" color="white" />
+    <template v-if="isInitializing">
+      <VCard variant="elevated" class="account-settings-card">
+        <VCardTitle class="text-h6 pa-6 pb-4">
+          {{ $t('profile_details') }}
+        </VCardTitle>
+        <VDivider />
+        <VCardText>
+          <div class="d-flex align-center gap-6 pa-4">
+            <VSkeletonLoader type="avatar" width="120" height="120" />
+            <div class="d-flex flex-column gap-3 flex-grow-1">
+              <div class="d-flex gap-3">
+                <VSkeletonLoader type="button" width="160" height="36" />
+                <VSkeletonLoader type="button" width="100" height="36" />
               </div>
-            </VAvatar>
+              <VSkeletonLoader type="text" width="70%" height="16" />
+            </div>
           </div>
+        </VCardText>
+      </VCard>
 
-          <div class="d-flex flex-column gap-3 flex-grow-1">
-            <div class="d-flex gap-3">
-              <VBtn
-                color="primary"
-                variant="elevated"
-                size="default"
+      <VCard variant="elevated" class="account-settings-card">
+        <VCardTitle class="text-h6 pa-6 pb-4">
+          {{ $t('additional_info') }}
+        </VCardTitle>
+        <VDivider />
+        <VCardText>
+          <VRow class="mt-4 mb-2">
+            <VCol cols="12" md="6">
+              <VSkeletonLoader
+                type="text"
+                width="60"
+                height="20"
+                class="mb-1"
+              />
+              <VSkeletonLoader type="text" height="48" />
+            </VCol>
+            <VCol cols="12" md="6">
+              <VSkeletonLoader
+                type="text"
+                width="50"
+                height="20"
+                class="mb-1"
+              />
+              <VSkeletonLoader type="text" height="48" />
+            </VCol>
+            <VCol cols="12">
+              <VDivider />
+            </VCol>
+            <VCol cols="12" md="6">
+              <VSkeletonLoader
+                type="text"
+                width="40"
+                height="20"
+                class="mb-1"
+              />
+              <VSkeletonLoader type="text" height="48" />
+            </VCol>
+            <VCol cols="12" md="6">
+              <VSkeletonLoader
+                type="text"
+                width="80"
+                height="20"
+                class="mb-1"
+              />
+              <VSkeletonLoader type="text" height="48" />
+            </VCol>
+            <VCol cols="12" md="6">
+              <VSkeletonLoader
+                type="text"
+                width="100"
+                height="20"
+                class="mb-1"
+              />
+              <VSkeletonLoader type="text" height="48" />
+            </VCol>
+            <VCol cols="12" md="6">
+              <VSkeletonLoader
+                type="text"
+                width="70"
+                height="20"
+                class="mb-1"
+              />
+              <VSkeletonLoader type="text" height="48" />
+            </VCol>
+            <VCol cols="12" md="6">
+              <VSkeletonLoader
+                type="text"
+                width="80"
+                height="20"
+                class="mb-1"
+              />
+              <VSkeletonLoader type="text" height="48" />
+            </VCol>
+          </VRow>
+          <VCardText class="d-flex justify-end flex-wrap gap-3 mt-4 pt-4">
+            <VSkeletonLoader type="button" width="100" height="36" />
+          </VCardText>
+        </VCardText>
+      </VCard>
+
+      <VCard variant="elevated" class="account-settings-card">
+        <VCardTitle class="text-h6 pa-6 pb-4">
+          {{ $t('address') }}
+        </VCardTitle>
+        <VDivider />
+        <VCardText>
+          <VRow class="mt-4 mb-2">
+            <VCol cols="12" md="6">
+              <VSkeletonLoader
+                type="text"
+                width="60"
+                height="20"
+                class="mb-1"
+              />
+              <VSkeletonLoader type="text" height="48" />
+            </VCol>
+            <VCol cols="12" md="6">
+              <VSkeletonLoader
+                type="text"
+                width="80"
+                height="20"
+                class="mb-1"
+              />
+              <VSkeletonLoader type="text" height="48" />
+            </VCol>
+            <VCol cols="12" md="6">
+              <VSkeletonLoader
+                type="text"
+                width="50"
+                height="20"
+                class="mb-1"
+              />
+              <VSkeletonLoader type="text" height="48" />
+            </VCol>
+            <VCol cols="12" md="6">
+              <VSkeletonLoader
+                type="text"
+                width="40"
+                height="20"
+                class="mb-1"
+              />
+              <VSkeletonLoader type="text" height="48" />
+            </VCol>
+            <VCol cols="12" md="6">
+              <VSkeletonLoader
+                type="text"
+                width="70"
+                height="20"
+                class="mb-1"
+              />
+              <VSkeletonLoader type="text" height="48" />
+            </VCol>
+            <VCol cols="12" md="6">
+              <VSkeletonLoader
+                type="text"
+                width="120"
+                height="20"
+                class="mb-1"
+              />
+              <VSkeletonLoader type="text" height="48" />
+            </VCol>
+            <VCol cols="12" md="6">
+              <VSkeletonLoader
+                type="text"
+                width="70"
+                height="20"
+                class="mb-1"
+              />
+              <VSkeletonLoader type="text" height="48" />
+            </VCol>
+          </VRow>
+          <VCardText class="d-flex justify-end flex-wrap gap-3 mt-4 pt-4">
+            <VSkeletonLoader type="button" width="100" height="36" />
+          </VCardText>
+        </VCardText>
+      </VCard>
+    </template>
+
+    <template v-else>
+      <VCard variant="elevated" class="account-settings-card">
+        <VCardTitle class="text-h6 pa-6 pb-4">
+          {{ $t('profile_details') }}
+        </VCardTitle>
+        <VDivider />
+        <VCardText>
+          <div class="d-flex align-center gap-6 pa-4">
+            <div
+              class="d-flex align-center justify-center"
+              style="min-width: 120px"
+            >
+              <VAvatar
+                size="120"
+                class="cursor-pointer"
                 @click="openFileSelector"
               >
-                {{
-                  chatStore.user?.info.photo
-                    ? $t('change_photo')
-                    : $t('upload_new_photo')
-                }}
-              </VBtn>
-              <VBtn
-                v-if="chatStore.user?.info.photo || photoPreview"
-                color="error"
-                variant="outlined"
-                size="default"
-                @click="deletePhoto"
-                :loading="accountSettingsStore.loading"
-              >
-                {{ $t('delete') }}
-              </VBtn>
+                <VImg
+                  v-if="photoPreview || chatStore.user?.info.photo"
+                  :src="photoPreview || chatStore.user?.info.photo || ''"
+                />
+                <VImg
+                  v-if="!photoPreview && !chatStore.user?.info.photo"
+                  :src="'/images/svg/avatar-default.svg'"
+                  alt="Avatar"
+                />
+                <div class="photo-overlay d-flex align-center justify-center">
+                  <VIcon icon="tabler-camera" size="24" color="white" />
+                </div>
+              </VAvatar>
             </div>
 
-            <p class="text-body-2 text-medium-emphasis mb-0">
-              {{ $t('allowed_jpg_gif_png_max_size_800k') }}
-            </p>
-          </div>
-        </div>
-      </VCardText>
-    </VCard>
+            <div class="d-flex flex-column gap-3 flex-grow-1">
+              <div class="d-flex gap-3">
+                <VBtn
+                  color="primary"
+                  variant="elevated"
+                  size="default"
+                  @click="openFileSelector"
+                >
+                  {{
+                    chatStore.user?.info.photo
+                      ? $t('change_photo')
+                      : $t('upload_new_photo')
+                  }}
+                </VBtn>
+                <VBtn
+                  v-if="chatStore.user?.info.photo || photoPreview"
+                  color="error"
+                  variant="outlined"
+                  size="default"
+                  @click="deletePhoto"
+                  :loading="accountSettingsStore.loading"
+                >
+                  {{ $t('delete') }}
+                </VBtn>
+              </div>
 
-    <VCard variant="elevated" class="account-settings-card">
-      <VCardTitle class="text-h6 pa-6 pb-4">
-        {{ $t('additional_info') }}
-      </VCardTitle>
-      <VDivider />
-      <VCardText>
-        <VForm class="mt-4" ref="refFormAdditionalInfo" @submit.prevent>
+              <p class="text-body-2 text-medium-emphasis mb-0">
+                {{ $t('allowed_jpg_gif_png_max_size_800k') }}
+              </p>
+            </div>
+          </div>
+        </VCardText>
+      </VCard>
+
+      <VCard variant="elevated" class="account-settings-card">
+        <VCardTitle class="text-h6 pa-6 pb-4">
+          {{ $t('additional_info') }}
+        </VCardTitle>
+        <VDivider />
+        <VCardText>
+          <VForm class="mt-4" ref="refFormAdditionalInfo" @submit.prevent>
           <VRow class="mb-2">
             <VCol cols="12" md="6">
               <VLabel class="text-body-2 mb-1">{{ $t('phone_ddi') }}:</VLabel>
@@ -1593,6 +1772,7 @@ watch(zip_code, () => {
         </VForm>
       </VCardText>
     </VCard>
+    </template>
 
     <VDialog v-model="isCropModalOpen" max-width="500" persistent>
       <VCard>

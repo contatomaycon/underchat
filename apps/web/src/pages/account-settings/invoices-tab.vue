@@ -180,7 +180,68 @@ watch(
       </VCardTitle>
       <VDivider />
       <VCardText>
+        <template v-if="accountSettingsStore.loading && accountSettingsStore.accountPaymentsList.length === 0">
+          <VTable class="data-table">
+            <thead>
+              <tr>
+                <th></th>
+                <th>ID</th>
+                <th>{{ $t('payment_type') }}</th>
+                <th>{{ $t('plan_name') }}</th>
+                <th>{{ $t('value') }}</th>
+                <th>{{ $t('status') }}</th>
+                <th>{{ $t('payment_date') }}</th>
+                <th>{{ $t('created_at') }}</th>
+                <th>{{ $t('actions') }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="i in 5" :key="i">
+                <td>
+                  <VSkeletonLoader type="text" width="24" height="24" />
+                </td>
+                <td>
+                  <VSkeletonLoader type="text" width="60" height="20" />
+                </td>
+                <td>
+                  <div class="d-flex align-center gap-2">
+                    <VSkeletonLoader type="avatar" width="20" height="20" />
+                    <VSkeletonLoader type="text" width="100" height="20" />
+                  </div>
+                </td>
+                <td>
+                  <div class="d-flex align-center gap-2">
+                    <VSkeletonLoader type="avatar" width="20" height="20" />
+                    <VSkeletonLoader type="text" width="120" height="20" />
+                  </div>
+                </td>
+                <td>
+                  <VSkeletonLoader type="text" width="80" height="20" />
+                </td>
+                <td>
+                  <VSkeletonLoader type="chip" width="100" height="24" />
+                </td>
+                <td>
+                  <VSkeletonLoader type="text" width="90" height="20" />
+                </td>
+                <td>
+                  <VSkeletonLoader type="text" width="90" height="20" />
+                </td>
+                <td>
+                  <div class="d-flex align-center gap-2">
+                    <VSkeletonLoader type="button" width="32" height="32" />
+                    <VSkeletonLoader type="button" width="32" height="32" />
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </VTable>
+          <div class="d-flex justify-center mt-4">
+            <VSkeletonLoader type="text" width="200" height="40" />
+          </div>
+        </template>
         <VDataTableServer
+          v-else
           class="data-table"
           v-model:page="options.page"
           v-model:items-per-page="options.itemsPerPage"

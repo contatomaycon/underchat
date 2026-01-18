@@ -774,9 +774,101 @@ onMounted(() => {
 
 <template>
   <div>
-    <VRow v-if="loading">
-      <VCol cols="12" class="text-center">
-        <VProgressCircular indeterminate color="primary" />
+    <VRow v-if="loading" class="align-stretch">
+      <VCol cols="12" md="6" class="d-flex">
+        <VCard
+          variant="elevated"
+          class="account-settings-card d-flex flex-column w-100"
+        >
+          <VCardText class="d-flex flex-column flex-grow-1">
+            <div class="d-flex align-center gap-4 mb-4">
+              <VSkeletonLoader type="avatar" width="60" height="60" />
+              <div class="flex-grow-1">
+                <VSkeletonLoader
+                  type="text, text"
+                  width="60%"
+                  height="24"
+                  class="mb-2"
+                />
+                <VSkeletonLoader type="text" width="80%" height="16" />
+              </div>
+            </div>
+            <VDivider class="my-4" />
+            <div class="mb-4">
+              <VSkeletonLoader
+                type="text"
+                width="40%"
+                height="20"
+                class="mb-3"
+              />
+              <VSkeletonLoader type="text" width="60%" height="20" />
+            </div>
+            <VDivider class="my-4" />
+            <div class="mb-4">
+              <VSkeletonLoader
+                type="text"
+                width="50%"
+                height="32"
+                class="mb-2"
+              />
+            </div>
+            <div class="d-flex gap-2">
+              <VSkeletonLoader type="button" width="120" height="36" />
+              <VSkeletonLoader type="button" width="160" height="36" />
+            </div>
+            <VDivider class="my-4" />
+            <div class="mb-4">
+              <VSkeletonLoader
+                type="text"
+                width="30%"
+                height="24"
+                class="mb-3"
+              />
+              <VSkeletonLoader type="text" width="100%" height="56" />
+            </div>
+          </VCardText>
+        </VCard>
+      </VCol>
+      <VCol cols="12" md="6" class="d-flex">
+        <VCard
+          variant="elevated"
+          class="account-settings-card d-flex flex-column w-100"
+        >
+          <VCardText class="d-flex flex-column flex-grow-1">
+            <VSkeletonLoader
+              type="text"
+              width="100%"
+              height="80"
+              class="mb-4"
+            />
+            <div class="mb-4">
+              <VSkeletonLoader
+                type="text"
+                width="40%"
+                height="20"
+                class="mb-2"
+              />
+              <VSkeletonLoader type="text" width="100%" height="8" />
+              <VSkeletonLoader
+                type="text"
+                width="60%"
+                height="16"
+                class="mt-2"
+              />
+            </div>
+            <VDivider class="my-4" />
+            <div class="mb-4">
+              <VSkeletonLoader
+                type="text"
+                width="40%"
+                height="24"
+                class="mb-3"
+              />
+              <VSkeletonLoader type="text" width="100%" height="32" />
+              <VSkeletonLoader type="text" width="80%" height="32" class="mt-2" />
+            </div>
+          </VCardText>
+        </VCard>
       </VCol>
     </VRow>
 

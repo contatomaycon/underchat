@@ -878,15 +878,171 @@ watch(
 
 <template>
   <div class="account-info-inline">
-    <VOverlay
-      :model-value="accountSettingsStore.loading"
-      class="align-center justify-center"
-      contained
-    >
-      <VProgressCircular color="primary" indeterminate size="64" />
-    </VOverlay>
+    <template v-if="accountSettingsStore.loading">
+      <VCard variant="elevated" class="account-settings-card">
+        <VCardTitle class="text-h6 pa-6 pb-4">
+          {{ $t('account_info') }}
+        </VCardTitle>
+        <VDivider />
+        <VCardText>
+          <VRow>
+            <VCol cols="12" md="6">
+              <VSkeletonLoader
+                type="text"
+                width="120"
+                height="20"
+                class="mb-1"
+              />
+              <VSkeletonLoader type="text" height="48" />
+            </VCol>
+            <VCol cols="12">
+              <VDivider class="my-4" />
+              <VSkeletonLoader type="text" width="60" height="24" class="mb-4" />
+            </VCol>
+            <VCol cols="12" md="6">
+              <VSkeletonLoader
+                type="image"
+                width="200"
+                height="200"
+                class="rounded"
+              />
+            </VCol>
+            <VCol cols="12" md="6">
+              <div class="d-flex flex-column gap-3">
+                <VSkeletonLoader type="button" width="140" height="36" />
+                <VSkeletonLoader type="button" width="140" height="36" />
+              </div>
+            </VCol>
+            <VCol cols="12">
+              <VDivider class="my-4" />
+              <VSkeletonLoader type="text" width="140" height="24" class="mb-4" />
+            </VCol>
+            <VCol cols="12" sm="6" md="4">
+              <VSkeletonLoader
+                type="text"
+                width="120"
+                height="20"
+                class="mb-1"
+              />
+              <VSkeletonLoader type="text" height="40" />
+            </VCol>
+            <VCol cols="12" sm="6" md="4">
+              <VSkeletonLoader
+                type="text"
+                width="140"
+                height="20"
+                class="mb-1"
+              />
+              <VSkeletonLoader type="text" height="40" />
+            </VCol>
+            <VCol cols="12" sm="6" md="4">
+              <VSkeletonLoader
+                type="text"
+                width="100"
+                height="20"
+                class="mb-1"
+              />
+              <VSkeletonLoader type="text" height="40" />
+            </VCol>
+            <VCol cols="12" sm="6" md="4">
+              <VSkeletonLoader
+                type="text"
+                width="60"
+                height="20"
+                class="mb-1"
+              />
+              <VSkeletonLoader type="text" height="40" />
+            </VCol>
+            <VCol cols="12" sm="6" md="4">
+              <VSkeletonLoader
+                type="text"
+                width="80"
+                height="20"
+                class="mb-1"
+              />
+              <VSkeletonLoader type="text" height="40" />
+            </VCol>
+            <VCol cols="12" sm="6" md="4">
+              <VSkeletonLoader
+                type="text"
+                width="70"
+                height="20"
+                class="mb-1"
+              />
+              <VSkeletonLoader type="text" height="40" />
+            </VCol>
+            <VCol cols="12">
+              <VDivider class="my-4" />
+              <VSkeletonLoader type="text" width="140" height="24" class="mb-4" />
+            </VCol>
+            <VCol cols="12" sm="6" md="6">
+              <VSkeletonLoader
+                type="text"
+                width="160"
+                height="20"
+                class="mb-2"
+              />
+              <div class="d-flex align-center gap-2">
+                <VSkeletonLoader type="button" width="40" height="40" />
+                <VSkeletonLoader type="button" width="40" height="40" />
+              </div>
+            </VCol>
+            <VCol cols="12" sm="6" md="6">
+              <VSkeletonLoader
+                type="text"
+                width="180"
+                height="20"
+                class="mb-2"
+              />
+              <div class="d-flex align-center gap-2">
+                <VSkeletonLoader type="button" width="40" height="40" />
+                <VSkeletonLoader type="button" width="40" height="40" />
+              </div>
+            </VCol>
+            <VCol cols="12" sm="6" md="6">
+              <VSkeletonLoader
+                type="text"
+                width="150"
+                height="20"
+                class="mb-2"
+              />
+              <div class="d-flex align-center gap-2">
+                <VSkeletonLoader type="button" width="40" height="40" />
+                <VSkeletonLoader type="button" width="40" height="40" />
+              </div>
+            </VCol>
+            <VCol cols="12" sm="6" md="6">
+              <VSkeletonLoader
+                type="text"
+                width="180"
+                height="20"
+                class="mb-2"
+              />
+              <div class="d-flex align-center gap-2">
+                <VSkeletonLoader type="button" width="40" height="40" />
+                <VSkeletonLoader type="button" width="40" height="40" />
+              </div>
+            </VCol>
+            <VCol cols="12">
+              <VDivider class="my-4" />
+              <VSkeletonLoader type="text" width="180" height="24" class="mb-4" />
+            </VCol>
+            <VCol cols="12" sm="6" md="6">
+              <VSkeletonLoader type="button" width="220" height="20" />
+            </VCol>
+            <VCol cols="12" sm="6" md="6">
+              <VSkeletonLoader type="button" width="240" height="20" />
+            </VCol>
+          </VRow>
+        </VCardText>
+        <VDivider />
+        <VCardText class="d-flex justify-end flex-wrap gap-3">
+          <VSkeletonLoader type="button" width="100" height="36" />
+        </VCardText>
+      </VCard>
+    </template>
 
-    <VForm ref="refFormEditAccount" @submit.prevent>
+    <VForm v-else ref="refFormEditAccount" @submit.prevent>
       <VCard variant="elevated" class="account-settings-card">
         <VCardTitle class="text-h6 pa-6 pb-4">
           {{ $t('account_info') }}

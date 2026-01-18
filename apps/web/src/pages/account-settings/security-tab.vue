@@ -108,7 +108,67 @@ const handleChangePassword = async () => {
       </VCardTitle>
       <VDivider />
       <VCardText>
+        <template v-if="accountSettingsStore.loading && !currentPassword && !newPassword && !confirmPassword">
+          <VRow>
+            <VCol cols="12">
+              <VSkeletonLoader
+                type="text"
+                width="140"
+                height="20"
+                class="mb-1"
+              />
+              <VSkeletonLoader type="text" height="48" />
+            </VCol>
+          </VRow>
+          <VRow>
+            <VCol cols="12" md="6">
+              <VSkeletonLoader
+                type="text"
+                width="120"
+                height="20"
+                class="mb-1"
+              />
+              <VSkeletonLoader type="text" height="48" />
+              <VSkeletonLoader
+                type="text"
+                width="100"
+                height="20"
+                class="mt-2"
+              />
+              <VSkeletonLoader type="text" width="100%" height="4" />
+            </VCol>
+            <VCol cols="12" md="6">
+              <VSkeletonLoader
+                type="text"
+                width="160"
+                height="20"
+                class="mb-1"
+              />
+              <VSkeletonLoader type="text" height="48" />
+            </VCol>
+          </VRow>
+          <VRow class="mt-2">
+            <VCol cols="12">
+              <VSkeletonLoader
+                type="text"
+                width="180"
+                height="20"
+                class="mb-2"
+              />
+              <VSkeletonLoader type="text" width="100%" height="20" />
+              <VSkeletonLoader type="text" width="90%" height="20" />
+              <VSkeletonLoader type="text" width="85%" height="20" />
+            </VCol>
+          </VRow>
+          <VRow class="mt-4">
+            <VCol cols="12" class="d-flex gap-3">
+              <VSkeletonLoader type="button" width="100" height="36" />
+              <VSkeletonLoader type="button" width="140" height="36" />
+            </VCol>
+          </VRow>
+        </template>
         <VForm
+          v-else
           ref="refFormChangePassword"
           @submit.prevent="handleChangePassword"
         >
