@@ -3438,7 +3438,7 @@ onMounted(async () => {
       location="top end"
       :color="planStore.snackbar.color"
     >
-      {{ planStore.snackbar.message }}
+      <span v-html="planStore.snackbar.message"></span>
     </VSnackbar>
   </div>
 

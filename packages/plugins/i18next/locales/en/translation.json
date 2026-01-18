@@ -275,7 +275,7 @@
   "user_sensitive_data_not_found": "User sensitive data not found",
   "customer_not_found_or_could_not_create": "Customer not found or could not be created",
   "user_id_not_found": "User ID not found",
-  "sensitive_data_document_not_found": "Customer without registered document. Please insert the document to continue",
+  "sensitive_data_document_not_found": "Customer without registered document. Please, in <a href=\"/account-settings?tab=account\" style=\"color: inherit; text-decoration: underline;\">Accounts</a> fill in your document",
   "asaas_customer_creation_failed": "Failed to create customer",
   "user_view_not_found": "User view not found",
   "active_plan_not_found": "Active plan not found",

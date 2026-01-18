@@ -274,7 +274,7 @@
   "user_sensitive_data_not_found": "Dados sensíveis do usuário não encontrados",
   "customer_not_found_or_could_not_create": "Cliente não encontrado ou não foi possível criar",
   "user_id_not_found": "ID do usuário não encontrado",
-  "sensitive_data_document_not_found": "Cliente sem documento cadastrado. Por favor, insira o documento para continuar",
+  "sensitive_data_document_not_found": "Cliente sem documento cadastrado. Por favor, em <a href=\"/account-settings?tab=account\" style=\"color: inherit; text-decoration: underline;\">Contas</a> preencha seu documento",
   "asaas_customer_creation_failed": "Falha ao criar cliente",
   "user_view_not_found": "Visualização do usuário não encontrada",
   "active_plan_not_found": "Plano ativo não encontrado",

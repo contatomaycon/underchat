@@ -3724,7 +3724,7 @@ watch(currentStep, async (newStep) => {
         location="top"
         @update:model-value="registerStore.hideSnackbar"
       >
-        {{ registerStore.snackbar.message }}
+        <span v-html="registerStore.snackbar.message"></span>
       </VSnackbar>
     </VCol>
   </VRow>
