@@ -273,7 +273,8 @@ export class OrderPaymentCreatorUseCase {
       data.customer.user_customer,
       data.totalAmount,
       `Pagamento do plano ${data.planId}`,
-      data.orderId
+      data.orderId,
+      data.accountId
     );
 
     if (!pixResult.payment || !pixResult.qrCode) {
@@ -443,7 +444,8 @@ export class OrderPaymentCreatorUseCase {
       data.customer.user_customer,
       data.totalAmount,
       `Pagamento do plano ${data.planId}`,
-      data.orderId
+      data.orderId,
+      data.accountId
     );
 
     if (!boletoResult.payment?.id || !boletoResult.identificationField) {

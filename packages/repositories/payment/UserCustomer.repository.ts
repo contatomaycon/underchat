@@ -50,4 +50,30 @@ export class UserCustomerRepository {
       user_customer: customerId,
     };
   };
+
+  updateUserCustomerByUserId = async (
+    userId: string,
+    customerId: string
+  ): Promise<{ user_customer_id: string; user_customer: string }> => {
+    const result = await this.dbRw
+      .update(userCustomer)
+      .set({
+        user_customer: customerId,
+        updated_at: new Date().toISOString(),
+      })
+      .where(eq(userCustomer.user_id, userId))
+      .returning({
+        user_customer_id: userCustomer.user_customer_id,
+        user_customer: userCustomer.user_customer,
+      });
+
+    if (!result[0]) {
+      throw new Error('User customer not found');
+    }
+
+    return {
+      user_customer_id: result[0].user_customer_id,
+      user_customer: result[0].user_customer,
+    };
+  };
 }

@@ -369,15 +369,45 @@ export class PaymentService {
     customerId: string,
     value: number,
     description?: string,
-    externalReference?: string
+    externalReference?: string,
+    accountId?: string
   ): Promise<{
     payment: ICreateAsaasPaymentResponse | null;
     qrCode: IGetAsaasPaymentPixQrCodeResponse | null;
   }> => {
+    const paymentRequest = this.buildPixPaymentRequest(
+      customerId,
+      value,
+      description,
+      externalReference
+    );
+
+    try {
+      return await this.processPixPaymentRequest(paymentRequest);
+    } catch (error) {
+      if (this.isRemovedCustomerError(error) && accountId) {
+        return this.retryPixPaymentWithNewCustomer(
+          value,
+          description,
+          externalReference,
+          accountId
+        );
+      }
+
+      throw error;
+    }
+  };
+
+  private readonly buildPixPaymentRequest = (
+    customerId: string,
+    value: number,
+    description?: string,
+    externalReference?: string
+  ): ICreateAsaasPaymentRequest => {
     const dueDate = new Date();
     dueDate.setDate(dueDate.getDate() + 1);
 
-    const paymentRequest: ICreateAsaasPaymentRequest = {
+    return {
       customer: customerId,
       billingType: 'PIX',
       value: value,
@@ -385,7 +415,14 @@ export class PaymentService {
       description: description,
       externalReference: externalReference,
     };
+  };
 
+  private readonly processPixPaymentRequest = async (
+    paymentRequest: ICreateAsaasPaymentRequest
+  ): Promise<{
+    payment: ICreateAsaasPaymentResponse | null;
+    qrCode: IGetAsaasPaymentPixQrCodeResponse | null;
+  }> => {
     const payment = await this.asaasService.createPayment(paymentRequest);
 
     if (!payment?.id) {
@@ -397,20 +434,80 @@ export class PaymentService {
     return { payment, qrCode };
   };
 
+  private readonly retryPixPaymentWithNewCustomer = async (
+    value: number,
+    description: string | undefined,
+    externalReference: string | undefined,
+    accountId: string
+  ): Promise<{
+    payment: ICreateAsaasPaymentResponse | null;
+    qrCode: IGetAsaasPaymentPixQrCodeResponse | null;
+  }> => {
+    const t = await createI18nInstance('pt');
+    const updatedCustomer = await this.recreateAndUpdateCustomer(t, accountId);
+
+    const retryPaymentRequest = this.buildPixPaymentRequest(
+      updatedCustomer.user_customer,
+      value,
+      description,
+      externalReference
+    );
+
+    return this.processPixPaymentRequest(retryPaymentRequest);
+  };
+
+  private readonly isRemovedCustomerError = (error: unknown): boolean => {
+    return (
+      error instanceof Error &&
+      (error.message.includes('cliente removido') ||
+        error.message.includes('removido'))
+    );
+  };
+
   createBoletoPayment = async (
     customerId: string,
     value: number,
     description?: string,
-    externalReference?: string
+    externalReference?: string,
+    accountId?: string
   ): Promise<{
     payment: ICreateAsaasPaymentResponse | null;
     identificationField: IGetAsaasPaymentIdentificationFieldResponse | null;
     pixQrCode: IGetAsaasPaymentPixQrCodeResponse | null;
   }> => {
+    const paymentRequest = this.buildBoletoPaymentRequest(
+      customerId,
+      value,
+      description,
+      externalReference
+    );
+
+    try {
+      return await this.processBoletoPaymentRequest(paymentRequest);
+    } catch (error) {
+      if (this.isRemovedCustomerError(error) && accountId) {
+        return this.retryBoletoPaymentWithNewCustomer(
+          value,
+          description,
+          externalReference,
+          accountId
+        );
+      }
+
+      throw error;
+    }
+  };
+
+  private readonly buildBoletoPaymentRequest = (
+    customerId: string,
+    value: number,
+    description?: string,
+    externalReference?: string
+  ): ICreateAsaasPaymentRequest => {
     const dueDate = new Date();
     dueDate.setDate(dueDate.getDate() + 3);
 
-    const paymentRequest: ICreateAsaasPaymentRequest = {
+    return {
       customer: customerId,
       billingType: 'BOLETO',
       value: value,
@@ -418,7 +515,15 @@ export class PaymentService {
       description: description,
       externalReference: externalReference,
     };
+  };
 
+  private readonly processBoletoPaymentRequest = async (
+    paymentRequest: ICreateAsaasPaymentRequest
+  ): Promise<{
+    payment: ICreateAsaasPaymentResponse | null;
+    identificationField: IGetAsaasPaymentIdentificationFieldResponse | null;
+    pixQrCode: IGetAsaasPaymentPixQrCodeResponse | null;
+  }> => {
     const payment = await this.asaasService.createPayment(paymentRequest);
 
     if (!payment?.id) {
@@ -431,6 +536,60 @@ export class PaymentService {
     const pixQrCode = await this.asaasService.getPaymentPixQrCode(payment.id);
 
     return { payment, identificationField, pixQrCode };
+  };
+
+  private readonly retryBoletoPaymentWithNewCustomer = async (
+    value: number,
+    description: string | undefined,
+    externalReference: string | undefined,
+    accountId: string
+  ): Promise<{
+    payment: ICreateAsaasPaymentResponse | null;
+    identificationField: IGetAsaasPaymentIdentificationFieldResponse | null;
+    pixQrCode: IGetAsaasPaymentPixQrCodeResponse | null;
+  }> => {
+    const t = await createI18nInstance('pt');
+    const updatedCustomer = await this.recreateAndUpdateCustomer(t, accountId);
+
+    const retryPaymentRequest = this.buildBoletoPaymentRequest(
+      updatedCustomer.user_customer,
+      value,
+      description,
+      externalReference
+    );
+
+    return this.processBoletoPaymentRequest(retryPaymentRequest);
+  };
+
+  private readonly recreateAndUpdateCustomer = async (
+    t: TFunction<'translation', undefined>,
+    accountId: string
+  ): Promise<{ user_customer_id: string; user_customer: string }> => {
+    const userId = await this.getUserIdByAccountId(t, accountId);
+
+    const sensitiveData =
+      await this.userService.getUserSensitiveDataDecrypted(userId);
+    if (!sensitiveData?.document) {
+      throw new Error(t('sensitive_data_document_not_found'));
+    }
+
+    const asaasCustomer = await this.createNewAsaasCustomer(
+      t,
+      userId,
+      accountId,
+      sensitiveData
+    );
+    if (!asaasCustomer) {
+      throw new Error(t('asaas_customer_creation_failed'));
+    }
+
+    const updatedCustomer =
+      await this.userCustomerRepository.updateUserCustomerByUserId(
+        userId,
+        asaasCustomer.id
+      );
+
+    return updatedCustomer;
   };
 
   createCreditCardPayment = async (
