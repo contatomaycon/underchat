@@ -36,6 +36,8 @@ import { CreateOrderPaymentRequest } from '@core/schema/plan/createOrderPayment/
 import { CreateOrderPaymentResponse } from '@core/schema/plan/createOrderPayment/response.schema';
 import { ViewCurrentPlanInvoiceResponse } from '@core/schema/accountSettings/viewCurrentPlanInvoice/response.schema';
 import { ListCreditCardFeeResponse } from '@core/schema/config/listCreditCardFee/response.schema';
+import { ListMethodPaymentsResponse } from '@core/schema/plan/listMethodPayments/response.schema';
+import { EMethodPayment } from '@core/common/enums/EMethodPayment';
 import creditCardType from 'credit-card-type';
 import DialogCloseBtn from '@/@webcore/components/DialogCloseBtn.vue';
 import { onMessage, unsubscribe } from '@/@webcore/centrifugo';
@@ -84,6 +86,8 @@ const selectedAddons = ref<
 const selectedCrossSellByType = ref<Record<string, string | null>>({});
 const loadingProducts = ref(false);
 const creditCardFee = ref<ListCreditCardFeeResponse | null>(null);
+const enabledPaymentMethods = ref<ListMethodPaymentsResponse>([]);
+const loadingPaymentMethods = ref(false);
 const currentUser = ref<ViewUserInfoResponse | null>(null);
 const loadingUser = ref(false);
 const userCards = ref<ListUserCardResponse[]>([]);
@@ -354,6 +358,16 @@ const loadCreditCardFee = async () => {
   }
 };
 
+const loadMethodPayments = async () => {
+  if (loadingPaymentMethods.value) return;
+  loadingPaymentMethods.value = true;
+  const result = await planStore.getMethodPayments();
+  if (result) {
+    enabledPaymentMethods.value = result;
+  }
+  loadingPaymentMethods.value = false;
+};
+
 const loadStep4 = async () => {
   if (step4Loaded.value) return;
 
@@ -361,8 +375,15 @@ const loadStep4 = async () => {
     loadUserCards(),
     loadUpgradeDiscount(),
     loadCreditCardFee(),
+    loadMethodPayments(),
   ]);
   step4Loaded.value = true;
+};
+
+const isPaymentMethodEnabled = (method: 'boleto' | 'credit_card' | 'pix'): boolean => {
+  return enabledPaymentMethods.value.some(
+    (mp) => mp.type === method && mp.status === true
+  );
 };
 
 const isPlanExpired = computed(() => {
@@ -1461,6 +1482,19 @@ watch(selectedPlanForCheckout, (plan) => {
   }
 });
 
+watch(
+  enabledPaymentMethods,
+  () => {
+    if (
+      selectedPaymentMethod.value &&
+      !isPaymentMethodEnabled(selectedPaymentMethod.value)
+    ) {
+      selectedPaymentMethod.value = null;
+    }
+  },
+  { deep: true }
+);
+
 watch(selectedPaymentMethod, (newMethod) => {
   if (newMethod !== 'credit_card' && showAddCardModal.value) {
     showAddCardModal.value = false;
@@ -2352,8 +2386,38 @@ onMounted(async () => {
                   </VAlert>
 
                   <VRow v-if="!paymentInitiated">
+                    <!-- Loading Skeleton -->
+                    <template v-if="loadingPaymentMethods">
+                      <VCol cols="12" md="4" v-for="n in 3" :key="n">
+                        <VCard variant="outlined">
+                          <VCardText class="text-center">
+                            <VSkeletonLoader
+                              type="avatar"
+                              width="48"
+                              height="48"
+                              class="mx-auto mb-3"
+                            />
+                            <VSkeletonLoader
+                              type="text"
+                              width="120"
+                              class="mx-auto mb-2"
+                            />
+                            <VSkeletonLoader
+                              type="text"
+                              width="180"
+                              class="mx-auto"
+                            />
+                          </VCardText>
+                        </VCard>
+                      </VCol>
+                    </template>
+
                     <!-- Boleto -->
-                    <VCol cols="12" md="4">
+                    <VCol
+                      v-else-if="isPaymentMethodEnabled('boleto')"
+                      cols="12"
+                      md="4"
+                    >
                       <VCard
                         :class="[
                           'payment-method-card',
@@ -2386,7 +2450,11 @@ onMounted(async () => {
                     </VCol>
 
                     <!-- Cartão de Crédito -->
-                    <VCol cols="12" md="4">
+                    <VCol
+                      v-if="!loadingPaymentMethods && isPaymentMethodEnabled('credit_card')"
+                      cols="12"
+                      md="4"
+                    >
                       <VCard
                         :class="[
                           'payment-method-card',
@@ -2423,7 +2491,11 @@ onMounted(async () => {
                     </VCol>
 
                     <!-- PIX -->
-                    <VCol cols="12" md="4">
+                    <VCol
+                      v-if="!loadingPaymentMethods && isPaymentMethodEnabled('pix')"
+                      cols="12"
+                      md="4"
+                    >
                       <VCard
                         :class="[
                           'payment-method-card',
@@ -2453,6 +2525,24 @@ onMounted(async () => {
                           </p>
                         </VCardText>
                       </VCard>
+                    </VCol>
+
+                    <!-- Mensagem quando não há métodos habilitados -->
+                    <VCol
+                      v-if="
+                        !loadingPaymentMethods &&
+                        enabledPaymentMethods.length === 0
+                      "
+                      cols="12"
+                    >
+                      <VAlert type="warning" variant="tonal" prominent>
+                        <VAlertTitle>
+                          {{ $t('no_payment_methods_available') }}
+                        </VAlertTitle>
+                        <div>
+                          {{ $t('no_payment_methods_available_message') }}
+                        </div>
+                      </VAlert>
                     </VCol>
                   </VRow>
 

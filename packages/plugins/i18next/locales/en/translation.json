@@ -672,6 +672,8 @@
   "method_payment_updated_successfully": "Payment method updated successfully!",
   "method_payment_update_error": "Error updating payment method",
   "method_payment_not_found": "Payment method not found",
+  "payment_method_disabled": "The selected payment method is not enabled",
+  "no_enabled_payment_methods": "No payment methods enabled",
   "plan_not_found_or_already_cancelled": "Plan not found or already cancelled",
   "plan_already_cancelling": "The plan is already in cancellation process",
   "last_payment_date_not_found": "Last payment date not found",

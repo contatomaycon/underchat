@@ -671,6 +671,8 @@
   "method_payment_updated_successfully": "Método de pagamento atualizado com sucesso!",
   "method_payment_update_error": "Erro ao atualizar método de pagamento",
   "method_payment_not_found": "Método de pagamento não encontrado",
+  "payment_method_disabled": "O método de pagamento selecionado não está habilitado",
+  "no_enabled_payment_methods": "Nenhum método de pagamento habilitado",
   "plan_not_found_or_already_cancelled": "Plano não encontrado ou já cancelado",
   "plan_already_cancelling": "O plano já está em processo de cancelamento",
   "last_payment_date_not_found": "Data do último pagamento não encontrada",

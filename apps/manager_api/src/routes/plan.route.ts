@@ -28,6 +28,7 @@ import { createOrderPaymentSchema } from '@core/schema/plan/createOrderPayment';
 import { listAvailableCrossSellSchema } from '@core/schema/plan/listAvailableCrossSell';
 import { checkTestPlanAlreadyUsedSchema } from '@core/schema/plan/checkTestPlanAlreadyUsed';
 import { listPlanCreditCardFeeSchema } from '@core/schema/plan/listCreditCardFee';
+import { listPlanMethodPaymentsSchema } from '@core/schema/plan/listMethodPayments';
 import { planStatus } from '@/plugins/planStatus';
 
 export default function planRoutes(server: FastifyInstance) {
@@ -196,6 +197,16 @@ export default function planRoutes(server: FastifyInstance) {
   server.get('/plan/credit-card-fee', {
     schema: listPlanCreditCardFeeSchema,
     handler: planController.listCreditCardFee,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, planInvoicePermissions),
+      planStatus,
+    ],
+  });
+
+  server.get('/plan/method-payments', {
+    schema: listPlanMethodPaymentsSchema,
+    handler: planController.listMethodPayments,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, planInvoicePermissions),

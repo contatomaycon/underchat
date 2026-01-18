@@ -2214,5 +2214,7 @@
   "ai_agent_not_available_plan_message": "Esta opción no está disponible en el plan actual. Actualice su plan o compre un complemento para usar esta funcionalidad.",
   "ai_agent_not_available_additional": "Límite de agentes de IA alcanzado. Elimine un agente para agregar otro.",
   "chunk_size_info": "Tamaño del Chunk: Define cuántos caracteres/tokens se procesarán en cada fragmento (chunk) del documento. Valores más pequeños resultan en chunks más precisos, pero aumentan el número de operaciones de procesamiento. Valores más grandes procesan más información a la vez, pero pueden perder contexto.",
-  "chunk_overlap_info": "Superposición del Chunk: Define cuántos caracteres/tokens se superponen entre chunks consecutivos. Esto ayuda a mantener el contexto entre partes del documento, evitando la pérdida de información en los límites entre chunks."
+  "chunk_overlap_info": "Superposición del Chunk: Define cuántos caracteres/tokens se superponen entre chunks consecutivos. Esto ayuda a mantener el contexto entre partes del documento, evitando la pérdida de información en los límites entre chunks.",
+  "no_payment_methods_available": "No hay métodos de pago disponibles",
+  "no_payment_methods_available_message": "No hay métodos de pago habilitados en este momento. Por favor, contacte al soporte."
 }

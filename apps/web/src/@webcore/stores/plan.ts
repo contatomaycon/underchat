@@ -33,6 +33,7 @@ import { IListPlanSales } from '../interfaces/IListPlanSales';
 import { ListPlanWithItemsResponse } from '@core/schema/plan/listPlanWithItems/response.schema';
 import { ListAvailableCrossSellResponse } from '@core/schema/plan/listAvailableCrossSell/response.schema';
 import { ListCreditCardFeeResponse } from '@core/schema/config/listCreditCardFee/response.schema';
+import { ListMethodPaymentsResponse } from '@core/schema/plan/listMethodPayments/response.schema';
 
 export const usePlanStore = defineStore('plan', {
   state: () => ({
@@ -52,6 +53,7 @@ export const usePlanStore = defineStore('plan', {
     listWithItems: [] as ListPlanWithItemsResponse[],
     availableCrossSells: [] as ListAvailableCrossSellResponse[],
     creditCardFee: null as ListCreditCardFeeResponse | null,
+    methodPayments: [] as ListMethodPaymentsResponse,
     pagings: {
       current_page: 1 as number,
       total_pages: 1 as number,
@@ -811,6 +813,41 @@ export const usePlanStore = defineStore('plan', {
         this.loading = false;
 
         return null;
+      }
+    },
+
+    async getMethodPayments(): Promise<ListMethodPaymentsResponse> {
+      try {
+        this.loading = true;
+
+        const response = await axios.get<
+          IApiResponse<ListMethodPaymentsResponse>
+        >('/plan/method-payments');
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          this.methodPayments = [];
+          return [];
+        }
+
+        this.methodPayments = data.data;
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('no_enabled_payment_methods');
+
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+        this.loading = false;
+        this.methodPayments = [];
+
+        return [];
       }
     },
 

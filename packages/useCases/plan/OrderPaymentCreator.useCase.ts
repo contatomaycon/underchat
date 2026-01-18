@@ -11,6 +11,8 @@ import { AccountTestService } from '@core/services/accountTest.service';
 import { CreditCardFeeService } from '@core/services/creditCardFee.service';
 import { UserMasterViewerRepository } from '@core/repositories/user/UserMasterViewer.repository';
 import { UserService } from '@core/services/user.service';
+import { MethodPaymentService } from '@core/services/methodPayment.service';
+import { EMethodPayment } from '@core/common/enums/EMethodPayment';
 import { randomUUID } from 'node:crypto';
 
 @injectable()
@@ -22,7 +24,8 @@ export class OrderPaymentCreatorUseCase {
     private readonly accountTestService: AccountTestService,
     private readonly userMasterViewerRepository: UserMasterViewerRepository,
     private readonly userService: UserService,
-    private readonly creditCardFeeService: CreditCardFeeService
+    private readonly creditCardFeeService: CreditCardFeeService,
+    private readonly methodPaymentService: MethodPaymentService
   ) {}
 
   private readonly applyCreditCardFee = (
@@ -239,6 +242,10 @@ export class OrderPaymentCreatorUseCase {
       }
 
       const isTestPlan = plan.is_test === true && (plan.days_trial ?? 0) > 0;
+      if (!isTestPlan) {
+        await this.validatePaymentMethod(t, input.payment_method);
+      }
+
       if (isTestPlan) {
         return this.processTestPlan(t, accountId, input.plan_id, plan, input);
       }
@@ -249,6 +256,20 @@ export class OrderPaymentCreatorUseCase {
         throw error;
       }
       throw new Error(t('order_payment_creation_failed'));
+    }
+  };
+
+  private readonly validatePaymentMethod = async (
+    t: TFunction<'translation', undefined>,
+    paymentMethod: string
+  ): Promise<void> => {
+    const methodPayment =
+      await this.methodPaymentService.viewMethodPaymentByType(
+        paymentMethod as EMethodPayment
+      );
+
+    if (!methodPayment || !methodPayment.status) {
+      throw new Error(t('payment_method_disabled'));
     }
   };
 
