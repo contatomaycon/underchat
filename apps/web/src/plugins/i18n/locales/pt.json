@@ -822,6 +822,7 @@
   "contact_export_error": "Ocorreu um erro ao exportar os contatos. Por favor, tente novamente.",
   "nickname": "Apelido",
   "contacts": "Contatos",
+  "registration_date": "Data de Inscrição",
   "view_contact": "Visualizar Contato",
   "delete_contact": "Excluir Contato",
   "delete_contact_confirmation": "Você tem certeza que deseja excluir este contato?",
