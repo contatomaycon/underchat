@@ -31,6 +31,7 @@ import {
 } from '@/permissions';
 import { viewAccountCustomizationSchema } from '@core/schema/accountSettings/viewAccountCustomization';
 import { upsertAccountCustomizationSchema } from '@core/schema/accountSettings/upsertAccountCustomization';
+import { listAccountSettingsMethodPaymentsSchema } from '@core/schema/accountSettings/listMethodPayments';
 import { planStatus } from '@/plugins/planStatus';
 
 export default async function accountSettingsRoutes(server: FastifyInstance) {
@@ -280,6 +281,16 @@ export default async function accountSettingsRoutes(server: FastifyInstance) {
   server.post('/account-settings/plan/reactivate', {
     schema: reactivatePlanAccountSchema,
     handler: accountSettingsController.reactivatePlanAccount,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, planInvoicePermissions),
+      planStatus,
+    ],
+  });
+
+  server.get('/account-settings/method-payments', {
+    schema: listAccountSettingsMethodPaymentsSchema,
+    handler: accountSettingsController.listMethodPayments,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, planInvoicePermissions),

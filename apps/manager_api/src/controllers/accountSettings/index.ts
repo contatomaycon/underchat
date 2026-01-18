@@ -25,6 +25,7 @@ import { reactivatePlanAccount } from './methods/reactivatePlanAccount';
 import { viewAccountCustomization } from './methods/viewAccountCustomization';
 import { upsertAccountCustomization } from './methods/upsertAccountCustomization';
 import { generateAccountPaymentNfse } from './methods/generateAccountPaymentNfse';
+import { listMethodPayments } from './methods/listMethodPayments';
 
 @injectable()
 class AccountSettingsController {
@@ -54,6 +55,7 @@ class AccountSettingsController {
   public reactivatePlanAccount = reactivatePlanAccount;
   public viewAccountCustomization = viewAccountCustomization;
   public upsertAccountCustomization = upsertAccountCustomization;
+  public listMethodPayments = listMethodPayments;
 }
 
 export default AccountSettingsController;

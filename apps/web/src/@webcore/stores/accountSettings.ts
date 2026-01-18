@@ -43,6 +43,7 @@ import { CancelPlanAccountResponse } from '@core/schema/accountSettings/cancelPl
 import { ReactivatePlanAccountResponse } from '@core/schema/accountSettings/reactivatePlanAccount/response.schema';
 import { getUser } from '@/@webcore/localStorage/user';
 import { ViewAccountCustomizationResponse } from '@core/schema/accountSettings/viewAccountCustomization/response.schema';
+import { ListMethodPaymentsResponse } from '@core/schema/accountSettings/listMethodPayments/response.schema';
 
 export const useAccountSettingsStore = defineStore('accountSettings', {
   state: () => ({
@@ -65,6 +66,7 @@ export const useAccountSettingsStore = defineStore('accountSettings', {
     accountAddonsList: [] as ListAccountAddonsResponse[],
     accountPlanProductsList: [] as ListAccountPlanProductsResponse[],
     accountPaymentNfse: null as ViewAccountPaymentNfseResponse | null,
+    methodPayments: [] as ListMethodPaymentsResponse,
   }),
   actions: {
     showSnackbar(message: string, color: EColor) {
@@ -925,6 +927,40 @@ export const useAccountSettingsStore = defineStore('accountSettings', {
         this.showSnackbar(errorMessage, EColor.error);
 
         return false;
+      }
+    },
+    async getMethodPayments(): Promise<ListMethodPaymentsResponse> {
+      try {
+        this.loading = true;
+
+        const response = await axios.get<
+          IApiResponse<ListMethodPaymentsResponse>
+        >('/account-settings/method-payments');
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          this.methodPayments = [];
+          return [];
+        }
+
+        this.methodPayments = data.data;
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('no_enabled_payment_methods');
+
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+        this.loading = false;
+        this.methodPayments = [];
+
+        return [];
       }
     },
   },

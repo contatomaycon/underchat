@@ -9,6 +9,8 @@ import { ViewCurrentPlanInvoiceResponse } from '@core/schema/accountSettings/vie
 import { ListUserCardResponse } from '@core/schema/plan/listUserCards/response.schema';
 import { ListAccountPlanProductsResponse } from '@core/schema/accountSettings/listAccountPlanProducts/response.schema';
 import { EAccountStatus } from '@core/common/enums/EAccountStatus';
+import { ListMethodPaymentsResponse } from '@core/schema/accountSettings/listMethodPayments/response.schema';
+import { EMethodPayment } from '@core/common/enums/EMethodPayment';
 import creditCardType from 'credit-card-type';
 import visaSvg from '@images/icons/payments/card/visa.svg?url';
 import mastercardSvg from '@images/icons/payments/card/mastercard.svg?url';
@@ -33,6 +35,8 @@ const cardsLoading = ref(false);
 const planProductsLoading = ref(false);
 const userCards = ref<ListUserCardResponse[]>([]);
 const accountPlanProducts = ref<ListAccountPlanProductsResponse[]>([]);
+const enabledPaymentMethods = ref<ListMethodPaymentsResponse>([]);
+const loadingPaymentMethods = ref(false);
 const cardToDelete = ref<string | null>(null);
 const isDeleteDialogOpen = ref(false);
 const showAddCardModal = ref(false);
@@ -246,6 +250,21 @@ const loadAccountPlanProducts = async () => {
   }
   planProductsLoading.value = false;
 };
+
+const loadMethodPayments = async () => {
+  loadingPaymentMethods.value = true;
+  const result = await accountSettingsStore.getMethodPayments();
+  if (result) {
+    enabledPaymentMethods.value = result;
+  }
+  loadingPaymentMethods.value = false;
+};
+
+const isCreditCardEnabled = computed(() => {
+  return enabledPaymentMethods.value.some(
+    (mp) => mp.type === EMethodPayment.credit_card && mp.status === true
+  );
+});
 
 const deleteCard = (cardId: string) => {
   cardToDelete.value = cardId;
@@ -747,6 +766,7 @@ const renewPlan = () => {
 
 onMounted(() => {
   loadPlanInvoice();
+  loadMethodPayments();
   loadUserCards();
   loadAccountPlanProducts();
 });
@@ -830,7 +850,10 @@ onMounted(() => {
                 </div>
               </div>
 
-              <div v-if="!isPlanCancelled" class="mb-3">
+              <div
+                v-if="!isPlanCancelled && isCreditCardEnabled"
+                class="mb-3"
+              >
                 <div class="d-flex align-center justify-space-between mb-1">
                   <span class="text-body-2 text-medium-emphasis">
                     {{ $t('recurring_payment') }}
@@ -909,7 +932,7 @@ onMounted(() => {
 
             <VDivider class="my-4" />
 
-            <div class="mb-4">
+            <div v-if="isCreditCardEnabled" class="mb-4">
               <div class="d-flex align-center justify-space-between mb-3">
                 <span class="text-h6">{{ $t('cards') }}</span>
               </div>
