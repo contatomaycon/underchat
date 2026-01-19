@@ -148,10 +148,11 @@ export class BaileysIncomingMessageService {
     if (this.isProcessingQueue || this.pendingQueue.length === 0) return;
 
     this.isProcessingQueue = true;
+    let batch: PendingMessage[] = [];
 
     try {
       const batchSize = Math.min(50, this.pendingQueue.length);
-      const batch = this.pendingQueue.splice(0, batchSize);
+      batch = this.pendingQueue.splice(0, batchSize);
 
       const results = await Promise.allSettled(
         batch.map((item) => this.sendToKafkaWithRetry(item))
@@ -172,6 +173,15 @@ export class BaileysIncomingMessageService {
             );
           }
         }
+      }
+
+      batch = [];
+    } catch (error) {
+      console.error('[CRITICAL] Error in processRetryQueue:', error);
+
+      if (batch.length > 0) {
+        this.pendingQueue.unshift(...batch);
+        console.log(`[RECOVERY] Restored ${batch.length} messages to queue`);
       }
     } finally {
       this.isProcessingQueue = false;
