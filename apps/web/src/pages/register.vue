@@ -1116,7 +1116,9 @@ const initPaymentSubscription = async () => {
 
     paymentSubscription.value = sub;
   } catch (error) {
-    console.error('Erro ao conectar ao Centrifugo:', error);
+    if (import.meta.env.DEV) {
+      console.error('Erro ao conectar ao Centrifugo:', error);
+    }
   }
 };
 
@@ -1128,7 +1130,9 @@ const cleanupPaymentSubscription = async () => {
       }
       paymentSubscription.value = null;
     } catch (error) {
-      console.error('Erro ao desconectar do Centrifugo:', error);
+      if (import.meta.env.DEV) {
+        console.error('Erro ao desconectar do Centrifugo:', error);
+      }
     }
   }
 
@@ -1137,7 +1141,9 @@ const cleanupPaymentSubscription = async () => {
       registerCentrifugeClient.value.disconnect();
       registerCentrifugeClient.value = null;
     } catch (error) {
-      console.error('Erro ao desconectar cliente do Centrifugo:', error);
+      if (import.meta.env.DEV) {
+        console.error('Erro ao desconectar cliente do Centrifugo:', error);
+      }
     }
   }
 };

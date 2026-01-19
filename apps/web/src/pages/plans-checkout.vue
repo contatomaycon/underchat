@@ -998,7 +998,9 @@ const initPaymentSubscription = async () => {
     });
     paymentSubscription.value = sub;
   } catch (error) {
-    console.error('Erro ao conectar ao Centrifugo:', error);
+    if (import.meta.env.DEV) {
+      console.error('Erro ao conectar ao Centrifugo:', error);
+    }
   }
 };
 

@@ -1,4 +1,4 @@
-import { injectable, inject } from 'tsyringe';
+import { injectable, inject, container } from 'tsyringe';
 import {
   Centrifuge,
   PublicationContext,
@@ -9,6 +9,8 @@ import {
 } from 'centrifuge';
 import jwt from 'jsonwebtoken';
 import WebSocket from 'ws';
+import { createHash } from 'crypto';
+import Redis from 'ioredis';
 import { centrifugoEnvironment } from '@core/config/environments';
 import { logger } from '@core/plugins/telemetry/logger';
 import { captureException } from '@core/plugins/telemetry/sentry';
@@ -34,7 +36,7 @@ export class CentrifugoService {
 
   private circuitBreakerFailures = 0;
   private circuitBreakerOpenUntil = 0;
-  private tokenBucket = this.rateLimitPerSecond;
+  private tokenBucket = 100;
   private lastTokenRefill = Date.now();
   private publishQueue: IQueuedPublish[] = [];
   private debounceMap = new Map<string, NodeJS.Timeout>();
@@ -42,8 +44,28 @@ export class CentrifugoService {
   private queueProcessTimer: ReturnType<typeof setInterval> | null = null;
   private cacheCleanupTimer: ReturnType<typeof setInterval> | null = null;
   private isProcessingQueue = false;
+  private queueProcessingLock = Promise.resolve();
+  private tempSubscriptions = new Map<
+    string,
+    { client: Centrifuge; sub: Subscription }
+  >();
+  private readonly circuitBreakerHalfOpenAttempts = 3;
+  private readonly maxBurstSize = 100;
+  private readonly publishCacheMaxSize = 10_000;
+  private circuitBreakerState: 'closed' | 'open' | 'half-open' = 'closed';
+  private halfOpenSuccessCount = 0;
+  private readonly useDistributed: boolean;
+  private readonly redis: Redis | undefined;
 
   constructor(@inject('Centrifuge') private readonly client: Centrifuge) {
+    try {
+      this.redis = container.resolve<Redis>('Redis');
+    } catch {
+      this.redis = undefined;
+    }
+
+    this.useDistributed =
+      process.env.USE_DISTRIBUTED_CENTRIFUGO === 'true' && !!this.redis;
     this.startQueueProcessor();
     this.startCacheCleanup();
   }
@@ -62,25 +84,118 @@ export class CentrifugoService {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
-  private isCircuitOpen(): boolean {
+  private async isCircuitOpen(): Promise<boolean> {
+    if (this.useDistributed && this.redis) {
+      const key = 'centrifugo:circuit_breaker:open_until';
+      const openUntilStr = await this.redis.get(key).catch(() => null);
+
+      if (!openUntilStr) {
+        return false;
+      }
+
+      const openUntil = Number.parseInt(openUntilStr, 10);
+      const now = Date.now();
+
+      if (now < openUntil) {
+        return true;
+      }
+
+      await this.redis.del(key).catch(() => {});
+      await this.redis
+        .del('centrifugo:circuit_breaker:failures')
+        .catch(() => {});
+      return false;
+    }
+
     const now = Date.now();
 
-    if (this.circuitBreakerOpenUntil && now < this.circuitBreakerOpenUntil) {
+    if (this.circuitBreakerState === 'open') {
+      if (now >= this.circuitBreakerOpenUntil) {
+        this.circuitBreakerState = 'half-open';
+        this.halfOpenSuccessCount = 0;
+        logger.info(
+          { type: 'centrifugo_circuit_breaker_half_open' },
+          'Centrifugo circuit breaker moved to half-open state'
+        );
+        return false;
+      }
       return true;
     }
 
-    if (this.circuitBreakerOpenUntil && now >= this.circuitBreakerOpenUntil) {
-      this.circuitBreakerFailures = 0;
-      this.circuitBreakerOpenUntil = 0;
+    if (this.circuitBreakerState === 'half-open') {
+      return false;
     }
 
     return false;
   }
 
-  private recordCircuitFailure(): void {
+  private async recordCircuitFailure(): Promise<void> {
+    if (this.useDistributed && this.redis) {
+      const failuresKey = 'centrifugo:circuit_breaker:failures';
+      const openUntilKey = 'centrifugo:circuit_breaker:open_until';
+
+      try {
+        const failures = await this.redis.incr(failuresKey);
+        await this.redis.expire(
+          failuresKey,
+          Math.ceil(this.circuitBreakerResetMs / 1000) + 60
+        );
+
+        if (failures >= this.circuitBreakerThreshold) {
+          const openUntil = Date.now() + this.circuitBreakerResetMs;
+          await this.redis.set(
+            openUntilKey,
+            openUntil.toString(),
+            'EX',
+            Math.ceil(this.circuitBreakerResetMs / 1000) + 60
+          );
+
+          logger.error(
+            {
+              type: 'centrifugo_circuit_breaker_open',
+              failures,
+              resetMs: this.circuitBreakerResetMs,
+            },
+            'Centrifugo circuit breaker opened'
+          );
+
+          captureException(new Error('Centrifugo circuit breaker opened'), {
+            level: 'error',
+            centrifugo: { type: 'circuit_breaker_open', failures },
+          });
+        }
+      } catch (error) {
+        logger.warn(
+          { err: error },
+          'Error in distributed circuit breaker, falling back to local'
+        );
+        this.recordCircuitFailureLocal();
+      }
+      return;
+    }
+
+    this.recordCircuitFailureLocal();
+  }
+
+  private recordCircuitFailureLocal(): void {
     this.circuitBreakerFailures++;
 
+    if (this.circuitBreakerState === 'half-open') {
+      this.circuitBreakerState = 'open';
+      this.circuitBreakerOpenUntil = Date.now() + this.circuitBreakerResetMs;
+      this.halfOpenSuccessCount = 0;
+
+      logger.error(
+        {
+          type: 'centrifugo_circuit_breaker_half_open_failed',
+        },
+        'Centrifugo circuit breaker half-open test failed, reopening'
+      );
+      return;
+    }
+
     if (this.circuitBreakerFailures >= this.circuitBreakerThreshold) {
+      this.circuitBreakerState = 'open';
       this.circuitBreakerOpenUntil = Date.now() + this.circuitBreakerResetMs;
 
       logger.error(
@@ -102,7 +217,50 @@ export class CentrifugoService {
     }
   }
 
-  private recordCircuitSuccess(): void {
+  private async recordCircuitSuccess(): Promise<void> {
+    if (this.useDistributed && this.redis) {
+      const failuresKey = 'centrifugo:circuit_breaker:failures';
+      try {
+        const current = await this.redis.get(failuresKey);
+        if (current && Number.parseInt(current, 10) > 0) {
+          const failures = Number.parseInt(current, 10);
+          if (failures > 0) {
+            await this.redis.set(failuresKey, (failures - 1).toString());
+          }
+        }
+      } catch (error) {
+        logger.warn(
+          { err: error },
+          'Error in distributed circuit breaker success, falling back to local'
+        );
+        this.recordCircuitSuccessLocal();
+      }
+      return;
+    }
+
+    this.recordCircuitSuccessLocal();
+  }
+
+  private recordCircuitSuccessLocal(): void {
+    if (this.circuitBreakerState === 'half-open') {
+      this.halfOpenSuccessCount++;
+
+      if (this.halfOpenSuccessCount >= this.circuitBreakerHalfOpenAttempts) {
+        this.circuitBreakerState = 'closed';
+        this.circuitBreakerFailures = 0;
+        this.halfOpenSuccessCount = 0;
+
+        logger.info(
+          {
+            type: 'centrifugo_circuit_breaker_closed',
+            halfOpenAttempts: this.halfOpenSuccessCount,
+          },
+          'Centrifugo circuit breaker closed after successful half-open'
+        );
+        return;
+      }
+    }
+
     if (this.circuitBreakerFailures > 0) {
       this.circuitBreakerFailures = Math.max(
         0,
@@ -120,14 +278,48 @@ export class CentrifugoService {
 
     if (tokensToAdd > 0) {
       this.tokenBucket = Math.min(
-        this.rateLimitPerSecond,
+        this.maxBurstSize + this.rateLimitPerSecond,
         this.tokenBucket + tokensToAdd
       );
       this.lastTokenRefill = now;
     }
   }
 
+  private async consumeTokenDistributed(): Promise<boolean> {
+    if (!this.redis) {
+      return this.consumeToken();
+    }
+
+    const key = 'centrifugo:rate_limit:tokens';
+    const maxTokens = this.rateLimitPerSecond;
+    const ttl = 1;
+
+    try {
+      const current = await this.redis.incr(key);
+
+      if (current === 1) {
+        await this.redis.expire(key, ttl);
+      }
+
+      if (current > maxTokens) {
+        await this.redis.decr(key);
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      logger.warn(
+        { err: error },
+        'Error in distributed rate limiting, falling back to local'
+      );
+      return this.consumeToken();
+    }
+  }
+
   private hasAvailableToken(): boolean {
+    if (this.useDistributed) {
+      return true;
+    }
     this.refillTokens();
     return this.tokenBucket > 0;
   }
@@ -154,22 +346,58 @@ export class CentrifugoService {
 
   private generateHash(channel: string, data: unknown): string {
     try {
-      const dataStr = typeof data === 'string' ? data : JSON.stringify(data);
-      let hash = 0;
+      const dataStr =
+        typeof data === 'string'
+          ? data
+          : JSON.stringify(data, Object.keys(data as object).sort());
 
-      for (let i = 0; i < dataStr.length; i++) {
-        const char = dataStr.charCodeAt(i);
-        hash = (hash << 5) - hash + char;
-        hash = hash & hash;
-      }
+      const hash = createHash('sha256')
+        .update(channel)
+        .update(':')
+        .update(dataStr)
+        .digest('hex')
+        .substring(0, 16);
 
-      return `${channel}:${hash.toString(36)}`;
-    } catch {
-      return `${channel}:${Date.now()}`;
+      return `${channel}:${hash}`;
+    } catch (error) {
+      const errorStr = error instanceof Error ? error.message : String(error);
+      const fallback = createHash('md5')
+        .update(channel)
+        .update(':')
+        .update(errorStr)
+        .update(':')
+        .update(Date.now().toString())
+        .digest('hex')
+        .substring(0, 16);
+
+      logger.warn(
+        { channel, error },
+        'Failed to generate hash, using fallback'
+      );
+      return `${channel}:${fallback}`;
     }
   }
 
-  private isDuplicatePublish(channel: string, data: unknown): boolean {
+  private async isDuplicatePublish(
+    channel: string,
+    data: unknown
+  ): Promise<boolean> {
+    if (this.useDistributed && this.redis) {
+      const hash = this.generateHash(channel, data);
+      const key = `centrifugo:publish_cache:${hash}`;
+      const ttlSeconds = Math.ceil(this.publishCacheWindowMs / 1000);
+
+      try {
+        const result = await this.redis.set(key, '1', 'EX', ttlSeconds, 'NX');
+        return result === null;
+      } catch (error) {
+        logger.warn(
+          { err: error, channel, hash },
+          'Error checking duplicate publish, falling back to local'
+        );
+      }
+    }
+
     const hash = this.generateHash(channel, data);
     const cached = this.publishCache.get(hash);
 
@@ -187,7 +415,22 @@ export class CentrifugoService {
     return true;
   }
 
-  private cachePublish(channel: string, data: unknown): void {
+  private async cachePublish(channel: string, data: unknown): Promise<void> {
+    if (this.useDistributed && this.redis) {
+      const hash = this.generateHash(channel, data);
+      const key = `centrifugo:publish_cache:${hash}`;
+      const ttlSeconds = Math.ceil(this.publishCacheWindowMs / 1000);
+      await this.redis.expire(key, ttlSeconds).catch(() => {});
+      return;
+    }
+
+    if (this.publishCache.size >= this.publishCacheMaxSize) {
+      const oldestKey = this.publishCache.keys().next().value;
+      if (oldestKey) {
+        this.publishCache.delete(oldestKey);
+      }
+    }
+
     const hash = this.generateHash(channel, data);
 
     this.publishCache.set(hash, {
@@ -269,45 +512,57 @@ export class CentrifugoService {
   }
 
   private async processQueue(): Promise<void> {
-    if (this.isProcessingQueue || this.publishQueue.length === 0) {
+    if (this.publishQueue.length === 0) {
       return;
     }
 
-    this.isProcessingQueue = true;
-
-    try {
-      while (this.publishQueue.length > 0 && this.hasAvailableToken()) {
-        const item = this.publishQueue.shift();
-
-        if (!item) {
-          break;
-        }
-
-        if (!this.consumeToken()) {
-          this.publishQueue.unshift(item);
-          break;
-        }
-
-        const ageMs = Date.now() - item.timestamp;
-
-        if (ageMs > 30_000) {
-          item.reject(new Error('Publish timeout: too long in queue'));
-          continue;
-        }
-
-        try {
-          const result = await this.publishViaHttpApiDirect(
-            item.channel,
-            item.data
-          );
-          item.resolve(result);
-        } catch (error) {
-          item.reject(this.toError(error));
-        }
+    this.queueProcessingLock = this.queueProcessingLock.then(async () => {
+      if (this.isProcessingQueue) {
+        return;
       }
-    } finally {
-      this.isProcessingQueue = false;
-    }
+
+      this.isProcessingQueue = true;
+
+      try {
+        while (this.publishQueue.length > 0 && this.hasAvailableToken()) {
+          const item = this.publishQueue.shift();
+
+          if (!item) {
+            break;
+          }
+
+          const hasToken = this.useDistributed
+            ? await this.consumeTokenDistributed()
+            : this.consumeToken();
+
+          if (!hasToken) {
+            this.publishQueue.unshift(item);
+            break;
+          }
+
+          const ageMs = Date.now() - item.timestamp;
+
+          if (ageMs > 30_000) {
+            item.reject(new Error('Publish timeout: too long in queue'));
+            continue;
+          }
+
+          try {
+            const result = await this.publishViaHttpApiDirect(
+              item.channel,
+              item.data
+            );
+            item.resolve(result);
+          } catch (error) {
+            item.reject(this.toError(error));
+          }
+        }
+      } finally {
+        this.isProcessingQueue = false;
+      }
+    });
+
+    await this.queueProcessingLock;
   }
 
   private enqueuePublish(
@@ -593,7 +848,7 @@ export class CentrifugoService {
     channel: string,
     data: unknown
   ): Promise<PublishResult> {
-    if (this.isCircuitOpen()) {
+    if (await this.isCircuitOpen()) {
       throw new Error('Centrifugo circuit breaker is open');
     }
 
@@ -632,7 +887,7 @@ export class CentrifugoService {
           }`
         );
         (error as { status?: number }).status = response.status;
-        this.recordCircuitFailure();
+        await this.recordCircuitFailure();
         throw error;
       }
 
@@ -642,17 +897,17 @@ export class CentrifugoService {
       } | null;
 
       if (payload?.error) {
-        this.recordCircuitFailure();
+        await this.recordCircuitFailure();
         throw new Error(
           `Centrifugo HTTP API error: ${payload.error.message ?? 'unknown'}`
         );
       }
 
-      this.recordCircuitSuccess();
+      await this.recordCircuitSuccess();
       return (payload?.result ?? {}) as PublishResult;
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
-        this.recordCircuitFailure();
+        await this.recordCircuitFailure();
         throw new Error('Centrifugo HTTP API timeout');
       }
 
@@ -661,7 +916,7 @@ export class CentrifugoService {
       }
 
       if (error instanceof Error) {
-        this.recordCircuitFailure();
+        await this.recordCircuitFailure();
         const wrapped = new Error('Centrifugo HTTP API connection error');
         (wrapped as { cause?: unknown }).cause = error;
         throw wrapped;
@@ -688,13 +943,19 @@ export class CentrifugoService {
       const debounceTimer = setTimeout(() => {
         this.debounceMap.delete(debounceKey);
 
-        if (this.consumeToken()) {
-          this.publishViaHttpApiDirect(channel, data)
-            .then(resolve)
-            .catch(reject);
-        } else {
-          this.enqueuePublish(channel, data).then(resolve).catch(reject);
-        }
+        (async () => {
+          const hasToken = this.useDistributed
+            ? await this.consumeTokenDistributed()
+            : this.consumeToken();
+
+          if (hasToken) {
+            this.publishViaHttpApiDirect(channel, data)
+              .then(resolve)
+              .catch(reject);
+          } else {
+            this.enqueuePublish(channel, data).then(resolve).catch(reject);
+          }
+        })();
       }, this.debounceWindowMs);
 
       this.debounceMap.set(debounceKey, debounceTimer);
@@ -752,7 +1013,7 @@ export class CentrifugoService {
 
   async publish(channel: string, data: unknown): Promise<PublishResult> {
     try {
-      if (this.isDuplicatePublish(channel, data)) {
+      if (await this.isDuplicatePublish(channel, data)) {
         logger.debug(
           {
             type: 'centrifugo_publish_deduplicated',
@@ -764,7 +1025,7 @@ export class CentrifugoService {
         return {} as PublishResult;
       }
 
-      this.cachePublish(channel, data);
+      await this.cachePublish(channel, data);
 
       return await this.withPublishRetry(
         () => this.publishViaHttpApi(channel, data),
@@ -794,7 +1055,7 @@ export class CentrifugoService {
         return {} as PublishResult;
       }
 
-      if (this.isDuplicatePublish(channel, data)) {
+      if (await this.isDuplicatePublish(channel, data)) {
         logger.debug(
           {
             type: 'centrifugo_publish_sub_deduplicated',
@@ -807,7 +1068,7 @@ export class CentrifugoService {
         return {} as PublishResult;
       }
 
-      this.cachePublish(channel, data);
+      await this.cachePublish(channel, data);
 
       return await this.withPublishRetry(
         () => this.publishViaHttpApi(channel, data),
@@ -876,9 +1137,25 @@ export class CentrifugoService {
         }
       );
 
-      tempClient.on('publication', (ctx) => {
-        handler(ctx.data, ctx);
-      });
+      let subscription: Subscription | null = null;
+      let publicationHandler: ((ctx: PublicationContext) => void) | null = null;
+
+      const cleanup = (): void => {
+        try {
+          if (subscription && publicationHandler) {
+            subscription.off('publication', publicationHandler);
+            if (subscription.state !== SubscriptionState.Unsubscribed) {
+              subscription.unsubscribe();
+            }
+          }
+          if (tempClient.state !== State.Disconnected) {
+            tempClient.disconnect();
+          }
+          this.tempSubscriptions.delete(channel);
+        } catch (error) {
+          logger.warn({ err: error }, 'Error during tempClient cleanup');
+        }
+      };
 
       await new Promise<void>((resolve, reject) => {
         let timer: ReturnType<typeof setTimeout> | null = null;
@@ -887,30 +1164,15 @@ export class CentrifugoService {
         let onConnect: () => void;
         let onError: (err: unknown) => void;
 
-        const cleanup = (): void => {
-          if (timer) {
-            clearTimeout(timer);
-            timer = null;
-          }
-
-          try {
-            tempClient.off('connected', onConnect);
-            tempClient.off('error', onError);
-          } catch {}
-        };
-
         const safeReject = (error: Error): void => {
           if (isResolved) {
             return;
           }
           isResolved = true;
           cleanup();
-
-          try {
-            if (tempClient.state !== State.Disconnected) {
-              tempClient.disconnect();
-            }
-          } catch {}
+          if (timer) {
+            clearTimeout(timer);
+          }
 
           if (this.isTimeoutError(error)) {
             logger.warn(
@@ -939,12 +1201,37 @@ export class CentrifugoService {
             return;
           }
           isResolved = true;
-          cleanup();
+          if (timer) {
+            clearTimeout(timer);
+          }
           resolve();
         };
 
         onConnect = (): void => {
-          safeResolve();
+          try {
+            subscription =
+              tempClient.getSubscription(channel) ??
+              tempClient.newSubscription(channel);
+
+            publicationHandler = (ctx: PublicationContext) => {
+              handler(ctx.data, ctx);
+            };
+
+            subscription.on('publication', publicationHandler);
+
+            if (subscription.state !== SubscriptionState.Subscribed) {
+              subscription.subscribe();
+            }
+
+            this.tempSubscriptions.set(channel, {
+              client: tempClient,
+              sub: subscription,
+            });
+
+            safeResolve();
+          } catch (err) {
+            safeReject(this.toError(err));
+          }
         };
 
         onError = (err: unknown): void => {
@@ -985,6 +1272,23 @@ export class CentrifugoService {
     }
   }
 
+  cleanupOnMessageSub(channel: string): void {
+    const entry = this.tempSubscriptions.get(channel);
+    if (entry) {
+      try {
+        if (entry.sub.state !== SubscriptionState.Unsubscribed) {
+          entry.sub.unsubscribe();
+        }
+        if (entry.client.state !== State.Disconnected) {
+          entry.client.disconnect();
+        }
+      } catch (error) {
+        logger.warn({ err: error }, 'Error during cleanupOnMessageSub');
+      }
+      this.tempSubscriptions.delete(channel);
+    }
+  }
+
   async unsubscribe(channel: string): Promise<void> {
     await this.waitForConnected();
 
@@ -1006,6 +1310,10 @@ export class CentrifugoService {
   } {
     this.refillTokens();
 
+    const circuitOpen =
+      this.circuitBreakerState === 'open' &&
+      Date.now() < this.circuitBreakerOpenUntil;
+
     return {
       queueSize: this.publishQueue.length,
       availableTokens: this.tokenBucket,
@@ -1013,7 +1321,7 @@ export class CentrifugoService {
       debouncePending: this.debounceMap.size,
       cacheSize: this.publishCache.size,
       circuitBreakerFailures: this.circuitBreakerFailures,
-      circuitBreakerOpen: this.isCircuitOpen(),
+      circuitBreakerOpen: circuitOpen,
     };
   }
 
@@ -1033,5 +1341,9 @@ export class CentrifugoService {
     }
 
     this.publishQueue = [];
+
+    for (const [channel] of this.tempSubscriptions.entries()) {
+      this.cleanupOnMessageSub(channel);
+    }
   }
 }

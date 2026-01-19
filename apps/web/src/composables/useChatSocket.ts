@@ -1,6 +1,6 @@
 import { ref } from 'vue';
 import { useRoute } from 'vue-router';
-import { onMessage, unsubscribe } from '@/@webcore/centrifugo';
+import { onMessage, unsubscribe, isChannelSubscribed } from '@/@webcore/centrifugo';
 import {
   chatAccountCentrifugo,
   chatQueueAccountCentrifugo,
@@ -132,15 +132,27 @@ const createChatSocket = () => {
   };
 
   const initializeSocket = async () => {
-    if (isInitialized || !chatStore.user?.account_id) {
+    if (!chatStore.user?.account_id) {
       return;
+    }
+
+    const accountId = chatStore.user.account_id;
+
+    if (isInitialized) {
+      const allSubscriptionsActive = subscriptions.every((sub) =>
+        isChannelSubscribed(sub.channel)
+      );
+
+      if (allSubscriptionsActive) {
+        return;
+      }
+
+      await cleanup();
     }
 
     if (initializingPromise) {
       return initializingPromise;
     }
-
-    const accountId = chatStore.user.account_id;
 
     initializingPromise = (async () => {
       try {
@@ -207,7 +219,9 @@ const createChatSocket = () => {
 
         isInitialized = true;
       } catch (error) {
-        console.error('Erro ao inicializar socket de chat:', error);
+        if (import.meta.env.DEV) {
+          console.error('Erro ao inicializar socket de chat:', error);
+        }
       } finally {
         initializingPromise = null;
       }
@@ -219,7 +233,9 @@ const createChatSocket = () => {
   const cleanup = async () => {
     const unsubscribePromises = subscriptions.map((sub) =>
       sub.unsubscribe().catch((error) => {
-        console.error('Erro ao fazer unsubscribe:', error);
+        if (import.meta.env.DEV) {
+          console.error('Erro ao fazer unsubscribe:', error);
+        }
       })
     );
 

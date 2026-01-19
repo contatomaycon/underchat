@@ -105,12 +105,12 @@ const sendPresence = async (
   await publish(channel, message).catch((error: any) => {
     if (error?.code === 103) {
       hasPermissionError = true;
-      if (!asHeartbeat) {
+      if (!asHeartbeat && import.meta.env.DEV) {
         console.warn(
           'Permission denied for presence channel. Connection may need to be reset.'
         );
       }
-    } else {
+    } else if (import.meta.env.DEV) {
       console.error('Failed to send presence via Centrifugo', error);
     }
   });

@@ -4,8 +4,9 @@ import { container } from 'tsyringe';
 import { centrifugoEnvironment } from '@core/config/environments';
 import jwt from 'jsonwebtoken';
 import { ERouteModule } from '@core/common/enums/ERouteModule';
-import { Centrifuge, UnauthorizedError } from 'centrifuge';
+import { Centrifuge, UnauthorizedError, State } from 'centrifuge';
 import WebSocket from 'ws';
+import { captureException } from '@core/plugins/telemetry/sentry';
 
 interface CentrifugoPluginOptions {
   module: ERouteModule;
@@ -16,6 +17,9 @@ const centrifugoPlugin: FastifyPluginAsync<CentrifugoPluginOptions> = async (
   opts
 ) => {
   const module = opts.module;
+
+  let errorHandler: ((error: unknown) => void) | null = null;
+  let isShuttingDown = false;
 
   const generateToken = async (): Promise<string> => {
     const exp = Math.floor(Date.now() / 1000) + 60 * 60 * 24;
@@ -35,7 +39,6 @@ const centrifugoPlugin: FastifyPluginAsync<CentrifugoPluginOptions> = async (
   };
 
   const token = await generateToken();
-
   const client = new Centrifuge(
     `${centrifugoEnvironment.centrifugoWsUrl}/connection/websocket`,
     {
@@ -47,7 +50,11 @@ const centrifugoPlugin: FastifyPluginAsync<CentrifugoPluginOptions> = async (
     }
   );
 
-  client.on('error', (error) => {
+  errorHandler = (error: unknown) => {
+    if (isShuttingDown) {
+      return;
+    }
+
     fastify.log.error(
       {
         err: error,
@@ -56,25 +63,49 @@ const centrifugoPlugin: FastifyPluginAsync<CentrifugoPluginOptions> = async (
       'Centrifugo client error'
     );
 
-    import('@core/plugins/telemetry/sentry.js')
-      .then(({ captureException }) => {
-        captureException(error, {
-          centrifugo: {
-            type: 'connection_error',
-          },
-        });
-      })
-      .catch(() => {});
-  });
+    captureException(error, {
+      centrifugo: {
+        type: 'connection_error',
+      },
+    });
+  };
 
-  client.connect();
+  client.on('error', errorHandler);
+
+  await new Promise((resolve) => setImmediate(resolve));
+
+  if (!isShuttingDown) {
+    client.connect();
+  }
 
   container.register<Centrifuge>('Centrifuge', { useValue: client });
   fastify.decorate('Centrifuge', client);
 
-  fastify.addHook('onClose', async () => {
-    client.disconnect();
-  });
+  const cleanup = async (): Promise<void> => {
+    if (isShuttingDown) {
+      return;
+    }
+    isShuttingDown = true;
+
+    try {
+      if (errorHandler) {
+        client.off('error', errorHandler);
+      }
+
+      if (client.state !== State.Disconnected) {
+        client.disconnect();
+      }
+    } catch (error) {
+      fastify.log.warn({ err: error }, 'Error during Centrifugo cleanup');
+    }
+  };
+
+  fastify.addHook('onClose', cleanup);
+
+  const signals = ['SIGTERM', 'SIGINT', 'SIGUSR2'];
+  for (const signal of signals) {
+    process.once(signal, cleanup);
+  }
 };
 
 export default fp(centrifugoPlugin, { name: 'centrifugo-plugin' });
