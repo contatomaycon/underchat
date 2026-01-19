@@ -65,6 +65,51 @@ export class BaileysIncomingMessageService {
     return `${jidToUse}:${id}:${fromMe}`;
   }
 
+  private async sendMessageWithRetry(
+    inputUpsert: IUpsertMessage,
+    messageKey: string,
+    originalMessage: WAMessage,
+    attempt = 0
+  ): Promise<void> {
+    const MAX_RETRIES = 50;
+    const INITIAL_BACKOFF_MS = 10;
+    const MAX_BACKOFF_MS = 5000;
+
+    try {
+      await this.streamProducerService.send(
+        this.kafkaServiceQueueService.upsertMessage(),
+        inputUpsert,
+        messageKey
+      );
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      const isBackpressure =
+        errorMessage.includes('backpressure') ||
+        errorMessage.includes('exceeds limit') ||
+        errorMessage.includes('Producer is closing');
+
+      if (!isBackpressure || attempt >= MAX_RETRIES) {
+        this.processedMessages.delete(messageKey);
+        throw error;
+      }
+
+      const backoffMs = Math.min(
+        INITIAL_BACKOFF_MS * Math.pow(2, attempt),
+        MAX_BACKOFF_MS
+      );
+
+      await new Promise((resolve) => setTimeout(resolve, backoffMs));
+
+      await this.sendMessageWithRetry(
+        inputUpsert,
+        messageKey,
+        originalMessage,
+        attempt + 1
+      );
+    }
+  }
+
   private startCleanupInterval() {
     if (this.cleanupInterval) return;
 
@@ -107,7 +152,7 @@ export class BaileysIncomingMessageService {
       for (let i = 0; i < e.messages.length; i += BATCH_SIZE) {
         const batch = e.messages.slice(i, i + BATCH_SIZE);
 
-        await Promise.allSettled(
+        const results = await Promise.allSettled(
           batch.map(async (m) => {
             const chatKind = getChatKind(m);
             const upsertType = e.type;
@@ -122,14 +167,9 @@ export class BaileysIncomingMessageService {
             const messageKey = this.getMessageKey(m);
             if (!messageKey) return;
 
-            const timestamp = Date.now();
-            const existingTimestamp = this.processedMessages.get(messageKey);
-
-            if (existingTimestamp && timestamp - existingTimestamp < 5000) {
+            if (this.processedMessages.has(messageKey)) {
               return;
             }
-
-            this.processedMessages.set(messageKey, timestamp);
 
             const type = mapIncomingToType(m);
             const hasQuoted = messageHasQuoted(m);
@@ -149,13 +189,34 @@ export class BaileysIncomingMessageService {
               has_quoted: hasQuoted,
             };
 
-            await this.streamProducerService.send(
-              this.kafkaServiceQueueService.upsertMessage(),
-              inputUpsert,
-              messageKey
-            );
+            try {
+              await this.sendMessageWithRetry(inputUpsert, messageKey, m);
+              this.processedMessages.set(messageKey, Date.now());
+            } catch (error) {
+              this.processedMessages.delete(messageKey);
+              throw error;
+            }
           })
         );
+
+        for (let j = 0; j < results.length; j++) {
+          const result = results[j];
+          if (result.status === 'rejected') {
+            const message = batch[j];
+            const messageKey = this.getMessageKey(message);
+            if (messageKey) {
+              this.processedMessages.delete(messageKey);
+            }
+            console.error(
+              '[BaileysIncomingMessageService] Erro crítico ao processar mensagem após retries:',
+              {
+                error: result.reason,
+                messageKey,
+                messageId: message?.key?.id,
+              }
+            );
+          }
+        }
       }
     });
 

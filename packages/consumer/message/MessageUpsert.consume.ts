@@ -1552,6 +1552,11 @@ export class MessageUpsertConsume {
 
       const messageId = data.message?.key?.id;
       if (!messageId) {
+        console.error('[MessageUpsertConsume] Mensagem sem messageId:', {
+          accountId: data.account_id,
+          workerId: data.worker_id,
+          chatId: getChat.chat_id,
+        });
         return false;
       }
 
@@ -1559,6 +1564,16 @@ export class MessageUpsertConsume {
         await this.chatService.createMessageIdempotent(inputChatMessage);
 
       if (!createResult.created && !createResult.conflict) {
+        console.error(
+          '[MessageUpsertConsume] Falha ao criar mensagem no Elasticsearch:',
+          {
+            accountId: data.account_id,
+            workerId: data.worker_id,
+            messageId,
+            chatId: getChat.chat_id,
+            createResult,
+          }
+        );
         return false;
       }
 
@@ -1636,8 +1651,15 @@ export class MessageUpsertConsume {
       );
 
       return true;
-    } catch {
-      return false;
+    } catch (error) {
+      console.error('[MessageUpsertConsume] Erro ao criar mensagem:', {
+        error,
+        accountId: data.account_id,
+        workerId: data.worker_id,
+        messageId: data.message?.key?.id,
+        chatId: getChat.chat_id,
+      });
+      throw error;
     }
   }
 
@@ -2007,6 +2029,8 @@ export class MessageUpsertConsume {
         };
 
         const stop = startHeartbeat(heartbeat);
+        let shouldCommit = true;
+
         try {
           if (data.is_call_event) {
             await this.handleCallEvent(t, data);
@@ -2025,9 +2049,22 @@ export class MessageUpsertConsume {
             throw new Error('Received message without valid phone');
           }
           await this.createOrUpdateChat(t, data, phone);
+        } catch (error) {
+          shouldCommit = false;
+          console.error('[MessageUpsertConsume] Erro ao processar mensagem:', {
+            error,
+            accountId: data.account_id,
+            workerId: data.worker_id,
+            messageId: data.message?.key?.id,
+            partition,
+            offset,
+          });
+          throw error;
         } finally {
           stop();
-          await this.commitNext(topic, partition, offset);
+          if (shouldCommit) {
+            await this.commitNext(topic, partition, offset);
+          }
         }
       });
 
