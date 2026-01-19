@@ -14,6 +14,7 @@ import routes from '@/routes';
 import { EPrefixRoutes } from '@core/common/enums/EPrefixRoutes';
 import { safePlugin } from '@core/common/functions/safePlugin';
 import baileysReadyHook from './hooks/baileysReady.hook';
+import redisPlugin from '@core/plugins/redis';
 
 const server = fastify({
   pluginTimeout: 600000,
@@ -36,7 +37,7 @@ server.register(safePlugin(fastifyQs, 'fastifyQs'));
 server.register(safePlugin(databaseElasticPlugin, 'databaseElastic'), {
   prefix: ERouteModule.worker_baileys,
 });
-
+server.register(safePlugin(redisPlugin, 'redis'));
 server.register(safePlugin(kafkaStreamsPlugin, 'kafkaStreams'), {
   module: ERouteModule.worker_baileys,
 });

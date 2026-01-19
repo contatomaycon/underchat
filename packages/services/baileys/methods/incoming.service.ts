@@ -1,4 +1,5 @@
-import { singleton } from 'tsyringe';
+import { inject, singleton } from 'tsyringe';
+import Redis from 'ioredis';
 import {
   AnyMessageContent,
   MessageUserReceiptUpdate,
@@ -34,21 +35,41 @@ import { IMessageStatusUpdate } from '@core/common/interfaces/IMessageStatusUpda
 import { getPhoneFromJid } from '@core/common/functions/getPhoneFromJid';
 import { EMessageType } from '@core/common/enums/EMessageType';
 
+interface PendingMessage {
+  inputUpsert: IUpsertMessage;
+  messageKey: string;
+  retries: number;
+  addedAt: number;
+}
+
 @singleton()
 export class BaileysIncomingMessageService {
   private currentSocket?: WASocket;
   private readonly processedMessages = new Map<string, number>();
   private readonly processedCalls = new Map<string, number>();
-  private readonly MAX_SIZE = 10000;
+  private readonly MAX_SIZE = 100000;
+  private readonly DEDUP_WINDOW_MS = 3000;
   private cleanupInterval?: NodeJS.Timeout;
   private rejectCallConfig: boolean = false;
+
+  private readonly pendingQueue: PendingMessage[] = [];
+  private isProcessingQueue = false;
+  private readonly MAX_RETRIES = 100;
+  private readonly RETRY_BASE_DELAY_MS = 50;
+  private readonly MAX_RETRY_DELAY_MS = 5000;
+  private queueProcessorInterval?: NodeJS.Timeout;
+
+  private readonly PHOTO_CACHE_TTL = 86400;
+  private readonly PHOTO_CACHE_PREFIX = 'photo:jid:';
 
   constructor(
     private readonly streamProducerService: StreamProducerService,
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
-    private readonly centrifugoService: CentrifugoService
+    private readonly centrifugoService: CentrifugoService,
+    @inject('Redis') private readonly redis: Redis
   ) {
     this.startCleanupInterval();
+    this.startQueueProcessor();
   }
 
   private getMessageKey(m: WAMessage): string | null {
@@ -69,21 +90,28 @@ export class BaileysIncomingMessageService {
     if (this.cleanupInterval) return;
 
     this.cleanupInterval = setInterval(() => {
-      this.cleanupOldMessages(this.processedMessages);
-      this.cleanupOldMessages(this.processedCalls);
-    }, 300000);
+      this.cleanupOldEntries(this.processedMessages);
+      this.cleanupOldEntries(this.processedCalls);
+    }, 60000);
   }
 
-  private cleanupOldMessages(processedMap: Map<string, number>): void {
-    if (processedMap.size <= this.MAX_SIZE) return;
+  private cleanupOldEntries(processedMap: Map<string, number>): void {
+    const now = Date.now();
+    const expireThreshold = now - 30000;
 
-    const sorted = Array.from(processedMap.entries()).sort(
-      (a, b) => a[1] - b[1]
-    );
+    for (const [key, timestamp] of processedMap) {
+      if (timestamp < expireThreshold) {
+        processedMap.delete(key);
+      }
+    }
 
-    const toDelete = sorted.slice(0, sorted.length - this.MAX_SIZE);
-    for (const [key] of toDelete) {
-      processedMap.delete(key);
+    if (processedMap.size > this.MAX_SIZE) {
+      const entries = Array.from(processedMap.entries());
+      entries.sort((a, b) => a[1] - b[1]);
+      const toRemove = entries.slice(0, entries.length - this.MAX_SIZE);
+      for (const [key] of toRemove) {
+        processedMap.delete(key);
+      }
     }
   }
 
@@ -94,68 +122,109 @@ export class BaileysIncomingMessageService {
     }
   }
 
+  private startQueueProcessor() {
+    if (this.queueProcessorInterval) return;
+
+    this.queueProcessorInterval = setInterval(() => {
+      this.processRetryQueue();
+    }, 100);
+  }
+
+  private stopQueueProcessor() {
+    if (this.queueProcessorInterval) {
+      clearInterval(this.queueProcessorInterval);
+      this.queueProcessorInterval = undefined;
+    }
+  }
+
+  private async processRetryQueue(): Promise<void> {
+    if (this.isProcessingQueue || this.pendingQueue.length === 0) return;
+
+    this.isProcessingQueue = true;
+
+    try {
+      const batchSize = Math.min(50, this.pendingQueue.length);
+      const batch = this.pendingQueue.splice(0, batchSize);
+
+      const results = await Promise.allSettled(
+        batch.map((item) => this.sendToKafkaWithRetry(item))
+      );
+
+      for (let i = 0; i < results.length; i++) {
+        const result = results[i];
+        if (result.status === 'rejected') {
+          const item = batch[i];
+          item.retries++;
+
+          if (item.retries < this.MAX_RETRIES) {
+            this.pendingQueue.push(item);
+          } else {
+            console.error(
+              `[CRITICAL] Message lost after ${this.MAX_RETRIES} retries:`,
+              item.messageKey
+            );
+          }
+        }
+      }
+    } finally {
+      this.isProcessingQueue = false;
+    }
+  }
+
+  private async sendToKafkaWithRetry(item: PendingMessage): Promise<void> {
+    const delay = Math.min(
+      this.RETRY_BASE_DELAY_MS * Math.pow(2, item.retries),
+      this.MAX_RETRY_DELAY_MS
+    );
+
+    if (item.retries > 0) {
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+
+    await this.streamProducerService.send(
+      this.kafkaServiceQueueService.upsertMessage(),
+      item.inputUpsert,
+      item.messageKey
+    );
+  }
+
+  private enqueueMessage(
+    inputUpsert: IUpsertMessage,
+    messageKey: string
+  ): PendingMessage {
+    const item: PendingMessage = {
+      inputUpsert,
+      messageKey,
+      retries: 0,
+      addedAt: Date.now(),
+    };
+    this.pendingQueue.push(item);
+    return item;
+  }
+
+  private isDuplicate(messageKey: string): boolean {
+    const now = Date.now();
+    const existingTimestamp = this.processedMessages.get(messageKey);
+
+    if (existingTimestamp && now - existingTimestamp < this.DEDUP_WINDOW_MS) {
+      return true;
+    }
+
+    this.processedMessages.set(messageKey, now);
+    return false;
+  }
+
   bindTo(socket: WASocket) {
     if (this.currentSocket === socket) return;
 
     this.unbind();
     this.currentSocket = socket;
 
-    socket.ev.on('messages.upsert', async (e) => {
+    socket.ev.on('messages.upsert', (e) => {
       if (!e?.messages?.length) return;
 
-      const BATCH_SIZE = 5;
-      for (let i = 0; i < e.messages.length; i += BATCH_SIZE) {
-        const batch = e.messages.slice(i, i + BATCH_SIZE);
-
-        await Promise.allSettled(
-          batch.map(async (m) => {
-            const chatKind = getChatKind(m);
-            const upsertType = e.type;
-
-            if (
-              chatKind !== EChatKind.user ||
-              upsertType !== EMessageUpsertType.notify
-            ) {
-              return;
-            }
-
-            const messageKey = this.getMessageKey(m);
-            if (!messageKey) return;
-
-            const timestamp = Date.now();
-            const existingTimestamp = this.processedMessages.get(messageKey);
-
-            if (existingTimestamp && timestamp - existingTimestamp < 5000) {
-              return;
-            }
-
-            this.processedMessages.set(messageKey, timestamp);
-
-            const type = mapIncomingToType(m);
-            const hasQuoted = messageHasQuoted(m);
-
-            if (!type) {
-              return;
-            }
-
-            const senderPic = await getSenderPhotoUrl(socket, m);
-
-            const inputUpsert: IUpsertMessage = {
-              worker_id: baileysEnvironment.baileysWorkerId,
-              account_id: baileysEnvironment.baileysAccountId,
-              type,
-              message: m,
-              photo: senderPic,
-              has_quoted: hasQuoted,
-            };
-
-            await this.streamProducerService.send(
-              this.kafkaServiceQueueService.upsertMessage(),
-              inputUpsert,
-              messageKey
-            );
-          })
-        );
+      for (const m of e.messages) {
+        this.processMessage(socket, m, e.type);
       }
     });
 
@@ -167,54 +236,138 @@ export class BaileysIncomingMessageService {
       void this.handleMessageReceiptUpdate(events);
     });
 
-    socket.ev.on('presence.update', async (data) => {
-      if (!data?.id || !data?.presences) {
-        return;
-      }
-
-      const chatJid = data.id;
-      const presences = data.presences;
-
-      for (const [, presence] of Object.entries(presences)) {
-        if (!presence) continue;
-
-        const lastKnownPresence = presence?.lastKnownPresence;
-
-        if (
-          lastKnownPresence !== 'composing' &&
-          lastKnownPresence !== 'available'
-        ) {
-          continue;
-        }
-
-        const typingEvent: IChatTyping = {
-          type: 'typing',
-          jid: chatJid,
-          is_typing: lastKnownPresence === 'composing',
-          account_id: baileysEnvironment.baileysAccountId,
-          worker_id: baileysEnvironment.baileysWorkerId,
-        };
-
-        try {
-          await this.centrifugoService.publishSub(
-            chatAccountCentrifugo(baileysEnvironment.baileysAccountId),
-            typingEvent
-          );
-        } catch {}
-      }
+    socket.ev.on('presence.update', (data) => {
+      void this.handlePresenceUpdate(data);
     });
 
     socket.ev.on('messaging-history.set', () => {});
 
-    socket.ev.on('call', async (callEvents: WACallEvent[]) => {
+    socket.ev.on('call', (callEvents: WACallEvent[]) => {
       if (!callEvents) return;
 
       const eventsArray = Array.isArray(callEvents) ? callEvents : [callEvents];
 
       for (const callEvent of eventsArray) {
-        await this.processCallEvent(socket, callEvent);
+        void this.processCallEvent(socket, callEvent);
       }
     });
+  }
+
+  private processMessage(
+    socket: WASocket,
+    m: WAMessage,
+    upsertType: string
+  ): void {
+    const chatKind = getChatKind(m);
+
+    if (
+      chatKind !== EChatKind.user ||
+      upsertType !== EMessageUpsertType.notify
+    ) {
+      return;
+    }
+
+    const messageKey = this.getMessageKey(m);
+    if (!messageKey) return;
+
+    if (this.isDuplicate(messageKey)) {
+      return;
+    }
+
+    const type = mapIncomingToType(m);
+    const hasQuoted = messageHasQuoted(m);
+
+    if (!type) {
+      return;
+    }
+
+    const inputUpsert: IUpsertMessage = {
+      worker_id: baileysEnvironment.baileysWorkerId,
+      account_id: baileysEnvironment.baileysAccountId,
+      type,
+      message: m,
+      photo: null,
+      has_quoted: hasQuoted,
+    };
+
+    const pendingItem = this.enqueueMessage(inputUpsert, messageKey);
+
+    this.fetchPhotoNonBlocking(socket, m, pendingItem);
+  }
+
+  private fetchPhotoNonBlocking(
+    socket: WASocket,
+    m: WAMessage,
+    pendingItem: PendingMessage
+  ): void {
+    const jid = remoteJid(m.key) || remoteJidAlt(m.key);
+    if (!jid) return;
+
+    const cacheKey = `${this.PHOTO_CACHE_PREFIX}${jid}`;
+
+    this.redis
+      .get(cacheKey)
+      .then((cachedPhoto) => {
+        if (cachedPhoto) {
+          if (pendingItem.retries === 0) {
+            pendingItem.inputUpsert.photo = cachedPhoto;
+          }
+          return;
+        }
+
+        return getSenderPhotoUrl(socket, m).then((photo) => {
+          if (photo) {
+            this.redis
+              .set(cacheKey, photo, 'EX', this.PHOTO_CACHE_TTL)
+              .catch(() => {});
+
+            if (pendingItem.retries === 0) {
+              pendingItem.inputUpsert.photo = photo;
+            }
+          }
+        });
+      })
+      .catch(() => {});
+  }
+
+  private async handlePresenceUpdate(data: {
+    id?: string;
+    presences?: Record<string, { lastKnownPresence?: string }>;
+  }): Promise<void> {
+    if (!data?.id || !data?.presences) {
+      return;
+    }
+
+    const chatJid = data.id;
+    const presences = data.presences;
+
+    for (const [, presence] of Object.entries(presences)) {
+      if (!presence) continue;
+
+      const lastKnownPresence = presence?.lastKnownPresence;
+
+      if (
+        lastKnownPresence !== 'composing' &&
+        lastKnownPresence !== 'available'
+      ) {
+        continue;
+      }
+
+      const typingEvent: IChatTyping = {
+        type: 'typing',
+        jid: chatJid,
+        is_typing: lastKnownPresence === 'composing',
+        account_id: baileysEnvironment.baileysAccountId,
+        worker_id: baileysEnvironment.baileysWorkerId,
+      };
+
+      this.centrifugoService
+        .publishSub(
+          chatAccountCentrifugo(baileysEnvironment.baileysAccountId),
+          typingEvent
+        )
+        .catch(() => {});
+    }
   }
 
   private getCallKey(callEvent: WACallEvent): string | null {
@@ -287,15 +440,7 @@ export class BaileysIncomingMessageService {
       call_name: callEvent.pushName ?? null,
     };
 
-    try {
-      await this.streamProducerService.send(
-        this.kafkaServiceQueueService.upsertMessage(),
-        callUpsert
-      );
-    } catch (error) {
-      this.processedCalls.delete(callKey);
-      throw error;
-    }
+    this.enqueueMessage(callUpsert, callKey);
 
     if (!this.rejectCallConfig) {
       return;
@@ -305,41 +450,30 @@ export class BaileysIncomingMessageService {
       (callEvent as { id?: string })?.id ??
       (callEvent as { callId?: string })?.callId;
     if (callId && jid) {
-      try {
-        await socket.rejectCall(callId, jid);
-      } catch {}
+      socket.rejectCall(callId, jid).catch(() => {});
     }
   }
 
   private async handleMessagesUpdate(events: WAMessageUpdate[]) {
     if (!events?.length) return;
 
-    const BATCH_SIZE = 10;
-    const batches: WAMessageUpdate[][] = [];
+    const promises = events.map((event) => {
+      const patch = this.mapStatusToPatch(event.update?.status);
+      return this.applyStatusPatch(event.key, patch);
+    });
 
-    for (let i = 0; i < events.length; i += BATCH_SIZE) {
-      batches.push(events.slice(i, i + BATCH_SIZE));
-    }
-
-    for (const batch of batches) {
-      await Promise.allSettled(
-        batch.map(async (event) => {
-          const patch = this.mapStatusToPatch(event.update?.status);
-          await this.applyStatusPatch(event.key, patch);
-        })
-      );
-    }
+    await Promise.allSettled(promises);
   }
 
   private async handleMessageReceiptUpdate(events: MessageUserReceiptUpdate[]) {
     if (!events?.length) return;
 
-    await Promise.allSettled(
-      events.map(async (event) => {
-        const patch = this.mapReceiptToPatch(event.receipt);
-        await this.applyStatusPatch(event.key, patch);
-      })
-    );
+    const promises = events.map((event) => {
+      const patch = this.mapReceiptToPatch(event.receipt);
+      return this.applyStatusPatch(event.key, patch);
+    });
+
+    await Promise.allSettled(promises);
   }
 
   private mapStatusToPatch(
@@ -409,9 +543,7 @@ export class BaileysIncomingMessageService {
         statusUpdate,
         kafkaKey
       );
-    } catch (error) {
-      throw error;
-    }
+    } catch {}
   }
 
   unbind() {
@@ -429,9 +561,15 @@ export class BaileysIncomingMessageService {
 
   destroy() {
     this.stopCleanupInterval();
+    this.stopQueueProcessor();
     this.processedMessages.clear();
     this.processedCalls.clear();
+    this.pendingQueue.length = 0;
     this.unbind();
+  }
+
+  getPendingQueueSize(): number {
+    return this.pendingQueue.length;
   }
 
   async markRead(keys: WAMessageKey[]) {
