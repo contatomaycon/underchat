@@ -277,42 +277,50 @@ export class BaileysIncomingMessageService {
     m: WAMessage,
     upsertType: string
   ): void {
-    const chatKind = getChatKind(m);
+    try {
+      const chatKind = getChatKind(m);
 
-    if (
-      chatKind !== EChatKind.user ||
-      upsertType !== EMessageUpsertType.notify
-    ) {
-      return;
+      if (
+        chatKind !== EChatKind.user ||
+        upsertType !== EMessageUpsertType.notify
+      ) {
+        return;
+      }
+
+      const messageKey = this.getMessageKey(m);
+      if (!messageKey) {
+        console.warn('[WARN] Message without key, skipping:', m.key?.id);
+        return;
+      }
+
+      if (this.isDuplicate(messageKey)) {
+        return;
+      }
+
+      const type = mapIncomingToType(m);
+      const hasQuoted = messageHasQuoted(m);
+
+      if (!type) {
+        console.warn('[WARN] Unknown message type, skipping:', messageKey);
+        return;
+      }
+
+      const inputUpsert: IUpsertMessage = {
+        worker_id: baileysEnvironment.baileysWorkerId,
+        account_id: baileysEnvironment.baileysAccountId,
+        type,
+        message: m,
+        photo: null,
+        has_quoted: hasQuoted,
+      };
+
+      const pendingItem = this.enqueueMessage(inputUpsert, messageKey);
+      if (!pendingItem) return;
+
+      this.fetchPhotoNonBlocking(socket, pendingItem);
+    } catch (error) {
+      console.error('[CRITICAL] Error processing message:', error, m.key?.id);
     }
-
-    const messageKey = this.getMessageKey(m);
-    if (!messageKey) return;
-
-    if (this.isDuplicate(messageKey)) {
-      return;
-    }
-
-    const type = mapIncomingToType(m);
-    const hasQuoted = messageHasQuoted(m);
-
-    if (!type) {
-      return;
-    }
-
-    const inputUpsert: IUpsertMessage = {
-      worker_id: baileysEnvironment.baileysWorkerId,
-      account_id: baileysEnvironment.baileysAccountId,
-      type,
-      message: m,
-      photo: null,
-      has_quoted: hasQuoted,
-    };
-
-    const pendingItem = this.enqueueMessage(inputUpsert, messageKey);
-    if (!pendingItem) return;
-
-    this.fetchPhotoNonBlocking(socket, pendingItem);
   }
 
   private fetchPhotoNonBlocking(
@@ -413,65 +421,72 @@ export class BaileysIncomingMessageService {
     socket: WASocket,
     callEvent: WACallEvent | null
   ): void {
-    if (!callEvent) {
-      return;
-    }
-
-    if (callEvent.status !== 'offer') {
-      return;
-    }
-
-    const jid = callEvent.remoteJid || callEvent.from;
-    const jidAlt = callEvent.remoteJidAlt || null;
-
-    if (!jid) {
-      return;
-    }
-
-    const callKey = this.getCallKey(callEvent);
-    if (!callKey) {
-      return;
-    }
-
-    if (this.processedCalls.has(callKey)) {
-      return;
-    }
-
-    this.processedCalls.set(callKey, Date.now());
-
-    const phone = getPhoneFromJid(jid, jidAlt);
-    if (!phone) {
-      this.processedCalls.delete(callKey);
-      return;
-    }
-
-    const callUpsert: IUpsertMessage = {
-      worker_id: baileysEnvironment.baileysWorkerId,
-      account_id: baileysEnvironment.baileysAccountId,
-      type: EMessageType.system,
-      message: {} as WAMessage,
-      photo: null,
-      has_quoted: false,
-      is_call_event: true,
-      call_phone: phone,
-      call_jid: jid,
-      call_jid_alt: jidAlt,
-      call_name: callEvent.pushName ?? null,
-    };
-
-    const pendingItem = this.enqueueMessage(callUpsert, callKey);
-    if (!pendingItem) return;
-
-    const jidToUse = jidAlt?.endsWith('@s.whatsapp.net') ? jidAlt : jid;
-    this.fetchPhotoNonBlocking(socket, pendingItem, jidToUse);
-
-    if (this.rejectCallConfig) {
-      const callId =
-        (callEvent as { id?: string })?.id ??
-        (callEvent as { callId?: string })?.callId;
-      if (callId && jid) {
-        socket.rejectCall(callId, jid).catch(() => {});
+    try {
+      if (!callEvent) {
+        return;
       }
+
+      if (callEvent.status !== 'offer') {
+        return;
+      }
+
+      const jid = callEvent.remoteJid || callEvent.from;
+      const jidAlt = callEvent.remoteJidAlt || null;
+
+      if (!jid) {
+        console.warn('[WARN] Call event without jid, skipping');
+        return;
+      }
+
+      const callKey = this.getCallKey(callEvent);
+      if (!callKey) {
+        console.warn('[WARN] Call event without key, skipping');
+        return;
+      }
+
+      if (this.processedCalls.has(callKey)) {
+        return;
+      }
+
+      this.processedCalls.set(callKey, Date.now());
+
+      const phone = getPhoneFromJid(jid, jidAlt);
+      if (!phone) {
+        console.warn('[WARN] Call event without phone, skipping:', jid);
+        this.processedCalls.delete(callKey);
+        return;
+      }
+
+      const callUpsert: IUpsertMessage = {
+        worker_id: baileysEnvironment.baileysWorkerId,
+        account_id: baileysEnvironment.baileysAccountId,
+        type: EMessageType.system,
+        message: {} as WAMessage,
+        photo: null,
+        has_quoted: false,
+        is_call_event: true,
+        call_phone: phone,
+        call_jid: jid,
+        call_jid_alt: jidAlt,
+        call_name: callEvent.pushName ?? null,
+      };
+
+      const pendingItem = this.enqueueMessage(callUpsert, callKey);
+      if (!pendingItem) return;
+
+      const jidToUse = jidAlt?.endsWith('@s.whatsapp.net') ? jidAlt : jid;
+      this.fetchPhotoNonBlocking(socket, pendingItem, jidToUse);
+
+      if (this.rejectCallConfig) {
+        const callId =
+          (callEvent as { id?: string })?.id ??
+          (callEvent as { callId?: string })?.callId;
+        if (callId && jid) {
+          socket.rejectCall(callId, jid).catch(() => {});
+        }
+      }
+    } catch (error) {
+      console.error('[CRITICAL] Error processing call event:', error);
     }
   }
 
