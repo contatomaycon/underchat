@@ -106,11 +106,11 @@ export class BaileysIncomingMessageService {
     }
 
     if (processedMap.size > this.MAX_SIZE) {
-      const entries = Array.from(processedMap.entries());
-      entries.sort((a, b) => a[1] - b[1]);
-      const toRemove = entries.slice(0, entries.length - this.MAX_SIZE);
-      for (const [key] of toRemove) {
-        processedMap.delete(key);
+      const excess = processedMap.size - this.MAX_SIZE;
+      const iterator = processedMap.keys();
+      for (let i = 0; i < excess; i++) {
+        const key = iterator.next().value;
+        if (key) processedMap.delete(key);
       }
     }
   }
@@ -125,14 +125,19 @@ export class BaileysIncomingMessageService {
   private startQueueProcessor() {
     if (this.queueProcessorInterval) return;
 
-    this.queueProcessorInterval = setInterval(() => {
-      this.processRetryQueue();
-    }, 100);
+    const processLoop = () => {
+      this.processRetryQueue().finally(() => {
+        const delay = this.pendingQueue.length > 0 ? 50 : 500;
+        this.queueProcessorInterval = setTimeout(processLoop, delay);
+      });
+    };
+
+    this.queueProcessorInterval = setTimeout(processLoop, 100);
   }
 
   private stopQueueProcessor() {
     if (this.queueProcessorInterval) {
-      clearInterval(this.queueProcessorInterval);
+      clearTimeout(this.queueProcessorInterval);
       this.queueProcessorInterval = undefined;
     }
   }
@@ -248,7 +253,7 @@ export class BaileysIncomingMessageService {
       const eventsArray = Array.isArray(callEvents) ? callEvents : [callEvents];
 
       for (const callEvent of eventsArray) {
-        void this.processCallEvent(socket, callEvent);
+        this.processCallEvent(socket, callEvent);
       }
     });
   }
@@ -382,10 +387,10 @@ export class BaileysIncomingMessageService {
     return `${jid}:${callId}:${callEvent.status}`;
   }
 
-  private async processCallEvent(
+  private processCallEvent(
     socket: WASocket,
     callEvent: WACallEvent | null
-  ): Promise<void> {
+  ): void {
     if (!callEvent) {
       return;
     }
@@ -418,20 +423,12 @@ export class BaileysIncomingMessageService {
       return;
     }
 
-    const jidToUse = jidAlt?.endsWith('@s.whatsapp.net') ? jidAlt : jid;
-    let senderPic: string | undefined;
-    try {
-      senderPic = await socket.profilePictureUrl(jidToUse, 'image');
-    } catch {
-      senderPic = undefined;
-    }
-
     const callUpsert: IUpsertMessage = {
       worker_id: baileysEnvironment.baileysWorkerId,
       account_id: baileysEnvironment.baileysAccountId,
       type: EMessageType.system,
       message: {} as WAMessage,
-      photo: senderPic ?? null,
+      photo: null,
       has_quoted: false,
       is_call_event: true,
       call_phone: phone,
@@ -440,18 +437,54 @@ export class BaileysIncomingMessageService {
       call_name: callEvent.pushName ?? null,
     };
 
-    this.enqueueMessage(callUpsert, callKey);
+    const pendingItem = this.enqueueMessage(callUpsert, callKey);
 
-    if (!this.rejectCallConfig) {
-      return;
-    }
+    const jidToUse = jidAlt?.endsWith('@s.whatsapp.net') ? jidAlt : jid;
+    this.fetchCallPhotoNonBlocking(socket, jidToUse, pendingItem);
 
-    const callId =
-      (callEvent as { id?: string })?.id ??
-      (callEvent as { callId?: string })?.callId;
-    if (callId && jid) {
-      socket.rejectCall(callId, jid).catch(() => {});
+    if (this.rejectCallConfig) {
+      const callId =
+        (callEvent as { id?: string })?.id ??
+        (callEvent as { callId?: string })?.callId;
+      if (callId && jid) {
+        socket.rejectCall(callId, jid).catch(() => {});
+      }
     }
+  }
+
+  private fetchCallPhotoNonBlocking(
+    socket: WASocket,
+    jid: string,
+    pendingItem: PendingMessage
+  ): void {
+    const cacheKey = `${this.PHOTO_CACHE_PREFIX}${jid}`;
+
+    this.redis
+      .get(cacheKey)
+      .then((cachedPhoto) => {
+        if (cachedPhoto) {
+          if (pendingItem.retries === 0) {
+            pendingItem.inputUpsert.photo = cachedPhoto;
+          }
+          return;
+        }
+
+        return socket
+          .profilePictureUrl(jid, 'image')
+          .then((photo) => {
+            if (photo) {
+              this.redis
+                .set(cacheKey, photo, 'EX', this.PHOTO_CACHE_TTL)
+                .catch(() => {});
+
+              if (pendingItem.retries === 0) {
+                pendingItem.inputUpsert.photo = photo;
+              }
+            }
+          })
+          .catch(() => {});
+      })
+      .catch(() => {});
   }
 
   private async handleMessagesUpdate(events: WAMessageUpdate[]) {
