@@ -95,41 +95,60 @@ export class MessageSendConsume {
       };
 
       const stop = startHeartbeat(heartbeat);
+      let shouldCommit = true;
+
       try {
         if (this.isDeleteStatusMessage(payload)) {
           await this.processDeleteStatus(payload);
+          stop();
+          await this.commitNext(topic, message.partition, message.offset);
           return;
         }
 
         if (this.isStatusMessage(payload)) {
           await this.processProfileStatus(payload);
+          stop();
+          await this.commitNext(topic, message.partition, message.offset);
           return;
         }
 
         if (this.isProfileInfoMessage(payload)) {
           await this.processProfileInfo(payload);
+          stop();
+          await this.commitNext(topic, message.partition, message.offset);
           return;
         }
 
         const isSend = this.isSendMessage(payload);
 
         if (!isSend) {
+          stop();
+          await this.commitNext(topic, message.partition, message.offset);
           return;
         }
 
         const chatId = this.resolveChatId(payload);
 
         if (!chatId) {
+          stop();
+          await this.commitNext(topic, message.partition, message.offset);
           return;
         }
 
         await this.enqueueByChatId(chatId, async () => {
           await this.processMessage(payload);
         });
-      } catch {
+      } catch (error) {
+        shouldCommit = this.isTransientError(error);
+
+        if (!shouldCommit) {
+          throw error;
+        }
       } finally {
         stop();
-        await this.commitNext(topic, message.partition, message.offset);
+        if (shouldCommit) {
+          await this.commitNext(topic, message.partition, message.offset);
+        }
       }
     });
 
@@ -254,6 +273,36 @@ export class MessageSendConsume {
     task: () => Promise<void>
   ): Promise<void> {
     await this.keyedSequencerService.enqueue(chatId, task);
+  }
+
+  private isTransientError(error: unknown): boolean {
+    if (!error || typeof error !== 'object') {
+      return false;
+    }
+
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const lowerMessage = errorMessage.toLowerCase();
+
+    const transientPatterns = [
+      'timeout',
+      'timed out',
+      'network',
+      'connection',
+      'temporary',
+      'retry',
+      'unavailable',
+      'service unavailable',
+      'too many requests',
+      'rate limit',
+    ];
+
+    for (const pattern of transientPatterns) {
+      if (lowerMessage.includes(pattern)) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   private getRandomDelay(): number {

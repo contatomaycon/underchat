@@ -348,7 +348,7 @@ export class MessageUpsertConsume {
       has_quoted: targetMessage.has_quoted,
     };
 
-    await Promise.all([
+    await Promise.allSettled([
       this.chatService.updateMessageChat(updatedMessage),
       this.centrifugoChatPublish(updatedMessage),
     ]);
@@ -411,7 +411,7 @@ export class MessageUpsertConsume {
       has_quoted: targetMessage.has_quoted,
     };
 
-    await Promise.all([
+    await Promise.allSettled([
       this.chatService.updateMessageChat(updatedMessage),
       this.centrifugoChatPublish(updatedMessage),
     ]);
@@ -473,7 +473,7 @@ export class MessageUpsertConsume {
       content: content,
     };
 
-    await Promise.all([
+    await Promise.allSettled([
       this.chatService.updateMessageChat(updatedMessage),
       this.centrifugoChatPublish(updatedMessage),
     ]);
@@ -578,6 +578,47 @@ export class MessageUpsertConsume {
     }
   }
 
+  private async handleMediaMessages(
+    content: IContent,
+    data: IUpsertMessage
+  ): Promise<void> {
+    const mediaPromises: Promise<void>[] = [];
+
+    if (content.type === EMessageType.image) {
+      mediaPromises.push(this.handleImageMessage(content, data));
+    }
+
+    if (content.type === EMessageType.video) {
+      mediaPromises.push(this.handleVideoMessage(content, data));
+    }
+
+    if (content.type === EMessageType.audio) {
+      mediaPromises.push(this.handleAudioMessage(content, data));
+    }
+
+    if (content.type === EMessageType.document) {
+      mediaPromises.push(this.handleDocumentMessage(content, data));
+    }
+
+    if (content.type === EMessageType.sticker) {
+      mediaPromises.push(this.handleStickerMessage(content, data));
+    }
+
+    await Promise.allSettled(mediaPromises);
+  }
+
+  private async downloadMediaMessageWithTimeout(
+    message: import('@whiskeysockets/baileys').WAMessage,
+    timeoutMs = 30000
+  ): Promise<Buffer> {
+    return Promise.race([
+      downloadMediaMessage(message, 'buffer', { startByte: 0 }),
+      new Promise<Buffer>((_, reject) =>
+        setTimeout(() => reject(new Error('Download timeout')), timeoutMs)
+      ),
+    ]);
+  }
+
   private async handleImageMessage(
     content: IContent,
     data: IUpsertMessage
@@ -589,9 +630,7 @@ export class MessageUpsertConsume {
       return;
     }
 
-    const buffer = await downloadMediaMessage(data.message, 'buffer', {
-      startByte: 0,
-    });
+    const buffer = await this.downloadMediaMessageWithTimeout(data.message);
 
     const photoResult = await this.storageService.uploadFromBuffer(
       buffer,
@@ -623,9 +662,7 @@ export class MessageUpsertConsume {
     }
 
     const videoMsg = data.message.message.videoMessage;
-    const buffer = await downloadMediaMessage(data.message, 'buffer', {
-      startByte: 0,
-    });
+    const buffer = await this.downloadMediaMessageWithTimeout(data.message);
 
     const inferredVideoName =
       (videoMsg as { fileName?: string | null })?.fileName ?? undefined;
@@ -674,9 +711,7 @@ export class MessageUpsertConsume {
     }
 
     const audioMsg = data.message.message.audioMessage;
-    const buffer = await downloadMediaMessage(data.message, 'buffer', {
-      startByte: 0,
-    });
+    const buffer = await this.downloadMediaMessageWithTimeout(data.message);
 
     const inferredAudioName =
       (audioMsg as { fileName?: string | null })?.fileName ?? undefined;
@@ -719,9 +754,7 @@ export class MessageUpsertConsume {
     }
 
     const documentMsg = data.message.message.documentMessage;
-    const buffer = await downloadMediaMessage(data.message, 'buffer', {
-      startByte: 0,
-    });
+    const buffer = await this.downloadMediaMessageWithTimeout(data.message);
 
     const documentResult = await this.storageService.uploadFromBuffer(
       buffer,
@@ -755,9 +788,7 @@ export class MessageUpsertConsume {
     }
 
     const stickerMsg = data.message.message.stickerMessage;
-    const buffer = await downloadMediaMessage(data.message, 'buffer', {
-      startByte: 0,
-    });
+    const buffer = await this.downloadMediaMessageWithTimeout(data.message);
 
     const stickerResult = await this.storageService.uploadFromBuffer(
       buffer,
@@ -1469,11 +1500,7 @@ export class MessageUpsertConsume {
 
       await this.updateChatNameIfNeeded(getChat, data);
 
-      await this.handleImageMessage(content, data);
-      await this.handleVideoMessage(content, data);
-      await this.handleAudioMessage(content, data);
-      await this.handleDocumentMessage(content, data);
-      await this.handleStickerMessage(content, data);
+      await this.handleMediaMessages(content, data);
       await this.handleLocationMessage(content, data);
       await this.handleContactMessage(content, data);
 
@@ -1584,7 +1611,7 @@ export class MessageUpsertConsume {
 
           const channelAccountId = updatedChat.account.id;
 
-          await Promise.all([
+          await Promise.allSettled([
             this.centrifugoService.publishSub(
               chatAccountCentrifugo(channelAccountId),
               updatedChat

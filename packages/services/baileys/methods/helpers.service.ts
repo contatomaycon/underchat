@@ -32,7 +32,15 @@ export class BaileysHelpersService {
       if (shouldSimulateTyping) {
         await this.simulateHumanTyping(address, content);
       }
-      return sock.sendMessage(address, content, options);
+      const result = await sock.sendMessage(address, content, options);
+
+      if (!result) {
+        throw new Error(
+          `Failed to send message to ${address}: result is undefined`
+        );
+      }
+
+      return result;
     }
 
     const { exists, jid } = await this.resolveJidFlexible(sock, address);
@@ -43,7 +51,14 @@ export class BaileysHelpersService {
     if (shouldSimulateTyping) {
       await this.simulateHumanTyping(jid, content);
     }
-    return sock.sendMessage(jid, content, options);
+
+    const result = await sock.sendMessage(jid, content, options);
+
+    if (!result) {
+      throw new Error(`Failed to send message to ${jid}: result is undefined`);
+    }
+
+    return result;
   }
 
   private async simulateHumanTyping(jid: string, content: AnyMessageContent) {
@@ -154,7 +169,7 @@ export class BaileysHelpersService {
     const total = base + punctPause + newlinePause + emojiPause + jitter;
 
     const minMs = 400;
-    const maxMs = 8000;
+    const maxMs = 3000;
     const clamped = Math.max(minMs, Math.min(total, maxMs));
 
     return Math.round(clamped);

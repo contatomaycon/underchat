@@ -3,7 +3,7 @@ import { injectable } from 'tsyringe';
 @injectable()
 export class KeyedSequencerService {
   private readonly chains = new Map<string, Promise<void>>();
-  private readonly TASK_TIMEOUT_MS = 30000;
+  private readonly TASK_TIMEOUT_MS = 15000;
 
   private withTimeout<T>(
     promise: Promise<T>,

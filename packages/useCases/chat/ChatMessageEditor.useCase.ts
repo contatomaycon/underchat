@@ -85,7 +85,8 @@ export class ChatMessageEditorUseCase {
 
     await this.streamProducerService.send(
       this.kafkaBaileysQueueService.workerSendMessage(message.worker.id),
-      editedMessage
+      editedMessage,
+      editedMessage.chat_id
     );
 
     return true;

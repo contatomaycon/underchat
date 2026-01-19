@@ -280,16 +280,40 @@ export class ChatMessageService {
     ];
 
     if (!isAnnotation) {
+      if (!message.worker.id) {
+        throw new Error('Worker ID is required to send message');
+      }
       const kafkaTopic = this.kafkaBaileysQueueService.workerSendMessage(
         message.worker.id
       );
-      promises.push(this.streamProducerService.send(kafkaTopic, message));
+      promises.push(
+        this.streamProducerService.send(kafkaTopic, message, message.chat_id)
+      );
     }
 
-    const [result] = await Promise.all(promises);
+    const results = await Promise.allSettled(promises);
 
-    if (!result) {
+    const elasticResult = results[0];
+    const centrifugoResult = results[1];
+    const kafkaResult = results[2];
+
+    if (elasticResult.status === 'rejected') {
+      throw elasticResult.reason;
+    }
+
+    if (!elasticResult.value) {
       return false;
+    }
+
+    if (centrifugoResult.status === 'rejected') {
+      const error = centrifugoResult.reason;
+      if (error instanceof Error) {
+        console.error('Erro ao publicar no Centrifugo:', error.message);
+      }
+    }
+
+    if (kafkaResult && kafkaResult.status === 'rejected') {
+      throw kafkaResult.reason;
     }
 
     if (!message.content) {
@@ -1446,7 +1470,14 @@ export class ChatMessageService {
     const { chat, accountId, type, message, messageQuotedId, hash, typeUser } =
       options;
 
-    const chatData = await this.getChat(accountId, chat.chat_id);
+    let chatData: IChat | null = null;
+
+    if (chat && chat.message_key?.remote_jid && chat.worker?.id) {
+      chatData = chat;
+    } else {
+      chatData = await this.getChat(accountId, chat.chat_id);
+    }
+
     if (!chatData) {
       throw new Error(t('chat_not_found'));
     }

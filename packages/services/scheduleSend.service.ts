@@ -681,9 +681,16 @@ export class ScheduleSendService {
     };
 
     const workerId = message.worker.id;
+    if (!workerId) {
+      throw new Error('Worker ID is required to send schedule message');
+    }
     const topic = this.kafkaBaileysQueueService.workerSendMessage(workerId);
 
-    await this.streamProducerService.send(topic, scheduleMessage);
+    await this.streamProducerService.send(
+      topic,
+      scheduleMessage,
+      message.chat_id
+    );
   }
 
   private async validateContactPhone(

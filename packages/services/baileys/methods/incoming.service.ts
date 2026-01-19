@@ -37,8 +37,9 @@ import { EMessageType } from '@core/common/enums/EMessageType';
 @singleton()
 export class BaileysIncomingMessageService {
   private currentSocket?: WASocket;
-  private readonly processedMessages = new Set<string>();
-  private readonly processedCalls = new Set<string>();
+  private readonly processedMessages = new Map<string, number>();
+  private readonly processedCalls = new Map<string, number>();
+  private readonly MAX_SIZE = 10000;
   private cleanupInterval?: NodeJS.Timeout;
   private rejectCallConfig: boolean = false;
 
@@ -68,13 +69,22 @@ export class BaileysIncomingMessageService {
     if (this.cleanupInterval) return;
 
     this.cleanupInterval = setInterval(() => {
-      if (this.processedMessages.size > 10000) {
-        this.processedMessages.clear();
-      }
-      if (this.processedCalls.size > 10000) {
-        this.processedCalls.clear();
-      }
+      this.cleanupOldMessages(this.processedMessages);
+      this.cleanupOldMessages(this.processedCalls);
     }, 300000);
+  }
+
+  private cleanupOldMessages(processedMap: Map<string, number>): void {
+    if (processedMap.size <= this.MAX_SIZE) return;
+
+    const sorted = Array.from(processedMap.entries()).sort(
+      (a, b) => a[1] - b[1]
+    );
+
+    const toDelete = sorted.slice(0, sorted.length - this.MAX_SIZE);
+    for (const [key] of toDelete) {
+      processedMap.delete(key);
+    }
   }
 
   private stopCleanupInterval() {
@@ -92,47 +102,60 @@ export class BaileysIncomingMessageService {
 
     socket.ev.on('messages.upsert', async (e) => {
       if (!e?.messages?.length) return;
-      for (const m of e.messages) {
-        const chatKind = getChatKind(m);
-        const upsertType = e.type;
 
-        if (
-          chatKind === EChatKind.user &&
-          upsertType === EMessageUpsertType.notify
-        ) {
-          const messageKey = this.getMessageKey(m);
-          if (!messageKey) continue;
+      const BATCH_SIZE = 5;
+      for (let i = 0; i < e.messages.length; i += BATCH_SIZE) {
+        const batch = e.messages.slice(i, i + BATCH_SIZE);
 
-          if (this.processedMessages.has(messageKey)) {
-            continue;
-          }
+        await Promise.allSettled(
+          batch.map(async (m) => {
+            const chatKind = getChatKind(m);
+            const upsertType = e.type;
 
-          const type = mapIncomingToType(m);
-          const hasQuoted = messageHasQuoted(m);
+            if (
+              chatKind !== EChatKind.user ||
+              upsertType !== EMessageUpsertType.notify
+            ) {
+              return;
+            }
 
-          if (!type) {
-            continue;
-          }
+            const messageKey = this.getMessageKey(m);
+            if (!messageKey) return;
 
-          this.processedMessages.add(messageKey);
+            const timestamp = Date.now();
+            const existingTimestamp = this.processedMessages.get(messageKey);
 
-          const senderPic = await getSenderPhotoUrl(socket, m);
+            if (existingTimestamp && timestamp - existingTimestamp < 5000) {
+              return;
+            }
 
-          const inputUpsert: IUpsertMessage = {
-            worker_id: baileysEnvironment.baileysWorkerId,
-            account_id: baileysEnvironment.baileysAccountId,
-            type,
-            message: m,
-            photo: senderPic,
-            has_quoted: hasQuoted,
-          };
+            this.processedMessages.set(messageKey, timestamp);
 
-          await this.streamProducerService.send(
-            this.kafkaServiceQueueService.upsertMessage(),
-            inputUpsert,
-            messageKey
-          );
-        }
+            const type = mapIncomingToType(m);
+            const hasQuoted = messageHasQuoted(m);
+
+            if (!type) {
+              return;
+            }
+
+            const senderPic = await getSenderPhotoUrl(socket, m);
+
+            const inputUpsert: IUpsertMessage = {
+              worker_id: baileysEnvironment.baileysWorkerId,
+              account_id: baileysEnvironment.baileysAccountId,
+              type,
+              message: m,
+              photo: senderPic,
+              has_quoted: hasQuoted,
+            };
+
+            await this.streamProducerService.send(
+              this.kafkaServiceQueueService.upsertMessage(),
+              inputUpsert,
+              messageKey
+            );
+          })
+        );
       }
     });
 
@@ -234,7 +257,7 @@ export class BaileysIncomingMessageService {
       return;
     }
 
-    this.processedCalls.add(callKey);
+    this.processedCalls.set(callKey, Date.now());
 
     const phone = getPhoneFromJid(jid, jidAlt);
     if (!phone) {
@@ -299,7 +322,7 @@ export class BaileysIncomingMessageService {
     }
 
     for (const batch of batches) {
-      await Promise.all(
+      await Promise.allSettled(
         batch.map(async (event) => {
           const patch = this.mapStatusToPatch(event.update?.status);
           await this.applyStatusPatch(event.key, patch);
@@ -311,7 +334,7 @@ export class BaileysIncomingMessageService {
   private async handleMessageReceiptUpdate(events: MessageUserReceiptUpdate[]) {
     if (!events?.length) return;
 
-    await Promise.all(
+    await Promise.allSettled(
       events.map(async (event) => {
         const patch = this.mapReceiptToPatch(event.receipt);
         await this.applyStatusPatch(event.key, patch);

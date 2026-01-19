@@ -1093,7 +1093,8 @@ export class ChatMessageCreatorUseCase {
         this.kafkaBaileysQueueService.workerSendMessage(
           chatContext.chat.worker.id
         ),
-        reactionMessage
+        reactionMessage,
+        reactionMessage.chat_id
       ),
       this.centrifugoChatPublish(updatedMessage),
     ]);
@@ -1174,7 +1175,8 @@ export class ChatMessageCreatorUseCase {
     await Promise.all([
       this.streamProducerService.send(
         this.kafkaBaileysQueueService.workerSendMessage(chat.worker.id),
-        deleteMessage
+        deleteMessage,
+        deleteMessage.chat_id
       ),
       this.centrifugoChatPublish(updatedMessage),
     ]);
