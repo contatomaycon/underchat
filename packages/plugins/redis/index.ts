@@ -4,7 +4,70 @@ import fp from 'fastify-plugin';
 import Redis from 'ioredis';
 import { container } from 'tsyringe';
 
+export const CONNECTION_CLOSED_ERROR_MSG = 'Connection is closed.';
+
+export function isRedisConnectionClosed(redis: Redis): boolean {
+  return redis.status === 'end' || redis.status === 'close';
+}
+
+export async function safeRedisGet(
+  redis: Redis,
+  key: string
+): Promise<string | null> {
+  if (isRedisConnectionClosed(redis)) {
+    return null;
+  }
+  try {
+    return await redis.get(key);
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message === CONNECTION_CLOSED_ERROR_MSG
+    ) {
+      return null;
+    }
+    throw error;
+  }
+}
+
+export async function safeRedisSet(
+  redis: Redis,
+  key: string,
+  value: string,
+  expiryMode?: 'EX' | 'PX',
+  time?: number,
+  setMode?: 'NX' | 'XX'
+): Promise<string | null> {
+  if (isRedisConnectionClosed(redis)) {
+    return null;
+  }
+  try {
+    const args: (string | number)[] = [key, value];
+    if (expiryMode && time !== undefined) {
+      args.push(expiryMode, time);
+    }
+    if (setMode) {
+      args.push(setMode);
+    }
+    return await (
+      redis.set as unknown as (
+        ...a: (string | number)[]
+      ) => Promise<string | null>
+    )(...args);
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message === CONNECTION_CLOSED_ERROR_MSG
+    ) {
+      return null;
+    }
+    throw error;
+  }
+}
+
 const redisPlugin = async (fastify: FastifyInstance) => {
+  let isShuttingDown = false;
+
   const client = new Redis({
     host: cacheEnvironment.cacheHost,
     port: cacheEnvironment.cachePort,
@@ -15,6 +78,14 @@ const redisPlugin = async (fastify: FastifyInstance) => {
   });
 
   client.on('error', (error: Error) => {
+    if (isShuttingDown && error.message === CONNECTION_CLOSED_ERROR_MSG) {
+      fastify.log.debug(
+        { type: 'redis_shutdown_error' },
+        'Redis connection closed error during shutdown (expected)'
+      );
+      return;
+    }
+
     fastify.log.error(
       {
         err: error,
@@ -62,7 +133,19 @@ const redisPlugin = async (fastify: FastifyInstance) => {
   fastify.decorate<Redis>('Redis', client);
 
   fastify.addHook('onClose', async () => {
-    await client.quit();
+    isShuttingDown = true;
+    try {
+      await client.quit();
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message === CONNECTION_CLOSED_ERROR_MSG
+      ) {
+        fastify.log.debug('Redis already closed during shutdown');
+      } else {
+        fastify.log.warn({ err: error }, 'Error closing Redis connection');
+      }
+    }
   });
 };
 

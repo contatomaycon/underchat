@@ -72,24 +72,40 @@ export class PresenceCentrifugoService {
 
   private async isCircuitOpen(): Promise<boolean> {
     if (this.useDistributed && this.redis) {
-      const key = 'presence_centrifugo:circuit_breaker:open_until';
-      const openUntilStr = await this.redis.get(key).catch(() => null);
+      const stateKey = 'presence_centrifugo:circuit_breaker:state';
+      const openUntilKey = 'presence_centrifugo:circuit_breaker:open_until';
 
-      if (!openUntilStr) {
+      const [state, openUntilStr] = await Promise.all([
+        this.redis.get(stateKey).catch(() => null),
+        this.redis.get(openUntilKey).catch(() => null),
+      ]);
+
+      const now = Date.now();
+
+      if (state === 'open') {
+        if (openUntilStr) {
+          const openUntil = Number.parseInt(openUntilStr, 10);
+          if (now < openUntil) {
+            return true;
+          }
+        }
+
+        await this.redis.set(stateKey, 'half-open', 'EX', 120).catch(() => {});
+        await this.redis
+          .del('presence_centrifugo:circuit_breaker:half_open_success')
+          .catch(() => {});
+
+        logger.info(
+          { type: 'presence_centrifugo_circuit_breaker_half_open' },
+          'Presence Centrifugo circuit breaker moved to half-open state (distributed)'
+        );
         return false;
       }
 
-      const openUntil = Number.parseInt(openUntilStr, 10);
-      const now = Date.now();
-
-      if (now < openUntil) {
-        return true;
+      if (state === 'half-open') {
+        return false;
       }
 
-      await this.redis.del(key).catch(() => {});
-      await this.redis
-        .del('presence_centrifugo:circuit_breaker:failures')
-        .catch(() => {});
       return false;
     }
 
@@ -117,10 +133,35 @@ export class PresenceCentrifugoService {
 
   private async recordCircuitFailure(): Promise<void> {
     if (this.useDistributed && this.redis) {
+      const stateKey = 'presence_centrifugo:circuit_breaker:state';
       const failuresKey = 'presence_centrifugo:circuit_breaker:failures';
       const openUntilKey = 'presence_centrifugo:circuit_breaker:open_until';
 
       try {
+        const currentState = await this.redis.get(stateKey).catch(() => null);
+
+        if (currentState === 'half-open') {
+          const openUntil = Date.now() + this.circuitBreakerResetMs;
+          await Promise.all([
+            this.redis.set(stateKey, 'open', 'EX', 120),
+            this.redis.set(
+              openUntilKey,
+              openUntil.toString(),
+              'EX',
+              Math.ceil(this.circuitBreakerResetMs / 1000) + 60
+            ),
+            this.redis.del(
+              'presence_centrifugo:circuit_breaker:half_open_success'
+            ),
+          ]);
+
+          logger.error(
+            { type: 'presence_centrifugo_circuit_breaker_half_open_failed' },
+            'Presence Centrifugo circuit breaker half-open test failed, reopening (distributed)'
+          );
+          return;
+        }
+
         const failures = await this.redis.incr(failuresKey);
         await this.redis.expire(
           failuresKey,
@@ -129,12 +170,15 @@ export class PresenceCentrifugoService {
 
         if (failures >= this.circuitBreakerThreshold) {
           const openUntil = Date.now() + this.circuitBreakerResetMs;
-          await this.redis.set(
-            openUntilKey,
-            openUntil.toString(),
-            'EX',
-            Math.ceil(this.circuitBreakerResetMs / 1000) + 60
-          );
+          await Promise.all([
+            this.redis.set(stateKey, 'open', 'EX', 120),
+            this.redis.set(
+              openUntilKey,
+              openUntil.toString(),
+              'EX',
+              Math.ceil(this.circuitBreakerResetMs / 1000) + 60
+            ),
+          ]);
 
           logger.error(
             {
@@ -211,8 +255,37 @@ export class PresenceCentrifugoService {
 
   private async recordCircuitSuccess(): Promise<void> {
     if (this.useDistributed && this.redis) {
+      const stateKey = 'presence_centrifugo:circuit_breaker:state';
       const failuresKey = 'presence_centrifugo:circuit_breaker:failures';
+      const halfOpenSuccessKey =
+        'presence_centrifugo:circuit_breaker:half_open_success';
+
       try {
+        const currentState = await this.redis.get(stateKey).catch(() => null);
+
+        if (currentState === 'half-open') {
+          const successCount = await this.redis.incr(halfOpenSuccessKey);
+          await this.redis.expire(halfOpenSuccessKey, 120);
+
+          if (successCount >= this.circuitBreakerHalfOpenAttempts) {
+            await Promise.all([
+              this.redis.del(stateKey),
+              this.redis.del(failuresKey),
+              this.redis.del(halfOpenSuccessKey),
+              this.redis.del('presence_centrifugo:circuit_breaker:open_until'),
+            ]);
+
+            logger.info(
+              {
+                type: 'presence_centrifugo_circuit_breaker_closed',
+                halfOpenAttempts: successCount,
+              },
+              'Presence Centrifugo circuit breaker closed after successful half-open (distributed)'
+            );
+          }
+          return;
+        }
+
         const current = await this.redis.get(failuresKey);
         if (current && Number.parseInt(current, 10) > 0) {
           const failures = Number.parseInt(current, 10);

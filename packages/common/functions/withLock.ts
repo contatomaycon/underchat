@@ -3,12 +3,29 @@ import { v7 as uuidv7 } from 'uuid';
 import { extendLock } from './extendLock';
 import { releaseLock } from './releaseLock';
 import { delay } from './delay';
+import {
+  isRedisConnectionClosed,
+  CONNECTION_CLOSED_ERROR_MSG,
+} from '@core/plugins/redis';
 
 export class LockAcquisitionTimeoutError extends Error {
   constructor(lockKey: string, timeoutMs: number) {
     super(`Failed to acquire lock "${lockKey}" after ${timeoutMs}ms`);
     this.name = 'LockAcquisitionTimeoutError';
   }
+}
+
+export class RedisConnectionClosedError extends Error {
+  constructor(operation: string) {
+    super(`Redis connection closed during ${operation}`);
+    this.name = 'RedisConnectionClosedError';
+  }
+}
+
+function isConnectionClosedError(error: unknown): boolean {
+  return (
+    error instanceof Error && error.message === CONNECTION_CLOSED_ERROR_MSG
+  );
 }
 
 export async function withLock<T>(
@@ -33,55 +50,95 @@ export async function withLock<T>(
   const executedKey = preventDuplicate ? `underchat:executed:${lockKey}` : null;
 
   const startTime = Date.now();
+  let interval: ReturnType<typeof setInterval> | null = null;
 
-  const startExtension = () =>
-    setInterval(
+  const clearExtensionInterval = () => {
+    if (interval !== null) {
+      clearInterval(interval);
+      interval = null;
+    }
+  };
+
+  const startExtension = () => {
+    interval = setInterval(
       () => {
+        if (isRedisConnectionClosed(redis)) {
+          clearExtensionInterval();
+          return;
+        }
         extendLock(redis, key, token, ttlMs).catch(() => {});
       },
       Math.floor(ttlMs / 2)
     );
+    return interval;
+  };
 
   const tryLock = async (): Promise<T> => {
+    if (isRedisConnectionClosed(redis)) {
+      throw new RedisConnectionClosedError('lock acquisition');
+    }
+
     const elapsed = Date.now() - startTime;
     if (elapsed >= maxWaitMs) {
       throw new LockAcquisitionTimeoutError(lockKey, maxWaitMs);
     }
 
-    const ok = await redis.set(key, token, 'PX', ttlMs, 'NX');
+    let ok: string | null;
+    try {
+      ok = await redis.set(key, token, 'PX', ttlMs, 'NX');
+    } catch (error) {
+      if (isConnectionClosedError(error)) {
+        throw new RedisConnectionClosedError('lock acquisition');
+      }
+      throw error;
+    }
+
     if (ok !== 'OK') {
       await delay(retryMs);
       return tryLock();
     }
 
     if (preventDuplicate && executedKey) {
-      const alreadyExecuted = await redis.get(executedKey);
-      if (alreadyExecuted) {
-        await releaseLock(redis, key, token);
-        return undefined as T;
+      try {
+        const alreadyExecuted = await redis.get(executedKey);
+        if (alreadyExecuted) {
+          await releaseLock(redis, key, token).catch(() => {});
+          return undefined as T;
+        }
+      } catch (error) {
+        if (isConnectionClosedError(error)) {
+          return undefined as T;
+        }
+        throw error;
       }
     }
 
-    const interval = startExtension();
+    startExtension();
 
     try {
       const result = await fn();
 
       if (preventDuplicate && executedKey) {
-        await redis.set(executedKey, '1', 'EX', duplicateTtlSeconds);
+        await redis
+          .set(executedKey, '1', 'EX', duplicateTtlSeconds)
+          .catch(() => {});
       }
 
-      await releaseLock(redis, key, token);
-      clearInterval(interval);
+      await releaseLock(redis, key, token).catch(() => {});
+      clearExtensionInterval();
 
       return result;
     } catch (e) {
-      await releaseLock(redis, key, token);
-      clearInterval(interval);
+      await releaseLock(redis, key, token).catch(() => {});
+      clearExtensionInterval();
 
       throw e;
     }
   };
 
-  return tryLock();
+  try {
+    return await tryLock();
+  } finally {
+    clearExtensionInterval();
+  }
 }

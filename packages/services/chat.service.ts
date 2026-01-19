@@ -28,6 +28,7 @@ import {
   createChatCacheKeyChatId,
 } from '@core/common/functions/createCacheKey';
 import Redis from 'ioredis';
+import { safeRedisGet } from '@core/plugins/redis';
 
 type ElasticHit<T> = {
   _source?: T;
@@ -1388,7 +1389,7 @@ export class ChatService {
     phone: string
   ): Promise<IChat | null> => {
     const cacheKey = createChatCacheKey(accountId, workerId, phone);
-    const cache = await this.redis.get(cacheKey);
+    const cache = await safeRedisGet(this.redis, cacheKey);
 
     if (cache) {
       return JSON.parse(cache) as IChat;
