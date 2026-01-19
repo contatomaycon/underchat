@@ -1688,15 +1688,28 @@ export class ChatbotFlowRunnerService {
     }
 
     if (redirectType === 'sector') {
-      const result = await this.processSectorRedirect(
-        t,
-        createChat,
-        selectedSector,
-        selectedSectorUser
-      );
-      sector = result.sector;
-      if (result.user) {
-        user = result.user;
+      try {
+        const result = await this.processSectorRedirect(
+          t,
+          createChat,
+          selectedSector,
+          selectedSectorUser
+        );
+        sector = result.sector;
+        if (result.user) {
+          user = result.user;
+        }
+      } catch (error) {
+        console.error('Erro ao redirecionar para setor no chatbot flow:', {
+          error: error instanceof Error ? error.message : String(error),
+          accountId: createChat.account.id,
+          chatId: createChat.chat_id,
+          selectedSector,
+          selectedSectorUser,
+          stack: error instanceof Error ? error.stack : undefined,
+        });
+
+        sector = null;
       }
     }
 
@@ -1802,6 +1815,13 @@ export class ChatbotFlowRunnerService {
     return true;
   }
 
+  private truncateContactName(name: string, maxLength: number = 100): string {
+    if (name.length <= maxLength) {
+      return name;
+    }
+    return name.substring(0, maxLength);
+  }
+
   private async updateContactData(
     createChat: IChat,
     updateData: UpdateContactRequest
@@ -1847,8 +1867,9 @@ export class ChatbotFlowRunnerService {
     const userText = this.getTextFromUpsertMessage(data)?.trim();
 
     if (userText && createChat.contact?.id) {
+      const truncatedName = this.truncateContactName(userText);
       await this.updateContactData(createChat, {
-        name: userText,
+        name: truncatedName,
       });
     }
 
@@ -1891,8 +1912,9 @@ export class ChatbotFlowRunnerService {
     const userText = this.getTextFromUpsertMessage(data)?.trim();
 
     if (userText && createChat.contact?.id) {
+      const truncatedLastName = this.truncateContactName(userText);
       await this.updateContactData(createChat, {
-        last_name: userText,
+        last_name: truncatedLastName,
       });
     }
 
