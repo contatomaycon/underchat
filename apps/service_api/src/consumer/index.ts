@@ -3,6 +3,7 @@ import { startBalanceConsume } from './balance.consume';
 import { startWorkerConsume } from './worker.consume';
 import { startMessageUpdateConsume } from './messageUpdate.consume';
 import { startMessageUpsertConsume } from './messageUpsert.consume';
+import { startMessageUpsertDlqConsume } from './messageUpsertDlq.consume';
 import { startMessageStatusUpdateConsume } from './messageStatusUpdate.consume';
 import { startChatSummaryClearConsume } from './chatSummaryClear.consume';
 import { startPhoneValidationResponseConsume } from './phoneValidationResponse.consume';
@@ -34,6 +35,7 @@ export function startConsumers(server: FastifyInstance): void {
       startWorkerConsume(server),
       startMessageUpdateConsume(server),
       startMessageUpsertConsume(server),
+      startMessageUpsertDlqConsume(server),
       startMessageStatusUpdateConsume(server),
       startChatSummaryClearConsume(server),
       startPhoneValidationResponseConsume(server),

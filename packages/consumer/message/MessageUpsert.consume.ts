@@ -111,6 +111,19 @@ export class MessageUpsertConsume {
     return candidates.sort()[0] ?? phone;
   }
 
+  private async sendToDlq(data: IUpsertMessage, error: unknown): Promise<void> {
+    try {
+      const dlqTopic = this.kafkaServiceQueueService.upsertMessageDlq();
+      await this.streamProducerService.send(dlqTopic, {
+        ...data,
+        dlq_error: error instanceof Error ? error.message : String(error),
+        dlq_timestamp: new Date().toISOString(),
+      });
+    } catch (dlqError) {
+      console.error('Failed to send message to DLQ:', dlqError);
+    }
+  }
+
   private centrifugoChatPublish(
     dataPublish: IChatMessage
   ): Promise<PublishResult> {
@@ -2025,6 +2038,9 @@ export class MessageUpsertConsume {
             throw new Error('Received message without valid phone');
           }
           await this.createOrUpdateChat(t, data, phone);
+        } catch (error) {
+          await this.sendToDlq(data, error);
+          throw error;
         } finally {
           stop();
           await this.commitNext(topic, partition, offset);
