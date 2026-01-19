@@ -88,6 +88,7 @@ export interface IContent {
   contact?: IContactMessage | null;
   reactions?: IReaction[] | null;
   version?: MessageVersion[] | null;
+  media_download_failed?: boolean;
 }
 
 export interface IMessageKey {

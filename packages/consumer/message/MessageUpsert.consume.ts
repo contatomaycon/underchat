@@ -31,7 +31,6 @@ import {
   MessageVersion,
 } from '@core/schema/chat/listMessageChats/response.schema';
 import { buildQuotedTextFromExtended } from '@core/common/functions/buildQuotedTextFromExtended';
-import { startHeartbeat } from '@core/common/functions/startHeartbeat';
 import { createConsumer } from '@core/common/functions/createConsumer';
 import { connectConsumer } from '@core/common/functions/connectConsumer';
 import { handleConsumerError } from '@core/common/functions/handleConsumerError';
@@ -78,6 +77,10 @@ export class MessageUpsertConsume {
   private partitionChains: Map<number, Promise<void>> = new Map();
   private readonly MAX_RETRIES = 3;
   private readonly RETRY_DELAYS = [100, 500, 2000];
+  private readonly MESSAGE_PROCESSING_TIMEOUT_MS = 120000;
+  private readonly MEDIA_DOWNLOAD_TIMEOUT_MS = 15000;
+  private readonly MAX_CONSECUTIVE_FAILURES = 10;
+  private partitionFailureCounts: Map<number, number> = new Map();
 
   constructor(
     @inject('Redis') private readonly redis: Redis,
@@ -110,6 +113,11 @@ export class MessageUpsertConsume {
   private normalizePhoneForLock(phone: string): string {
     const candidates = buildCandidates(phone);
     return candidates.sort()[0] ?? phone;
+  }
+
+  private incrementPartitionFailure(partition: number): void {
+    const current = this.partitionFailureCounts.get(partition) ?? 0;
+    this.partitionFailureCounts.set(partition, current + 1);
   }
 
   private async sendToDlq(
@@ -574,45 +582,52 @@ export class MessageUpsertConsume {
 
     if (!needsPhotoUpdate && !needsContactPhotoUpdate) return;
 
-    const photoResult = await this.storageService.uploadFromUrl(
-      data.photo,
-      data.account_id,
-      getChat.chat_id
-    );
-
-    if (!photoResult?.url) return;
-
-    if (needsPhotoUpdate) getChat.photo = photoResult.url;
-
-    if (needsContactPhotoUpdate && getChat.contact?.id) {
-      await this.contactService.updateContactById(
-        {
-          image_url: photoResult.url,
-        },
-        getChat.contact.id,
-        data.account_id
+    try {
+      const photoResult = await this.storageService.uploadFromUrl(
+        data.photo,
+        data.account_id,
+        getChat.chat_id
       );
 
-      getChat.contact = {
-        ...getChat.contact,
-        photo: photoResult.url,
-      };
-    }
+      if (!photoResult?.url) return;
 
-    const updateData: Partial<IChat> = {};
-    if (needsPhotoUpdate) {
-      updateData.photo = photoResult.url;
-    }
+      if (needsPhotoUpdate) getChat.photo = photoResult.url;
 
-    if (needsContactPhotoUpdate && getChat.contact) {
-      updateData.contact = getChat.contact;
-    }
+      if (needsContactPhotoUpdate && getChat.contact?.id) {
+        await this.contactService.updateContactById(
+          {
+            image_url: photoResult.url,
+          },
+          getChat.contact.id,
+          data.account_id
+        );
 
-    if (Object.keys(updateData).length > 0) {
-      await this.chatService.saveChat({
-        ...getChat,
-        ...updateData,
-      });
+        getChat.contact = {
+          ...getChat.contact,
+          photo: photoResult.url,
+        };
+      }
+
+      const updateData: Partial<IChat> = {};
+      if (needsPhotoUpdate) {
+        updateData.photo = photoResult.url;
+      }
+
+      if (needsContactPhotoUpdate && getChat.contact) {
+        updateData.contact = getChat.contact;
+      }
+
+      if (Object.keys(updateData).length > 0) {
+        await this.chatService.saveChat({
+          ...getChat,
+          ...updateData,
+        });
+      }
+    } catch (error) {
+      console.error(
+        `[MessageUpsert] Failed to update chat photo for chat ${getChat.chat_id}:`,
+        error instanceof Error ? error.message : error
+      );
     }
   }
 
@@ -629,34 +644,41 @@ export class MessageUpsertConsume {
       return;
     }
 
-    const scriptSource = `
-      if (ctx._source == null) {
-        ctx.op = 'noop';
-        return;
-      }
-      
-      if (ctx._source.name == null || ctx._source.name == '') {
-        ctx._source.name = params.name;
-      } else {
-        ctx.op = 'noop';
-      }
-    `;
+    try {
+      const scriptSource = `
+        if (ctx._source == null) {
+          ctx.op = 'noop';
+          return;
+        }
+        
+        if (ctx._source.name == null || ctx._source.name == '') {
+          ctx._source.name = params.name;
+        } else {
+          ctx.op = 'noop';
+        }
+      `;
 
-    const result = await this.elasticDatabaseService.updateWithScriptOCC(
-      EElasticIndex.chat,
-      getChat.chat_id,
-      {
-        source: scriptSource,
-        params: { name },
-      },
-      {
-        maxRetries: 5,
-      }
-    );
+      const result = await this.elasticDatabaseService.updateWithScriptOCC(
+        EElasticIndex.chat,
+        getChat.chat_id,
+        {
+          source: scriptSource,
+          params: { name },
+        },
+        {
+          maxRetries: 5,
+        }
+      );
 
-    if (result === 'updated' || result === 'created') {
-      getChat.name = name;
-      await this.centrifugoChatQueuePublish(getChat);
+      if (result === 'updated' || result === 'created') {
+        getChat.name = name;
+        await this.centrifugoChatQueuePublish(getChat);
+      }
+    } catch (error) {
+      console.error(
+        `[MessageUpsert] Failed to update chat name for chat ${getChat.chat_id}:`,
+        error instanceof Error ? error.message : error
+      );
     }
   }
 
@@ -690,13 +712,15 @@ export class MessageUpsertConsume {
   }
 
   private async downloadMediaMessageWithTimeout(
-    message: import('@whiskeysockets/baileys').WAMessage,
-    timeoutMs = 30000
+    message: import('@whiskeysockets/baileys').WAMessage
   ): Promise<Buffer> {
     return Promise.race([
       downloadMediaMessage(message, 'buffer', { startByte: 0 }),
       new Promise<Buffer>((_, reject) =>
-        setTimeout(() => reject(new Error('Download timeout')), timeoutMs)
+        setTimeout(
+          () => reject(new Error('Download timeout')),
+          this.MEDIA_DOWNLOAD_TIMEOUT_MS
+        )
       ),
     ]);
   }
@@ -712,24 +736,32 @@ export class MessageUpsertConsume {
       return;
     }
 
-    const buffer = await this.downloadMediaMessageWithTimeout(data.message);
+    try {
+      const buffer = await this.downloadMediaMessageWithTimeout(data.message);
 
-    const photoResult = await this.storageService.uploadFromBuffer(
-      buffer,
-      data.account_id
-    );
+      const photoResult = await this.storageService.uploadFromBuffer(
+        buffer,
+        data.account_id
+      );
 
-    content.image = photoResult
-      ? {
-          url: photoResult.url,
-          caption: data.message.message.imageMessage.caption ?? null,
-          mimetype: data.message.message.imageMessage.mimetype,
-          extension: photoResult.extension,
-          size: photoResult.size,
-          height: data.message.message.imageMessage.height,
-          width: data.message.message.imageMessage.width,
-        }
-      : undefined;
+      content.image = photoResult
+        ? {
+            url: photoResult.url,
+            caption: data.message.message.imageMessage.caption ?? null,
+            mimetype: data.message.message.imageMessage.mimetype,
+            extension: photoResult.extension,
+            size: photoResult.size,
+            height: data.message.message.imageMessage.height,
+            width: data.message.message.imageMessage.width,
+          }
+        : undefined;
+    } catch (error) {
+      console.error(
+        `[MessageUpsert] Failed to download image for message ${data.message?.key?.id}:`,
+        error instanceof Error ? error.message : error
+      );
+      content.media_download_failed = true;
+    }
   }
 
   private async handleVideoMessage(
@@ -743,42 +775,50 @@ export class MessageUpsertConsume {
       return;
     }
 
-    const videoMsg = data.message.message.videoMessage;
-    const buffer = await this.downloadMediaMessageWithTimeout(data.message);
+    try {
+      const videoMsg = data.message.message.videoMessage;
+      const buffer = await this.downloadMediaMessageWithTimeout(data.message);
 
-    const inferredVideoName =
-      (videoMsg as { fileName?: string | null })?.fileName ?? undefined;
+      const inferredVideoName =
+        (videoMsg as { fileName?: string | null })?.fileName ?? undefined;
 
-    const videoResult = await this.storageService.uploadFromBuffer(
-      buffer,
-      data.account_id,
-      {
-        fileName: inferredVideoName,
-        mimetype: videoMsg.mimetype ?? undefined,
-      }
-    );
-
-    const thumb =
-      videoMsg.jpegThumbnail && videoMsg.jpegThumbnail.length > 0
-        ? `data:image/jpeg;base64,${Buffer.from(
-            videoMsg.jpegThumbnail
-          ).toString('base64')}`
-        : null;
-
-    content.video = videoResult
-      ? {
-          url: videoResult.url,
-          caption: videoMsg.caption ?? null,
-          name: inferredVideoName ?? videoResult.name,
-          mimetype: videoMsg.mimetype ?? videoResult.mimetype ?? 'video/mp4',
-          extension: videoResult.extension,
-          size: videoResult.size,
-          duration: videoMsg.seconds ?? null,
-          height: videoMsg.height ?? null,
-          width: videoMsg.width ?? null,
-          thumbnail: thumb,
+      const videoResult = await this.storageService.uploadFromBuffer(
+        buffer,
+        data.account_id,
+        {
+          fileName: inferredVideoName,
+          mimetype: videoMsg.mimetype ?? undefined,
         }
-      : undefined;
+      );
+
+      const thumb =
+        videoMsg.jpegThumbnail && videoMsg.jpegThumbnail.length > 0
+          ? `data:image/jpeg;base64,${Buffer.from(
+              videoMsg.jpegThumbnail
+            ).toString('base64')}`
+          : null;
+
+      content.video = videoResult
+        ? {
+            url: videoResult.url,
+            caption: videoMsg.caption ?? null,
+            name: inferredVideoName ?? videoResult.name,
+            mimetype: videoMsg.mimetype ?? videoResult.mimetype ?? 'video/mp4',
+            extension: videoResult.extension,
+            size: videoResult.size,
+            duration: videoMsg.seconds ?? null,
+            height: videoMsg.height ?? null,
+            width: videoMsg.width ?? null,
+            thumbnail: thumb,
+          }
+        : undefined;
+    } catch (error) {
+      console.error(
+        `[MessageUpsert] Failed to download video for message ${data.message?.key?.id}:`,
+        error instanceof Error ? error.message : error
+      );
+      content.media_download_failed = true;
+    }
   }
 
   private async handleAudioMessage(
@@ -792,36 +832,44 @@ export class MessageUpsertConsume {
       return;
     }
 
-    const audioMsg = data.message.message.audioMessage;
-    const buffer = await this.downloadMediaMessageWithTimeout(data.message);
+    try {
+      const audioMsg = data.message.message.audioMessage;
+      const buffer = await this.downloadMediaMessageWithTimeout(data.message);
 
-    const inferredAudioName =
-      (audioMsg as { fileName?: string | null })?.fileName ?? undefined;
+      const inferredAudioName =
+        (audioMsg as { fileName?: string | null })?.fileName ?? undefined;
 
-    const audioResult = await this.storageService.uploadFromBuffer(
-      buffer,
-      data.account_id,
-      {
-        fileName: inferredAudioName,
-        mimetype: audioMsg.mimetype ?? undefined,
-      }
-    );
-
-    const waveform = convertWaveformToBase64(audioMsg.waveform);
-
-    content.audio = audioResult
-      ? {
-          url: audioResult.url,
-          name: inferredAudioName ?? audioResult.name,
-          mimetype: audioMsg.mimetype ?? audioResult.mimetype ?? null,
-          extension: audioResult.extension,
-          size: audioResult.size,
-          duration: audioMsg.seconds ?? null,
-          ptt: audioMsg.ptt ?? false,
-          view_once: data.message?.key?.isViewOnce ?? false,
-          waveform: waveform ?? null,
+      const audioResult = await this.storageService.uploadFromBuffer(
+        buffer,
+        data.account_id,
+        {
+          fileName: inferredAudioName,
+          mimetype: audioMsg.mimetype ?? undefined,
         }
-      : undefined;
+      );
+
+      const waveform = convertWaveformToBase64(audioMsg.waveform);
+
+      content.audio = audioResult
+        ? {
+            url: audioResult.url,
+            name: inferredAudioName ?? audioResult.name,
+            mimetype: audioMsg.mimetype ?? audioResult.mimetype ?? null,
+            extension: audioResult.extension,
+            size: audioResult.size,
+            duration: audioMsg.seconds ?? null,
+            ptt: audioMsg.ptt ?? false,
+            view_once: data.message?.key?.isViewOnce ?? false,
+            waveform: waveform ?? null,
+          }
+        : undefined;
+    } catch (error) {
+      console.error(
+        `[MessageUpsert] Failed to download audio for message ${data.message?.key?.id}:`,
+        error instanceof Error ? error.message : error
+      );
+      content.media_download_failed = true;
+    }
   }
 
   private async handleDocumentMessage(
@@ -835,27 +883,35 @@ export class MessageUpsertConsume {
       return;
     }
 
-    const documentMsg = data.message.message.documentMessage;
-    const buffer = await this.downloadMediaMessageWithTimeout(data.message);
+    try {
+      const documentMsg = data.message.message.documentMessage;
+      const buffer = await this.downloadMediaMessageWithTimeout(data.message);
 
-    const documentResult = await this.storageService.uploadFromBuffer(
-      buffer,
-      data.account_id,
-      {
-        fileName: documentMsg.fileName ?? undefined,
-        mimetype: documentMsg.mimetype ?? undefined,
-      }
-    );
-
-    content.document = documentResult
-      ? {
-          url: documentResult.url,
-          name: documentMsg.fileName ?? documentResult.name,
-          mimetype: documentMsg.mimetype ?? documentResult.mimetype ?? null,
-          extension: documentResult.extension,
-          size: documentResult.size,
+      const documentResult = await this.storageService.uploadFromBuffer(
+        buffer,
+        data.account_id,
+        {
+          fileName: documentMsg.fileName ?? undefined,
+          mimetype: documentMsg.mimetype ?? undefined,
         }
-      : undefined;
+      );
+
+      content.document = documentResult
+        ? {
+            url: documentResult.url,
+            name: documentMsg.fileName ?? documentResult.name,
+            mimetype: documentMsg.mimetype ?? documentResult.mimetype ?? null,
+            extension: documentResult.extension,
+            size: documentResult.size,
+          }
+        : undefined;
+    } catch (error) {
+      console.error(
+        `[MessageUpsert] Failed to download document for message ${data.message?.key?.id}:`,
+        error instanceof Error ? error.message : error
+      );
+      content.media_download_failed = true;
+    }
   }
 
   private async handleStickerMessage(
@@ -869,25 +925,33 @@ export class MessageUpsertConsume {
       return;
     }
 
-    const stickerMsg = data.message.message.stickerMessage;
-    const buffer = await this.downloadMediaMessageWithTimeout(data.message);
+    try {
+      const stickerMsg = data.message.message.stickerMessage;
+      const buffer = await this.downloadMediaMessageWithTimeout(data.message);
 
-    const stickerResult = await this.storageService.uploadFromBuffer(
-      buffer,
-      data.account_id
-    );
+      const stickerResult = await this.storageService.uploadFromBuffer(
+        buffer,
+        data.account_id
+      );
 
-    content.sticker = stickerResult
-      ? {
-          url: stickerResult.url,
-          mimetype: stickerMsg.mimetype ?? stickerResult.mimetype ?? null,
-          extension: stickerResult.extension,
-          size: stickerResult.size,
-          height: stickerMsg.height ?? stickerResult.height ?? null,
-          width: stickerMsg.width ?? stickerResult.width ?? null,
-          is_animated: stickerMsg.isAnimated ?? false,
-        }
-      : undefined;
+      content.sticker = stickerResult
+        ? {
+            url: stickerResult.url,
+            mimetype: stickerMsg.mimetype ?? stickerResult.mimetype ?? null,
+            extension: stickerResult.extension,
+            size: stickerResult.size,
+            height: stickerMsg.height ?? stickerResult.height ?? null,
+            width: stickerMsg.width ?? stickerResult.width ?? null,
+            is_animated: stickerMsg.isAnimated ?? false,
+          }
+        : undefined;
+    } catch (error) {
+      console.error(
+        `[MessageUpsert] Failed to download sticker for message ${data.message?.key?.id}:`,
+        error instanceof Error ? error.message : error
+      );
+      content.media_download_failed = true;
+    }
   }
 
   private async handleLocationMessage(
@@ -1123,53 +1187,60 @@ export class MessageUpsertConsume {
       return;
     }
 
-    const contactMsg = data.message.message.contactMessage;
-    const vcard = contactMsg.vcard ?? '';
-    const parsed = this.parseVCard(vcard);
+    try {
+      const contactMsg = data.message.message.contactMessage;
+      const vcard = contactMsg.vcard ?? '';
+      const parsed = this.parseVCard(vcard);
 
-    const phoneAndDdi = extractPhoneAndDdiFromContactMessage(contactMsg);
+      const phoneAndDdi = extractPhoneAndDdiFromContactMessage(contactMsg);
 
-    if (!phoneAndDdi) return;
+      if (!phoneAndDdi) return;
 
-    const phonePartial = this.encryptService.sanitize(
-      phoneAndDdi.phone,
-      ETypeSanetize.phone
-    );
+      const phonePartial = this.encryptService.sanitize(
+        phoneAndDdi.phone,
+        ETypeSanetize.phone
+      );
 
-    const emailPartial = parsed?.email
-      ? this.encryptService.sanitize(parsed.email, ETypeSanetize.email)
-      : null;
+      const emailPartial = parsed?.email
+        ? this.encryptService.sanitize(parsed.email, ETypeSanetize.email)
+        : null;
 
-    let existingContactId: string | null = null;
-    let existingContactPhoto: string | null = null;
+      let existingContactId: string | null = null;
+      let existingContactPhoto: string | null = null;
 
-    const existingContact = await this.contactService.getContactByPhone(
-      data.account_id,
-      phoneAndDdi.phone,
-      phoneAndDdi.phone_ddi
-    );
+      const existingContact = await this.contactService.getContactByPhone(
+        data.account_id,
+        phoneAndDdi.phone,
+        phoneAndDdi.phone_ddi
+      );
 
-    let existingContactName =
-      parsed.name ?? contactMsg.displayName ?? 'Contato';
-    let existingContactLastName = parsed.last_name ?? null;
-    if (existingContact) {
-      existingContactId = existingContact.contact_id;
-      existingContactPhoto = existingContact.photo ?? null;
-      existingContactName = existingContact.name;
-      existingContactLastName = existingContact.last_name ?? null;
+      let existingContactName =
+        parsed.name ?? contactMsg.displayName ?? 'Contato';
+      let existingContactLastName = parsed.last_name ?? null;
+      if (existingContact) {
+        existingContactId = existingContact.contact_id;
+        existingContactPhoto = existingContact.photo ?? null;
+        existingContactName = existingContact.name;
+        existingContactLastName = existingContact.last_name ?? null;
+      }
+
+      content.contact = {
+        contact_id: existingContactId,
+        name: existingContactName,
+        last_name: existingContactLastName,
+        phone: phoneAndDdi.phone,
+        phone_partial: phonePartial,
+        phone_ddi: phoneAndDdi.phone_ddi,
+        email: parsed.email ?? null,
+        email_partial: emailPartial,
+        photo: existingContactPhoto,
+      };
+    } catch (error) {
+      console.error(
+        `[MessageUpsert] Failed to handle contact message for message ${data.message?.key?.id}:`,
+        error instanceof Error ? error.message : error
+      );
     }
-
-    content.contact = {
-      contact_id: existingContactId,
-      name: existingContactName,
-      last_name: existingContactLastName,
-      phone: phoneAndDdi.phone,
-      phone_partial: phonePartial,
-      phone_ddi: phoneAndDdi.phone_ddi,
-      email: parsed.email ?? null,
-      email_partial: emailPartial,
-      photo: existingContactPhoto,
-    };
   }
 
   private async ensureContactForChat(
@@ -1420,7 +1491,7 @@ export class MessageUpsertConsume {
           typeUser: ETypeUserChat.system,
         });
       },
-      { ttlMs: 60000, retryMs: 100 }
+      { ttlMs: 60000, retryMs: 100, maxWaitMs: 90000 }
     );
   }
 
@@ -1714,7 +1785,7 @@ export class MessageUpsertConsume {
             }
           }
         },
-        { ttlMs: 30000, retryMs: 50 }
+        { ttlMs: 30000, retryMs: 50, maxWaitMs: 45000 }
       );
 
       return true;
@@ -1781,19 +1852,26 @@ export class MessageUpsertConsume {
   ): Promise<void> {
     if (!quoted || !messageQuotedId) return;
 
-    const originalMessage = await this.findMessageByKeyId(
-      accountId,
-      chatId,
-      messageQuotedId
-    );
+    try {
+      const originalMessage = await this.findMessageByKeyId(
+        accountId,
+        chatId,
+        messageQuotedId
+      );
 
-    if (!originalMessage?.content) return;
+      if (!originalMessage?.content) return;
 
-    this.enrichSticker(quoted, originalMessage.content);
-    this.enrichImage(quoted, originalMessage.content);
-    this.enrichVideo(quoted, originalMessage.content);
-    this.enrichDocument(quoted, originalMessage.content);
-    this.enrichAudio(quoted, originalMessage.content);
+      this.enrichSticker(quoted, originalMessage.content);
+      this.enrichImage(quoted, originalMessage.content);
+      this.enrichVideo(quoted, originalMessage.content);
+      this.enrichDocument(quoted, originalMessage.content);
+      this.enrichAudio(quoted, originalMessage.content);
+    } catch (error) {
+      console.error(
+        `[MessageUpsert] Failed to enrich quoted message content for ${messageQuotedId}:`,
+        error instanceof Error ? error.message : error
+      );
+    }
   }
 
   private nameChat(data: IUpsertMessage) {
@@ -2053,7 +2131,7 @@ export class MessageUpsertConsume {
 
         await this.createOrUpdateChatQueue(t, getChat, data);
       },
-      { ttlMs: 60000, retryMs: 100 }
+      { ttlMs: 60000, retryMs: 100, maxWaitMs: 90000 }
     );
   }
 
@@ -2089,12 +2167,7 @@ export class MessageUpsertConsume {
 
       const currentChain = previousChain
         .then(async () => {
-          const heartbeat = async () => {
-            this.consumer?.commit();
-          };
-
-          const stop = startHeartbeat(heartbeat);
-          try {
+          const processMessage = async (): Promise<boolean> => {
             const jid = remoteJid(data.message?.key);
             const jidAlt = remoteJidAlt(data.message?.key);
 
@@ -2104,12 +2177,7 @@ export class MessageUpsertConsume {
                 new Error('Received message without remoteJid'),
                 0
               );
-              if (!dlqSent) {
-                console.error(
-                  '[MessageUpsert] CRITICAL: Message without JID and DLQ failed'
-                );
-              }
-              return;
+              return dlqSent;
             }
 
             const phone = data.is_call_event
@@ -2122,17 +2190,94 @@ export class MessageUpsertConsume {
                 new Error('Received message without valid phone'),
                 0
               );
-              if (!dlqSent) {
+              return dlqSent;
+            }
+
+            await this.processWithRetry(t, data, phone);
+            return true;
+          };
+
+          const timeoutPromise = new Promise<'timeout'>((resolve) =>
+            setTimeout(
+              () => resolve('timeout'),
+              this.MESSAGE_PROCESSING_TIMEOUT_MS
+            )
+          );
+
+          const result = await Promise.race([
+            processMessage()
+              .then(() => 'success' as const)
+              .catch((error) => ({ error })),
+            timeoutPromise,
+          ]);
+
+          if (result === 'timeout') {
+            console.error(
+              `[MessageUpsert] CRITICAL: Message processing timeout after ${this.MESSAGE_PROCESSING_TIMEOUT_MS}ms`,
+              {
+                partition,
+                offset,
+                account_id: data.account_id,
+                worker_id: data.worker_id,
+                message_key_id: data.message?.key?.id,
+              }
+            );
+
+            const dlqSent = await this.sendToDlq(
+              data,
+              new Error(
+                `Processing timeout after ${this.MESSAGE_PROCESSING_TIMEOUT_MS}ms`
+              ),
+              this.MAX_RETRIES
+            );
+
+            if (!dlqSent) {
+              this.incrementPartitionFailure(partition);
+              const failureCount =
+                this.partitionFailureCounts.get(partition) ?? 0;
+
+              if (failureCount >= this.MAX_CONSECUTIVE_FAILURES) {
                 console.error(
-                  '[MessageUpsert] CRITICAL: Message without phone and DLQ failed'
+                  `[MessageUpsert] CRITICAL: ${failureCount} consecutive failures on partition ${partition}. Force committing to unblock partition.`
                 );
+                this.partitionFailureCounts.set(partition, 0);
+                await this.commitNext(topic, partition, offset);
               }
               return;
             }
 
-            await this.processWithRetry(t, data, phone);
-          } finally {
-            stop();
+            this.partitionFailureCounts.set(partition, 0);
+            await this.commitNext(topic, partition, offset);
+            return;
+          }
+
+          if (typeof result === 'object' && 'error' in result) {
+            console.error(
+              `[MessageUpsert] Error processing message:`,
+              result.error
+            );
+
+            this.incrementPartitionFailure(partition);
+            const failureCount =
+              this.partitionFailureCounts.get(partition) ?? 0;
+
+            if (failureCount >= this.MAX_CONSECUTIVE_FAILURES) {
+              console.error(
+                `[MessageUpsert] CRITICAL: ${failureCount} consecutive failures on partition ${partition}. Force committing to unblock partition. Message lost:`,
+                {
+                  account_id: data.account_id,
+                  worker_id: data.worker_id,
+                  message_key_id: data.message?.key?.id,
+                }
+              );
+              this.partitionFailureCounts.set(partition, 0);
+              await this.commitNext(topic, partition, offset);
+            }
+            return;
+          }
+
+          if (result === 'success') {
+            this.partitionFailureCounts.set(partition, 0);
             await this.commitNext(topic, partition, offset);
           }
         })
@@ -2141,6 +2286,7 @@ export class MessageUpsertConsume {
             `[MessageUpsert] CRITICAL: Unhandled error in partition ${partition}, offset ${offset}:`,
             error
           );
+          this.incrementPartitionFailure(partition);
         });
 
       this.partitionChains.set(partition, currentChain);
@@ -2205,6 +2351,7 @@ export class MessageUpsertConsume {
     } finally {
       this.consumer = null;
       this.partitionChains.clear();
+      this.partitionFailureCounts.clear();
     }
   }
 

@@ -4,6 +4,13 @@ import { extendLock } from './extendLock';
 import { releaseLock } from './releaseLock';
 import { delay } from './delay';
 
+export class LockAcquisitionTimeoutError extends Error {
+  constructor(lockKey: string, timeoutMs: number) {
+    super(`Failed to acquire lock "${lockKey}" after ${timeoutMs}ms`);
+    this.name = 'LockAcquisitionTimeoutError';
+  }
+}
+
 export async function withLock<T>(
   redis: Redis,
   lockKey: string,
@@ -11,6 +18,7 @@ export async function withLock<T>(
   options?: {
     ttlMs?: number;
     retryMs?: number;
+    maxWaitMs?: number;
     preventDuplicate?: boolean;
     duplicateTtlSeconds?: number;
   }
@@ -19,9 +27,12 @@ export async function withLock<T>(
   const token = uuidv7();
   const ttlMs = options?.ttlMs ?? 20000;
   const retryMs = options?.retryMs ?? 150;
+  const maxWaitMs = options?.maxWaitMs ?? ttlMs * 3;
   const preventDuplicate = options?.preventDuplicate ?? false;
   const duplicateTtlSeconds = options?.duplicateTtlSeconds ?? 300;
   const executedKey = preventDuplicate ? `underchat:executed:${lockKey}` : null;
+
+  const startTime = Date.now();
 
   const startExtension = () =>
     setInterval(
@@ -32,6 +43,11 @@ export async function withLock<T>(
     );
 
   const tryLock = async (): Promise<T> => {
+    const elapsed = Date.now() - startTime;
+    if (elapsed >= maxWaitMs) {
+      throw new LockAcquisitionTimeoutError(lockKey, maxWaitMs);
+    }
+
     const ok = await redis.set(key, token, 'PX', ttlMs, 'NX');
     if (ok !== 'OK') {
       await delay(retryMs);
