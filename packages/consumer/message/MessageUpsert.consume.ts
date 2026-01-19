@@ -37,7 +37,6 @@ import { connectConsumer } from '@core/common/functions/connectConsumer';
 import { handleConsumerError } from '@core/common/functions/handleConsumerError';
 import { remoteJidAlt } from '@core/common/functions/remoteJidAlt';
 import { convertWaveformToBase64 } from '@core/common/functions/convertWaveform';
-import { createChatCacheKey } from '@core/common/functions/createCacheKey';
 import Redis from 'ioredis';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import {
@@ -77,6 +76,8 @@ export class MessageUpsertConsume {
   private consumer: KafkaConsumer | null = null;
   private isRunning = false;
   private partitionChains: Map<number, Promise<void>> = new Map();
+  private readonly MAX_RETRIES = 3;
+  private readonly RETRY_DELAYS = [100, 500, 2000];
 
   constructor(
     @inject('Redis') private readonly redis: Redis,
@@ -111,16 +112,84 @@ export class MessageUpsertConsume {
     return candidates.sort()[0] ?? phone;
   }
 
-  private async sendToDlq(data: IUpsertMessage, error: unknown): Promise<void> {
-    try {
-      const dlqTopic = this.kafkaServiceQueueService.upsertMessageDlq();
-      await this.streamProducerService.send(dlqTopic, {
-        ...data,
-        dlq_error: error instanceof Error ? error.message : String(error),
-        dlq_timestamp: new Date().toISOString(),
-      });
-    } catch (dlqError) {
-      console.error('Failed to send message to DLQ:', dlqError);
+  private async sendToDlq(
+    data: IUpsertMessage,
+    error: unknown,
+    retryCount: number
+  ): Promise<boolean> {
+    const maxDlqRetries = 5;
+    const dlqTopic = this.kafkaServiceQueueService.upsertMessageDlq();
+
+    for (let attempt = 0; attempt < maxDlqRetries; attempt++) {
+      try {
+        await this.streamProducerService.send(dlqTopic, {
+          ...data,
+          dlq_error: error instanceof Error ? error.message : String(error),
+          dlq_stack: error instanceof Error ? error.stack : undefined,
+          dlq_timestamp: new Date().toISOString(),
+          dlq_retry_count: retryCount,
+          dlq_pod: process.env.HOSTNAME || 'unknown',
+        });
+        return true;
+      } catch (dlqError) {
+        console.error(
+          `[DLQ] Attempt ${attempt + 1}/${maxDlqRetries} failed:`,
+          dlqError
+        );
+        if (attempt < maxDlqRetries - 1) {
+          await delay(Math.min(100 * Math.pow(2, attempt), 2000));
+        }
+      }
+    }
+
+    console.error(
+      '[DLQ] CRITICAL: Failed to send to DLQ after all retries. Message data:',
+      JSON.stringify({
+        account_id: data.account_id,
+        worker_id: data.worker_id,
+        message_key_id: data.message?.key?.id,
+      })
+    );
+    return false;
+  }
+
+  private async processWithRetry(
+    t: TFunction<'translation', undefined>,
+    data: IUpsertMessage,
+    phone: string
+  ): Promise<void> {
+    let lastError: unknown;
+
+    for (let attempt = 0; attempt < this.MAX_RETRIES; attempt++) {
+      try {
+        if (data.is_call_event) {
+          await this.handleCallEvent(t, data);
+          return;
+        }
+
+        await this.createOrUpdateChat(t, data, phone);
+        return;
+      } catch (error) {
+        lastError = error;
+        const isLastAttempt = attempt === this.MAX_RETRIES - 1;
+
+        console.error(
+          `[MessageUpsert] Attempt ${attempt + 1}/${this.MAX_RETRIES} failed for message ${data.message?.key?.id}:`,
+          error instanceof Error ? error.message : error
+        );
+
+        if (!isLastAttempt) {
+          const delayMs = this.RETRY_DELAYS[attempt] ?? 1000;
+          await delay(delayMs);
+        }
+      }
+    }
+
+    const dlqSent = await this.sendToDlq(data, lastError, this.MAX_RETRIES);
+    if (!dlqSent) {
+      throw new Error(
+        `Failed to process message and failed to send to DLQ: ${data.message?.key?.id}`
+      );
     }
   }
 
@@ -1351,7 +1420,7 @@ export class MessageUpsertConsume {
           typeUser: ETypeUserChat.system,
         });
       },
-      { ttlMs: 30000, retryMs: 100 }
+      { ttlMs: 60000, retryMs: 100 }
     );
   }
 
@@ -1645,12 +1714,16 @@ export class MessageUpsertConsume {
             }
           }
         },
-        { ttlMs: 20000 }
+        { ttlMs: 30000, retryMs: 50 }
       );
 
       return true;
-    } catch {
-      return false;
+    } catch (error) {
+      console.error(
+        `[MessageUpsert] Error in createChatMessage for chat ${getChat.chat_id}:`,
+        error instanceof Error ? error.message : error
+      );
+      throw error;
     }
   }
 
@@ -1980,7 +2053,7 @@ export class MessageUpsertConsume {
 
         await this.createOrUpdateChatQueue(t, getChat, data);
       },
-      { ttlMs: 30000, retryMs: 100 }
+      { ttlMs: 60000, retryMs: 100 }
     );
   }
 
@@ -2014,38 +2087,61 @@ export class MessageUpsertConsume {
       const previousChain =
         this.partitionChains.get(partition) ?? Promise.resolve();
 
-      const currentChain = previousChain.then(async () => {
-        const heartbeat = async () => {
-          this.consumer?.commit();
-        };
+      const currentChain = previousChain
+        .then(async () => {
+          const heartbeat = async () => {
+            this.consumer?.commit();
+          };
 
-        const stop = startHeartbeat(heartbeat);
-        try {
-          if (data.is_call_event) {
-            await this.handleCallEvent(t, data);
-            return;
+          const stop = startHeartbeat(heartbeat);
+          try {
+            const jid = remoteJid(data.message?.key);
+            const jidAlt = remoteJidAlt(data.message?.key);
+
+            if (!jid && !jidAlt && !data.is_call_event) {
+              const dlqSent = await this.sendToDlq(
+                data,
+                new Error('Received message without remoteJid'),
+                0
+              );
+              if (!dlqSent) {
+                console.error(
+                  '[MessageUpsert] CRITICAL: Message without JID and DLQ failed'
+                );
+              }
+              return;
+            }
+
+            const phone = data.is_call_event
+              ? data.call_phone
+              : getPhoneFromJid(jid, jidAlt);
+
+            if (!phone) {
+              const dlqSent = await this.sendToDlq(
+                data,
+                new Error('Received message without valid phone'),
+                0
+              );
+              if (!dlqSent) {
+                console.error(
+                  '[MessageUpsert] CRITICAL: Message without phone and DLQ failed'
+                );
+              }
+              return;
+            }
+
+            await this.processWithRetry(t, data, phone);
+          } finally {
+            stop();
+            await this.commitNext(topic, partition, offset);
           }
-
-          const jid = remoteJid(data.message?.key);
-          const jidAlt = remoteJidAlt(data.message?.key);
-
-          if (!jid && !jidAlt) {
-            throw new Error('Received message without remoteJid');
-          }
-
-          const phone = getPhoneFromJid(jid, jidAlt);
-          if (!phone) {
-            throw new Error('Received message without valid phone');
-          }
-          await this.createOrUpdateChat(t, data, phone);
-        } catch (error) {
-          await this.sendToDlq(data, error);
-          throw error;
-        } finally {
-          stop();
-          await this.commitNext(topic, partition, offset);
-        }
-      });
+        })
+        .catch((error) => {
+          console.error(
+            `[MessageUpsert] CRITICAL: Unhandled error in partition ${partition}, offset ${offset}:`,
+            error
+          );
+        });
 
       this.partitionChains.set(partition, currentChain);
     });
@@ -2065,14 +2161,37 @@ export class MessageUpsertConsume {
   }
 
   public async close(): Promise<void> {
-    await Promise.all(this.partitionChains.values());
+    console.log('[MessageUpsert] Initiating graceful shutdown...');
+    this.isRunning = false;
+
+    const pendingChains = Array.from(this.partitionChains.values());
+    if (pendingChains.length > 0) {
+      console.log(
+        `[MessageUpsert] Waiting for ${pendingChains.length} partition chains to complete...`
+      );
+
+      const SHUTDOWN_TIMEOUT_MS = 30000;
+      const chainsPromise = Promise.allSettled(pendingChains);
+      const timeoutPromise = new Promise<'timeout'>((resolve) =>
+        setTimeout(() => resolve('timeout'), SHUTDOWN_TIMEOUT_MS)
+      );
+
+      const result = await Promise.race([chainsPromise, timeoutPromise]);
+
+      if (result === 'timeout') {
+        console.warn(
+          `[MessageUpsert] WARNING: Shutdown timeout after ${SHUTDOWN_TIMEOUT_MS}ms. Some messages may be reprocessed on restart.`
+        );
+      } else {
+        console.log('[MessageUpsert] All partition chains completed.');
+      }
+    }
 
     if (!this.consumer) {
       return;
     }
 
     try {
-      this.isRunning = false;
       await new Promise<void>((resolve) => {
         const consumer = this.consumer;
         if (!consumer) {
@@ -2082,6 +2201,7 @@ export class MessageUpsertConsume {
         consumer.unsubscribe();
         consumer.disconnect(resolve);
       });
+      console.log('[MessageUpsert] Consumer disconnected successfully.');
     } finally {
       this.consumer = null;
       this.partitionChains.clear();
@@ -2121,16 +2241,5 @@ export class MessageUpsertConsume {
     }
 
     return result ?? false;
-  }
-
-  private async getChatFromCache(
-    accountId: string,
-    workerId: string,
-    phone: string
-  ): Promise<IChat | null> {
-    const key = createChatCacheKey(accountId, workerId, phone);
-    const raw = await this.redis.get(key);
-
-    return raw ? (JSON.parse(raw) as IChat) : null;
   }
 }
