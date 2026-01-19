@@ -26,10 +26,7 @@ import { remoteJidAlt } from '@core/common/functions/remoteJidAlt';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { chatAccountCentrifugo } from '@core/common/functions/centrifugoQueue';
 import { IChatTyping } from '@core/common/interfaces/IChatTyping';
-import {
-  MessageSummaryPatch,
-  MessageStatusService,
-} from '@core/services/messageStatus.service';
+import { MessageSummaryPatch } from '@core/services/messageStatus.service';
 import { IMessageStatusUpdate } from '@core/common/interfaces/IMessageStatusUpdate';
 import { getPhoneFromJid } from '@core/common/functions/getPhoneFromJid';
 import { EMessageType } from '@core/common/enums/EMessageType';
@@ -37,9 +34,8 @@ import { EMessageType } from '@core/common/enums/EMessageType';
 @singleton()
 export class BaileysIncomingMessageService {
   private currentSocket?: WASocket;
-  private readonly processedMessages = new Map<string, number>();
-  private readonly processedCalls = new Map<string, number>();
-  private readonly MAX_SIZE = 10000;
+  private readonly processedMessages = new Set<string>();
+  private readonly processedCalls = new Set<string>();
   private cleanupInterval?: NodeJS.Timeout;
   private rejectCallConfig: boolean = false;
 
@@ -65,71 +61,17 @@ export class BaileysIncomingMessageService {
     return `${jidToUse}:${id}:${fromMe}`;
   }
 
-  private async sendMessageWithRetry(
-    inputUpsert: IUpsertMessage,
-    messageKey: string,
-    originalMessage: WAMessage,
-    attempt = 0
-  ): Promise<void> {
-    const MAX_RETRIES = 50;
-    const INITIAL_BACKOFF_MS = 10;
-    const MAX_BACKOFF_MS = 5000;
-
-    try {
-      await this.streamProducerService.send(
-        this.kafkaServiceQueueService.upsertMessage(),
-        inputUpsert,
-        messageKey
-      );
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
-      const isBackpressure =
-        errorMessage.includes('backpressure') ||
-        errorMessage.includes('exceeds limit') ||
-        errorMessage.includes('Producer is closing');
-
-      if (!isBackpressure || attempt >= MAX_RETRIES) {
-        this.processedMessages.delete(messageKey);
-        throw error;
-      }
-
-      const backoffMs = Math.min(
-        INITIAL_BACKOFF_MS * Math.pow(2, attempt),
-        MAX_BACKOFF_MS
-      );
-
-      await new Promise((resolve) => setTimeout(resolve, backoffMs));
-
-      await this.sendMessageWithRetry(
-        inputUpsert,
-        messageKey,
-        originalMessage,
-        attempt + 1
-      );
-    }
-  }
-
   private startCleanupInterval() {
     if (this.cleanupInterval) return;
 
     this.cleanupInterval = setInterval(() => {
-      this.cleanupOldMessages(this.processedMessages);
-      this.cleanupOldMessages(this.processedCalls);
+      if (this.processedMessages.size > 10000) {
+        this.processedMessages.clear();
+      }
+      if (this.processedCalls.size > 10000) {
+        this.processedCalls.clear();
+      }
     }, 300000);
-  }
-
-  private cleanupOldMessages(processedMap: Map<string, number>): void {
-    if (processedMap.size <= this.MAX_SIZE) return;
-
-    const sorted = Array.from(processedMap.entries()).sort(
-      (a, b) => a[1] - b[1]
-    );
-
-    const toDelete = sorted.slice(0, sorted.length - this.MAX_SIZE);
-    for (const [key] of toDelete) {
-      processedMap.delete(key);
-    }
   }
 
   private stopCleanupInterval() {
@@ -147,75 +89,52 @@ export class BaileysIncomingMessageService {
 
     socket.ev.on('messages.upsert', async (e) => {
       if (!e?.messages?.length) return;
+      for (const m of e.messages) {
+        const chatKind = getChatKind(m);
+        const upsertType = e.type;
 
-      const BATCH_SIZE = 5;
-      for (let i = 0; i < e.messages.length; i += BATCH_SIZE) {
-        const batch = e.messages.slice(i, i + BATCH_SIZE);
+        console.dir(upsertType, { depth: null, colors: true });
+        console.dir(chatKind, { depth: null, colors: true });
 
-        const results = await Promise.allSettled(
-          batch.map(async (m) => {
-            const chatKind = getChatKind(m);
-            const upsertType = e.type;
+        if (
+          chatKind === EChatKind.user &&
+          upsertType === EMessageUpsertType.notify
+        ) {
+          const messageKey = this.getMessageKey(m);
+          if (!messageKey) continue;
 
-            if (
-              chatKind !== EChatKind.user ||
-              upsertType !== EMessageUpsertType.notify
-            ) {
-              return;
-            }
-
-            const messageKey = this.getMessageKey(m);
-            if (!messageKey) return;
-
-            if (this.processedMessages.has(messageKey)) {
-              return;
-            }
-
-            const type = mapIncomingToType(m);
-            const hasQuoted = messageHasQuoted(m);
-
-            if (!type) {
-              return;
-            }
-
-            const senderPic = await getSenderPhotoUrl(socket, m);
-
-            const inputUpsert: IUpsertMessage = {
-              worker_id: baileysEnvironment.baileysWorkerId,
-              account_id: baileysEnvironment.baileysAccountId,
-              type,
-              message: m,
-              photo: senderPic,
-              has_quoted: hasQuoted,
-            };
-
-            try {
-              await this.sendMessageWithRetry(inputUpsert, messageKey, m);
-              this.processedMessages.set(messageKey, Date.now());
-            } catch (error) {
-              this.processedMessages.delete(messageKey);
-              throw error;
-            }
-          })
-        );
-
-        for (let j = 0; j < results.length; j++) {
-          const result = results[j];
-          if (result.status === 'rejected') {
-            const message = batch[j];
-            const messageKey = this.getMessageKey(message);
-            if (messageKey) {
-              this.processedMessages.delete(messageKey);
-            }
-            console.error(
-              '[BaileysIncomingMessageService] Erro crítico ao processar mensagem após retries:',
-              {
-                error: result.reason,
-                messageKey,
-                messageId: message?.key?.id,
-              }
-            );
+          if (this.processedMessages.has(messageKey)) {
+            continue;
           }
+
+          this.processedMessages.add(messageKey);
+
+          const type = mapIncomingToType(m);
+          const hasQuoted = messageHasQuoted(m);
+
+          console.dir(m, { depth: null, colors: true });
+          console.dir(type, { depth: null, colors: true });
+
+          if (!type) {
+            this.processedMessages.delete(messageKey);
+            continue;
+          }
+
+          const senderPic = await getSenderPhotoUrl(socket, m);
+
+          const inputUpsert: IUpsertMessage = {
+            worker_id: baileysEnvironment.baileysWorkerId,
+            account_id: baileysEnvironment.baileysAccountId,
+            type,
+            message: m,
+            photo: senderPic,
+            has_quoted: hasQuoted,
+          };
+
+          await this.streamProducerService.send(
+            this.kafkaServiceQueueService.upsertMessage(),
+            inputUpsert
+          );
         }
       }
     });
@@ -261,11 +180,15 @@ export class BaileysIncomingMessageService {
             chatAccountCentrifugo(baileysEnvironment.baileysAccountId),
             typingEvent
           );
-        } catch {}
+        } catch (error) {
+          console.error('Error publishing typing event:', error);
+        }
       }
     });
 
-    socket.ev.on('messaging-history.set', () => {});
+    socket.ev.on('messaging-history.set', (data) => {
+      console.log('data:', data);
+    });
 
     socket.ev.on('call', async (callEvents: WACallEvent[]) => {
       if (!callEvents) return;
@@ -318,7 +241,7 @@ export class BaileysIncomingMessageService {
       return;
     }
 
-    this.processedCalls.set(callKey, Date.now());
+    this.processedCalls.add(callKey);
 
     const phone = getPhoneFromJid(jid, jidAlt);
     if (!phone) {
@@ -368,34 +291,27 @@ export class BaileysIncomingMessageService {
     if (callId && jid) {
       try {
         await socket.rejectCall(callId, jid);
-      } catch {}
+      } catch (error) {
+        console.error('Error rejecting call:', error);
+      }
     }
   }
 
   private async handleMessagesUpdate(events: WAMessageUpdate[]) {
     if (!events?.length) return;
 
-    const BATCH_SIZE = 10;
-    const batches: WAMessageUpdate[][] = [];
-
-    for (let i = 0; i < events.length; i += BATCH_SIZE) {
-      batches.push(events.slice(i, i + BATCH_SIZE));
-    }
-
-    for (const batch of batches) {
-      await Promise.allSettled(
-        batch.map(async (event) => {
-          const patch = this.mapStatusToPatch(event.update?.status);
-          await this.applyStatusPatch(event.key, patch);
-        })
-      );
-    }
+    await Promise.all(
+      events.map(async (event) => {
+        const patch = this.mapStatusToPatch(event.update?.status);
+        await this.applyStatusPatch(event.key, patch);
+      })
+    );
   }
 
   private async handleMessageReceiptUpdate(events: MessageUserReceiptUpdate[]) {
     if (!events?.length) return;
 
-    await Promise.allSettled(
+    await Promise.all(
       events.map(async (event) => {
         const patch = this.mapReceiptToPatch(event.receipt);
         await this.applyStatusPatch(event.key, patch);
@@ -463,12 +379,9 @@ export class BaileysIncomingMessageService {
         key,
       };
 
-      const kafkaKey = `${baileysEnvironment.baileysAccountId}:${key.id}:${MessageStatusService.hashPatch(patch)}`;
-
       await this.streamProducerService.send(
         this.kafkaServiceQueueService.updateMessageStatus(),
-        statusUpdate,
-        kafkaKey
+        statusUpdate
       );
     } catch (error) {
       throw error;
@@ -497,7 +410,7 @@ export class BaileysIncomingMessageService {
 
   async markRead(keys: WAMessageKey[]) {
     if (!this.currentSocket) {
-      return;
+      throw new Error('Socket not connected');
     }
 
     await this.currentSocket.readMessages(keys);
