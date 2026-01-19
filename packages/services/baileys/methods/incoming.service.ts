@@ -21,7 +21,6 @@ import { baileysEnvironment } from '@core/config/environments';
 import { getChatKind } from '@core/common/functions/getChatKind';
 import { EChatKind } from '@core/common/enums/EChatKind';
 import { EMessageUpsertType } from '@core/common/enums/EMessageUpsertType';
-import { getSenderPhotoUrl } from '@core/common/functions/getSenderPhotoUrl';
 import { remoteJid } from '@core/common/functions/remoteJid';
 import { remoteJidAlt } from '@core/common/functions/remoteJidAlt';
 import { CentrifugoService } from '@core/services/centrifugo.service';
@@ -57,7 +56,10 @@ export class BaileysIncomingMessageService {
   private readonly MAX_RETRIES = 100;
   private readonly RETRY_BASE_DELAY_MS = 50;
   private readonly MAX_RETRY_DELAY_MS = 5000;
+  private readonly MAX_QUEUE_SIZE = 500000;
+  private readonly DESTROY_TIMEOUT_MS = 30000;
   private queueProcessorInterval?: NodeJS.Timeout;
+  private isDestroying = false;
 
   private readonly PHOTO_CACHE_TTL = 86400;
   private readonly PHOTO_CACHE_PREFIX = 'photo:jid:';
@@ -196,7 +198,19 @@ export class BaileysIncomingMessageService {
   private enqueueMessage(
     inputUpsert: IUpsertMessage,
     messageKey: string
-  ): PendingMessage {
+  ): PendingMessage | null {
+    if (this.isDestroying) {
+      return null;
+    }
+
+    if (this.pendingQueue.length >= this.MAX_QUEUE_SIZE) {
+      console.error(
+        `[CRITICAL] Queue full (${this.MAX_QUEUE_SIZE}), dropping oldest messages`
+      );
+      const dropCount = Math.floor(this.MAX_QUEUE_SIZE * 0.1);
+      this.pendingQueue.splice(0, dropCount);
+    }
+
     const item: PendingMessage = {
       inputUpsert,
       messageKey,
@@ -296,19 +310,24 @@ export class BaileysIncomingMessageService {
     };
 
     const pendingItem = this.enqueueMessage(inputUpsert, messageKey);
+    if (!pendingItem) return;
 
-    this.fetchPhotoNonBlocking(socket, m, pendingItem);
+    this.fetchPhotoNonBlocking(socket, pendingItem);
   }
 
   private fetchPhotoNonBlocking(
     socket: WASocket,
-    m: WAMessage,
-    pendingItem: PendingMessage
+    pendingItem: PendingMessage,
+    jid?: string
   ): void {
-    const jid = remoteJid(m.key) || remoteJidAlt(m.key);
-    if (!jid) return;
+    const resolvedJid =
+      jid ||
+      remoteJid(pendingItem.inputUpsert.message?.key) ||
+      remoteJidAlt(pendingItem.inputUpsert.message?.key);
 
-    const cacheKey = `${this.PHOTO_CACHE_PREFIX}${jid}`;
+    if (!resolvedJid) return;
+
+    const cacheKey = `${this.PHOTO_CACHE_PREFIX}${resolvedJid}`;
 
     this.redis
       .get(cacheKey)
@@ -320,17 +339,20 @@ export class BaileysIncomingMessageService {
           return;
         }
 
-        return getSenderPhotoUrl(socket, m).then((photo) => {
-          if (photo) {
-            this.redis
-              .set(cacheKey, photo, 'EX', this.PHOTO_CACHE_TTL)
-              .catch(() => {});
+        return socket
+          .profilePictureUrl(resolvedJid, 'image')
+          .then((photo) => {
+            if (photo) {
+              this.redis
+                .set(cacheKey, photo, 'EX', this.PHOTO_CACHE_TTL)
+                .catch(() => {});
 
-            if (pendingItem.retries === 0) {
-              pendingItem.inputUpsert.photo = photo;
+              if (pendingItem.retries === 0) {
+                pendingItem.inputUpsert.photo = photo;
+              }
             }
-          }
-        });
+          })
+          .catch(() => {});
       })
       .catch(() => {});
   }
@@ -438,9 +460,10 @@ export class BaileysIncomingMessageService {
     };
 
     const pendingItem = this.enqueueMessage(callUpsert, callKey);
+    if (!pendingItem) return;
 
     const jidToUse = jidAlt?.endsWith('@s.whatsapp.net') ? jidAlt : jid;
-    this.fetchCallPhotoNonBlocking(socket, jidToUse, pendingItem);
+    this.fetchPhotoNonBlocking(socket, pendingItem, jidToUse);
 
     if (this.rejectCallConfig) {
       const callId =
@@ -450,41 +473,6 @@ export class BaileysIncomingMessageService {
         socket.rejectCall(callId, jid).catch(() => {});
       }
     }
-  }
-
-  private fetchCallPhotoNonBlocking(
-    socket: WASocket,
-    jid: string,
-    pendingItem: PendingMessage
-  ): void {
-    const cacheKey = `${this.PHOTO_CACHE_PREFIX}${jid}`;
-
-    this.redis
-      .get(cacheKey)
-      .then((cachedPhoto) => {
-        if (cachedPhoto) {
-          if (pendingItem.retries === 0) {
-            pendingItem.inputUpsert.photo = cachedPhoto;
-          }
-          return;
-        }
-
-        return socket
-          .profilePictureUrl(jid, 'image')
-          .then((photo) => {
-            if (photo) {
-              this.redis
-                .set(cacheKey, photo, 'EX', this.PHOTO_CACHE_TTL)
-                .catch(() => {});
-
-              if (pendingItem.retries === 0) {
-                pendingItem.inputUpsert.photo = photo;
-              }
-            }
-          })
-          .catch(() => {});
-      })
-      .catch(() => {});
   }
 
   private async handleMessagesUpdate(events: WAMessageUpdate[]) {
@@ -592,13 +580,40 @@ export class BaileysIncomingMessageService {
     this.currentSocket = undefined;
   }
 
-  destroy() {
+  async destroy(): Promise<void> {
+    this.isDestroying = true;
+    this.unbind();
     this.stopCleanupInterval();
+
+    if (this.pendingQueue.length > 0) {
+      console.log(
+        `[GRACEFUL] Waiting for ${this.pendingQueue.length} pending messages...`
+      );
+
+      const startTime = Date.now();
+      while (
+        this.pendingQueue.length > 0 &&
+        Date.now() - startTime < this.DESTROY_TIMEOUT_MS
+      ) {
+        await this.processRetryQueue();
+        if (this.pendingQueue.length > 0) {
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+      }
+
+      if (this.pendingQueue.length > 0) {
+        console.error(
+          `[CRITICAL] Timeout reached, ${this.pendingQueue.length} messages lost`
+        );
+      } else {
+        console.log('[GRACEFUL] All pending messages sent successfully');
+      }
+    }
+
     this.stopQueueProcessor();
     this.processedMessages.clear();
     this.processedCalls.clear();
     this.pendingQueue.length = 0;
-    this.unbind();
   }
 
   getPendingQueueSize(): number {
