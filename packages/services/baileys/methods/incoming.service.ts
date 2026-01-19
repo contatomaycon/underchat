@@ -26,7 +26,10 @@ import { remoteJidAlt } from '@core/common/functions/remoteJidAlt';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { chatAccountCentrifugo } from '@core/common/functions/centrifugoQueue';
 import { IChatTyping } from '@core/common/interfaces/IChatTyping';
-import { MessageSummaryPatch } from '@core/services/messageStatus.service';
+import {
+  MessageSummaryPatch,
+  MessageStatusService,
+} from '@core/services/messageStatus.service';
 import { IMessageStatusUpdate } from '@core/common/interfaces/IMessageStatusUpdate';
 import { getPhoneFromJid } from '@core/common/functions/getPhoneFromJid';
 import { EMessageType } from '@core/common/enums/EMessageType';
@@ -34,8 +37,9 @@ import { EMessageType } from '@core/common/enums/EMessageType';
 @singleton()
 export class BaileysIncomingMessageService {
   private currentSocket?: WASocket;
-  private readonly processedMessages = new Set<string>();
-  private readonly processedCalls = new Set<string>();
+  private readonly processedMessages = new Map<string, number>();
+  private readonly processedCalls = new Map<string, number>();
+  private readonly MAX_SIZE = 10000;
   private cleanupInterval?: NodeJS.Timeout;
   private rejectCallConfig: boolean = false;
 
@@ -65,13 +69,22 @@ export class BaileysIncomingMessageService {
     if (this.cleanupInterval) return;
 
     this.cleanupInterval = setInterval(() => {
-      if (this.processedMessages.size > 10000) {
-        this.processedMessages.clear();
-      }
-      if (this.processedCalls.size > 10000) {
-        this.processedCalls.clear();
-      }
+      this.cleanupOldMessages(this.processedMessages);
+      this.cleanupOldMessages(this.processedCalls);
     }, 300000);
+  }
+
+  private cleanupOldMessages(processedMap: Map<string, number>): void {
+    if (processedMap.size <= this.MAX_SIZE) return;
+
+    const sorted = Array.from(processedMap.entries()).sort(
+      (a, b) => a[1] - b[1]
+    );
+
+    const toDelete = sorted.slice(0, sorted.length - this.MAX_SIZE);
+    for (const [key] of toDelete) {
+      processedMap.delete(key);
+    }
   }
 
   private stopCleanupInterval() {
@@ -89,53 +102,60 @@ export class BaileysIncomingMessageService {
 
     socket.ev.on('messages.upsert', async (e) => {
       if (!e?.messages?.length) return;
-      for (const m of e.messages) {
-        const chatKind = getChatKind(m);
-        const upsertType = e.type;
 
-        console.dir(upsertType, { depth: null, colors: true });
-        console.dir(chatKind, { depth: null, colors: true });
+      const BATCH_SIZE = 5;
+      for (let i = 0; i < e.messages.length; i += BATCH_SIZE) {
+        const batch = e.messages.slice(i, i + BATCH_SIZE);
 
-        if (
-          chatKind === EChatKind.user &&
-          upsertType === EMessageUpsertType.notify
-        ) {
-          const messageKey = this.getMessageKey(m);
-          if (!messageKey) continue;
+        await Promise.allSettled(
+          batch.map(async (m) => {
+            const chatKind = getChatKind(m);
+            const upsertType = e.type;
 
-          if (this.processedMessages.has(messageKey)) {
-            continue;
-          }
+            if (
+              chatKind !== EChatKind.user ||
+              upsertType !== EMessageUpsertType.notify
+            ) {
+              return;
+            }
 
-          this.processedMessages.add(messageKey);
+            const messageKey = this.getMessageKey(m);
+            if (!messageKey) return;
 
-          const type = mapIncomingToType(m);
-          const hasQuoted = messageHasQuoted(m);
+            const timestamp = Date.now();
+            const existingTimestamp = this.processedMessages.get(messageKey);
 
-          console.dir(m, { depth: null, colors: true });
-          console.dir(type, { depth: null, colors: true });
+            if (existingTimestamp && timestamp - existingTimestamp < 5000) {
+              return;
+            }
 
-          if (!type) {
-            this.processedMessages.delete(messageKey);
-            continue;
-          }
+            this.processedMessages.set(messageKey, timestamp);
 
-          const senderPic = await getSenderPhotoUrl(socket, m);
+            const type = mapIncomingToType(m);
+            const hasQuoted = messageHasQuoted(m);
 
-          const inputUpsert: IUpsertMessage = {
-            worker_id: baileysEnvironment.baileysWorkerId,
-            account_id: baileysEnvironment.baileysAccountId,
-            type,
-            message: m,
-            photo: senderPic,
-            has_quoted: hasQuoted,
-          };
+            if (!type) {
+              return;
+            }
 
-          await this.streamProducerService.send(
-            this.kafkaServiceQueueService.upsertMessage(),
-            inputUpsert
-          );
-        }
+            const senderPic = await getSenderPhotoUrl(socket, m);
+
+            const inputUpsert: IUpsertMessage = {
+              worker_id: baileysEnvironment.baileysWorkerId,
+              account_id: baileysEnvironment.baileysAccountId,
+              type,
+              message: m,
+              photo: senderPic,
+              has_quoted: hasQuoted,
+            };
+
+            await this.streamProducerService.send(
+              this.kafkaServiceQueueService.upsertMessage(),
+              inputUpsert,
+              messageKey
+            );
+          })
+        );
       }
     });
 
@@ -180,15 +200,11 @@ export class BaileysIncomingMessageService {
             chatAccountCentrifugo(baileysEnvironment.baileysAccountId),
             typingEvent
           );
-        } catch (error) {
-          console.error('Error publishing typing event:', error);
-        }
+        } catch {}
       }
     });
 
-    socket.ev.on('messaging-history.set', (data) => {
-      console.log('data:', data);
-    });
+    socket.ev.on('messaging-history.set', () => {});
 
     socket.ev.on('call', async (callEvents: WACallEvent[]) => {
       if (!callEvents) return;
@@ -241,7 +257,7 @@ export class BaileysIncomingMessageService {
       return;
     }
 
-    this.processedCalls.add(callKey);
+    this.processedCalls.set(callKey, Date.now());
 
     const phone = getPhoneFromJid(jid, jidAlt);
     if (!phone) {
@@ -291,27 +307,34 @@ export class BaileysIncomingMessageService {
     if (callId && jid) {
       try {
         await socket.rejectCall(callId, jid);
-      } catch (error) {
-        console.error('Error rejecting call:', error);
-      }
+      } catch {}
     }
   }
 
   private async handleMessagesUpdate(events: WAMessageUpdate[]) {
     if (!events?.length) return;
 
-    await Promise.all(
-      events.map(async (event) => {
-        const patch = this.mapStatusToPatch(event.update?.status);
-        await this.applyStatusPatch(event.key, patch);
-      })
-    );
+    const BATCH_SIZE = 10;
+    const batches: WAMessageUpdate[][] = [];
+
+    for (let i = 0; i < events.length; i += BATCH_SIZE) {
+      batches.push(events.slice(i, i + BATCH_SIZE));
+    }
+
+    for (const batch of batches) {
+      await Promise.allSettled(
+        batch.map(async (event) => {
+          const patch = this.mapStatusToPatch(event.update?.status);
+          await this.applyStatusPatch(event.key, patch);
+        })
+      );
+    }
   }
 
   private async handleMessageReceiptUpdate(events: MessageUserReceiptUpdate[]) {
     if (!events?.length) return;
 
-    await Promise.all(
+    await Promise.allSettled(
       events.map(async (event) => {
         const patch = this.mapReceiptToPatch(event.receipt);
         await this.applyStatusPatch(event.key, patch);
@@ -379,9 +402,12 @@ export class BaileysIncomingMessageService {
         key,
       };
 
+      const kafkaKey = `${baileysEnvironment.baileysAccountId}:${key.id}:${MessageStatusService.hashPatch(patch)}`;
+
       await this.streamProducerService.send(
         this.kafkaServiceQueueService.updateMessageStatus(),
-        statusUpdate
+        statusUpdate,
+        kafkaKey
       );
     } catch (error) {
       throw error;
@@ -410,7 +436,7 @@ export class BaileysIncomingMessageService {
 
   async markRead(keys: WAMessageKey[]) {
     if (!this.currentSocket) {
-      throw new Error('Socket not connected');
+      return;
     }
 
     await this.currentSocket.readMessages(keys);
