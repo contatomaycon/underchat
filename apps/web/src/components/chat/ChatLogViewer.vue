@@ -1352,6 +1352,116 @@ const handleContactClick = (message: ListMessageResult) => {
                   </div>
 
                   <div
+                    v-if="item.message.content?.context_info?.external_ad_reply"
+                    class="context-info-ad rounded mt-2"
+                    :class="
+                      !isTypeUser(item.message)
+                        ? 'context-info-ad--right'
+                        : 'context-info-ad--left'
+                    "
+                    :style="{
+                      backgroundColor: isTypeUser(item.message)
+                        ? 'rgb(var(--v-theme-grey-200))'
+                        : 'rgb(214, 243, 207)',
+                      color: isTypeUser(item.message)
+                        ? 'rgb(var(--v-theme-on-grey))'
+                        : 'rgb(var(--v-theme-title))',
+                    }"
+                  >
+                    <div class="d-flex">
+                      <div
+                        v-if="
+                          item.message.content.context_info.external_ad_reply
+                            .thumbnail_url
+                        "
+                        class="me-3"
+                      >
+                        <div class="context-ad-thumb">
+                          <img
+                            :src="
+                              item.message.content.context_info.external_ad_reply
+                                .thumbnail_url
+                            "
+                            alt=""
+                            style="width: 60px; height: 60px; object-fit: cover; border-radius: 4px;"
+                          />
+                        </div>
+                      </div>
+
+                      <div class="flex-grow-1">
+                        <div
+                          v-if="
+                            item.message.content.context_info.external_ad_reply
+                              .source_app
+                          "
+                          class="text-xs mb-1 opacity-75"
+                        >
+                          {{
+                            item.message.content.context_info.external_ad_reply
+                              .source_app === 'instagram'
+                              ? 'Instagram'
+                              : item.message.content.context_info
+                                  .external_ad_reply.source_app === 'facebook'
+                                ? 'Facebook'
+                                : item.message.content.context_info
+                                    .external_ad_reply.source_app
+                          }}
+                        </div>
+
+                        <div
+                          v-if="
+                            item.message.content.context_info.external_ad_reply
+                              .title
+                          "
+                          class="text-sm font-weight-medium mb-1"
+                        >
+                          {{
+                            item.message.content.context_info.external_ad_reply
+                              .title
+                          }}
+                        </div>
+
+                        <div
+                          v-if="
+                            item.message.content.context_info.external_ad_reply
+                              .greeting_message_body
+                          "
+                          class="text-xs opacity-75"
+                        >
+                          {{
+                            item.message.content.context_info.external_ad_reply
+                              .greeting_message_body
+                          }}
+                        </div>
+                      </div>
+                    </div>
+
+                    <a
+                      v-if="
+                        item.message.content.context_info.external_ad_reply
+                          .source_url
+                      "
+                      class="d-block mt-2 text-sm"
+                      :href="
+                        item.message.content.context_info.external_ad_reply
+                          .source_url
+                      "
+                      target="_blank"
+                      rel="noopener"
+                      :style="{
+                        color: isTypeUser(item.message)
+                          ? 'rgb(var(--v-theme-primary))'
+                          : 'rgb(var(--v-theme-primary))',
+                      }"
+                    >
+                      {{
+                        item.message.content.context_info.external_ad_reply
+                          .source_url
+                      }}
+                    </a>
+                  </div>
+
+                  <div
                     v-if="item.message.content?.type === EMessageType.view_once"
                     class="view-once-message"
                   >

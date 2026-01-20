@@ -126,6 +126,67 @@ export const messageVersionSchema = Type.Object({
   date: Type.String(),
 });
 
+export const externalAdReplySchema = Type.Object({
+  title: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  media_type: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
+  thumbnail_url: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  source_type: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  source_id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  source_url: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  contains_auto_reply: Type.Optional(Type.Union([Type.Boolean(), Type.Null()])),
+  render_larger_thumbnail: Type.Optional(
+    Type.Union([Type.Boolean(), Type.Null()])
+  ),
+  show_ad_attribution: Type.Optional(Type.Union([Type.Boolean(), Type.Null()])),
+  ctwa_clid: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  click_to_whatsapp_call: Type.Optional(
+    Type.Union([Type.Boolean(), Type.Null()])
+  ),
+  ad_context_preview_dismissed: Type.Optional(
+    Type.Union([Type.Boolean(), Type.Null()])
+  ),
+  source_app: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  automated_greeting_message_shown: Type.Optional(
+    Type.Union([Type.Boolean(), Type.Null()])
+  ),
+  greeting_message_body: Type.Optional(
+    Type.Union([Type.String(), Type.Null()])
+  ),
+  disable_nudge: Type.Optional(Type.Union([Type.Boolean(), Type.Null()])),
+  original_image_url: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  wtwa_ad_format: Type.Optional(Type.Union([Type.Boolean(), Type.Null()])),
+});
+
+export const contextInfoSchema = Type.Object({
+  mentioned_jid: Type.Optional(
+    Type.Union([Type.Array(Type.String()), Type.Null()])
+  ),
+  group_mentions: Type.Optional(
+    Type.Union([Type.Array(Type.String()), Type.Null()])
+  ),
+  status_attributions: Type.Optional(
+    Type.Union([Type.Array(Type.String()), Type.Null()])
+  ),
+  conversion_source: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  conversion_delay_seconds: Type.Optional(
+    Type.Union([Type.Number(), Type.Null()])
+  ),
+  external_ad_reply: Type.Optional(
+    Type.Union([externalAdReplySchema, Type.Null()])
+  ),
+  entry_point_conversion_source: Type.Optional(
+    Type.Union([Type.String(), Type.Null()])
+  ),
+  entry_point_conversion_app: Type.Optional(
+    Type.Union([Type.String(), Type.Null()])
+  ),
+  entry_point_conversion_delay_seconds: Type.Optional(
+    Type.Union([Type.Number(), Type.Null()])
+  ),
+  trust_banner_action: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
+  ctwa_signals: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+});
+
 export const contentSchema = Type.Object({
   type: Type.String({ enum: Object.values(EMessageType) }),
   message: Type.Optional(Type.Union([Type.String(), Type.Null()])),
@@ -147,6 +208,7 @@ export const contentSchema = Type.Object({
   version: Type.Optional(
     Type.Union([Type.Array(messageVersionSchema), Type.Null()])
   ),
+  context_info: Type.Optional(Type.Union([contextInfoSchema, Type.Null()])),
 });
 
 export const listMessageResultSchema = Type.Object({

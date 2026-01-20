@@ -11,6 +11,7 @@ import {
   LocationMessageChat,
   MessageVersion,
 } from '@core/schema/chat/listMessageChats/response.schema';
+import { IMessageContextInfo } from '../functions/buildContextInfoFromMessage';
 
 interface IAccount {
   id: string;
@@ -89,6 +90,7 @@ export interface IContent {
   reactions?: IReaction[] | null;
   version?: MessageVersion[] | null;
   media_download_failed?: boolean;
+  context_info?: IMessageContextInfo | null;
 }
 
 export interface IMessageKey {

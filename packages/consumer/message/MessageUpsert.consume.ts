@@ -31,6 +31,7 @@ import {
   MessageVersion,
 } from '@core/schema/chat/listMessageChats/response.schema';
 import { buildQuotedTextFromExtended } from '@core/common/functions/buildQuotedTextFromExtended';
+import { buildContextInfoFromMessage } from '@core/common/functions/buildContextInfoFromMessage';
 import { createConsumer } from '@core/common/functions/createConsumer';
 import { connectConsumer } from '@core/common/functions/connectConsumer';
 import { handleConsumerError } from '@core/common/functions/handleConsumerError';
@@ -1904,6 +1905,7 @@ export class MessageUpsertConsume {
         data.message?.message?.conversation,
       link_preview: linkPreview,
       quoted: buildQuotedTextFromExtended(data.message),
+      context_info: buildContextInfoFromMessage(data.message),
     };
 
     const messageQuotedId = content.quoted?.key.id ?? null;

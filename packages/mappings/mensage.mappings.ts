@@ -613,6 +613,100 @@ export const mensageMappings = () => {
                 },
               },
             },
+            context_info: {
+              type: 'nested',
+              properties: {
+                mentioned_jid: {
+                  type: 'keyword',
+                },
+                group_mentions: {
+                  type: 'keyword',
+                },
+                status_attributions: {
+                  type: 'keyword',
+                },
+                conversion_source: {
+                  type: 'keyword',
+                },
+                conversion_delay_seconds: {
+                  type: 'integer',
+                },
+                external_ad_reply: {
+                  type: 'nested',
+                  properties: {
+                    title: {
+                      type: 'text',
+                    },
+                    media_type: {
+                      type: 'integer',
+                    },
+                    thumbnail_url: {
+                      type: 'keyword',
+                    },
+                    source_type: {
+                      type: 'keyword',
+                    },
+                    source_id: {
+                      type: 'keyword',
+                    },
+                    source_url: {
+                      type: 'keyword',
+                    },
+                    contains_auto_reply: {
+                      type: 'boolean',
+                    },
+                    render_larger_thumbnail: {
+                      type: 'boolean',
+                    },
+                    show_ad_attribution: {
+                      type: 'boolean',
+                    },
+                    ctwa_clid: {
+                      type: 'keyword',
+                    },
+                    click_to_whatsapp_call: {
+                      type: 'boolean',
+                    },
+                    ad_context_preview_dismissed: {
+                      type: 'boolean',
+                    },
+                    source_app: {
+                      type: 'keyword',
+                    },
+                    automated_greeting_message_shown: {
+                      type: 'boolean',
+                    },
+                    greeting_message_body: {
+                      type: 'text',
+                    },
+                    disable_nudge: {
+                      type: 'boolean',
+                    },
+                    original_image_url: {
+                      type: 'keyword',
+                    },
+                    wtwa_ad_format: {
+                      type: 'boolean',
+                    },
+                  },
+                },
+                entry_point_conversion_source: {
+                  type: 'keyword',
+                },
+                entry_point_conversion_app: {
+                  type: 'keyword',
+                },
+                entry_point_conversion_delay_seconds: {
+                  type: 'integer',
+                },
+                trust_banner_action: {
+                  type: 'long',
+                },
+                ctwa_signals: {
+                  type: 'keyword',
+                },
+              },
+            },
           },
         },
         summary: {
