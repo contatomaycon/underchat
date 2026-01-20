@@ -2629,6 +2629,10 @@ const toggleViewOnceAudio = () => {
 
 const startAudioRecording = async () => {
   if (isRecordingAudio.value) return;
+  
+  releaseAudioResources();
+  resetRecordingState();
+  
   if (recordedAudioUrl.value) {
     URL.revokeObjectURL(recordedAudioUrl.value);
     recordedAudioUrl.value = null;
@@ -6271,15 +6275,12 @@ $chat-app-header-height: 76px;
   align-items: center;
   flex: 1;
   min-width: 0;
-  max-width: fit-content;
-  overflow: hidden;
 }
 
 .audio-wave-canvas {
-  width: min(180px, 30vw);
+  width: min(220px, 35vw);
   height: 28px;
   background: transparent;
-  max-width: 100%;
 }
 
 @media (max-width: 600px) {
