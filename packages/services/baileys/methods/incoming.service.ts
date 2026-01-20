@@ -290,6 +290,15 @@ export class BaileysIncomingMessageService {
     try {
       const chatKind = getChatKind(m);
 
+      console.log('chatKind');
+      console.dir(chatKind, { depth: null, colors: true });
+
+      console.log('upsertType');
+      console.dir(upsertType, { depth: null, colors: true });
+
+      console.log('message');
+      console.dir(m, { depth: null, colors: true });
+
       if (
         chatKind !== EChatKind.user ||
         upsertType !== EMessageUpsertType.notify
