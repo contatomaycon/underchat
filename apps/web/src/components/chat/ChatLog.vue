@@ -314,21 +314,6 @@ const saveContactFromGroup = async (
   );
 };
 
-const saveAllContactsFromGroup = async () => {
-  if (!contactsGroupData.value?.content?.contacts) return;
-
-  const contacts = contactsGroupData.value.content.contacts;
-  const contactsToSave = contacts.filter(
-    (c) => !c.contact_id && (c.phone || c.phone_partial)
-  );
-
-  if (contactsToSave.length === 0) return;
-
-  for (const contact of contactsToSave) {
-    await saveContactFromGroup(contact);
-  }
-};
-
 const handleContactClick = async (message: ListMessageResult) => {
   if (!message.content?.contact) return;
 
@@ -3629,7 +3614,7 @@ onUnmounted(() => {
               "
               @click.stop="saveContactFromGroup(contact)"
             >
-              <VIcon>
+              <VIcon :color="contact.contact_id ? 'warning' : 'success'">
                 {{
                   contact.contact_id
                     ? 'tabler-user-edit'
@@ -3641,8 +3626,7 @@ onUnmounted(() => {
         </div>
       </VCardText>
       <VDivider />
-      <VCardActions>
-        <VSpacer />
+      <VCardText class="d-flex justify-end flex-wrap gap-3">
         <VBtn
           variant="tonal"
           color="secondary"
@@ -3650,17 +3634,7 @@ onUnmounted(() => {
         >
           {{ t('close') }}
         </VBtn>
-        <VBtn
-          color="primary"
-          :disabled="
-            contactsGroupData.content.contacts.every((c) => c.contact_id) ||
-            savingContacts.size > 0
-          "
-          @click="saveAllContactsFromGroup"
-        >
-          {{ t('save_all_contacts') }}
-        </VBtn>
-      </VCardActions>
+      </VCardText>
     </VCard>
   </VDialog>
 
