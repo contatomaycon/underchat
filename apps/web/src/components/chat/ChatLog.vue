@@ -1255,11 +1255,82 @@ const hasQuotedLocation = (m: ListMessageResult): boolean =>
     m.content.quoted.location
   );
 
-const hasQuotedContact = (m: ListMessageResult): boolean =>
-  !!(
-    m.content?.quoted?.type === EMessageType.contact_card &&
-    m.content.quoted.contact
-  );
+const hasQuotedContact = (m: ListMessageResult): boolean => {
+  if (!m.content?.quoted) return false;
+  
+  if (m.content.quoted.type === EMessageType.contact_card && m.content.quoted.contact) {
+    return true;
+  }
+  
+  if (m.content.quoted.type === EMessageType.contacts) {
+    const quotedContent = m.content.quoted as any;
+    if (quotedContent?.contacts && quotedContent.contacts.length > 0) {
+      return true;
+    }
+    return true;
+  }
+  
+  return false;
+};
+
+const resolveQuotedContactName = (m: ListMessageResult): string => {
+  if (!m.content?.quoted) return '';
+  
+  if (m.content.quoted.type === EMessageType.contact_card && m.content.quoted.contact) {
+    return m.content.quoted.contact.name || '';
+  }
+  
+  if (m.content.quoted.type === EMessageType.contacts) {
+    const quotedContent = m.content.quoted as any;
+    if (quotedContent?.contacts && quotedContent.contacts.length > 0) {
+      const firstContact = quotedContent.contacts[0];
+      if (quotedContent.contacts.length === 1) {
+        return firstContact.name || '';
+      }
+      return `${firstContact.name}${
+        quotedContent.contacts.length > 1
+          ? ` e ${quotedContent.contacts.length - 1}`
+          : ''
+      }${
+        quotedContent.contacts.length > 1
+          ? ' outro contato'
+          : ''
+      }`;
+    }
+    
+    if (m.content.quoted.message) {
+      return m.content.quoted.message;
+    }
+    
+    return t('contact_label', 'Contato');
+  }
+  
+  return '';
+};
+
+const resolveQuotedContactPhoto = (m: ListMessageResult): string | null => {
+  if (!m.content?.quoted) return null;
+  
+  if (m.content.quoted.type === EMessageType.contact_card && m.content.quoted.contact) {
+    return m.content.quoted.contact.photo || null;
+  }
+  
+  return null;
+};
+
+const isQuotedContactGroup = (m: ListMessageResult): boolean => {
+  if (!m.content?.quoted) return false;
+  
+  if (m.content.quoted.type === EMessageType.contacts) {
+    const quotedContent = m.content.quoted as any;
+    if (quotedContent?.contacts && quotedContent.contacts.length > 0) {
+      return quotedContent.contacts.length > 1;
+    }
+    return true;
+  }
+  
+  return false;
+};
 
 const resolveQuotedDocumentIcon = (m: ListMessageResult): string => {
   const ext = m.content?.quoted?.document?.extension?.toLowerCase();
@@ -2358,11 +2429,48 @@ onUnmounted(() => {
                         v-if="hasQuotedContact(item.message)"
                         class="quoted-contact"
                       >
-                        <VIcon size="22" color="primary">tabler-user</VIcon>
+                        <VAvatar
+                          v-if="resolveQuotedContactPhoto(item.message)"
+                          size="22"
+                          class="quoted-contact-avatar"
+                        >
+                          <VImg
+                            :src="resolveQuotedContactPhoto(item.message) || ''"
+                            :alt="resolveQuotedContactName(item.message)"
+                          />
+                        </VAvatar>
+                        <div
+                          v-else-if="isQuotedContactGroup(item.message)"
+                          class="quoted-contact-group-icon"
+                        >
+                          <svg
+                            width="22"
+                            height="22"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            xmlns="http://www.w3.org/2000/svg"
+                          >
+                            <path
+                              d="M16 11c1.66 0 3-1.34 3-3S17.66 5 16 5s-3 1.34-3 3s1.34 3 3 3Zm-8 0c1.66 0 3-1.34 3-3S9.66 5 8 5S5 6.34 5 8s1.34 3 3 3Zm0 2c-2.33 0-7 1.17-7 3.5V20h14v-3.5C15 14.17 10.33 13 8 13Zm8 0c-.29 0-.62.02-.97.05c1.16.84 1.97 1.96 1.97 3.45V20h7v-3.5c0-2.33-4.67-3.5-7-3.5Z"
+                              fill="currentColor"
+                            />
+                          </svg>
+                        </div>
+                        <VIcon
+                          v-else
+                          size="22"
+                          color="primary"
+                          icon="tabler-user"
+                        ></VIcon>
                         <div class="quoted-contact-info">
                           <span class="quoted-contact-name">
-                            {{ t('contact_label') }}
+                            {{ resolveQuotedContactName(item.message) || t('contact_label') }}
                           </span>
+                          <span
+                            v-if="item.message.content?.quoted?.message"
+                            class="quoted-contact-message"
+                            v-html="formatWhatsAppText(item.message.content.quoted.message)"
+                          ></span>
                         </div>
                       </div>
 
@@ -2395,7 +2503,9 @@ onUnmounted(() => {
                           item.message.content?.quoted?.type !==
                             EMessageType.location &&
                           item.message.content?.quoted?.type !==
-                            EMessageType.contact_card
+                            EMessageType.contact_card &&
+                          item.message.content?.quoted?.type !==
+                            EMessageType.contacts
                         "
                         class="quoted-text"
                         :style="{
@@ -2957,7 +3067,7 @@ onUnmounted(() => {
                     ]"
                   >
                     <GroupContactMessageCard
-                      :title="item.message.content.contact.name || 'Braian e 1 outro contato'"
+                      :title="item.message.content.contact.name || ''"
                       :time="
                         formatDate(item.message.date, {
                           hour: '2-digit',
@@ -2967,6 +3077,8 @@ onUnmounted(() => {
                       "
                       :seen="!!item.message.summary?.is_seen"
                       :align="isTypeUser(item.message) ? 'left' : 'right'"
+                      :is-group="false"
+                      :photo="item.message.content.contact.photo"
                       @toggle="handleContactClick(item.message)"
                       @view-all="handleContactClick(item.message)"
                     />
@@ -3022,6 +3134,7 @@ onUnmounted(() => {
                       "
                       :seen="!!item.message.summary?.is_seen"
                       :align="isTypeUser(item.message) ? 'left' : 'right'"
+                      :is-group="true"
                       @toggle="handleContactsGroupClick(item.message)"
                       @view-all="handleContactsGroupClick(item.message)"
                     />
@@ -3165,6 +3278,11 @@ onUnmounted(() => {
                         : !isTypeUser(item.message)
                           ? 'reactions-summary--right'
                           : 'reactions-summary--left',
+                      {
+                        'reactions-summary--contact':
+                          item.message.content?.type === EMessageType.contact_card ||
+                          item.message.content?.type === EMessageType.contacts,
+                      },
                     ]"
                   >
                     <div class="reaction-summary-bubble">
@@ -4050,10 +4168,31 @@ onUnmounted(() => {
         gap: 8px;
       }
 
+      .quoted-contact-avatar {
+        flex-shrink: 0;
+      }
+
+      .quoted-contact-group-icon {
+        width: 22px;
+        height: 22px;
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: rgb(var(--v-theme-primary));
+
+        svg {
+          width: 100%;
+          height: 100%;
+        }
+      }
+
       .quoted-contact-info {
         display: flex;
         flex-direction: column;
         gap: 2px;
+        flex: 1;
+        min-width: 0;
       }
 
       .quoted-contact-name {
@@ -4064,6 +4203,16 @@ onUnmounted(() => {
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
+      }
+
+      .quoted-contact-message {
+        font-size: 0.75rem;
+        color: rgba(var(--v-theme-on-surface), 0.7);
+        max-width: 180px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        margin-top: 2px;
       }
 
       .quoted-document {
@@ -4961,6 +5110,26 @@ onUnmounted(() => {
       transform: translateX(-50%) translateY(60%);
     }
 
+    &--contact {
+      bottom: auto;
+      top: calc(100% - 16px);
+      left: 20px;
+      transform: translateY(0);
+      z-index: 10;
+
+      &.reactions-summary--right {
+        transform: translateY(0);
+      }
+
+      &.reactions-summary--left {
+        transform: translateY(0);
+      }
+
+      &.reactions-summary--center {
+        transform: translateX(-50%) translateY(0);
+      }
+    }
+
     .reaction-summary-bubble {
       display: inline-flex;
       align-items: center;
@@ -5300,6 +5469,7 @@ onUnmounted(() => {
   padding: 0;
   background: transparent !important;
   box-shadow: none !important;
+  position: relative;
 }
 
 .contact-bubble--left {

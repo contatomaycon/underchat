@@ -52,8 +52,16 @@ const replyIsLocation = computed(
   () => replying.value?.content?.type === EMessageType.location
 );
 
-const replyIsContact = computed(
-  () => replying.value?.content?.type === EMessageType.contact_card
+const replyIsContact = computed(() => {
+  const type = replying.value?.content?.type;
+  return (
+    type === EMessageType.contact_card ||
+    type === EMessageType.contacts
+  );
+});
+
+const replyIsContactGroup = computed(
+  () => replying.value?.content?.type === EMessageType.contacts
 );
 
 const replyImageSrc = computed(() => {
@@ -72,6 +80,13 @@ const replyStickerSrc = computed(() => {
   }
 
   return sticker.url || null;
+});
+
+const replyContactPhoto = computed(() => {
+  if (replying.value?.content?.type === EMessageType.contact_card && replying.value.content.contact) {
+    return replying.value.content.contact.photo || null;
+  }
+  return null;
 });
 
 const replyText = computed(() => {
@@ -108,8 +123,34 @@ const replyText = computed(() => {
     );
   }
 
-  if (m.content?.type === EMessageType.contact_card) {
-    return t('contact_label', 'Contato');
+  if (m.content?.type === EMessageType.contact_card && m.content.contact) {
+    const contactName = m.content.contact.name || t('contact_label', 'Contato');
+    if (m.content.message) {
+      return `${contactName} - ${m.content.message}`;
+    }
+    return contactName;
+  }
+
+  if (m.content?.type === EMessageType.contacts && m.content.contacts && m.content.contacts.length > 0) {
+    const firstContact = m.content.contacts[0];
+    let groupName = '';
+    if (m.content.contacts.length === 1) {
+      groupName = firstContact.name || t('contact_label', 'Contato');
+    } else {
+      groupName = `${firstContact.name}${
+        m.content.contacts.length > 1
+          ? ` e ${m.content.contacts.length - 1}`
+          : ''
+      }${
+        m.content.contacts.length > 1
+          ? ' outro contato'
+          : ''
+      }`;
+    }
+    if (m.content.message) {
+      return `${groupName} - ${m.content.message}`;
+    }
+    return groupName;
   }
 
   if (m.content?.message) {
@@ -239,7 +280,22 @@ onMounted(() => {
       <VIcon size="26" color="primary">tabler-map-pin</VIcon>
     </div>
     <div v-if="replyIsContact" class="rp-doc-icon rp-contact-icon">
-      <VIcon size="26" color="primary">tabler-user</VIcon>
+      <VAvatar
+        v-if="replyContactPhoto"
+        size="26"
+        class="rp-contact-avatar"
+      >
+        <VImg
+          :src="replyContactPhoto"
+          :alt="replyText"
+        />
+      </VAvatar>
+      <VIcon
+        v-else
+        size="26"
+        color="primary"
+        :icon="replyIsContactGroup ? 'tabler-users' : 'tabler-user'"
+      ></VIcon>
     </div>
     <div
       v-if="
@@ -341,6 +397,11 @@ onMounted(() => {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+
+  .rp-contact-avatar {
+    width: 100%;
+    height: 100%;
+  }
 }
 .rp-content {
   flex: 1;

@@ -4,6 +4,7 @@
       :class="{
         'group-contact-card--left': align === 'left',
         'group-contact-card--right': align === 'right',
+        'group-contact-card--single': !isGroup,
       }"
       role="button"
       tabindex="0"
@@ -11,7 +12,20 @@
     >
       <div class="group-contact-card__body">
         <div class="group-contact-card__left">
-          <div class="group-contact-card__icon">
+          <VAvatar
+            v-if="!isGroup"
+            size="42"
+            class="group-contact-card__photo"
+            :variant="!photo ? 'tonal' : undefined"
+            :color="!photo ? 'primary' : undefined"
+          >
+            <VImg v-if="photo" :src="photo" :alt="title" />
+            <VIcon v-else size="20">tabler-user</VIcon>
+          </VAvatar>
+          <div
+            v-else
+            class="group-contact-card__icon"
+          >
             <svg
               class="group-contact-card__icon-svg"
               width="18"
@@ -48,6 +62,7 @@
       </div>
   
       <button
+        v-if="isGroup"
         type="button"
         class="group-contact-card__action"
         @click.stop="$emit('view-all')"
@@ -63,6 +78,8 @@
     time: string;
     seen?: boolean;
     align?: 'left' | 'right';
+    isGroup?: boolean;
+    photo?: string | null;
   }>();
 
   defineEmits<{
@@ -100,6 +117,10 @@
     padding: 18px 18px 16px 18px;
     min-height: 80px;
   }
+
+  .group-contact-card--single .group-contact-card__body {
+    padding-bottom: 18px;
+  }
   
   .group-contact-card__left {
     display: flex;
@@ -107,6 +128,10 @@
     padding-top: 2px;
   }
   
+  .group-contact-card__photo {
+    flex-shrink: 0;
+  }
+
   .group-contact-card__icon {
     width: 42px;
     height: 42px;
@@ -115,6 +140,7 @@
     display: grid;
     place-items: center;
     color: rgba(37, 99, 235, 0.9);
+    flex-shrink: 0;
   }
   
   .group-contact-card__icon-svg {
