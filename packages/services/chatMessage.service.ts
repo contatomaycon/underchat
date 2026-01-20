@@ -236,6 +236,7 @@ export class ChatMessageService {
     )
       inferredType = EMessageType.location;
     const quotedContact = chatMessage.content?.contact ?? null;
+    const quotedContacts = chatMessage.content?.contacts ?? null;
     if (
       !quotedVideo &&
       !quotedImage &&
@@ -243,11 +244,23 @@ export class ChatMessageService {
       !quotedAudio &&
       !quotedSticker &&
       !quotedLocation &&
+      quotedContacts &&
+      quotedContacts.length > 0
+    )
+      inferredType = EMessageType.contacts;
+    else if (
+      !quotedVideo &&
+      !quotedImage &&
+      !quotedDocument &&
+      !quotedAudio &&
+      !quotedSticker &&
+      !quotedLocation &&
+      !quotedContacts &&
       quotedContact
     )
       inferredType = EMessageType.contact_card;
 
-    return {
+    const quoted: IQuotedMessage = {
       type: inferredType,
       image: quotedImage,
       video: quotedVideo,
@@ -268,6 +281,12 @@ export class ChatMessageService {
       },
       message: chatMessage.content?.message ?? null,
     };
+
+    if (inferredType === EMessageType.contacts && quotedContacts) {
+      (quoted as any).contacts = quotedContacts;
+    }
+
+    return quoted;
   }
 
   private async publishMessage(message: IChatMessage): Promise<boolean> {

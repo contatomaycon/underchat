@@ -9,7 +9,10 @@ import { BaileysMessageLocationContactService } from '@core/services/baileys/met
 import { BaileysMessageStatusStoriesService } from '@core/services/baileys/methods/messageStatusStories.service';
 import { BaileysProfileService } from '@core/services/baileys/methods/profile.service';
 import { EMessageType } from '@core/common/enums/EMessageType';
-import { IChatMessage } from '@core/common/interfaces/IChatMessage';
+import {
+  IChatMessage,
+  IContactMessage,
+} from '@core/common/interfaces/IChatMessage';
 import { IProfileStatusMessage } from '@core/common/interfaces/IProfileStatusMessage';
 import { IProfileStatusDeleteMessage } from '@core/common/interfaces/IProfileStatusDeleteMessage';
 import { IProfileInfoMessage } from '@core/common/interfaces/IProfileInfoMessage';
@@ -1248,36 +1251,79 @@ export class MessageSendConsume {
   private createQuotedContactMessage(
     q: NonNullable<IChatMessage['content']>['quoted']
   ): proto.IMessage | null {
-    if (q?.type !== EMessageType.contact_card || !q?.contact) return null;
+    if (q?.type === EMessageType.contact_card && q?.contact) {
+      const vcardLines: string[] = ['BEGIN:VCARD', 'VERSION:3.0'];
 
-    const vcardLines: string[] = ['BEGIN:VCARD', 'VERSION:3.0'];
+      const fullName = [q.contact.name, q.contact.last_name]
+        .filter(Boolean)
+        .join(' ')
+        .trim();
 
-    const fullName = [q.contact.name, q.contact.last_name]
-      .filter(Boolean)
-      .join(' ')
-      .trim();
+      if (fullName) {
+        vcardLines.push(`N:;${fullName};;;`, `FN:${fullName}`);
+      }
 
-    if (fullName) {
-      vcardLines.push(`N:;${fullName};;;`, `FN:${fullName}`);
+      if (q.contact.phone) {
+        vcardLines.push(`TEL:${q.contact.phone}`);
+      }
+
+      if (q.contact.email) {
+        vcardLines.push(`EMAIL:${q.contact.email}`);
+      }
+
+      vcardLines.push('END:VCARD');
+      const vcard = vcardLines.join('\n');
+
+      return {
+        contactMessage: {
+          displayName: fullName || 'Contato',
+          vcard,
+        },
+      };
     }
 
-    if (q.contact.phone) {
-      vcardLines.push(`TEL:${q.contact.phone}`);
+    if (q?.type === EMessageType.contacts) {
+      const quotedContent = q as any;
+      if (quotedContent?.contacts && quotedContent.contacts.length > 0) {
+        const firstContact = quotedContent.contacts[0] as IContactMessage;
+
+        const vcardLines: string[] = ['BEGIN:VCARD', 'VERSION:3.0'];
+
+        const fullName = [firstContact.name, firstContact.last_name]
+          .filter(Boolean)
+          .join(' ')
+          .trim();
+
+        if (fullName) {
+          vcardLines.push(`N:;${fullName};;;`, `FN:${fullName}`);
+        }
+
+        if (firstContact.phone) {
+          vcardLines.push(`TEL:${firstContact.phone}`);
+        }
+
+        if (firstContact.email) {
+          vcardLines.push(`EMAIL:${firstContact.email}`);
+        }
+
+        vcardLines.push('END:VCARD');
+        const vcard = vcardLines.join('\n');
+
+        const displayName =
+          quotedContent.contacts.length === 1
+            ? fullName || 'Contato'
+            : `${firstContact.name} e ${quotedContent.contacts.length - 1} outro contato`;
+
+        return {
+          contactMessage: {
+            displayName,
+            vcard,
+          },
+        };
+      }
     }
 
-    if (q.contact.email) {
-      vcardLines.push(`EMAIL:${q.contact.email}`);
-    }
-
-    vcardLines.push('END:VCARD');
-    const vcard = vcardLines.join('\n');
-
-    return {
-      contactMessage: {
-        displayName: fullName || 'Contato',
-        vcard,
-      },
-    };
+    return null;
   }
 
   private createQuotedTextMessage(

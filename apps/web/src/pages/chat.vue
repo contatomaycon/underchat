@@ -779,7 +779,7 @@ const buildQuotedPayload = (
 
   const quotedType = reply.content?.type as EMessageType | undefined;
 
-  return {
+  const quoted: IQuotedMessage = {
     key,
     message: reply.content?.message ?? null,
     type: quotedType ?? undefined,
@@ -790,7 +790,13 @@ const buildQuotedPayload = (
     sticker: reply.content?.sticker ?? null,
     location: reply.content?.location ?? null,
     contact: reply.content?.contact ?? null,
-  } satisfies IQuotedMessage;
+  };
+
+  if (quotedType === EMessageType.contacts && reply.content?.contacts) {
+    (quoted as any).contacts = reply.content.contacts;
+  }
+
+  return quoted;
 };
 
 const getQuotedContent = (
