@@ -87,6 +87,7 @@ export interface IContent {
   sticker?: StickerMessageChat | null;
   location?: LocationMessageChat | null;
   contact?: IContactMessage | null;
+  contacts?: IContactMessage[] | null;
   reactions?: IReaction[] | null;
   version?: MessageVersion[] | null;
   media_download_failed?: boolean;

@@ -63,6 +63,10 @@ const locationData = ref<{
 } | null>(null);
 const locationMapRef = ref<any>(null);
 
+const contactsGroupModalOpen = ref(false);
+const contactsGroupData = ref<ListMessageResult | null>(null);
+const savingContacts = ref<Set<string>>(new Set());
+
 const editMessageModalOpen = ref(false);
 const editingMessage = ref<ListMessageResult | null>(null);
 const editMessageText = ref<string>('');
@@ -291,6 +295,101 @@ const handleContactClick = async (message: ListMessageResult) => {
     new CustomEvent('open-add-contact-modal', { detail: contactData })
   );
 };
+
+const handleContactsGroupClick = (message: ListMessageResult) => {
+  if (!message.content?.contacts || message.content.contacts.length === 0) {
+    return;
+  }
+  contactsGroupData.value = message;
+  contactsGroupModalOpen.value = true;
+};
+
+const saveContactFromGroup = async (
+  contact: {
+    contact_id: string | null;
+    name: string;
+    last_name?: string | null;
+    phone?: string | null;
+    phone_partial?: string | null;
+    phone_ddi?: string | null;
+    email?: string | null;
+    email_partial?: string | null;
+    photo?: string | null;
+  }
+) => {
+  const contactKey = contact.contact_id || `${contact.phone}_${contact.phone_ddi}`;
+  if (savingContacts.value.has(contactKey)) return;
+
+  if (contact.contact_id) {
+    globalThis.dispatchEvent(
+      new CustomEvent('open-edit-contact-modal', {
+        detail: contact.contact_id,
+      })
+    );
+    return;
+  }
+
+  const phone = contact.phone ?? contact.phone_partial;
+  const phoneDdi = contact.phone_ddi ?? '55';
+
+  if (!phone) return;
+
+  savingContacts.value.add(contactKey);
+
+  try {
+    const phoneSearch = phone.replaceAll(/\D/g, '');
+    const foundContact = await chatStore.getChatContactByPhone(
+      phoneSearch,
+      phoneDdi
+    );
+
+    if (foundContact) {
+      savingContacts.value.delete(contactKey);
+      globalThis.dispatchEvent(
+        new CustomEvent('open-edit-contact-modal', {
+          detail: foundContact.contact_id,
+        })
+      );
+      return;
+    }
+  } catch {
+    savingContacts.value.delete(contactKey);
+  }
+
+  savingContacts.value.delete(contactKey);
+
+  const contactData: Partial<CreateContactRequest> = {
+    name: contact.name ?? undefined,
+    last_name: contact.last_name ?? undefined,
+    email: contact.email ?? undefined,
+    phone: phone ?? undefined,
+    phone_ddi: phoneDdi,
+    nickname: undefined,
+    birthday: undefined,
+    notes: undefined,
+    label_template_ids: undefined,
+  };
+
+  globalThis.dispatchEvent(
+    new CustomEvent('open-add-contact-modal', { detail: contactData })
+  );
+};
+
+const saveAllContactsFromGroup = async () => {
+  if (!contactsGroupData.value?.content?.contacts) return;
+
+  const contacts = contactsGroupData.value.content.contacts;
+  const contactsToSave = contacts.filter(
+    (c) => !c.contact_id && (c.phone || c.phone_partial)
+  );
+
+  if (contactsToSave.length === 0) return;
+
+  for (const contact of contactsToSave) {
+    await saveContactFromGroup(contact);
+  }
+};
+
 
 const canInteractWithMessage = (m: ListMessageResult): boolean => {
   if (m.deleted) return false;
@@ -2946,12 +3045,122 @@ onUnmounted(() => {
 
                   <div
                     v-if="
+                      item.message.content?.type === EMessageType.contacts &&
+                      item.message.content?.contacts &&
+                      item.message.content.contacts.length > 0
+                    "
+                    :class="[
+                      'contacts-group-bubble',
+                      !isTypeUser(item.message)
+                        ? 'contacts-group-bubble--right'
+                        : 'contacts-group-bubble--left',
+                      { 'is-deleted': item.message.deleted },
+                    ]"
+                    :style="{
+                      borderRadius: '6px 6px 0 0 !important',
+                      borderBottomLeftRadius: '0 !important',
+                      borderBottomRightRadius: '0 !important',
+                    }"
+                  >
+                    <div
+                      class="contacts-group-card"
+                      :style="{
+                        backgroundColor: 'rgb(var(--v-theme-surface))',
+                        borderRadius: '6px 6px 0 0 !important',
+                        borderBottomLeftRadius: '0 !important',
+                        borderBottomRightRadius: '0 !important',
+                      }"
+                    >
+                      <div
+                        class="contacts-group-item d-flex align-center gap-3 pa-3"
+                        :class="{
+                          'contacts-group-item--clickable': !item.message.deleted,
+                        }"
+                        :style="{
+                          borderRadius: '6px 6px 0 0 !important',
+                          borderBottomLeftRadius: '0 !important',
+                          borderBottomRightRadius: '0 !important',
+                        }"
+                        @click="handleContactsGroupClick(item.message)"
+                      >
+                        <VAvatar
+                          size="48"
+                          variant="tonal"
+                          color="primary"
+                        >
+                          <VIcon size="24">tabler-users-group</VIcon>
+                        </VAvatar>
+                        <div class="flex-grow-1">
+                          <div class="d-flex align-center gap-1">
+                            <div class="d-flex flex-column">
+                              <span
+                                class="text-body-1 font-weight-bold"
+                                :style="{
+                                  color: 'rgb(var(--v-theme-on-surface))',
+                                }"
+                              >
+                                {{ item.message.content.contacts[0].name }}
+                                {{
+                                  item.message.content.contacts.length > 1
+                                    ? `e ${item.message.content.contacts.length - 1}`
+                                    : ''
+                                }}
+                              </span>
+                              <span
+                                v-if="item.message.content.contacts.length > 1"
+                                class="text-body-2"
+                                :style="{
+                                  color: 'rgba(var(--v-theme-on-surface), 0.7)',
+                                }"
+                              >
+                                outro{{ item.message.content.contacts.length > 2 ? 's' : '' }} contato{{ item.message.content.contacts.length > 2 ? 's' : '' }}
+                              </span>
+                            </div>
+                            <VIcon
+                              size="18"
+                              :style="{
+                                color: 'rgba(var(--v-theme-on-surface), 0.4)',
+                                marginLeft: 'auto',
+                              }"
+                            >
+                              tabler-chevron-down
+                            </VIcon>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <p
+                    v-if="item.message.content?.message"
+                    class="contact-caption mt-2"
+                    :style="{
+                      color: isTypeUser(item.message)
+                        ? 'rgb(var(--v-theme-on-surface))'
+                        : 'rgb(var(--v-theme-title))',
+                    }"
+                  >
+                    <span
+                      v-if="shouldFormatMessage(item.message)"
+                      v-html="
+                        formatWhatsAppText(
+                          getLatestMessageText(item.message)
+                        )
+                      "
+                    ></span>
+                    <span v-else>{{
+                      getLatestMessageText(item.message)
+                    }}</span>
+                  </p>
+
+                  <div
+                    v-if="
                       item.message.content?.message &&
                       item.message.content?.type !== EMessageType.image &&
                       item.message.content?.type !== EMessageType.video &&
                       item.message.content?.type !== EMessageType.document &&
                       item.message.content?.type !==
                         EMessageType.contact_card &&
+                      item.message.content?.type !== EMessageType.contacts &&
                       !item.message.message_key?.is_view_once
                     "
                   >
@@ -3221,6 +3430,41 @@ onUnmounted(() => {
                 </div>
               </div>
             </div>
+            <div
+              v-if="
+                item.message.content?.type === EMessageType.contacts &&
+                item.message.content?.contacts &&
+                item.message.content.contacts.length > 0
+              "
+              :class="[
+                'contacts-group-view-all-button-wrapper',
+                !isTypeUser(item.message)
+                  ? 'contacts-group-view-all-button-wrapper--right'
+                  : 'contacts-group-view-all-button-wrapper--left',
+              ]"
+            >
+              <div
+                class="contacts-group-view-all-button d-flex justify-center align-center"
+                :style="{
+                  cursor: item.message.deleted ? 'default' : 'pointer',
+                  width: '100%',
+                }"
+                @click="
+                  !item.message.deleted &&
+                    handleContactsGroupClick(item.message)
+                "
+              >
+                <span
+                  class="text-body-2 font-weight-medium"
+                  :style="{
+                    color: 'rgb(var(--v-theme-primary))',
+                    fontSize: '0.875rem',
+                  }"
+                >
+                  {{ t('view_all') }}
+                </span>
+              </div>
+            </div>
           </div>
         </div>
       </template>
@@ -3327,6 +3571,134 @@ onUnmounted(() => {
           {{ t('save', 'Salvar') }}
         </VBtn>
       </VCardText>
+    </VCard>
+  </VDialog>
+
+  <VDialog
+    v-model="contactsGroupModalOpen"
+    max-width="600"
+    :scrollable="true"
+  >
+    <VCard v-if="contactsGroupData?.content?.contacts">
+      <VCardTitle class="d-flex align-center justify-space-between">
+        <div>
+          <div class="text-h6">
+            {{ t('contacts_group') }}
+          </div>
+          <div class="text-caption text-disabled mt-1">
+            {{
+              contactsGroupData.content.contacts.length === 1
+                ? t('contact_count_singular') || '1 contato'
+                : `${contactsGroupData.content.contacts.length} ${t('contacts') || 'contatos'}`
+            }}
+          </div>
+        </div>
+        <VBtn icon variant="text" size="small" @click="contactsGroupModalOpen = false">
+          <VIcon>tabler-x</VIcon>
+        </VBtn>
+      </VCardTitle>
+      <VDivider />
+      <VCardText>
+        <div class="d-flex flex-column gap-2">
+          <div
+            v-for="(contact, idx) in contactsGroupData.content.contacts"
+            :key="idx"
+            class="contact-item-modal d-flex align-center gap-3 pa-3"
+            :style="{
+              backgroundColor: 'rgba(var(--v-theme-surface), 0.5)',
+              borderRadius: '8px',
+              cursor: 'pointer',
+            }"
+            @click="saveContactFromGroup(contact)"
+          >
+            <VOverlay
+              :model-value="
+                savingContacts.has(
+                  contact.contact_id ||
+                    `${contact.phone}_${contact.phone_ddi}`
+                )
+              "
+              contained
+              class="align-center justify-center"
+              scrim="rgba(var(--v-theme-surface), 0.7)"
+              style="border-radius: 8px"
+            >
+              <VProgressCircular indeterminate color="primary" />
+            </VOverlay>
+            <VAvatar
+              size="48"
+              :variant="contact.photo ? undefined : 'tonal'"
+              :color="contact.photo ? undefined : 'primary'"
+            >
+              <VImg
+                v-if="contact.photo"
+                :src="contact.photo"
+                :alt="contact.name"
+              />
+              <VIcon v-else size="24">tabler-user</VIcon>
+            </VAvatar>
+            <div class="flex-grow-1">
+              <div class="text-body-1 font-weight-medium">
+                {{ contact.name }}
+                {{ contact.last_name || '' }}
+              </div>
+              <div
+                v-if="contact.phone_partial"
+                class="text-caption text-disabled"
+              >
+                {{ contact.phone_partial }}
+              </div>
+              <div
+                v-if="contact.email_partial"
+                class="text-caption text-disabled"
+              >
+                {{ contact.email_partial }}
+              </div>
+            </div>
+            <VBtn
+              icon
+              variant="text"
+              size="small"
+              :disabled="
+                savingContacts.has(
+                  contact.contact_id ||
+                    `${contact.phone}_${contact.phone_ddi}`
+                )
+              "
+              @click.stop="saveContactFromGroup(contact)"
+            >
+              <VIcon>
+                {{
+                  contact.contact_id
+                    ? 'tabler-user-edit'
+                    : 'tabler-user-plus'
+                }}
+              </VIcon>
+            </VBtn>
+          </div>
+        </div>
+      </VCardText>
+      <VDivider />
+      <VCardActions>
+        <VSpacer />
+        <VBtn
+          variant="tonal"
+          color="secondary"
+          @click="contactsGroupModalOpen = false"
+        >
+          {{ t('close') }}
+        </VBtn>
+        <VBtn
+          color="primary"
+          :disabled="
+            contactsGroupData.content.contacts.every((c) => c.contact_id) ||
+            savingContacts.size > 0
+          "
+          @click="saveAllContactsFromGroup"
+        >
+          {{ t('save_all_contacts') }}
+        </VBtn>
+      </VCardActions>
     </VCard>
   </VDialog>
 
@@ -5068,6 +5440,103 @@ onUnmounted(() => {
   50% {
     transform: scaleY(1);
     opacity: 1;
+  }
+}
+
+.contacts-group-bubble {
+  max-width: 280px;
+  margin-bottom: 0;
+  overflow: visible;
+  border-radius: 0 !important;
+}
+
+.contacts-group-card {
+  margin-bottom: 0;
+  border-radius: 6px 6px 0 0 !important;
+  box-shadow: none !important;
+  overflow: visible !important;
+}
+
+.contacts-group-bubble--left {
+  margin-right: auto;
+}
+
+.contacts-group-bubble--right {
+  margin-left: auto;
+}
+
+.contacts-group-card {
+  width: 100%;
+}
+
+.contacts-group-item {
+  position: relative;
+  border-radius: 6px 6px 0 0 !important;
+}
+
+.contacts-group-item--clickable {
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+
+  &:hover {
+    background-color: rgba(var(--v-theme-on-surface), 0.04) !important;
+  }
+
+  &:active {
+    background-color: rgba(var(--v-theme-on-surface), 0.08) !important;
+  }
+}
+
+.contacts-group-view-all-button-wrapper {
+  max-width: 280px;
+  width: 100%;
+  margin-top: 0;
+  margin-bottom: 0;
+  padding: 0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  border-radius: 0 0 6px 6px;
+}
+
+.contacts-group-view-all-button-wrapper--left {
+  margin-right: auto;
+  margin-left: 0;
+}
+
+.contacts-group-view-all-button-wrapper--right {
+  margin-left: auto;
+  margin-right: 0;
+}
+
+.contacts-group-view-all-button {
+  background: rgb(var(--v-theme-surface));
+  border-radius: 0 0 6px 6px;
+  padding: 10px 12px;
+  transition: all 0.2s ease;
+  min-height: 40px;
+  border-top: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+
+  &:not([style*='cursor: default']):hover {
+    background-color: rgba(var(--v-theme-on-surface), 0.02);
+  }
+
+  &:not([style*='cursor: default']):active {
+    background-color: rgba(var(--v-theme-on-surface), 0.04);
+  }
+}
+
+.contact-item-modal {
+  position: relative;
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
+
+  &:hover {
+    opacity: 0.9;
+    transform: scale(1.01);
+  }
+
+  &:active {
+    transform: scale(0.99);
   }
 }
 

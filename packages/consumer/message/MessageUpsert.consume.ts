@@ -14,6 +14,7 @@ import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { ChatService } from '@core/services/chat.service';
 import {
   IChatMessage,
+  IContactMessage,
   IContent,
   IQuotedMessage,
 } from '@core/common/interfaces/IChatMessage';
@@ -1244,6 +1245,83 @@ export class MessageUpsertConsume {
     }
   }
 
+  private async handleContactsMessage(
+    content: IContent,
+    data: IUpsertMessage
+  ): Promise<void> {
+    if (
+      content.type !== EMessageType.contacts ||
+      !data.message?.message?.contactsArrayMessage?.contacts?.length
+    ) {
+      return;
+    }
+
+    try {
+      const contactsArray = data.message.message.contactsArrayMessage.contacts;
+      const processedContacts: IContactMessage[] = [];
+
+      for (const contactMsg of contactsArray) {
+        if (!contactMsg.vcard) continue;
+
+        const vcard = contactMsg.vcard;
+        const parsed = this.parseVCard(vcard);
+
+        const phoneAndDdi = extractPhoneAndDdiFromContactMessage(contactMsg);
+
+        if (!phoneAndDdi) continue;
+
+        const phonePartial = this.encryptService.sanitize(
+          phoneAndDdi.phone,
+          ETypeSanetize.phone
+        );
+
+        const emailPartial = parsed?.email
+          ? this.encryptService.sanitize(parsed.email, ETypeSanetize.email)
+          : null;
+
+        let existingContactId: string | null = null;
+        let existingContactPhoto: string | null = null;
+
+        const existingContact = await this.contactService.getContactByPhone(
+          data.account_id,
+          phoneAndDdi.phone,
+          phoneAndDdi.phone_ddi
+        );
+
+        let existingContactName =
+          parsed.name ?? contactMsg.displayName ?? 'Contato';
+        let existingContactLastName = parsed.last_name ?? null;
+        if (existingContact) {
+          existingContactId = existingContact.contact_id;
+          existingContactPhoto = existingContact.photo ?? null;
+          existingContactName = existingContact.name;
+          existingContactLastName = existingContact.last_name ?? null;
+        }
+
+        processedContacts.push({
+          contact_id: existingContactId,
+          name: existingContactName,
+          last_name: existingContactLastName,
+          phone: phoneAndDdi.phone,
+          phone_partial: phonePartial,
+          phone_ddi: phoneAndDdi.phone_ddi,
+          email: parsed.email ?? null,
+          email_partial: emailPartial,
+          photo: existingContactPhoto,
+        });
+      }
+
+      if (processedContacts.length > 0) {
+        content.contacts = processedContacts;
+      }
+    } catch (error) {
+      console.error(
+        `[MessageUpsert] Failed to handle contacts message for message ${data.message?.key?.id}:`,
+        error instanceof Error ? error.message : error
+      );
+    }
+  }
+
   private async ensureContactForChat(
     inputChatMessage: IChat,
     data: IUpsertMessage,
@@ -1657,6 +1735,7 @@ export class MessageUpsertConsume {
       await this.handleMediaMessages(content, data);
       await this.handleLocationMessage(content, data);
       await this.handleContactMessage(content, data);
+      await this.handleContactsMessage(content, data);
 
       const isFromMe = data.message?.key?.fromMe ?? false;
 

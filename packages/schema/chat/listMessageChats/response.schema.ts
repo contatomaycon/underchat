@@ -200,6 +200,7 @@ export const contentSchema = Type.Object({
   sticker: Type.Optional(Type.Union([stickerSchema, Type.Null()])),
   location: Type.Optional(Type.Union([locationSchema, Type.Null()])),
   contact: Type.Optional(Type.Union([contactSchema, Type.Null()])),
+  contacts: Type.Optional(Type.Union([Type.Array(contactSchema), Type.Null()])),
   audio: Type.Optional(Type.Union([audioSchema, Type.Null()])),
   document: Type.Optional(Type.Union([documentSchema, Type.Null()])),
   reactions: Type.Optional(
