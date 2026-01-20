@@ -3902,7 +3902,7 @@ onUnmounted(() => {
       min-width: 120px;
 
       &.has-contact-card {
-        padding: 8px !important;
+        padding: 8px 8px 8px 0 !important;
         padding-bottom: 8px !important;
         box-shadow: none !important;
         background: transparent !important;
