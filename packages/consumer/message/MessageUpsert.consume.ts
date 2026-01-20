@@ -1357,6 +1357,13 @@ export class MessageUpsertConsume {
           }
         : null;
 
+      const contactLabels =
+        existingContact.label_templates?.map((label) => ({
+          label_template_id: label.label_template_id,
+          label: label.label,
+          color: label.color,
+        })) ?? null;
+
       inputChatMessage.contact = {
         id: existingContact.contact_id,
         name: existingContact.name,
@@ -1366,6 +1373,10 @@ export class MessageUpsertConsume {
         responsible_attendant: responsibleAttendant,
         ignore: ignoreStatus,
       };
+
+      if (contactLabels) {
+        inputChatMessage.label = contactLabels;
+      }
 
       if (ignoreStatus === EContactIgnore.ignore_automation) {
         inputChatMessage.status = EChatStatus.queue;
@@ -1405,6 +1416,13 @@ export class MessageUpsertConsume {
           }
         : null;
 
+      const contactLabels =
+        createdContact.label_templates?.map((label) => ({
+          label_template_id: label.label_template_id,
+          label: label.label,
+          color: label.color,
+        })) ?? null;
+
       inputChatMessage.contact = {
         id: createdContact.contact_id,
         name: createdContact.name,
@@ -1414,6 +1432,10 @@ export class MessageUpsertConsume {
         responsible_attendant: responsibleAttendant,
         ignore: ignoreStatus,
       };
+
+      if (contactLabels) {
+        inputChatMessage.label = contactLabels;
+      }
 
       if (ignoreStatus === EContactIgnore.ignore_automation) {
         inputChatMessage.status = EChatStatus.queue;

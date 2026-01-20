@@ -343,6 +343,21 @@ export class ContactCreatorUseCase {
     );
     if (!contact) return;
 
+    const contactLabels =
+      contact.label_templates?.map((label) => ({
+        label_template_id: label.label_template_id,
+        label: label.label,
+        color: label.color,
+      })) ?? null;
+
+    const responsibleAttendant = contact.user
+      ? {
+          id: contact.user.user_id,
+          name: contact.user.name ?? '',
+          photo: contact.user.photo ?? null,
+        }
+      : (chat.contact?.responsible_attendant ?? null);
+
     const updatedChat: IChat = {
       ...chat,
       contact: {
@@ -352,7 +367,10 @@ export class ContactCreatorUseCase {
         phone_ddi:
           contact.phone_ddi ?? phoneDdi ?? chat.contact?.phone_ddi ?? null,
         photo: contact.photo ?? null,
+        responsible_attendant: responsibleAttendant,
+        ignore: contact.ignore ?? chat.contact?.ignore ?? null,
       },
+      label: contactLabels,
     };
 
     const saved = await this.chatService.saveChat(updatedChat);

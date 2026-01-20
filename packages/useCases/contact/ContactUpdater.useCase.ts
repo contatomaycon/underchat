@@ -463,7 +463,22 @@ export class ContactUpdaterUseCase {
       return;
     }
 
+    const contactLabels =
+      updatedContact.label_templates?.map((label) => ({
+        label_template_id: label.label_template_id,
+        label: label.label,
+        color: label.color,
+      })) ?? null;
+
     const updatePromises = chats.map(async (chat) => {
+      const responsibleAttendant = updatedContact.user
+        ? {
+            id: updatedContact.user.user_id,
+            name: updatedContact.user.name ?? '',
+            photo: updatedContact.user.photo ?? null,
+          }
+        : (chat.contact?.responsible_attendant ?? null);
+
       const updatedChat: IChat = {
         ...chat,
         contact: {
@@ -473,7 +488,10 @@ export class ContactUpdaterUseCase {
           phone_ddi:
             updatedContact.phone_ddi ?? chat.contact?.phone_ddi ?? null,
           photo: updatedContact?.photo ?? undefined,
+          responsible_attendant: responsibleAttendant,
+          ignore: updatedContact.ignore ?? chat.contact?.ignore ?? null,
         },
+        label: contactLabels,
       };
 
       const saved = await this.chatService.saveChat(updatedChat);
