@@ -103,10 +103,19 @@ function detectProtocol({ pType, msg }: IMapCtx): EMessageType | undefined {
     return EMessageType.set_disappearing_messages;
 }
 
-function detectText({ text }: IMapCtx): EMessageType | undefined {
-  if (!text) return;
+function detectText({ text, msg }: IMapCtx): EMessageType | undefined {
+  if (text) return EMessageType.text;
 
-  return EMessageType.text;
+  if (msg.extendedTextMessage || msg.conversation !== undefined) {
+    return EMessageType.text;
+  }
+
+  const unwrapped = unwrapMessage(msg);
+  if (unwrapped.extendedTextMessage || unwrapped.conversation !== undefined) {
+    return EMessageType.text;
+  }
+
+  return undefined;
 }
 
 export function mapIncomingToType(m: WAMessage): EMessageType | undefined {
