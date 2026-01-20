@@ -180,7 +180,7 @@
   }
   
   .group-contact-card__time {
-    font-size: 0.78rem;
+    font-size: 0.75rem;
     color: rgba(107, 114, 128, 0.85);
     letter-spacing: 0.2px;
   }
