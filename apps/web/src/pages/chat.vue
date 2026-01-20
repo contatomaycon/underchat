@@ -5278,11 +5278,11 @@ onBeforeUnmount(() => {
             </IconBtn>
 
             <span
-              class="recording-dot"
+              class="recording-dot flex-shrink-0"
               :class="{ 'is-paused': isRecordingPaused }"
             ></span>
 
-            <span class="audio-recording-clock">{{
+            <span class="audio-recording-clock flex-shrink-0">{{
               formattedRecordingTime
             }}</span>
 
@@ -5295,7 +5295,7 @@ onBeforeUnmount(() => {
             </div>
 
             <IconBtn
-              class="record-action"
+              class="record-action flex-shrink-0"
               aria-label="Pausar ou retomar gravação"
               @click="togglePauseAudioRecording"
             >
@@ -5309,7 +5309,7 @@ onBeforeUnmount(() => {
             </IconBtn>
 
             <IconBtn
-              class="record-action view-once-toggle"
+              class="record-action view-once-toggle flex-shrink-0"
               :class="{ 'is-active': audioViewOnce }"
               aria-label="Visualização única"
               @click="toggleViewOnceAudio"
@@ -5320,7 +5320,7 @@ onBeforeUnmount(() => {
             </IconBtn>
 
             <VBtn
-              class="record-send-btn"
+              class="record-send-btn flex-shrink-0"
               color="success"
               variant="flat"
               icon
@@ -6217,27 +6217,76 @@ $chat-app-header-height: 76px;
   background: rgb(var(--v-theme-surface));
   border-radius: 12px;
   min-height: 56px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.audio-recording-inline::-webkit-scrollbar {
+  display: none;
 }
 
 .audio-recording-inline .record-action {
   color: rgba(var(--v-theme-on-surface), 0.7) !important;
+  flex-shrink: 0;
 }
 
 .audio-recording-inline .record-send-btn {
   min-width: 42px !important;
   height: 42px !important;
+  flex-shrink: 0;
+}
+
+@media (max-width: 600px) {
+  .audio-recording-inline {
+    gap: 0.5rem !important;
+    padding-left: 0.5rem !important;
+    padding-right: 0.5rem !important;
+  }
+
+  .audio-recording-inline .record-action {
+    min-width: 36px !important;
+    width: 36px !important;
+    height: 36px !important;
+  }
+
+  .audio-recording-inline .record-action .v-icon {
+    font-size: 18px !important;
+  }
+
+  .audio-recording-inline .record-send-btn {
+    min-width: 36px !important;
+    width: 36px !important;
+    height: 36px !important;
+  }
+
+  .audio-recording-inline .record-send-btn .v-icon {
+    font-size: 18px !important;
+  }
 }
 
 .audio-recording-info {
   display: flex;
   align-items: center;
   flex: 1;
+  min-width: 0;
+  max-width: fit-content;
+  overflow: hidden;
 }
 
 .audio-wave-canvas {
-  width: min(220px, 35vw);
+  width: min(180px, 30vw);
   height: 28px;
   background: transparent;
+  max-width: 100%;
+}
+
+@media (max-width: 600px) {
+  .audio-wave-canvas {
+    width: min(80px, 20vw);
+    height: 20px;
+  }
 }
 
 .audio-recording-clock {
@@ -6245,6 +6294,14 @@ $chat-app-header-height: 76px;
   font-weight: 600;
   min-width: 52px;
   text-align: center;
+  flex-shrink: 0;
+}
+
+@media (max-width: 600px) {
+  .audio-recording-clock {
+    min-width: 42px;
+    font-size: 0.875rem;
+  }
 }
 
 .recording-dot {
@@ -6253,6 +6310,14 @@ $chat-app-header-height: 76px;
   border-radius: 50%;
   background: rgb(var(--v-theme-error));
   animation: pulse 1.4s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+@media (max-width: 600px) {
+  .recording-dot {
+    width: 8px;
+    height: 8px;
+  }
 }
 
 .recording-dot.is-paused {
