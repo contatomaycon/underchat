@@ -986,13 +986,33 @@ const scrollToMessageById = async (
 ) => {
   await nextTick();
 
-  const container: HTMLElement = chatLogPS.value?.$el || chatLogPS.value;
-  if (!container) return;
+  if (!chatLogPS.value) return;
+
+  const scrollEl = chatLogPS.value.$el || chatLogPS.value;
+  if (!scrollEl) return;
+
+  const psContainer =
+    (scrollEl.querySelector('.ps') as HTMLElement) ||
+    (scrollEl.closest('.ps') as HTMLElement) ||
+    scrollEl;
+
+  if (!psContainer) return;
+
+  const scrollContainer =
+    (psContainer.querySelector('.ps__rail-y')
+      ?.parentElement as HTMLElement) ||
+    (psContainer.querySelector('.ps__container') as HTMLElement) ||
+    psContainer;
+
+  if (!scrollContainer) return;
 
   if (!id) {
-    container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
-    chatLogPS.value?.update?.();
-
+    scrollContainer.scrollTop = scrollContainer.scrollHeight;
+    await nextTick();
+    requestAnimationFrame(() => {
+      scrollContainer.scrollTop = scrollContainer.scrollHeight;
+      chatLogPS.value?.update?.();
+    });
     return;
   }
 
@@ -1004,8 +1024,12 @@ const scrollToMessageById = async (
   if (isUuid) {
     const messageReady = await ensureMessageLoaded(targetMessageId);
     if (!messageReady) {
-      container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
-      chatLogPS.value?.update?.();
+      scrollContainer.scrollTop = scrollContainer.scrollHeight;
+      await nextTick();
+      requestAnimationFrame(() => {
+        scrollContainer.scrollTop = scrollContainer.scrollHeight;
+        chatLogPS.value?.update?.();
+      });
       return;
     }
   } else {
@@ -1020,7 +1044,7 @@ const scrollToMessageById = async (
   await nextTick();
 
   let target =
-    (container.querySelector(
+    (scrollContainer.querySelector(
       `[data-message-id="${targetMessageId}"]`
     ) as HTMLElement) ||
     (document.getElementById(`msg-${targetMessageId}`) as HTMLElement);
@@ -1031,7 +1055,7 @@ const scrollToMessageById = async (
     );
     if (message) {
       target =
-        (container.querySelector(
+        (scrollContainer.querySelector(
           `[data-message-id="${message.message_id}"]`
         ) as HTMLElement) ||
         (document.getElementById(`msg-${message.message_id}`) as HTMLElement);
@@ -1039,12 +1063,17 @@ const scrollToMessageById = async (
   }
 
   if (target) {
-    const top = getOffsetTop(container, target) - 60;
+    await nextTick();
 
-    container.scrollTo({ top, behavior: 'auto' });
+    const top = getOffsetTop(scrollContainer, target) - 60;
+    const maxScroll = scrollContainer.scrollHeight - scrollContainer.clientHeight;
+    const validTop = Math.max(0, Math.min(top, maxScroll));
+
+    scrollContainer.scrollTop = validTop;
+    chatLogPS.value?.update?.();
 
     requestAnimationFrame(() => {
-      container.scrollTo({ top, behavior: 'smooth' });
+      scrollContainer.scrollTop = validTop;
       chatLogPS.value?.update?.();
 
       if (options.highlight) {
@@ -1068,8 +1097,12 @@ const scrollToMessageById = async (
     return;
   }
 
-  container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
-  chatLogPS.value?.update?.();
+  scrollContainer.scrollTop = scrollContainer.scrollHeight;
+  await nextTick();
+  requestAnimationFrame(() => {
+    scrollContainer.scrollTop = scrollContainer.scrollHeight;
+    chatLogPS.value?.update?.();
+  });
 };
 
 const highlightAndScrollToMessage = async (id: string) => {
