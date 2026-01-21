@@ -250,6 +250,9 @@ export class BaileysIncomingMessageService {
     this.currentSocket = socket;
 
     socket.ev.on('messages.upsert', (e) => {
+      console.log('logs');
+      console.dir(e, { depth: null, colors: true });
+
       if (!e?.messages?.length) return;
 
       for (const m of e.messages) {
@@ -289,12 +292,6 @@ export class BaileysIncomingMessageService {
   ): void {
     try {
       const chatKind = getChatKind(m);
-
-      console.log('upsertType');
-      console.dir(upsertType, { depth: null, colors: true });
-
-      console.log('message');
-      console.dir(m, { depth: null, colors: true });
 
       if (
         chatKind !== EChatKind.user ||
