@@ -1,6 +1,7 @@
 <script lang="ts" setup>
 import { useChatStore } from '@/@webcore/stores/chat';
-import { computed, watch, onUnmounted, nextTick } from 'vue';
+import { computed, watch, onUnmounted, nextTick, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { ListChatsResult } from '@core/schema/chat/listChats/response.schema';
 import { formatDate } from '@core/common/functions/formatDate';
 import { formatDateTime } from '@core/common/functions/formatDateTime';

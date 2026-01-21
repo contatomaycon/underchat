@@ -16,6 +16,7 @@ import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { IChat } from '@core/common/interfaces/IChat';
 import { ReportConversationHistoryMessagesListerUseCase } from '@core/useCases/reportConversationHistory/ReportConversationHistoryMessagesLister.useCase';
 import { ChatContactService } from './chatContact.service';
+import { PasswordEncryptorService } from './passwordEncryptor.service';
 import { extractPhoneAndDdi } from '@core/common/functions/extractPhoneAndDdi';
 import { TFunction } from 'i18next';
 import {
@@ -34,7 +35,8 @@ export class ReportConversationHistoryPdfService {
     private readonly pdfUpdaterRepository: ReportConversationHistoryPdfUpdaterRepository,
     private readonly elasticDatabaseService: ElasticDatabaseService,
     private readonly messagesListerUseCase: ReportConversationHistoryMessagesListerUseCase,
-    private readonly chatContactService: ChatContactService
+    private readonly chatContactService: ChatContactService,
+    private readonly passwordEncryptorService: PasswordEncryptorService
   ) {}
 
   async deletePdf(url: string | null): Promise<void> {
@@ -105,6 +107,15 @@ export class ReportConversationHistoryPdfService {
       const contactId = msg.content?.contact?.contact_id;
       if (contactId && typeof contactId === 'string') {
         uniqueContactIds.add(contactId);
+      }
+
+      if (msg.content?.contacts && Array.isArray(msg.content.contacts)) {
+        for (const contact of msg.content.contacts) {
+          const id = contact?.contact_id;
+          if (id && typeof id === 'string') {
+            uniqueContactIds.add(id);
+          }
+        }
       }
     }
 
@@ -690,10 +701,14 @@ export class ReportConversationHistoryPdfService {
             .time { font-weight: 500; }
             .message-deleted-badge { font-size: 10.4px; color: rgba(17, 27, 33, 0.5); font-style: italic; line-height: 1; margin-top: 6px; text-align: right; text-decoration: none; display: block; }
             .message-edited-badge { font-size: 10.4px; color: rgba(17, 27, 33, 0.5); font-style: italic; line-height: 1; margin-top: 6px; text-align: right; text-decoration: none; display: block; }
-            .reactions-summary { position: absolute; display: inline-flex; gap: 4px; bottom: 0; transform: translateY(50%); z-index: 11; }
+            .reactions-summary { position: absolute; display: inline-flex; gap: 4px; bottom: -2px; transform: translateY(60%); z-index: 11; }
             .reactions-summary--left { justify-content: flex-start; left: 16px; }
             .reactions-summary--right { justify-content: flex-end; right: 16px; }
             .reactions-summary--center { justify-content: center; left: 50%; transform: translateX(-50%) translateY(60%); }
+            .reactions-summary--contact { bottom: auto; top: calc(100% - 16px); left: 20px; transform: translateY(0); }
+            .reactions-summary--contact.reactions-summary--right { transform: translateY(0); }
+            .reactions-summary--contact.reactions-summary--left { transform: translateY(0); }
+            .reactions-summary--contact.reactions-summary--center { transform: translateX(-50%) translateY(0); }
             .reaction-summary-bubble { display: inline-flex; align-items: center; background: rgb(255, 255, 255); border-radius: 999px; padding: 2px 8px; min-height: 22px; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08); border: 0.5px solid rgba(17, 27, 33, 0.08); gap: 8px; }
             .reaction-summary-item { display: inline-flex; align-items: center; gap: 4px; }
             .reaction-summary-emoji { font-size: 0.9rem; line-height: 1; }
@@ -705,8 +720,9 @@ export class ReportConversationHistoryPdfService {
             .quoted-media { width: 44px; height: 44px; border-radius: 4px; overflow: hidden; margin-bottom: 4px; }
             .quoted-media img { width: 100%; height: 100%; object-fit: cover; }
             .quoted-location, .quoted-document, .quoted-audio, .quoted-contact, .quoted-sticker { display: flex; align-items: center; gap: 8px; }
-            .quoted-document-info, .quoted-audio-info, .quoted-video-info, .quoted-image-info { display: flex; flex-direction: column; gap: 2px; }
-            .quoted-document-name, .quoted-audio-name, .quoted-video-name, .quoted-image-name { font-size: 12.8px; font-weight: 600; color: rgb(25, 118, 210); max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+            .quoted-document-info, .quoted-audio-info, .quoted-video-info, .quoted-image-info, .quoted-contact-info { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+            .quoted-document-name, .quoted-audio-name, .quoted-video-name, .quoted-image-name, .quoted-contact-name { font-size: 12.8px; font-weight: 600; color: rgb(25, 118, 210); max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+            .quoted-contact-message { font-size: 0.75rem; color: rgba(17, 27, 33, 0.7); max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
             .quoted-document-meta, .quoted-audio-meta, .quoted-video-meta, .quoted-image-meta { font-size: 11.2px; color: rgba(17, 27, 33, 0.6); }
             .quoted-text { color: rgba(17, 27, 33, 0.7); }
             .quoted-video-thumb { width: 100%; height: 100%; object-fit: cover; }
@@ -1304,6 +1320,14 @@ export class ReportConversationHistoryPdfService {
       return this.formatContactCard(contact, msg, content.message);
     }
 
+    if (content.type === EMessageType.contacts) {
+      const contacts = content.contacts;
+      if (!contacts || !Array.isArray(contacts) || contacts.length === 0) {
+        return `[${t('contacts')}]`;
+      }
+      return this.formatContacts(contacts, msg, content.message);
+    }
+
     const annotationMessage = this.formatAnnotationMessage(content);
     if (annotationMessage) return annotationMessage;
 
@@ -1592,6 +1616,11 @@ export class ReportConversationHistoryPdfService {
       positionClass = 'reactions-summary--right';
     }
 
+    const isContactType =
+      contentType === EMessageType.contact_card ||
+      contentType === EMessageType.contacts;
+    const contactClass = isContactType ? 'reactions-summary--contact' : '';
+
     const reactionItems = reactionsSummary
       .map(
         (reaction) => `
@@ -1606,7 +1635,7 @@ export class ReportConversationHistoryPdfService {
       .join('');
 
     return `
-      <div class="reactions-summary ${positionClass}">
+      <div class="reactions-summary ${positionClass} ${contactClass}">
         <div class="reaction-summary-bubble">
           ${reactionItems}
         </div>
@@ -1615,23 +1644,41 @@ export class ReportConversationHistoryPdfService {
   }
 
   private getContactPhoneDisplay(contact: IContactMessage): string {
-    if (!contact.contact_id) {
-      return contact.phone_partial || '';
+    if (contact.contact_id) {
+      const phone = this.contactPhoneCache.get(contact.contact_id);
+      if (phone) {
+        const phoneDdi = contact.phone_ddi || null;
+        if (phoneDdi) {
+          const phoneDigits = phone.replaceAll(/\D/g, '');
+          const fullPhone = `${phoneDdi}${phoneDigits}`;
+          return this.formatPhone(fullPhone, phoneDdi);
+        }
+
+        return this.formatPhone(phone, null);
+      }
     }
 
-    const phone = this.contactPhoneCache.get(contact.contact_id);
-    if (!phone) {
-      return contact.phone_partial || '';
+    if (contact.phone && !contact.phone.includes('*')) {
+      const isAESFormat =
+        contact.phone.includes(':') && contact.phone.split(':').length === 3;
+
+      if (isAESFormat) {
+        try {
+          const decryptedPhone = this.passwordEncryptorService.decrypt(
+            contact.phone
+          );
+          if (decryptedPhone) {
+            const phoneDdi = contact.phone_ddi || null;
+            return this.formatPhone(decryptedPhone, phoneDdi);
+          }
+        } catch {}
+      } else {
+        const phoneDdi = contact.phone_ddi || null;
+        return this.formatPhone(contact.phone, phoneDdi);
+      }
     }
 
-    const phoneDdi = contact.phone_ddi || null;
-    if (phoneDdi) {
-      const phoneDigits = phone.replaceAll(/\D/g, '');
-      const fullPhone = `${phoneDdi}${phoneDigits}`;
-      return this.formatPhone(fullPhone, phoneDdi);
-    }
-
-    return this.formatPhone(phone, null);
+    return contact.phone_partial || '';
   }
 
   private generateContactAvatarHtml(
@@ -1709,6 +1756,116 @@ export class ReportConversationHistoryPdfService {
           font-size: 14px;
           line-height: 1.5;
         ">${this.escapeHtml(message.replaceAll('\n', '<br>'))}</p>`;
+  }
+
+  private formatContacts(
+    contacts: IContactMessage[],
+    msg: ListMessageResult,
+    message: string | null | undefined
+  ): string {
+    const isUser = msg.type_user === ETypeUserChat.client;
+    const backgroundColor = isUser
+      ? 'rgba(255, 255, 255, 0.5)'
+      : 'rgba(255, 255, 255, 0.3)';
+    const textColor = 'rgb(17, 27, 33)';
+
+    const firstContact = contacts[0];
+    const contactName = firstContact?.name || '';
+    const contactLastName = firstContact?.last_name || '';
+    const fullName = contactLastName
+      ? `${contactName} ${contactLastName}`
+      : contactName;
+
+    const title =
+      contacts.length === 1
+        ? fullName
+        : `${fullName} e ${contacts.length - 1} outro contato`;
+
+    const contactsHtml = contacts
+      .map((contact) => {
+        const contactName = contact.name || '';
+        const contactLastName = contact.last_name || '';
+        const fullName = contactLastName
+          ? `${contactName} ${contactLastName}`
+          : contactName;
+        const hasPhoto = !!contact.photo;
+        const contactPhoto =
+          hasPhoto && contact.photo ? contact.photo : this.getDefaultAvatar();
+        const phoneDisplay = this.getContactPhoneDisplay(contact);
+
+        const avatarHtml = this.generateContactAvatarHtml(
+          contactPhoto,
+          fullName,
+          hasPhoto
+        );
+        const infoHtml = this.generateContactInfoHtml(
+          fullName,
+          phoneDisplay,
+          textColor
+        );
+
+        return `
+          <div class="contact-item" style="
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px;
+            background-color: ${backgroundColor};
+            border-radius: 8px;
+            margin-bottom: 8px;
+          ">
+            ${avatarHtml}
+            ${infoHtml}
+          </div>
+        `;
+      })
+      .join('');
+
+    const messageHtml = this.generateContactMessageHtml(message, textColor);
+
+    return `
+      <div class="contact-bubble" style="
+        max-width: 100%;
+        position: relative;
+        padding-bottom: 0;
+        margin-bottom: 0;
+      ">
+        <div style="
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 12px;
+          background-color: ${backgroundColor};
+          border-radius: 8px;
+          margin-bottom: 8px;
+        ">
+          <div style="
+            width: 42px;
+            height: 42px;
+            border-radius: 999px;
+            background: rgba(59, 130, 246, 0.16);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: rgba(37, 99, 235, 0.9);
+            flex-shrink: 0;
+          ">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M16 11c1.66 0 3-1.34 3-3S17.66 5 16 5s-3 1.34-3 3s1.34 3 3 3Zm-8 0c1.66 0 3-1.34 3-3S9.66 5 8 5S5 6.34 5 8s1.34 3 3 3Zm0 2c-2.33 0-7 1.17-7 3.5V20h14v-3.5C15 14.17 10.33 13 8 13Zm8 0c-.29 0-.62.02-.97.05c1.16.84 1.97 1.96 1.97 3.45V20h7v-3.5c0-2.33-4.67-3.5-7-3.5Z"/>
+            </svg>
+          </div>
+          <div style="flex: 1; min-width: 0;">
+            <div style="
+              font-size: 14px;
+              font-weight: 500;
+              color: ${textColor};
+            ">${this.escapeHtml(title)}</div>
+          </div>
+        </div>
+        ${contacts.length > 1 ? contactsHtml : ''}
+        ${messageHtml}
+      </div>
+    `;
   }
 
   private formatContactCard(
@@ -2187,15 +2344,72 @@ export class ReportConversationHistoryPdfService {
   }
 
   private generateQuotedContactHtml(
+    quoted: QuotedMessageType,
     t: TFunction<'translation', undefined>
   ): string {
+    const isGroup = quoted?.type === EMessageType.contacts;
+    const quotedContent = quoted as any;
+
+    let contactName = t('contact');
+
+    if (quoted?.type === EMessageType.contact_card && quoted.contact) {
+      const contactNameValue = quoted.contact.name || '';
+      const contactLastNameValue = quoted.contact.last_name || '';
+      contactName = contactLastNameValue
+        ? `${contactNameValue} ${contactLastNameValue}`
+        : contactNameValue;
+    } else if (
+      isGroup &&
+      quotedContent?.contacts &&
+      quotedContent.contacts.length > 0
+    ) {
+      const firstContact = quotedContent.contacts[0];
+      const firstName = firstContact?.name || '';
+      const firstLastName = firstContact?.last_name || '';
+      const firstFullName = firstLastName
+        ? `${firstName} ${firstLastName}`
+        : firstName;
+
+      if (quotedContent.contacts.length === 1) {
+        contactName = firstFullName;
+      } else {
+        contactName = `${firstFullName} e ${quotedContent.contacts.length - 1} outro contato`;
+      }
+    }
+
+    const iconSvg = isGroup
+      ? `<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
+           <path d="M16 11c1.66 0 3-1.34 3-3S17.66 5 16 5s-3 1.34-3 3s1.34 3 3 3Zm-8 0c1.66 0 3-1.34 3-3S9.66 5 8 5S5 6.34 5 8s1.34 3 3 3Zm0 2c-2.33 0-7 1.17-7 3.5V20h14v-3.5C15 14.17 10.33 13 8 13Zm8 0c-.29 0-.62.02-.97.05c1.16.84 1.97 1.96 1.97 3.45V20h7v-3.5c0-2.33-4.67-3.5-7-3.5Z"/>
+         </svg>`
+      : `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+           <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+         </svg>`;
+
+    const avatarHtml =
+      quoted?.type === EMessageType.contact_card &&
+      quoted.contact &&
+      quoted.contact.photo
+        ? `<img src="${this.escapeHtml(quoted.contact.photo)}" alt="${this.escapeHtml(contactName)}" style="width: 22px; height: 22px; border-radius: 50%; object-fit: cover;" />`
+        : iconSvg;
+
     return `
         <div class="quoted-contact">
-          <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="width: 22px; height: 22px; fill: rgb(25, 118, 210);">
-            <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
-          </svg>
+          <div style="
+            width: 22px;
+            height: 22px;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            ${isGroup ? 'color: rgb(25, 118, 210);' : ''}
+          ">${avatarHtml}</div>
           <div class="quoted-contact-info">
-            <span class="quoted-contact-name">${t('contact')}</span>
+            <span class="quoted-contact-name">${this.escapeHtml(contactName)}</span>
+            ${
+              quoted?.message
+                ? `<span class="quoted-contact-message" style="font-size: 0.75rem; color: rgba(17, 27, 33, 0.7); max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${this.escapeHtml(quoted.message)}</span>`
+                : ''
+            }
           </div>
         </div>
       `;
@@ -2208,7 +2422,8 @@ export class ReportConversationHistoryPdfService {
       quotedType !== EMessageType.audio &&
       quotedType !== EMessageType.sticker &&
       quotedType !== EMessageType.location &&
-      quotedType !== EMessageType.contact_card
+      quotedType !== EMessageType.contact_card &&
+      quotedType !== EMessageType.contacts
     );
   }
 
@@ -2284,7 +2499,7 @@ export class ReportConversationHistoryPdfService {
     }
 
     if (this.hasQuotedContact(quoted)) {
-      parts.push(this.generateQuotedContactHtml(t));
+      parts.push(this.generateQuotedContactHtml(quoted, t));
     }
 
     const quotedText = this.resolveQuotedText(quoted, quotedType, t);
@@ -2378,7 +2593,21 @@ export class ReportConversationHistoryPdfService {
   }
 
   private hasQuotedContact(quoted: QuotedMessageType): boolean {
-    return !!(quoted?.type === EMessageType.contact_card && quoted.contact);
+    if (!quoted) return false;
+
+    if (quoted.type === EMessageType.contact_card && quoted.contact) {
+      return true;
+    }
+
+    if (quoted.type === EMessageType.contacts) {
+      const quotedContent = quoted as any;
+      if (quotedContent?.contacts && quotedContent.contacts.length > 0) {
+        return true;
+      }
+      return true;
+    }
+
+    return false;
   }
 
   private hasQuotedDocument(quoted: QuotedMessageType): boolean {
