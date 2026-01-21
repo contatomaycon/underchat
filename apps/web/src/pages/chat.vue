@@ -18,6 +18,7 @@ import ChatLog from '@/components/chat/ChatLog.vue';
 import ChatQuickMessagePreview from '@/components/chat/ChatQuickMessagePreview.vue';
 import ChatUserProfileSidebarContent from '@/components/chat/ChatUserProfileSidebarContent.vue';
 import ChatSearchSidebarContent from '@/components/chat/ChatSearchSidebarContent.vue';
+import ChatAttendanceHistorySidebarContent from '@/components/chat/ChatAttendanceHistorySidebarContent.vue';
 import AppContactPicker from '@/components/chat/AppContactPicker.vue';
 import AppAddContactChat from '@/components/chat/AppAddContactChat.vue';
 import AppEditContactChat from '@/components/chat/AppEditContactChat.vue';
@@ -129,6 +130,7 @@ const isUserProfileSidebarOpen = ref(false);
 const isUpdatingUserProfileStatus = ref(false);
 const isActiveChatUserProfileSidebarOpen = ref(false);
 const isSearchSidebarOpen = ref(false);
+const isAttendanceHistorySidebarOpen = ref(false);
 const linkPreview = ref<ViewLinkPreviewResponse | null>(null);
 const isLoadingLinkPreview = ref(false);
 const hasUrlInMessage = computed(() => {
@@ -709,6 +711,15 @@ const canShowCloseButton = computed(() => {
 
 const canTransfer = computed(() => {
   return true;
+});
+
+const canViewAttendanceHistory = computed(() => {
+  return can([
+    EGeneralPermissions.full_access,
+    EGeneralPermissions.full_access_group,
+    EChatPermissions.chat_group,
+    EChatPermissions.attendance_history,
+  ]);
 });
 
 const activeChatLabels = computed(() => {
@@ -4598,6 +4609,22 @@ onBeforeUnmount(() => {
     </VNavigationDrawer>
 
     <VNavigationDrawer
+      v-model="isAttendanceHistorySidebarOpen"
+      data-allow-mismatch
+      width="374"
+      absolute
+      temporary
+      location="end"
+      touchless
+      class="chat-attendance-history-sidebar"
+    >
+      <ChatAttendanceHistorySidebarContent
+        :is-open="isAttendanceHistorySidebarOpen"
+        @close="isAttendanceHistorySidebarOpen = false"
+      />
+    </VNavigationDrawer>
+
+    <VNavigationDrawer
       v-model="isLeftSidebarOpen"
       data-allow-mismatch
       absolute
@@ -4815,6 +4842,13 @@ onBeforeUnmount(() => {
               :title="t('label')"
             >
               <VIcon icon="tabler-tag" />
+            </IconBtn>
+            <IconBtn
+              v-if="canViewAttendanceHistory"
+              @click="isAttendanceHistorySidebarOpen = true"
+              :title="t('attendance_history')"
+            >
+              <VIcon icon="tabler-history" />
             </IconBtn>
             <IconBtn
               v-if="isInChatStatus && canTransfer"

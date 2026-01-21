@@ -2146,6 +2146,43 @@ export const useChatStore = defineStore('chat', {
       }
     },
 
+    async getChatMessagesById(
+      chatId: string,
+      query: ListMessageChatsQuery
+    ): Promise<ListMessageResponse | null> {
+      try {
+        const response = await axios.get<IApiResponse<ListMessageResponse>>(
+          `/chat/${chatId}`,
+          {
+            params: query,
+          }
+        );
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        return data.data;
+      } catch (error) {
+        if (error instanceof AxiosError) {
+          if (error.response?.status === 404) {
+            return null;
+          }
+          const errorMessage = error.response?.data?.message ?? error.message;
+          this.showSnackbar(errorMessage, EColor.error);
+          return null;
+        }
+
+        if (error instanceof Error) {
+          this.showSnackbar(error.message, EColor.error);
+        }
+
+        return null;
+      }
+    },
+
     async loadMoreMessages(): Promise<boolean> {
       if (this.loadingMoreMessages || this.currentPage >= this.totalPages) {
         return false;
