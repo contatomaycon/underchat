@@ -1,0 +1,2 @@
+-- Insert permission action: attendance history
+INSERT INTO "permission_action" ("permission_action_id", "permission_module_id", "permission_action_group_id", "action", "name", "description") VALUES ('d90d34cf-d820-4be0-9d08-39b8ac1bd461', '019a930d-c6f6-766d-9c83-914b7faa4337', '019a930d-c6f6-766d-9c83-b9db2f0d1aae', 'attendance_history', 'Histórico de atendimento', 'Permissão para acessar o histórico de atendimento');

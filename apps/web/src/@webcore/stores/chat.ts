@@ -1704,6 +1704,9 @@ export const useChatStore = defineStore('chat', {
         if (input.filter_date_end) {
           params.filter_date_end = input.filter_date_end;
         }
+        if (input.status !== null && input.status !== undefined) {
+          params.status = input.status;
+        }
         if (input.sort_field) {
           params.sort_field = input.sort_field;
         }
@@ -1772,7 +1775,8 @@ export const useChatStore = defineStore('chat', {
           normalizedSearch,
           searchFilters,
           pagination,
-          append
+          append,
+          hasAppliedAdvancedFilters
         );
       }
 
@@ -1798,7 +1802,8 @@ export const useChatStore = defineStore('chat', {
       search: string,
       filters: Partial<ChatFilters>,
       pagination: { current_page: number; per_page: number },
-      append: boolean
+      append: boolean,
+      hasAppliedAdvancedFilters: boolean
     ): Promise<ResolveChatEndpointResult> {
       const request: SearchChatsQuery = {
         current_page: pagination.current_page,
@@ -1806,6 +1811,14 @@ export const useChatStore = defineStore('chat', {
         search,
         ...pickDefinedFilters(filters, [...FILTER_KEYS]),
       };
+
+      if (hasAppliedAdvancedFilters) {
+        if (statusArray.length === 1) {
+          request.status = statusArray[0];
+        } else {
+          request.status = statusArray;
+        }
+      }
 
       if (filters.sort_field !== null && filters.sort_field !== undefined) {
         request.sort_field = filters.sort_field;

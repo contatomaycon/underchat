@@ -1,9 +1,17 @@
 import { Static, Type } from '@sinclair/typebox';
 import { pagingRequestSchema } from '@core/schema/common/pagingRequestSchema';
+import { EChatStatus } from '@core/common/enums/EChatStatus';
 
 export const searchChatsQuerySchema = Type.Object({
   ...pagingRequestSchema.properties,
   search: Type.String(),
+  status: Type.Optional(
+    Type.Union([
+      Type.String({ enum: Object.values(EChatStatus) }),
+      Type.Array(Type.String({ enum: Object.values(EChatStatus) })),
+      Type.Null(),
+    ])
+  ),
   filter_label_template_id: Type.Optional(
     Type.Union([Type.String(), Type.Null()])
   ),

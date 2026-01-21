@@ -313,6 +313,26 @@ export class ChatSearcherUseCase {
       } as unknown as IElasticsearchBoolClause);
     }
 
+    if (query.status !== null && query.status !== undefined) {
+      const statusArray = Array.isArray(query.status)
+        ? query.status
+        : [query.status];
+
+      if (statusArray.length === 1) {
+        filterClauses.push({
+          term: {
+            status: statusArray[0],
+          },
+        });
+      } else {
+        filterClauses.push({
+          terms: {
+            status: statusArray,
+          },
+        } as unknown as IElasticsearchBoolClause);
+      }
+    }
+
     const canViewOthers = this.canViewOthersChats(actions);
     const canListAll = this.canListAllChatsWithoutSectorLimit(actions);
 
