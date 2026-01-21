@@ -13,6 +13,10 @@ import { EMessageType } from '@core/common/enums/EMessageType';
 import { formatDate } from '@/@webcore/utils/formatters';
 import { useI18n } from 'vue-i18n';
 import { MglMap, MglMarker } from 'vue-maplibre-gl';
+import { useChatStore } from '@/@webcore/stores/chat';
+import { EColor } from '@core/common/enums/EColor';
+import GroupContactMessageCard from '@/components/chat/GroupContactMessageCard.vue';
+import { CreateContactRequest } from '@core/schema/contact/createContact/request.schema';
 
 interface Props {
   messages: ListMessageResult[];
@@ -30,6 +34,7 @@ const props = withDefaults(defineProps<Props>(), {
 });
 
 const { t } = useI18n();
+const chatStore = useChatStore();
 
 const audioPlayers = ref<Map<string, HTMLAudioElement>>(new Map());
 const audioPlayStates = reactive<Record<string, boolean>>({});
@@ -377,11 +382,88 @@ const getMessageEditHistory = (
 const editHistoryModalOpen = ref(false);
 const viewingEditHistory = ref<ListMessageResult | null>(null);
 
+const contactsGroupModalOpen = ref(false);
+const contactsGroupData = ref<ListMessageResult | null>(null);
+const savingContacts = ref<Set<string>>(new Set());
+
 const onViewEditHistory = (m: ListMessageResult) => {
   if (!hasMessageVersions(m)) return;
 
   viewingEditHistory.value = m;
   editHistoryModalOpen.value = true;
+};
+
+const handleContactsGroupClick = (message: ListMessageResult) => {
+  if (!message.content?.contacts || message.content.contacts.length === 0) {
+    return;
+  }
+  contactsGroupData.value = message;
+  contactsGroupModalOpen.value = true;
+};
+
+const saveContactFromGroup = async (
+  contact: {
+    contact_id: string | null;
+    name: string;
+    last_name?: string | null;
+    phone?: string | null;
+    phone_partial?: string | null;
+    phone_ddi?: string | null;
+    email?: string | null;
+    email_partial?: string | null;
+    photo?: string | null;
+  }
+) => {
+  const contactKey = contact.contact_id || `${contact.phone}_${contact.phone_ddi}`;
+  if (savingContacts.value.has(contactKey)) return;
+
+  if (contact.contact_id) {
+    emit('openContact', contact.contact_id);
+    return;
+  }
+
+  const phone = contact.phone ?? contact.phone_partial;
+  const phoneDdi = contact.phone_ddi ?? '55';
+
+  if (!phone) return;
+
+  savingContacts.value.add(contactKey);
+
+  try {
+    const phoneSearch = phone.replaceAll(/\D/g, '');
+    const foundContact = await chatStore.getChatContactByPhone(
+      phoneSearch,
+      phoneDdi
+    );
+
+    if (foundContact) {
+      savingContacts.value.delete(contactKey);
+      emit('openContact', foundContact.contact_id);
+      return;
+    }
+
+    const createContactData: CreateContactRequest = {
+      name: contact.name,
+      last_name: contact.last_name ?? null,
+      phone: phoneSearch,
+      phone_ddi: phoneDdi,
+      email: contact.email ?? null,
+    };
+
+    globalThis.dispatchEvent(
+      new CustomEvent('open-add-contact-modal', {
+        detail: createContactData,
+      })
+    );
+
+    savingContacts.value.delete(contactKey);
+  } catch (error) {
+    savingContacts.value.delete(contactKey);
+    chatStore.showSnackbar(
+      t('error_saving_contact') || 'Erro ao salvar contato',
+      EColor.error
+    );
+  }
 };
 
 const shouldFormatMessage = (message: ListMessageResult): boolean => {
@@ -513,6 +595,8 @@ const resolveQuotedName = (m: ListMessageResult): string => {
   return '';
 };
 
+const showQuoted = (m: ListMessageResult) => !!m.content?.quoted;
+
 const resolveQuotedText = (m: ListMessageResult): string => {
   if (!m.content?.quoted) {
     return '';
@@ -579,11 +663,82 @@ const hasQuotedLocation = (m: ListMessageResult): boolean =>
     m.content.quoted.location
   );
 
-const hasQuotedContact = (m: ListMessageResult): boolean =>
-  !!(
-    m.content?.quoted?.type === EMessageType.contact_card &&
-    m.content.quoted.contact
-  );
+const hasQuotedContact = (m: ListMessageResult): boolean => {
+  if (!m.content?.quoted) return false;
+  
+  if (m.content.quoted.type === EMessageType.contact_card && m.content.quoted.contact) {
+    return true;
+  }
+  
+  if (m.content.quoted.type === EMessageType.contacts) {
+    const quotedContent = m.content.quoted as any;
+    if (quotedContent?.contacts && quotedContent.contacts.length > 0) {
+      return true;
+    }
+    return true;
+  }
+  
+  return false;
+};
+
+const resolveQuotedContactName = (m: ListMessageResult): string => {
+  if (!m.content?.quoted) return '';
+  
+  if (m.content.quoted.type === EMessageType.contact_card && m.content.quoted.contact) {
+    return m.content.quoted.contact.name || '';
+  }
+  
+  if (m.content.quoted.type === EMessageType.contacts) {
+    const quotedContent = m.content.quoted as any;
+    if (quotedContent?.contacts && quotedContent.contacts.length > 0) {
+      const firstContact = quotedContent.contacts[0];
+      if (quotedContent.contacts.length === 1) {
+        return firstContact.name || '';
+      }
+      return `${firstContact.name}${
+        quotedContent.contacts.length > 1
+          ? ` e ${quotedContent.contacts.length - 1}`
+          : ''
+      }${
+        quotedContent.contacts.length > 1
+          ? ' outro contato'
+          : ''
+      }`;
+    }
+    
+    if (m.content.quoted.message) {
+      return m.content.quoted.message;
+    }
+    
+    return t('contact_label', 'Contato');
+  }
+  
+  return '';
+};
+
+const resolveQuotedContactPhoto = (m: ListMessageResult): string | null => {
+  if (!m.content?.quoted) return null;
+  
+  if (m.content.quoted.type === EMessageType.contact_card && m.content.quoted.contact) {
+    return m.content.quoted.contact.photo || null;
+  }
+  
+  return null;
+};
+
+const isQuotedContactGroup = (m: ListMessageResult): boolean => {
+  if (!m.content?.quoted) return false;
+  
+  if (m.content.quoted.type === EMessageType.contacts) {
+    const quotedContent = m.content.quoted as any;
+    if (quotedContent?.contacts && quotedContent.contacts.length > 0) {
+      return quotedContent.contacts.length > 1;
+    }
+    return true;
+  }
+  
+  return false;
+};
 
 const hasQuotedDocument = (m: ListMessageResult): boolean => {
   if (!m.content?.quoted) return false;
@@ -1044,6 +1199,10 @@ const handleContactClick = (message: ListMessageResult) => {
                       : 'chat-right',
                   {
                     'is-deleted': item.message.deleted,
+                    'has-actions': !item.message.deleted,
+                    'has-contact-card':
+                      item.message.content?.type === EMessageType.contact_card ||
+                      item.message.content?.type === EMessageType.contacts,
                     'has-reactions':
                       item.message.content?.reactions &&
                       item.message.content.reactions.length > 0 &&
@@ -1070,10 +1229,11 @@ const handleContactClick = (message: ListMessageResult) => {
               >
                 <div class="message-block">
                   <div
-                    v-if="item.message.content?.quoted"
+                    v-if="showQuoted(item.message)"
                     class="quoted-block"
                     :class="{
                       'is-right': !isTypeUser(item.message),
+                      'is-clickable': !item.message.deleted,
                     }"
                   >
                     <div class="quoted-name">
@@ -1210,11 +1370,48 @@ const handleContactClick = (message: ListMessageResult) => {
                         v-if="hasQuotedContact(item.message)"
                         class="quoted-contact"
                       >
-                        <VIcon size="22" color="primary">tabler-user</VIcon>
+                        <VAvatar
+                          v-if="resolveQuotedContactPhoto(item.message)"
+                          size="22"
+                          class="quoted-contact-avatar"
+                        >
+                          <VImg
+                            :src="resolveQuotedContactPhoto(item.message) || ''"
+                            :alt="resolveQuotedContactName(item.message)"
+                          />
+                        </VAvatar>
+                        <div
+                          v-else-if="isQuotedContactGroup(item.message)"
+                          class="quoted-contact-group-icon"
+                        >
+                          <svg
+                            width="22"
+                            height="22"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            xmlns="http://www.w3.org/2000/svg"
+                          >
+                            <path
+                              d="M16 11c1.66 0 3-1.34 3-3S17.66 5 16 5s-3 1.34-3 3s1.34 3 3 3Zm-8 0c1.66 0 3-1.34 3-3S9.66 5 8 5S5 6.34 5 8s1.34 3 3 3Zm0 2c-2.33 0-7 1.17-7 3.5V20h14v-3.5C15 14.17 10.33 13 8 13Zm8 0c-.29 0-.62.02-.97.05c1.16.84 1.97 1.96 1.97 3.45V20h7v-3.5c0-2.33-4.67-3.5-7-3.5Z"
+                              fill="currentColor"
+                            />
+                          </svg>
+                        </div>
+                        <VIcon
+                          v-else
+                          size="22"
+                          color="primary"
+                          icon="tabler-user"
+                        ></VIcon>
                         <div class="quoted-contact-info">
                           <span class="quoted-contact-name">
-                            {{ t('contact_label') }}
+                            {{ resolveQuotedContactName(item.message) || t('contact_label') }}
                           </span>
+                          <span
+                            v-if="item.message.content?.quoted?.message"
+                            class="quoted-contact-message"
+                            v-html="formatWhatsAppText(item.message.content.quoted.message)"
+                          ></span>
                         </div>
                       </div>
 
@@ -1247,7 +1444,9 @@ const handleContactClick = (message: ListMessageResult) => {
                           item.message.content?.quoted?.type !==
                             EMessageType.location &&
                           item.message.content?.quoted?.type !==
-                            EMessageType.contact_card
+                            EMessageType.contact_card &&
+                          item.message.content?.quoted?.type !==
+                            EMessageType.contacts
                         "
                         class="quoted-text"
                         :style="{
@@ -1701,61 +1900,23 @@ const handleContactClick = (message: ListMessageResult) => {
                       { 'is-deleted': item.message.deleted },
                     ]"
                   >
-                    <div
-                      class="contact-item d-flex align-center gap-3 pa-3"
-                      :class="{
-                        'contact-item--clickable':
-                          !item.message.deleted &&
-                          item.message.content.contact.contact_id,
-                      }"
-                      :style="{
-                        backgroundColor: isTypeUser(item.message)
-                          ? 'rgba(var(--v-theme-surface), 0.5)'
-                          : 'rgba(255, 255, 255, 0.3)',
-                        borderRadius: '8px',
-                      }"
-                      @click="handleContactClick(item.message)"
-                    >
-                      <VAvatar
-                        size="40"
-                        :variant="
-                          item.message.content.contact.photo
-                            ? undefined
-                            : 'tonal'
-                        "
-                        :color="
-                          item.message.content.contact.photo
-                            ? undefined
-                            : 'primary'
-                        "
-                      >
-                        <VImg
-                          v-if="item.message.content.contact.photo"
-                          :src="item.message.content.contact.photo"
-                          :alt="item.message.content.contact.name"
-                        />
-                        <VIcon v-else size="20">tabler-user</VIcon>
-                      </VAvatar>
-                      <div class="flex-grow-1">
-                        <div
-                          class="text-body-1 font-weight-medium"
-                          :style="{
-                            color: isTypeUser(item.message)
-                              ? 'rgb(var(--v-theme-on-surface))'
-                              : 'rgb(var(--v-theme-title))',
-                          }"
-                        >
-                          {{ item.message.content.contact.name }}
-                          {{ item.message.content.contact.last_name || '' }}
-                        </div>
-                        <div
-                          v-if="item.message.content.contact.phone_partial"
-                          class="text-caption text-disabled"
-                        >
-                          {{ item.message.content.contact.phone_partial }}
-                        </div>
-                      </div>
-                    </div>
+                    <GroupContactMessageCard
+                      :title="item.message.content.contact.name || ''"
+                      :time="
+                        formatDate(item.message.date, {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          hour12: false,
+                        })
+                      "
+                      :seen="!!item.message.summary?.is_seen"
+                      :align="isTypeUser(item.message) ? 'left' : 'right'"
+                      :is-group="false"
+                      :photo="item.message.content.contact.photo"
+                      @toggle="handleContactClick(item.message)"
+                      @view-all="handleContactClick(item.message)"
+                    />
+
                     <p
                       v-if="item.message.content?.message"
                       class="contact-caption mt-2"
@@ -1779,12 +1940,54 @@ const handleContactClick = (message: ListMessageResult) => {
 
                   <div
                     v-if="
+                      item.message.content?.type === EMessageType.contacts &&
+                      item.message.content?.contacts &&
+                      item.message.content.contacts.length > 0
+                    "
+                    :class="[
+                      'contact-bubble',
+                      !isTypeUser(item.message)
+                        ? 'contact-bubble--right'
+                        : 'contact-bubble--left',
+                      { 'is-deleted': item.message.deleted },
+                    ]"
+                  >
+                    <GroupContactMessageCard
+                      :title="
+                        `${item.message.content.contacts[0].name}${
+                          item.message.content.contacts.length > 1
+                            ? ` e ${item.message.content.contacts.length - 1}`
+                            : ''
+                        }${
+                          item.message.content.contacts.length > 1
+                            ? ' outro contato'
+                            : ''
+                        }`
+                      "
+                      :time="
+                        formatDate(item.message.date, {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          hour12: false,
+                        })
+                      "
+                      :seen="!!item.message.summary?.is_seen"
+                      :align="isTypeUser(item.message) ? 'left' : 'right'"
+                      :is-group="true"
+                      @toggle="handleContactsGroupClick(item.message)"
+                      @view-all="handleContactsGroupClick(item.message)"
+                    />
+                  </div>
+
+                  <div
+                    v-if="
                       item.message.content?.message &&
                       item.message.content?.type !== EMessageType.image &&
                       item.message.content?.type !== EMessageType.video &&
                       item.message.content?.type !== EMessageType.document &&
                       item.message.content?.type !==
                         EMessageType.contact_card &&
+                      item.message.content?.type !== EMessageType.contacts &&
                       item.message.content?.type !== EMessageType.audio &&
                       !item.message.message_key?.is_view_once
                     "
@@ -2014,6 +2217,11 @@ const handleContactClick = (message: ListMessageResult) => {
                         : !isTypeUser(item.message)
                           ? 'reactions-summary--right'
                           : 'reactions-summary--left',
+                      {
+                        'reactions-summary--contact':
+                          item.message.content?.type === EMessageType.contact_card ||
+                          item.message.content?.type === EMessageType.contacts,
+                      },
                     ]"
                   >
                     <div class="reaction-summary-bubble">
@@ -2035,6 +2243,10 @@ const handleContactClick = (message: ListMessageResult) => {
                   </div>
 
                   <div
+                    v-if="
+                      item.message.content?.type !== EMessageType.contact_card &&
+                      item.message.content?.type !== EMessageType.contacts
+                    "
                     :class="[
                       'message-meta',
                       {
@@ -2100,6 +2312,123 @@ const handleContactClick = (message: ListMessageResult) => {
       </template>
     </div>
   </div>
+
+  <VDialog
+    v-model="contactsGroupModalOpen"
+    max-width="600"
+    :scrollable="true"
+  >
+    <VCard v-if="contactsGroupData?.content?.contacts">
+      <VCardTitle class="d-flex align-center justify-space-between">
+        <div>
+          <div class="text-h6">
+            {{ t('contacts_group') }}
+          </div>
+          <div class="text-caption text-disabled mt-1">
+            {{
+              contactsGroupData.content.contacts.length === 1
+                ? t('contact_count_singular') || '1 contato'
+                : `${contactsGroupData.content.contacts.length} ${t('contacts') || 'contatos'}`
+            }}
+          </div>
+        </div>
+        <VBtn icon variant="text" size="small" @click="contactsGroupModalOpen = false">
+          <VIcon>tabler-x</VIcon>
+        </VBtn>
+      </VCardTitle>
+      <VDivider />
+      <VCardText>
+        <div class="d-flex flex-column gap-2">
+          <div
+            v-for="(contact, idx) in contactsGroupData.content.contacts"
+            :key="idx"
+            class="contact-item-modal d-flex align-center gap-3 pa-3"
+            :style="{
+              backgroundColor: 'rgba(var(--v-theme-surface), 0.5)',
+              borderRadius: '8px',
+              cursor: 'pointer',
+            }"
+            @click="saveContactFromGroup(contact)"
+          >
+            <VOverlay
+              :model-value="
+                savingContacts.has(
+                  contact.contact_id ||
+                    `${contact.phone}_${contact.phone_ddi}`
+                )
+              "
+              contained
+              class="align-center justify-center"
+              scrim="rgba(var(--v-theme-surface), 0.7)"
+              style="border-radius: 8px"
+            >
+              <VProgressCircular indeterminate color="primary" />
+            </VOverlay>
+            <VAvatar
+              size="48"
+              :variant="contact.photo ? undefined : 'tonal'"
+              :color="contact.photo ? undefined : 'primary'"
+            >
+              <VImg
+                v-if="contact.photo"
+                :src="contact.photo"
+                :alt="contact.name"
+              />
+              <VIcon v-else size="24">tabler-user</VIcon>
+            </VAvatar>
+            <div class="flex-grow-1">
+              <div class="text-body-1 font-weight-medium">
+                {{ contact.name }}
+                {{ contact.last_name || '' }}
+              </div>
+              <div
+                v-if="contact.phone_partial"
+                class="text-caption text-disabled"
+              >
+                {{ contact.phone_partial }}
+              </div>
+              <div
+                v-if="contact.email_partial"
+                class="text-caption text-disabled"
+              >
+                {{ contact.email_partial }}
+              </div>
+            </div>
+            <VBtn
+              icon
+              variant="text"
+              size="small"
+              :disabled="
+                savingContacts.has(
+                  contact.contact_id ||
+                    `${contact.phone}_${contact.phone_ddi}`
+                )
+              "
+              @click.stop="saveContactFromGroup(contact)"
+            >
+              <VIcon :color="contact.contact_id ? 'warning' : 'success'">
+                {{
+                  contact.contact_id
+                    ? 'tabler-user-edit'
+                    : 'tabler-user-plus'
+                }}
+              </VIcon>
+            </VBtn>
+          </div>
+        </div>
+      </VCardText>
+      <VDivider />
+      <VCardText class="d-flex justify-end flex-wrap gap-3">
+        <VBtn
+          variant="tonal"
+          color="secondary"
+          @click="contactsGroupModalOpen = false"
+        >
+          {{ t('close') }}
+        </VBtn>
+      </VCardText>
+    </VCard>
+  </VDialog>
 
   <VDialog v-model="editHistoryModalOpen" max-width="600" :scrollable="false">
     <VCard v-if="viewingEditHistory">
@@ -2202,6 +2531,13 @@ const handleContactClick = (message: ListMessageResult) => {
     min-width: 0;
     min-height: 40px;
     overflow: visible !important;
+
+    &.has-contact-card {
+      padding: 8px 8px 8px 0 !important;
+      padding-bottom: 8px !important;
+      box-shadow: none !important;
+      background: transparent !important;
+    }
 
     &.is-deleted {
       opacity: 0.7;
@@ -2450,16 +2786,50 @@ const handleContactClick = (message: ListMessageResult) => {
       background: rgba(var(--v-theme-on-surface), 0.1);
     }
 
+    .quoted-contact-avatar {
+      flex-shrink: 0;
+    }
+
+    .quoted-contact-group-icon {
+      width: 22px;
+      height: 22px;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: rgb(var(--v-theme-primary));
+
+      svg {
+        width: 100%;
+        height: 100%;
+      }
+    }
+
     .quoted-contact-info {
       display: flex;
       flex-direction: column;
       gap: 2px;
+      flex: 1;
+      min-width: 0;
     }
 
     .quoted-contact-name {
       font-size: 0.8rem;
       font-weight: 600;
       color: rgb(var(--v-theme-primary));
+      max-width: 180px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .quoted-contact-message {
+      font-size: 0.75rem;
+      color: rgba(var(--v-theme-on-surface), 0.7);
+      max-width: 180px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     .quoted-text {
@@ -2735,30 +3105,78 @@ const handleContactClick = (message: ListMessageResult) => {
 
   .contact-bubble {
     max-width: 100%;
+    margin-bottom: 0;
+    padding: 0;
+    background: transparent !important;
+    box-shadow: none !important;
     position: relative;
-    padding-bottom: 0;
-    margin-bottom: 16px;
 
     &.is-deleted {
       opacity: 0.7;
     }
+  }
 
-    .contact-caption {
-      margin-top: 8px;
-      white-space: pre-wrap;
-      word-break: break-word;
+  .contact-bubble--left {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    margin-right: auto;
+  }
+
+  .contact-bubble--right {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    margin-left: auto;
+  }
+
+  .contact-bubble--left .group-contact-card {
+    margin-right: 0;
+    margin-left: 0;
+    width: 100%;
+    max-width: 380px;
+  }
+
+  .contact-bubble--right .group-contact-card {
+    margin-left: 0;
+    margin-right: 0;
+    width: 100%;
+    max-width: 380px;
+  }
+
+  .chat-content.has-contact-card.has-actions {
+    .group-contact-card {
+      margin-top: 0;
+      position: relative;
     }
 
-    .contact-item--clickable {
-      cursor: pointer;
-      transition:
-        opacity 0.2s ease,
-        transform 0.2s ease;
+    .group-contact-card__title-row {
+      padding-right: 44px;
+    }
+  }
 
-      &:hover {
-        opacity: 0.9;
-        transform: scale(1.01);
-      }
+  .contact-caption {
+    margin-top: 8px;
+    padding: 0 4px;
+    font-size: 0.875rem;
+    line-height: 1.4;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  .contact-item-modal {
+    position: relative;
+    transition:
+      opacity 0.2s ease,
+      transform 0.2s ease;
+
+    &:hover {
+      opacity: 0.9;
+      transform: scale(1.01);
+    }
+
+    &:active {
+      transform: scale(0.99);
     }
   }
 
@@ -2958,12 +3376,32 @@ const handleContactClick = (message: ListMessageResult) => {
       transform: translateX(-50%) translateY(60%);
     }
 
+    &--contact {
+      bottom: auto;
+      top: calc(100% - 16px);
+      left: 20px;
+      transform: translateY(0);
+      z-index: 10;
+
+      &.reactions-summary--right {
+        transform: translateY(0);
+      }
+
+      &.reactions-summary--left {
+        transform: translateY(0);
+      }
+
+      &.reactions-summary--center {
+        transform: translateX(-50%) translateY(0);
+      }
+    }
+
     .reaction-summary-bubble {
       display: inline-flex;
       align-items: center;
       background: rgb(var(--v-theme-surface));
       border-radius: 999px;
-      padding: 2px 10px;
+      padding: 2px 8px;
       min-height: 22px;
       box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
       border: 0.5px solid rgba(var(--v-theme-on-surface), 0.08);
