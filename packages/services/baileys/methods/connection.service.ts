@@ -62,6 +62,8 @@ export class BaileysConnectionService {
   private connectionEstablished = false;
   private keepAliveInterval?: NodeJS.Timeout;
   private readonly keepAliveIntervalMs = 30_000;
+  private isKeepAliveRunning = false;
+  private keepAliveTimeoutMs = 25_000;
 
   constructor(
     private readonly centrifugo: CentrifugoService,
@@ -822,12 +824,59 @@ export class BaileysConnectionService {
       return undefined;
     }
 
-    if (!('ws' in reference)) {
-      return undefined;
+    if ('ws' in reference) {
+      const wsWrapper = (reference as { ws?: unknown }).ws;
+      if (wsWrapper && typeof wsWrapper === 'object') {
+        if ('socket' in wsWrapper) {
+          const ws = (wsWrapper as { socket?: WebSocket }).socket;
+          if (ws) {
+            return ws;
+          }
+        }
+        return wsWrapper as WebSocket;
+      }
     }
 
-    const { ws } = reference as { ws?: WebSocket };
-    return ws;
+    if ('socket' in reference) {
+      const socketRef = (reference as { socket?: unknown }).socket;
+      if (socketRef && typeof socketRef === 'object') {
+        if ('socket' in socketRef) {
+          const ws = (socketRef as { socket?: WebSocket }).socket;
+          if (ws) {
+            return ws;
+          }
+        }
+        return socketRef as WebSocket;
+      }
+    }
+
+    return undefined;
+  }
+
+  private isWebSocketOpen(ws: WebSocket | undefined): boolean {
+    if (!ws) {
+      return false;
+    }
+
+    const wsAny = ws as unknown;
+    if (typeof wsAny !== 'object' || wsAny === null) {
+      return false;
+    }
+
+    const hasReadyState = 'readyState' in wsAny;
+    const hasPrivateReadyState = '_readyState' in wsAny;
+
+    if (hasReadyState) {
+      const state = (wsAny as { readyState: number }).readyState;
+      return state === 1;
+    }
+
+    if (hasPrivateReadyState) {
+      const state = (wsAny as { _readyState: number })._readyState;
+      return state === 1;
+    }
+
+    return false;
   }
 
   private extractStatusCode(error: unknown): ECodeMessage | undefined {
@@ -883,6 +932,10 @@ export class BaileysConnectionService {
       return;
     }
 
+    if (!this.connected) {
+      return;
+    }
+
     this.keepAliveInterval = setInterval(() => {
       void this.checkAndMaintainActivity();
     }, this.keepAliveIntervalMs);
@@ -893,9 +946,15 @@ export class BaileysConnectionService {
       clearInterval(this.keepAliveInterval);
       this.keepAliveInterval = undefined;
     }
+
+    this.isKeepAliveRunning = false;
   }
 
   private async checkAndMaintainActivity(): Promise<void> {
+    if (this.isKeepAliveRunning) {
+      return;
+    }
+
     if (!this.connected) {
       this.stopKeepAlive();
       return;
@@ -910,25 +969,82 @@ export class BaileysConnectionService {
       return;
     }
 
-    try {
-      console.log('Sending keep-alive');
+    const ws = this.resolveWebSocket();
 
-      await this.socket.sendPresenceUpdate('available');
+    if (!this.isWebSocketOpen(ws)) {
+      this.stopKeepAlive();
+      return;
+    }
+
+    this.isKeepAliveRunning = true;
+
+    try {
+      await Promise.race([
+        this.socket.sendPresenceUpdate('available'),
+        new Promise<never>((_, reject) =>
+          setTimeout(
+            () => reject(new Error('Keep-alive timeout')),
+            this.keepAliveTimeoutMs
+          )
+        ),
+      ]);
+
+      console.log('Keep-alive sent');
     } catch (error) {
-      console.error('Keep-alive error', error);
+      console.error('Keep-alive error');
+      console.dir(error, { depth: null, colors: true });
+
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+
+      const isConnectionError = this.isConnectionRelatedError(errorMessage);
+
+      if (!isConnectionError) {
+        return;
+      }
 
       this.saveLogWppConnection({
         worker_id: WORKER,
         status: this.status,
         code: ECodeMessage.connectionLost,
-        message: `Keep-alive error: ${error instanceof Error ? error.message : String(error)}`,
+        message: `Keep-alive falhou: ${errorMessage}`,
         date: new Date(),
       });
 
-      if (!this.connected) {
-        this.stopKeepAlive();
+      this.stopKeepAlive();
+      this.connectionEstablished = false;
+
+      this.reconnect({
+        initial_connection: this.initialConnection,
+      });
+    } finally {
+      this.isKeepAliveRunning = false;
+    }
+  }
+
+  private isConnectionRelatedError(errorMessage: string): boolean {
+    const connectionErrorPatterns = [
+      'timeout',
+      'ECONNRESET',
+      'ETIMEDOUT',
+      'ENOTFOUND',
+      'ECONNREFUSED',
+      'EPIPE',
+      'socket hang up',
+      'Connection',
+      'connection closed',
+      'WebSocket',
+    ];
+
+    const lowerMessage = errorMessage.toLowerCase();
+
+    for (const pattern of connectionErrorPatterns) {
+      if (lowerMessage.includes(pattern.toLowerCase())) {
+        return true;
       }
     }
+
+    return false;
   }
 
   private readonly saveLogWppConnection = async (
