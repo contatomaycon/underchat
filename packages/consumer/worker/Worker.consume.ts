@@ -35,6 +35,8 @@ import { commitOffset } from '@core/common/functions/commitOffset';
 export class WorkerConsume {
   private consumer: KafkaConsumer | null = null;
   private isRunning = false;
+  private readonly maxRetries = 3;
+  private readonly retryIntervalMs = 30 * 1000;
 
   constructor(
     @inject('Kafka') private readonly kafka: KafkaClient,
@@ -254,9 +256,11 @@ export class WorkerConsume {
       throw new Error('Worker not found');
     }
 
-    const removed = await this.workerService.removeContainerWorker(
-      data.worker_id,
-      false
+    const removed = await this.retryOperation(
+      async () => {
+        return this.workerService.removeContainerWorker(data.worker_id, false);
+      },
+      (result) => !result
     );
 
     if (!removed) {
@@ -273,11 +277,16 @@ export class WorkerConsume {
     const workerType = viewWorkerType.worker_type_id as EWorkerType;
     const imageName = getImageWorker(workerType);
 
-    const containerId = await this.workerService.createContainerWorker(
-      imageName,
-      data.worker_id,
-      data.account_id,
-      false
+    const containerId = await this.retryOperation(
+      async () => {
+        return this.workerService.createContainerWorker(
+          imageName,
+          data.worker_id,
+          data.account_id,
+          false
+        );
+      },
+      (result) => !result
     );
 
     if (!containerId) {
@@ -291,8 +300,12 @@ export class WorkerConsume {
       throw new Error('Worker creation failed');
     }
 
-    const healthy =
-      await this.containerHealthService.isServiceHealthy(containerId);
+    const healthy = await this.retryOperation(
+      async () => {
+        return this.containerHealthService.isServiceHealthy(containerId);
+      },
+      (result) => !result
+    );
 
     if (!healthy) {
       await this.updateWorkerErrorStatus(
@@ -311,9 +324,14 @@ export class WorkerConsume {
       container_id: containerId,
     };
 
-    const updated = await this.workerService.updateWorkerById(
-      data.account_id,
-      inputUpdate
+    const updated = await this.retryOperation(
+      async () => {
+        return this.workerService.updateWorkerById(
+          data.account_id,
+          inputUpdate
+        );
+      },
+      (result) => !result
     );
 
     if (!updated) {
@@ -394,8 +412,11 @@ export class WorkerConsume {
       data.worker_id
     );
 
-    const containerId = await this.workerService.removeContainerWorker(
-      data.worker_id
+    const containerId = await this.retryOperation(
+      async () => {
+        return this.workerService.removeContainerWorker(data.worker_id);
+      },
+      (result) => !result
     );
 
     if (!containerId) {
@@ -409,9 +430,14 @@ export class WorkerConsume {
       throw new Error('Worker removal failed');
     }
 
-    const deleted = await this.workerService.deleteWorkerById(
-      data.account_id,
-      data.worker_id
+    const deleted = await this.retryOperation(
+      async () => {
+        return this.workerService.deleteWorkerById(
+          data.account_id,
+          data.worker_id
+        );
+      },
+      (result) => !result
     );
 
     if (!deleted) {
@@ -470,10 +496,15 @@ export class WorkerConsume {
 
     const imageName = getImageWorker(data.worker_type_id);
 
-    const containerId = await this.workerService.createContainerWorker(
-      imageName,
-      data.worker_id,
-      data.account_id
+    const containerId = await this.retryOperation(
+      async () => {
+        return this.workerService.createContainerWorker(
+          imageName,
+          data.worker_id,
+          data.account_id
+        );
+      },
+      (result) => !result
     );
 
     if (!containerId) {
@@ -482,8 +513,12 @@ export class WorkerConsume {
       throw new Error('Failed to create worker container');
     }
 
-    const healthy =
-      await this.containerHealthService.isServiceHealthy(containerId);
+    const healthy = await this.retryOperation(
+      async () => {
+        return this.containerHealthService.isServiceHealthy(containerId);
+      },
+      (result) => !result
+    );
 
     if (!healthy) {
       await this.updateWorkerErrorStatus(data.worker_id, data.account_id);
@@ -497,9 +532,14 @@ export class WorkerConsume {
       container_id: containerId,
     };
 
-    const updated = await this.workerService.updateWorkerById(
-      data.account_id,
-      inputUpdate
+    const updated = await this.retryOperation(
+      async () => {
+        return this.workerService.updateWorkerById(
+          data.account_id,
+          inputUpdate
+        );
+      },
+      (result) => !result
     );
 
     if (!updated) {
@@ -526,4 +566,34 @@ export class WorkerConsume {
   ): Promise<void> {
     await commitOffset(this.consumerOrThrow, topic, partition, offset);
   }
+
+  private readonly sleep = (ms: number): Promise<void> => {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  };
+
+  private readonly retryOperation = async <T>(
+    operation: () => Promise<T>,
+    shouldRetry: (result: T) => boolean
+  ): Promise<T> => {
+    let lastResult: T | undefined;
+
+    for (let attempt = 1; attempt <= this.maxRetries; attempt++) {
+      const result = await operation();
+      lastResult = result;
+
+      if (!shouldRetry(result)) {
+        return result;
+      }
+
+      if (attempt < this.maxRetries) {
+        await this.sleep(this.retryIntervalMs);
+      }
+    }
+
+    if (lastResult === undefined) {
+      throw new Error('Retry operation failed: no result');
+    }
+
+    return lastResult;
+  };
 }
