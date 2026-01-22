@@ -24,31 +24,45 @@ const offlineChannels = computed(() => {
   );
 });
 
-const currentChannel = computed(() => {
+const prioritizedChannels = computed(() => {
   const activeWorkerId = chatStore.activeChat?.worker?.id;
+  const channels = [...offlineChannels.value];
 
   if (activeWorkerId) {
-    const activeChannel = offlineChannels.value.find(
+    const activeIndex = channels.findIndex(
       (channel) => channel.id === activeWorkerId
     );
-    if (activeChannel) return activeChannel;
+    if (activeIndex > -1) {
+      const [activeChannel] = channels.splice(activeIndex, 1);
+      channels.unshift(activeChannel);
+    }
   }
 
-  if (offlineChannels.value.length > 0) {
-    return offlineChannels.value[0];
-  }
+  return channels;
+});
 
-  return null;
+const displayedChannels = computed(() => {
+  return prioritizedChannels.value.slice(0, 2);
+});
+
+const remainingChannels = computed(() => {
+  return prioritizedChannels.value.slice(2);
+});
+
+const remainingChannelsCount = computed(() => {
+  return remainingChannels.value.length;
+});
+
+const remainingChannelsNames = computed(() => {
+  return remainingChannels.value.map((channel) => channel.name).join(', ');
 });
 
 const shouldShowBanner = computed(() => {
-  return !!currentChannel.value;
+  return offlineChannels.value.length > 0;
 });
 
-const channelStatus = computed(() => {
-  if (!currentChannel.value?.status?.id) return null;
-
-  const statusId = currentChannel.value.status.id;
+const getChannelStatus = (statusId: string | undefined | null) => {
+  if (!statusId) return null;
 
   if (statusId === EWorkerStatus.disponible)
     return { color: EColor.warning, text: t('disponible') };
@@ -66,7 +80,7 @@ const channelStatus = computed(() => {
     return { color: EColor.warning, text: t('stopped') };
 
   return { color: EColor.primary, text: t('unknown') };
-});
+};
 
 const handleClick = () => {
   router.push('/channels');
@@ -108,15 +122,42 @@ onUnmounted(async () => {
 
 <template>
   <div
-    v-if="shouldShowBanner && currentChannel && channelStatus"
+    v-if="shouldShowBanner"
     class="channel-status-banner"
     @click="handleClick"
   >
     <div class="d-flex align-center gap-2">
-      <span class="channel-name">{{ currentChannel.name }}</span>
-      <VChip :color="channelStatus.color" size="small">
-        {{ channelStatus.text }}
-      </VChip>
+      <template v-for="(channel, index) in displayedChannels" :key="channel.id">
+        <div class="d-flex align-center gap-2">
+          <span class="channel-name">{{ channel.name }}</span>
+          <VChip
+            v-if="getChannelStatus(channel.status?.id)"
+            :color="getChannelStatus(channel.status?.id)?.color"
+            size="small"
+          >
+            {{ getChannelStatus(channel.status?.id)?.text }}
+          </VChip>
+        </div>
+        <VDivider
+          v-if="index < displayedChannels.length - 1 || remainingChannelsCount > 0"
+          vertical
+          class="mx-1"
+        />
+      </template>
+      <VTooltip
+        v-if="remainingChannelsCount > 0"
+        :text="remainingChannelsNames"
+        location="top"
+      >
+        <template #activator="{ props: tooltipProps }">
+          <span
+            v-bind="tooltipProps"
+            class="remaining-count"
+          >
+            +{{ remainingChannelsCount }}
+          </span>
+        </template>
+      </VTooltip>
     </div>
   </div>
 </template>
@@ -134,6 +175,12 @@ onUnmounted(async () => {
 
   .channel-name {
     font-weight: 500;
+  }
+
+  .remaining-count {
+    font-weight: 500;
+    color: rgb(var(--v-theme-primary));
+    cursor: pointer;
   }
 }
 </style>
