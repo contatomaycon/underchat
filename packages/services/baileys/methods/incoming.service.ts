@@ -291,6 +291,8 @@ export class BaileysIncomingMessageService {
     upsertType: string
   ): void {
     try {
+      if (m.category === 'peer') return;
+
       const chatKind = getChatKind(m);
 
       if (

@@ -239,10 +239,6 @@ export class BaileysConnectionService {
       date: new Date(),
     });
 
-    if (!this.initialConnection) {
-      return;
-    }
-
     this.setStatus(Status.disconnected, ECodeMessage.connectionClosed);
 
     const payload: IBaileysConnectionState = {
@@ -254,7 +250,7 @@ export class BaileysConnectionService {
       worker_status_id: EWorkerStatus.disponible,
     };
 
-    this.publishSub(payload);
+    this.publishSub(payload, true);
 
     await this.streamProducerService.send(
       this.kafkaServiceQueueService.workerStatus(),
@@ -262,9 +258,11 @@ export class BaileysConnectionService {
       WORKER
     );
 
-    this.connect({
-      initial_connection: true,
-    });
+    if (this.initialConnection) {
+      this.connect({
+        initial_connection: true,
+      });
+    }
   }
 
   reconnect(input: IBaileysConnection): void {
@@ -463,17 +461,28 @@ export class BaileysConnectionService {
 
     this.setStatus(Status.disconnected, disconnectionCode);
 
+    const isMismatchedStatus =
+      statusCode === ECodeMessage.loggedOut ||
+      statusCode === ECodeMessage.multideviceMismatch ||
+      statusCode === ECodeMessage.badSession ||
+      statusCode === ECodeMessage.connectionReplaced;
+
+    const workerStatusId = isMismatchedStatus
+      ? EWorkerStatus.mismatched
+      : EWorkerStatus.offline;
+
     if (!this.awaitingNewLogin) {
       const payload: IBaileysConnectionState = {
         status: this.status,
         worker_id: WORKER,
         account_id: ACCOUNT,
         code: disconnectionCode,
+        worker_status_id: workerStatusId,
       };
 
       const payloadStr = JSON.stringify(payload);
       if (payloadStr !== this.lastStatusPayload) {
-        this.publishSub(payload);
+        this.publishSub(payload, true);
         this.lastStatusPayload = payloadStr;
 
         await this.streamProducerService.send(
@@ -492,12 +501,7 @@ export class BaileysConnectionService {
       }
     }
 
-    if (
-      statusCode === ECodeMessage.loggedOut ||
-      statusCode === ECodeMessage.multideviceMismatch ||
-      statusCode === ECodeMessage.badSession ||
-      statusCode === ECodeMessage.connectionReplaced
-    ) {
+    if (isMismatchedStatus) {
       await this.updateWorkerMismatchedStatus();
     }
 
@@ -512,6 +516,8 @@ export class BaileysConnectionService {
         account_id: ACCOUNT,
         worker_status_id: EWorkerStatus.mismatched,
       };
+
+      this.publishSub(payload, true);
 
       await this.streamProducerService.send(
         this.kafkaServiceQueueService.workerStatus(),
@@ -600,13 +606,13 @@ export class BaileysConnectionService {
     });
   }
 
-  private publishSub(payload: IBaileysConnectionState): void {
-    if (!this.initialConnection) {
+  private publishSub(payload: IBaileysConnectionState, force = false): void {
+    if (!this.initialConnection && !force) {
       return;
     }
 
     const data = JSON.stringify(payload);
-    if (data === this.lastPayload) {
+    if (data === this.lastPayload && !force) {
       return;
     }
 

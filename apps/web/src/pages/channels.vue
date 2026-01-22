@@ -276,20 +276,22 @@ watch(isDialogDeleterShow, (isOpen) => {
   }
 });
 
+const workerStatusHandler = (data: IBaileysConnectionState) => {
+  channelsStore.updateStatusChannel(data);
+};
+
 onMounted(async () => {
   if (user?.account_id) {
     await onMessage(
       workerCentrifugoQueue(user.account_id),
-      (data: IBaileysConnectionState) => {
-        channelsStore.updateStatusChannel(data);
-      }
+      workerStatusHandler
     );
   }
 });
 
 onUnmounted(async () => {
   if (user?.account_id) {
-    await unsubscribe(workerCentrifugoQueue(user.account_id));
+    await unsubscribe(workerCentrifugoQueue(user.account_id), workerStatusHandler);
   }
 });
 </script>

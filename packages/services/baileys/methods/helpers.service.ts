@@ -25,6 +25,7 @@ export class BaileysHelpersService {
     options?: MiscMessageGenerationOptions
   ): Promise<WAMessage | undefined> {
     const sock = this.socket();
+    this.getOwnJid();
 
     const shouldSimulateTyping = !this.isReactionOrEdit(content);
 
@@ -63,6 +64,10 @@ export class BaileysHelpersService {
 
   private async simulateHumanTyping(jid: string, content: AnyMessageContent) {
     const sock = this.socket();
+    if (!sock.user?.id) {
+      return;
+    }
+
     const text = this.extractText(content);
     const durationMs = this.estimateTypingMs(text);
 

@@ -7,6 +7,7 @@ import NavbarThemeSwitcher from '@/layouts/components/NavbarThemeSwitcher.vue';
 import UserProfile from '@/layouts/components/UserProfile.vue';
 import NavBarI18n from '@webcore/components/I18n.vue';
 import MasterSessionSwitcher from '@webcore/components/MasterSessionSwitcher.vue';
+import ChannelStatusBanner from '@/components/ChannelStatusBanner.vue';
 import { HorizontalNavLayout } from '@layouts';
 import { VNodeRenderer } from '@layouts/components/VNodeRenderer';
 import { useLayoutConfigStore } from '@layouts/stores/config';
@@ -33,6 +34,8 @@ const computedNavItems = computed(() => {
         </h1>
       </RouterLink>
       <VSpacer />
+
+      <ChannelStatusBanner />
 
       <MasterSessionSwitcher />
       <NavBarI18n

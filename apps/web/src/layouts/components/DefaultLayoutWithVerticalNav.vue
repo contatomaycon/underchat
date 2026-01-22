@@ -6,6 +6,7 @@ import NavbarThemeSwitcher from '@/layouts/components/NavbarThemeSwitcher.vue';
 import UserProfile from '@/layouts/components/UserProfile.vue';
 import NavBarI18n from '@webcore/components/I18n.vue';
 import MasterSessionSwitcher from '@webcore/components/MasterSessionSwitcher.vue';
+import ChannelStatusBanner from '@/components/ChannelStatusBanner.vue';
 import { VerticalNavLayout } from '@layouts';
 import { useAuthStore } from '@/@webcore/stores/auth';
 import { filterNavItemsByPlan } from '@/navigation/filterByPlan';
@@ -30,6 +31,8 @@ const computedNavItems = computed(() => {
         </IconBtn>
 
         <NavbarThemeSwitcher />
+
+        <ChannelStatusBanner />
 
         <VSpacer />
 
