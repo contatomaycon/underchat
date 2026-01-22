@@ -60,6 +60,8 @@ export class BaileysConnectionService {
   private currentPromise?: Promise<IBaileysConnectionState>;
   private pendingResolve?: (s: IBaileysConnectionState) => void;
   private connectionEstablished = false;
+  private keepAliveInterval?: NodeJS.Timeout;
+  private readonly keepAliveIntervalMs = 30_000;
 
   constructor(
     private readonly centrifugo: CentrifugoService,
@@ -224,6 +226,7 @@ export class BaileysConnectionService {
       disconnected_user: disconnectedUser = false,
     } = input;
 
+    this.stopKeepAlive();
     this.initialConnection = initialConnection;
     this.connectionEstablished = false;
 
@@ -449,6 +452,8 @@ export class BaileysConnectionService {
       WORKER
     );
 
+    this.startKeepAlive();
+
     resolve(this.state());
 
     this.pendingResolve = undefined;
@@ -458,6 +463,7 @@ export class BaileysConnectionService {
     last: IBaileysUpdateEvent['lastDisconnect'],
     resolve: (s: IBaileysConnectionState) => void
   ): Promise<void> {
+    this.stopKeepAlive();
     this.connectionEstablished = false;
     const statusCode = this.extractStatusCode(last?.error);
     const statusMessage = this.extractStatusMessage(last?.error);
@@ -698,6 +704,8 @@ export class BaileysConnectionService {
   }
 
   private cancelAttempt(skipWebSocketClose = false) {
+    this.stopKeepAlive();
+
     try {
       this.socket?.ev.removeAllListeners('connection.update');
     } catch {
@@ -866,6 +874,61 @@ export class BaileysConnectionService {
     }
 
     return undefined;
+  }
+
+  private startKeepAlive(): void {
+    this.stopKeepAlive();
+
+    if (!this.socket) {
+      return;
+    }
+
+    this.keepAliveInterval = setInterval(() => {
+      void this.checkAndMaintainActivity();
+    }, this.keepAliveIntervalMs);
+  }
+
+  private stopKeepAlive(): void {
+    if (this.keepAliveInterval) {
+      clearInterval(this.keepAliveInterval);
+      this.keepAliveInterval = undefined;
+    }
+  }
+
+  private async checkAndMaintainActivity(): Promise<void> {
+    if (!this.connected) {
+      this.stopKeepAlive();
+      return;
+    }
+
+    if (!this.socket) {
+      this.stopKeepAlive();
+      return;
+    }
+
+    if (!this.socket.user?.id) {
+      return;
+    }
+
+    try {
+      console.log('Sending keep-alive');
+
+      await this.socket.sendPresenceUpdate('available');
+    } catch (error) {
+      console.error('Keep-alive error', error);
+
+      this.saveLogWppConnection({
+        worker_id: WORKER,
+        status: this.status,
+        code: ECodeMessage.connectionLost,
+        message: `Keep-alive error: ${error instanceof Error ? error.message : String(error)}`,
+        date: new Date(),
+      });
+
+      if (!this.connected) {
+        this.stopKeepAlive();
+      }
+    }
   }
 
   private readonly saveLogWppConnection = async (

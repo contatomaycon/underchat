@@ -250,6 +250,9 @@ export class BaileysIncomingMessageService {
     this.currentSocket = socket;
 
     socket.ev.on('messages.upsert', (e) => {
+      console.log('Messages upsert');
+      console.dir(e, { depth: null, colors: true });
+
       if (!e?.messages?.length) return;
 
       for (const m of e.messages) {
