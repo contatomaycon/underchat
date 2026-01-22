@@ -23,9 +23,53 @@ export class RedisConnectionClosedError extends Error {
 }
 
 function isConnectionClosedError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const message = error.message.toLowerCase();
+  const errorCode = (error as { code?: string }).code;
+
   return (
-    error instanceof Error && error.message === CONNECTION_CLOSED_ERROR_MSG
+    error.message === CONNECTION_CLOSED_ERROR_MSG ||
+    message.includes('connection is closed') ||
+    message.includes('connection closed') ||
+    message.includes('redis connection closed') ||
+    errorCode === 'ECONNREFUSED' ||
+    errorCode === 'ENOTFOUND' ||
+    errorCode === 'ETIMEDOUT'
   );
+}
+
+async function waitForRedisConnection(
+  redis: Redis,
+  timeoutMs: number
+): Promise<boolean> {
+  if (!isRedisConnectionClosed(redis)) {
+    return true;
+  }
+
+  const startTime = Date.now();
+  const checkInterval = 100;
+
+  return new Promise<boolean>((resolve) => {
+    const checkConnection = () => {
+      if (!isRedisConnectionClosed(redis)) {
+        resolve(true);
+        return;
+      }
+
+      const elapsed = Date.now() - startTime;
+      if (elapsed >= timeoutMs) {
+        resolve(false);
+        return;
+      }
+
+      setTimeout(checkConnection, checkInterval);
+    };
+
+    checkConnection();
+  });
 }
 
 export async function withLock<T>(
@@ -74,23 +118,41 @@ export async function withLock<T>(
   };
 
   const tryLock = async (): Promise<T> => {
-    if (isRedisConnectionClosed(redis)) {
-      throw new RedisConnectionClosedError('lock acquisition');
-    }
-
     const elapsed = Date.now() - startTime;
     if (elapsed >= maxWaitMs) {
       throw new LockAcquisitionTimeoutError(lockKey, maxWaitMs);
+    }
+
+    if (isRedisConnectionClosed(redis)) {
+      const remainingTime = maxWaitMs - elapsed;
+      const waitTimeout = Math.min(remainingTime, 5000);
+      const reconnected = await waitForRedisConnection(redis, waitTimeout);
+      if (!reconnected) {
+        throw new RedisConnectionClosedError('lock acquisition');
+      }
     }
 
     let ok: string | null;
     try {
       ok = await redis.set(key, token, 'PX', ttlMs, 'NX');
     } catch (error) {
-      if (isConnectionClosedError(error)) {
+      if (!isConnectionClosedError(error)) {
+        throw error;
+      }
+
+      const remainingTime = maxWaitMs - (Date.now() - startTime);
+      if (remainingTime <= 0) {
         throw new RedisConnectionClosedError('lock acquisition');
       }
-      throw error;
+
+      const waitTimeout = Math.min(remainingTime, 5000);
+      const reconnected = await waitForRedisConnection(redis, waitTimeout);
+      if (reconnected) {
+        await delay(retryMs);
+        return tryLock();
+      }
+
+      throw new RedisConnectionClosedError('lock acquisition');
     }
 
     if (ok !== 'OK') {
@@ -106,10 +168,23 @@ export async function withLock<T>(
           return undefined as T;
         }
       } catch (error) {
-        if (isConnectionClosedError(error)) {
+        if (!isConnectionClosedError(error)) {
+          throw error;
+        }
+
+        const remainingTime = maxWaitMs - (Date.now() - startTime);
+        if (remainingTime <= 0) {
           return undefined as T;
         }
-        throw error;
+
+        const waitTimeout = Math.min(remainingTime, 5000);
+        const reconnected = await waitForRedisConnection(redis, waitTimeout);
+        if (reconnected) {
+          await delay(retryMs);
+          return tryLock();
+        }
+
+        return undefined as T;
       }
     }
 
