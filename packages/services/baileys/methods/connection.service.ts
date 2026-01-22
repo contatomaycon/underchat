@@ -291,8 +291,15 @@ export class BaileysConnectionService {
       browser: Browsers.windows('Chrome'),
       logger: P({ level: 'silent' }),
       printQRInTerminal: false,
-      connectTimeoutMs: 60_000,
-      defaultQueryTimeoutMs: 0,
+      enableAutoSessionRecreation: true,
+      enableRecentMessageCache: true,
+      retryRequestDelayMs: 5_000,
+      connectTimeoutMs: 30_000,
+      keepAliveIntervalMs: 15_000,
+      defaultQueryTimeoutMs: 60_000,
+      maxMsgRetryCount: 10,
+      syncFullHistory: false,
+      enableCTWARecovery: true,
     });
 
     socket.ev.on('creds.update', saveCreds);

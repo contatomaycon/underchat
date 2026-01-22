@@ -124,7 +124,7 @@
     "@types/mime-types": "^3.0.1",
     "@types/pdfkit": "^0.17.4",
     "@types/web-push": "^3.6.4",
-    "@whiskeysockets/baileys": "https://gitea.devunder.com/underchat/-/packages/npm/@whiskeysockets%2Fbaileys/22.1.2026/files/71",
+    "@whiskeysockets/baileys": "https://gitea.devunder.com/underchat/-/packages/npm/@whiskeysockets%2Fbaileys/22.1.2026/files/72",
     "audio-decode": "^2.2.3",
     "axios": "^1.13.2",
     "centrifuge": "^5.5.2",
