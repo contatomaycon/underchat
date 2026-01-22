@@ -299,7 +299,6 @@ export class BaileysConnectionService {
       defaultQueryTimeoutMs: 60_000,
       maxMsgRetryCount: 10,
       syncFullHistory: false,
-      enableCTWARecovery: true,
     });
 
     socket.ev.on('creds.update', saveCreds);
