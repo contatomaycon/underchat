@@ -398,7 +398,26 @@ export class WorkerConsume {
       connection_date: null,
     };
 
-    await this.workerService.updateWorkerById(data.account_id, inputUpdate);
+    const updated = await this.retryOperation(
+      async () => {
+        return this.workerService.updateWorkerById(
+          data.account_id,
+          inputUpdate
+        );
+      },
+      (result) => !result
+    );
+
+    if (!updated) {
+      await this.updateWorkerErrorStatus(
+        data.worker_id,
+        data.account_id,
+        data.action,
+        data.server_id
+      );
+
+      throw new Error('Failed to update worker status');
+    }
 
     const payload: StatusConnectionWorkerRequest = {
       worker_id: data.worker_id,

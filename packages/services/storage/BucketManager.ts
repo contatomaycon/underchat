@@ -37,7 +37,36 @@ export class BucketManager {
     ) {
       throw new Error('Invalid accountId provided');
     }
-    return accountId.trim();
+
+    const bucketId = accountId.trim();
+
+    if (bucketId.length < 3 || bucketId.length > 63) {
+      throw new Error('Bucket name must be between 3 and 63 characters');
+    }
+
+    if (!/^[a-z0-9.-]+$/.test(bucketId)) {
+      throw new Error(
+        'Bucket name can only contain lowercase letters, numbers, dots, and hyphens'
+      );
+    }
+
+    if (bucketId.startsWith('.') || bucketId.endsWith('.')) {
+      throw new Error('Bucket name cannot start or end with a dot');
+    }
+
+    if (bucketId.startsWith('-') || bucketId.endsWith('-')) {
+      throw new Error('Bucket name cannot start or end with a hyphen');
+    }
+
+    if (bucketId.includes('..')) {
+      throw new Error('Bucket name cannot contain consecutive dots');
+    }
+
+    if (/^\d+\.\d+\.\d+\.\d+$/.test(bucketId)) {
+      throw new Error('Bucket name cannot be formatted as an IP address');
+    }
+
+    return bucketId;
   }
 
   private async createBucket(bucketId: string): Promise<void> {
@@ -114,21 +143,28 @@ export class BucketManager {
     }
   }
 
-  async ensurePublicBucket(accountId: string): Promise<void> {
-    if (this.verifiedBuckets.has(accountId)) {
-      return;
-    }
-
+  async ensurePublicBucket(accountId: string): Promise<string> {
     const bucketId = this.validateAccountId(accountId);
+
+    if (this.verifiedBuckets.has(bucketId)) {
+      return bucketId;
+    }
 
     await this.createBucket(bucketId);
     await this.removePublicAccessBlock(bucketId);
     await this.setPublicPolicy(bucketId);
 
     this.verifiedBuckets.add(bucketId);
+
+    return bucketId;
   }
 
   isBucketVerified(accountId: string): boolean {
-    return this.verifiedBuckets.has(accountId);
+    const bucketId = this.validateAccountId(accountId);
+    return this.verifiedBuckets.has(bucketId);
+  }
+
+  validateAndGetBucketId(accountId: string): string {
+    return this.validateAccountId(accountId);
   }
 }

@@ -39,12 +39,14 @@ export class StorageService {
     this.urlParser = new S3UrlParser();
   }
 
-  private async ensureBucket(accountId: string): Promise<void> {
-    if (this.bucketManager.isBucketVerified(accountId)) {
-      return;
+  private async ensureBucket(accountId: string): Promise<string> {
+    const bucketId = this.bucketManager.validateAndGetBucketId(accountId);
+
+    if (this.bucketManager.isBucketVerified(bucketId)) {
+      return bucketId;
     }
 
-    await this.bucketManager.ensurePublicBucket(accountId);
+    return this.bucketManager.ensurePublicBucket(accountId);
   }
 
   private createUrl(path: string, accountId: string): string {
@@ -81,17 +83,17 @@ export class StorageService {
       mimetype = metadata.mimetype;
     }
 
-    await this.ensureBucket(accountId);
+    const bucketId = await this.ensureBucket(accountId);
 
     await this.uploader.uploadWithRetry({
-      bucket: accountId,
+      bucket: bucketId,
       key: path,
       body: buffer,
       contentType: mimetype ?? 'image/jpeg',
     });
 
     return {
-      url: this.createUrl(path, accountId),
+      url: this.createUrl(path, bucketId),
       name: generatedFilename,
       extension,
       size: buffer.byteLength,
@@ -119,17 +121,17 @@ export class StorageService {
     const key = this.fileProcessor.normalizeFilename(normalizedName);
     const mimetype = file.mimetype ?? 'application/octet-stream';
 
-    await this.ensureBucket(accountId);
+    const bucketId = await this.ensureBucket(accountId);
 
     await this.uploader.uploadWithRetry({
-      bucket: accountId,
+      bucket: bucketId,
       key,
       body: buffer,
       contentType: mimetype,
     });
 
     return {
-      url: this.createUrl(key, accountId),
+      url: this.createUrl(key, bucketId),
       name: normalizedName,
       extension,
       size: buffer.byteLength,
@@ -159,17 +161,17 @@ export class StorageService {
     const key = this.fileProcessor.normalizeFilename(normalizedName);
     const mimetype = file.mimetype ?? 'video/mp4';
 
-    await this.ensureBucket(accountId);
+    const bucketId = await this.ensureBucket(accountId);
 
     await this.uploader.uploadWithRetry({
-      bucket: accountId,
+      bucket: bucketId,
       key,
       body: buffer,
       contentType: mimetype,
     });
 
     return {
-      url: this.createUrl(key, accountId),
+      url: this.createUrl(key, bucketId),
       name: normalizedName,
       extension,
       size: buffer.byteLength,
@@ -199,17 +201,17 @@ export class StorageService {
     );
     const key = this.fileProcessor.normalizeFilename(normalizedName);
 
-    await this.ensureBucket(accountId);
+    const bucketId = await this.ensureBucket(accountId);
 
     await this.uploader.uploadWithRetry({
-      bucket: accountId,
+      bucket: bucketId,
       key,
       body: buffer,
       contentType: mimetype,
     });
 
     return {
-      url: this.createUrl(key, accountId),
+      url: this.createUrl(key, bucketId),
       name: normalizedName,
       extension,
       size: buffer.byteLength,
@@ -237,17 +239,17 @@ export class StorageService {
     const key = this.fileProcessor.normalizeFilename(normalizedName);
     const mimetype = file.mimetype ?? 'audio/ogg; codecs=opus';
 
-    await this.ensureBucket(accountId);
+    const bucketId = await this.ensureBucket(accountId);
 
     await this.uploader.uploadWithRetry({
-      bucket: accountId,
+      bucket: bucketId,
       key,
       body: buffer,
       contentType: mimetype,
     });
 
     return {
-      url: this.createUrl(key, accountId),
+      url: this.createUrl(key, bucketId),
       name: normalizedName,
       extension,
       size: buffer.byteLength,
@@ -275,17 +277,17 @@ export class StorageService {
     );
     const key = this.fileProcessor.normalizeFilename(normalizedName);
 
-    await this.ensureBucket(accountId);
+    const bucketId = await this.ensureBucket(accountId);
 
     await this.uploader.uploadWithRetry({
-      bucket: accountId,
+      bucket: bucketId,
       key,
       body: buffer,
       contentType: mimetype,
     });
 
     return {
-      url: this.createUrl(key, accountId),
+      url: this.createUrl(key, bucketId),
       name: normalizedName,
       extension,
       size: buffer.byteLength,
@@ -355,17 +357,17 @@ export class StorageService {
       }
     }
 
-    await this.ensureBucket(accountId);
+    const bucketId = await this.ensureBucket(accountId);
 
     await this.uploader.uploadWithRetry({
-      bucket: accountId,
+      bucket: bucketId,
       key,
       body: buffer,
       contentType: mimeToStore,
     });
 
     return {
-      url: this.createUrl(key, accountId),
+      url: this.createUrl(key, bucketId),
       name: baseName,
       extension: finalExt,
       size: buffer.byteLength,
@@ -401,17 +403,17 @@ export class StorageService {
     );
     const key = this.fileProcessor.normalizeFilename(baseName);
 
-    await this.ensureBucket(accountId);
+    const bucketId = await this.ensureBucket(accountId);
 
     await this.uploader.uploadWithRetry({
-      bucket: accountId,
+      bucket: bucketId,
       key,
       body: buffer,
       contentType: mime,
     });
 
     return {
-      url: this.createUrl(key, accountId),
+      url: this.createUrl(key, bucketId),
       name: baseName,
       extension: ext,
       size: buffer.byteLength,
@@ -428,16 +430,16 @@ export class StorageService {
   ): Promise<string> {
     const pdfBuffer = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
 
-    await this.ensureBucket(accountId);
+    const bucketId = await this.ensureBucket(accountId);
 
     await this.uploader.uploadWithRetry({
-      bucket: accountId,
+      bucket: bucketId,
       key,
       body: pdfBuffer,
       contentType: 'application/pdf',
     });
 
-    return this.createUrl(key, accountId);
+    return this.createUrl(key, bucketId);
   }
 
   public async deleteImage(url: string): Promise<boolean> {
@@ -450,7 +452,8 @@ export class StorageService {
     const { accountId, key } = parsed;
 
     try {
-      const result = await this.deleter.deleteObject(accountId, key);
+      const bucketId = this.bucketManager.validateAndGetBucketId(accountId);
+      const result = await this.deleter.deleteObject(bucketId, key);
       return result;
     } catch (error: any) {
       if (
