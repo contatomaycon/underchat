@@ -15,9 +15,66 @@ import { serverSshCentrifugoQueue } from '@core/common/functions/centrifugoQueue
 
 @injectable()
 export class SshService {
+  private readonly connectMaxRetries = 3;
+  private readonly connectRetryBaseDelayMs = 1000;
+
   constructor(private readonly centrifugoService: CentrifugoService) {}
 
   private connect(config: ConnectConfig): Promise<Client> {
+    return this.connectWithRetry(config, 0, this.connectRetryBaseDelayMs);
+  }
+
+  private async connectWithRetry(
+    config: ConnectConfig,
+    attempt: number,
+    delayMs: number
+  ): Promise<Client> {
+    try {
+      return await this.connectOnce(config);
+    } catch (err) {
+      const lastAttempt = attempt >= this.connectMaxRetries - 1;
+      if (!this.isConnectErrorRetryable(err) || lastAttempt) {
+        throw err;
+      }
+
+      await this.sleep(delayMs);
+      return this.connectWithRetry(config, attempt + 1, delayMs * 2);
+    }
+  }
+
+  private isConnectErrorRetryable(err: unknown): boolean {
+    if (!(err instanceof Error)) {
+      return false;
+    }
+
+    const msg = err.message.toLowerCase();
+    if (msg.includes('connection lost before handshake')) {
+      return true;
+    }
+    if (msg.includes('ssh connection timeout')) {
+      return true;
+    }
+    if (
+      err.name === 'ConnectionError' ||
+      err.name === 'ConnectionTimeoutError'
+    ) {
+      return true;
+    }
+
+    const code = (err as NodeJS.ErrnoException).code;
+    const retryableCodes = ['ECONNRESET', 'ETIMEDOUT', 'ECONNREFUSED'];
+    if (code && retryableCodes.includes(code)) {
+      return true;
+    }
+
+    return false;
+  }
+
+  private sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private connectOnce(config: ConnectConfig): Promise<Client> {
     return new Promise((resolve, reject) => {
       const conn = new Client();
       let resolved = false;
