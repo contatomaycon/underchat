@@ -29,6 +29,40 @@ export class BucketManager {
     );
   }
 
+  private isRetryableError(error: any): boolean {
+    if (!error) {
+      return false;
+    }
+
+    if (error.name === 'InternalError') {
+      return true;
+    }
+
+    if (error.name === 'ServiceUnavailable') {
+      return true;
+    }
+
+    if (error.name === 'RequestTimeout') {
+      return true;
+    }
+
+    if (error.$metadata?.httpStatusCode) {
+      const statusCode = error.$metadata.httpStatusCode;
+      if (statusCode >= 500 && statusCode < 600) {
+        return true;
+      }
+      if (statusCode === 429) {
+        return true;
+      }
+    }
+
+    if (error.code === 'ECONNRESET' || error.code === 'ETIMEDOUT') {
+      return true;
+    }
+
+    return false;
+  }
+
   private validateAccountId(accountId: string): string {
     if (
       !accountId ||
@@ -70,34 +104,69 @@ export class BucketManager {
   }
 
   private async createBucket(bucketId: string): Promise<void> {
-    try {
-      await this.client.send(
-        new CreateBucketCommand({
-          Bucket: bucketId,
-        })
-      );
-    } catch (createError: any) {
-      if (this.isBucketExistsError(createError)) {
-        this.verifiedBuckets.add(bucketId);
+    const MAX_RETRIES = 3;
+    const RETRY_DELAY_MS = 1000;
+
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      try {
+        await this.client.send(
+          new CreateBucketCommand({
+            Bucket: bucketId,
+          })
+        );
         return;
+      } catch (createError: any) {
+        if (this.isBucketExistsError(createError)) {
+          this.verifiedBuckets.add(bucketId);
+          return;
+        }
+
+        const shouldRetry =
+          attempt < MAX_RETRIES - 1 && this.isRetryableError(createError);
+
+        if (shouldRetry) {
+          await new Promise((resolve) =>
+            setTimeout(resolve, RETRY_DELAY_MS * (attempt + 1))
+          );
+          continue;
+        }
+
+        throw createError;
       }
-      throw createError;
     }
   }
 
   private async removePublicAccessBlock(bucketId: string): Promise<void> {
-    try {
-      await this.client.send(
-        new DeletePublicAccessBlockCommand({
-          Bucket: bucketId,
-        })
-      );
-    } catch (error: any) {
-      if (
-        error.name !== 'NoSuchPublicAccessBlockConfiguration' &&
-        !this.isBucketExistsError(error) &&
-        !this.isNoSuchBucketError(error)
-      ) {
+    const MAX_RETRIES = 3;
+    const RETRY_DELAY_MS = 1000;
+
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      try {
+        await this.client.send(
+          new DeletePublicAccessBlockCommand({
+            Bucket: bucketId,
+          })
+        );
+        return;
+      } catch (error: any) {
+        if (
+          error.name === 'NoSuchPublicAccessBlockConfiguration' ||
+          this.isBucketExistsError(error) ||
+          this.isNoSuchBucketError(error)
+        ) {
+          return;
+        }
+
+        const shouldRetry =
+          attempt < MAX_RETRIES - 1 && this.isRetryableError(error);
+
+        if (shouldRetry) {
+          await new Promise((resolve) =>
+            setTimeout(resolve, RETRY_DELAY_MS * (attempt + 1))
+          );
+          continue;
+        }
+
         throw error;
       }
     }
@@ -117,16 +186,11 @@ export class BucketManager {
       ],
     };
 
-    try {
-      await this.client.send(
-        new PutBucketPolicyCommand({
-          Bucket: bucketId,
-          Policy: JSON.stringify(publicReadPolicy),
-        })
-      );
-    } catch (error: any) {
-      if (this.isNoSuchBucketError(error)) {
-        await this.createBucket(bucketId);
+    const MAX_RETRIES = 3;
+    const RETRY_DELAY_MS = 1000;
+
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      try {
         await this.client.send(
           new PutBucketPolicyCommand({
             Bucket: bucketId,
@@ -134,12 +198,35 @@ export class BucketManager {
           })
         );
         return;
+      } catch (error: any) {
+        if (this.isNoSuchBucketError(error)) {
+          await this.createBucket(bucketId);
+          await this.client.send(
+            new PutBucketPolicyCommand({
+              Bucket: bucketId,
+              Policy: JSON.stringify(publicReadPolicy),
+            })
+          );
+          return;
+        }
+
+        if (this.isBucketExistsError(error)) {
+          this.verifiedBuckets.add(bucketId);
+          return;
+        }
+
+        const shouldRetry =
+          attempt < MAX_RETRIES - 1 && this.isRetryableError(error);
+
+        if (shouldRetry) {
+          await new Promise((resolve) =>
+            setTimeout(resolve, RETRY_DELAY_MS * (attempt + 1))
+          );
+          continue;
+        }
+
+        throw error;
       }
-      if (this.isBucketExistsError(error)) {
-        this.verifiedBuckets.add(bucketId);
-        return;
-      }
-      throw error;
     }
   }
 

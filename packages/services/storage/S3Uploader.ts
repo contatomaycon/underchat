@@ -28,6 +28,40 @@ export class S3Uploader {
     await this.client.send(command);
   }
 
+  private isRetryableError(error: any): boolean {
+    if (!error) {
+      return false;
+    }
+
+    if (error.name === 'InternalError') {
+      return true;
+    }
+
+    if (error.name === 'ServiceUnavailable') {
+      return true;
+    }
+
+    if (error.name === 'RequestTimeout') {
+      return true;
+    }
+
+    if (error.$metadata?.httpStatusCode) {
+      const statusCode = error.$metadata.httpStatusCode;
+      if (statusCode >= 500 && statusCode < 600) {
+        return true;
+      }
+      if (statusCode === 429) {
+        return true;
+      }
+    }
+
+    if (error.code === 'ECONNRESET' || error.code === 'ETIMEDOUT') {
+      return true;
+    }
+
+    return false;
+  }
+
   async uploadWithRetry(params: UploadParams): Promise<void> {
     let lastError: Error | null = null;
 
@@ -38,10 +72,16 @@ export class S3Uploader {
       } catch (error: any) {
         lastError = error;
 
-        if (attempt < MAX_RETRIES - 1) {
+        const shouldRetry =
+          attempt < MAX_RETRIES - 1 && this.isRetryableError(error);
+
+        if (shouldRetry) {
           const delay = RETRY_DELAY_MS * (attempt + 1);
           await this.sleep(delay);
+          continue;
         }
+
+        throw error;
       }
     }
 
