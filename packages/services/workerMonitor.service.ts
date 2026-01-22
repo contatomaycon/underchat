@@ -29,7 +29,7 @@ export class WorkerMonitorService {
   private readonly timeoutMinutes = 5;
   private readonly maxConnectionFailures = 3;
   private readonly connectionCheckIntervalMs = 60 * 1000;
-  private readonly stoppedTimeoutMinutes = 30;
+  private readonly stoppedTimeoutMinutes = 24 * 60;
   private readonly connectionFailureTrackers = new Map<
     string,
     IConnectionFailureTracker
@@ -118,13 +118,9 @@ export class WorkerMonitorService {
       return;
     }
 
-    if (worker.worker_status_id === EWorkerStatus.mismatched) {
-      await this.handleStop(worker, server, sshConfig);
-      return;
-    }
-
     if (
-      this.shouldCheckConnectionTimeout(worker) &&
+      (worker.worker_status_id === EWorkerStatus.mismatched ||
+        worker.worker_status_id === EWorkerStatus.disponible) &&
       this.isConnectionCheckTimeout(worker)
     ) {
       await this.handleStop(worker, server, sshConfig);
@@ -663,14 +659,6 @@ export class WorkerMonitorService {
       EWorkerStatus.offline,
       EWorkerStatus.mismatched,
     ];
-
-    return statuses.includes(worker.worker_status_id);
-  };
-
-  private readonly shouldCheckConnectionTimeout = (
-    worker: IWorkerMonitor
-  ): boolean => {
-    const statuses = [EWorkerStatus.disponible, EWorkerStatus.error];
 
     return statuses.includes(worker.worker_status_id);
   };
