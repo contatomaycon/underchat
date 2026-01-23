@@ -2251,6 +2251,8 @@
   "release_create_success": "¡Informativo creado con éxito!",
   "release_create_error": "Error al crear informativo",
   "release_create_account_permission_error": "No tiene permiso para crear informativos para cuentas específicas",
+  "read": "Leído",
+  "unread": "No leído",
   "recipient": "Destinatario",
   "permission_groups": "Grupos de Permisos",
   "html_editor": "Editor HTML",

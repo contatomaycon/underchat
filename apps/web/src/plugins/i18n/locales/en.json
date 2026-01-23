@@ -2251,6 +2251,8 @@
   "release_create_success": "Release created successfully!",
   "release_create_error": "Error creating release",
   "release_create_account_permission_error": "You do not have permission to create releases for specific accounts",
+  "read": "Read",
+  "unread": "Unread",
   "recipient": "Recipient",
   "permission_groups": "Permission Groups",
   "html_editor": "HTML Editor",

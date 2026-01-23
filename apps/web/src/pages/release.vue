@@ -340,6 +340,15 @@ fetchReleases();
             class="release-item d-flex align-center pa-4 gap-2 cursor-pointer"
             @click="openRelease(release)"
           >
+            <VChip
+              :color="release.viewed ? 'success' : 'error'"
+              size="x-small"
+              variant="flat"
+              class="flex-shrink-0"
+            >
+              {{ release.viewed ? t('read') : t('unread') }}
+            </VChip>
+
             <div class="flex-grow-1">
               <h6
                 class="text-h6"

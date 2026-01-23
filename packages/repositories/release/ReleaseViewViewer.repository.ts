@@ -2,7 +2,7 @@ import * as schema from '@core/models';
 import { releaseView } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 
 @injectable()
 export class ReleaseViewViewerRepository {
@@ -22,5 +22,29 @@ export class ReleaseViewViewerRepository {
     });
 
     return !!existingView;
+  };
+
+  findViewedReleaseIds = async (
+    releaseIds: string[],
+    userId: string
+  ): Promise<Set<string>> => {
+    if (releaseIds.length === 0) {
+      return new Set();
+    }
+
+    const viewedReleases = await this.dbRo
+      .select({
+        release_id: releaseView.release_id,
+      })
+      .from(releaseView)
+      .where(
+        and(
+          inArray(releaseView.release_id, releaseIds),
+          eq(releaseView.user_id, userId)
+        )
+      )
+      .execute();
+
+    return new Set(viewedReleases.map((item) => item.release_id));
   };
 }

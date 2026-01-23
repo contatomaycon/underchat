@@ -1,16 +1,18 @@
 import * as schema from '@core/models';
-import { release, releaseAccess, releaseView } from '@core/models';
+import { release, releaseAccess } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { and, count, desc, eq, SQLWrapper, or, ilike, sql } from 'drizzle-orm';
 import { ListReleaseRequest } from '@core/schema/release/listRelease/request.schema';
 import { ListReleaseResponse } from '@core/schema/release/listRelease/response.schema';
 import { EReleaseStatus } from '@core/common/enums/EReleaseStatus';
+import { ReleaseViewViewerRepository } from './ReleaseViewViewer.repository';
 
 @injectable()
 export class ReleaseListerRepository {
   constructor(
-    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
+    @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>,
+    private readonly releaseViewViewerRepository: ReleaseViewViewerRepository
   ) {}
 
   private readonly setFilters = (
@@ -102,12 +104,6 @@ export class ReleaseListerRepository {
         message: release.message,
         created_at: release.created_at,
         updated_at: release.updated_at,
-        viewed: sql<boolean>`EXISTS(
-          SELECT 1 
-          FROM ${releaseView} 
-          WHERE ${releaseView.release_id} = ${release.release_id} 
-          AND ${releaseView.user_id} = ${userId}
-        )`,
       })
       .from(release)
       .where(and(...filters))
@@ -120,6 +116,13 @@ export class ReleaseListerRepository {
       return [] as ListReleaseResponse[];
     }
 
+    const releaseIds = result.map((item) => item.release_id);
+    const viewedReleaseIds =
+      await this.releaseViewViewerRepository.findViewedReleaseIds(
+        releaseIds,
+        userId
+      );
+
     return result.map((item): ListReleaseResponse => {
       const createdAt: string = item.created_at ?? new Date().toISOString();
       const updatedAt: string = item.updated_at ?? new Date().toISOString();
@@ -130,7 +133,7 @@ export class ReleaseListerRepository {
         status: item.status,
         title: item.title,
         message: item.message,
-        viewed: item.viewed,
+        viewed: viewedReleaseIds.has(item.release_id),
         created_at: createdAt,
         updated_at: updatedAt,
       };
