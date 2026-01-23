@@ -61,9 +61,9 @@ export class BaileysConnectionService {
   private pendingResolve?: (s: IBaileysConnectionState) => void;
   private connectionEstablished = false;
   private keepAliveInterval?: NodeJS.Timeout;
-  private readonly keepAliveIntervalMs = 30_000;
+  private readonly keepAliveIntervalMs = 120_000;
   private isKeepAliveRunning = false;
-  private keepAliveTimeoutMs = 25_000;
+  private keepAliveTimeoutMs = 30_000;
 
   constructor(
     private readonly centrifugo: CentrifugoService,

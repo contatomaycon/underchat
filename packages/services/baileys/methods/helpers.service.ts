@@ -25,7 +25,6 @@ export class BaileysHelpersService {
     options?: MiscMessageGenerationOptions
   ): Promise<WAMessage | undefined> {
     const sock = this.socket();
-    this.getOwnJid();
 
     const shouldSimulateTyping = !this.isReactionOrEdit(content);
 
