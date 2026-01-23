@@ -2,7 +2,7 @@ import * as schema from '@core/models';
 import { release, releaseAccess, releaseView } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, eq, or, sql, SQLWrapper } from 'drizzle-orm';
+import { and, eq, gte, or, sql, SQLWrapper } from 'drizzle-orm';
 import { ViewReleaseResponse } from '@core/schema/release/viewRelease/response.schema';
 import { EReleaseType } from '@core/common/enums/EReleaseType';
 import { EReleaseStatus } from '@core/common/enums/EReleaseStatus';
@@ -94,13 +94,19 @@ export class ReleaseViewerRepository {
     releaseId: string,
     accountId: string,
     userId: string,
-    permissionRoleId: string
+    permissionRoleId: string,
+    userCreatedAt: string | null
   ): Promise<ViewReleaseResponse | null> => {
     const accessConditions = this.buildAccessConditions(
       accountId,
       userId,
       permissionRoleId
     );
+
+    const conditions = [eq(release.release_id, releaseId), accessConditions];
+    if (userCreatedAt) {
+      conditions.push(gte(release.created_at, userCreatedAt));
+    }
 
     const result = await this.dbRo
       .select({
@@ -115,7 +121,7 @@ export class ReleaseViewerRepository {
         viewed: this.buildViewedField(userId),
       })
       .from(release)
-      .where(and(eq(release.release_id, releaseId), accessConditions))
+      .where(and(...conditions))
       .limit(1)
       .execute();
 

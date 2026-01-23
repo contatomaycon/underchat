@@ -2,7 +2,17 @@ import * as schema from '@core/models';
 import { release, releaseAccess, releaseView } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, count, desc, eq, SQLWrapper, or, ilike, sql } from 'drizzle-orm';
+import {
+  and,
+  count,
+  desc,
+  eq,
+  gte,
+  SQLWrapper,
+  or,
+  ilike,
+  sql,
+} from 'drizzle-orm';
 import { ListReleaseRequest } from '@core/schema/release/listRelease/request.schema';
 import { ListReleaseResponse } from '@core/schema/release/listRelease/response.schema';
 import { EReleaseStatus } from '@core/common/enums/EReleaseStatus';
@@ -19,11 +29,16 @@ export class ReleaseListerRepository {
     query: ListReleaseRequest,
     accountId: string,
     userId: string,
-    permissionRoleId: string
+    permissionRoleId: string,
+    userCreatedAt: string | null
   ): SQLWrapper[] => {
     const filters: SQLWrapper[] = [];
 
     filters.push(eq(release.status, EReleaseStatus.active));
+
+    if (userCreatedAt) {
+      filters.push(gte(release.created_at, userCreatedAt));
+    }
 
     if (query.search) {
       const conditions: (SQLWrapper | undefined)[] = [
@@ -91,9 +106,16 @@ export class ReleaseListerRepository {
     query: ListReleaseRequest,
     accountId: string,
     userId: string,
-    permissionRoleId: string
+    permissionRoleId: string,
+    userCreatedAt: string | null
   ): Promise<ListReleaseResponse[]> => {
-    const filters = this.setFilters(query, accountId, userId, permissionRoleId);
+    const filters = this.setFilters(
+      query,
+      accountId,
+      userId,
+      permissionRoleId,
+      userCreatedAt
+    );
 
     const result = await this.dbRo
       .select({
@@ -144,9 +166,16 @@ export class ReleaseListerRepository {
     query: ListReleaseRequest,
     accountId: string,
     userId: string,
-    permissionRoleId: string
+    permissionRoleId: string,
+    userCreatedAt: string | null
   ): Promise<number> => {
-    const filters = this.setFilters(query, accountId, userId, permissionRoleId);
+    const filters = this.setFilters(
+      query,
+      accountId,
+      userId,
+      permissionRoleId,
+      userCreatedAt
+    );
 
     const result = await this.dbRo
       .select({ count: count() })
@@ -171,14 +200,16 @@ export class ReleaseListerRepository {
   private readonly executeUnreadCount = async (
     accountId: string,
     userId: string,
-    permissionRoleId: string
+    permissionRoleId: string,
+    userCreatedAt: string | null
   ): Promise<number> => {
     const query = {};
     const filters = this.setFilters(
       query as ListReleaseRequest,
       accountId,
       userId,
-      permissionRoleId
+      permissionRoleId,
+      userCreatedAt
     );
     const unreadFilter = this.buildUnreadFilter(userId);
     const allFilters = and(...filters, unreadFilter);
@@ -199,7 +230,8 @@ export class ReleaseListerRepository {
   countUnreadReleases = async (
     accountId: string,
     userId: string,
-    permissionRoleId: string
+    permissionRoleId: string,
+    userCreatedAt: string | null
   ): Promise<number> =>
-    this.executeUnreadCount(accountId, userId, permissionRoleId);
+    this.executeUnreadCount(accountId, userId, permissionRoleId, userCreatedAt);
 }

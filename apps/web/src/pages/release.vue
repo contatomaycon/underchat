@@ -492,12 +492,13 @@ fetchReleases();
               @click="openRelease(release)"
             >
               <VChip
-                :color="release.viewed ? 'success' : 'error'"
+                v-if="!release.viewed"
+                color="error"
                 size="x-small"
                 variant="flat"
                 class="flex-shrink-0"
               >
-                {{ release.viewed ? t('read') : t('unread') }}
+                {{ t('unread') }}
               </VChip>
 
               <div class="flex-grow-1">

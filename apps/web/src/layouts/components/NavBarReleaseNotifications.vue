@@ -214,10 +214,10 @@ onMounted(() => {
                         </p>
                       </div>
                       <span
-                        class="text-caption flex-shrink-0 mt-1 text-nowrap"
-                        :class="item.viewed ? 'text-disabled' : 'text-primary'"
+                        v-if="!item.viewed"
+                        class="text-caption flex-shrink-0 mt-1 text-nowrap text-primary"
                       >
-                        {{ item.viewed ? t('read') : t('unread') }}
+                        {{ t('unread') }}
                       </span>
                     </div>
                   </VListItem>

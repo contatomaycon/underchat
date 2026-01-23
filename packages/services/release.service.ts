@@ -1,4 +1,5 @@
 import { injectable } from 'tsyringe';
+import { UserViewerRepository } from '@core/repositories/user/UserViewer.repository';
 import { ReleaseListerRepository } from '@core/repositories/release/ReleaseLister.repository';
 import { ReleaseViewerRepository } from '@core/repositories/release/ReleaseViewer.repository';
 import { ReleaseViewViewerRepository } from '@core/repositories/release/ReleaseViewViewer.repository';
@@ -19,6 +20,7 @@ import { ListReleaseNotificationsResponse } from '@core/schema/release/listRelea
 @injectable()
 export class ReleaseService {
   constructor(
+    private readonly userViewerRepository: UserViewerRepository,
     private readonly releaseListerRepository: ReleaseListerRepository,
     private readonly releaseViewerRepository: ReleaseViewerRepository,
     private readonly releaseViewViewerRepository: ReleaseViewViewerRepository,
@@ -37,6 +39,9 @@ export class ReleaseService {
     userId: string,
     permissionRoleId: string
   ): Promise<[ListReleaseResponse[], number]> => {
+    const userCreatedAt =
+      await this.userViewerRepository.getCreatedAtByUserId(userId);
+
     const [result, total] = await Promise.all([
       this.releaseListerRepository.listReleases(
         perPage,
@@ -44,13 +49,15 @@ export class ReleaseService {
         query,
         accountId,
         userId,
-        permissionRoleId
+        permissionRoleId,
+        userCreatedAt
       ),
       this.releaseListerRepository.listReleasesTotal(
         query,
         accountId,
         userId,
-        permissionRoleId
+        permissionRoleId,
+        userCreatedAt
       ),
     ]);
 
@@ -63,11 +70,15 @@ export class ReleaseService {
     userId: string,
     permissionRoleId: string
   ): Promise<ViewReleaseResponse | null> => {
+    const userCreatedAt =
+      await this.userViewerRepository.getCreatedAtByUserId(userId);
+
     const release = await this.releaseViewerRepository.viewRelease(
       releaseId,
       accountId,
       userId,
-      permissionRoleId
+      permissionRoleId,
+      userCreatedAt
     );
 
     if (!release) {
@@ -90,7 +101,8 @@ export class ReleaseService {
       releaseId,
       accountId,
       userId,
-      permissionRoleId
+      permissionRoleId,
+      userCreatedAt
     );
 
     return updatedRelease;
@@ -133,13 +145,16 @@ export class ReleaseService {
     userId: string,
     permissionRoleId: string
   ): Promise<ListReleaseNotificationsResponse> => {
+    const userCreatedAt =
+      await this.userViewerRepository.getCreatedAtByUserId(userId);
     const query = { current_page: 1, per_page: 4 };
 
     const [unreadCount, results] = await Promise.all([
       this.releaseListerRepository.countUnreadReleases(
         accountId,
         userId,
-        permissionRoleId
+        permissionRoleId,
+        userCreatedAt
       ),
       this.releaseListerRepository.listReleases(
         4,
@@ -147,7 +162,8 @@ export class ReleaseService {
         query,
         accountId,
         userId,
-        permissionRoleId
+        permissionRoleId,
+        userCreatedAt
       ),
     ]);
 

@@ -43,7 +43,7 @@ const computedNavItems = computed(() => {
           "
           :languages="themeConfig.app.i18n.langConfig"
         />
-        <NavBarReleaseNotifications class="me-1" />
+        <NavBarReleaseNotifications class="me-4" />
         <UserProfile />
       </div>
     </template>

@@ -11,6 +11,21 @@ export class UserViewerRepository {
     @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
+  getCreatedAtByUserId = async (userId: string): Promise<string | null> => {
+    const result = await this.dbRo
+      .select({ created_at: user.created_at })
+      .from(user)
+      .where(and(eq(user.user_id, userId), isNull(user.deleted_at)))
+      .limit(1)
+      .execute();
+
+    if (!result?.length || !result[0].created_at) {
+      return null;
+    }
+
+    return result[0].created_at;
+  };
+
   viewUserById = async (
     userId: string,
     accountId: string
