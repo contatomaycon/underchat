@@ -1,8 +1,6 @@
 import { injectable } from 'tsyringe';
 import { ReleaseListerRepository } from '@core/repositories/release/ReleaseLister.repository';
 import { ReleaseViewerRepository } from '@core/repositories/release/ReleaseViewer.repository';
-import { ReleaseAccessViewerRepository } from '@core/repositories/release/ReleaseAccessViewer.repository';
-import { ReleaseAccessUpdaterRepository } from '@core/repositories/release/ReleaseAccessUpdater.repository';
 import { ReleaseViewViewerRepository } from '@core/repositories/release/ReleaseViewViewer.repository';
 import { ReleaseViewCreatorRepository } from '@core/repositories/release/ReleaseViewCreator.repository';
 import { ReleaseCreatorRepository } from '@core/repositories/release/ReleaseCreator.repository';
@@ -22,8 +20,6 @@ export class ReleaseService {
   constructor(
     private readonly releaseListerRepository: ReleaseListerRepository,
     private readonly releaseViewerRepository: ReleaseViewerRepository,
-    private readonly releaseAccessViewerRepository: ReleaseAccessViewerRepository,
-    private readonly releaseAccessUpdaterRepository: ReleaseAccessUpdaterRepository,
     private readonly releaseViewViewerRepository: ReleaseViewViewerRepository,
     private readonly releaseViewCreatorRepository: ReleaseViewCreatorRepository,
     private readonly releaseCreatorRepository: ReleaseCreatorRepository,
@@ -77,27 +73,13 @@ export class ReleaseService {
       return null;
     }
 
-    const existsAccess =
-      await this.releaseAccessViewerRepository.existsReleaseAccessByUserId(
-        releaseId,
-        userId
-      );
+    const existsView = await this.releaseViewViewerRepository.existsReleaseView(
+      releaseId,
+      userId
+    );
 
-    if (existsAccess) {
-      const existsView =
-        await this.releaseViewViewerRepository.existsReleaseView(
-          releaseId,
-          userId
-        );
-
-      if (!existsView) {
-        await this.releaseViewCreatorRepository.createReleaseView(
-          releaseId,
-          userId
-        );
-      }
-    } else {
-      await this.releaseAccessUpdaterRepository.createReleaseAccess(
+    if (!existsView) {
+      await this.releaseViewCreatorRepository.createReleaseView(
         releaseId,
         userId
       );
