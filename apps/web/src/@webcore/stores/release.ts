@@ -27,11 +27,13 @@ export const useReleaseStore = defineStore('release', {
     } as ISnackbar,
     i18n: getI18n(),
     loading: false,
+    loadingMore: false,
+    refreshing: false,
     list: [] as ListReleaseResponse[],
     pagings: {
       current_page: 1 as number,
       total_pages: 1 as number,
-      per_page: 10 as number,
+      per_page: 50 as number,
       count: 0 as number,
       total: 0 as number,
     } as PagingResponseSchema,
@@ -46,10 +48,15 @@ export const useReleaseStore = defineStore('release', {
       this.snackbar.status = false;
     },
     async listReleases(
-      input?: ListReleaseRequest
+      input?: ListReleaseRequest,
+      append: boolean = false
     ): Promise<ListReleaseFinalResponse | null> {
       try {
-        this.loading = true;
+        if (append) {
+          this.loadingMore = true;
+        } else {
+          this.loading = true;
+        }
 
         const response = await axios.get<
           IApiResponse<ListReleaseFinalResponse>
@@ -57,7 +64,62 @@ export const useReleaseStore = defineStore('release', {
           params: input,
         });
 
-        this.loading = false;
+        if (append) {
+          this.loadingMore = false;
+        } else {
+          this.loading = false;
+        }
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const message =
+            data?.message ?? this.i18n.global.t('release_list_not_found');
+
+          this.showSnackbar(message, EColor.error);
+
+          return null;
+        }
+
+        if (append) {
+          this.list = [...this.list, ...data.data.results];
+        } else {
+          this.list = data.data.results;
+        }
+
+        this.pagings = data.data.pagings;
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('release_list_not_found');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        if (append) {
+          this.loadingMore = false;
+        } else {
+          this.loading = false;
+        }
+
+        return null;
+      }
+    },
+    async refreshReleases(
+      input?: ListReleaseRequest
+    ): Promise<ListReleaseFinalResponse | null> {
+      try {
+        this.refreshing = true;
+
+        const response = await axios.get<
+          IApiResponse<ListReleaseFinalResponse>
+        >('/release', {
+          params: { ...input, current_page: 1 },
+        });
+
+        this.refreshing = false;
 
         const data = response?.data;
 
@@ -82,7 +144,7 @@ export const useReleaseStore = defineStore('release', {
 
         this.showSnackbar(errorMessage, EColor.error);
 
-        this.loading = false;
+        this.refreshing = false;
 
         return null;
       }
