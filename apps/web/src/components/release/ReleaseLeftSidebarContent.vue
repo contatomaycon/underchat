@@ -68,6 +68,23 @@ const types: EReleaseType[] = [
           {{ $t('types') }}
         </div>
         <li
+          v-bind="$attrs"
+          :class="
+            props.selectedType === null && 'release-type-active text-primary'
+          "
+          class="cursor-pointer d-flex align-center"
+          @click="$emit('selectType', null)"
+        >
+          <VIcon
+            icon="tabler-list"
+            class="me-2 text-medium-emphasis"
+            size="12"
+          />
+          <div class="text-body-1 text-high-emphasis">
+            {{ $t('all') }}
+          </div>
+        </li>
+        <li
           v-for="type in types"
           :key="type"
           v-bind="$attrs"
