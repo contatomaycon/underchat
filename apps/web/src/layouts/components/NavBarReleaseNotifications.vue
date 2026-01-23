@@ -84,12 +84,12 @@ const onMenuUpdate = (open: boolean) => {
   if (open) fetchNotifications();
 };
 
-const openNotification = (release: ListReleaseResponse) => {
+const openNotification = async (release: ListReleaseResponse) => {
   const target = { path: '/release', query: { open: release.release_id } };
   if (route.path === '/release') {
-    router.replace(target);
+    await router.replace(target);
   } else {
-    router.push(target);
+    await router.push(target);
   }
   menuOpen.value = false;
 };

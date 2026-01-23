@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { PerfectScrollbar } from 'vue3-perfect-scrollbar';
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, nextTick } from 'vue';
 import { useRoute } from 'vue-router';
 import { refDebounced } from '@vueuse/core';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
@@ -38,6 +38,7 @@ const searchQuery = ref('');
 const debouncedSearch = refDebounced(searchQuery, 500);
 const selectedType = ref<EReleaseType | null>(null);
 const openedRelease = ref<ViewReleaseResponse | null>(null);
+const isOpeningFromRoute = ref(false);
 const releases = computed(() => releaseStore.list);
 const loading = computed(() => releaseStore.loading);
 const loadingMore = computed(() => releaseStore.loadingMore);
@@ -248,6 +249,12 @@ const closeRelease = () => {
   openedRelease.value = null;
 };
 
+const handleDrawerUpdate = (value: boolean) => {
+  if (!value && !isOpeningFromRoute.value) {
+    closeRelease();
+  }
+};
+
 const selectType = (type: EReleaseType | null) => {
   closeRelease();
   selectedType.value = type;
@@ -275,16 +282,26 @@ watch(
 watch(
   () => route.query.open,
   async (openId) => {
+    if (route.path !== '/release') return;
     const id =
       typeof openId === 'string'
         ? openId
         : Array.isArray(openId)
           ? openId[0]
           : null;
-    if (!id) return;
-    const data = await releaseStore.viewRelease(id);
-    if (data) {
-      openedRelease.value = data;
+    if (!id) {
+      openedRelease.value = null;
+      return;
+    }
+    isOpeningFromRoute.value = true;
+    try {
+      const data = await releaseStore.viewRelease(id);
+      if (data) {
+        openedRelease.value = data;
+        await nextTick();
+      }
+    } finally {
+      isOpeningFromRoute.value = false;
     }
   },
   { immediate: true }
@@ -315,7 +332,8 @@ fetchReleases();
     <VNavigationDrawer
       data-allow-mismatch
       temporary
-      :model-value="!!openedRelease"
+      :model-value="!!openedRelease || isOpeningFromRoute"
+      @update:model-value="handleDrawerUpdate"
       location="right"
       :scrim="false"
       floating
