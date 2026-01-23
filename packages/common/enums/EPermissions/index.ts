@@ -22,6 +22,7 @@ import { EReportConversationHistoryPermissions } from './reportConversationHisto
 import { EReportAttendancePermissions } from './reportAttendance';
 import { ESchedulePermissions } from './schedule';
 import { EAiAgentPermissions } from './aiAgent';
+import { EReleasePermissions } from './release';
 
 export type EPermissionsRoles =
   | EUserPermissions
@@ -47,4 +48,5 @@ export type EPermissionsRoles =
   | EReportConversationHistoryPermissions
   | EReportAttendancePermissions
   | ESchedulePermissions
-  | EAiAgentPermissions;
+  | EAiAgentPermissions
+  | EReleasePermissions;
