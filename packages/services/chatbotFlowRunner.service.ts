@@ -995,7 +995,8 @@ export class ChatbotFlowRunnerService {
       transfer_message_user_enabled?: boolean;
       transfer_message_sector_enabled?: boolean;
       transfer_message_sector_user_enabled?: boolean;
-    }
+    },
+    data?: IUpsertMessage
   ): Promise<boolean> {
     const nextFlowNode = this.getFlowNodeById(chatbotFlow, nextFlowId);
 
@@ -1122,6 +1123,18 @@ export class ChatbotFlowRunnerService {
 
     if (nextFlowNode.type === 'conditional') {
       await this.updateCache(createChat, nextFlowId);
+
+      if (data) {
+        return this.processConditionalNode(
+          t,
+          data,
+          createChat,
+          chatbotFlow,
+          nextFlowId,
+          customMessages
+        );
+      }
+
       return true;
     }
 
@@ -5157,7 +5170,8 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       transfer_message_user_enabled?: boolean;
       transfer_message_sector_enabled?: boolean;
       transfer_message_sector_user_enabled?: boolean;
-    }
+    },
+    data?: IUpsertMessage
   ): Promise<boolean> {
     const nextFlowId = this.getNextFlowId(chatbotFlow, currentFlowId);
 
@@ -5170,7 +5184,8 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       createChat,
       chatbotFlow,
       nextFlowId,
-      customMessages
+      customMessages,
+      data
     );
   }
 
@@ -5208,7 +5223,8 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
         createChat,
         chatbotFlow,
         currentFlowId,
-        customMessages
+        customMessages,
+        data
       );
     }
 
