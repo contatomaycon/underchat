@@ -985,7 +985,101 @@ const addAiAgentNode = (position?: { x: number; y: number }) => {
   nodes.value.push(newNode);
 };
 
+const isValidConnection = (connection: Connection): boolean => {
+  const sourceHandleId = connection.sourceHandle
+    ? String(connection.sourceHandle)
+    : null;
+  const targetHandleId = connection.targetHandle
+    ? String(connection.targetHandle)
+    : null;
+
+  if (!sourceHandleId && !targetHandleId) {
+    return true;
+  }
+
+  const isSourceHandleById = (handleId: string): boolean => {
+    const lowerId = handleId.toLowerCase();
+    return (
+      lowerId.includes('-source') ||
+      lowerId.endsWith('source') ||
+      lowerId === 'interactions-quantity' ||
+      lowerId === 'human-support' ||
+      lowerId === 'fallback' ||
+      lowerId === 'default'
+    );
+  };
+
+  const isTargetHandleById = (handleId: string): boolean => {
+    const lowerId = handleId.toLowerCase();
+    return (
+      lowerId.includes('-target') ||
+      lowerId.endsWith('target')
+    );
+  };
+
+  if (sourceHandleId && targetHandleId) {
+    const sourceIsSource = isSourceHandleById(sourceHandleId);
+    const targetIsTarget = isTargetHandleById(targetHandleId);
+    const sourceIsTarget = isTargetHandleById(sourceHandleId);
+    const targetIsSource = isSourceHandleById(targetHandleId);
+
+    if (sourceIsSource && targetIsSource) {
+      chatbotStore.showSnackbar(
+        t('chatbot_flow_validation_same_handle_type'),
+        EColor.error
+      );
+      return false;
+    }
+
+    if (sourceIsTarget && targetIsTarget) {
+      chatbotStore.showSnackbar(
+        t('chatbot_flow_validation_same_handle_type'),
+        EColor.error
+      );
+      return false;
+    }
+
+    if (sourceIsTarget && !targetIsTarget && !targetIsSource) {
+      chatbotStore.showSnackbar(
+        t('chatbot_flow_validation_invalid_source_handle'),
+        EColor.error
+      );
+      return false;
+    }
+
+    if (targetIsSource && !sourceIsSource && !sourceIsTarget) {
+      chatbotStore.showSnackbar(
+        t('chatbot_flow_validation_invalid_target_handle'),
+        EColor.error
+      );
+      return false;
+    }
+  }
+
+  if (sourceHandleId && isTargetHandleById(sourceHandleId) && !isSourceHandleById(sourceHandleId)) {
+    chatbotStore.showSnackbar(
+      t('chatbot_flow_validation_invalid_source_handle'),
+      EColor.error
+    );
+    return false;
+  }
+
+  if (targetHandleId && isSourceHandleById(targetHandleId) && !isTargetHandleById(targetHandleId)) {
+    chatbotStore.showSnackbar(
+      t('chatbot_flow_validation_invalid_target_handle'),
+      EColor.error
+    );
+    return false;
+  }
+
+  return true;
+};
+
 const onConnect = (connection: Connection) => {
+  if (!isValidConnection(connection)) {
+    return;
+  }
+
   const normalizedSourceHandle = normalizeConnectionSourceHandle(connection);
   const normalizedTargetHandle = connection.targetHandle
     ? String(connection.targetHandle)
@@ -2338,6 +2432,7 @@ onUnmounted(() => {
                 style: { stroke: '#1a192b', strokeWidth: 2 },
               }"
               :connection-radius="20"
+              :is-valid-connection="isValidConnection"
               @connect="onConnect"
               @nodes-change="onNodesChange"
               @drop="onDrop"

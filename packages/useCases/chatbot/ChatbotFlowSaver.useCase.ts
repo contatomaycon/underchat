@@ -840,6 +840,87 @@ export class ChatbotFlowSaverUseCase {
     return false;
   }
 
+  private isSourceHandle(handleId: string | null | undefined): boolean {
+    if (!handleId) {
+      return false;
+    }
+
+    const lowerId = handleId.toLowerCase();
+    return (
+      lowerId.includes('-source') ||
+      lowerId.endsWith('source') ||
+      lowerId === 'interactions-quantity' ||
+      lowerId === 'human-support' ||
+      lowerId === 'fallback' ||
+      lowerId === 'default'
+    );
+  }
+
+  private isTargetHandle(handleId: string | null | undefined): boolean {
+    if (!handleId) {
+      return false;
+    }
+
+    const lowerId = handleId.toLowerCase();
+    return lowerId.includes('-target') || lowerId.endsWith('target');
+  }
+
+  private validateEdges(
+    t: TFunction<'translation', undefined>,
+    requestData: SaveChatbotFlowRequestData,
+    errors: string[]
+  ): void {
+    for (const edge of requestData.edges) {
+      const sourceHandleId = edge.sourceHandle
+        ? String(edge.sourceHandle)
+        : null;
+      const targetHandleId = edge.targetHandle
+        ? String(edge.targetHandle)
+        : null;
+
+      if (!sourceHandleId && !targetHandleId) {
+        continue;
+      }
+
+      const sourceIsSource = this.isSourceHandle(sourceHandleId);
+      const targetIsTarget = this.isTargetHandle(targetHandleId);
+      const sourceIsTarget = this.isTargetHandle(sourceHandleId);
+      const targetIsSource = this.isSourceHandle(targetHandleId);
+
+      if (sourceHandleId && targetHandleId) {
+        if (sourceIsSource && targetIsSource) {
+          errors.push(t('chatbot_flow_validation_same_handle_type'));
+          continue;
+        }
+
+        if (sourceIsTarget && targetIsTarget) {
+          errors.push(t('chatbot_flow_validation_same_handle_type'));
+          continue;
+        }
+
+        if (sourceIsTarget && !targetIsTarget && !targetIsSource) {
+          errors.push(t('chatbot_flow_validation_invalid_source_handle'));
+          continue;
+        }
+
+        if (targetIsSource && !sourceIsSource && !sourceIsTarget) {
+          errors.push(t('chatbot_flow_validation_invalid_target_handle'));
+          continue;
+        }
+      }
+
+      if (sourceHandleId && sourceIsTarget && !sourceIsSource) {
+        errors.push(t('chatbot_flow_validation_invalid_source_handle'));
+        continue;
+      }
+
+      if (targetHandleId && targetIsSource && !targetIsTarget) {
+        errors.push(t('chatbot_flow_validation_invalid_target_handle'));
+        continue;
+      }
+    }
+  }
+
   private validateFlow(
     t: TFunction<'translation', undefined>,
     requestData: SaveChatbotFlowRequestData,
@@ -848,6 +929,7 @@ export class ChatbotFlowSaverUseCase {
     const errors: string[] = [];
 
     this.validateBasicFlowStructure(t, requestData, errors);
+    this.validateEdges(t, requestData, errors);
 
     if (errors.length > 0) {
       const errorMessage =
