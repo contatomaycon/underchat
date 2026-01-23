@@ -32,6 +32,7 @@ useSnackbarCleanup(chatbotStore);
 
 const headers: DataTableHeader<ListChatbotResponse>[] = [
   { title: t('name'), key: 'name' },
+  { title: t('chatbot_type'), key: 'type' },
   { title: t('created_at'), key: 'created_at' },
   { title: t('actions'), key: 'actions', sortable: false },
 ];
@@ -152,6 +153,16 @@ onMounted(async () => {
         >
           <template #item.name="{ item }">
             {{ item.name }}
+          </template>
+
+          <template #item.type="{ item }">
+            <VChip
+              size="small"
+              color="primary"
+              variant="tonal"
+            >
+              {{ item.type === 'output' ? $t('chatbot_type_output') : $t('chatbot_type_input') }}
+            </VChip>
           </template>
 
           <template #item.created_at="{ item }">

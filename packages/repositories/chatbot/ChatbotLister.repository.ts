@@ -16,6 +16,7 @@ export class ChatbotListerRepository {
       .select({
         chatbot_id: chatbot.chatbot_id,
         name: chatbot.name,
+        type: chatbot.type,
         created_at: chatbot.created_at,
       })
       .from(chatbot)
@@ -30,6 +31,7 @@ export class ChatbotListerRepository {
     return result.map((chatbot) => ({
       chatbot_id: chatbot.chatbot_id,
       name: chatbot.name,
+      type: chatbot.type || null,
       created_at: chatbot.created_at || '',
     }));
   };

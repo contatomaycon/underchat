@@ -5,6 +5,7 @@ import { UpdateChatbotResponse } from '@core/schema/chatbot/updateChatbot/respon
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { eq } from 'drizzle-orm';
+import { EChatbotType } from '@core/common/enums/EChatbotType';
 
 @injectable()
 export class ChatbotUpdaterRepository {
@@ -16,12 +17,22 @@ export class ChatbotUpdaterRepository {
     chatbotId: string,
     input: UpdateChatbotRequest
   ): Promise<UpdateChatbotResponse | null> => {
+    const updateData: {
+      name: string;
+      updated_at: string;
+      type?: EChatbotType | null;
+    } = {
+      name: input.name,
+      updated_at: new Date().toISOString(),
+    };
+
+    if (input.type !== undefined) {
+      updateData.type = input.type as EChatbotType | null;
+    }
+
     const result = await this.dbRw
       .update(chatbot)
-      .set({
-        name: input.name,
-        updated_at: new Date().toISOString(),
-      })
+      .set(updateData)
       .where(eq(chatbot.chatbot_id, chatbotId))
       .returning();
 
