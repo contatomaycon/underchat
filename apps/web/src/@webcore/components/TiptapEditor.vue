@@ -12,8 +12,6 @@ const props = defineProps<{
 
 const emit = defineEmits<(e: 'update:modelValue', value: string) => void>();
 
-const editorRef = ref();
-
 const editor = useEditor({
   content: props.modelValue,
   extensions: [
@@ -25,7 +23,8 @@ const editor = useEditor({
   ],
   onUpdate() {
     if (!editor.value) return;
-    emit('update:modelValue', editor.value.getHTML());
+    const html = editor.value.getHTML();
+    emit('update:modelValue', html);
   },
 });
 
@@ -123,7 +122,7 @@ watch(
       </IconBtn>
     </div>
     <VDivider />
-    <EditorContent ref="editorRef" :editor="editor" />
+    <EditorContent :editor="editor" />
   </div>
 </template>
 

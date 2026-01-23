@@ -2252,5 +2252,8 @@
   "release_create_error": "Error creating release",
   "release_create_account_permission_error": "You do not have permission to create releases for specific accounts",
   "recipient": "Recipient",
-  "permission_groups": "Permission Groups"
+  "permission_groups": "Permission Groups",
+  "html_editor": "HTML Editor",
+  "html_editor_hint": "Paste or type raw HTML. Use the Preview tab to visualize.",
+  "no_preview_available": "No content to preview"
 }

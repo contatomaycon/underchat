@@ -10,7 +10,6 @@ import { useReleaseStore } from '@/@webcore/stores/release';
 import { ListReleaseResponse } from '@core/schema/release/listRelease/response.schema';
 import { ViewReleaseResponse } from '@core/schema/release/viewRelease/response.schema';
 import ReleaseLeftSidebarContent from '@/components/release/ReleaseLeftSidebarContent.vue';
-import ReleaseView from '@/components/release/ReleaseView.vue';
 import ReleaseComposeDialog from '@/components/release/ReleaseComposeDialog.vue';
 import { useResponsiveLeftSidebar } from '@/@webcore/composable/useResponsiveSidebar';
 import { formatDateToMonthShort } from '@/@webcore/utils/formatters';
@@ -64,6 +63,104 @@ const getTypeLabel = (type: EReleaseType): string => {
     [EReleaseType.warning]: t('release_type_warning'),
   };
   return labels[type] || type;
+};
+
+const getRenderableHtml = (html: string): string => {
+  if (!html) return '';
+
+  const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+  if (bodyMatch && bodyMatch[1]) {
+    return bodyMatch[1].trim();
+  }
+
+  if (html.includes('<!DOCTYPE') || html.includes('<html')) {
+    let cleaned = html
+      .replace(/<!DOCTYPE[^>]*>/gi, '')
+      .replace(/<html[^>]*>/gi, '')
+      .replace(/<\/html>/gi, '')
+      .replace(/<head[^>]*>[\s\S]*?<\/head>/gi, '')
+      .replace(/<body[^>]*>/gi, '')
+      .replace(/<\/body>/gi, '')
+      .trim();
+
+    if (cleaned) {
+      return cleaned;
+    }
+
+    try {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(html, 'text/html');
+      const body = doc.querySelector('body');
+      if (body && body.innerHTML.trim()) {
+        return body.innerHTML.trim();
+      }
+    } catch (error) {}
+  }
+
+  return html;
+};
+
+const extractHtmlContent = (html: string): string => {
+  if (!html) return '';
+
+  const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+  if (bodyMatch && bodyMatch[1]) {
+    return bodyMatch[1].trim();
+  }
+
+  if (html.includes('<!DOCTYPE') || html.includes('<html')) {
+    let cleaned = html
+      .replace(/<!DOCTYPE[^>]*>/gi, '')
+      .replace(/<html[^>]*>/gi, '')
+      .replace(/<\/html>/gi, '')
+      .replace(/<head[^>]*>[\s\S]*?<\/head>/gi, '')
+      .replace(/<body[^>]*>/gi, '')
+      .replace(/<\/body>/gi, '')
+      .trim();
+
+    if (cleaned) {
+      return cleaned;
+    }
+
+    try {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(html, 'text/html');
+      const body = doc.querySelector('body');
+      if (body && body.innerHTML.trim()) {
+        return body.innerHTML.trim();
+      }
+    } catch (error) {}
+  }
+
+  return html;
+};
+
+const stripHtml = (html: string): string => {
+  if (!html) return '';
+
+  try {
+    const content = extractHtmlContent(html);
+    const div = globalThis.document.createElement('div');
+    div.innerHTML = content;
+    const text = div.textContent || div.innerText || '';
+
+    return text.trim();
+  } catch (error) {
+    const content = extractHtmlContent(html);
+    return content.replace(/<[^>]*>/g, '').trim();
+  }
+};
+
+const getMessagePreview = (message: string): string => {
+  if (!message) return '';
+
+  const plainText = stripHtml(message);
+
+  if (plainText.length > 100) {
+    return plainText.substring(0, 100) + '...';
+  }
+
+  return plainText;
 };
 
 const fetchReleases = async () => {
@@ -143,7 +240,59 @@ fetchReleases();
       />
     </VNavigationDrawer>
 
-    <ReleaseView :release="openedRelease" @close="closeRelease" />
+    <VNavigationDrawer
+      data-allow-mismatch
+      temporary
+      :model-value="!!openedRelease"
+      location="right"
+      :scrim="false"
+      floating
+      class="release-view"
+    >
+      <template v-if="openedRelease">
+        <div class="release-view-header d-flex align-center px-5 py-3">
+          <IconBtn class="me-2" @click="closeRelease">
+            <VIcon size="22" icon="tabler-chevron-left" class="flip-in-rtl" />
+          </IconBtn>
+
+          <div
+            class="d-flex align-center flex-wrap flex-grow-1 overflow-hidden gap-2"
+          >
+            <div class="text-body-1 text-high-emphasis text-truncate">
+              {{ openedRelease.title }}
+            </div>
+
+            <VChip
+              :color="getTypeColor(openedRelease.type)"
+              class="text-capitalize flex-shrink-0"
+              size="small"
+              :label="false"
+            >
+              {{ getTypeLabel(openedRelease.type) }}
+            </VChip>
+          </div>
+        </div>
+
+        <VDivider />
+
+        <PerfectScrollbar
+          tag="div"
+          class="release-content-container flex-grow-1 pa-sm-12 pa-6"
+          :options="{ wheelPropagation: false }"
+        >
+          <VCard class="mb-4">
+            <VCardText>
+              <div
+                v-if="openedRelease.message"
+                v-html="openedRelease.message"
+                class="release-message-content"
+              ></div>
+              <div v-else class="text-body-1">-</div>
+            </VCardText>
+          </VCard>
+        </PerfectScrollbar>
+      </template>
+    </VNavigationDrawer>
 
     <VMain>
       <VCard flat class="release-content-list h-100 d-flex flex-column">
@@ -199,8 +348,7 @@ fetchReleases();
                 {{ release.title }}
               </h6>
               <span class="text-body-2 text-truncate d-block">
-                {{ release.message.substring(0, 100)
-                }}{{ release.message.length > 100 ? '...' : '' }}
+                {{ getMessagePreview(release.message) }}
               </span>
             </div>
 
@@ -300,6 +448,46 @@ fetchReleases();
   .release-item .release-meta {
     display: flex;
   }
+}
+
+.release-view {
+  &:not(.v-navigation-drawer--active) {
+    transform: translateX(110%) !important;
+  }
+
+  inline-size: 100% !important;
+
+  @media only screen and (min-width: 1280px) {
+    inline-size: calc(100% - 256px) !important;
+  }
+
+  .v-navigation-drawer__content {
+    display: flex;
+    flex-direction: column;
+  }
+}
+
+.release-content-container {
+  background-color: rgb(var(--v-theme-on-surface), var(--v-hover-opacity));
+}
+
+.release-message-content {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.release-message-content :deep(img) {
+  max-width: 100%;
+  height: auto;
+}
+
+.release-message-content :deep(table) {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.release-message-content :deep(*) {
+  max-width: 100%;
 }
 </style>
 

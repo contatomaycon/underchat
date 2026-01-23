@@ -2252,5 +2252,8 @@
   "release_create_error": "Erro ao criar informativo",
   "release_create_account_permission_error": "Você não tem permissão para criar informativos para contas específicas",
   "recipient": "Destinatário",
-  "permission_groups": "Grupos de Acesso"
+  "permission_groups": "Grupos de Acesso",
+  "html_editor": "Editor HTML",
+  "html_editor_hint": "Cole ou digite HTML bruto. Use a aba Preview para visualizar.",
+  "no_preview_available": "Nenhum conteúdo para visualizar"
 }

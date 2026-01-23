@@ -9,6 +9,7 @@ import { getUser } from '@/@webcore/localStorage/user';
 import { EColor } from '@core/common/enums/EColor';
 import { CreateReleaseRequest } from '@core/schema/release/createRelease/request.schema';
 import DialogCloseBtn from '@/@webcore/components/DialogCloseBtn.vue';
+import ReleaseHtmlEditor from './ReleaseHtmlEditor.vue';
 
 const props = defineProps<{
   modelValue: boolean;
@@ -203,107 +204,108 @@ onMounted(async () => {
         </h5>
       </VCardItem>
 
-    <VDivider />
+      <VDivider />
 
-    <div class="px-6 py-4">
-      <AppSelectSearch
-        v-model="type"
-        :items="typeOptions"
-        :label="$t('type')"
-        item-value="value"
-        item-title="title"
-      />
-    </div>
+      <div class="px-6 py-4">
+        <AppSelectSearch
+          v-model="type"
+          :items="typeOptions"
+          :label="$t('type')"
+          item-value="value"
+          item-title="title"
+        />
+      </div>
 
-    <VDivider />
+      <VDivider />
 
-    <div class="px-6 py-4">
-      <AppSelectSearch
-        v-model="recipientType"
-        :items="recipientTypeOptions"
-        :label="$t('recipient')"
-        item-value="value"
-        item-title="title"
-      />
-    </div>
+      <div class="px-6 py-4">
+        <AppSelectSearch
+          v-model="recipientType"
+          :items="recipientTypeOptions"
+          :label="$t('recipient')"
+          item-value="value"
+          item-title="title"
+        />
+      </div>
 
-    <VDivider v-if="recipientType === 'account'" />
+      <VDivider v-if="recipientType === 'account'" />
 
-    <div v-if="recipientType === 'account'" class="px-6 py-4">
-      <AppSelectSearch
-        v-model="selectedAccountId"
-        :items="accountOptions"
-        :label="$t('account')"
-        item-value="id"
-        item-title="name"
-      />
-    </div>
+      <div v-if="recipientType === 'account'" class="px-6 py-4">
+        <AppSelectSearch
+          v-model="selectedAccountId"
+          :items="accountOptions"
+          :label="$t('account')"
+          item-value="id"
+          item-title="name"
+        />
+      </div>
 
-    <VDivider v-if="recipientType === 'permission_role'" />
+      <VDivider v-if="recipientType === 'permission_role'" />
 
-    <div v-if="recipientType === 'permission_role'" class="px-6 py-4">
-      <AppSelectSearch
-        v-model="selectedPermissionRoleId"
-        :items="permissionRoleOptions"
-        :label="$t('permission_groups')"
-        item-value="id"
-        item-title="name"
-      />
-    </div>
+      <div v-if="recipientType === 'permission_role'" class="px-6 py-4">
+        <AppSelectSearch
+          v-model="selectedPermissionRoleId"
+          :items="permissionRoleOptions"
+          :label="$t('permission_groups')"
+          item-value="id"
+          item-title="name"
+        />
+      </div>
 
-    <VDivider v-if="recipientType === 'user'" />
+      <VDivider v-if="recipientType === 'user'" />
 
-    <div v-if="recipientType === 'user'" class="px-6 py-4">
-      <AppSelectSearch
-        v-model="selectedUserId"
-        :items="userOptions"
-        :label="$t('user')"
-        item-value="id"
-        item-title="name"
-      />
-    </div>
+      <div v-if="recipientType === 'user'" class="px-6 py-4">
+        <AppSelectSearch
+          v-model="selectedUserId"
+          :items="userOptions"
+          :label="$t('user')"
+          item-value="id"
+          item-title="name"
+        />
+      </div>
 
-    <VDivider />
+      <VDivider />
 
-    <div class="px-6 py-4">
-      <VTextField v-model="title" :label="$t('title')" density="compact" />
-    </div>
+      <div class="px-6 py-4">
+        <VTextField v-model="title" :label="$t('title')" density="compact" />
+      </div>
 
-    <VDivider />
+      <VDivider />
 
-    <div class="px-6 py-4">
-      <TiptapEditor v-model="message" :placeholder="$t('message')" />
-    </div>
+      <div class="px-6 py-4">
+        <ReleaseHtmlEditor v-model="message" :placeholder="$t('message')" />
+      </div>
 
-    <VCardText class="d-flex justify-end flex-wrap gap-3">
-      <VBtn
-        variant="tonal"
-        color="secondary"
-        :disabled="loading"
-        @click="
-          isVisible = false;
-          resetValues();
-        "
-      >
-        {{ $t('close') }}
-      </VBtn>
-      <VBtn
-        color="primary"
-        append-icon="tabler-send"
-        :disabled="
-          title === '' ||
-          message === '' ||
-          loading ||
-          (recipientType === 'account' && !selectedAccountId) ||
-          (recipientType === 'permission_role' && !selectedPermissionRoleId) ||
-          (recipientType === 'user' && !selectedUserId)
-        "
-        :loading="loading"
-        @click="createRelease"
-      >
-        {{ $t('save') }}
-      </VBtn>
-    </VCardText>
+      <VCardText class="d-flex justify-end flex-wrap gap-3">
+        <VBtn
+          variant="tonal"
+          color="secondary"
+          :disabled="loading"
+          @click="
+            isVisible = false;
+            resetValues();
+          "
+        >
+          {{ $t('close') }}
+        </VBtn>
+        <VBtn
+          color="primary"
+          append-icon="tabler-send"
+          :disabled="
+            title === '' ||
+            message === '' ||
+            loading ||
+            (recipientType === 'account' && !selectedAccountId) ||
+            (recipientType === 'permission_role' &&
+              !selectedPermissionRoleId) ||
+            (recipientType === 'user' && !selectedUserId)
+          "
+          :loading="loading"
+          @click="createRelease"
+        >
+          {{ $t('save') }}
+        </VBtn>
+      </VCardText>
     </VCard>
   </VDialog>
 </template>
