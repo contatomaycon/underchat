@@ -82,7 +82,6 @@ export class ReleaseCreatorRepository {
       account_id: input.account_id ?? null,
       user_id: input.user_id ?? null,
       permission_role_id: input.permission_role_id ?? null,
-      viewed: false,
     });
   };
 }

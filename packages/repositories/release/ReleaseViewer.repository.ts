@@ -1,5 +1,5 @@
 import * as schema from '@core/models';
-import { release, releaseAccess } from '@core/models';
+import { release, releaseAccess, releaseView } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { and, eq, or, sql, SQLWrapper } from 'drizzle-orm';
@@ -43,13 +43,11 @@ export class ReleaseViewerRepository {
   };
 
   private readonly buildViewedField = (userId: string) => {
-    return sql<boolean>`COALESCE(
-      (SELECT ${releaseAccess.viewed} 
-       FROM ${releaseAccess} 
-       WHERE ${releaseAccess.release_id} = ${release.release_id} 
-       AND ${releaseAccess.user_id} = ${userId} 
-       LIMIT 1), 
-      false
+    return sql<boolean>`EXISTS(
+      SELECT 1 
+      FROM ${releaseView} 
+      WHERE ${releaseView.release_id} = ${release.release_id} 
+      AND ${releaseView.user_id} = ${userId}
     )`;
   };
 

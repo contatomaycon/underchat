@@ -1,5 +1,5 @@
 import * as schema from '@core/models';
-import { releaseAccess } from '@core/models';
+import { releaseView } from '@core/models';
 import {
   NodePgDatabase,
   NodePgQueryResultHKT,
@@ -10,34 +10,30 @@ import { ExtractTablesWithRelations } from 'drizzle-orm';
 import { PgTransaction } from 'drizzle-orm/pg-core';
 
 @injectable()
-export class ReleaseAccessUpdaterRepository {
+export class ReleaseViewCreatorRepository {
   constructor(
     @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
 
-  createReleaseAccess = async (
+  createReleaseView = async (
     releaseId: string,
     userId: string
-  ): Promise<string | null> => {
-    const releaseAccessId = uuidv7();
+  ): Promise<boolean> => {
+    const releaseViewId = uuidv7();
 
     const result = await this.dbRw
-      .insert(releaseAccess)
+      .insert(releaseView)
       .values({
-        release_access_id: releaseAccessId,
+        release_view_id: releaseViewId,
         release_id: releaseId,
         user_id: userId,
       })
       .execute();
 
-    if (!result) {
-      return null;
-    }
-
-    return releaseAccessId;
+    return (result.rowCount ?? 0) > 0;
   };
 
-  createReleaseAccessInTransaction = async (
+  createReleaseViewInTransaction = async (
     tx: PgTransaction<
       NodePgQueryResultHKT,
       typeof schema,
@@ -45,22 +41,18 @@ export class ReleaseAccessUpdaterRepository {
     >,
     releaseId: string,
     userId: string
-  ): Promise<string | null> => {
-    const releaseAccessId = uuidv7();
+  ): Promise<boolean> => {
+    const releaseViewId = uuidv7();
 
     const result = await tx
-      .insert(releaseAccess)
+      .insert(releaseView)
       .values({
-        release_access_id: releaseAccessId,
+        release_view_id: releaseViewId,
         release_id: releaseId,
         user_id: userId,
       })
       .execute();
 
-    if (!result) {
-      return null;
-    }
-
-    return releaseAccessId;
+    return (result.rowCount ?? 0) > 0;
   };
 }

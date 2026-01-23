@@ -1,4 +1,4 @@
-import { pgTable, uuid, timestamp, boolean, index } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, timestamp, index } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 import { account, user, permissionRole } from '@core/models';
 import { release } from './release.model';
@@ -15,7 +15,6 @@ export const releaseAccess = pgTable(
     permission_role_id: uuid().references(
       () => permissionRole.permission_role_id
     ),
-    viewed: boolean().notNull().default(false),
     created_at: timestamp({
       mode: 'string',
       withTimezone: true,
@@ -30,11 +29,6 @@ export const releaseAccess = pgTable(
     index('release_access_account_id_idx').on(table.account_id),
     index('release_access_user_id_idx').on(table.user_id),
     index('release_access_permission_role_id_idx').on(table.permission_role_id),
-    index('release_access_viewed_idx').on(table.viewed),
-    index('release_access_release_id_viewed_idx').on(
-      table.release_id,
-      table.viewed
-    ),
   ]
 );
 

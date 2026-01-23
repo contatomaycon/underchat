@@ -1,5 +1,5 @@
 import * as schema from '@core/models';
-import { release, releaseAccess } from '@core/models';
+import { release, releaseAccess, releaseView } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { and, count, desc, eq, SQLWrapper, or, ilike, sql } from 'drizzle-orm';
@@ -90,13 +90,11 @@ export class ReleaseListerRepository {
         message: release.message,
         created_at: release.created_at,
         updated_at: release.updated_at,
-        viewed: sql<boolean>`COALESCE(
-          (SELECT ${releaseAccess.viewed} 
-           FROM ${releaseAccess} 
-           WHERE ${releaseAccess.release_id} = ${release.release_id} 
-           AND ${releaseAccess.user_id} = ${userId} 
-           LIMIT 1), 
-          false
+        viewed: sql<boolean>`EXISTS(
+          SELECT 1 
+          FROM ${releaseView} 
+          WHERE ${releaseView.release_id} = ${release.release_id} 
+          AND ${releaseView.user_id} = ${userId}
         )`,
       })
       .from(release)

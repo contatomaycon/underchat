@@ -3,6 +3,8 @@ import { ReleaseListerRepository } from '@core/repositories/release/ReleaseListe
 import { ReleaseViewerRepository } from '@core/repositories/release/ReleaseViewer.repository';
 import { ReleaseAccessViewerRepository } from '@core/repositories/release/ReleaseAccessViewer.repository';
 import { ReleaseAccessUpdaterRepository } from '@core/repositories/release/ReleaseAccessUpdater.repository';
+import { ReleaseViewViewerRepository } from '@core/repositories/release/ReleaseViewViewer.repository';
+import { ReleaseViewCreatorRepository } from '@core/repositories/release/ReleaseViewCreator.repository';
 import { ReleaseCreatorRepository } from '@core/repositories/release/ReleaseCreator.repository';
 import { ReleaseUsersListerRepository } from '@core/repositories/release/ReleaseUsersLister.repository';
 import { ReleaseAccountsListerRepository } from '@core/repositories/release/ReleaseAccountsLister.repository';
@@ -22,6 +24,8 @@ export class ReleaseService {
     private readonly releaseViewerRepository: ReleaseViewerRepository,
     private readonly releaseAccessViewerRepository: ReleaseAccessViewerRepository,
     private readonly releaseAccessUpdaterRepository: ReleaseAccessUpdaterRepository,
+    private readonly releaseViewViewerRepository: ReleaseViewViewerRepository,
+    private readonly releaseViewCreatorRepository: ReleaseViewCreatorRepository,
     private readonly releaseCreatorRepository: ReleaseCreatorRepository,
     private readonly releaseUsersListerRepository: ReleaseUsersListerRepository,
     private readonly releaseAccountsListerRepository: ReleaseAccountsListerRepository,
@@ -80,7 +84,18 @@ export class ReleaseService {
       );
 
     if (existsAccess) {
-      await this.releaseAccessUpdaterRepository.markAsViewed(releaseId, userId);
+      const existsView =
+        await this.releaseViewViewerRepository.existsReleaseView(
+          releaseId,
+          userId
+        );
+
+      if (!existsView) {
+        await this.releaseViewCreatorRepository.createReleaseView(
+          releaseId,
+          userId
+        );
+      }
     } else {
       await this.releaseAccessUpdaterRepository.createReleaseAccess(
         releaseId,

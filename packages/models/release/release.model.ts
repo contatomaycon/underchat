@@ -8,6 +8,7 @@ import {
 } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 import { account, releaseAccess } from '@core/models';
+import { releaseView } from './releaseView.model';
 import { EReleaseType } from '@core/common/enums/EReleaseType';
 import { EReleaseStatus } from '@core/common/enums/EReleaseStatus';
 
@@ -49,4 +50,5 @@ export const releaseRelations = relations(release, ({ one, many }) => ({
     references: [account.account_id],
   }),
   raa: many(releaseAccess),
+  rav: many(releaseView),
 }));
