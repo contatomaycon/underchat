@@ -316,13 +316,120 @@ onUnmounted(async () => {
       <VCardText>
         <div v-if="statistics" class="statistics-container mb-6">
           <VCard
+            class="statistics-card statistics-card-large"
+            elevation="2"
+            variant="flat"
+          >
+            <VCardText class="pa-8 d-flex flex-column h-100">
+              <div class="d-flex align-center justify-space-between mb-6">
+                <div
+                  class="statistics-icon-wrapper statistics-icon-wrapper-large"
+                  :style="{
+                    backgroundColor: `rgb(var(--v-theme-success))`,
+                  }"
+                >
+                  <VIcon icon="tabler-circle-check" size="32" color="white" />
+                </div>
+                <VChip
+                  color="success"
+                  size="large"
+                  variant="flat"
+                  class="font-weight-bold"
+                >
+                  {{ (statistics as any).online?.percentage ?? 0 }}%
+                </VChip>
+              </div>
+
+              <div class="text-h5 font-weight-bold mb-2">
+                {{ t('online') }}
+              </div>
+
+              <div class="text-h1 font-weight-bold mb-4">
+                {{ (statistics as any).online?.total ?? 0 }}
+              </div>
+
+              <div class="text-body-2 text-medium-emphasis mb-6">
+                {{ t('channels') }}
+              </div>
+
+              <VDivider class="mb-6" />
+
+              <div class="d-flex flex-column gap-4 mb-auto">
+                <div class="d-flex align-center justify-space-between">
+                  <div class="d-flex align-center gap-2">
+                    <VIcon
+                      icon="tabler-database"
+                      size="20"
+                      color="success"
+                      class="opacity-75"
+                    />
+                    <span class="text-body-2 text-medium-emphasis">
+                      {{ t('total') }}
+                    </span>
+                  </div>
+                  <span class="text-body-1 font-weight-medium">
+                    {{ (statistics as any).total ?? 0 }}
+                  </span>
+                </div>
+
+                <div class="d-flex align-center justify-space-between">
+                  <div class="d-flex align-center gap-2">
+                    <VIcon
+                      icon="tabler-user-check"
+                      size="20"
+                      color="info"
+                      class="opacity-75"
+                    />
+                    <span class="text-body-2 text-medium-emphasis">
+                      {{ t('disponible') }}
+                    </span>
+                  </div>
+                  <span class="text-body-1 font-weight-medium">
+                    {{ (statistics as any).disponible?.total ?? 0 }}
+                  </span>
+                </div>
+
+                <div class="d-flex align-center justify-space-between">
+                  <div class="d-flex align-center gap-2">
+                    <VIcon
+                      icon="tabler-circle-x"
+                      size="20"
+                      color="error"
+                      class="opacity-75"
+                    />
+                    <span class="text-body-2 text-medium-emphasis">
+                      {{ t('offline') }}
+                    </span>
+                  </div>
+                  <span class="text-body-1 font-weight-medium">
+                    {{ (statistics as any).offline?.total ?? 0 }}
+                  </span>
+                </div>
+              </div>
+
+              <div
+                class="mt-auto pt-4 d-flex align-center justify-center"
+                :style="{
+                  backgroundColor: `rgba(var(--v-theme-success), 0.1)`,
+                  borderRadius: '8px',
+                  padding: '12px',
+                }"
+              >
+                <VIcon
+                  icon="tabler-trending-up"
+                  size="20"
+                  color="success"
+                  class="mr-2"
+                />
+                <span class="text-body-2 font-weight-medium text-success">
+                  {{ t('active_channels') }}
+                </span>
+              </div>
+            </VCardText>
+          </VCard>
+
+          <VCard
             v-for="(stat, index) in [
-              {
-                key: 'online',
-                label: t('online'),
-                color: 'success',
-                icon: 'tabler-circle-check',
-              },
               {
                 key: 'disponible',
                 label: t('disponible'),
@@ -352,6 +459,12 @@ onUnmounted(async () => {
                 label: t('mismatched'),
                 color: 'warning',
                 icon: 'tabler-alert-triangle',
+              },
+              {
+                key: 'stopped',
+                label: t('stopped'),
+                color: 'warning',
+                icon: 'tabler-player-pause',
               },
             ]"
             :key="index"
@@ -645,19 +758,73 @@ onUnmounted(async () => {
 
 .statistics-container {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  grid-template-columns: 1.5fr 1fr 1fr 1fr;
+  grid-auto-rows: minmax(150px, auto);
   gap: 1.5rem;
+  align-items: stretch;
+}
+
+.statistics-card-large {
+  grid-column: 1;
+  grid-row: 1 / 3;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.statistics-card-large :deep(.v-card-text) {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.statistics-card:not(.statistics-card-large):nth-child(2) {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.statistics-card:not(.statistics-card-large):nth-child(3) {
+  grid-column: 3;
+  grid-row: 1;
+}
+
+.statistics-card:not(.statistics-card-large):nth-child(4) {
+  grid-column: 4;
+  grid-row: 1;
+}
+
+.statistics-card:not(.statistics-card-large):nth-child(5) {
+  grid-column: 2;
+  grid-row: 2;
+}
+
+.statistics-card:not(.statistics-card-large):nth-child(6) {
+  grid-column: 3;
+  grid-row: 2;
+}
+
+.statistics-card:not(.statistics-card-large):nth-child(7) {
+  grid-column: 4;
+  grid-row: 2;
 }
 
 .statistics-card {
   transition: all 0.3s ease;
   border-radius: 12px;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
 
   &:hover {
     transform: translateY(-2px);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
   }
+}
+
+.statistics-card :deep(.v-card-text) {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
 }
 
 .statistics-icon-wrapper {
@@ -667,6 +834,12 @@ onUnmounted(async () => {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.statistics-icon-wrapper-large {
+  width: 64px;
+  height: 64px;
+  border-radius: 12px;
 }
 
 .invoice-list-filter {

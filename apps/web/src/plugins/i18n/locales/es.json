@@ -384,6 +384,7 @@
   "deleting": "Eliminando",
   "recreating": "Recreando",
   "stopped": "Detenido",
+  "active_channels": "Canales Activos",
   "recreate": "Recrear",
   "recreate_all": "Recrear Todos",
   "recreate_all_channels_confirmation": "¿Está seguro de que desea recrear todos los canales no eliminados?",

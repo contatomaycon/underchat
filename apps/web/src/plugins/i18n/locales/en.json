@@ -383,6 +383,7 @@
   "deleting": "Deleting",
   "recreating": "Recreating",
   "stopped": "Stopped",
+  "active_channels": "Active Channels",
   "recreate": "Recreate",
   "recreate_all": "Recreate All",
   "recreate_all_channels_confirmation": "Are you sure you want to recreate all non-deleted channels?",

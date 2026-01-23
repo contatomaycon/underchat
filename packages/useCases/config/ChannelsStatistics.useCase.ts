@@ -18,6 +18,7 @@ export class ChannelsStatisticsUseCase {
         offline: { total: 0, percentage: 0 },
         error: { total: 0, percentage: 0 },
         mismatched: { total: 0, percentage: 0 },
+        stopped: { total: 0, percentage: 0 },
         total: 0,
       };
     }
@@ -57,6 +58,12 @@ export class ChannelsStatisticsUseCase {
         total: statistics.mismatched,
         percentage: Number.parseFloat(
           ((statistics.mismatched / total) * 100).toFixed(1)
+        ),
+      },
+      stopped: {
+        total: statistics.stopped,
+        percentage: Number.parseFloat(
+          ((statistics.stopped / total) * 100).toFixed(1)
         ),
       },
       total,

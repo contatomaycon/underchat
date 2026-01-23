@@ -385,6 +385,7 @@
   "deleting": "Excluindo",
   "recreating": "Recriando",
   "stopped": "Parado",
+  "active_channels": "Canais Ativos",
   "recreate": "Recriar",
   "recreate_all": "Recriar Todos",
   "recreate_all_channels_confirmation": "Tem certeza que deseja recriar todos os canais não deletados?",

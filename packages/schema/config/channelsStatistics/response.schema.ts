@@ -14,6 +14,7 @@ export const channelsStatisticsResponseSchema = Type.Object({
   offline: statusStatisticSchema,
   error: statusStatisticSchema,
   mismatched: statusStatisticSchema,
+  stopped: statusStatisticSchema,
   total: Type.Number({ description: 'Total de canais não deletados' }),
 });
 

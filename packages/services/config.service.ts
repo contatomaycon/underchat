@@ -45,6 +45,7 @@ export class ConfigService {
     offline: number;
     error: number;
     mismatched: number;
+    stopped: number;
     total: number;
   }> => {
     const { statusCounts, total } =
@@ -62,6 +63,7 @@ export class ConfigService {
       offline: statusMap.get(EWorkerStatus.offline) ?? 0,
       error: statusMap.get(EWorkerStatus.error) ?? 0,
       mismatched: statusMap.get(EWorkerStatus.mismatched) ?? 0,
+      stopped: statusMap.get(EWorkerStatus.stopped) ?? 0,
       total,
     };
   };
