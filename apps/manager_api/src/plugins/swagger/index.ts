@@ -146,11 +146,6 @@ const swaggerPlugin = async (fastify: FastifyInstance) => {
           description: 'End-points relacionados a agendamentos',
         },
         {
-          name: ETagSwagger.masterSession,
-          description:
-            'End-points relacionados à sessão master para troca de contas',
-        },
-        {
           name: ETagSwagger.release,
           description: 'End-points relacionados à releases',
         },

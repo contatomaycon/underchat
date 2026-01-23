@@ -1,5 +1,5 @@
 import * as schema from '@core/models';
-import { release, releaseAccess } from '@core/models';
+import { release, releaseAccess, releaseView } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { and, count, desc, eq, SQLWrapper, or, ilike, sql } from 'drizzle-orm';
@@ -149,9 +149,7 @@ export class ReleaseListerRepository {
     const filters = this.setFilters(query, accountId, userId, permissionRoleId);
 
     const result = await this.dbRo
-      .select({
-        count: count(),
-      })
+      .select({ count: count() })
       .from(release)
       .where(and(...filters))
       .execute();
@@ -162,4 +160,46 @@ export class ReleaseListerRepository {
 
     return result[0].count;
   };
+
+  private readonly buildUnreadFilter = (userId: string) =>
+    sql`NOT EXISTS (
+      SELECT 1 FROM ${releaseView}
+      WHERE ${releaseView.release_id} = ${release.release_id}
+      AND ${releaseView.user_id} = ${userId}
+    )`;
+
+  private readonly executeUnreadCount = async (
+    accountId: string,
+    userId: string,
+    permissionRoleId: string
+  ): Promise<number> => {
+    const query = {};
+    const filters = this.setFilters(
+      query as ListReleaseRequest,
+      accountId,
+      userId,
+      permissionRoleId
+    );
+    const unreadFilter = this.buildUnreadFilter(userId);
+    const allFilters = and(...filters, unreadFilter);
+
+    const result = await this.dbRo
+      .select({ count: count() })
+      .from(release)
+      .where(allFilters)
+      .execute();
+
+    if (result.length === 0) {
+      return 0;
+    }
+
+    return result[0].count;
+  };
+
+  countUnreadReleases = async (
+    accountId: string,
+    userId: string,
+    permissionRoleId: string
+  ): Promise<number> =>
+    this.executeUnreadCount(accountId, userId, permissionRoleId);
 }

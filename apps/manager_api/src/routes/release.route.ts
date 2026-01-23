@@ -11,9 +11,19 @@ import { createReleaseSchema } from '@core/schema/release/createRelease';
 import { listReleaseUsersSchema } from '@core/schema/release/listReleaseUsers';
 import { listReleaseAccountsSchema } from '@core/schema/release/listReleaseAccounts';
 import { listReleasePermissionRolesSchema } from '@core/schema/release/listReleasePermissionRoles';
+import { listReleaseNotificationsSchema } from '@core/schema/release/listReleaseNotifications';
 
 export default async function releaseRoutes(server: FastifyInstance) {
   const releaseController = container.resolve(ReleaseController);
+
+  server.get('/release/notifications', {
+    schema: listReleaseNotificationsSchema,
+    handler: releaseController.listReleaseNotifications,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, releaseViewPermissions),
+    ],
+  });
 
   server.get('/release', {
     schema: listReleaseSchema,

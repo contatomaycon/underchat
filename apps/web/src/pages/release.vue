@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { PerfectScrollbar } from 'vue3-perfect-scrollbar';
-import { ref, computed, watch, nextTick } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { refDebounced } from '@vueuse/core';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
@@ -29,6 +29,7 @@ definePage({
 
 const { isLeftSidebarOpen } = useResponsiveLeftSidebar();
 const route = useRoute();
+const router = useRouter();
 const { t } = useI18n();
 const releaseStore = useReleaseStore();
 
@@ -210,9 +211,7 @@ const handleScroll = async (e: Event) => {
   if (!target) return;
 
   const scrollElement =
-    target.closest('.ps__container') ||
-    target.closest('.ps') ||
-    target;
+    target.closest('.ps__container') || target.closest('.ps') || target;
 
   if (!scrollElement) return;
 
@@ -221,8 +220,7 @@ const handleScroll = async (e: Event) => {
   const clientHeight = (scrollElement as HTMLElement).clientHeight || 0;
 
   const threshold = 200;
-  const isNearBottom =
-    scrollTop + clientHeight >= scrollHeight - threshold;
+  const isNearBottom = scrollTop + clientHeight >= scrollHeight - threshold;
 
   if (
     isNearBottom &&
@@ -244,6 +242,9 @@ const openRelease = async (release: ListReleaseResponse) => {
 };
 
 const closeRelease = () => {
+  if (route.query.open) {
+    router.replace({ path: '/release' });
+  }
   openedRelease.value = null;
 };
 
@@ -265,6 +266,24 @@ watch(
   () => {
     if (route.query.type) {
       selectedType.value = route.query.type as EReleaseType;
+    }
+  },
+  { immediate: true }
+);
+
+watch(
+  () => route.query.open,
+  async (openId) => {
+    const id =
+      typeof openId === 'string'
+        ? openId
+        : Array.isArray(openId)
+          ? openId[0]
+          : null;
+    if (!id) return;
+    const data = await releaseStore.viewRelease(id);
+    if (data) {
+      openedRelease.value = data;
     }
   },
   { immediate: true }
@@ -335,9 +354,24 @@ fetchReleases();
           <template v-if="loading && !openedRelease">
             <VCard class="mb-4">
               <VCardText>
-                <VSkeletonLoader type="text" width="100%" height="24" class="mb-2" />
-                <VSkeletonLoader type="text" width="90%" height="16" class="mb-2" />
-                <VSkeletonLoader type="text" width="95%" height="16" class="mb-2" />
+                <VSkeletonLoader
+                  type="text"
+                  width="100%"
+                  height="24"
+                  class="mb-2"
+                />
+                <VSkeletonLoader
+                  type="text"
+                  width="90%"
+                  height="16"
+                  class="mb-2"
+                />
+                <VSkeletonLoader
+                  type="text"
+                  width="95%"
+                  height="16"
+                  class="mb-2"
+                />
                 <VSkeletonLoader type="text" width="85%" height="16" />
               </VCardText>
             </VCard>
@@ -387,7 +421,7 @@ fetchReleases();
             <VIcon
               icon="tabler-refresh"
               size="22"
-              :class="{ 'rotating': refreshing }"
+              :class="{ rotating: refreshing }"
             />
           </IconBtn>
         </div>

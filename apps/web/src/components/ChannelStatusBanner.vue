@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useChatStore } from '@/@webcore/stores/chat';
-import { useChannelsStore } from '@/@webcore/stores/channels';
+import { useDashboardStore } from '@/@webcore/stores/dashboard';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { EColor } from '@core/common/enums/EColor';
 import { useI18n } from 'vue-i18n';
@@ -14,14 +14,10 @@ import { getUser } from '@/@webcore/localStorage/user';
 const { t } = useI18n();
 const router = useRouter();
 const chatStore = useChatStore();
-const channelsStore = useChannelsStore();
+const dashboardStore = useDashboardStore();
 
 const offlineChannels = computed(() => {
-  return channelsStore.list.filter(
-    (channel) =>
-      channel.status?.id &&
-      channel.status.id !== EWorkerStatus.online
-  );
+  return dashboardStore.offlineChannels;
 });
 
 const prioritizedChannels = computed(() => {
@@ -87,19 +83,45 @@ const handleClick = () => {
 };
 
 const loadChannelsIfNeeded = async () => {
-  if (channelsStore.list.length === 0) {
-    await channelsStore.listChannels({
-      page: 1,
-      per_page: 100,
-      sort_by: [],
-    });
+  if (dashboardStore.offlineChannels.length === 0) {
+    await dashboardStore.getDashboardOfflineChannels();
   }
+};
+
+const getStatusName = (statusId: string | undefined | null): string | null => {
+  if (!statusId) return null;
+
+  if (statusId === EWorkerStatus.offline) return t('offline');
+  if (statusId === EWorkerStatus.disponible) return t('disponible');
+  if (statusId === EWorkerStatus.error) return t('error');
+  if (statusId === EWorkerStatus.mismatched) return t('mismatched');
+  if (statusId === EWorkerStatus.stopped) return t('stopped');
+  if (statusId === EWorkerStatus.creating) return t('creating');
+  if (statusId === EWorkerStatus.new) return t('new');
+
+  return null;
 };
 
 const user = getUser();
 
 const workerStatusHandler = (data: IBaileysConnectionState) => {
-  channelsStore.updateStatusChannel(data);
+  if (data.worker_status_id === EWorkerStatus.online) {
+    dashboardStore.updateOfflineChannelStatus(data.worker_id, null, null);
+    return;
+  }
+
+  const statusId = data.worker_status_id ?? null;
+  const statusName = getStatusName(data.worker_status_id);
+
+  dashboardStore.updateOfflineChannelStatus(
+    data.worker_id,
+    statusId,
+    statusName
+  );
+
+  if (!dashboardStore.offlineChannels.find((ch) => ch.id === data.worker_id)) {
+    dashboardStore.getDashboardOfflineChannels();
+  }
 };
 
 onMounted(async () => {
@@ -115,7 +137,10 @@ onMounted(async () => {
 
 onUnmounted(async () => {
   if (user?.account_id) {
-    await unsubscribe(workerCentrifugoQueue(user.account_id), workerStatusHandler);
+    await unsubscribe(
+      workerCentrifugoQueue(user.account_id),
+      workerStatusHandler
+    );
   }
 });
 </script>
@@ -139,7 +164,9 @@ onUnmounted(async () => {
           </VChip>
         </div>
         <VDivider
-          v-if="index < displayedChannels.length - 1 || remainingChannelsCount > 0"
+          v-if="
+            index < displayedChannels.length - 1 || remainingChannelsCount > 0
+          "
           vertical
           class="mx-1"
         />
@@ -150,10 +177,7 @@ onUnmounted(async () => {
         location="top"
       >
         <template #activator="{ props: tooltipProps }">
-          <span
-            v-bind="tooltipProps"
-            class="remaining-count"
-          >
+          <span v-bind="tooltipProps" class="remaining-count">
             +{{ remainingChannelsCount }}
           </span>
         </template>

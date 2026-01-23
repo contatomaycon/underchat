@@ -8,9 +8,11 @@ import { DashboardSectorsRepository } from '@core/repositories/dashboard/Dashboa
 import { DashboardChatbotsRepository } from '@core/repositories/dashboard/DashboardChatbots.repository';
 import { DashboardSchedulesRepository } from '@core/repositories/dashboard/DashboardSchedules.repository';
 import { DashboardTemplatesRepository } from '@core/repositories/dashboard/DashboardTemplates.repository';
+import { DashboardOfflineChannelsRepository } from '@core/repositories/dashboard/DashboardOfflineChannels.repository';
 import { GetDashboardStatsResponse } from '@core/schema/dashboard/getDashboardStats/response.schema';
 import { GetDashboardConversationsResponse } from '@core/schema/dashboard/getDashboardConversations/response.schema';
 import { GetDashboardAdditionalResponse } from '@core/schema/dashboard/getDashboardAdditional/response.schema';
+import { ListOfflineChannelsFinalResponse } from '@core/schema/dashboard/listOfflineChannels/response.schema';
 
 @injectable()
 export class DashboardService {
@@ -22,7 +24,8 @@ export class DashboardService {
     private readonly dashboardSectorsRepository: DashboardSectorsRepository,
     private readonly dashboardChatbotsRepository: DashboardChatbotsRepository,
     private readonly dashboardSchedulesRepository: DashboardSchedulesRepository,
-    private readonly dashboardTemplatesRepository: DashboardTemplatesRepository
+    private readonly dashboardTemplatesRepository: DashboardTemplatesRepository,
+    private readonly dashboardOfflineChannelsRepository: DashboardOfflineChannelsRepository
   ) {}
 
   getDashboardStats = async (
@@ -164,6 +167,14 @@ export class DashboardService {
       message_templates: messageTemplatesTotal,
       label_templates: labelTemplatesTotal,
     };
+  };
+
+  getDashboardOfflineChannels = async (
+    accountId: string
+  ): Promise<ListOfflineChannelsFinalResponse> => {
+    return this.dashboardOfflineChannelsRepository.listOfflineChannels(
+      accountId
+    );
   };
 
   private readonly formatRenewalDate = (

@@ -3,26 +3,26 @@ import { sendResponse } from '@core/common/functions/sendResponse';
 import { handleControllerError } from '@core/common/functions/handleControllerError';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
-import { MasterSessionAccountsListerUseCase } from '@core/useCases/masterSession/MasterSessionAccountsLister.useCase';
+import { ReleaseNotificationsListerUseCase } from '@core/useCases/release/ReleaseNotificationsLister.useCase';
 
-export const listAccounts = async (
+export const listReleaseNotifications = async (
   request: FastifyRequest,
   reply: FastifyReply
 ) => {
-  const masterSessionAccountsListerUseCase = container.resolve(
-    MasterSessionAccountsListerUseCase
-  );
+  const useCase = container.resolve(ReleaseNotificationsListerUseCase);
   const { t, tokenJwtData } = request;
 
   try {
-    const response = await masterSessionAccountsListerUseCase.execute(
-      tokenJwtData.account_id
+    const data = await useCase.execute(
+      tokenJwtData.account_id,
+      tokenJwtData.user_id,
+      tokenJwtData.permission_role_id
     );
 
     return sendResponse(reply, {
-      message: t('account_list_successfully'),
+      message: t('release_notifications_list_successfully'),
       httpStatusCode: EHTTPStatusCode.ok,
-      data: response,
+      data,
     });
   } catch (error) {
     handleControllerError(error, reply, t);

@@ -8,6 +8,7 @@ import { AxiosError } from 'axios';
 import { GetDashboardStatsResponse } from '@core/schema/dashboard/getDashboardStats/response.schema';
 import { GetDashboardConversationsResponse } from '@core/schema/dashboard/getDashboardConversations/response.schema';
 import { GetDashboardAdditionalResponse } from '@core/schema/dashboard/getDashboardAdditional/response.schema';
+import { ListOfflineChannelsFinalResponse } from '@core/schema/dashboard/listOfflineChannels/response.schema';
 
 export const useDashboardStore = defineStore('dashboard', {
   state: () => ({
@@ -20,9 +21,11 @@ export const useDashboardStore = defineStore('dashboard', {
     loadingStats: false,
     loadingConversations: false,
     loadingAdditional: false,
+    loadingOfflineChannels: false,
     stats: null as GetDashboardStatsResponse | null,
     conversations: null as GetDashboardConversationsResponse | null,
     additional: null as GetDashboardAdditionalResponse | null,
+    offlineChannels: [] as ListOfflineChannelsFinalResponse,
   }),
   actions: {
     showSnackbar(message: string, color: EColor) {
@@ -113,6 +116,44 @@ export const useDashboardStore = defineStore('dashboard', {
         return null;
       } finally {
         this.loadingAdditional = false;
+      }
+    },
+    async getDashboardOfflineChannels(): Promise<ListOfflineChannelsFinalResponse | null> {
+      try {
+        this.loadingOfflineChannels = true;
+
+        const response = await axios.get<
+          IApiResponse<ListOfflineChannelsFinalResponse>
+        >('/dashboard/offline-channels');
+
+        if (response.data.status && response.data.data) {
+          this.offlineChannels = response.data.data;
+          return response.data.data;
+        }
+
+        return null;
+      } catch (error) {
+        if (error instanceof AxiosError) {
+          const message =
+            error.response?.data?.message ||
+            this.i18n.global.t('dashboard_offline_channels_error');
+          this.showSnackbar(message, EColor.error);
+        }
+
+        return null;
+      } finally {
+        this.loadingOfflineChannels = false;
+      }
+    },
+    updateOfflineChannelStatus(
+      channelId: string,
+      statusId: string | null,
+      statusName: string | null
+    ) {
+      const channel = this.offlineChannels.find((ch) => ch.id === channelId);
+      if (channel) {
+        channel.status =
+          statusId && statusName ? { id: statusId, name: statusName } : null;
       }
     },
   },

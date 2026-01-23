@@ -762,6 +762,9 @@
   "dashboard_conversations_not_found": "Dashboard conversations not found!",
   "dashboard_additional_loaded_successfully": "Additional dashboard data loaded successfully!",
   "dashboard_additional_not_found": "Additional dashboard data not found!",
+  "dashboard_offline_channels_loaded_successfully": "Dashboard offline channels loaded successfully!",
+  "dashboard_offline_channels_not_found": "Dashboard offline channels not found!",
+  "dashboard_offline_channels_error": "Error loading dashboard offline channels!",
   "client": "Client",
   "operator": "Operator",
   "user": "User",
@@ -903,5 +906,6 @@
   "release_users_list_success": "Users listed successfully!",
   "release_accounts_list_success": "Accounts listed successfully!",
   "release_permission_roles_list_success": "Permission roles listed successfully!",
+  "release_notifications_list_successfully": "Notifications listed successfully!",
   "release_accounts_permission_error": "You do not have permission to list all accounts"
 }

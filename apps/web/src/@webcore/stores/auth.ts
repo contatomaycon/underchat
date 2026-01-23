@@ -126,55 +126,6 @@ export const useAuthStore = defineStore('auth', {
       }
     },
 
-    async masterSessionLogin(accountId: string): Promise<boolean> {
-      try {
-        const response = await axiosAuth.post<
-          IApiResponse<AuthLoginResponse | null>
-        >(`/master-session/login`, {
-          account_id: accountId,
-        });
-
-        const data = response?.data;
-
-        if (!data?.status) {
-          this.showSnackbar(this.i18n.global.t('login_error'), EColor.error);
-
-          return false;
-        }
-
-        if (!data.data) {
-          this.showSnackbar(this.i18n.global.t('login_invalid'), EColor.error);
-
-          return false;
-        }
-
-        this.user = data.data.user;
-        this.token = data.data.token;
-        this.permissions = (data.data.permissions ?? []) as EPermissionsRoles[];
-        this.layout = data.data.layout;
-        this.planIsActive = data.data.plan_is_active ?? false;
-
-        setUser(this.user);
-        setToken(this.token);
-        setPermissions(this.permissions);
-        setLayout(this.layout);
-        setSectors(data.data.sectors ?? []);
-        persistPlanStatus(this.planIsActive);
-        updateAbilityPermissions(this.permissions);
-
-        return true;
-      } catch (error) {
-        let errorMessage = this.i18n.global.t('login_invalid');
-        if (error instanceof AxiosError) {
-          errorMessage = error?.response?.data?.message ?? errorMessage;
-        }
-
-        this.showSnackbar(errorMessage, EColor.error);
-
-        return false;
-      }
-    },
-
     async userSessionLogin(userId: string): Promise<boolean> {
       try {
         const response = await axiosAuth.post<

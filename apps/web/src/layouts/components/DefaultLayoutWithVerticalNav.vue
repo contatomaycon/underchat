@@ -4,8 +4,8 @@ import { themeConfig } from '@themeConfig';
 import Footer from '@/layouts/components/Footer.vue';
 import NavbarThemeSwitcher from '@/layouts/components/NavbarThemeSwitcher.vue';
 import UserProfile from '@/layouts/components/UserProfile.vue';
+import NavBarReleaseNotifications from '@/layouts/components/NavBarReleaseNotifications.vue';
 import NavBarI18n from '@webcore/components/I18n.vue';
-import MasterSessionSwitcher from '@webcore/components/MasterSessionSwitcher.vue';
 import ChannelStatusBanner from '@/components/ChannelStatusBanner.vue';
 import { VerticalNavLayout } from '@layouts';
 import { useAuthStore } from '@/@webcore/stores/auth';
@@ -36,7 +36,6 @@ const computedNavItems = computed(() => {
 
         <VSpacer />
 
-        <MasterSessionSwitcher />
         <NavBarI18n
           v-if="
             themeConfig.app.i18n.enable &&
@@ -44,6 +43,7 @@ const computedNavItems = computed(() => {
           "
           :languages="themeConfig.app.i18n.langConfig"
         />
+        <NavBarReleaseNotifications class="me-1" />
         <UserProfile />
       </div>
     </template>

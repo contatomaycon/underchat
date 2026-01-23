@@ -762,6 +762,9 @@
   "dashboard_conversations_not_found": "Conversas do dashboard não encontradas!",
   "dashboard_additional_loaded_successfully": "Dados adicionais do dashboard carregados com sucesso!",
   "dashboard_additional_not_found": "Dados adicionais do dashboard não encontrados!",
+  "dashboard_offline_channels_loaded_successfully": "Canais offline do dashboard carregados com sucesso!",
+  "dashboard_offline_channels_not_found": "Canais offline do dashboard não encontrados!",
+  "dashboard_offline_channels_error": "Erro ao carregar canais offline do dashboard!",
   "client": "Cliente",
   "operator": "Operador",
   "user": "Usuário",
@@ -903,5 +906,6 @@
   "release_users_list_success": "Usuários listados com sucesso!",
   "release_accounts_list_success": "Contas listadas com sucesso!",
   "release_permission_roles_list_success": "Grupos de acesso listados com sucesso!",
+  "release_notifications_list_successfully": "Notificações listadas com sucesso!",
   "release_accounts_permission_error": "Você não tem permissão para listar todas as contas"
 }

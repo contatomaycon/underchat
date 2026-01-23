@@ -14,6 +14,7 @@ import { CreateReleaseRequest } from '@core/schema/release/createRelease/request
 import { ListReleaseUsersResponse } from '@core/schema/release/listReleaseUsers/response.schema';
 import { ListReleaseAccountsResponse } from '@core/schema/release/listReleaseAccounts/response.schema';
 import { ListReleasePermissionRolesResponse } from '@core/schema/release/listReleasePermissionRoles/response.schema';
+import { ListReleaseNotificationsResponse } from '@core/schema/release/listReleaseNotifications/response.schema';
 
 @injectable()
 export class ReleaseService {
@@ -125,5 +126,34 @@ export class ReleaseService {
     return this.releasePermissionRolesListerRepository.listReleasePermissionRoles(
       accountId
     );
+  };
+
+  listReleaseNotifications = async (
+    accountId: string,
+    userId: string,
+    permissionRoleId: string
+  ): Promise<ListReleaseNotificationsResponse> => {
+    const query = { current_page: 1, per_page: 4 };
+
+    const [unreadCount, results] = await Promise.all([
+      this.releaseListerRepository.countUnreadReleases(
+        accountId,
+        userId,
+        permissionRoleId
+      ),
+      this.releaseListerRepository.listReleases(
+        4,
+        1,
+        query,
+        accountId,
+        userId,
+        permissionRoleId
+      ),
+    ]);
+
+    return {
+      unread_count: unreadCount,
+      results,
+    };
   };
 }

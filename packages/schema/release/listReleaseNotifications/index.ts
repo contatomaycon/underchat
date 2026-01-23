@@ -1,13 +1,17 @@
 import { Type } from '@sinclair/typebox';
 import { ELanguage } from '@core/common/enums/ELanguage';
 import { ETagSwagger } from '@core/common/enums/ETagSwagger';
-import { loginRequestSchema } from './request.schema';
-import { loginResponseSchema } from './response.schema';
+import { listReleaseNotificationsResponseSchema } from './response.schema';
 
-export const loginSchema = {
-  description: 'Faz login na sessão master para uma conta específica',
-  tags: [ETagSwagger.masterSession],
+export const listReleaseNotificationsSchema = {
+  description: 'Lista as últimas notificações (informativos) do usuário',
+  tags: [ETagSwagger.release],
   produces: ['application/json'],
+  security: [
+    {
+      authenticateJwt: [],
+    },
+  ],
   headers: Type.Object({
     'Accept-Language': Type.Optional(
       Type.String({
@@ -17,14 +21,13 @@ export const loginSchema = {
       })
     ),
   }),
-  body: loginRequestSchema,
   response: {
     200: Type.Object(
       {
         id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
         status: Type.Boolean({ const: true }),
         message: Type.String(),
-        data: loginResponseSchema,
+        data: listReleaseNotificationsResponseSchema,
       },
       { description: 'Successful' }
     ),

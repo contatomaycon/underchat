@@ -1,12 +1,17 @@
 import { Type } from '@sinclair/typebox';
 import { ELanguage } from '@core/common/enums/ELanguage';
 import { ETagSwagger } from '@core/common/enums/ETagSwagger';
-import { listAccountsResponseSchema } from './response.schema';
+import { listOfflineChannelsFinalResponseSchema } from './response.schema';
 
-export const listAccountsSchema = {
-  description: 'Lista todas as contas acessíveis pelo usuário master',
-  tags: [ETagSwagger.masterSession],
+export const listOfflineChannelsSchema = {
+  description: 'Lista canais offline do dashboard',
+  tags: [ETagSwagger.dashboard],
   produces: ['application/json'],
+  security: [
+    {
+      authenticateJwt: [],
+    },
+  ],
   headers: Type.Object({
     'Accept-Language': Type.Optional(
       Type.String({
@@ -22,7 +27,7 @@ export const listAccountsSchema = {
         id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
         status: Type.Boolean({ const: true }),
         message: Type.String(),
-        data: listAccountsResponseSchema,
+        data: listOfflineChannelsFinalResponseSchema,
       },
       { description: 'Successful' }
     ),

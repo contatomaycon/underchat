@@ -17,6 +17,7 @@ import { CreateReleaseResponse } from '@core/schema/release/createRelease/respon
 import { ListReleaseUsersResponse } from '@core/schema/release/listReleaseUsers/response.schema';
 import { ListReleaseAccountsResponse } from '@core/schema/release/listReleaseAccounts/response.schema';
 import { ListReleasePermissionRolesResponse } from '@core/schema/release/listReleasePermissionRoles/response.schema';
+import { ListReleaseNotificationsResponse } from '@core/schema/release/listReleaseNotifications/response.schema';
 
 export const useReleaseStore = defineStore('release', {
   state: () => ({
@@ -280,6 +281,23 @@ export const useReleaseStore = defineStore('release', {
         return data.data;
       } catch (error) {
         console.error('Error loading release permission roles:', error);
+        return null;
+      }
+    },
+    async listReleaseNotifications(): Promise<ListReleaseNotificationsResponse | null> {
+      try {
+        const response = await axios.get<
+          IApiResponse<ListReleaseNotificationsResponse>
+        >('/release/notifications');
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        return data.data;
+      } catch {
         return null;
       }
     },

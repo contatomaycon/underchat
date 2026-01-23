@@ -5,6 +5,7 @@ import { createRelease } from './methods/createRelease';
 import { listReleaseUsers } from './methods/listReleaseUsers';
 import { listReleaseAccounts } from './methods/listReleaseAccounts';
 import { listReleasePermissionRoles } from './methods/listReleasePermissionRoles';
+import { listReleaseNotifications } from './methods/listReleaseNotifications';
 
 @injectable()
 class ReleaseController {
@@ -14,6 +15,7 @@ class ReleaseController {
   public listReleaseUsers = listReleaseUsers;
   public listReleaseAccounts = listReleaseAccounts;
   public listReleasePermissionRoles = listReleasePermissionRoles;
+  public listReleaseNotifications = listReleaseNotifications;
 }
 
 export default ReleaseController;
