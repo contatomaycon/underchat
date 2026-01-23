@@ -186,14 +186,27 @@ export class ChannelsListerRepository {
     return result[0]?.count ?? 0;
   };
 
-  listAllNonDeletedChannelIds = async (): Promise<string[]> => {
+  listAllNonDeletedChannelIds = async (status?: string): Promise<string[]> => {
+    const filters: SQLWrapper[] = [
+      isNull(worker.deleted_at),
+      isNull(account.deleted_at),
+    ];
+
+    if (status) {
+      filters.push(eq(workerStatus.worker_status_id, status));
+    }
+
     const result = await this.dbRo
       .select({
         worker_id: worker.worker_id,
       })
       .from(worker)
       .innerJoin(account, eq(account.account_id, worker.account_id))
-      .where(and(isNull(worker.deleted_at), isNull(account.deleted_at)))
+      .innerJoin(
+        workerStatus,
+        eq(workerStatus.worker_status_id, worker.worker_status_id)
+      )
+      .where(and(...filters))
       .execute();
 
     return result.map((item) => item.worker_id);

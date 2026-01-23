@@ -231,7 +231,10 @@ const handleRecreate = async () => {
 };
 
 const handleRecreateAll = async () => {
-  const result = await settingsStore.recreateChannelsAll();
+  const result = await settingsStore.recreateChannelsAll(
+    options.value.status
+  );
+  
   if (result) {
     await loadStatistics();
     await loadChannels();

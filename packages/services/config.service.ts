@@ -34,8 +34,8 @@ export class ConfigService {
     return this.channelViewerRepository.viewChannelBalancer(channelId);
   };
 
-  listAllNonDeletedChannelIds = async (): Promise<string[]> => {
-    return this.channelsListerRepository.listAllNonDeletedChannelIds();
+  listAllNonDeletedChannelIds = async (status?: string): Promise<string[]> => {
+    return this.channelsListerRepository.listAllNonDeletedChannelIds(status);
   };
 
   getChannelsStatistics = async (): Promise<{

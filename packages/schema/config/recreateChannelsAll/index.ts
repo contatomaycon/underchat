@@ -1,6 +1,8 @@
 import { Type } from '@sinclair/typebox';
 import { ELanguage } from '@core/common/enums/ELanguage';
 import { ETagSwagger } from '@core/common/enums/ETagSwagger';
+import { recreateChannelsAllRequestSchema } from './request.schema';
+import { recreateChannelsAllResponseSchema } from './response.schema';
 
 export const recreateChannelsAllSchema = {
   description: 'Recria todos os canais existentes',
@@ -11,6 +13,7 @@ export const recreateChannelsAllSchema = {
       authenticateJwt: [],
     },
   ],
+  body: recreateChannelsAllRequestSchema,
   headers: Type.Object({
     'Accept-Language': Type.Optional(
       Type.String({
@@ -26,10 +29,7 @@ export const recreateChannelsAllSchema = {
         id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
         status: Type.Boolean({ const: true }),
         message: Type.String(),
-        data: Type.Object({
-          success: Type.Number(),
-          errors: Type.Number(),
-        }),
+        data: recreateChannelsAllResponseSchema,
       },
       { description: 'Successful' }
     ),

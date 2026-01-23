@@ -11,17 +11,20 @@ export class ChannelsRecreatorAllUseCase {
   ) {}
 
   async execute(
-    t: TFunction<'translation', undefined>
+    t: TFunction<'translation', undefined>,
+    status?: string
   ): Promise<{ success: number; errors: number }> {
-    const channelIds = await this.getChannelIds(t);
+    const channelIds = await this.getChannelIds(t, status);
     const results = await this.recreateAllChannels(t, channelIds);
     return this.countResults(results);
   }
 
   private async getChannelIds(
-    t: TFunction<'translation', undefined>
+    t: TFunction<'translation', undefined>,
+    status?: string
   ): Promise<string[]> {
-    const channelIds = await this.configService.listAllNonDeletedChannelIds();
+    const channelIds =
+      await this.configService.listAllNonDeletedChannelIds(status);
 
     if (channelIds.length === 0) {
       throw new Error(t('no_channels_to_recreate'));

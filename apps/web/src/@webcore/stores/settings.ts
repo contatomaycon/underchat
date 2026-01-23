@@ -508,7 +508,7 @@ export const useSettingsStore = defineStore('settings', {
         return false;
       }
     },
-    async recreateChannelsAll(): Promise<{
+    async recreateChannelsAll(status?: string | null): Promise<{
       success: number;
       errors: number;
     } | null> {
@@ -517,7 +517,9 @@ export const useSettingsStore = defineStore('settings', {
 
         const response = await axios.patch<
           IApiResponse<{ success: number; errors: number }>
-        >('/config/channels/recreate-all');
+        >('/config/channels/recreate-all', {
+          status: status || undefined,
+        });
 
         this.loading = false;
 

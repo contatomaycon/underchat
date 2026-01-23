@@ -4,9 +4,12 @@ import { handleControllerError } from '@core/common/functions/handleControllerEr
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
 import { ChannelsRecreatorAllUseCase } from '@core/useCases/config/ChannelsRecreatorAll.useCase';
+import { RecreateChannelsAllRequest } from '@core/schema/config/recreateChannelsAll/request.schema';
 
 export const recreateChannelsAll = async (
-  request: FastifyRequest,
+  request: FastifyRequest<{
+    Body: RecreateChannelsAllRequest;
+  }>,
   reply: FastifyReply
 ) => {
   const channelsRecreatorAllUseCase = container.resolve(
@@ -15,7 +18,8 @@ export const recreateChannelsAll = async (
   const { t } = request;
 
   try {
-    const result = await channelsRecreatorAllUseCase.execute(t);
+    const status = request.body.status || undefined;
+    const result = await channelsRecreatorAllUseCase.execute(t, status);
 
     return sendResponse(reply, {
       message: t('channels_recreate_all_success', {
