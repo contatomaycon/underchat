@@ -19,14 +19,20 @@ export class ReleaseCreatorRepository {
 
   createRelease = async (
     input: CreateReleaseRequest,
-    accountId: string | null
+    accountId: string | null,
+    userAccountId: string | null,
+    hasFullAccess: boolean
   ): Promise<string | null> => {
     return this.dbRw.transaction(async (tx) => {
       const releaseId = await this.createReleaseRecord(tx, input, accountId);
 
-      if (this.shouldCreateReleaseAccess(input)) {
-        await this.createReleaseAccessRecord(tx, releaseId, input);
-      }
+      await this.createReleaseAccessRecord(
+        tx,
+        releaseId,
+        input,
+        userAccountId,
+        hasFullAccess
+      );
 
       return releaseId;
     });
@@ -45,7 +51,7 @@ export class ReleaseCreatorRepository {
 
     await tx.insert(release).values({
       release_id: releaseId,
-      account_id: input.account_id ?? accountId,
+      account_id: accountId,
       type: input.type,
       status: EReleaseStatus.active,
       title: input.title,
@@ -55,16 +61,6 @@ export class ReleaseCreatorRepository {
     return releaseId;
   };
 
-  private readonly shouldCreateReleaseAccess = (
-    input: CreateReleaseRequest
-  ): boolean => {
-    return !(
-      input.account_id === null &&
-      input.user_id === null &&
-      input.permission_role_id === null
-    );
-  };
-
   private readonly createReleaseAccessRecord = async (
     tx: PgTransaction<
       NodePgQueryResultHKT,
@@ -72,14 +68,34 @@ export class ReleaseCreatorRepository {
       ExtractTablesWithRelations<typeof schema>
     >,
     releaseId: string,
-    input: CreateReleaseRequest
+    input: CreateReleaseRequest,
+    userAccountId: string | null,
+    hasFullAccess: boolean
   ): Promise<void> => {
     const releaseAccessId = uuidv7();
+
+    const isForAll =
+      (input.account_id === null || input.account_id === undefined) &&
+      (input.user_id === null || input.user_id === undefined) &&
+      (input.permission_role_id === null ||
+        input.permission_role_id === undefined);
+
+    let accountIdToUse: string | null;
+
+    if (!hasFullAccess) {
+      accountIdToUse = userAccountId;
+    } else {
+      if (isForAll) {
+        accountIdToUse = null;
+      } else {
+        accountIdToUse = input.account_id ?? null;
+      }
+    }
 
     await tx.insert(releaseAccess).values({
       release_access_id: releaseAccessId,
       release_id: releaseId,
-      account_id: input.account_id ?? null,
+      account_id: accountIdToUse,
       user_id: input.user_id ?? null,
       permission_role_id: input.permission_role_id ?? null,
     });

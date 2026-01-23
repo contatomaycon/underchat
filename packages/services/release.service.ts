@@ -115,9 +115,16 @@ export class ReleaseService {
 
   createRelease = async (
     input: CreateReleaseRequest,
-    accountId: string | null
+    accountId: string | null,
+    userAccountId: string | null,
+    hasFullAccess: boolean
   ): Promise<string | null> => {
-    return this.releaseCreatorRepository.createRelease(input, accountId);
+    return this.releaseCreatorRepository.createRelease(
+      input,
+      accountId,
+      userAccountId,
+      hasFullAccess
+    );
   };
 
   listReleaseUsers = async (

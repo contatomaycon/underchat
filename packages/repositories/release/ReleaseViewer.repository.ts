@@ -34,8 +34,20 @@ export class ReleaseViewerRepository {
             AND ${releaseAccess.user_id} IS NULL
             AND ${releaseAccess.permission_role_id} IS NULL
           )
-          OR ${releaseAccess.user_id} = ${userId}
-          OR ${releaseAccess.permission_role_id} = ${permissionRoleId}
+          OR (
+            (
+              ${releaseAccess.account_id} IS NULL 
+              OR ${releaseAccess.account_id} = ${accountId}
+            )
+            AND ${releaseAccess.user_id} = ${userId}
+          )
+          OR (
+            (
+              ${releaseAccess.account_id} IS NULL 
+              OR ${releaseAccess.account_id} = ${accountId}
+            )
+            AND ${releaseAccess.permission_role_id} = ${permissionRoleId}
+          )
         )
       )`,
       sql`${release.account_id} IS NULL OR ${release.account_id} = ${accountId}`

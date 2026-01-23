@@ -141,13 +141,9 @@ const createRelease = async () => {
     };
 
     if (recipientType.value === 'all') {
-      if (hasFullAccess.value) {
-        request.account_id = null;
-        request.user_id = null;
-        request.permission_role_id = null;
-      } else {
-        request.account_id = currentUser.value?.account_id || null;
-      }
+      request.account_id = null;
+      request.user_id = null;
+      request.permission_role_id = null;
     } else if (recipientType.value === 'account') {
       if (!hasFullAccess.value) {
         releaseStore.showSnackbar(

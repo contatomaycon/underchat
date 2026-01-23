@@ -16,18 +16,28 @@ export class ReleaseCreatorUseCase {
     accountId: string | null,
     actions: IJwtGroupHierarchy[]
   ): Promise<string> {
-    if (input.account_id !== null && input.account_id !== undefined) {
-      const hasFullAccess = hasRequiredPermission(actions, [
-        EGeneralPermissions.full_access,
-        EGeneralPermissions.full_access_group,
-      ]);
+    const hasFullAccess = hasRequiredPermission(actions, [
+      EGeneralPermissions.full_access,
+      EGeneralPermissions.full_access_group,
+    ]);
 
-      if (!hasFullAccess) {
-        throw new Error(t('release_create_account_permission_error'));
-      }
+    const isForAccount =
+      input.account_id !== null &&
+      input.account_id !== undefined &&
+      (input.user_id === null || input.user_id === undefined) &&
+      (input.permission_role_id === null ||
+        input.permission_role_id === undefined);
+
+    if (isForAccount && !hasFullAccess) {
+      throw new Error(t('release_create_account_permission_error'));
     }
 
-    const releaseId = await this.releaseService.createRelease(input, accountId);
+    const releaseId = await this.releaseService.createRelease(
+      input,
+      accountId,
+      accountId,
+      hasFullAccess
+    );
 
     if (!releaseId) {
       throw new Error(t('release_create_error'));
