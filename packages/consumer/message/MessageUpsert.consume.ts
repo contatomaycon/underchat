@@ -2157,7 +2157,10 @@ export class MessageUpsertConsume {
     data: IUpsertMessage
   ): Promise<void> {
     if (!getChat) {
-      const createChat = await this.createChat(data, EChatStatus.queue);
+      const isFromMe = data.message?.key?.fromMe ?? false;
+      const initialStatus = isFromMe ? EChatStatus.in_chat : EChatStatus.queue;
+
+      const createChat = await this.createChat(data, initialStatus);
       if (!createChat) {
         throw new Error('Failed to create chat');
       }
@@ -2226,7 +2229,13 @@ export class MessageUpsertConsume {
             ? chatbotConfig.chatbot_id
             : null;
 
-        if (chatbotId && (!getChat || getChat.status === EChatStatus.ura)) {
+        const isFromMe = data.message?.key?.fromMe ?? false;
+
+        if (
+          chatbotId &&
+          (!getChat || getChat.status === EChatStatus.ura) &&
+          !isFromMe
+        ) {
           await this.createOrUpdateChatBotFlow(t, getChat, data, chatbotId);
 
           return;
