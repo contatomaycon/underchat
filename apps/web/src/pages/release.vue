@@ -249,6 +249,7 @@ const closeRelease = () => {
 };
 
 const selectType = (type: EReleaseType | null) => {
+  closeRelease();
   selectedType.value = type;
   releaseStore.pagings.current_page = 1;
   releaseStore.list = [];

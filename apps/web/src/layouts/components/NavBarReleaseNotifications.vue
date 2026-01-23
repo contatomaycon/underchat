@@ -9,6 +9,7 @@ import { ListReleaseResponse } from '@core/schema/release/listRelease/response.s
 import { formatDateToMonthShort } from '@/@webcore/utils/formatters';
 
 const router = useRouter();
+const route = useRoute();
 const releaseStore = useReleaseStore();
 const { t } = useI18n();
 const ability = useAbility();
@@ -84,8 +85,13 @@ const onMenuUpdate = (open: boolean) => {
 };
 
 const openNotification = (release: ListReleaseResponse) => {
+  const target = { path: '/release', query: { open: release.release_id } };
+  if (route.path === '/release') {
+    router.replace(target);
+  } else {
+    router.push(target);
+  }
   menuOpen.value = false;
-  router.push({ path: '/release', query: { open: release.release_id } });
 };
 
 const viewAll = () => {
