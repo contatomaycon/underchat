@@ -892,5 +892,16 @@
   "password_reset_success": "Senha redefinida com sucesso!",
   "password_reset_error": "Erro ao redefinir senha",
   "passwords_do_not_match": "As senhas não coincidem",
-  "confirm_new_password_match": "As senhas não coincidem"
+  "confirm_new_password_match": "As senhas não coincidem",
+  "release_list_successfully": "Lista de informativos obtida com sucesso!",
+  "release_list_not_found": "Nenhum informativo encontrado!",
+  "release_viewed_successfully": "Informativo visualizado com sucesso!",
+  "release_not_found": "Informativo não encontrado!",
+  "release_create_success": "Informativo criado com sucesso!",
+  "release_create_error": "Erro ao criar informativo",
+  "release_create_account_permission_error": "Você não tem permissão para criar informativos para contas específicas",
+  "release_users_list_success": "Usuários listados com sucesso!",
+  "release_accounts_list_success": "Contas listadas com sucesso!",
+  "release_permission_roles_list_success": "Grupos de acesso listados com sucesso!",
+  "release_accounts_permission_error": "Você não tem permissão para listar todas as contas"
 }

@@ -2,7 +2,6 @@
 import { ref, watch } from 'vue';
 import { Placeholder } from '@tiptap/extension-placeholder';
 import { TextAlign } from '@tiptap/extension-text-align';
-import { Underline } from '@tiptap/extension-underline';
 import { StarterKit } from '@tiptap/starter-kit';
 import { EditorContent, useEditor } from '@tiptap/vue-3';
 
@@ -23,7 +22,6 @@ const editor = useEditor({
     Placeholder.configure({
       placeholder: props.placeholder ?? 'Write something here...',
     }),
-    Underline,
   ],
   onUpdate() {
     if (!editor.value) return;

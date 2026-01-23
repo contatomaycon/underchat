@@ -1,4 +1,4 @@
-import type { Ref } from 'vue';
+import { type Ref, ref, watch } from 'vue';
 import { useDisplay } from 'vuetify';
 
 export const useResponsiveLeftSidebar = (

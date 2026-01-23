@@ -2236,5 +2236,21 @@
   "chunk_size_info": "Tamanho do Chunk: Define quantos caracteres/tokens serão processados em cada pedaço (chunk) do documento. Valores menores resultam em chunks mais precisos, mas aumentam o número de processamentos. Valores maiores processam mais informações por vez, mas podem perder contexto.",
   "chunk_overlap_info": "Sobreposição do Chunk: Define quantos caracteres/tokens se sobrepõem entre chunks consecutivos. Isso ajuda a manter o contexto entre partes do documento, evitando perda de informação nas fronteiras entre chunks.",
   "no_payment_methods_available": "Nenhum método de pagamento disponível",
-  "no_payment_methods_available_message": "Não há métodos de pagamento habilitados no momento. Entre em contato com o suporte."
+  "no_payment_methods_available_message": "Não há métodos de pagamento habilitados no momento. Entre em contato com o suporte.",
+  "add_release": "Adicionar",
+  "search_releases": "Buscar informativos",
+  "types": "TIPOS",
+  "release_type_news": "Novidade",
+  "release_type_informative": "Informativo",
+  "release_type_maintenance": "Manutenção",
+  "release_type_update": "Atualização",
+  "release_type_fix": "Correção",
+  "release_type_warning": "Aviso",
+  "no_items_found": "Nenhum item encontrado",
+  "title": "Título",
+  "release_create_success": "Informativo criado com sucesso!",
+  "release_create_error": "Erro ao criar informativo",
+  "release_create_account_permission_error": "Você não tem permissão para criar informativos para contas específicas",
+  "recipient": "Destinatário",
+  "permission_groups": "Grupos de Acesso"
 }

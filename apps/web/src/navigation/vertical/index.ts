@@ -18,6 +18,7 @@ import { EFinancialPermissions } from '@core/common/enums/EPermissions/financial
 import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
 import { EReportConversationHistoryPermissions } from '@core/common/enums/EPermissions/reportConversationHistory';
 import { EReportAttendancePermissions } from '@core/common/enums/EPermissions/reportAttendance';
+import { EReleasePermissions } from '@core/common/enums/EPermissions/release';
 
 export default [
   {
@@ -35,6 +36,17 @@ export default [
       EGeneralPermissions.full_access_group,
       EChatPermissions.chat_group,
       EChatPermissions.chat_access,
+    ],
+  },
+  {
+    title: 'notifications',
+    icon: { icon: 'tabler-bell' },
+    to: { name: 'release' as keyof RouteNamedMap },
+    permissions: [
+      EGeneralPermissions.full_access,
+      EGeneralPermissions.full_access_group,
+      EReleasePermissions.release_group,
+      EReleasePermissions.release_view,
     ],
   },
   {

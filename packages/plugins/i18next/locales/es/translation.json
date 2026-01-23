@@ -892,5 +892,16 @@
   "password_reset_success": "¡Contraseña restablecida con éxito!",
   "password_reset_error": "Error al restablecer la contraseña",
   "passwords_do_not_match": "Las contraseñas no coinciden",
-  "confirm_new_password_match": "Las contraseñas no coinciden"
+  "confirm_new_password_match": "Las contraseñas no coinciden",
+  "release_list_successfully": "¡Lista de informativos obtenida con éxito!",
+  "release_list_not_found": "¡Ningún informativo encontrado!",
+  "release_viewed_successfully": "¡Informativo visualizado con éxito!",
+  "release_not_found": "¡Informativo no encontrado!",
+  "release_create_success": "¡Informativo creado con éxito!",
+  "release_create_error": "Error al crear informativo",
+  "release_create_account_permission_error": "No tiene permiso para crear informativos para cuentas específicas",
+  "release_users_list_success": "¡Usuarios listados con éxito!",
+  "release_accounts_list_success": "¡Cuentas listadas con éxito!",
+  "release_permission_roles_list_success": "¡Grupos de permisos listados con éxito!",
+  "release_accounts_permission_error": "No tiene permiso para listar todas las cuentas"
 }

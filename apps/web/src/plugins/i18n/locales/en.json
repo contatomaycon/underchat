@@ -2236,5 +2236,21 @@
   "chunk_size_info": "Chunk Size: Defines how many characters/tokens will be processed in each document chunk. Smaller values result in more precise chunks but increase the number of processing operations. Larger values process more information at once but may lose context.",
   "chunk_overlap_info": "Chunk Overlap: Defines how many characters/tokens overlap between consecutive chunks. This helps maintain context between document parts, avoiding information loss at chunk boundaries.",
   "no_payment_methods_available": "No payment methods available",
-  "no_payment_methods_available_message": "There are no payment methods enabled at the moment. Please contact support."
+  "no_payment_methods_available_message": "There are no payment methods enabled at the moment. Please contact support.",
+  "add_release": "Add",
+  "search_releases": "Search releases",
+  "types": "TYPES",
+  "release_type_news": "News",
+  "release_type_informative": "Informative",
+  "release_type_maintenance": "Maintenance",
+  "release_type_update": "Update",
+  "release_type_fix": "Fix",
+  "release_type_warning": "Warning",
+  "no_items_found": "No items found",
+  "title": "Title",
+  "release_create_success": "Release created successfully!",
+  "release_create_error": "Error creating release",
+  "release_create_account_permission_error": "You do not have permission to create releases for specific accounts",
+  "recipient": "Recipient",
+  "permission_groups": "Permission Groups"
 }

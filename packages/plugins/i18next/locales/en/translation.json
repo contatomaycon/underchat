@@ -892,5 +892,16 @@
   "password_reset_success": "Password reset successfully!",
   "password_reset_error": "Error resetting password",
   "passwords_do_not_match": "Passwords do not match",
-  "confirm_new_password_match": "Passwords do not match"
+  "confirm_new_password_match": "Passwords do not match",
+  "release_list_successfully": "Release list retrieved successfully!",
+  "release_list_not_found": "No releases found!",
+  "release_viewed_successfully": "Release viewed successfully!",
+  "release_not_found": "Release not found!",
+  "release_create_success": "Release created successfully!",
+  "release_create_error": "Error creating release",
+  "release_create_account_permission_error": "You do not have permission to create releases for specific accounts",
+  "release_users_list_success": "Users listed successfully!",
+  "release_accounts_list_success": "Accounts listed successfully!",
+  "release_permission_roles_list_success": "Permission roles listed successfully!",
+  "release_accounts_permission_error": "You do not have permission to list all accounts"
 }
