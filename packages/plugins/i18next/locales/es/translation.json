@@ -570,6 +570,7 @@
   "chatbot_flow_validation_interactions_handle_required": "La conexión del handler de cantidad de interacciones es obligatoria cuando la acción después de interacciones está habilitada en el nodo \"{{nodeLabel}}\"",
   "chatbot_flow_validation_human_support_handle_required": "La conexión del handler Atención humana es obligatoria cuando está habilitado en el nodo \"{{nodeLabel}}\"",
   "chatbot_flow_validation_fallback_handle_required": "La conexión del handler Fallback es obligatoria en el nodo \"{{nodeLabel}}\"",
+  "chatbot_flow_validation_conditional_default_handle_required": "La conexión del handler Salida Predeterminada es obligatoria en el nodo \"{{nodeLabel}}\"",
   "chatbot_ai_agent": "Agente de IA",
   "chatbot_menu": "Menú",
   "chatbot_satisfaction": "Satisfacción",

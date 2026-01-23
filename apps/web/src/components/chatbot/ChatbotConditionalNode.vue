@@ -3,6 +3,7 @@ import { ref, computed, watch, nextTick } from 'vue';
 import type { NodeProps } from '@vue-flow/core';
 import { Handle, Position, useVueFlow } from '@vue-flow/core';
 import { useI18n } from 'vue-i18n';
+import AppInfoTooltip from '@/components/AppInfoTooltip.vue';
 
 type ConditionType =
   | 'contains'
@@ -231,6 +232,34 @@ watch(
           <VIcon icon="tabler-plus" class="me-2" />
           {{ t('chatbot_conditional_add') }}
         </VBtn>
+
+        <div class="d-flex align-center ga-1 mb-1 mt-4">
+          <VLabel class="text-body-2">{{
+            t('chatbot_conditional_default_label')
+          }}</VLabel>
+          <AppInfoTooltip
+            :text="t('chatbot_conditional_default_description')"
+            :title="t('chatbot_conditional_default_label')"
+          />
+        </div>
+        <div class="default-item nodrag">
+          <VTextField
+            :model-value="t('chatbot_conditional_default_placeholder')"
+            variant="outlined"
+            density="compact"
+            class="default-field"
+            disabled
+            hide-details
+          />
+          <Handle
+            id="default-source"
+            type="source"
+            :position="Position.Right"
+            class="default-handle handle-source"
+            @mousedown.stop
+            @touchstart.stop
+          />
+        </div>
       </VCardText>
     </VCard>
   </div>
@@ -238,7 +267,9 @@ watch(
 
 <style scoped>
 .chatbot-conditional-node {
+  width: 350px;
   min-width: 350px;
+  max-width: 350px;
 }
 
 .conditional-card {
@@ -274,5 +305,21 @@ watch(
   right: -25px;
   top: 50%;
   transform: translateY(-150%);
+}
+
+.default-item {
+  position: relative;
+  margin-top: 8px;
+}
+
+.default-field {
+  flex-grow: 1;
+}
+
+.default-handle {
+  position: absolute;
+  right: -10px;
+  top: 50%;
+  transform: translateY(-50%);
 }
 </style>

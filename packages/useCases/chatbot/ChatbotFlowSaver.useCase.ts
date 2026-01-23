@@ -200,7 +200,8 @@ export class ChatbotFlowSaverUseCase {
     if (
       node.type !== 'menu' &&
       node.type !== 'satisfaction' &&
-      node.type !== 'aiAgent'
+      node.type !== 'aiAgent' &&
+      node.type !== 'conditional'
     ) {
       return;
     }
@@ -358,6 +359,45 @@ export class ChatbotFlowSaverUseCase {
         const nodeLabel = this.getNodeLabel(t, node);
         errors.push(
           t('chatbot_flow_validation_fallback_handle_required', {
+            nodeLabel,
+          })
+        );
+      }
+    }
+
+    if (node.type === 'conditional') {
+      const defaultHandleId = 'default-source';
+      const normalizedDefaultHandle = 'default';
+
+      const outgoingEdges = requestData.edges.filter(
+        (edge) => edge.source === node.id
+      );
+
+      const hasDefaultConnection = outgoingEdges.some((edge) => {
+        const edgeHandleId = this.normalizeHandleId(
+          typeof edge.sourceHandle === 'string' ||
+            typeof edge.sourceHandle === 'number'
+            ? String(edge.sourceHandle)
+            : null
+        );
+        const rawHandleId =
+          typeof edge.sourceHandle === 'string'
+            ? edge.sourceHandle
+            : typeof edge.sourceHandle === 'number'
+              ? String(edge.sourceHandle)
+              : null;
+
+        return (
+          edgeHandleId === normalizedDefaultHandle ||
+          rawHandleId === defaultHandleId ||
+          rawHandleId === 'default'
+        );
+      });
+
+      if (!hasDefaultConnection) {
+        const nodeLabel = this.getNodeLabel(t, node);
+        errors.push(
+          t('chatbot_flow_validation_conditional_default_handle_required', {
             nodeLabel,
           })
         );

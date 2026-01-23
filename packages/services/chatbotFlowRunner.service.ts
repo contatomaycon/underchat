@@ -291,6 +291,19 @@ export class ChatbotFlowRunnerService {
     return edge?.target ?? null;
   }
 
+  private getNextFlowIdByDefaultHandle(
+    chatbotFlow: ListChatbotFlowResponse,
+    currentFlowId: string
+  ): string | null {
+    const edge = chatbotFlow.edges.find(
+      (currentEdge) =>
+        currentEdge.source === currentFlowId &&
+        currentEdge.sourceHandle === 'default-source'
+    );
+
+    return edge?.target ?? null;
+  }
+
   private getAiAgentInteractionsCountKey(
     accountId: string,
     workerId: string,
@@ -5446,6 +5459,21 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
           );
         }
       }
+    }
+
+    const defaultFlowId = this.getNextFlowIdByDefaultHandle(
+      chatbotFlow,
+      currentFlowId
+    );
+
+    if (defaultFlowId) {
+      return this.processNextNode(
+        t,
+        createChat,
+        chatbotFlow,
+        defaultFlowId,
+        customMessages
+      );
     }
 
     return false;

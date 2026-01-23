@@ -1308,6 +1308,54 @@ const handleSave = async () => {
     return;
   }
 
+  const conditionalNodesWithoutDefault: Node[] = [];
+  for (const node of nodes.value) {
+    if (node.type !== 'conditional') {
+      continue;
+    }
+
+    const defaultHandleId = 'default-source';
+    const normalizedDefaultHandle = 'default';
+
+    const outgoingEdges = edges.value.filter(
+      (edge) => edge.source === node.id
+    );
+
+    const hasDefaultConnection = outgoingEdges.some((edge) => {
+      const edgeHandleId = normalizeHandleId(
+        edge.sourceHandle ? String(edge.sourceHandle) : null
+      );
+      const rawHandleId = edge.sourceHandle
+        ? String(edge.sourceHandle)
+        : null;
+
+      return (
+        edgeHandleId === normalizedDefaultHandle ||
+        rawHandleId === defaultHandleId ||
+        rawHandleId === 'default'
+      );
+    });
+
+    if (!hasDefaultConnection) {
+      conditionalNodesWithoutDefault.push(node);
+    }
+  }
+
+  if (conditionalNodesWithoutDefault.length > 0) {
+    const nodeLabels: string[] = [];
+    for (const node of conditionalNodesWithoutDefault) {
+      const label = node.data?.title || node.label || node.id;
+      nodeLabels.push(label);
+    }
+    chatbotStore.showSnackbar(
+      t('chatbot_flow_validation_conditional_default_handle_required', {
+        nodeLabel: nodeLabels.join(', '),
+      }),
+      EColor.error
+    );
+    return;
+  }
+
   isLoadingFlow.value = true;
 
   try {
