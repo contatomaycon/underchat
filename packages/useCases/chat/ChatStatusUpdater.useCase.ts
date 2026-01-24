@@ -1,4 +1,4 @@
-import { injectable, inject } from 'tsyringe';
+import { injectable } from 'tsyringe';
 import { TFunction } from 'i18next';
 import {
   UpdateChatStatusBody,
@@ -23,9 +23,7 @@ import { ChatMessageService } from '@core/services/chatMessage.service';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { generateProtocol } from '@core/common/functions/generateProtocol';
 import { replaceMessageTags } from '@core/common/functions/replaceMessageTags';
-import { ChatUserViewerRepository } from '@core/repositories/chat/ChatUserViewer.repository';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
-import Redis from 'ioredis';
 import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 import { PresenceService } from '@core/services/presence.service';
 
@@ -38,9 +36,7 @@ export class ChatStatusUpdaterUseCase {
     private readonly workerService: WorkerService,
     private readonly workerConfigService: WorkerConfigService,
     private readonly chatMessageService: ChatMessageService,
-    private readonly chatUserViewerRepository: ChatUserViewerRepository,
-    private readonly presenceService: PresenceService,
-    @inject('Redis') private readonly redis: Redis
+    private readonly presenceService: PresenceService
   ) {}
 
   private async sendProtocolMessage(
