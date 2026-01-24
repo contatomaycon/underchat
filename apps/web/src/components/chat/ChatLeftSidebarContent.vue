@@ -1872,7 +1872,10 @@ const performSearch = async (append = false) => {
           queueChats.push(chat);
         } else if (chat.status === EChatStatus.in_chat) {
           inChatChats.push(chat);
-        } else if (chat.status === EChatStatus.ura) {
+        } else if (
+          chat.status === EChatStatus.ura ||
+          chat.status === EChatStatus.ura_output
+        ) {
           chatbotChats.push(chat);
         } else if (chat.status === EChatStatus.closed) {
           closedChats.push(chat);
@@ -2121,7 +2124,11 @@ watch(
   () => chatStore.activeChat?.status,
   (newStatus, oldStatus) => {
     if (newStatus === EChatStatus.in_chat) {
-      if (oldStatus === EChatStatus.ura && activeFilter.value === 'chatbot') {
+      if (
+        (oldStatus === EChatStatus.ura ||
+          oldStatus === EChatStatus.ura_output) &&
+        activeFilter.value === 'chatbot'
+      ) {
         activeFilter.value = 'in_chat';
         expandedFilter.value = 'in_chat';
       } else if (
