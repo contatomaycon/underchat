@@ -191,15 +191,20 @@ const stripHtml = (html: string): string => {
   if (!html) return '';
 
   try {
-    const content = sanitizeHtmlContent(html);
-    const div = globalThis.document.createElement('div');
-    div.innerHTML = content;
-    const text = div.textContent || div.innerText || '';
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
 
-    return text.trim();
+    doc.querySelectorAll('style, script').forEach((el) => el.remove());
+
+    const text = doc.body?.textContent || '';
+    return text.replace(/\s+/g, ' ').trim();
   } catch (error) {
-    const content = sanitizeHtmlContent(html);
-    return content.replace(/<[^>]*>/g, '').trim();
+    return html
+      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+      .replace(/<[^>]*>/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
   }
 };
 
