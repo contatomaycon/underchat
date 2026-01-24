@@ -26,6 +26,7 @@ export enum ETagSwagger {
   financial = 'Financeiro',
   reportConversationHistory = 'Histórico de Conversas',
   reportAttendance = 'Relatórios de Atendimentos',
+  reportSatisfaction = 'Relatórios de Satisfação',
   webhook = 'Webhook',
   config = 'Configurações',
   dashboard = 'Dashboard',

@@ -341,6 +341,17 @@ export default [
           EReportAttendancePermissions.report_attendance_view,
         ],
       },
+      {
+        title: 'satisfaction',
+        to: { name: 'reports-satisfaction' as keyof RouteNamedMap },
+        icon: { icon: 'tabler-mood-smile' },
+        permissions: [
+          EGeneralPermissions.full_access,
+          EGeneralPermissions.full_access_group,
+          EReportConversationHistoryPermissions.report_conversation_history_group,
+          EReportAttendancePermissions.report_satisfaction_view,
+        ],
+      },
     ],
   },
   {

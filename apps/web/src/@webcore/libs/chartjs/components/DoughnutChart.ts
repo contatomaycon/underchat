@@ -7,7 +7,7 @@ import {
   Tooltip,
   type PluginOptionsByType,
 } from 'chart.js';
-import { defineComponent, type PropType } from 'vue';
+import { defineComponent, h, type PropType } from 'vue';
 import { Doughnut } from 'vue-chartjs';
 
 ChartJS.register(Title, Tooltip, Legend, ArcElement, CategoryScale);

@@ -325,6 +325,13 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       | never
     >,
+    'reports-satisfaction': RouteRecordInfo<
+      'reports-satisfaction',
+      '/reports-satisfaction',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
     'reports-users': RouteRecordInfo<
       'reports-users',
       '/reports-users',
@@ -640,6 +647,12 @@ declare module 'vue-router/auto-routes' {
     'src/pages/reports-sales.vue': {
       routes:
         | 'reports-sales'
+      views:
+        | never
+    }
+    'src/pages/reports-satisfaction.vue': {
+      routes:
+        | 'reports-satisfaction'
       views:
         | never
     }
