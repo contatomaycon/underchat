@@ -2144,6 +2144,13 @@ watch(
         activeFilter.value = 'all';
         expandedFilter.value = 'all';
       }
+    } else if (
+      newStatus === EChatStatus.queue &&
+      (oldStatus === EChatStatus.ura || oldStatus === EChatStatus.ura_output) &&
+      activeFilter.value === 'chatbot'
+    ) {
+      activeFilter.value = 'queue';
+      expandedFilter.value = 'queue';
     }
   }
 );
