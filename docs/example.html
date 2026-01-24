@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Chatbot de Saída – Documentação Underchat</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        font-family:
+          'Segoe UI',
+          system-ui,
+          -apple-system,
+          sans-serif;
+        line-height: 1.6;
+        color: #1a1a2e;
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 2rem 1.5rem;
+        background: #fafafa;
+      }
+      h1 {
+        font-size: 1.75rem;
+        color: #16213e;
+        border-bottom: 3px solid #0f3460;
+        padding-bottom: 0.5rem;
+        margin-top: 0;
+        margin-bottom: 1.25rem;
+      }
+      h2 {
+        font-size: 1.35rem;
+        color: #0f3460;
+        margin-top: 2.5rem;
+        margin-bottom: 1rem;
+      }
+      h3 {
+        font-size: 1.1rem;
+        color: #16213e;
+        margin-top: 1.75rem;
+        margin-bottom: 0.75rem;
+      }
+      p {
+        margin: 0.75rem 0;
+      }
+      ul,
+      ol {
+        margin: 0.5rem 0;
+        padding-left: 1.5rem;
+      }
+      li {
+        margin: 0.35rem 0;
+      }
+      .highlight {
+        background: #e8f4f8;
+        border-left: 4px solid #0f3460;
+        padding: 1rem 1.25rem;
+        margin: 1.25rem 0;
+      }
+      .step {
+        background: #fff;
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+        padding: 1rem 1.25rem;
+        margin: 1rem 0;
+      }
+      .step:first-of-type {
+        margin-top: 0.5rem;
+      }
+      .img-placeholder {
+        display: block;
+        width: 100%;
+        max-width: 600px;
+        margin: 1.5rem 0;
+      }
+      .img-placeholder img {
+        max-width: 100%;
+        height: auto;
+        display: block;
+        border-radius: 8px;
+      }
+      .icon-desc {
+        font-style: italic;
+        color: #555;
+      }
+      .badge {
+        display: inline-block;
+        background: #0f3460;
+        color: #fff;
+        padding: 0.25rem 0.6rem;
+        border-radius: 4px;
+        font-size: 0.9rem;
+      }
+      footer {
+        margin-top: 3rem;
+        padding-top: 1rem;
+        border-top: 1px solid #ddd;
+        font-size: 0.9rem;
+        color: #666;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Chatbot de Saída</h1>
+    <p>
+      O <strong>Chatbot de Saída</strong> é o atendimento automático que começa
+      <em>depois que o atendente encerra o atendimento</em>. Serve para
+      pós-atendimento, pesquisas de satisfação, envio de links ou o que você
+      configurar: tudo isso ocorre automaticamente assim que o atendente encerra
+      o serviço.
+    </p>
+
+    <div class="img-placeholder">
+      <img
+        src="https://s3.ca-central-1.wasabisys.com/019a930d-c6f4-75ad-88ff-8d2fcd5839e1/019bf0c2-96ec-72b9-9318-b4a4190003b6.png"
+        alt="Fluxo: Atendimento humano → Encerrar → Chatbot de Saída"
+      />
+    </div>
+
+    <h2>1. Onde ativar o Chatbot de Saída</h2>
+
+    <p>
+      O Chatbot de Saída é configurado <strong>por canal</strong>, nas
+      configurações de chatbot do canal.
+    </p>
+
+    <h3>Passo a passo</h3>
+
+    <div class="step">
+      <strong>Passo 1.</strong> Acesse <strong>Canais</strong> e localize o
+      canal desejado.
+    </div>
+
+    <div class="step">
+      <strong>Passo 2.</strong> Clique no ícone de
+      <strong>Configurações</strong> (engrenagem) na linha do canal.
+    </div>
+
+    <div class="img-placeholder">
+      <img
+        src="https://s3.ca-central-1.wasabisys.com/019a930d-c6f4-75ad-88ff-8d2fcd5839e1/019bf0c5-4af4-73f3-85f0-8eeb9a3f79ff.png"
+        alt="Lista de canais com destaque no ícone de Configurações"
+      />
+    </div>
+
+    <div class="step">
+      <strong>Passo 3.</strong> Na tela de configurações do canal, localize o
+      item <strong>«Ativar chatbot no canal»</strong> e clique para abrir a
+      janela de configuração do chatbot.
+    </div>
+
+    <div class="img-placeholder">
+      <img
+        src="https://s3.ca-central-1.wasabisys.com/019a930d-c6f4-75ad-88ff-8d2fcd5839e1/019bf0c6-1e72-76d1-a3dc-9e4bae27b535.png"
+        alt="Configurações do canal com item Ativar chatbot no canal"
+      />
+    </div>
+
+    <div class="step">
+      <strong>Passo 4.</strong> Na janela que abrir:
+      <ul>
+        <li>
+          Ligue a opção <strong>«Ativar chatbot no canal»</strong> se ainda não
+          estiver ligada.
+        </li>
+        <li>
+          Em <strong>«Chatbot de entrada»</strong>, escolha o robô que atende o
+          cliente na fila, antes do atendente (opcional).
+        </li>
+        <li>
+          Em <strong>«Chatbot de saída»</strong>, escolha o robô que vai
+          conversar com o cliente <em>depois</em> que o atendente encerrar. Este
+          campo é opcional.
+        </li>
+      </ul>
+      <p>
+        Na lista de <strong>«Chatbot de saída»</strong> só aparecem robôs do
+        tipo <strong>Saída</strong>. Se o seu não aparecer, crie ou edite o
+        chatbot e defina o tipo como «Saída».
+      </p>
+    </div>
+
+    <div class="step">
+      <strong>Passo 5.</strong> Clique em <strong>Salvar</strong>.
+    </div>
+
+    <div class="highlight">
+      <strong>Resumo:</strong> Canais → ícone de Configurações do canal →
+      «Ativar chatbot no canal» → escolher <strong>Chatbot de saída</strong> →
+      Salvar.
+    </div>
+
+    <h2>2. Como funciona no chat</h2>
+
+    <h3>2.1. Quando o Chatbot de Saída é acionado</h3>
+
+    <p>O robô de saída só é acionado quando:</p>
+    <ol>
+      <li>
+        O atendente clica em <strong>«Encerrar Atendimento»</strong> e confirma.
+      </li>
+      <li>
+        O canal está com chatbot ligado e com um
+        <strong>Chatbot de saída</strong> escolhido.
+      </li>
+      <li>
+        A opção <strong>«Encaminhar para o Chatbot de Saída»</strong> está
+        <strong>ligada</strong> naquele chat (ícone do robô ativo).
+      </li>
+    </ol>
+
+    <p>
+      Se qualquer uma dessas condições não for atendida, o chat é encerrado de
+      uma vez e o Chatbot de Saída não é usado.
+    </p>
+
+    <h3>2.2. O ícone do robô na conversa</h3>
+
+    <p>
+      Na tela do chat, perto dos ícones de etiqueta, histórico e transferência,
+      pode aparecer um botão com ícone de <strong>robô</strong>:
+    </p>
+    <ul>
+      <li>
+        <strong>Robô ligado</strong> (ícone preenchido): o chat
+        <em>será</em> encaminhado para o Chatbot de Saída quando o atendente
+        encerrar.
+      </li>
+      <li>
+        <strong>Robô desligado</strong> (ícone em cinza ou cortado): o chat
+        <em>não</em> será encaminhado; ao encerrar, a conversa termina ali.
+      </li>
+    </ul>
+
+    <p>Esse ícone só aparece quando:</p>
+    <ul>
+      <li>
+        O chat está <strong>em atendimento</strong> ou <strong>na fila</strong>;
+      </li>
+      <li>O canal tem <strong>Chatbot de saída</strong> configurado;</li>
+      <li>
+        Seu usuário tem permissão para usar essa função (se não aparecer, quem
+        gerencia os acessos precisa liberar).
+      </li>
+    </ul>
+
+    <div class="img-placeholder">
+      <img
+        src="https://s3.ca-central-1.wasabisys.com/019a930d-c6f4-75ad-88ff-8d2fcd5839e1/019bf0c9-57bc-7563-ab91-5c120da13c6d.png"
+        alt="Barra do chat com ícone do robô (Encaminhar para o Chatbot de Saída)"
+      />
+    </div>
+
+    <h3>2.3. O que acontece ao encerrar o atendimento</h3>
+
+    <ol>
+      <li>
+        O atendente clica em <strong>Encerrar Atendimento</strong> (ícone X ou
+        menu de opções) e confirma.
+      </li>
+      <li>
+        O sistema verifica: o canal tem Chatbot de saída configurado e a opção
+        <strong>«Encaminhar para o Chatbot de Saída»</strong> está ligada
+        naquele chat.
+      </li>
+      <li>
+        <strong>Se sim:</strong> o Chatbot de Saída começa a conversar com o
+        cliente na mesma hora. As mensagens que o cliente enviar a partir daí
+        são atendidas pelo robô de saída.
+      </li>
+      <li>
+        <strong>Se não:</strong> o atendimento é encerrado e a conversa termina.
+      </li>
+    </ol>
+
+    <div class="img-placeholder">
+      <img
+        src="https://s3.ca-central-1.wasabisys.com/019a930d-c6f4-75ad-88ff-8d2fcd5839e1/019bf0ca-9b74-74dd-a51c-0542822eaacb.png"
+        alt="Diálogo Encerrar Atendimento"
+      />
+    </div>
+
+    <h3>2.4. Enquanto o Chatbot de Saída está ativo</h3>
+
+    <p>Depois que o atendente encerrou e o robô de saída assumiu:</p>
+    <ul>
+      <li>
+        As <strong>mensagens do cliente</strong> são respondidas automaticamente
+        pelo Chatbot de Saída, seguindo as regras e mensagens que você
+        configurou.
+      </li>
+      <li>
+        A conversa automática continua até o fim definido no fluxo que você
+        montou para o Chatbot de Saída.
+      </li>
+    </ul>
+
+    <p>
+      O atendente pode acompanhar a conversa na tela, mas quem responde é o
+      robô.
+    </p>
+
+    <h3>2.5. O que o sistema faz sozinho</h3>
+
+    <ul>
+      <li>
+        Quando o atendente <strong>pega o chat</strong> (começa a atender), o
+        sistema já deixa a opção
+        <strong>«Encaminhar para o Chatbot de Saída»</strong>
+        <strong>ligada</strong>.
+      </li>
+      <li>
+        Se o chat for devolvido para a fila ou para o atendimento automático
+        inicial, o sistema desliga a opção
+        <strong>«Encaminhar para o Chatbot de Saída»</strong> para aquele chat.
+      </li>
+    </ul>
+
+    <h2>3. Quem pode usar o botão do robô</h2>
+
+    <p>
+      Para o ícone
+      <strong>«Encaminhar para o Chatbot de Saída»</strong> aparecer e poder ser
+      usado, essa permissão precisa estar liberada para o seu usuário. Quem
+      define isso é o <strong>administrador</strong> ou quem gerencia os acessos
+      na sua conta.
+    </p>
+    <p>
+      Se você não vê o ícone do robô na barra do chat, mesmo com o canal
+      configurado, peça para que habilitem a opção
+      <strong>«Encaminhar para o Chatbot de Saída»</strong> no seu perfil ou no
+      grupo de permissões ao qual você pertence.
+    </p>
+
+    <footer>Documentação Underchat — Chatbot de Saída</footer>
+  </body>
+</html>
