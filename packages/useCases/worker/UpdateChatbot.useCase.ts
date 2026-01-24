@@ -20,6 +20,7 @@ export class UpdateChatbotUseCase {
     body: UpdateChatbotRequest
   ): Promise<{
     chatbot_id: string | null;
+    output_chatbot_id: string | null;
     enabled: boolean;
   }> {
     const existsWorkerById = await this.workerService.existsWorkerById(
@@ -31,23 +32,67 @@ export class UpdateChatbotUseCase {
       throw new Error(t('worker_not_found'));
     }
 
-    const chatbotId = body.chatbot_id?.trim() || null;
+    const chatbots = await this.chatbotService.listChatbots(accountId);
+    const currentConfig = await this.workerConfigService.viewChatbots(workerId);
 
-    if (chatbotId) {
-      const chatbots = await this.chatbotService.listChatbots(accountId);
-      const chatbotExists = chatbots.some((c) => c.chatbot_id === chatbotId);
+    const chatbotIdToSave =
+      body.chatbot_id === undefined
+        ? currentConfig.chatbot_id
+        : body.chatbot_id?.trim() || null;
+
+    const outputChatbotIdToSave =
+      body.output_chatbot_id === undefined
+        ? currentConfig.output_chatbot_id
+        : body.output_chatbot_id?.trim() || null;
+
+    if (chatbotIdToSave) {
+      const chatbotExists = chatbots.some(
+        (c) => c.chatbot_id === chatbotIdToSave && c.type === 'input'
+      );
 
       if (!chatbotExists) {
         throw new Error(t('chatbot_not_found'));
       }
     }
 
-    const result = await this.workerConfigService.updateChatbot(
+    if (outputChatbotIdToSave) {
+      const chatbotExists = chatbots.some(
+        (c) => c.chatbot_id === outputChatbotIdToSave && c.type === 'output'
+      );
+
+      if (!chatbotExists) {
+        throw new Error(t('chatbot_not_found'));
+      }
+    }
+
+    if (chatbotIdToSave && body.output_chatbot_id === undefined) {
+      const result = await this.workerConfigService.updateChatbot(
+        workerId,
+        chatbotIdToSave,
+        body.enabled
+      );
+
+      const currentOutputConfig =
+        await this.workerConfigService.viewChatbots(workerId);
+
+      return {
+        chatbot_id: result.chatbot_id,
+        output_chatbot_id: currentOutputConfig.output_chatbot_id,
+        enabled: result.enabled,
+      };
+    }
+
+    const result = await this.workerConfigService.updateChatbots(
       workerId,
-      chatbotId,
+      chatbotIdToSave,
+      outputChatbotIdToSave,
       body.enabled
     );
 
-    return result;
+    return {
+      chatbot_id: result.chatbot_id,
+      output_chatbot_id: result.output_chatbot_id,
+      enabled: result.enabled,
+    };
   }
 }

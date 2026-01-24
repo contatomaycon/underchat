@@ -1226,14 +1226,20 @@ export const useChannelsStore = defineStore('channels', {
       }
     },
 
-    async fetchChatbot(
-      workerId: string
-    ): Promise<{ chatbot_id: string | null; enabled: boolean } | null> {
+    async fetchChatbot(workerId: string): Promise<{
+      chatbot_id: string | null;
+      output_chatbot_id: string | null;
+      enabled: boolean;
+    } | null> {
       if (!workerId) return null;
 
       try {
         const response = await axios.get<
-          IApiResponse<{ chatbot_id: string | null; enabled: boolean }>
+          IApiResponse<{
+            chatbot_id: string | null;
+            output_chatbot_id: string | null;
+            enabled: boolean;
+          }>
         >(`/worker/${workerId}/config/chatbot`);
 
         const data = response?.data;
@@ -1251,24 +1257,30 @@ export const useChannelsStore = defineStore('channels', {
     async updateChatbot(
       workerId: string,
       chatbotId: string | null,
+      outputChatbotId: string | null,
       enabled: boolean
     ): Promise<{
       chatbot_id: string | null;
+      output_chatbot_id: string | null;
       enabled: boolean;
     } | null> {
       if (!workerId) return null;
 
       try {
-        const body: { chatbot_id?: string; enabled: boolean } = {
+        const body: {
+          chatbot_id?: string | null;
+          output_chatbot_id?: string | null;
+          enabled: boolean;
+        } = {
           enabled,
+          chatbot_id: chatbotId,
+          output_chatbot_id: outputChatbotId,
         };
-        if (chatbotId !== null) {
-          body.chatbot_id = chatbotId;
-        }
 
         const response = await axios.patch<
           IApiResponse<{
             chatbot_id: string | null;
+            output_chatbot_id: string | null;
             enabled: boolean;
           }>
         >(`/worker/${workerId}/config/chatbot`, body);

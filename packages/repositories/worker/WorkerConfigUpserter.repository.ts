@@ -495,4 +495,113 @@ export class WorkerConfigUpserterRepository {
 
     return result[0]?.chatbot_id || null;
   }
+
+  updateChatbots = async (
+    workerId: string,
+    chatbotId: string | null,
+    outputChatbotId: string | null,
+    statusId: string
+  ): Promise<{
+    chatbot_id: string | null;
+    output_chatbot_id: string | null;
+  }> => {
+    await this.dbRw.transaction(async (tx) => {
+      await this.upsertInputChatbot(tx, workerId, chatbotId, statusId);
+      await this.upsertOutputChatbot(tx, workerId, outputChatbotId, statusId);
+    });
+
+    const chatbotIdResult = await this.getChatbotId(workerId);
+    const outputId = await this.getChatbotIdByType(
+      workerId,
+      EWorkerConfigType.chatbot_output_id
+    );
+
+    return {
+      chatbot_id: chatbotIdResult,
+      output_chatbot_id: outputId,
+    };
+  };
+
+  private async upsertInputChatbot(
+    tx: Transaction,
+    workerId: string,
+    chatbotId: string | null,
+    statusId: string
+  ): Promise<void> {
+    const existing = await this.findConfigByWorkerAndTypeId(
+      tx,
+      workerId,
+      EWorkerConfigType.chatbot_id
+    );
+
+    if (existing) {
+      await this.updateChatbotId(
+        tx,
+        existing.worker_config_id,
+        chatbotId,
+        statusId
+      );
+      return;
+    }
+
+    await this.createChatbotConfig(
+      tx,
+      workerId,
+      statusId,
+      EWorkerConfigType.chatbot_id,
+      chatbotId
+    );
+  }
+
+  private async upsertOutputChatbot(
+    tx: Transaction,
+    workerId: string,
+    outputChatbotId: string | null,
+    statusId: string
+  ): Promise<void> {
+    const existing = await this.findConfigByWorkerAndTypeId(
+      tx,
+      workerId,
+      EWorkerConfigType.chatbot_output_id
+    );
+
+    if (existing) {
+      await this.updateChatbotId(
+        tx,
+        existing.worker_config_id,
+        outputChatbotId,
+        statusId
+      );
+      return;
+    }
+
+    await this.createChatbotConfig(
+      tx,
+      workerId,
+      statusId,
+      EWorkerConfigType.chatbot_output_id,
+      outputChatbotId
+    );
+  }
+
+  private async getChatbotIdByType(
+    workerId: string,
+    typeId: string
+  ): Promise<string | null> {
+    const result = await this.dbRo
+      .select({
+        chatbot_id: workerConfig.chatbot_id,
+      })
+      .from(workerConfig)
+      .where(
+        and(
+          eq(workerConfig.worker_id, workerId),
+          eq(workerConfig.worker_config_type_id, typeId)
+        )
+      )
+      .limit(1)
+      .execute();
+
+    return result[0]?.chatbot_id || null;
+  }
 }

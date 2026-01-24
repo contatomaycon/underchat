@@ -95,6 +95,56 @@ export class WorkerConfigViewerRepository {
     };
   }
 
+  async fetchChatbotsValue(workerId: string): Promise<{
+    inputChatbotId: string | null;
+    outputChatbotId: string | null;
+    statusId: string | null;
+  }> {
+    const [inputResult, outputResult] = await Promise.all([
+      this.dbRo
+        .select({
+          chatbot_id: workerConfig.chatbot_id,
+          worker_config_status_id: workerConfig.worker_config_status_id,
+        })
+        .from(workerConfig)
+        .where(
+          and(
+            eq(workerConfig.worker_id, workerId),
+            eq(workerConfig.worker_config_type_id, EWorkerConfigType.chatbot_id)
+          )
+        )
+        .limit(1)
+        .execute(),
+      this.dbRo
+        .select({
+          chatbot_id: workerConfig.chatbot_id,
+          worker_config_status_id: workerConfig.worker_config_status_id,
+        })
+        .from(workerConfig)
+        .where(
+          and(
+            eq(workerConfig.worker_id, workerId),
+            eq(
+              workerConfig.worker_config_type_id,
+              EWorkerConfigType.chatbot_output_id
+            )
+          )
+        )
+        .limit(1)
+        .execute(),
+    ]);
+
+    const inputStatusId = inputResult[0]?.worker_config_status_id || null;
+    const outputStatusId = outputResult[0]?.worker_config_status_id || null;
+    const statusId = inputStatusId || outputStatusId;
+
+    return {
+      inputChatbotId: inputResult[0]?.chatbot_id || null,
+      outputChatbotId: outputResult[0]?.chatbot_id || null,
+      statusId,
+    };
+  }
+
   async fetchSimultaneousAttendanceValue(
     workerId: string
   ): Promise<{ value: string | null; statusId: string | null }> {

@@ -5,7 +5,12 @@ export const updateChatbotParamsSchema = Type.Object({
 });
 
 export const updateChatbotRequestSchema = Type.Object({
-  chatbot_id: Type.Optional(Type.String({ format: 'uuid' })),
+  chatbot_id: Type.Optional(
+    Type.Union([Type.String({ format: 'uuid' }), Type.Null()])
+  ),
+  output_chatbot_id: Type.Optional(
+    Type.Union([Type.String({ format: 'uuid' }), Type.Null()])
+  ),
   enabled: Type.Boolean(),
 });
 

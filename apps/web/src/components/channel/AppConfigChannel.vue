@@ -13,6 +13,8 @@ import { ListContactGroupAllResponse } from '@core/schema/contactGroup/listConta
 import { ListContactResponse } from '@core/schema/contact/listContact/response.schema';
 import { ViewWorkerConfigResponse } from '@core/schema/worker/viewWorkerConfig/response.schema';
 import { UpdateWorkerConfigRequest } from '@core/schema/worker/updateWorkerConfig/request.schema';
+import AppInfoTooltip from '@/components/AppInfoTooltip.vue';
+import AppSelectSearch from '@/components/AppSelectSearch.vue';
 
 const channelStore = useChannelsStore();
 const contactGroupStore = useContactGroupStore();
@@ -330,7 +332,8 @@ const sendMessageOnFinishAttendanceEnabledInModal = ref<boolean>(false);
 const chatbotId = ref<string | null>(null);
 const chatbotModalOpen = ref(false);
 const isSavingChatbot = ref(false);
-const selectedChatbotId = ref<string | null>(null);
+const selectedInputChatbotId = ref<string | null>(null);
+const selectedOutputChatbotId = ref<string | null>(null);
 const chatbotEnabledInModal = ref<boolean>(false);
 
 const statusTypeOptions = computed(() => [
@@ -626,11 +629,13 @@ const loadWorkerConfig = async (force = false) => {
 
     if (chatbotData) {
       chatbotId.value = chatbotData.chatbot_id;
-      selectedChatbotId.value = chatbotData.chatbot_id;
+      selectedInputChatbotId.value = chatbotData.chatbot_id;
+      selectedOutputChatbotId.value = chatbotData.output_chatbot_id;
       workerConfigForm.chatbot = chatbotData.enabled;
     } else {
       chatbotId.value = null;
-      selectedChatbotId.value = null;
+      selectedInputChatbotId.value = null;
+      selectedOutputChatbotId.value = null;
       workerConfigForm.chatbot = false;
     }
   } finally {
@@ -1279,11 +1284,13 @@ const openChatbotModal = async () => {
 
   if (data) {
     chatbotId.value = data.chatbot_id;
-    selectedChatbotId.value = data.chatbot_id;
+    selectedInputChatbotId.value = data.chatbot_id;
+    selectedOutputChatbotId.value = data.output_chatbot_id;
     chatbotEnabledInModal.value = data.enabled;
   } else {
     chatbotId.value = null;
-    selectedChatbotId.value = null;
+    selectedInputChatbotId.value = null;
+    selectedOutputChatbotId.value = null;
     chatbotEnabledInModal.value = false;
   }
   chatbotModalOpen.value = true;
@@ -1299,25 +1306,26 @@ const toggleChatbotStatus = async () => {
   const isCurrentlyEnabled = workerConfigForm.chatbot;
   const newEnabled = !isCurrentlyEnabled;
 
-  if (newEnabled && (!chatbotId.value || chatbotId.value === '')) {
-    return;
-  }
-
   try {
     isSavingChatbot.value = true;
 
     const chatbotIdValue = newEnabled ? chatbotId.value || null : null;
+    const outputChatbotIdValue = newEnabled
+      ? selectedOutputChatbotId.value || null
+      : null;
 
     const result = await channelStore.updateChatbot(
       channelId.value,
       chatbotIdValue,
+      outputChatbotIdValue,
       newEnabled
     );
 
     if (result) {
       workerConfigForm.chatbot = result.enabled;
       chatbotId.value = result.chatbot_id;
-      selectedChatbotId.value = result.chatbot_id;
+      selectedInputChatbotId.value = result.chatbot_id;
+      selectedOutputChatbotId.value = result.output_chatbot_id;
     }
   } finally {
     isSavingChatbot.value = false;
@@ -1331,27 +1339,22 @@ const toggleChatbotStatusInModal = () => {
 const saveChatbot = async () => {
   if (!channelId.value) return;
 
-  if (
-    chatbotEnabledInModal.value &&
-    (!selectedChatbotId.value || selectedChatbotId.value === '')
-  ) {
-    channelStore.showSnackbar(t('chatbot_select_required'), EColor.warning);
-    return;
-  }
-
   try {
     isSavingChatbot.value = true;
-    const chatbotIdValue = selectedChatbotId.value || null;
+    const chatbotIdValue = selectedInputChatbotId.value || null;
+    const outputChatbotIdValue = selectedOutputChatbotId.value || null;
 
     const result = await channelStore.updateChatbot(
       channelId.value,
       chatbotIdValue,
+      outputChatbotIdValue,
       chatbotEnabledInModal.value
     );
 
     if (result) {
       chatbotId.value = result.chatbot_id;
-      selectedChatbotId.value = result.chatbot_id;
+      selectedInputChatbotId.value = result.chatbot_id;
+      selectedOutputChatbotId.value = result.output_chatbot_id;
       workerConfigForm.chatbot = result.enabled;
     }
 
@@ -1519,18 +1522,7 @@ const getToggleDisabled = (key: WorkerConfigField): boolean => {
   }
 
   if (key === 'chatbot') {
-    if (isSavingWorkerConfig.value || isSavingChatbot.value) {
-      return true;
-    }
-
-    const isEnabled = workerConfigForm.chatbot;
-    const hasValue = chatbotId.value !== null && chatbotId.value !== '';
-
-    if (!isEnabled && !hasValue) {
-      return true;
-    }
-
-    return false;
+    return isSavingWorkerConfig.value || isSavingChatbot.value;
   }
 
   return isSavingWorkerConfig.value;
@@ -1698,20 +1690,6 @@ const getToggleTooltip = (key: WorkerConfigField): string | undefined => {
 
     if (!hasValue) {
       return t('toggle_disabled_show_message_on_call_tooltip');
-    }
-
-    return undefined;
-  }
-
-  if (key === 'chatbot') {
-    if (isSavingChatbot.value) {
-      return undefined;
-    }
-
-    const hasValue = chatbotId.value !== null && chatbotId.value !== '';
-
-    if (!hasValue) {
-      return t('toggle_disabled_chatbot_tooltip');
     }
 
     return undefined;
@@ -4208,20 +4186,45 @@ onMounted(async () => {
         </div>
       </VCardTitle>
       <VCardText>
-        <VLabel class="text-body-2 mb-1"
-          >{{ $t('chatbot_select_label') }}:</VLabel
-        >
-        <VSelect
-          v-model="selectedChatbotId"
-          :items="chatbotStore.list"
-          item-title="name"
-          item-value="chatbot_id"
-          :placeholder="$t('chatbot_select_placeholder')"
-          clearable
-          :disabled="!chatbotEnabledInModal"
-        />
-        <div class="text-caption text-medium-emphasis mt-2">
-          {{ $t('chatbot_select_hint') }}
+        <div class="mb-4">
+          <div class="d-flex align-center gap-2 mb-1">
+            <VLabel class="text-body-2"
+              >{{ $t('chatbot_input_select_label') }}:</VLabel
+            >
+            <AppInfoTooltip :text="$t('chatbot_input_info')" />
+          </div>
+          <AppSelectSearch
+            v-model="selectedInputChatbotId"
+            :items="chatbotStore.list.filter((c) => c.type === 'input')"
+            item-value="chatbot_id"
+            item-title="name"
+            :placeholder="$t('chatbot_input_select_placeholder')"
+            clearable
+            :disabled="!chatbotEnabledInModal"
+          />
+          <div class="text-caption text-medium-emphasis mt-2">
+            {{ $t('chatbot_input_select_hint') }}
+          </div>
+        </div>
+        <div>
+          <div class="d-flex align-center gap-2 mb-1">
+            <VLabel class="text-body-2"
+              >{{ $t('chatbot_output_select_label') }}:</VLabel
+            >
+            <AppInfoTooltip :text="$t('chatbot_output_info')" />
+          </div>
+          <AppSelectSearch
+            v-model="selectedOutputChatbotId"
+            :items="chatbotStore.list.filter((c) => c.type === 'output')"
+            item-value="chatbot_id"
+            item-title="name"
+            :placeholder="$t('chatbot_output_select_placeholder')"
+            clearable
+            :disabled="!chatbotEnabledInModal"
+          />
+          <div class="text-caption text-medium-emphasis mt-2">
+            {{ $t('chatbot_output_select_hint') }}
+          </div>
         </div>
       </VCardText>
       <VCardText class="d-flex justify-end flex-wrap gap-3">

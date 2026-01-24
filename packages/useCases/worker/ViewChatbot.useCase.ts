@@ -16,6 +16,7 @@ export class ViewChatbotUseCase {
     workerId: string
   ): Promise<{
     chatbot_id: string | null;
+    output_chatbot_id: string | null;
     enabled: boolean;
   }> {
     const existsWorkerById = await this.workerService.existsWorkerById(
@@ -27,8 +28,15 @@ export class ViewChatbotUseCase {
       throw new Error(t('worker_not_found'));
     }
 
-    const result = await this.workerConfigService.viewChatbot(workerId);
+    const [oldResult, newResult] = await Promise.all([
+      this.workerConfigService.viewChatbot(workerId),
+      this.workerConfigService.viewChatbots(workerId),
+    ]);
 
-    return result;
+    return {
+      chatbot_id: oldResult.chatbot_id,
+      output_chatbot_id: newResult.output_chatbot_id,
+      enabled: newResult.enabled || oldResult.enabled,
+    };
   }
 }

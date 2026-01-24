@@ -548,6 +548,57 @@ export class WorkerConfigService {
     };
   }
 
+  async updateChatbots(
+    workerId: string,
+    chatbotId: string | null,
+    outputChatbotId: string | null,
+    enabled: boolean
+  ): Promise<{
+    chatbot_id: string | null;
+    output_chatbot_id: string | null;
+    enabled: boolean;
+  }> {
+    const statusId = enabled
+      ? EWorkerConfigStatus.active
+      : EWorkerConfigStatus.inactive;
+
+    const [result] = await Promise.all([
+      this.workerConfigUpserterRepository.updateChatbots(
+        workerId,
+        chatbotId,
+        outputChatbotId,
+        statusId
+      ),
+      this.invalidateWorkerConfigCache(workerId),
+    ]);
+
+    return {
+      chatbot_id: result.chatbot_id,
+      output_chatbot_id: result.output_chatbot_id,
+      enabled,
+    };
+  }
+
+  async viewChatbots(workerId: string): Promise<{
+    chatbot_id: string | null;
+    output_chatbot_id: string | null;
+    enabled: boolean;
+  }> {
+    const config =
+      await this.workerConfigViewerRepository.fetchChatbotsValue(workerId);
+
+    const chatbotId = config.inputChatbotId || null;
+    const outputChatbotId = config.outputChatbotId || null;
+
+    const enabled = config.statusId === EWorkerConfigStatus.active;
+
+    return {
+      chatbot_id: chatbotId,
+      output_chatbot_id: outputChatbotId,
+      enabled,
+    };
+  }
+
   async viewChatbotConfigByAccountId(accountId: string): Promise<{
     enabled: boolean;
   }> {
