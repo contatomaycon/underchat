@@ -70,88 +70,135 @@ const getTypeLabel = (type: EReleaseType): string => {
   return labels[type] || type;
 };
 
-const getRenderableHtml = (html: string): string => {
-  if (!html) return '';
+const scopeCssToContainer = (css: string, scopeClass: string): string => {
+  if (!css) return '';
 
-  const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
-  if (bodyMatch && bodyMatch[1]) {
-    return bodyMatch[1].trim();
-  }
+  let scopedCss = css.replace(/\/\*[\s\S]*?\*\//g, '');
 
-  if (html.includes('<!DOCTYPE') || html.includes('<html')) {
-    let cleaned = html
-      .replace(/<!DOCTYPE[^>]*>/gi, '')
-      .replace(/<html[^>]*>/gi, '')
-      .replace(/<\/html>/gi, '')
-      .replace(/<head[^>]*>[\s\S]*?<\/head>/gi, '')
-      .replace(/<body[^>]*>/gi, '')
-      .replace(/<\/body>/gi, '')
-      .trim();
+  const rules: string[] = [];
+  let buffer = '';
+  let depth = 0;
 
-    if (cleaned) {
-      return cleaned;
-    }
+  for (let i = 0; i < scopedCss.length; i++) {
+    const char = scopedCss[i];
+    buffer += char;
 
-    try {
-      const parser = new DOMParser();
-      const doc = parser.parseFromString(html, 'text/html');
-      const body = doc.querySelector('body');
-      if (body && body.innerHTML.trim()) {
-        return body.innerHTML.trim();
+    if (char === '{') depth++;
+    if (char === '}') {
+      depth--;
+      if (depth === 0) {
+        rules.push(buffer.trim());
+        buffer = '';
       }
-    } catch (error) {}
+    }
   }
 
-  return html;
+  return rules
+    .map((rule) => {
+      if (
+        rule.startsWith('@keyframes') ||
+        rule.startsWith('@font-face') ||
+        rule.startsWith('@import')
+      ) {
+        return rule;
+      }
+
+      if (rule.startsWith('@media')) {
+        const mediaMatch = rule.match(/@media[^{]+\{([\s\S]*)\}$/);
+        if (mediaMatch) {
+          const mediaQuery = rule.substring(0, rule.indexOf('{') + 1);
+          const innerCss = scopeCssToContainer(mediaMatch[1], scopeClass);
+          return `${mediaQuery}${innerCss}}`;
+        }
+        return rule;
+      }
+
+      const braceIndex = rule.indexOf('{');
+      if (braceIndex === -1) return rule;
+
+      const selectors = rule.substring(0, braceIndex).trim();
+      const declarations = rule.substring(braceIndex);
+
+      const scopedSelectors = selectors
+        .split(',')
+        .map((selector) => {
+          selector = selector.trim();
+          if (selector === 'body' || selector === 'html' || selector === '*') {
+            return `.${scopeClass}`;
+          }
+
+          return `.${scopeClass} ${selector}`;
+        })
+        .join(', ');
+
+      return `${scopedSelectors} ${declarations}`;
+    })
+    .join('\n');
 };
 
-const extractHtmlContent = (html: string): string => {
+const sanitizeHtmlContent = (html: string): string => {
   if (!html) return '';
 
-  const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
-  if (bodyMatch && bodyMatch[1]) {
-    return bodyMatch[1].trim();
-  }
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(html, 'text/html');
 
-  if (html.includes('<!DOCTYPE') || html.includes('<html')) {
-    let cleaned = html
-      .replace(/<!DOCTYPE[^>]*>/gi, '')
-      .replace(/<html[^>]*>/gi, '')
-      .replace(/<\/html>/gi, '')
-      .replace(/<head[^>]*>[\s\S]*?<\/head>/gi, '')
-      .replace(/<body[^>]*>/gi, '')
-      .replace(/<\/body>/gi, '')
-      .trim();
-
-    if (cleaned) {
-      return cleaned;
+  const styles: string[] = [];
+  doc.querySelectorAll('style').forEach((style) => {
+    if (style.textContent) {
+      styles.push(style.textContent);
     }
+  });
 
-    try {
-      const parser = new DOMParser();
-      const doc = parser.parseFromString(html, 'text/html');
-      const body = doc.querySelector('body');
-      if (body && body.innerHTML.trim()) {
-        return body.innerHTML.trim();
+  const headStyles = html.match(/<style[^>]*>([\s\S]*?)<\/style>/gi);
+  if (headStyles) {
+    headStyles.forEach((styleTag) => {
+      const content = styleTag
+        .replace(/<style[^>]*>/gi, '')
+        .replace(/<\/style>/gi, '');
+      if (content && !styles.includes(content)) {
+        styles.push(content);
       }
-    } catch (error) {}
+    });
   }
 
-  return html;
+  let content = doc.body?.innerHTML || html;
+
+  content = content.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '');
+  content = content.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '');
+  content = content.replace(/<link[^>]*>/gi, '');
+
+  if (styles.length > 0) {
+    const scopedCss = styles
+      .map((css) => scopeCssToContainer(css, 'release-message-content'))
+      .join('\n');
+
+    const baseStyles = `
+      .release-message-content { max-width: 100% !important; overflow: hidden !important; }
+      .release-message-content img { max-width: 100% !important; height: auto !important; display: block; }
+      .release-message-content table { max-width: 100% !important; width: 100% !important; table-layout: fixed !important; }
+      .release-message-content * { max-width: 100% !important; box-sizing: border-box !important; }
+      .release-message-content .img-placeholder { max-width: 100% !important; }
+      .release-message-content .img-placeholder img { width: 100% !important; }
+    `;
+
+    content = `<style>${scopedCss}\n${baseStyles}</style>${content}`;
+  }
+
+  return content;
 };
 
 const stripHtml = (html: string): string => {
   if (!html) return '';
 
   try {
-    const content = extractHtmlContent(html);
+    const content = sanitizeHtmlContent(html);
     const div = globalThis.document.createElement('div');
     div.innerHTML = content;
     const text = div.textContent || div.innerText || '';
 
     return text.trim();
   } catch (error) {
-    const content = extractHtmlContent(html);
+    const content = sanitizeHtmlContent(html);
     return content.replace(/<[^>]*>/g, '').trim();
   }
 };
@@ -399,7 +446,7 @@ fetchReleases();
             <VCardText>
               <div
                 v-if="openedRelease?.message"
-                v-html="openedRelease.message"
+                v-html="sanitizeHtmlContent(openedRelease.message)"
                 class="release-message-content"
               ></div>
               <div v-else class="text-body-1">-</div>
@@ -644,6 +691,7 @@ fetchReleases();
   }
 
   inline-size: 100% !important;
+  overflow: hidden !important;
 
   @media only screen and (min-width: 1280px) {
     inline-size: calc(100% - 256px) !important;
@@ -652,30 +700,45 @@ fetchReleases();
   .v-navigation-drawer__content {
     display: flex;
     flex-direction: column;
+    overflow: hidden !important;
+    max-width: 100%;
   }
 }
 
 .release-content-container {
   background-color: rgb(var(--v-theme-on-surface), var(--v-hover-opacity));
+  max-width: 100%;
+  width: 100%;
+
+  &.ps {
+    overflow: hidden !important;
+  }
+
+  .ps__rail-x {
+    display: none !important;
+  }
+
+  .v-card {
+    max-width: 100% !important;
+    width: 100%;
+    overflow: hidden;
+  }
+
+  .v-card-text {
+    max-width: 100% !important;
+    width: 100%;
+    overflow: hidden;
+    padding: 1rem;
+  }
 }
 
 .release-message-content {
-  max-width: 100%;
-  overflow-x: auto;
-}
-
-.release-message-content :deep(img) {
-  max-width: 100%;
-  height: auto;
-}
-
-.release-message-content :deep(table) {
-  max-width: 100%;
-  overflow-x: auto;
-}
-
-.release-message-content :deep(*) {
-  max-width: 100%;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+  word-break: break-word;
 }
 
 .release-list {
