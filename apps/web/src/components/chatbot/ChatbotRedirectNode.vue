@@ -243,7 +243,7 @@ onMounted(() => {
 
 <template>
   <div class="chatbot-redirect-node">
-    <Handle type="target" :position="Position.Top" class="handle-target" />
+    <Handle id="target" type="target" :position="Position.Top" class="handle-target" />
 
     <VCard class="redirect-card" elevation="2">
       <VCardTitle

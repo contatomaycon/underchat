@@ -150,7 +150,7 @@ watch(
 
 <template>
   <div class="chatbot-conditional-node">
-    <Handle type="target" :position="Position.Top" class="handle-target" />
+    <Handle id="target" type="target" :position="Position.Top" class="handle-target" />
 
     <VCard class="conditional-card" elevation="2">
       <VCardTitle

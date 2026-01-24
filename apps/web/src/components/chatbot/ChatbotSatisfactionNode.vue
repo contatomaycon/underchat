@@ -238,7 +238,7 @@ watch(
 
 <template>
   <div class="chatbot-satisfaction-node">
-    <Handle type="target" :position="Position.Top" class="handle-target" />
+    <Handle id="target" type="target" :position="Position.Top" class="handle-target" />
 
     <VCard class="satisfaction-card" elevation="2">
       <VCardTitle

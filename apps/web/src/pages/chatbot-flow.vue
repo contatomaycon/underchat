@@ -994,6 +994,29 @@ const isValidConnection = (connection: Connection): boolean => {
     : null;
 
   if (!sourceHandleId && !targetHandleId) {
+    const nodeTypesOnlyTarget = ['redirect', 'distribution', 'finish'];
+    const nodeTypesOnlySource = ['start'];
+    const sourceNode = nodes.value.find((n) => n.id === connection.source);
+    const targetNode = nodes.value.find((n) => n.id === connection.target);
+    const sourceType = sourceNode?.type as string | undefined;
+    const targetType = targetNode?.type as string | undefined;
+
+    if (sourceType && nodeTypesOnlyTarget.includes(sourceType)) {
+      chatbotStore.showSnackbar(
+        t('chatbot_flow_validation_invalid_source_handle'),
+        EColor.error
+      );
+      return false;
+    }
+
+    if (targetType && nodeTypesOnlySource.includes(targetType)) {
+      chatbotStore.showSnackbar(
+        t('chatbot_flow_validation_invalid_target_handle'),
+        EColor.error
+      );
+      return false;
+    }
+
     return true;
   }
 

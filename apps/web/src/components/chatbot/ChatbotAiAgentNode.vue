@@ -592,7 +592,7 @@ const handleRemove = () => {
 
 <template>
   <div class="chatbot-ai-agent-node">
-    <Handle type="target" :position="Position.Top" class="handle-target" />
+    <Handle id="target" type="target" :position="Position.Top" class="handle-target" />
 
     <VCard class="ai-agent-card" elevation="2">
       <VCardTitle

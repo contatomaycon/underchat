@@ -20,7 +20,7 @@ const handleRemove = () => {
 
 <template>
   <div class="chatbot-finish-node">
-    <Handle type="target" :position="Position.Top" class="handle-target" />
+    <Handle id="target" type="target" :position="Position.Top" class="handle-target" />
 
     <VCard class="finish-card" elevation="2">
       <VCardTitle

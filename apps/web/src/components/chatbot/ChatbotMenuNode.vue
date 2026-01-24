@@ -251,7 +251,7 @@ watch(
 
 <template>
   <div class="chatbot-menu-node">
-    <Handle type="target" :position="Position.Top" class="handle-target" />
+    <Handle id="target" type="target" :position="Position.Top" class="handle-target" />
 
     <VCard class="menu-card" elevation="2">
       <VCardTitle

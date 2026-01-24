@@ -46,8 +46,8 @@ const handleRemove = () => {
 
 <template>
   <div class="chatbot-annotation-node">
-    <Handle type="target" :position="Position.Top" class="handle-target" />
-    <Handle type="source" :position="Position.Bottom" class="handle-source" />
+    <Handle id="target" type="target" :position="Position.Top" class="handle-target" />
+    <Handle id="source" type="source" :position="Position.Bottom" class="handle-source" />
 
     <VCard class="annotation-card" elevation="2">
       <VCardTitle

@@ -9,7 +9,7 @@ const { t } = useI18n();
 
 <template>
   <div class="chatbot-start-node">
-    <Handle type="source" :position="Position.Bottom" class="handle-source" />
+    <Handle id="source" type="source" :position="Position.Bottom" class="handle-source" />
     <VCard class="start-card" elevation="2">
       <VCardText class="d-flex flex-column align-center justify-center pa-3">
         <VAvatar
