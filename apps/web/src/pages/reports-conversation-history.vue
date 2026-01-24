@@ -614,101 +614,101 @@ const copyToClipboard = async (text: string) => {
   <div>
     <VCard :title="$t('conversation_history_report')" no-padding>
       <VCardText>
-        <!-- Filtros de Pesquisa -->
-        <div class="d-flex flex-column gap-4 mb-6">
-          <div>
-            <VLabel class="mb-2">{{ $t('search_history_by') }}</VLabel>
-            <VRadioGroup v-model="searchBy" inline>
-              <VRadio
-                v-for="option in searchByOptions"
-                :key="option.value"
-                :label="option.title"
-                :value="option.value"
-              />
-            </VRadioGroup>
-          </div>
+        <VCard variant="tonal" color="default" class="mb-6 report-filters">
+          <VCardText>
+            <div class="mb-3">
+              <VLabel class="text-body-2 mb-1">{{
+                $t('search_history_by')
+              }}</VLabel>
+              <VRadioGroup v-model="searchBy" inline>
+                <VRadio
+                  v-for="option in searchByOptions"
+                  :key="option.value"
+                  :label="option.title"
+                  :value="option.value"
+                />
+              </VRadioGroup>
+            </div>
 
-          <!-- Filtro por Data -->
-          <div v-if="searchBy === 'date'" class="d-flex gap-4 align-center">
-            <div class="invoice-list-filter">
-              <VLabel>{{ $t('start_date') }}:</VLabel>
-              <AppDateTimePicker
-                v-model="startDate"
-                :placeholder="$t('select_date')"
+            <div
+              v-if="searchBy === 'date'"
+              class="d-flex align-center flex-wrap gap-4"
+            >
+              <div class="report-filters__field">
+                <VLabel class="text-body-2 mb-1">{{ $t('start_date') }}</VLabel>
+                <AppDateTimePicker
+                  v-model="startDate"
+                  :placeholder="$t('select_date')"
+                />
+              </div>
+              <div class="report-filters__field">
+                <VLabel class="text-body-2 mb-1">{{ $t('end_date') }}</VLabel>
+                <AppDateTimePicker
+                  v-model="endDate"
+                  :placeholder="$t('select_date')"
+                />
+              </div>
+            </div>
+
+            <div v-if="searchBy === 'operator'" class="report-filters__field">
+              <VLabel class="text-body-2 mb-1">{{
+                $t('search_by_operator')
+              }}</VLabel>
+              <AppSelectSearch
+                v-model="operatorId"
+                :items="operators as any"
+                :placeholder="$t('search_by_operator')"
+                :clearable="true"
+                item-value="id"
+                item-title="text"
               />
             </div>
-            <div class="invoice-list-filter">
-              <VLabel>{{ $t('end_date') }}:</VLabel>
-              <AppDateTimePicker
-                v-model="endDate"
-                :placeholder="$t('select_date')"
+
+            <div v-if="searchBy === 'queue'" class="report-filters__field">
+              <VLabel class="text-body-2 mb-1">{{
+                $t('search_by_sector')
+              }}</VLabel>
+              <AppSelectSearch
+                v-model="queueId"
+                :items="sectors as any"
+                :placeholder="$t('search_by_sector')"
+                :clearable="true"
+                item-value="id"
+                item-title="text"
               />
             </div>
-          </div>
 
-          <!-- Filtro por Operador -->
-          <div v-if="searchBy === 'operator'" class="invoice-list-filter">
-            <VLabel class="text-body-2 mb-1"
-              >{{ $t('search_by_operator') }}:</VLabel
-            >
-            <AppSelectSearch
-              v-model="operatorId"
-              :items="operators as any"
-              :placeholder="$t('search_by_operator')"
-              :clearable="true"
-              item-value="id"
-              item-title="text"
-            />
-          </div>
+            <div v-if="searchBy === 'protocol'" class="report-filters__field">
+              <VLabel class="text-body-2 mb-1">{{
+                $t('search_by_protocol')
+              }}</VLabel>
+              <AppTextField
+                v-model="protocol"
+                :placeholder="$t('search_by_protocol')"
+              />
+            </div>
 
-          <!-- Filtro por Setor -->
-          <div v-if="searchBy === 'queue'" class="invoice-list-filter">
-            <VLabel class="text-body-2 mb-1"
-              >{{ $t('search_by_sector') }}:</VLabel
-            >
-            <AppSelectSearch
-              v-model="queueId"
-              :items="sectors as any"
-              :placeholder="$t('search_by_sector')"
-              :clearable="true"
-              item-value="id"
-              item-title="text"
-            />
-          </div>
+            <div v-if="searchBy === 'client'" class="report-filters__field">
+              <VLabel class="text-body-2 mb-1">{{
+                $t('search_by_client')
+              }}</VLabel>
+              <AppTextField
+                v-model="clientName"
+                :placeholder="$t('search_by_client')"
+              />
+            </div>
 
-          <!-- Filtro por Protocolo -->
-          <div v-if="searchBy === 'protocol'" class="invoice-list-filter">
-            <VLabel class="text-body-2 mb-1"
-              >{{ $t('search_by_protocol') }}:</VLabel
-            >
-            <AppTextField
-              v-model="protocol"
-              :placeholder="$t('search_by_protocol')"
-            />
-          </div>
-
-          <!-- Filtro por Cliente -->
-          <div v-if="searchBy === 'client'" class="invoice-list-filter">
-            <VLabel class="text-body-2 mb-1"
-              >{{ $t('search_by_client') }}:</VLabel
-            >
-            <AppTextField
-              v-model="clientName"
-              :placeholder="$t('search_by_client')"
-            />
-          </div>
-
-          <!-- Filtro por Telefone -->
-          <div v-if="searchBy === 'phone'" class="invoice-list-filter">
-            <VLabel class="text-body-2 mb-1"
-              >{{ $t('search_by_phone') }}:</VLabel
-            >
-            <AppTextField
-              v-model="phoneFormatted"
-              :placeholder="$t('search_by_phone')"
-            />
-          </div>
-        </div>
+            <div v-if="searchBy === 'phone'" class="report-filters__field">
+              <VLabel class="text-body-2 mb-1">{{
+                $t('search_by_phone')
+              }}</VLabel>
+              <AppTextField
+                v-model="phoneFormatted"
+                :placeholder="$t('search_by_phone')"
+              />
+            </div>
+          </VCardText>
+        </VCard>
 
         <!-- Controles da Tabela -->
         <div class="d-flex justify-space-between flex-wrap gap-4 mb-4">
@@ -1320,6 +1320,10 @@ const copyToClipboard = async (text: string) => {
       }
     }
   }
+}
+
+.report-filters__field {
+  inline-size: 18rem;
 }
 
 .data-table {

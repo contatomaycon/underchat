@@ -449,64 +449,62 @@ onMounted(() => {
   <div>
     <VCard :title="$t('attendance_reports')" no-padding>
       <VCardText>
-        <!-- Filtros -->
-        <div class="d-flex align-center flex-wrap gap-4 mb-6">
-          <div class="invoice-list-filter">
-            <VLabel class="text-body-2 mb-1">{{ $t('report_type') }}:</VLabel>
-            <AppSelect
-              v-model="reportType"
-              :items="[
-                { value: 'queue', title: $t('attendances_by_queue') },
-                { value: 'analyst', title: $t('attendances_by_analyst') },
-                { value: 'general', title: $t('attendances') },
-              ]"
-              :placeholder="$t('select_report_type')"
-            />
-          </div>
+        <VCard variant="tonal" color="default" class="mb-6 report-filters">
+          <VCardText>
+            <div class="d-flex align-center flex-wrap gap-4 mb-3">
+              <div class="report-filters__field">
+                <VLabel class="text-body-2 mb-1">{{
+                  $t('report_type')
+                }}</VLabel>
+                <AppSelect
+                  v-model="reportType"
+                  :items="[
+                    { value: 'queue', title: $t('attendances_by_queue') },
+                    { value: 'analyst', title: $t('attendances_by_analyst') },
+                    { value: 'general', title: $t('attendances') },
+                  ]"
+                  :placeholder="$t('select_report_type')"
+                />
+              </div>
+              <div class="report-filters__field">
+                <VLabel class="text-body-2 mb-1">{{ $t('start_date') }}</VLabel>
+                <AppDateTimePicker
+                  v-model="startDate"
+                  :placeholder="$t('select_date')"
+                />
+              </div>
+              <div class="report-filters__field">
+                <VLabel class="text-body-2 mb-1">{{ $t('end_date') }}</VLabel>
+                <AppDateTimePicker
+                  v-model="endDate"
+                  :placeholder="$t('select_date')"
+                />
+              </div>
+            </div>
+            <div class="d-flex align-center">
+              <span class="text-body-2 mr-2">{{ $t('period') }}:</span>
+              <VTabs
+                v-model="periodType"
+                density="compact"
+                class="report-filters__tabs"
+              >
+                <VTab value="month">{{ $t('month') }}</VTab>
+                <VTab value="week">{{ $t('week') }}</VTab>
+                <VTab value="day">{{ $t('day') }}</VTab>
+                <VTab value="hour">{{ $t('hour') }}</VTab>
+              </VTabs>
+            </div>
+          </VCardText>
+        </VCard>
 
-          <div class="invoice-list-filter">
-            <VLabel class="text-body-2 mb-1">{{ $t('start_date') }}:</VLabel>
-            <AppDateTimePicker
-              v-model="startDate"
-              :placeholder="$t('select_date')"
-            />
-          </div>
-
-          <div class="invoice-list-filter">
-            <VLabel class="text-body-2 mb-1">{{ $t('end_date') }}:</VLabel>
-            <AppDateTimePicker
-              v-model="endDate"
-              :placeholder="$t('select_date')"
-            />
-          </div>
-        </div>
-
-        <!-- Tabs de período -->
-        <div class="d-flex align-center gap-4 mb-6">
-          <VTabs v-model="periodType" class="flex-grow-1">
-            <VTab value="month">
-              {{ $t('attendances_by') }} {{ $t('month') }}
-            </VTab>
-            <VTab value="week">
-              {{ $t('attendances_by') }} {{ $t('week') }}
-            </VTab>
-            <VTab value="day">
-              {{ $t('attendances_by') }} {{ $t('day') }}
-            </VTab>
-            <VTab value="hour">
-              {{ $t('attendances_by') }} {{ $t('hour') }}
-            </VTab>
-          </VTabs>
-        </div>
-
-        <!-- Título do relatório -->
-        <div class="mb-6" v-if="startDate && endDate">
-          <h3 class="text-h5">
-            {{ getChartTitle() }} - {{ $t('from') }}
-            {{ formatDisplayDate(startDate) }} {{ $t('to') }}
-            {{ formatDisplayDate(endDate) }}
-          </h3>
-        </div>
+        <p
+          v-if="startDate && endDate"
+          class="text-body-2 text-medium-emphasis mb-6"
+        >
+          {{ getChartTitle() }} — {{ $t('from') }}
+          {{ formatDisplayDate(startDate) }} {{ $t('to') }}
+          {{ formatDisplayDate(endDate) }}
+        </p>
 
         <!-- Gráfico -->
         <VCard class="mb-6" v-if="chartData">
@@ -602,8 +600,12 @@ onMounted(() => {
 </template>
 
 <style lang="scss" scoped>
-.invoice-list-filter {
-  inline-size: 20rem;
+.report-filters__field {
+  inline-size: 18rem;
+}
+.report-filters__tabs {
+  flex: 1;
+  min-width: 0;
 }
 
 .data-table {
