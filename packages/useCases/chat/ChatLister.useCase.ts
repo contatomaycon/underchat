@@ -109,7 +109,10 @@ export class ChatListerUseCase {
         };
       }
 
-      if (filterStatus === EChatStatus.ura) {
+      if (
+        filterStatus === EChatStatus.ura ||
+        filterStatus === EChatStatus.ura_output
+      ) {
         return {
           sortBy: preferences.sortByChatbotOrder,
           sortOrder: preferences.sortChatbotOrder,
@@ -145,7 +148,10 @@ export class ChatListerUseCase {
       };
     }
 
-    if (singleStatus === EChatStatus.ura) {
+    if (
+      singleStatus === EChatStatus.ura ||
+      singleStatus === EChatStatus.ura_output
+    ) {
       return {
         sortBy: preferences.sortByChatbotOrder,
         sortOrder: preferences.sortChatbotOrder,
@@ -610,7 +616,8 @@ export class ChatListerUseCase {
 
     const buildQueueCountFilter = (): IElasticsearchBoolClause[] => {
       const baseFilters = filterClauses.filter(
-        (clause) => !(clause as any).term?.status
+        (clause) =>
+          !(clause as any).term?.status && !(clause as any).terms?.status
       );
 
       if (hasPermissionToViewAll) {
@@ -700,7 +707,8 @@ export class ChatListerUseCase {
 
     const buildInChatCountFilter = (): IElasticsearchBoolClause[] => {
       const baseFilters = filterClauses.filter(
-        (clause) => !(clause as any).term?.status
+        (clause) =>
+          !(clause as any).term?.status && !(clause as any).terms?.status
       );
 
       if (hasPermissionToViewAll) {
@@ -736,7 +744,8 @@ export class ChatListerUseCase {
 
     const buildChatbotCountFilter = (): IElasticsearchBoolClause[] => {
       const baseFilters = filterClauses.filter(
-        (clause) => !(clause as any).term?.status
+        (clause) =>
+          !(clause as any).term?.status && !(clause as any).terms?.status
       );
 
       const canViewChatbotMessages = hasRequiredPermission(actions, [
@@ -750,8 +759,8 @@ export class ChatListerUseCase {
         return [
           ...baseFilters,
           {
-            term: {
-              status: EChatStatus.ura,
+            terms: {
+              status: [EChatStatus.ura, EChatStatus.ura_output],
             },
           } as unknown as IElasticsearchBoolClause,
         ];
@@ -760,8 +769,8 @@ export class ChatListerUseCase {
       return [
         ...baseFilters,
         {
-          term: {
-            status: EChatStatus.ura,
+          terms: {
+            status: [EChatStatus.ura, EChatStatus.ura_output],
           },
         } as unknown as IElasticsearchBoolClause,
         {
@@ -779,7 +788,8 @@ export class ChatListerUseCase {
 
     const buildMyChatsCountFilter = (): IElasticsearchBoolClause[] => {
       const baseFilters = filterClauses.filter(
-        (clause) => !(clause as any).term?.status
+        (clause) =>
+          !(clause as any).term?.status && !(clause as any).terms?.status
       );
 
       return [

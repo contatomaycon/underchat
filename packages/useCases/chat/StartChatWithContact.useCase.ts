@@ -100,7 +100,8 @@ export class StartChatWithContactUseCase {
 
       if (
         existingChat.status === EChatStatus.queue ||
-        existingChat.status === EChatStatus.ura
+        existingChat.status === EChatStatus.ura ||
+        existingChat.status === EChatStatus.ura_output
       ) {
         return this.updateExistingChat(
           t,
@@ -237,7 +238,9 @@ export class StartChatWithContactUseCase {
       );
     }
 
-    const wasUraStatus = existingChat.status === EChatStatus.ura;
+    const wasUraStatus =
+      existingChat.status === EChatStatus.ura ||
+      existingChat.status === EChatStatus.ura_output;
 
     const updatedChat = this.buildUpdatedChat(
       existingChat,

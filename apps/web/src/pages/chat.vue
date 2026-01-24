@@ -213,7 +213,9 @@ const isQueueStatus = computed(
 );
 
 const isUraStatus = computed(
-  () => chatStore.activeChat?.status === EChatStatus.ura
+  () =>
+    chatStore.activeChat?.status === EChatStatus.ura ||
+    chatStore.activeChat?.status === EChatStatus.ura_output
 );
 
 const isClosedStatus = computed(
@@ -223,7 +225,8 @@ const isClosedStatus = computed(
 const isQueueOrUraStatus = computed(() => {
   return (
     chatStore.activeChat?.status === EChatStatus.queue ||
-    chatStore.activeChat?.status === EChatStatus.ura
+    chatStore.activeChat?.status === EChatStatus.ura ||
+    chatStore.activeChat?.status === EChatStatus.ura_output
   );
 });
 
@@ -1010,8 +1013,7 @@ const scrollToMessageById = async (
   if (!psContainer) return;
 
   const scrollContainer =
-    (psContainer.querySelector('.ps__rail-y')
-      ?.parentElement as HTMLElement) ||
+    (psContainer.querySelector('.ps__rail-y')?.parentElement as HTMLElement) ||
     (psContainer.querySelector('.ps__container') as HTMLElement) ||
     psContainer;
 
@@ -1077,7 +1079,8 @@ const scrollToMessageById = async (
     await nextTick();
 
     const top = getOffsetTop(scrollContainer, target) - 60;
-    const maxScroll = scrollContainer.scrollHeight - scrollContainer.clientHeight;
+    const maxScroll =
+      scrollContainer.scrollHeight - scrollContainer.clientHeight;
     const validTop = Math.max(0, Math.min(top, maxScroll));
 
     scrollContainer.scrollTop = validTop;
@@ -2640,10 +2643,10 @@ const toggleViewOnceAudio = () => {
 
 const startAudioRecording = async () => {
   if (isRecordingAudio.value) return;
-  
+
   releaseAudioResources();
   resetRecordingState();
-  
+
   if (recordedAudioUrl.value) {
     URL.revokeObjectURL(recordedAudioUrl.value);
     recordedAudioUrl.value = null;

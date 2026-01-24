@@ -2215,8 +2215,8 @@ export class MessageUpsertConsume {
       this.redis,
       lockKey,
       async () => {
-        const [chatbotConfig, getChat] = await Promise.all([
-          this.workerConfigService.viewChatbot(data.worker_id),
+        const [chatbotsConfig, getChat] = await Promise.all([
+          this.workerConfigService.viewChatbots(data.worker_id),
           this.chatService.findChatByPhone(
             data.account_id,
             data.worker_id,
@@ -2224,19 +2224,45 @@ export class MessageUpsertConsume {
           ),
         ]);
 
-        const chatbotId =
-          chatbotConfig.enabled && chatbotConfig.chatbot_id
-            ? chatbotConfig.chatbot_id
+        const inputChatbotId =
+          chatbotsConfig.enabled && chatbotsConfig.chatbot_id
+            ? chatbotsConfig.chatbot_id
+            : null;
+
+        const outputChatbotId =
+          chatbotsConfig.enabled && chatbotsConfig.output_chatbot_id
+            ? chatbotsConfig.output_chatbot_id
             : null;
 
         const isFromMe = data.message?.key?.fromMe ?? false;
 
         if (
-          chatbotId &&
+          outputChatbotId &&
+          getChat &&
+          getChat.status === EChatStatus.ura_output &&
+          !isFromMe
+        ) {
+          await this.createOrUpdateChatBotFlow(
+            t,
+            getChat,
+            data,
+            outputChatbotId
+          );
+
+          return;
+        }
+
+        if (
+          inputChatbotId &&
           (!getChat || getChat.status === EChatStatus.ura) &&
           !isFromMe
         ) {
-          await this.createOrUpdateChatBotFlow(t, getChat, data, chatbotId);
+          await this.createOrUpdateChatBotFlow(
+            t,
+            getChat,
+            data,
+            inputChatbotId
+          );
 
           return;
         }

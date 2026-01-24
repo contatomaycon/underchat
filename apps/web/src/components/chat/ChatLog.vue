@@ -165,7 +165,9 @@ const shouldBlurMessageContent = computed(() => {
 
   const chatStatus = activeChat.value.status;
   const isQueueOrUra =
-    chatStatus === EChatStatus.queue || chatStatus === EChatStatus.ura;
+    chatStatus === EChatStatus.queue ||
+    chatStatus === EChatStatus.ura ||
+    chatStatus === EChatStatus.ura_output;
   return isQueueOrUra && !canViewChatContent();
 });
 
@@ -243,20 +245,19 @@ const handleContactsGroupClick = (message: ListMessageResult) => {
   contactsGroupModalOpen.value = true;
 };
 
-const saveContactFromGroup = async (
-  contact: {
-    contact_id: string | null;
-    name: string;
-    last_name?: string | null;
-    phone?: string | null;
-    phone_partial?: string | null;
-    phone_ddi?: string | null;
-    email?: string | null;
-    email_partial?: string | null;
-    photo?: string | null;
-  }
-) => {
-  const contactKey = contact.contact_id || `${contact.phone}_${contact.phone_ddi}`;
+const saveContactFromGroup = async (contact: {
+  contact_id: string | null;
+  name: string;
+  last_name?: string | null;
+  phone?: string | null;
+  phone_partial?: string | null;
+  phone_ddi?: string | null;
+  email?: string | null;
+  email_partial?: string | null;
+  photo?: string | null;
+}) => {
+  const contactKey =
+    contact.contact_id || `${contact.phone}_${contact.phone_ddi}`;
   if (savingContacts.value.has(contactKey)) return;
 
   if (contact.contact_id) {
@@ -1242,11 +1243,14 @@ const hasQuotedLocation = (m: ListMessageResult): boolean =>
 
 const hasQuotedContact = (m: ListMessageResult): boolean => {
   if (!m.content?.quoted) return false;
-  
-  if (m.content.quoted.type === EMessageType.contact_card && m.content.quoted.contact) {
+
+  if (
+    m.content.quoted.type === EMessageType.contact_card &&
+    m.content.quoted.contact
+  ) {
     return true;
   }
-  
+
   if (m.content.quoted.type === EMessageType.contacts) {
     const quotedContent = m.content.quoted as any;
     if (quotedContent?.contacts && quotedContent.contacts.length > 0) {
@@ -1254,17 +1258,20 @@ const hasQuotedContact = (m: ListMessageResult): boolean => {
     }
     return true;
   }
-  
+
   return false;
 };
 
 const resolveQuotedContactName = (m: ListMessageResult): string => {
   if (!m.content?.quoted) return '';
-  
-  if (m.content.quoted.type === EMessageType.contact_card && m.content.quoted.contact) {
+
+  if (
+    m.content.quoted.type === EMessageType.contact_card &&
+    m.content.quoted.contact
+  ) {
     return m.content.quoted.contact.name || '';
   }
-  
+
   if (m.content.quoted.type === EMessageType.contacts) {
     const quotedContent = m.content.quoted as any;
     if (quotedContent?.contacts && quotedContent.contacts.length > 0) {
@@ -1276,36 +1283,35 @@ const resolveQuotedContactName = (m: ListMessageResult): string => {
         quotedContent.contacts.length > 1
           ? ` e ${quotedContent.contacts.length - 1}`
           : ''
-      }${
-        quotedContent.contacts.length > 1
-          ? ' outro contato'
-          : ''
-      }`;
+      }${quotedContent.contacts.length > 1 ? ' outro contato' : ''}`;
     }
-    
+
     if (m.content.quoted.message) {
       return m.content.quoted.message;
     }
-    
+
     return t('contact_label', 'Contato');
   }
-  
+
   return '';
 };
 
 const resolveQuotedContactPhoto = (m: ListMessageResult): string | null => {
   if (!m.content?.quoted) return null;
-  
-  if (m.content.quoted.type === EMessageType.contact_card && m.content.quoted.contact) {
+
+  if (
+    m.content.quoted.type === EMessageType.contact_card &&
+    m.content.quoted.contact
+  ) {
     return m.content.quoted.contact.photo || null;
   }
-  
+
   return null;
 };
 
 const isQuotedContactGroup = (m: ListMessageResult): boolean => {
   if (!m.content?.quoted) return false;
-  
+
   if (m.content.quoted.type === EMessageType.contacts) {
     const quotedContent = m.content.quoted as any;
     if (quotedContent?.contacts && quotedContent.contacts.length > 0) {
@@ -1313,7 +1319,7 @@ const isQuotedContactGroup = (m: ListMessageResult): boolean => {
     }
     return true;
   }
-  
+
   return false;
 };
 
@@ -2127,7 +2133,8 @@ onUnmounted(() => {
                     'is-deleted': item.message.deleted,
                     'has-actions': !item.message.deleted,
                     'has-contact-card':
-                      item.message.content?.type === EMessageType.contact_card ||
+                      item.message.content?.type ===
+                        EMessageType.contact_card ||
                       item.message.content?.type === EMessageType.contacts,
                   },
                 ]"
@@ -2137,8 +2144,9 @@ onUnmounted(() => {
                       ? 'rgb(255, 243, 205)'
                       : item.message.content?.type === EMessageType.system
                         ? 'rgb(227, 242, 253)'
-                        : (item.message.content?.type === EMessageType.contact_card ||
-                            item.message.content?.type === EMessageType.contacts)
+                        : item.message.content?.type ===
+                              EMessageType.contact_card ||
+                            item.message.content?.type === EMessageType.contacts
                           ? 'transparent'
                           : isTypeUser(item.message)
                             ? 'rgb(var(--v-theme-surface))'
@@ -2449,12 +2457,19 @@ onUnmounted(() => {
                         ></VIcon>
                         <div class="quoted-contact-info">
                           <span class="quoted-contact-name">
-                            {{ resolveQuotedContactName(item.message) || t('contact_label') }}
+                            {{
+                              resolveQuotedContactName(item.message) ||
+                              t('contact_label')
+                            }}
                           </span>
                           <span
                             v-if="item.message.content?.quoted?.message"
                             class="quoted-contact-message"
-                            v-html="formatWhatsAppText(item.message.content.quoted.message)"
+                            v-html="
+                              formatWhatsAppText(
+                                item.message.content.quoted.message
+                              )
+                            "
                           ></span>
                         </div>
                       </div>
@@ -2621,11 +2636,16 @@ onUnmounted(() => {
                         <div class="context-ad-thumb">
                           <img
                             :src="
-                              item.message.content.context_info.external_ad_reply
-                                .thumbnail_url
+                              item.message.content.context_info
+                                .external_ad_reply.thumbnail_url
                             "
                             alt=""
-                            style="width: 60px; height: 60px; object-fit: cover; border-radius: 4px;"
+                            style="
+                              width: 60px;
+                              height: 60px;
+                              object-fit: cover;
+                              border-radius: 4px;
+                            "
                           />
                         </div>
                       </div>
@@ -2643,7 +2663,7 @@ onUnmounted(() => {
                               .source_app === 'instagram'
                               ? 'Instagram'
                               : item.message.content.context_info
-                                  .external_ad_reply.source_app === 'facebook'
+                                    .external_ad_reply.source_app === 'facebook'
                                 ? 'Facebook'
                                 : item.message.content.context_info
                                     .external_ad_reply.source_app
@@ -3079,9 +3099,13 @@ onUnmounted(() => {
                     >
                       <span
                         v-if="shouldFormatMessage(item.message)"
-                        v-html="formatWhatsAppText(getLatestMessageText(item.message))"
+                        v-html="
+                          formatWhatsAppText(getLatestMessageText(item.message))
+                        "
                       ></span>
-                      <span v-else>{{ getLatestMessageText(item.message) }}</span>
+                      <span v-else>{{
+                        getLatestMessageText(item.message)
+                      }}</span>
                     </p>
                   </div>
                   <div
@@ -3099,17 +3123,15 @@ onUnmounted(() => {
                     ]"
                   >
                     <GroupContactMessageCard
-                      :title="
-                        `${item.message.content.contacts[0].name}${
-                          item.message.content.contacts.length > 1
-                            ? ` e ${item.message.content.contacts.length - 1}`
-                            : ''
-                        }${
-                          item.message.content.contacts.length > 1
-                            ? ' outro contato'
-                            : ''
-                        }`
-                      "
+                      :title="`${item.message.content.contacts[0].name}${
+                        item.message.content.contacts.length > 1
+                          ? ` e ${item.message.content.contacts.length - 1}`
+                          : ''
+                      }${
+                        item.message.content.contacts.length > 1
+                          ? ' outro contato'
+                          : ''
+                      }`"
                       :time="
                         formatDate(item.message.date, {
                           hour: '2-digit',
@@ -3265,7 +3287,8 @@ onUnmounted(() => {
                           : 'reactions-summary--left',
                       {
                         'reactions-summary--contact':
-                          item.message.content?.type === EMessageType.contact_card ||
+                          item.message.content?.type ===
+                            EMessageType.contact_card ||
                           item.message.content?.type === EMessageType.contacts,
                       },
                     ]"
@@ -3349,7 +3372,8 @@ onUnmounted(() => {
 
                   <div
                     v-if="
-                      item.message.content?.type !== EMessageType.contact_card &&
+                      item.message.content?.type !==
+                        EMessageType.contact_card &&
                       item.message.content?.type !== EMessageType.contacts
                     "
                     :class="[
@@ -3521,11 +3545,7 @@ onUnmounted(() => {
     </VCard>
   </VDialog>
 
-  <VDialog
-    v-model="contactsGroupModalOpen"
-    max-width="600"
-    :scrollable="true"
-  >
+  <VDialog v-model="contactsGroupModalOpen" max-width="600" :scrollable="true">
     <VCard v-if="contactsGroupData?.content?.contacts">
       <VCardTitle class="d-flex align-center justify-space-between">
         <div>
@@ -3540,7 +3560,12 @@ onUnmounted(() => {
             }}
           </div>
         </div>
-        <VBtn icon variant="text" size="small" @click="contactsGroupModalOpen = false">
+        <VBtn
+          icon
+          variant="text"
+          size="small"
+          @click="contactsGroupModalOpen = false"
+        >
           <VIcon>tabler-x</VIcon>
         </VBtn>
       </VCardTitle>
@@ -3561,8 +3586,7 @@ onUnmounted(() => {
             <VOverlay
               :model-value="
                 savingContacts.has(
-                  contact.contact_id ||
-                    `${contact.phone}_${contact.phone_ddi}`
+                  contact.contact_id || `${contact.phone}_${contact.phone_ddi}`
                 )
               "
               contained
@@ -3608,17 +3632,14 @@ onUnmounted(() => {
               size="small"
               :disabled="
                 savingContacts.has(
-                  contact.contact_id ||
-                    `${contact.phone}_${contact.phone_ddi}`
+                  contact.contact_id || `${contact.phone}_${contact.phone_ddi}`
                 )
               "
               @click.stop="saveContactFromGroup(contact)"
             >
               <VIcon :color="contact.contact_id ? 'warning' : 'success'">
                 {{
-                  contact.contact_id
-                    ? 'tabler-user-edit'
-                    : 'tabler-user-plus'
+                  contact.contact_id ? 'tabler-user-edit' : 'tabler-user-plus'
                 }}
               </VIcon>
             </VBtn>

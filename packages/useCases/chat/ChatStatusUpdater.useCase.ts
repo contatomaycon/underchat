@@ -26,6 +26,8 @@ import { replaceMessageTags } from '@core/common/functions/replaceMessageTags';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 import { PresenceService } from '@core/services/presence.service';
+import { ChatbotFlowRunnerService } from '@core/services/chatbotFlowRunner.service';
+import { WAMessage } from '@whiskeysockets/baileys';
 
 @injectable()
 export class ChatStatusUpdaterUseCase {
@@ -36,7 +38,8 @@ export class ChatStatusUpdaterUseCase {
     private readonly workerService: WorkerService,
     private readonly workerConfigService: WorkerConfigService,
     private readonly chatMessageService: ChatMessageService,
-    private readonly presenceService: PresenceService
+    private readonly presenceService: PresenceService,
+    private readonly chatbotFlowRunnerService: ChatbotFlowRunnerService
   ) {}
 
   private async sendProtocolMessage(
@@ -151,6 +154,30 @@ export class ChatStatusUpdaterUseCase {
       message,
       typeUser: ETypeUserChat.system,
     });
+  }
+
+  private async handleUraOutputStatus(
+    t: TFunction<'translation', undefined>,
+    accountId: string,
+    chat: IChat
+  ): Promise<boolean> {
+    const chatbotConfig = await this.workerConfigService.viewChatbots(
+      chat.worker.id
+    );
+
+    if (!chatbotConfig.enabled || !chatbotConfig.output_chatbot_id) {
+      return false;
+    }
+
+    const chatData = await this.chatService.findChatByChatId(
+      accountId,
+      chat.chat_id
+    );
+    if (!chatData) {
+      return false;
+    }
+
+    return true;
   }
 
   private async validatePhoneNotInActiveChat(
@@ -406,7 +433,25 @@ export class ChatStatusUpdaterUseCase {
     }
 
     if (finalStatus === EChatStatus.closed && !chat.closed_at) {
-      closedAt = currentDate;
+      const isFromUraOrUraOutput =
+        chat.status === EChatStatus.ura ||
+        chat.status === EChatStatus.ura_output;
+
+      if (!isFromUraOrUraOutput) {
+        const shouldUseUraOutput = await this.handleUraOutputStatus(
+          t,
+          accountId,
+          chat
+        );
+
+        if (shouldUseUraOutput) {
+          finalStatus = EChatStatus.ura_output;
+        }
+      }
+
+      if (finalStatus === EChatStatus.closed) {
+        closedAt = currentDate;
+      }
     }
 
     if (
@@ -435,7 +480,8 @@ export class ChatStatusUpdaterUseCase {
 
     if (
       finalStatus === EChatStatus.in_chat ||
-      finalStatus === EChatStatus.closed
+      finalStatus === EChatStatus.closed ||
+      finalStatus === EChatStatus.ura_output
     ) {
       await this.chatService.invalidateChatCache(updatedChat);
     }
@@ -449,11 +495,39 @@ export class ChatStatusUpdaterUseCase {
       chat
     );
 
-    await this.publishChatUpdate(chatWithProtocol, accountId);
-
     if (finalStatus === EChatStatus.closed) {
       await this.handleClosedStatus(t, accountId, params.chat_id, chat);
     }
+
+    if (finalStatus === EChatStatus.ura_output) {
+      const chatbotConfig = await this.workerConfigService.viewChatbots(
+        chat.worker.id
+      );
+
+      if (chatbotConfig.enabled && chatbotConfig.output_chatbot_id) {
+        await this.chatbotFlowRunnerService.clearFlowCacheForChat(
+          accountId,
+          chat.worker.id,
+          chatWithProtocol.chat_id
+        );
+
+        await this.chatbotFlowRunnerService.execute(
+          t,
+          {
+            account_id: accountId,
+            worker_id: chat.worker.id,
+            type: EMessageType.text,
+            message: {} as WAMessage,
+            has_quoted: false,
+            is_call_event: false,
+          },
+          chatWithProtocol,
+          chatbotConfig.output_chatbot_id
+        );
+      }
+    }
+
+    await this.publishChatUpdate(chatWithProtocol, accountId);
 
     return chatWithProtocol;
   }

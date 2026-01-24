@@ -938,6 +938,15 @@ export class ChatbotFlowRunnerService {
     await this.redis.set(cacheKey, nextFlowId, 'EX', 1800);
   }
 
+  async clearFlowCacheForChat(
+    accountId: string,
+    workerId: string,
+    chatId: string
+  ): Promise<void> {
+    const cacheKey = this.getChatbotFlowCacheKey(accountId, workerId, chatId);
+    await this.redis.del(cacheKey);
+  }
+
   private getQuestionTextForDataType(
     node: ListChatbotFlowResponse['nodes'][number]
   ): string {

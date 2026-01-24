@@ -491,7 +491,7 @@ export const useChatStore = defineStore('chat', {
         this.handleQueueStatusChat(input, chat, isActiveChat, previousStatus);
       } else if (chat.status === EChatStatus.in_chat) {
         this.handleInChatStatusChat(input, chat, isActiveChat, previousStatus);
-      } else if (chat.status === EChatStatus.ura) {
+      } else if (this.isChatbotStatus(chat.status)) {
         this.handleUraStatusChat(input, chat, isActiveChat, previousStatus);
       } else if (chat.status === EChatStatus.closed) {
         this.handleClosedStatusChat(input, chat, isActiveChat, previousStatus);
@@ -591,6 +591,10 @@ export const useChatStore = defineStore('chat', {
       return status === EChatStatus.queue || status === EChatStatus.in_chat;
     },
 
+    isChatbotStatus(status: string | null | undefined): boolean {
+      return status === EChatStatus.ura || status === EChatStatus.ura_output;
+    },
+
     findChatInLists(chatId: string): ListChatsResult | null {
       return (
         this.listQueue.find((c) => c.chat_id === chatId) ||
@@ -684,6 +688,7 @@ export const useChatStore = defineStore('chat', {
 
       const ranks: Record<string, number> = {
         [EChatStatus.ura]: 0,
+        [EChatStatus.ura_output]: 0,
         [EChatStatus.queue]: 1,
         [EChatStatus.in_chat]: 2,
         [EChatStatus.closed]: 3,
@@ -708,7 +713,7 @@ export const useChatStore = defineStore('chat', {
 
       if (
         incomingStatus &&
-        (incomingStatus === EChatStatus.ura ||
+        (this.isChatbotStatus(incomingStatus) ||
           incomingStatus === EChatStatus.transmission) &&
         (existingStatus === EChatStatus.queue ||
           existingStatus === EChatStatus.in_chat ||
@@ -856,8 +861,7 @@ export const useChatStore = defineStore('chat', {
         };
       }
 
-      // "ChatBot"
-      if (status === EChatStatus.ura) {
+      if (this.isChatbotStatus(status)) {
         return {
           sortBy: chatUser.sort_by_chatbot_order ?? fallbackSort.sortBy,
           sortOrder: chatUser.sort_chatbot_order ?? fallbackSort.sortOrder,
@@ -982,7 +986,7 @@ export const useChatStore = defineStore('chat', {
 
       const isOwnChat = chat.user?.id === this.user?.user_id;
 
-      if (chat.status === EChatStatus.ura) {
+      if (this.isChatbotStatus(chat.status)) {
         return canViewChatbotMessages || isOwnChat;
       }
 
@@ -1034,7 +1038,7 @@ export const useChatStore = defineStore('chat', {
       const previousWasInInChat =
         wasInInChat || previousStatus === EChatStatus.in_chat;
       const previousWasInChatbot =
-        wasInChatbot || previousStatus === EChatStatus.ura;
+        wasInChatbot || this.isChatbotStatus(previousStatus);
       const previousWasInClosed =
         wasInClosed || previousStatus === EChatStatus.closed;
 
@@ -1138,7 +1142,7 @@ export const useChatStore = defineStore('chat', {
       const previousWasInInChat =
         wasInInChat || previousStatus === EChatStatus.in_chat;
       const previousWasInChatbot =
-        wasInChatbot || previousStatus === EChatStatus.ura;
+        wasInChatbot || this.isChatbotStatus(previousStatus);
       const previousWasInClosed =
         wasInClosed || previousStatus === EChatStatus.closed;
 
@@ -1232,7 +1236,7 @@ export const useChatStore = defineStore('chat', {
       const previousWasInQueue =
         wasInQueue || previousStatus === EChatStatus.queue;
       const previousWasInChatbot =
-        wasInChatbot || previousStatus === EChatStatus.ura;
+        wasInChatbot || this.isChatbotStatus(previousStatus);
       const previousWasInClosed =
         wasInClosed || previousStatus === EChatStatus.closed;
 
@@ -1319,7 +1323,7 @@ export const useChatStore = defineStore('chat', {
       const previousWasInQueue =
         wasInQueue || previousStatus === EChatStatus.queue;
       const previousWasInChatbot =
-        wasInChatbot || previousStatus === EChatStatus.ura;
+        wasInChatbot || this.isChatbotStatus(previousStatus);
       const previousWasInClosed =
         wasInClosed || previousStatus === EChatStatus.closed;
 
@@ -1855,7 +1859,7 @@ export const useChatStore = defineStore('chat', {
       if (statusArray.includes(EChatStatus.in_chat)) {
         this.inChatPagings = pagings;
       }
-      if (statusArray.includes(EChatStatus.ura)) {
+      if (statusArray.some((s) => this.isChatbotStatus(s))) {
         this.chatbotPagings = pagings;
       }
       if (statusArray.includes(EChatStatus.closed)) {
@@ -1899,6 +1903,12 @@ export const useChatStore = defineStore('chat', {
         if (statusArray.includes(EChatStatus.in_chat)) {
           this.inChatPagings = data.data.pagings;
         }
+        if (statusArray.some((s) => this.isChatbotStatus(s))) {
+          this.chatbotPagings = data.data.pagings;
+        }
+        if (statusArray.includes(EChatStatus.closed)) {
+          this.closedPagings = data.data.pagings;
+        }
 
         return { results: data.data.results, counts: data.data.counts };
       } catch {
@@ -1916,10 +1926,17 @@ export const useChatStore = defineStore('chat', {
       const request: ListChatsQuery = {
         current_page: pagination.current_page,
         per_page: pagination.per_page,
-        status,
+        status: this.isChatbotStatus(status)
+          ? [EChatStatus.ura, EChatStatus.ura_output]
+          : status,
         ...pickDefinedFilters(filters, [...LIST_FILTER_KEYS]),
       };
 
+      const chatbotHandler = {
+        fetch: (req: ListChatsQuery, append: boolean) =>
+          this.listChatbotChats(req, append),
+        getList: () => this.listChatbot,
+      };
       const handlers: Partial<
         Record<
           EChatStatus,
@@ -1940,10 +1957,8 @@ export const useChatStore = defineStore('chat', {
           fetch: (req, app) => this.listInChatChats(req, app),
           getList: () => this.listInChat,
         },
-        [EChatStatus.ura]: {
-          fetch: (req, app) => this.listChatbotChats(req, app),
-          getList: () => this.listChatbot,
-        },
+        [EChatStatus.ura]: chatbotHandler,
+        [EChatStatus.ura_output]: chatbotHandler,
         [EChatStatus.closed]: {
           fetch: (req, app) => this.listClosedChats(req, app),
           getList: () => this.listClosed,
@@ -1969,9 +1984,18 @@ export const useChatStore = defineStore('chat', {
         getCurrentList: () => ListChatsResult[],
         setList: (items: ListChatsResult[]) => void
       ) => {
-        if (!statusArray.includes(targetStatus)) return;
+        const shouldRun =
+          statusArray.includes(targetStatus) ||
+          (this.isChatbotStatus(targetStatus) &&
+            statusArray.some((s) => this.isChatbotStatus(s)));
+        if (!shouldRun) return;
 
-        const filtered = results.filter((c) => c.status === targetStatus);
+        const statusesToInclude = this.isChatbotStatus(targetStatus)
+          ? [EChatStatus.ura, EChatStatus.ura_output]
+          : [targetStatus];
+        const filtered = results.filter((c) =>
+          statusesToInclude.includes(c.status as EChatStatus)
+        );
         if (append) {
           getCurrentList().push(...filtered);
         } else {
@@ -2283,6 +2307,10 @@ export const useChatStore = defineStore('chat', {
           const isActiveChat = this.activeChat?.chat_id === chatId;
 
           this.addChat(data.data, true);
+
+          if (isActiveChat && isClosing) {
+            this.activeChat = null;
+          }
 
           if (isActiveChat && !isClosing) {
             const input: ListChatsResult = {

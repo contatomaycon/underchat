@@ -519,6 +519,7 @@
   "chatbot_view_success": "Chatbot obtido com sucesso!",
   "chatbot_config_view_success": "Configuração do chatbot visualizada com sucesso!",
   "chatbot_not_found": "Chatbot não encontrado!",
+  "chatbot_flow_node_not_found": "Nó do fluxo do chatbot não encontrado!",
   "chatbot_deleter_error": "Ocorreu um erro ao excluir o chatbot. Por favor, tente novamente.",
   "chatbot_deleted_successfully": "Chatbot excluído com sucesso!",
   "simultaneous_attendance_view_success": "Quantidade de atendimentos simultâneos obtida com sucesso!",
