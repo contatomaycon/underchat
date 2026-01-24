@@ -65,9 +65,17 @@ const searchQueryDebounced = refDebounced(searchQuery, 500);
 const headers = computed<DataTableHeader[]>(() => {
   const base: DataTableHeader[] = [
     { title: t('period'), key: 'period', sortable: true },
-    { title: t('report_satisfaction_question'), key: 'question', sortable: true },
+    {
+      title: t('report_satisfaction_question'),
+      key: 'question',
+      sortable: true,
+    },
     { title: t('total'), key: 'total', sortable: true },
-    { title: t('report_satisfaction_by_option'), key: 'optionBreakdown', sortable: false },
+    {
+      title: t('report_satisfaction_by_option'),
+      key: 'optionBreakdown',
+      sortable: false,
+    },
   ];
   if (reportType.value === 'sector') {
     base.splice(1, 0, { title: t('sector'), key: 'sector', sortable: true });
@@ -78,7 +86,11 @@ const headers = computed<DataTableHeader[]>(() => {
   return base;
 });
 
-const formatOptionWithPercent = (optionText: string, count: number, total: number): string => {
+const formatOptionWithPercent = (
+  optionText: string,
+  count: number,
+  total: number
+): string => {
   const pct = total > 0 ? (count / total) * 100 : 0;
   return `${optionText} (${count} — ${pct.toFixed(1)}%)`;
 };
@@ -124,7 +136,10 @@ const formatDisplayDate = (dateStr: string | null): string => {
   return `${day}/${month}/${d.getUTCFullYear()}`;
 };
 
-const formatDateForApi = (date: string | Date | null, isEnd = false): string | null => {
+const formatDateForApi = (
+  date: string | Date | null,
+  isEnd = false
+): string | null => {
   if (!date) return null;
   const d = date instanceof Date ? date : new Date(date);
   if (Number.isNaN(d.getTime())) return null;
@@ -158,52 +173,165 @@ const getChartTitle = (): string => {
 const prepareCharts = (data: ReportSatisfactionResult[]) => {
   if (!data || data.length === 0) {
     chartData.value = { labels: [], datasets: [] };
-    chartOptions.value = { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } } };
+    chartOptions.value = {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: { y: { beginAtZero: true } },
+    };
     chartByQuestionData.value = { labels: [], datasets: [] };
-    chartByQuestionOptions.value = { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } } };
+    chartByQuestionOptions.value = {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: { y: { beginAtZero: true } },
+    };
     return;
   }
 
-  const byPeriod = new Map<string, number>();
-  for (const r of data) {
-    byPeriod.set(r.period, (byPeriod.get(r.period) || 0) + r.total);
-  }
-  const periodLabels = Array.from(byPeriod.keys()).sort((a, b) => a.localeCompare(b));
-  const periodValues = periodLabels.map((p) => byPeriod.get(p) || 0);
+  const OPTION_COLORS = [
+    '#4BC0C0',
+    '#36A2EB',
+    '#FFCE56',
+    '#FF9F40',
+    '#FF6384',
+    '#9966FF',
+    '#E0E0E0',
+    '#9E9E9E',
+  ];
+  const barColors = [
+    '#36A2EB',
+    '#4BC0C0',
+    '#FFCE56',
+    '#FF9F40',
+    '#9966FF',
+    '#FF6384',
+    '#E0E0E0',
+    '#9E9E9E',
+  ];
 
-  chartData.value = {
-    labels: periodLabels,
-    datasets: [{ label: t('report_satisfaction_responses_by_period'), data: periodValues, backgroundColor: '#36A2EB' }],
-  };
-  chartOptions.value = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: { legend: { position: 'bottom' as const }, title: { display: true, text: t('report_satisfaction_responses_by_period') } },
-    scales: { y: { beginAtZero: true } },
-  };
+  if (reportType.value === 'sector' || reportType.value === 'analyst') {
+    const key = reportType.value === 'sector' ? 'sector' : 'analyst';
+    const mainTitle =
+      reportType.value === 'sector'
+        ? t('report_satisfaction_quantity_by_sector')
+        : t('report_satisfaction_quantity_by_analyst');
 
-  const byQuestion = new Map<string, number>();
-  for (const r of data) {
-    const q = r.question.length > 45 ? r.question.slice(0, 42) + '...' : r.question;
-    byQuestion.set(q, (byQuestion.get(q) || 0) + r.total);
+    const entitySet = new Set<string>();
+    const optionSet = new Set<string>();
+    const entityToOption = new Map<string, Map<string, number>>();
+
+    for (const r of data) {
+      const entity = (r[key] as string) || '-';
+      entitySet.add(entity);
+      let optMap = entityToOption.get(entity);
+      if (!optMap) {
+        optMap = new Map<string, number>();
+        entityToOption.set(entity, optMap);
+      }
+      for (const o of r.option_counts) {
+        const txt = o.option_text || '-';
+        optionSet.add(txt);
+        optMap.set(txt, (optMap.get(txt) || 0) + o.count);
+      }
+    }
+
+    const mainLabels = Array.from(entitySet).sort((a, b) => a.localeCompare(b));
+    const options = Array.from(optionSet).sort((a, b) => a.localeCompare(b));
+
+    const datasets = options.map((opt, i) => ({
+      label: opt,
+      data: mainLabels.map((e) => entityToOption.get(e)?.get(opt) || 0),
+      backgroundColor: OPTION_COLORS[i % OPTION_COLORS.length],
+    }));
+
+    chartData.value = { labels: mainLabels, datasets };
+    chartOptions.value = {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'bottom' as const },
+        title: { display: true, text: mainTitle },
+      },
+      scales: {
+        x: { stacked: true },
+        y: { stacked: true, beginAtZero: true },
+      },
+    };
+  } else {
+    const byPeriod = new Map<string, number>();
+    for (const r of data) {
+      byPeriod.set(r.period, (byPeriod.get(r.period) || 0) + r.total);
+    }
+    const mainLabels = Array.from(byPeriod.keys()).sort((a, b) =>
+      a.localeCompare(b)
+    );
+    const mainValues = mainLabels.map((p) => byPeriod.get(p) || 0);
+    const mainTitle = t('report_satisfaction_responses_by_period');
+
+    chartData.value = {
+      labels: mainLabels,
+      datasets: [
+        {
+          label: mainTitle,
+          data: mainValues,
+          backgroundColor: mainLabels.map(
+            (_, i) => barColors[i % barColors.length]
+          ),
+        },
+      ],
+    };
+    chartOptions.value = {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'bottom' as const },
+        title: { display: true, text: mainTitle },
+      },
+      scales: { y: { beginAtZero: true } },
+    };
   }
-  const sorted = Array.from(byQuestion.entries()).sort((a, b) => b[1] - a[1]).slice(0, 8);
-  const qLabels = sorted.map(([l]) => l);
-  const qValues = sorted.map(([, v]) => v);
-  const qTotal = qValues.reduce((s, v) => s + v, 0);
-  const labelsWithPct = qLabels.map(
-    (l, i) => `${l} (${qTotal > 0 ? ((qValues[i] || 0) / qTotal * 100).toFixed(1) : '0'}%)`
+
+  const optionToCount = new Map<string, number>();
+  for (const r of data) {
+    for (const o of r.option_counts) {
+      const txt = o.option_text || '-';
+      optionToCount.set(txt, (optionToCount.get(txt) || 0) + o.count);
+    }
+  }
+  const optionEntries = Array.from(optionToCount.entries()).sort((a, b) =>
+    a[0].localeCompare(b[0])
   );
-  const colors = ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40', '#E0E0E0', '#9E9E9E'];
+  const optionLabels = optionEntries.map(([txt, cnt]) => `${txt} (${cnt})`);
+  const optionValues = optionEntries.map(([, cnt]) => cnt);
+  const colors = [
+    '#4BC0C0',
+    '#36A2EB',
+    '#FFCE56',
+    '#FF9F40',
+    '#FF6384',
+    '#9966FF',
+    '#E0E0E0',
+    '#9E9E9E',
+  ];
 
   chartByQuestionData.value = {
-    labels: labelsWithPct,
-    datasets: [{ data: qValues, backgroundColor: colors.slice(0, qLabels.length) }],
+    labels: optionLabels,
+    datasets: [
+      {
+        data: optionValues,
+        backgroundColor: colors.slice(0, optionLabels.length),
+      },
+    ],
   };
   chartByQuestionOptions.value = {
     responsive: true,
     maintainAspectRatio: false,
-    plugins: { legend: { position: 'bottom' as const }, title: { display: true, text: t('report_satisfaction_by_question') } },
+    plugins: {
+      legend: { position: 'bottom' as const },
+      title: {
+        display: true,
+        text: t('report_satisfaction_responses_by_option'),
+      },
+    },
   };
 };
 
@@ -237,7 +365,12 @@ const downloadPdf = async () => {
   isDownloadingPdf.value = true;
   try {
     const { data } = await axios.get('/report-satisfaction/pdf', {
-      params: { report_type: reportType.value, period: periodType.value, start_date: start, end_date: end },
+      params: {
+        report_type: reportType.value,
+        period: periodType.value,
+        start_date: start,
+        end_date: end,
+      },
       responseType: 'blob',
     });
     const blob = new Blob([data], { type: 'application/pdf' });
@@ -272,29 +405,50 @@ onMounted(() => {
           <VCardText>
             <div class="d-flex align-center flex-wrap gap-4 mb-3">
               <div class="report-filters__field">
-                <VLabel class="text-body-2 mb-1">{{ $t('report_type') }}</VLabel>
+                <VLabel class="text-body-2 mb-1">{{
+                  $t('report_type')
+                }}</VLabel>
                 <AppSelect
                   v-model="reportType"
                   :items="[
-                    { value: 'general', title: $t('report_satisfaction_title_general') },
-                    { value: 'sector', title: $t('report_satisfaction_title_by_sector') },
-                    { value: 'analyst', title: $t('report_satisfaction_title_by_analyst') },
+                    {
+                      value: 'general',
+                      title: $t('report_satisfaction_title_general'),
+                    },
+                    {
+                      value: 'sector',
+                      title: $t('report_satisfaction_title_by_sector'),
+                    },
+                    {
+                      value: 'analyst',
+                      title: $t('report_satisfaction_title_by_analyst'),
+                    },
                   ]"
                   :placeholder="$t('select_report_type')"
                 />
               </div>
               <div class="report-filters__field">
                 <VLabel class="text-body-2 mb-1">{{ $t('start_date') }}</VLabel>
-                <AppDateTimePicker v-model="startDate" :placeholder="$t('select_date')" />
+                <AppDateTimePicker
+                  v-model="startDate"
+                  :placeholder="$t('select_date')"
+                />
               </div>
               <div class="report-filters__field">
                 <VLabel class="text-body-2 mb-1">{{ $t('end_date') }}</VLabel>
-                <AppDateTimePicker v-model="endDate" :placeholder="$t('select_date')" />
+                <AppDateTimePicker
+                  v-model="endDate"
+                  :placeholder="$t('select_date')"
+                />
               </div>
             </div>
             <div class="d-flex align-center">
               <span class="text-body-2 mr-2">{{ $t('period') }}:</span>
-              <VTabs v-model="periodType" density="compact" class="report-filters__tabs">
+              <VTabs
+                v-model="periodType"
+                density="compact"
+                class="report-filters__tabs"
+              >
                 <VTab value="month">{{ $t('month') }}</VTab>
                 <VTab value="week">{{ $t('week') }}</VTab>
                 <VTab value="day">{{ $t('day') }}</VTab>
@@ -305,7 +459,9 @@ onMounted(() => {
         </VCard>
 
         <p v-if="hasDateRange" class="text-body-2 text-medium-emphasis mb-6">
-          {{ getChartTitle() }} — {{ $t('from') }} {{ formatDisplayDate(startDate) }} {{ $t('to') }} {{ formatDisplayDate(endDate) }}
+          {{ getChartTitle() }} — {{ $t('from') }}
+          {{ formatDisplayDate(startDate) }} {{ $t('to') }}
+          {{ formatDisplayDate(endDate) }}
         </p>
 
         <VRow class="mb-6">
@@ -317,7 +473,9 @@ onMounted(() => {
             </VCard>
             <VCard v-else variant="tonal" color="primary">
               <VCardText>
-                <div class="text-body-2">{{ $t('report_satisfaction_total_responses') }}</div>
+                <div class="text-body-2">
+                  {{ $t('report_satisfaction_total_responses') }}
+                </div>
                 <div class="text-h4">{{ summary.total_responses }}</div>
               </VCardText>
             </VCard>
@@ -330,7 +488,9 @@ onMounted(() => {
             </VCard>
             <VCard v-else variant="tonal" color="secondary">
               <VCardText>
-                <div class="text-body-2">{{ $t('report_satisfaction_unique_satisfactions') }}</div>
+                <div class="text-body-2">
+                  {{ $t('report_satisfaction_unique_satisfactions') }}
+                </div>
                 <div class="text-h4">{{ summary.unique_satisfactions }}</div>
               </VCardText>
             </VCard>
@@ -344,20 +504,40 @@ onMounted(() => {
                 <VSkeletonLoader type="image" height="340" class="rounded" />
               </VCardText>
               <VCardText v-else-if="isEmptyAfterLoad" class="report-empty">
-                <div class="d-flex flex-column align-center justify-center py-12">
-                  <VIcon icon="tabler-chart-bar-off" size="48" class="text-medium-emphasis mb-3" />
-                  <span class="text-body-2 text-medium-emphasis">{{ $t('report_satisfaction_no_data') }}</span>
+                <div
+                  class="d-flex flex-column align-center justify-center py-12"
+                >
+                  <VIcon
+                    icon="tabler-chart-bar-off"
+                    size="48"
+                    class="text-medium-emphasis mb-3"
+                  />
+                  <span class="text-body-2 text-medium-emphasis">{{
+                    $t('report_satisfaction_no_data')
+                  }}</span>
                 </div>
               </VCardText>
               <VCardText v-else-if="chartData?.labels?.length">
                 <div class="report-chart" style="height: 340px">
-                  <BarChart :chart-data="chartData" :chart-options="chartOptions" :height="340" />
+                  <BarChart
+                    :chart-data="chartData"
+                    :chart-options="chartOptions"
+                    :height="340"
+                  />
                 </div>
               </VCardText>
               <VCardText v-else class="report-empty">
-                <div class="d-flex flex-column align-center justify-center py-12">
-                  <VIcon icon="tabler-chart-bar-off" size="48" class="text-medium-emphasis mb-3" />
-                  <span class="text-body-2 text-medium-emphasis">{{ $t('report_satisfaction_no_data') }}</span>
+                <div
+                  class="d-flex flex-column align-center justify-center py-12"
+                >
+                  <VIcon
+                    icon="tabler-chart-bar-off"
+                    size="48"
+                    class="text-medium-emphasis mb-3"
+                  />
+                  <span class="text-body-2 text-medium-emphasis">{{
+                    $t('report_satisfaction_no_data')
+                  }}</span>
                 </div>
               </VCardText>
             </VCard>
@@ -368,20 +548,40 @@ onMounted(() => {
                 <VSkeletonLoader type="image" height="340" class="rounded" />
               </VCardText>
               <VCardText v-else-if="isEmptyAfterLoad" class="report-empty">
-                <div class="d-flex flex-column align-center justify-center py-12">
-                  <VIcon icon="tabler-chart-donut" size="48" class="text-medium-emphasis mb-3" />
-                  <span class="text-body-2 text-medium-emphasis">{{ $t('report_satisfaction_no_data') }}</span>
+                <div
+                  class="d-flex flex-column align-center justify-center py-12"
+                >
+                  <VIcon
+                    icon="tabler-chart-donut"
+                    size="48"
+                    class="text-medium-emphasis mb-3"
+                  />
+                  <span class="text-body-2 text-medium-emphasis">{{
+                    $t('report_satisfaction_no_data')
+                  }}</span>
                 </div>
               </VCardText>
               <VCardText v-else-if="chartByQuestionData?.labels?.length">
                 <div class="report-chart" style="height: 340px">
-                  <DoughnutChart :chart-data="chartByQuestionData" :chart-options="chartByQuestionOptions" :height="340" />
+                  <DoughnutChart
+                    :chart-data="chartByQuestionData"
+                    :chart-options="chartByQuestionOptions"
+                    :height="340"
+                  />
                 </div>
               </VCardText>
               <VCardText v-else class="report-empty">
-                <div class="d-flex flex-column align-center justify-center py-12">
-                  <VIcon icon="tabler-chart-donut" size="48" class="text-medium-emphasis mb-3" />
-                  <span class="text-body-2 text-medium-emphasis">{{ $t('report_satisfaction_no_data') }}</span>
+                <div
+                  class="d-flex flex-column align-center justify-center py-12"
+                >
+                  <VIcon
+                    icon="tabler-chart-donut"
+                    size="48"
+                    class="text-medium-emphasis mb-3"
+                  />
+                  <span class="text-body-2 text-medium-emphasis">{{
+                    $t('report_satisfaction_no_data')
+                  }}</span>
                 </div>
               </VCardText>
             </VCard>
@@ -389,7 +589,9 @@ onMounted(() => {
         </VRow>
 
         <VCard>
-          <VCardTitle class="d-flex justify-space-between align-center flex-wrap gap-2">
+          <VCardTitle
+            class="d-flex justify-space-between align-center flex-wrap gap-2"
+          >
             <span class="text-h6">{{ getChartTitle() }}</span>
             <VBtn
               color="primary"
@@ -406,12 +608,22 @@ onMounted(() => {
           <VCardText>
             <template v-if="loading">
               <VSkeletonLoader type="heading" class="mb-3" />
-              <VSkeletonLoader v-for="i in 6" :key="i" type="list-item" class="mb-2" />
+              <VSkeletonLoader
+                v-for="i in 6"
+                :key="i"
+                type="list-item"
+                class="mb-2"
+              />
             </template>
             <template v-else>
               <div class="d-flex justify-end align-center mb-3">
                 <div class="d-flex align-center gap-3">
-                  <AppSelect v-model="options.itemsPerPage" :items="itemsPerPage" style="width: 140px" density="compact" />
+                  <AppSelect
+                    v-model="options.itemsPerPage"
+                    :items="itemsPerPage"
+                    style="width: 140px"
+                    density="compact"
+                  />
                   <VTextField
                     v-model="searchQuery"
                     :placeholder="$t('search')"
@@ -444,7 +656,9 @@ onMounted(() => {
                 <tbody>
                   <tr class="font-weight-bold">
                     <td>{{ $t('total') }}</td>
-                    <td v-if="reportType === 'sector' || reportType === 'analyst'"></td>
+                    <td
+                      v-if="reportType === 'sector' || reportType === 'analyst'"
+                    ></td>
                     <td></td>
                     <td>{{ grandTotal }}</td>
                     <td></td>

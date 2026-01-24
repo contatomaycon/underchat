@@ -740,6 +740,8 @@
   "report_satisfaction_by_option": "Por opción",
   "report_satisfaction_responses_by_period": "Respuestas por período",
   "report_satisfaction_responses_by_option": "Respuestas por opción",
+  "report_satisfaction_quantity_by_sector": "Cantidad por sector",
+  "report_satisfaction_quantity_by_analyst": "Cantidad por agente",
   "attendances_by_queue": "Atenciones por Sector",
   "attendances_by_analyst": "Atenciones por Analista",
   "attendances": "Atenciones",

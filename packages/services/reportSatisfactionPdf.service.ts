@@ -10,7 +10,10 @@ import type {
   ReportSatisfactionReportType,
 } from '@core/common/interfaces/IReportSatisfactionPdf';
 import { drawHeader } from './reportSatisfactionPdf/ReportSatisfactionPdfHeader';
-import { drawChart } from './reportSatisfactionPdf/ReportSatisfactionPdfChartDrawer';
+import {
+  drawChart,
+  drawStackedBarChartByEntity,
+} from './reportSatisfactionPdf/ReportSatisfactionPdfChartDrawer';
 import { drawTable } from './reportSatisfactionPdf/ReportSatisfactionPdfTableRenderer';
 
 @injectable()
@@ -36,7 +39,12 @@ export class ReportSatisfactionPdfService {
         doc.on('error', reject);
 
         drawHeader(doc, t, summary, reportType, periodType, startDate, endDate);
-        drawChart(doc, t, data);
+
+        if (reportType === 'sector' || reportType === 'analyst') {
+          drawStackedBarChartByEntity(doc, t, data, reportType);
+        } else {
+          drawChart(doc, t, data);
+        }
 
         if (reportType === 'sector' || reportType === 'analyst') {
           const key = reportType === 'sector' ? 'sector' : 'analyst';
