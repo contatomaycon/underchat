@@ -505,9 +505,21 @@ export class WorkerConfigUpserterRepository {
     chatbot_id: string | null;
     output_chatbot_id: string | null;
   }> => {
+    const outputStatus =
+      outputChatbotId !== null &&
+      outputChatbotId !== undefined &&
+      String(outputChatbotId).trim().length > 0
+        ? EWorkerConfigStatus.active
+        : statusId;
+
     await this.dbRw.transaction(async (tx) => {
       await this.upsertInputChatbot(tx, workerId, chatbotId, statusId);
-      await this.upsertOutputChatbot(tx, workerId, outputChatbotId, statusId);
+      await this.upsertOutputChatbot(
+        tx,
+        workerId,
+        outputChatbotId,
+        outputStatus
+      );
     });
 
     const chatbotIdResult = await this.getChatbotId(workerId);

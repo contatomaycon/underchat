@@ -435,6 +435,8 @@
   "chat_status_update_failed": "¡Error al actualizar el estado del chat!",
   "chat_label_update_success": "¡Etiqueta del chat actualizada con éxito!",
   "chat_label_update_failed": "¡Error al actualizar la etiqueta del chat!",
+  "chat_forward_to_output_chatbot_update_success": "¡Encaminamiento al chatbot de salida actualizado con éxito!",
+  "chat_forward_to_output_chatbot_update_failed": "¡Error al actualizar encaminamiento al chatbot de salida!",
   "chat_summary_clear_success": "¡Summary del chat limpiado con éxito!",
   "chat_summary_clear_failed": "¡Error al limpiar el summary del chat!",
   "role_does_not_belong_to_user_account": "¡El grupo de acceso no pertenece a la cuenta del usuario!",

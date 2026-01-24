@@ -32,6 +32,7 @@ import { deleteContactPhoto } from './methods/deleteContactPhoto';
 import { validateContact } from './methods/validateContact';
 import { listQuickMessageTemplates } from './methods/listQuickMessageTemplates';
 import { updateChatLabel } from './methods/updateChatLabel';
+import { updateForwardToOutputChatbot } from './methods/updateForwardToOutputChatbot';
 import { listChatWorkers } from './methods/listChatWorkers';
 import { listChatUsers } from './methods/listChatUsers';
 import { listChatSectors } from './methods/listChatSectors';
@@ -72,6 +73,7 @@ class ChatController {
   public validateContact = validateContact;
   public listQuickMessageTemplates = listQuickMessageTemplates;
   public updateChatLabel = updateChatLabel;
+  public updateForwardToOutputChatbot = updateForwardToOutputChatbot;
   public listChatWorkers = listChatWorkers;
   public listChatUsers = listChatUsers;
   public listChatSectors = listChatSectors;

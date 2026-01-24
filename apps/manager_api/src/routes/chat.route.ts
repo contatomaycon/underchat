@@ -4,7 +4,10 @@ import { listChatsSchema } from '@core/schema/chat/listChats';
 import ChatController from '@/controllers/chat';
 import { planGuard } from '@/plugins/planGuard';
 import { planStatus } from '@/plugins/planStatus';
-import { chatPermissions } from '@/permissions';
+import {
+  chatPermissions,
+  forwardToOutputChatbotPermissions,
+} from '@/permissions';
 import { updateChatsUserSchema } from '@core/schema/chat/updateChatsUser';
 import { listMessageChatsSchema } from '@core/schema/chat/listMessageChats';
 import { createMessageChatsSchema } from '@core/schema/chat/createMessageChats';
@@ -37,6 +40,7 @@ import { deleteChatContactPhotoSchema } from '@core/schema/chat/deleteContactPho
 import { validateChatContactSchema } from '@core/schema/chat/validateContact';
 import { listQuickMessageTemplatesSchema } from '@core/schema/chat/listQuickMessageTemplates';
 import { updateChatLabelSchema } from '@core/schema/chat/updateChatLabel';
+import { updateForwardToOutputChatbotSchema } from '@core/schema/chat/updateForwardToOutputChatbot';
 import { listChatWorkersSchema } from '@core/schema/chat/listChatWorkers';
 import { listChatUsersSchema } from '@core/schema/chat/listChatUsers';
 import { listChatSectorsSchema } from '@core/schema/chat/listChatSectors';
@@ -414,6 +418,21 @@ export default function chatRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, chatPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.patch('/chat/:chat_id/forward-to-output-chatbot', {
+    schema: updateForwardToOutputChatbotSchema,
+    handler: chatController.updateForwardToOutputChatbot,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(
+          request,
+          reply,
+          forwardToOutputChatbotPermissions
+        ),
       planGuard,
       planStatus,
     ],

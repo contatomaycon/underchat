@@ -338,6 +338,7 @@ export class ChatService {
       protocol_transfer: chat.protocol_transfer,
       label: chat.label,
       embedded_for_ai_agents: chat.embedded_for_ai_agents,
+      forward_to_output_chatbot: chat.forward_to_output_chatbot,
     };
 
     return this.applyChatPatch(chat.chat_id, patch, {
@@ -567,6 +568,11 @@ export class ChatService {
         ctx._source.embedded_for_ai_agents = patch.embedded_for_ai_agents;
         changed = true;
       }
+
+      if (patch.containsKey('forward_to_output_chatbot')) {
+        ctx._source.forward_to_output_chatbot = patch.forward_to_output_chatbot;
+        changed = true;
+      }
       
       if (patch.containsKey('user') && patch.user != null && !hasStatusAndUserUpdate) {
         if (eventEpochMillis != null) {
@@ -723,6 +729,13 @@ export class ChatService {
       upsert.embedded_for_ai_agents = patch.embedded_for_ai_agents;
     }
 
+    if (
+      patch.forward_to_output_chatbot !== null &&
+      patch.forward_to_output_chatbot !== undefined
+    ) {
+      upsert.forward_to_output_chatbot = patch.forward_to_output_chatbot;
+    }
+
     upsert.meta = {};
 
     return upsert;
@@ -848,6 +861,16 @@ export class ChatService {
       eventId,
       allowCreate: false,
     });
+  };
+
+  updateForwardToOutputChatbot = async (
+    chatId: string,
+    forwardToOutputChatbot: boolean
+  ): Promise<boolean> => {
+    const patch: ChatPatch = {
+      forward_to_output_chatbot: forwardToOutputChatbot,
+    };
+    return this.applyChatPatch(chatId, patch, { allowCreate: false });
   };
 
   updateChatProtocol = async (

@@ -435,6 +435,8 @@
   "chat_status_update_failed": "Error updating chat status!",
   "chat_label_update_success": "Chat label updated successfully!",
   "chat_label_update_failed": "Error updating chat label!",
+  "chat_forward_to_output_chatbot_update_success": "Forward to output chatbot updated successfully!",
+  "chat_forward_to_output_chatbot_update_failed": "Error updating forward to output chatbot!",
   "chat_summary_clear_success": "Chat summary cleared successfully!",
   "chat_summary_clear_failed": "Error clearing chat summary!",
   "role_does_not_belong_to_user_account": "The role does not belong to the user's account!",

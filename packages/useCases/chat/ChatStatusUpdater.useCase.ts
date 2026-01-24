@@ -161,6 +161,10 @@ export class ChatStatusUpdaterUseCase {
     accountId: string,
     chat: IChat
   ): Promise<boolean> {
+    if (chat.forward_to_output_chatbot === false) {
+      return false;
+    }
+
     const chatbotConfig = await this.workerConfigService.viewChatbots(
       chat.worker.id
     );

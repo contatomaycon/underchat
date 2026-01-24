@@ -1,0 +1,2 @@
+-- Insert permission action: forward to output chatbot
+INSERT INTO "permission_action" ("permission_action_id", "permission_module_id", "permission_action_group_id", "action", "name", "description") VALUES ('e8f1a2b3-4c5d-6e7f-8a9b-0c1d2e3f4a5b', '019a930d-c6f6-766d-9c83-914b7faa4337', '019a930d-c6f6-766d-9c83-b9db2f0d1aae', 'forward_to_output_chatbot', 'Encaminhar para o Chatbot de Saída', 'Permissão para ativar ou inativar o encaminhamento para o chatbot de saída');

@@ -478,6 +478,9 @@ export const useChatStore = defineStore('chat', {
         started_at: chat.started_at,
         closed_at: chat.closed_at,
         label: chat.label ?? null,
+        forward_to_output_chatbot:
+          chat.forward_to_output_chatbot ??
+          existingSnapshot?.forward_to_output_chatbot,
       };
 
       this.updateActiveChatSummaryIfNeeded(chat, isActiveChat);
@@ -569,6 +572,7 @@ export const useChatStore = defineStore('chat', {
         started_at: input.started_at,
         label: input.label,
         closed_at: input.closed_at,
+        forward_to_output_chatbot: input.forward_to_output_chatbot,
       };
       return result;
     },
@@ -2798,6 +2802,7 @@ export const useChatStore = defineStore('chat', {
         status: chat.status,
         date: chat.date,
         label: chat.label ?? null,
+        forward_to_output_chatbot: chat.forward_to_output_chatbot,
       };
     },
 
@@ -4070,6 +4075,70 @@ export const useChatStore = defineStore('chat', {
         this.loading = false;
 
         let errorMessage = this.i18n.global.t('chat_label_update_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        return false;
+      }
+    },
+
+    async updateForwardToOutputChatbot(
+      chatId: string,
+      forwardToOutputChatbot: boolean
+    ): Promise<boolean> {
+      try {
+        this.loading = true;
+
+        const response = await axios.patch<IApiResponse<{ success: boolean }>>(
+          `/chat/${chatId}/forward-to-output-chatbot`,
+          { forward_to_output_chatbot: forwardToOutputChatbot }
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          const errorMessage =
+            data?.message ||
+            this.i18n.global.t('chat_forward_to_output_chatbot_update_failed');
+          this.showSnackbar(errorMessage, EColor.error);
+
+          return false;
+        }
+
+        if (this.activeChat?.chat_id === chatId) {
+          this.activeChat = {
+            ...this.activeChat,
+            forward_to_output_chatbot: forwardToOutputChatbot,
+          };
+        }
+
+        const updateInList = (list: ListChatsResult[]) => {
+          const idx = list.findIndex((c) => c.chat_id === chatId);
+          if (idx !== -1) {
+            list.splice(idx, 1, {
+              ...list[idx],
+              forward_to_output_chatbot: forwardToOutputChatbot,
+            });
+          }
+        };
+
+        updateInList(this.listQueue);
+        updateInList(this.listInChat);
+        updateInList(this.listChatbot);
+        updateInList(this.listClosed);
+
+        return true;
+      } catch (error) {
+        this.loading = false;
+
+        let errorMessage = this.i18n.global.t(
+          'chat_forward_to_output_chatbot_update_failed'
+        );
         if (error instanceof AxiosError) {
           errorMessage = error?.response?.data?.message ?? errorMessage;
         }

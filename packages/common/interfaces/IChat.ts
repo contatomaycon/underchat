@@ -73,4 +73,5 @@ export interface IChat {
   protocol_transfer?: string[] | null;
   label?: ILabel[] | null;
   embedded_for_ai_agents?: string[] | null;
+  forward_to_output_chatbot?: boolean | null;
 }

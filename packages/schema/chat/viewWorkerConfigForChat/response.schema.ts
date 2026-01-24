@@ -6,6 +6,7 @@ export const workerConfigForChatSchema = Type.Object({
   allow_attendance_only_online: Type.Boolean(),
   simultaneous_attendance: Type.Union([Type.Number(), Type.Null()]),
   simultaneous_attendance_enabled: Type.Boolean(),
+  has_ura_output: Type.Boolean(),
 });
 
 export const viewWorkerConfigForChatResponseSchema = Type.Union([

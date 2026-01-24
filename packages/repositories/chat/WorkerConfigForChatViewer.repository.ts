@@ -16,14 +16,47 @@ export class WorkerConfigForChatViewerRepository {
   viewWorkerConfigForChatByWorkerId = async (
     workerId: string
   ): Promise<ViewWorkerConfigForChatResponse> => {
-    const configMap = await this.fetchActiveConfigs(workerId);
+    const [configMap, chatbotOutputConfig] = await Promise.all([
+      this.fetchActiveConfigs(workerId),
+      this.fetchChatbotOutputConfig(workerId),
+    ]);
 
     if (configMap.size === 0) {
       return null;
     }
 
-    return this.buildConfigForChat(configMap);
+    return this.buildConfigForChat(configMap, chatbotOutputConfig);
   };
+
+  private async fetchChatbotOutputConfig(
+    workerId: string
+  ): Promise<{ chatbotId: string | null; statusId: string } | null> {
+    const result = await this.dbRo
+      .select({
+        chatbot_id: workerConfig.chatbot_id,
+        worker_config_status_id: workerConfig.worker_config_status_id,
+      })
+      .from(workerConfig)
+      .where(
+        and(
+          eq(workerConfig.worker_id, workerId),
+          eq(
+            workerConfig.worker_config_type_id,
+            EWorkerConfigType.chatbot_output_id
+          )
+        )
+      )
+      .limit(1)
+      .execute();
+
+    const row = result[0];
+    if (!row) return null;
+
+    return {
+      chatbotId: row.chatbot_id,
+      statusId: row.worker_config_status_id,
+    };
+  }
 
   private async fetchActiveConfigs(
     workerId: string
@@ -51,10 +84,17 @@ export class WorkerConfigForChatViewerRepository {
   }
 
   private buildConfigForChat(
-    configMap: Map<EWorkerConfigType, string | null>
+    configMap: Map<EWorkerConfigType, string | null>,
+    chatbotOutputConfig: { chatbotId: string | null; statusId: string } | null
   ): ViewWorkerConfigForChatResponse {
     const simultaneousAttendance = this.parseNumber(
       configMap.get(EWorkerConfigType.simultaneous_attendance)
+    );
+
+    const hasUraOutput = !!(
+      chatbotOutputConfig &&
+      chatbotOutputConfig.chatbotId &&
+      String(chatbotOutputConfig.chatbotId).trim().length > 0
     );
 
     return {
@@ -72,6 +112,7 @@ export class WorkerConfigForChatViewerRepository {
       simultaneous_attendance: simultaneousAttendance,
       simultaneous_attendance_enabled:
         simultaneousAttendance !== null && simultaneousAttendance > 0,
+      has_ura_output: hasUraOutput,
     };
   }
 

@@ -9,4 +9,5 @@ export enum EChatPermissions {
   close_chat_without_attending = 'close_chat_without_attending',
   reopen_chat = 'reopen_chat',
   attendance_history = 'attendance_history',
+  forward_to_output_chatbot = 'forward_to_output_chatbot',
 }

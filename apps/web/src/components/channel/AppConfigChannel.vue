@@ -1309,10 +1309,8 @@ const toggleChatbotStatus = async () => {
   try {
     isSavingChatbot.value = true;
 
-    const chatbotIdValue = newEnabled ? chatbotId.value || null : null;
-    const outputChatbotIdValue = newEnabled
-      ? selectedOutputChatbotId.value || null
-      : null;
+    const chatbotIdValue = chatbotId.value || selectedInputChatbotId.value || null;
+    const outputChatbotIdValue = selectedOutputChatbotId.value || null;
 
     const result = await channelStore.updateChatbot(
       channelId.value,

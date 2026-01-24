@@ -7,3 +7,10 @@ export const chatPermissions = [
   EChatPermissions.chat_group,
   EChatPermissions.chat_access,
 ];
+
+export const forwardToOutputChatbotPermissions = [
+  EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  EChatPermissions.chat_group,
+  EChatPermissions.forward_to_output_chatbot,
+];

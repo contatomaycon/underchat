@@ -69,6 +69,9 @@ export const listChatsResultSchema = Type.Object({
     Type.Union([Type.Array(Type.String()), Type.Null()])
   ),
   label: Type.Optional(Type.Union([Type.Array(labelSchema), Type.Null()])),
+  forward_to_output_chatbot: Type.Optional(
+    Type.Union([Type.Boolean(), Type.Null()])
+  ),
 });
 
 export const listChatsResponseSchema = Type.Object({

@@ -725,6 +725,28 @@ const canViewAttendanceHistory = computed(() => {
   ]);
 });
 
+const canToggleForwardToOutputChatbot = computed(() => {
+  return can([
+    EGeneralPermissions.full_access,
+    EGeneralPermissions.full_access_group,
+    EChatPermissions.chat_group,
+    EChatPermissions.forward_to_output_chatbot,
+  ]);
+});
+
+const isForwardToOutputChatbotActive = computed(
+  () => chatStore.activeChat?.forward_to_output_chatbot !== false
+);
+
+const handleToggleForwardToOutputChatbot = async () => {
+  if (!chatStore.activeChat?.chat_id) return;
+  const next = chatStore.activeChat?.forward_to_output_chatbot === false;
+  await chatStore.updateForwardToOutputChatbot(
+    chatStore.activeChat.chat_id,
+    next
+  );
+};
+
 const activeChatLabels = computed(() => {
   if (!chatStore.activeChat?.label) return [];
   if (Array.isArray(chatStore.activeChat.label)) {
@@ -4845,6 +4867,21 @@ onBeforeUnmount(() => {
               :title="t('label')"
             >
               <VIcon icon="tabler-tag" />
+            </IconBtn>
+            <IconBtn
+              v-if="
+                isInChatStatus &&
+                workerConfigForChat?.has_ura_output === true &&
+                canToggleForwardToOutputChatbot
+              "
+              @click="handleToggleForwardToOutputChatbot"
+              :title="t('forward_to_output_chatbot')"
+            >
+              <VIcon
+                :icon="
+                  isForwardToOutputChatbotActive ? 'tabler-robot' : 'tabler-robot-off'
+                "
+              />
             </IconBtn>
             <IconBtn
               v-if="canViewAttendanceHistory"

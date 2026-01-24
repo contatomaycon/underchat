@@ -174,6 +174,9 @@ export const chatMappings = () => {
         embedded_for_ai_agents: {
           type: 'keyword',
         },
+        forward_to_output_chatbot: {
+          type: 'boolean',
+        },
       },
     },
   };
