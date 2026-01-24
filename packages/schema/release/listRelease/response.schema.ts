@@ -5,6 +5,9 @@ import { EReleaseStatus } from '@core/common/enums/EReleaseStatus';
 
 export const listReleaseResponseSchema = Type.Object({
   release_id: Type.String({ format: 'uuid' }),
+  created_by_user_id: Type.Optional(
+    Type.Union([Type.String({ format: 'uuid' }), Type.Null()])
+  ),
   type: Type.Enum(EReleaseType),
   status: Type.Enum(EReleaseStatus),
   title: Type.String(),

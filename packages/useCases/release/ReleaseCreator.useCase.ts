@@ -14,6 +14,7 @@ export class ReleaseCreatorUseCase {
     t: TFunction<'translation', undefined>,
     input: CreateReleaseRequest,
     accountId: string | null,
+    userId: string,
     actions: IJwtGroupHierarchy[]
   ): Promise<string> {
     const hasFullAccess = hasRequiredPermission(actions, [
@@ -36,7 +37,8 @@ export class ReleaseCreatorUseCase {
       input,
       accountId,
       accountId,
-      hasFullAccess
+      hasFullAccess,
+      userId
     );
 
     if (!releaseId) {

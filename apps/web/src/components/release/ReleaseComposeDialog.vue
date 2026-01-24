@@ -8,16 +8,22 @@ import { useReleaseStore } from '@/@webcore/stores/release';
 import { getUser } from '@/@webcore/localStorage/user';
 import { EColor } from '@core/common/enums/EColor';
 import { CreateReleaseRequest } from '@core/schema/release/createRelease/request.schema';
+import { ViewReleaseResponse } from '@core/schema/release/viewRelease/response.schema';
 import DialogCloseBtn from '@/@webcore/components/DialogCloseBtn.vue';
 import ReleaseHtmlEditor from './ReleaseHtmlEditor.vue';
 
-const props = defineProps<{
-  modelValue: boolean;
-}>();
+const props = withDefaults(
+  defineProps<{
+    modelValue: boolean;
+    release?: ViewReleaseResponse | null;
+  }>(),
+  { release: null }
+);
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: boolean): void;
   (e: 'created'): void;
+  (e: 'updated'): void;
 }>();
 
 const { t } = useI18n();
@@ -27,6 +33,8 @@ const isVisible = computed({
   get: () => props.modelValue,
   set: (value) => emit('update:modelValue', value),
 });
+
+const isEditMode = computed(() => !!props.release);
 
 const type = ref<EReleaseType>(EReleaseType.informative);
 const title = ref('');
@@ -128,12 +136,40 @@ watch(recipientType, () => {
   selectedUserId.value = null;
 });
 
-const createRelease = async () => {
+watch(
+  () => [props.modelValue, props.release] as const,
+  ([visible, r]) => {
+    if (visible && r) {
+      type.value = r.type;
+      title.value = r.title;
+      message.value = r.message;
+    }
+    if (visible && !r) {
+      resetValues();
+    }
+  }
+);
+
+const submit = async () => {
   if (!title.value || !message.value) return;
 
   loading.value = true;
 
   try {
+    if (isEditMode.value && props.release) {
+      const ok = await releaseStore.updateRelease(props.release.release_id, {
+        type: type.value,
+        title: title.value,
+        message: message.value,
+      });
+      if (ok) {
+        resetValues();
+        emit('updated');
+        isVisible.value = false;
+      }
+      return;
+    }
+
     const request: Record<string, unknown> = {
       type: type.value,
       title: title.value,
@@ -196,7 +232,7 @@ onMounted(async () => {
     <VCard class="release-compose-dialog">
       <VCardItem class="py-3 px-6">
         <h5 class="text-h5">
-          {{ $t('add_release') }}
+          {{ isEditMode ? $t('edit_release') : $t('add_release') }}
         </h5>
       </VCardItem>
 
@@ -212,53 +248,55 @@ onMounted(async () => {
         />
       </div>
 
-      <VDivider />
+      <template v-if="!isEditMode">
+        <VDivider />
 
-      <div class="px-6 py-4">
-        <AppSelectSearch
-          v-model="recipientType"
-          :items="recipientTypeOptions"
-          :label="$t('recipient')"
-          item-value="value"
-          item-title="title"
-        />
-      </div>
+        <div class="px-6 py-4">
+          <AppSelectSearch
+            v-model="recipientType"
+            :items="recipientTypeOptions"
+            :label="$t('recipient')"
+            item-value="value"
+            item-title="title"
+          />
+        </div>
 
-      <VDivider v-if="recipientType === 'account'" />
+        <VDivider v-if="recipientType === 'account'" />
 
-      <div v-if="recipientType === 'account'" class="px-6 py-4">
-        <AppSelectSearch
-          v-model="selectedAccountId"
-          :items="accountOptions"
-          :label="$t('account')"
-          item-value="id"
-          item-title="name"
-        />
-      </div>
+        <div v-if="recipientType === 'account'" class="px-6 py-4">
+          <AppSelectSearch
+            v-model="selectedAccountId"
+            :items="accountOptions"
+            :label="$t('account')"
+            item-value="id"
+            item-title="name"
+          />
+        </div>
 
-      <VDivider v-if="recipientType === 'permission_role'" />
+        <VDivider v-if="recipientType === 'permission_role'" />
 
-      <div v-if="recipientType === 'permission_role'" class="px-6 py-4">
-        <AppSelectSearch
-          v-model="selectedPermissionRoleId"
-          :items="permissionRoleOptions"
-          :label="$t('permission_groups')"
-          item-value="id"
-          item-title="name"
-        />
-      </div>
+        <div v-if="recipientType === 'permission_role'" class="px-6 py-4">
+          <AppSelectSearch
+            v-model="selectedPermissionRoleId"
+            :items="permissionRoleOptions"
+            :label="$t('permission_groups')"
+            item-value="id"
+            item-title="name"
+          />
+        </div>
 
-      <VDivider v-if="recipientType === 'user'" />
+        <VDivider v-if="recipientType === 'user'" />
 
-      <div v-if="recipientType === 'user'" class="px-6 py-4">
-        <AppSelectSearch
-          v-model="selectedUserId"
-          :items="userOptions"
-          :label="$t('user')"
-          item-value="id"
-          item-title="name"
-        />
-      </div>
+        <div v-if="recipientType === 'user'" class="px-6 py-4">
+          <AppSelectSearch
+            v-model="selectedUserId"
+            :items="userOptions"
+            :label="$t('user')"
+            item-value="id"
+            item-title="name"
+          />
+        </div>
+      </template>
 
       <VDivider />
 
@@ -291,13 +329,14 @@ onMounted(async () => {
             title === '' ||
             message === '' ||
             loading ||
-            (recipientType === 'account' && !selectedAccountId) ||
-            (recipientType === 'permission_role' &&
-              !selectedPermissionRoleId) ||
-            (recipientType === 'user' && !selectedUserId)
+            (!isEditMode &&
+              ((recipientType === 'account' && !selectedAccountId) ||
+                (recipientType === 'permission_role' &&
+                  !selectedPermissionRoleId) ||
+                (recipientType === 'user' && !selectedUserId)))
           "
           :loading="loading"
-          @click="createRelease"
+          @click="submit"
         >
           {{ $t('save') }}
         </VBtn>

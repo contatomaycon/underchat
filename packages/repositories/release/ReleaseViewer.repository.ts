@@ -66,6 +66,7 @@ export class ReleaseViewerRepository {
   private readonly mapToViewReleaseResponse = (item: {
     release_id: string;
     account_id: string | null;
+    created_by_user_id: string | null;
     type: EReleaseType;
     status: EReleaseStatus;
     title: string;
@@ -80,6 +81,7 @@ export class ReleaseViewerRepository {
     return {
       release_id: item.release_id,
       account_id: item.account_id,
+      created_by_user_id: item.created_by_user_id,
       type: item.type as EReleaseType,
       status: item.status as EReleaseStatus,
       title: item.title,
@@ -112,6 +114,7 @@ export class ReleaseViewerRepository {
       .select({
         release_id: release.release_id,
         account_id: release.account_id,
+        created_by_user_id: release.created_by_user_id,
         type: release.type,
         status: release.status,
         title: release.title,

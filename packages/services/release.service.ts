@@ -5,6 +5,8 @@ import { ReleaseViewerRepository } from '@core/repositories/release/ReleaseViewe
 import { ReleaseViewViewerRepository } from '@core/repositories/release/ReleaseViewViewer.repository';
 import { ReleaseViewCreatorRepository } from '@core/repositories/release/ReleaseViewCreator.repository';
 import { ReleaseCreatorRepository } from '@core/repositories/release/ReleaseCreator.repository';
+import { ReleaseDeleterRepository } from '@core/repositories/release/ReleaseDeleter.repository';
+import { ReleaseUpdaterRepository } from '@core/repositories/release/ReleaseUpdater.repository';
 import { ReleaseUsersListerRepository } from '@core/repositories/release/ReleaseUsersLister.repository';
 import { ReleaseAccountsListerRepository } from '@core/repositories/release/ReleaseAccountsLister.repository';
 import { ReleasePermissionRolesListerRepository } from '@core/repositories/release/ReleasePermissionRolesLister.repository';
@@ -12,6 +14,7 @@ import { ListReleaseRequest } from '@core/schema/release/listRelease/request.sch
 import { ListReleaseResponse } from '@core/schema/release/listRelease/response.schema';
 import { ViewReleaseResponse } from '@core/schema/release/viewRelease/response.schema';
 import { CreateReleaseRequest } from '@core/schema/release/createRelease/request.schema';
+import { EditReleaseBodyRequest } from '@core/schema/release/editRelease/request.schema';
 import { ListReleaseUsersResponse } from '@core/schema/release/listReleaseUsers/response.schema';
 import { ListReleaseAccountsResponse } from '@core/schema/release/listReleaseAccounts/response.schema';
 import { ListReleasePermissionRolesResponse } from '@core/schema/release/listReleasePermissionRoles/response.schema';
@@ -26,6 +29,8 @@ export class ReleaseService {
     private readonly releaseViewViewerRepository: ReleaseViewViewerRepository,
     private readonly releaseViewCreatorRepository: ReleaseViewCreatorRepository,
     private readonly releaseCreatorRepository: ReleaseCreatorRepository,
+    private readonly releaseDeleterRepository: ReleaseDeleterRepository,
+    private readonly releaseUpdaterRepository: ReleaseUpdaterRepository,
     private readonly releaseUsersListerRepository: ReleaseUsersListerRepository,
     private readonly releaseAccountsListerRepository: ReleaseAccountsListerRepository,
     private readonly releasePermissionRolesListerRepository: ReleasePermissionRolesListerRepository
@@ -108,17 +113,34 @@ export class ReleaseService {
     return updatedRelease;
   };
 
+  deleteRelease = async (
+    releaseId: string,
+    userId: string
+  ): Promise<true | 'not_found' | 'forbidden'> => {
+    return this.releaseDeleterRepository.deleteById(releaseId, userId);
+  };
+
+  updateRelease = async (
+    releaseId: string,
+    userId: string,
+    input: EditReleaseBodyRequest
+  ): Promise<true | 'not_found' | 'forbidden'> => {
+    return this.releaseUpdaterRepository.updateById(releaseId, userId, input);
+  };
+
   createRelease = async (
     input: CreateReleaseRequest,
     accountId: string | null,
     userAccountId: string | null,
-    hasFullAccess: boolean
+    hasFullAccess: boolean,
+    createdByUserId: string
   ): Promise<string | null> => {
     return this.releaseCreatorRepository.createRelease(
       input,
       accountId,
       userAccountId,
-      hasFullAccess
+      hasFullAccess,
+      createdByUserId
     );
   };
 

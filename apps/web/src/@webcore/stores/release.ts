@@ -14,6 +14,7 @@ import { ListReleaseRequest } from '@core/schema/release/listRelease/request.sch
 import { ViewReleaseResponse } from '@core/schema/release/viewRelease/response.schema';
 import { CreateReleaseRequest } from '@core/schema/release/createRelease/request.schema';
 import { CreateReleaseResponse } from '@core/schema/release/createRelease/response.schema';
+import { EditReleaseBodyRequest } from '@core/schema/release/editRelease/request.schema';
 import { ListReleaseUsersResponse } from '@core/schema/release/listReleaseUsers/response.schema';
 import { ListReleaseAccountsResponse } from '@core/schema/release/listReleaseAccounts/response.schema';
 import { ListReleasePermissionRolesResponse } from '@core/schema/release/listReleasePermissionRoles/response.schema';
@@ -183,6 +184,68 @@ export const useReleaseStore = defineStore('release', {
         this.loading = false;
 
         return null;
+      }
+    },
+    async deleteRelease(releaseId: string): Promise<boolean> {
+      try {
+        const response = await axios.delete<IApiResponse<null>>(
+          `/release/${releaseId}`
+        );
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          this.showSnackbar(
+            data?.message ?? this.i18n.global.t('release_delete_error'),
+            EColor.error
+          );
+          return false;
+        }
+
+        this.showSnackbar(
+          data.message ?? this.i18n.global.t('release_deleted_successfully'),
+          EColor.success
+        );
+        return true;
+      } catch (error) {
+        const errorMessage =
+          (error instanceof AxiosError && error?.response?.data?.message) ||
+          this.i18n.global.t('release_delete_error');
+        this.showSnackbar(errorMessage, EColor.error);
+        return false;
+      }
+    },
+    async updateRelease(
+      releaseId: string,
+      input: EditReleaseBodyRequest
+    ): Promise<boolean> {
+      try {
+        const response = await axios.patch<IApiResponse<null>>(
+          `/release/${releaseId}`,
+          input
+        );
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          this.showSnackbar(
+            data?.message ?? this.i18n.global.t('release_update_error'),
+            EColor.error
+          );
+          return false;
+        }
+
+        this.showSnackbar(
+          data.message ?? this.i18n.global.t('release_updated_successfully'),
+          EColor.success
+        );
+        return true;
+      } catch (error) {
+        const errorMessage =
+          (error instanceof AxiosError && error?.response?.data?.message) ||
+          this.i18n.global.t('release_update_error');
+        this.showSnackbar(errorMessage, EColor.error);
+        return false;
       }
     },
     async createRelease(

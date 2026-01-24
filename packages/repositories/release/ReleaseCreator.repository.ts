@@ -21,10 +21,16 @@ export class ReleaseCreatorRepository {
     input: CreateReleaseRequest,
     accountId: string | null,
     userAccountId: string | null,
-    hasFullAccess: boolean
+    hasFullAccess: boolean,
+    createdByUserId: string
   ): Promise<string | null> => {
     return this.dbRw.transaction(async (tx) => {
-      const releaseId = await this.createReleaseRecord(tx, input, accountId);
+      const releaseId = await this.createReleaseRecord(
+        tx,
+        input,
+        accountId,
+        createdByUserId
+      );
 
       await this.createReleaseAccessRecord(
         tx,
@@ -45,13 +51,15 @@ export class ReleaseCreatorRepository {
       ExtractTablesWithRelations<typeof schema>
     >,
     input: CreateReleaseRequest,
-    accountId: string | null
+    accountId: string | null,
+    createdByUserId: string
   ): Promise<string> => {
     const releaseId = uuidv7();
 
     await tx.insert(release).values({
       release_id: releaseId,
       account_id: accountId,
+      created_by_user_id: createdByUserId,
       type: input.type,
       status: EReleaseStatus.active,
       title: input.title,

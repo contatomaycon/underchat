@@ -21,6 +21,7 @@ export const createRelease = async (
       t,
       request.body,
       tokenJwtData.account_id,
+      tokenJwtData.user_id,
       tokenJwtData.actions
     );
 

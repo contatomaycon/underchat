@@ -7,6 +7,9 @@ export const viewReleaseResponseSchema = Type.Object({
   account_id: Type.Optional(
     Type.Union([Type.String({ format: 'uuid' }), Type.Null()])
   ),
+  created_by_user_id: Type.Optional(
+    Type.Union([Type.String({ format: 'uuid' }), Type.Null()])
+  ),
   type: Type.Enum(EReleaseType),
   status: Type.Enum(EReleaseStatus),
   title: Type.String(),

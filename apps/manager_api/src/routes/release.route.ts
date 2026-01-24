@@ -3,6 +3,8 @@ import { container } from 'tsyringe';
 import {
   releaseViewPermissions,
   releaseCreatePermissions,
+  releaseDeletePermissions,
+  releaseUpdatePermissions,
 } from '@/permissions';
 import ReleaseController from '@/controllers/release';
 import { listReleaseSchema } from '@core/schema/release/listRelease';
@@ -12,6 +14,8 @@ import { listReleaseUsersSchema } from '@core/schema/release/listReleaseUsers';
 import { listReleaseAccountsSchema } from '@core/schema/release/listReleaseAccounts';
 import { listReleasePermissionRolesSchema } from '@core/schema/release/listReleasePermissionRoles';
 import { listReleaseNotificationsSchema } from '@core/schema/release/listReleaseNotifications';
+import { deleteReleaseSchema } from '@core/schema/release/deleteRelease';
+import { editReleaseSchema } from '@core/schema/release/editRelease';
 
 export default async function releaseRoutes(server: FastifyInstance) {
   const releaseController = container.resolve(ReleaseController);
@@ -67,6 +71,24 @@ export default async function releaseRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, releaseViewPermissions),
+    ],
+  });
+
+  server.delete('/release/:release_id', {
+    schema: deleteReleaseSchema,
+    handler: releaseController.deleteRelease,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, releaseDeletePermissions),
+    ],
+  });
+
+  server.patch('/release/:release_id', {
+    schema: editReleaseSchema,
+    handler: releaseController.editRelease,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, releaseUpdatePermissions),
     ],
   });
 

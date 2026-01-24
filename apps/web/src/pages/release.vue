@@ -14,6 +14,7 @@ import ReleaseComposeDialog from '@/components/release/ReleaseComposeDialog.vue'
 import { useResponsiveLeftSidebar } from '@/@webcore/composable/useResponsiveSidebar';
 import { formatDateToMonthShort } from '@/@webcore/utils/formatters';
 import { ListReleaseRequest } from '@core/schema/release/listRelease/request.schema';
+import { getUser } from '@/@webcore/localStorage/user';
 
 definePage({
   meta: {
@@ -34,6 +35,9 @@ const { t } = useI18n();
 const releaseStore = useReleaseStore();
 
 const isComposeDialogVisible = ref(false);
+const editRelease = ref<ViewReleaseResponse | null>(null);
+const isDialogDeleterShow = ref(false);
+const releaseIdToDelete = ref<string | null>(null);
 const searchQuery = ref('');
 const debouncedSearch = refDebounced(searchQuery, 500);
 const selectedType = ref<EReleaseType | null>(null);
@@ -299,6 +303,51 @@ const closeRelease = () => {
     router.replace({ path: '/release' });
   }
   openedRelease.value = null;
+  editRelease.value = null;
+};
+
+const isCreatorFor = (r: { created_by_user_id?: string | null } | null): boolean => {
+  const user = getUser();
+  if (!user?.user_id || !r?.created_by_user_id) return false;
+  return r.created_by_user_id === user.user_id;
+};
+
+const isCreator = computed(() => isCreatorFor(openedRelease.value));
+
+const openEditDialog = (r?: ListReleaseResponse | ViewReleaseResponse) => {
+  const source = r ?? openedRelease.value;
+  if (!source) return;
+  editRelease.value = { ...source } as ViewReleaseResponse;
+  isComposeDialogVisible.value = true;
+};
+
+const openDeleteDialog = (r?: ListReleaseResponse) => {
+  const id = r?.release_id ?? openedRelease.value?.release_id;
+  if (!id) return;
+  releaseIdToDelete.value = id;
+  isDialogDeleterShow.value = true;
+};
+
+const handleDeleteRelease = async () => {
+  const id = releaseIdToDelete.value;
+  if (!id) return;
+  const ok = await releaseStore.deleteRelease(id);
+  if (ok) {
+    if (openedRelease.value?.release_id === id) closeRelease();
+    await handleRefresh();
+  }
+  releaseIdToDelete.value = null;
+};
+
+const onReleaseUpdated = async () => {
+  editRelease.value = null;
+  await handleRefresh();
+  if (openedRelease.value) {
+    const updated = await releaseStore.viewRelease(
+      openedRelease.value.release_id
+    );
+    if (updated) openedRelease.value = updated;
+  }
 };
 
 const handleDrawerUpdate = (value: boolean) => {
@@ -412,6 +461,17 @@ fetchReleases();
             >
               {{ getTypeLabel(openedRelease.type) }}
             </VChip>
+
+            <VSpacer />
+
+            <template v-if="isCreator">
+              <IconBtn @click="openEditDialog">
+                <VIcon size="20" icon="tabler-edit" />
+              </IconBtn>
+              <IconBtn @click="openDeleteDialog">
+                <VIcon size="20" icon="tabler-trash" />
+              </IconBtn>
+            </template>
           </div>
         </div>
 
@@ -566,6 +626,19 @@ fetchReleases();
               </div>
 
               <div
+                v-if="isCreatorFor(release)"
+                class="d-flex align-center gap-1 flex-shrink-0"
+                @click.stop
+              >
+                <IconBtn @click="openEditDialog(release)">
+                  <VIcon size="18" icon="tabler-edit" />
+                </IconBtn>
+                <IconBtn @click="openDeleteDialog(release)">
+                  <VIcon size="18" icon="tabler-trash" />
+                </IconBtn>
+              </div>
+
+              <div
                 class="release-meta align-center gap-2"
                 :class="$vuetify.display.xs ? 'd-none' : ''"
               >
@@ -623,7 +696,17 @@ fetchReleases();
 
       <ReleaseComposeDialog
         v-model="isComposeDialogVisible"
+        :release="editRelease"
         @created="handleRefresh"
+        @updated="onReleaseUpdated"
+      />
+
+      <VDialogHandler
+        v-if="isDialogDeleterShow"
+        v-model="isDialogDeleterShow"
+        :title="$t('delete')"
+        :message="$t('release_confirm_delete')"
+        @confirm="handleDeleteRelease"
       />
     </VMain>
   </VLayout>

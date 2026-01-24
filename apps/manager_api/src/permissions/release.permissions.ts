@@ -14,3 +14,17 @@ export const releaseCreatePermissions = [
   EReleasePermissions.release_group,
   EReleasePermissions.release_create,
 ];
+
+export const releaseDeletePermissions = [
+  EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  EReleasePermissions.release_group,
+  EReleasePermissions.release_delete,
+];
+
+export const releaseUpdatePermissions = [
+  EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  EReleasePermissions.release_group,
+  EReleasePermissions.release_update,
+];

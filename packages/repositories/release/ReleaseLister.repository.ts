@@ -120,6 +120,7 @@ export class ReleaseListerRepository {
     const result = await this.dbRo
       .select({
         release_id: release.release_id,
+        created_by_user_id: release.created_by_user_id,
         type: release.type,
         status: release.status,
         title: release.title,
@@ -151,6 +152,7 @@ export class ReleaseListerRepository {
 
       return {
         release_id: item.release_id,
+        created_by_user_id: item.created_by_user_id ?? null,
         type: item.type,
         status: item.status,
         title: item.title,
