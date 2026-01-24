@@ -141,13 +141,14 @@ watch(
   ([visible, r]) => {
     if (visible && r) {
       type.value = r.type;
-      title.value = r.title;
-      message.value = r.message;
+      title.value = r.title ?? '';
+      message.value = r.message ?? '';
     }
     if (visible && !r) {
       resetValues();
     }
-  }
+  },
+  { immediate: true }
 );
 
 const submit = async () => {

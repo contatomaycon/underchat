@@ -314,10 +314,18 @@ const isCreatorFor = (r: { created_by_user_id?: string | null } | null): boolean
 
 const isCreator = computed(() => isCreatorFor(openedRelease.value));
 
-const openEditDialog = (r?: ListReleaseResponse | ViewReleaseResponse) => {
+const openEditDialog = async (
+  r?: ListReleaseResponse | ViewReleaseResponse | null
+) => {
   const source = r ?? openedRelease.value;
   if (!source) return;
-  editRelease.value = { ...source } as ViewReleaseResponse;
+  editRelease.value = {
+    release_id: source.release_id,
+    type: source.type,
+    title: source.title,
+    message: source.message,
+  } as ViewReleaseResponse;
+  await nextTick();
   isComposeDialogVisible.value = true;
 };
 
@@ -465,7 +473,7 @@ fetchReleases();
             <VSpacer />
 
             <template v-if="isCreator">
-              <IconBtn @click="openEditDialog">
+              <IconBtn @click="openEditDialog(openedRelease)">
                 <VIcon size="20" icon="tabler-edit" />
               </IconBtn>
               <IconBtn @click="openDeleteDialog">
