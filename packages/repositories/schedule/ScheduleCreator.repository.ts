@@ -66,6 +66,7 @@ export class ScheduleCreatorRepository {
       worker_id: string;
       type: string;
       send_to: string;
+      send_speed: string;
       message: string | null;
       url: string | null;
       mimetype: string | null;
@@ -81,6 +82,7 @@ export class ScheduleCreatorRepository {
       worker_id: input.worker_id,
       type: input.type,
       send_to: input.send_to,
+      send_speed: input.send_speed,
       message: input.message,
       url: input.url,
       send_date: input.send_date,
@@ -115,6 +117,7 @@ export class ScheduleCreatorRepository {
     worker_id: string;
     type: string;
     send_to: string;
+    send_speed: string;
     message: string | null;
     url: string | null;
     mimetype: string | null;

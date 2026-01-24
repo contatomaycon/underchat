@@ -37,6 +37,15 @@ export const updateScheduleRequestSchema = Type.Object({
       }),
     ])
   ),
+  send_speed: Type.Optional(
+    Type.Union([
+      Type.String(),
+      Type.Null(),
+      Type.Object({
+        value: Type.Union([Type.String(), Type.Null()]),
+      }),
+    ])
+  ),
   message: Type.Optional(
     Type.Union([
       Type.String(),

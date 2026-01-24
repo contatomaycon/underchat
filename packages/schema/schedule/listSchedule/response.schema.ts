@@ -17,6 +17,7 @@ export const listScheduleResponseSchema = Type.Object({
   worker: workerSchema,
   type: Type.String(),
   send_to: Type.String(),
+  send_speed: Type.String(),
   message: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   url: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   mimetype: Type.Optional(Type.Union([Type.String(), Type.Null()])),

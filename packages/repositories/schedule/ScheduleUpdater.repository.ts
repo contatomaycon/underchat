@@ -7,6 +7,7 @@ import {
 import { inject, injectable } from 'tsyringe';
 import { eq, ExtractTablesWithRelations } from 'drizzle-orm';
 import { EScheduleSendTo } from '@core/common/enums/EScheduleSendTo';
+import { EScheduleSendSpeed } from '@core/common/enums/EScheduleSendSpeed';
 import { EScheduleType } from '@core/common/enums/EScheduleType';
 import { v7 as uuidv7 } from 'uuid';
 import { currentTime } from '@core/common/functions/currentTime';
@@ -36,6 +37,10 @@ export class ScheduleUpdaterRepository {
 
     if (input.send_to !== undefined && input.send_to !== null) {
       updateData.send_to = input.send_to as EScheduleSendTo;
+    }
+
+    if (input.send_speed !== undefined && input.send_speed !== null) {
+      updateData.send_speed = input.send_speed as EScheduleSendSpeed;
     }
 
     if (input.message !== undefined) {

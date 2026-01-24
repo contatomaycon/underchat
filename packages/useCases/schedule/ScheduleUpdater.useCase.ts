@@ -9,6 +9,7 @@ import { UploadFileResponse } from '@core/schema/upload/response.schema';
 import { EScheduleType } from '@core/common/enums/EScheduleType';
 import { WorkerService } from '@core/services/worker.service';
 import { EScheduleSendTo } from '@core/common/enums/EScheduleSendTo';
+import { EScheduleSendSpeed } from '@core/common/enums/EScheduleSendSpeed';
 import { IUpdateSchedule } from '@core/interfaces/repositories/schedule/IUpdateSchedule';
 import moment from 'moment-timezone';
 import { extractArrayField } from '@core/common/functions/extractArrayField';
@@ -110,6 +111,18 @@ export class ScheduleUpdaterUseCase {
     }
   }
 
+  private resolveSendSpeed(
+    value: string | null | undefined
+  ): EScheduleSendSpeed | undefined {
+    if (!value) return undefined;
+    if (
+      Object.values(EScheduleSendSpeed).includes(value as EScheduleSendSpeed)
+    ) {
+      return value as EScheduleSendSpeed;
+    }
+    return undefined;
+  }
+
   private buildUpdateScheduleInput(
     scheduleBasic: {
       scheduleId: string;
@@ -118,6 +131,7 @@ export class ScheduleUpdaterUseCase {
     },
     type: string | null | undefined,
     sendToValue: string | null | undefined,
+    sendSpeedValue: EScheduleSendSpeed | undefined,
     messageValue: string | null | undefined,
     attachment:
       | (UploadFileResponse & {
@@ -141,6 +155,7 @@ export class ScheduleUpdaterUseCase {
       worker_id: scheduleBasic.workerId ?? undefined,
       type: type ?? undefined,
       send_to: sendToValue ?? undefined,
+      send_speed: sendSpeedValue ?? undefined,
       message: messageValue ?? undefined,
       url: attachment?.url ?? undefined,
       mimetype: attachment?.mimetype ?? undefined,
@@ -180,6 +195,9 @@ export class ScheduleUpdaterUseCase {
     const contactIds = this.extractContactIds(body.contact_ids);
     const contactGroupIds = this.extractContactGroupIds(body.contact_group_ids);
     const sendToValue = this.extractStringValue(body.send_to);
+    const sendSpeedValue = this.resolveSendSpeed(
+      this.extractStringValue(body.send_speed)
+    );
     const messageValue = this.extractMessageValue(body.message);
 
     this.validateRequiredFields(sendToValue, contactIds, contactGroupIds, t);
@@ -192,6 +210,7 @@ export class ScheduleUpdaterUseCase {
       },
       this.extractStringValue(body.type),
       sendToValue,
+      sendSpeedValue,
       messageValue,
       attachment,
       {

@@ -20,6 +20,14 @@ export const createScheduleRequestSchema = Type.Object({
       value: Type.String(),
     }),
   ]),
+  send_speed: Type.Optional(
+    Type.Union([
+      Type.String(),
+      Type.Object({
+        value: Type.String(),
+      }),
+    ])
+  ),
   message: Type.Optional(
     Type.Union([
       Type.String(),

@@ -14,6 +14,7 @@ import { scheduledContact } from './scheduledContact.model';
 import { EScheduleType } from '@core/common/enums/EScheduleType';
 import { EScheduleSendTo } from '@core/common/enums/EScheduleSendTo';
 import { EScheduleStatus } from '@core/common/enums/EScheduleStatus';
+import { EScheduleSendSpeed } from '@core/common/enums/EScheduleSendSpeed';
 
 export const schedule = pgTable(
   'schedule',
@@ -27,6 +28,10 @@ export const schedule = pgTable(
       .notNull(),
     type: varchar({ length: 20 }).notNull().$type<EScheduleType>(),
     send_to: varchar({ length: 30 }).notNull().$type<EScheduleSendTo>(),
+    send_speed: varchar({ length: 20 })
+      .notNull()
+      .$type<EScheduleSendSpeed>()
+      .default(EScheduleSendSpeed.low),
     message: text(),
     url: varchar({ length: 500 }),
     mimetype: varchar({ length: 100 }),

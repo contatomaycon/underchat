@@ -2,6 +2,7 @@
 import { useScheduleStore } from '@/@webcore/stores/schedule';
 import { EScheduleType } from '@core/common/enums/EScheduleType';
 import { EScheduleSendTo } from '@core/common/enums/EScheduleSendTo';
+import { EScheduleSendSpeed } from '@core/common/enums/EScheduleSendSpeed';
 import { VForm } from 'vuetify/components/VForm';
 import { refDebounced } from '@vueuse/core';
 
@@ -92,6 +93,12 @@ const sendToOptions = computed(() => [
   },
 ]);
 
+const sendSpeedOptions = computed(() => [
+  { id: EScheduleSendSpeed.low, title: t('send_speed_low') },
+  { id: EScheduleSendSpeed.medium, title: t('send_speed_medium') },
+  { id: EScheduleSendSpeed.high, title: t('send_speed_high') },
+]);
+
 const selectedType = ref<EScheduleType>(EScheduleType.text);
 const message = ref<string | null>(null);
 const attachmentFile = ref<File | null>(null);
@@ -120,6 +127,7 @@ const audioCurrentTime = ref(0);
 const audioWaveformBars = ref<number[]>([]);
 const workerId = ref<string | null>(null);
 const sendTo = ref<EScheduleSendTo | null>(null);
+const sendSpeed = ref<EScheduleSendSpeed>(EScheduleSendSpeed.low);
 const sendDate = ref<string | null>(null);
 const selectedContactIds = ref<string[]>([]);
 const selectedContactGroupIds = ref<string[]>([]);
@@ -294,6 +302,7 @@ const addSchedule = async () => {
     form.append('worker_id', workerId.value ?? '');
     form.append('type', selectedType.value);
     form.append('send_to', sendTo.value ?? '');
+    form.append('send_speed', sendSpeed.value);
     form.append('send_date', sendDate.value ?? '');
     if (message.value) {
       form.append('message', message.value);
@@ -327,6 +336,7 @@ const resetForm = () => {
   message.value = null;
   workerId.value = null;
   sendTo.value = null;
+  sendSpeed.value = EScheduleSendSpeed.low;
   sendDate.value = null;
   selectedContactIds.value = [];
   selectedContactGroupIds.value = [];
@@ -851,6 +861,20 @@ onBeforeUnmount(() => {
                 item-title="title"
                 :clearable="false"
                 :rules="[requiredValidator(sendTo, $t('send_to_required'))]"
+              />
+            </VCol>
+
+            <VCol cols="12">
+              <VLabel class="text-body-2 mb-1">{{ $t('send_speed') }}:</VLabel>
+              <AppSelectSearch
+                v-model="sendSpeed"
+                :items="sendSpeedOptions"
+                item-value="id"
+                item-title="title"
+                :clearable="false"
+                :rules="[
+                  requiredValidator(sendSpeed, $t('send_speed_required')),
+                ]"
               />
             </VCol>
 

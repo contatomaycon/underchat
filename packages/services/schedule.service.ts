@@ -64,6 +64,7 @@ export class ScheduleService {
     worker_id: string;
     type: string;
     send_to: string;
+    send_speed: string;
     message: string | null;
     url: string | null;
     mimetype: string | null;

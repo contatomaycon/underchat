@@ -1,0 +1,1 @@
+ALTER TABLE "schedule" ADD COLUMN "send_speed" character varying(20) NOT NULL DEFAULT 'low';

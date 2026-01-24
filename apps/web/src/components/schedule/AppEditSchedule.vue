@@ -3,6 +3,7 @@ import { VForm } from 'vuetify/components/VForm';
 import { useScheduleStore } from '@/@webcore/stores/schedule';
 import { EScheduleType } from '@core/common/enums/EScheduleType';
 import { EScheduleSendTo } from '@core/common/enums/EScheduleSendTo';
+import { EScheduleSendSpeed } from '@core/common/enums/EScheduleSendSpeed';
 import { refDebounced } from '@vueuse/core';
 import { EditScheduleParamsRequest } from '@core/schema/schedule/editSchedule/request.schema';
 import { formatDateToDateTimePicker } from '@core/common/functions/formatDateToDateTimePicker';
@@ -95,6 +96,12 @@ const sendToOptions = computed(() => [
   },
 ]);
 
+const sendSpeedOptions = computed(() => [
+  { value: EScheduleSendSpeed.low, title: t('send_speed_low') },
+  { value: EScheduleSendSpeed.medium, title: t('send_speed_medium') },
+  { value: EScheduleSendSpeed.high, title: t('send_speed_high') },
+]);
+
 const scheduleId = toRef(props, 'scheduleId');
 const selectedType = ref<EScheduleType>(EScheduleType.text);
 const message = ref<string | null>(null);
@@ -126,6 +133,7 @@ const audioCurrentTime = ref(0);
 const audioWaveformBars = ref<number[]>([]);
 const workerId = ref<string | null>(null);
 const sendTo = ref<EScheduleSendTo | null>(null);
+const sendSpeed = ref<EScheduleSendSpeed>(EScheduleSendSpeed.low);
 const sendDate = ref<string | null>(null);
 const selectedContactIds = ref<string[]>([]);
 const selectedContactGroupIds = ref<string[]>([]);
@@ -316,6 +324,7 @@ const buildFormData = (): FormData => {
   if (sendTo.value) {
     form.append('send_to', sendTo.value);
   }
+  form.append('send_speed', sendSpeed.value ?? EScheduleSendSpeed.low);
   if (sendDate.value) {
     form.append('send_date', sendDate.value);
   }
@@ -371,6 +380,7 @@ const resetForm = () => {
   message.value = null;
   workerId.value = null;
   sendTo.value = null;
+  sendSpeed.value = EScheduleSendSpeed.low;
   sendDate.value = null;
   selectedContactIds.value = [];
   selectedContactGroupIds.value = [];
@@ -593,6 +603,8 @@ watch(
         message.value = schedule.message ?? null;
         workerId.value = schedule.worker.worker_id;
         sendTo.value = schedule.send_to as EScheduleSendTo;
+        sendSpeed.value =
+          (schedule.send_speed as EScheduleSendSpeed) || EScheduleSendSpeed.low;
         sendDate.value = formatDateToDateTimePicker(schedule.send_date ?? null);
         existingAttachmentUrl.value = schedule?.url ?? null;
         selectedType.value =
@@ -950,6 +962,20 @@ onBeforeUnmount(() => {
                 item-value="value"
                 item-title="title"
                 :clearable="true"
+              />
+            </VCol>
+
+            <VCol cols="12">
+              <VLabel class="text-body-2 mb-1">{{ $t('send_speed') }}:</VLabel>
+              <AppSelectSearch
+                v-model="sendSpeed"
+                :items="sendSpeedOptions"
+                item-value="value"
+                item-title="title"
+                :clearable="false"
+                :rules="[
+                  requiredValidator(sendSpeed, $t('send_speed_required')),
+                ]"
               />
             </VCol>
 

@@ -3,6 +3,7 @@ export interface IUpdateSchedule {
   worker_id?: string | null;
   type?: string | null;
   send_to?: string | null;
+  send_speed?: string | null;
   message?: string | null;
   url?: string | null;
   mimetype?: string | null;

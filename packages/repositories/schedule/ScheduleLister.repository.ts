@@ -75,6 +75,7 @@ export class ScheduleListerRepository {
     worker: { worker_id: string; name: string } | null;
     type: string;
     send_to: string;
+    send_speed: string;
     message: string | null;
     url: string | null;
     mimetype: string | null;
@@ -97,6 +98,7 @@ export class ScheduleListerRepository {
       },
       type: item.type,
       send_to: item.send_to,
+      send_speed: item.send_speed,
       message: item.message ?? null,
       url: item.url ?? null,
       mimetype: item.mimetype ?? null,
@@ -131,6 +133,7 @@ export class ScheduleListerRepository {
         },
         type: schedule.type,
         send_to: schedule.send_to,
+        send_speed: schedule.send_speed,
         message: schedule.message,
         url: schedule.url,
         mimetype: schedule.mimetype,

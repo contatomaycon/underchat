@@ -10,6 +10,7 @@ import { UploadFileResponse } from '@core/schema/upload/response.schema';
 import { EScheduleType } from '@core/common/enums/EScheduleType';
 import { WorkerService } from '@core/services/worker.service';
 import { EScheduleSendTo } from '@core/common/enums/EScheduleSendTo';
+import { EScheduleSendSpeed } from '@core/common/enums/EScheduleSendSpeed';
 import moment from 'moment-timezone';
 import { extractArrayField } from '@core/common/functions/extractArrayField';
 import { formatDateToISO } from '@core/common/functions/formatDateToISO';
@@ -349,6 +350,18 @@ export class ScheduleCreatorUseCase {
     return this.uploadAttachmentByType(url, messageType, accountId);
   }
 
+  private resolveSendSpeed(
+    value: string | null | undefined
+  ): EScheduleSendSpeed {
+    if (
+      value &&
+      Object.values(EScheduleSendSpeed).includes(value as EScheduleSendSpeed)
+    ) {
+      return value as EScheduleSendSpeed;
+    }
+    return EScheduleSendSpeed.low;
+  }
+
   private buildCreateScheduleInput(
     scheduleBasic: {
       accountId: string;
@@ -357,6 +370,7 @@ export class ScheduleCreatorUseCase {
     },
     messageType: EScheduleType,
     sendToValue: string,
+    sendSpeedValue: EScheduleSendSpeed,
     messageValue: string | null,
     attachmentUrl:
       | (UploadFileResponse & {
@@ -381,6 +395,7 @@ export class ScheduleCreatorUseCase {
       worker_id: scheduleBasic.workerId,
       type: messageType,
       send_to: sendToValue,
+      send_speed: sendSpeedValue,
       message: messageValue,
       url: attachmentUrl ? attachmentUrl.url : null,
       mimetype: attachmentUrl?.mimetype ?? null,
@@ -408,6 +423,9 @@ export class ScheduleCreatorUseCase {
     const sendDate = this.extractStringValue(input.send_date);
     const typeValue = this.extractStringValue(input.type);
     const sendToValue = this.extractStringValue(input.send_to);
+    const sendSpeedValue = this.resolveSendSpeed(
+      this.extractStringValue(input.send_speed)
+    );
     const messageValue = this.extractMessageValue(input.message);
     const contactIds = this.extractContactIds(input.contact_ids);
     const contactGroupIds = this.extractContactGroupIds(
@@ -450,6 +468,7 @@ export class ScheduleCreatorUseCase {
       },
       messageType,
       sendToValue ?? '',
+      sendSpeedValue,
       messageValue,
       attachmentUrl,
       {
