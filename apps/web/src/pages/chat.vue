@@ -4870,7 +4870,7 @@ onBeforeUnmount(() => {
             </IconBtn>
             <IconBtn
               v-if="
-                isInChatStatus &&
+                (isInChatStatus || isQueueOrUraStatus) &&
                 workerConfigForChat?.has_ura_output === true &&
                 canToggleForwardToOutputChatbot
               "

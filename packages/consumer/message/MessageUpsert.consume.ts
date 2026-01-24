@@ -2097,6 +2097,13 @@ export class MessageUpsertConsume {
         inputChatMessage.contact?.photo ?? photoResult?.url ?? null;
     }
 
+    if (
+      inputChatMessage.status === EChatStatus.ura ||
+      inputChatMessage.status === EChatStatus.ura_output
+    ) {
+      inputChatMessage.forward_to_output_chatbot = false;
+    }
+
     await this.saveChatWithCaches(inputChatMessage);
 
     return inputChatMessage;

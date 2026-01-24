@@ -437,23 +437,27 @@ export class ChatStatusUpdaterUseCase {
     }
 
     if (finalStatus === EChatStatus.closed && !chat.closed_at) {
-      const isFromUraOrUraOutput =
-        chat.status === EChatStatus.ura ||
-        chat.status === EChatStatus.ura_output;
+      const shouldUseUraOutput = await this.handleUraOutputStatus(
+        t,
+        accountId,
+        chat
+      );
 
-      if (!isFromUraOrUraOutput) {
-        const shouldUseUraOutput = await this.handleUraOutputStatus(
-          t,
-          accountId,
-          chat
-        );
-
-        if (shouldUseUraOutput) {
-          finalStatus = EChatStatus.ura_output;
-        }
+      if (shouldUseUraOutput) {
+        finalStatus = EChatStatus.ura_output;
       }
 
       if (finalStatus === EChatStatus.closed) {
+        closedAt = currentDate;
+      }
+    }
+
+    if (
+      finalStatus === EChatStatus.ura_output &&
+      chat.forward_to_output_chatbot === false
+    ) {
+      finalStatus = EChatStatus.closed;
+      if (!closedAt) {
         closedAt = currentDate;
       }
     }
@@ -474,6 +478,15 @@ export class ChatStatusUpdaterUseCase {
       startedAt,
       closedAt
     );
+
+    if (finalStatus === EChatStatus.in_chat) {
+      updatedChat.forward_to_output_chatbot = true;
+    } else if (
+      finalStatus === EChatStatus.ura ||
+      finalStatus === EChatStatus.ura_output
+    ) {
+      updatedChat.forward_to_output_chatbot = false;
+    }
 
     const updated = await this.chatService.saveChat(updatedChat);
     if (!updated) {

@@ -196,6 +196,7 @@ export class TransferChatUseCase {
       status: EChatStatus.queue,
       user: shouldClearUser ? null : (user ?? chat.user),
       sector: shouldClearSector ? null : (sector ?? chat.sector),
+      forward_to_output_chatbot: true,
     };
   }
 

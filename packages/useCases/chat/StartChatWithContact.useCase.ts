@@ -368,6 +368,7 @@ export class StartChatWithContactUseCase {
       phone: contactData.fullPhone,
       photo: contactData.contact.photo,
       started_at: existingChat.started_at || currentDate,
+      forward_to_output_chatbot: true,
     };
   }
 
@@ -430,6 +431,7 @@ export class StartChatWithContactUseCase {
       status: EChatStatus.in_chat,
       date: currentDate,
       started_at: currentDate,
+      forward_to_output_chatbot: true,
     };
 
     const result = await this.chatService.saveChat(newChat, { refresh: true });
