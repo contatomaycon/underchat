@@ -177,6 +177,35 @@ export const chatMappings = () => {
         forward_to_output_chatbot: {
           type: 'boolean',
         },
+        satisfaction_response: {
+          type: 'object',
+          properties: {
+            question: {
+              type: 'text',
+            },
+            options: {
+              properties: {
+                id: {
+                  type: 'keyword',
+                },
+                text: {
+                  type: 'text',
+                },
+              },
+            },
+            response: {
+              type: 'object',
+              properties: {
+                id: {
+                  type: 'keyword',
+                },
+                text: {
+                  type: 'text',
+                },
+              },
+            },
+          },
+        },
       },
     },
   };

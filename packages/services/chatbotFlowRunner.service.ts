@@ -2362,6 +2362,25 @@ export class ChatbotFlowRunnerService {
       throw new Error(t('chatbot_flow_not_found'));
     }
 
+    if (currentNode.type === 'satisfaction') {
+      const question = await this.replaceVariables(
+        t,
+        currentNode.data?.message || '',
+        createChat,
+        createChat.user,
+        createChat.sector
+      );
+      const satisfactionData = {
+        question,
+        options: menuOptions.map((o) => ({ id: o.id, text: o.text })),
+        response: { id: selectedOption.id, text: selectedOption.text },
+      };
+      await this.chatService.updateChatSatisfactionResponse(
+        createChat.chat_id,
+        satisfactionData
+      );
+    }
+
     await this.resetFailedAttempts(createChat);
 
     return this.processNextNode(

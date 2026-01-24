@@ -886,6 +886,38 @@ export class ChatService {
     );
   };
 
+  updateChatSatisfactionResponse = async (
+    chatId: string,
+    data: {
+      question: string;
+      options: { id: string; text: string }[];
+      response: { id: string; text: string };
+    }
+  ): Promise<boolean> => {
+    const mappings = chatMappings();
+    const indicesResult = await this.elasticDatabaseService.indices(
+      EElasticIndex.chat,
+      mappings
+    );
+
+    if (!indicesResult) {
+      return false;
+    }
+
+    const result = await this.elasticDatabaseService.updateWithScriptOCC(
+      EElasticIndex.chat,
+      chatId,
+      {
+        source:
+          'ctx._source.satisfaction_response = params.satisfaction_response',
+        params: { satisfaction_response: data },
+      },
+      { upsert: false, maxRetries: 5 }
+    );
+
+    return result === 'updated' || result === 'noop';
+  };
+
   countInChatChatsByUserId = async (
     accountId: string,
     workerId: string,
