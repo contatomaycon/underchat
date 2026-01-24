@@ -2118,6 +2118,8 @@
   "day_fri_short": "Sex",
   "day_sat_short": "Sáb",
   "dashboard_no_data": "Sem dados",
+  "dashboard_unread_notification": "1 notificação não lida",
+  "dashboard_unread_notifications": "{count} notificações não lidas",
   "dashboard_additional_error": "Erro ao carregar dados adicionais do dashboard",
   "dashboard_offline_channels_error": "Erro ao carregar canais offline do dashboard",
   "schedule_list_error": "Erro ao listar agendamentos. Por favor, tente novamente.",

@@ -2118,6 +2118,8 @@
   "day_fri_short": "Fri",
   "day_sat_short": "Sat",
   "dashboard_no_data": "No data",
+  "dashboard_unread_notification": "1 unread notification",
+  "dashboard_unread_notifications": "{count} unread notifications",
   "dashboard_additional_error": "Error loading additional dashboard data",
   "dashboard_offline_channels_error": "Error loading dashboard offline channels",
   "schedule_list_error": "Error listing schedules. Please try again.",

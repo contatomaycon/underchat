@@ -1,21 +1,70 @@
 <script setup lang="ts">
-import { computed, onMounted } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useTheme } from 'vuetify';
 import { useI18n } from 'vue-i18n';
+import { useRouter } from 'vue-router';
 import { hexToRgb } from '@webcore/utils/colorConverter';
 import BarChart from '@/@webcore/libs/chartjs/components/BarChart';
 import LineChart from '@/@webcore/libs/chartjs/components/LineChart';
 import DoughnutChart from '@/@webcore/libs/chartjs/components/DoughnutChart';
 import CardStatisticsVertical from '@/@webcore/components/cards/CardStatisticsVertical.vue';
+import { useAbility } from '@/plugins/0.casl/composables/useAbility';
 import { useChannelsStore } from '@/@webcore/stores/channels';
 import { useDashboardStore } from '@/@webcore/stores/dashboard';
+import { useReleaseStore } from '@/@webcore/stores/release';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
+import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
+import { EReleasePermissions } from '@core/common/enums/EPermissions/release';
+import type { ListReleaseResponse } from '@core/schema/release/listRelease/response.schema';
 
 const { t } = useI18n();
+const router = useRouter();
 const channelsStore = useChannelsStore();
 const dashboardStore = useDashboardStore();
+const releaseStore = useReleaseStore();
 useSnackbarCleanup(channelsStore);
 useSnackbarCleanup(dashboardStore);
+
+const ability = useAbility();
+const canViewReleases = computed(
+  () =>
+    ability.can(EGeneralPermissions.full_access, EGeneralPermissions.full_access) ||
+    ability.can(
+      EGeneralPermissions.full_access_group,
+      EGeneralPermissions.full_access_group
+    ) ||
+    ability.can(
+      EReleasePermissions.release_view,
+      EReleasePermissions.release_view
+    ) ||
+    ability.can(
+      EReleasePermissions.release_group,
+      EReleasePermissions.release_group
+    )
+);
+
+const releaseNotifications = ref<ListReleaseResponse[]>([]);
+const releaseUnreadCount = ref(0);
+
+const latestUnreadRelease = computed(() => {
+  if (releaseUnreadCount.value === 0) return null;
+  const unread = releaseNotifications.value.find((r) => !r.viewed);
+  return unread ?? null;
+});
+
+const releaseUnreadLabel = computed(() => {
+  const n = releaseUnreadCount.value;
+  if (n <= 0) return '';
+  return n === 1
+    ? t('dashboard_unread_notification')
+    : t('dashboard_unread_notifications', { count: n });
+});
+
+const openLatestUnreadRelease = () => {
+  const r = latestUnreadRelease.value;
+  if (!r) return;
+  router.push({ path: '/release', query: { open: r.release_id } });
+};
 
 const theme = useTheme();
 
@@ -521,11 +570,42 @@ onMounted(async () => {
     dashboardStore.getDashboardConversations(),
     dashboardStore.getDashboardAdditional(),
   ]);
+
+  if (canViewReleases.value) {
+    const data = await releaseStore.listReleaseNotifications();
+    if (data) {
+      releaseNotifications.value = data.results;
+      releaseUnreadCount.value = data.unread_count;
+    }
+  }
 });
 </script>
 
 <template>
   <div>
+    <VCard
+      v-if="canViewReleases && latestUnreadRelease"
+      variant="tonal"
+      color="primary"
+      class="mb-4 dashboard-unread-release-banner cursor-pointer"
+      @click="openLatestUnreadRelease"
+    >
+      <VCardText class="d-flex align-center gap-3 py-3">
+        <VAvatar color="primary" size="40" variant="tonal">
+          <VIcon icon="tabler-bell" size="22" />
+        </VAvatar>
+        <div class="flex-grow-1 min-w-0">
+          <p class="text-caption text-medium-emphasis mb-0">
+            {{ releaseUnreadLabel }}
+          </p>
+          <p class="text-body-1 font-weight-medium mb-0 text-truncate">
+            {{ latestUnreadRelease.title }}
+          </p>
+        </div>
+        <VIcon icon="tabler-chevron-right" size="20" class="text-medium-emphasis" />
+      </VCardText>
+    </VCard>
+
     <VRow class="mb-4">
       <VCol cols="12" sm="6" md="3">
         <VCard v-if="dashboardStore.loadingStats">
@@ -1076,6 +1156,15 @@ onMounted(async () => {
 
   .v-card {
     width: 100%;
+  }
+}
+
+.dashboard-unread-release-banner {
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+
+  &:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    transform: translateY(-1px);
   }
 }
 </style>
