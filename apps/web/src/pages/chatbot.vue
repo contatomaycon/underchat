@@ -158,10 +158,14 @@ onMounted(async () => {
           <template #item.type="{ item }">
             <VChip
               size="small"
-              color="primary"
+              :color="item.type === 'output' ? 'error' : 'success'"
               variant="tonal"
             >
-              {{ item.type === 'output' ? $t('chatbot_type_output') : $t('chatbot_type_input') }}
+              {{
+                item.type === 'output'
+                  ? $t('chatbot_type_output')
+                  : $t('chatbot_type_input')
+              }}
             </VChip>
           </template>
 
