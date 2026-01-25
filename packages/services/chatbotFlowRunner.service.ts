@@ -50,6 +50,8 @@ import { EContactIgnore } from '@core/common/enums/EContactIgnore';
 export class ChatbotFlowRunnerService {
   private readonly MENU_DEBOUNCE_SECONDS = 3;
 
+  private readonly CHATBOT_FLOW_NODE_CACHE_TTL_SECONDS = 259200;
+
   constructor(
     @inject('Redis') private readonly redis: Redis,
     private readonly chatbotService: ChatbotService,
@@ -921,7 +923,12 @@ export class ChatbotFlowRunnerService {
       return null;
     }
 
-    await this.redis.set(cacheKey, startNode.id, 'EX', 1800);
+    await this.redis.set(
+      cacheKey,
+      startNode.id,
+      'EX',
+      this.CHATBOT_FLOW_NODE_CACHE_TTL_SECONDS
+    );
 
     return startNode.id;
   }
@@ -935,7 +942,12 @@ export class ChatbotFlowRunnerService {
       createChat.worker.id,
       createChat.chat_id
     );
-    await this.redis.set(cacheKey, nextFlowId, 'EX', 1800);
+    await this.redis.set(
+      cacheKey,
+      nextFlowId,
+      'EX',
+      this.CHATBOT_FLOW_NODE_CACHE_TTL_SECONDS
+    );
   }
 
   async clearFlowCacheForChat(
