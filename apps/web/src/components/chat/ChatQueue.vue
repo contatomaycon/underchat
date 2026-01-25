@@ -7,6 +7,7 @@ import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
 import { formatDateToMonthShort } from '@/@webcore/utils/formatters';
 import { useI18n } from 'vue-i18n';
 import { useTheme } from 'vuetify';
+import { EChatStatus } from '@core/common/enums/EChatStatus';
 
 const { t } = useI18n();
 const { global } = useTheme();
@@ -14,10 +15,14 @@ const { global } = useTheme();
 const chatStore = useChatStore();
 const channelsStore = useChannelsStore();
 
-const props = defineProps<{
-  user: ListChatsResult;
-  disabled?: boolean;
-}>();
+const props = withDefaults(
+  defineProps<{
+    user: ListChatsResult;
+    disabled?: boolean;
+    showChatbotTypeIndicator?: boolean;
+  }>(),
+  { showChatbotTypeIndicator: false }
+);
 
 const isChatContactActive = computed(() => {
   return chatStore.activeChat?.chat_id === props.user.chat_id;
@@ -64,6 +69,15 @@ const attendantLabel = computed(() => {
   }
 
   return limitCharacters(10, attendantFirstName.value);
+});
+
+const chatbotTypeLabel = computed(() => {
+  if (!props.showChatbotTypeIndicator || !props.user?.status) return null;
+  const s = props.user.status;
+  if (s === EChatStatus.ura) return t('chatbot_type_input');
+  if (s === EChatStatus.ura_output) return t('chatbot_type_output');
+  if (s === EChatStatus.ura_schedule) return t('chatbot_type_schedule');
+  return null;
 });
 
 const chatLabels = computed(() => {
@@ -373,6 +387,12 @@ watch(
         >
           {{ limitCharacters(35, props.user.summary.last_message, '...') }}
         </p>
+        <div
+          v-if="showChatbotTypeIndicator && chatbotTypeLabel"
+          class="chatbot-type-footer d-flex align-center gap-1 mt-1"
+        >
+          <span class="chatbot-type-footer__item">{{ chatbotTypeLabel }}</span>
+        </div>
       </div>
       <div
         v-if="props.user?.summary?.last_date"
@@ -567,6 +587,26 @@ watch(
   height: 16px !important;
   opacity: 0.7;
   flex-shrink: 0;
+}
+
+.chatbot-type-footer {
+  border-top: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+  padding-top: 4px;
+  min-height: 0;
+}
+
+.chatbot-type-footer__item {
+  font-size: 0.625rem;
+  line-height: 1;
+  color: rgba(var(--v-theme-on-surface), 0.5);
+}
+
+.chat.chat-active .chatbot-type-footer {
+  border-top-color: rgba(255, 255, 255, 0.2);
+}
+
+.chat.chat-active .chatbot-type-footer__item {
+  color: rgba(255, 255, 255, 0.75);
 }
 
 .chat-label-count-wrapper {

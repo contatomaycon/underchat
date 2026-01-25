@@ -2776,6 +2776,7 @@ defineExpose({
             v-for="chat in chatStore.listChatbot"
             :key="`chatbot-${chat.chat_id}`"
             :user="chat"
+            show-chatbot-type-indicator
             @click="$emit('openChat', chat.chat_id)"
           />
 
