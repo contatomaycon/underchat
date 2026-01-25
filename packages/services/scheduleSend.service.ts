@@ -36,6 +36,8 @@ import {
 import { delay } from '@core/common/functions/delay';
 import { ChatService } from './chat.service';
 import { ChatbotFlowRunnerService } from './chatbotFlowRunner.service';
+import { EncryptService } from './encrypt.service';
+import { ETypeSanetize } from '@core/common/enums/ETypeSanetize';
 import i18next from 'i18next';
 import { IChat } from '@core/common/interfaces/IChat';
 import { IUpsertMessage } from '@core/common/interfaces/IUpsertMessage';
@@ -57,6 +59,7 @@ export class ScheduleSendService {
     private readonly planAccountService: PlanAccountService,
     private readonly chatService: ChatService,
     private readonly chatbotFlowRunnerService: ChatbotFlowRunnerService,
+    private readonly encryptService: EncryptService,
     @inject('Redis') private readonly redis: Redis
   ) {}
 
@@ -749,6 +752,11 @@ export class ScheduleSendService {
       this.contactService.getContactPhoneDecrypted(contact.phone) ??
       getPhoneFromJid(jid, null) ??
       '';
+    const phoneDdi = contact.phone_ddi ?? '';
+    const fullPhone = `${phoneDdi}${phone}`;
+    const contactPhoneSanitized = phone
+      ? this.encryptService.sanitize(phone, ETypeSanetize.phone)
+      : '';
 
     return {
       chat_id: uuidv7(),
@@ -758,11 +766,11 @@ export class ScheduleSendService {
       contact: {
         id: contact.contact_id,
         name: contact.name,
-        phone,
+        phone: contactPhoneSanitized,
         phone_ddi: contact.phone_ddi ?? null,
       },
       name: contact.name,
-      phone,
+      phone: fullPhone,
       status: EChatStatus.ura_schedule,
       date: now,
       summary: { last_message: '', last_date: now, unread_count: 0 },
