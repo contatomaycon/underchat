@@ -2189,6 +2189,8 @@
   "send_speed_medium": "Médio",
   "send_speed_high": "Alto",
   "send_speed_required": "Velocidade de envio é obrigatória.",
+  "send_speed_info": "<strong>Baixo:</strong> intervalo aleatório de 30 a 60 segundos entre cada mensagem.<br><br><strong>Médio:</strong> intervalo aleatório de 20 a 40 segundos entre cada mensagem.<br><br><strong>Alto:</strong> intervalo aleatório de 10 a 20 segundos entre cada mensagem.",
+  "message_type_info": "<strong>Texto:</strong> envia uma mensagem de texto. Você pode usar tags para personalização.<br><br><strong>Imagem:</strong> envia uma imagem com legenda opcional.<br><br><strong>Vídeo:</strong> envia um vídeo com legenda opcional.<br><br><strong>Áudio:</strong> envia um arquivo de áudio.<br><br><strong>Chatbot:</strong> inicia uma conversa com um fluxo de chatbot para cada contato selecionado.",
   "schedule_messages": "Mensagens do Agendamento",
   "schedule_messages_list_error": "Erro ao listar mensagens do agendamento. Por favor, tente novamente.",
   "send_log": "Log de Envio",

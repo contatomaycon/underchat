@@ -2189,6 +2189,8 @@
   "send_speed_medium": "Medium",
   "send_speed_high": "High",
   "send_speed_required": "Send speed is required.",
+  "send_speed_info": "<strong>Low:</strong> random interval of 30 to 60 seconds between each message.<br><br><strong>Medium:</strong> random interval of 20 to 40 seconds between each message.<br><br><strong>High:</strong> random interval of 10 to 20 seconds between each message.",
+  "message_type_info": "<strong>Text:</strong> sends a text message. You can use tags for personalization.<br><br><strong>Image:</strong> sends an image with optional caption.<br><br><strong>Video:</strong> sends a video with optional caption.<br><br><strong>Audio:</strong> sends an audio file.<br><br><strong>Chatbot:</strong> starts a conversation with a chatbot flow for each selected contact.",
   "schedule_messages": "Schedule Messages",
   "schedule_messages_list_error": "Error listing schedule messages. Please try again.",
   "send_log": "Send Log",

@@ -635,9 +635,10 @@ onBeforeUnmount(() => {
             </VCol>
 
             <VCol cols="12">
-              <VLabel class="text-body-2 mb-1"
-                >{{ $t('message_type') }}:</VLabel
-              >
+              <div class="d-flex align-center gap-2 mb-1">
+                <VLabel class="text-body-2">{{ $t('message_type') }}:</VLabel>
+                <AppInfoTooltip :text="$t('message_type_info')" />
+              </div>
               <AppSelectSearch
                 v-model="selectedType"
                 :items="messageTypeOptions"
@@ -921,7 +922,10 @@ onBeforeUnmount(() => {
             </VCol>
 
             <VCol cols="12">
-              <VLabel class="text-body-2 mb-1">{{ $t('send_speed') }}:</VLabel>
+              <div class="d-flex align-center gap-2 mb-1">
+                <VLabel class="text-body-2">{{ $t('send_speed') }}:</VLabel>
+                <AppInfoTooltip :text="$t('send_speed_info')" />
+              </div>
               <AppSelectSearch
                 v-model="sendSpeed"
                 :items="sendSpeedOptions"
