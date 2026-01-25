@@ -2169,6 +2169,7 @@
   "sent": "Sent",
   "failed": "Failed",
   "limit_exhausted": "Limit exhausted",
+  "ignored": "Ignored",
   "schedule_workers_list_error": "Error listing channels. Please try again.",
   "schedule_chatbots_list_error": "Error listing chatbots. Please try again.",
   "schedule_contacts_list_error": "Error listing contacts. Please try again.",

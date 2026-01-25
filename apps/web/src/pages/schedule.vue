@@ -266,6 +266,7 @@ const getStatusLabel = (status: string): string => {
   if (status === EScheduleStatus.sent) return t('sent');
   if (status === EScheduleStatus.failed) return t('failed');
   if (status === EScheduleStatus.limit_exhausted) return t('limit_exhausted');
+  if (status === EScheduleStatus.ignored) return t('ignored');
   return status;
 };
 
@@ -275,6 +276,7 @@ const getStatusColor = (status: string): string => {
   if (status === EScheduleStatus.sent) return 'success';
   if (status === EScheduleStatus.failed) return 'error';
   if (status === EScheduleStatus.limit_exhausted) return 'error';
+  if (status === EScheduleStatus.ignored) return 'warning';
   return 'default';
 };
 

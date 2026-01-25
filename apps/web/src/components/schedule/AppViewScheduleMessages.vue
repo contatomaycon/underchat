@@ -174,6 +174,7 @@ const getStatusLabel = (status: string): string => {
   if (status === 'processing') return t('processing');
   if (status === 'processed') return t('processed');
   if (status === 'limit_exhausted') return t('limit_exhausted');
+  if (status === 'ignored') return t('ignored');
   return status;
 };
 
@@ -184,6 +185,7 @@ const getStatusColor = (status: string): string => {
   if (status === 'processing') return 'info';
   if (status === 'processed') return 'success';
   if (status === 'limit_exhausted') return 'error';
+  if (status === 'ignored') return 'warning';
   return 'default';
 };
 

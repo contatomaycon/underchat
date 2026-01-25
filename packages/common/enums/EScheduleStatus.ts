@@ -5,4 +5,5 @@ export enum EScheduleStatus {
   sent = 'sent',
   failed = 'failed',
   limit_exhausted = 'limit_exhausted',
+  ignored = 'ignored',
 }

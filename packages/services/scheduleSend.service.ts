@@ -751,6 +751,21 @@ export class ScheduleSendService {
     return { success: false, contactId: contact.contact_id };
   }
 
+  private async reportScheduleChatbotIgnored(
+    schedule: ISchedulePendingData,
+    contact: IScheduleContactValidated
+  ): Promise<IScheduleMessageResult> {
+    const failedMessage = this.createFailedMessage(schedule);
+    await this.saveToElasticsearch(
+      schedule,
+      contact,
+      failedMessage,
+      EScheduleStatus.ignored
+    );
+
+    return { success: false, contactId: contact.contact_id };
+  }
+
   private buildScheduleChatbotChat(
     schedule: ISchedulePendingData,
     contact: IScheduleContactValidated,
@@ -906,6 +921,25 @@ export class ScheduleSendService {
         contact,
         EScheduleStatus.limit_exhausted
       );
+    }
+
+    const phoneFromJid = getPhoneFromJid(jid, null);
+    const decrypted = this.contactService.getContactPhoneDecrypted(
+      contact.phone
+    );
+    const ddi = contact.phone_ddi ?? '';
+    const phoneFromContact = decrypted ? `${ddi}${decrypted}` : null;
+    const phone = phoneFromJid ?? phoneFromContact;
+    if (phone) {
+      const existingChat = await this.chatService.findChatByPhone(
+        schedule.account_id,
+        schedule.worker_id,
+        phone
+      );
+
+      if (existingChat) {
+        return this.reportScheduleChatbotIgnored(schedule, contact);
+      }
     }
 
     return withLock(
