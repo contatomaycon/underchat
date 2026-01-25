@@ -1,5 +1,5 @@
 import * as schema from '@core/models';
-import { schedule, account, worker } from '@core/models';
+import { schedule, account, worker, chatbot } from '@core/models';
 import { EScheduleStatus } from '@core/common/enums/EScheduleStatus';
 import { and, desc, eq, lte } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
@@ -26,6 +26,7 @@ export class SchedulePendingListerRepository {
         send_to: schedule.send_to,
         send_speed: schedule.send_speed,
         chatbot_id: schedule.chatbot_id,
+        chatbot_name: chatbot.name,
         message: schedule.message,
         url: schedule.url,
         mimetype: schedule.mimetype,
@@ -37,6 +38,7 @@ export class SchedulePendingListerRepository {
       .from(schedule)
       .leftJoin(account, eq(schedule.account_id, account.account_id))
       .leftJoin(worker, eq(schedule.worker_id, worker.worker_id))
+      .leftJoin(chatbot, eq(schedule.chatbot_id, chatbot.chatbot_id))
       .where(
         and(
           eq(schedule.status, EScheduleStatus.pending),
@@ -56,6 +58,7 @@ export class SchedulePendingListerRepository {
       send_to: item.send_to,
       send_speed: item.send_speed ?? 'low',
       chatbot_id: item.chatbot_id ?? null,
+      chatbot_name: item.chatbot_name ?? null,
       message: item.message,
       url: item.url,
       mimetype: item.mimetype,

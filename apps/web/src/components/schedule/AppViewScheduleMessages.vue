@@ -39,6 +39,7 @@ const options = ref({
 const headers: DataTableHeader<ScheduleMessageResult>[] = [
   { title: t('contact'), key: 'contact' },
   { title: t('channel'), key: 'worker' },
+  { title: t('chatbot'), key: 'chatbot_name' },
   { title: t('message'), key: 'message' },
   { title: t('status'), key: 'status' },
   { title: t('send_date'), key: 'send_date' },
@@ -138,6 +139,10 @@ const getWorkerName = (item: ScheduleMessageResult): string => {
   return item.worker?.name || '-';
 };
 
+const getChatbotName = (item: ScheduleMessageResult): string => {
+  return item.chatbot_name || '-';
+};
+
 const getMessageTypeLabel = (type: string | null | undefined): string => {
   if (!type) {
     return '';
@@ -167,6 +172,7 @@ const getStatusLabel = (status: string): string => {
   if (status === 'failed') return t('failed');
   if (status === 'pending') return t('pending');
   if (status === 'processing') return t('processing');
+  if (status === 'processed') return t('processed');
   if (status === 'limit_exhausted') return t('limit_exhausted');
   return status;
 };
@@ -176,6 +182,7 @@ const getStatusColor = (status: string): string => {
   if (status === 'failed') return 'error';
   if (status === 'pending') return 'warning';
   if (status === 'processing') return 'info';
+  if (status === 'processed') return 'success';
   if (status === 'limit_exhausted') return 'error';
   return 'default';
 };
@@ -344,10 +351,14 @@ watch(
             {{ getWorkerName(item) }}
           </template>
 
+          <template #item.chatbot_name="{ item }">
+            {{ getChatbotName(item) }}
+          </template>
+
           <template #item.message="{ item }">
             <div class="d-flex align-center gap-2">
               <span class="text-medium-emphasis">
-                {{ getMessageTypeLabel(item.type) }}
+                {{ item.url || item.message ? getMessageTypeLabel(item.type) : '-' }}
               </span>
               <VBtn
                 v-if="item.url || item.message"

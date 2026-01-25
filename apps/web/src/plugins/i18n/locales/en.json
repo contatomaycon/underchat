@@ -2165,6 +2165,7 @@
   "schedule_deleted_success": "Schedule deleted successfully!",
   "pending": "Pending",
   "processing": "Processing",
+  "processed": "Processed",
   "sent": "Sent",
   "failed": "Failed",
   "limit_exhausted": "Limit exhausted",

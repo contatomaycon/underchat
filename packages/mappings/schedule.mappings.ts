@@ -78,6 +78,9 @@ export const scheduleMappings = () => {
         url: {
           type: 'keyword',
         },
+        chatbot_name: {
+          type: 'keyword',
+        },
         status: {
           type: 'keyword',
         },

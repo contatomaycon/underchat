@@ -39,6 +39,7 @@ export const scheduleMessageResultSchema = Type.Object({
   type: Type.String(),
   message: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   url: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  chatbot_name: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   status: Type.String(),
   send_date: Type.String(),
   send_log: Type.Optional(Type.Union([scheduleSendLogSchema, Type.Null()])),

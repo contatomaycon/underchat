@@ -563,6 +563,13 @@ export class ScheduleSendService {
         }
       }
       
+      if (patch.containsKey('chatbot_name')) {
+        if (ctx._source.chatbot_name == null && patch.chatbot_name != null) {
+          ctx._source.chatbot_name = patch.chatbot_name;
+          changed = true;
+        }
+      }
+      
       if (patch.containsKey('send_log') && patch.send_log != null) {
         if (ctx._source.send_log == null) {
           ctx._source.send_log = patch.send_log;
@@ -589,6 +596,7 @@ export class ScheduleSendService {
         type: document.type,
         message: document.message,
         url: document.url,
+        chatbot_name: document.chatbot_name,
         send_date: document.send_date,
         send_log: document.send_log,
       },
@@ -663,6 +671,7 @@ export class ScheduleSendService {
         type: schedule.type as EScheduleType,
         message: message.content?.message || schedule.message || '',
         url: schedule.url,
+        chatbot_name: schedule.chatbot_name ?? null,
         status,
         send_date: new Date(schedule.send_date).toISOString(),
         send_log: null,
@@ -768,12 +777,13 @@ export class ScheduleSendService {
         name: contact.name,
         phone: contactPhoneSanitized,
         phone_ddi: contact.phone_ddi ?? null,
+        responsible_attendant: null,
+        ignore: 'not_ignore',
       },
       name: contact.name,
       phone: fullPhone,
       status: EChatStatus.ura_schedule,
       date: now,
-      summary: { last_message: '', last_date: now, unread_count: 0 },
       forward_to_output_chatbot: false,
       chatbot_schedule_id: schedule.chatbot_id,
     };
@@ -858,13 +868,14 @@ export class ScheduleSendService {
   private async persistScheduleChatbotSyntheticMessage(
     schedule: ISchedulePendingData,
     contact: IScheduleContactValidated,
-    syntheticMessage: IChatMessage
+    syntheticMessage: IChatMessage,
+    status: EScheduleStatus.processed | EScheduleStatus.processing
   ): Promise<void> {
     const saved = await this.saveToElasticsearch(
       schedule,
       contact,
       syntheticMessage,
-      EScheduleStatus.processing
+      status
     );
     if (!saved) {
       console.error(
@@ -941,7 +952,8 @@ export class ScheduleSendService {
         await this.persistScheduleChatbotSyntheticMessage(
           schedule,
           contact,
-          syntheticMessage
+          syntheticMessage,
+          EScheduleStatus.processed
         );
 
         return { success: true, contactId: contact.contact_id };

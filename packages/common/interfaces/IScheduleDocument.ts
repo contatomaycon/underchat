@@ -25,6 +25,7 @@ export interface ScheduleDocument {
   type: EScheduleType;
   message: string;
   url: string | null;
+  chatbot_name?: string | null;
   status: EScheduleStatus | string;
   send_date: string;
   send_log: {
