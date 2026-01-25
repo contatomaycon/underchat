@@ -520,7 +520,9 @@ export class BaileysConnectionService {
     }
 
     if (statusCode === ECodeMessage.loggedOut) {
-      this.clearFolder();
+      if (!this.initialConnection) {
+        this.clearFolder();
+      }
 
       const payload: IBaileysConnectionState = {
         status: this.status,
@@ -610,7 +612,9 @@ export class BaileysConnectionService {
       await new Promise((r) => setTimeout(r, this.retryDelay));
     }
     this.setStatus(Status.disconnected, ECodeMessage.badSession);
-    this.clearFolder();
+    if (!this.initialConnection) {
+      this.clearFolder();
+    }
 
     await this.updateWorkerMismatchedStatus();
 
