@@ -884,7 +884,7 @@ export class ScheduleSendService {
     schedule: ISchedulePendingData,
     contact: IScheduleContactValidated,
     syntheticMessage: IChatMessage,
-    status: EScheduleStatus.processed | EScheduleStatus.processing
+    status: EScheduleStatus.sent | EScheduleStatus.processed
   ): Promise<void> {
     const saved = await this.saveToElasticsearch(
       schedule,
@@ -987,7 +987,7 @@ export class ScheduleSendService {
           schedule,
           contact,
           syntheticMessage,
-          EScheduleStatus.processed
+          EScheduleStatus.sent
         );
 
         return { success: true, contactId: contact.contact_id };
