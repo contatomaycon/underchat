@@ -1533,6 +1533,7 @@
   "chatbot_type": "Type",
   "chatbot_type_input": "Input",
   "chatbot_type_output": "Output",
+  "chatbot_type_schedule": "Schedule",
   "chatbot_data": "Data",
   "chatbot_data_type": "Type",
   "chatbot_data_type_name": "Name",

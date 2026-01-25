@@ -32,6 +32,7 @@ const refForm = ref<VForm>();
 const typeOptions = computed(() => [
   { value: EChatbotType.input, title: t('chatbot_type_input') },
   { value: EChatbotType.output, title: t('chatbot_type_output') },
+  { value: EChatbotType.schedule, title: t('chatbot_type_schedule') },
 ]);
 
 const nameRules = computed(() => [

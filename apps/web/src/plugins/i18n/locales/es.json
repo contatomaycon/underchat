@@ -1533,6 +1533,7 @@
   "chatbot_type": "Tipo",
   "chatbot_type_input": "Entrada",
   "chatbot_type_output": "Salida",
+  "chatbot_type_schedule": "Agendamiento",
   "chatbot_data": "Datos",
   "chatbot_data_type": "Tipo",
   "chatbot_data_type_name": "Nombre",

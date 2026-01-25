@@ -3,6 +3,7 @@ import { ref, onMounted, computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { formatDateTime } from '@core/common/functions/formatDateTime';
 import { DataTableHeader } from 'vuetify';
+import { EChatbotType } from '@core/common/enums/EChatbotType';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EChatbotPermissions } from '@core/common/enums/EPermissions/chatbot';
 import { useChatbotStore } from '@/@webcore/stores/chatbot';
@@ -97,6 +98,16 @@ const openAddModal = () => {
   isAddModalOpen.value = true;
 };
 
+const getChatbotTypeDisplay = (type: string | null | undefined) => {
+  if (type === EChatbotType.output) {
+    return { color: 'error' as const, textKey: 'chatbot_type_output' };
+  }
+  if (type === EChatbotType.schedule) {
+    return { color: 'info' as const, textKey: 'chatbot_type_schedule' };
+  }
+  return { color: 'success' as const, textKey: 'chatbot_type_input' };
+};
+
 const handleCreated = async () => {
   await chatbotStore.listChatbots();
 };
@@ -158,14 +169,10 @@ onMounted(async () => {
           <template #item.type="{ item }">
             <VChip
               size="small"
-              :color="item.type === 'output' ? 'error' : 'success'"
+              :color="getChatbotTypeDisplay(item.type).color"
               variant="tonal"
             >
-              {{
-                item.type === 'output'
-                  ? $t('chatbot_type_output')
-                  : $t('chatbot_type_input')
-              }}
+              {{ $t(getChatbotTypeDisplay(item.type).textKey) }}
             </VChip>
           </template>
 

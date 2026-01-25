@@ -5,7 +5,7 @@ import { listScheduleChatbotsFinalResponseSchema } from './response.schema';
 
 export const listScheduleChatbotsSchema = {
   description:
-    'Lista os chatbots disponíveis para agendamento (entrada ou saída)',
+    'Lista os chatbots do tipo agendamento (schedule) disponíveis para agendamento',
   tags: [ETagSwagger.schedule],
   produces: ['application/json'],
   security: [
