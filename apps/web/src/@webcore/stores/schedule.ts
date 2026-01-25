@@ -69,6 +69,8 @@ export const useScheduleStore = defineStore('schedule', {
               per_page: input.per_page,
               sort_by: input.sort_by,
               search: input.search,
+              type: input.type || undefined,
+              send_to: input.send_to || undefined,
             }
           : undefined;
 

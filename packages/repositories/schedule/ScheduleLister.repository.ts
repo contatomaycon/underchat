@@ -14,6 +14,8 @@ import {
   ilike,
 } from 'drizzle-orm';
 import { ESortOrder } from '@core/common/enums/ESortOrder';
+import { EScheduleType } from '@core/common/enums/EScheduleType';
+import { EScheduleSendTo } from '@core/common/enums/EScheduleSendTo';
 import { ListScheduleResponse } from '@core/schema/schedule/listSchedule/response.schema';
 import { ListScheduleRequest } from '@core/schema/schedule/listSchedule/request.schema';
 
@@ -64,6 +66,14 @@ export class ScheduleListerRepository {
       const combined = or(...conditions);
 
       if (combined) filters.push(combined);
+    }
+
+    if (query.type) {
+      filters.push(eq(schedule.type, query.type as EScheduleType));
+    }
+
+    if (query.send_to) {
+      filters.push(eq(schedule.send_to, query.send_to as EScheduleSendTo));
     }
 
     return filters;
