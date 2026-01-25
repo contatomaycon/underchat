@@ -95,3 +95,8 @@ SAÍDA ESPERADA
 - Placeholders de imagens incluídos
 - Pronto para produção
 - Visualmente e estruturalmente idêntico ao padrão “Chatbot de Saída”
+
+IMPORTANTE
+
+- Deve ser uma documentação clara e objetiva
+- Não utilizar termos técnicos, deve ser voltada para usuário final
