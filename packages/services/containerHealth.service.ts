@@ -12,33 +12,67 @@ export class ContainerHealthService {
     this.docker = new Docker({ socketPath: '/var/run/docker.sock' });
   }
 
-  async isServiceHealthy(containerId: string): Promise<boolean> {
-    for (let attempt = 1; attempt <= this.maxAttempts; attempt++) {
-      const code = await this.getStatusCode(containerId);
+  private readonly connectionHealthMaxAttempts = 10;
+  private readonly connectionHealthDelayMs = 2000;
+
+  async isServiceHealthy(
+    containerId: string,
+    overrides?: { maxAttempts?: number; delayMs?: number }
+  ): Promise<boolean> {
+    const maxAttempts = overrides?.maxAttempts ?? this.maxAttempts;
+    const delayMs = overrides?.delayMs ?? this.delayMs;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const code = await this.getHttpStatusCode(
+        containerId,
+        'http://127.0.0.1:3005/v1/health/check'
+      );
       if (Number(code) === 200) {
         return true;
       }
 
-      await this.sleep(this.delayMs);
+      if (attempt < maxAttempts) {
+        await this.sleep(delayMs);
+      }
     }
 
     return false;
   }
 
-  private async getStatusCode(containerId: string): Promise<string> {
+  async isConnectionHealthy(
+    containerId: string,
+    overrides?: { maxAttempts?: number; delayMs?: number }
+  ): Promise<boolean> {
+    const maxAttempts =
+      overrides?.maxAttempts ?? this.connectionHealthMaxAttempts;
+    const delayMs = overrides?.delayMs ?? this.connectionHealthDelayMs;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const code = await this.getHttpStatusCode(
+        containerId,
+        'http://127.0.0.1:3005/v1/connection/health/check'
+      );
+      if (Number(code) === 200) {
+        return true;
+      }
+
+      if (attempt < maxAttempts) {
+        await this.sleep(delayMs);
+      }
+    }
+
+    return false;
+  }
+
+  private async getHttpStatusCode(
+    containerId: string,
+    url: string
+  ): Promise<string> {
     try {
       const container = this.docker.getContainer(containerId);
 
       const execInstance = await container.exec({
-        Cmd: [
-          'curl',
-          '-s',
-          '-o',
-          '/dev/null',
-          '-w',
-          '%{http_code}',
-          'http://127.0.0.1:3005/v1/health/check',
-        ],
+        Cmd: ['curl', '-s', '-o', '/dev/null', '-w', '%{http_code}', url],
         AttachStdout: true,
         AttachStderr: true,
       });

@@ -10,4 +10,5 @@ export interface IWorkerPayload {
   worker_status_id?: EWorkerStatus;
   worker_type_id?: EWorkerType;
   name?: string;
+  previous_worker_status_id?: EWorkerStatus;
 }

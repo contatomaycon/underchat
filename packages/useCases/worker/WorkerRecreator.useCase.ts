@@ -54,10 +54,10 @@ export class WorkerRecreatorUseCase {
   ): Promise<boolean> {
     await this.validate(t, accountId);
 
-    const viewWorkerBalancer = await this.workerService.viewWorkerBalancer(
-      accountId,
-      workerId
-    );
+    const [viewWorkerBalancer, viewWorker] = await Promise.all([
+      this.workerService.viewWorkerBalancer(accountId, workerId),
+      this.workerService.viewWorker(accountId, workerId),
+    ]);
 
     if (!viewWorkerBalancer) {
       throw new Error(t('worker_balancer_not_available'));
@@ -69,6 +69,9 @@ export class WorkerRecreatorUseCase {
       server_id: viewWorkerBalancer.server_id,
       account_id: viewWorkerBalancer.account_id,
       worker_status_id: EWorkerStatus.recreating,
+      previous_worker_status_id: viewWorker?.status?.id as
+        | EWorkerStatus
+        | undefined,
     };
 
     await this.centrifugoService.publishSub(

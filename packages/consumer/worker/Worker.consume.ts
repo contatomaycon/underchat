@@ -35,7 +35,7 @@ import { commitOffset } from '@core/common/functions/commitOffset';
 export class WorkerConsume {
   private consumer: KafkaConsumer | null = null;
   private isRunning = false;
-  private readonly maxRetries = 3;
+  private readonly maxRetries = 5;
   private readonly retryIntervalMs = 30 * 1000;
 
   constructor(
@@ -300,8 +300,26 @@ export class WorkerConsume {
       throw new Error('Worker creation failed');
     }
 
+    const wasOnline = data.previous_worker_status_id === EWorkerStatus.online;
+
     const healthy = await this.retryOperation(
       async () => {
+        if (wasOnline) {
+          const serviceOk = await this.containerHealthService.isServiceHealthy(
+            containerId,
+            {
+              maxAttempts: 5,
+              delayMs: 2000,
+            }
+          );
+          if (!serviceOk) return false;
+
+          return this.containerHealthService.isConnectionHealthy(containerId, {
+            maxAttempts: 10,
+            delayMs: 7000,
+          });
+        }
+
         return this.containerHealthService.isServiceHealthy(containerId);
       },
       (result) => !result
@@ -314,7 +332,12 @@ export class WorkerConsume {
         data.action,
         data.server_id
       );
-      throw new Error('Worker service is not healthy');
+
+      throw new Error(
+        wasOnline
+          ? 'Worker service or connection health check failed'
+          : 'Worker service is not healthy'
+      );
     }
 
     const inputUpdate: IUpdateWorker = {

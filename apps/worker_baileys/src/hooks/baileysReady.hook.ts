@@ -11,7 +11,20 @@ import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnect
 import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 
 const RETRY_DELAY = 10000;
+const CONNECT_TIMEOUT_MS = 60000;
 let mismatchedStatusSent = false;
+
+const withConnectTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> => {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(
+        () => reject(new Error(`Baileys connect timeout após ${ms}ms`)),
+        ms
+      )
+    ),
+  ]);
+};
 
 const updateWorkerMismatchedStatus = async (
   workerId: string,
@@ -52,6 +65,8 @@ const ensureConnected = async (
   log: FastifyInstance['log'],
   baileys: BaileysService
 ): Promise<void> => {
+  log.info({ attempt }, 'Baileys: iniciando verificação de conexão');
+
   if (baileys.isConnected()) {
     log.info({ attempt }, 'Baileys conectado com sucesso');
     mismatchedStatusSent = false;
@@ -75,8 +90,13 @@ const ensureConnected = async (
     return;
   }
 
+  log.info({ attempt }, 'Baileys: iniciando tentativa de conexão');
+
   try {
-    const state = await baileys.connect({ initial_connection: true });
+    const state = await withConnectTimeout(
+      baileys.connect({ initial_connection: true }),
+      CONNECT_TIMEOUT_MS
+    );
     log.info(
       { status: state.status, attempt },
       'Baileys connection attempt finalizada'
@@ -100,8 +120,20 @@ const ensureConnected = async (
 
 const baileysReadyHook = fp(async (fastify) => {
   fastify.addHook('onReady', () => {
-    const baileysService = container.resolve(BaileysService);
-    ensureConnected(1, fastify.log, baileysService);
+    try {
+      const baileysService = container.resolve(BaileysService);
+      ensureConnected(1, fastify.log, baileysService).catch((err: unknown) => {
+        fastify.log.error(
+          { err },
+          'Baileys ensureConnected falhou inesperadamente'
+        );
+      });
+    } catch (err) {
+      fastify.log.error(
+        { err },
+        'Baileys: falha ao iniciar verificação de conexão no onReady'
+      );
+    }
   });
 });
 

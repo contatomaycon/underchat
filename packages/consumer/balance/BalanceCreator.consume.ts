@@ -72,9 +72,7 @@ export class BalanceCreatorConsume {
 
       const stop = startHeartbeat(heartbeat);
       try {
-        await this.handleCreateServerMessage(server, data);
-      } catch {
-        await this.commitNext(topic, message.partition, message.offset);
+        await this.processMessageWithRetry(server, data);
       } finally {
         stop();
       }
@@ -121,6 +119,40 @@ export class BalanceCreatorConsume {
     offset: number
   ): Promise<void> {
     await commitOffset(this.consumerOrThrow, topic, partition, offset);
+  }
+
+  private async processMessageWithRetry(
+    server: FastifyInstance,
+    data: CreateServerResponse
+  ): Promise<void> {
+    const maxAttempts = 5;
+    const delayMs = 10_000;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        await this.handleCreateServerMessage(server, data);
+        return;
+      } catch (err) {
+        if (attempt < maxAttempts) {
+          server.log.warn(
+            `Server ${data.server_id ?? 'unknown'} installation attempt ${attempt} failed, retrying in ${delayMs / 1000}s`
+          );
+          await delay(delayMs);
+          continue;
+        }
+
+        server.log.warn(
+          `Skipping server ${data.server_id ?? 'unknown'}: ${getErrorMessage(err)}`
+        );
+        const serverId = data.server_id ?? null;
+        if (serverId) {
+          await this.serverService.updateServerStatusById(
+            serverId,
+            EServerStatus.error
+          );
+        }
+      }
+    }
   }
 
   private async handleCreateServerMessage(
@@ -192,15 +224,7 @@ export class BalanceCreatorConsume {
 
       await this.serverService.updateServerStatusById(serverId, finalStatus);
     } catch (err: unknown) {
-      const msg = getErrorMessage(err);
-      server.log.warn(`Skipping server ${serverId ?? 'unknown'}: ${msg}`);
-
-      if (serverId) {
-        await this.serverService.updateServerStatusById(
-          serverId,
-          EServerStatus.error
-        );
-      }
+      throw err;
     }
   }
 
@@ -222,8 +246,12 @@ export class BalanceCreatorConsume {
       throw new Error('Web configuration not found');
     }
 
-    if (sshView.server_status_id !== EServerStatus.new) {
-      throw new Error('Server is not in new status');
+    const isNewOrInstalling =
+      sshView.server_status_id === EServerStatus.new ||
+      sshView.server_status_id === EServerStatus.installing;
+
+    if (!isNewOrInstalling) {
+      throw new Error('Server is not in new or installing status');
     }
 
     const sshConfig: ConnectConfig = {
