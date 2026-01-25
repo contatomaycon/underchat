@@ -316,7 +316,7 @@ export class WorkerConsume {
 
           return this.containerHealthService.isConnectionHealthy(containerId, {
             maxAttempts: 10,
-            delayMs: 7000,
+            delayMs: 10000,
           });
         }
 

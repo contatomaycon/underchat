@@ -91,11 +91,7 @@ export class BaileysConnectionService {
     if (!this.connecting) return null;
 
     if (initialConnection) {
-      const wasConnected = this.connectionEstablished;
       this.cancelAttempt();
-      if (!wasConnected) {
-        this.clearFolder();
-      }
     }
 
     if (this.currentPromise) {
@@ -218,12 +214,9 @@ export class BaileysConnectionService {
       await this.requestPairing(socket);
     }
 
-    const id = this.socketId;
-    this.currentPromise = this.wait(socket, id).finally(() => {
-      if (this.socketId === id) {
-        this.connecting = false;
-        this.currentPromise = undefined;
-      }
+    this.currentPromise = this.wait(socket, this.socketId).finally(() => {
+      this.connecting = false;
+      this.currentPromise = undefined;
     });
 
     return this.currentPromise;
@@ -591,7 +584,7 @@ export class BaileysConnectionService {
     return this.initialConnection && !this.connected && !this.awaitingNewLogin;
   }
 
-  private hasSession(): boolean {
+  hasSession(): boolean {
     return fs.existsSync(FOLDER) && fs.readdirSync(FOLDER).length > 0;
   }
 
@@ -619,9 +612,7 @@ export class BaileysConnectionService {
       await new Promise((r) => setTimeout(r, this.retryDelay));
     }
     this.setStatus(Status.disconnected, ECodeMessage.badSession);
-    if (!this.initialConnection) {
-      this.clearFolder();
-    }
+    this.clearFolder();
 
     await this.updateWorkerMismatchedStatus();
 
@@ -736,15 +727,22 @@ export class BaileysConnectionService {
     if (!skipWebSocketClose) {
       try {
         const ws = this.resolveWebSocket();
-        if (ws) {
-          const readyState = ws.readyState;
-          if (readyState === 1) {
-            ws.close(1000, 'reconnect');
-          } else if (readyState === 0 || readyState === 2) {
-            ws.terminate?.();
-          }
-        } else {
+        if (!ws) {
           this.socket = undefined;
+
+          return;
+        }
+
+        const readyState = ws.readyState;
+        if (readyState === 1) {
+          ws.close(1000, 'reconnect');
+
+          return;
+        }
+
+        const isConnectingOrClosing = readyState === 0 || readyState === 2;
+        if (isConnectingOrClosing) {
+          ws.terminate?.();
         }
       } catch {
         this.saveLogWppConnection({

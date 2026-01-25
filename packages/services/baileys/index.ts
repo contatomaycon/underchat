@@ -34,6 +34,10 @@ export class BaileysService {
     return this.connection.getStatus();
   }
 
+  hasSession(): boolean {
+    return this.connection.hasSession();
+  }
+
   get socket(): ReturnType<typeof makeWASocket> | undefined {
     return this.connection.getSocket();
   }
