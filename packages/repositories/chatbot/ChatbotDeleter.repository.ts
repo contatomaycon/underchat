@@ -1,5 +1,5 @@
 import * as schema from '@core/models';
-import { chatbot, workerConfig } from '@core/models';
+import { chatbot, schedule, workerConfig } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { eq } from 'drizzle-orm';
@@ -9,6 +9,17 @@ export class ChatbotDeleterRepository {
   constructor(
     @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
   ) {}
+
+  clearChatbotFromSchedules = async (chatbotId: string): Promise<void> => {
+    await this.dbRw
+      .update(schedule)
+      .set({
+        chatbot_id: null,
+        updated_at: new Date().toISOString(),
+      })
+      .where(eq(schedule.chatbot_id, chatbotId))
+      .execute();
+  };
 
   clearChatbotFromWorkerConfigs = async (chatbotId: string): Promise<void> => {
     await this.dbRw

@@ -328,6 +328,10 @@ export class ChatbotService {
     return deletedConfigurations;
   };
 
+  clearChatbotFromSchedules = async (chatbotId: string): Promise<void> => {
+    await this.chatbotDeleterRepository.clearChatbotFromSchedules(chatbotId);
+  };
+
   clearChatbotFromWorkerConfigs = async (chatbotId: string): Promise<void> => {
     await this.chatbotDeleterRepository.clearChatbotFromWorkerConfigs(
       chatbotId

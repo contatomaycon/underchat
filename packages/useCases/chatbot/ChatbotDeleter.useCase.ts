@@ -19,6 +19,7 @@ export class ChatbotDeleterUseCase {
     }
 
     await Promise.all([
+      this.chatbotService.clearChatbotFromSchedules(chatbotId),
       this.chatbotService.clearChatbotFromWorkerConfigs(chatbotId),
       this.chatbotService.deleteChatbotFlowByChatbotId(chatbotId),
       this.chatbotService.deleteChatbotFlowConfigurationsByChatbotId(chatbotId),
