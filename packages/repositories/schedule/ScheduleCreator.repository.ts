@@ -67,6 +67,7 @@ export class ScheduleCreatorRepository {
       type: string;
       send_to: string;
       send_speed: string;
+      chatbot_id?: string | null;
       message: string | null;
       url: string | null;
       mimetype: string | null;
@@ -87,6 +88,10 @@ export class ScheduleCreatorRepository {
       url: input.url,
       send_date: input.send_date,
     };
+
+    if (input.chatbot_id !== undefined) {
+      baseValues.chatbot_id = input.chatbot_id;
+    }
 
     if (input.mimetype !== null && input.mimetype !== undefined) {
       baseValues.mimetype = input.mimetype;
@@ -118,6 +123,7 @@ export class ScheduleCreatorRepository {
     type: string;
     send_to: string;
     send_speed: string;
+    chatbot_id?: string | null;
     message: string | null;
     url: string | null;
     mimetype: string | null;

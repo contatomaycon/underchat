@@ -1,0 +1,2 @@
+ALTER TABLE "schedule" ADD COLUMN "chatbot_id" uuid NULL;
+ALTER TABLE "schedule" ADD CONSTRAINT "schedule_chatbot_id_chatbot_chatbot_id_fk" FOREIGN KEY ("chatbot_id") REFERENCES "chatbot" ("chatbot_id") ON UPDATE NO ACTION ON DELETE NO ACTION;

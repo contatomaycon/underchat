@@ -3,4 +3,5 @@ export enum EScheduleType {
   video = 'video',
   audio = 'audio',
   image = 'image',
+  chatbot = 'chatbot',
 }

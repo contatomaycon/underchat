@@ -43,6 +43,10 @@ export class ScheduleUpdaterRepository {
       updateData.send_speed = input.send_speed as EScheduleSendSpeed;
     }
 
+    if (input.chatbot_id !== undefined) {
+      updateData.chatbot_id = input.chatbot_id ?? null;
+    }
+
     if (input.message !== undefined) {
       updateData.message = input.message ?? null;
     }

@@ -132,6 +132,7 @@ export class ScheduleUpdaterUseCase {
     type: string | null | undefined,
     sendToValue: string | null | undefined,
     sendSpeedValue: EScheduleSendSpeed | undefined,
+    chatbotIdValue: string | null | undefined,
     messageValue: string | null | undefined,
     attachment:
       | (UploadFileResponse & {
@@ -150,18 +151,21 @@ export class ScheduleUpdaterUseCase {
       ? formatDateToISO(scheduleBasic.sendDate, 'YYYY-MM-DD HH:mm')
       : undefined;
 
+    const isChatbot = type === 'chatbot';
+
     return {
       schedule_id: scheduleBasic.scheduleId,
       worker_id: scheduleBasic.workerId ?? undefined,
       type: type ?? undefined,
       send_to: sendToValue ?? undefined,
       send_speed: sendSpeedValue ?? undefined,
-      message: messageValue ?? undefined,
-      url: attachment?.url ?? undefined,
-      mimetype: attachment?.mimetype ?? undefined,
-      duration: attachment?.duration ?? undefined,
-      width: attachment?.width ?? undefined,
-      height: attachment?.height ?? undefined,
+      chatbot_id: chatbotIdValue ?? undefined,
+      message: isChatbot ? null : (messageValue ?? undefined),
+      url: isChatbot ? null : (attachment?.url ?? undefined),
+      mimetype: isChatbot ? null : (attachment?.mimetype ?? undefined),
+      duration: isChatbot ? null : (attachment?.duration ?? undefined),
+      width: isChatbot ? null : (attachment?.width ?? undefined),
+      height: isChatbot ? null : (attachment?.height ?? undefined),
       send_date: sendDateISO,
       contact_ids:
         recipients.contactIds.length > 0 ? recipients.contactIds : undefined,
@@ -198,9 +202,26 @@ export class ScheduleUpdaterUseCase {
     const sendSpeedValue = this.resolveSendSpeed(
       this.extractStringValue(body.send_speed)
     );
+    const typeValue = this.extractStringValue(body.type);
+    let chatbotIdValue = this.extractStringValue(body.chatbot_id);
+    if (chatbotIdValue === '') chatbotIdValue = null;
     const messageValue = this.extractMessageValue(body.message);
 
     this.validateRequiredFields(sendToValue, contactIds, contactGroupIds, t);
+
+    if (typeValue === 'chatbot' && !chatbotIdValue) {
+      throw new Error(t('schedule_chatbot_required'));
+    }
+
+    if (chatbotIdValue) {
+      const exists = await this.scheduleService.existsChatbotInAccount(
+        chatbotIdValue,
+        accountId
+      );
+      if (!exists) {
+        throw new Error(t('schedule_chatbot_not_found'));
+      }
+    }
 
     const updateBody = this.buildUpdateScheduleInput(
       {
@@ -208,9 +229,10 @@ export class ScheduleUpdaterUseCase {
         workerId: this.extractStringValue(body.worker_id),
         sendDate,
       },
-      this.extractStringValue(body.type),
+      typeValue,
       sendToValue,
       sendSpeedValue,
+      chatbotIdValue,
       messageValue,
       attachment,
       {
@@ -294,11 +316,13 @@ export class ScheduleUpdaterUseCase {
       })
     | null
   > {
+    const typeValue = this.extractStringValue(body.type);
+    if (typeValue === 'chatbot') return null;
+
     const file = body.url;
     if (!file?.filename) return null;
 
     await this.validateAttachment(file, t);
-    const typeValue = this.extractStringValue(body.type);
     const messageType = (typeValue || 'text') as EScheduleType;
 
     if (messageType === EScheduleType.image) {

@@ -275,7 +275,7 @@ export class ScheduleCreatorUseCase {
   }
 
   private extractStringValue(
-    field: string | { value: string } | null | undefined
+    field: string | { value: string | null } | null | undefined
   ): string | null {
     if (!field) return null;
     if (typeof field === 'string') return field;
@@ -343,6 +343,7 @@ export class ScheduleCreatorUseCase {
       })
     | null
   > {
+    if (messageType === EScheduleType.chatbot) return null;
     if (!url?.filename) return null;
 
     await this.validateAttachment(url, t);
@@ -371,6 +372,7 @@ export class ScheduleCreatorUseCase {
     messageType: EScheduleType,
     sendToValue: string,
     sendSpeedValue: EScheduleSendSpeed,
+    chatbotIdValue: string | null,
     messageValue: string | null,
     attachmentUrl:
       | (UploadFileResponse & {
@@ -390,18 +392,21 @@ export class ScheduleCreatorUseCase {
       'YYYY-MM-DD HH:mm'
     );
 
+    const isChatbot = !!chatbotIdValue;
+
     return {
       account_id: scheduleBasic.accountId,
       worker_id: scheduleBasic.workerId,
       type: messageType,
       send_to: sendToValue,
       send_speed: sendSpeedValue,
-      message: messageValue,
-      url: attachmentUrl ? attachmentUrl.url : null,
-      mimetype: attachmentUrl?.mimetype ?? null,
-      duration: attachmentUrl?.duration ?? null,
-      width: attachmentUrl?.width ?? null,
-      height: attachmentUrl?.height ?? null,
+      chatbot_id: chatbotIdValue ?? undefined,
+      message: isChatbot ? null : messageValue,
+      url: isChatbot ? null : attachmentUrl ? attachmentUrl.url : null,
+      mimetype: isChatbot ? null : (attachmentUrl?.mimetype ?? null),
+      duration: isChatbot ? null : (attachmentUrl?.duration ?? null),
+      width: isChatbot ? null : (attachmentUrl?.width ?? null),
+      height: isChatbot ? null : (attachmentUrl?.height ?? null),
       send_date: sendDateISO,
       contact_ids:
         recipients.contactIds.length > 0 ? recipients.contactIds : undefined,
@@ -426,6 +431,7 @@ export class ScheduleCreatorUseCase {
     const sendSpeedValue = this.resolveSendSpeed(
       this.extractStringValue(input.send_speed)
     );
+    const chatbotIdValue = this.extractStringValue(input.chatbot_id);
     const messageValue = this.extractMessageValue(input.message);
     const contactIds = this.extractContactIds(input.contact_ids);
     const contactGroupIds = this.extractContactGroupIds(
@@ -453,6 +459,19 @@ export class ScheduleCreatorUseCase {
       input.url?.filename
     );
 
+    if (messageType === EScheduleType.chatbot) {
+      if (!chatbotIdValue) {
+        throw new Error(t('schedule_chatbot_required'));
+      }
+      const exists = await this.scheduleService.existsChatbotInAccount(
+        chatbotIdValue,
+        accountId
+      );
+      if (!exists) {
+        throw new Error(t('schedule_chatbot_not_found'));
+      }
+    }
+
     const attachmentUrl = await this.processAttachment(
       input.url,
       messageType,
@@ -469,6 +488,7 @@ export class ScheduleCreatorUseCase {
       messageType,
       sendToValue ?? '',
       sendSpeedValue,
+      chatbotIdValue,
       messageValue,
       attachmentUrl,
       {

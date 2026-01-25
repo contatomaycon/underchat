@@ -8,6 +8,7 @@ import { listScheduleWorkers } from './methods/listScheduleWorkers';
 import { listScheduleContacts } from './methods/listScheduleContacts';
 import { listScheduleContactGroups } from './methods/listScheduleContactGroups';
 import { listScheduleMessages } from './methods/listScheduleMessages';
+import { listScheduleChatbots } from './methods/listScheduleChatbots';
 
 @injectable()
 class ScheduleController {
@@ -17,6 +18,7 @@ class ScheduleController {
   public updateSchedule = editSchedule;
   public createSchedule = createSchedule;
   public listScheduleWorkers = listScheduleWorkers;
+  public listScheduleChatbots = listScheduleChatbots;
   public listScheduleContacts = listScheduleContacts;
   public listScheduleContactGroups = listScheduleContactGroups;
   public listScheduleMessages = listScheduleMessages;

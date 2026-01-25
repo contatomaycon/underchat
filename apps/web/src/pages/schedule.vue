@@ -67,6 +67,7 @@ const itemsType = computed(() => [
   { id: EScheduleType.image, text: t('message_type_image') },
   { id: EScheduleType.video, text: t('message_type_video') },
   { id: EScheduleType.audio, text: t('message_type_audio') },
+  { id: EScheduleType.chatbot, text: t('message_type_chatbot') },
 ]);
 
 const itemsSendTo = computed(() => [
@@ -239,7 +240,17 @@ const getTypeLabel = (type: string): string => {
   if (type === EScheduleType.image) return t('message_type_image');
   if (type === EScheduleType.video) return t('message_type_video');
   if (type === EScheduleType.audio) return t('message_type_audio');
+  if (type === EScheduleType.chatbot) return t('message_type_chatbot');
   return type;
+};
+
+const getTypeColor = (type: string): string => {
+  if (type === EScheduleType.text) return 'info';
+  if (type === EScheduleType.image) return 'success';
+  if (type === EScheduleType.video) return 'secondary';
+  if (type === EScheduleType.audio) return 'warning';
+  if (type === EScheduleType.chatbot) return 'teal';
+  return 'default';
 };
 
 const getSendToLabel = (sendTo: string): string => {
@@ -279,6 +290,7 @@ const scheduleToView = ref<string | null>(null);
 const headers: DataTableHeader<ListScheduleResponse>[] = [
   { title: t('worker'), key: 'worker' },
   { title: t('type'), key: 'type' },
+  { title: t('chatbot'), key: 'chatbot_name' },
   { title: t('send_to'), key: 'send_to' },
   { title: t('message'), key: 'message' },
   { title: t('attachment'), key: 'url' },
@@ -443,7 +455,18 @@ watch(
             </template>
 
             <template #item.type="{ item }">
-              {{ getTypeLabel(item.type) }}
+              <VChip
+                :color="getTypeColor(item.type)"
+                size="small"
+                variant="tonal"
+              >
+                {{ getTypeLabel(item.type) }}
+              </VChip>
+            </template>
+
+            <template #item.chatbot_name="{ item }">
+              <span v-if="item.chatbot_name">{{ item.chatbot_name }}</span>
+              <span v-else class="text-medium-emphasis">-</span>
             </template>
 
             <template #item.send_to="{ item }">

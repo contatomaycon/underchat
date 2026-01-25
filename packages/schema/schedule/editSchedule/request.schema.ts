@@ -46,6 +46,15 @@ export const updateScheduleRequestSchema = Type.Object({
       }),
     ])
   ),
+  chatbot_id: Type.Optional(
+    Type.Union([
+      Type.String({ format: 'uuid' }),
+      Type.Null(),
+      Type.Object({
+        value: Type.Union([Type.String({ format: 'uuid' }), Type.Null()]),
+      }),
+    ])
+  ),
   message: Type.Optional(
     Type.Union([
       Type.String(),

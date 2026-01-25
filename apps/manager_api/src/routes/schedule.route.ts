@@ -13,6 +13,7 @@ import { viewScheduleSchema } from '@core/schema/schedule/viewSchedule';
 import { deleteScheduleSchema } from '@core/schema/schedule/deleteSchedule';
 import { editScheduleSchema } from '@core/schema/schedule/editSchedule';
 import { listScheduleWorkersSchema } from '@core/schema/schedule/listScheduleWorkers';
+import { listScheduleChatbotsSchema } from '@core/schema/schedule/listScheduleChatbots';
 import { listScheduleContactsSchema } from '@core/schema/schedule/listScheduleContacts';
 import { listScheduleContactGroupsSchema } from '@core/schema/schedule/listScheduleContactGroups';
 import { listScheduleMessagesSchema } from '@core/schema/schedule/listScheduleMessages';
@@ -80,6 +81,17 @@ export default function scheduleRoutes(server: FastifyInstance) {
   server.get('/schedule/workers', {
     schema: listScheduleWorkersSchema,
     handler: scheduleController.listScheduleWorkers,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, scheduleViewPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.get('/schedule/chatbots', {
+    schema: listScheduleChatbotsSchema,
+    handler: scheduleController.listScheduleChatbots,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, scheduleViewPermissions),

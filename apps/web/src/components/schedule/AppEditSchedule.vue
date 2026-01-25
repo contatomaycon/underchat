@@ -79,6 +79,10 @@ const messageTypeOptions = computed(() => [
     value: EScheduleType.audio,
     title: t('message_type_audio'),
   },
+  {
+    value: EScheduleType.chatbot,
+    title: t('message_type_chatbot'),
+  },
 ]);
 
 const sendToOptions = computed(() => [
@@ -155,6 +159,10 @@ const contacts = ref<
 const contactGroups = ref<Array<{ contact_group_id: string; name: string }>>(
   []
 );
+const chatbotId = ref<string | null>(null);
+const chatbots = ref<
+  Array<{ chatbot_id: string; name: string; type?: string | null }>
+>([]);
 
 const showTextInput = computed(() => {
   return selectedType.value === EScheduleType.text;
@@ -166,6 +174,10 @@ const showFileInput = computed(() => {
     EScheduleType.video,
     EScheduleType.audio,
   ].includes(selectedType.value);
+});
+
+const showChatbotSelect = computed(() => {
+  return selectedType.value === EScheduleType.chatbot;
 });
 
 const showContactsSelect = computed(() => {
@@ -328,6 +340,12 @@ const buildFormData = (): FormData => {
   if (sendDate.value) {
     form.append('send_date', sendDate.value);
   }
+  form.append(
+    'chatbot_id',
+    selectedType.value === EScheduleType.chatbot && chatbotId.value
+      ? chatbotId.value
+      : ''
+  );
   if (message.value !== null) {
     form.append('message', message.value);
   }
@@ -355,6 +373,12 @@ const updateSchedule = async () => {
   if (!validateFile()) return;
   if (!validateRecipients()) return;
   if (!scheduleId.value) return;
+  if (
+    selectedType.value === EScheduleType.chatbot &&
+    (!chatbotId.value || !chatbotId.value.trim())
+  ) {
+    return;
+  }
 
   isLoading.value = true;
 
@@ -386,6 +410,7 @@ const resetForm = () => {
   selectedContactGroupIds.value = [];
   contactSearch.value = '';
   contactGroupSearch.value = '';
+  chatbotId.value = null;
   attachmentFile.value = null;
   fileSizeError.value = null;
   if (filePreview.value?.src) {
@@ -429,6 +454,13 @@ const loadContactGroups = async () => {
   const result = await scheduleStore.listScheduleContactGroups();
   if (result) {
     contactGroups.value = result;
+  }
+};
+
+const loadChatbots = async () => {
+  const result = await scheduleStore.listScheduleChatbots();
+  if (result) {
+    chatbots.value = result;
   }
 };
 
@@ -562,6 +594,12 @@ watch(selectedType, () => {
     hasNewFile.value = false;
     fileInputKey.value++;
   }
+  if (selectedType.value === EScheduleType.chatbot) {
+    message.value = null;
+  }
+  if (selectedType.value !== EScheduleType.chatbot) {
+    chatbotId.value = null;
+  }
 });
 
 watch(debouncedContactSearch, () => {
@@ -598,6 +636,7 @@ watch(
     if (visible && id) {
       resetForm();
       await loadWorkers();
+      await loadChatbots();
       const schedule = await scheduleStore.getScheduleById(id);
       if (schedule) {
         message.value = schedule.message ?? null;
@@ -609,6 +648,7 @@ watch(
         existingAttachmentUrl.value = schedule?.url ?? null;
         selectedType.value =
           (schedule.type as EScheduleType) || EScheduleType.text;
+        chatbotId.value = schedule.chatbot_id ?? null;
         if (schedule.contacts && schedule.contacts.length > 0) {
           selectedContactIds.value = schedule.contacts.map((c) => c.contact_id);
           await loadContacts();
@@ -693,6 +733,24 @@ onBeforeUnmount(() => {
                 item-value="value"
                 item-title="title"
                 :clearable="true"
+              />
+            </VCol>
+
+            <VCol v-if="showChatbotSelect" cols="12">
+              <VLabel class="text-body-2 mb-1">{{ $t('chatbot') }}:</VLabel>
+              <AppSelectSearch
+                v-model="chatbotId"
+                :items="
+                  chatbots.map((c) => ({
+                    id: c.chatbot_id,
+                    title: c.name,
+                  }))
+                "
+                :placeholder="$t('select_chatbot')"
+                :clearable="false"
+                item-value="id"
+                item-title="title"
+                :rules="[requiredValidator(chatbotId, $t('chatbot_required'))]"
               />
             </VCol>
 

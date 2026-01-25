@@ -19,6 +19,7 @@ import {
   UpdateScheduleRequest,
 } from '@core/schema/schedule/editSchedule/request.schema';
 import { ListScheduleWorkersFinalResponse } from '@core/schema/schedule/listScheduleWorkers/response.schema';
+import { ListScheduleChatbotsFinalResponse } from '@core/schema/schedule/listScheduleChatbots/response.schema';
 import { ListScheduleContactsFinalResponse } from '@core/schema/schedule/listScheduleContacts/response.schema';
 import { ListScheduleContactGroupsFinalResponse } from '@core/schema/schedule/listScheduleContactGroups/response.schema';
 import { ListScheduleContactsRequest } from '@core/schema/schedule/listScheduleContacts/request.schema';
@@ -301,6 +302,43 @@ export const useScheduleStore = defineStore('schedule', {
         return data.data;
       } catch (error) {
         let errorMessage = this.i18n.global.t('schedule_workers_list_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return null;
+      }
+    },
+
+    async listScheduleChatbots(): Promise<ListScheduleChatbotsFinalResponse | null> {
+      try {
+        this.loading = true;
+
+        const response =
+          await axios.get<IApiResponse<ListScheduleChatbotsFinalResponse>>(
+            `/schedule/chatbots`
+          );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('schedule_chatbots_list_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return null;
+        }
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('schedule_chatbots_list_error');
         if (error instanceof AxiosError) {
           errorMessage = error?.response?.data?.message ?? errorMessage;
         }

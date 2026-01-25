@@ -10,6 +10,7 @@ import {
 import { relations } from 'drizzle-orm';
 import { account } from '../account';
 import { worker } from '../worker';
+import { chatbot } from '../chatbot';
 import { scheduledContact } from './scheduledContact.model';
 import { EScheduleType } from '@core/common/enums/EScheduleType';
 import { EScheduleSendTo } from '@core/common/enums/EScheduleSendTo';
@@ -32,6 +33,7 @@ export const schedule = pgTable(
       .notNull()
       .$type<EScheduleSendSpeed>()
       .default(EScheduleSendSpeed.low),
+    chatbot_id: uuid().references(() => chatbot.chatbot_id),
     message: text(),
     url: varchar({ length: 500 }),
     mimetype: varchar({ length: 100 }),
@@ -78,6 +80,10 @@ export const scheduleRelations = relations(schedule, ({ one, many }) => ({
   swr: one(worker, {
     fields: [schedule.worker_id],
     references: [worker.worker_id],
+  }),
+  sct: one(chatbot, {
+    fields: [schedule.chatbot_id],
+    references: [chatbot.chatbot_id],
   }),
   scs: many(scheduledContact),
 }));

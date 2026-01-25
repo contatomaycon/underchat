@@ -4,6 +4,7 @@ export interface IUpdateSchedule {
   type?: string | null;
   send_to?: string | null;
   send_speed?: string | null;
+  chatbot_id?: string | null;
   message?: string | null;
   url?: string | null;
   mimetype?: string | null;

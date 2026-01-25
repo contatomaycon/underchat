@@ -9,7 +9,9 @@ import { ViewScheduleResponse } from '@core/schema/schedule/viewSchedule/respons
 import { ScheduleDeleterRepository } from '@core/repositories/schedule/ScheduleDeleter.repository';
 import { ScheduleUpdaterRepository } from '@core/repositories/schedule/ScheduleUpdater.repository';
 import { ScheduleWorkersListerRepository } from '@core/repositories/schedule/ScheduleWorkersLister.repository';
+import { ScheduleChatbotsListerRepository } from '@core/repositories/schedule/ScheduleChatbotsLister.repository';
 import { ListScheduleWorkersResponse } from '@core/schema/schedule/listScheduleWorkers/response.schema';
+import { ListScheduleChatbotsResponse } from '@core/schema/schedule/listScheduleChatbots/response.schema';
 import { ScheduleContactsListerRepository } from '@core/repositories/schedule/ScheduleContactsLister.repository';
 import { ListScheduleContactsRequest } from '@core/schema/schedule/listScheduleContacts/request.schema';
 import { ListScheduleContactsResponse } from '@core/schema/schedule/listScheduleContacts/response.schema';
@@ -34,6 +36,7 @@ export class ScheduleService {
     private readonly scheduleDeleterRepository: ScheduleDeleterRepository,
     private readonly scheduleUpdaterRepository: ScheduleUpdaterRepository,
     private readonly scheduleWorkersListerRepository: ScheduleWorkersListerRepository,
+    private readonly scheduleChatbotsListerRepository: ScheduleChatbotsListerRepository,
     private readonly scheduleContactsListerRepository: ScheduleContactsListerRepository,
     private readonly scheduleContactGroupsListerRepository: ScheduleContactGroupsListerRepository,
     private readonly scheduleMessagesListerRepository: ScheduleMessagesListerRepository,
@@ -65,6 +68,7 @@ export class ScheduleService {
     type: string;
     send_to: string;
     send_speed: string;
+    chatbot_id?: string | null;
     message: string | null;
     url: string | null;
     mimetype: string | null;
@@ -103,6 +107,24 @@ export class ScheduleService {
     accountId: string
   ): Promise<ListScheduleWorkersResponse[]> => {
     return this.scheduleWorkersListerRepository.listScheduleWorkers(accountId);
+  };
+
+  listScheduleChatbots = async (
+    accountId: string
+  ): Promise<ListScheduleChatbotsResponse[]> => {
+    return this.scheduleChatbotsListerRepository.listScheduleChatbots(
+      accountId
+    );
+  };
+
+  existsChatbotInAccount = async (
+    chatbotId: string,
+    accountId: string
+  ): Promise<boolean> => {
+    return this.scheduleChatbotsListerRepository.existsByChatbotIdAndAccount(
+      chatbotId,
+      accountId
+    );
   };
 
   listScheduleContacts = async (

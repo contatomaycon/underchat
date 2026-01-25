@@ -76,6 +76,10 @@ const messageTypeOptions = computed(() => [
     id: EScheduleType.audio,
     title: t('message_type_audio'),
   },
+  {
+    id: EScheduleType.chatbot,
+    title: t('message_type_chatbot'),
+  },
 ]);
 
 const sendToOptions = computed(() => [
@@ -149,6 +153,10 @@ const contacts = ref<
 const contactGroups = ref<Array<{ contact_group_id: string; name: string }>>(
   []
 );
+const chatbotId = ref<string | null>(null);
+const chatbots = ref<
+  Array<{ chatbot_id: string; name: string; type?: string | null }>
+>([]);
 
 const showTextInput = computed(() => {
   return selectedType.value === EScheduleType.text;
@@ -168,6 +176,10 @@ const showContactsSelect = computed(() => {
 
 const showContactGroupsSelect = computed(() => {
   return sendTo.value === EScheduleSendTo.contact_groups;
+});
+
+const showChatbotSelect = computed(() => {
+  return selectedType.value === EScheduleType.chatbot;
 });
 
 const acceptedFileTypes = computed(() => {
@@ -282,6 +294,13 @@ const addSchedule = async () => {
   }
 
   if (
+    selectedType.value === EScheduleType.chatbot &&
+    (!chatbotId.value || !chatbotId.value.trim())
+  ) {
+    return;
+  }
+
+  if (
     sendTo.value === EScheduleSendTo.contacts &&
     selectedContactIds.value.length === 0
   ) {
@@ -304,6 +323,9 @@ const addSchedule = async () => {
     form.append('send_to', sendTo.value ?? '');
     form.append('send_speed', sendSpeed.value);
     form.append('send_date', sendDate.value ?? '');
+    if (selectedType.value === EScheduleType.chatbot && chatbotId.value) {
+      form.append('chatbot_id', chatbotId.value);
+    }
     if (message.value) {
       form.append('message', message.value);
     }
@@ -342,6 +364,7 @@ const resetForm = () => {
   selectedContactGroupIds.value = [];
   contactSearch.value = '';
   contactGroupSearch.value = '';
+  chatbotId.value = null;
   attachmentFile.value = null;
   fileSizeError.value = null;
   if (filePreview.value?.src) {
@@ -383,6 +406,13 @@ const loadContactGroups = async () => {
   const result = await scheduleStore.listScheduleContactGroups();
   if (result) {
     contactGroups.value = result;
+  }
+};
+
+const loadChatbots = async () => {
+  const result = await scheduleStore.listScheduleChatbots();
+  if (result) {
+    chatbots.value = result;
   }
 };
 
@@ -516,6 +546,12 @@ watch(selectedType, () => {
   if (selectedType.value === EScheduleType.text) {
     message.value = '';
   }
+  if (selectedType.value === EScheduleType.chatbot) {
+    message.value = null;
+  }
+  if (selectedType.value !== EScheduleType.chatbot) {
+    chatbotId.value = null;
+  }
 });
 
 watch(debouncedContactSearch, () => {
@@ -544,6 +580,7 @@ watch(sendTo, (newValue) => {
 
 onMounted(async () => {
   await loadWorkers();
+  await loadChatbots();
   resetForm();
 });
 
@@ -551,6 +588,7 @@ watch(isVisible, (visible) => {
   if (visible) {
     resetForm();
     loadWorkers();
+    loadChatbots();
   }
 });
 
@@ -609,6 +647,24 @@ onBeforeUnmount(() => {
                 :rules="[
                   requiredValidator(selectedType, $t('message_type_required')),
                 ]"
+              />
+            </VCol>
+
+            <VCol v-if="showChatbotSelect" cols="12">
+              <VLabel class="text-body-2 mb-1">{{ $t('chatbot') }}:</VLabel>
+              <AppSelectSearch
+                v-model="chatbotId"
+                :items="
+                  chatbots.map((c) => ({
+                    id: c.chatbot_id,
+                    title: c.name,
+                  }))
+                "
+                :placeholder="$t('select_chatbot')"
+                :clearable="false"
+                item-value="id"
+                item-title="title"
+                :rules="[requiredValidator(chatbotId, $t('chatbot_required'))]"
               />
             </VCol>
 

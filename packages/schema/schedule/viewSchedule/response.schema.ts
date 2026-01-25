@@ -28,6 +28,7 @@ export const viewScheduleResponseSchema = Type.Object({
   type: Type.String(),
   send_to: Type.String(),
   send_speed: Type.String(),
+  chatbot_id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   message: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   url: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   mimetype: Type.Optional(Type.Union([Type.String(), Type.Null()])),

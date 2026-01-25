@@ -1,5 +1,5 @@
 import * as schema from '@core/models';
-import { schedule, account, worker } from '@core/models';
+import { schedule, account, worker, chatbot } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import {
@@ -76,6 +76,8 @@ export class ScheduleListerRepository {
     type: string;
     send_to: string;
     send_speed: string;
+    chatbot_id: string | null;
+    chatbot_name: string | null;
     message: string | null;
     url: string | null;
     mimetype: string | null;
@@ -99,6 +101,8 @@ export class ScheduleListerRepository {
       type: item.type,
       send_to: item.send_to,
       send_speed: item.send_speed,
+      chatbot_id: item.chatbot_id ?? null,
+      chatbot_name: item.chatbot_name ?? null,
       message: item.message ?? null,
       url: item.url ?? null,
       mimetype: item.mimetype ?? null,
@@ -134,6 +138,8 @@ export class ScheduleListerRepository {
         type: schedule.type,
         send_to: schedule.send_to,
         send_speed: schedule.send_speed,
+        chatbot_id: schedule.chatbot_id,
+        chatbot_name: chatbot.name,
         message: schedule.message,
         url: schedule.url,
         mimetype: schedule.mimetype,
@@ -147,6 +153,7 @@ export class ScheduleListerRepository {
       .from(schedule)
       .leftJoin(account, eq(schedule.account_id, account.account_id))
       .leftJoin(worker, eq(schedule.worker_id, worker.worker_id))
+      .leftJoin(chatbot, eq(schedule.chatbot_id, chatbot.chatbot_id))
       .where(and(eq(schedule.account_id, accountId), ...filters));
 
     if (orders.length) {
