@@ -1874,7 +1874,8 @@ const performSearch = async (append = false) => {
           inChatChats.push(chat);
         } else if (
           chat.status === EChatStatus.ura ||
-          chat.status === EChatStatus.ura_output
+          chat.status === EChatStatus.ura_output ||
+          chat.status === EChatStatus.ura_schedule
         ) {
           chatbotChats.push(chat);
         } else if (chat.status === EChatStatus.closed) {
@@ -2126,7 +2127,8 @@ watch(
     if (newStatus === EChatStatus.in_chat) {
       if (
         (oldStatus === EChatStatus.ura ||
-          oldStatus === EChatStatus.ura_output) &&
+          oldStatus === EChatStatus.ura_output ||
+          oldStatus === EChatStatus.ura_schedule) &&
         activeFilter.value === 'chatbot'
       ) {
         activeFilter.value = 'in_chat';
@@ -2146,7 +2148,9 @@ watch(
       }
     } else if (
       newStatus === EChatStatus.queue &&
-      (oldStatus === EChatStatus.ura || oldStatus === EChatStatus.ura_output) &&
+      (oldStatus === EChatStatus.ura ||
+        oldStatus === EChatStatus.ura_output ||
+        oldStatus === EChatStatus.ura_schedule) &&
       activeFilter.value === 'chatbot'
     ) {
       activeFilter.value = 'queue';

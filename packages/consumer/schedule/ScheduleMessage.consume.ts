@@ -21,7 +21,9 @@ import { selectJidChat } from '@core/common/functions/selectJidChat';
 import { IUpdateMessage } from '@core/common/interfaces/IUpdateMessage';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 import { commitOffset } from '@core/common/functions/commitOffset';
+import { withLock } from '@core/common/functions/withLock';
 import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
+import Redis from 'ioredis';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { scheduleMappings } from '@core/mappings/schedule.mappings';
 
@@ -32,6 +34,7 @@ export class ScheduleMessageConsume {
 
   constructor(
     @inject('Kafka') private readonly kafka: KafkaClient,
+    @inject('Redis') private readonly redis: Redis,
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
     private readonly kafkaBaileysQueueService: KafkaBaileysQueueService,
     private readonly streamProducerService: StreamProducerService,
@@ -53,7 +56,8 @@ export class ScheduleMessageConsume {
     if (this.consumer && this.isRunning) return;
 
     const workerId = baileysEnvironment.baileysWorkerId;
-    const topic = this.kafkaBaileysQueueService.workerSendMessage(workerId);
+    const topic =
+      this.kafkaBaileysQueueService.workerScheduleSendMessage(workerId);
     const groupId = `group-underchat-schedule-message-${workerId}`;
 
     await ensureKafkaTopic(
@@ -79,7 +83,12 @@ export class ScheduleMessageConsume {
 
       const stop = startHeartbeat(heartbeat);
       try {
-        await this.handleMessage(data);
+        await withLock(
+          this.redis,
+          `schedule:send:${workerId}`,
+          () => this.handleMessage(data),
+          { ttlMs: 300000, retryMs: 500 }
+        );
       } catch (error) {
         console.error(
           `Error processing schedule message for schedule ${data.schedule_id}, contact ${data.contact_id}:`,

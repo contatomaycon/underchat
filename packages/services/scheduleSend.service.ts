@@ -4,12 +4,15 @@ import { ScheduleContactsValidatedListerRepository } from '@core/repositories/sc
 import { ScheduleStatusUpdaterRepository } from '@core/repositories/schedule/ScheduleStatusUpdater.repository';
 import { ContactService } from './contact.service';
 import { normalizePhoneToJid } from '@core/common/functions/normalizePhoneToJid';
+import { getPhoneFromJid } from '@core/common/functions/getPhoneFromJid';
 import { KafkaBaileysQueueService } from './kafkaBaileysQueue.service';
 import { StreamProducerService } from './streamProducer.service';
 import { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { EScheduleType } from '@core/common/enums/EScheduleType';
 import { EScheduleStatus } from '@core/common/enums/EScheduleStatus';
+import { EScheduleSendSpeed } from '@core/common/enums/EScheduleSendSpeed';
+import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 import { v7 as uuidv7 } from 'uuid';
 import { ElasticDatabaseService } from './elasticDatabase.service';
@@ -30,13 +33,17 @@ import {
   ScheduleCreateResult,
   SchedulePatchScriptParams,
 } from '@core/common/interfaces/IScheduleDocument';
+import { delay } from '@core/common/functions/delay';
+import { ChatService } from './chat.service';
+import { ChatbotFlowRunnerService } from './chatbotFlowRunner.service';
+import i18next from 'i18next';
+import { IChat } from '@core/common/interfaces/IChat';
+import { IUpsertMessage } from '@core/common/interfaces/IUpsertMessage';
+import { WAMessage } from '@whiskeysockets/baileys';
 
 @injectable()
 export class ScheduleSendService {
   private readonly BATCH_SIZE = 10;
-  private readonly DELAY_MIN_MS = 5000;
-  private readonly DELAY_MAX_MS = 20000;
-
   private readonly BRAZIL_TIMEZONE = 'America/Sao_Paulo';
 
   constructor(
@@ -48,15 +55,26 @@ export class ScheduleSendService {
     private readonly streamProducerService: StreamProducerService,
     private readonly elasticDatabaseService: ElasticDatabaseService,
     private readonly planAccountService: PlanAccountService,
+    private readonly chatService: ChatService,
+    private readonly chatbotFlowRunnerService: ChatbotFlowRunnerService,
     @inject('Redis') private readonly redis: Redis
   ) {}
 
-  private getRandomDelay(): number {
+  private getRandomDelayMs(sendSpeed: string | undefined): number {
+    let minMs: number;
+    let maxMs: number;
+    if (sendSpeed === EScheduleSendSpeed.high) {
+      minMs = 10000;
+      maxMs = 20000;
+    } else if (sendSpeed === EScheduleSendSpeed.medium) {
+      minMs = 20000;
+      maxMs = 40000;
+    } else {
+      minMs = 30000;
+      maxMs = 60000;
+    }
     const random = Math.random(); // NOSONAR: Math.random() is safe here as it's only used for non-security purposes (message timing)
-
-    return Math.floor(
-      random * (this.DELAY_MAX_MS - this.DELAY_MIN_MS) + this.DELAY_MIN_MS
-    );
+    return Math.floor(random * (maxMs - minMs) + minMs);
   }
 
   private getGreeting(): string {
@@ -291,7 +309,7 @@ export class ScheduleSendService {
   ): IChatMessage {
     const phone = this.contactService.getContactPhoneDecrypted(contact.phone);
     const now = new Date().toISOString();
-    const delay = this.getRandomDelay();
+    const delayMs = this.getRandomDelayMs(schedule.send_speed);
 
     return {
       message_id: uuidv7(),
@@ -323,7 +341,7 @@ export class ScheduleSendService {
       has_quoted: false,
       date: now,
       hash: null,
-      send_delay_ms: delay,
+      send_delay_ms: delayMs,
     };
   }
 
@@ -333,6 +351,10 @@ export class ScheduleSendService {
     jid: string
   ): Promise<IChatMessage> {
     const baseMessage = this.createBaseMessage(schedule, contact, jid);
+
+    if (schedule.type === EScheduleType.chatbot) {
+      return baseMessage;
+    }
 
     if (schedule.type === EScheduleType.text) {
       return this.createTextMessage(schedule, baseMessage, contact);
@@ -684,7 +706,8 @@ export class ScheduleSendService {
     if (!workerId) {
       throw new Error('Worker ID is required to send schedule message');
     }
-    const topic = this.kafkaBaileysQueueService.workerSendMessage(workerId);
+    const topic =
+      this.kafkaBaileysQueueService.workerScheduleSendMessage(workerId);
 
     await this.streamProducerService.send(
       topic,
@@ -703,6 +726,220 @@ export class ScheduleSendService {
     if (!jid) return null;
 
     return jid;
+  }
+
+  private async reportScheduleChatbotFailure(
+    schedule: ISchedulePendingData,
+    contact: IScheduleContactValidated,
+    status: EScheduleStatus
+  ): Promise<IScheduleMessageResult> {
+    const failedMessage = this.createFailedMessage(schedule);
+    await this.saveToElasticsearch(schedule, contact, failedMessage, status);
+
+    return { success: false, contactId: contact.contact_id };
+  }
+
+  private buildScheduleChatbotChat(
+    schedule: ISchedulePendingData,
+    contact: IScheduleContactValidated,
+    jid: string,
+    now: string
+  ): IChat {
+    const phone =
+      this.contactService.getContactPhoneDecrypted(contact.phone) ??
+      getPhoneFromJid(jid, null) ??
+      '';
+
+    return {
+      chat_id: uuidv7(),
+      message_key: { remote_jid: jid, remote_jid_alt: null },
+      account: { id: schedule.account_id, name: schedule.account_name },
+      worker: { id: schedule.worker_id, name: schedule.worker_name },
+      contact: {
+        id: contact.contact_id,
+        name: contact.name,
+        phone,
+        phone_ddi: contact.phone_ddi ?? null,
+      },
+      name: contact.name,
+      phone,
+      status: EChatStatus.ura_schedule,
+      date: now,
+      summary: { last_message: '', last_date: now, unread_count: 0 },
+      forward_to_output_chatbot: false,
+      chatbot_schedule_id: schedule.chatbot_id,
+    };
+  }
+
+  private buildScheduleChatbotMinimalData(
+    schedule: ISchedulePendingData,
+    jid: string
+  ): IUpsertMessage {
+    return {
+      account_id: schedule.account_id,
+      worker_id: schedule.worker_id,
+      type: EMessageType.text,
+      message: { key: { remoteJid: jid } } as WAMessage,
+      has_quoted: false,
+    };
+  }
+
+  private async runScheduleChatbotFlow(
+    t: ReturnType<typeof i18next.t>,
+    minimalData: IUpsertMessage,
+    chat: IChat,
+    chatbotId: string,
+    schedule: ISchedulePendingData,
+    contact: IScheduleContactValidated
+  ): Promise<IScheduleMessageResult | null> {
+    try {
+      await this.chatbotFlowRunnerService.execute(
+        t,
+        minimalData,
+        chat,
+        chatbotId
+      );
+      return null;
+    } catch (err) {
+      console.error(
+        `[ScheduleSendService] Chatbot flow error schedule=${schedule.schedule_id} contact=${contact.contact_id}:`,
+        err
+      );
+      return this.reportScheduleChatbotFailure(
+        schedule,
+        contact,
+        EScheduleStatus.failed
+      );
+    }
+  }
+
+  private buildScheduleChatbotSyntheticMessage(
+    schedule: ISchedulePendingData,
+    contact: IScheduleContactValidated,
+    jid: string,
+    now: string
+  ): IChatMessage {
+    return {
+      message_id: uuidv7(),
+      chat_id: `${schedule.account_id}:${jid}`,
+      message_key: {
+        remote_jid: jid,
+        remote_jid_alt: null,
+        is_view_once: false,
+      },
+      type_user: ETypeUserChat.system,
+      account: { id: schedule.account_id, name: schedule.account_name },
+      worker: { id: schedule.worker_id, name: schedule.worker_name },
+      user: null,
+      phone: this.contactService.getContactPhoneDecrypted(contact.phone) ?? '',
+      phone_ddi: contact.phone_ddi ?? null,
+      summary: {
+        is_sent: false,
+        is_delivered: false,
+        is_seen: false,
+        is_sent_to_internal: true,
+      },
+      deleted: false,
+      has_quoted: false,
+      date: now,
+      hash: null,
+      content: { type: EMessageType.text, message: '' },
+    };
+  }
+
+  private async persistScheduleChatbotSyntheticMessage(
+    schedule: ISchedulePendingData,
+    contact: IScheduleContactValidated,
+    syntheticMessage: IChatMessage
+  ): Promise<void> {
+    const saved = await this.saveToElasticsearch(
+      schedule,
+      contact,
+      syntheticMessage,
+      EScheduleStatus.processing
+    );
+    if (!saved) {
+      console.error(
+        `Failed to save schedule chatbot to Elasticsearch schedule=${schedule.schedule_id} contact=${contact.contact_id}`
+      );
+    }
+  }
+
+  private async sendScheduleChatbot(
+    schedule: ISchedulePendingData,
+    contact: IScheduleContactValidated,
+    jid: string
+  ): Promise<IScheduleMessageResult> {
+    if (!schedule.chatbot_id) {
+      return this.reportScheduleChatbotFailure(
+        schedule,
+        contact,
+        EScheduleStatus.failed
+      );
+    }
+
+    const chatbotId = schedule.chatbot_id;
+
+    const hasLimit = await this.checkMassSendingLimit(schedule.account_id, 1);
+    if (!hasLimit) {
+      return this.reportScheduleChatbotFailure(
+        schedule,
+        contact,
+        EScheduleStatus.limit_exhausted
+      );
+    }
+
+    return withLock(
+      this.redis,
+      `schedule:send:${schedule.worker_id}`,
+      async () => {
+        await delay(this.getRandomDelayMs(schedule.send_speed));
+
+        const now = new Date().toISOString();
+        const chat = this.buildScheduleChatbotChat(schedule, contact, jid, now);
+
+        const savedChat = await this.chatService.saveChat(chat, {
+          refresh: true,
+        });
+        if (!savedChat) {
+          return this.reportScheduleChatbotFailure(
+            schedule,
+            contact,
+            EScheduleStatus.failed
+          );
+        }
+
+        const t = i18next.t.bind(i18next);
+        const minimalData = this.buildScheduleChatbotMinimalData(schedule, jid);
+
+        const flowFailure = await this.runScheduleChatbotFlow(
+          t,
+          minimalData,
+          chat,
+          chatbotId,
+          schedule,
+          contact
+        );
+        if (flowFailure) {
+          return flowFailure;
+        }
+
+        const syntheticMessage = this.buildScheduleChatbotSyntheticMessage(
+          schedule,
+          contact,
+          jid,
+          now
+        );
+        await this.persistScheduleChatbotSyntheticMessage(
+          schedule,
+          contact,
+          syntheticMessage
+        );
+
+        return { success: true, contactId: contact.contact_id };
+      },
+      { ttlMs: 300000, retryMs: 500 }
+    );
   }
 
   private async checkMassSendingLimit(
@@ -768,6 +1005,10 @@ export class ScheduleSendService {
         success: false,
         contactId: contact.contact_id,
       };
+    }
+
+    if (schedule.type === EScheduleType.chatbot) {
+      return this.sendScheduleChatbot(schedule, contact, jid);
     }
 
     const message = await this.createChatMessage(schedule, contact, jid);

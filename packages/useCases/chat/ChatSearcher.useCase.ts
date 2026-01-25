@@ -796,7 +796,11 @@ export class ChatSearcherUseCase {
           ...baseFilters,
           {
             terms: {
-              status: [EChatStatus.ura, EChatStatus.ura_output],
+              status: [
+                EChatStatus.ura,
+                EChatStatus.ura_output,
+                EChatStatus.ura_schedule,
+              ],
             },
           } as unknown as IElasticsearchBoolClause,
         ];
@@ -806,7 +810,11 @@ export class ChatSearcherUseCase {
         ...baseFilters,
         {
           terms: {
-            status: [EChatStatus.ura, EChatStatus.ura_output],
+            status: [
+              EChatStatus.ura,
+              EChatStatus.ura_output,
+              EChatStatus.ura_schedule,
+            ],
           },
         } as unknown as IElasticsearchBoolClause,
         {

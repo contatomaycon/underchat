@@ -215,7 +215,8 @@ const isQueueStatus = computed(
 const isUraStatus = computed(
   () =>
     chatStore.activeChat?.status === EChatStatus.ura ||
-    chatStore.activeChat?.status === EChatStatus.ura_output
+    chatStore.activeChat?.status === EChatStatus.ura_output ||
+    chatStore.activeChat?.status === EChatStatus.ura_schedule
 );
 
 const isClosedStatus = computed(
@@ -226,7 +227,8 @@ const isQueueOrUraStatus = computed(() => {
   return (
     chatStore.activeChat?.status === EChatStatus.queue ||
     chatStore.activeChat?.status === EChatStatus.ura ||
-    chatStore.activeChat?.status === EChatStatus.ura_output
+    chatStore.activeChat?.status === EChatStatus.ura_output ||
+    chatStore.activeChat?.status === EChatStatus.ura_schedule
   );
 });
 
@@ -4879,7 +4881,9 @@ onBeforeUnmount(() => {
             >
               <VIcon
                 :icon="
-                  isForwardToOutputChatbotActive ? 'tabler-robot' : 'tabler-robot-off'
+                  isForwardToOutputChatbotActive
+                    ? 'tabler-robot'
+                    : 'tabler-robot-off'
                 "
               />
             </IconBtn>

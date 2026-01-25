@@ -167,7 +167,8 @@ const shouldBlurMessageContent = computed(() => {
   const isQueueOrUra =
     chatStatus === EChatStatus.queue ||
     chatStatus === EChatStatus.ura ||
-    chatStatus === EChatStatus.ura_output;
+    chatStatus === EChatStatus.ura_output ||
+    chatStatus === EChatStatus.ura_schedule;
   return isQueueOrUra && !canViewChatContent();
 });
 

@@ -101,7 +101,8 @@ export class StartChatWithContactUseCase {
       if (
         existingChat.status === EChatStatus.queue ||
         existingChat.status === EChatStatus.ura ||
-        existingChat.status === EChatStatus.ura_output
+        existingChat.status === EChatStatus.ura_output ||
+        existingChat.status === EChatStatus.ura_schedule
       ) {
         return this.updateExistingChat(
           t,
@@ -240,7 +241,8 @@ export class StartChatWithContactUseCase {
 
     const wasUraStatus =
       existingChat.status === EChatStatus.ura ||
-      existingChat.status === EChatStatus.ura_output;
+      existingChat.status === EChatStatus.ura_output ||
+      existingChat.status === EChatStatus.ura_schedule;
 
     const updatedChat = this.buildUpdatedChat(
       existingChat,

@@ -1482,6 +1482,7 @@ export class ChatService {
                   EChatStatus.queue,
                   EChatStatus.ura,
                   EChatStatus.ura_output,
+                  EChatStatus.ura_schedule,
                 ],
               },
             },

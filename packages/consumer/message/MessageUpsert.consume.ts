@@ -2099,7 +2099,8 @@ export class MessageUpsertConsume {
 
     if (
       inputChatMessage.status === EChatStatus.ura ||
-      inputChatMessage.status === EChatStatus.ura_output
+      inputChatMessage.status === EChatStatus.ura_output ||
+      inputChatMessage.status === EChatStatus.ura_schedule
     ) {
       inputChatMessage.forward_to_output_chatbot = false;
     }
@@ -2210,6 +2211,20 @@ export class MessageUpsertConsume {
     await this.createChatMessage(getChat, data);
   }
 
+  private getEffectiveInputChatbotId(
+    getChat: IChat | null,
+    inputChatbotId: string | null
+  ): string | null {
+    if (
+      getChat?.status === EChatStatus.ura_schedule &&
+      getChat?.chatbot_schedule_id
+    ) {
+      return getChat.chatbot_schedule_id;
+    }
+
+    return inputChatbotId;
+  }
+
   private async createOrUpdateChat(
     t: TFunction<'translation', undefined>,
     data: IUpsertMessage,
@@ -2259,16 +2274,23 @@ export class MessageUpsertConsume {
           return;
         }
 
+        const effectiveInputChatbotId = this.getEffectiveInputChatbotId(
+          getChat,
+          inputChatbotId
+        );
+
         if (
-          inputChatbotId &&
-          (!getChat || getChat.status === EChatStatus.ura) &&
+          effectiveInputChatbotId &&
+          (!getChat ||
+            getChat.status === EChatStatus.ura ||
+            getChat.status === EChatStatus.ura_schedule) &&
           !isFromMe
         ) {
           await this.createOrUpdateChatBotFlow(
             t,
             getChat,
             data,
-            inputChatbotId
+            effectiveInputChatbotId
           );
 
           return;

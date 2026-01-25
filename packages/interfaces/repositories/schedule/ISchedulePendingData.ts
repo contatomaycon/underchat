@@ -6,6 +6,8 @@ export interface ISchedulePendingData {
   worker_name: string;
   type: string;
   send_to: string;
+  send_speed: string;
+  chatbot_id: string | null;
   message: string | null;
   url: string | null;
   mimetype: string | null;

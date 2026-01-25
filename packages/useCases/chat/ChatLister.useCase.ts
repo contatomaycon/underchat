@@ -111,7 +111,8 @@ export class ChatListerUseCase {
 
       if (
         filterStatus === EChatStatus.ura ||
-        filterStatus === EChatStatus.ura_output
+        filterStatus === EChatStatus.ura_output ||
+        filterStatus === EChatStatus.ura_schedule
       ) {
         return {
           sortBy: preferences.sortByChatbotOrder,
@@ -150,7 +151,8 @@ export class ChatListerUseCase {
 
     if (
       singleStatus === EChatStatus.ura ||
-      singleStatus === EChatStatus.ura_output
+      singleStatus === EChatStatus.ura_output ||
+      singleStatus === EChatStatus.ura_schedule
     ) {
       return {
         sortBy: preferences.sortByChatbotOrder,
@@ -760,7 +762,11 @@ export class ChatListerUseCase {
           ...baseFilters,
           {
             terms: {
-              status: [EChatStatus.ura, EChatStatus.ura_output],
+              status: [
+                EChatStatus.ura,
+                EChatStatus.ura_output,
+                EChatStatus.ura_schedule,
+              ],
             },
           } as unknown as IElasticsearchBoolClause,
         ];
@@ -770,7 +776,11 @@ export class ChatListerUseCase {
         ...baseFilters,
         {
           terms: {
-            status: [EChatStatus.ura, EChatStatus.ura_output],
+            status: [
+              EChatStatus.ura,
+              EChatStatus.ura_output,
+              EChatStatus.ura_schedule,
+            ],
           },
         } as unknown as IElasticsearchBoolClause,
         {
