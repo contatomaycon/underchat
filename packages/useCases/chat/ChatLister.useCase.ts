@@ -500,13 +500,7 @@ export class ChatListerUseCase {
     const canViewOthers = this.canViewOthersChats(actions);
     const canListAll = this.canListAllChatsWithoutSectorLimit(actions);
 
-    const hasPermissionToViewAll = canViewOthers || canListAll;
-
-    if (!hasPermissionToViewAll) {
-      const statusArray = Array.isArray(query.status)
-        ? query.status
-        : [query.status];
-
+    if (!canViewOthers) {
       if (statusArray.includes(EChatStatus.in_chat)) {
         filterClauses.push({
           nested: {
@@ -519,7 +513,9 @@ export class ChatListerUseCase {
           },
         });
       }
+    }
 
+    if (!canListAll) {
       if (statusArray.includes(EChatStatus.queue)) {
         const queueVisibility: IElasticsearchBoolClause = {
           bool: {
@@ -622,7 +618,7 @@ export class ChatListerUseCase {
           !(clause as any).term?.status && !(clause as any).terms?.status
       );
 
-      if (hasPermissionToViewAll) {
+      if (canListAll) {
         return [
           ...baseFilters,
           {
@@ -713,7 +709,7 @@ export class ChatListerUseCase {
           !(clause as any).term?.status && !(clause as any).terms?.status
       );
 
-      if (hasPermissionToViewAll) {
+      if (canViewOthers) {
         return [
           ...baseFilters,
           {
