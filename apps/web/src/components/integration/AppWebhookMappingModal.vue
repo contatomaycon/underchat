@@ -4,9 +4,11 @@ import { useI18n } from 'vue-i18n';
 import { useIntegrationStore } from '@/@webcore/stores/integration';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EIntegrationPermissions } from '@core/common/enums/EPermissions/integration';
+import { useCountryCodes } from '@/composables/useCountryCodes';
 
 const { t } = useI18n();
 const integrationStore = useIntegrationStore();
+const { items: countryCodesItems } = useCountryCodes();
 
 const props = defineProps<{
   modelValue: boolean;
@@ -23,6 +25,43 @@ const isOpen = computed({
 
 const webhookMapping = ref<Record<string, string | null>>({});
 const webhookDataKeys = ref<string[]>([]);
+const phoneDdiMode = ref<'depara' | 'select'>('select');
+const messageMode = ref<'textarea' | 'depara'>('textarea');
+
+const availableTags = computed(() => [
+  {
+    tag: '{{ greeting }}',
+    description: t('tag_greeting_description'),
+  },
+  {
+    tag: '{{ name }}',
+    description: t('tag_name_description'),
+  },
+  {
+    tag: '{{ protocol }}',
+    description: t('tag_protocol_description'),
+  },
+  {
+    tag: '{{ date }}',
+    description: t('tag_date_description'),
+  },
+  {
+    tag: '{{ time }}',
+    description: t('tag_time_description'),
+  },
+  {
+    tag: '{{ account_name }}',
+    description: t('tag_account_name_description'),
+  },
+  {
+    tag: '{{ phone }}',
+    description: t('tag_phone_description'),
+  },
+  {
+    tag: '{{ channel_name }}',
+    description: t('tag_channel_name_description'),
+  },
+]);
 const expectedFields = computed(() => [
   { key: 'first_name', label: t('webhook_field_first_name'), required: true },
   { key: 'last_name', label: t('webhook_field_last_name'), required: false },
@@ -31,11 +70,6 @@ const expectedFields = computed(() => [
   { key: 'email', label: t('webhook_field_email'), required: false },
   { key: 'phone_ddi', label: t('webhook_field_phone_ddi'), required: true },
   { key: 'phone', label: t('webhook_field_phone'), required: true },
-  {
-    key: 'document_type',
-    label: t('webhook_field_document_type'),
-    required: false,
-  },
   { key: 'notes', label: t('webhook_field_notes'), required: false },
   { key: 'labels', label: t('webhook_field_labels'), required: false },
   { key: 'message', label: t('webhook_field_message'), required: false },
@@ -156,12 +190,39 @@ watch(isOpen, async (newValue) => {
   if (newValue) {
     webhookMapping.value = {};
     webhookDataKeys.value = [];
+    phoneDdiMode.value = 'select';
+    messageMode.value = 'textarea';
 
     expectedFields.value.forEach((field) => {
-      webhookMapping.value[field.key] = null;
+      if (field.key === 'phone_ddi') {
+        webhookMapping.value[field.key] = '55';
+      } else {
+        webhookMapping.value[field.key] = null;
+      }
     });
 
     await Promise.all([loadWebhookData(), loadWebhookMapping()]);
+
+    if (
+      webhookMapping.value.phone_ddi &&
+      !webhookDataKeys.value.includes(webhookMapping.value.phone_ddi)
+    ) {
+      phoneDdiMode.value = 'select';
+    } else if (
+      webhookMapping.value.phone_ddi &&
+      webhookDataKeys.value.includes(webhookMapping.value.phone_ddi)
+    ) {
+      phoneDdiMode.value = 'depara';
+    } else if (!webhookMapping.value.phone_ddi) {
+      webhookMapping.value.phone_ddi = '55';
+    }
+
+    if (
+      webhookMapping.value.message &&
+      webhookDataKeys.value.includes(webhookMapping.value.message)
+    ) {
+      messageMode.value = 'depara';
+    }
   }
 });
 </script>
@@ -210,11 +271,124 @@ watch(isOpen, async (newValue) => {
         <VRow v-else>
           <VCol cols="12">
             <div v-for="field in expectedFields" :key="field.key" class="mb-4">
-              <VLabel class="text-body-2 mb-2">
+              <div
+                v-if="field.key === 'phone_ddi'"
+                class="d-flex align-center justify-space-between mb-2"
+              >
+                <VLabel class="text-body-2">
+                  {{ field.label }}
+                  <span v-if="field.required" class="text-error">*</span>
+                </VLabel>
+                <VBtn
+                  variant="text"
+                  size="small"
+                  density="compact"
+                  @click="phoneDdiMode = phoneDdiMode === 'select' ? 'depara' : 'select'"
+                >
+                  {{
+                    phoneDdiMode === 'select'
+                      ? $t('use_mapping')
+                      : $t('use_ddi_list')
+                  }}
+                </VBtn>
+              </div>
+              <div
+                v-else-if="field.key === 'message'"
+                class="d-flex align-center justify-space-between mb-2"
+              >
+                <VLabel class="text-body-2">
+                  {{ field.label }}
+                  <span v-if="field.required" class="text-error">*</span>
+                </VLabel>
+                <VBtn
+                  variant="text"
+                  size="small"
+                  density="compact"
+                  @click="messageMode = messageMode === 'textarea' ? 'depara' : 'textarea'"
+                >
+                  {{
+                    messageMode === 'textarea'
+                      ? $t('use_mapping')
+                      : $t('use_textarea')
+                  }}
+                </VBtn>
+              </div>
+              <VLabel
+                v-else
+                class="text-body-2 mb-2"
+              >
                 {{ field.label }}
                 <span v-if="field.required" class="text-error">*</span>
               </VLabel>
               <AppSelectSearch
+                v-if="field.key === 'phone_ddi' && phoneDdiMode === 'depara'"
+                :model-value="webhookMapping[field.key] ?? null"
+                @update:model-value="handleFieldUpdate(field.key, $event)"
+                :items="
+                  webhookDataKeys.map((key) => ({
+                    value: key,
+                    title: key,
+                  }))
+                "
+                :placeholder="$t('select_field')"
+                :clearable="!field.required"
+                item-value="value"
+                item-title="title"
+              />
+              <AppSelectSearch
+                v-else-if="field.key === 'phone_ddi' && phoneDdiMode === 'select'"
+                :model-value="webhookMapping[field.key] ?? null"
+                @update:model-value="handleFieldUpdate(field.key, $event)"
+                :items="countryCodesItems"
+                :placeholder="$t('select_phone_ddi')"
+                :clearable="!field.required"
+                item-value="value"
+                item-title="title"
+              />
+              <div v-else-if="field.key === 'message' && messageMode === 'textarea'">
+                <VTextarea
+                  :model-value="webhookMapping[field.key] ?? ''"
+                  @update:model-value="webhookMapping[field.key] = $event || null"
+                  :placeholder="$t('webhook_field_message')"
+                  rows="4"
+                />
+                <VExpansionPanels variant="accordion" class="mt-2">
+                  <VExpansionPanel>
+                    <VExpansionPanelTitle>
+                      <span class="text-caption">{{ $t('available_tags') }}</span>
+                    </VExpansionPanelTitle>
+                    <VExpansionPanelText>
+                      <div class="d-flex flex-column gap-1">
+                        <div
+                          v-for="tag in availableTags"
+                          :key="tag.tag"
+                          class="text-caption"
+                        >
+                          <code>{{ tag.tag }}</code
+                          >: {{ tag.description }}
+                        </div>
+                      </div>
+                    </VExpansionPanelText>
+                  </VExpansionPanel>
+                </VExpansionPanels>
+              </div>
+              <AppSelectSearch
+                v-else-if="field.key === 'message' && messageMode === 'depara'"
+                :model-value="webhookMapping[field.key] ?? null"
+                @update:model-value="handleFieldUpdate(field.key, $event)"
+                :items="
+                  webhookDataKeys.map((key) => ({
+                    value: key,
+                    title: key,
+                  }))
+                "
+                :placeholder="$t('select_field')"
+                :clearable="!field.required"
+                item-value="value"
+                item-title="title"
+              />
+              <AppSelectSearch
+                v-else
                 :model-value="webhookMapping[field.key] ?? null"
                 @update:model-value="handleFieldUpdate(field.key, $event)"
                 :items="
