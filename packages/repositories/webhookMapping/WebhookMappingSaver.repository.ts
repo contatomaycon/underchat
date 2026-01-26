@@ -2,7 +2,6 @@ import { injectable } from 'tsyringe';
 import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { webhookMappingMappings } from '@core/mappings/webhookMapping.mappings';
-import { currentTime } from '@core/common/functions/currentTime';
 
 @injectable()
 export class WebhookMappingSaverRepository {
@@ -61,7 +60,7 @@ export class WebhookMappingSaverRepository {
       documentId
     );
 
-    const now = currentTime();
+    const now = new Date().toISOString();
     const document: {
       account_id: string;
       worker_id: string;
