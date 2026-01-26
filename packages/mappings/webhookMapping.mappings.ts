@@ -5,6 +5,9 @@ export const webhookMappingMappings = () => {
         account_id: {
           type: 'keyword',
         },
+        worker_id: {
+          type: 'keyword',
+        },
         mapping: {
           type: 'object',
           dynamic: true,

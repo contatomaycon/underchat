@@ -1,6 +1,7 @@
 import { Type } from '@sinclair/typebox';
 import { ELanguage } from '@core/common/enums/ELanguage';
 import { ETagSwagger } from '@core/common/enums/ETagSwagger';
+import { viewWebhookMappingRequestSchema } from './request.schema';
 import { viewWebhookMappingResponseSchema } from './response.schema';
 
 export const viewWebhookMappingSchema = {
@@ -21,6 +22,7 @@ export const viewWebhookMappingSchema = {
       })
     ),
   }),
+  querystring: viewWebhookMappingRequestSchema,
   response: {
     200: Type.Object(
       {

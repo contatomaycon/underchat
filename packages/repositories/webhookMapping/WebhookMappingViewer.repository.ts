@@ -10,9 +10,11 @@ export class WebhookMappingViewerRepository {
   ) {}
 
   viewWebhookMapping = async (
-    accountId: string
+    accountId: string,
+    workerId: string
   ): Promise<{
     account_id: string;
+    worker_id: string;
     mapping: Record<string, string>;
     created_at?: string;
     updated_at?: string;
@@ -28,9 +30,10 @@ export class WebhookMappingViewerRepository {
       return null;
     }
 
+    const documentId = `${accountId}_${workerId}`;
     const document = await this.elasticDatabaseService.view(
       EElasticIndex.webhook_mapping,
-      accountId
+      documentId
     );
 
     if (!document) {
@@ -39,6 +42,7 @@ export class WebhookMappingViewerRepository {
 
     return document as {
       account_id: string;
+      worker_id: string;
       mapping: Record<string, string>;
       created_at?: string;
       updated_at?: string;

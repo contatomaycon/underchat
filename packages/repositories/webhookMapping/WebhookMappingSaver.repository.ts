@@ -12,6 +12,7 @@ export class WebhookMappingSaverRepository {
 
   saveWebhookMapping = async (
     accountId: string,
+    workerId: string,
     mapping: Record<string, string>
   ): Promise<boolean> => {
     const indexCreated = await this.ensureIndexExists();
@@ -20,9 +21,10 @@ export class WebhookMappingSaverRepository {
       return false;
     }
 
-    const document = await this.prepareDocument(accountId, mapping);
+    const document = await this.prepareDocument(accountId, workerId, mapping);
 
-    const updateResult = await this.saveDocument(accountId, document);
+    const documentId = `${accountId}_${workerId}`;
+    const updateResult = await this.saveDocument(documentId, document);
 
     return (
       updateResult === 'updated' ||
@@ -44,26 +46,31 @@ export class WebhookMappingSaverRepository {
 
   private readonly prepareDocument = async (
     accountId: string,
+    workerId: string,
     mapping: Record<string, string>
   ): Promise<{
     account_id: string;
+    worker_id: string;
     mapping: Record<string, string>;
     created_at?: string;
     updated_at: string;
   }> => {
+    const documentId = `${accountId}_${workerId}`;
     const existing = await this.elasticDatabaseService.view(
       EElasticIndex.webhook_mapping,
-      accountId
+      documentId
     );
 
     const now = currentTime();
     const document: {
       account_id: string;
+      worker_id: string;
       mapping: Record<string, string>;
       created_at?: string;
       updated_at: string;
     } = {
       account_id: accountId,
+      worker_id: workerId,
       mapping,
       updated_at: now,
     };
@@ -76,9 +83,10 @@ export class WebhookMappingSaverRepository {
   };
 
   private readonly saveDocument = async (
-    accountId: string,
+    documentId: string,
     document: {
       account_id: string;
+      worker_id: string;
       mapping: Record<string, string>;
       created_at?: string;
       updated_at: string;
@@ -86,7 +94,7 @@ export class WebhookMappingSaverRepository {
   ): Promise<'updated' | 'created' | 'noop' | 'conflict' | 'not_found'> => {
     const updateResult = await this.elasticDatabaseService.updateWithOCC(
       EElasticIndex.webhook_mapping,
-      accountId,
+      documentId,
       document,
       {
         upsert: true,

@@ -18,16 +18,17 @@ export const saveWebhookMapping = async (
   const { t, tokenJwtData } = request;
 
   try {
-    await webhookMappingSaverUseCase.execute(
+    const success = await webhookMappingSaverUseCase.execute(
       t,
       tokenJwtData.account_id,
+      request.body.api_key_id,
       request.body.mapping
     );
 
     return sendResponse(reply, {
       message: t('webhook_mapping_saved_successfully'),
       httpStatusCode: EHTTPStatusCode.ok,
-      data: { success: true },
+      data: { success },
     });
   } catch (error) {
     handleControllerError(error, reply, t);

@@ -9,10 +9,12 @@ export class WebhookMappingSaverUseCase {
   async execute(
     t: TFunction<'translation', undefined>,
     accountId: string,
+    apiKeyId: string,
     mapping: Record<string, string>
   ): Promise<boolean> {
     const success = await this.integrationService.saveWebhookMapping(
       accountId,
+      apiKeyId,
       mapping
     );
 

@@ -4,9 +4,12 @@ import { handleControllerError } from '@core/common/functions/handleControllerEr
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
 import { IntegrationKeyGeneratorUseCase } from '@core/useCases/integration/IntegrationKeyGenerator.useCase';
+import { GenerateIntegrationKeyRequest } from '@core/schema/integration/generateIntegrationKey/request.schema';
 
 export const generateIntegrationKey = async (
-  request: FastifyRequest,
+  request: FastifyRequest<{
+    Querystring: GenerateIntegrationKeyRequest;
+  }>,
   reply: FastifyReply
 ) => {
   const integrationKeyGeneratorUseCase = container.resolve(
@@ -16,9 +19,16 @@ export const generateIntegrationKey = async (
 
   try {
     const key = await integrationKeyGeneratorUseCase.execute(
-      t,
-      tokenJwtData.account_id
+      tokenJwtData.account_id,
+      request.query.api_key_id
     );
+
+    if (!key) {
+      return sendResponse(reply, {
+        message: t('integration_key_generation_error'),
+        httpStatusCode: EHTTPStatusCode.internal_server_error,
+      });
+    }
 
     return sendResponse(reply, {
       message: t('integration_key_generated_successfully'),

@@ -937,5 +937,7 @@
   "integration_status_update_error": "Erro ao atualizar status da integração!",
   "integration_key_generated_successfully": "Nova chave gerada com sucesso!",
   "integration_key_generation_error": "Erro ao gerar nova chave!",
+  "integrations_listed_successfully": "Integrações listadas com sucesso!",
+  "channels_listed_successfully": "Canais listados com sucesso!",
   "webhook_received_successfully": "Webhook recebido com sucesso!"
 }

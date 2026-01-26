@@ -4,9 +4,12 @@ import { handleControllerError } from '@core/common/functions/handleControllerEr
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
 import { WebhookDataViewerUseCase } from '@core/useCases/integration/WebhookDataViewer.useCase';
+import { ViewWebhookDataRequest } from '@core/schema/integration/viewWebhookData/request.schema';
 
 export const viewWebhookData = async (
-  request: FastifyRequest,
+  request: FastifyRequest<{
+    Querystring: ViewWebhookDataRequest;
+  }>,
   reply: FastifyReply
 ) => {
   const webhookDataViewerUseCase = container.resolve(WebhookDataViewerUseCase);
@@ -14,7 +17,8 @@ export const viewWebhookData = async (
 
   try {
     const result = await webhookDataViewerUseCase.execute(
-      tokenJwtData.account_id
+      tokenJwtData.account_id,
+      request.query.api_key_id
     );
 
     return sendResponse(reply, {

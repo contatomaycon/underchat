@@ -1,6 +1,7 @@
 import { Type } from '@sinclair/typebox';
 import { ELanguage } from '@core/common/enums/ELanguage';
 import { ETagSwagger } from '@core/common/enums/ETagSwagger';
+import { generateIntegrationKeyRequestSchema } from './request.schema';
 import { generateIntegrationKeyResponseSchema } from './response.schema';
 
 export const generateIntegrationKeySchema = {
@@ -21,6 +22,7 @@ export const generateIntegrationKeySchema = {
       })
     ),
   }),
+  querystring: generateIntegrationKeyRequestSchema,
   response: {
     200: Type.Object(
       {

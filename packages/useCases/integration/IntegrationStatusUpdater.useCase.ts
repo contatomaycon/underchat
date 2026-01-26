@@ -1,5 +1,4 @@
 import { injectable } from 'tsyringe';
-import { TFunction } from 'i18next';
 import { IntegrationService } from '@core/services/integration.service';
 import { EStatusApiKey } from '@core/common/enums/EStatusApiKey';
 
@@ -8,19 +7,14 @@ export class IntegrationStatusUpdaterUseCase {
   constructor(private readonly integrationService: IntegrationService) {}
 
   async execute(
-    t: TFunction<'translation', undefined>,
     accountId: string,
+    apiKeyId: string,
     status: EStatusApiKey
   ): Promise<boolean> {
-    const success = await this.integrationService.updateIntegrationStatus(
+    return this.integrationService.updateIntegrationStatus(
       accountId,
+      apiKeyId,
       status
     );
-
-    if (!success) {
-      throw new Error(t('integration_status_update_error'));
-    }
-
-    return success;
   }
 }

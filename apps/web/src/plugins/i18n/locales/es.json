@@ -2359,5 +2359,14 @@
   "webhook_field_labels": "Etiquetas",
   "webhook_field_message": "Mensaje",
   "integration_webhook_mapping_description": "Configure el mapeo de los campos del webhook a los campos esperados",
-  "configure_mapping": "Configurar Mapeo"
+  "configure_mapping": "Configurar Mapeo",
+  "integration_created_successfully": "Integración creada con éxito",
+  "integration_creation_error": "Error al crear integración",
+  "integration_updated_successfully": "Integración actualizada con éxito",
+  "integration_update_error": "Error al actualizar integración",
+  "integration_deleted_successfully": "Integración eliminada con éxito",
+  "integration_deletion_error": "Error al eliminar integración",
+  "configure": "Configurar",
+  "activate": "Activar",
+  "key": "Clave"
 }

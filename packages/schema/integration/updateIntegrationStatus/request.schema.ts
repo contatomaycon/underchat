@@ -2,10 +2,8 @@ import { Static, Type } from '@sinclair/typebox';
 import { EStatusApiKey } from '@core/common/enums/EStatusApiKey';
 
 export const updateIntegrationStatusRequestSchema = Type.Object({
-  status: Type.Union([
-    Type.Literal(EStatusApiKey.active),
-    Type.Literal(EStatusApiKey.inactive),
-  ]),
+  api_key_id: Type.String({ format: 'uuid' }),
+  status: Type.String({ enum: Object.values(EStatusApiKey) }),
 });
 
 export type UpdateIntegrationStatusRequest = Static<

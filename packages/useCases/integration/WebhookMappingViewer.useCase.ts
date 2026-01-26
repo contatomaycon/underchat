@@ -5,12 +5,16 @@ import { IntegrationService } from '@core/services/integration.service';
 export class WebhookMappingViewerUseCase {
   constructor(private readonly integrationService: IntegrationService) {}
 
-  async execute(accountId: string): Promise<{
+  async execute(
+    accountId: string,
+    apiKeyId: string
+  ): Promise<{
     account_id: string;
+    worker_id: string | null;
     mapping: Record<string, string>;
     created_at?: string;
     updated_at?: string;
   } | null> {
-    return this.integrationService.viewWebhookMapping(accountId);
+    return this.integrationService.viewWebhookMapping(accountId, apiKeyId);
   }
 }

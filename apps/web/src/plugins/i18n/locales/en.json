@@ -2359,5 +2359,14 @@
   "webhook_field_labels": "Labels",
   "webhook_field_message": "Message",
   "integration_webhook_mapping_description": "Configure the mapping of webhook fields to expected fields",
-  "configure_mapping": "Configure Mapping"
+  "configure_mapping": "Configure Mapping",
+  "integration_created_successfully": "Integration created successfully",
+  "integration_creation_error": "Error creating integration",
+  "integration_updated_successfully": "Integration updated successfully",
+  "integration_update_error": "Error updating integration",
+  "integration_deleted_successfully": "Integration deleted successfully",
+  "integration_deletion_error": "Error deleting integration",
+  "configure": "Configure",
+  "activate": "Activate",
+  "key": "Key"
 }

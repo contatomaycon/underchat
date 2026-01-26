@@ -36,4 +36,35 @@ export class ApiKeyViewerRepository {
 
     return result[0];
   };
+
+  viewApiKeyById = async (
+    apiKeyId: string
+  ): Promise<{
+    api_key_id: string;
+    account_id: string;
+    worker_id: string | null;
+    key: string;
+    name: string;
+    status: string;
+  } | null> => {
+    const result = await this.dbRo
+      .select({
+        api_key_id: apiKey.api_key_id,
+        account_id: apiKey.account_id,
+        worker_id: apiKey.worker_id,
+        key: apiKey.key,
+        name: apiKey.name,
+        status: apiKey.status,
+      })
+      .from(apiKey)
+      .where(and(eq(apiKey.api_key_id, apiKeyId), isNull(apiKey.deleted_at)))
+      .limit(1)
+      .execute();
+
+    if (!result?.length) {
+      return null;
+    }
+
+    return result[0];
+  };
 }

@@ -3,25 +3,26 @@ import { sendResponse } from '@core/common/functions/sendResponse';
 import { handleControllerError } from '@core/common/functions/handleControllerError';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
-import { IntegrationViewerUseCase } from '@core/useCases/integration/IntegrationViewer.useCase';
+import { IntegrationAvailableChannelsListerUseCase } from '@core/useCases/integration/IntegrationAvailableChannelsLister.useCase';
 
-export const viewIntegration = async (
+export const listAvailableChannels = async (
   request: FastifyRequest,
   reply: FastifyReply
 ) => {
-  const integrationViewerUseCase = container.resolve(IntegrationViewerUseCase);
+  const integrationAvailableChannelsListerUseCase = container.resolve(
+    IntegrationAvailableChannelsListerUseCase
+  );
   const { t, tokenJwtData } = request;
 
   try {
-    const response = await integrationViewerUseCase.execute(
-      t,
+    const result = await integrationAvailableChannelsListerUseCase.execute(
       tokenJwtData.account_id
     );
 
     return sendResponse(reply, {
-      message: t('integration_view_successfully'),
+      message: t('channels_listed_successfully'),
       httpStatusCode: EHTTPStatusCode.ok,
-      data: response,
+      data: result,
     });
   } catch (error) {
     handleControllerError(error, reply, t);

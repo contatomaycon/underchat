@@ -5,6 +5,7 @@ import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
 import { UpdateIntegrationStatusRequest } from '@core/schema/integration/updateIntegrationStatus/request.schema';
 import { IntegrationStatusUpdaterUseCase } from '@core/useCases/integration/IntegrationStatusUpdater.useCase';
+import { EStatusApiKey } from '@core/common/enums/EStatusApiKey';
 
 export const updateIntegrationStatus = async (
   request: FastifyRequest<{
@@ -18,11 +19,18 @@ export const updateIntegrationStatus = async (
   const { t, tokenJwtData } = request;
 
   try {
-    await integrationStatusUpdaterUseCase.execute(
-      t,
+    const success = await integrationStatusUpdaterUseCase.execute(
       tokenJwtData.account_id,
-      request.body.status
+      request.body.api_key_id,
+      request.body.status as EStatusApiKey
     );
+
+    if (!success) {
+      return sendResponse(reply, {
+        message: t('integration_status_update_error'),
+        httpStatusCode: EHTTPStatusCode.internal_server_error,
+      });
+    }
 
     return sendResponse(reply, {
       message: t('integration_status_updated_successfully'),

@@ -2359,5 +2359,21 @@
   "webhook_field_labels": "Etiquetas",
   "webhook_field_message": "Mensagem",
   "integration_webhook_mapping_description": "Configure o mapeamento dos campos do webhook para os campos esperados",
-  "configure_mapping": "Configurar Mapeamento"
+  "configure_mapping": "Configurar Mapeamento",
+  "add_integration": "Adicionar Integração",
+  "edit_integration": "Editar Integração",
+  "delete_integration": "Excluir Integração",
+  "delete_integration_confirmation": "Tem certeza que deseja excluir esta integração?",
+  "configure_integration": "Configurar Integração",
+  "integrations_listed_successfully": "Integrações listadas com sucesso",
+  "integrations_list_error": "Erro ao listar integrações",
+  "integration_created_successfully": "Integração criada com sucesso",
+  "integration_creation_error": "Erro ao criar integração",
+  "integration_updated_successfully": "Integração atualizada com sucesso",
+  "integration_update_error": "Erro ao atualizar integração",
+  "integration_deleted_successfully": "Integração excluída com sucesso",
+  "integration_deletion_error": "Erro ao excluir integração",
+  "configure": "Configurar",
+  "activate": "Ativar",
+  "key": "Chave"
 }

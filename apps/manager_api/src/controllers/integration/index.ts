@@ -1,16 +1,26 @@
 import { injectable } from 'tsyringe';
-import { viewIntegration } from './methods/viewIntegration';
+import { listIntegrations } from './methods/listIntegrations';
+import { createIntegration } from './methods/createIntegration';
+import { updateIntegration } from './methods/updateIntegration';
+import { deleteIntegration } from './methods/deleteIntegration';
+import { viewIntegrationById } from './methods/viewIntegrationById';
 import { updateIntegrationStatus } from './methods/updateIntegrationStatus';
 import { generateIntegrationKey } from './methods/generateIntegrationKey';
+import { listAvailableChannels } from './methods/listAvailableChannels';
 import { viewWebhookMapping } from './methods/viewWebhookMapping';
 import { saveWebhookMapping } from './methods/saveWebhookMapping';
 import { viewWebhookData } from './methods/viewWebhookData';
 
 @injectable()
 class IntegrationController {
-  public viewIntegration = viewIntegration;
+  public listIntegrations = listIntegrations;
+  public createIntegration = createIntegration;
+  public updateIntegration = updateIntegration;
+  public deleteIntegration = deleteIntegration;
+  public viewIntegrationById = viewIntegrationById;
   public updateIntegrationStatus = updateIntegrationStatus;
   public generateIntegrationKey = generateIntegrationKey;
+  public listAvailableChannels = listAvailableChannels;
   public viewWebhookMapping = viewWebhookMapping;
   public saveWebhookMapping = saveWebhookMapping;
   public viewWebhookData = viewWebhookData;

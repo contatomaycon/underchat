@@ -12,6 +12,7 @@ const { items: countryCodesItems } = useCountryCodes();
 
 const props = defineProps<{
   modelValue: boolean;
+  apiKeyId?: string | null;
 }>();
 
 const emit = defineEmits<{
@@ -130,7 +131,9 @@ const extractNestedKeys = (
 };
 
 const loadWebhookData = async () => {
-  await integrationStore.viewWebhookData();
+  if (props.apiKeyId) {
+    await integrationStore.viewWebhookData(props.apiKeyId);
+  }
 
   if (integrationStore.webhookData) {
     const allKeys = extractNestedKeys(integrationStore.webhookData);
@@ -139,7 +142,9 @@ const loadWebhookData = async () => {
 };
 
 const loadWebhookMapping = async () => {
-  await integrationStore.viewWebhookMapping();
+  if (props.apiKeyId) {
+    await integrationStore.viewWebhookMapping(props.apiKeyId);
+  }
 
   if (integrationStore.webhookMapping) {
     webhookMapping.value = integrationStore.webhookMapping.mapping || {};
@@ -162,7 +167,11 @@ const handleFieldUpdate = (
 ): void => {
   if (typeof value === 'string') {
     webhookMapping.value[fieldKey] = value;
-  } else if (Array.isArray(value) && value.length > 0 && typeof value[0] === 'string') {
+  } else if (
+    Array.isArray(value) &&
+    value.length > 0 &&
+    typeof value[0] === 'string'
+  ) {
     webhookMapping.value[fieldKey] = value[0];
   } else {
     webhookMapping.value[fieldKey] = null;
@@ -179,7 +188,14 @@ const handleSaveMapping = async () => {
     }
   }
 
-  const success = await integrationStore.saveWebhookMapping(mappingToSave);
+  if (!props.apiKeyId) {
+    return;
+  }
+
+  const success = await integrationStore.saveWebhookMapping(
+    props.apiKeyId,
+    mappingToSave
+  );
 
   if (success) {
     isOpen.value = false;
@@ -250,18 +266,15 @@ watch(isOpen, async (newValue) => {
         <VRow v-else-if="webhookDataKeys.length === 0">
           <VCol cols="12">
             <div class="d-flex flex-column align-center justify-center py-12">
-              <VAvatar
-                size="120"
-                color="primary"
-                variant="tonal"
-                class="mb-6"
-              >
+              <VAvatar size="120" color="primary" variant="tonal" class="mb-6">
                 <VIcon icon="tabler-webhook" size="64" />
               </VAvatar>
               <h3 class="text-h5 mb-2">
                 {{ $t('integration_webhook_mapping_empty') }}
               </h3>
-              <p class="text-body-1 text-medium-emphasis text-center max-width-400">
+              <p
+                class="text-body-1 text-medium-emphasis text-center max-width-400"
+              >
                 {{ $t('integration_webhook_mapping_empty_description') }}
               </p>
             </div>
@@ -283,7 +296,10 @@ watch(isOpen, async (newValue) => {
                   variant="text"
                   size="small"
                   density="compact"
-                  @click="phoneDdiMode = phoneDdiMode === 'select' ? 'depara' : 'select'"
+                  @click="
+                    phoneDdiMode =
+                      phoneDdiMode === 'select' ? 'depara' : 'select'
+                  "
                 >
                   {{
                     phoneDdiMode === 'select'
@@ -304,7 +320,10 @@ watch(isOpen, async (newValue) => {
                   variant="text"
                   size="small"
                   density="compact"
-                  @click="messageMode = messageMode === 'textarea' ? 'depara' : 'textarea'"
+                  @click="
+                    messageMode =
+                      messageMode === 'textarea' ? 'depara' : 'textarea'
+                  "
                 >
                   {{
                     messageMode === 'textarea'
@@ -313,10 +332,7 @@ watch(isOpen, async (newValue) => {
                   }}
                 </VBtn>
               </div>
-              <VLabel
-                v-else
-                class="text-body-2 mb-2"
-              >
+              <VLabel v-else class="text-body-2 mb-2">
                 {{ field.label }}
                 <span v-if="field.required" class="text-error">*</span>
               </VLabel>
@@ -336,7 +352,9 @@ watch(isOpen, async (newValue) => {
                 item-title="title"
               />
               <AppSelectSearch
-                v-else-if="field.key === 'phone_ddi' && phoneDdiMode === 'select'"
+                v-else-if="
+                  field.key === 'phone_ddi' && phoneDdiMode === 'select'
+                "
                 :model-value="webhookMapping[field.key] ?? null"
                 @update:model-value="handleFieldUpdate(field.key, $event)"
                 :items="countryCodesItems"
@@ -345,17 +363,25 @@ watch(isOpen, async (newValue) => {
                 item-value="value"
                 item-title="title"
               />
-              <div v-else-if="field.key === 'message' && messageMode === 'textarea'">
+              <div
+                v-else-if="
+                  field.key === 'message' && messageMode === 'textarea'
+                "
+              >
                 <VTextarea
                   :model-value="webhookMapping[field.key] ?? ''"
-                  @update:model-value="webhookMapping[field.key] = $event || null"
+                  @update:model-value="
+                    webhookMapping[field.key] = $event || null
+                  "
                   :placeholder="$t('webhook_field_message')"
                   rows="4"
                 />
                 <VExpansionPanels variant="accordion" class="mt-2">
                   <VExpansionPanel>
                     <VExpansionPanelTitle>
-                      <span class="text-caption">{{ $t('available_tags') }}</span>
+                      <span class="text-caption">{{
+                        $t('available_tags')
+                      }}</span>
                     </VExpansionPanelTitle>
                     <VExpansionPanelText>
                       <div class="d-flex flex-column gap-1">

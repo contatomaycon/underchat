@@ -8,10 +8,14 @@ export class WebhookDataViewerRepository {
     private readonly elasticDatabaseService: ElasticDatabaseService
   ) {}
 
-  viewWebhookData = async (accountId: string): Promise<unknown | null> => {
+  viewWebhookData = async (
+    accountId: string,
+    workerId: string
+  ): Promise<unknown | null> => {
+    const documentId = `${accountId}_${workerId}`;
     const document = await this.elasticDatabaseService.view(
       EElasticIndex.webhook,
-      accountId
+      documentId
     );
 
     return document;
