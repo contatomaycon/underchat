@@ -28,7 +28,7 @@ const webhookMapping = ref<Record<string, string | null>>({});
 const webhookDataKeys = ref<string[]>([]);
 const phoneDdiMode = ref<'depara' | 'select'>('select');
 const messageMode = ref<'textarea' | 'depara'>('textarea');
-const messageType = ref<'message' | 'chatbot'>('message');
+const messageType = ref<'message' | 'chatbot'>('chatbot');
 const transferType = ref<'sector' | 'user' | null>(null);
 const selectedSector = ref<string | null>(null);
 const selectedUser = ref<string | null>(null);
@@ -439,6 +439,7 @@ watch(isOpen, async (newValue) => {
         selectedUser.value = webhookMapping.value.transfer_user_id;
       }
     } else {
+      messageType.value = 'chatbot';
       await loadInputChatbots();
     }
   }
@@ -561,208 +562,214 @@ watch(isOpen, async (newValue) => {
               />
             </div>
 
-            <VDivider class="my-4" />
+            <VDivider class="my-6" thickness="2" color="primary" />
 
-            <div class="mb-4">
-              <VLabel class="text-body-2 mb-2">{{ $t('type') }}</VLabel>
-              <AppSelectSearch
-                v-model="messageType"
-                :items="[
-                  { value: 'message', title: $t('message') },
-                  { value: 'chatbot', title: $t('chatbot') },
-                ]"
-                :placeholder="$t('select_type')"
-                item-value="value"
-                item-title="title"
-              />
-            </div>
-
-            <div v-if="messageType === 'message'">
-              <div class="mb-4">
-                <VLabel class="text-body-2 mb-2">{{
-                  $t('transfer_to')
-                }}</VLabel>
-                <AppSelectSearch
-                  v-model="transferType"
-                  :items="[
-                    { value: 'sector', title: $t('sector') },
-                    { value: 'user', title: $t('user') },
-                  ]"
-                  :placeholder="$t('transfer_to_placeholder')"
-                  :clearable="true"
-                  item-value="value"
-                  item-title="title"
-                />
-              </div>
-
-              <div v-if="transferType === 'sector'" class="mb-4">
-                <VLabel class="text-body-2 mb-2">{{ $t('sector') }}</VLabel>
-                <AppSelectSearch
-                  v-model="selectedSector"
-                  :items="sectors"
-                  :placeholder="$t('select_sector')"
-                  :loading="isLoadingSectors"
-                  :clearable="true"
-                  item-value="value"
-                  item-title="title"
-                  @select="loadSectors()"
-                >
-                  <template #item-prepend="{ item }">
-                    <VAvatar
-                      size="24"
-                      :style="{
-                        backgroundColor: item.color || '#1976D2',
-                      }"
-                    />
-                  </template>
-                </AppSelectSearch>
-              </div>
-
-              <div
-                v-if="transferType === 'sector' && selectedSector"
-                class="mb-4"
-              >
-                <VLabel class="text-body-2 mb-2">{{ $t('user') }}</VLabel>
-                <AppSelectSearch
-                  v-model="selectedSectorUser"
-                  :items="sectorUsers"
-                  :placeholder="$t('select_user')"
-                  :loading="isLoadingSectorUsers"
-                  :clearable="true"
-                  item-value="value"
-                  item-title="title"
-                >
-                  <template #item-prepend="{ item }">
-                    <VAvatar
-                      size="32"
-                      :variant="!item.photo ? 'tonal' : undefined"
-                      color="primary"
-                    >
-                      <VImg
-                        v-if="item.photo"
-                        :src="item.photo"
-                        :alt="item.title"
-                      />
-                      <VIcon v-else icon="tabler-user" size="18" />
-                    </VAvatar>
-                  </template>
-                </AppSelectSearch>
-              </div>
-
-              <div v-if="transferType === 'user'" class="mb-4">
-                <VLabel class="text-body-2 mb-2">{{ $t('user') }}</VLabel>
-                <AppSelectSearch
-                  v-model="selectedUser"
-                  :items="users"
-                  :placeholder="$t('select_user')"
-                  :loading="isLoadingUsers"
-                  :clearable="true"
-                  item-value="value"
-                  item-title="title"
-                  @select="loadUsers()"
-                >
-                  <template #item-prepend="{ item }">
-                    <VAvatar
-                      size="32"
-                      :variant="!item.photo ? 'tonal' : undefined"
-                      color="primary"
-                    >
-                      <VImg
-                        v-if="item.photo"
-                        :src="item.photo"
-                        :alt="item.title"
-                      />
-                      <VIcon v-else icon="tabler-user" size="18" />
-                    </VAvatar>
-                  </template>
-                </AppSelectSearch>
-              </div>
-
-              <div class="mb-4">
-                <div class="d-flex align-center justify-space-between mb-2">
-                  <VLabel class="text-body-2">
-                    {{ $t('webhook_field_message') }}
-                  </VLabel>
-                  <VBtn
-                    variant="text"
-                    size="small"
-                    density="compact"
-                    @click="
-                      messageMode =
-                        messageMode === 'textarea' ? 'depara' : 'textarea'
-                    "
-                  >
-                    {{
-                      messageMode === 'textarea'
-                        ? $t('use_mapping')
-                        : $t('use_textarea')
-                    }}
-                  </VBtn>
-                </div>
-                <div v-if="messageMode === 'textarea'">
-                  <VTextarea
-                    :model-value="webhookMapping.message ?? ''"
-                    @update:model-value="
-                      webhookMapping.message = $event || null
-                    "
-                    :placeholder="$t('webhook_field_message')"
-                    rows="4"
+            <VCard variant="outlined" class="mb-4" elevation="1">
+              <VCardText>
+                <div class="mb-4">
+                  <VLabel class="text-body-1 font-weight-medium mb-3 d-block">{{
+                    $t('type')
+                  }}</VLabel>
+                  <AppSelectSearch
+                    v-model="messageType"
+                    :items="[
+                      { value: 'message', title: $t('message') },
+                      { value: 'chatbot', title: $t('chatbot') },
+                    ]"
+                    :placeholder="$t('select_type')"
+                    item-value="value"
+                    item-title="title"
                   />
-                  <VExpansionPanels variant="accordion" class="mt-2">
-                    <VExpansionPanel>
-                      <VExpansionPanelTitle>
-                        <span class="text-caption">{{
-                          $t('available_tags')
-                        }}</span>
-                      </VExpansionPanelTitle>
-                      <VExpansionPanelText>
-                        <div class="d-flex flex-column gap-1">
-                          <div
-                            v-for="tag in availableTags"
-                            :key="tag.tag"
-                            class="text-caption"
-                          >
-                            <code>{{ tag.tag }}</code
-                            >: {{ tag.description }}
-                          </div>
-                        </div>
-                      </VExpansionPanelText>
-                    </VExpansionPanel>
-                  </VExpansionPanels>
                 </div>
-                <AppSelectSearch
-                  v-else
-                  :model-value="webhookMapping.message ?? null"
-                  @update:model-value="handleFieldUpdate('message', $event)"
-                  :items="
-                    webhookDataKeys.map((key) => ({
-                      value: key,
-                      title: key,
-                    }))
-                  "
-                  :placeholder="$t('select_field')"
-                  :clearable="true"
-                  item-value="value"
-                  item-title="title"
-                />
-              </div>
-            </div>
 
-            <div v-if="messageType === 'chatbot'" class="mb-4">
-              <VLabel class="text-body-2 mb-2">{{
-                $t('chatbot_input_select_label')
-              }}</VLabel>
-              <AppSelectSearch
-                v-model="selectedChatbot"
-                :items="inputChatbots"
-                :placeholder="$t('chatbot_input_select_placeholder')"
-                :loading="isLoadingChatbots"
-                :clearable="true"
-                item-value="value"
-                item-title="title"
-                @select="loadInputChatbots()"
-              />
-            </div>
+                <div v-if="messageType === 'message'">
+                  <div class="mb-4">
+                    <VLabel class="text-body-2 mb-2">{{
+                      $t('transfer_to')
+                    }}</VLabel>
+                    <AppSelectSearch
+                      v-model="transferType"
+                      :items="[
+                        { value: 'sector', title: $t('sector') },
+                        { value: 'user', title: $t('user') },
+                      ]"
+                      :placeholder="$t('transfer_to_placeholder')"
+                      :clearable="true"
+                      item-value="value"
+                      item-title="title"
+                    />
+                  </div>
+
+                  <div v-if="transferType === 'sector'" class="mb-4">
+                    <VLabel class="text-body-2 mb-2">{{ $t('sector') }}</VLabel>
+                    <AppSelectSearch
+                      v-model="selectedSector"
+                      :items="sectors"
+                      :placeholder="$t('select_sector')"
+                      :loading="isLoadingSectors"
+                      :clearable="true"
+                      item-value="value"
+                      item-title="title"
+                      @select="loadSectors()"
+                    >
+                      <template #item-prepend="{ item }">
+                        <VAvatar
+                          size="24"
+                          :style="{
+                            backgroundColor: item.color || '#1976D2',
+                          }"
+                        />
+                      </template>
+                    </AppSelectSearch>
+                  </div>
+
+                  <div
+                    v-if="transferType === 'sector' && selectedSector"
+                    class="mb-4"
+                  >
+                    <VLabel class="text-body-2 mb-2">{{ $t('user') }}</VLabel>
+                    <AppSelectSearch
+                      v-model="selectedSectorUser"
+                      :items="sectorUsers"
+                      :placeholder="$t('select_user')"
+                      :loading="isLoadingSectorUsers"
+                      :clearable="true"
+                      item-value="value"
+                      item-title="title"
+                    >
+                      <template #item-prepend="{ item }">
+                        <VAvatar
+                          size="32"
+                          :variant="!item.photo ? 'tonal' : undefined"
+                          color="primary"
+                        >
+                          <VImg
+                            v-if="item.photo"
+                            :src="item.photo"
+                            :alt="item.title"
+                          />
+                          <VIcon v-else icon="tabler-user" size="18" />
+                        </VAvatar>
+                      </template>
+                    </AppSelectSearch>
+                  </div>
+
+                  <div v-if="transferType === 'user'" class="mb-4">
+                    <VLabel class="text-body-2 mb-2">{{ $t('user') }}</VLabel>
+                    <AppSelectSearch
+                      v-model="selectedUser"
+                      :items="users"
+                      :placeholder="$t('select_user')"
+                      :loading="isLoadingUsers"
+                      :clearable="true"
+                      item-value="value"
+                      item-title="title"
+                      @select="loadUsers()"
+                    >
+                      <template #item-prepend="{ item }">
+                        <VAvatar
+                          size="32"
+                          :variant="!item.photo ? 'tonal' : undefined"
+                          color="primary"
+                        >
+                          <VImg
+                            v-if="item.photo"
+                            :src="item.photo"
+                            :alt="item.title"
+                          />
+                          <VIcon v-else icon="tabler-user" size="18" />
+                        </VAvatar>
+                      </template>
+                    </AppSelectSearch>
+                  </div>
+
+                  <div class="mb-4">
+                    <div class="d-flex align-center justify-space-between mb-2">
+                      <VLabel class="text-body-2">
+                        {{ $t('webhook_field_message') }}
+                      </VLabel>
+                      <VBtn
+                        variant="text"
+                        size="small"
+                        density="compact"
+                        @click="
+                          messageMode =
+                            messageMode === 'textarea' ? 'depara' : 'textarea'
+                        "
+                      >
+                        {{
+                          messageMode === 'textarea'
+                            ? $t('use_mapping')
+                            : $t('use_textarea')
+                        }}
+                      </VBtn>
+                    </div>
+                    <div v-if="messageMode === 'textarea'">
+                      <VTextarea
+                        :model-value="webhookMapping.message ?? ''"
+                        @update:model-value="
+                          webhookMapping.message = $event || null
+                        "
+                        :placeholder="$t('webhook_field_message')"
+                        rows="4"
+                      />
+                      <VExpansionPanels variant="accordion" class="mt-2">
+                        <VExpansionPanel>
+                          <VExpansionPanelTitle>
+                            <span class="text-caption">{{
+                              $t('available_tags')
+                            }}</span>
+                          </VExpansionPanelTitle>
+                          <VExpansionPanelText>
+                            <div class="d-flex flex-column gap-1">
+                              <div
+                                v-for="tag in availableTags"
+                                :key="tag.tag"
+                                class="text-caption"
+                              >
+                                <code>{{ tag.tag }}</code
+                                >: {{ tag.description }}
+                              </div>
+                            </div>
+                          </VExpansionPanelText>
+                        </VExpansionPanel>
+                      </VExpansionPanels>
+                    </div>
+                    <AppSelectSearch
+                      v-else
+                      :model-value="webhookMapping.message ?? null"
+                      @update:model-value="handleFieldUpdate('message', $event)"
+                      :items="
+                        webhookDataKeys.map((key) => ({
+                          value: key,
+                          title: key,
+                        }))
+                      "
+                      :placeholder="$t('select_field')"
+                      :clearable="true"
+                      item-value="value"
+                      item-title="title"
+                    />
+                  </div>
+                </div>
+
+                <div v-if="messageType === 'chatbot'">
+                  <VLabel class="text-body-1 font-weight-medium mb-3 d-block">{{
+                    $t('chatbot_input_select_label')
+                  }}</VLabel>
+                  <AppSelectSearch
+                    v-model="selectedChatbot"
+                    :items="inputChatbots"
+                    :placeholder="$t('chatbot_input_select_placeholder')"
+                    :loading="isLoadingChatbots"
+                    :clearable="true"
+                    item-value="value"
+                    item-title="title"
+                    @select="loadInputChatbots()"
+                  />
+                </div>
+              </VCardText>
+            </VCard>
           </VCol>
         </VRow>
       </VCardText>
