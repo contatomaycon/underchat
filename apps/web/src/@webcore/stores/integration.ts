@@ -417,7 +417,7 @@ export const useIntegrationStore = defineStore('integration', {
     },
     async saveWebhookMapping(
       apiKeyId: string,
-      mapping: Record<string, string>
+      mapping: Record<string, string | string[]>
     ): Promise<boolean> {
       try {
         this.webhookMappingLoading = true;

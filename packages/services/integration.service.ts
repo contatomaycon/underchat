@@ -172,7 +172,7 @@ export class IntegrationService {
   ): Promise<{
     account_id: string;
     worker_id: string | null;
-    mapping: Record<string, string>;
+    mapping: Record<string, string | string[]>;
     created_at?: string;
     updated_at?: string;
   } | null> => {
@@ -191,7 +191,7 @@ export class IntegrationService {
   saveWebhookMapping = async (
     accountId: string,
     apiKeyId: string,
-    mapping: Record<string, string>
+    mapping: Record<string, string | string[]>
   ): Promise<boolean> => {
     const apiKey = await this.apiKeyViewerRepository.viewApiKeyById(apiKeyId);
 

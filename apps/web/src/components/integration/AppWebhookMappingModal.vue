@@ -24,7 +24,7 @@ const isOpen = computed({
   set: (value) => emit('update:modelValue', value),
 });
 
-const webhookMapping = ref<Record<string, string | null>>({});
+const webhookMapping = ref<Record<string, string | string[] | null>>({});
 const webhookDataKeys = ref<string[]>([]);
 const phoneDdiMode = ref<'depara' | 'select'>('select');
 const messageMode = ref<'textarea' | 'depara'>('textarea');
@@ -188,14 +188,33 @@ const loadWebhookMapping = async () => {
   }
 
   if (integrationStore.webhookMapping) {
-    webhookMapping.value = integrationStore.webhookMapping.mapping || {};
+    const savedMapping = integrationStore.webhookMapping.mapping || {};
+    webhookMapping.value = {};
+    for (const key in savedMapping) {
+      const value = savedMapping[key];
+      if (key === 'labels' && typeof value === 'string') {
+        try {
+          webhookMapping.value[key] = JSON.parse(value) as string[];
+        } catch {
+          webhookMapping.value[key] = [value];
+        }
+      } else if (key === 'labels' && Array.isArray(value)) {
+        webhookMapping.value[key] = value;
+      } else {
+        webhookMapping.value[key] = value as string;
+      }
+    }
   } else {
     webhookMapping.value = {};
   }
 
   expectedFields.value.forEach((field) => {
     if (webhookMapping.value[field.key] === undefined) {
-      webhookMapping.value[field.key] = null;
+      if (field.key === 'labels') {
+        webhookMapping.value[field.key] = [];
+      } else {
+        webhookMapping.value[field.key] = null;
+      }
     }
   });
 };
@@ -206,6 +225,17 @@ const handleFieldUpdate = (
   fieldKey: string,
   value: SelectValue | SelectValue[]
 ): void => {
+  if (fieldKey === 'labels') {
+    if (Array.isArray(value)) {
+      webhookMapping.value[fieldKey] = value.filter(
+        (v) => typeof v === 'string'
+      ) as string[];
+    } else {
+      webhookMapping.value[fieldKey] = [];
+    }
+    return;
+  }
+
   if (typeof value === 'string') {
     webhookMapping.value[fieldKey] = value;
   } else if (
@@ -220,12 +250,16 @@ const handleFieldUpdate = (
 };
 
 const handleSaveMapping = async () => {
-  const mappingToSave: Record<string, string> = {};
+  const mappingToSave: Record<string, string | string[]> = {};
 
   for (const key in webhookMapping.value) {
     const value = webhookMapping.value[key];
     if (value !== null && value !== undefined) {
-      mappingToSave[key] = value;
+      if (key === 'labels' && Array.isArray(value) && value.length > 0) {
+        mappingToSave[key] = value;
+      } else if (typeof value === 'string' && value !== '') {
+        mappingToSave[key] = value;
+      }
     }
   }
 
@@ -387,6 +421,8 @@ watch(isOpen, async (newValue) => {
     expectedFields.value.forEach((field) => {
       if (field.key === 'phone_ddi') {
         webhookMapping.value[field.key] = '55';
+      } else if (field.key === 'labels') {
+        webhookMapping.value[field.key] = [];
       } else {
         webhookMapping.value[field.key] = null;
       }
@@ -394,49 +430,63 @@ watch(isOpen, async (newValue) => {
 
     await Promise.all([loadWebhookData(), loadWebhookMapping()]);
 
-    if (
-      webhookMapping.value.phone_ddi &&
-      !webhookDataKeys.value.includes(webhookMapping.value.phone_ddi)
-    ) {
+    const phoneDdiValue =
+      typeof webhookMapping.value.phone_ddi === 'string'
+        ? webhookMapping.value.phone_ddi
+        : null;
+    if (phoneDdiValue && !webhookDataKeys.value.includes(phoneDdiValue)) {
       phoneDdiMode.value = 'select';
-    } else if (
-      webhookMapping.value.phone_ddi &&
-      webhookDataKeys.value.includes(webhookMapping.value.phone_ddi)
-    ) {
+    } else if (phoneDdiValue && webhookDataKeys.value.includes(phoneDdiValue)) {
       phoneDdiMode.value = 'depara';
-    } else if (!webhookMapping.value.phone_ddi) {
+    } else if (!phoneDdiValue) {
       webhookMapping.value.phone_ddi = '55';
     }
 
-    if (
-      webhookMapping.value.message &&
-      webhookDataKeys.value.includes(webhookMapping.value.message)
-    ) {
+    const messageValue =
+      typeof webhookMapping.value.message === 'string'
+        ? webhookMapping.value.message
+        : null;
+    if (messageValue && webhookDataKeys.value.includes(messageValue)) {
       messageMode.value = 'depara';
     }
 
-    const savedMessageType = webhookMapping.value.message_type as
-      | 'message'
-      | 'chatbot'
-      | undefined;
+    const savedMessageType =
+      typeof webhookMapping.value.message_type === 'string'
+        ? (webhookMapping.value.message_type as 'message' | 'chatbot')
+        : undefined;
     if (savedMessageType === 'chatbot') {
       messageType.value = 'chatbot';
-      if (webhookMapping.value.chatbot_id) {
-        selectedChatbot.value = webhookMapping.value.chatbot_id;
+      const chatbotIdValue =
+        typeof webhookMapping.value.chatbot_id === 'string'
+          ? webhookMapping.value.chatbot_id
+          : null;
+      if (chatbotIdValue) {
+        selectedChatbot.value = chatbotIdValue;
       }
       await loadInputChatbots();
     } else if (savedMessageType === 'message') {
       messageType.value = 'message';
-      if (webhookMapping.value.transfer_sector_id) {
+      const transferSectorIdValue =
+        typeof webhookMapping.value.transfer_sector_id === 'string'
+          ? webhookMapping.value.transfer_sector_id
+          : null;
+      const transferUserIdValue =
+        typeof webhookMapping.value.transfer_user_id === 'string'
+          ? webhookMapping.value.transfer_user_id
+          : null;
+      if (transferSectorIdValue) {
         transferType.value = 'sector';
-        selectedSector.value = webhookMapping.value.transfer_sector_id;
-        if (webhookMapping.value.transfer_sector_user_id) {
-          selectedSectorUser.value =
-            webhookMapping.value.transfer_sector_user_id;
+        selectedSector.value = transferSectorIdValue;
+        const transferSectorUserIdValue =
+          typeof webhookMapping.value.transfer_sector_user_id === 'string'
+            ? webhookMapping.value.transfer_sector_user_id
+            : null;
+        if (transferSectorUserIdValue) {
+          selectedSectorUser.value = transferSectorUserIdValue;
         }
-      } else if (webhookMapping.value.transfer_user_id) {
+      } else if (transferUserIdValue) {
         transferType.value = 'user';
-        selectedUser.value = webhookMapping.value.transfer_user_id;
+        selectedUser.value = transferUserIdValue;
       }
     } else {
       messageType.value = 'chatbot';
@@ -542,6 +592,24 @@ watch(isOpen, async (newValue) => {
                 :items="countryCodesItems"
                 :placeholder="$t('select_phone_ddi')"
                 :clearable="!field.required"
+                item-value="value"
+                item-title="title"
+              />
+              <AppSelectSearch
+                v-else-if="field.key === 'labels'"
+                :model-value="webhookMapping[field.key] ?? []"
+                @update:model-value="handleFieldUpdate(field.key, $event)"
+                :items="
+                  webhookDataKeys.map((key) => ({
+                    value: key,
+                    title: key,
+                  }))
+                "
+                :placeholder="$t('select_field')"
+                :clearable="!field.required"
+                multiple
+                chips
+                closable-chips
                 item-value="value"
                 item-title="title"
               />

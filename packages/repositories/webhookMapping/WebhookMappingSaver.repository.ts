@@ -13,7 +13,7 @@ export class WebhookMappingSaverRepository {
   saveWebhookMapping = async (
     accountId: string,
     workerId: string,
-    mapping: Record<string, string>
+    mapping: Record<string, string | string[]>
   ): Promise<boolean> => {
     const indexCreated = await this.ensureIndexExists();
 
@@ -47,11 +47,11 @@ export class WebhookMappingSaverRepository {
   private readonly prepareDocument = async (
     accountId: string,
     workerId: string,
-    mapping: Record<string, string>
+    mapping: Record<string, string | string[]>
   ): Promise<{
     account_id: string;
     worker_id: string;
-    mapping: Record<string, string>;
+    mapping: Record<string, string | string[]>;
     created_at?: string;
     updated_at: string;
   }> => {
@@ -65,7 +65,7 @@ export class WebhookMappingSaverRepository {
     const document: {
       account_id: string;
       worker_id: string;
-      mapping: Record<string, string>;
+      mapping: Record<string, string | string[]>;
       created_at?: string;
       updated_at: string;
     } = {
@@ -87,7 +87,7 @@ export class WebhookMappingSaverRepository {
     document: {
       account_id: string;
       worker_id: string;
-      mapping: Record<string, string>;
+      mapping: Record<string, string | string[]>;
       created_at?: string;
       updated_at: string;
     }

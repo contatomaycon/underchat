@@ -10,7 +10,7 @@ export class WebhookMappingSaverUseCase {
     t: TFunction<'translation', undefined>,
     accountId: string,
     apiKeyId: string,
-    mapping: Record<string, string>
+    mapping: Record<string, string | string[]>
   ): Promise<boolean> {
     const success = await this.integrationService.saveWebhookMapping(
       accountId,

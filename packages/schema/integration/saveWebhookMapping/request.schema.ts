@@ -2,7 +2,10 @@ import { Static, Type } from '@sinclair/typebox';
 
 export const saveWebhookMappingRequestSchema = Type.Object({
   api_key_id: Type.String({ format: 'uuid' }),
-  mapping: Type.Record(Type.String(), Type.String()),
+  mapping: Type.Record(
+    Type.String(),
+    Type.Union([Type.String(), Type.Array(Type.String())])
+  ),
 });
 
 export type SaveWebhookMappingRequest = Static<

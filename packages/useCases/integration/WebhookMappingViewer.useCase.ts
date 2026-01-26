@@ -11,7 +11,7 @@ export class WebhookMappingViewerUseCase {
   ): Promise<{
     account_id: string;
     worker_id: string | null;
-    mapping: Record<string, string>;
+    mapping: Record<string, string | string[]>;
     created_at?: string;
     updated_at?: string;
   } | null> {
