@@ -1,5 +1,5 @@
 import { pgTable, timestamp, varchar, uuid, index } from 'drizzle-orm/pg-core';
-import { account, permissionAssignment } from '@core/models';
+import { account, permissionAssignment, worker } from '@core/models';
 import { relations } from 'drizzle-orm';
 import { EStatusApiKey } from '@core/common/enums/EStatusApiKey';
 
@@ -10,6 +10,7 @@ export const apiKey = pgTable(
     account_id: uuid()
       .references(() => account.account_id)
       .notNull(),
+    worker_id: uuid().references(() => worker.worker_id),
     key: varchar({ length: 32 }).notNull(),
     name: varchar({ length: 200 }).notNull(),
     status: varchar({ length: 20 })
@@ -35,6 +36,20 @@ export const apiKey = pgTable(
       table.deleted_at
     ),
     index('api_key_key_deleted_at_idx').on(table.key, table.deleted_at),
+    index('api_key_worker_id_idx').on(table.worker_id),
+    index('api_key_worker_id_deleted_at_idx').on(
+      table.worker_id,
+      table.deleted_at
+    ),
+    index('api_key_worker_id_account_id_idx').on(
+      table.worker_id,
+      table.account_id
+    ),
+    index('api_key_worker_id_account_id_deleted_at_idx').on(
+      table.worker_id,
+      table.account_id,
+      table.deleted_at
+    ),
   ]
 );
 
@@ -43,5 +58,9 @@ export const apiKeyRelations = relations(apiKey, ({ many, one }) => ({
   aac: one(account, {
     fields: [apiKey.account_id],
     references: [account.account_id],
+  }),
+  awo: one(worker, {
+    fields: [apiKey.worker_id],
+    references: [worker.worker_id],
   }),
 }));
