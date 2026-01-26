@@ -10,4 +10,5 @@ export enum EElasticIndex {
   ai_agent_prompt_embedding = 'ai-agent-prompt-embedding',
   chat_history_embedding = 'chat-history-embedding',
   webhook = 'webhook',
+  webhook_mapping = 'webhook-mapping',
 }

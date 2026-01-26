@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { onMounted, computed } from 'vue';
+import { onMounted, computed, ref } from 'vue';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EIntegrationPermissions } from '@core/common/enums/EPermissions/integration';
 import { useIntegrationStore } from '@/@webcore/stores/integration';
 import { EStatusApiKey } from '@core/common/enums/EStatusApiKey';
+import AppWebhookMappingModal from '@/components/integration/AppWebhookMappingModal.vue';
 
 definePage({
   meta: {
@@ -16,6 +17,7 @@ definePage({
 });
 
 const integrationStore = useIntegrationStore();
+const isWebhookMappingModalOpen = ref(false);
 
 const isActive = computed(() => {
   return integrationStore.integration?.status === EStatusApiKey.active;
@@ -289,8 +291,42 @@ onMounted(async () => {
           </VCard>
         </VCol>
       </VRow>
+
+      <VRow v-if="isActive">
+        <VCol cols="12">
+          <VCard variant="outlined">
+            <VCardText>
+              <div class="d-flex justify-space-between align-center">
+                <div>
+                  <div class="text-h6 mb-1">
+                    {{ $t('integration_webhook_mapping') }}
+                  </div>
+                  <div class="text-body-2 text-medium-emphasis">
+                    {{ $t('integration_webhook_mapping_description') }}
+                  </div>
+                </div>
+                <VBtn
+                  color="primary"
+                  :disabled="
+                    !$canPermission([
+                      EGeneralPermissions.full_access,
+                      EGeneralPermissions.full_access_group,
+                      EIntegrationPermissions.integration_group,
+                    ])
+                  "
+                  @click="isWebhookMappingModalOpen = true"
+                >
+                  {{ $t('configure_mapping') }}
+                </VBtn>
+              </div>
+            </VCardText>
+          </VCard>
+        </VCol>
+      </VRow>
     </VCardText>
   </VCard>
+
+  <AppWebhookMappingModal v-model="isWebhookMappingModalOpen" />
 </template>
 
 <route lang="json">

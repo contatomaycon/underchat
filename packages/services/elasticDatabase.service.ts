@@ -104,7 +104,16 @@ export class ElasticDatabaseService {
         id,
       });
       return result._source ?? null;
-    } catch (error) {
+    } catch (error: unknown) {
+      if (
+        typeof error === 'object' &&
+        error !== null &&
+        'statusCode' in error &&
+        error.statusCode === 404
+      ) {
+        return null;
+      }
+
       throw new Error(`Failed to retrieve document with ID: ${error}`);
     }
   };

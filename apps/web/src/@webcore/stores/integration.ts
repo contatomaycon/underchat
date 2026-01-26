@@ -8,6 +8,9 @@ import { AxiosError } from 'axios';
 import { ViewIntegrationResponse } from '@core/schema/integration/viewIntegration/response.schema';
 import { UpdateIntegrationStatusRequest } from '@core/schema/integration/updateIntegrationStatus/request.schema';
 import { GenerateIntegrationKeyResponse } from '@core/schema/integration/generateIntegrationKey/response.schema';
+import { ViewWebhookMappingResponse } from '@core/schema/integration/viewWebhookMapping/response.schema';
+import { SaveWebhookMappingRequest } from '@core/schema/integration/saveWebhookMapping/request.schema';
+import { ViewWebhookDataResponse } from '@core/schema/integration/viewWebhookData/response.schema';
 import { EStatusApiKey } from '@core/common/enums/EStatusApiKey';
 
 export const useIntegrationStore = defineStore('integration', {
@@ -20,6 +23,10 @@ export const useIntegrationStore = defineStore('integration', {
     i18n: getI18n(),
     loading: false,
     integration: null as ViewIntegrationResponse | null,
+    webhookMapping: null as ViewWebhookMappingResponse | null,
+    webhookData: null as unknown | null,
+    webhookMappingLoading: false,
+    webhookDataLoading: false,
   }),
   actions: {
     showSnackbar(message: string, color: EColor) {
@@ -158,6 +165,106 @@ export const useIntegrationStore = defineStore('integration', {
 
         this.showSnackbar(errorMessage, EColor.error);
         this.loading = false;
+
+        return null;
+      }
+    },
+    async viewWebhookMapping(): Promise<ViewWebhookMappingResponse | null> {
+      try {
+        this.webhookMappingLoading = true;
+
+        const response = await axios.get<
+          IApiResponse<ViewWebhookMappingResponse>
+        >(`/integration/webhook-mapping`);
+
+        this.webhookMappingLoading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          this.webhookMapping = null;
+          return null;
+        }
+
+        this.webhookMapping = data.data;
+
+        return data.data;
+      } catch {
+        this.webhookMappingLoading = false;
+        this.webhookMapping = null;
+
+        return null;
+      }
+    },
+    async saveWebhookMapping(
+      mapping: Record<string, string>
+    ): Promise<boolean> {
+      try {
+        this.webhookMappingLoading = true;
+
+        const request: SaveWebhookMappingRequest = { mapping };
+
+        const response = await axios.post<IApiResponse<{ success: boolean }>>(
+          `/integration/webhook-mapping`,
+          request
+        );
+
+        this.webhookMappingLoading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const message =
+            data?.message ?? this.i18n.global.t('webhook_mapping_save_error');
+
+          this.showSnackbar(message, EColor.error);
+
+          return false;
+        }
+
+        const message = this.i18n.global.t(
+          'webhook_mapping_saved_successfully'
+        );
+        this.showSnackbar(message, EColor.success);
+
+        await this.viewWebhookMapping();
+
+        return true;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('webhook_mapping_save_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+        this.webhookMappingLoading = false;
+
+        return false;
+      }
+    },
+    async viewWebhookData(): Promise<unknown | null> {
+      try {
+        this.webhookDataLoading = true;
+
+        const response = await axios.get<IApiResponse<ViewWebhookDataResponse>>(
+          `/integration/webhook-data`
+        );
+
+        this.webhookDataLoading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          this.webhookData = null;
+          return null;
+        }
+
+        this.webhookData = data.data.data;
+
+        return data.data.data;
+      } catch {
+        this.webhookDataLoading = false;
+        this.webhookData = null;
 
         return null;
       }

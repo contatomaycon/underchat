@@ -1,16 +1,17 @@
 import { Type } from '@sinclair/typebox';
 import { ELanguage } from '@core/common/enums/ELanguage';
 import { ETagSwagger } from '@core/common/enums/ETagSwagger';
-import {
-  receiveWebhookParamsRequestSchema,
-  receiveWebhookRequestSchema,
-} from './request.schema';
-import { receiveWebhookResponseSchema } from './response.schema';
+import { viewWebhookDataResponseSchema } from './response.schema';
 
-export const receiveWebhookSchema = {
-  description: 'Integração de webhook para iniciar um atendimento',
-  tags: [ETagSwagger.webhook],
+export const viewWebhookDataSchema = {
+  description: 'Visualiza dados do webhook do Elasticsearch',
+  tags: [ETagSwagger.integration],
   produces: ['application/json'],
+  security: [
+    {
+      authenticateJwt: [],
+    },
+  ],
   headers: Type.Object({
     'Accept-Language': Type.Optional(
       Type.String({
@@ -20,15 +21,13 @@ export const receiveWebhookSchema = {
       })
     ),
   }),
-  params: receiveWebhookParamsRequestSchema,
-  body: receiveWebhookRequestSchema,
   response: {
     200: Type.Object(
       {
         id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
         status: Type.Boolean({ const: true }),
         message: Type.String(),
-        data: receiveWebhookResponseSchema,
+        data: viewWebhookDataResponseSchema,
       },
       { description: 'Successful' }
     ),

@@ -17,14 +17,10 @@ export class WebhookReceiverUseCase {
     tokenKeyData: ITokenKeyData,
     body: ReceiveWebhookRequest
   ): Promise<boolean> {
-    console.log('Webhook received:', {
-      tokenKeyData,
-      body,
-    });
+    console.log('body');
+    console.dir(body, { depth: null, colors: true });
 
-    return true;
-
-    /* const mappings = webhookMappings();
+    const mappings = webhookMappings();
 
     const result = await this.elasticDatabaseService.indices(
       EElasticIndex.webhook,
@@ -49,6 +45,6 @@ export class WebhookReceiverUseCase {
       updateResult === 'updated' ||
       updateResult === 'created' ||
       updateResult === 'noop'
-    ); */
+    );
   }
 }
