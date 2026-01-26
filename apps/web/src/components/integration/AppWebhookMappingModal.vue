@@ -188,14 +188,22 @@ watch(isOpen, async (newValue) => {
 
         <VRow v-else-if="webhookDataKeys.length === 0">
           <VCol cols="12">
-            <VAlert type="info" variant="tonal">
-              <div class="text-body-2">
+            <div class="d-flex flex-column align-center justify-center py-12">
+              <VAvatar
+                size="120"
+                color="primary"
+                variant="tonal"
+                class="mb-6"
+              >
+                <VIcon icon="tabler-webhook" size="64" />
+              </VAvatar>
+              <h3 class="text-h5 mb-2">
                 {{ $t('integration_webhook_mapping_empty') }}
-              </div>
-              <div class="text-body-2 mt-2">
+              </h3>
+              <p class="text-body-1 text-medium-emphasis text-center max-width-400">
                 {{ $t('integration_webhook_mapping_empty_description') }}
-              </div>
-            </VAlert>
+              </p>
+            </div>
           </VCol>
         </VRow>
 
