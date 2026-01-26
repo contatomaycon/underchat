@@ -6,8 +6,6 @@ import { ApiKeyViewerUseCase } from '@core/useCases/api/ApiKeyViewer.useCase';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import fp from 'fastify-plugin';
 import { container } from 'tsyringe';
-import { hasRequiredPermission } from '@core/common/functions/hasRequiredPermission';
-import { EPermissionsRoles } from '@core/common/enums/EPermissions';
 import { IApiKeyMiddleware } from '@core/common/interfaces/IApiKeyMiddleware';
 import { IApiKeyGroupHierarchy } from '@core/common/interfaces/IApiKeyGroupHierarchy';
 import { ITokenKeyData } from '@core/common/interfaces/ITokenKeyData';
@@ -27,21 +25,38 @@ function getKeyApiValue(keyapi: string | string[] | undefined): string | null {
   return keyapi;
 }
 
+function getKeyApiFromUrl(
+  routePath: string | null,
+  params: Record<string, string | undefined> | null
+): string | null {
+  if (params?.keyapi) {
+    return params.keyapi;
+  }
+
+  if (!routePath) {
+    return null;
+  }
+
+  const webhookMatch = routePath.match(/\/webhook\/([^/]+)/);
+  if (webhookMatch && webhookMatch[1]) {
+    return webhookMatch[1];
+  }
+
+  return null;
+}
+
 async function handleApiKeyCache(
   redis: Redis,
   cacheKey: string,
   keyapi: string,
   routeModule: string,
-  module: ERouteModule,
-  permissions?: EPermissionsRoles[] | null
+  module: ERouteModule
 ): Promise<IApiKeyGroupHierarchy[]> {
   const cacheAuth = await redis.get(cacheKey);
   if (cacheAuth) {
-    const cachedPermissions = JSON.parse(cacheAuth) as IApiKeyGroupHierarchy[];
-    const hasPermission = hasRequiredPermission(cachedPermissions, permissions);
-
-    if (hasPermission) {
-      return cachedPermissions;
+    const cachedData = JSON.parse(cacheAuth) as IApiKeyGroupHierarchy[];
+    if (cachedData && cachedData.length > 0) {
+      return cachedData;
     }
   }
 
@@ -52,7 +67,7 @@ async function handleApiKeyCache(
     module,
   } as IApiKeyMiddleware);
 
-  if (responseAuth) {
+  if (responseAuth && responseAuth.length > 0) {
     await redis.set(cacheKey, JSON.stringify(responseAuth), 'EX', 1800);
   }
 
@@ -62,41 +77,37 @@ async function handleApiKeyCache(
 function generateTokenKeyData(
   responseAuth: IApiKeyGroupHierarchy[]
 ): ITokenKeyData {
-  const apiKeyId = responseAuth.find(
-    (item) => item.api_key_id !== null
-  )?.api_key_id;
+  const firstItem = responseAuth[0];
 
-  const apiKey = responseAuth.find((item) => item.api_key !== null)?.api_key;
-  const name = responseAuth.find((item) => item.name !== null)?.name;
-  const accountId = responseAuth.find(
-    (item) => item.account_id !== null
-  )?.account_id;
-  const permissionRoleId = responseAuth.find(
-    (item) => item.permission_role_id !== null
-  )?.permission_role_id;
+  if (!firstItem) {
+    throw new Error('No API key data found');
+  }
 
   return {
-    account_id: accountId,
-    api_key_id: apiKeyId,
-    api_key: apiKey,
-    permission_role_id: permissionRoleId,
-    name: name,
+    account_id: firstItem.account_id,
+    api_key_id: firstItem.api_key_id,
+    api_key: firstItem.api_key,
+    name: firstItem.name,
     actions: responseAuth,
-  } as ITokenKeyData;
+  };
 }
 
 async function authenticateKeyApi(
   request: FastifyRequest,
-  reply: FastifyReply,
-  permissions: EPermissionsRoles[] | null
+  reply: FastifyReply
 ): Promise<void> {
   const { t } = request;
   const { Redis } = request.server;
   const { keyapi: headerKeyApi } = request.headers;
   const routePath = routePathWithoutPrefix(request);
-  const keyapi = getKeyApiValue(headerKeyApi);
+  const headerKeyApiValue = getKeyApiValue(headerKeyApi);
+  const urlKeyApi = getKeyApiFromUrl(
+    routePath,
+    request.params as Record<string, string | undefined> | null
+  );
+  const keyapi = headerKeyApiValue || urlKeyApi;
 
-  if (!keyapi || !routePath || !permissions) {
+  if (!keyapi || !routePath) {
     return sendResponse(reply, {
       message: t('not_authorized'),
       httpStatusCode: EHTTPStatusCode.unauthorized,
@@ -111,20 +122,10 @@ async function authenticateKeyApi(
       cacheKey,
       keyapi,
       routeModule,
-      request.module,
-      permissions
+      request.module
     );
 
-    if (!responseAuth) {
-      return sendResponse(reply, {
-        message: t('not_authorized'),
-        httpStatusCode: EHTTPStatusCode.unauthorized,
-      });
-    }
-
-    const hasPermission = hasRequiredPermission(responseAuth, permissions);
-
-    if (!hasPermission) {
+    if (!responseAuth || responseAuth.length === 0) {
       return sendResponse(reply, {
         message: t('not_authorized'),
         httpStatusCode: EHTTPStatusCode.unauthorized,
@@ -145,10 +146,7 @@ async function authenticateKeyApi(
 export default fp(async (fastify) => {
   fastify.decorate(
     'authenticateKeyApi',
-    async (
-      request: FastifyRequest,
-      reply: FastifyReply,
-      permissions: EPermissionsRoles[] | null = null
-    ) => authenticateKeyApi(request, reply, permissions)
+    async (request: FastifyRequest, reply: FastifyReply) =>
+      authenticateKeyApi(request, reply)
   );
 });

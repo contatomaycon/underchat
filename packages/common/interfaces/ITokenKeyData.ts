@@ -1,10 +1,9 @@
-import { IActionsTokenKeyData } from './IActionsTokenKeyData';
+import { IApiKeyGroupHierarchy } from './IApiKeyGroupHierarchy';
 
 export interface ITokenKeyData {
   account_id: string;
   api_key_id: string;
   api_key: string;
-  permission_role_id: string;
   name: string;
-  actions: IActionsTokenKeyData[];
+  actions: IApiKeyGroupHierarchy[];
 }

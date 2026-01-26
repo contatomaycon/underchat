@@ -936,5 +936,6 @@
   "integration_status_updated_successfully": "Integration status updated successfully!",
   "integration_status_update_error": "Error updating integration status!",
   "integration_key_generated_successfully": "New key generated successfully!",
-  "integration_key_generation_error": "Error generating new key!"
+  "integration_key_generation_error": "Error generating new key!",
+  "webhook_received_successfully": "Webhook received successfully!"
 }

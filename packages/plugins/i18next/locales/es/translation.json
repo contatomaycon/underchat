@@ -936,5 +936,6 @@
   "integration_status_updated_successfully": "¡Estado de integración actualizado con éxito!",
   "integration_status_update_error": "¡Error al actualizar el estado de integración!",
   "integration_key_generated_successfully": "¡Nueva clave generada con éxito!",
-  "integration_key_generation_error": "¡Error al generar nueva clave!"
+  "integration_key_generation_error": "¡Error al generar nueva clave!",
+  "webhook_received_successfully": "¡Webhook recibido con éxito!"
 }

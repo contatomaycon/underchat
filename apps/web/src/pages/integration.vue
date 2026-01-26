@@ -81,15 +81,87 @@ onMounted(async () => {
     <VCardText>
       <VRow v-if="integrationStore.loading">
         <VCol cols="12">
-          <VProgressLinear indeterminate color="primary" />
+          <VCard variant="outlined">
+            <VCardText>
+              <VRow>
+                <VCol cols="12" md="6">
+                  <VSkeletonLoader
+                    type="text"
+                    width="120"
+                    height="20"
+                    class="mb-2"
+                  />
+                  <VSkeletonLoader type="chip" width="100" height="32" />
+                </VCol>
+                <VCol cols="12" md="6" class="text-end">
+                  <VSkeletonLoader type="button" width="140" height="36" />
+                </VCol>
+              </VRow>
+
+              <VDivider class="my-4" />
+
+              <VRow>
+                <VCol cols="12">
+                  <VSkeletonLoader
+                    type="text"
+                    width="150"
+                    height="20"
+                    class="mb-2"
+                  />
+                  <VSkeletonLoader type="text" height="48" />
+                </VCol>
+              </VRow>
+
+              <VDivider class="my-4" />
+
+              <VRow>
+                <VCol cols="12">
+                  <VSkeletonLoader
+                    type="text"
+                    width="130"
+                    height="20"
+                    class="mb-2"
+                  />
+                  <VSkeletonLoader type="text" height="48" class="mb-2" />
+                  <VSkeletonLoader type="button" width="180" height="36" />
+                </VCol>
+              </VRow>
+            </VCardText>
+          </VCard>
         </VCol>
       </VRow>
 
       <VRow v-else-if="!integrationStore.integration">
         <VCol cols="12">
-          <VAlert type="warning" variant="tonal">
-            {{ $t('integration_not_found') }}
-          </VAlert>
+          <VCard variant="outlined">
+            <VCardText class="text-center py-8">
+              <VIcon
+                icon="tabler-api-off"
+                size="64"
+                color="medium-emphasis"
+                class="mb-4"
+              />
+              <div class="text-h6 mb-2">
+                {{ $t('integration_not_activated') }}
+              </div>
+              <div class="text-body-2 text-medium-emphasis mb-6">
+                {{ $t('integration_not_activated_description') }}
+              </div>
+              <VBtn
+                color="primary"
+                :disabled="
+                  !$canPermission([
+                    EGeneralPermissions.full_access,
+                    EGeneralPermissions.full_access_group,
+                    EIntegrationPermissions.integration_status_update,
+                  ])
+                "
+                @click="handleToggleStatus"
+              >
+                {{ $t('integration_activate') }}
+              </VBtn>
+            </VCardText>
+          </VCard>
         </VCol>
       </VRow>
 
@@ -167,10 +239,6 @@ onMounted(async () => {
                     <div class="text-body-2 mt-2">
                       <strong>{{ $t('integration_webhook_url') }}</strong>
                       {{ $t('integration_webhook_url_example') }}
-                    </div>
-                    <div class="text-body-2 mt-2">
-                      <strong>{{ $t('integration_webhook_header') }}</strong>
-                      {{ $t('integration_webhook_header_example') }}
                     </div>
                   </VAlert>
                 </VCol>

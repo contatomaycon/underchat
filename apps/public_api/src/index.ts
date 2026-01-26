@@ -2,7 +2,7 @@ import 'reflect-metadata';
 import 'module-alias/register';
 import fastify from 'fastify';
 import dbConnector from '@core/config/database';
-import authenticateJwt from '@core/middlewares/jwt.middleware';
+import authenticateKeyApi from '@core/middlewares/keyapi.middleware';
 import i18nextPlugin from '@core/plugins/i18next';
 import { ERouteModule } from '@core/common/enums/ERouteModule';
 import { v7 } from 'uuid';
@@ -34,7 +34,7 @@ server.register(safePlugin(multipartFile, 'multipartFile'), {
 });
 server.register(safePlugin(dbConnector, 'database'));
 server.register(safePlugin(redisPlugin, 'redis'));
-server.register(safePlugin(authenticateJwt, 'authenticateJwt'));
+server.register(safePlugin(authenticateKeyApi, 'authenticateKeyApi'));
 server.register(safePlugin(i18nextPlugin, 'i18next'));
 server.register(safePlugin(jwtPlugin, 'jwt'));
 server.register(safePlugin(corsPlugin, 'cors'));

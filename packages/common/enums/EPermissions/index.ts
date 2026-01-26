@@ -24,6 +24,7 @@ import { ESchedulePermissions } from './schedule';
 import { EAiAgentPermissions } from './aiAgent';
 import { EReleasePermissions } from './release';
 import { EIntegrationPermissions } from './integration';
+import { EWebhookPermissions } from './webhook';
 
 export type EPermissionsRoles =
   | EUserPermissions
@@ -51,4 +52,5 @@ export type EPermissionsRoles =
   | ESchedulePermissions
   | EAiAgentPermissions
   | EReleasePermissions
-  | EIntegrationPermissions;
+  | EIntegrationPermissions
+  | EWebhookPermissions;

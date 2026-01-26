@@ -46,6 +46,10 @@ const swaggerPlugin = async (fastify: FastifyInstance) => {
           name: ETagSwagger.health,
           description: 'End-points relacionados à saúde da aplicação',
         },
+        {
+          name: ETagSwagger.webhook,
+          description: 'End-points relacionados ao webhook',
+        },
       ],
     },
   });
