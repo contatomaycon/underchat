@@ -10,6 +10,10 @@ import { listAvailableChannels } from './methods/listAvailableChannels';
 import { viewWebhookMapping } from './methods/viewWebhookMapping';
 import { saveWebhookMapping } from './methods/saveWebhookMapping';
 import { viewWebhookData } from './methods/viewWebhookData';
+import { listUsers } from './methods/listUsers';
+import { listSectors } from './methods/listSectors';
+import { listSectorUsers } from './methods/listSectorUsers';
+import { listInputChatbots } from './methods/listInputChatbots';
 
 @injectable()
 class IntegrationController {
@@ -24,6 +28,10 @@ class IntegrationController {
   public viewWebhookMapping = viewWebhookMapping;
   public saveWebhookMapping = saveWebhookMapping;
   public viewWebhookData = viewWebhookData;
+  public listUsers = listUsers;
+  public listSectors = listSectors;
+  public listSectorUsers = listSectorUsers;
+  public listInputChatbots = listInputChatbots;
 }
 
 export default IntegrationController;

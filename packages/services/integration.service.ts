@@ -22,6 +22,14 @@ import { CreateIntegrationResponse } from '@core/schema/integration/createIntegr
 import { UpdateIntegrationRequest } from '@core/schema/integration/updateIntegration/request.schema';
 import { ViewIntegrationByIdResponse } from '@core/schema/integration/viewIntegrationById/response.schema';
 import { ListAvailableChannelsResponse } from '@core/schema/integration/listAvailableChannels/response.schema';
+import { UserService } from './user.service';
+import { SectorService } from './sector.service';
+import { ChatbotService } from './chatbot.service';
+import { ListIntegrationUsersResponse } from '@core/schema/integration/listUsers/response.schema';
+import { ListIntegrationSectorsResponse } from '@core/schema/integration/listSectors/response.schema';
+import { ListIntegrationSectorUsersResponse } from '@core/schema/integration/listSectorUsers/response.schema';
+import { ListIntegrationInputChatbotsResponse } from '@core/schema/integration/listInputChatbots/response.schema';
+import { EChatbotType } from '@core/common/enums/EChatbotType';
 
 @injectable()
 export class IntegrationService {
@@ -38,7 +46,10 @@ export class IntegrationService {
     private readonly webhookMappingViewerRepository: WebhookMappingViewerRepository,
     private readonly webhookMappingSaverRepository: WebhookMappingSaverRepository,
     private readonly webhookDataViewerRepository: WebhookDataViewerRepository,
-    private readonly elasticDatabaseService: ElasticDatabaseService
+    private readonly elasticDatabaseService: ElasticDatabaseService,
+    private readonly userService: UserService,
+    private readonly sectorService: SectorService,
+    private readonly chatbotService: ChatbotService
   ) {}
 
   listIntegrations = async (
@@ -247,5 +258,59 @@ export class IntegrationService {
     );
 
     return indexResult === 'updated' || indexResult === 'created';
+  };
+
+  listUsersForWebhook = async (
+    accountId: string
+  ): Promise<ListIntegrationUsersResponse> => {
+    const users = await this.userService.listUsersForTransfer(accountId);
+    return users.map((user) => ({
+      id: user.id,
+      name: user.name,
+      photo: user.photo ?? null,
+      status: user.status ?? null,
+    }));
+  };
+
+  listSectorsForWebhook = async (
+    accountId: string
+  ): Promise<ListIntegrationSectorsResponse> => {
+    const sectors = await this.sectorService.listSectorsForTransfer(accountId);
+    return sectors.map((sector) => ({
+      id: sector.id,
+      name: sector.name,
+      color: sector.color ?? null,
+    }));
+  };
+
+  listSectorUsersForWebhook = async (
+    accountId: string,
+    sectorId: string
+  ): Promise<ListIntegrationSectorUsersResponse> => {
+    const users = await this.sectorService.listSectorUsersForTransfer(
+      accountId,
+      sectorId
+    );
+    return users.map((user) => ({
+      id: user.id,
+      name: user.name,
+      photo: user.photo ?? null,
+      status: user.status ?? null,
+    }));
+  };
+
+  listInputChatbotsForWebhook = async (
+    accountId: string
+  ): Promise<ListIntegrationInputChatbotsResponse> => {
+    const chatbots = await this.chatbotService.listChatbots(accountId);
+    const inputChatbots = chatbots.filter(
+      (chatbot) => chatbot.type === EChatbotType.input
+    );
+    return inputChatbots.map((chatbot) => ({
+      chatbot_id: chatbot.chatbot_id,
+      name: chatbot.name,
+      type: chatbot.type ?? null,
+      created_at: chatbot.created_at,
+    }));
   };
 }

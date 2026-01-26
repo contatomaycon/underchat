@@ -28,6 +28,47 @@ const webhookMapping = ref<Record<string, string | null>>({});
 const webhookDataKeys = ref<string[]>([]);
 const phoneDdiMode = ref<'depara' | 'select'>('select');
 const messageMode = ref<'textarea' | 'depara'>('textarea');
+const messageType = ref<'message' | 'chatbot'>('message');
+const transferType = ref<'sector' | 'user' | null>(null);
+const selectedSector = ref<string | null>(null);
+const selectedUser = ref<string | null>(null);
+const selectedSectorUser = ref<string | null>(null);
+const selectedChatbot = ref<string | null>(null);
+
+const users = ref<
+  Array<{
+    value: string;
+    title: string;
+    photo: string | null;
+    status: string | null;
+  }>
+>([]);
+const sectors = ref<
+  Array<{
+    value: string;
+    title: string;
+    color: string | null;
+  }>
+>([]);
+const sectorUsers = ref<
+  Array<{
+    value: string;
+    title: string;
+    photo: string | null;
+    status: string | null;
+  }>
+>([]);
+const inputChatbots = ref<
+  Array<{
+    value: string;
+    title: string;
+  }>
+>([]);
+
+const isLoadingUsers = ref(false);
+const isLoadingSectors = ref(false);
+const isLoadingSectorUsers = ref(false);
+const isLoadingChatbots = ref(false);
 
 const availableTags = computed(() => [
   {
@@ -188,6 +229,26 @@ const handleSaveMapping = async () => {
     }
   }
 
+  if (messageType.value === 'message') {
+    if (transferType.value === 'sector' && selectedSector.value) {
+      mappingToSave.transfer_sector_id = selectedSector.value;
+    }
+    if (
+      transferType.value === 'sector' &&
+      selectedSector.value &&
+      selectedSectorUser.value
+    ) {
+      mappingToSave.transfer_sector_user_id = selectedSectorUser.value;
+    }
+    if (transferType.value === 'user' && selectedUser.value) {
+      mappingToSave.transfer_user_id = selectedUser.value;
+    }
+    mappingToSave.message_type = 'message';
+  } else if (messageType.value === 'chatbot' && selectedChatbot.value) {
+    mappingToSave.message_type = 'chatbot';
+    mappingToSave.chatbot_id = selectedChatbot.value;
+  }
+
   if (!props.apiKeyId) {
     return;
   }
@@ -202,12 +263,126 @@ const handleSaveMapping = async () => {
   }
 };
 
+const loadUsers = async () => {
+  if (isLoadingUsers.value) return;
+  isLoadingUsers.value = true;
+  try {
+    const usersList = await integrationStore.listUsers();
+    users.value = usersList.map((user) => ({
+      value: user.id,
+      title: user.name,
+      photo: user.photo || null,
+      status: user.status || null,
+    }));
+  } catch (error) {
+    console.error('Error loading users:', error);
+  } finally {
+    isLoadingUsers.value = false;
+  }
+};
+
+const loadSectors = async () => {
+  if (isLoadingSectors.value) return;
+  isLoadingSectors.value = true;
+  try {
+    const sectorsList = await integrationStore.listSectors();
+    sectors.value = sectorsList.map((sector) => ({
+      value: sector.id,
+      title: sector.name,
+      color: sector.color || null,
+    }));
+  } catch (error) {
+    console.error('Error loading sectors:', error);
+  } finally {
+    isLoadingSectors.value = false;
+  }
+};
+
+const loadSectorUsers = async (sectorId: string) => {
+  if (isLoadingSectorUsers.value || !sectorId) return;
+  isLoadingSectorUsers.value = true;
+  try {
+    const usersList = await integrationStore.listSectorUsers(sectorId);
+    sectorUsers.value = usersList.map((user) => ({
+      value: user.id,
+      title: user.name,
+      photo: user.photo || null,
+      status: user.status || null,
+    }));
+  } catch (error) {
+    console.error('Error loading sector users:', error);
+    sectorUsers.value = [];
+  } finally {
+    isLoadingSectorUsers.value = false;
+  }
+};
+
+const loadInputChatbots = async () => {
+  if (isLoadingChatbots.value) return;
+  isLoadingChatbots.value = true;
+  try {
+    const chatbotsList = await integrationStore.listInputChatbots();
+    inputChatbots.value = chatbotsList.map((chatbot) => ({
+      value: chatbot.chatbot_id,
+      title: chatbot.name,
+    }));
+  } catch (error) {
+    console.error('Error loading chatbots:', error);
+  } finally {
+    isLoadingChatbots.value = false;
+  }
+};
+
+watch(messageType, (newType) => {
+  if (newType === 'message') {
+    selectedChatbot.value = null;
+  } else {
+    transferType.value = null;
+    selectedSector.value = null;
+    selectedUser.value = null;
+    selectedSectorUser.value = null;
+    sectorUsers.value = [];
+  }
+});
+
+watch(transferType, (newType) => {
+  selectedUser.value = null;
+  selectedSector.value = null;
+  selectedSectorUser.value = null;
+  sectorUsers.value = [];
+
+  if (newType === 'user' && users.value.length === 0) {
+    loadUsers();
+  } else if (newType === 'sector' && sectors.value.length === 0) {
+    loadSectors();
+  }
+});
+
+watch(selectedSector, (sectorId) => {
+  selectedSectorUser.value = null;
+  sectorUsers.value = [];
+
+  if (sectorId) {
+    loadSectorUsers(sectorId);
+  }
+});
+
 watch(isOpen, async (newValue) => {
   if (newValue) {
     webhookMapping.value = {};
     webhookDataKeys.value = [];
     phoneDdiMode.value = 'select';
     messageMode.value = 'textarea';
+    messageType.value = 'message';
+    transferType.value = null;
+    selectedSector.value = null;
+    selectedUser.value = null;
+    selectedSectorUser.value = null;
+    selectedChatbot.value = null;
+    users.value = [];
+    sectors.value = [];
+    sectorUsers.value = [];
+    inputChatbots.value = [];
 
     expectedFields.value.forEach((field) => {
       if (field.key === 'phone_ddi') {
@@ -238,6 +413,33 @@ watch(isOpen, async (newValue) => {
       webhookDataKeys.value.includes(webhookMapping.value.message)
     ) {
       messageMode.value = 'depara';
+    }
+
+    const savedMessageType = webhookMapping.value.message_type as
+      | 'message'
+      | 'chatbot'
+      | undefined;
+    if (savedMessageType === 'chatbot') {
+      messageType.value = 'chatbot';
+      if (webhookMapping.value.chatbot_id) {
+        selectedChatbot.value = webhookMapping.value.chatbot_id;
+      }
+      await loadInputChatbots();
+    } else if (savedMessageType === 'message') {
+      messageType.value = 'message';
+      if (webhookMapping.value.transfer_sector_id) {
+        transferType.value = 'sector';
+        selectedSector.value = webhookMapping.value.transfer_sector_id;
+        if (webhookMapping.value.transfer_sector_user_id) {
+          selectedSectorUser.value =
+            webhookMapping.value.transfer_sector_user_id;
+        }
+      } else if (webhookMapping.value.transfer_user_id) {
+        transferType.value = 'user';
+        selectedUser.value = webhookMapping.value.transfer_user_id;
+      }
+    } else {
+      await loadInputChatbots();
     }
   }
 });
@@ -308,31 +510,10 @@ watch(isOpen, async (newValue) => {
                   }}
                 </VBtn>
               </div>
-              <div
-                v-else-if="field.key === 'message'"
-                class="d-flex align-center justify-space-between mb-2"
+              <VLabel
+                v-else-if="field.key !== 'message'"
+                class="text-body-2 mb-2"
               >
-                <VLabel class="text-body-2">
-                  {{ field.label }}
-                  <span v-if="field.required" class="text-error">*</span>
-                </VLabel>
-                <VBtn
-                  variant="text"
-                  size="small"
-                  density="compact"
-                  @click="
-                    messageMode =
-                      messageMode === 'textarea' ? 'depara' : 'textarea'
-                  "
-                >
-                  {{
-                    messageMode === 'textarea'
-                      ? $t('use_mapping')
-                      : $t('use_textarea')
-                  }}
-                </VBtn>
-              </div>
-              <VLabel v-else class="text-body-2 mb-2">
                 {{ field.label }}
                 <span v-if="field.required" class="text-error">*</span>
               </VLabel>
@@ -363,43 +544,8 @@ watch(isOpen, async (newValue) => {
                 item-value="value"
                 item-title="title"
               />
-              <div
-                v-else-if="
-                  field.key === 'message' && messageMode === 'textarea'
-                "
-              >
-                <VTextarea
-                  :model-value="webhookMapping[field.key] ?? ''"
-                  @update:model-value="
-                    webhookMapping[field.key] = $event || null
-                  "
-                  :placeholder="$t('webhook_field_message')"
-                  rows="4"
-                />
-                <VExpansionPanels variant="accordion" class="mt-2">
-                  <VExpansionPanel>
-                    <VExpansionPanelTitle>
-                      <span class="text-caption">{{
-                        $t('available_tags')
-                      }}</span>
-                    </VExpansionPanelTitle>
-                    <VExpansionPanelText>
-                      <div class="d-flex flex-column gap-1">
-                        <div
-                          v-for="tag in availableTags"
-                          :key="tag.tag"
-                          class="text-caption"
-                        >
-                          <code>{{ tag.tag }}</code
-                          >: {{ tag.description }}
-                        </div>
-                      </div>
-                    </VExpansionPanelText>
-                  </VExpansionPanel>
-                </VExpansionPanels>
-              </div>
               <AppSelectSearch
-                v-else-if="field.key === 'message' && messageMode === 'depara'"
+                v-else-if="field.key !== 'message'"
                 :model-value="webhookMapping[field.key] ?? null"
                 @update:model-value="handleFieldUpdate(field.key, $event)"
                 :items="
@@ -413,20 +559,208 @@ watch(isOpen, async (newValue) => {
                 item-value="value"
                 item-title="title"
               />
+            </div>
+
+            <VDivider class="my-4" />
+
+            <div class="mb-4">
+              <VLabel class="text-body-2 mb-2">{{ $t('type') }}</VLabel>
               <AppSelectSearch
-                v-else
-                :model-value="webhookMapping[field.key] ?? null"
-                @update:model-value="handleFieldUpdate(field.key, $event)"
-                :items="
-                  webhookDataKeys.map((key) => ({
-                    value: key,
-                    title: key,
-                  }))
-                "
-                :placeholder="$t('select_field')"
-                :clearable="!field.required"
+                v-model="messageType"
+                :items="[
+                  { value: 'message', title: $t('message') },
+                  { value: 'chatbot', title: $t('chatbot') },
+                ]"
+                :placeholder="$t('select_type')"
                 item-value="value"
                 item-title="title"
+              />
+            </div>
+
+            <div v-if="messageType === 'message'">
+              <div class="mb-4">
+                <VLabel class="text-body-2 mb-2">{{
+                  $t('transfer_to')
+                }}</VLabel>
+                <AppSelectSearch
+                  v-model="transferType"
+                  :items="[
+                    { value: 'sector', title: $t('sector') },
+                    { value: 'user', title: $t('user') },
+                  ]"
+                  :placeholder="$t('transfer_to_placeholder')"
+                  :clearable="true"
+                  item-value="value"
+                  item-title="title"
+                />
+              </div>
+
+              <div v-if="transferType === 'sector'" class="mb-4">
+                <VLabel class="text-body-2 mb-2">{{ $t('sector') }}</VLabel>
+                <AppSelectSearch
+                  v-model="selectedSector"
+                  :items="sectors"
+                  :placeholder="$t('select_sector')"
+                  :loading="isLoadingSectors"
+                  :clearable="true"
+                  item-value="value"
+                  item-title="title"
+                  @select="loadSectors()"
+                >
+                  <template #item-prepend="{ item }">
+                    <VAvatar
+                      size="24"
+                      :style="{
+                        backgroundColor: item.color || '#1976D2',
+                      }"
+                    />
+                  </template>
+                </AppSelectSearch>
+              </div>
+
+              <div
+                v-if="transferType === 'sector' && selectedSector"
+                class="mb-4"
+              >
+                <VLabel class="text-body-2 mb-2">{{ $t('user') }}</VLabel>
+                <AppSelectSearch
+                  v-model="selectedSectorUser"
+                  :items="sectorUsers"
+                  :placeholder="$t('select_user')"
+                  :loading="isLoadingSectorUsers"
+                  :clearable="true"
+                  item-value="value"
+                  item-title="title"
+                >
+                  <template #item-prepend="{ item }">
+                    <VAvatar
+                      size="32"
+                      :variant="!item.photo ? 'tonal' : undefined"
+                      color="primary"
+                    >
+                      <VImg
+                        v-if="item.photo"
+                        :src="item.photo"
+                        :alt="item.title"
+                      />
+                      <VIcon v-else icon="tabler-user" size="18" />
+                    </VAvatar>
+                  </template>
+                </AppSelectSearch>
+              </div>
+
+              <div v-if="transferType === 'user'" class="mb-4">
+                <VLabel class="text-body-2 mb-2">{{ $t('user') }}</VLabel>
+                <AppSelectSearch
+                  v-model="selectedUser"
+                  :items="users"
+                  :placeholder="$t('select_user')"
+                  :loading="isLoadingUsers"
+                  :clearable="true"
+                  item-value="value"
+                  item-title="title"
+                  @select="loadUsers()"
+                >
+                  <template #item-prepend="{ item }">
+                    <VAvatar
+                      size="32"
+                      :variant="!item.photo ? 'tonal' : undefined"
+                      color="primary"
+                    >
+                      <VImg
+                        v-if="item.photo"
+                        :src="item.photo"
+                        :alt="item.title"
+                      />
+                      <VIcon v-else icon="tabler-user" size="18" />
+                    </VAvatar>
+                  </template>
+                </AppSelectSearch>
+              </div>
+
+              <div class="mb-4">
+                <div class="d-flex align-center justify-space-between mb-2">
+                  <VLabel class="text-body-2">
+                    {{ $t('webhook_field_message') }}
+                  </VLabel>
+                  <VBtn
+                    variant="text"
+                    size="small"
+                    density="compact"
+                    @click="
+                      messageMode =
+                        messageMode === 'textarea' ? 'depara' : 'textarea'
+                    "
+                  >
+                    {{
+                      messageMode === 'textarea'
+                        ? $t('use_mapping')
+                        : $t('use_textarea')
+                    }}
+                  </VBtn>
+                </div>
+                <div v-if="messageMode === 'textarea'">
+                  <VTextarea
+                    :model-value="webhookMapping.message ?? ''"
+                    @update:model-value="
+                      webhookMapping.message = $event || null
+                    "
+                    :placeholder="$t('webhook_field_message')"
+                    rows="4"
+                  />
+                  <VExpansionPanels variant="accordion" class="mt-2">
+                    <VExpansionPanel>
+                      <VExpansionPanelTitle>
+                        <span class="text-caption">{{
+                          $t('available_tags')
+                        }}</span>
+                      </VExpansionPanelTitle>
+                      <VExpansionPanelText>
+                        <div class="d-flex flex-column gap-1">
+                          <div
+                            v-for="tag in availableTags"
+                            :key="tag.tag"
+                            class="text-caption"
+                          >
+                            <code>{{ tag.tag }}</code
+                            >: {{ tag.description }}
+                          </div>
+                        </div>
+                      </VExpansionPanelText>
+                    </VExpansionPanel>
+                  </VExpansionPanels>
+                </div>
+                <AppSelectSearch
+                  v-else
+                  :model-value="webhookMapping.message ?? null"
+                  @update:model-value="handleFieldUpdate('message', $event)"
+                  :items="
+                    webhookDataKeys.map((key) => ({
+                      value: key,
+                      title: key,
+                    }))
+                  "
+                  :placeholder="$t('select_field')"
+                  :clearable="true"
+                  item-value="value"
+                  item-title="title"
+                />
+              </div>
+            </div>
+
+            <div v-if="messageType === 'chatbot'" class="mb-4">
+              <VLabel class="text-body-2 mb-2">{{
+                $t('chatbot_input_select_label')
+              }}</VLabel>
+              <AppSelectSearch
+                v-model="selectedChatbot"
+                :items="inputChatbots"
+                :placeholder="$t('chatbot_input_select_placeholder')"
+                :loading="isLoadingChatbots"
+                :clearable="true"
+                item-value="value"
+                item-title="title"
+                @select="loadInputChatbots()"
               />
             </div>
           </VCol>

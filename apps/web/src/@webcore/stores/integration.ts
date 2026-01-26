@@ -51,6 +51,31 @@ export const useIntegrationStore = defineStore('integration', {
     hideSnackbar() {
       this.snackbar.status = false;
     },
+    async _handleGetRequestArray<T>(
+      url: string,
+      errorKey: string
+    ): Promise<T[] | null> {
+      try {
+        const response = await axios.get<IApiResponse<T[]>>(url);
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const message = data?.message ?? this.i18n.global.t(errorKey);
+          this.showSnackbar(message, EColor.error);
+          return null;
+        }
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t(errorKey);
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+        return null;
+      }
+    },
     async listIntegrations(params?: {
       page?: number;
       per_page?: number;
@@ -484,6 +509,44 @@ export const useIntegrationStore = defineStore('integration', {
       } catch {
         return null;
       }
+    },
+    async listUsers(): Promise<
+      import('@core/schema/integration/listUsers/response.schema').ListIntegrationUsersResponse
+    > {
+      const result = await this._handleGetRequestArray<
+        import('@core/schema/integration/listUsers/response.schema').IntegrationUserResponse
+      >('/integration/users', 'error_loading_users');
+
+      return result || [];
+    },
+    async listSectors(): Promise<
+      import('@core/schema/integration/listSectors/response.schema').ListIntegrationSectorsResponse
+    > {
+      const result = await this._handleGetRequestArray<
+        import('@core/schema/integration/listSectors/response.schema').IntegrationSectorResponse
+      >('/integration/sectors', 'error_loading_sectors');
+
+      return result || [];
+    },
+    async listSectorUsers(
+      sectorId: string
+    ): Promise<
+      import('@core/schema/integration/listSectorUsers/response.schema').ListIntegrationSectorUsersResponse
+    > {
+      const result = await this._handleGetRequestArray<
+        import('@core/schema/integration/listSectorUsers/response.schema').IntegrationSectorUserResponse
+      >(`/integration/sectors/${sectorId}/users`, 'error_loading_sector_users');
+
+      return result || [];
+    },
+    async listInputChatbots(): Promise<
+      import('@core/schema/integration/listInputChatbots/response.schema').ListIntegrationInputChatbotsResponse
+    > {
+      const result = await this._handleGetRequestArray<
+        import('@core/schema/integration/listInputChatbots/response.schema').IntegrationInputChatbotResponse
+      >('/integration/input-chatbots', 'error_loading_chatbots');
+
+      return result || [];
     },
   },
 });

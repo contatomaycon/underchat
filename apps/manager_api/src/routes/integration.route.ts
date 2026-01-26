@@ -17,6 +17,10 @@ import { listAvailableChannelsSchema } from '@core/schema/integration/listAvaila
 import { viewWebhookMappingSchema } from '@core/schema/integration/viewWebhookMapping';
 import { saveWebhookMappingSchema } from '@core/schema/integration/saveWebhookMapping';
 import { viewWebhookDataSchema } from '@core/schema/integration/viewWebhookData';
+import { listIntegrationUsersSchema } from '@core/schema/integration/listUsers';
+import { listIntegrationSectorsSchema } from '@core/schema/integration/listSectors';
+import { listIntegrationSectorUsersSchema } from '@core/schema/integration/listSectorUsers';
+import { listIntegrationInputChatbotsSchema } from '@core/schema/integration/listInputChatbots';
 
 export default function integrationRoutes(server: FastifyInstance) {
   const integrationController = container.resolve(IntegrationController);
@@ -122,6 +126,42 @@ export default function integrationRoutes(server: FastifyInstance) {
   server.get('/integration/webhook-data', {
     schema: viewWebhookDataSchema,
     handler: integrationController.viewWebhookData,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, integrationPermissions),
+    ],
+  });
+
+  server.get('/integration/users', {
+    schema: listIntegrationUsersSchema,
+    handler: integrationController.listUsers,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, integrationPermissions),
+    ],
+  });
+
+  server.get('/integration/sectors', {
+    schema: listIntegrationSectorsSchema,
+    handler: integrationController.listSectors,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, integrationPermissions),
+    ],
+  });
+
+  server.get('/integration/sectors/:sector_id/users', {
+    schema: listIntegrationSectorUsersSchema,
+    handler: integrationController.listSectorUsers,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, integrationPermissions),
+    ],
+  });
+
+  server.get('/integration/input-chatbots', {
+    schema: listIntegrationInputChatbotsSchema,
+    handler: integrationController.listInputChatbots,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, integrationPermissions),
