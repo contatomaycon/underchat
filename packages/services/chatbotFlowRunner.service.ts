@@ -41,6 +41,7 @@ import InvalidConfigurationError from '@core/common/exceptions/InvalidConfigurat
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import { extractMessageTextFromContent } from '@core/common/functions/extractMessageTextFromContent';
+import { normalizeTextForConditionalComparison } from '@core/common/functions/normalizeTextForConditionalComparison';
 import { StreamProducerService } from './streamProducer.service';
 import { KafkaServiceQueueService } from './kafkaServiceQueue.service';
 import { IChatHistoryEmbeddingRequest } from '@core/common/interfaces/IChatHistoryEmbeddingRequest';
@@ -5458,7 +5459,9 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       return false;
     }
 
-    const userText = this.getTextFromUpsertMessage(data)?.trim().toLowerCase();
+    const userText = normalizeTextForConditionalComparison(
+      this.getTextFromUpsertMessage(data) ?? ''
+    );
 
     if (!userText) {
       return false;
@@ -5472,7 +5475,11 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
         continue;
       }
 
-      const term = conditionTerm.trim().toLowerCase();
+      const term = normalizeTextForConditionalComparison(conditionTerm);
+      if (!term) {
+        continue;
+      }
+
       let conditionMet = false;
 
       switch (conditionType) {
