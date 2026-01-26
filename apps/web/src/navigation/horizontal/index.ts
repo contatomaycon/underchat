@@ -19,6 +19,7 @@ import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
 import { EReportConversationHistoryPermissions } from '@core/common/enums/EPermissions/reportConversationHistory';
 import { EReportAttendancePermissions } from '@core/common/enums/EPermissions/reportAttendance';
 import { EReleasePermissions } from '@core/common/enums/EPermissions/release';
+import { EIntegrationPermissions } from '@core/common/enums/EPermissions/integration';
 
 export default [
   {
@@ -367,6 +368,16 @@ export default [
       EGeneralPermissions.full_access_group,
       EAccountPermissions.account_group,
       EAccountPermissions.account_customize,
+    ],
+  },
+  {
+    title: 'integration',
+    to: { name: 'integration' as keyof RouteNamedMap },
+    icon: { icon: 'tabler-api' },
+    permissions: [
+      EGeneralPermissions.full_access,
+      EGeneralPermissions.full_access_group,
+      EIntegrationPermissions.integration_group,
     ],
   },
   {

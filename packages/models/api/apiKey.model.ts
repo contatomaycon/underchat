@@ -1,6 +1,7 @@
 import { pgTable, timestamp, varchar, uuid, index } from 'drizzle-orm/pg-core';
 import { account, permissionAssignment } from '@core/models';
 import { relations } from 'drizzle-orm';
+import { EStatusApiKey } from '@core/common/enums/EStatusApiKey';
 
 export const apiKey = pgTable(
   'api_key',
@@ -11,6 +12,10 @@ export const apiKey = pgTable(
       .notNull(),
     key: varchar({ length: 32 }).notNull(),
     name: varchar({ length: 200 }).notNull(),
+    status: varchar({ length: 20 })
+      .notNull()
+      .$type<EStatusApiKey>()
+      .default(EStatusApiKey.active),
     created_at: timestamp('created_at', {
       mode: 'string',
       withTimezone: true,

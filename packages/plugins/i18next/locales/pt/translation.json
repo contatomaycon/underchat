@@ -930,5 +930,11 @@
   "release_accounts_list_success": "Contas listadas com sucesso!",
   "release_permission_roles_list_success": "Grupos de acesso listados com sucesso!",
   "release_notifications_list_successfully": "Notificações listadas com sucesso!",
-  "release_accounts_permission_error": "Você não tem permissão para listar todas as contas"
+  "release_accounts_permission_error": "Você não tem permissão para listar todas as contas",
+  "integration_view_successfully": "Integração visualizada com sucesso!",
+  "integration_not_found": "Integração não encontrada!",
+  "integration_status_updated_successfully": "Status da integração atualizado com sucesso!",
+  "integration_status_update_error": "Erro ao atualizar status da integração!",
+  "integration_key_generated_successfully": "Nova chave gerada com sucesso!",
+  "integration_key_generation_error": "Erro ao gerar nova chave!"
 }

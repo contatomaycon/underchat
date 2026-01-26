@@ -23,6 +23,7 @@ import { EReportAttendancePermissions } from './reportAttendance';
 import { ESchedulePermissions } from './schedule';
 import { EAiAgentPermissions } from './aiAgent';
 import { EReleasePermissions } from './release';
+import { EIntegrationPermissions } from './integration';
 
 export type EPermissionsRoles =
   | EUserPermissions
@@ -49,4 +50,5 @@ export type EPermissionsRoles =
   | EReportAttendancePermissions
   | ESchedulePermissions
   | EAiAgentPermissions
-  | EReleasePermissions;
+  | EReleasePermissions
+  | EIntegrationPermissions;

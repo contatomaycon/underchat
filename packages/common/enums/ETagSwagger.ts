@@ -34,4 +34,5 @@ export enum ETagSwagger {
   masterSession = 'Sessão Master',
   aiAgent = 'Agente de IA',
   release = 'Informativos',
+  integration = 'Integração',
 }

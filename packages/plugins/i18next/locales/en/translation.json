@@ -930,5 +930,11 @@
   "release_accounts_list_success": "Accounts listed successfully!",
   "release_permission_roles_list_success": "Permission roles listed successfully!",
   "release_notifications_list_successfully": "Notifications listed successfully!",
-  "release_accounts_permission_error": "You do not have permission to list all accounts"
+  "release_accounts_permission_error": "You do not have permission to list all accounts",
+  "integration_view_successfully": "Integration viewed successfully!",
+  "integration_not_found": "Integration not found!",
+  "integration_status_updated_successfully": "Integration status updated successfully!",
+  "integration_status_update_error": "Error updating integration status!",
+  "integration_key_generated_successfully": "New key generated successfully!",
+  "integration_key_generation_error": "Error generating new key!"
 }
