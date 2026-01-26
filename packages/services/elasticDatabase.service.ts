@@ -379,6 +379,91 @@ export class ElasticDatabaseService {
     return 'conflict';
   };
 
+  private async tryIndexWithMeta<T extends Record<string, unknown>>(
+    index: string,
+    id: string,
+    doc: T,
+    meta: { seqNo: number; primaryTerm: number }
+  ): Promise<'updated' | 'created' | 'conflict'> {
+    try {
+      const result = await this.client.index({
+        index,
+        id,
+        document: doc,
+        if_seq_no: meta.seqNo,
+        if_primary_term: meta.primaryTerm,
+      });
+
+      if (result.result === 'updated') {
+        return 'updated';
+      }
+
+      if (result.result === 'created') {
+        return 'created';
+      }
+
+      return 'updated';
+    } catch (indexError: unknown) {
+      if (
+        typeof indexError === 'object' &&
+        indexError !== null &&
+        'statusCode' in indexError &&
+        indexError.statusCode === 409
+      ) {
+        return 'conflict';
+      }
+
+      throw indexError;
+    }
+  }
+
+  indexWithOCC = async <T extends Record<string, unknown>>(
+    index: string,
+    id: string,
+    doc: T,
+    options?: { upsert?: boolean; maxRetries?: number }
+  ): Promise<'updated' | 'created' | 'conflict' | 'not_found'> => {
+    const maxRetries = options?.maxRetries ?? 5;
+    let attempt = 0;
+
+    while (attempt < maxRetries) {
+      try {
+        const meta = await this.getDocumentMeta(index, id);
+
+        if (!meta) {
+          if (options?.upsert !== true) {
+            return 'not_found';
+          }
+
+          const createResult = await this.tryCreateDocument(index, id, doc);
+
+          if (createResult === 'created') {
+            return 'created';
+          }
+
+          attempt++;
+          continue;
+        }
+
+        const indexResult = await this.tryIndexWithMeta(index, id, doc, meta);
+
+        if (indexResult !== 'conflict') {
+          return indexResult;
+        }
+
+        attempt++;
+      } catch (error) {
+        if (attempt >= maxRetries - 1) {
+          throw new Error(`Failed to index with OCC after retries: ${error}`);
+        }
+
+        attempt++;
+      }
+    }
+
+    return 'conflict';
+  };
+
   updateArrayField = async (
     index: string,
     id: string,

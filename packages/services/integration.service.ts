@@ -10,6 +10,9 @@ import { IntegrationAvailableChannelsListerRepository } from '@core/repositories
 import { WebhookMappingViewerRepository } from '@core/repositories/webhookMapping/WebhookMappingViewer.repository';
 import { WebhookMappingSaverRepository } from '@core/repositories/webhookMapping/WebhookMappingSaver.repository';
 import { WebhookDataViewerRepository } from '@core/repositories/webhook/WebhookDataViewer.repository';
+import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
+import { EElasticIndex } from '@core/common/enums/EElasticIndex';
+import { webhookMappings } from '@core/mappings/webhook.mappings';
 import { injectable } from 'tsyringe';
 import { EStatusApiKey } from '@core/common/enums/EStatusApiKey';
 import { ListIntegrationsRequest } from '@core/schema/integration/listIntegrations/request.schema';
@@ -34,7 +37,8 @@ export class IntegrationService {
     private readonly integrationAvailableChannelsListerRepository: IntegrationAvailableChannelsListerRepository,
     private readonly webhookMappingViewerRepository: WebhookMappingViewerRepository,
     private readonly webhookMappingSaverRepository: WebhookMappingSaverRepository,
-    private readonly webhookDataViewerRepository: WebhookDataViewerRepository
+    private readonly webhookDataViewerRepository: WebhookDataViewerRepository,
+    private readonly elasticDatabaseService: ElasticDatabaseService
   ) {}
 
   listIntegrations = async (
@@ -213,5 +217,35 @@ export class IntegrationService {
     return this.integrationAvailableChannelsListerRepository.listAvailableChannels(
       accountId
     );
+  };
+
+  saveWebhookData = async (
+    accountId: string,
+    workerId: string,
+    data: Record<string, unknown>
+  ): Promise<boolean> => {
+    const mappings = webhookMappings();
+
+    const result = await this.elasticDatabaseService.indices(
+      EElasticIndex.webhook,
+      mappings
+    );
+
+    if (!result) {
+      return false;
+    }
+
+    const documentId = `${accountId}_${workerId}`;
+    const indexResult = await this.elasticDatabaseService.indexWithOCC(
+      EElasticIndex.webhook,
+      documentId,
+      data,
+      {
+        upsert: true,
+        maxRetries: 5,
+      }
+    );
+
+    return indexResult === 'updated' || indexResult === 'created';
   };
 }
