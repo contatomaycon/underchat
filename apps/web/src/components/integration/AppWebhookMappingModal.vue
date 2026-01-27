@@ -548,6 +548,7 @@ watch(isOpen, async (newValue) => {
         ? (webhookMapping.value.message_type as 'message' | 'chatbot')
         : undefined;
     if (savedMessageType === 'chatbot') {
+      await loadInputChatbots();
       messageType.value = 'chatbot';
       const chatbotIdValue =
         typeof webhookMapping.value.chatbot_id === 'string'
@@ -556,7 +557,6 @@ watch(isOpen, async (newValue) => {
       if (chatbotIdValue) {
         selectedChatbot.value = chatbotIdValue;
       }
-      await loadInputChatbots();
       const chatbotMessageValue =
         typeof webhookMapping.value.message === 'string'
           ? webhookMapping.value.message
@@ -612,7 +612,6 @@ watch(isOpen, async (newValue) => {
       }
     } else {
       messageType.value = 'chatbot';
-      await loadInputChatbots();
       chatbotMessageMode.value = 'depara';
     }
   }
