@@ -1,63 +1,86 @@
 FROM node:24.12.0-bookworm-slim AS base
 
+FROM base AS turbo
+
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
       bash \
+      git \
+      g++ \
+      make \
+      python3 \
+      pkg-config \
+      libssl-dev \
+      libsasl2-dev \
+      librdkafka-dev \
+      zlib1g-dev \
+      libzstd-dev \
+      zstd \
       curl \
       ca-certificates && \
     apt-get clean && \
-    rm -rf /var/lib/apt/lists/* && \
-    corepack enable && \
-    corepack prepare pnpm@latest --activate
+    rm -rf /var/lib/apt/lists/*
 
-FROM base AS pruned
-WORKDIR /app
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json ./
-COPY apps/public_api ./apps/public_api
-COPY packages/plugins/i18next/locales ./packages/plugins/i18next/locales
-RUN pnpm dlx turbo@latest prune public --docker
-
-FROM pruned AS deps
+RUN corepack enable && \
+    corepack prepare pnpm@10.14.0 --activate && \
+    corepack prepare yarn@4.9.2 --activate && \
+    npm add -g turbo
+ 
+FROM turbo AS pruned
 
 WORKDIR /app
+
+COPY . .
+
+RUN turbo prune public --docker
+
+FROM turbo AS deps
+
+WORKDIR /app
+
 COPY --from=pruned /app/out/json/ .
 
-RUN pnpm install --frozen-lockfile --ignore-scripts
+ENV npm_config_build_from_source=true \
+    npm_config_loglevel=verbose
+RUN pnpm install --unsafe-perm
+RUN RDKAFKA_PATH=$(find node_modules/.pnpm/node-rdkafka@* -type d -name "node-rdkafka" -path "*/node_modules/node-rdkafka" | head -1) && \
+    if [ -n "$RDKAFKA_PATH" ] && [ ! -f "$RDKAFKA_PATH/build/Release/node-librdkafka.node" ]; then \
+      cd "$RDKAFKA_PATH" && npm run install; \
+    fi
 
 FROM deps AS builder
+
 WORKDIR /app
-COPY --from=deps /app/node_modules/ ./
-COPY --from=pruned /app/out/full/ ./
+
+COPY --from=deps /app/node_modules/ .
+COPY --from=pruned /app/out/full/ .
+COPY packages ./packages
+
 RUN pnpm build:public
 RUN mkdir -p /build_locales
+
 COPY packages/plugins/i18next/locales /build_locales
 
-FROM node:24.12.0-bookworm-slim AS release
+FROM node:24.12.0-bookworm-slim
+
 WORKDIR /app
-ARG ATLASGO_SHA256
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-      bash \
-      curl \
-      ca-certificates && \
-    curl --proto '=https' --tlsv1.2 -sSfL https://atlasgo.sh -o /tmp/atlasgo.sh \
-    && echo "$ATLASGO_SHA256  /tmp/atlasgo.sh" | sha256sum -c - \
-    && bash /tmp/atlasgo.sh \
-    && rm /tmp/atlasgo.sh \
-    && apt-get clean && \
-    rm -rf /var/lib/apt/lists/* && \
-    corepack enable && \
-    corepack prepare pnpm@latest --activate
 
 COPY --from=builder /app/apps/public_api/dist ./
 COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/package*.json .
+COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/apps/public_api/package*.json ./apps/public_api
-COPY --from=builder /app/atlas ./atlas
-COPY --from=builder /app/atlas.hcl ./atlas.hcl
 COPY --from=builder /build_locales ./packages/plugins/i18next/locales
-RUN groupadd -r app && useradd -r -g app app
-USER app
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      ffmpeg \
+      librdkafka1 \
+      curl && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
 EXPOSE 3001
+
 WORKDIR /app/apps/public_api
-CMD ["node","src/index.js"]
+
+CMD ["node", "src/index.js"]
