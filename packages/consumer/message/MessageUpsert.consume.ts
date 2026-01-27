@@ -66,6 +66,8 @@ import { PlanAccountService } from '@core/services/planAccount.service';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 import { commitOffset } from '@core/common/functions/commitOffset';
 import { PushNotificationService } from '@core/services/pushNotification.service';
+import { SectorService } from '@core/services/sector.service';
+import { UserService } from '@core/services/user.service';
 import { EContactIgnore } from '@core/common/enums/EContactIgnore';
 import { withLock } from '@core/common/functions/withLock';
 import { delay } from '@core/common/functions/delay';
@@ -101,7 +103,9 @@ export class MessageUpsertConsume {
     private readonly workerConfigService: WorkerConfigService,
     private readonly chatbotFlowRunnerService: ChatbotFlowRunnerService,
     private readonly planAccountService: PlanAccountService,
-    private readonly pushNotificationService: PushNotificationService
+    private readonly pushNotificationService: PushNotificationService,
+    private readonly sectorService: SectorService,
+    private readonly userService: UserService
   ) {}
 
   private get consumerOrThrow(): KafkaConsumer {
@@ -2205,10 +2209,97 @@ export class MessageUpsertConsume {
         }
       }
 
+      await this.processTransferIfNeeded(t, createChat, data);
+
       return this.handleNewChatMessageAndPublish(createChat, data);
     }
 
+    await this.processTransferIfNeeded(t, getChat, data);
     await this.createChatMessage(getChat, data);
+  }
+
+  private async processTransferIfNeeded(
+    t: TFunction<'translation', undefined>,
+    chat: IChat,
+    data: IUpsertMessage
+  ): Promise<void> {
+    if (data.transfer_sector_id) {
+      await this.transferToSector(t, chat, data);
+      return;
+    }
+
+    if (data.transfer_user_id) {
+      await this.transferToUser(t, chat, data);
+    }
+  }
+
+  private async transferToSector(
+    t: TFunction<'translation', undefined>,
+    chat: IChat,
+    data: IUpsertMessage
+  ): Promise<void> {
+    if (!data.transfer_sector_id) {
+      return;
+    }
+
+    const sectorData = await this.sectorService.viewSectorById(
+      data.transfer_sector_id,
+      chat.account.id
+    );
+
+    if (!sectorData) {
+      return;
+    }
+
+    const sector: IChat['sector'] = {
+      id: sectorData.sector_id,
+      name: sectorData.name,
+      color: sectorData.color,
+    };
+
+    let user: IChat['user'] | null = null;
+
+    if (data.transfer_sector_user_id) {
+      const userData = await this.userService.viewUserNamePhoto(
+        data.transfer_sector_user_id
+      );
+
+      if (userData) {
+        user = {
+          id: userData.id,
+          name: userData.name,
+          photo: userData.photo ?? null,
+        };
+      }
+    }
+
+    await this.chatService.updateChatUserAndSector(chat.chat_id, user, sector);
+  }
+
+  private async transferToUser(
+    t: TFunction<'translation', undefined>,
+    chat: IChat,
+    data: IUpsertMessage
+  ): Promise<void> {
+    if (!data.transfer_user_id) {
+      return;
+    }
+
+    const userData = await this.userService.viewUserNamePhoto(
+      data.transfer_user_id
+    );
+
+    if (!userData) {
+      return;
+    }
+
+    const user: IChat['user'] = {
+      id: userData.id,
+      name: userData.name,
+      photo: userData.photo ?? null,
+    };
+
+    await this.chatService.updateChatUserAndSector(chat.chat_id, user, null);
   }
 
   private getEffectiveInputChatbotId(

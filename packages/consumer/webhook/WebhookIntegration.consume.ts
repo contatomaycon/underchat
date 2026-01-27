@@ -205,6 +205,19 @@ export class WebhookIntegrationConsume {
       upsert.webhook_message_type = webhookType;
     }
 
+    if (request.mapped_data.transfer_sector_id) {
+      upsert.transfer_sector_id = request.mapped_data.transfer_sector_id;
+    }
+
+    if (request.mapped_data.transfer_sector_user_id) {
+      upsert.transfer_sector_user_id =
+        request.mapped_data.transfer_sector_user_id;
+    }
+
+    if (request.mapped_data.transfer_user_id) {
+      upsert.transfer_user_id = request.mapped_data.transfer_user_id;
+    }
+
     return upsert;
   }
 
