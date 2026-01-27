@@ -236,6 +236,7 @@ const isQueueOrUraStatus = computed(() => {
 
 const workerConfigForChat = ref<ViewWorkerConfigForChatResponse>(null);
 const isLoadingWorkerConfig = ref(false);
+const lastLoadedWorkerConfigId = ref<string | null>(null);
 
 const getStatusColor = (status: EChatUserStatus): string => {
   const isDark = global.name.value === 'dark';
@@ -305,29 +306,51 @@ const canReopenChat = computed(() => {
   return true;
 });
 
-const loadWorkerConfigForChat = async () => {
+const loadWorkerConfigForChat = async (forceReload = false) => {
   const workerId = chatStore.activeChat?.worker?.id;
   if (!workerId) {
     workerConfigForChat.value = null;
     isLoadingWorkerConfig.value = false;
+    lastLoadedWorkerConfigId.value = null;
+    return;
+  }
+
+  if (
+    !forceReload &&
+    lastLoadedWorkerConfigId.value === workerId &&
+    workerConfigForChat.value !== null
+  ) {
+    return;
+  }
+
+  if (isLoadingWorkerConfig.value && lastLoadedWorkerConfigId.value === workerId) {
     return;
   }
 
   isLoadingWorkerConfig.value = true;
+  lastLoadedWorkerConfigId.value = workerId;
   try {
     const config = await channelStore.fetchWorkerConfigForChat(workerId);
-    workerConfigForChat.value = config;
+    if (lastLoadedWorkerConfigId.value === workerId) {
+      workerConfigForChat.value = config;
+    }
   } catch (error) {
-    workerConfigForChat.value = null;
+    if (lastLoadedWorkerConfigId.value === workerId) {
+      workerConfigForChat.value = null;
+    }
   } finally {
-    isLoadingWorkerConfig.value = false;
+    if (lastLoadedWorkerConfigId.value === workerId) {
+      isLoadingWorkerConfig.value = false;
+    }
   }
 };
 
 watch(
   () => chatStore.activeChat?.worker?.id,
-  () => {
-    loadWorkerConfigForChat().catch(() => {});
+  (newWorkerId, oldWorkerId) => {
+    if (newWorkerId !== oldWorkerId || workerConfigForChat.value === null) {
+      loadWorkerConfigForChat().catch(() => {});
+    }
   },
   { immediate: true }
 );

@@ -28,6 +28,11 @@ import { ViewWorkerConfigResponse } from '@core/schema/worker/viewWorkerConfig/r
 import { UpdateWorkerConfigRequest } from '@core/schema/worker/updateWorkerConfig/request.schema';
 import { ViewWorkerConfigForChatResponse } from '@core/schema/chat/viewWorkerConfigForChat/response.schema';
 
+const workerConfigForChatPendingModule: Record<
+  string,
+  Promise<ViewWorkerConfigForChatResponse | null>
+> = {};
+
 export const useChannelsStore = defineStore('channels', {
   state: () => ({
     snackbar: {
@@ -49,10 +54,6 @@ export const useChannelsStore = defineStore('channels', {
     workerConfigForChatCache: {} as Record<
       string,
       ViewWorkerConfigForChatResponse | null
-    >,
-    workerConfigForChatPending: {} as Record<
-      string,
-      Promise<ViewWorkerConfigForChatResponse | null>
     >,
   }),
   actions: {
@@ -819,25 +820,24 @@ export const useChannelsStore = defineStore('channels', {
       }
     },
 
-    async fetchWorkerConfigForChat(
+    fetchWorkerConfigForChat(
       workerId: string
     ): Promise<ViewWorkerConfigForChatResponse | null> {
-      if (!workerId) return null;
+      if (!workerId) return Promise.resolve(null);
 
       if (this.workerConfigForChatCache[workerId] !== undefined) {
-        return this.workerConfigForChatCache[workerId];
+        return Promise.resolve(this.workerConfigForChatCache[workerId]);
       }
 
-      if (workerId in this.workerConfigForChatPending) {
-        return this.workerConfigForChatPending[workerId];
+      if (workerId in workerConfigForChatPendingModule) {
+        return workerConfigForChatPendingModule[workerId];
       }
 
-      const promise = (async () => {
-        try {
-          const response = await axios.get<
-            IApiResponse<ViewWorkerConfigForChatResponse>
-          >(`/chat/worker/${workerId}/config`);
-
+      const promise = axios
+        .get<IApiResponse<ViewWorkerConfigForChatResponse>>(
+          `/chat/worker/${workerId}/config`
+        )
+        .then((response) => {
           const data = response?.data;
 
           if (!data?.status) {
@@ -847,14 +847,13 @@ export const useChannelsStore = defineStore('channels', {
             this.showSnackbar(message, EColor.error);
 
             this.workerConfigForChatCache[workerId] = null;
-            delete this.workerConfigForChatPending[workerId];
             return null;
           }
 
           this.workerConfigForChatCache[workerId] = data.data ?? null;
-          delete this.workerConfigForChatPending[workerId];
           return this.workerConfigForChatCache[workerId];
-        } catch (error) {
+        })
+        .catch((error) => {
           let message = this.i18n.global.t('channel_general_config_load_error');
           if (error instanceof AxiosError) {
             message = error?.response?.data?.message ?? message;
@@ -863,12 +862,13 @@ export const useChannelsStore = defineStore('channels', {
           this.showSnackbar(message, EColor.error);
 
           this.workerConfigForChatCache[workerId] = null;
-          delete this.workerConfigForChatPending[workerId];
           return null;
-        }
-      })();
+        })
+        .finally(() => {
+          delete workerConfigForChatPendingModule[workerId];
+        });
 
-      this.workerConfigForChatPending[workerId] = promise;
+      workerConfigForChatPendingModule[workerId] = promise;
       return promise;
     },
 
