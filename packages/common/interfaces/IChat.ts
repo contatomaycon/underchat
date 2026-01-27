@@ -75,4 +75,5 @@ export interface IChat {
   embedded_for_ai_agents?: string[] | null;
   forward_to_output_chatbot?: boolean | null;
   chatbot_schedule_id?: string | null;
+  chatbot_webhook_id?: string | null;
 }

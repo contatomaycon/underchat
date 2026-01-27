@@ -340,6 +340,7 @@ export class ChatService {
       embedded_for_ai_agents: chat.embedded_for_ai_agents,
       forward_to_output_chatbot: chat.forward_to_output_chatbot,
       chatbot_schedule_id: chat.chatbot_schedule_id,
+      chatbot_webhook_id: chat.chatbot_webhook_id,
     };
 
     return this.applyChatPatch(chat.chat_id, patch, {
@@ -579,6 +580,11 @@ export class ChatService {
         ctx._source.chatbot_schedule_id = patch.chatbot_schedule_id;
         changed = true;
       }
+
+      if (patch.containsKey('chatbot_webhook_id')) {
+        ctx._source.chatbot_webhook_id = patch.chatbot_webhook_id;
+        changed = true;
+      }
       
       if (patch.containsKey('user') && patch.user != null && !hasStatusAndUserUpdate) {
         if (eventEpochMillis != null) {
@@ -747,6 +753,13 @@ export class ChatService {
       patch.chatbot_schedule_id !== undefined
     ) {
       upsert.chatbot_schedule_id = patch.chatbot_schedule_id;
+    }
+
+    if (
+      patch.chatbot_webhook_id !== null &&
+      patch.chatbot_webhook_id !== undefined
+    ) {
+      upsert.chatbot_webhook_id = patch.chatbot_webhook_id;
     }
 
     upsert.meta = {};

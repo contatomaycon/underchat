@@ -180,6 +180,9 @@ export const chatMappings = () => {
         chatbot_schedule_id: {
           type: 'keyword',
         },
+        chatbot_webhook_id: {
+          type: 'keyword',
+        },
         satisfaction_response: {
           type: 'object',
           properties: {

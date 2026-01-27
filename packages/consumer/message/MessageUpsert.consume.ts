@@ -2114,6 +2114,13 @@ export class MessageUpsertConsume {
       inputChatMessage.forward_to_output_chatbot = false;
     }
 
+    if (
+      inputChatMessage.status === EChatStatus.ura_webhook &&
+      data.webhook_chatbot_id
+    ) {
+      inputChatMessage.chatbot_webhook_id = data.webhook_chatbot_id;
+    }
+
     await this.saveChatWithCaches(inputChatMessage);
 
     return inputChatMessage;
@@ -2163,6 +2170,18 @@ export class MessageUpsertConsume {
     const chat = await this.ensureChatAndHandleMessage(data, getChat);
     if (!chat) {
       return;
+    }
+
+    if (
+      !getChat &&
+      data.webhook_message_type === 'chatbot' &&
+      data.webhook_chatbot_id
+    ) {
+      await this.chatbotFlowRunnerService.clearFlowCacheForChat(
+        chat.account.id,
+        chat.worker.id,
+        chat.chat_id
+      );
     }
 
     return this.chatbotFlowRunnerService.execute(t, data, chat, chatbotId);
@@ -2316,6 +2335,13 @@ export class MessageUpsertConsume {
       getChat?.chatbot_schedule_id
     ) {
       return getChat.chatbot_schedule_id;
+    }
+
+    if (
+      getChat?.status === EChatStatus.ura_webhook &&
+      getChat?.chatbot_webhook_id
+    ) {
+      return getChat.chatbot_webhook_id;
     }
 
     return inputChatbotId;

@@ -913,7 +913,6 @@ export class ChatbotFlowRunnerService {
     );
 
     const alreadyCached = await this.redis.get(cacheKey);
-
     if (alreadyCached) {
       return alreadyCached;
     }
