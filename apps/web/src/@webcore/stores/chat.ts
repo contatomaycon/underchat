@@ -1448,7 +1448,11 @@ export const useChatStore = defineStore('chat', {
         }
 
         if (append) {
-          this.listQueue = [...this.listQueue, ...data.data.results];
+          const existingIds = new Set(this.listQueue.map((c) => c.chat_id));
+          const newResults = data.data.results.filter(
+            (c) => !existingIds.has(c.chat_id)
+          );
+          this.listQueue = [...this.listQueue, ...newResults];
         } else {
           const filteredResults = data.data.results.filter((chat) => {
             const existingInQueue = this.listQueue.find(
@@ -1534,7 +1538,11 @@ export const useChatStore = defineStore('chat', {
         }
 
         if (append) {
-          this.listInChat = [...this.listInChat, ...data.data.results];
+          const existingIds = new Set(this.listInChat.map((c) => c.chat_id));
+          const newResults = data.data.results.filter(
+            (c) => !existingIds.has(c.chat_id)
+          );
+          this.listInChat = [...this.listInChat, ...newResults];
         } else {
           const existingInChatChats = this.listInChat.filter(
             (c) => c.status === EChatStatus.in_chat
@@ -1607,7 +1615,11 @@ export const useChatStore = defineStore('chat', {
         this.chatbotPagings = data.data.pagings;
 
         if (append) {
-          this.listChatbot = [...this.listChatbot, ...data.data.results];
+          const existingIds = new Set(this.listChatbot.map((c) => c.chat_id));
+          const newResults = data.data.results.filter(
+            (c) => !existingIds.has(c.chat_id)
+          );
+          this.listChatbot = [...this.listChatbot, ...newResults];
           return data.data;
         }
 
@@ -1663,7 +1675,11 @@ export const useChatStore = defineStore('chat', {
         }
 
         if (append) {
-          this.listClosed = [...this.listClosed, ...data.data.results];
+          const existingIds = new Set(this.listClosed.map((c) => c.chat_id));
+          const newResults = data.data.results.filter(
+            (c) => !existingIds.has(c.chat_id)
+          );
+          this.listClosed = [...this.listClosed, ...newResults];
           this.closedPagings = data.data.pagings;
           return data.data;
         }
@@ -2020,7 +2036,10 @@ export const useChatStore = defineStore('chat', {
           statusesToInclude.includes(c.status as EChatStatus)
         );
         if (append) {
-          getCurrentList().push(...filtered);
+          const currentList = getCurrentList();
+          const existingIds = new Set(currentList.map((c) => c.chat_id));
+          const newItems = filtered.filter((c) => !existingIds.has(c.chat_id));
+          currentList.push(...newItems);
         } else {
           setList(filtered);
         }
