@@ -45,6 +45,7 @@ const canViewReleases = computed(
 
 const releaseNotifications = ref<ListReleaseResponse[]>([]);
 const releaseUnreadCount = ref(0);
+const loadingReleaseNotifications = ref(false);
 
 const latestUnreadRelease = computed(() => {
   if (releaseUnreadCount.value === 0) return null;
@@ -572,7 +573,9 @@ onMounted(async () => {
   ]);
 
   if (canViewReleases.value) {
+    loadingReleaseNotifications.value = true;
     const data = await releaseStore.listReleaseNotifications();
+    loadingReleaseNotifications.value = false;
     if (data) {
       releaseNotifications.value = data.results;
       releaseUnreadCount.value = data.unread_count;
@@ -584,7 +587,22 @@ onMounted(async () => {
 <template>
   <div>
     <VCard
-      v-if="canViewReleases && latestUnreadRelease"
+      v-if="canViewReleases && loadingReleaseNotifications"
+      variant="tonal"
+      color="primary"
+      class="mb-4 dashboard-unread-release-banner"
+    >
+      <VCardText class="d-flex align-center gap-3 py-3">
+        <VSkeletonLoader type="avatar" width="40" height="40" />
+        <div class="flex-grow-1 min-w-0">
+          <VSkeletonLoader type="text" width="150" height="16" class="mb-2" />
+          <VSkeletonLoader type="text" width="200" height="20" />
+        </div>
+        <VSkeletonLoader type="text" width="20" height="20" />
+      </VCardText>
+    </VCard>
+    <VCard
+      v-else-if="canViewReleases && latestUnreadRelease"
       variant="tonal"
       color="primary"
       class="mb-4 dashboard-unread-release-banner cursor-pointer"

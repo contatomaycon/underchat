@@ -142,6 +142,20 @@ const chatScrollContainer = ref<InstanceType<typeof PerfectScrollbar> | null>(
   null
 );
 
+const updateScrollbar = async () => {
+  await nextTick();
+  if (chatScrollContainer.value) {
+    const psElement = chatScrollContainer.value.$el as HTMLElement;
+    const ps = (chatScrollContainer.value as any).ps;
+    if (ps && typeof ps.update === 'function') {
+      ps.update();
+    } else if (psElement) {
+      // Fallback: trigger scroll event to force update
+      psElement.dispatchEvent(new Event('scroll'));
+    }
+  }
+};
+
 type FilterType =
   | 'new'
   | 'all'
@@ -1358,6 +1372,7 @@ const loadContacts = async (append = false) => {
     }
   } finally {
     isLoadingMoreContacts.value = false;
+    await updateScrollbar();
   }
 };
 
@@ -1531,6 +1546,7 @@ const handleChatScroll = async (event?: Event) => {
 
           isLoadingMoreQueue.value = false;
           isLoadingMoreInChat.value = false;
+          await updateScrollbar();
         }
         return;
       }
@@ -1546,6 +1562,7 @@ const handleChatScroll = async (event?: Event) => {
 
           isLoadingMoreQueue.value = false;
           isLoadingMoreInChat.value = false;
+          await updateScrollbar();
         }
         return;
       }
@@ -1568,6 +1585,7 @@ const handleChatScroll = async (event?: Event) => {
 
         isLoadingMoreQueue.value = false;
         isLoadingMoreInChat.value = false;
+        await updateScrollbar();
       }
     }
     return;
@@ -1584,6 +1602,7 @@ const handleChatScroll = async (event?: Event) => {
       currentPageInChat.value += 1;
       await loadChatsByFilter(true);
       isLoadingMoreInChat.value = false;
+      await updateScrollbar();
     }
     return;
   }
@@ -1599,6 +1618,7 @@ const handleChatScroll = async (event?: Event) => {
       currentPageQueue.value += 1;
       await loadChatsByFilter(true);
       isLoadingMoreQueue.value = false;
+      await updateScrollbar();
     }
     return;
   }
@@ -1614,6 +1634,7 @@ const handleChatScroll = async (event?: Event) => {
       chatStore.chatbotPagings.current_page += 1;
       await loadChatbotChats(true);
       isLoadingChatbot.value = false;
+      await updateScrollbar();
     }
     return;
   }
@@ -1665,6 +1686,7 @@ const handleClosedScroll = async (event?: Event) => {
     chatStore.closedPagings.current_page += 1;
     await loadClosedChats(true);
     isLoadingClosed.value = false;
+    await updateScrollbar();
   }
 };
 
@@ -1689,6 +1711,7 @@ const handleClosedReachEnd = async () => {
   await loadClosedChats(true);
 
   isLoadingClosed.value = false;
+  await updateScrollbar();
 };
 
 const handleAddContactModalClose = (isOpen: boolean) => {
@@ -2930,7 +2953,13 @@ defineExpose({
       @ps-scroll-y="handleChatScroll"
     >
       <ul class="d-flex flex-column gap-y-1 chat-list px-3 py-2 list-none">
-        <template v-if="chatStore.loadingChats || isLoadingWorkerConfigs">
+        <template
+          v-if="
+            (chatStore.loadingChats || isLoadingWorkerConfigs) &&
+            !isLoadingMoreQueue &&
+            !isLoadingMoreInChat
+          "
+        >
           <li
             v-for="i in 5"
             :key="`skeleton-my-chat-${i}`"
@@ -3030,7 +3059,12 @@ defineExpose({
       @ps-scroll-y="handleChatScroll"
     >
       <ul class="d-flex flex-column gap-y-1 chat-list px-3 py-2 list-none">
-        <template v-if="chatStore.loadingChats || isLoadingWorkerConfigs">
+        <template
+          v-if="
+            (chatStore.loadingChats || isLoadingWorkerConfigs) &&
+            !isLoadingMoreInChat
+          "
+        >
           <li
             v-for="i in 5"
             :key="`skeleton-in-chat-${i}`"
@@ -3122,7 +3156,12 @@ defineExpose({
       @ps-scroll-y="handleChatScroll"
     >
       <ul class="d-flex flex-column gap-y-1 chat-list px-3 py-2 list-none">
-        <template v-if="chatStore.loadingChats || isLoadingWorkerConfigs">
+        <template
+          v-if="
+            (chatStore.loadingChats || isLoadingWorkerConfigs) &&
+            !isLoadingMoreQueue
+          "
+        >
           <li
             v-for="i in 5"
             :key="`skeleton-queue-${i}`"
@@ -3215,7 +3254,13 @@ defineExpose({
     @ps-scroll-y="handleChatScroll"
   >
     <ul class="d-flex flex-column gap-y-1 chat-list px-3 py-2 list-none">
-      <template v-if="chatStore.loadingChats || isLoadingWorkerConfigs">
+      <template
+        v-if="
+          (chatStore.loadingChats || isLoadingWorkerConfigs) &&
+          !isLoadingMoreQueue &&
+          !isLoadingMoreInChat
+        "
+      >
         <li
           v-for="i in 5"
           :key="`skeleton-${i}`"
