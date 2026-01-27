@@ -1411,7 +1411,9 @@ export const useChatStore = defineStore('chat', {
     ): Promise<ListChatsResponse | null> {
       try {
         this.loading = true;
-        this.loadingChats = true;
+        if (!append) {
+          this.loadingChats = true;
+        }
 
         const request: ListChatsQuery = {
           current_page: input.current_page,
@@ -1501,7 +1503,9 @@ export const useChatStore = defineStore('chat', {
     ): Promise<ListChatsResponse | null> {
       try {
         this.loading = true;
-        this.loadingChats = true;
+        if (!append) {
+          this.loadingChats = true;
+        }
 
         const request: ListChatsQuery = {
           current_page: input.current_page,
