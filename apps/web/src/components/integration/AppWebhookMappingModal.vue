@@ -448,7 +448,7 @@ const loadInputChatbots = async () => {
   }
 };
 
-watch(messageType, (newType) => {
+watch(messageType, async (newType) => {
   if (newType === 'message') {
     selectedChatbot.value = null;
   } else {
@@ -457,6 +457,8 @@ watch(messageType, (newType) => {
     selectedUser.value = null;
     selectedSectorUser.value = null;
     sectorUsers.value = [];
+
+    await loadInputChatbots();
   }
 });
 
