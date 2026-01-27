@@ -1541,6 +1541,7 @@
   "chatbot_type_input": "Entrada",
   "chatbot_type_output": "Saída",
   "chatbot_type_schedule": "Agendamento",
+  "chatbot_type_webhook": "Webhook",
   "chatbot_data": "Dados",
   "chatbot_data_type": "Tipo",
   "chatbot_data_type_name": "Nome",

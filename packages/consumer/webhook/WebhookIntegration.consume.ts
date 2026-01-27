@@ -205,6 +205,10 @@ export class WebhookIntegrationConsume {
       upsert.webhook_message_type = webhookType;
     }
 
+    if (request.mapped_data.chatbot_id) {
+      upsert.webhook_chatbot_id = request.mapped_data.chatbot_id;
+    }
+
     if (request.mapped_data.transfer_sector_id) {
       upsert.transfer_sector_id = request.mapped_data.transfer_sector_id;
     }

@@ -1496,6 +1496,7 @@ export class ChatService {
                   EChatStatus.ura,
                   EChatStatus.ura_output,
                   EChatStatus.ura_schedule,
+                  EChatStatus.ura_webhook,
                 ],
               },
             },

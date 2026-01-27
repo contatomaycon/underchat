@@ -216,7 +216,8 @@ const isUraStatus = computed(
   () =>
     chatStore.activeChat?.status === EChatStatus.ura ||
     chatStore.activeChat?.status === EChatStatus.ura_output ||
-    chatStore.activeChat?.status === EChatStatus.ura_schedule
+    chatStore.activeChat?.status === EChatStatus.ura_schedule ||
+    chatStore.activeChat?.status === EChatStatus.ura_webhook
 );
 
 const isClosedStatus = computed(
@@ -228,7 +229,8 @@ const isQueueOrUraStatus = computed(() => {
     chatStore.activeChat?.status === EChatStatus.queue ||
     chatStore.activeChat?.status === EChatStatus.ura ||
     chatStore.activeChat?.status === EChatStatus.ura_output ||
-    chatStore.activeChat?.status === EChatStatus.ura_schedule
+    chatStore.activeChat?.status === EChatStatus.ura_schedule ||
+    chatStore.activeChat?.status === EChatStatus.ura_webhook
   );
 });
 

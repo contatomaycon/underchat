@@ -432,7 +432,8 @@ export class ChatStatusUpdaterUseCase {
       finalStatus === EChatStatus.in_chat &&
       (chat.status === EChatStatus.queue ||
         chat.status === EChatStatus.ura ||
-        chat.status === EChatStatus.ura_schedule) &&
+        chat.status === EChatStatus.ura_schedule ||
+        chat.status === EChatStatus.ura_webhook) &&
       !chat.started_at
     ) {
       startedAt = currentDate;

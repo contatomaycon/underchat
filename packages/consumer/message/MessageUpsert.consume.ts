@@ -260,8 +260,12 @@ export class MessageUpsertConsume {
       return chat;
     }
 
-    const newChat = await this.createChat(data, EChatStatus.ura);
+    const initialStatus =
+      data.webhook_message_type === 'chatbot' && data.webhook_chatbot_id
+        ? EChatStatus.ura_webhook
+        : EChatStatus.ura;
 
+    const newChat = await this.createChat(data, initialStatus);
     if (!newChat) {
       throw new Error('Failed to create chat');
     }
@@ -2104,7 +2108,8 @@ export class MessageUpsertConsume {
     if (
       inputChatMessage.status === EChatStatus.ura ||
       inputChatMessage.status === EChatStatus.ura_output ||
-      inputChatMessage.status === EChatStatus.ura_schedule
+      inputChatMessage.status === EChatStatus.ura_schedule ||
+      inputChatMessage.status === EChatStatus.ura_webhook
     ) {
       inputChatMessage.forward_to_output_chatbot = false;
     }
@@ -2355,6 +2360,20 @@ export class MessageUpsertConsume {
         }
 
         if (
+          data.webhook_message_type === 'chatbot' &&
+          data.webhook_chatbot_id
+        ) {
+          await this.createOrUpdateChatBotFlow(
+            t,
+            getChat,
+            data,
+            data.webhook_chatbot_id
+          );
+
+          return;
+        }
+
+        if (
           outputChatbotId &&
           getChat &&
           getChat.status === EChatStatus.ura_output &&
@@ -2379,7 +2398,8 @@ export class MessageUpsertConsume {
           effectiveInputChatbotId &&
           (!getChat ||
             getChat.status === EChatStatus.ura ||
-            getChat.status === EChatStatus.ura_schedule) &&
+            getChat.status === EChatStatus.ura_schedule ||
+            getChat.status === EChatStatus.ura_webhook) &&
           !isFromMe
         ) {
           await this.createOrUpdateChatBotFlow(

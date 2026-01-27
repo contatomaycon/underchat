@@ -112,7 +112,8 @@ export class ChatListerUseCase {
       if (
         filterStatus === EChatStatus.ura ||
         filterStatus === EChatStatus.ura_output ||
-        filterStatus === EChatStatus.ura_schedule
+        filterStatus === EChatStatus.ura_schedule ||
+        filterStatus === EChatStatus.ura_webhook
       ) {
         return {
           sortBy: preferences.sortByChatbotOrder,
@@ -152,7 +153,8 @@ export class ChatListerUseCase {
     if (
       singleStatus === EChatStatus.ura ||
       singleStatus === EChatStatus.ura_output ||
-      singleStatus === EChatStatus.ura_schedule
+      singleStatus === EChatStatus.ura_schedule ||
+      singleStatus === EChatStatus.ura_webhook
     ) {
       return {
         sortBy: preferences.sortByChatbotOrder,
@@ -762,6 +764,7 @@ export class ChatListerUseCase {
                 EChatStatus.ura,
                 EChatStatus.ura_output,
                 EChatStatus.ura_schedule,
+                EChatStatus.ura_webhook,
               ],
             },
           } as unknown as IElasticsearchBoolClause,
@@ -776,6 +779,7 @@ export class ChatListerUseCase {
               EChatStatus.ura,
               EChatStatus.ura_output,
               EChatStatus.ura_schedule,
+              EChatStatus.ura_webhook,
             ],
           },
         } as unknown as IElasticsearchBoolClause,

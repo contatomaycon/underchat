@@ -1541,6 +1541,7 @@
   "chatbot_type_input": "Input",
   "chatbot_type_output": "Output",
   "chatbot_type_schedule": "Schedule",
+  "chatbot_type_webhook": "Webhook",
   "chatbot_data": "Data",
   "chatbot_data_type": "Type",
   "chatbot_data_type_name": "Name",

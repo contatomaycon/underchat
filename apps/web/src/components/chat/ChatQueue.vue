@@ -77,6 +77,7 @@ const chatbotTypeLabel = computed(() => {
   if (s === EChatStatus.ura) return t('chatbot_type_input');
   if (s === EChatStatus.ura_output) return t('chatbot_type_output');
   if (s === EChatStatus.ura_schedule) return t('chatbot_type_schedule');
+  if (s === EChatStatus.ura_webhook) return t('chatbot_type_webhook');
   return null;
 });
 

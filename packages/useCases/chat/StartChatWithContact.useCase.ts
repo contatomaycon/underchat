@@ -102,7 +102,8 @@ export class StartChatWithContactUseCase {
         existingChat.status === EChatStatus.queue ||
         existingChat.status === EChatStatus.ura ||
         existingChat.status === EChatStatus.ura_output ||
-        existingChat.status === EChatStatus.ura_schedule
+        existingChat.status === EChatStatus.ura_schedule ||
+        existingChat.status === EChatStatus.ura_webhook
       ) {
         return this.updateExistingChat(
           t,
@@ -242,7 +243,8 @@ export class StartChatWithContactUseCase {
     const wasUraStatus =
       existingChat.status === EChatStatus.ura ||
       existingChat.status === EChatStatus.ura_output ||
-      existingChat.status === EChatStatus.ura_schedule;
+      existingChat.status === EChatStatus.ura_schedule ||
+      existingChat.status === EChatStatus.ura_webhook;
 
     const updatedChat = this.buildUpdatedChat(
       existingChat,

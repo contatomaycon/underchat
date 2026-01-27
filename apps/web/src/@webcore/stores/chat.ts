@@ -599,7 +599,8 @@ export const useChatStore = defineStore('chat', {
       return (
         status === EChatStatus.ura ||
         status === EChatStatus.ura_output ||
-        status === EChatStatus.ura_schedule
+        status === EChatStatus.ura_schedule ||
+        status === EChatStatus.ura_webhook
       );
     },
 
@@ -698,6 +699,7 @@ export const useChatStore = defineStore('chat', {
         [EChatStatus.ura]: 0,
         [EChatStatus.ura_output]: 0,
         [EChatStatus.ura_schedule]: 0,
+        [EChatStatus.ura_webhook]: 0,
         [EChatStatus.queue]: 1,
         [EChatStatus.in_chat]: 2,
         [EChatStatus.closed]: 3,
@@ -1936,7 +1938,12 @@ export const useChatStore = defineStore('chat', {
         current_page: pagination.current_page,
         per_page: pagination.per_page,
         status: this.isChatbotStatus(status)
-          ? [EChatStatus.ura, EChatStatus.ura_output, EChatStatus.ura_schedule]
+          ? [
+              EChatStatus.ura,
+              EChatStatus.ura_output,
+              EChatStatus.ura_schedule,
+              EChatStatus.ura_webhook,
+            ]
           : status,
         ...pickDefinedFilters(filters, [...LIST_FILTER_KEYS]),
       };
@@ -1969,6 +1976,7 @@ export const useChatStore = defineStore('chat', {
         [EChatStatus.ura]: chatbotHandler,
         [EChatStatus.ura_output]: chatbotHandler,
         [EChatStatus.ura_schedule]: chatbotHandler,
+        [EChatStatus.ura_webhook]: chatbotHandler,
         [EChatStatus.closed]: {
           fetch: (req, app) => this.listClosedChats(req, app),
           getList: () => this.listClosed,
@@ -2001,7 +2009,12 @@ export const useChatStore = defineStore('chat', {
         if (!shouldRun) return;
 
         const statusesToInclude = this.isChatbotStatus(targetStatus)
-          ? [EChatStatus.ura, EChatStatus.ura_output, EChatStatus.ura_schedule]
+          ? [
+              EChatStatus.ura,
+              EChatStatus.ura_output,
+              EChatStatus.ura_schedule,
+              EChatStatus.ura_webhook,
+            ]
           : [targetStatus];
         const filtered = results.filter((c) =>
           statusesToInclude.includes(c.status as EChatStatus)
