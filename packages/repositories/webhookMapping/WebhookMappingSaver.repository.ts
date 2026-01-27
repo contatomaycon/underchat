@@ -94,8 +94,32 @@ export class WebhookMappingSaverRepository {
       existingMapping,
       newMapping
     );
+    const removedOptionalFields = this.removeOptionalFieldsNotInNew(
+      cleanedExistingMapping,
+      newMapping
+    );
 
-    return { ...cleanedExistingMapping, ...newMapping };
+    return { ...removedOptionalFields, ...newMapping };
+  };
+
+  private readonly removeOptionalFieldsNotInNew = (
+    existingMapping: Record<string, string | string[]>,
+    newMapping: Record<string, string | string[]>
+  ): Record<string, string | string[]> => {
+    const cleaned = { ...existingMapping };
+    const newMappingKeys = new Set(Object.keys(newMapping));
+
+    for (const key in cleaned) {
+      if (key === 'message_type') {
+        continue;
+      }
+
+      if (!newMappingKeys.has(key)) {
+        delete cleaned[key];
+      }
+    }
+
+    return cleaned;
   };
 
   private readonly removeOppositeTransferFields = (
@@ -110,6 +134,9 @@ export class WebhookMappingSaverRepository {
     const hasTransferSectorIdInNew =
       typeof newMapping.transfer_sector_id === 'string' &&
       newMapping.transfer_sector_id.length > 0;
+    const hasTransferSectorUserIdInNew =
+      typeof newMapping.transfer_sector_user_id === 'string' &&
+      newMapping.transfer_sector_user_id.length > 0;
 
     if (hasTransferUserIdInNew) {
       delete cleaned.transfer_sector_id;
@@ -119,6 +146,19 @@ export class WebhookMappingSaverRepository {
 
     if (hasTransferSectorIdInNew) {
       delete cleaned.transfer_user_id;
+      if (!hasTransferSectorUserIdInNew) {
+        delete cleaned.transfer_sector_user_id;
+      }
+      return cleaned;
+    }
+
+    if (!hasTransferUserIdInNew && !hasTransferSectorIdInNew) {
+      const messageType = newMapping.message_type;
+      if (typeof messageType === 'string' && messageType === 'message') {
+        delete cleaned.transfer_user_id;
+        delete cleaned.transfer_sector_id;
+        delete cleaned.transfer_sector_user_id;
+      }
     }
 
     return cleaned;
@@ -197,6 +237,22 @@ export class WebhookMappingSaverRepository {
     const hasTransferSectorId = this.hasTransferSectorId(cleanedMapping);
     if (hasTransferSectorId) {
       this.removeUserTransferField(cleanedMapping);
+      const hasTransferSectorUserId =
+        this.hasTransferSectorUserId(cleanedMapping);
+      if (!hasTransferSectorUserId) {
+        delete cleanedMapping.transfer_sector_user_id;
+      }
+      return cleanedMapping;
+    }
+
+    const messageType = cleanedMapping.message_type;
+    if (
+      typeof messageType === 'string' &&
+      messageType === 'message' &&
+      !hasTransferUserId &&
+      !hasTransferSectorId
+    ) {
+      this.removeAllTransferFields(cleanedMapping);
     }
 
     return cleanedMapping;
@@ -220,6 +276,15 @@ export class WebhookMappingSaverRepository {
     );
   };
 
+  private readonly hasTransferSectorUserId = (
+    mapping: Record<string, string | string[]>
+  ): boolean => {
+    return (
+      typeof mapping.transfer_sector_user_id === 'string' &&
+      mapping.transfer_sector_user_id.length > 0
+    );
+  };
+
   private readonly removeSectorTransferFields = (
     mapping: Record<string, string | string[]>
   ): void => {
@@ -231,6 +296,14 @@ export class WebhookMappingSaverRepository {
     mapping: Record<string, string | string[]>
   ): void => {
     delete mapping.transfer_user_id;
+  };
+
+  private readonly removeAllTransferFields = (
+    mapping: Record<string, string | string[]>
+  ): void => {
+    delete mapping.transfer_user_id;
+    delete mapping.transfer_sector_id;
+    delete mapping.transfer_sector_user_id;
   };
 
   private readonly saveDocument = async (
