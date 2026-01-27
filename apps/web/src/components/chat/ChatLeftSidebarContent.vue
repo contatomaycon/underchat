@@ -3076,6 +3076,40 @@ defineExpose({
           >
             {{ $t('no_chat_in_service') }}
           </li>
+
+          <template v-if="isLoadingMoreInChat">
+            <li
+              v-for="i in 3"
+              :key="`skeleton-in-chat-pagination-${i}`"
+              class="chat d-flex align-center"
+            >
+              <VSkeletonLoader type="avatar" width="40" height="40" />
+              <div class="flex-grow-1 ms-4 overflow-hidden min-w-0">
+                <VSkeletonLoader
+                  type="text"
+                  width="60%"
+                  height="20"
+                  class="mb-1"
+                />
+                <VSkeletonLoader
+                  type="text"
+                  width="40%"
+                  height="16"
+                  class="mb-1"
+                />
+                <VSkeletonLoader type="text" width="50%" height="16" />
+              </div>
+              <div class="d-flex flex-column align-self-start">
+                <VSkeletonLoader
+                  type="text"
+                  width="50"
+                  height="16"
+                  class="mb-1"
+                />
+                <VSkeletonLoader type="text" width="20" height="16" />
+              </div>
+            </li>
+          </template>
         </template>
       </ul>
     </PerfectScrollbar>
@@ -3135,6 +3169,40 @@ defineExpose({
           >
             {{ $t('no_chat_in_queue') }}
           </li>
+
+          <template v-if="isLoadingMoreQueue">
+            <li
+              v-for="i in 3"
+              :key="`skeleton-queue-pagination-${i}`"
+              class="chat d-flex align-center"
+            >
+              <VSkeletonLoader type="avatar" width="40" height="40" />
+              <div class="flex-grow-1 ms-4 overflow-hidden min-w-0">
+                <VSkeletonLoader
+                  type="text"
+                  width="60%"
+                  height="20"
+                  class="mb-1"
+                />
+                <VSkeletonLoader
+                  type="text"
+                  width="40%"
+                  height="16"
+                  class="mb-1"
+                />
+                <VSkeletonLoader type="text" width="50%" height="16" />
+              </div>
+              <div class="d-flex flex-column align-self-start">
+                <VSkeletonLoader
+                  type="text"
+                  width="50"
+                  height="16"
+                  class="mb-1"
+                />
+                <VSkeletonLoader type="text" width="20" height="16" />
+              </div>
+            </li>
+          </template>
         </template>
       </ul>
     </PerfectScrollbar>

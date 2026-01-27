@@ -6,7 +6,7 @@ import { healthCheckSchema } from '@core/schema/health';
 export default function healthRoutes(server: FastifyInstance) {
   const healthController = container.resolve(HealthController);
 
-  server.get('/health-check', {
+  server.get('/health/check', {
     schema: healthCheckSchema,
     handler: healthController.view,
   });
