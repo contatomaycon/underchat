@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useIntegrationStore } from '@/@webcore/stores/integration';
 import { EColor } from '@core/common/enums/EColor';
@@ -271,8 +271,16 @@ const handleSaveMapping = async () => {
   }
 
   const mappingToSave: Record<string, string | string[]> = {};
+  const transferKeys = [
+    'transfer_sector_id',
+    'transfer_sector_user_id',
+    'transfer_user_id',
+  ];
 
   for (const key in webhookMapping.value) {
+    if (transferKeys.includes(key)) {
+      continue;
+    }
     const value = webhookMapping.value[key];
     if (value !== null && value !== undefined) {
       if (key === 'labels' && Array.isArray(value) && value.length > 0) {
@@ -284,20 +292,15 @@ const handleSaveMapping = async () => {
   }
 
   if (messageType.value === 'message') {
+    mappingToSave.message_type = 'message';
     if (transferType.value === 'sector' && selectedSector.value) {
       mappingToSave.transfer_sector_id = selectedSector.value;
-    }
-    if (
-      transferType.value === 'sector' &&
-      selectedSector.value &&
-      selectedSectorUser.value
-    ) {
-      mappingToSave.transfer_sector_user_id = selectedSectorUser.value;
-    }
-    if (transferType.value === 'user' && selectedUser.value) {
+      if (selectedSectorUser.value) {
+        mappingToSave.transfer_sector_user_id = selectedSectorUser.value;
+      }
+    } else if (transferType.value === 'user' && selectedUser.value) {
       mappingToSave.transfer_user_id = selectedUser.value;
     }
-    mappingToSave.message_type = 'message';
   } else if (messageType.value === 'chatbot' && selectedChatbot.value) {
     mappingToSave.message_type = 'chatbot';
     mappingToSave.chatbot_id = selectedChatbot.value;
@@ -374,6 +377,27 @@ const loadSectorUsers = async (sectorId: string) => {
   }
 };
 
+const ensureSectorInList = async (sectorId: string): Promise<void> => {
+  if (sectors.value.length === 0) {
+    await loadSectors();
+  }
+};
+
+const ensureUserInList = async (userId: string): Promise<void> => {
+  if (users.value.length === 0) {
+    await loadUsers();
+  }
+};
+
+const ensureSectorUserInList = async (
+  userId: string,
+  sectorId: string
+): Promise<void> => {
+  if (sectorUsers.value.length === 0) {
+    await loadSectorUsers(sectorId);
+  }
+};
+
 const loadInputChatbots = async () => {
   if (isLoadingChatbots.value) return;
   isLoadingChatbots.value = true;
@@ -402,7 +426,12 @@ watch(messageType, (newType) => {
   }
 });
 
+const isRestoringFromLoad = ref(false);
+
 watch(transferType, (newType) => {
+  if (isRestoringFromLoad.value) {
+    return;
+  }
   selectedUser.value = null;
   selectedSector.value = null;
   selectedSectorUser.value = null;
@@ -416,6 +445,9 @@ watch(transferType, (newType) => {
 });
 
 watch(selectedSector, (sectorId) => {
+  if (isRestoringFromLoad.value) {
+    return;
+  }
   selectedSectorUser.value = null;
   sectorUsers.value = [];
 
@@ -426,6 +458,7 @@ watch(selectedSector, (sectorId) => {
 
 watch(isOpen, async (newValue) => {
   if (newValue) {
+    isRestoringFromLoad.value = false;
     webhookMapping.value = {};
     webhookDataKeys.value = [];
     phoneDdiMode.value = 'select';
@@ -504,27 +537,42 @@ watch(isOpen, async (newValue) => {
       }
     } else if (savedMessageType === 'message') {
       messageType.value = 'message';
-      const transferSectorIdValue =
-        typeof webhookMapping.value.transfer_sector_id === 'string'
-          ? webhookMapping.value.transfer_sector_id
-          : null;
       const transferUserIdValue =
         typeof webhookMapping.value.transfer_user_id === 'string'
           ? webhookMapping.value.transfer_user_id
           : null;
-      if (transferSectorIdValue) {
-        transferType.value = 'sector';
-        selectedSector.value = transferSectorIdValue;
+      const transferSectorIdValue =
+        typeof webhookMapping.value.transfer_sector_id === 'string'
+          ? webhookMapping.value.transfer_sector_id
+          : null;
+      if (transferUserIdValue) {
+        await ensureUserInList(transferUserIdValue);
+        isRestoringFromLoad.value = true;
+        transferType.value = 'user';
+        await nextTick();
+        selectedUser.value = transferUserIdValue;
+        isRestoringFromLoad.value = false;
+      } else if (transferSectorIdValue) {
+        await ensureSectorInList(transferSectorIdValue);
         const transferSectorUserIdValue =
           typeof webhookMapping.value.transfer_sector_user_id === 'string'
             ? webhookMapping.value.transfer_sector_user_id
             : null;
         if (transferSectorUserIdValue) {
+          await ensureSectorUserInList(
+            transferSectorUserIdValue,
+            transferSectorIdValue
+          );
+        }
+        isRestoringFromLoad.value = true;
+        transferType.value = 'sector';
+        await nextTick();
+        selectedSector.value = transferSectorIdValue;
+        if (transferSectorUserIdValue) {
+          await nextTick();
           selectedSectorUser.value = transferSectorUserIdValue;
         }
-      } else if (transferUserIdValue) {
-        transferType.value = 'user';
-        selectedUser.value = transferUserIdValue;
+        isRestoringFromLoad.value = false;
       }
     } else {
       messageType.value = 'chatbot';

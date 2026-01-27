@@ -55,12 +55,114 @@ export class WebhookMappingSaverRepository {
     updated_at: string;
   }> => {
     const documentId = `${accountId}_${workerId}`;
-    const existing = await this.elasticDatabaseService.view(
+    const existing = await this.getExistingDocument(documentId);
+
+    const mergedMapping = this.mergeMappings(existing, mapping);
+    const finalMapping = this.cleanTransferFields(mergedMapping);
+
+    const now = new Date().toISOString();
+    const document = this.buildDocument(
+      accountId,
+      workerId,
+      finalMapping,
+      now,
+      existing
+    );
+
+    return document;
+  };
+
+  private readonly getExistingDocument = async (
+    documentId: string
+  ): Promise<unknown> => {
+    return this.elasticDatabaseService.view(
       EElasticIndex.webhook_mapping,
       documentId
     );
+  };
 
-    const now = new Date().toISOString();
+  private readonly mergeMappings = (
+    existing: unknown,
+    newMapping: Record<string, string | string[]>
+  ): Record<string, string | string[]> => {
+    const existingMapping = this.extractExistingMapping(existing);
+    if (!existingMapping) {
+      return { ...newMapping };
+    }
+
+    const cleanedExistingMapping = this.removeOppositeTransferFields(
+      existingMapping,
+      newMapping
+    );
+
+    return { ...cleanedExistingMapping, ...newMapping };
+  };
+
+  private readonly removeOppositeTransferFields = (
+    existingMapping: Record<string, string | string[]>,
+    newMapping: Record<string, string | string[]>
+  ): Record<string, string | string[]> => {
+    const cleaned = { ...existingMapping };
+
+    const hasTransferUserIdInNew =
+      typeof newMapping.transfer_user_id === 'string' &&
+      newMapping.transfer_user_id.length > 0;
+    const hasTransferSectorIdInNew =
+      typeof newMapping.transfer_sector_id === 'string' &&
+      newMapping.transfer_sector_id.length > 0;
+
+    if (hasTransferUserIdInNew) {
+      delete cleaned.transfer_sector_id;
+      delete cleaned.transfer_sector_user_id;
+      return cleaned;
+    }
+
+    if (hasTransferSectorIdInNew) {
+      delete cleaned.transfer_user_id;
+    }
+
+    return cleaned;
+  };
+
+  private readonly extractExistingMapping = (
+    existing: unknown
+  ): Record<string, string | string[]> | null => {
+    if (!existing) {
+      return null;
+    }
+
+    if (typeof existing !== 'object') {
+      return null;
+    }
+
+    if (!('mapping' in existing)) {
+      return null;
+    }
+
+    if (!existing.mapping) {
+      return null;
+    }
+
+    if (typeof existing.mapping !== 'object') {
+      return null;
+    }
+
+    return existing.mapping as Record<string, string | string[]>;
+  };
+
+  private readonly buildDocument = (
+    accountId: string,
+    workerId: string,
+    mapping: Record<string, string | string[]>,
+    now: string,
+    existing: unknown
+  ): {
+    account_id: string;
+    worker_id: string;
+    mapping: Record<string, string | string[]>;
+    created_at?: string;
+    updated_at: string;
+  } => {
     const document: {
       account_id: string;
       worker_id: string;
@@ -81,6 +183,56 @@ export class WebhookMappingSaverRepository {
     return document;
   };
 
+  private readonly cleanTransferFields = (
+    mapping: Record<string, string | string[]>
+  ): Record<string, string | string[]> => {
+    const cleanedMapping = { ...mapping };
+
+    const hasTransferUserId = this.hasTransferUserId(cleanedMapping);
+    if (hasTransferUserId) {
+      this.removeSectorTransferFields(cleanedMapping);
+      return cleanedMapping;
+    }
+
+    const hasTransferSectorId = this.hasTransferSectorId(cleanedMapping);
+    if (hasTransferSectorId) {
+      this.removeUserTransferField(cleanedMapping);
+    }
+
+    return cleanedMapping;
+  };
+
+  private readonly hasTransferUserId = (
+    mapping: Record<string, string | string[]>
+  ): boolean => {
+    return (
+      typeof mapping.transfer_user_id === 'string' &&
+      mapping.transfer_user_id.length > 0
+    );
+  };
+
+  private readonly hasTransferSectorId = (
+    mapping: Record<string, string | string[]>
+  ): boolean => {
+    return (
+      typeof mapping.transfer_sector_id === 'string' &&
+      mapping.transfer_sector_id.length > 0
+    );
+  };
+
+  private readonly removeSectorTransferFields = (
+    mapping: Record<string, string | string[]>
+  ): void => {
+    delete mapping.transfer_sector_id;
+    delete mapping.transfer_sector_user_id;
+  };
+
+  private readonly removeUserTransferField = (
+    mapping: Record<string, string | string[]>
+  ): void => {
+    delete mapping.transfer_user_id;
+  };
+
   private readonly saveDocument = async (
     documentId: string,
     document: {
@@ -91,10 +243,17 @@ export class WebhookMappingSaverRepository {
       updated_at: string;
     }
   ): Promise<'updated' | 'created' | 'noop' | 'conflict' | 'not_found'> => {
-    const updateResult = await this.elasticDatabaseService.updateWithOCC(
+    const scriptSource = 'ctx._source = params.doc;';
+    const scriptParams = { doc: document };
+
+    const updateResult = await this.elasticDatabaseService.updateWithScriptOCC(
       EElasticIndex.webhook_mapping,
       documentId,
-      document,
+      {
+        source: scriptSource,
+        params: scriptParams,
+        upsert: document,
+      },
       {
         upsert: true,
         maxRetries: 5,
