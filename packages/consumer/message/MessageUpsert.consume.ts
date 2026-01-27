@@ -2258,6 +2258,11 @@ export class MessageUpsertConsume {
 
         const isFromMe = data.message?.key?.fromMe ?? false;
 
+        if (data.webhook_message_type === 'message') {
+          await this.createOrUpdateChatQueue(t, getChat, data);
+          return;
+        }
+
         if (
           outputChatbotId &&
           getChat &&

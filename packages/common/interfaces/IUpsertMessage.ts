@@ -13,4 +13,5 @@ export interface IUpsertMessage {
   call_jid?: string | null;
   call_jid_alt?: string | null;
   call_name?: string | null;
+  webhook_message_type?: 'message' | 'chatbot';
 }

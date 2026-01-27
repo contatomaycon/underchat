@@ -191,7 +191,7 @@ export class WebhookIntegrationConsume {
     const messageText = this.extractMessageText(request);
     const waMessage = this.buildWaMessage(remoteJid, messageText ?? '');
 
-    return {
+    const upsert: IUpsertMessage = {
       account_id: request.account_id,
       worker_id: request.worker_id,
       type: EMessageType.text,
@@ -199,6 +199,13 @@ export class WebhookIntegrationConsume {
       has_quoted: false,
       is_call_event: false,
     };
+
+    const webhookType = request.mapped_data.message_type;
+    if (webhookType === 'message' || webhookType === 'chatbot') {
+      upsert.webhook_message_type = webhookType;
+    }
+
+    return upsert;
   }
 
   private resolveRemoteJid(
