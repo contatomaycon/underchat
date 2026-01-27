@@ -253,6 +253,18 @@ const handleFieldUpdate = (
 
 const handleSaveMapping = async () => {
   if (messageType.value === 'message') {
+    const messageValue =
+      typeof webhookMapping.value.message === 'string'
+        ? webhookMapping.value.message.trim()
+        : '';
+    if (!messageValue) {
+      integrationStore.showSnackbar(
+        t('webhook_mapping_message_required'),
+        EColor.error
+      );
+      return;
+    }
+
     if (transferType.value === 'sector' && !selectedSector.value) {
       integrationStore.showSnackbar(
         t('webhook_mapping_transfer_sector_required'),
@@ -264,6 +276,26 @@ const handleSaveMapping = async () => {
     if (transferType.value === 'user' && !selectedUser.value) {
       integrationStore.showSnackbar(
         t('webhook_mapping_transfer_user_required'),
+        EColor.error
+      );
+      return;
+    }
+  } else if (messageType.value === 'chatbot') {
+    if (!selectedChatbot.value) {
+      integrationStore.showSnackbar(
+        t('webhook_mapping_chatbot_required'),
+        EColor.error
+      );
+      return;
+    }
+
+    const messageValue =
+      typeof webhookMapping.value.message === 'string'
+        ? webhookMapping.value.message.trim()
+        : '';
+    if (!messageValue) {
+      integrationStore.showSnackbar(
+        t('webhook_mapping_message_required'),
         EColor.error
       );
       return;
@@ -301,9 +333,11 @@ const handleSaveMapping = async () => {
     } else if (transferType.value === 'user' && selectedUser.value) {
       mappingToSave.transfer_user_id = selectedUser.value;
     }
-  } else if (messageType.value === 'chatbot' && selectedChatbot.value) {
+  } else if (messageType.value === 'chatbot') {
     mappingToSave.message_type = 'chatbot';
-    mappingToSave.chatbot_id = selectedChatbot.value;
+    if (selectedChatbot.value) {
+      mappingToSave.chatbot_id = selectedChatbot.value;
+    }
     if (webhookMapping.value.message) {
       mappingToSave.message = webhookMapping.value.message as string;
     }
@@ -847,7 +881,7 @@ watch(isOpen, async (newValue) => {
                   <div class="mb-4">
                     <div class="d-flex align-center justify-space-between mb-2">
                       <VLabel class="text-body-2">
-                        {{ $t('webhook_field_message') }}
+                        {{ $t('webhook_field_message') }}*
                       </VLabel>
                       <VBtn
                         variant="text"
@@ -916,9 +950,8 @@ watch(isOpen, async (newValue) => {
 
                 <div v-if="messageType === 'chatbot'">
                   <div class="mb-4">
-                    <VLabel
-                      class="text-body-1 font-weight-medium mb-3 d-block"
-                      >{{ $t('chatbot_input_select_label') }}</VLabel
+                    <VLabel class="text-body-1 font-weight-medium mb-3 d-block"
+                      >{{ $t('chatbot_input_select_label') }}*</VLabel
                     >
                     <AppSelectSearch
                       v-model="selectedChatbot"
@@ -935,7 +968,7 @@ watch(isOpen, async (newValue) => {
                   <div class="mb-4">
                     <div class="d-flex align-center justify-space-between mb-2">
                       <VLabel class="text-body-2">
-                        {{ $t('webhook_field_message') }}
+                        {{ $t('webhook_field_message') }}*
                       </VLabel>
                       <VBtn
                         variant="text"

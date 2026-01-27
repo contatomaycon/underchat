@@ -13,7 +13,7 @@ export class WebhookMappingSaverUseCase {
     apiKeyId: string,
     mapping: Record<string, string | string[]>
   ): Promise<boolean> {
-    this.validateTransferMapping(mapping, t);
+    this.validateMapping(mapping, t);
 
     const success = await this.integrationService.saveWebhookMapping(
       accountId,
@@ -28,12 +28,64 @@ export class WebhookMappingSaverUseCase {
     return success;
   }
 
-  private validateTransferMapping(
+  private validateMapping(
     mapping: Record<string, string | string[]>,
     t: TFunction<'translation', undefined>
   ): void {
     const messageType = mapping.message_type;
-    if (typeof messageType !== 'string' || messageType !== 'message') {
+    if (typeof messageType !== 'string') {
+      return;
+    }
+
+    this.validateMessage(mapping, t);
+    this.validateChatbotMapping(mapping, messageType, t);
+    this.validateTransferMapping(mapping, messageType, t);
+  }
+
+  private validateMessage(
+    mapping: Record<string, string | string[]>,
+    t: TFunction<'translation', undefined>
+  ): void {
+    const message = mapping.message;
+    if (!message) {
+      throw new WebhookMappingValidationError(
+        t('webhook_mapping_message_required')
+      );
+    }
+
+    const messageValue = typeof message === 'string' ? message.trim() : '';
+    if (!messageValue) {
+      throw new WebhookMappingValidationError(
+        t('webhook_mapping_message_required')
+      );
+    }
+  }
+
+  private validateChatbotMapping(
+    mapping: Record<string, string | string[]>,
+    messageType: string,
+    t: TFunction<'translation', undefined>
+  ): void {
+    if (messageType !== 'chatbot') {
+      return;
+    }
+
+    const chatbotId = mapping.chatbot_id;
+    const chatbotIdValue =
+      typeof chatbotId === 'string' ? chatbotId.trim() : '';
+    if (!chatbotIdValue) {
+      throw new WebhookMappingValidationError(
+        t('webhook_mapping_chatbot_required')
+      );
+    }
+  }
+
+  private validateTransferMapping(
+    mapping: Record<string, string | string[]>,
+    messageType: string,
+    t: TFunction<'translation', undefined>
+  ): void {
+    if (messageType !== 'message') {
       return;
     }
 

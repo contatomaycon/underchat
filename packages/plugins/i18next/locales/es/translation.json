@@ -942,5 +942,7 @@
   "webhook_received_successfully": "¡Webhook recibido con éxito!",
   "webhook_mapping_save_error": "Error al guardar mapeo de webhook.",
   "webhook_mapping_transfer_sector_required": "Al transferir a sector, el sector es obligatorio.",
-  "webhook_mapping_transfer_user_required": "Al transferir a usuario, el usuario es obligatorio."
+  "webhook_mapping_transfer_user_required": "Al transferir a usuario, el usuario es obligatorio.",
+  "webhook_mapping_chatbot_required": "Cuando el tipo es chatbot, el chatbot de entrada es obligatorio.",
+  "webhook_mapping_message_required": "El mensaje es obligatorio."
 }

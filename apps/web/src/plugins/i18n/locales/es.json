@@ -2350,6 +2350,8 @@
   "webhook_mapping_saved_successfully": "Mapeo de webhook guardado con éxito",
   "webhook_mapping_transfer_sector_required": "Al transferir a sector, el sector es obligatorio.",
   "webhook_mapping_transfer_user_required": "Al transferir a usuario, el usuario es obligatorio.",
+  "webhook_mapping_chatbot_required": "Cuando el tipo es chatbot, el chatbot de entrada es obligatorio.",
+  "webhook_mapping_message_required": "El mensaje es obligatorio.",
   "webhook_data_viewed_successfully": "Datos del webhook visualizados con éxito",
   "webhook_field_first_name": "Nombre",
   "webhook_field_last_name": "Apellido",

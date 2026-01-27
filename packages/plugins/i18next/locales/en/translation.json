@@ -942,5 +942,7 @@
   "webhook_received_successfully": "Webhook received successfully!",
   "webhook_mapping_save_error": "Error saving webhook mapping.",
   "webhook_mapping_transfer_sector_required": "When transferring to sector, sector is required.",
-  "webhook_mapping_transfer_user_required": "When transferring to user, user is required."
+  "webhook_mapping_transfer_user_required": "When transferring to user, user is required.",
+  "webhook_mapping_chatbot_required": "When type is chatbot, input chatbot is required.",
+  "webhook_mapping_message_required": "Message is required."
 }
