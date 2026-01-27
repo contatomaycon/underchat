@@ -50,7 +50,6 @@ import { EContactIgnore } from '@core/common/enums/EContactIgnore';
 @injectable()
 export class ChatbotFlowRunnerService {
   private readonly MENU_DEBOUNCE_SECONDS = 3;
-
   private readonly CHATBOT_FLOW_NODE_CACHE_TTL_SECONDS = 259200;
 
   constructor(
