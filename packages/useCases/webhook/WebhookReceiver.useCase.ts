@@ -17,9 +17,6 @@ export class WebhookReceiverUseCase {
     tokenKeyData: ITokenKeyData,
     body: ReceiveWebhookRequest
   ): Promise<boolean> {
-    console.log('body');
-    console.dir(body, { depth: null, colors: true });
-
     const apiKeyData = await this.apiKeyViewerRepository.viewApiKeyById(
       tokenKeyData.api_key_id
     );
@@ -28,7 +25,8 @@ export class WebhookReceiverUseCase {
       return false;
     }
 
-    return this.integrationService.saveWebhookData(
+    return this.integrationService.processWebhook(
+      t,
       tokenKeyData.account_id,
       apiKeyData.worker_id,
       body as unknown as Record<string, unknown>

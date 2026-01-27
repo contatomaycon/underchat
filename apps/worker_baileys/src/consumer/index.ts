@@ -6,6 +6,7 @@ import { startPhoneValidationConsume } from './phoneValidation.consume';
 import { startNotificationMessageSendConsume } from './notificationMessageSend.consume';
 import { startScheduleMessageConsume } from './scheduleMessage.consume';
 import { startWorkerConfigUpdateConsume } from './workerConfigUpdate.consume';
+import { startWebhookIntegrationConsume } from './webhookIntegration.consume';
 
 const consumers: Array<{ close?: () => Promise<void> }> = [];
 
@@ -26,7 +27,8 @@ export function startConsumers(server: FastifyInstance): void {
       startPhoneValidationConsume(server),
       startNotificationMessageSendConsume(server),
       startScheduleMessageConsume(server),
-      startWorkerConfigUpdateConsume(server)
+      startWorkerConfigUpdateConsume(server),
+      startWebhookIntegrationConsume(server)
     );
   });
 }

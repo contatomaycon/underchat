@@ -12,6 +12,8 @@ import jwtPlugin from '@core/plugins/jwt';
 import multipartFile from '@fastify/multipart';
 import { generalEnvironment } from '@core/config/environments';
 import databaseElasticPlugin from '@core/plugins/dbElastic';
+import kafkaStreamsPlugin from '@core/plugins/kafkaStreams';
+import centrifugoPlugin from '@core/plugins/centrifugo';
 import redisPlugin from '@core/plugins/redis';
 import fastifyQs from 'fastify-qs';
 import routes from '@/routes';
@@ -28,6 +30,9 @@ const server = fastify({
 
 server.decorateRequest('module', ERouteModule.public);
 
+server.register(safePlugin(centrifugoPlugin, 'centrifugo'), {
+  module: ERouteModule.public,
+});
 server.register(safePlugin(multipartFile, 'multipartFile'), {
   attachFieldsToBody: true,
   limits: { fileSize: generalEnvironment.uploadLimitInBytes },
@@ -40,6 +45,10 @@ server.register(safePlugin(jwtPlugin, 'jwt'));
 server.register(safePlugin(corsPlugin, 'cors'));
 server.register(safePlugin(databaseElasticPlugin, 'databaseElastic'), {
   prefix: ERouteModule.public,
+});
+
+server.register(safePlugin(kafkaStreamsPlugin, 'kafkaStreams'), {
+  module: ERouteModule.public,
 });
 
 server.register(safePlugin(swaggerPlugin, 'swagger'));

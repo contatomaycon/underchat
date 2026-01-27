@@ -365,7 +365,6 @@ export class ContactService {
     const phoneC = phone ? this.encryptService.encrypt(phone) : null;
     if (!phoneC) return null;
     const phoneDdiToSave = phoneDdi ?? '55';
-
     const phones = buildCandidatesWithDdi(phone, phoneDdiToSave);
     const phonesC = phones.map((phone) => this.encryptService.encrypt(phone));
 

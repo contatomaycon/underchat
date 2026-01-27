@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useIntegrationStore } from '@/@webcore/stores/integration';
+import { EColor } from '@core/common/enums/EColor';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EIntegrationPermissions } from '@core/common/enums/EPermissions/integration';
 import { useCountryCodes } from '@/composables/useCountryCodes';
@@ -28,6 +29,7 @@ const webhookMapping = ref<Record<string, string | string[] | null>>({});
 const webhookDataKeys = ref<string[]>([]);
 const phoneDdiMode = ref<'depara' | 'select'>('select');
 const messageMode = ref<'textarea' | 'depara'>('textarea');
+const chatbotMessageMode = ref<'textarea' | 'depara'>('depara');
 const messageType = ref<'message' | 'chatbot'>('chatbot');
 const transferType = ref<'sector' | 'user' | null>(null);
 const selectedSector = ref<string | null>(null);
@@ -250,6 +252,24 @@ const handleFieldUpdate = (
 };
 
 const handleSaveMapping = async () => {
+  if (messageType.value === 'message') {
+    if (transferType.value === 'sector' && !selectedSector.value) {
+      integrationStore.showSnackbar(
+        t('webhook_mapping_transfer_sector_required'),
+        EColor.error
+      );
+      return;
+    }
+
+    if (transferType.value === 'user' && !selectedUser.value) {
+      integrationStore.showSnackbar(
+        t('webhook_mapping_transfer_user_required'),
+        EColor.error
+      );
+      return;
+    }
+  }
+
   const mappingToSave: Record<string, string | string[]> = {};
 
   for (const key in webhookMapping.value) {
@@ -281,6 +301,9 @@ const handleSaveMapping = async () => {
   } else if (messageType.value === 'chatbot' && selectedChatbot.value) {
     mappingToSave.message_type = 'chatbot';
     mappingToSave.chatbot_id = selectedChatbot.value;
+    if (webhookMapping.value.message) {
+      mappingToSave.message = webhookMapping.value.message as string;
+    }
   }
 
   if (!props.apiKeyId) {
@@ -407,6 +430,7 @@ watch(isOpen, async (newValue) => {
     webhookDataKeys.value = [];
     phoneDdiMode.value = 'select';
     messageMode.value = 'textarea';
+    chatbotMessageMode.value = 'depara';
     messageType.value = 'message';
     transferType.value = null;
     selectedSector.value = null;
@@ -464,6 +488,20 @@ watch(isOpen, async (newValue) => {
         selectedChatbot.value = chatbotIdValue;
       }
       await loadInputChatbots();
+      const chatbotMessageValue =
+        typeof webhookMapping.value.message === 'string'
+          ? webhookMapping.value.message
+          : null;
+      if (
+        chatbotMessageValue &&
+        webhookDataKeys.value.includes(chatbotMessageValue)
+      ) {
+        chatbotMessageMode.value = 'depara';
+      } else if (chatbotMessageValue) {
+        chatbotMessageMode.value = 'textarea';
+      } else {
+        chatbotMessageMode.value = 'depara';
+      }
     } else if (savedMessageType === 'message') {
       messageType.value = 'message';
       const transferSectorIdValue =
@@ -491,6 +529,7 @@ watch(isOpen, async (newValue) => {
     } else {
       messageType.value = 'chatbot';
       await loadInputChatbots();
+      chatbotMessageMode.value = 'depara';
     }
   }
 });
@@ -669,7 +708,10 @@ watch(isOpen, async (newValue) => {
                   </div>
 
                   <div v-if="transferType === 'sector'" class="mb-4">
-                    <VLabel class="text-body-2 mb-2">{{ $t('sector') }}</VLabel>
+                    <VLabel class="text-body-2 mb-2">
+                      {{ $t('sector') }}
+                      <span class="text-error">*</span>
+                    </VLabel>
                     <AppSelectSearch
                       v-model="selectedSector"
                       :items="sectors"
@@ -723,7 +765,10 @@ watch(isOpen, async (newValue) => {
                   </div>
 
                   <div v-if="transferType === 'user'" class="mb-4">
-                    <VLabel class="text-body-2 mb-2">{{ $t('user') }}</VLabel>
+                    <VLabel class="text-body-2 mb-2">
+                      {{ $t('user') }}
+                      <span class="text-error">*</span>
+                    </VLabel>
                     <AppSelectSearch
                       v-model="selectedUser"
                       :items="users"
@@ -822,19 +867,93 @@ watch(isOpen, async (newValue) => {
                 </div>
 
                 <div v-if="messageType === 'chatbot'">
-                  <VLabel class="text-body-1 font-weight-medium mb-3 d-block">{{
-                    $t('chatbot_input_select_label')
-                  }}</VLabel>
-                  <AppSelectSearch
-                    v-model="selectedChatbot"
-                    :items="inputChatbots"
-                    :placeholder="$t('chatbot_input_select_placeholder')"
-                    :loading="isLoadingChatbots"
-                    :clearable="true"
-                    item-value="value"
-                    item-title="title"
-                    @select="loadInputChatbots()"
-                  />
+                  <div class="mb-4">
+                    <VLabel
+                      class="text-body-1 font-weight-medium mb-3 d-block"
+                      >{{ $t('chatbot_input_select_label') }}</VLabel
+                    >
+                    <AppSelectSearch
+                      v-model="selectedChatbot"
+                      :items="inputChatbots"
+                      :placeholder="$t('chatbot_input_select_placeholder')"
+                      :loading="isLoadingChatbots"
+                      :clearable="true"
+                      item-value="value"
+                      item-title="title"
+                      @select="loadInputChatbots()"
+                    />
+                  </div>
+
+                  <div class="mb-4">
+                    <div class="d-flex align-center justify-space-between mb-2">
+                      <VLabel class="text-body-2">
+                        {{ $t('webhook_field_message') }}
+                      </VLabel>
+                      <VBtn
+                        variant="text"
+                        size="small"
+                        density="compact"
+                        @click="
+                          chatbotMessageMode =
+                            chatbotMessageMode === 'textarea'
+                              ? 'depara'
+                              : 'textarea'
+                        "
+                      >
+                        {{
+                          chatbotMessageMode === 'textarea'
+                            ? $t('use_mapping')
+                            : $t('use_textarea')
+                        }}
+                      </VBtn>
+                    </div>
+                    <div v-if="chatbotMessageMode === 'textarea'">
+                      <VTextarea
+                        :model-value="webhookMapping.message ?? ''"
+                        @update:model-value="
+                          webhookMapping.message = $event || null
+                        "
+                        :placeholder="$t('webhook_field_message')"
+                        rows="4"
+                      />
+                      <VExpansionPanels variant="accordion" class="mt-2">
+                        <VExpansionPanel>
+                          <VExpansionPanelTitle>
+                            <span class="text-caption">{{
+                              $t('available_tags')
+                            }}</span>
+                          </VExpansionPanelTitle>
+                          <VExpansionPanelText>
+                            <div class="d-flex flex-column gap-1">
+                              <div
+                                v-for="tag in availableTags"
+                                :key="tag.tag"
+                                class="text-caption"
+                              >
+                                <code>{{ tag.tag }}</code
+                                >: {{ tag.description }}
+                              </div>
+                            </div>
+                          </VExpansionPanelText>
+                        </VExpansionPanel>
+                      </VExpansionPanels>
+                    </div>
+                    <AppSelectSearch
+                      v-else
+                      :model-value="webhookMapping.message ?? null"
+                      @update:model-value="handleFieldUpdate('message', $event)"
+                      :items="
+                        webhookDataKeys.map((key) => ({
+                          value: key,
+                          title: key,
+                        }))
+                      "
+                      :placeholder="$t('select_field')"
+                      :clearable="true"
+                      item-value="value"
+                      item-title="title"
+                    />
+                  </div>
                 </div>
               </VCardText>
             </VCard>

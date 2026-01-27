@@ -5,6 +5,7 @@ import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
 import { SaveWebhookMappingRequest } from '@core/schema/integration/saveWebhookMapping/request.schema';
 import { WebhookMappingSaverUseCase } from '@core/useCases/integration/WebhookMappingSaver.useCase';
+import { WebhookMappingValidationError } from '@core/common/exceptions/WebhookMappingValidationError';
 
 export const saveWebhookMapping = async (
   request: FastifyRequest<{
@@ -31,6 +32,13 @@ export const saveWebhookMapping = async (
       data: { success },
     });
   } catch (error) {
+    if (error instanceof WebhookMappingValidationError) {
+      return sendResponse(reply, {
+        message: error.message,
+        httpStatusCode: EHTTPStatusCode.bad_request,
+      });
+    }
+
     handleControllerError(error, reply, t);
   }
 };

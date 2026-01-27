@@ -1,9 +1,14 @@
 import * as schema from '@core/models';
 import { labelTemplate } from '@core/models';
 import { CreateLabelTemplateRequest } from '@core/schema/labelTemplate/createLabelTemplate/request.schema';
-import { NodePgDatabase } from 'drizzle-orm/node-postgres';
+import {
+  NodePgDatabase,
+  NodePgQueryResultHKT,
+} from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { v7 as uuidv7 } from 'uuid';
+import { ExtractTablesWithRelations } from 'drizzle-orm';
+import { PgTransaction } from 'drizzle-orm/pg-core';
 
 @injectable()
 export class LabelTemplateCreatorRepository {
@@ -18,6 +23,35 @@ export class LabelTemplateCreatorRepository {
     const labelTemplateId = uuidv7();
 
     const result = await this.dbRw
+      .insert(labelTemplate)
+      .values({
+        label_template_id: labelTemplateId,
+        account_id: accountId,
+        label_status_id: input.label_status.label_status_id,
+        label: input.label,
+        color: input.color,
+      })
+      .execute();
+
+    if (!result) {
+      return null;
+    }
+
+    return labelTemplateId;
+  };
+
+  createLabelTemplateInTransaction = async (
+    tx: PgTransaction<
+      NodePgQueryResultHKT,
+      typeof schema,
+      ExtractTablesWithRelations<typeof schema>
+    >,
+    input: CreateLabelTemplateRequest,
+    accountId: string
+  ): Promise<string | null> => {
+    const labelTemplateId = uuidv7();
+
+    const result = await tx
       .insert(labelTemplate)
       .values({
         label_template_id: labelTemplateId,

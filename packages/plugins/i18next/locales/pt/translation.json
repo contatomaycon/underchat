@@ -939,5 +939,8 @@
   "integration_key_generation_error": "Erro ao gerar nova chave!",
   "integrations_listed_successfully": "Integrações listadas com sucesso!",
   "channels_listed_successfully": "Canais listados com sucesso!",
-  "webhook_received_successfully": "Webhook recebido com sucesso!"
+  "webhook_received_successfully": "Webhook recebido com sucesso!",
+  "webhook_mapping_save_error": "Erro ao salvar mapeamento de webhook.",
+  "webhook_mapping_transfer_sector_required": "Ao transferir para setor, o setor é obrigatório.",
+  "webhook_mapping_transfer_user_required": "Ao transferir para usuário, o usuário é obrigatório."
 }

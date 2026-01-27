@@ -1,22 +1,13 @@
 import * as schema from '@core/models';
 import { workerConfig } from '@core/models';
-import {
-  NodePgDatabase,
-  NodePgQueryResultHKT,
-} from 'drizzle-orm/node-postgres';
-import { PgTransaction } from 'drizzle-orm/pg-core';
-import { ExtractTablesWithRelations, eq, and } from 'drizzle-orm';
+import { NodePgDatabase } from 'drizzle-orm/node-postgres';
+import { eq, and } from 'drizzle-orm';
 import { inject, injectable } from 'tsyringe';
 import { v7 as uuidv7 } from 'uuid';
 import { IUpdateWorkerConfig } from '@core/common/interfaces/IUpdateWorkerConfig';
 import { EWorkerConfigStatus } from '@core/common/enums/EWorkerConfigStatus';
 import { EWorkerConfigType } from '@core/common/enums/EWorkerConfigType';
-
-type Transaction = PgTransaction<
-  NodePgQueryResultHKT,
-  typeof schema,
-  ExtractTablesWithRelations<typeof schema>
->;
+import { Transaction } from '@core/common/types/Transaction.type';
 
 @injectable()
 export class WorkerConfigUpserterRepository {

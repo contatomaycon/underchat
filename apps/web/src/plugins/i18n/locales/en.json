@@ -2348,6 +2348,8 @@
   "webhook_mapping_viewed_successfully": "Webhook mapping viewed successfully",
   "webhook_mapping_save_error": "Error saving webhook mapping",
   "webhook_mapping_saved_successfully": "Webhook mapping saved successfully",
+  "webhook_mapping_transfer_sector_required": "When transferring to sector, sector is required.",
+  "webhook_mapping_transfer_user_required": "When transferring to user, user is required.",
   "webhook_data_viewed_successfully": "Webhook data viewed successfully",
   "webhook_field_first_name": "First Name",
   "webhook_field_last_name": "Last Name",

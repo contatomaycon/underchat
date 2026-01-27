@@ -13,7 +13,7 @@ import { WebhookDataViewerRepository } from '@core/repositories/webhook/WebhookD
 import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { webhookMappings } from '@core/mappings/webhook.mappings';
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { EStatusApiKey } from '@core/common/enums/EStatusApiKey';
 import { ListIntegrationsRequest } from '@core/schema/integration/listIntegrations/request.schema';
 import { ListIntegrationsResponse } from '@core/schema/integration/listIntegrations/response.schema';
@@ -25,15 +25,35 @@ import { ListAvailableChannelsResponse } from '@core/schema/integration/listAvai
 import { UserService } from './user.service';
 import { SectorService } from './sector.service';
 import { ChatbotService } from './chatbot.service';
+import { ContactService } from './contact.service';
+import { PlanAccountService } from './planAccount.service';
+import { LabelTemplateViewerByNameRepository } from '@core/repositories/labelTemplate/LabelTemplateViewerByName.repository';
 import { ListIntegrationUsersResponse } from '@core/schema/integration/listUsers/response.schema';
 import { ListIntegrationSectorsResponse } from '@core/schema/integration/listSectors/response.schema';
 import { ListIntegrationSectorUsersResponse } from '@core/schema/integration/listSectorUsers/response.schema';
 import { ListIntegrationInputChatbotsResponse } from '@core/schema/integration/listInputChatbots/response.schema';
 import { EChatbotType } from '@core/common/enums/EChatbotType';
+import { ELabelStatus } from '@core/common/enums/ELabelStatus';
+import { TFunction } from 'i18next';
+import { extractPhoneAndDdi } from '@core/common/functions/extractPhoneAndDdi';
+import * as schema from '@core/models';
+import { NodePgDatabase } from 'drizzle-orm/node-postgres';
+import { ContactCreatorRepository } from '@core/repositories/contact/ContactCreator.repository';
+import { LabelTemplateCreatorRepository } from '@core/repositories/labelTemplate/LabelTemplateCreator.repository';
+import { EncryptService } from './encrypt.service';
+import { PasswordEncryptorService } from './passwordEncryptor.service';
+import { ETypeSanetize } from '@core/common/enums/ETypeSanetize';
+import { nullIfEmpty } from '@core/common/functions/nullIfEmpty';
+import { IMappedWebhookData } from '@core/common/interfaces/IMappedWebhookData';
+import { Transaction } from '@core/common/types/Transaction.type';
+import { StreamProducerService } from './streamProducer.service';
+import { KafkaBaileysQueueService } from './kafkaBaileysQueue.service';
+import { IWebhookIntegrationRequest } from '@core/common/interfaces/IWebhookIntegrationRequest';
 
 @injectable()
 export class IntegrationService {
   constructor(
+    @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>,
     private readonly apiKeyViewerRepository: ApiKeyViewerRepository,
     private readonly integrationListerRepository: IntegrationListerRepository,
     private readonly integrationCreatorRepository: IntegrationCreatorRepository,
@@ -49,7 +69,16 @@ export class IntegrationService {
     private readonly elasticDatabaseService: ElasticDatabaseService,
     private readonly userService: UserService,
     private readonly sectorService: SectorService,
-    private readonly chatbotService: ChatbotService
+    private readonly chatbotService: ChatbotService,
+    private readonly contactService: ContactService,
+    private readonly planAccountService: PlanAccountService,
+    private readonly labelTemplateViewerByNameRepository: LabelTemplateViewerByNameRepository,
+    private readonly contactCreatorRepository: ContactCreatorRepository,
+    private readonly labelTemplateCreatorRepository: LabelTemplateCreatorRepository,
+    private readonly encryptService: EncryptService,
+    private readonly passwordEncryptorService: PasswordEncryptorService,
+    private readonly streamProducerService: StreamProducerService,
+    private readonly kafkaBaileysQueueService: KafkaBaileysQueueService
   ) {}
 
   listIntegrations = async (
@@ -260,6 +289,162 @@ export class IntegrationService {
     return indexResult === 'updated' || indexResult === 'created';
   };
 
+  processWebhook = async (
+    _t: TFunction<'translation', undefined>,
+    accountId: string,
+    workerId: string,
+    body: Record<string, unknown>
+  ): Promise<boolean> => {
+    const saved = await this.saveWebhookData(accountId, workerId, body);
+    if (!saved) {
+      return false;
+    }
+
+    const webhookMapping = await this.getWebhookMapping(accountId, workerId);
+    if (!webhookMapping) {
+      return true;
+    }
+
+    const mappedData = this.mapWebhookData(body, webhookMapping.mapping);
+    if (!mappedData.phone) {
+      return true;
+    }
+
+    const canCreateContact =
+      await this.planAccountService.validateCanCreateContactReceived(accountId);
+    if (!canCreateContact) {
+      return true;
+    }
+
+    const phoneAndDdi = this.extractPhoneAndDdiFromMappedData(mappedData);
+    if (!phoneAndDdi) {
+      return true;
+    }
+
+    const contact = await this.getOrCreateContact(
+      accountId,
+      phoneAndDdi,
+      mappedData
+    );
+    if (!contact) {
+      return true;
+    }
+
+    await this.sendToWebhookIntegrationConsumer(
+      accountId,
+      workerId,
+      contact,
+      mappedData,
+      webhookMapping.mapping,
+      body,
+      phoneAndDdi
+    );
+
+    return true;
+  };
+
+  private getWebhookMapping = async (
+    accountId: string,
+    workerId: string
+  ): Promise<{
+    account_id: string;
+    worker_id: string | null;
+    mapping: Record<string, string | string[]>;
+    created_at?: string;
+    updated_at?: string;
+  } | null> => {
+    const webhookMapping =
+      await this.webhookMappingViewerRepository.viewWebhookMapping(
+        accountId,
+        workerId
+      );
+
+    if (!webhookMapping || !webhookMapping.mapping) {
+      return null;
+    }
+
+    return webhookMapping;
+  };
+
+  private extractPhoneAndDdiFromMappedData = (
+    mappedData: IMappedWebhookData
+  ): { phone: string; phone_ddi: string | null } | null => {
+    if (!mappedData.phone) {
+      return null;
+    }
+
+    const fullPhone = `${mappedData.phone_ddi ?? ''}${mappedData.phone}`;
+    return extractPhoneAndDdi(fullPhone);
+  };
+
+  private getOrCreateContact = async (
+    accountId: string,
+    phoneAndDdi: { phone: string; phone_ddi: string | null },
+    mappedData: IMappedWebhookData
+  ): Promise<{
+    contactId: string;
+    is_valided: boolean;
+    phone_validated?: string;
+    phone_ddi_validated?: string | null;
+  } | null> => {
+    const existingContact = await this.contactService.getContactByPhone(
+      accountId,
+      phoneAndDdi.phone,
+      phoneAndDdi.phone_ddi
+    );
+
+    if (existingContact) {
+      return this.buildExistingContactResult(
+        accountId,
+        existingContact.contact_id,
+        existingContact.is_valided === true,
+        existingContact.phone_ddi ?? null,
+        phoneAndDdi,
+        mappedData
+      );
+    }
+
+    const contactId = await this.createContactWithLabels(accountId, mappedData);
+    if (!contactId) {
+      return null;
+    }
+
+    return { contactId, is_valided: false };
+  };
+
+  private buildExistingContactResult = async (
+    accountId: string,
+    contactId: string,
+    isValided: boolean,
+    contactPhoneDdi: string | null,
+    phoneAndDdi: { phone: string; phone_ddi: string | null },
+    mappedData: IMappedWebhookData
+  ): Promise<{
+    contactId: string;
+    is_valided: boolean;
+    phone_validated?: string;
+    phone_ddi_validated?: string | null;
+  }> => {
+    await this.addLabelsToExistingContact(accountId, contactId, mappedData);
+
+    if (!isValided) {
+      return { contactId, is_valided: false };
+    }
+
+    const sensitive =
+      await this.contactService.getContactSensitiveDataDecrypted(contactId);
+    if (!sensitive?.phone) {
+      return { contactId, is_valided: true };
+    }
+
+    return {
+      contactId,
+      is_valided: true,
+      phone_validated: sensitive.phone,
+      phone_ddi_validated: contactPhoneDdi ?? phoneAndDdi.phone_ddi ?? null,
+    };
+  };
+
   listUsersForWebhook = async (
     accountId: string
   ): Promise<ListIntegrationUsersResponse> => {
@@ -312,5 +497,534 @@ export class IntegrationService {
       type: chatbot.type ?? null,
       created_at: chatbot.created_at,
     }));
+  };
+
+  private addLabelsToExistingContact = async (
+    accountId: string,
+    contactId: string,
+    mappedData: IMappedWebhookData
+  ): Promise<void> => {
+    if (!mappedData.labels || mappedData.labels.length === 0) {
+      return;
+    }
+
+    const labelTemplateIds = await this.dbRw.transaction(async (tx) => {
+      return this.processLabelsInTransaction(tx, accountId, mappedData.labels);
+    });
+
+    const addLabelPromises: Promise<boolean>[] = [];
+    for (let i = 0; i < labelTemplateIds.length; i++) {
+      addLabelPromises.push(
+        this.contactService.addContactLabelTemplateIfNotExists(
+          contactId,
+          labelTemplateIds[i]
+        )
+      );
+    }
+    await Promise.all(addLabelPromises);
+  };
+
+  private createContactWithLabels = async (
+    accountId: string,
+    mappedData: IMappedWebhookData
+  ): Promise<string | null> => {
+    return this.dbRw.transaction(async (tx) => {
+      const labelTemplateIds = await this.processLabelsInTransaction(
+        tx,
+        accountId,
+        mappedData.labels
+      );
+
+      return this.createContactFromWebhookInTransaction(
+        tx,
+        accountId,
+        mappedData,
+        labelTemplateIds
+      );
+    });
+  };
+
+  private sendToWebhookIntegrationConsumer = async (
+    accountId: string,
+    workerId: string,
+    contact: {
+      contactId: string;
+      is_valided: boolean;
+      phone_validated?: string;
+      phone_ddi_validated?: string | null;
+    },
+    mappedData: IMappedWebhookData,
+    mapping: Record<string, string | string[]>,
+    body: Record<string, unknown>,
+    phoneAndDdi: { phone: string; phone_ddi: string | null }
+  ): Promise<void> => {
+    const request: IWebhookIntegrationRequest = {
+      account_id: accountId,
+      worker_id: workerId,
+      contact_id: contact.contactId,
+      contact_is_valided: contact.is_valided,
+      phone_validated: contact.phone_validated,
+      phone_ddi_validated: contact.phone_ddi_validated,
+      mapped_data: mappedData,
+      mapping,
+      body,
+      phone: phoneAndDdi.phone,
+      phone_ddi: phoneAndDdi.phone_ddi,
+    };
+
+    const topic =
+      this.kafkaBaileysQueueService.workerWebhookIntegration(workerId);
+    await this.streamProducerService.send(topic, request);
+  };
+
+  private extractLabelValue = (value: unknown): string[] => {
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (!trimmed) {
+        return [];
+      }
+      return [trimmed];
+    }
+
+    if (Array.isArray(value)) {
+      const result: string[] = [];
+      for (let i = 0; i < value.length; i++) {
+        const v = value[i];
+        if (typeof v !== 'string') {
+          continue;
+        }
+        const trimmed = v.trim();
+        if (trimmed.length > 0) {
+          result.push(trimmed);
+        }
+      }
+      return result;
+    }
+
+    return [];
+  };
+
+  private processLabelsMapping = (
+    body: Record<string, unknown>,
+    mappingKey: string | string[]
+  ): string[] => {
+    const labelValues: string[] = [];
+
+    if (Array.isArray(mappingKey)) {
+      for (let i = 0; i < mappingKey.length; i++) {
+        const value = this.getNestedValue(body, mappingKey[i]);
+        const extracted = this.extractLabelValue(value);
+        labelValues.push(...extracted);
+      }
+      return this.removeDuplicateLabels(labelValues);
+    }
+
+    const value = this.getNestedValue(body, mappingKey);
+    const extracted = this.extractLabelValue(value);
+    labelValues.push(...extracted);
+    return this.removeDuplicateLabels(labelValues);
+  };
+
+  private removeDuplicateLabels = (labels: string[]): string[] => {
+    const seen = new Set<string>();
+    const unique: string[] = [];
+
+    for (let i = 0; i < labels.length; i++) {
+      const label = labels[i];
+      const normalized = label.toLowerCase().trim();
+      if (normalized && !seen.has(normalized)) {
+        seen.add(normalized);
+        unique.push(label);
+      }
+    }
+
+    return unique;
+  };
+
+  private mapWebhookData = (
+    body: Record<string, unknown>,
+    mapping: Record<string, string | string[]>
+  ): IMappedWebhookData => {
+    const mapped: IMappedWebhookData = {};
+    const entries = Object.entries(mapping);
+
+    for (let i = 0; i < entries.length; i++) {
+      const [fieldKey, mappingKey] = entries[i];
+
+      if (fieldKey === 'labels') {
+        mapped.labels = this.processLabelsMapping(body, mappingKey);
+        continue;
+      }
+
+      if (typeof mappingKey !== 'string') {
+        continue;
+      }
+
+      const value = this.getNestedValueFromMapping(body, mappingKey);
+      if (value === null || value === undefined) {
+        continue;
+      }
+
+      this.assignMappedValue(mapped, fieldKey, value);
+    }
+
+    return mapped;
+  };
+
+  private getNestedValueFromMapping = (
+    body: Record<string, unknown>,
+    mappingKey: string
+  ): unknown => {
+    const isPath = mappingKey.includes('.') || mappingKey.includes('[');
+
+    if (!isPath) {
+      return mappingKey;
+    }
+
+    return this.getNestedValue(body, mappingKey);
+  };
+
+  private assignMappedValue = (
+    mapped: IMappedWebhookData,
+    fieldKey: string,
+    value: unknown
+  ): void => {
+    const stringValue = String(value);
+
+    if (fieldKey === 'message_type') {
+      mapped.message_type = stringValue as 'message' | 'chatbot';
+      return;
+    }
+
+    if (fieldKey === 'transfer_sector_id') {
+      mapped.transfer_sector_id = stringValue;
+      return;
+    }
+
+    if (fieldKey === 'transfer_sector_user_id') {
+      mapped.transfer_sector_user_id = stringValue;
+      return;
+    }
+
+    if (fieldKey === 'transfer_user_id') {
+      mapped.transfer_user_id = stringValue;
+      return;
+    }
+
+    if (fieldKey === 'chatbot_id') {
+      mapped.chatbot_id = stringValue;
+      return;
+    }
+
+    if (fieldKey === 'message') {
+      mapped.message = stringValue;
+      return;
+    }
+
+    if (fieldKey === 'first_name') {
+      mapped.first_name = stringValue;
+      return;
+    }
+
+    if (fieldKey === 'last_name') {
+      mapped.last_name = stringValue;
+      return;
+    }
+
+    if (fieldKey === 'nickname') {
+      mapped.nickname = stringValue;
+      return;
+    }
+
+    if (fieldKey === 'birthday') {
+      mapped.birthday = stringValue;
+      return;
+    }
+
+    if (fieldKey === 'email') {
+      mapped.email = stringValue;
+      return;
+    }
+
+    if (fieldKey === 'phone_ddi') {
+      mapped.phone_ddi = stringValue;
+      return;
+    }
+
+    if (fieldKey === 'phone') {
+      mapped.phone = stringValue;
+      return;
+    }
+
+    if (fieldKey === 'notes') {
+      mapped.notes = stringValue;
+      return;
+    }
+  };
+
+  private getNestedValue = (
+    obj: Record<string, unknown>,
+    path: string
+  ): unknown => {
+    const keys = path.split('.');
+    let current: unknown = obj;
+
+    for (let i = 0; i < keys.length; i++) {
+      const key = keys[i];
+      if (typeof current !== 'object' || current === null) {
+        return null;
+      }
+
+      const arrayMatch = key.match(/^(.+)\[(\d+)\]$/);
+      if (arrayMatch) {
+        const arrayKey = arrayMatch[1];
+        const arrayIndex = Number.parseInt(arrayMatch[2], 10);
+
+        if (!(arrayKey in current)) {
+          return null;
+        }
+
+        const arrayValue = (current as Record<string, unknown>)[arrayKey];
+        if (!Array.isArray(arrayValue)) {
+          return null;
+        }
+
+        if (arrayIndex < 0 || arrayIndex >= arrayValue.length) {
+          return null;
+        }
+
+        current = arrayValue[arrayIndex];
+        continue;
+      }
+
+      if (!(key in current)) {
+        return null;
+      }
+
+      current = (current as Record<string, unknown>)[key];
+    }
+
+    return current;
+  };
+
+  private generateRandomColor = (): string => {
+    const colors = [
+      '#1976D2',
+      '#388E3C',
+      '#F57C00',
+      '#7B1FA2',
+      '#C2185B',
+      '#00796B',
+      '#0288D1',
+      '#5D4037',
+      '#455A64',
+      '#E64A19',
+    ];
+    return colors[Math.floor(Math.random() * colors.length)];
+  };
+
+  private truncateLabelName = (name: string, maxLength: number): string => {
+    if (name.length <= maxLength) {
+      return name;
+    }
+    return name.substring(0, maxLength);
+  };
+
+  private processLabelsInTransaction = async (
+    tx: Transaction,
+    accountId: string,
+    labels?: string[]
+  ): Promise<string[]> => {
+    if (!labels || labels.length === 0) {
+      return [];
+    }
+
+    const promises: Promise<string | null>[] = [];
+    for (let i = 0; i < labels.length; i++) {
+      promises.push(
+        this.resolveOrCreateLabelInTransaction(tx, accountId, labels[i])
+      );
+    }
+
+    const results = await Promise.all(promises);
+    const labelTemplateIds: string[] = [];
+    for (let i = 0; i < results.length; i++) {
+      const id = results[i];
+      if (id) {
+        labelTemplateIds.push(id);
+      }
+    }
+    return labelTemplateIds;
+  };
+
+  private resolveOrCreateLabelInTransaction = async (
+    tx: Transaction,
+    accountId: string,
+    labelName: unknown
+  ): Promise<string | null> => {
+    try {
+      if (!labelName || typeof labelName !== 'string') {
+        return null;
+      }
+
+      const trimmedName = labelName.trim();
+      if (!trimmedName) {
+        return null;
+      }
+
+      const truncatedName = this.truncateLabelName(trimmedName, 255);
+
+      const existingLabel =
+        await this.labelTemplateViewerByNameRepository.viewLabelTemplateByNameInTransaction(
+          tx,
+          accountId,
+          truncatedName
+        );
+
+      if (existingLabel) {
+        return existingLabel.label_template_id;
+      }
+
+      return this.createLabelTemplateInTransaction(
+        tx,
+        accountId,
+        truncatedName
+      );
+    } catch {
+      return null;
+    }
+  };
+
+  private createLabelTemplateInTransaction = async (
+    tx: Transaction,
+    accountId: string,
+    labelName: string
+  ): Promise<string | null> => {
+    const color = this.generateRandomColor();
+
+    return this.labelTemplateCreatorRepository.createLabelTemplateInTransaction(
+      tx,
+      {
+        label: labelName,
+        color,
+        label_status: {
+          label_status_id: ELabelStatus.active,
+        },
+      },
+      accountId
+    );
+  };
+
+  private processEmailFieldsForContact = (
+    email?: string | null
+  ): {
+    emailCEncrypted: string | null;
+    emailPartialEncrypted: string | null;
+    emailC: string | null;
+  } => {
+    if (!email) {
+      return {
+        emailCEncrypted: null,
+        emailPartialEncrypted: null,
+        emailC: null,
+      };
+    }
+
+    return {
+      emailCEncrypted: this.passwordEncryptorService.encrypt(email),
+      emailPartialEncrypted: (
+        this.encryptService.sanitize(email, ETypeSanetize.email) ?? ''
+      ).slice(0, 50),
+      emailC: this.encryptService.encrypt(email),
+    };
+  };
+
+  private processPhoneFieldsForContact = (
+    phone?: string | null
+  ): {
+    phoneCEncrypted: string | null;
+    phonePartialEncrypted: string | null;
+    phoneC: string | null;
+  } => {
+    if (!phone) {
+      return {
+        phoneCEncrypted: null,
+        phonePartialEncrypted: null,
+        phoneC: null,
+      };
+    }
+
+    return {
+      phoneCEncrypted: this.passwordEncryptorService.encrypt(phone),
+      phonePartialEncrypted: this.encryptService.sanitize(
+        phone,
+        ETypeSanetize.phone
+      ),
+      phoneC: this.encryptService.encrypt(phone),
+    };
+  };
+
+  private createContactFromWebhookInTransaction = async (
+    tx: Transaction,
+    accountId: string,
+    mappedData: IMappedWebhookData,
+    labelTemplateIds: string[]
+  ): Promise<string | null> => {
+    if (!mappedData.phone) {
+      return null;
+    }
+
+    const emailFields = this.processEmailFieldsForContact(mappedData.email);
+    const phoneFields = this.processPhoneFieldsForContact(mappedData.phone);
+    const contactPayload = this.buildContactPayload(
+      accountId,
+      mappedData,
+      emailFields,
+      phoneFields,
+      labelTemplateIds
+    );
+
+    return this.contactCreatorRepository.createContact(contactPayload, tx);
+  };
+
+  private buildContactPayload = (
+    accountId: string,
+    mappedData: IMappedWebhookData,
+    emailFields: {
+      emailCEncrypted: string | null;
+      emailPartialEncrypted: string | null;
+      emailC: string | null;
+    },
+    phoneFields: {
+      phoneCEncrypted: string | null;
+      phonePartialEncrypted: string | null;
+      phoneC: string | null;
+    },
+    labelTemplateIds: string[]
+  ) => {
+    return {
+      account_id: accountId,
+      label_template_ids: labelTemplateIds.length > 0 ? labelTemplateIds : null,
+      contact_document_type_id: null,
+      is_valided: false,
+      name: mappedData.first_name || '',
+      last_name: mappedData.last_name || null,
+      email: emailFields.emailCEncrypted,
+      email_partial: emailFields.emailPartialEncrypted,
+      email_c: emailFields.emailC,
+      phone_ddi: mappedData.phone_ddi || '55',
+      phone: phoneFields.phoneCEncrypted,
+      phone_partial: phoneFields.phonePartialEncrypted,
+      phone_c: phoneFields.phoneC,
+      nickname: mappedData.nickname || null,
+      photo: null,
+      birthday: nullIfEmpty(mappedData.birthday || null),
+      notes: mappedData.notes || null,
+      document: null,
+      document_partial: null,
+      document_c: null,
+      user_id: null,
+      ignore: null,
+    };
   };
 }
