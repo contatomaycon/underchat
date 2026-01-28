@@ -134,6 +134,39 @@ const ensureConnected = async (
       return;
     }
 
+    // Se o status é "connecting", verifica se deve mostrar QR code
+    if (state.status === EBaileysConnectionStatus.connecting) {
+      const hasValidSession = baileys.hasSession();
+
+      // Criação nova OU sem sessão válida → mostra QR code imediatamente
+      if (isNewCreation || !hasValidSession) {
+        log.warn(
+          { attempt, hasSession: hasValidSession, isNewCreation },
+          'Baileys aguardando pareamento. Escaneie o QR Code ou aguarde a autorização.'
+        );
+
+        await updateWorkerMismatchedStatus(
+          baileysEnvironment.baileysWorkerId,
+          baileysEnvironment.baileysAccountId
+        );
+
+        setTimeout(() => ensureConnected(attempt, log, baileys), RETRY_DELAY);
+        return;
+      }
+
+      if (attempt <= MAX_RETRY_ATTEMPTS) {
+        log.info(
+          { attempt, maxRetries: MAX_RETRY_ATTEMPTS },
+          'Baileys em estado connecting com sessão válida. Aguardando reconexão automática...'
+        );
+        setTimeout(
+          () => ensureConnected(attempt + 1, log, baileys),
+          RETRY_DELAY
+        );
+        return;
+      }
+    }
+
     setTimeout(() => ensureConnected(attempt + 1, log, baileys), RETRY_DELAY);
   } catch (error) {
     const hasValidSession = baileys.hasSession();
