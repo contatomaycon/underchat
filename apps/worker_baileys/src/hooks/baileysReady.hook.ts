@@ -14,6 +14,7 @@ const RETRY_DELAY = 10000;
 const CONNECT_TIMEOUT_MS = 60000;
 const MAX_RETRY_ATTEMPTS = 5;
 let mismatchedStatusSent = false;
+let isNewCreation: boolean | null = null;
 
 const withConnectTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> => {
   return Promise.race([
@@ -68,6 +69,16 @@ const ensureConnected = async (
 ): Promise<void> => {
   log.info({ attempt }, 'Baileys: iniciando verificação de conexão');
 
+  if (isNewCreation === null) {
+    isNewCreation = !baileys.hasSession();
+    log.info(
+      { isNewCreation },
+      isNewCreation
+        ? 'Baileys: criação nova detectada, mostrando QR code imediatamente'
+        : 'Baileys: sessão existente detectada, tentando reconexão'
+    );
+  }
+
   if (baileys.isConnected()) {
     log.info({ attempt }, 'Baileys conectado com sucesso');
     mismatchedStatusSent = false;
@@ -79,7 +90,7 @@ const ensureConnected = async (
   if (currentStatus === EBaileysConnectionStatus.connecting) {
     const hasValidSession = baileys.hasSession();
 
-    if (hasValidSession && attempt <= MAX_RETRY_ATTEMPTS) {
+    if (!isNewCreation && hasValidSession && attempt <= MAX_RETRY_ATTEMPTS) {
       log.info(
         { attempt, maxRetries: MAX_RETRY_ATTEMPTS },
         'Baileys em estado connecting com sessão válida. Aguardando reconexão automática...'
@@ -89,7 +100,7 @@ const ensureConnected = async (
     }
 
     log.warn(
-      { attempt, hasSession: hasValidSession },
+      { attempt, hasSession: hasValidSession, isNewCreation },
       'Baileys aguardando pareamento. Escaneie o QR Code ou aguarde a autorização.'
     );
 
@@ -127,11 +138,11 @@ const ensureConnected = async (
   } catch (error) {
     const hasValidSession = baileys.hasSession();
     log.error(
-      { err: error, attempt, hasSession: hasValidSession },
+      { err: error, attempt, hasSession: hasValidSession, isNewCreation },
       'Baileys connection attempt failed'
     );
 
-    if (hasValidSession && attempt < MAX_RETRY_ATTEMPTS) {
+    if (!isNewCreation && hasValidSession && attempt < MAX_RETRY_ATTEMPTS) {
       log.info(
         { attempt, nextAttempt: attempt + 1, maxRetries: MAX_RETRY_ATTEMPTS },
         'Baileys: sessão válida encontrada, tentando reconexão...'
