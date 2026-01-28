@@ -1442,7 +1442,9 @@ export class ChatbotFlowRunnerService {
     }
 
     if (tagType === 'contact') {
-      await this.updateContactTag(t, createChat, selectedTag);
+      try {
+        await this.updateContactTag(t, createChat, selectedTag);
+      } catch {}
     }
 
     const nextFlowId = this.getNextFlowId(chatbotFlow, currentFlowId);

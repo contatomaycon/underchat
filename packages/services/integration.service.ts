@@ -310,12 +310,6 @@ export class IntegrationService {
       return true;
     }
 
-    const canCreateContact =
-      await this.planAccountService.validateCanCreateContactReceived(accountId);
-    if (!canCreateContact) {
-      return true;
-    }
-
     const phoneAndDdi = this.extractPhoneAndDdiFromMappedData(mappedData);
     if (!phoneAndDdi) {
       return true;
@@ -326,14 +320,16 @@ export class IntegrationService {
       phoneAndDdi,
       mappedData
     );
-    if (!contact) {
-      return true;
-    }
+
+    const contactPayload = contact ?? {
+      contactId: '',
+      is_valided: false,
+    };
 
     await this.sendToWebhookIntegrationConsumer(
       accountId,
       workerId,
-      contact,
+      contactPayload,
       mappedData,
       webhookMapping.mapping,
       body,
@@ -402,6 +398,12 @@ export class IntegrationService {
         phoneAndDdi,
         mappedData
       );
+    }
+
+    const canCreateContact =
+      await this.planAccountService.validateCanCreateContactReceived(accountId);
+    if (!canCreateContact) {
+      return null;
     }
 
     const contactId = await this.createContactWithLabels(accountId, mappedData);

@@ -1531,10 +1531,14 @@ export class MessageUpsertConsume {
       return null;
     }
 
+    const canCreateContact =
+      await this.planAccountService.validateCanCreateContactReceived(
+        data.account_id
+      );
+    if (!canCreateContact) return null;
+
     const shouldAutoSave = await this.shouldAutoSaveContact(data.worker_id);
-    if (!shouldAutoSave) {
-      return null;
-    }
+    if (!shouldAutoSave) return null;
 
     const createdContact = await this.createContactAutomatically(
       data,
