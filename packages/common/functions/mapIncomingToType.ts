@@ -81,6 +81,8 @@ function detectReactionOrPin({ msg }: IMapCtx): EMessageType | undefined {
   const unwrapped = unwrapMessage(msg);
   if (unwrapped.reactionMessage) return EMessageType.react;
   if ((unwrapped as any).encReactionMessage) return EMessageType.react;
+  if ((msg as any).pinInChatMessage) return EMessageType.system;
+  if ((unwrapped as any).pinInChatMessage) return EMessageType.system;
 }
 
 function detectMedia({ msg }: IMapCtx): EMessageType | undefined {

@@ -216,6 +216,12 @@ export const templateMessageSchema = Type.Object({
   verifiedBizName: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 });
 
+export const pinMessageSchema = Type.Object({
+  pin_action: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  pin_user_name: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  pin_user_phone: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+});
+
 export const contentSchema = Type.Object(
   {
     type: Type.String({ enum: Object.values(EMessageType) }),
@@ -243,6 +249,7 @@ export const contentSchema = Type.Object(
     ),
     context_info: Type.Optional(Type.Union([contextInfoSchema, Type.Null()])),
     template: Type.Optional(Type.Union([templateMessageSchema, Type.Null()])),
+    pin: Type.Optional(Type.Union([pinMessageSchema, Type.Null()])),
   },
   { additionalProperties: true }
 );

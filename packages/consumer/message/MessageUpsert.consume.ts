@@ -2025,6 +2025,7 @@ export class MessageUpsertConsume {
     const extended = data?.message?.message?.extendedTextMessage;
     const templateMessage =
       data?.message?.message?.templateMessage?.hydratedTemplate;
+    const pinMessage = (data?.message?.message as any)?.pinInChatMessage;
 
     const linkPreview = extended
       ? ({
@@ -2073,6 +2074,29 @@ export class MessageUpsertConsume {
       if (templateMessage.hydratedContentText) {
         content.message = templateMessage.hydratedContentText;
       }
+    }
+
+    if (pinMessage && data.type === EMessageType.system) {
+      const jid = remoteJid(data.message?.key);
+      const jidAlt = remoteJidAlt(data.message?.key);
+      const phone = getPhoneFromJid(jid, jidAlt);
+      const pushName = data.message?.pushName;
+      const pinType = pinMessage.type;
+
+      let formattedPhone: string | null = null;
+      if (phone) {
+        const phoneWithPlus = `+${phone}`;
+        const phoneAndDdi = extractPhoneAndDdi(phoneWithPlus);
+        formattedPhone = phoneAndDdi
+          ? `${phoneAndDdi.phone_ddi} ${phoneAndDdi.phone}`
+          : phone;
+      }
+
+      content.pin = {
+        pin_action: pinType ? String(pinType) : null,
+        pin_user_name: pushName ?? null,
+        pin_user_phone: formattedPhone,
+      };
     }
 
     return content;

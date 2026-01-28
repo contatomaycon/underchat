@@ -383,6 +383,7 @@ const canInteractWithMessage = (m: ListMessageResult): boolean => {
   if (m.summary?.is_sent_to_internal === false) return false;
   if (m.content?.type === EMessageType.view_once) return false;
   if (m.content?.type === EMessageType.annotation) return false;
+  if (m.content?.type === EMessageType.system) return false;
   return true;
 };
 
@@ -653,8 +654,34 @@ const hasMessageVersions = (message: ListMessageResult): boolean => {
   return !!(message.content?.version && message.content.version.length > 0);
 };
 
+const getPinMessageText = (message: ListMessageResult): string | null => {
+  if (!message.content?.pin) return null;
+
+  const pin = message.content.pin;
+  const pinAction = pin.pin_action;
+  const isUnpin =
+    pinAction === '2' || pinAction === 'UNPIN_FOR_ALL' || pinAction === 'UNPIN';
+
+  if (pin.pin_user_name) {
+    return isUnpin
+      ? t('message_unpinned_by_user', { name: pin.pin_user_name })
+      : t('message_pinned_by_user', { name: pin.pin_user_name });
+  }
+
+  if (pin.pin_user_phone) {
+    return isUnpin
+      ? t('message_unpinned_by_phone', { phone: pin.pin_user_phone })
+      : t('message_pinned_by_phone', { phone: pin.pin_user_phone });
+  }
+
+  return isUnpin ? t('message_unpinned_default') : t('message_pinned_default');
+};
+
 const getLatestMessageText = (message: ListMessageResult): string => {
   if (!message.content) return '';
+
+  const pinText = getPinMessageText(message);
+  if (pinText) return pinText;
 
   const versions = message.content.version;
   if (versions && versions.length > 0) {
@@ -2097,7 +2124,8 @@ onUnmounted(() => {
                   canInteractWithMessage(item.message) &&
                   showReactionPicker !== item.message.message_id &&
                   !isQueueStatus &&
-                  item.message.content?.type !== EMessageType.annotation
+                  item.message.content?.type !== EMessageType.annotation &&
+                  item.message.content?.type !== EMessageType.system
                 "
                 :class="[
                   'reaction-trigger-container',
@@ -2177,10 +2205,10 @@ onUnmounted(() => {
                   v-if="
                     (canInteractWithMessage(item.message) ||
                       (item.message.deleted &&
-                        hasMessageVersions(item.message)) ||
-                      item.message.content?.type === EMessageType.system) &&
+                        hasMessageVersions(item.message))) &&
                     !isQueueStatus &&
-                    item.message.content?.type !== EMessageType.annotation
+                    item.message.content?.type !== EMessageType.annotation &&
+                    item.message.content?.type !== EMessageType.system
                   "
                   class="message-actions"
                 >
@@ -3238,6 +3266,22 @@ onUnmounted(() => {
 
                   <div
                     v-if="
+                      item.message.content?.type === EMessageType.system &&
+                      item.message.content?.pin
+                    "
+                  >
+                    <p
+                      class="text-base message-text mb-2"
+                      :style="{
+                        color: 'rgb(var(--v-theme-on-surface))',
+                      }"
+                    >
+                      {{ getLatestMessageText(item.message) }}
+                    </p>
+                  </div>
+
+                  <div
+                    v-if="
                       item.message.content?.message &&
                       item.message.content?.type !== EMessageType.image &&
                       item.message.content?.type !== EMessageType.video &&
@@ -3245,6 +3289,7 @@ onUnmounted(() => {
                       item.message.content?.type !==
                         EMessageType.contact_card &&
                       item.message.content?.type !== EMessageType.contacts &&
+                      item.message.content?.type !== EMessageType.system &&
                       !item.message.message_key?.is_view_once &&
                       !item.message.content?.template
                     "
@@ -3261,9 +3306,12 @@ onUnmounted(() => {
                           item.message.deleted,
                       }"
                       :style="{
-                        color: isTypeUser(item.message)
-                          ? 'rgb(var(--v-theme-on-surface))'
-                          : 'rgb(var(--v-theme-title))',
+                        color:
+                          item.message.content?.type === EMessageType.system
+                            ? 'rgb(var(--v-theme-on-surface))'
+                            : isTypeUser(item.message)
+                              ? 'rgb(var(--v-theme-on-surface))'
+                              : 'rgb(var(--v-theme-title))',
                       }"
                       v-html="
                         formatWhatsAppText(getLatestMessageText(item.message))
@@ -3281,9 +3329,12 @@ onUnmounted(() => {
                           item.message.deleted,
                       }"
                       :style="{
-                        color: isTypeUser(item.message)
-                          ? 'rgb(var(--v-theme-on-surface))'
-                          : 'rgb(var(--v-theme-title))',
+                        color:
+                          item.message.content?.type === EMessageType.system
+                            ? 'rgb(var(--v-theme-on-surface))'
+                            : isTypeUser(item.message)
+                              ? 'rgb(var(--v-theme-on-surface))'
+                              : 'rgb(var(--v-theme-title))',
                       }"
                     >
                       {{ getLatestMessageText(item.message) }}
@@ -3366,7 +3417,8 @@ onUnmounted(() => {
                     v-if="
                       item.message.content?.reactions &&
                       item.message.content.reactions.length > 0 &&
-                      item.message.content?.type !== EMessageType.annotation
+                      item.message.content?.type !== EMessageType.annotation &&
+                      item.message.content?.type !== EMessageType.system
                     "
                     :class="[
                       'reactions-summary',
@@ -3405,7 +3457,8 @@ onUnmounted(() => {
                     v-if="
                       showReactionPicker === item.message.message_id &&
                       canInteractWithMessage(item.message) &&
-                      !isQueueStatus
+                      !isQueueStatus &&
+                      item.message.content?.type !== EMessageType.system
                     "
                     class="reaction-picker"
                     :class="

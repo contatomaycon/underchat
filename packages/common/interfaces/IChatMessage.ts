@@ -87,6 +87,12 @@ export interface ITemplateMessage {
   verifiedBizName?: string | null;
 }
 
+export interface IPinMessage {
+  pin_action?: string | null;
+  pin_user_name?: string | null;
+  pin_user_phone?: string | null;
+}
+
 export interface IContent {
   type: EMessageType;
   message?: string | null;
@@ -106,6 +112,7 @@ export interface IContent {
   media_download_failed?: boolean;
   context_info?: IMessageContextInfo | null;
   template?: ITemplateMessage | null;
+  pin?: IPinMessage | null;
 }
 
 export interface IMessageKey {

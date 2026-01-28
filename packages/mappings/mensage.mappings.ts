@@ -785,6 +785,32 @@ export const mensageMappings = () => {
                 },
               },
             },
+            pin: {
+              type: 'nested',
+              properties: {
+                pin_action: {
+                  type: 'text',
+                  fields: {
+                    keyword: {
+                      type: 'keyword',
+                      ignore_above: 256,
+                    },
+                  },
+                },
+                pin_user_name: {
+                  type: 'text',
+                  fields: {
+                    keyword: {
+                      type: 'keyword',
+                      ignore_above: 256,
+                    },
+                  },
+                },
+                pin_user_phone: {
+                  type: 'keyword',
+                },
+              },
+            },
           },
         },
         summary: {
