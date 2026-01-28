@@ -658,6 +658,9 @@ const getPinMessageText = (message: ListMessageResult): string | null => {
   if (!message.content?.pin) return null;
 
   const pin = message.content.pin;
+  const hasPinData = pin.pin_action || pin.pin_user_name || pin.pin_user_phone;
+  if (!hasPinData) return null;
+
   const pinAction = pin.pin_action;
   const isUnpin =
     pinAction === '2' || pinAction === 'UNPIN_FOR_ALL' || pinAction === 'UNPIN';
@@ -3269,7 +3272,8 @@ onUnmounted(() => {
                   <div
                     v-if="
                       item.message.content?.type === EMessageType.system &&
-                      item.message.content?.pin
+                      (item.message.content?.pin ||
+                        item.message.content?.message)
                     "
                   >
                     <p
@@ -3278,7 +3282,15 @@ onUnmounted(() => {
                         color: 'rgb(var(--v-theme-on-surface))',
                       }"
                     >
-                      {{ getLatestMessageText(item.message) }}
+                      <span
+                        v-if="shouldFormatMessage(item.message)"
+                        v-html="
+                          formatWhatsAppText(getLatestMessageText(item.message))
+                        "
+                      ></span>
+                      <span v-else>{{
+                        getLatestMessageText(item.message)
+                      }}</span>
                     </p>
                   </div>
 
