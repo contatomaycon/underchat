@@ -3985,6 +3985,20 @@ const onOpenAddContactModal = (e: Event) => {
   isAddContactModalOpen.value = true;
 };
 
+const onSendTemplateButton = async (e: Event) => {
+  const customEvent = e as CustomEvent;
+  const { text } = customEvent.detail as {
+    text: string;
+    buttonId: string;
+    messageId: string;
+  };
+
+  if (!text || !hasActiveChat()) return;
+  if (isQueueOrUraStatus.value) return;
+
+  await sendTextMessage(text);
+};
+
 const onOpenEditContactModal = (e: Event) => {
   const customEvent = e as CustomEvent;
   const contactId = customEvent.detail as string;
@@ -4544,6 +4558,10 @@ onMounted(async () => {
     'open-edit-contact-modal',
     onOpenEditContactModal as EventListener
   );
+  globalThis.addEventListener(
+    'send-template-button',
+    onSendTemplateButton as EventListener
+  );
 
   const handleResize = () => {
     requestAnimationFrame(() => {
@@ -4577,6 +4595,10 @@ onUnmounted(async () => {
   globalThis.removeEventListener(
     'open-edit-contact-modal',
     onOpenEditContactModal as EventListener
+  );
+  globalThis.removeEventListener(
+    'send-template-button',
+    onSendTemplateButton as EventListener
   );
 
   if (resizeHandler.value) {

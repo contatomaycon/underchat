@@ -74,6 +74,19 @@ export interface IContactMessage {
   photo?: string | null;
 }
 
+export interface ITemplateButton {
+  displayText: string;
+  id: string;
+}
+
+export interface ITemplateMessage {
+  hydratedTitleText?: string | null;
+  hydratedContentText?: string | null;
+  hydratedButtons?: ITemplateButton[] | null;
+  templateId?: string | null;
+  verifiedBizName?: string | null;
+}
+
 export interface IContent {
   type: EMessageType;
   message?: string | null;
@@ -92,6 +105,7 @@ export interface IContent {
   version?: MessageVersion[] | null;
   media_download_failed?: boolean;
   context_info?: IMessageContextInfo | null;
+  template?: ITemplateMessage | null;
 }
 
 export interface IMessageKey {

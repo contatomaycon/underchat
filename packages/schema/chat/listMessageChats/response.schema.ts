@@ -201,6 +201,21 @@ export const contextInfoSchema = Type.Object(
   { additionalProperties: true }
 );
 
+export const templateButtonSchema = Type.Object({
+  displayText: Type.String(),
+  id: Type.String(),
+});
+
+export const templateMessageSchema = Type.Object({
+  hydratedTitleText: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  hydratedContentText: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  hydratedButtons: Type.Optional(
+    Type.Union([Type.Array(templateButtonSchema), Type.Null()])
+  ),
+  templateId: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  verifiedBizName: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+});
+
 export const contentSchema = Type.Object(
   {
     type: Type.String({ enum: Object.values(EMessageType) }),
@@ -227,6 +242,7 @@ export const contentSchema = Type.Object(
       Type.Union([Type.Array(messageVersionSchema), Type.Null()])
     ),
     context_info: Type.Optional(Type.Union([contextInfoSchema, Type.Null()])),
+    template: Type.Optional(Type.Union([templateMessageSchema, Type.Null()])),
   },
   { additionalProperties: true }
 );

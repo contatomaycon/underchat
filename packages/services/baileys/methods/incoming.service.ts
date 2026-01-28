@@ -294,7 +294,6 @@ export class BaileysIncomingMessageService {
       if (m.category === 'peer') return;
 
       const chatKind = getChatKind(m);
-
       if (
         chatKind !== EChatKind.user ||
         upsertType !== EMessageUpsertType.notify

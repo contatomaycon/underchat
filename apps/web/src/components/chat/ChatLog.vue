@@ -410,6 +410,24 @@ const onCopy = async (m: ListMessageResult) => {
   if (text) await navigator.clipboard.writeText(text);
 };
 
+const onTemplateButtonClick = (
+  button: { displayText: string; id: string },
+  message: ListMessageResult
+) => {
+  if (isDeleted(message)) return;
+  if (isQueueStatus.value) return;
+
+  globalThis.dispatchEvent(
+    new CustomEvent('send-template-button', {
+      detail: {
+        text: button.displayText,
+        buttonId: button.id,
+        messageId: message.message_id,
+      },
+    })
+  );
+};
+
 const hoveredMessageId = ref<string | null>(null);
 const showReactionPicker = ref<string | null>(null);
 const showEmojiPicker = ref<string | null>(null);
@@ -3151,6 +3169,75 @@ onUnmounted(() => {
 
                   <div
                     v-if="
+                      item.message.content?.template &&
+                      item.message.content?.type === EMessageType.text
+                    "
+                    class="template-message"
+                    :class="{
+                      'is-deleted': item.message.deleted,
+                    }"
+                  >
+                    <div
+                      v-if="item.message.content.template.hydratedTitleText"
+                      class="template-title"
+                      :style="{
+                        color: isTypeUser(item.message)
+                          ? 'rgb(var(--v-theme-on-surface))'
+                          : 'rgb(var(--v-theme-title))',
+                      }"
+                    >
+                      {{ item.message.content.template.hydratedTitleText }}
+                    </div>
+                    <div
+                      v-if="item.message.content.template.hydratedContentText"
+                      class="template-content"
+                      :style="{
+                        color: isTypeUser(item.message)
+                          ? 'rgb(var(--v-theme-on-surface))'
+                          : 'rgb(var(--v-theme-title))',
+                      }"
+                    >
+                      <span
+                        v-if="shouldFormatMessage(item.message)"
+                        v-html="
+                          formatWhatsAppText(
+                            item.message.content.template.hydratedContentText
+                          )
+                        "
+                      ></span>
+                      <span v-else>{{
+                        item.message.content.template.hydratedContentText
+                      }}</span>
+                    </div>
+                    <div
+                      v-if="
+                        item.message.content.template.hydratedButtons &&
+                        item.message.content.template.hydratedButtons.length > 0
+                      "
+                      class="template-buttons"
+                    >
+                      <VBtn
+                        v-for="(button, index) in item.message.content.template
+                          .hydratedButtons"
+                        :key="`template-btn-${item.message.message_id}-${index}`"
+                        variant="text"
+                        class="template-button"
+                        :class="{
+                          'template-button--user': isTypeUser(item.message),
+                        }"
+                        :disabled="item.message.deleted || isQueueStatus"
+                        @click="onTemplateButtonClick(button, item.message)"
+                      >
+                        <VIcon start size="18" class="template-button-icon">
+                          tabler-arrow-back
+                        </VIcon>
+                        {{ button.displayText }}
+                      </VBtn>
+                    </div>
+                  </div>
+
+                  <div
+                    v-if="
                       item.message.content?.message &&
                       item.message.content?.type !== EMessageType.image &&
                       item.message.content?.type !== EMessageType.video &&
@@ -3158,7 +3245,8 @@ onUnmounted(() => {
                       item.message.content?.type !==
                         EMessageType.contact_card &&
                       item.message.content?.type !== EMessageType.contacts &&
-                      !item.message.message_key?.is_view_once
+                      !item.message.message_key?.is_view_once &&
+                      !item.message.content?.template
                     "
                   >
                     <p
@@ -3884,6 +3972,74 @@ onUnmounted(() => {
       word-break: break-word;
       overflow-wrap: anywhere;
       max-width: 100%;
+    }
+
+    .template-message {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 0;
+      margin: 0;
+
+      &.is-deleted {
+        opacity: 0.5;
+      }
+
+      .template-title {
+        font-size: 0.9375rem;
+        font-weight: 600;
+        line-height: 1.4;
+        margin-bottom: 4px;
+      }
+
+      .template-content {
+        font-size: 0.875rem;
+        line-height: 1.5;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+
+      .template-buttons {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        margin-top: 4px;
+        padding-top: 8px;
+        border-top: 1px solid rgba(var(--v-theme-on-surface), 0.12);
+
+        .template-button {
+          justify-content: flex-start;
+          text-transform: none;
+          font-size: 0.875rem;
+          font-weight: 500;
+          padding: 8px 12px;
+          min-height: auto;
+          height: auto;
+          color: rgb(37, 211, 102);
+          background-color: transparent;
+
+          &:hover {
+            background-color: rgba(37, 211, 102, 0.1);
+          }
+
+          &:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+          }
+
+          .template-button-icon {
+            transform: rotate(180deg);
+          }
+
+          &.template-button--user {
+            color: rgb(var(--v-theme-primary));
+
+            &:hover {
+              background-color: rgba(var(--v-theme-primary), 0.1);
+            }
+          }
+        }
+      }
     }
 
     .chat-content {

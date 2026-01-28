@@ -2023,6 +2023,8 @@ export class MessageUpsertConsume {
 
   private buildMessageContent(data: IUpsertMessage): IContent {
     const extended = data?.message?.message?.extendedTextMessage;
+    const templateMessage =
+      data?.message?.message?.templateMessage?.hydratedTemplate;
 
     const linkPreview = extended
       ? ({
@@ -2047,6 +2049,30 @@ export class MessageUpsertConsume {
     const messageQuotedId = content.quoted?.key.id ?? null;
     if (messageQuotedId) {
       content.message_quoted_id = messageQuotedId;
+    }
+
+    if (templateMessage) {
+      const hydratedButtons = templateMessage.hydratedButtons
+        ?.filter((btn: proto.IHydratedTemplateButton) => btn.quickReplyButton)
+        .map((btn: proto.IHydratedTemplateButton) => ({
+          displayText: btn.quickReplyButton?.displayText ?? '',
+          id: btn.quickReplyButton?.id ?? '',
+        }));
+
+      content.template = {
+        hydratedTitleText: templateMessage.hydratedTitleText ?? null,
+        hydratedContentText: templateMessage.hydratedContentText ?? null,
+        hydratedButtons:
+          hydratedButtons && hydratedButtons.length > 0
+            ? hydratedButtons
+            : null,
+        templateId: data?.message?.message?.templateMessage?.templateId ?? null,
+        verifiedBizName: data.message?.verifiedBizName ?? null,
+      };
+
+      if (templateMessage.hydratedContentText) {
+        content.message = templateMessage.hydratedContentText;
+      }
     }
 
     return content;

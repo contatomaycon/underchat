@@ -6,6 +6,8 @@ import { IMapCtx } from '../interfaces/IMapCtx';
 function getText(msg: proto.IMessage): string {
   if (msg.conversation) return msg.conversation;
   if (msg.extendedTextMessage?.text) return msg.extendedTextMessage.text;
+  if ((msg as any).templateMessage?.hydratedTemplate?.hydratedContentText)
+    return (msg as any).templateMessage.hydratedTemplate.hydratedContentText;
   if ((msg as any).ephemeralMessage?.message)
     return getText((msg as any).ephemeralMessage.message as proto.IMessage);
 
@@ -103,6 +105,21 @@ function detectProtocol({ pType, msg }: IMapCtx): EMessageType | undefined {
     return EMessageType.set_disappearing_messages;
 }
 
+function detectTemplate({ msg }: IMapCtx): EMessageType | undefined {
+  const templateMsg = (msg as any).templateMessage;
+  if (templateMsg?.hydratedTemplate) {
+    return EMessageType.text;
+  }
+
+  const unwrapped = unwrapMessage(msg);
+  const unwrappedTemplate = (unwrapped as any).templateMessage;
+  if (unwrappedTemplate?.hydratedTemplate) {
+    return EMessageType.text;
+  }
+
+  return undefined;
+}
+
 function detectText({ text, msg }: IMapCtx): EMessageType | undefined {
   if (text) return EMessageType.text;
 
@@ -143,6 +160,7 @@ export function mapIncomingToType(m: WAMessage): EMessageType | undefined {
     detectReactionOrPin,
     detectMedia,
     detectProtocol,
+    detectTemplate,
     detectText,
   ];
 

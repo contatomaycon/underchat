@@ -739,6 +739,52 @@ export const mensageMappings = () => {
                 },
               },
             },
+            template: {
+              type: 'nested',
+              properties: {
+                hydratedTitleText: {
+                  type: 'text',
+                  fields: {
+                    keyword: {
+                      type: 'keyword',
+                      ignore_above: 256,
+                    },
+                  },
+                },
+                hydratedContentText: {
+                  type: 'text',
+                },
+                hydratedButtons: {
+                  type: 'nested',
+                  properties: {
+                    displayText: {
+                      type: 'text',
+                      fields: {
+                        keyword: {
+                          type: 'keyword',
+                          ignore_above: 256,
+                        },
+                      },
+                    },
+                    id: {
+                      type: 'keyword',
+                    },
+                  },
+                },
+                templateId: {
+                  type: 'keyword',
+                },
+                verifiedBizName: {
+                  type: 'text',
+                  fields: {
+                    keyword: {
+                      type: 'keyword',
+                      ignore_above: 256,
+                    },
+                  },
+                },
+              },
+            },
           },
         },
         summary: {
