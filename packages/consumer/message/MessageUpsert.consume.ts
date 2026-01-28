@@ -255,7 +255,15 @@ export class MessageUpsertConsume {
     chat: IChat | null
   ): Promise<IChat | null> {
     if (chat) {
-      await this.createChatMessage(chat, data);
+      const isMessageEmpty = this.isMessageEmpty(data);
+      const shouldSkipMessageCreation =
+        isMessageEmpty &&
+        ((data.webhook_message_type === 'chatbot' && data.webhook_chatbot_id) ||
+          data.webhook_message_type === 'message');
+
+      if (!shouldSkipMessageCreation) {
+        await this.createChatMessage(chat, data);
+      }
 
       return chat;
     }
@@ -305,6 +313,18 @@ export class MessageUpsertConsume {
       if (ignoreResult === 'ignore_automation') {
         await this.saveChatWithCaches(newChat);
       }
+    }
+
+    const isMessageEmpty = this.isMessageEmpty(data);
+    const shouldSkipMessageCreation =
+      isMessageEmpty &&
+      ((data.webhook_message_type === 'chatbot' && data.webhook_chatbot_id) ||
+        data.webhook_message_type === 'message');
+
+    if (shouldSkipMessageCreation) {
+      await this.saveChatWithCaches(newChat);
+      await this.centrifugoChatQueuePublish(newChat);
+      return newChat;
     }
 
     await this.handleNewChatMessageAndPublish(newChat, data);
@@ -1994,6 +2014,13 @@ export class MessageUpsertConsume {
     return name;
   }
 
+  private isMessageEmpty(data: IUpsertMessage): boolean {
+    const messageText =
+      data.message?.message?.extendedTextMessage?.text ??
+      data.message?.message?.conversation;
+    return !messageText || messageText.trim() === '';
+  }
+
   private buildMessageContent(data: IUpsertMessage): IContent {
     const extended = data?.message?.message?.extendedTextMessage;
 
@@ -2235,11 +2262,27 @@ export class MessageUpsertConsume {
 
       await this.processTransferIfNeeded(t, createChat, data);
 
+      const isMessageEmpty = this.isMessageEmpty(data);
+      const shouldSkipMessageCreation =
+        isMessageEmpty && data.webhook_message_type === 'message';
+
+      if (shouldSkipMessageCreation) {
+        await this.saveChatWithCaches(createChat);
+        await this.centrifugoChatQueuePublish(createChat);
+        return;
+      }
+
       return this.handleNewChatMessageAndPublish(createChat, data);
     }
 
+    const isMessageEmpty = this.isMessageEmpty(data);
+    const shouldSkipMessageCreation =
+      isMessageEmpty && data.webhook_message_type === 'message';
+
     await this.processTransferIfNeeded(t, getChat, data);
-    await this.createChatMessage(getChat, data);
+    if (!shouldSkipMessageCreation) {
+      await this.createChatMessage(getChat, data);
+    }
   }
 
   private async processTransferIfNeeded(
@@ -2616,15 +2659,10 @@ export class MessageUpsertConsume {
   }
 
   public async close(): Promise<void> {
-    console.log('[MessageUpsert] Initiating graceful shutdown...');
     this.isRunning = false;
 
     const pendingChains = Array.from(this.partitionChains.values());
     if (pendingChains.length > 0) {
-      console.log(
-        `[MessageUpsert] Waiting for ${pendingChains.length} partition chains to complete...`
-      );
-
       const SHUTDOWN_TIMEOUT_MS = 30000;
       const chainsPromise = Promise.allSettled(pendingChains);
       const timeoutPromise = new Promise<'timeout'>((resolve) =>
@@ -2637,8 +2675,6 @@ export class MessageUpsertConsume {
         console.warn(
           `[MessageUpsert] WARNING: Shutdown timeout after ${SHUTDOWN_TIMEOUT_MS}ms. Some messages may be reprocessed on restart.`
         );
-      } else {
-        console.log('[MessageUpsert] All partition chains completed.');
       }
     }
 
@@ -2656,7 +2692,6 @@ export class MessageUpsertConsume {
         consumer.unsubscribe();
         consumer.disconnect(resolve);
       });
-      console.log('[MessageUpsert] Consumer disconnected successfully.');
     } finally {
       this.consumer = null;
       this.partitionChains.clear();

@@ -5244,7 +5244,7 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       throw new Error(t('chatbot_flow_not_found'));
     }
 
-    return this.processNextNode(
+    const result = await this.processNextNode(
       t,
       createChat,
       chatbotFlow,
@@ -5252,6 +5252,8 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       customMessages,
       data
     );
+
+    return result;
   }
 
   private async processFlowNode(
@@ -5458,6 +5460,32 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
     const conditions = currentNode.data?.conditions;
 
     if (!Array.isArray(conditions) || conditions.length === 0) {
+      const defaultFlowId = this.getNextFlowIdByDefaultHandle(
+        chatbotFlow,
+        currentFlowId
+      );
+
+      if (defaultFlowId) {
+        return this.processNextNode(
+          t,
+          createChat,
+          chatbotFlow,
+          defaultFlowId,
+          customMessages
+        );
+      }
+
+      const nextFlowId = this.getNextFlowId(chatbotFlow, currentFlowId);
+      if (nextFlowId) {
+        return this.processNextNode(
+          t,
+          createChat,
+          chatbotFlow,
+          nextFlowId,
+          customMessages
+        );
+      }
+
       return false;
     }
 
@@ -5466,6 +5494,32 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
     );
 
     if (!userText) {
+      const defaultFlowId = this.getNextFlowIdByDefaultHandle(
+        chatbotFlow,
+        currentFlowId
+      );
+
+      if (defaultFlowId) {
+        return this.processNextNode(
+          t,
+          createChat,
+          chatbotFlow,
+          defaultFlowId,
+          customMessages
+        );
+      }
+
+      const nextFlowId = this.getNextFlowId(chatbotFlow, currentFlowId);
+      if (nextFlowId) {
+        return this.processNextNode(
+          t,
+          createChat,
+          chatbotFlow,
+          nextFlowId,
+          customMessages
+        );
+      }
+
       return false;
     }
 
@@ -5532,6 +5586,17 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
         createChat,
         chatbotFlow,
         defaultFlowId,
+        customMessages
+      );
+    }
+
+    const nextFlowId = this.getNextFlowId(chatbotFlow, currentFlowId);
+    if (nextFlowId) {
+      return this.processNextNode(
+        t,
+        createChat,
+        chatbotFlow,
+        nextFlowId,
         customMessages
       );
     }
