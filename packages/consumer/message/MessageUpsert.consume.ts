@@ -601,6 +601,119 @@ export class MessageUpsertConsume {
     return true;
   }
 
+  private async handlePinMessage(
+    getChat: IChat,
+    data: IUpsertMessage
+  ): Promise<void> {
+    if (data.type !== EMessageType.system) {
+      return;
+    }
+
+    const pinMessage = (data?.message?.message as any)?.pinInChatMessage;
+    if (!pinMessage?.key?.id) {
+      return;
+    }
+
+    const targetMessageId = pinMessage.key.id;
+    const targetMessage = await this.findMessageByKeyId(
+      data.account_id,
+      getChat.chat_id,
+      targetMessageId
+    );
+
+    if (!targetMessage) {
+      return;
+    }
+
+    const jid = remoteJid(data.message?.key);
+    const jidAlt = remoteJidAlt(data.message?.key);
+    const phone = getPhoneFromJid(jid, jidAlt);
+    const pushName = data.message?.pushName;
+    const pinType = pinMessage.type;
+
+    let formattedPhone: string | null = null;
+    if (phone) {
+      const phoneWithPlus = `+${phone}`;
+      const phoneAndDdi = extractPhoneAndDdi(phoneWithPlus);
+      formattedPhone = phoneAndDdi
+        ? `${phoneAndDdi.phone_ddi} ${phoneAndDdi.phone}`
+        : phone;
+    }
+
+    const isUnpin =
+      pinType === 2 ||
+      pinType === '2' ||
+      pinType === 'UNPIN_FOR_ALL' ||
+      pinType === 'UNPIN';
+
+    const pinData = isUnpin
+      ? null
+      : {
+          pin_action: pinType ? String(pinType) : null,
+          pin_user_name: pushName ?? null,
+          pin_user_phone: formattedPhone,
+        };
+
+    const updatedContent: IContent = {
+      ...targetMessage.content,
+      type: targetMessage.content?.type ?? EMessageType.text,
+      pin: pinData,
+    };
+
+    const updatedMessage: IChatMessage = {
+      ...targetMessage,
+      content: updatedContent,
+      has_quoted: targetMessage.has_quoted,
+    };
+
+    await Promise.allSettled([
+      this.chatService.updateMessageChat(updatedMessage),
+      this.centrifugoChatPublish(updatedMessage),
+    ]);
+  }
+
+  private buildTypeUserAndSummary(
+    messageType: EMessageType,
+    isFromMe: boolean
+  ): {
+    typeUser: ETypeUserChat;
+    summary: IChatMessage['summary'];
+  } {
+    if (messageType === EMessageType.system) {
+      return {
+        typeUser: ETypeUserChat.system,
+        summary: {
+          is_sent: true,
+          is_delivered: true,
+          is_seen: true,
+          is_sent_to_internal: true,
+        },
+      };
+    }
+
+    if (isFromMe) {
+      return {
+        typeUser: ETypeUserChat.operator,
+        summary: {
+          is_sent: false,
+          is_delivered: false,
+          is_seen: false,
+          is_sent_to_internal: true,
+        },
+      };
+    }
+
+    return {
+      typeUser: ETypeUserChat.client,
+      summary: {
+        is_sent: true,
+        is_delivered: true,
+        is_seen: true,
+        is_sent_to_internal: true,
+      },
+    };
+  }
+
   private async updateChatPhotoIfNeeded(
     getChat: IChat,
     data: IUpsertMessage
@@ -1763,6 +1876,8 @@ export class MessageUpsertConsume {
         return deleteResult;
       }
 
+      await this.handlePinMessage(getChat, data);
+
       const jid = remoteJid(data.message?.key);
       const jidAlt = remoteJidAlt(data.message?.key);
 
@@ -1788,24 +1903,10 @@ export class MessageUpsertConsume {
       await this.handleContactsMessage(content, data);
 
       const isFromMe = data.message?.key?.fromMe ?? false;
-
-      let typeUser: ETypeUserChat = ETypeUserChat.client;
-      let summary: IChatMessage['summary'] = {
-        is_sent: true,
-        is_delivered: true,
-        is_seen: true,
-        is_sent_to_internal: true,
-      };
-
-      if (isFromMe) {
-        typeUser = ETypeUserChat.operator;
-        summary = {
-          is_sent: false,
-          is_delivered: false,
-          is_seen: false,
-          is_sent_to_internal: true,
-        };
-      }
+      const { typeUser, summary } = this.buildTypeUserAndSummary(
+        data.type,
+        isFromMe
+      );
 
       const inputChatMessage: IChatMessage = {
         message_id: uuidv7(),
@@ -2025,7 +2126,6 @@ export class MessageUpsertConsume {
     const extended = data?.message?.message?.extendedTextMessage;
     const templateMessage =
       data?.message?.message?.templateMessage?.hydratedTemplate;
-    const pinMessage = (data?.message?.message as any)?.pinInChatMessage;
 
     const linkPreview = extended
       ? ({
@@ -2076,27 +2176,34 @@ export class MessageUpsertConsume {
       }
     }
 
-    if (pinMessage && data.type === EMessageType.system) {
-      const jid = remoteJid(data.message?.key);
-      const jidAlt = remoteJidAlt(data.message?.key);
-      const phone = getPhoneFromJid(jid, jidAlt);
-      const pushName = data.message?.pushName;
-      const pinType = pinMessage.type;
+    if (data.type === EMessageType.system) {
+      const pinMessage = (data?.message?.message as any)?.pinInChatMessage;
+      if (pinMessage) {
+        const jid = remoteJid(data.message?.key);
+        const jidAlt = remoteJidAlt(data.message?.key);
+        const phone = getPhoneFromJid(jid, jidAlt);
+        const pushName = data.message?.pushName;
+        const pinType = pinMessage.type;
 
-      let formattedPhone: string | null = null;
-      if (phone) {
-        const phoneWithPlus = `+${phone}`;
-        const phoneAndDdi = extractPhoneAndDdi(phoneWithPlus);
-        formattedPhone = phoneAndDdi
-          ? `${phoneAndDdi.phone_ddi} ${phoneAndDdi.phone}`
-          : phone;
+        let formattedPhone: string | null = null;
+        if (phone) {
+          const phoneWithPlus = `+${phone}`;
+          const phoneAndDdi = extractPhoneAndDdi(phoneWithPlus);
+          formattedPhone = phoneAndDdi
+            ? `${phoneAndDdi.phone_ddi} ${phoneAndDdi.phone}`
+            : phone;
+        }
+
+        content.pin = {
+          pin_action: pinType ? String(pinType) : null,
+          pin_user_name: pushName ?? null,
+          pin_user_phone: formattedPhone,
+        };
+
+        if (!content.message) {
+          content.message = '';
+        }
       }
-
-      content.pin = {
-        pin_action: pinType ? String(pinType) : null,
-        pin_user_name: pushName ?? null,
-        pin_user_phone: formattedPhone,
-      };
     }
 
     return content;

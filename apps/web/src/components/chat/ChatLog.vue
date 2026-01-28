@@ -680,8 +680,10 @@ const getPinMessageText = (message: ListMessageResult): string | null => {
 const getLatestMessageText = (message: ListMessageResult): string => {
   if (!message.content) return '';
 
-  const pinText = getPinMessageText(message);
-  if (pinText) return pinText;
+  if (message.content.type === EMessageType.system) {
+    const pinText = getPinMessageText(message);
+    if (pinText) return pinText;
+  }
 
   const versions = message.content.version;
   if (versions && versions.length > 0) {
@@ -3293,10 +3295,11 @@ onUnmounted(() => {
                       !item.message.message_key?.is_view_once &&
                       !item.message.content?.template
                     "
+                    class="d-flex align-center"
                   >
                     <p
                       v-if="shouldFormatMessage(item.message)"
-                      class="mr-6 text-base message-text"
+                      class="text-base message-text"
                       :class="{
                         'mb-2':
                           !hasMessageVersions(item.message) &&
@@ -3304,6 +3307,8 @@ onUnmounted(() => {
                         'mb-6':
                           hasMessageVersions(item.message) ||
                           item.message.deleted,
+                        'mr-2': item.message.content?.pin,
+                        'mr-6': !item.message.content?.pin,
                       }"
                       :style="{
                         color:
@@ -3319,7 +3324,7 @@ onUnmounted(() => {
                     ></p>
                     <p
                       v-else
-                      class="mr-6 text-base message-text"
+                      class="text-base message-text"
                       :class="{
                         'mb-2':
                           !hasMessageVersions(item.message) &&
@@ -3327,6 +3332,8 @@ onUnmounted(() => {
                         'mb-6':
                           hasMessageVersions(item.message) ||
                           item.message.deleted,
+                        'mr-2': item.message.content?.pin,
+                        'mr-6': !item.message.content?.pin,
                       }"
                       :style="{
                         color:
@@ -3339,6 +3346,17 @@ onUnmounted(() => {
                     >
                       {{ getLatestMessageText(item.message) }}
                     </p>
+                    <VIcon
+                      v-if="
+                        item.message.content?.pin &&
+                        item.message.content?.type !== EMessageType.system
+                      "
+                      size="16"
+                      color="grey-600"
+                      class="pin-icon"
+                    >
+                      tabler-pin
+                    </VIcon>
                   </div>
 
                   <div
