@@ -414,7 +414,7 @@ export class ChatbotFlowRunnerService {
     return this.chatMessageService.sendMessage(t, {
       chat: createChat,
       accountId: createChat.account.id,
-      type: EMessageType.text,
+      type: EMessageType.system,
       message,
       typeUser: ETypeUserChat.bot,
     });
@@ -441,7 +441,7 @@ export class ChatbotFlowRunnerService {
     return this.chatMessageService.sendMessage(t, {
       chat: createChat,
       accountId: createChat.account.id,
-      type: EMessageType.text,
+      type: EMessageType.system,
       message,
       typeUser: ETypeUserChat.bot,
     });
@@ -468,7 +468,7 @@ export class ChatbotFlowRunnerService {
     return this.chatMessageService.sendMessage(t, {
       chat: createChat,
       accountId: createChat.account.id,
-      type: EMessageType.text,
+      type: EMessageType.system,
       message,
       typeUser: ETypeUserChat.bot,
     });
@@ -495,7 +495,7 @@ export class ChatbotFlowRunnerService {
     return this.chatMessageService.sendMessage(t, {
       chat: createChat,
       accountId: createChat.account.id,
-      type: EMessageType.text,
+      type: EMessageType.system,
       message,
       typeUser: ETypeUserChat.bot,
     });
@@ -890,7 +890,7 @@ export class ChatbotFlowRunnerService {
         this.chatMessageService.sendMessage(t, {
           chat: createChat,
           accountId: createChat.account.id,
-          type: EMessageType.text,
+          type: EMessageType.system,
           message,
           typeUser: ETypeUserChat.bot,
         })
@@ -1702,7 +1702,7 @@ export class ChatbotFlowRunnerService {
         await this.chatMessageService.sendMessage(t, {
           chat: updatedChat,
           accountId: updatedChat.account.id,
-          type: EMessageType.text,
+          type: EMessageType.system,
           message: transferMessage,
           typeUser: ETypeUserChat.bot,
         });
@@ -1802,7 +1802,7 @@ export class ChatbotFlowRunnerService {
       await this.chatMessageService.sendMessage(t, {
         chat: updatedChat,
         accountId: updatedChat.account.id,
-        type: EMessageType.text,
+        type: EMessageType.system,
         message: transferMessage,
         typeUser: ETypeUserChat.bot,
       });
@@ -2687,7 +2687,7 @@ export class ChatbotFlowRunnerService {
     await this.chatMessageService.sendMessage(t, {
       chat: createChat,
       accountId: createChat.account.id,
-      type: EMessageType.text,
+      type: EMessageType.system,
       message: inactivityMessage,
       typeUser: ETypeUserChat.bot,
     });
@@ -3237,7 +3237,7 @@ export class ChatbotFlowRunnerService {
     await this.chatMessageService.sendMessage(t, {
       chat: updatedChat,
       accountId: updatedChat.account.id,
-      type: EMessageType.text,
+      type: EMessageType.system,
       message: transferMessage,
       typeUser: ETypeUserChat.bot,
     });
@@ -5829,7 +5829,7 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
         await this.chatMessageService.sendMessage(t, {
           chat: updatedChat,
           accountId: updatedChat.account.id,
-          type: EMessageType.text,
+          type: EMessageType.system,
           message: transferMessage,
           typeUser: ETypeUserChat.bot,
         });
@@ -5975,7 +5975,7 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       await this.chatMessageService.sendMessage(t, {
         chat: updatedChat,
         accountId: updatedChat.account.id,
-        type: EMessageType.text,
+        type: EMessageType.system,
         message: transferMessage,
         typeUser: ETypeUserChat.bot,
       });
