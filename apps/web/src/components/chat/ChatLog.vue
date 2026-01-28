@@ -2331,6 +2331,19 @@ onUnmounted(() => {
 
                 <div class="message-block">
                   <div
+                    v-if="item.message.content?.context_info?.is_forwarded"
+                    class="forwarded-indicator"
+                    :class="{
+                      'forwarded-indicator--left': isTypeUser(item.message),
+                      'forwarded-indicator--right': !isTypeUser(item.message),
+                    }"
+                  >
+                    <VIcon size="14" class="forwarded-icon">
+                      tabler-corner-up-right
+                    </VIcon>
+                    <span class="forwarded-text">{{ t('forwarded') }}</span>
+                  </div>
+                  <div
                     v-if="showQuoted(item.message)"
                     class="quoted-block"
                     :class="{
@@ -4359,6 +4372,32 @@ onUnmounted(() => {
 
       &.has-actions {
         padding-inline-end: 40px;
+      }
+
+      .forwarded-indicator {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 12px;
+        font-style: italic;
+        margin-bottom: 4px;
+        opacity: 0.7;
+      }
+
+      .forwarded-indicator--left {
+        color: rgb(var(--v-theme-on-surface));
+      }
+
+      .forwarded-indicator--right {
+        color: rgba(17, 27, 33, 0.7);
+      }
+
+      .forwarded-icon {
+        transform: scaleX(-1);
+      }
+
+      .forwarded-text {
+        font-weight: 400;
       }
 
       .quoted-block {

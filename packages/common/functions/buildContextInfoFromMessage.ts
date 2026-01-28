@@ -12,6 +12,8 @@ export interface IMessageContextInfo {
   entry_point_conversion_delay_seconds?: number | null;
   trust_banner_action?: number | null;
   ctwa_signals?: string | null;
+  is_forwarded?: boolean | null;
+  forwarding_score?: number | null;
 }
 
 export interface IExternalAdReply {
@@ -124,6 +126,9 @@ export function buildContextInfoFromMessage(
           .filter(Boolean) as string[])
       : [];
 
+  const isForwarded = contextInfo.isForwarded ?? false;
+  const forwardingScore = contextInfo.forwardingScore ?? null;
+
   if (
     mentionedJid.length === 0 &&
     groupMentionsStrings.length === 0 &&
@@ -131,7 +136,8 @@ export function buildContextInfoFromMessage(
     !contextInfo.conversionSource &&
     !contextInfo.externalAdReply &&
     !contextInfo.entryPointConversionSource &&
-    !contextInfo.ctwaSignals
+    !contextInfo.ctwaSignals &&
+    !isForwarded
   ) {
     return null;
   }
@@ -152,5 +158,7 @@ export function buildContextInfoFromMessage(
       contextInfo.entryPointConversionDelaySeconds ?? null,
     trust_banner_action: contextInfo.trustBannerAction ?? null,
     ctwa_signals: contextInfo.ctwaSignals ?? null,
+    is_forwarded: isForwarded || null,
+    forwarding_score: forwardingScore,
   };
 }

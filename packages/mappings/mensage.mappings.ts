@@ -737,6 +737,12 @@ export const mensageMappings = () => {
                 ctwa_signals: {
                   type: 'keyword',
                 },
+                is_forwarded: {
+                  type: 'boolean',
+                },
+                forwarding_score: {
+                  type: 'integer',
+                },
               },
             },
             template: {

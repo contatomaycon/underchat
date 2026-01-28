@@ -197,6 +197,8 @@ export const contextInfoSchema = Type.Object(
       Type.Union([Type.Number(), Type.Null()])
     ),
     ctwa_signals: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    is_forwarded: Type.Optional(Type.Union([Type.Boolean(), Type.Null()])),
+    forwarding_score: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
   },
   { additionalProperties: true }
 );
