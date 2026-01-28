@@ -22,31 +22,25 @@ function hasQuotedRecursive(msg: proto.IMessage): boolean {
     msg.audioMessage,
     msg.documentMessage,
     msg.stickerMessage,
-    (msg as any).buttonsMessage,
-    (msg as any).templateButtonReplyMessage,
-    (msg as any).interactiveResponseMessage,
+    msg.buttonsMessage,
+    msg.templateButtonReplyMessage,
+    msg.interactiveResponseMessage,
   ]
     .map((entry) => entry?.contextInfo)
     .filter(Boolean);
 
   if (contextSources.some((ctx) => ctx?.quotedMessage)) return true;
 
-  if ((msg as any).ephemeralMessage?.message)
-    return hasQuotedRecursive(
-      (msg as any).ephemeralMessage.message as proto.IMessage
-    );
+  if (msg.ephemeralMessage?.message)
+    return hasQuotedRecursive(msg.ephemeralMessage.message as proto.IMessage);
 
   return false;
 }
 
 function getViewOnceInner(msg: proto.IMessage): proto.IMessage | undefined {
-  const v1 = (msg as any).viewOnceMessage?.message as
-    | proto.IMessage
-    | undefined;
-  const v2 = (msg as any).viewOnceMessageV2?.message as
-    | proto.IMessage
-    | undefined;
-  const v3 = (msg as any).viewOnceMessageV2Extension?.message as
+  const v1 = msg.viewOnceMessage?.message as proto.IMessage | undefined;
+  const v2 = msg.viewOnceMessageV2?.message as proto.IMessage | undefined;
+  const v3 = msg.viewOnceMessageV2Extension?.message as
     | proto.IMessage
     | undefined;
 
@@ -54,25 +48,35 @@ function getViewOnceInner(msg: proto.IMessage): proto.IMessage | undefined {
 }
 
 function unwrapMessage(msg: proto.IMessage): proto.IMessage {
-  const ephemeral = (msg as any).ephemeralMessage?.message as
-    | proto.IMessage
-    | undefined;
+  const ephemeral = msg.ephemeralMessage?.message as proto.IMessage | undefined;
   if (ephemeral) return unwrapMessage(ephemeral);
 
-  const viewOnce = (msg as any).viewOnceMessage?.message as
-    | proto.IMessage
-    | undefined;
+  const viewOnce = msg.viewOnceMessage?.message as proto.IMessage | undefined;
   if (viewOnce) return unwrapMessage(viewOnce);
 
-  const viewOnceV2 = (msg as any).viewOnceMessageV2?.message as
+  const viewOnceV2 = msg.viewOnceMessageV2?.message as
     | proto.IMessage
     | undefined;
   if (viewOnceV2) return unwrapMessage(viewOnceV2);
 
-  const viewOnceV2Ext = (msg as any).viewOnceMessageV2Extension?.message as
+  const viewOnceV2Ext = msg.viewOnceMessageV2Extension?.message as
     | proto.IMessage
     | undefined;
   if (viewOnceV2Ext) return unwrapMessage(viewOnceV2Ext);
+
+  const documentWithCaption = (msg as any).documentWithCaptionMessage
+    ?.message as proto.IMessage | undefined;
+  if (documentWithCaption) return unwrapMessage(documentWithCaption);
+
+  const imageWithCaption = (msg as any).imageWithCaptionMessage?.message as
+    | proto.IMessage
+    | undefined;
+  if (imageWithCaption) return unwrapMessage(imageWithCaption);
+
+  const videoWithCaption = (msg as any).videoWithCaptionMessage?.message as
+    | proto.IMessage
+    | undefined;
+  if (videoWithCaption) return unwrapMessage(videoWithCaption);
 
   return msg;
 }
@@ -86,14 +90,20 @@ function detectReactionOrPin({ msg }: IMapCtx): EMessageType | undefined {
 }
 
 function detectMedia({ msg }: IMapCtx): EMessageType | undefined {
-  if (msg.imageMessage) return EMessageType.image;
-  if (msg.videoMessage) return EMessageType.video;
-  if (msg.audioMessage) return EMessageType.audio;
-  if (msg.stickerMessage) return EMessageType.sticker;
-  if (msg.documentMessage) return EMessageType.document;
-  if (msg.locationMessage) return EMessageType.location;
-  if (msg.contactMessage) return EMessageType.contact_card;
-  if (msg.contactsArrayMessage) return EMessageType.contacts;
+  const unwrapped = unwrapMessage(msg);
+  if (msg.imageMessage || unwrapped.imageMessage) return EMessageType.image;
+  if (msg.videoMessage || unwrapped.videoMessage) return EMessageType.video;
+  if (msg.audioMessage || unwrapped.audioMessage) return EMessageType.audio;
+  if (msg.stickerMessage || unwrapped.stickerMessage)
+    return EMessageType.sticker;
+  if (msg.documentMessage || unwrapped.documentMessage)
+    return EMessageType.document;
+  if (msg.locationMessage || unwrapped.locationMessage)
+    return EMessageType.location;
+  if (msg.contactMessage || unwrapped.contactMessage)
+    return EMessageType.contact_card;
+  if (msg.contactsArrayMessage || unwrapped.contactsArrayMessage)
+    return EMessageType.contacts;
 }
 
 function detectProtocol({ pType, msg }: IMapCtx): EMessageType | undefined {

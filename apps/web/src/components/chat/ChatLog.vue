@@ -3460,6 +3460,17 @@ onUnmounted(() => {
                     </a>
                   </div>
 
+                  <p
+                    v-if="
+                      item.message.content?.type === EMessageType.document &&
+                      item.message.content?.document?.caption
+                    "
+                    class="chat-text mt-2 mb-0"
+                    v-html="
+                      formatWhatsAppText(item.message.content.document.caption)
+                    "
+                  />
+
                   <div
                     v-if="
                       item.message.content?.reactions &&

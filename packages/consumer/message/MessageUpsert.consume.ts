@@ -868,14 +868,73 @@ export class MessageUpsertConsume {
     ]);
   }
 
+  private getDocumentMessage(
+    data: IUpsertMessage
+  ): proto.Message.IDocumentMessage | null {
+    const msg = data.message?.message;
+    if (!msg) return null;
+
+    if (msg.documentMessage?.url) {
+      return msg.documentMessage;
+    }
+
+    const withCaption = (msg as any).documentWithCaptionMessage?.message
+      ?.documentMessage as proto.Message.IDocumentMessage | undefined;
+    if (withCaption?.url) {
+      return withCaption;
+    }
+
+    return null;
+  }
+
+  private getImageMessage(
+    data: IUpsertMessage
+  ): proto.Message.IImageMessage | null {
+    const msg = data.message?.message;
+    if (!msg) return null;
+
+    if (msg.imageMessage?.url) {
+      return msg.imageMessage;
+    }
+
+    const withCaption = (msg as any).imageWithCaptionMessage?.message
+      ?.imageMessage as proto.Message.IImageMessage | undefined;
+    if (withCaption?.url) {
+      return withCaption;
+    }
+
+    return null;
+  }
+
+  private getVideoMessage(
+    data: IUpsertMessage
+  ): proto.Message.IVideoMessage | null {
+    const msg = data.message?.message;
+    if (!msg) return null;
+
+    if (msg.videoMessage?.url) {
+      return msg.videoMessage;
+    }
+
+    const withCaption = (msg as any).videoWithCaptionMessage?.message
+      ?.videoMessage as proto.Message.IVideoMessage | undefined;
+    if (withCaption?.url) {
+      return withCaption;
+    }
+
+    return null;
+  }
+
   private async handleImageMessage(
     content: IContent,
     data: IUpsertMessage
   ): Promise<void> {
-    if (
-      content.type !== EMessageType.image ||
-      !data.message?.message?.imageMessage?.url
-    ) {
+    if (content.type !== EMessageType.image) {
+      return;
+    }
+
+    const imageMsg = this.getImageMessage(data);
+    if (!imageMsg) {
       return;
     }
 
@@ -890,12 +949,12 @@ export class MessageUpsertConsume {
       content.image = photoResult
         ? {
             url: photoResult.url,
-            caption: data.message.message.imageMessage.caption ?? null,
-            mimetype: data.message.message.imageMessage.mimetype,
+            caption: imageMsg.caption ?? null,
+            mimetype: imageMsg.mimetype,
             extension: photoResult.extension,
             size: photoResult.size,
-            height: data.message.message.imageMessage.height,
-            width: data.message.message.imageMessage.width,
+            height: imageMsg.height,
+            width: imageMsg.width,
           }
         : undefined;
     } catch (error) {
@@ -911,15 +970,16 @@ export class MessageUpsertConsume {
     content: IContent,
     data: IUpsertMessage
   ): Promise<void> {
-    if (
-      content.type !== EMessageType.video ||
-      !data.message?.message?.videoMessage?.url
-    ) {
+    if (content.type !== EMessageType.video) {
+      return;
+    }
+
+    const videoMsg = this.getVideoMessage(data);
+    if (!videoMsg) {
       return;
     }
 
     try {
-      const videoMsg = data.message.message.videoMessage;
       const buffer = await this.downloadMediaMessageWithTimeout(data.message);
 
       const inferredVideoName =
@@ -1019,15 +1079,16 @@ export class MessageUpsertConsume {
     content: IContent,
     data: IUpsertMessage
   ): Promise<void> {
-    if (
-      content.type !== EMessageType.document ||
-      !data.message?.message?.documentMessage?.url
-    ) {
+    if (content.type !== EMessageType.document) {
+      return;
+    }
+
+    const documentMsg = this.getDocumentMessage(data);
+    if (!documentMsg) {
       return;
     }
 
     try {
-      const documentMsg = data.message.message.documentMessage;
       const buffer = await this.downloadMediaMessageWithTimeout(data.message);
 
       const documentResult = await this.storageService.uploadFromBuffer(
@@ -1042,6 +1103,7 @@ export class MessageUpsertConsume {
       content.document = documentResult
         ? {
             url: documentResult.url,
+            caption: documentMsg.caption ?? null,
             name: documentMsg.fileName ?? documentResult.name,
             mimetype: documentMsg.mimetype ?? documentResult.mimetype ?? null,
             extension: documentResult.extension,
