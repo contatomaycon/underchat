@@ -683,17 +683,18 @@ const getPinMessageText = (message: ListMessageResult): string | null => {
 const getLatestMessageText = (message: ListMessageResult): string => {
   if (!message.content) return '';
 
-  if (message.content.type === EMessageType.system) {
-    const pinText = getPinMessageText(message);
-    if (pinText) return pinText;
-  }
-
   const versions = message.content.version;
   if (versions && versions.length > 0) {
     const sortedVersions = [...versions].sort(
       (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
     );
     return sortedVersions[0].message || '';
+  }
+
+  const hasMessageContent = !!message.content.message?.trim();
+  if (message.content.type === EMessageType.system && !hasMessageContent) {
+    const pinText = getPinMessageText(message);
+    if (pinText) return pinText;
   }
 
   return message.content.message || '';
@@ -3275,9 +3276,14 @@ onUnmounted(() => {
                       (item.message.content?.pin ||
                         item.message.content?.message)
                     "
+                    class="d-flex align-center"
                   >
                     <p
                       class="text-base message-text mb-2"
+                      :class="{
+                        'mr-2': item.message.content?.pin,
+                        'mr-6': !item.message.content?.pin,
+                      }"
                       :style="{
                         color: 'rgb(var(--v-theme-on-surface))',
                       }"
@@ -3292,6 +3298,17 @@ onUnmounted(() => {
                         getLatestMessageText(item.message)
                       }}</span>
                     </p>
+                    <VIcon
+                      v-if="
+                        item.message.content?.pin &&
+                        item.message.content?.message?.trim()
+                      "
+                      size="16"
+                      color="grey-600"
+                      class="pin-icon"
+                    >
+                      tabler-pin
+                    </VIcon>
                   </div>
 
                   <div
