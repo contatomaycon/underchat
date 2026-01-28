@@ -72,7 +72,8 @@ export class WorkerConnectionStatusConsume {
       const stop = startHeartbeat(heartbeat);
       try {
         await this.handleConnectionStatus(data);
-      } catch {
+      } catch (error) {
+        console.error('Error handling connection status:', error);
         await this.commitNext(topic, message.partition, message.offset);
       } finally {
         stop();

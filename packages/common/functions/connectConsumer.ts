@@ -4,7 +4,7 @@ import { logger } from '@core/plugins/telemetry/logger';
 import { captureException } from '@core/plugins/telemetry/sentry';
 
 const TIMEOUT_ERROR_CODE = -185;
-const FALLBACK_DELAY_MS = 5000;
+const FALLBACK_DELAY_MS = 1000;
 
 function isTimeoutError(error: unknown): boolean {
   if (!error || typeof error !== 'object') {
@@ -412,9 +412,7 @@ export async function connectConsumer(
   topic: string,
   onConnected: () => void
 ): Promise<void> {
-  setImmediate(() => {
-    connectInBackground(consumer, topic, onConnected);
-  });
+  connectInBackground(consumer, topic, onConnected);
 
   return Promise.resolve();
 }
