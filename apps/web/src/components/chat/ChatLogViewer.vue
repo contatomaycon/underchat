@@ -895,6 +895,9 @@ const resolveQuotedImageMeta = (m: ListMessageResult): string => {
 };
 
 const resolveQuotedVideoName = (m: ListMessageResult): string => {
+  if (m.content?.quoted?.type === EMessageType.video_note) {
+    return t('video_note_label');
+  }
   return t('video_label');
 };
 

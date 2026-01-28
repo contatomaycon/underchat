@@ -44,13 +44,14 @@ function getContextInfoFromMessage(
     message.extendedTextMessage?.contextInfo,
     message.imageMessage?.contextInfo,
     message.videoMessage?.contextInfo,
+    message.ptvMessage?.contextInfo,
     message.documentMessage?.contextInfo,
     message.audioMessage?.contextInfo,
     message.stickerMessage?.contextInfo,
     message.locationMessage?.contextInfo,
     message.contactMessage?.contextInfo,
-    (message as any).buttonsMessage?.contextInfo,
-    (message as any).templateButtonReplyMessage?.contextInfo,
+    message.buttonsMessage?.contextInfo,
+    message.templateButtonReplyMessage?.contextInfo,
     (message as any).interactiveResponseMessage?.contextInfo,
   ];
 

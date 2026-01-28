@@ -37,7 +37,9 @@ const replyIsDocument = computed(
 );
 
 const replyIsVideo = computed(
-  () => replying.value?.content?.type === EMessageType.video
+  () =>
+    replying.value?.content?.type === EMessageType.video ||
+    replying.value?.content?.type === EMessageType.video_note
 );
 
 const replyIsAudio = computed(
@@ -54,10 +56,7 @@ const replyIsLocation = computed(
 
 const replyIsContact = computed(() => {
   const type = replying.value?.content?.type;
-  return (
-    type === EMessageType.contact_card ||
-    type === EMessageType.contacts
-  );
+  return type === EMessageType.contact_card || type === EMessageType.contacts;
 });
 
 const replyIsContactGroup = computed(
@@ -83,7 +82,10 @@ const replyStickerSrc = computed(() => {
 });
 
 const replyContactPhoto = computed(() => {
-  if (replying.value?.content?.type === EMessageType.contact_card && replying.value.content.contact) {
+  if (
+    replying.value?.content?.type === EMessageType.contact_card &&
+    replying.value.content.contact
+  ) {
     return replying.value.content.contact.photo || null;
   }
   return null;
@@ -105,6 +107,10 @@ const replyText = computed(() => {
 
   if (m.content?.type === EMessageType.video) {
     return m.content.video?.caption || t('video_label');
+  }
+
+  if (m.content?.type === EMessageType.video_note) {
+    return m.content.video?.caption || t('video_note_label');
   }
 
   if (m.content?.type === EMessageType.audio) {
@@ -131,7 +137,11 @@ const replyText = computed(() => {
     return contactName;
   }
 
-  if (m.content?.type === EMessageType.contacts && m.content.contacts && m.content.contacts.length > 0) {
+  if (
+    m.content?.type === EMessageType.contacts &&
+    m.content.contacts &&
+    m.content.contacts.length > 0
+  ) {
     const firstContact = m.content.contacts[0];
     let groupName = '';
     if (m.content.contacts.length === 1) {
@@ -141,11 +151,7 @@ const replyText = computed(() => {
         m.content.contacts.length > 1
           ? ` e ${m.content.contacts.length - 1}`
           : ''
-      }${
-        m.content.contacts.length > 1
-          ? ' outro contato'
-          : ''
-      }`;
+      }${m.content.contacts.length > 1 ? ' outro contato' : ''}`;
     }
     if (m.content.message) {
       return `${groupName} - ${m.content.message}`;
@@ -280,15 +286,8 @@ onMounted(() => {
       <VIcon size="26" color="primary">tabler-map-pin</VIcon>
     </div>
     <div v-if="replyIsContact" class="rp-doc-icon rp-contact-icon">
-      <VAvatar
-        v-if="replyContactPhoto"
-        size="26"
-        class="rp-contact-avatar"
-      >
-        <VImg
-          :src="replyContactPhoto"
-          :alt="replyText"
-        />
+      <VAvatar v-if="replyContactPhoto" size="26" class="rp-contact-avatar">
+        <VImg :src="replyContactPhoto" :alt="replyText" />
       </VAvatar>
       <VIcon
         v-else

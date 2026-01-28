@@ -9,6 +9,9 @@ function getTextByMessageType(content: IContent): string | null {
     case EMessageType.video:
       return content.video?.caption ?? '[Vídeo]';
 
+    case EMessageType.video_note:
+      return content.video?.caption ?? '[Recado de vídeo]';
+
     case EMessageType.location:
       return (
         content.location?.name ?? content.location?.address ?? '[Localização]'

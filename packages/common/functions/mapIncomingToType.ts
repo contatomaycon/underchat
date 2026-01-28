@@ -19,6 +19,7 @@ function hasQuotedRecursive(msg: proto.IMessage): boolean {
     msg.extendedTextMessage,
     msg.imageMessage,
     msg.videoMessage,
+    msg.ptvMessage,
     msg.audioMessage,
     msg.documentMessage,
     msg.stickerMessage,
@@ -92,6 +93,7 @@ function detectReactionOrPin({ msg }: IMapCtx): EMessageType | undefined {
 function detectMedia({ msg }: IMapCtx): EMessageType | undefined {
   const unwrapped = unwrapMessage(msg);
   if (msg.imageMessage || unwrapped.imageMessage) return EMessageType.image;
+  if (msg.ptvMessage || unwrapped.ptvMessage) return EMessageType.video_note;
   if (msg.videoMessage || unwrapped.videoMessage) return EMessageType.video;
   if (msg.audioMessage || unwrapped.audioMessage) return EMessageType.audio;
   if (msg.stickerMessage || unwrapped.stickerMessage)

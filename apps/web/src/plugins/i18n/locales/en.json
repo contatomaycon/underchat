@@ -634,6 +634,7 @@
   "can_select_more_videos": "You can select up to {count} video(s).",
   "document_label": "Document",
   "video_label": "Video",
+  "video_note_label": "Video note",
   "accounts": "Accounts",
   "subscribers": "Subscribers",
   "cancelling": "Cancelling",

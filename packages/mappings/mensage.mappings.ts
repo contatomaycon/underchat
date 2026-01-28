@@ -203,6 +203,15 @@ export const mensageMappings = () => {
                         },
                       },
                     },
+                    name: {
+                      type: 'text',
+                      fields: {
+                        keyword: {
+                          type: 'keyword',
+                          ignore_above: 256,
+                        },
+                      },
+                    },
                     mimetype: {
                       type: 'keyword',
                     },
@@ -409,6 +418,15 @@ export const mensageMappings = () => {
                   type: 'keyword',
                 },
                 caption: {
+                  type: 'text',
+                  fields: {
+                    keyword: {
+                      type: 'keyword',
+                      ignore_above: 256,
+                    },
+                  },
+                },
+                name: {
                   type: 'text',
                   fields: {
                     keyword: {

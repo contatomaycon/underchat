@@ -599,7 +599,10 @@ const isDownloadableVideo = (message: ListMessageResult): boolean => {
   if (!video) return false;
   if (!video.url) return false;
   if (message.message_key?.is_view_once) return false;
-  return message.content?.type === EMessageType.video;
+  return (
+    message.content?.type === EMessageType.video ||
+    message.content?.type === EMessageType.video_note
+  );
 };
 
 const isDownloadableAudio = (message: ListMessageResult): boolean => {
@@ -981,6 +984,13 @@ const resolveVideoMeta = (video?: VideoMessageChat | null): string => {
   return [ext, size, duration].filter(Boolean).join(' • ');
 };
 
+const resolveVideoNoteMeta = (video?: VideoMessageChat | null): string => {
+  if (!video) return '';
+  const duration = formatVideoDuration(video.duration);
+  if (duration) return duration;
+  return resolveVideoMeta(video);
+};
+
 const normalizeTimeValue = (value?: number | null): number | null => {
   if (typeof value !== 'number') return null;
   if (!Number.isFinite(value)) return null;
@@ -1222,7 +1232,10 @@ const resolveQuotedText = (m: ListMessageResult): string => {
     return m.content.quoted.message ?? '';
   }
 
-  if (m.content.quoted.type === EMessageType.video) {
+  if (
+    m.content.quoted.type === EMessageType.video ||
+    m.content.quoted.type === EMessageType.video_note
+  ) {
     return m.content.quoted.video?.caption || '';
   }
 
@@ -1418,6 +1431,9 @@ const resolveQuotedImageMeta = (m: ListMessageResult): string => {
 };
 
 const resolveQuotedVideoName = (m: ListMessageResult): string => {
+  if (m.content?.quoted?.type === EMessageType.video_note) {
+    return t('video_note_label');
+  }
   return t('video_label');
 };
 
@@ -2560,6 +2576,8 @@ onUnmounted(() => {
                         v-if="
                           resolveQuotedText(item.message) &&
                           item.message.content?.quoted?.type !==
+                            EMessageType.video_note &&
+                          item.message.content?.quoted?.type !==
                             EMessageType.video &&
                           item.message.content?.quoted?.type !==
                             EMessageType.image &&
@@ -2899,6 +2917,72 @@ onUnmounted(() => {
                     <div class="video-details">
                       <span class="video-meta text-caption text-disabled">
                         {{ resolveVideoMeta(item.message.content.video) }}
+                      </span>
+                    </div>
+                    <div
+                      v-if="item.message.content.video.caption || item.message.content?.pin"
+                      class="d-flex align-center mt-2"
+                    >
+                      <p
+                        v-if="item.message.content.video.caption"
+                        class="video-caption mb-0"
+                        :class="{
+                          'mr-2': item.message.content?.pin,
+                        }"
+                        :style="{
+                          color: isTypeUser(item.message)
+                            ? 'rgb(var(--v-theme-on-surface))'
+                            : 'rgb(var(--v-theme-title))',
+                        }"
+                      >
+                        <span
+                          v-html="
+                            formatWhatsAppText(item.message.content.video.caption)
+                          "
+                        ></span>
+                      </p>
+                      <VIcon
+                        v-if="item.message.content?.pin"
+                        size="16"
+                        color="grey-600"
+                        class="pin-icon"
+                      >
+                        tabler-pin
+                      </VIcon>
+                    </div>
+                  </div>
+
+                  <div
+                    v-if="
+                      item.message.content?.type === EMessageType.video_note &&
+                      item.message.content?.video?.url
+                    "
+                    :class="[
+                      'video-note-bubble',
+                      !isTypeUser(item.message)
+                        ? 'video-note-bubble--right'
+                        : 'video-note-bubble--left',
+                      { 'is-deleted': item.message.deleted },
+                    ]"
+                    @click="openVideo(item.message)"
+                  >
+                    <div class="video-note-thumb-wrapper">
+                      <video
+                        :src="item.message.content.video.url"
+                        class="video-note-thumb"
+                        preload="metadata"
+                        muted
+                        playsinline
+                      >
+                        <track kind="captions" />
+                      </video>
+                      <div class="video-play-overlay">
+                        <VIcon size="28">tabler-player-play</VIcon>
+                      </div>
+                    </div>
+                    <div class="video-note-details">
+                      <span class="video-meta text-caption text-disabled">
+                        {{ resolveVideoNoteMeta(item.message.content.video) }}
                       </span>
                     </div>
                     <div
@@ -3428,6 +3512,7 @@ onUnmounted(() => {
                     v-if="
                       item.message.content?.message &&
                       item.message.content?.type !== EMessageType.image &&
+                      item.message.content?.type !== EMessageType.video_note &&
                       item.message.content?.type !== EMessageType.video &&
                       item.message.content?.type !== EMessageType.document &&
                       item.message.content?.type !==
@@ -4776,6 +4861,32 @@ onUnmounted(() => {
         opacity: 0.7;
       }
 
+      .video-note-bubble {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        max-inline-size: 180px;
+        inline-size: 100%;
+        cursor: pointer;
+        border-radius: 10px;
+        background: rgba(var(--v-theme-on-surface), 0.04);
+        padding: 10px;
+        align-items: center;
+      }
+
+      .video-note-bubble--left {
+        border-start-end-radius: 6px;
+      }
+
+      .video-note-bubble--right {
+        border-start-start-radius: 6px;
+      }
+
+      .video-note-bubble.is-deleted {
+        pointer-events: none;
+        opacity: 0.7;
+      }
+
       .sticker-bubble {
         display: inline-block;
         cursor: pointer;
@@ -4983,6 +5094,23 @@ onUnmounted(() => {
         display: block;
       }
 
+      .video-note-thumb-wrapper {
+        position: relative;
+        inline-size: 120px;
+        block-size: 120px;
+        border-radius: 9999px;
+        overflow: hidden;
+        background: #000;
+      }
+
+      .video-note-thumb {
+        inline-size: 100%;
+        block-size: 100%;
+        object-fit: cover;
+        display: block;
+        border-radius: 9999px;
+      }
+
       .video-play-overlay {
         position: absolute;
         inset: 0;
@@ -5000,6 +5128,10 @@ onUnmounted(() => {
         background: rgba(0, 0, 0, 0.4);
       }
 
+      .video-note-bubble:hover .video-play-overlay {
+        background: rgba(0, 0, 0, 0.4);
+      }
+
       .video-play-overlay .v-icon {
         filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
         transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -5010,10 +5142,21 @@ onUnmounted(() => {
         transform: scale(1.2);
       }
 
+      .video-note-bubble:hover .video-play-overlay .v-icon {
+        transform: scale(1.2);
+      }
+
       .video-details {
         display: flex;
         flex-direction: column;
         gap: 4px;
+      }
+
+      .video-note-details {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        inline-size: 100%;
       }
 
       .video-name {

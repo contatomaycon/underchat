@@ -14,6 +14,7 @@ function createThumbnail(jpegThumbnail?: Uint8Array | null): string | null {
 
 function determineMessageType(quotedMessage: any): EMessageType {
   if (quotedMessage.documentMessage) return EMessageType.document;
+  if (quotedMessage.ptvMessage) return EMessageType.video_note;
   if (quotedMessage.videoMessage) return EMessageType.video;
   if (quotedMessage.imageMessage) return EMessageType.image;
   if (quotedMessage.audioMessage) return EMessageType.audio;
@@ -60,7 +61,7 @@ function processImageMessage(quotedMessage: any, quoted: IQuotedMessage): void {
 }
 
 function processVideoMessage(quotedMessage: any, quoted: IQuotedMessage): void {
-  const videoMessage = quotedMessage.videoMessage;
+  const videoMessage = quotedMessage.videoMessage ?? quotedMessage.ptvMessage;
   if (!videoMessage) return;
 
   const thumbnail = createThumbnail(videoMessage.jpegThumbnail);

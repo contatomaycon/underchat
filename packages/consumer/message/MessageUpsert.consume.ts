@@ -839,6 +839,10 @@ export class MessageUpsertConsume {
       mediaPromises.push(this.handleVideoMessage(content, data));
     }
 
+    if (content.type === EMessageType.video_note) {
+      mediaPromises.push(this.handleVideoMessage(content, data));
+    }
+
     if (content.type === EMessageType.audio) {
       mediaPromises.push(this.handleAudioMessage(content, data));
     }
@@ -909,8 +913,15 @@ export class MessageUpsertConsume {
   private getVideoMessage(
     data: IUpsertMessage
   ): proto.Message.IVideoMessage | null {
-    const msg = data.message?.message;
+    const msg = data.message?.message as
+      | (proto.IMessage & { ptvMessage?: proto.Message.IVideoMessage })
+      | undefined;
     if (!msg) return null;
+
+    const ptv = msg.ptvMessage;
+    if (ptv?.url) {
+      return ptv;
+    }
 
     if (msg.videoMessage?.url) {
       return msg.videoMessage;
@@ -970,7 +981,10 @@ export class MessageUpsertConsume {
     content: IContent,
     data: IUpsertMessage
   ): Promise<void> {
-    if (content.type !== EMessageType.video) {
+    if (
+      content.type !== EMessageType.video &&
+      content.type !== EMessageType.video_note
+    ) {
       return;
     }
 
@@ -2221,7 +2235,11 @@ export class MessageUpsertConsume {
       }
     }
 
-    if (!messageText && data.type === EMessageType.video) {
+    if (
+      !messageText &&
+      (data.type === EMessageType.video ||
+        data.type === EMessageType.video_note)
+    ) {
       const videoMsg = this.getVideoMessage(data);
       if (videoMsg?.caption) {
         messageText = videoMsg.caption;

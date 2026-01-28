@@ -6,6 +6,7 @@ export enum EMessageType {
   react = 'react',
   image = 'image',
   video = 'video',
+  video_note = 'video_note',
   audio = 'audio',
   sticker = 'sticker',
   document = 'document',

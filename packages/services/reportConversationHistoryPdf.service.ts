@@ -2418,6 +2418,7 @@ export class ReportConversationHistoryPdfService {
   private shouldShowQuotedText(quotedType: string): boolean {
     return (
       quotedType !== EMessageType.video &&
+      quotedType !== EMessageType.video_note &&
       quotedType !== EMessageType.image &&
       quotedType !== EMessageType.audio &&
       quotedType !== EMessageType.sticker &&
@@ -2543,7 +2544,10 @@ export class ReportConversationHistoryPdfService {
       return quoted.message ?? '';
     }
 
-    if (quotedType === EMessageType.video) {
+    if (
+      quotedType === EMessageType.video ||
+      quotedType === EMessageType.video_note
+    ) {
       return quoted.video?.caption || '';
     }
 

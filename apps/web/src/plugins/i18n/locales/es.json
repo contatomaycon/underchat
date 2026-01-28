@@ -633,6 +633,7 @@
   "can_select_more_videos": "Puedes seleccionar hasta {count} video(s).",
   "document_label": "Documento",
   "video_label": "Video",
+  "video_note_label": "Nota de video",
   "no_subscriptions_found": "No se encontraron suscripciones.",
   "accounts": "Cuentas",
   "subscribers": "Suscriptores",
