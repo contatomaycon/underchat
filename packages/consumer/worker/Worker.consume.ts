@@ -156,14 +156,22 @@ export class WorkerConsume {
 
   private async handleMessage(data: IWorkerPayload): Promise<void> {
     if (data.action === EWorkerAction.create) {
-      await this.createWorker(data);
+      try {
+        await this.createWorker(data);
+      } catch (error) {
+        console.error('Error creating worker', error);
+      }
 
       return;
     }
 
     if (data.action === EWorkerAction.delete) {
-      await this.kafkaBaileysQueueService.delete(data.worker_id);
-      await this.deleteWorker(data);
+      try {
+        await this.kafkaBaileysQueueService.delete(data.worker_id);
+        await this.deleteWorker(data);
+      } catch (error) {
+        console.error('Error deleting worker', error);
+      }
 
       return;
     }
@@ -557,7 +565,10 @@ export class WorkerConsume {
 
     const healthy = await this.retryOperation(
       async () => {
-        return this.containerHealthService.isServiceHealthy(containerId);
+        return this.containerHealthService.isServiceHealthy(containerId, {
+          maxAttempts: 5,
+          delayMs: 2000,
+        });
       },
       (result) => !result
     );
