@@ -323,6 +323,32 @@ const formatWhatsAppText = (text: string): string => {
   return formatted;
 };
 
+const getPinMessageText = (message: ListMessageResult): string | null => {
+  if (!message.content?.pin) return null;
+
+  const pin = message.content.pin;
+  const hasPinData = pin.pin_action || pin.pin_user_name || pin.pin_user_phone;
+  if (!hasPinData) return null;
+
+  const pinAction = pin.pin_action;
+  const isUnpin =
+    pinAction === '2' || pinAction === 'UNPIN_FOR_ALL' || pinAction === 'UNPIN';
+
+  if (pin.pin_user_name) {
+    if (isUnpin) return t('message_unpinned_by_user', { name: pin.pin_user_name });
+    return t('message_pinned_by_user', { name: pin.pin_user_name });
+  }
+
+  if (pin.pin_user_phone) {
+    if (isUnpin)
+      return t('message_unpinned_by_phone', { phone: pin.pin_user_phone });
+    return t('message_pinned_by_phone', { phone: pin.pin_user_phone });
+  }
+
+  if (isUnpin) return t('message_unpinned_default');
+  return t('message_pinned_default');
+};
+
 const getLatestMessageText = (message: ListMessageResult): string => {
   if (!message.content) return '';
 
@@ -332,6 +358,12 @@ const getLatestMessageText = (message: ListMessageResult): string => {
       (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
     );
     return sortedVersions[0].message || '';
+  }
+
+  const hasMessageContent = !!message.content.message?.trim();
+  if (message.content.type === EMessageType.system && !hasMessageContent) {
+    const pinText = getPinMessageText(message);
+    if (pinText) return pinText;
   }
 
   return message.content.message || '';
@@ -613,7 +645,10 @@ const resolveQuotedText = (m: ListMessageResult): string => {
     return m.content.quoted.message ?? '';
   }
 
-  if (m.content.quoted.type === EMessageType.video) {
+  if (
+    m.content.quoted.type === EMessageType.video ||
+    m.content.quoted.type === EMessageType.video_note
+  ) {
     return m.content.quoted.video?.caption || '';
   }
 
@@ -880,6 +915,38 @@ const resolveVideoMeta = (video?: {
   }
 
   return parts.join(' • ');
+};
+
+const resolveVideoNoteMeta = (video?: {
+  duration?: number | null;
+}): string => {
+  if (!video) return '';
+  const duration = formatVideoDuration(video.duration);
+  if (duration) return duration;
+  return resolveVideoMeta(video);
+};
+
+const isVideoNoteMessage = (message: ListMessageResult): boolean => {
+  const type = message.content?.type;
+  if (type === EMessageType.video_note) return true;
+  if (type !== EMessageType.video) return false;
+
+  const video = message.content?.video;
+  if (!video) return false;
+
+  const width = video.width ?? null;
+  if (!width) return false;
+
+  const height = video.height ?? null;
+  if (!height) return false;
+
+  if (width !== height) return false;
+
+  const duration = video.duration ?? null;
+  if (!duration) return false;
+  if (duration > 60) return false;
+
+  return true;
 };
 
 const resolveQuotedImageName = (m: ListMessageResult): string => {
@@ -1232,6 +1299,19 @@ const handleContactClick = (message: ListMessageResult) => {
               >
                 <div class="message-block">
                   <div
+                    v-if="item.message.content?.context_info?.is_forwarded"
+                    class="forwarded-indicator"
+                    :class="{
+                      'forwarded-indicator--left': isTypeUser(item.message),
+                      'forwarded-indicator--right': !isTypeUser(item.message),
+                    }"
+                  >
+                    <VIcon size="14" class="forwarded-icon">
+                      tabler-corner-up-right
+                    </VIcon>
+                    <span class="forwarded-text">{{ t('forwarded') }}</span>
+                  </div>
+                  <div
                     v-if="showQuoted(item.message)"
                     class="quoted-block"
                     :class="{
@@ -1436,6 +1516,8 @@ const handleContactClick = (message: ListMessageResult) => {
                       <div
                         v-if="
                           resolveQuotedText(item.message) &&
+                          item.message.content?.quoted?.type !==
+                            EMessageType.video_note &&
                           item.message.content?.quoted?.type !==
                             EMessageType.video &&
                           item.message.content?.quoted?.type !==
@@ -1708,27 +1790,44 @@ const handleContactClick = (message: ListMessageResult) => {
                       cover
                     />
 
-                    <p
-                      v-if="item.message.content.image.caption"
-                      class="image-caption mt-2"
-                      :style="{
-                        color: isTypeUser(item.message)
-                          ? 'rgb(var(--v-theme-on-surface))'
-                          : 'rgb(var(--v-theme-title))',
-                      }"
+                    <div
+                      v-if="item.message.content.image.caption || item.message.content?.pin"
+                      class="d-flex align-center mt-2"
                     >
-                      <span
-                        v-html="
-                          formatWhatsAppText(item.message.content.image.caption)
-                        "
-                      ></span>
-                    </p>
+                      <p
+                        v-if="item.message.content.image.caption"
+                        class="image-caption mb-0"
+                        :class="{
+                          'mr-2': item.message.content?.pin,
+                        }"
+                        :style="{
+                          color: isTypeUser(item.message)
+                            ? 'rgb(var(--v-theme-on-surface))'
+                            : 'rgb(var(--v-theme-title))',
+                        }"
+                      >
+                        <span
+                          v-html="
+                            formatWhatsAppText(item.message.content.image.caption)
+                          "
+                        ></span>
+                      </p>
+                      <VIcon
+                        v-if="item.message.content?.pin"
+                        size="16"
+                        color="grey-600"
+                        class="pin-icon"
+                      >
+                        tabler-pin
+                      </VIcon>
+                    </div>
                   </div>
 
                   <div
                     v-if="
                       item.message.content?.type === EMessageType.video &&
-                      item.message.content?.video?.url
+                      item.message.content?.video?.url &&
+                      !isVideoNoteMessage(item.message)
                     "
                     :class="[
                       'video-bubble',
@@ -1758,21 +1857,103 @@ const handleContactClick = (message: ListMessageResult) => {
                         {{ resolveVideoMeta(item.message.content.video) }}
                       </span>
                     </div>
-                    <p
-                      v-if="item.message.content.video.caption"
-                      class="video-caption mt-2"
-                      :style="{
-                        color: isTypeUser(item.message)
-                          ? 'rgb(var(--v-theme-on-surface))'
-                          : 'rgb(var(--v-theme-title))',
-                      }"
+                    <div
+                      v-if="item.message.content.video.caption || item.message.content?.pin"
+                      class="d-flex align-center mt-2"
                     >
-                      <span
-                        v-html="
-                          formatWhatsAppText(item.message.content.video.caption)
-                        "
-                      ></span>
-                    </p>
+                      <p
+                        v-if="item.message.content.video.caption"
+                        class="video-caption mb-0"
+                        :class="{
+                          'mr-2': item.message.content?.pin,
+                        }"
+                        :style="{
+                          color: isTypeUser(item.message)
+                            ? 'rgb(var(--v-theme-on-surface))'
+                            : 'rgb(var(--v-theme-title))',
+                        }"
+                      >
+                        <span
+                          v-html="
+                            formatWhatsAppText(item.message.content.video.caption)
+                          "
+                        ></span>
+                      </p>
+                      <VIcon
+                        v-if="item.message.content?.pin"
+                        size="16"
+                        color="grey-600"
+                        class="pin-icon"
+                      >
+                        tabler-pin
+                      </VIcon>
+                    </div>
+                  </div>
+
+                  <div
+                    v-if="
+                      item.message.content?.video?.url &&
+                      isVideoNoteMessage(item.message)
+                    "
+                    :class="[
+                      'video-note-bubble',
+                      !isTypeUser(item.message)
+                        ? 'video-note-bubble--right'
+                        : 'video-note-bubble--left',
+                      { 'is-deleted': item.message.deleted },
+                    ]"
+                    @click="handleOpenVideo(item.message)"
+                  >
+                    <div class="video-note-thumb-wrapper">
+                      <video
+                        :src="item.message.content.video.url"
+                        class="video-note-thumb"
+                        preload="metadata"
+                        muted
+                        playsinline
+                      >
+                        <track kind="captions" />
+                      </video>
+                      <div class="video-play-overlay video-note-play-overlay">
+                        <VIcon size="28">tabler-player-play</VIcon>
+                      </div>
+                    </div>
+                    <div class="video-note-details">
+                      <span class="video-meta text-caption text-disabled">
+                        {{ resolveVideoNoteMeta(item.message.content.video) }}
+                      </span>
+                    </div>
+                    <div
+                      v-if="item.message.content.video.caption || item.message.content?.pin"
+                      class="d-flex align-center mt-2"
+                    >
+                      <p
+                        v-if="item.message.content.video.caption"
+                        class="video-caption mb-0"
+                        :class="{
+                          'mr-2': item.message.content?.pin,
+                        }"
+                        :style="{
+                          color: isTypeUser(item.message)
+                            ? 'rgb(var(--v-theme-on-surface))'
+                            : 'rgb(var(--v-theme-title))',
+                        }"
+                      >
+                        <span
+                          v-html="
+                            formatWhatsAppText(item.message.content.video.caption)
+                          "
+                        ></span>
+                      </p>
+                      <VIcon
+                        v-if="item.message.content?.pin"
+                        size="16"
+                        color="grey-600"
+                        class="pin-icon"
+                      >
+                        tabler-pin
+                      </VIcon>
+                    </div>
                   </div>
 
                   <div
@@ -1984,8 +2165,9 @@ const handleContactClick = (message: ListMessageResult) => {
 
                   <div
                     v-if="
-                      item.message.content?.message &&
+                      getLatestMessageText(item.message) &&
                       item.message.content?.type !== EMessageType.image &&
+                      item.message.content?.type !== EMessageType.video_note &&
                       item.message.content?.type !== EMessageType.video &&
                       item.message.content?.type !== EMessageType.document &&
                       item.message.content?.type !==
@@ -1994,6 +2176,7 @@ const handleContactClick = (message: ListMessageResult) => {
                       item.message.content?.type !== EMessageType.audio &&
                       !item.message.message_key?.is_view_once
                     "
+                    class="d-flex align-center"
                   >
                     <p
                       v-if="shouldFormatMessage(item.message)"
@@ -2005,6 +2188,7 @@ const handleContactClick = (message: ListMessageResult) => {
                         'mb-6':
                           hasMessageVersions(item.message) ||
                           item.message.deleted,
+                        'mr-2': item.message.content?.pin,
                       }"
                       :style="{
                         color: isTypeUser(item.message)
@@ -2025,6 +2209,7 @@ const handleContactClick = (message: ListMessageResult) => {
                         'mb-6':
                           hasMessageVersions(item.message) ||
                           item.message.deleted,
+                        'mr-2': item.message.content?.pin,
                       }"
                       :style="{
                         color: isTypeUser(item.message)
@@ -2034,6 +2219,17 @@ const handleContactClick = (message: ListMessageResult) => {
                     >
                       {{ getLatestMessageText(item.message) }}
                     </p>
+                    <VIcon
+                      v-if="
+                        item.message.content?.pin &&
+                        item.message.content?.message?.trim()
+                      "
+                      size="16"
+                      color="grey-600"
+                      class="pin-icon"
+                    >
+                      tabler-pin
+                    </VIcon>
                   </div>
 
                   <div
@@ -2098,6 +2294,33 @@ const handleContactClick = (message: ListMessageResult) => {
                     >
                       <VIcon size="22">tabler-download</VIcon>
                     </a>
+                  </div>
+
+                  <div
+                    v-if="
+                      item.message.content?.type === EMessageType.document &&
+                      (item.message.content?.message || item.message.content?.pin)
+                    "
+                    class="d-flex align-center mt-2"
+                  >
+                    <p
+                      v-if="item.message.content?.message"
+                      class="chat-text mb-0"
+                      :class="{
+                        'mr-2': item.message.content?.pin,
+                      }"
+                      v-html="
+                        formatWhatsAppText(item.message.content.message)
+                      "
+                    />
+                    <VIcon
+                      v-if="item.message.content?.pin"
+                      size="16"
+                      color="grey-600"
+                      class="pin-icon"
+                    >
+                      tabler-pin
+                    </VIcon>
                   </div>
 
                   <div
@@ -2186,25 +2409,43 @@ const handleContactClick = (message: ListMessageResult) => {
                       </div>
                     </div>
 
-                    <p
-                      v-if="item.message.content?.message"
-                      class="audio-caption mt-2"
-                      :style="{
-                        color: isTypeUser(item.message)
-                          ? 'rgb(var(--v-theme-on-surface))'
-                          : 'rgb(var(--v-theme-title))',
-                      }"
+                    <div
+                      v-if="item.message.content?.message || item.message.content?.pin"
+                      class="d-flex align-center mt-2"
                     >
-                      <span
-                        v-if="shouldFormatMessage(item.message)"
-                        v-html="
-                          formatWhatsAppText(getLatestMessageText(item.message))
-                        "
-                      ></span>
-                      <span v-else>{{
-                        getLatestMessageText(item.message)
-                      }}</span>
-                    </p>
+                      <p
+                        v-if="item.message.content?.message"
+                        class="audio-caption mb-0"
+                        :class="{
+                          'mr-2': item.message.content?.pin,
+                        }"
+                        :style="{
+                          color: isTypeUser(item.message)
+                            ? 'rgb(var(--v-theme-on-surface))'
+                            : 'rgb(var(--v-theme-title))',
+                        }"
+                      >
+                        <span
+                          v-if="shouldFormatMessage(item.message)"
+                          v-html="
+                            formatWhatsAppText(
+                              getLatestMessageText(item.message)
+                            )
+                          "
+                        ></span>
+                        <span v-else>{{
+                          getLatestMessageText(item.message)
+                        }}</span>
+                      </p>
+                      <VIcon
+                        v-if="item.message.content?.pin"
+                        size="16"
+                        color="grey-600"
+                        class="pin-icon"
+                      >
+                        tabler-pin
+                      </VIcon>
+                    </div>
                   </div>
 
                   <div
@@ -2553,6 +2794,7 @@ const handleContactClick = (message: ListMessageResult) => {
 
     &:has(.image-bubble),
     &:has(.video-bubble),
+    &:has(.video-note-bubble),
     &:has(.sticker-bubble),
     &:has(.document-bubble),
     &:has(.location-bubble),
@@ -2684,6 +2926,32 @@ const handleContactClick = (message: ListMessageResult) => {
 
   .message-meta--audio {
     padding-inline-start: 62px;
+  }
+
+  .forwarded-indicator {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    font-style: italic;
+    margin-bottom: 4px;
+    opacity: 0.7;
+  }
+
+  .forwarded-indicator--left {
+    color: rgb(var(--v-theme-on-surface));
+  }
+
+  .forwarded-indicator--right {
+    color: rgba(17, 27, 33, 0.7);
+  }
+
+  .forwarded-icon {
+    transform: scaleX(-1);
+  }
+
+  .forwarded-text {
+    font-weight: 400;
   }
 
   .quoted-block {
@@ -2970,6 +3238,58 @@ const handleContactClick = (message: ListMessageResult) => {
     margin-bottom: 0 !important;
     padding: 8px 12px;
     padding-bottom: 0;
+  }
+
+  .video-note-bubble {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-inline-size: 180px;
+    inline-size: 100%;
+    cursor: pointer;
+    border-radius: 10px;
+    background: rgba(var(--v-theme-on-surface), 0.04);
+    padding: 10px;
+    align-items: center;
+
+    &.is-deleted {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+  }
+
+  .video-note-bubble--left {
+    border-start-end-radius: 6px;
+  }
+
+  .video-note-bubble--right {
+    border-start-start-radius: 6px;
+  }
+
+  .video-note-thumb-wrapper {
+    position: relative;
+    inline-size: 120px;
+    block-size: 120px;
+    border-radius: 9999px;
+    overflow: hidden;
+    background: #000;
+  }
+
+  .video-note-thumb {
+    inline-size: 100%;
+    block-size: 100%;
+    object-fit: cover;
+    display: block;
+    border-radius: 9999px;
+  }
+
+  .video-note-play-overlay {
+    border-radius: 9999px;
+  }
+
+  .video-note-details {
+    inline-size: 100%;
+    padding: 0 12px;
   }
 
   .sticker-thumb {

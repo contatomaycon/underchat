@@ -415,7 +415,12 @@ export class ReportConversationHistoryPdfService {
     hasReactions: boolean,
     isDeleted: boolean
   ): string {
-    const isMediaType = ['audio', 'video', 'document'].includes(contentType);
+    const isMediaType = [
+      'audio',
+      'video',
+      'document',
+      EMessageType.video_note,
+    ].includes(contentType);
     const mediaClass = isMediaType ? 'bubble-media' : '';
     const isAnnotation = contentType === EMessageType.annotation;
     const annotationClass = isAnnotation ? 'is-annotation' : '';
@@ -498,10 +503,18 @@ export class ReportConversationHistoryPdfService {
           </div>
           `;
 
+    const forwardedHtml =
+      msg.content?.context_info?.is_forwarded === true
+        ? `<div class="forwarded-indicator"><span class="forwarded-text">${this.escapeHtml(
+            t('forwarded')
+          )}</span></div>`
+        : '';
+
     return `
         <div class="msg-row ${alignmentClass}">
           ${avatarHtml}
           <div class="bubble ${alignmentClass} ${bubbleClasses}" style="${bubbleStyle}">
+            ${forwardedHtml}
             ${this.formatQuoted(msg, clientName, t)}
             <div class="content">
               <div class="message-text" style="word-break: break-word; overflow-wrap: break-word; hyphens: none;">${content}</div>
@@ -654,6 +667,8 @@ export class ReportConversationHistoryPdfService {
             .msg-row.right .msg-avatar { order: 3; }
             .avatar-img { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; background: #e0e0e0; }
             .msg-name { font-size: 11px; color: rgba(17,27,33,0.6); white-space: nowrap; font-weight: 500; text-align: center; }
+            .forwarded-indicator { display: flex; align-items: center; gap: 4px; font-size: 12px; font-style: italic; margin-bottom: 4px; opacity: 0.7; }
+            .forwarded-text { color: rgba(17, 27, 33, 0.7); font-weight: 400; }
             .bubble { max-width: 65%; min-width: 50px; width: fit-content; padding: 8px 12px 20px 12px; border-radius: 8px; position: relative; line-height: 1.5; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
             .bubble.has-reactions { padding-bottom: 28px; padding-right: 60px; }
             .bubble.bubble-media { max-width: 280px; }
@@ -877,11 +892,49 @@ export class ReportConversationHistoryPdfService {
     return `${hours}:${minutes}`;
   }
 
-  private formatSystemMessage(content: ContentMessageChat): string {
-    if (content.type === EMessageType.system && content.message) {
+  private formatSystemMessage(
+    content: ContentMessageChat,
+    t: TFunction<'translation', undefined>
+  ): string {
+    if (content.type !== EMessageType.system) {
+      return '';
+    }
+
+    if (content.message) {
       return content.message.replaceAll('\n', '<br>');
     }
-    return '';
+
+    const pin = content.pin;
+    if (!pin) {
+      return '';
+    }
+
+    const hasPinData =
+      pin.pin_action || pin.pin_user_name || pin.pin_user_phone;
+    if (!hasPinData) {
+      return '';
+    }
+
+    const pinAction = pin.pin_action;
+    const isUnpin =
+      pinAction === '2' ||
+      pinAction === 'UNPIN_FOR_ALL' ||
+      pinAction === 'UNPIN';
+
+    if (pin.pin_user_name) {
+      if (isUnpin)
+        return t('message_unpinned_by_user', { name: pin.pin_user_name });
+      return t('message_pinned_by_user', { name: pin.pin_user_name });
+    }
+
+    if (pin.pin_user_phone) {
+      if (isUnpin)
+        return t('message_unpinned_by_phone', { phone: pin.pin_user_phone });
+      return t('message_pinned_by_phone', { phone: pin.pin_user_phone });
+    }
+
+    if (isUnpin) return t('message_unpinned_default');
+    return t('message_pinned_default');
   }
 
   private formatTextMessage(
@@ -979,10 +1032,12 @@ export class ReportConversationHistoryPdfService {
     content: ContentMessageChat,
     t: TFunction<'translation', undefined>
   ): string {
-    if (content.type !== 'video') {
+    if (content.type !== 'video' && content.type !== EMessageType.video_note) {
       return '';
     }
 
+    const label =
+      content.type === EMessageType.video_note ? t('video_note') : t('video');
     const videoUrl = content.video?.url || '';
     const caption = content.video?.caption || '';
     const parts: string[] = [];
@@ -1022,7 +1077,7 @@ export class ReportConversationHistoryPdfService {
       parts.push(`<div>${caption.replaceAll('\n', '<br>')}</div>`);
     }
 
-    return parts.length > 0 ? parts.join('') : `[${t('video')}]`;
+    return parts.length > 0 ? parts.join('') : `[${label}]`;
   }
 
   private formatAudioMessage(
@@ -1288,7 +1343,7 @@ export class ReportConversationHistoryPdfService {
       return '';
     }
 
-    const systemMessage = this.formatSystemMessage(content);
+    const systemMessage = this.formatSystemMessage(content, t);
     if (systemMessage) return systemMessage;
 
     const textMessage = this.formatTextMessage(content, msg, t);
@@ -2296,11 +2351,13 @@ export class ReportConversationHistoryPdfService {
   ): string {
     const videoUrl = this.resolveQuotedVideoUrl(quoted);
     const videoPoster = this.resolveQuotedVideoPoster(quoted);
-    const videoName = this.resolveQuotedVideoName(t);
+    const videoName = this.resolveQuotedVideoName(quoted, t);
     const videoMeta = this.resolveQuotedVideoMeta(quoted);
+    const videoAlt =
+      quoted.type === EMessageType.video_note ? t('video_note') : t('video');
 
     const videoThumbHtml = videoUrl
-      ? `<img src="${this.escapeHtml(videoPoster || videoUrl)}" alt="${t('video')}" class="quoted-video-thumb" />
+      ? `<img src="${this.escapeHtml(videoPoster || videoUrl)}" alt="${this.escapeHtml(videoAlt)}" class="quoted-video-thumb" />
                <div class="quoted-video-overlay">
                  <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="width: 16px; height: 16px; fill: white;">
                    <path d="M8 5v14l11-7z"/>
@@ -2695,8 +2752,10 @@ export class ReportConversationHistoryPdfService {
   }
 
   private resolveQuotedVideoName(
+    quoted: QuotedMessageType,
     t: TFunction<'translation', undefined>
   ): string {
+    if (quoted.type === EMessageType.video_note) return t('video_note');
     return t('video');
   }
 
