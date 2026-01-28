@@ -2575,6 +2575,7 @@ export class ChatbotFlowRunnerService {
   ): Promise<void> {
     if (
       createChat.status !== EChatStatus.ura &&
+      createChat.status !== EChatStatus.ura_output &&
       createChat.status !== EChatStatus.ura_schedule &&
       createChat.status !== EChatStatus.ura_webhook
     ) {
@@ -2644,6 +2645,7 @@ export class ChatbotFlowRunnerService {
   ): Promise<void> {
     if (
       createChat.status !== EChatStatus.ura &&
+      createChat.status !== EChatStatus.ura_output &&
       createChat.status !== EChatStatus.ura_schedule &&
       createChat.status !== EChatStatus.ura_webhook
     ) {
@@ -3106,6 +3108,7 @@ export class ChatbotFlowRunnerService {
       !!redirectFailedAttempts &&
       redirectFailedAttempts.status === 'active' &&
       (createChat?.status === EChatStatus.ura ||
+        createChat?.status === EChatStatus.ura_output ||
         createChat?.status === EChatStatus.ura_schedule ||
         createChat?.status === EChatStatus.ura_webhook)
     );
@@ -3388,7 +3391,9 @@ export class ChatbotFlowRunnerService {
 
       if (
         createChat.status !== EChatStatus.ura &&
-        createChat.status !== EChatStatus.ura_schedule
+        createChat.status !== EChatStatus.ura_output &&
+        createChat.status !== EChatStatus.ura_schedule &&
+        createChat.status !== EChatStatus.ura_webhook
       ) {
         await this.cancelInactivityCheck(createChat);
 
@@ -5272,6 +5277,7 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
     if (
       inactivityAlert?.status === 'active' &&
       (createChat.status === EChatStatus.ura ||
+        createChat.status === EChatStatus.ura_output ||
         createChat.status === EChatStatus.ura_schedule ||
         createChat.status === EChatStatus.ura_webhook)
     ) {
