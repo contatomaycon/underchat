@@ -28,7 +28,8 @@ async function dbConnector(fastify: FastifyInstance) {
     idleTimeoutMillis: databaseEnvironment.dbPoolIdleTimeout,
     connectionTimeoutMillis: databaseEnvironment.dbPoolAcquireTimeout,
     keepAlive: true,
-    keepAliveInitialDelayMillis: 10000,
+    keepAliveInitialDelayMillis: 5000,
+    allowExitOnIdle: true,
     ssl,
   });
 
@@ -43,7 +44,8 @@ async function dbConnector(fastify: FastifyInstance) {
     idleTimeoutMillis: databaseEnvironment.dbPoolIdleTimeout,
     connectionTimeoutMillis: databaseEnvironment.dbPoolAcquireTimeout,
     keepAlive: true,
-    keepAliveInitialDelayMillis: 10000,
+    keepAliveInitialDelayMillis: 5000,
+    allowExitOnIdle: true,
     ssl,
   });
 
