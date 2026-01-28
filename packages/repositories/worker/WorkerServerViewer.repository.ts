@@ -2,8 +2,9 @@ import * as schema from '@core/models';
 import { server, serverWeb, worker, apiKey } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, eq, isNull, lt, count, asc } from 'drizzle-orm';
+import { and, eq, isNull, lt, count, asc, notInArray } from 'drizzle-orm';
 import { EServerStatus } from '@core/common/enums/EServerStatus';
+import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { IViewWorkerServer } from '@core/common/interfaces/IViewWorkerServer';
 
 @injectable()
@@ -29,7 +30,14 @@ export class WorkerServerViewerRepository {
       .innerJoin(apiKey, eq(apiKey.account_id, accountId))
       .leftJoin(
         worker,
-        and(eq(worker.server_id, server.server_id), isNull(worker.deleted_at))
+        and(
+          eq(worker.server_id, server.server_id),
+          isNull(worker.deleted_at),
+          notInArray(worker.worker_status_id, [
+            EWorkerStatus.stopped,
+            EWorkerStatus.delete,
+          ])
+        )
       )
       .where(
         and(
