@@ -225,6 +225,9 @@ export class WorkerMonitorService {
 
     const isOffline = worker.worker_status_id === EWorkerStatus.offline;
     if (isOffline) {
+      if (this.isConnectionCheckTimeout(worker)) {
+        await this.handleStop(worker, server, sshConfig);
+      }
       return;
     }
 
