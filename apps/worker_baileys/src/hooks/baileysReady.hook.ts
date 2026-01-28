@@ -11,7 +11,8 @@ import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnect
 import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 
 const RETRY_DELAY = 10000;
-const CONNECT_TIMEOUT_MS = 60000;
+const CONNECT_TIMEOUT_NEW_MS = 5000;
+const CONNECT_TIMEOUT_RECONNECT_MS = 30000;
 const MAX_RETRY_ATTEMPTS = 5;
 let mismatchedStatusSent = false;
 let isNewCreation: boolean | null = null;
@@ -113,12 +114,15 @@ const ensureConnected = async (
     return;
   }
 
-  log.info({ attempt }, 'Baileys: iniciando tentativa de conexão');
+  const timeoutMs = isNewCreation
+    ? CONNECT_TIMEOUT_NEW_MS
+    : CONNECT_TIMEOUT_RECONNECT_MS;
+  log.info({ attempt, timeoutMs }, 'Baileys: iniciando tentativa de conexão');
 
   try {
     const state = await withConnectTimeout(
       baileys.connect({ initial_connection: true }),
-      CONNECT_TIMEOUT_MS
+      timeoutMs
     );
     log.info(
       { status: state.status, attempt },
@@ -134,11 +138,9 @@ const ensureConnected = async (
       return;
     }
 
-    // Se o status é "connecting", verifica se deve mostrar QR code
     if (state.status === EBaileysConnectionStatus.connecting) {
       const hasValidSession = baileys.hasSession();
 
-      // Criação nova OU sem sessão válida → mostra QR code imediatamente
       if (isNewCreation || !hasValidSession) {
         log.warn(
           { attempt, hasSession: hasValidSession, isNewCreation },
