@@ -2822,21 +2822,37 @@ onUnmounted(() => {
                       cover
                     />
 
-                    <p
-                      v-if="item.message.content.image.caption"
-                      class="image-caption mt-2"
-                      :style="{
-                        color: isTypeUser(item.message)
-                          ? 'rgb(var(--v-theme-on-surface))'
-                          : 'rgb(var(--v-theme-title))',
-                      }"
+                    <div
+                      v-if="item.message.content.image.caption || item.message.content?.pin"
+                      class="d-flex align-center mt-2"
                     >
-                      <span
-                        v-html="
-                          formatWhatsAppText(item.message.content.image.caption)
-                        "
-                      ></span>
-                    </p>
+                      <p
+                        v-if="item.message.content.image.caption"
+                        class="image-caption mb-0"
+                        :class="{
+                          'mr-2': item.message.content?.pin,
+                        }"
+                        :style="{
+                          color: isTypeUser(item.message)
+                            ? 'rgb(var(--v-theme-on-surface))'
+                            : 'rgb(var(--v-theme-title))',
+                        }"
+                      >
+                        <span
+                          v-html="
+                            formatWhatsAppText(item.message.content.image.caption)
+                          "
+                        ></span>
+                      </p>
+                      <VIcon
+                        v-if="item.message.content?.pin"
+                        size="16"
+                        color="grey-600"
+                        class="pin-icon"
+                      >
+                        tabler-pin
+                      </VIcon>
+                    </div>
                   </div>
 
                   <div
@@ -2872,21 +2888,37 @@ onUnmounted(() => {
                         {{ resolveVideoMeta(item.message.content.video) }}
                       </span>
                     </div>
-                    <p
-                      v-if="item.message.content.video.caption"
-                      class="video-caption mt-2"
-                      :style="{
-                        color: isTypeUser(item.message)
-                          ? 'rgb(var(--v-theme-on-surface))'
-                          : 'rgb(var(--v-theme-title))',
-                      }"
+                    <div
+                      v-if="item.message.content.video.caption || item.message.content?.pin"
+                      class="d-flex align-center mt-2"
                     >
-                      <span
-                        v-html="
-                          formatWhatsAppText(item.message.content.video.caption)
-                        "
-                      ></span>
-                    </p>
+                      <p
+                        v-if="item.message.content.video.caption"
+                        class="video-caption mb-0"
+                        :class="{
+                          'mr-2': item.message.content?.pin,
+                        }"
+                        :style="{
+                          color: isTypeUser(item.message)
+                            ? 'rgb(var(--v-theme-on-surface))'
+                            : 'rgb(var(--v-theme-title))',
+                        }"
+                      >
+                        <span
+                          v-html="
+                            formatWhatsAppText(item.message.content.video.caption)
+                          "
+                        ></span>
+                      </p>
+                      <VIcon
+                        v-if="item.message.content?.pin"
+                        size="16"
+                        color="grey-600"
+                        class="pin-icon"
+                      >
+                        tabler-pin
+                      </VIcon>
+                    </div>
                   </div>
 
                   <div
@@ -2922,6 +2954,18 @@ onUnmounted(() => {
                         object-fit: contain;
                       "
                     />
+                    <div
+                      v-if="item.message.content?.pin"
+                      class="d-flex align-center mt-2"
+                    >
+                      <VIcon
+                        size="16"
+                        color="grey-600"
+                        class="pin-icon"
+                      >
+                        tabler-pin
+                      </VIcon>
+                    </div>
                   </div>
 
                   <div
@@ -3001,6 +3045,18 @@ onUnmounted(() => {
                         {{ item.message.content.location.address }}
                       </div>
                       <!-- Hide fallback coordinates when no address is provided to show only the map -->
+                      <div
+                        v-if="item.message.content?.pin"
+                        class="d-flex align-center mt-2"
+                      >
+                        <VIcon
+                          size="16"
+                          color="grey-600"
+                          class="pin-icon"
+                        >
+                          tabler-pin
+                        </VIcon>
+                      </div>
                     </div>
                   </div>
 
@@ -3090,25 +3146,41 @@ onUnmounted(() => {
                       </div>
                     </div>
 
-                    <p
-                      v-if="item.message.content?.message"
-                      class="audio-caption mt-2"
-                      :style="{
-                        color: isTypeUser(item.message)
-                          ? 'rgb(var(--v-theme-on-surface))'
-                          : 'rgb(var(--v-theme-title))',
-                      }"
+                    <div
+                      v-if="item.message.content?.message || item.message.content?.pin"
+                      class="d-flex align-center mt-2"
                     >
-                      <span
-                        v-if="shouldFormatMessage(item.message)"
-                        v-html="
-                          formatWhatsAppText(getLatestMessageText(item.message))
-                        "
-                      ></span>
-                      <span v-else>{{
-                        getLatestMessageText(item.message)
-                      }}</span>
-                    </p>
+                      <p
+                        v-if="item.message.content?.message"
+                        class="audio-caption mb-0"
+                        :class="{
+                          'mr-2': item.message.content?.pin,
+                        }"
+                        :style="{
+                          color: isTypeUser(item.message)
+                            ? 'rgb(var(--v-theme-on-surface))'
+                            : 'rgb(var(--v-theme-title))',
+                        }"
+                      >
+                        <span
+                          v-if="shouldFormatMessage(item.message)"
+                          v-html="
+                            formatWhatsAppText(getLatestMessageText(item.message))
+                          "
+                        ></span>
+                        <span v-else>{{
+                          getLatestMessageText(item.message)
+                        }}</span>
+                      </p>
+                      <VIcon
+                        v-if="item.message.content?.pin"
+                        size="16"
+                        color="grey-600"
+                        class="pin-icon"
+                      >
+                        tabler-pin
+                      </VIcon>
+                    </div>
                   </div>
 
                   <div
@@ -3142,25 +3214,41 @@ onUnmounted(() => {
                       @view-all="handleContactClick(item.message)"
                     />
 
-                    <p
-                      v-if="item.message.content?.message"
-                      class="contact-caption mt-2"
-                      :style="{
-                        color: isTypeUser(item.message)
-                          ? 'rgb(var(--v-theme-on-surface))'
-                          : 'rgb(var(--v-theme-title))',
-                      }"
+                    <div
+                      v-if="item.message.content?.message || item.message.content?.pin"
+                      class="d-flex align-center mt-2"
                     >
-                      <span
-                        v-if="shouldFormatMessage(item.message)"
-                        v-html="
-                          formatWhatsAppText(getLatestMessageText(item.message))
-                        "
-                      ></span>
-                      <span v-else>{{
-                        getLatestMessageText(item.message)
-                      }}</span>
-                    </p>
+                      <p
+                        v-if="item.message.content?.message"
+                        class="contact-caption mb-0"
+                        :class="{
+                          'mr-2': item.message.content?.pin,
+                        }"
+                        :style="{
+                          color: isTypeUser(item.message)
+                            ? 'rgb(var(--v-theme-on-surface))'
+                            : 'rgb(var(--v-theme-title))',
+                        }"
+                      >
+                        <span
+                          v-if="shouldFormatMessage(item.message)"
+                          v-html="
+                            formatWhatsAppText(getLatestMessageText(item.message))
+                          "
+                        ></span>
+                        <span v-else>{{
+                          getLatestMessageText(item.message)
+                        }}</span>
+                      </p>
+                      <VIcon
+                        v-if="item.message.content?.pin"
+                        size="16"
+                        color="grey-600"
+                        class="pin-icon"
+                      >
+                        tabler-pin
+                      </VIcon>
+                    </div>
                   </div>
                   <div
                     v-if="
@@ -3199,6 +3287,18 @@ onUnmounted(() => {
                       @toggle="handleContactsGroupClick(item.message)"
                       @view-all="handleContactsGroupClick(item.message)"
                     />
+                    <div
+                      v-if="item.message.content?.pin"
+                      class="d-flex align-center mt-2"
+                    >
+                      <VIcon
+                        size="16"
+                        color="grey-600"
+                        class="pin-icon"
+                      >
+                        tabler-pin
+                      </VIcon>
+                    </div>
                   </div>
 
                   <div
@@ -3460,16 +3560,32 @@ onUnmounted(() => {
                     </a>
                   </div>
 
-                  <p
+                  <div
                     v-if="
                       item.message.content?.type === EMessageType.document &&
-                      item.message.content?.message
+                      (item.message.content?.message || item.message.content?.pin)
                     "
-                    class="chat-text mt-2 mb-0"
-                    v-html="
-                      formatWhatsAppText(item.message.content.message)
-                    "
-                  />
+                    class="d-flex align-center mt-2"
+                  >
+                    <p
+                      v-if="item.message.content?.message"
+                      class="chat-text mb-0"
+                      :class="{
+                        'mr-2': item.message.content?.pin,
+                      }"
+                      v-html="
+                        formatWhatsAppText(item.message.content.message)
+                      "
+                    />
+                    <VIcon
+                      v-if="item.message.content?.pin"
+                      size="16"
+                      color="grey-600"
+                      class="pin-icon"
+                    >
+                      tabler-pin
+                    </VIcon>
+                  </div>
 
                   <div
                     v-if="
