@@ -8,6 +8,8 @@ import { AxiosError } from 'axios';
 import { ListChatbotResponse } from '@core/schema/chatbot/listChatbot/response.schema';
 import { CreateChatbotRequest } from '@core/schema/chatbot/createChatbot/request.schema';
 import { CreateChatbotResponse } from '@core/schema/chatbot/createChatbot/response.schema';
+import { CloneChatbotRequest } from '@core/schema/chatbot/cloneChatbot/request.schema';
+import { CloneChatbotResponse } from '@core/schema/chatbot/cloneChatbot/response.schema';
 import { UpdateChatbotRequest } from '@core/schema/chatbot/updateChatbot/request.schema';
 import { UpdateChatbotResponse } from '@core/schema/chatbot/updateChatbot/response.schema';
 import { ChatbotUserResponse } from '@core/schema/chatbot/listUsers/response.schema';
@@ -306,6 +308,17 @@ export const useChatbotStore = defineStore('chatbot', {
         CreateChatbotRequest,
         CreateChatbotResponse
       >('/chatbot', input, 'chatbot_creator_success', 'chatbot_creator_error');
+    },
+
+    async cloneChatbot(
+      input: CloneChatbotRequest
+    ): Promise<CloneChatbotResponse | null> {
+      return this._handlePostRequest<CloneChatbotRequest, CloneChatbotResponse>(
+        '/chatbot/clone',
+        input,
+        'chatbot_cloner_success',
+        'chatbot_cloner_error'
+      );
     },
 
     async updateChatbot(

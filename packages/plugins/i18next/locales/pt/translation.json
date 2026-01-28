@@ -514,6 +514,8 @@
   "chatbot_list_error": "Ocorreu um erro ao listar os chatbots. Por favor, tente novamente.",
   "chatbot_creator_error": "Ocorreu um erro ao criar o chatbot. Por favor, tente novamente.",
   "chatbot_creator_success": "Chatbot criado com sucesso!",
+  "chatbot_cloner_error": "Ocorreu um erro ao clonar o chatbot. Por favor, tente novamente.",
+  "chatbot_cloner_success": "Chatbot clonado com sucesso!",
   "chatbot_list_successfully": "Chatbots listados com sucesso!",
   "chatbot_name_already_exists": "Já existe um chatbot com este nome para esta conta.",
   "chatbot_update_error": "Ocorreu um erro ao atualizar o chatbot. Por favor, tente novamente.",

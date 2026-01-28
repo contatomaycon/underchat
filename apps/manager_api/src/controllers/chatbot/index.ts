@@ -13,6 +13,7 @@ import { listChatbotFlow } from './methods/listChatbotFlow';
 import { saveChatbotFlowConfigurations } from './methods/saveChatbotFlowConfigurations';
 import { listChatbotFlowConfigurations } from './methods/listChatbotFlowConfigurations';
 import { viewChatbotConfig } from './methods/viewChatbotConfig';
+import { cloneChatbot } from './methods/cloneChatbot';
 
 @injectable()
 class ChatbotController {
@@ -20,6 +21,7 @@ class ChatbotController {
   public listChatbot = listChatbot;
   public updateChatbot = updateChatbot;
   public deleteChatbot = deleteChatbot;
+  public cloneChatbot = cloneChatbot;
   public listUsers = listUsers;
   public listSectors = listSectors;
   public listSectorUsers = listSectorUsers;

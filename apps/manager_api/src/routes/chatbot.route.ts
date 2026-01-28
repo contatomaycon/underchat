@@ -16,6 +16,7 @@ import { saveChatbotFlowConfigurationsSchema } from '@core/schema/chatbot/saveCh
 import { listChatbotFlowConfigurationsSchema } from '@core/schema/chatbot/listChatbotFlowConfigurations';
 import { deleteChatbotSchema } from '@core/schema/chatbot/deleteChatbot';
 import { viewChatbotConfigSchema } from '@core/schema/chatbot/viewChatbotConfig';
+import { cloneChatbotSchema } from '@core/schema/chatbot/cloneChatbot';
 import { planGuard } from '@/plugins/planGuard';
 import { planStatus } from '@/plugins/planStatus';
 
@@ -58,6 +59,17 @@ export default function chatbotRoutes(server: FastifyInstance) {
   server.delete('/chatbot/:chatbot_id', {
     schema: deleteChatbotSchema,
     handler: chatbotController.deleteChatbot,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, chatbotPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.post('/chatbot/clone', {
+    schema: cloneChatbotSchema,
+    handler: chatbotController.cloneChatbot,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, chatbotPermissions),

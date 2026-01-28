@@ -12,6 +12,7 @@ import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import { useRouter } from 'vue-router';
 import AppAddChatbot from '@/components/chatbot/AppAddChatbot.vue';
 import AppEditChatbot from '@/components/chatbot/AppEditChatbot.vue';
+import AppCloneChatbot from '@/components/chatbot/AppCloneChatbot.vue';
 import VDialogHandler from '@/components/VDialogHandler.vue';
 import TablePagination from '@/@webcore/components/TablePagination.vue';
 
@@ -40,6 +41,8 @@ const headers: DataTableHeader<ListChatbotResponse>[] = [
 
 const isAddModalOpen = ref(false);
 const isEditModalOpen = ref(false);
+const isCloneModalOpen = ref(false);
+const cloningChatbotId = ref<string | null>(null);
 const editingChatbotId = ref<string | null>(null);
 const isDialogDeleterShow = ref(false);
 const chatbotToDelete = ref<string | null>(null);
@@ -81,6 +84,11 @@ const deleteChatbot = (id: string) => {
   isDialogDeleterShow.value = true;
 };
 
+const cloneChatbot = (id: string) => {
+  cloningChatbotId.value = id;
+  isCloneModalOpen.value = true;
+};
+
 const handleDelete = async () => {
   if (!chatbotToDelete.value) {
     return;
@@ -114,6 +122,11 @@ const handleCreated = async () => {
 
 const handleUpdated = async () => {
   editingChatbotId.value = null;
+  await chatbotStore.listChatbots();
+};
+
+const handleCloned = async () => {
+  cloningChatbotId.value = null;
   await chatbotStore.listChatbots();
 };
 
@@ -216,6 +229,20 @@ onMounted(async () => {
                   transition="scale-transition"
                   activator="parent"
                 >
+                  <span>{{ $t('clone') }} {{ $t('chatbot') }}</span>
+                </VTooltip>
+                <VIcon
+                  icon="tabler-copy"
+                  @click="cloneChatbot(item.chatbot_id)"
+                />
+              </IconBtn>
+
+              <IconBtn>
+                <VTooltip
+                  location="top"
+                  transition="scale-transition"
+                  activator="parent"
+                >
                   <span>{{ $t('delete') }} {{ $t('chatbot') }}</span>
                 </VTooltip>
                 <VIcon
@@ -248,6 +275,12 @@ onMounted(async () => {
       v-model="isEditModalOpen"
       :chatbot-id="editingChatbotId"
       @updated="handleUpdated"
+    />
+
+    <AppCloneChatbot
+      v-model="isCloneModalOpen"
+      :chatbot-id="cloningChatbotId"
+      @cloned="handleCloned"
     />
 
     <VDialogHandler
