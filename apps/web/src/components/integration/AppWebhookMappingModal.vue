@@ -253,18 +253,6 @@ const handleFieldUpdate = (
 
 const handleSaveMapping = async () => {
   if (messageType.value === 'message') {
-    const messageValue =
-      typeof webhookMapping.value.message === 'string'
-        ? webhookMapping.value.message.trim()
-        : '';
-    if (!messageValue) {
-      integrationStore.showSnackbar(
-        t('webhook_mapping_message_required'),
-        EColor.error
-      );
-      return;
-    }
-
     if (transferType.value === 'sector' && !selectedSector.value) {
       integrationStore.showSnackbar(
         t('webhook_mapping_transfer_sector_required'),
@@ -284,18 +272,6 @@ const handleSaveMapping = async () => {
     if (!selectedChatbot.value) {
       integrationStore.showSnackbar(
         t('webhook_mapping_chatbot_required'),
-        EColor.error
-      );
-      return;
-    }
-
-    const messageValue =
-      typeof webhookMapping.value.message === 'string'
-        ? webhookMapping.value.message.trim()
-        : '';
-    if (!messageValue) {
-      integrationStore.showSnackbar(
-        t('webhook_mapping_message_required'),
         EColor.error
       );
       return;
@@ -882,7 +858,7 @@ watch(isOpen, async (newValue) => {
                   <div class="mb-4">
                     <div class="d-flex align-center justify-space-between mb-2">
                       <VLabel class="text-body-2">
-                        {{ $t('webhook_field_message') }}*
+                        {{ $t('webhook_field_message') }}
                       </VLabel>
                       <VBtn
                         variant="text"
@@ -969,7 +945,7 @@ watch(isOpen, async (newValue) => {
                   <div class="mb-4">
                     <div class="d-flex align-center justify-space-between mb-2">
                       <VLabel class="text-body-2">
-                        {{ $t('webhook_field_message') }}*
+                        {{ $t('webhook_field_message') }}
                       </VLabel>
                       <VBtn
                         variant="text"

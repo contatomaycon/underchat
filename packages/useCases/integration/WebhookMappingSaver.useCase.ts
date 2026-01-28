@@ -37,28 +37,8 @@ export class WebhookMappingSaverUseCase {
       return;
     }
 
-    this.validateMessage(mapping, t);
     this.validateChatbotMapping(mapping, messageType, t);
     this.validateTransferMapping(mapping, messageType, t);
-  }
-
-  private validateMessage(
-    mapping: Record<string, string | string[]>,
-    t: TFunction<'translation', undefined>
-  ): void {
-    const message = mapping.message;
-    if (!message) {
-      throw new WebhookMappingValidationError(
-        t('webhook_mapping_message_required')
-      );
-    }
-
-    const messageValue = typeof message === 'string' ? message.trim() : '';
-    if (!messageValue) {
-      throw new WebhookMappingValidationError(
-        t('webhook_mapping_message_required')
-      );
-    }
   }
 
   private validateChatbotMapping(
