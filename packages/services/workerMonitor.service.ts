@@ -120,7 +120,8 @@ export class WorkerMonitorService {
 
     if (
       (worker.worker_status_id === EWorkerStatus.mismatched ||
-        worker.worker_status_id === EWorkerStatus.disponible) &&
+        worker.worker_status_id === EWorkerStatus.disponible ||
+        worker.worker_status_id === EWorkerStatus.offline) &&
       this.isConnectionCheckTimeout(worker)
     ) {
       await this.handleStop(worker, server, sshConfig);
