@@ -66,7 +66,6 @@ export const audioSchema = Type.Object({
 
 export const documentSchema = Type.Object({
   url: Type.Optional(Type.Union([Type.String(), Type.Null()])),
-  caption: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   name: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   mimetype: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   extension: Type.Optional(Type.Union([Type.String(), Type.Null()])),

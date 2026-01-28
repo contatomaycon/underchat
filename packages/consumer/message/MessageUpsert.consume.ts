@@ -1103,7 +1103,6 @@ export class MessageUpsertConsume {
       content.document = documentResult
         ? {
             url: documentResult.url,
-            caption: documentMsg.caption ?? null,
             name: documentMsg.fileName ?? documentResult.name,
             mimetype: documentMsg.mimetype ?? documentResult.mimetype ?? null,
             extension: documentResult.extension,
@@ -2203,11 +2202,35 @@ export class MessageUpsertConsume {
         } as LinkPreview)
       : undefined;
 
+    let messageText: string | undefined =
+      data.message?.message?.extendedTextMessage?.text ??
+      data.message?.message?.conversation ??
+      undefined;
+
+    if (!messageText && data.type === EMessageType.document) {
+      const documentMsg = this.getDocumentMessage(data);
+      if (documentMsg?.caption) {
+        messageText = documentMsg.caption;
+      }
+    }
+
+    if (!messageText && data.type === EMessageType.image) {
+      const imageMsg = this.getImageMessage(data);
+      if (imageMsg?.caption) {
+        messageText = imageMsg.caption;
+      }
+    }
+
+    if (!messageText && data.type === EMessageType.video) {
+      const videoMsg = this.getVideoMessage(data);
+      if (videoMsg?.caption) {
+        messageText = videoMsg.caption;
+      }
+    }
+
     const content: IContent = {
       type: data.type,
-      message:
-        data.message?.message?.extendedTextMessage?.text ??
-        data.message?.message?.conversation,
+      message: messageText,
       link_preview: linkPreview,
       quoted: buildQuotedTextFromExtended(data.message),
       context_info: buildContextInfoFromMessage(data.message),

@@ -3463,11 +3463,11 @@ onUnmounted(() => {
                   <p
                     v-if="
                       item.message.content?.type === EMessageType.document &&
-                      item.message.content?.document?.caption
+                      item.message.content?.message
                     "
                     class="chat-text mt-2 mb-0"
                     v-html="
-                      formatWhatsAppText(item.message.content.document.caption)
+                      formatWhatsAppText(item.message.content.message)
                     "
                   />
 
