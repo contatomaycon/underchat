@@ -74,20 +74,33 @@ export class BaileysConnectionService {
   ) {}
 
   get connected(): boolean {
-    return this.connectionEstablished && this.status === Status.connected;
+    const value =
+      this.connectionEstablished && this.status === Status.connected;
+    console.log('[worker_baileys:connection] get connected', { value });
+    return value;
   }
 
   getStatus(): Status {
+    console.log('[worker_baileys:connection] getStatus', {
+      status: this.status,
+    });
     return this.status;
   }
 
   getSocket(): WASocket | undefined {
+    console.log('[worker_baileys:connection] getSocket', {
+      hasSocket: !!this.socket,
+    });
     return this.socket;
   }
 
   private handleInitialConnectionState(
     initialConnection: boolean
   ): Promise<IBaileysConnectionState> | null {
+    console.log('[worker_baileys:connection] handleInitialConnectionState', {
+      initialConnection,
+      connecting: this.connecting,
+    });
     if (!this.connecting) return null;
 
     if (initialConnection) {
@@ -102,14 +115,23 @@ export class BaileysConnectionService {
   }
 
   private canRestoreSession(allowRestore: boolean): boolean {
-    return (
+    const result =
       allowRestore &&
       (this.status === Status.initial || this.status === Status.disconnected) &&
-      this.hasSession()
-    );
+      this.hasSession();
+    console.log('[worker_baileys:connection] canRestoreSession', {
+      allowRestore,
+      status: this.status,
+      result,
+    });
+    return result;
   }
 
   private handleRestoreSession(): Promise<IBaileysConnectionState> | null {
+    console.log('[worker_baileys:connection] handleRestoreSession', {
+      restoreInProgress: this.restoreSessionInProgress(),
+      hasCurrentPromise: !!this.currentPromise,
+    });
     if (!this.restoreSessionInProgress()) {
       return this.restoreWithRetries();
     }
@@ -122,6 +144,11 @@ export class BaileysConnectionService {
   }
 
   private handleExistingConnection(): Promise<IBaileysConnectionState> | null {
+    console.log('[worker_baileys:connection] handleExistingConnection', {
+      connected: this.connected,
+      connecting: this.connecting,
+      status: this.status,
+    });
     if (this.connected) {
       return Promise.resolve(this.reportConnected());
     }
@@ -143,6 +170,11 @@ export class BaileysConnectionService {
   private handleDisconnectedWithRestore(
     allowRestore: boolean
   ): Promise<IBaileysConnectionState> | null {
+    console.log('[worker_baileys:connection] handleDisconnectedWithRestore', {
+      allowRestore,
+      status: this.status,
+      hasSession: this.hasSession(),
+    });
     if (!allowRestore) return null;
     if (this.status !== Status.disconnected) return null;
     if (!this.hasSession()) return null;
@@ -152,6 +184,11 @@ export class BaileysConnectionService {
   private handleConnectingWithRestore(
     allowRestore: boolean
   ): Promise<IBaileysConnectionState> | null {
+    console.log('[worker_baileys:connection] handleConnectingWithRestore', {
+      allowRestore,
+      status: this.status,
+      hasCurrentPromise: !!this.currentPromise,
+    });
     if (!allowRestore) return null;
     if (this.status !== Status.connecting) return null;
     if (!this.currentPromise) return null;
@@ -159,6 +196,7 @@ export class BaileysConnectionService {
   }
 
   async connect(input: IBaileysConnection): Promise<IBaileysConnectionState> {
+    console.log('[worker_baileys:connection] connect entrada', { input });
     const {
       initial_connection: initialConnection = false,
       allow_restore: allowRestore = true,
@@ -171,42 +209,62 @@ export class BaileysConnectionService {
     this.phoneConnection = phoneConnection;
 
     if (this.connected) {
+      console.log('[worker_baileys:connection] connect já conectado');
       return this.reportConnected();
     }
 
     const initialState = this.handleInitialConnectionState(initialConnection);
     if (initialState) {
+      console.log(
+        '[worker_baileys:connection] connect retorno handleInitialConnectionState'
+      );
       return initialState;
     }
 
     if (this.canRestoreSession(allowRestore)) {
       const restoreState = this.handleRestoreSession();
       if (restoreState) {
+        console.log(
+          '[worker_baileys:connection] connect retorno handleRestoreSession'
+        );
         return restoreState;
       }
     }
 
     const existingState = this.handleExistingConnection();
     if (existingState) {
+      console.log(
+        '[worker_baileys:connection] connect retorno handleExistingConnection'
+      );
       return existingState;
     }
 
     const disconnectedState = this.handleDisconnectedWithRestore(allowRestore);
     if (disconnectedState) {
+      console.log(
+        '[worker_baileys:connection] connect retorno handleDisconnectedWithRestore'
+      );
       return disconnectedState;
     }
 
     const connectingState = this.handleConnectingWithRestore(allowRestore);
     if (connectingState) {
+      console.log(
+        '[worker_baileys:connection] connect retorno handleConnectingWithRestore'
+      );
       return connectingState;
     }
 
+    console.log('[worker_baileys:connection] connect criando nova conexão');
     this.prepareFolder();
     this.connecting = true;
     this.retryCount = 0;
     this.socketId += 1;
 
     const { socket } = await this.createSocket();
+    console.log(
+      '[worker_baileys:connection] connect socket criado, bind incoming'
+    );
     this.baileysIncomingMessageService.bindTo(socket);
     this.socket = socket;
 
@@ -217,12 +275,14 @@ export class BaileysConnectionService {
     this.currentPromise = this.wait(socket, this.socketId).finally(() => {
       this.connecting = false;
       this.currentPromise = undefined;
+      console.log('[worker_baileys:connection] connect wait finally');
     });
 
     return this.currentPromise;
   }
 
   async disconnect(input: IBaileysConnection): Promise<void> {
+    console.log('[worker_baileys:connection] disconnect entrada', { input });
     const {
       initial_connection: initialConnection = false,
       disconnected_user: disconnectedUser = false,
@@ -264,13 +324,18 @@ export class BaileysConnectionService {
     );
 
     if (this.initialConnection) {
+      console.log(
+        '[worker_baileys:connection] disconnect reconectando (initial_connection)'
+      );
       this.connect({
         initial_connection: true,
       });
     }
+    console.log('[worker_baileys:connection] disconnect concluído');
   }
 
   reconnect(input: IBaileysConnection): void {
+    console.log('[worker_baileys:connection] reconnect', { input });
     const { initial_connection: initialConnection = true } = input;
 
     this.connect({
@@ -287,9 +352,27 @@ export class BaileysConnectionService {
   }
 
   private async createSocket() {
-    const { state, saveCreds } = await useMultiFileAuthState(FOLDER);
-    const { version } = await fetchLatestWaWebVersion();
+    const t0 = Date.now();
+    console.log(
+      '[worker_baileys:init] connection.service: createSocket iniciado',
+      { ts: t0 }
+    );
 
+    const t1 = Date.now();
+    const { state, saveCreds } = await useMultiFileAuthState(FOLDER);
+    console.log(
+      '[worker_baileys:init] connection.service: useMultiFileAuthState concluído',
+      { ms: Date.now() - t1, ts: Date.now() }
+    );
+
+    const t2 = Date.now();
+    const { version } = await fetchLatestWaWebVersion();
+    console.log(
+      '[worker_baileys:init] connection.service: fetchLatestWaWebVersion concluído',
+      { version, ms: Date.now() - t2, ts: Date.now() }
+    );
+
+    const t3 = Date.now();
     const socket = makeWASocket({
       auth: state,
       version,
@@ -305,13 +388,25 @@ export class BaileysConnectionService {
       maxMsgRetryCount: 10,
       syncFullHistory: false,
     });
+    console.log(
+      '[worker_baileys:init] connection.service: makeWASocket concluído',
+      { ms: Date.now() - t3, ts: Date.now() }
+    );
 
     socket.ev.on('creds.update', saveCreds);
 
+    console.log(
+      '[worker_baileys:init] connection.service: createSocket concluído',
+      { msTotal: Date.now() - t0, ts: Date.now() }
+    );
     return { socket, saveCreds };
   }
 
   private async requestPairing(socket: WASocket): Promise<void> {
+    console.log('[worker_baileys:connection] requestPairing', {
+      hasPhoneConnection: !!this.phoneConnection,
+      registered: socket.authState.creds.registered,
+    });
     if (!this.phoneConnection) {
       return;
     }
@@ -331,19 +426,31 @@ export class BaileysConnectionService {
       };
 
       this.publishSub(payload);
+      console.log(
+        '[worker_baileys:connection] requestPairing pairing code publicado'
+      );
     }
   }
 
   private restoreSessionInProgress(): boolean {
-    return (
+    const result =
       this.connecting &&
       !!this.currentPromise &&
       this.hasSession() &&
-      (this.status === Status.connecting || this.status === Status.initial)
-    );
+      (this.status === Status.connecting || this.status === Status.initial);
+    console.log('[worker_baileys:connection] restoreSessionInProgress', {
+      result,
+      connecting: this.connecting,
+      hasCurrentPromise: !!this.currentPromise,
+      status: this.status,
+    });
+    return result;
   }
 
   private reportConnecting(): IBaileysConnectionState {
+    console.log('[worker_baileys:connection] reportConnecting', {
+      status: this.status,
+    });
     if (this.status !== Status.connecting) {
       this.setStatus(Status.connecting, ECodeMessage.awaitConnection);
     }
@@ -352,16 +459,30 @@ export class BaileysConnectionService {
   }
 
   private wait(socket: WASocket, id: number): Promise<IBaileysConnectionState> {
+    console.log('[worker_baileys:connection] wait iniciado', { socketId: id });
     return new Promise<IBaileysConnectionState>((resolve) => {
       this.pendingResolve = resolve;
       let opened = false;
 
       socket.ev.on('connection.update', async (u: IBaileysUpdateEvent) => {
         if (id !== this.socketId) {
+          console.log(
+            '[worker_baileys:connection] connection.update id ignorado',
+            {
+              id,
+              socketId: this.socketId,
+            }
+          );
           return;
         }
 
         const { qr, connection, isNewLogin, lastDisconnect } = u;
+        console.log('[worker_baileys:connection] connection.update', {
+          hasQr: !!qr,
+          connection,
+          isNewLogin,
+          hasLastDisconnect: !!lastDisconnect,
+        });
 
         if (isNewLogin) {
           return this.onNewLoginAttempt();
@@ -379,11 +500,13 @@ export class BaileysConnectionService {
         if (connection === 'open' && !opened) {
           opened = true;
           this.retryCount = 0;
+          console.log('[worker_baileys:connection] connection.update open');
 
           return void this.onOpen(resolve);
         }
 
         if (connection === 'close') {
+          console.log('[worker_baileys:connection] connection.update close');
           return this.onClose(lastDisconnect, resolve);
         }
 
@@ -396,6 +519,10 @@ export class BaileysConnectionService {
     qr: string,
     resolve: (s: IBaileysConnectionState) => void
   ): Promise<void> {
+    console.log('[worker_baileys:connection] onQr', {
+      qrHash: qr.slice(-20),
+      sameAsLast: qr.slice(-20) === this.qrHash,
+    });
     if (qr.slice(-20) === this.qrHash) {
       return;
     }
@@ -425,6 +552,7 @@ export class BaileysConnectionService {
     }
 
     resolve(this.state(img));
+    console.log('[worker_baileys:connection] onQr concluído, qrcode publicado');
 
     this.pendingResolve = undefined;
   }
@@ -432,6 +560,7 @@ export class BaileysConnectionService {
   private async onOpen(
     resolve: (s: IBaileysConnectionState) => void
   ): Promise<void> {
+    console.log('[worker_baileys:connection] onOpen');
     this.qrHash = undefined;
     this.setStatus(Status.connected, ECodeMessage.connectionEstablished);
     this.connectionEstablished = true;
@@ -455,6 +584,9 @@ export class BaileysConnectionService {
     );
 
     this.startKeepAlive();
+    console.log(
+      '[worker_baileys:connection] onOpen concluído, keepAlive iniciado'
+    );
 
     resolve(this.state());
 
@@ -465,10 +597,18 @@ export class BaileysConnectionService {
     last: IBaileysUpdateEvent['lastDisconnect'],
     resolve: (s: IBaileysConnectionState) => void
   ): Promise<void> {
+    console.log('[worker_baileys:connection] onClose', {
+      hasLast: !!last,
+      error: last?.error,
+    });
     this.stopKeepAlive();
     this.connectionEstablished = false;
     const statusCode = this.extractStatusCode(last?.error);
     const statusMessage = this.extractStatusMessage(last?.error);
+    console.log('[worker_baileys:connection] onClose extraído', {
+      statusCode,
+      statusMessage,
+    });
 
     const disconnectionCode =
       statusCode ?? this.code ?? ECodeMessage.connectionLost;
@@ -546,6 +686,11 @@ export class BaileysConnectionService {
     this.pendingResolve = undefined;
 
     if (this.retryCount < this.maxRetries) {
+      console.log('[worker_baileys:connection] onClose agendando retry', {
+        retryCount: this.retryCount,
+        maxRetries: this.maxRetries,
+        retryDelay: this.retryDelay,
+      });
       setTimeout(() => {
         this.retryCount++;
 
@@ -561,10 +706,13 @@ export class BaileysConnectionService {
           });
         });
       }, this.retryDelay);
+    } else {
+      console.log('[worker_baileys:connection] onClose sem mais retries');
     }
   }
 
   private onNewLoginAttempt() {
+    console.log('[worker_baileys:connection] onNewLoginAttempt');
     this.awaitingNewLogin = true;
     this.connectionEstablished = false;
 
@@ -581,15 +729,35 @@ export class BaileysConnectionService {
   }
 
   private canShowQr(): boolean {
-    return this.initialConnection && !this.connected && !this.awaitingNewLogin;
+    const result =
+      this.initialConnection && !this.connected && !this.awaitingNewLogin;
+    console.log('[worker_baileys:connection] canShowQr', {
+      result,
+      initialConnection: this.initialConnection,
+      connected: this.connected,
+      awaitingNewLogin: this.awaitingNewLogin,
+    });
+    return result;
   }
 
   hasSession(): boolean {
-    return fs.existsSync(FOLDER) && fs.readdirSync(FOLDER).length > 0;
+    const result = fs.existsSync(FOLDER) && fs.readdirSync(FOLDER).length > 0;
+    console.log('[worker_baileys:connection] hasSession', {
+      result,
+      folder: FOLDER,
+    });
+    return result;
   }
 
   private async restoreWithRetries(): Promise<IBaileysConnectionState> {
+    console.log('[worker_baileys:connection] restoreWithRetries iniciado', {
+      maxRetries: this.maxRetries,
+    });
     for (let i = 0; i < this.maxRetries; i++) {
+      console.log('[worker_baileys:connection] restoreWithRetries tentativa', {
+        attempt: i + 1,
+        maxRetries: this.maxRetries,
+      });
       try {
         const s = await this.connect({
           initial_connection: this.initialConnection,
@@ -597,6 +765,7 @@ export class BaileysConnectionService {
         });
 
         if (s.status === Status.connected) {
+          console.log('[worker_baileys:connection] restoreWithRetries sucesso');
           return s;
         }
       } catch (e) {
@@ -611,6 +780,9 @@ export class BaileysConnectionService {
 
       await new Promise((r) => setTimeout(r, this.retryDelay));
     }
+    console.log(
+      '[worker_baileys:connection] restoreWithRetries esgotado, badSession'
+    );
     this.setStatus(Status.disconnected, ECodeMessage.badSession);
     this.clearFolder();
 
@@ -623,6 +795,11 @@ export class BaileysConnectionService {
   }
 
   private publishSub(payload: IBaileysConnectionState, force = false): void {
+    console.log('[worker_baileys:connection] publishSub', {
+      force,
+      initialConnection: this.initialConnection,
+      status: payload.status,
+    });
     if (!this.initialConnection && !force) {
       return;
     }
@@ -637,6 +814,7 @@ export class BaileysConnectionService {
   }
 
   private async updateWorkerMismatchedStatus(): Promise<void> {
+    console.log('[worker_baileys:connection] updateWorkerMismatchedStatus');
     const payload: IBaileysConnectionState = {
       code: ECodeMessage.info,
       status: Status.disconnected,
@@ -655,6 +833,11 @@ export class BaileysConnectionService {
   }
 
   private async safeLogout(forceLogout = false): Promise<void> {
+    console.log('[worker_baileys:connection] safeLogout', {
+      forceLogout,
+      hasSocket: !!this.socket,
+      hasUser: !!this.socket?.user,
+    });
     if (forceLogout && this.socket?.user) {
       try {
         await this.socket.logout();
@@ -676,6 +859,9 @@ export class BaileysConnectionService {
 
     try {
       const ws = this.resolveWebSocket();
+      console.log('[worker_baileys:connection] safeLogout resolveWebSocket', {
+        hasWs: !!ws,
+      });
       if (!ws) {
         this.socket = undefined;
         this.setStatus(Status.disconnected, ECodeMessage.loggedOut);
@@ -684,6 +870,9 @@ export class BaileysConnectionService {
       }
 
       const readyState = ws.readyState;
+      console.log('[worker_baileys:connection] safeLogout readyState', {
+        readyState,
+      });
       if (readyState === 1) {
         ws.close(1000, 'logout');
 
@@ -705,9 +894,13 @@ export class BaileysConnectionService {
 
     this.socket = undefined;
     this.setStatus(Status.disconnected, ECodeMessage.loggedOut);
+    console.log('[worker_baileys:connection] safeLogout concluído');
   }
 
   private cancelAttempt(skipWebSocketClose = false) {
+    console.log('[worker_baileys:connection] cancelAttempt', {
+      skipWebSocketClose,
+    });
     this.stopKeepAlive();
 
     try {
@@ -766,9 +959,13 @@ export class BaileysConnectionService {
     if (!skipWebSocketClose) {
       this.socket = undefined;
     }
+    console.log('[worker_baileys:connection] cancelAttempt concluído');
   }
 
   private reportConnected(): IBaileysConnectionState {
+    console.log('[worker_baileys:connection] reportConnected', {
+      initialConnection: this.initialConnection,
+    });
     if (this.initialConnection) {
       this.lastPayload = null;
 
@@ -786,6 +983,9 @@ export class BaileysConnectionService {
   }
 
   private prepareFolder() {
+    console.log('[worker_baileys:connection] prepareFolder', {
+      folder: FOLDER,
+    });
     if (!fs.existsSync(FOLDER)) {
       fs.mkdirSync(FOLDER, {
         recursive: true,
@@ -794,6 +994,7 @@ export class BaileysConnectionService {
   }
 
   private clearFolder() {
+    console.log('[worker_baileys:connection] clearFolder', { folder: FOLDER });
     for (const f of fs.readdirSync(FOLDER)) {
       fs.rmSync(path.join(FOLDER, f), {
         recursive: true,
@@ -803,6 +1004,11 @@ export class BaileysConnectionService {
   }
 
   private setStatus(s: Status, c?: ECodeMessage) {
+    console.log('[worker_baileys:connection] setStatus', {
+      status: s,
+      code: c,
+      previousStatus: this.status,
+    });
     this.status = s;
 
     if (c) {
@@ -823,6 +1029,7 @@ export class BaileysConnectionService {
   private resolveWebSocket(): WebSocket | undefined {
     const reference = this.socket as unknown;
     if (!reference || typeof reference !== 'object') {
+      console.log('[worker_baileys:connection] resolveWebSocket sem reference');
       return undefined;
     }
 
@@ -852,6 +1059,9 @@ export class BaileysConnectionService {
       }
     }
 
+    console.log(
+      '[worker_baileys:connection] resolveWebSocket não encontrou ws'
+    );
     return undefined;
   }
 
@@ -883,6 +1093,9 @@ export class BaileysConnectionService {
 
   private extractStatusCode(error: unknown): ECodeMessage | undefined {
     if (!error || typeof error !== 'object') {
+      console.log(
+        '[worker_baileys:connection] extractStatusCode sem error válido'
+      );
       return undefined;
     }
 
@@ -901,11 +1114,17 @@ export class BaileysConnectionService {
       return directCode as ECodeMessage;
     }
 
+    console.log(
+      '[worker_baileys:connection] extractStatusCode sem code encontrado'
+    );
     return undefined;
   }
 
   private extractStatusMessage(error: unknown): string | undefined {
     if (!error || typeof error !== 'object') {
+      console.log(
+        '[worker_baileys:connection] extractStatusMessage sem error válido'
+      );
       return undefined;
     }
 
@@ -928,13 +1147,16 @@ export class BaileysConnectionService {
   }
 
   private startKeepAlive(): void {
+    console.log('[worker_baileys:connection] startKeepAlive');
     this.stopKeepAlive();
 
     if (!this.socket) {
+      console.log('[worker_baileys:connection] startKeepAlive sem socket');
       return;
     }
 
     if (!this.connected) {
+      console.log('[worker_baileys:connection] startKeepAlive não conectado');
       return;
     }
 
@@ -944,6 +1166,9 @@ export class BaileysConnectionService {
   }
 
   private stopKeepAlive(): void {
+    console.log('[worker_baileys:connection] stopKeepAlive', {
+      hadInterval: !!this.keepAliveInterval,
+    });
     if (this.keepAliveInterval) {
       clearInterval(this.keepAliveInterval);
       this.keepAliveInterval = undefined;
@@ -954,6 +1179,9 @@ export class BaileysConnectionService {
 
   private async checkAndMaintainActivity(): Promise<void> {
     if (this.isKeepAliveRunning) {
+      console.log(
+        '[worker_baileys:connection] checkAndMaintainActivity já em execução'
+      );
       return;
     }
 
@@ -974,6 +1202,9 @@ export class BaileysConnectionService {
     const ws = this.resolveWebSocket();
 
     if (!this.isWebSocketOpen(ws)) {
+      console.log(
+        '[worker_baileys:connection] checkAndMaintainActivity ws não aberto'
+      );
       this.stopKeepAlive();
       return;
     }
@@ -1000,6 +1231,10 @@ export class BaileysConnectionService {
         error instanceof Error ? error.message : String(error);
 
       const isConnectionError = this.isConnectionRelatedError(errorMessage);
+      console.log('[worker_baileys:connection] checkAndMaintainActivity erro', {
+        errorMessage,
+        isConnectionError,
+      });
 
       if (!isConnectionError) {
         return;
@@ -1025,6 +1260,9 @@ export class BaileysConnectionService {
   }
 
   private isConnectionRelatedError(errorMessage: string): boolean {
+    console.log('[worker_baileys:connection] isConnectionRelatedError', {
+      errorMessage,
+    });
     const connectionErrorPatterns = [
       'timeout',
       'ECONNRESET',
@@ -1042,16 +1280,27 @@ export class BaileysConnectionService {
 
     for (const pattern of connectionErrorPatterns) {
       if (lowerMessage.includes(pattern.toLowerCase())) {
+        console.log(
+          '[worker_baileys:connection] isConnectionRelatedError match',
+          {
+            pattern,
+          }
+        );
         return true;
       }
     }
 
+    console.log('[worker_baileys:connection] isConnectionRelatedError false');
     return false;
   }
 
   private readonly saveLogWppConnection = async (
     wppLog: EWppConnection
   ): Promise<boolean> => {
+    console.log('[worker_baileys:connection] saveLogWppConnection', {
+      worker_id: wppLog.worker_id,
+      status: wppLog.status,
+    });
     const mappings = wppConnectionMappings();
 
     const result = await this.elasticDatabaseService.indices(
@@ -1075,10 +1324,14 @@ export class BaileysConnectionService {
       }
     );
 
-    return (
+    const success =
       updateResult === 'updated' ||
       updateResult === 'created' ||
-      updateResult === 'noop'
-    );
+      updateResult === 'noop';
+    console.log('[worker_baileys:connection] saveLogWppConnection resultado', {
+      updateResult,
+      success,
+    });
+    return success;
   };
 }
