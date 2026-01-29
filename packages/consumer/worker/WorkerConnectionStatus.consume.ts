@@ -249,30 +249,12 @@ export class WorkerConnectionStatusConsume {
   }
 
   private startConnectionRetry(data: StatusConnectionWorkerRequest): void {
-    if (
-      this.activeConnectionRequest &&
-      this.isSameConnectionRequest(this.activeConnectionRequest, data)
-    ) {
-      return;
-    }
-
     this.stopConnectionRetry();
+    this.baileysService.abortConnectionAttempt();
     this.activeConnectionRequest = data;
     this.connectionRetryAttempt = 0;
 
     this.runConnectionAttempt();
-  }
-
-  private isSameConnectionRequest(
-    current: StatusConnectionWorkerRequest,
-    next: StatusConnectionWorkerRequest
-  ): boolean {
-    return (
-      current.worker_id === next.worker_id &&
-      current.status === next.status &&
-      current.type === next.type &&
-      (current.phone_connection ?? '') === (next.phone_connection ?? '')
-    );
   }
 
   private stopConnectionRetry(): void {
@@ -323,6 +305,24 @@ export class WorkerConnectionStatusConsume {
     this.connectionRetryAttempt += 1;
     this.publishConnectionAttempt(this.connectionRetryAttempt);
 
+    if (this.connectionRetryAttempt > this.connectionRetryMinAttempts) {
+      this.stopConnectionRetry();
+      this.baileysService.abortConnectionAttempt();
+      void this.baileysService
+        .disconnect({
+          initial_connection: true,
+          disconnected_user: true,
+        })
+        .catch((error) => {
+          console.error('Error disconnecting Baileys after retries:', error);
+        });
+      return;
+    }
+
+    if (this.connectionRetryAttempt > 1) {
+      this.baileysService.abortConnectionAttempt();
+    }
+
     const connectPromise = this.baileysService
       .connect({
         initial_connection: true,
@@ -343,7 +343,30 @@ export class WorkerConnectionStatusConsume {
 
     void connectPromise;
 
-    this.scheduleNextAttempt();
+    if (this.connectionRetryAttempt < this.connectionRetryMinAttempts) {
+      this.scheduleNextAttempt();
+    } else {
+      this.connectionRetryTimer = setTimeout(() => {
+        if (
+          this.activeConnectionRequest &&
+          !this.baileysService.isConnected()
+        ) {
+          this.stopConnectionRetry();
+          this.baileysService.abortConnectionAttempt();
+          void this.baileysService
+            .disconnect({
+              initial_connection: true,
+              disconnected_user: true,
+            })
+            .catch((error) => {
+              console.error(
+                'Error disconnecting Baileys after retries:',
+                error
+              );
+            });
+        }
+      }, this.connectionRetryIntervalMs);
+    }
   }
 
   private async commitNext(

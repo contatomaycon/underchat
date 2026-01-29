@@ -335,6 +335,11 @@ export class BaileysConnectionService {
     console.log('[worker_baileys:connection] disconnect concluído');
   }
 
+  abortConnectionAttempt(): void {
+    console.log('[worker_baileys:connection] abortConnectionAttempt');
+    this.cancelAttempt(false);
+  }
+
   reconnect(input: IBaileysConnection): void {
     console.log('[worker_baileys:connection] reconnect', { input });
     const { initial_connection: initialConnection = true } = input;

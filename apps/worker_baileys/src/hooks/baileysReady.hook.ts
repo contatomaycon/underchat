@@ -10,10 +10,10 @@ import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 
-const RETRY_DELAY = 10000;
-const CONNECT_TIMEOUT_NEW_MS = 60000;
+const RETRY_DELAY = 15000;
+const CONNECT_TIMEOUT_NEW_MS = 15000;
 const CONNECT_TIMEOUT_RECONNECT_MS = 30000;
-const MAX_RETRY_ATTEMPTS = 5;
+const MAX_RETRY_ATTEMPTS = 10;
 let mismatchedStatusSent = false;
 let isNewCreation: boolean | null = null;
 
@@ -83,6 +83,15 @@ const ensureConnected = async (
   );
   log.info({ attempt }, 'Baileys: iniciando verificação de conexão');
 
+  if (attempt > MAX_RETRY_ATTEMPTS) {
+    log.warn(
+      { attempt, maxRetries: MAX_RETRY_ATTEMPTS },
+      'Baileys: máximo de tentativas atingido, encerrando tentativa'
+    );
+    baileys.abortConnectionAttempt();
+    return;
+  }
+
   if (isNewCreation === null) {
     isNewCreation = !baileys.hasSession();
     log.info(
@@ -127,7 +136,9 @@ const ensureConnected = async (
       baileysEnvironment.baileysAccountId
     );
 
-    setTimeout(() => ensureConnected(attempt, log, baileys), RETRY_DELAY);
+    baileys.abortConnectionAttempt();
+
+    setTimeout(() => ensureConnected(attempt + 1, log, baileys), RETRY_DELAY);
     return;
   }
 
@@ -182,7 +193,12 @@ const ensureConnected = async (
           { attempt },
           'Baileys: QR code emitido com sucesso. Aguardando scan do usuário.'
         );
-        setTimeout(() => ensureConnected(attempt, log, baileys), RETRY_DELAY);
+        baileys.abortConnectionAttempt();
+
+        setTimeout(
+          () => ensureConnected(attempt + 1, log, baileys),
+          RETRY_DELAY
+        );
         return;
       }
 
@@ -224,24 +240,31 @@ const ensureConnected = async (
       'Baileys connection attempt failed'
     );
 
+    baileys.abortConnectionAttempt();
+
+    const isTimeout =
+      error instanceof Error && error.message.toLowerCase().includes('timeout');
+    const nextDelay = isTimeout ? 0 : RETRY_DELAY;
+
     if (!isNewCreation && hasValidSession && attempt < MAX_RETRY_ATTEMPTS) {
       log.info(
         { attempt, nextAttempt: attempt + 1, maxRetries: MAX_RETRY_ATTEMPTS },
         'Baileys: sessão válida encontrada, tentando reconexão...'
       );
       baileys.reconnect({ initial_connection: true });
-      setTimeout(() => ensureConnected(attempt + 1, log, baileys), RETRY_DELAY);
+      setTimeout(() => ensureConnected(attempt + 1, log, baileys), nextDelay);
     } else if (attempt < MAX_RETRY_ATTEMPTS) {
       log.info(
         { attempt, nextAttempt: attempt + 1 },
         'Baileys: tentando nova conexão...'
       );
-      setTimeout(() => ensureConnected(attempt + 1, log, baileys), RETRY_DELAY);
+      setTimeout(() => ensureConnected(attempt + 1, log, baileys), nextDelay);
     } else {
       log.error(
         { attempt, maxRetries: MAX_RETRY_ATTEMPTS },
-        'Baileys: máximo de tentativas atingido, aguardando QR code'
+        'Baileys: máximo de tentativas atingido, continuando retries'
       );
+      setTimeout(() => ensureConnected(attempt + 1, log, baileys), nextDelay);
     }
   }
 };

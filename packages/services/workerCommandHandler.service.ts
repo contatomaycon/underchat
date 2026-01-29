@@ -323,13 +323,11 @@ export class WorkerCommandHandlerService {
     );
 
     if (!updated) {
-      await this.updateWorkerErrorStatus(
-        data.worker_id,
-        data.account_id,
-        data.action,
-        data.server_id
-      );
-      throw new Error('Failed to update worker status');
+      console.error('Failed to update worker status after recreate', {
+        workerId: data.worker_id,
+        accountId: data.account_id,
+        action: data.action,
+      });
     }
 
     const payload: StatusConnectionWorkerRequest = {
@@ -396,13 +394,11 @@ export class WorkerCommandHandlerService {
     );
 
     if (!updated) {
-      await this.updateWorkerErrorStatus(
-        data.worker_id,
-        data.account_id,
-        data.action,
-        data.server_id
-      );
-      throw new Error('Failed to update worker status');
+      console.error('Failed to update worker status before delete', {
+        workerId: data.worker_id,
+        accountId: data.account_id,
+        action: data.action,
+      });
     }
 
     const payload: StatusConnectionWorkerRequest = {
@@ -543,8 +539,11 @@ export class WorkerCommandHandlerService {
     );
 
     if (!updated) {
-      await this.updateWorkerErrorStatus(data.worker_id, data.account_id);
-      throw new Error('Failed to update worker status');
+      console.error('Failed to update worker status after create', {
+        workerId: data.worker_id,
+        accountId: data.account_id,
+        containerId,
+      });
     }
 
     const dataPublish: IBaileysConnectionState = {

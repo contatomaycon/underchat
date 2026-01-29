@@ -26,6 +26,10 @@ export class BaileysService {
     return this.connection.disconnect(input);
   }
 
+  abortConnectionAttempt(): void {
+    return this.connection.abortConnectionAttempt();
+  }
+
   isConnected(): boolean {
     return this.connection.connected;
   }
