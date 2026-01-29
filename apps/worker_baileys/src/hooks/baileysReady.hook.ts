@@ -22,6 +22,7 @@ const withConnectTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> => {
     '[worker_baileys:init] baileysReady.hook: withConnectTimeout criado',
     { ms, ts: Date.now() }
   );
+
   return Promise.race([
     promise,
     new Promise<never>((_, reject) =>
