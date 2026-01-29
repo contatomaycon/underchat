@@ -106,7 +106,8 @@ export class KafkaService {
                 'This server does not host this topic-partition'
               ) ||
               errorMessage.includes('UNKNOWN_TOPIC_OR_PART') ||
-              errorMessage.includes('Unknown topic or partition')
+              errorMessage.includes('Unknown topic or partition') ||
+              errorMessage.includes('unknown partition')
             ) {
               resolve();
               return;
