@@ -82,8 +82,6 @@ const centrifugoPlugin: FastifyPluginAsync<CentrifugoPluginOptions> = async (
     fastify.log.info(
       {
         clientId: ctx.client,
-        version: ctx.version,
-        expires: ctx.expires,
         msSinceStart: Date.now() - connectStart,
         ts: Date.now(),
       },
