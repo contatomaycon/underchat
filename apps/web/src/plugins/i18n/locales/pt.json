@@ -183,6 +183,7 @@
   "channel_general_config_save_error": "Erro ao salvar as configurações do canal.",
   "channels_recreate_all_success": "{success} canais recriados com sucesso! {errors} erros.",
   "channels_recreate_all_error": "Erro ao recriar todos os canais!",
+  "channels_recreate_all_enqueued": "Solicitação enviada. Você será notificado quando a recriação for concluída.",
   "transfer_protocol_text_label": "Transferência para usuário",
   "transfer_protocol_text_placeholder": "Digite o texto da mensagem que será enviada ao transferir para usuário...",
   "transfer_protocol_sector_text_label": "Transferência para setor",

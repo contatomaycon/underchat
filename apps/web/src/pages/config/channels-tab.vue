@@ -17,7 +17,9 @@ import { onMessage, unsubscribe } from '@/@webcore/centrifugo';
 import { channelsConfigCentrifugo } from '@core/common/functions/centrifugoQueue';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { IWorkerPayload } from '@core/common/interfaces/IWorkerPayload';
+import { IConfigChannelsRecreateAllCompleted } from '@core/common/interfaces/IConfigChannelsRecreateAllCompleted';
 import { EWorkerAction } from '@core/common/enums/EWorkerAction';
+import { getUser } from '@/@webcore/localStorage/user';
 import VDialogHandler from '@/components/VDialogHandler.vue';
 import { ChannelsStatisticsResponse } from '@core/schema/config/channelsStatistics/response.schema';
 
@@ -231,16 +233,14 @@ const handleRecreate = async () => {
 };
 
 const handleRecreateAll = async () => {
-  const result = await settingsStore.recreateChannelsAll(
-    options.value.status
-  );
-  
-  if (result) {
+  const result = await settingsStore.recreateChannelsAll(options.value.status);
+
+  isDialogRecreateAllShow.value = false;
+
+  if (result && !result.enqueued) {
     await loadStatistics();
     await loadChannels();
   }
-
-  isDialogRecreateAllShow.value = false;
 };
 
 const deleteChannel = async (id: string) => {
@@ -265,8 +265,33 @@ const deleteChannel = async (id: string) => {
 };
 
 const updateChannelFromCentrifugo = (
-  data: IBaileysConnectionState | IWorkerPayload
+  data:
+    | IBaileysConnectionState
+    | IWorkerPayload
+    | IConfigChannelsRecreateAllCompleted
 ) => {
+  if (
+    data &&
+    typeof data === 'object' &&
+    'type' in data &&
+    data.type === 'recreate_all_completed'
+  ) {
+    const payload = data as IConfigChannelsRecreateAllCompleted;
+    const user = getUser();
+    if (user?.account_id === payload.account_id) {
+      settingsStore.showSnackbar(
+        t('channels_recreate_all_success', {
+          success: payload.success,
+          errors: payload.errors,
+        }),
+        payload.errors > 0 ? EColor.warning : EColor.success
+      );
+      loadStatistics();
+      loadChannels();
+    }
+    return;
+  }
+
   if ('action' in data) {
     const payload = data as IWorkerPayload;
 
@@ -277,15 +302,16 @@ const updateChannelFromCentrifugo = (
       loadStatistics();
       loadChannels();
     }
-  } else {
-    const connectionState = data as IBaileysConnectionState;
-    const channelIndex = channels.value.findIndex(
-      (ch) => ch.id === connectionState.worker_id
-    );
+    return;
+  }
 
-    if (channelIndex !== -1) {
-      loadChannels();
-    }
+  const connectionState = data as IBaileysConnectionState;
+  const channelIndex = channels.value.findIndex(
+    (ch) => ch.id === connectionState.worker_id
+  );
+
+  if (channelIndex !== -1) {
+    loadChannels();
   }
 };
 
@@ -296,7 +322,12 @@ onMounted(async () => {
 
   await onMessage(
     channelsConfigCentrifugo(),
-    (data: IBaileysConnectionState | IWorkerPayload) => {
+    (
+      data:
+        | IBaileysConnectionState
+        | IWorkerPayload
+        | IConfigChannelsRecreateAllCompleted
+    ) => {
       updateChannelFromCentrifugo(data);
     }
   );

@@ -183,6 +183,7 @@
   "channel_general_config_save_error": "Error al guardar las configuraciones del canal.",
   "channels_recreate_all_success": "¡{success} canales recreados con éxito! {errors} errores.",
   "channels_recreate_all_error": "¡Error al recrear todos los canales!",
+  "channels_recreate_all_enqueued": "Solicitud enviada. Será notificado cuando la recreación se complete.",
   "transfer_protocol_text_label": "Transferencia para usuario",
   "transfer_protocol_text_placeholder": "Ingrese el texto del mensaje que se enviará al transferir para usuario...",
   "transfer_protocol_sector_text_label": "Transferencia para sector",

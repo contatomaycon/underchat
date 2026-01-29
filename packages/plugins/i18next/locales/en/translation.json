@@ -131,6 +131,7 @@
   "channel_recreate_error": "Error recreating channel!",
   "channels_recreate_all_success": "{{success}} channels recreated successfully! {{errors}} errors.",
   "channels_recreate_all_error": "Error recreating all channels!",
+  "channels_recreate_all_enqueued": "Request sent. You will be notified when recreation is complete.",
   "no_channels_to_recreate": "No channels found to recreate!",
   "channels_statistics_success": "Channel statistics retrieved successfully!",
   "worker_balancer_not_available": "Worker balancer not available!",

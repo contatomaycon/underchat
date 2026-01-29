@@ -17,6 +17,7 @@ import { startScheduleStatusUpdateConsume } from './scheduleStatusUpdate.consume
 import { startAiAgentPromptEmbeddingConsume } from './aiAgentPromptEmbedding.consume';
 import { startChatHistoryEmbeddingConsume } from './chatHistoryEmbedding.consume';
 import { startContactValidationUpdateConsume } from './contactValidationUpdate.consume';
+import { startConfigChannelsRecreateAllConsume } from './configChannelsRecreateAll.consume';
 
 const consumers: Array<{ close?: () => Promise<void> }> = [];
 
@@ -48,7 +49,8 @@ export function startConsumers(server: FastifyInstance): void {
       startScheduleStatusUpdateConsume(server),
       startAiAgentPromptEmbeddingConsume(server),
       startChatHistoryEmbeddingConsume(server),
-      startContactValidationUpdateConsume(server)
+      startContactValidationUpdateConsume(server),
+      startConfigChannelsRecreateAllConsume(server)
     );
   });
 }

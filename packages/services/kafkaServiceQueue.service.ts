@@ -37,6 +37,7 @@ export class KafkaServiceQueueService {
     const aiAgentPromptEmbedding = this.aiAgentPromptEmbedding();
     const chatHistoryEmbedding = this.chatHistoryEmbedding();
     const contactValidationUpdate = this.contactValidationUpdate();
+    const configChannelsRecreateAll = this.configChannelsRecreateAll();
 
     return [
       createServer,
@@ -58,6 +59,7 @@ export class KafkaServiceQueueService {
       aiAgentPromptEmbedding,
       chatHistoryEmbedding,
       contactValidationUpdate,
+      configChannelsRecreateAll,
     ];
   };
 
@@ -145,5 +147,9 @@ export class KafkaServiceQueueService {
 
   contactValidationUpdate = () => {
     return `contact.validation.update`;
+  };
+
+  configChannelsRecreateAll = () => {
+    return 'config.channels.recreate.all';
   };
 }

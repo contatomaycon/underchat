@@ -509,14 +509,15 @@ export const useSettingsStore = defineStore('settings', {
       }
     },
     async recreateChannelsAll(status?: string | null): Promise<{
-      success: number;
-      errors: number;
+      enqueued: boolean;
+      success?: number;
+      errors?: number;
     } | null> {
       try {
         this.loading = true;
 
         const response = await axios.patch<
-          IApiResponse<{ success: number; errors: number }>
+          IApiResponse<{ success?: number; errors?: number }>
         >('/config/channels/recreate-all', {
           status: status || undefined,
         });
@@ -524,6 +525,12 @@ export const useSettingsStore = defineStore('settings', {
         this.loading = false;
 
         const data = response?.data;
+        const isAccepted = response?.status === 202;
+
+        if (isAccepted && data?.status && data?.message) {
+          this.showSnackbar(data.message, EColor.info);
+          return { enqueued: true };
+        }
 
         if (!data?.status || !data?.data) {
           this.showSnackbar(
@@ -542,7 +549,11 @@ export const useSettingsStore = defineStore('settings', {
           EColor.success
         );
 
-        return data.data;
+        return {
+          enqueued: false,
+          success: data.data.success,
+          errors: data.data.errors,
+        };
       } catch (error) {
         this.loading = false;
         let errorMessage = this.i18n.global.t('channels_recreate_all_error');

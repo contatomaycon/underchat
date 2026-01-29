@@ -131,6 +131,7 @@
   "channel_recreate_error": "Erro ao recriar o canal!",
   "channels_recreate_all_success": "{{success}} canais recriados com sucesso! {{errors}} erros.",
   "channels_recreate_all_error": "Erro ao recriar todos os canais!",
+  "channels_recreate_all_enqueued": "Solicitação enviada. Você será notificado quando a recriação for concluída.",
   "no_channels_to_recreate": "Nenhum canal encontrado para recriar!",
   "channels_statistics_success": "Estatísticas dos canais obtidas com sucesso!",
   "worker_balancer_not_available": "Trabalhador balancer não disponível",

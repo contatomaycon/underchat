@@ -1,6 +1,7 @@
 export enum EHTTPStatusCode {
   ok = 200,
   created = 201,
+  accepted = 202,
   multiple_choices = 300,
   moved_permanently = 301,
   bad_request = 400,

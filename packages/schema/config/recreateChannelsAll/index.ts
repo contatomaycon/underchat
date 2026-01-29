@@ -2,7 +2,6 @@ import { Type } from '@sinclair/typebox';
 import { ELanguage } from '@core/common/enums/ELanguage';
 import { ETagSwagger } from '@core/common/enums/ETagSwagger';
 import { recreateChannelsAllRequestSchema } from './request.schema';
-import { recreateChannelsAllResponseSchema } from './response.schema';
 
 export const recreateChannelsAllSchema = {
   description: 'Recria todos os canais existentes',
@@ -24,14 +23,13 @@ export const recreateChannelsAllSchema = {
     ),
   }),
   response: {
-    200: Type.Object(
+    202: Type.Object(
       {
         id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
         status: Type.Boolean({ const: true }),
         message: Type.String(),
-        data: recreateChannelsAllResponseSchema,
       },
-      { description: 'Successful' }
+      { description: 'Accepted - processing in background' }
     ),
     400: Type.Object(
       {
