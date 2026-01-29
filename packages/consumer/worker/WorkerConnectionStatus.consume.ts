@@ -41,20 +41,45 @@ export class WorkerConnectionStatusConsume {
   }
 
   public async execute(): Promise<void> {
-    if (this.consumer && this.isRunning) return;
+    const t0 = Date.now();
+    console.log(
+      '[worker_baileys:init] WorkerConnectionStatus.consume: execute iniciado',
+      { ts: t0 }
+    );
+    if (this.consumer && this.isRunning) {
+      console.log(
+        '[worker_baileys:init] WorkerConnectionStatus.consume: execute já rodando, saindo',
+        { ts: Date.now() }
+      );
+      return;
+    }
 
     const topic = this.getWorkerConnectionTopic();
+    console.log(
+      '[worker_baileys:init] WorkerConnectionStatus.consume: topic obtido',
+      { topic, ts: Date.now() }
+    );
 
+    const tEnsureTopic = Date.now();
     await ensureKafkaTopic(
       this.kafka,
       topic,
       this.kafkaBaileysQueueService.getNumPartitions(),
       this.kafkaBaileysQueueService.getReplicationFactor()
     );
+    console.log(
+      '[worker_baileys:init] WorkerConnectionStatus.consume: ensureKafkaTopic concluído',
+      { topic, ms: Date.now() - tEnsureTopic, ts: Date.now() }
+    );
 
+    const tCreateConsumer = Date.now();
     this.consumer = createConsumer(
       this.kafka,
       `group-underchat-worker-connection-status-${baileysEnvironment.baileysWorkerId}`
+    );
+    console.log(
+      '[worker_baileys:init] WorkerConnectionStatus.consume: createConsumer concluído',
+      { ms: Date.now() - tCreateConsumer, ts: Date.now() }
     );
 
     this.consumer.on('data', async (message) => {
@@ -91,9 +116,22 @@ export class WorkerConnectionStatusConsume {
       throw new Error('Consumer not initialized');
     }
 
+    const tConnect = Date.now();
+    console.log(
+      '[worker_baileys:init] WorkerConnectionStatus.consume: connectConsumer iniciando',
+      { topic, ts: Date.now() }
+    );
     connectConsumer(consumer, topic, () => {
       this.isRunning = true;
+      console.log(
+        '[worker_baileys:init] WorkerConnectionStatus.consume: connectConsumer callback (conectado)',
+        { ms: Date.now() - tConnect, msTotal: Date.now() - t0, ts: Date.now() }
+      );
     });
+    console.log(
+      '[worker_baileys:init] WorkerConnectionStatus.consume: execute concluído (connectConsumer assíncrono)',
+      { msTotal: Date.now() - t0, ts: Date.now() }
+    );
   }
 
   public async close(): Promise<void> {

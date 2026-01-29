@@ -15,8 +15,11 @@ import { EDocumentation } from '@core/common/enums/EDocumentation';
 import path from 'node:path';
 
 const swaggerPlugin = async (fastify: FastifyInstance) => {
+  const t0 = Date.now();
+  console.log('[worker_baileys:init] swagger: plugin iniciado', { ts: t0 });
   const patchPackage = path.join(__dirname, '../../../package.json');
 
+  const tSwagger = Date.now();
   fastify.register(fastifySwagger, {
     openapi: {
       openapi: '3.1.0',
@@ -43,9 +46,18 @@ const swaggerPlugin = async (fastify: FastifyInstance) => {
       ],
     },
   });
+  console.log('[worker_baileys:init] swagger: fastifySwagger registrado', {
+    ms: Date.now() - tSwagger,
+    ts: Date.now(),
+  });
 
+  const tScalar = Date.now();
   const ScalarApiReference = (await import('@scalar/fastify-api-reference'))
     .default;
+  console.log('[worker_baileys:init] swagger: ScalarApiReference importado', {
+    ms: Date.now() - tScalar,
+    ts: Date.now(),
+  });
 
   fastify.register(ScalarApiReference, {
     routePrefix: EDocumentation.scalar,
@@ -53,7 +65,11 @@ const swaggerPlugin = async (fastify: FastifyInstance) => {
       layout: 'classic',
     },
   });
+  console.log('[worker_baileys:init] swagger: ScalarApiReference registrado', {
+    ts: Date.now(),
+  });
 
+  const tSwaggerUi = Date.now();
   fastify.register(fastifySwaggerUi, {
     routePrefix: EDocumentation.swagger,
     uiConfig: {
@@ -81,8 +97,16 @@ const swaggerPlugin = async (fastify: FastifyInstance) => {
       return header;
     },
   });
+  console.log('[worker_baileys:init] swagger: fastifySwaggerUi registrado', {
+    ms: Date.now() - tSwaggerUi,
+    ts: Date.now(),
+  });
 
   fastify.withTypeProvider<TypeBoxTypeProvider>();
+  console.log('[worker_baileys:init] swagger: plugin concluído', {
+    msTotal: Date.now() - t0,
+    ts: Date.now(),
+  });
 };
 
 export default fp(swaggerPlugin, { name: 'swagger' });
