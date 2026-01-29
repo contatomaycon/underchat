@@ -56,3 +56,8 @@ export const workerProfileInfoPermissions = [
   EWorkerPermissions.worker_group,
   EWorkerPermissions.profile_info_worker,
 ];
+
+export const workerServersListPermissions = [
+  EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+];

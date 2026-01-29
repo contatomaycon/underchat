@@ -87,6 +87,23 @@ export class KafkaService {
     }
   }
 
+  private isUnknownTopicOrPartitionError(err: unknown): boolean {
+    const errorMessage = getErrorMessage(err).toLowerCase();
+    const errorCode = (err as any)?.code ?? (err as any)?.errno;
+
+    if (errorCode === 3) {
+      return true;
+    }
+
+    return (
+      errorMessage.includes('this server does not host this topic-partition') ||
+      errorMessage.includes('unknown_topic_or_part') ||
+      errorMessage.includes('unknown topic or partition') ||
+      errorMessage.includes('unknown partition') ||
+      (errorMessage.includes('unknown') && errorMessage.includes('partition'))
+    );
+  }
+
   private async deleteSingleTopic(
     topic: string,
     timeoutMs: number
@@ -97,18 +114,7 @@ export class KafkaService {
         timeoutMs,
         (err: LibrdKafkaError | null) => {
           if (err) {
-            const errorMessage = getErrorMessage(err);
-            const errorCode = (err as any).code ?? (err as any).errno;
-
-            if (
-              errorCode === 3 ||
-              errorMessage.includes(
-                'This server does not host this topic-partition'
-              ) ||
-              errorMessage.includes('UNKNOWN_TOPIC_OR_PART') ||
-              errorMessage.includes('Unknown topic or partition') ||
-              errorMessage.includes('unknown partition')
-            ) {
+            if (this.isUnknownTopicOrPartitionError(err)) {
               resolve();
               return;
             }

@@ -72,7 +72,9 @@ export class WorkerDeleterUseCase {
       inputDeleter
     );
 
-    await this.onWorkerDeleted(t, inputDeleter);
+    try {
+      await this.onWorkerDeleted(t, inputDeleter);
+    } catch {}
 
     const inputUpdate: IUpdateWorker = {
       worker_id: workerId,

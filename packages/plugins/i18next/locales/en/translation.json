@@ -40,6 +40,7 @@
   "server_reinstall_failed": "Failed to reinstall server",
   "worker_creator_success": "Worker created successfully!",
   "worker_creator_error": "Error creating worker!",
+  "worker_servers_list_successfully": "Worker servers list retrieved successfully!",
   "worker_removal_failed": "Failed to remove worker",
   "worker_creation_failed": "Failed to create worker",
   "worker_server_not_disponible": "Worker server not disponible",

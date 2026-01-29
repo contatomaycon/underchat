@@ -3,6 +3,7 @@ import Docker from 'dockerode';
 import { EWorkerImage } from '@core/common/enums/EWorkerImage';
 import { WorkerCreatorRepository } from '@core/repositories/worker/WorkerCreator.repository';
 import { ICreateWorker } from '@core/common/interfaces/ICreateWorker';
+import { WorkerServerListerRepository } from '@core/repositories/worker/WorkerServerLister.repository';
 import { WorkerServerViewerRepository } from '@core/repositories/worker/WorkerServerViewer.repository';
 import { WorkerTotalViewerRepository } from '@core/repositories/worker/WorkerTotalViewer.repository';
 import { WorkerListerRepository } from '@core/repositories/worker/WorkerLister.repository';
@@ -28,6 +29,7 @@ import { ICreateWorkerPhoneConnection } from '@core/common/interfaces/ICreateWor
 import { WorkerTypeViewerRepository } from '@core/repositories/worker/WorkerTypeViewer.repository';
 import { IViewWorkerType } from '@core/common/interfaces/IViewWorkerType';
 import { IUpdateWorker } from '@core/common/interfaces/IUpdateWorker';
+import { IListWorkerServer } from '@core/common/interfaces/IListWorkerServer';
 import { IViewWorkerServer } from '@core/common/interfaces/IViewWorkerServer';
 import { WorkerBaileysActivitiesListerRepository } from '@core/repositories/worker/WorkerBaileysActivitiesLister.repository';
 import { IListWorkerActivities } from '@core/common/interfaces/IListWorkerActivities';
@@ -53,6 +55,7 @@ export class WorkerService {
 
   constructor(
     private readonly workerCreatorRepository: WorkerCreatorRepository,
+    private readonly workerServerListerRepository: WorkerServerListerRepository,
     private readonly workerServerViewerRepository: WorkerServerViewerRepository,
     private readonly workerTotalViewerRepository: WorkerTotalViewerRepository,
     private readonly workerListerRepository: WorkerListerRepository,
@@ -226,6 +229,10 @@ export class WorkerService {
 
   public async createWorker(input: ICreateWorker): Promise<boolean> {
     return this.workerCreatorRepository.createWorker(input);
+  }
+
+  public async listWorkerServers(): Promise<IListWorkerServer[]> {
+    return this.workerServerListerRepository.listWorkerServers();
   }
 
   public async viewWorkerServer(

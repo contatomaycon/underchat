@@ -40,6 +40,7 @@
   "server_reinstall_failed": "Error al reinstalar el servidor",
   "worker_creator_success": "¡Trabajador creado con éxito!",
   "worker_creator_error": "Error al crear el trabajador",
+  "worker_servers_list_successfully": "¡Lista de servidores para canales obtenida con éxito!",
   "worker_removal_failed": "Error al eliminar el trabajador",
   "worker_creation_failed": "Error al crear el trabajador",
   "worker_server_not_disponible": "Servidor de trabajadores no disponible",

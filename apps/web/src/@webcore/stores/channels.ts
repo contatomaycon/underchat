@@ -13,6 +13,10 @@ import {
 } from '@core/schema/worker/listWorker/response.schema';
 import { ListWorkerRequest } from '@core/schema/worker/listWorker/request.schema';
 import { CreateWorkerRequest } from '@core/schema/worker/createWorker/request.schema';
+import {
+  ListWorkerServersResponse,
+  ListWorkerServersItemResponse,
+} from '@core/schema/worker/listWorkerServers/response.schema';
 import { EditWorkerRequest } from '@core/schema/worker/editWorker/request.schema';
 import { ViewWorkerResponse } from '@core/schema/worker/viewWorker/response.schema';
 import { StatusConnectionWorkerRequest } from '@core/schema/worker/statusConnection/request.schema';
@@ -119,6 +123,25 @@ export const useChannelsStore = defineStore('channels', {
 
         this.loading = false;
 
+        return null;
+      }
+    },
+
+    async listWorkerServers(): Promise<ListWorkerServersItemResponse[] | null> {
+      try {
+        const response =
+          await axios.get<IApiResponse<ListWorkerServersResponse>>(
+            `/worker/servers`
+          );
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        return data.data.results;
+      } catch {
         return null;
       }
     },

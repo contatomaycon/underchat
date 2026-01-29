@@ -56,15 +56,28 @@ export class WorkerCreatorUseCase {
   ): Promise<boolean> {
     await this.validate(t, accountId);
 
-    const viewWorkerServer =
-      await this.workerService.viewWorkerServer(accountId);
+    let serverId: string;
 
-    if (!viewWorkerServer) {
-      throw new Error(t('worker_server_not_disponible'));
-    }
+    if (input.server_id) {
+      const eligibleServers = await this.workerService.listWorkerServers();
+      const serverEligible = eligibleServers.some(
+        (s) => s.server_id === input.server_id
+      );
 
-    if (!viewWorkerServer.server_id) {
-      throw new Error(t('worker_server_not_disponible'));
+      if (!serverEligible) {
+        throw new Error(t('worker_server_not_disponible'));
+      }
+
+      serverId = input.server_id;
+    } else {
+      const viewWorkerServer =
+        await this.workerService.viewWorkerServer(accountId);
+
+      if (!viewWorkerServer?.server_id) {
+        throw new Error(t('worker_server_not_disponible'));
+      }
+
+      serverId = viewWorkerServer.server_id;
     }
 
     const workerType = input.worker_type as EWorkerType;
@@ -82,7 +95,7 @@ export class WorkerCreatorUseCase {
       worker_id: workerId,
       worker_status_id: EWorkerStatus.new,
       worker_type_id: workerType,
-      server_id: viewWorkerServer.server_id,
+      server_id: serverId,
       account_id: accountId,
       name: input.name.trim(),
     };
@@ -99,8 +112,8 @@ export class WorkerCreatorUseCase {
       worker_id: workerId,
       worker_status_id: EWorkerStatus.new,
       worker_type_id: workerType,
-      server_id: viewWorkerServer.server_id,
-      account_id: viewWorkerServer.account_id,
+      server_id: serverId,
+      account_id: accountId,
       name: input.name.trim(),
     };
 

@@ -21,6 +21,7 @@ import {
   channelsConfigCentrifugo,
 } from '@core/common/functions/centrifugoQueue';
 import { balanceEnvironment } from '@core/config/environments';
+import { getErrorMessage } from '@core/common/functions/toError';
 
 @injectable()
 export class WorkerCommandHandlerService {
@@ -35,6 +36,15 @@ export class WorkerCommandHandlerService {
     private readonly streamProducerService: StreamProducerService
   ) {}
 
+  private isTopicOrPartitionMissing(err: unknown): boolean {
+    const msg = getErrorMessage(err).toLowerCase();
+    return (
+      msg.includes('unknown partition') ||
+      msg.includes('unknown topic') ||
+      msg.includes('topic or partition')
+    );
+  }
+
   async handle(data: IWorkerPayload): Promise<void> {
     if (data.action === EWorkerAction.create) {
       await this.createWorker(data);
@@ -42,7 +52,13 @@ export class WorkerCommandHandlerService {
     }
 
     if (data.action === EWorkerAction.delete) {
-      await this.kafkaBaileysQueueService.delete(data.worker_id);
+      try {
+        await this.kafkaBaileysQueueService.delete(data.worker_id);
+      } catch (err) {
+        if (!this.isTopicOrPartitionMissing(err)) {
+          throw err;
+        }
+      }
       await this.deleteWorker(data);
       return;
     }
@@ -246,11 +262,17 @@ export class WorkerCommandHandlerService {
       type: data.worker_type_id as EWorkerType,
     };
 
-    await this.streamProducerService.send(
-      this.kafkaBaileysQueueService.workerConnection(data.worker_id),
-      payload,
-      data.worker_id
-    );
+    try {
+      await this.streamProducerService.send(
+        this.kafkaBaileysQueueService.workerConnection(data.worker_id),
+        payload,
+        data.worker_id
+      );
+    } catch (err) {
+      if (!this.isTopicOrPartitionMissing(err)) {
+        throw err;
+      }
+    }
 
     const dataPublish: IBaileysConnectionState = {
       code: ECodeMessage.info,
@@ -313,11 +335,17 @@ export class WorkerCommandHandlerService {
       type: EBaileysConnectionType.qrcode,
     };
 
-    await this.streamProducerService.send(
-      this.kafkaBaileysQueueService.workerConnection(data.worker_id),
-      payload,
-      data.worker_id
-    );
+    try {
+      await this.streamProducerService.send(
+        this.kafkaBaileysQueueService.workerConnection(data.worker_id),
+        payload,
+        data.worker_id
+      );
+    } catch (err) {
+      if (!this.isTopicOrPartitionMissing(err)) {
+        throw err;
+      }
+    }
 
     const containerId = await this.retryOperation(
       async () => this.workerService.removeContainerWorker(data.worker_id),

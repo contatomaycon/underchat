@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { container } from 'tsyringe';
 import WorkerController from '@/controllers/worker';
 import { listWorkerSchema } from '@core/schema/worker/listWorker';
+import { listWorkerServersSchema } from '@core/schema/worker/listWorkerServers';
 import {
   workerCreatePermissions,
   workerDeletePermissions,
@@ -11,6 +12,7 @@ import {
   workerViewPermissions,
   workerProfileStatusPermissions,
   workerProfileInfoPermissions,
+  workerServersListPermissions,
 } from '@/permissions';
 import { createWorkerSchema } from '@core/schema/worker/createWorker';
 import { editWorkerSchema } from '@core/schema/worker/editWorker';
@@ -77,6 +79,17 @@ export default function workerRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, workerViewPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.get('/worker/servers', {
+    schema: listWorkerServersSchema,
+    handler: workerController.listWorkerServers,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, workerServersListPermissions),
       planGuard,
       planStatus,
     ],

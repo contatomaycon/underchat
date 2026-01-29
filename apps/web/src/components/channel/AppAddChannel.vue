@@ -1,8 +1,11 @@
 <script lang="ts" setup>
+import { nextTick } from 'vue';
 import { useChannelsStore } from '@/@webcore/stores/channels';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
+import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { CreateWorkerRequest } from '@core/schema/worker/createWorker/request.schema';
 import { VForm } from 'vuetify/components/VForm';
+import { can } from '@layouts/plugins/casl';
 
 const channelStore = useChannelsStore();
 const { t } = useI18n();
@@ -18,13 +21,40 @@ const isVisible = computed({
   set: (v) => emit('update:modelValue', v),
 });
 
+const canChooseServer = computed(() =>
+  can([EGeneralPermissions.full_access, EGeneralPermissions.full_access_group])
+);
+
 const name = ref<string | null>(null);
 const type = ref<EWorkerType | null>(EWorkerType.baileys);
+const serverId = ref<string | null>(null);
 
 const itemsType = ref([{ value: EWorkerType.baileys, title: t('unofficial') }]);
+const serverItems = ref<Array<{ value: string; title: string }>>([]);
+const serversLoading = ref(false);
 
 const refFormAddChannel = ref<VForm>();
 const isAdding = ref(false);
+
+const loadWorkerServers = async () => {
+  if (!canChooseServer.value) {
+    return;
+  }
+
+  serversLoading.value = true;
+  try {
+    const result = await channelStore.listWorkerServers();
+
+    if (result) {
+      serverItems.value = result.map((s) => ({
+        value: s.server_id,
+        title: s.name,
+      }));
+    }
+  } finally {
+    serversLoading.value = false;
+  }
+};
 
 const addChannel = async () => {
   const validateForm = await refFormAddChannel?.value?.validate();
@@ -38,6 +68,10 @@ const addChannel = async () => {
     name: name.value,
     worker_type: type.value,
   };
+
+  if (canChooseServer.value && serverId.value) {
+    payload.server_id = serverId.value;
+  }
 
   isAdding.value = true;
   try {
@@ -56,12 +90,24 @@ const addChannel = async () => {
 const resetForm = () => {
   name.value = null;
   type.value = EWorkerType.baileys;
+  serverId.value = null;
   refFormAddChannel.value?.resetValidation();
 };
 
-watch(isVisible, (visible) => {
-  if (visible) resetForm();
-});
+watch(
+  isVisible,
+  async (visible) => {
+    if (visible) {
+      resetForm();
+      serverItems.value = [];
+      await nextTick();
+      if (canChooseServer.value) {
+        loadWorkerServers();
+      }
+    }
+  },
+  { immediate: true }
+);
 
 onMounted(resetForm);
 </script>
@@ -71,7 +117,7 @@ onMounted(resetForm);
     <DialogCloseBtn @click="isVisible = false" />
 
     <VForm ref="refFormAddChannel" @submit.prevent>
-      <VCard :title="$t('add_server')">
+      <VCard :title="$t('add_channel')">
         <VCardText>
           <VRow>
             <VCol cols="12" sm="6" md="6">
@@ -92,6 +138,19 @@ onMounted(resetForm);
                 v-model="name"
                 :placeholder="$t('name')"
                 :rules="[requiredValidator(name, $t('name_required'))]"
+              />
+            </VCol>
+
+            <VCol v-if="canChooseServer" cols="12" sm="6" md="6">
+              <VLabel class="text-body-2 mb-1">{{ $t('server') }}:</VLabel>
+              <AppSelectSearch
+                v-model="serverId"
+                :items="serverItems"
+                :placeholder="$t('select_server')"
+                :loading="serversLoading"
+                :clearable="true"
+                item-value="value"
+                item-title="title"
               />
             </VCol>
           </VRow>
