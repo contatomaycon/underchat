@@ -73,7 +73,9 @@ COPY --from=builder /app/packages/proto ./packages/proto
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
       librdkafka1 \
-      curl && \
+      curl \
+      ca-certificates && \
+    update-ca-certificates && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 

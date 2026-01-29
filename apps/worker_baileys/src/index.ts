@@ -1,5 +1,7 @@
 import 'reflect-metadata';
 import 'module-alias/register';
+import dns from 'node:dns';
+dns.setDefaultResultOrder('ipv4first');
 console.log('[worker_baileys:init] index.ts: imports iniciados', {
   ts: Date.now(),
 });
