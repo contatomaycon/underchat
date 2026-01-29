@@ -13,11 +13,7 @@ import { webcrypto as nodeCrypto } from 'node:crypto';
 
 @injectable()
 export class BaileysHelpersService {
-  constructor(private readonly connection: BaileysConnectionService) {
-    if (!this.connection.connected) {
-      this.connection.reconnect({ initial_connection: true });
-    }
-  }
+  constructor(private readonly connection: BaileysConnectionService) {}
 
   async send(
     address: string,
