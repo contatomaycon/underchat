@@ -96,24 +96,18 @@ export class BaileysConnectionService {
     return this.socket;
   }
 
-  private handleInitialConnectionState(
-    initialConnection: boolean
-  ): Promise<IBaileysConnectionState> | null {
-    console.log('[worker_baileys:connection] handleInitialConnectionState', {
-      initialConnection,
+  private handleAlreadyConnecting(): Promise<IBaileysConnectionState> | null {
+    console.log('[worker_baileys:connection] handleAlreadyConnecting', {
       connecting: this.connecting,
+      hasCurrentPromise: !!this.currentPromise,
     });
     if (!this.connecting) return null;
-
-    if (initialConnection) {
-      this.cancelAttempt();
-    }
 
     if (this.currentPromise) {
       return this.currentPromise;
     }
 
-    return null;
+    return Promise.resolve(this.reportConnecting());
   }
 
   private canRestoreSession(allowRestore: boolean): boolean {
@@ -150,6 +144,7 @@ export class BaileysConnectionService {
       connected: this.connected,
       connecting: this.connecting,
       status: this.status,
+      hasSocket: !!this.socket,
     });
     if (this.connected) {
       return Promise.resolve(this.reportConnected());
@@ -164,6 +159,10 @@ export class BaileysConnectionService {
 
     if (this.status === Status.connected) {
       return Promise.resolve(this.reportConnected());
+    }
+
+    if (this.status === Status.connecting && this.socket) {
+      return Promise.resolve(this.reportConnecting());
     }
 
     return null;
@@ -215,12 +214,12 @@ export class BaileysConnectionService {
       return this.reportConnected();
     }
 
-    const initialState = this.handleInitialConnectionState(initialConnection);
-    if (initialState) {
+    const alreadyConnecting = this.handleAlreadyConnecting();
+    if (alreadyConnecting) {
       console.log(
-        '[worker_baileys:connection] connect retorno handleInitialConnectionState'
+        '[worker_baileys:connection] connect retorno handleAlreadyConnecting'
       );
-      return initialState;
+      return alreadyConnecting;
     }
 
     if (this.canRestoreSession(allowRestore)) {
@@ -1065,22 +1064,13 @@ export class BaileysConnectionService {
     if (!skipWebSocketClose) {
       try {
         const ws = this.resolveWebSocket();
-        if (!ws) {
-          this.socket = undefined;
-
-          return;
-        }
-
-        const readyState = ws.readyState;
-        if (readyState === 1) {
-          ws.close(1000, 'reconnect');
-
-          return;
-        }
-
-        const isConnectingOrClosing = readyState === 0 || readyState === 2;
-        if (isConnectingOrClosing) {
-          ws.terminate?.();
+        if (ws) {
+          const readyState = ws.readyState;
+          if (readyState === 1) {
+            ws.close(1000, 'reconnect');
+          } else if (readyState === 0 || readyState === 2) {
+            ws.terminate?.();
+          }
         }
       } catch {
         this.saveLogWppConnection({

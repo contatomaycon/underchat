@@ -124,6 +124,11 @@ export class WorkerCreatorUseCase {
 
     await this.onWorkerCreated(t, payloadCreate);
 
+    await this.workerService.updateWorkerById(accountId, {
+      worker_id: workerId,
+      worker_status_id: EWorkerStatus.disponible,
+    });
+
     return isCreated;
   }
 }

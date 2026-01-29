@@ -177,6 +177,15 @@ const ensureConnected = async (
     }
 
     if (state.status === EBaileysConnectionStatus.connecting) {
+      if (state.qrcode) {
+        log.info(
+          { attempt },
+          'Baileys: QR code emitido com sucesso. Aguardando scan do usuário.'
+        );
+        setTimeout(() => ensureConnected(attempt, log, baileys), RETRY_DELAY);
+        return;
+      }
+
       const hasValidSession = baileys.hasSession();
 
       if (isNewCreation || !hasValidSession) {

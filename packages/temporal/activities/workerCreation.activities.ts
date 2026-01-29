@@ -63,5 +63,10 @@ export class WorkerCreationActivity implements IWorkerCreationActivity {
     };
 
     await this.workerGrpcClientService.createWorker(payloadCreate);
+
+    await this.workerService.updateWorkerById(input.account_id, {
+      worker_id: input.worker_id,
+      worker_status_id: EWorkerStatus.disponible,
+    });
   };
 }
