@@ -373,7 +373,90 @@ onUnmounted(() => {
 
           <div v-else-if="statusCode === ECodeMessage.awaitConnection">
             <VCardText class="d-flex justify-center">
-              <VSkeletonLoader type="image" width="240" height="240" />
+              <div class="qrcode-skeleton">
+                <svg
+                  viewBox="0 0 21 21"
+                  fill="none"
+                  xmlns="http://www.w3.org/2000/svg"
+                  class="qrcode-skeleton__grid"
+                >
+                  <rect
+                    width="21"
+                    height="21"
+                    fill="currentColor"
+                    opacity="0.08"
+                  />
+                  <g fill="currentColor" opacity="0.2">
+                    <rect x="0" y="0" width="7" height="7" />
+                    <rect
+                      x="1"
+                      y="1"
+                      width="5"
+                      height="5"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="0.5"
+                      opacity="0.4"
+                    />
+                    <rect x="2" y="2" width="3" height="3" />
+                    <rect x="14" y="0" width="7" height="7" />
+                    <rect
+                      x="15"
+                      y="1"
+                      width="5"
+                      height="5"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="0.5"
+                      opacity="0.4"
+                    />
+                    <rect x="16" y="2" width="3" height="3" />
+                    <rect x="0" y="14" width="7" height="7" />
+                    <rect
+                      x="1"
+                      y="15"
+                      width="5"
+                      height="5"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="0.5"
+                      opacity="0.4"
+                    />
+                    <rect x="2" y="16" width="3" height="3" />
+                  </g>
+                  <g fill="currentColor" opacity="0.15">
+                    <rect x="8" y="0" width="1" height="1" />
+                    <rect x="10" y="0" width="1" height="1" />
+                    <rect x="12" y="0" width="1" height="1" />
+                    <rect x="8" y="2" width="1" height="1" />
+                    <rect x="12" y="2" width="1" height="1" />
+                    <rect x="0" y="8" width="1" height="1" />
+                    <rect x="2" y="8" width="1" height="1" />
+                    <rect x="4" y="8" width="1" height="1" />
+                    <rect x="8" y="8" width="1" height="1" />
+                    <rect x="10" y="8" width="1" height="1" />
+                    <rect x="12" y="8" width="1" height="1" />
+                    <rect x="14" y="8" width="1" height="1" />
+                    <rect x="16" y="8" width="1" height="1" />
+                    <rect x="18" y="8" width="1" height="1" />
+                    <rect x="20" y="8" width="1" height="1" />
+                    <rect x="8" y="10" width="1" height="1" />
+                    <rect x="10" y="10" width="1" height="1" />
+                    <rect x="12" y="10" width="1" height="1" />
+                    <rect x="8" y="12" width="1" height="1" />
+                    <rect x="10" y="12" width="1" height="1" />
+                    <rect x="12" y="12" width="1" height="1" />
+                    <rect x="14" y="14" width="1" height="1" />
+                    <rect x="16" y="14" width="1" height="1" />
+                    <rect x="14" y="16" width="1" height="1" />
+                    <rect x="16" y="16" width="1" height="1" />
+                    <rect x="18" y="18" width="1" height="1" />
+                    <rect x="20" y="18" width="1" height="1" />
+                    <rect x="18" y="20" width="1" height="1" />
+                    <rect x="20" y="20" width="1" height="1" />
+                  </g>
+                </svg>
+              </div>
             </VCardText>
             <VCardText class="text-center">
               <div class="text-body-1">
@@ -732,6 +815,22 @@ onUnmounted(() => {
 </template>
 
 <style lang="scss" scoped>
+.qrcode-skeleton {
+  width: 240px;
+  height: 240px;
+  padding: 12px;
+  border-radius: 8px;
+  background-color: rgb(var(--v-theme-surface));
+  border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+  color: rgb(var(--v-theme-on-surface));
+
+  .qrcode-skeleton__grid {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+}
+
 .avatar-center {
   position: absolute;
   border: 3px solid rgb(var(--v-theme-surface));
