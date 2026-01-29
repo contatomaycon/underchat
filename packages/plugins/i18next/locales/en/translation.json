@@ -95,6 +95,7 @@
   "worker_status_change_success": "Worker status changed successfully!",
   "worker_status_change_error": "Error changing worker status!",
   "kafka_error": "Error communicating with Kafka!",
+  "grpc_error": "Error communicating with worker service!",
   "sector_creator_success": "Sector created successfully!",
   "sector_not_found": "Sector not found!",
   "sector_creator_error": "Error creating sector!",

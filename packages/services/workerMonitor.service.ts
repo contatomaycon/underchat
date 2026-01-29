@@ -8,9 +8,8 @@ import { ConnectConfig } from 'ssh2';
 import { IWorkerMonitor } from '@core/common/interfaces/IWorkerMonitor';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { EWorkerAction } from '@core/common/enums/EWorkerAction';
-import { StreamProducerService } from './streamProducer.service';
-import { KafkaBalanceQueueService } from './kafkaBalanceQueue.service';
 import { CentrifugoService } from './centrifugo.service';
+import { WorkerGrpcClientService } from './workerGrpcClient.service';
 import {
   channelsConfigCentrifugo,
   workerCentrifugoQueue,
@@ -41,8 +40,7 @@ export class WorkerMonitorService {
     private readonly serverService: ServerService,
     private readonly sshService: SshService,
     private readonly passwordEncryptorService: PasswordEncryptorService,
-    private readonly streamProducerService: StreamProducerService,
-    private readonly kafkaBalanceQueueService: KafkaBalanceQueueService,
+    private readonly workerGrpcClientService: WorkerGrpcClientService,
     private readonly centrifugoService: CentrifugoService,
     private readonly accountService: AccountService
   ) {}
@@ -324,10 +322,7 @@ export class WorkerMonitorService {
 
     await this.centrifugoService.publish(channelsConfigCentrifugo(), payload);
 
-    await this.streamProducerService.send(
-      this.kafkaBalanceQueueService.worker(server.server_id),
-      payload
-    );
+    await this.workerGrpcClientService.recreateWorker(payload);
   };
 
   private readonly syncConnectionStatusWithFailureTracking = async (

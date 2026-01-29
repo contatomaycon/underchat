@@ -80,7 +80,7 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-EXPOSE 3003
+EXPOSE 3003 50051
 
 WORKDIR /app/apps/balance_api
 

@@ -173,6 +173,8 @@
     "tsyringe": "^4.10.0",
     "typescript-eslint": "^8.50.1",
     "ulid": "^3.0.2",
+    "@grpc/grpc-js": "^1.14.3",
+    "@grpc/proto-loader": "^0.8.0",
     "uuid": "^13.0.0",
     "web-push": "^3.6.7",
     "word-extractor": "^1.0.4",

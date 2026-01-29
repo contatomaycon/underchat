@@ -1,13 +1,12 @@
 import { IListWorkerActivities } from '@core/common/interfaces/IListWorkerActivities';
 import { WorkerService } from '@core/services/worker.service';
-import { StreamProducerService } from '@core/services/streamProducer.service';
-import { KafkaBalanceQueueService } from '@core/services/kafkaBalanceQueue.service';
 import { IWorkerPayload } from '@core/common/interfaces/IWorkerPayload';
 import { EWorkerAction } from '@core/common/enums/EWorkerAction';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { IUpdateWorker } from '@core/common/interfaces/IUpdateWorker';
 import { injectable } from 'tsyringe';
+import { WorkerGrpcClientService } from '@core/services/workerGrpcClient.service';
 
 export interface IWorkerCreationActivity {
   listWorkerNewStatusActivities(): Promise<IListWorkerActivities[]>;
@@ -18,8 +17,7 @@ export interface IWorkerCreationActivity {
 export class WorkerCreationActivity implements IWorkerCreationActivity {
   constructor(
     private readonly workerService: WorkerService,
-    private readonly streamProducerService: StreamProducerService,
-    private readonly kafkaBalanceQueueService: KafkaBalanceQueueService
+    private readonly workerGrpcClientService: WorkerGrpcClientService
   ) {}
 
   listWorkerNewStatusActivities = async (): Promise<
@@ -64,9 +62,6 @@ export class WorkerCreationActivity implements IWorkerCreationActivity {
       name: viewWorkerNameAndId.name ?? '',
     };
 
-    await this.streamProducerService.send(
-      this.kafkaBalanceQueueService.worker(input.server_id),
-      payloadCreate
-    );
+    await this.workerGrpcClientService.createWorker(payloadCreate);
   };
 }

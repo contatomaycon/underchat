@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package worker_command;
+
+service WorkerCommand {
+  rpc CreateWorker(WorkerPayload) returns (WorkerCommandResponse);
+  rpc DeleteWorker(WorkerPayload) returns (WorkerCommandResponse);
+  rpc RecreateWorker(WorkerPayload) returns (WorkerCommandResponse);
+}
+
+message WorkerPayload {
+  string action = 1;
+  string worker_id = 2;
+  string server_id = 3;
+  string account_id = 4;
+  string worker_status_id = 5;
+  string worker_type_id = 6;
+  string name = 7;
+  string previous_worker_status_id = 8;
+}
+
+message WorkerCommandResponse {}

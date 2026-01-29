@@ -2,27 +2,25 @@ import { injectable } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { WorkerService } from '@core/services/worker.service';
 import { ConfigService } from '@core/services/config.service';
-import { StreamProducerService } from '@core/services/streamProducer.service';
 import { IUpdateWorker } from '@core/common/interfaces/IUpdateWorker';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { IWorkerPayload } from '@core/common/interfaces/IWorkerPayload';
 import { EWorkerAction } from '@core/common/enums/EWorkerAction';
 import { CentrifugoService } from '@core/services/centrifugo.service';
-import { KafkaBalanceQueueService } from '@core/services/kafkaBalanceQueue.service';
 import { ChatService } from '@core/services/chat.service';
 import {
   workerCentrifugoQueue,
   channelsConfigCentrifugo,
 } from '@core/common/functions/centrifugoQueue';
+import { WorkerGrpcClientService } from '@core/services/workerGrpcClient.service';
 
 @injectable()
 export class ChannelDeleterUseCase {
   constructor(
     private readonly workerService: WorkerService,
     private readonly configService: ConfigService,
-    private readonly streamProducerService: StreamProducerService,
     private readonly centrifugoService: CentrifugoService,
-    private readonly kafkaBalanceQueueService: KafkaBalanceQueueService,
+    private readonly workerGrpcClientService: WorkerGrpcClientService,
     private readonly chatService: ChatService
   ) {}
 
@@ -56,12 +54,9 @@ export class ChannelDeleterUseCase {
     payload: IWorkerPayload
   ): Promise<void> {
     try {
-      await this.streamProducerService.send(
-        this.kafkaBalanceQueueService.worker(payload.server_id),
-        payload
-      );
+      await this.workerGrpcClientService.deleteWorker(payload);
     } catch {
-      throw new Error(t('kafka_error'));
+      throw new Error(t('grpc_error'));
     }
   }
 

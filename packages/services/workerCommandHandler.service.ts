@@ -1,6 +1,4 @@
-import { singleton, inject } from 'tsyringe';
-import { KafkaConsumer } from 'node-rdkafka';
-import { KafkaClient } from '@core/plugins/kafkaStreams';
+import { injectable } from 'tsyringe';
 import { WorkerService } from '@core/services/worker.service';
 import { getImageWorker } from '@core/common/functions/getImageWorker';
 import { IUpdateWorker } from '@core/common/interfaces/IUpdateWorker';
@@ -10,8 +8,6 @@ import { EWorkerAction } from '@core/common/enums/EWorkerAction';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { PublishResult } from 'centrifuge';
-import { KafkaBalanceQueueService } from '@core/services/kafkaBalanceQueue.service';
-import { balanceEnvironment } from '@core/config/environments';
 import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.service';
 import { ContainerHealthService } from '@core/services/containerHealth.service';
 import { StatusConnectionWorkerRequest } from '@core/schema/worker/statusConnection/request.schema';
@@ -24,170 +20,37 @@ import {
   workerCentrifugoQueue,
   channelsConfigCentrifugo,
 } from '@core/common/functions/centrifugoQueue';
-import { startHeartbeat } from '@core/common/functions/startHeartbeat';
-import { createConsumer } from '@core/common/functions/createConsumer';
-import { connectConsumer } from '@core/common/functions/connectConsumer';
-import { handleConsumerError } from '@core/common/functions/handleConsumerError';
-import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
-import { commitOffset } from '@core/common/functions/commitOffset';
 
-@singleton()
-export class WorkerConsume {
-  private consumer: KafkaConsumer | null = null;
-  private isRunning = false;
+@injectable()
+export class WorkerCommandHandlerService {
   private readonly maxRetries = 5;
   private readonly retryIntervalMs = 30 * 1000;
 
   constructor(
-    @inject('Kafka') private readonly kafka: KafkaClient,
     private readonly workerService: WorkerService,
     private readonly centrifugoService: CentrifugoService,
-    private readonly kafkaBalanceQueueService: KafkaBalanceQueueService,
     private readonly kafkaBaileysQueueService: KafkaBaileysQueueService,
     private readonly containerHealthService: ContainerHealthService,
     private readonly streamProducerService: StreamProducerService
   ) {}
 
-  private get consumerOrThrow(): KafkaConsumer {
-    if (!this.consumer) {
-      throw new Error('Consumer not initialized');
-    }
-
-    return this.consumer;
-  }
-
-  public async execute(): Promise<void> {
-    if (this.consumer && this.isRunning) return;
-
-    const topic = this.getTopic();
-
-    await ensureKafkaTopic(
-      this.kafka,
-      topic,
-      this.kafkaBalanceQueueService.getNumPartitions(),
-      this.kafkaBalanceQueueService.getReplicationFactor()
-    );
-
-    this.consumer = createConsumer(
-      this.kafka,
-      `group-underchat-worker-${balanceEnvironment.serverId}`
-    );
-
-    this.consumer.on('data', async (message) => {
-      const data = this.parseMessage(message.value);
-      if (!data) {
-        await this.commitNext(topic, message.partition, message.offset);
-        return;
-      }
-
-      const heartbeat = async () => {
-        this.consumer?.commit();
-      };
-
-      const stop = startHeartbeat(heartbeat);
-      try {
-        await this.handleMessage(data);
-      } finally {
-        stop();
-        await this.commitNext(topic, message.partition, message.offset);
-      }
-    });
-
-    this.consumer.on('event.error', (err) => {
-      handleConsumerError(err, topic);
-    });
-
-    const consumer = this.consumer;
-    if (!consumer) {
-      throw new Error('Consumer not initialized');
-    }
-
-    connectConsumer(consumer, topic, () => {
-      this.isRunning = true;
-    });
-  }
-
-  public async close(): Promise<void> {
-    if (!this.consumer) {
-      return;
-    }
-
-    try {
-      this.isRunning = false;
-      await new Promise<void>((resolve) => {
-        const consumer = this.consumer;
-        if (!consumer) {
-          resolve();
-          return;
-        }
-        consumer.unsubscribe();
-        consumer.disconnect(resolve);
-      });
-    } finally {
-      this.consumer = null;
-    }
-  }
-
-  private getTopic(): string {
-    const topic = this.kafkaBalanceQueueService.worker(
-      balanceEnvironment.serverId
-    );
-
-    return topic;
-  }
-
-  private parseMessage(value: Buffer | null): IWorkerPayload | null {
-    if (!value) {
-      return null;
-    }
-
-    const raw = value.toString('utf8').trim();
-    if (!raw) {
-      return null;
-    }
-
-    try {
-      const parsed = JSON.parse(raw) as IWorkerPayload;
-      return parsed ?? null;
-    } catch {
-      return null;
-    }
-  }
-
-  private async handleMessage(data: IWorkerPayload): Promise<void> {
+  async handle(data: IWorkerPayload): Promise<void> {
     if (data.action === EWorkerAction.create) {
-      try {
-        await this.createWorker(data);
-      } catch (error) {
-        console.error('Error creating worker', error);
-      }
-
+      await this.createWorker(data);
       return;
     }
 
     if (data.action === EWorkerAction.delete) {
-      try {
-        await this.kafkaBaileysQueueService.delete(data.worker_id);
-        await this.deleteWorker(data);
-      } catch (error) {
-        console.error('Error deleting worker', error);
-      }
-
+      await this.kafkaBaileysQueueService.delete(data.worker_id);
+      await this.deleteWorker(data);
       return;
     }
 
     if (data.action === EWorkerAction.recreate) {
       try {
         await this.kafkaBaileysQueueService.delete(data.worker_id);
-      } catch (error) {
-        console.error('Error deleting Kafka Baileys queue', error);
-      }
-
-      try {
-        await this.recreateWorker(data);
-      } catch (error) {
-        console.error('Error recreating worker', error);
-      }
+      } catch {}
+      await this.recreateWorker(data);
     }
   }
 
@@ -195,9 +58,7 @@ export class WorkerConsume {
     dataPublish: IBaileysConnectionState
   ): Promise<PublishResult> {
     const channel = workerCentrifugoQueue(dataPublish.account_id);
-    const promise = this.centrifugoService.publishSub(channel, dataPublish);
-
-    return promise;
+    return this.centrifugoService.publishSub(channel, dataPublish);
   }
 
   private async updateWorkerErrorStatus(
@@ -230,7 +91,7 @@ export class WorkerConsume {
       serverId
     ) {
       const errorPayload: IWorkerPayload = {
-        action,
+        action: action,
         worker_id: workerId,
         server_id: serverId,
         account_id: accountId,
@@ -243,7 +104,6 @@ export class WorkerConsume {
     }
 
     const [result] = await Promise.all(publishPromises);
-
     return result;
   }
 
@@ -260,15 +120,13 @@ export class WorkerConsume {
         data.action,
         data.server_id
       );
-
       throw new Error('Worker not found');
     }
 
     const removed = await this.retryOperation(
-      async () => {
-        return this.workerService.removeContainerWorker(data.worker_id, false);
-      },
-      (result) => !result
+      async () =>
+        this.workerService.removeContainerWorker(data.worker_id, false),
+      (r) => !r
     );
 
     if (!removed) {
@@ -278,7 +136,6 @@ export class WorkerConsume {
         data.action,
         data.server_id
       );
-
       throw new Error('Worker removal failed');
     }
 
@@ -286,15 +143,14 @@ export class WorkerConsume {
     const imageName = getImageWorker(workerType);
 
     const containerId = await this.retryOperation(
-      async () => {
-        return this.workerService.createContainerWorker(
+      async () =>
+        this.workerService.createContainerWorker(
           imageName,
           data.worker_id,
           data.account_id,
           false
-        );
-      },
-      (result) => !result
+        ),
+      (r) => !r
     );
 
     if (!containerId) {
@@ -304,7 +160,6 @@ export class WorkerConsume {
         data.action,
         data.server_id
       );
-
       throw new Error('Worker creation failed');
     }
 
@@ -315,22 +170,17 @@ export class WorkerConsume {
         if (wasOnline) {
           const serviceOk = await this.containerHealthService.isServiceHealthy(
             containerId,
-            {
-              maxAttempts: 5,
-              delayMs: 2000,
-            }
+            { maxAttempts: 5, delayMs: 2000 }
           );
           if (!serviceOk) return false;
-
           return this.containerHealthService.isConnectionHealthy(containerId, {
             maxAttempts: 10,
             delayMs: 10000,
           });
         }
-
         return this.containerHealthService.isServiceHealthy(containerId);
       },
-      (result) => !result
+      (r) => !r
     );
 
     if (!healthy) {
@@ -340,7 +190,6 @@ export class WorkerConsume {
         data.action,
         data.server_id
       );
-
       throw new Error(
         wasOnline
           ? 'Worker service or connection health check failed'
@@ -356,13 +205,9 @@ export class WorkerConsume {
     };
 
     const updated = await this.retryOperation(
-      async () => {
-        return this.workerService.updateWorkerById(
-          data.account_id,
-          inputUpdate
-        );
-      },
-      (result) => !result
+      async () =>
+        this.workerService.updateWorkerById(data.account_id, inputUpdate),
+      (r) => !r
     );
 
     if (!updated) {
@@ -372,7 +217,6 @@ export class WorkerConsume {
         data.action,
         data.server_id
       );
-
       throw new Error('Failed to update worker status');
     }
 
@@ -400,7 +244,6 @@ export class WorkerConsume {
       this.centrifugoPublish(dataPublish),
       this.centrifugoService.publish(channelsConfigCentrifugo(), data),
     ]);
-
     return result;
   }
 
@@ -417,7 +260,6 @@ export class WorkerConsume {
         data.action,
         data.server_id
       );
-
       throw new Error('Worker not found');
     }
 
@@ -430,13 +272,9 @@ export class WorkerConsume {
     };
 
     const updated = await this.retryOperation(
-      async () => {
-        return this.workerService.updateWorkerById(
-          data.account_id,
-          inputUpdate
-        );
-      },
-      (result) => !result
+      async () =>
+        this.workerService.updateWorkerById(data.account_id, inputUpdate),
+      (r) => !r
     );
 
     if (!updated) {
@@ -446,7 +284,6 @@ export class WorkerConsume {
         data.action,
         data.server_id
       );
-
       throw new Error('Failed to update worker status');
     }
 
@@ -463,10 +300,8 @@ export class WorkerConsume {
     );
 
     const containerId = await this.retryOperation(
-      async () => {
-        return this.workerService.removeContainerWorker(data.worker_id);
-      },
-      (result) => !result
+      async () => this.workerService.removeContainerWorker(data.worker_id),
+      (r) => !r
     );
 
     if (!containerId) {
@@ -476,18 +311,13 @@ export class WorkerConsume {
         data.action,
         data.server_id
       );
-
       throw new Error('Worker removal failed');
     }
 
     const deleted = await this.retryOperation(
-      async () => {
-        return this.workerService.deleteWorkerById(
-          data.account_id,
-          data.worker_id
-        );
-      },
-      (result) => !result
+      async () =>
+        this.workerService.deleteWorkerById(data.account_id, data.worker_id),
+      (r) => !r
     );
 
     if (!deleted) {
@@ -497,7 +327,6 @@ export class WorkerConsume {
         data.action,
         data.server_id
       );
-
       throw new Error('Failed to delete worker');
     }
 
@@ -513,14 +342,12 @@ export class WorkerConsume {
       this.centrifugoPublish(dataPublish),
       this.centrifugoService.publish(channelsConfigCentrifugo(), data),
     ]);
-
     return result;
   }
 
   private async createWorker(data: IWorkerPayload): Promise<PublishResult> {
     if (!data?.worker_type_id) {
       await this.updateWorkerErrorStatus(data.worker_id, data.account_id);
-
       throw new Error('Worker type ID is required');
     }
 
@@ -547,35 +374,31 @@ export class WorkerConsume {
     const imageName = getImageWorker(data.worker_type_id);
 
     const containerId = await this.retryOperation(
-      async () => {
-        return this.workerService.createContainerWorker(
+      async () =>
+        this.workerService.createContainerWorker(
           imageName,
           data.worker_id,
           data.account_id
-        );
-      },
-      (result) => !result
+        ),
+      (r) => !r
     );
 
     if (!containerId) {
       await this.updateWorkerErrorStatus(data.worker_id, data.account_id);
-
       throw new Error('Failed to create worker container');
     }
 
     const healthy = await this.retryOperation(
-      async () => {
-        return this.containerHealthService.isServiceHealthy(containerId, {
+      async () =>
+        this.containerHealthService.isServiceHealthy(containerId, {
           maxAttempts: 5,
           delayMs: 2000,
-        });
-      },
-      (result) => !result
+        }),
+      (r) => !r
     );
 
     if (!healthy) {
       await this.updateWorkerErrorStatus(data.worker_id, data.account_id);
-
       throw new Error('Worker service is not healthy');
     }
 
@@ -586,18 +409,13 @@ export class WorkerConsume {
     };
 
     const updated = await this.retryOperation(
-      async () => {
-        return this.workerService.updateWorkerById(
-          data.account_id,
-          inputUpdate
-        );
-      },
-      (result) => !result
+      async () =>
+        this.workerService.updateWorkerById(data.account_id, inputUpdate),
+      (r) => !r
     );
 
     if (!updated) {
       await this.updateWorkerErrorStatus(data.worker_id, data.account_id);
-
       throw new Error('Failed to update worker status');
     }
 
@@ -612,41 +430,23 @@ export class WorkerConsume {
     return this.centrifugoPublish(dataPublish);
   }
 
-  private async commitNext(
-    topic: string,
-    partition: number,
-    offset: number
-  ): Promise<void> {
-    await commitOffset(this.consumerOrThrow, topic, partition, offset);
-  }
-
-  private readonly sleep = (ms: number): Promise<void> => {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-  };
+  private readonly sleep = (ms: number): Promise<void> =>
+    new Promise((resolve) => setTimeout(resolve, ms));
 
   private readonly retryOperation = async <T>(
     operation: () => Promise<T>,
     shouldRetry: (result: T) => boolean
   ): Promise<T> => {
     let lastResult: T | undefined;
-
     for (let attempt = 1; attempt <= this.maxRetries; attempt++) {
       const result = await operation();
       lastResult = result;
-
-      if (!shouldRetry(result)) {
-        return result;
-      }
-
-      if (attempt < this.maxRetries) {
-        await this.sleep(this.retryIntervalMs);
-      }
+      if (!shouldRetry(result)) return result;
+      if (attempt < this.maxRetries) await this.sleep(this.retryIntervalMs);
     }
-
     if (lastResult === undefined) {
       throw new Error('Retry operation failed: no result');
     }
-
     return lastResult;
   };
 }

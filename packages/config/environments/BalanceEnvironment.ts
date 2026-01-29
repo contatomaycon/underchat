@@ -9,4 +9,20 @@ export class BalanceEnvironment {
 
     return serverId;
   }
+
+  public get grpcPort(): number {
+    const port = process.env.BALANCER_GRPC_PORT;
+    if (!port) {
+      return 50051;
+    }
+
+    const parsed = Number(port);
+    if (Number.isNaN(parsed) || parsed < 1 || parsed > 65535) {
+      throw new InvalidConfigurationError(
+        'BALANCER_GRPC_PORT must be a valid port.'
+      );
+    }
+
+    return parsed;
+  }
 }

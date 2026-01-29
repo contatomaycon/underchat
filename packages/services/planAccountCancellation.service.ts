@@ -13,10 +13,9 @@ import { PlanAccountCancellerRepository } from '@core/repositories/accountSettin
 import { AccountUpdaterRepository } from '@core/repositories/account/AccountUpdater.repository';
 import { EAccountStatus } from '@core/common/enums/EAccountStatus';
 import { WorkerService } from '@core/services/worker.service';
-import { StreamProducerService } from '@core/services/streamProducer.service';
 import { CentrifugoService } from '@core/services/centrifugo.service';
-import { KafkaBalanceQueueService } from '@core/services/kafkaBalanceQueue.service';
 import { IWorkerPayload } from '@core/common/interfaces/IWorkerPayload';
+import { WorkerGrpcClientService } from '@core/services/workerGrpcClient.service';
 import { EWorkerAction } from '@core/common/enums/EWorkerAction';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { IUpdateWorker } from '@core/common/interfaces/IUpdateWorker';
@@ -34,9 +33,8 @@ export class PlanAccountCancellationService {
     private readonly planAccountCancellerRepository: PlanAccountCancellerRepository,
     private readonly accountUpdaterRepository: AccountUpdaterRepository,
     private readonly workerService: WorkerService,
-    private readonly streamProducerService: StreamProducerService,
     private readonly centrifugoService: CentrifugoService,
-    private readonly kafkaBalanceQueueService: KafkaBalanceQueueService,
+    private readonly workerGrpcClientService: WorkerGrpcClientService,
     private readonly notificationMessageService: NotificationMessageService,
     private readonly planAccountReactivatorTransactionRepository: PlanAccountReactivatorTransactionRepository,
     @inject('Redis') private readonly redis: Redis
@@ -451,11 +449,9 @@ export class PlanAccountCancellationService {
         workerCentrifugoQueue(payload.account_id),
         payload
       ),
-      this.streamProducerService
-        .send(this.kafkaBalanceQueueService.worker(payload.server_id), payload)
-        .catch(() => {
-          throw new Error(t('kafka_error'));
-        }),
+      this.workerGrpcClientService.deleteWorker(payload).catch(() => {
+        throw new Error(t('grpc_error'));
+      }),
     ]);
   }
 

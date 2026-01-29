@@ -4,26 +4,24 @@ import { WorkerService } from '@core/services/worker.service';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { AccountService } from '@core/services/account.service';
 import { CreateWorkerRequest } from '@core/schema/worker/createWorker/request.schema';
-import { StreamProducerService } from '@core/services/streamProducer.service';
 import { v7 as uuidv7 } from 'uuid';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { IWorkerPayload } from '@core/common/interfaces/IWorkerPayload';
 import { EWorkerAction } from '@core/common/enums/EWorkerAction';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { ICreateWorker } from '@core/common/interfaces/ICreateWorker';
-import { KafkaBalanceQueueService } from '@core/services/kafkaBalanceQueue.service';
 import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 import { PlanAccountService } from '@core/services/planAccount.service';
+import { WorkerGrpcClientService } from '@core/services/workerGrpcClient.service';
 
 @injectable()
 export class WorkerCreatorUseCase {
   constructor(
     private readonly workerService: WorkerService,
     private readonly accountService: AccountService,
-    private readonly streamProducerService: StreamProducerService,
     private readonly centrifugoService: CentrifugoService,
-    private readonly kafkaBalanceQueueService: KafkaBalanceQueueService,
-    private readonly planAccountService: PlanAccountService
+    private readonly planAccountService: PlanAccountService,
+    private readonly workerGrpcClientService: WorkerGrpcClientService
   ) {}
 
   private async validate(
@@ -45,12 +43,9 @@ export class WorkerCreatorUseCase {
     payload: IWorkerPayload
   ): Promise<void> {
     try {
-      await this.streamProducerService.send(
-        this.kafkaBalanceQueueService.worker(payload.server_id),
-        payload
-      );
+      await this.workerGrpcClientService.createWorker(payload);
     } catch {
-      throw new Error(t('kafka_error'));
+      throw new Error(t('grpc_error'));
     }
   }
 

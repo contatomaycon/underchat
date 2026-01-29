@@ -14,7 +14,7 @@ import authenticateKeyApi from '@core/middlewares/keyapi.middleware';
 import kafkaStreamsPlugin from '@core/plugins/kafkaStreams';
 import centrifugoPlugin from '@core/plugins/centrifugo';
 import redisPlugin from '@core/plugins/redis';
-import consumerPlugin from './consumer';
+import workerGrpcServerPlugin from '@core/plugins/workerGrpcServer';
 import fastifyQs from 'fastify-qs';
 import routes from '@/routes';
 import { EPrefixRoutes } from '@core/common/enums/EPrefixRoutes';
@@ -52,7 +52,7 @@ server.register(safePlugin(routes, 'routes', true), {
   prefix: EPrefixRoutes.v1,
 });
 server.register(safePlugin(fastifyQs, 'fastifyQs'));
-server.register(safePlugin(consumerPlugin, 'consumer'));
+server.register(safePlugin(workerGrpcServerPlugin, 'workerGrpcServer'));
 
 const start = async () => {
   try {

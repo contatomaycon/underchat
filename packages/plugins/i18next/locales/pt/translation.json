@@ -95,6 +95,7 @@
   "worker_status_change_success": "Status do canal alterado com sucesso!",
   "worker_status_change_error": "Erro ao alterar o status do canal",
   "kafka_error": "Erro ao comunicar com Kafka!",
+  "grpc_error": "Erro ao comunicar com o serviço de workers!",
   "sector_creator_success": "Setor criado com sucesso!",
   "sector_not_found": "Setor não encontrado!",
   "sector_creator_error": "Erro ao criar o setor!",

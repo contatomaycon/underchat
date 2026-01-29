@@ -3,17 +3,16 @@ import { TFunction } from 'i18next';
 import { WorkerService } from '@core/services/worker.service';
 import { AccountService } from '@core/services/account.service';
 import { ConfigService } from '@core/services/config.service';
-import { StreamProducerService } from '@core/services/streamProducer.service';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { IWorkerPayload } from '@core/common/interfaces/IWorkerPayload';
 import { EWorkerAction } from '@core/common/enums/EWorkerAction';
 import { CentrifugoService } from '@core/services/centrifugo.service';
-import { KafkaBalanceQueueService } from '@core/services/kafkaBalanceQueue.service';
 import {
   workerCentrifugoQueue,
   channelsConfigCentrifugo,
 } from '@core/common/functions/centrifugoQueue';
 import { IUpdateWorker } from '@core/common/interfaces/IUpdateWorker';
+import { WorkerGrpcClientService } from '@core/services/workerGrpcClient.service';
 
 @injectable()
 export class ChannelRecreatorUseCase {
@@ -21,9 +20,8 @@ export class ChannelRecreatorUseCase {
     private readonly workerService: WorkerService,
     private readonly accountService: AccountService,
     private readonly configService: ConfigService,
-    private readonly streamProducerService: StreamProducerService,
     private readonly centrifugoService: CentrifugoService,
-    private readonly kafkaBalanceQueueService: KafkaBalanceQueueService
+    private readonly workerGrpcClientService: WorkerGrpcClientService
   ) {}
 
   private async validate(
@@ -43,12 +41,9 @@ export class ChannelRecreatorUseCase {
     payload: IWorkerPayload
   ): Promise<void> {
     try {
-      await this.streamProducerService.send(
-        this.kafkaBalanceQueueService.worker(payload.server_id),
-        payload
-      );
+      await this.workerGrpcClientService.recreateWorker(payload);
     } catch {
-      throw new Error(t('kafka_error'));
+      throw new Error(t('grpc_error'));
     }
   }
 
