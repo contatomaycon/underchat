@@ -15,8 +15,10 @@ import { balanceEnvironment } from '@core/config/environments';
 import { WorkerCommandHandlerService } from '@core/services/workerCommandHandler.service';
 import {
   protoToWorkerPayload,
-  WorkerPayloadProto,
+  protoToStatusConnectionRequest,
 } from '@core/common/functions/workerCommandProtoMapper';
+import { IWorkerPayloadProto } from '@core/common/interfaces/IWorkerPayloadProto';
+import { IChangeConnectionStatusRequestProto } from '@core/common/interfaces/IChangeConnectionStatusRequestProto';
 
 const protoPath = path.join(
   __dirname,
@@ -49,7 +51,7 @@ const workerGrpcServerPlugin: FastifyPluginAsync = async (
   const grpcServer = new Server();
 
   const handleUnary = (
-    call: ServerUnaryCall<WorkerPayloadProto, unknown>,
+    call: ServerUnaryCall<IWorkerPayloadProto, unknown>,
     callback: sendUnaryData<unknown>,
     action: 'create' | 'delete' | 'recreate'
   ) => {
@@ -83,19 +85,56 @@ const workerGrpcServerPlugin: FastifyPluginAsync = async (
       });
   };
 
+  const handleChangeConnectionStatus = (
+    call: ServerUnaryCall<IChangeConnectionStatusRequestProto, unknown>,
+    callback: sendUnaryData<unknown>
+  ) => {
+    const req = call.request;
+    let payload;
+    try {
+      payload = protoToStatusConnectionRequest(req);
+    } catch (err) {
+      const e = err instanceof Error ? err : new Error(String(err));
+      callback(
+        {
+          code: status.INVALID_ARGUMENT,
+          message: e.message,
+          details: e.message,
+        },
+        null
+      );
+      return;
+    }
+
+    handler
+      .handleChangeConnectionStatus(payload)
+      .then(() => {
+        callback(null, {});
+      })
+      .catch((err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        fastify.log.error(
+          { err, workerId: req.worker_id },
+          'ChangeConnectionStatus gRPC handler error'
+        );
+        callback({ code: status.INTERNAL, message: msg, details: msg }, null);
+      });
+  };
+
   grpcServer.addService(WorkerCommandService.service, {
     CreateWorker: (
-      call: ServerUnaryCall<WorkerPayloadProto, unknown>,
+      call: ServerUnaryCall<IWorkerPayloadProto, unknown>,
       cb: sendUnaryData<unknown>
     ) => handleUnary(call, cb, 'create'),
     DeleteWorker: (
-      call: ServerUnaryCall<WorkerPayloadProto, unknown>,
+      call: ServerUnaryCall<IWorkerPayloadProto, unknown>,
       cb: sendUnaryData<unknown>
     ) => handleUnary(call, cb, 'delete'),
     RecreateWorker: (
-      call: ServerUnaryCall<WorkerPayloadProto, unknown>,
+      call: ServerUnaryCall<IWorkerPayloadProto, unknown>,
       cb: sendUnaryData<unknown>
     ) => handleUnary(call, cb, 'recreate'),
+    ChangeConnectionStatus: handleChangeConnectionStatus,
   });
 
   const port = balanceEnvironment.grpcPort;

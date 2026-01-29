@@ -13,4 +13,8 @@ export class BalanceEnvironment {
   public get grpcPort(): number {
     return 50051;
   }
+
+  public get grpcHost(): string {
+    return 'under-balance-api';
+  }
 }

@@ -1,21 +1,13 @@
 import { IWorkerPayload } from '@core/common/interfaces/IWorkerPayload';
+import { IWorkerPayloadProto } from '@core/common/interfaces/IWorkerPayloadProto';
+import { IChangeConnectionStatusRequestProto } from '@core/common/interfaces/IChangeConnectionStatusRequestProto';
 import { EWorkerAction } from '@core/common/enums/EWorkerAction';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
-
-export interface WorkerPayloadProto {
-  action?: string;
-  worker_id?: string;
-  server_id?: string;
-  account_id?: string;
-  worker_status_id?: string;
-  worker_type_id?: string;
-  name?: string;
-  previous_worker_status_id?: string;
-}
+import { StatusConnectionWorkerRequest } from '@core/schema/worker/statusConnection/request.schema';
 
 export function protoToWorkerPayload(
-  proto: WorkerPayloadProto
+  proto: IWorkerPayloadProto
 ): IWorkerPayload {
   const action = proto.action as EWorkerAction;
   if (!action || !proto.worker_id || !proto.server_id || !proto.account_id) {
@@ -50,8 +42,8 @@ export function protoToWorkerPayload(
 
 export function workerPayloadToProto(
   payload: IWorkerPayload
-): WorkerPayloadProto {
-  const proto: WorkerPayloadProto = {
+): IWorkerPayloadProto {
+  const proto: IWorkerPayloadProto = {
     action: payload.action,
     worker_id: payload.worker_id,
     server_id: payload.server_id,
@@ -68,6 +60,40 @@ export function workerPayloadToProto(
   }
   if (payload.previous_worker_status_id) {
     proto.previous_worker_status_id = payload.previous_worker_status_id;
+  }
+  return proto;
+}
+
+export function protoToStatusConnectionRequest(
+  proto: IChangeConnectionStatusRequestProto
+): StatusConnectionWorkerRequest {
+  if (!proto.worker_id || !proto.status || !proto.type) {
+    throw new Error('Missing required fields: worker_id, status, type');
+  }
+
+  const payload: StatusConnectionWorkerRequest = {
+    worker_id: proto.worker_id,
+    status: proto.status as StatusConnectionWorkerRequest['status'],
+    type: proto.type as StatusConnectionWorkerRequest['type'],
+  };
+
+  if (proto.phone_connection !== undefined && proto.phone_connection !== '') {
+    payload.phone_connection = proto.phone_connection;
+  }
+
+  return payload;
+}
+
+export function statusConnectionRequestToProto(
+  payload: StatusConnectionWorkerRequest
+): IChangeConnectionStatusRequestProto {
+  const proto: IChangeConnectionStatusRequestProto = {
+    worker_id: payload.worker_id,
+    status: payload.status,
+    type: payload.type,
+  };
+  if (payload.phone_connection) {
+    proto.phone_connection = payload.phone_connection;
   }
   return proto;
 }

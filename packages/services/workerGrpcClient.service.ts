@@ -10,8 +10,10 @@ import { IWorkerPayload } from '@core/common/interfaces/IWorkerPayload';
 import { WorkerGrpcRegistryService } from '@core/services/workerGrpcRegistry.service';
 import {
   workerPayloadToProto,
-  WorkerPayloadProto,
+  statusConnectionRequestToProto,
 } from '@core/common/functions/workerCommandProtoMapper';
+import { IWorkerPayloadProto } from '@core/common/interfaces/IWorkerPayloadProto';
+import { StatusConnectionWorkerRequest } from '@core/schema/worker/statusConnection/request.schema';
 
 const protoPath = path.join(__dirname, '..', 'proto', 'worker_command.proto');
 const packageDefinition = loadSync(protoPath, {
@@ -47,6 +49,35 @@ export class WorkerGrpcClientService {
     await this.call('RecreateWorker', payload);
   }
 
+  async changeConnectionStatus(
+    serverId: string,
+    payload: StatusConnectionWorkerRequest
+  ): Promise<void> {
+    const { host, port } =
+      await this.workerGrpcRegistryService.getAddress(serverId);
+    const address = `${host}:${port}`;
+    const client = new WorkerCommandClient(
+      address,
+      credentials.createInsecure()
+    );
+
+    const protoPayload = statusConnectionRequestToProto(payload);
+
+    await new Promise<void>((resolve, reject) => {
+      (client as any).ChangeConnectionStatus(
+        protoPayload,
+        (err: ServiceError | null) => {
+          client.close();
+          if (err) {
+            reject(err);
+            return;
+          }
+          resolve();
+        }
+      );
+    });
+  }
+
   private async call(
     method: 'CreateWorker' | 'DeleteWorker' | 'RecreateWorker',
     payload: IWorkerPayload
@@ -60,7 +91,7 @@ export class WorkerGrpcClientService {
       credentials.createInsecure()
     );
 
-    const protoPayload: WorkerPayloadProto = workerPayloadToProto(payload);
+    const protoPayload: IWorkerPayloadProto = workerPayloadToProto(payload);
 
     await new Promise<void>((resolve, reject) => {
       (client as any)[method](protoPayload, (err: ServiceError | null) => {

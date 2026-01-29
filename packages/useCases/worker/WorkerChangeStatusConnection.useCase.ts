@@ -2,7 +2,6 @@ import { injectable } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { WorkerService } from '@core/services/worker.service';
 import { StatusConnectionWorkerRequest } from '@core/schema/worker/statusConnection/request.schema';
-import { StreamProducerService } from '@core/services/streamProducer.service';
 import { EBaileysConnectionType } from '@core/common/enums/EBaileysConnectionType';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { IUpdateWorkerPhoneConnection } from '@core/common/interfaces/IUpdateWorkerPhoneConnection';
@@ -11,16 +10,15 @@ import moment from 'moment';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
-import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.service';
 import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
+import { WorkerGrpcClientService } from '@core/services/workerGrpcClient.service';
 
 @injectable()
 export class WorkerChangeStatusConnectionUseCase {
   constructor(
     private readonly workerService: WorkerService,
-    private readonly streamProducerService: StreamProducerService,
     private readonly centrifugoService: CentrifugoService,
-    private readonly kafkaBaileysQueueService: KafkaBaileysQueueService
+    private readonly workerGrpcClientService: WorkerGrpcClientService
   ) {}
 
   private readonly MAX_ATTEMPTS = 3;
@@ -163,24 +161,33 @@ export class WorkerChangeStatusConnectionUseCase {
 
   private async onChangeConnectionStatus(
     t: TFunction<'translation', undefined>,
+    accountId: string,
     input: StatusConnectionWorkerRequest
   ): Promise<void> {
-    try {
-      const cleanPhone = this.cleanPhoneNumber(input.phone_connection);
-      const payload: StatusConnectionWorkerRequest = {
-        worker_id: input.worker_id,
-        status: input.status,
-        type: input.type,
-        phone_connection: cleanPhone,
-      };
+    const view = await this.workerService.viewWorker(
+      accountId,
+      input.worker_id
+    );
+    const serverId = view?.server?.id;
+    if (!serverId) {
+      throw new Error(t('worker_not_found'));
+    }
 
-      await this.streamProducerService.send(
-        this.kafkaBaileysQueueService.workerConnection(input.worker_id),
-        payload,
-        input.worker_id
+    const cleanPhone = this.cleanPhoneNumber(input.phone_connection);
+    const payload: StatusConnectionWorkerRequest = {
+      worker_id: input.worker_id,
+      status: input.status,
+      type: input.type,
+      phone_connection: cleanPhone,
+    };
+
+    try {
+      await this.workerGrpcClientService.changeConnectionStatus(
+        serverId,
+        payload
       );
-    } catch {
-      throw new Error(t('kafka_error'));
+    } catch (err) {
+      throw new Error(t('grpc_error'), { cause: err });
     }
   }
 
@@ -212,6 +219,6 @@ export class WorkerChangeStatusConnectionUseCase {
     }
 
     await this.validate(t, input, accountId);
-    await this.onChangeConnectionStatus(t, input);
+    await this.onChangeConnectionStatus(t, accountId, input);
   }
 }

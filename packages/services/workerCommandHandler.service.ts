@@ -20,6 +20,7 @@ import {
   workerCentrifugoQueue,
   channelsConfigCentrifugo,
 } from '@core/common/functions/centrifugoQueue';
+import { balanceEnvironment } from '@core/config/environments';
 
 @injectable()
 export class WorkerCommandHandlerService {
@@ -52,6 +53,23 @@ export class WorkerCommandHandlerService {
       } catch {}
       await this.recreateWorker(data);
     }
+  }
+
+  async handleChangeConnectionStatus(
+    input: StatusConnectionWorkerRequest
+  ): Promise<void> {
+    const payload: StatusConnectionWorkerRequest = {
+      worker_id: input.worker_id,
+      status: input.status,
+      type: input.type,
+      phone_connection: input.phone_connection,
+    };
+
+    await this.streamProducerService.send(
+      this.kafkaBaileysQueueService.workerConnection(input.worker_id),
+      payload,
+      input.worker_id
+    );
   }
 
   private centrifugoPublish(
@@ -148,7 +166,9 @@ export class WorkerCommandHandlerService {
           imageName,
           data.worker_id,
           data.account_id,
-          false
+          false,
+          balanceEnvironment.grpcHost,
+          balanceEnvironment.grpcPort
         ),
       (r) => !r
     );
@@ -378,7 +398,10 @@ export class WorkerCommandHandlerService {
         this.workerService.createContainerWorker(
           imageName,
           data.worker_id,
-          data.account_id
+          data.account_id,
+          true,
+          balanceEnvironment.grpcHost,
+          balanceEnvironment.grpcPort
         ),
       (r) => !r
     );

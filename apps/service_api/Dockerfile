@@ -70,6 +70,7 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/apps/service_api/package*.json ./apps/service_api
 COPY --from=builder /build_locales ./packages/plugins/i18next/locales
+COPY --from=builder /app/packages/proto ./packages/proto
 
 RUN groupadd -r pptruser && useradd -r -g pptruser -G audio,video pptruser
 

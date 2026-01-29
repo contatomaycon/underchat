@@ -143,7 +143,9 @@ export class WorkerService {
     imageName: EWorkerImage,
     workerId: string,
     accountId: string,
-    isCreateVolume: boolean = true
+    isCreateVolume: boolean = true,
+    grpcHost?: string,
+    grpcPort?: number
   ): Promise<string> {
     const existsContainerById = await this.existsContainerWorkerById(workerId);
     if (existsContainerById) {
@@ -157,6 +159,14 @@ export class WorkerService {
       throw new Error('Volume creation failed');
     }
 
+    const env = [`WORKER_ID=${workerId}`, `ACCOUNT_ID=${accountId}`];
+    if (grpcHost !== undefined && grpcPort !== undefined) {
+      env.push(
+        `BALANCER_GRPC_HOST=${grpcHost}`,
+        `BALANCER_GRPC_PORT=${grpcPort}`
+      );
+    }
+
     const container = await this.docker.createContainer({
       Image: imageName,
       name: workerId,
@@ -167,7 +177,7 @@ export class WorkerService {
       Volumes: {
         '/app/data': {},
       },
-      Env: [`WORKER_ID=${workerId}`, `ACCOUNT_ID=${accountId}`],
+      Env: env,
     });
 
     await container.start();
