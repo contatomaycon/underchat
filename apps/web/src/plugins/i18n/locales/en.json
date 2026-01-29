@@ -317,6 +317,8 @@
   "connection_failed": "Connection failed. Please try again.",
   "connection_success": "Connection successful!",
   "awaiting_connection": "Awaiting connection status",
+  "connection_attempting": "Trying to connect... (attempt {attempt} of {max})",
+  "keep_screen_open": "Do not close this screen until the QR Code appears.",
   "awaiting_qr_code": "Awaiting QR code scan",
   "connection_in_progress": "Connection in progress, please wait...",
   "connection_removed": "Connection removed, please reconnect.",

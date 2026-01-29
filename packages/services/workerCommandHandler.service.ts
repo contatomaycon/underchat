@@ -27,6 +27,14 @@ import { getErrorMessage } from '@core/common/functions/toError';
 export class WorkerCommandHandlerService {
   private readonly maxRetries = 5;
   private readonly retryIntervalMs = 30 * 1000;
+  private readonly connectionRequestRetryIntervalMs = 15_000;
+  private readonly connectionRequestMinAttempts = 10;
+  private connectionRequestTimers = new Map<string, NodeJS.Timeout>();
+  private connectionRequestAttempts = new Map<string, number>();
+  private connectionRequestPayloads = new Map<
+    string,
+    StatusConnectionWorkerRequest
+  >();
 
   constructor(
     private readonly workerService: WorkerService,
@@ -81,11 +89,79 @@ export class WorkerCommandHandlerService {
       phone_connection: input.phone_connection,
     };
 
-    await this.streamProducerService.send(
-      this.kafkaBaileysQueueService.workerConnection(input.worker_id),
-      payload,
-      input.worker_id
-    );
+    if (payload.status === EWorkerStatus.online) {
+      this.startConnectionRequestRetry(payload);
+      return;
+    }
+
+    this.stopConnectionRequestRetry(payload.worker_id);
+    try {
+      await this.streamProducerService.send(
+        this.kafkaBaileysQueueService.workerConnection(input.worker_id),
+        payload,
+        input.worker_id
+      );
+    } catch (err) {
+      if (!this.isTopicOrPartitionMissing(err)) {
+        throw err;
+      }
+    }
+  }
+
+  private startConnectionRequestRetry(
+    payload: StatusConnectionWorkerRequest
+  ): void {
+    this.stopConnectionRequestRetry(payload.worker_id);
+    this.connectionRequestPayloads.set(payload.worker_id, payload);
+    this.connectionRequestAttempts.set(payload.worker_id, 0);
+    this.runConnectionRequestAttempt(payload.worker_id);
+  }
+
+  private stopConnectionRequestRetry(workerId: string): void {
+    const timer = this.connectionRequestTimers.get(workerId);
+    if (timer) {
+      clearTimeout(timer);
+      this.connectionRequestTimers.delete(workerId);
+    }
+    this.connectionRequestPayloads.delete(workerId);
+    this.connectionRequestAttempts.delete(workerId);
+  }
+
+  private scheduleNextConnectionRequest(workerId: string): void {
+    const timer = setTimeout(() => {
+      this.runConnectionRequestAttempt(workerId);
+    }, this.connectionRequestRetryIntervalMs);
+    this.connectionRequestTimers.set(workerId, timer);
+  }
+
+  private runConnectionRequestAttempt(workerId: string): void {
+    const payload = this.connectionRequestPayloads.get(workerId);
+    if (!payload) {
+      return;
+    }
+
+    const attempt = (this.connectionRequestAttempts.get(workerId) ?? 0) + 1;
+    this.connectionRequestAttempts.set(workerId, attempt);
+
+    this.streamProducerService
+      .send(
+        this.kafkaBaileysQueueService.workerConnection(workerId),
+        payload,
+        workerId
+      )
+      .then(() => {
+        this.stopConnectionRequestRetry(workerId);
+      })
+      .catch((err) => {
+        console.error('Failed to request worker connection:', err);
+
+        if (attempt < this.connectionRequestMinAttempts) {
+          this.scheduleNextConnectionRequest(workerId);
+          return;
+        }
+
+        this.scheduleNextConnectionRequest(workerId);
+      });
   }
 
   private centrifugoPublish(

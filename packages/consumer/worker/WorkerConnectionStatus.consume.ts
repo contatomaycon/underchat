@@ -18,18 +18,26 @@ import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.servi
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
+import { CentrifugoService } from '@core/services/centrifugo.service';
+import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 
 @singleton()
 export class WorkerConnectionStatusConsume {
   private consumer: KafkaConsumer | null = null;
   private isRunning = false;
+  private connectionRetryTimer: NodeJS.Timeout | null = null;
+  private connectionRetryAttempt = 0;
+  private readonly connectionRetryIntervalMs = 15_000;
+  private readonly connectionRetryMinAttempts = 10;
+  private activeConnectionRequest: StatusConnectionWorkerRequest | null = null;
 
   constructor(
     @inject('Kafka') private readonly kafka: KafkaClient,
     private readonly baileysService: BaileysService,
     private readonly kafkaBaileysQueueService: KafkaBaileysQueueService,
     private readonly streamProducerService: StreamProducerService,
-    private readonly kafkaServiceQueueService: KafkaServiceQueueService
+    private readonly kafkaServiceQueueService: KafkaServiceQueueService,
+    private readonly centrifugoService: CentrifugoService
   ) {}
 
   private get consumerOrThrow(): KafkaConsumer {
@@ -140,6 +148,7 @@ export class WorkerConnectionStatusConsume {
     }
 
     try {
+      this.stopConnectionRetry();
       this.isRunning = false;
       await new Promise<void>((resolve) => {
         const consumer = this.consumer;
@@ -206,15 +215,7 @@ export class WorkerConnectionStatusConsume {
   private async handleOnline(
     data: StatusConnectionWorkerRequest
   ): Promise<void> {
-    this.baileysService
-      .connect({
-        initial_connection: true,
-        type: data.type as EBaileysConnectionType,
-        phone_connection: data.phone_connection,
-      })
-      .catch((error) => {
-        console.error('Error initiating Baileys connection:', error);
-      });
+    this.startConnectionRetry(data);
   }
 
   private handleRecreating(): void {
@@ -222,6 +223,7 @@ export class WorkerConnectionStatusConsume {
   }
 
   private async handleDisponible(): Promise<void> {
+    this.stopConnectionRetry();
     await this.baileysService.disconnect({
       initial_connection: true,
       disconnected_user: true,
@@ -244,6 +246,104 @@ export class WorkerConnectionStatusConsume {
       payload,
       workerId
     );
+  }
+
+  private startConnectionRetry(data: StatusConnectionWorkerRequest): void {
+    if (
+      this.activeConnectionRequest &&
+      this.isSameConnectionRequest(this.activeConnectionRequest, data)
+    ) {
+      return;
+    }
+
+    this.stopConnectionRetry();
+    this.activeConnectionRequest = data;
+    this.connectionRetryAttempt = 0;
+
+    this.runConnectionAttempt();
+  }
+
+  private isSameConnectionRequest(
+    current: StatusConnectionWorkerRequest,
+    next: StatusConnectionWorkerRequest
+  ): boolean {
+    return (
+      current.worker_id === next.worker_id &&
+      current.status === next.status &&
+      current.type === next.type &&
+      (current.phone_connection ?? '') === (next.phone_connection ?? '')
+    );
+  }
+
+  private stopConnectionRetry(): void {
+    if (this.connectionRetryTimer) {
+      clearTimeout(this.connectionRetryTimer);
+      this.connectionRetryTimer = null;
+    }
+    this.activeConnectionRequest = null;
+    this.connectionRetryAttempt = 0;
+  }
+
+  private scheduleNextAttempt(): void {
+    if (!this.activeConnectionRequest) {
+      return;
+    }
+
+    this.connectionRetryTimer = setTimeout(() => {
+      this.runConnectionAttempt();
+    }, this.connectionRetryIntervalMs);
+  }
+
+  private publishConnectionAttempt(attempt: number): void {
+    const payload: IBaileysConnectionState = {
+      status: EBaileysConnectionStatus.connecting,
+      code: ECodeMessage.awaitConnection,
+      worker_id: baileysEnvironment.baileysWorkerId,
+      account_id: baileysEnvironment.baileysAccountId,
+      attempt,
+      max_attempts: this.connectionRetryMinAttempts,
+    };
+
+    void this.centrifugoService
+      .publishSub(workerCentrifugoQueue(payload.account_id), payload)
+      .catch(() => {});
+  }
+
+  private async runConnectionAttempt(): Promise<void> {
+    const request = this.activeConnectionRequest;
+    if (!request) {
+      return;
+    }
+
+    if (this.baileysService.isConnected()) {
+      this.stopConnectionRetry();
+      return;
+    }
+
+    this.connectionRetryAttempt += 1;
+    this.publishConnectionAttempt(this.connectionRetryAttempt);
+
+    const connectPromise = this.baileysService
+      .connect({
+        initial_connection: true,
+        type: request.type as EBaileysConnectionType,
+        phone_connection: request.phone_connection,
+      })
+      .then((state) => {
+        if (
+          state?.qrcode ||
+          state?.status === EBaileysConnectionStatus.connected
+        ) {
+          this.stopConnectionRetry();
+        }
+      })
+      .catch((error) => {
+        console.error('Error initiating Baileys connection:', error);
+      });
+
+    void connectPromise;
+
+    this.scheduleNextAttempt();
   }
 
   private async commitNext(

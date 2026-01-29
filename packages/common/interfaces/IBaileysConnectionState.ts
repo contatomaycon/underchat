@@ -15,4 +15,6 @@ export interface IBaileysConnectionState {
   pairing_code?: string;
   seconds_until_next_attempt?: number;
   worker_status_id?: EWorkerStatus;
+  attempt?: number;
+  max_attempts?: number;
 }

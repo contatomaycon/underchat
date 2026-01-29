@@ -61,6 +61,8 @@ const phoneConnection = ref<string | undefined>();
 const phoneSent = ref(false);
 
 const secondsNextAttempt = ref(0);
+const connectionAttempt = ref<number | null>(null);
+const connectionMaxAttempts = ref<number | null>(null);
 
 const isConnected = computed(
   () => statusConnection.value === EBaileysConnectionStatus.connected
@@ -82,6 +84,22 @@ const formattedTime = computed(() => {
   const s = (secondsNextAttempt.value % 60).toString().padStart(2, '0');
 
   return `${m}:${s}`;
+});
+
+const attemptDisplay = computed(() => {
+  if (!connectionAttempt.value) return null;
+
+  const max = connectionMaxAttempts.value ?? 10;
+  return connectionAttempt.value > max
+    ? `${max}+`
+    : String(connectionAttempt.value);
+});
+
+const maxAttemptDisplay = computed(() => {
+  if (!connectionAttempt.value) return null;
+
+  const max = connectionMaxAttempts.value ?? 10;
+  return String(max);
 });
 
 function calculateProgress(seconds: number, max = totalSeconds.value) {
@@ -250,6 +268,8 @@ onMounted(async () => {
             isPhoneNumber.value = false;
             phoneSent.value = false;
             connectionType.value = EBaileysConnectionType.qrcode;
+            connectionAttempt.value = null;
+            connectionMaxAttempts.value = null;
 
             resetPairingCodes();
           }
@@ -257,7 +277,9 @@ onMounted(async () => {
 
         if (data.qrcode) qrcode.value = data.qrcode;
         if (data.code) {
-          statusCode.value = data.code as ECodeMessage;
+          if (!(data.code === ECodeMessage.awaitConnection && qrcode.value)) {
+            statusCode.value = data.code as ECodeMessage;
+          }
 
           if (data.code === ECodeMessage.loggedOut) {
             attempt.value = 0;
@@ -266,6 +288,9 @@ onMounted(async () => {
         }
 
         if (data.phone) phoneNumber.value = formatPhoneBR(data.phone);
+
+        if (data.attempt) connectionAttempt.value = data.attempt;
+        if (data.max_attempts) connectionMaxAttempts.value = data.max_attempts;
 
         if (
           data.status === EBaileysConnectionStatus.connecting &&
@@ -348,10 +373,23 @@ onUnmounted(() => {
 
           <div v-else-if="statusCode === ECodeMessage.awaitConnection">
             <VCardText class="d-flex justify-center">
-              <VIcon icon="tabler-hourglass-high" size="150" />
+              <VSkeletonLoader type="image" width="240" height="240" />
             </VCardText>
             <VCardText class="text-center">
-              <i>{{ $t('awaiting_connection') }}</i>
+              <div class="text-body-1">
+                <strong v-if="attemptDisplay && maxAttemptDisplay">
+                  {{
+                    $t('connection_attempting', {
+                      attempt: attemptDisplay,
+                      max: maxAttemptDisplay,
+                    })
+                  }}
+                </strong>
+                <i v-else>{{ $t('awaiting_connection') }}</i>
+              </div>
+              <div class="text-body-2 mt-2">
+                {{ $t('keep_screen_open') }}
+              </div>
             </VCardText>
           </div>
 
