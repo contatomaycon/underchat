@@ -1,10 +1,12 @@
 import {
   Browsers,
+  fetchLatestBaileysVersion,
   fetchLatestWaWebVersion,
   makeWASocket,
   useMultiFileAuthState,
   type WASocket,
 } from '@whiskeysockets/baileys';
+import Boom from '@hapi/boom';
 import type WebSocket from 'ws';
 import QRCode from 'qrcode';
 import P from 'pino';
@@ -351,6 +353,149 @@ export class BaileysConnectionService {
     });
   }
 
+  private async fetchLatestWppConnectVersion(): Promise<{
+    version: [number, number, number];
+    isLatest: boolean;
+  }> {
+    const response = await fetch('https://wppconnect.io/whatsapp-versions/', {
+      method: 'GET',
+    });
+    if (!response.ok) {
+      throw Boom.badRequest(
+        `Failed to fetch wppconnect versions: ${response.statusText}`
+      );
+    }
+    const data = await response.text();
+    const regex = /(\d+)\.(\d+)\.(\d+)-alpha/g;
+    const match = regex.exec(data);
+    if (!match) {
+      throw Boom.badRequest('No version found in wppconnect response');
+    }
+    const [, major, minor, patch] = match;
+    return {
+      version: [Number(major), Number(minor), Number(patch)],
+      isLatest: true,
+    };
+  }
+
+  private async fetchVersionWithFallback(): Promise<[number, number, number]> {
+    const FALLBACK_VERSION: [number, number, number] = [2, 3000, 1015331287];
+    const FETCH_TIMEOUT_MS = 3000;
+    const MAX_ATTEMPTS = 3;
+
+    const withTimeout = <T>(promise: Promise<T>, name: string): Promise<T> => {
+      return Promise.race([
+        promise,
+        new Promise<never>((_, reject) =>
+          setTimeout(
+            () => reject(new Error(`${name} timeout`)),
+            FETCH_TIMEOUT_MS
+          )
+        ),
+      ]);
+    };
+
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      const t = Date.now();
+      console.log(
+        '[worker_baileys:init] connection.service: fetchVersion tentativa',
+        { attempt, ts: t }
+      );
+
+      try {
+        const result = await withTimeout(
+          fetchLatestBaileysVersion(),
+          'fetchLatestBaileysVersion'
+        );
+        console.log(
+          '[worker_baileys:init] connection.service: fetchLatestBaileysVersion sucesso',
+          {
+            version: result.version,
+            attempt,
+            ms: Date.now() - t,
+            ts: Date.now(),
+          }
+        );
+        return result.version;
+      } catch (err) {
+        console.log(
+          '[worker_baileys:init] connection.service: fetchLatestBaileysVersion falhou',
+          {
+            error: err instanceof Error ? err.message : String(err),
+            attempt,
+            ms: Date.now() - t,
+          }
+        );
+      }
+
+      try {
+        const result = await withTimeout(
+          fetchLatestWaWebVersion(),
+          'fetchLatestWaWebVersion'
+        );
+        console.log(
+          '[worker_baileys:init] connection.service: fetchLatestWaWebVersion sucesso',
+          {
+            version: result.version,
+            attempt,
+            ms: Date.now() - t,
+            ts: Date.now(),
+          }
+        );
+        return result.version;
+      } catch (err) {
+        console.log(
+          '[worker_baileys:init] connection.service: fetchLatestWaWebVersion falhou',
+          {
+            error: err instanceof Error ? err.message : String(err),
+            attempt,
+            ms: Date.now() - t,
+          }
+        );
+      }
+
+      try {
+        const result = await withTimeout(
+          this.fetchLatestWppConnectVersion(),
+          'fetchLatestWppConnectVersion'
+        );
+        console.log(
+          '[worker_baileys:init] connection.service: fetchLatestWppConnectVersion sucesso',
+          {
+            version: result.version,
+            attempt,
+            ms: Date.now() - t,
+            ts: Date.now(),
+          }
+        );
+        return result.version;
+      } catch (err) {
+        console.log(
+          '[worker_baileys:init] connection.service: fetchLatestWppConnectVersion falhou',
+          {
+            error: err instanceof Error ? err.message : String(err),
+            attempt,
+            ms: Date.now() - t,
+          }
+        );
+      }
+
+      if (attempt < MAX_ATTEMPTS) {
+        console.log(
+          '[worker_baileys:init] connection.service: todas as fontes falharam, aguardando próxima tentativa',
+          { attempt, nextAttempt: attempt + 1 }
+        );
+        await new Promise((r) => setTimeout(r, 1000));
+      }
+    }
+
+    console.log(
+      '[worker_baileys:init] connection.service: todas tentativas esgotadas, usando fallback',
+      { fallbackVersion: FALLBACK_VERSION }
+    );
+    return FALLBACK_VERSION;
+  }
+
   private async createSocket() {
     const t0 = Date.now();
     console.log(
@@ -366,9 +511,9 @@ export class BaileysConnectionService {
     );
 
     const t2 = Date.now();
-    const { version } = await fetchLatestWaWebVersion();
+    const version = await this.fetchVersionWithFallback();
     console.log(
-      '[worker_baileys:init] connection.service: fetchLatestWaWebVersion concluído',
+      '[worker_baileys:init] connection.service: fetchVersionWithFallback concluído',
       { version, ms: Date.now() - t2, ts: Date.now() }
     );
 
