@@ -11,7 +11,23 @@ import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnect
 import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 
 const RETRY_DELAY = 10000;
+const CONNECT_TIMEOUT_NEW_MS = 5000;
+const CONNECT_TIMEOUT_RECONNECT_MS = 30000;
+const MAX_RETRY_ATTEMPTS = 5;
 let mismatchedStatusSent = false;
+let isNewCreation: boolean | null = null;
+
+const withConnectTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> => {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(
+        () => reject(new Error(`Baileys connect timeout após ${ms}ms`)),
+        ms
+      )
+    ),
+  ]);
+};
 
 const updateWorkerMismatchedStatus = async (
   workerId: string,
@@ -52,6 +68,18 @@ const ensureConnected = async (
   log: FastifyInstance['log'],
   baileys: BaileysService
 ): Promise<void> => {
+  log.info({ attempt }, 'Baileys: iniciando verificação de conexão');
+
+  if (isNewCreation === null) {
+    isNewCreation = !baileys.hasSession();
+    log.info(
+      { isNewCreation },
+      isNewCreation
+        ? 'Baileys: criação nova detectada, mostrando QR code imediatamente'
+        : 'Baileys: sessão existente detectada, tentando reconexão'
+    );
+  }
+
   if (baileys.isConnected()) {
     log.info({ attempt }, 'Baileys conectado com sucesso');
     mismatchedStatusSent = false;
@@ -61,8 +89,19 @@ const ensureConnected = async (
 
   const currentStatus = baileys.getStatus();
   if (currentStatus === EBaileysConnectionStatus.connecting) {
+    const hasValidSession = baileys.hasSession();
+
+    if (!isNewCreation && hasValidSession && attempt <= MAX_RETRY_ATTEMPTS) {
+      log.info(
+        { attempt, maxRetries: MAX_RETRY_ATTEMPTS },
+        'Baileys em estado connecting com sessão válida. Aguardando reconexão automática...'
+      );
+      setTimeout(() => ensureConnected(attempt + 1, log, baileys), RETRY_DELAY);
+      return;
+    }
+
     log.warn(
-      { attempt },
+      { attempt, hasSession: hasValidSession, isNewCreation },
       'Baileys aguardando pareamento. Escaneie o QR Code ou aguarde a autorização.'
     );
 
@@ -75,8 +114,16 @@ const ensureConnected = async (
     return;
   }
 
+  const timeoutMs = isNewCreation
+    ? CONNECT_TIMEOUT_NEW_MS
+    : CONNECT_TIMEOUT_RECONNECT_MS;
+  log.info({ attempt, timeoutMs }, 'Baileys: iniciando tentativa de conexão');
+
   try {
-    const state = await baileys.connect({ initial_connection: true });
+    const state = await withConnectTimeout(
+      baileys.connect({ initial_connection: true }),
+      timeoutMs
+    );
     log.info(
       { status: state.status, attempt },
       'Baileys connection attempt finalizada'
@@ -91,17 +138,83 @@ const ensureConnected = async (
       return;
     }
 
+    if (state.status === EBaileysConnectionStatus.connecting) {
+      const hasValidSession = baileys.hasSession();
+
+      if (isNewCreation || !hasValidSession) {
+        log.warn(
+          { attempt, hasSession: hasValidSession, isNewCreation },
+          'Baileys aguardando pareamento. Escaneie o QR Code ou aguarde a autorização.'
+        );
+
+        await updateWorkerMismatchedStatus(
+          baileysEnvironment.baileysWorkerId,
+          baileysEnvironment.baileysAccountId
+        );
+
+        setTimeout(() => ensureConnected(attempt, log, baileys), RETRY_DELAY);
+        return;
+      }
+
+      if (attempt <= MAX_RETRY_ATTEMPTS) {
+        log.info(
+          { attempt, maxRetries: MAX_RETRY_ATTEMPTS },
+          'Baileys em estado connecting com sessão válida. Aguardando reconexão automática...'
+        );
+        setTimeout(
+          () => ensureConnected(attempt + 1, log, baileys),
+          RETRY_DELAY
+        );
+        return;
+      }
+    }
+
     setTimeout(() => ensureConnected(attempt + 1, log, baileys), RETRY_DELAY);
   } catch (error) {
-    log.error({ err: error, attempt }, 'Baileys connection attempt failed');
-    setTimeout(() => ensureConnected(attempt + 1, log, baileys), RETRY_DELAY);
+    const hasValidSession = baileys.hasSession();
+    log.error(
+      { err: error, attempt, hasSession: hasValidSession, isNewCreation },
+      'Baileys connection attempt failed'
+    );
+
+    if (!isNewCreation && hasValidSession && attempt < MAX_RETRY_ATTEMPTS) {
+      log.info(
+        { attempt, nextAttempt: attempt + 1, maxRetries: MAX_RETRY_ATTEMPTS },
+        'Baileys: sessão válida encontrada, tentando reconexão...'
+      );
+      baileys.reconnect({ initial_connection: true });
+      setTimeout(() => ensureConnected(attempt + 1, log, baileys), RETRY_DELAY);
+    } else if (attempt < MAX_RETRY_ATTEMPTS) {
+      log.info(
+        { attempt, nextAttempt: attempt + 1 },
+        'Baileys: tentando nova conexão...'
+      );
+      setTimeout(() => ensureConnected(attempt + 1, log, baileys), RETRY_DELAY);
+    } else {
+      log.error(
+        { attempt, maxRetries: MAX_RETRY_ATTEMPTS },
+        'Baileys: máximo de tentativas atingido, aguardando QR code'
+      );
+    }
   }
 };
 
 const baileysReadyHook = fp(async (fastify) => {
   fastify.addHook('onReady', () => {
-    const baileysService = container.resolve(BaileysService);
-    ensureConnected(1, fastify.log, baileysService);
+    try {
+      const baileysService = container.resolve(BaileysService);
+      ensureConnected(1, fastify.log, baileysService).catch((err: unknown) => {
+        fastify.log.error(
+          { err },
+          'Baileys ensureConnected falhou inesperadamente'
+        );
+      });
+    } catch (err) {
+      fastify.log.error(
+        { err },
+        'Baileys: falha ao iniciar verificação de conexão no onReady'
+      );
+    }
   });
 });
 
