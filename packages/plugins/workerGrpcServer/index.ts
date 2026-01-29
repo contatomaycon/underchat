@@ -107,7 +107,6 @@ const workerGrpcServerPlugin: FastifyPluginAsync = async (
         reject(err);
         return;
       }
-      grpcServer.start();
       fastify.log.info({ bind }, 'WorkerCommand gRPC server started');
       resolve();
     });
