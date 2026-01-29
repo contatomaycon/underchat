@@ -37,8 +37,8 @@ export class WorkerRecreatorUseCase {
   ): Promise<void> {
     try {
       await this.workerGrpcClientService.recreateWorker(payload);
-    } catch {
-      throw new Error(t('grpc_error'));
+    } catch (err) {
+      throw new Error(t('grpc_error'), { cause: err });
     }
   }
 

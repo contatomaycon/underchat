@@ -54,17 +54,18 @@ export function handleControllerError(
   }
 
   if (error instanceof Error) {
-    logger.error(
-      {
-        err: error,
-        type: 'controller_error',
-        requestId,
-        method,
-        url,
-        stack: error.stack,
-      },
-      'Error in controller'
-    );
+    const logPayload: Record<string, unknown> = {
+      err: error,
+      type: 'controller_error',
+      requestId,
+      method,
+      url,
+      stack: error.stack,
+    };
+    if (error.cause !== undefined) {
+      logPayload.cause = error.cause;
+    }
+    logger.error(logPayload, 'Error in controller');
 
     captureException(error, {
       controller: {

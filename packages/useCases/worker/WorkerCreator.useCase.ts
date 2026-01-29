@@ -44,8 +44,8 @@ export class WorkerCreatorUseCase {
   ): Promise<void> {
     try {
       await this.workerGrpcClientService.createWorker(payload);
-    } catch {
-      throw new Error(t('grpc_error'));
+    } catch (err) {
+      throw new Error(t('grpc_error'), { cause: err });
     }
   }
 

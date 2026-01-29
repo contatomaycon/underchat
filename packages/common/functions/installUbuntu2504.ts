@@ -121,6 +121,7 @@ export async function installUbuntu2504(
       CONTAINER_ID=$(docker run -d --name under-balance-api \
         --restart always \
         -p ${webView.web_port}:3003 \
+        -p 50051:50051 \
         -v /var/run/docker.sock:/var/run/docker.sock \
         --network underchat \
         -e DOCKER_HOST=unix:///var/run/docker.sock \

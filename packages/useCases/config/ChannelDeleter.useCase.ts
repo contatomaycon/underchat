@@ -55,8 +55,8 @@ export class ChannelDeleterUseCase {
   ): Promise<void> {
     try {
       await this.workerGrpcClientService.deleteWorker(payload);
-    } catch {
-      throw new Error(t('grpc_error'));
+    } catch (err) {
+      throw new Error(t('grpc_error'), { cause: err });
     }
   }
 
