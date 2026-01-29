@@ -15,19 +15,38 @@ export class BaileysService {
   ) {}
 
   connect(input: IBaileysConnection): Promise<IBaileysConnectionState> {
+    console.log('[worker_baileys:service] BaileysService.connect', {
+      input,
+      ts: Date.now(),
+    });
     return this.connection.connect(input);
   }
 
   reconnect(input: IBaileysConnection): void {
+    console.log('[worker_baileys:service] BaileysService.reconnect', {
+      input,
+      ts: Date.now(),
+    });
     return this.connection.reconnect(input);
   }
 
   disconnect(input: IBaileysConnection): Promise<void> {
+    console.log('[worker_baileys:service] BaileysService.disconnect', {
+      input,
+      ts: Date.now(),
+    });
     return this.connection.disconnect(input);
   }
 
-  abortConnectionAttempt(): void {
-    return this.connection.abortConnectionAttempt();
+  abortConnectionAttempt(reason?: string): void {
+    console.log(
+      '[worker_baileys:service] BaileysService.abortConnectionAttempt',
+      {
+        reason,
+        ts: Date.now(),
+      }
+    );
+    return this.connection.abortConnectionAttempt(reason);
   }
 
   isConnected(): boolean {

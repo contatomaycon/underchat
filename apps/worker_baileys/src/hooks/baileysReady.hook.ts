@@ -16,6 +16,14 @@ const CONNECT_TIMEOUT_RECONNECT_MS = 30000;
 const MAX_RETRY_ATTEMPTS = 10;
 let mismatchedStatusSent = false;
 let isNewCreation: boolean | null = null;
+let lastEnsureAt: number | null = null;
+
+const handleEnsureConnectedError = (
+  fastify: FastifyInstance,
+  err: unknown
+): void => {
+  fastify.log.error({ err }, 'Baileys ensureConnected falhou inesperadamente');
+};
 
 const withConnectTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> => {
   console.log(
@@ -77,9 +85,11 @@ const ensureConnected = async (
   baileys: BaileysService
 ): Promise<void> => {
   const t0 = Date.now();
+  const sinceLastEnsure = lastEnsureAt ? t0 - lastEnsureAt : undefined;
+  lastEnsureAt = t0;
   console.log(
     '[worker_baileys:init] baileysReady.hook: ensureConnected iniciado',
-    { attempt, ts: t0 }
+    { attempt, ts: t0, msSinceLast: sinceLastEnsure }
   );
   log.info({ attempt }, 'Baileys: iniciando verificação de conexão');
 
@@ -88,7 +98,7 @@ const ensureConnected = async (
       { attempt, maxRetries: MAX_RETRY_ATTEMPTS },
       'Baileys: máximo de tentativas atingido, encerrando tentativa'
     );
-    baileys.abortConnectionAttempt();
+    baileys.abortConnectionAttempt('connecting_state');
     return;
   }
 
@@ -136,7 +146,7 @@ const ensureConnected = async (
       baileysEnvironment.baileysAccountId
     );
 
-    baileys.abortConnectionAttempt();
+    baileys.abortConnectionAttempt('max_attempts_reached');
 
     setTimeout(() => ensureConnected(attempt + 1, log, baileys), RETRY_DELAY);
     return;
@@ -193,7 +203,7 @@ const ensureConnected = async (
           { attempt },
           'Baileys: QR code emitido com sucesso. Aguardando scan do usuário.'
         );
-        baileys.abortConnectionAttempt();
+        baileys.abortConnectionAttempt('connecting_state_no_qr');
 
         setTimeout(
           () => ensureConnected(attempt + 1, log, baileys),
@@ -240,7 +250,7 @@ const ensureConnected = async (
       'Baileys connection attempt failed'
     );
 
-    baileys.abortConnectionAttempt();
+    baileys.abortConnectionAttempt('connect_error');
 
     const isTimeout =
       error instanceof Error && error.message.toLowerCase().includes('timeout');
@@ -269,14 +279,23 @@ const ensureConnected = async (
   }
 };
 
+const runEnsureConnected = (
+  fastify: FastifyInstance,
+  baileysService: BaileysService
+): void => {
+  ensureConnected(1, fastify.log, baileysService).catch((err: unknown) =>
+    handleEnsureConnectedError(fastify, err)
+  );
+};
+
 const baileysReadyHook = fp(async (fastify) => {
   console.log(
     '[worker_baileys:init] baileysReady.hook: plugin registrando onReady',
     { ts: Date.now() }
   );
-  fastify.addHook('onReady', () => {
+  fastify.addHook('onListen', () => {
     const t0 = Date.now();
-    console.log('[worker_baileys:init] baileysReady.hook: onReady disparado', {
+    console.log('[worker_baileys:init] baileysReady.hook: onListen disparado', {
       ts: t0,
     });
     try {
@@ -286,24 +305,19 @@ const baileysReadyHook = fp(async (fastify) => {
         '[worker_baileys:init] baileysReady.hook: BaileysService resolvido',
         { ms: Date.now() - tResolve, ts: Date.now() }
       );
-      ensureConnected(1, fastify.log, baileysService).catch((err: unknown) => {
-        fastify.log.error(
-          { err },
-          'Baileys ensureConnected falhou inesperadamente'
-        );
-      });
+      setImmediate(runEnsureConnected, fastify, baileysService);
       console.log(
         '[worker_baileys:init] baileysReady.hook: ensureConnected agendado (async)',
         { ms: Date.now() - t0, ts: Date.now() }
       );
     } catch (err) {
-      console.log('[worker_baileys:init] baileysReady.hook: erro no onReady', {
+      console.log('[worker_baileys:init] baileysReady.hook: erro no onListen', {
         err,
         ts: Date.now(),
       });
       fastify.log.error(
         { err },
-        'Baileys: falha ao iniciar verificação de conexão no onReady'
+        'Baileys: falha ao iniciar verificação de conexão no onListen'
       );
     }
   });

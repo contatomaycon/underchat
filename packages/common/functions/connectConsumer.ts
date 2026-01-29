@@ -41,7 +41,8 @@ function createCleanup(consumer: KafkaConsumer) {
 function createTimeoutHandler(
   topic: string,
   cleanup: () => void,
-  isResolved: { value: boolean }
+  isResolved: { value: boolean },
+  startTs: number
 ): NodeJS.Timeout {
   return setTimeout(() => {
     if (isResolved.value) {
@@ -54,6 +55,7 @@ function createTimeoutHandler(
       {
         topic,
         type: 'kafka_connection_timeout',
+        ms: Date.now() - startTs,
       },
       `Kafka consumer connection timeout for topic ${topic}, continuing without connection`
     );
@@ -122,7 +124,8 @@ function createReadyHandler(
   cleanup: () => void,
   timeout: NodeJS.Timeout,
   isResolved: { value: boolean },
-  consumer: KafkaConsumer
+  consumer: KafkaConsumer,
+  startTs: number
 ) {
   return (): void => {
     if (isResolved.value) {
@@ -136,6 +139,7 @@ function createReadyHandler(
         {
           topic,
           type: 'kafka_consumer_connected',
+          ms: Date.now() - startTs,
         },
         `Kafka consumer connected to topic: ${topic}`
       );
@@ -371,10 +375,15 @@ function connectInBackground(
   topic: string,
   onConnected: () => void
 ): void {
+  const startTs = Date.now();
+  logger.info(
+    { topic, type: 'kafka_consumer_connect_start', ts: startTs },
+    `Kafka consumer connect start for topic ${topic}`
+  );
   const isResolved = { value: false };
   const connectCallbackCalled = { value: false };
   const cleanup = createCleanup(consumer);
-  const timeout = createTimeoutHandler(topic, cleanup, isResolved);
+  const timeout = createTimeoutHandler(topic, cleanup, isResolved, startTs);
   const errorHandler = createErrorHandler(topic, cleanup, timeout, isResolved);
   const readyHandler = createReadyHandler(
     topic,
@@ -382,7 +391,8 @@ function connectInBackground(
     cleanup,
     timeout,
     isResolved,
-    consumer
+    consumer,
+    startTs
   );
 
   setupEventListeners(consumer, readyHandler, errorHandler);

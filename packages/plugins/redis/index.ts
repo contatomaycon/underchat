@@ -66,6 +66,11 @@ export async function safeRedisSet(
 }
 
 const redisPlugin = async (fastify: FastifyInstance) => {
+  const startTs = Date.now();
+  fastify.log.info(
+    { ts: startTs, host: cacheEnvironment.cacheHost, port: cacheEnvironment.cachePort },
+    'Redis plugin inicializando'
+  );
   let isShuttingDown = false;
 
   const client = new Redis({
@@ -106,11 +111,17 @@ const redisPlugin = async (fastify: FastifyInstance) => {
   });
 
   client.on('connect', () => {
-    fastify.log.info('Redis client connected');
+    fastify.log.info(
+      { ms: Date.now() - startTs, ts: Date.now() },
+      'Redis client connected'
+    );
   });
 
   client.on('ready', () => {
-    fastify.log.info('Redis client ready');
+    fastify.log.info(
+      { ms: Date.now() - startTs, ts: Date.now() },
+      'Redis client ready'
+    );
   });
 
   client.on('close', () => {

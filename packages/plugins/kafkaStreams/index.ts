@@ -186,6 +186,16 @@ const kafkaPlugin: FastifyPluginAsync<KafkaPluginOptions> = async (
   opts
 ) => {
   const module = opts.module;
+  const startTs = Date.now();
+  fastify.log.info(
+    {
+      module,
+      broker: kafkaEnvironment.kafkaBroker,
+      securityProtocol: kafkaEnvironment.securityProtocol,
+      ts: startTs,
+    },
+    'Kafka plugin inicializando'
+  );
 
   const kafka = new KafkaStreamsClient(
     kafkaEnvironment.kafkaBroker,
@@ -203,6 +213,10 @@ const kafkaPlugin: FastifyPluginAsync<KafkaPluginOptions> = async (
   container.register('Kafka', { useValue: kafka });
 
   fastify.decorate('kafka', kafka);
+  fastify.log.info(
+    { module, ms: Date.now() - startTs, ts: Date.now() },
+    'Kafka plugin pronto'
+  );
 };
 
 export default fp(kafkaPlugin, { name: 'kafka-plugin' });

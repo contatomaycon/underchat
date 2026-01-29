@@ -39,6 +39,7 @@ const centrifugoPlugin: FastifyPluginAsync<CentrifugoPluginOptions> = async (
   };
 
   const token = await generateToken();
+  const connectStart = Date.now();
   const client = new Centrifuge(
     `${centrifugoEnvironment.centrifugoWsUrl}/connection/websocket`,
     {
@@ -71,6 +72,30 @@ const centrifugoPlugin: FastifyPluginAsync<CentrifugoPluginOptions> = async (
   };
 
   client.on('error', errorHandler);
+  client.on('connecting', (ctx) => {
+    fastify.log.info(
+      { code: ctx.code, reason: ctx.reason, ts: Date.now() },
+      'Centrifugo connecting'
+    );
+  });
+  client.on('connected', (ctx) => {
+    fastify.log.info(
+      {
+        clientId: ctx.client,
+        version: ctx.version,
+        expires: ctx.expires,
+        msSinceStart: Date.now() - connectStart,
+        ts: Date.now(),
+      },
+      'Centrifugo connected'
+    );
+  });
+  client.on('disconnected', (ctx) => {
+    fastify.log.warn(
+      { code: ctx.code, reason: ctx.reason, ts: Date.now() },
+      'Centrifugo disconnected'
+    );
+  });
 
   await new Promise((resolve) => setImmediate(resolve));
 
