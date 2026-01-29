@@ -24,6 +24,7 @@ const type = ref<EWorkerType | null>(EWorkerType.baileys);
 const itemsType = ref([{ value: EWorkerType.baileys, title: t('unofficial') }]);
 
 const refFormAddChannel = ref<VForm>();
+const isAdding = ref(false);
 
 const addChannel = async () => {
   const validateForm = await refFormAddChannel?.value?.validate();
@@ -38,12 +39,17 @@ const addChannel = async () => {
     worker_type: type.value,
   };
 
-  const result = await channelStore.addChannel(payload);
+  isAdding.value = true;
+  try {
+    const result = await channelStore.addChannel(payload);
 
-  if (result) {
-    isVisible.value = false;
+    if (result) {
+      isVisible.value = false;
 
-    await channelStore.listChannels();
+      await channelStore.listChannels();
+    }
+  } finally {
+    isAdding.value = false;
   }
 };
 
@@ -63,14 +69,6 @@ onMounted(resetForm);
 <template>
   <VDialog v-model="isVisible" max-width="600">
     <DialogCloseBtn @click="isVisible = false" />
-
-    <VOverlay
-      :model-value="channelStore.loading"
-      class="align-center justify-center"
-      contained
-    >
-      <VProgressCircular color="primary" indeterminate size="64" />
-    </VOverlay>
 
     <VForm ref="refFormAddChannel" @submit.prevent>
       <VCard :title="$t('add_server')">
@@ -103,7 +101,9 @@ onMounted(resetForm);
           <VBtn variant="tonal" color="secondary" @click="isVisible = false">
             {{ $t('cancel') }}
           </VBtn>
-          <VBtn @click="addChannel"> {{ $t('add') }} </VBtn>
+          <VBtn :loading="isAdding" @click="addChannel">
+            {{ $t('add') }}
+          </VBtn>
         </VCardText>
       </VCard>
     </VForm>
