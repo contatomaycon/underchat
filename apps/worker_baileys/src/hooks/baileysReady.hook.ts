@@ -11,7 +11,7 @@ import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnect
 import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 
 const RETRY_DELAY = 10000;
-const CONNECT_TIMEOUT_NEW_MS = 5000;
+const CONNECT_TIMEOUT_NEW_MS = 60000;
 const CONNECT_TIMEOUT_RECONNECT_MS = 30000;
 const MAX_RETRY_ATTEMPTS = 5;
 let mismatchedStatusSent = false;

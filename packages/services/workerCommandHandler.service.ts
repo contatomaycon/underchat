@@ -478,7 +478,29 @@ export class WorkerCommandHandlerService {
       worker_status_id: EWorkerStatus.disponible,
     };
 
-    return this.centrifugoPublish(dataPublish);
+    const result = await this.centrifugoPublish(dataPublish);
+
+    if (data.worker_type_id === EWorkerType.baileys) {
+      const payload: StatusConnectionWorkerRequest = {
+        worker_id: data.worker_id,
+        status: EWorkerStatus.online,
+        type: EBaileysConnectionType.qrcode,
+      };
+
+      try {
+        await this.streamProducerService.send(
+          this.kafkaBaileysQueueService.workerConnection(data.worker_id),
+          payload,
+          data.worker_id
+        );
+      } catch (err) {
+        if (!this.isTopicOrPartitionMissing(err)) {
+          console.error('Failed to request worker connection:', err);
+        }
+      }
+    }
+
+    return result;
   }
 
   private readonly sleep = (ms: number): Promise<void> =>

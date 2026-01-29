@@ -206,11 +206,15 @@ export class WorkerConnectionStatusConsume {
   private async handleOnline(
     data: StatusConnectionWorkerRequest
   ): Promise<void> {
-    await this.baileysService.connect({
-      initial_connection: true,
-      type: data.type as EBaileysConnectionType,
-      phone_connection: data.phone_connection,
-    });
+    this.baileysService
+      .connect({
+        initial_connection: true,
+        type: data.type as EBaileysConnectionType,
+        phone_connection: data.phone_connection,
+      })
+      .catch((error) => {
+        console.error('Error initiating Baileys connection:', error);
+      });
   }
 
   private handleRecreating(): void {
