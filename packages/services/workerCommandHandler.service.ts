@@ -493,7 +493,9 @@ export class WorkerCommandHandlerService {
       worker_status_id: EWorkerStatus.creating,
     };
 
-    await this.centrifugoPublish(dataPublishCreating);
+    void this.centrifugoPublish(dataPublishCreating).catch((err) => {
+      console.error('Failed to publish worker creating status:', err);
+    });
 
     const imageName = getImageWorker(data.worker_type_id);
 
@@ -515,13 +517,12 @@ export class WorkerCommandHandlerService {
       throw new Error('Failed to create worker container');
     }
 
-    const healthy = await this.retryOperation(
-      async () =>
-        this.containerHealthService.isServiceHealthy(containerId, {
-          maxAttempts: 5,
-          delayMs: 2000,
-        }),
-      (r) => !r
+    const healthy = await this.containerHealthService.isServiceHealthy(
+      containerId,
+      {
+        maxAttempts: 10,
+        delayMs: 1000,
+      }
     );
 
     if (!healthy) {
@@ -554,7 +555,9 @@ export class WorkerCommandHandlerService {
       worker_status_id: EWorkerStatus.disponible,
     };
 
-    const result = await this.centrifugoPublish(dataPublish);
+    void this.centrifugoPublish(dataPublish).catch((err) => {
+      console.error('Failed to publish worker available status:', err);
+    });
 
     if (data.worker_type_id === EWorkerType.baileys) {
       const payload: StatusConnectionWorkerRequest = {
@@ -563,20 +566,20 @@ export class WorkerCommandHandlerService {
         type: EBaileysConnectionType.qrcode,
       };
 
-      try {
-        await this.streamProducerService.send(
+      void this.streamProducerService
+        .send(
           this.kafkaBaileysQueueService.workerConnection(data.worker_id),
           payload,
           data.worker_id
-        );
-      } catch (err) {
-        if (!this.isTopicOrPartitionMissing(err)) {
-          console.error('Failed to request worker connection:', err);
-        }
-      }
+        )
+        .catch((err) => {
+          if (!this.isTopicOrPartitionMissing(err)) {
+            console.error('Failed to request worker connection:', err);
+          }
+        });
     }
 
-    return result;
+    return {} as PublishResult;
   }
 
   private readonly sleep = (ms: number): Promise<void> =>

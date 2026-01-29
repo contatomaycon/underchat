@@ -72,7 +72,19 @@ export class ContainerHealthService {
       const container = this.docker.getContainer(containerId);
 
       const execInstance = await container.exec({
-        Cmd: ['curl', '-s', '-o', '/dev/null', '-w', '%{http_code}', url],
+        Cmd: [
+          'curl',
+          '-s',
+          '--connect-timeout',
+          '2',
+          '--max-time',
+          '3',
+          '-o',
+          '/dev/null',
+          '-w',
+          '%{http_code}',
+          url,
+        ],
         AttachStdout: true,
         AttachStderr: true,
       });
