@@ -61,6 +61,7 @@ export class BaileysConnectionService {
   private connectAttemptStartedAt?: number;
   private connectAttemptCallId?: number;
   private connectionUpdateCount = 0;
+  private lastQrAt?: number;
 
   private connecting = false;
   private retryCount = 0;
@@ -99,6 +100,20 @@ export class BaileysConnectionService {
       hasSocket: !!this.socket,
     });
     return this.socket;
+  }
+
+  hasRecentQr(maxAgeMs = 60_000): boolean {
+    if (!this.lastQrAt) {
+      return false;
+    }
+    if (!this.socket || this.status !== Status.connecting) {
+      return false;
+    }
+    return Date.now() - this.lastQrAt <= maxAgeMs;
+  }
+
+  getLastQrAt(): number | null {
+    return this.lastQrAt ?? null;
   }
 
   private handleAlreadyConnecting(): Promise<IBaileysConnectionState> | null {
@@ -759,6 +774,7 @@ export class BaileysConnectionService {
     qr: string,
     resolve: (s: IBaileysConnectionState) => void
   ): Promise<void> {
+    this.lastQrAt = Date.now();
     console.log('[worker_baileys:connection] onQr', {
       qrHash: qr.slice(-20),
       sameAsLast: qr.slice(-20) === this.qrHash,
@@ -805,6 +821,7 @@ export class BaileysConnectionService {
   private async onOpen(
     resolve: (s: IBaileysConnectionState) => void
   ): Promise<void> {
+    this.lastQrAt = undefined;
     console.log('[worker_baileys:connection] onOpen', {
       attemptId: this.connectAttemptId,
       socketId: this.socketId,

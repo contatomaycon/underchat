@@ -61,6 +61,14 @@ export class BaileysService {
     return this.connection.hasSession();
   }
 
+  hasRecentQr(maxAgeMs?: number): boolean {
+    return this.connection.hasRecentQr(maxAgeMs);
+  }
+
+  getLastQrAt(): number | null {
+    return this.connection.getLastQrAt();
+  }
+
   get socket(): ReturnType<typeof makeWASocket> | undefined {
     return this.connection.getSocket();
   }

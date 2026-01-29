@@ -87,9 +87,10 @@ const ensureConnected = async (
   const t0 = Date.now();
   const sinceLastEnsure = lastEnsureAt ? t0 - lastEnsureAt : undefined;
   lastEnsureAt = t0;
+  const hasRecentQr = baileys.hasRecentQr();
   console.log(
     '[worker_baileys:init] baileysReady.hook: ensureConnected iniciado',
-    { attempt, ts: t0, msSinceLast: sinceLastEnsure }
+    { attempt, ts: t0, msSinceLast: sinceLastEnsure, hasRecentQr }
   );
   log.info({ attempt }, 'Baileys: iniciando verificação de conexão');
 
@@ -125,6 +126,15 @@ const ensureConnected = async (
 
   const currentStatus = baileys.getStatus();
   if (currentStatus === EBaileysConnectionStatus.connecting) {
+    if (hasRecentQr) {
+      log.info(
+        { attempt },
+        'Baileys: QR code emitido recentemente. Aguardando scan do usuário...'
+      );
+      setTimeout(() => ensureConnected(attempt + 1, log, baileys), RETRY_DELAY);
+      return;
+    }
+
     const hasValidSession = baileys.hasSession();
 
     if (!isNewCreation && hasValidSession && attempt <= MAX_RETRY_ATTEMPTS) {
@@ -145,8 +155,6 @@ const ensureConnected = async (
       baileysEnvironment.baileysWorkerId,
       baileysEnvironment.baileysAccountId
     );
-
-    baileys.abortConnectionAttempt('max_attempts_reached');
 
     setTimeout(() => ensureConnected(attempt + 1, log, baileys), RETRY_DELAY);
     return;
@@ -203,8 +211,6 @@ const ensureConnected = async (
           { attempt },
           'Baileys: QR code emitido com sucesso. Aguardando scan do usuário.'
         );
-        baileys.abortConnectionAttempt('connecting_state_no_qr');
-
         setTimeout(
           () => ensureConnected(attempt + 1, log, baileys),
           RETRY_DELAY
