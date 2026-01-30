@@ -61,16 +61,24 @@ const updateWorkerMismatchedStatus = async (
   }
 };
 
+const fireOnReady = (onReady?: () => void): void => {
+  if (onReady) {
+    onReady();
+  }
+};
+
 const ensureConnected = async (
   attempt: number,
   log: FastifyInstance['log'],
-  baileys: BaileysService
+  baileys: BaileysService,
+  onReady?: () => void
 ): Promise<void> => {
   log.info({ attempt }, 'Baileys: iniciando verificação de conexão');
 
   if (baileys.isConnected()) {
     log.info({ attempt }, 'Baileys conectado com sucesso');
     mismatchedStatusSent = false;
+    fireOnReady(onReady);
 
     return;
   }
@@ -84,7 +92,10 @@ const ensureConnected = async (
         { attempt, maxRetries: MAX_RETRY_ATTEMPTS },
         'Baileys em estado connecting com sessão válida. Aguardando reconexão automática...'
       );
-      setTimeout(() => ensureConnected(attempt + 1, log, baileys), RETRY_DELAY);
+      setTimeout(
+        () => ensureConnected(attempt + 1, log, baileys, onReady),
+        RETRY_DELAY
+      );
       return;
     }
 
@@ -97,6 +108,8 @@ const ensureConnected = async (
       baileysEnvironment.baileysWorkerId,
       baileysEnvironment.baileysAccountId
     );
+
+    fireOnReady(onReady);
 
     setTimeout(() => ensureConnected(attempt, log, baileys), RETRY_DELAY);
     return;
@@ -120,10 +133,14 @@ const ensureConnected = async (
     ) {
       log.info('Baileys conectado com sucesso');
       mismatchedStatusSent = false;
+      fireOnReady(onReady);
       return;
     }
 
-    setTimeout(() => ensureConnected(attempt + 1, log, baileys), RETRY_DELAY);
+    setTimeout(
+      () => ensureConnected(attempt + 1, log, baileys, onReady),
+      RETRY_DELAY
+    );
   } catch (error) {
     const hasValidSession = baileys.hasSession();
     log.error(
@@ -137,31 +154,45 @@ const ensureConnected = async (
         'Baileys: sessão válida encontrada, tentando reconexão...'
       );
       baileys.reconnect({ initial_connection: true });
-      setTimeout(() => ensureConnected(attempt + 1, log, baileys), RETRY_DELAY);
+      setTimeout(
+        () => ensureConnected(attempt + 1, log, baileys, onReady),
+        RETRY_DELAY
+      );
     } else if (attempt < MAX_RETRY_ATTEMPTS) {
       log.info(
         { attempt, nextAttempt: attempt + 1 },
         'Baileys: tentando nova conexão...'
       );
-      setTimeout(() => ensureConnected(attempt + 1, log, baileys), RETRY_DELAY);
+      setTimeout(
+        () => ensureConnected(attempt + 1, log, baileys, onReady),
+        RETRY_DELAY
+      );
     } else {
       log.error(
         { attempt, maxRetries: MAX_RETRY_ATTEMPTS },
         'Baileys: máximo de tentativas atingido, aguardando QR code'
       );
+      fireOnReady(onReady);
     }
   }
 };
 
 const baileysOnListenHook = fp(async (fastify) => {
+  fastify.decorate('baileysInitialized', undefined as unknown as Promise<void>);
+
   fastify.addHook('onListen', () => {
     try {
       const baileysService = container.resolve(BaileysService);
 
-      ensureConnected(1, fastify.log, baileysService).catch((err: unknown) => {
-        fastify.log.error(
-          { err },
-          'Baileys ensureConnected falhou inesperadamente'
+      fastify.baileysInitialized = new Promise<void>((resolve) => {
+        ensureConnected(1, fastify.log, baileysService, resolve).catch(
+          (err: unknown) => {
+            fastify.log.error(
+              { err },
+              'Baileys ensureConnected falhou inesperadamente'
+            );
+            resolve();
+          }
         );
       });
     } catch (err) {

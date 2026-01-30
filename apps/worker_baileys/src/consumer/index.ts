@@ -11,13 +11,18 @@ import fp from 'fastify-plugin';
 const consumers: Array<{ close?: () => Promise<void> }> = [];
 
 const CONSUMER_STAGGER_DELAY_MS = 500;
-const CONSUMER_INITIAL_DELAY_MS = 3000;
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export function startConsumers(server: FastifyInstance): void {
+export async function startConsumers(server: FastifyInstance): Promise<void> {
+  if (server.baileysInitialized) {
+    try {
+      await server.baileysInitialized;
+    } catch {}
+  }
+
   const starters = [
     () => startSendMessageConsume(server),
     () => startMarkMessageReadConsume(server),
@@ -28,25 +33,21 @@ export function startConsumers(server: FastifyInstance): void {
     () => startWebhookIntegrationConsume(server),
   ];
 
-  setTimeout(async () => {
-    for (const start of starters) {
-      try {
-        consumers.push(start());
-      } catch (err) {
-        server.log.error({ err }, 'Erro ao iniciar consumidor Kafka');
-      }
-      await delay(CONSUMER_STAGGER_DELAY_MS);
+  for (const start of starters) {
+    try {
+      consumers.push(start());
+    } catch (err) {
+      server.log.error({ err }, 'Erro ao iniciar consumidor Kafka');
     }
-  }, CONSUMER_INITIAL_DELAY_MS);
+    await delay(CONSUMER_STAGGER_DELAY_MS);
+  }
 }
 
 const baileysConsumersOnListenHook = fp(async (fastify) => {
   fastify.addHook('onListen', () => {
-    try {
-      startConsumers(fastify);
-    } catch (err) {
+    startConsumers(fastify).catch((err) => {
       fastify.log.error({ err }, 'Baileys: falha ao iniciar consumidores');
-    }
+    });
   });
 
   fastify.addHook('onClose', async () => {

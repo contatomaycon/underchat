@@ -49,6 +49,7 @@ declare module 'fastify' {
       nativeConnection: NativeConnection;
       registerWorker: (worker: Worker) => void;
     };
+    baileysInitialized: Promise<void>;
   }
 
   export interface FastifyRequest {
