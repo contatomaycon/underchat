@@ -68,6 +68,16 @@ export class ChannelRecreatorUseCase {
       worker_status_id: EWorkerStatus.recreating,
     };
 
+    const inputUpdate: IUpdateWorker = {
+      worker_id: channelId,
+      worker_status_id: EWorkerStatus.recreating,
+    };
+
+    await this.workerService.updateWorkerById(
+      viewWorkerBalancer.account_id,
+      inputUpdate
+    );
+
     await Promise.all([
       this.centrifugoService.publishSub(
         workerCentrifugoQueue(inputRecreate.account_id),
@@ -78,14 +88,6 @@ export class ChannelRecreatorUseCase {
 
     await this.onChannelRecreated(t, inputRecreate);
 
-    const inputUpdate: IUpdateWorker = {
-      worker_id: channelId,
-      worker_status_id: EWorkerStatus.recreating,
-    };
-
-    return this.workerService.updateWorkerById(
-      viewWorkerBalancer.account_id,
-      inputUpdate
-    );
+    return true;
   }
 }

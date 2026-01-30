@@ -69,6 +69,13 @@ export class WorkerRecreatorUseCase {
         | undefined,
     };
 
+    const inputUpdate: IUpdateWorker = {
+      worker_id: workerId,
+      worker_status_id: EWorkerStatus.recreating,
+    };
+
+    await this.workerService.updateWorkerById(accountId, inputUpdate);
+
     await this.centrifugoService.publishSub(
       workerCentrifugoQueue(inputRecreate.account_id),
       inputRecreate
@@ -76,11 +83,6 @@ export class WorkerRecreatorUseCase {
 
     await this.onWorkerRecreated(t, inputRecreate);
 
-    const inputUpdate: IUpdateWorker = {
-      worker_id: workerId,
-      worker_status_id: EWorkerStatus.recreating,
-    };
-
-    return this.workerService.updateWorkerById(accountId, inputUpdate);
+    return true;
   }
 }
