@@ -1,18 +1,9 @@
-import { singleton, inject } from 'tsyringe';
+import { singleton } from 'tsyringe';
 import { baileysEnvironment } from '@core/config/environments';
 import { StatusConnectionWorkerRequest } from '@core/schema/worker/statusConnection/request.schema';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { BaileysService } from '@core/services/baileys';
 import { EBaileysConnectionType } from '@core/common/enums/EBaileysConnectionType';
-import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.service';
-import { KafkaConsumer } from 'node-rdkafka';
-import { KafkaClient } from '@core/plugins/kafkaStreams';
-import { startHeartbeat } from '@core/common/functions/startHeartbeat';
-import { createConsumer } from '@core/common/functions/createConsumer';
-import { connectConsumer } from '@core/common/functions/connectConsumer';
-import { handleConsumerError } from '@core/common/functions/handleConsumerError';
-import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
-import { commitOffset } from '@core/common/functions/commitOffset';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
@@ -23,8 +14,6 @@ import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 
 @singleton()
 export class WorkerConnectionStatusConsume {
-  private consumer: KafkaConsumer | null = null;
-  private isRunning = false;
   private connectionRetryTimer: NodeJS.Timeout | null = null;
   private connectionRetryAttempt = 0;
   private readonly connectionRetryIntervalMs = 15_000;
@@ -32,175 +21,18 @@ export class WorkerConnectionStatusConsume {
   private activeConnectionRequest: StatusConnectionWorkerRequest | null = null;
 
   constructor(
-    @inject('Kafka') private readonly kafka: KafkaClient,
     private readonly baileysService: BaileysService,
-    private readonly kafkaBaileysQueueService: KafkaBaileysQueueService,
     private readonly streamProducerService: StreamProducerService,
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
     private readonly centrifugoService: CentrifugoService
   ) {}
 
-  private get consumerOrThrow(): KafkaConsumer {
-    if (!this.consumer) {
-      throw new Error('Consumer not initialized');
-    }
-
-    return this.consumer;
+  requestConnection(payload: StatusConnectionWorkerRequest): void {
+    void this.handleConnectionStatus(payload);
   }
 
-  public async execute(): Promise<void> {
-    const t0 = Date.now();
-    console.log(
-      '[worker_baileys:init] WorkerConnectionStatus.consume: execute iniciado',
-      { ts: t0 }
-    );
-    if (this.consumer && this.isRunning) {
-      console.log(
-        '[worker_baileys:init] WorkerConnectionStatus.consume: execute já rodando, saindo',
-        { ts: Date.now() }
-      );
-      return;
-    }
-
-    const topic = this.getWorkerConnectionTopic();
-    console.log(
-      '[worker_baileys:init] WorkerConnectionStatus.consume: topic obtido',
-      { topic, ts: Date.now() }
-    );
-
-    const tEnsureTopic = Date.now();
-    await ensureKafkaTopic(
-      this.kafka,
-      topic,
-      this.kafkaBaileysQueueService.getNumPartitions(),
-      this.kafkaBaileysQueueService.getReplicationFactor()
-    );
-    console.log(
-      '[worker_baileys:init] WorkerConnectionStatus.consume: ensureKafkaTopic concluído',
-      { topic, ms: Date.now() - tEnsureTopic, ts: Date.now() }
-    );
-
-    const tCreateConsumer = Date.now();
-    this.consumer = createConsumer(
-      this.kafka,
-      `group-underchat-worker-connection-status-${baileysEnvironment.baileysWorkerId}`
-    );
-    console.log(
-      '[worker_baileys:init] WorkerConnectionStatus.consume: createConsumer concluído',
-      { ms: Date.now() - tCreateConsumer, ts: Date.now() }
-    );
-
-    this.consumer.on('data', async (message) => {
-      const data = this.parseMessage(message.value);
-      if (!data) {
-        await this.commitNext(topic, message.partition, message.offset);
-
-        return;
-      }
-
-      const heartbeat = async () => {
-        this.consumer?.commit();
-      };
-
-      const stop = startHeartbeat(heartbeat);
-      try {
-        await this.handleConnectionStatus(data);
-      } catch (error) {
-        console.error('Error handling connection status:', error);
-        await this.commitNext(topic, message.partition, message.offset);
-      } finally {
-        stop();
-      }
-
-      await this.commitNext(topic, message.partition, message.offset);
-    });
-
-    this.consumer.on('event.error', (err) => {
-      handleConsumerError(err, topic);
-    });
-
-    const consumer = this.consumer;
-    if (!consumer) {
-      throw new Error('Consumer not initialized');
-    }
-
-    const tConnect = Date.now();
-    console.log(
-      '[worker_baileys:init] WorkerConnectionStatus.consume: connectConsumer iniciando',
-      { topic, ts: Date.now() }
-    );
-    connectConsumer(consumer, topic, () => {
-      this.isRunning = true;
-      console.log(
-        '[worker_baileys:init] WorkerConnectionStatus.consume: connectConsumer callback (conectado)',
-        { ms: Date.now() - tConnect, msTotal: Date.now() - t0, ts: Date.now() }
-      );
-      if (
-        !this.baileysService.isConnected() &&
-        !this.baileysService.hasSession()
-      ) {
-        const bootstrapPayload: StatusConnectionWorkerRequest = {
-          worker_id: baileysEnvironment.baileysWorkerId,
-          status: EWorkerStatus.online,
-          type: EBaileysConnectionType.qrcode,
-        };
-        this.startConnectionRetry(bootstrapPayload);
-      }
-    });
-    console.log(
-      '[worker_baileys:init] WorkerConnectionStatus.consume: execute concluído (connectConsumer assíncrono)',
-      { msTotal: Date.now() - t0, ts: Date.now() }
-    );
-  }
-
-  public async close(): Promise<void> {
-    if (!this.consumer) {
-      return;
-    }
-
-    try {
-      this.stopConnectionRetry();
-      this.isRunning = false;
-      await new Promise<void>((resolve) => {
-        const consumer = this.consumer;
-        if (!consumer) {
-          resolve();
-          return;
-        }
-        consumer.unsubscribe();
-        consumer.disconnect(resolve);
-      });
-    } finally {
-      this.consumer = null;
-    }
-  }
-
-  private getWorkerConnectionTopic(): string {
-    const topic = this.kafkaBaileysQueueService.workerConnection(
-      baileysEnvironment.baileysWorkerId
-    );
-
-    return topic;
-  }
-
-  private parseMessage(
-    value: Buffer | null
-  ): StatusConnectionWorkerRequest | null {
-    if (!value) {
-      return null;
-    }
-
-    const raw = value.toString('utf8').trim();
-    if (!raw) {
-      return null;
-    }
-
-    try {
-      const parsed = JSON.parse(raw) as StatusConnectionWorkerRequest;
-      return parsed ?? null;
-    } catch {
-      return null;
-    }
+  async close(): Promise<void> {
+    this.stopConnectionRetry();
   }
 
   private async handleConnectionStatus(
@@ -418,13 +250,5 @@ export class WorkerConnectionStatusConsume {
         }
       }, this.connectionRetryIntervalMs);
     }
-  }
-
-  private async commitNext(
-    topic: string,
-    partition: number,
-    offset: number
-  ): Promise<void> {
-    await commitOffset(this.consumerOrThrow, topic, partition, offset);
   }
 }

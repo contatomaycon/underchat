@@ -18,4 +18,9 @@ export class BaileysEnvironment {
 
     return accountId;
   }
+
+  public get grpcPort(): number {
+    const port = process.env.WORKER_BAILEYS_GRPC_PORT;
+    return port ? parseInt(port, 10) : 50052;
+  }
 }

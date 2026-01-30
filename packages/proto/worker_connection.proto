@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package worker_connection;
+
+service WorkerConnection {
+  rpc RequestConnection(StatusConnectionRequest) returns (WorkerConnectionResponse);
+}
+
+message StatusConnectionRequest {
+  string worker_id = 1;
+  string status = 2;
+  string type = 3;
+  string phone_connection = 4;
+}
+
+message WorkerConnectionResponse {}

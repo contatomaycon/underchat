@@ -11,7 +11,7 @@ import { PublishResult } from 'centrifuge';
 import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.service';
 import { ContainerHealthService } from '@core/services/containerHealth.service';
 import { StatusConnectionWorkerRequest } from '@core/schema/worker/statusConnection/request.schema';
-import { StreamProducerService } from '@core/services/streamProducer.service';
+import { WorkerBaileysGrpcClientService } from '@core/services/workerBaileysGrpcClient.service';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
@@ -41,7 +41,7 @@ export class WorkerCommandHandlerService {
     private readonly centrifugoService: CentrifugoService,
     private readonly kafkaBaileysQueueService: KafkaBaileysQueueService,
     private readonly containerHealthService: ContainerHealthService,
-    private readonly streamProducerService: StreamProducerService
+    private readonly workerBaileysGrpcClientService: WorkerBaileysGrpcClientService
   ) {}
 
   private isTopicOrPartitionMissing(err: unknown): boolean {
@@ -96,10 +96,9 @@ export class WorkerCommandHandlerService {
 
     this.stopConnectionRequestRetry(payload.worker_id);
     try {
-      await this.streamProducerService.send(
-        this.kafkaBaileysQueueService.workerConnection(input.worker_id),
-        payload,
-        input.worker_id
+      await this.workerBaileysGrpcClientService.requestConnection(
+        input.worker_id,
+        payload
       );
     } catch (err) {
       if (!this.isTopicOrPartitionMissing(err)) {
@@ -143,12 +142,8 @@ export class WorkerCommandHandlerService {
     const attempt = (this.connectionRequestAttempts.get(workerId) ?? 0) + 1;
     this.connectionRequestAttempts.set(workerId, attempt);
 
-    this.streamProducerService
-      .send(
-        this.kafkaBaileysQueueService.workerConnection(workerId),
-        payload,
-        workerId
-      )
+    this.workerBaileysGrpcClientService
+      .requestConnection(workerId, payload)
       .then(() => {
         this.stopConnectionRequestRetry(workerId);
       })
@@ -337,10 +332,9 @@ export class WorkerCommandHandlerService {
     };
 
     try {
-      await this.streamProducerService.send(
-        this.kafkaBaileysQueueService.workerConnection(data.worker_id),
-        payload,
-        data.worker_id
+      await this.workerBaileysGrpcClientService.requestConnection(
+        data.worker_id,
+        payload
       );
     } catch (err) {
       if (!this.isTopicOrPartitionMissing(err)) {
@@ -408,10 +402,9 @@ export class WorkerCommandHandlerService {
     };
 
     try {
-      await this.streamProducerService.send(
-        this.kafkaBaileysQueueService.workerConnection(data.worker_id),
-        payload,
-        data.worker_id
+      await this.workerBaileysGrpcClientService.requestConnection(
+        data.worker_id,
+        payload
       );
     } catch (err) {
       if (!this.isTopicOrPartitionMissing(err)) {
@@ -565,12 +558,8 @@ export class WorkerCommandHandlerService {
         type: EBaileysConnectionType.qrcode,
       };
 
-      void this.streamProducerService
-        .send(
-          this.kafkaBaileysQueueService.workerConnection(data.worker_id),
-          payload,
-          data.worker_id
-        )
+      void this.workerBaileysGrpcClientService
+        .requestConnection(data.worker_id, payload)
         .catch((err) => {
           if (!this.isTopicOrPartitionMissing(err)) {
             console.error('Failed to request worker connection:', err);

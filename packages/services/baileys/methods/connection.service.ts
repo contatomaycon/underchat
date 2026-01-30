@@ -12,10 +12,7 @@ import QRCode from 'qrcode';
 import P from 'pino';
 import fs from 'node:fs';
 import path from 'node:path';
-import https from 'node:https';
 import { singleton } from 'tsyringe';
-
-const ipv4Agent = new https.Agent({ family: 4 });
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { baileysEnvironment } from '@core/config/environments';
 import { EBaileysConnectionStatus as Status } from '@core/common/enums/EBaileysConnectionStatus';
@@ -62,7 +59,6 @@ export class BaileysConnectionService {
   private connectCallId = 0;
   private connectAttemptId = 0;
   private connectAttemptStartedAt?: number;
-  private connectAttemptCallId?: number;
   private connectionUpdateCount = 0;
   private lastQrAt?: number;
 
@@ -307,7 +303,6 @@ export class BaileysConnectionService {
     this.retryCount = 0;
     this.socketId += 1;
     this.connectAttemptId += 1;
-    this.connectAttemptCallId = callId;
     this.connectAttemptStartedAt = Date.now();
     this.connectionUpdateCount = 0;
     console.log('[worker_baileys:connection] connect tentativa iniciada', {
@@ -632,8 +627,6 @@ export class BaileysConnectionService {
       defaultQueryTimeoutMs: 60_000,
       maxMsgRetryCount: 10,
       syncFullHistory: false,
-      agent: ipv4Agent,
-      fetchAgent: ipv4Agent,
     });
     console.log(
       '[worker_baileys:init] connection.service: makeWASocket concluído',
