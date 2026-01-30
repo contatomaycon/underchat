@@ -10,18 +10,34 @@ import fp from 'fastify-plugin';
 
 const consumers: Array<{ close?: () => Promise<void> }> = [];
 
+const CONSUMER_STAGGER_DELAY_MS = 500;
+const CONSUMER_INITIAL_DELAY_MS = 3000;
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export function startConsumers(server: FastifyInstance): void {
-  setImmediate(() => {
-    consumers.push(
-      startSendMessageConsume(server),
-      startMarkMessageReadConsume(server),
-      startPhoneValidationConsume(server),
-      startNotificationMessageSendConsume(server),
-      startScheduleMessageConsume(server),
-      startWorkerConfigUpdateConsume(server),
-      startWebhookIntegrationConsume(server)
-    );
-  });
+  const starters = [
+    () => startSendMessageConsume(server),
+    () => startMarkMessageReadConsume(server),
+    () => startPhoneValidationConsume(server),
+    () => startNotificationMessageSendConsume(server),
+    () => startScheduleMessageConsume(server),
+    () => startWorkerConfigUpdateConsume(server),
+    () => startWebhookIntegrationConsume(server),
+  ];
+
+  setTimeout(async () => {
+    for (const start of starters) {
+      try {
+        consumers.push(start());
+      } catch (err) {
+        server.log.error({ err }, 'Erro ao iniciar consumidor Kafka');
+      }
+      await delay(CONSUMER_STAGGER_DELAY_MS);
+    }
+  }, CONSUMER_INITIAL_DELAY_MS);
 }
 
 const baileysConsumersOnListenHook = fp(async (fastify) => {
