@@ -57,4 +57,8 @@ export class BaileysService {
   validatePhone(ddi: string, number: string): Promise<IPhoneValidationResult> {
     return this.phoneValidationService.validatePhone(ddi, number);
   }
+
+  publishConnectionState(state: IBaileysConnectionState): void {
+    this.connection.publishState(state);
+  }
 }

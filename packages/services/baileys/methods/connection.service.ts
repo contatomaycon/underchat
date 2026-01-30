@@ -738,6 +738,10 @@ export class BaileysConnectionService {
     void this.centrifugo.publishSub(CHANNEL, payload).catch(() => {});
   }
 
+  publishState(payload: IBaileysConnectionState): void {
+    this.publishSub(payload, true);
+  }
+
   private async updateWorkerMismatchedStatus(): Promise<void> {
     const payload: IBaileysConnectionState = {
       code: ECodeMessage.info,

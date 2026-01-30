@@ -157,6 +157,7 @@ const ensureConnected = async (
 
     if (state.status === EBaileysConnectionStatus.connecting) {
       if (state.qrcode) {
+        baileys.publishConnectionState(state);
         log.info(
           { attempt },
           'Baileys: QR code emitido com sucesso. Aguardando scan do usuário.'
