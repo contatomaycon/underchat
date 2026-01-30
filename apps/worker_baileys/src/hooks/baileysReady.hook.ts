@@ -146,15 +146,17 @@ const ensureConnected = async (
       return;
     }
 
-    log.warn(
+    log.info(
       { attempt, hasSession: hasValidSession, isNewCreation },
-      'Baileys aguardando pareamento. Escaneie o QR Code ou aguarde a autorização.'
+      'Baileys: aguardando QR code ou conexão automática...'
     );
 
-    await updateWorkerMismatchedStatus(
-      baileysEnvironment.baileysWorkerId,
-      baileysEnvironment.baileysAccountId
-    );
+    if (attempt > Math.floor(MAX_RETRY_ATTEMPTS / 2)) {
+      await updateWorkerMismatchedStatus(
+        baileysEnvironment.baileysWorkerId,
+        baileysEnvironment.baileysAccountId
+      );
+    }
 
     setTimeout(() => ensureConnected(attempt + 1, log, baileys), RETRY_DELAY);
     return;
@@ -221,17 +223,22 @@ const ensureConnected = async (
       const hasValidSession = baileys.hasSession();
 
       if (isNewCreation || !hasValidSession) {
-        log.warn(
+        log.info(
           { attempt, hasSession: hasValidSession, isNewCreation },
-          'Baileys aguardando pareamento. Escaneie o QR Code ou aguarde a autorização.'
+          'Baileys: aguardando QR code ou conexão automática...'
         );
 
-        await updateWorkerMismatchedStatus(
-          baileysEnvironment.baileysWorkerId,
-          baileysEnvironment.baileysAccountId
-        );
+        if (attempt > Math.floor(MAX_RETRY_ATTEMPTS / 2)) {
+          await updateWorkerMismatchedStatus(
+            baileysEnvironment.baileysWorkerId,
+            baileysEnvironment.baileysAccountId
+          );
+        }
 
-        setTimeout(() => ensureConnected(attempt, log, baileys), RETRY_DELAY);
+        setTimeout(
+          () => ensureConnected(attempt + 1, log, baileys),
+          RETRY_DELAY
+        );
         return;
       }
 

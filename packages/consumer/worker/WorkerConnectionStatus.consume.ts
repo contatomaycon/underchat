@@ -260,7 +260,6 @@ export class WorkerConnectionStatusConsume {
 
   private startConnectionRetry(data: StatusConnectionWorkerRequest): void {
     this.stopConnectionRetry();
-    this.baileysService.abortConnectionAttempt('new_connection_request');
     this.activeConnectionRequest = data;
     this.connectionRetryAttempt = 0;
 
@@ -362,7 +361,7 @@ export class WorkerConnectionStatusConsume {
       return;
     }
 
-    if (this.connectionRetryAttempt > 1) {
+    if (this.connectionRetryAttempt > 1 && !this.baileysService.hasRecentQr()) {
       this.baileysService.abortConnectionAttempt('retry_attempt');
     }
 

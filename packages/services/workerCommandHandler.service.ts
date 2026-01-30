@@ -516,8 +516,8 @@ export class WorkerCommandHandlerService {
     const healthy = await this.containerHealthService.isServiceHealthy(
       containerId,
       {
-        maxAttempts: 10,
-        delayMs: 1000,
+        maxAttempts: 30,
+        delayMs: 2000,
       }
     );
 
