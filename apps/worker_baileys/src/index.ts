@@ -8,7 +8,6 @@ import { ERouteModule } from '@core/common/enums/ERouteModule';
 import { v7 } from 'uuid';
 import swaggerPlugin from '@/plugins/swagger';
 import corsPlugin from '@core/plugins/cors';
-import { startConsumers, registerConsumersCloseHook } from './consumer';
 import centrifugoPlugin from '@core/plugins/centrifugo';
 import databaseElasticPlugin from '@core/plugins/dbElastic';
 import kafkaStreamsPlugin from '@core/plugins/kafkaStreams';
@@ -19,6 +18,7 @@ import { safePlugin } from '@core/common/functions/safePlugin';
 import baileysOnListenHook from './hooks/baileysOnListen.hook';
 import redisPlugin from '@core/plugins/redis';
 import workerConnectionGrpcServerPlugin from '@core/plugins/proto/workerConnectionGrpcServer';
+import baileysConsumersOnListenHook from './consumer';
 
 const server = fastify({
   pluginTimeout: 600000,
@@ -50,16 +50,16 @@ server.register(
   safePlugin(workerConnectionGrpcServerPlugin, 'workerConnectionGrpcServer')
 );
 
-//registerConsumersCloseHook(server);
 server.register(safePlugin(baileysOnListenHook, 'baileysOnListen'));
+server.register(
+  safePlugin(baileysConsumersOnListenHook, 'baileysConsumersOnListen')
+);
 
 const start = async () => {
   try {
     await server.listen({ port: 3005, host: '0.0.0.0' });
 
     console.log('Server running');
-
-    //startConsumers(server);
   } catch {
     process.exit(1);
   }
