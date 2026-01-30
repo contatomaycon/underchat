@@ -17,7 +17,6 @@ export class KafkaBaileysQueueService {
   }
 
   all = (workerId: string): string[] => {
-    const worker = this.workerConnection(workerId);
     const sendMessage = this.workerSendMessage(workerId);
     const scheduleSendMessage = this.workerScheduleSendMessage(workerId);
     const validatePhone = this.workerValidatePhone(workerId);
@@ -25,7 +24,6 @@ export class KafkaBaileysQueueService {
     const webhookIntegration = this.workerWebhookIntegration(workerId);
 
     return [
-      worker,
       sendMessage,
       scheduleSendMessage,
       validatePhone,
@@ -42,10 +40,6 @@ export class KafkaBaileysQueueService {
 
   close = async (): Promise<void> => {
     await this.kafkaService.close();
-  };
-
-  workerConnection = (workerId: string) => {
-    return `worker.${workerId}.connection`;
   };
 
   workerSendMessage = (workerId: string) => {
