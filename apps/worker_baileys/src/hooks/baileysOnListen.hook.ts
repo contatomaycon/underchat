@@ -157,6 +157,7 @@ const baileysOnListenHook = fp(async (fastify) => {
   fastify.addHook('onListen', () => {
     try {
       const baileysService = container.resolve(BaileysService);
+
       ensureConnected(1, fastify.log, baileysService).catch((err: unknown) => {
         fastify.log.error(
           { err },
