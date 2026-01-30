@@ -16,7 +16,10 @@
     "typeRoots": ["./node_modules/@types", "../../packages/common/types"],
     "paths": {
       "@/*": ["src/*"],
-      "@core/*": ["../../packages/*"]
+      "@core/*": ["../../packages/*"],
+      "@elastic/elasticsearch/lib/api/types": [
+        "../../node_modules/@elastic/elasticsearch/lib/api/types"
+      ]
     }
   },
   "include": [
