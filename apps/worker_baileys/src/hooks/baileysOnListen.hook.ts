@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import fp from 'fastify-plugin';
 import { container } from 'tsyringe';
-import { BaileysService } from '@core/services/baileys';
+import { BaileysService, setQrCodeResetCallback } from '@core/services/baileys';
 import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
 import { baileysEnvironment } from '@core/config/environments';
 import { BalanceWorkerStatusGrpcClientService } from '@core/services/balanceWorkerStatusGrpcClient.service';
@@ -203,6 +203,10 @@ const ensureConnected = async (
 
 const baileysOnListenHook = fp(async (fastify) => {
   fastify.decorate('baileysInitialized', undefined as unknown as Promise<void>);
+
+  setQrCodeResetCallback(() => {
+    QrCodeCounter.reset();
+  });
 
   fastify.addHook('onListen', () => {
     try {

@@ -10,6 +10,7 @@ import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
+import { getPhoneNumber } from '@core/common/functions/getPhoneNumber';
 
 @singleton()
 export class WorkerConnectionStatusConsume {
@@ -56,6 +57,27 @@ export class WorkerConnectionStatusConsume {
   private async handleOnline(
     data: StatusConnectionWorkerRequest
   ): Promise<void> {
+    if (this.baileysService.isConnected()) {
+      const workerId = baileysEnvironment.baileysWorkerId;
+      const accountId = baileysEnvironment.baileysAccountId;
+
+      const payload: IBaileysConnectionState = {
+        status: EBaileysConnectionStatus.connected,
+        worker_id: workerId,
+        account_id: accountId,
+        code: ECodeMessage.connectionEstablished,
+        phone: getPhoneNumber(this.baileysService.socket?.user?.id),
+        worker_status_id: EWorkerStatus.online,
+      };
+
+      await this.centrifugoService
+        .publishSub(workerCentrifugoQueue(accountId), payload)
+        .catch(() => {});
+
+      return;
+    }
+
+    this.baileysService.resetQrCodeCounter();
     this.startConnectionRetry(data);
   }
 

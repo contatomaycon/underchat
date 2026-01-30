@@ -7,6 +7,12 @@ import { IBaileysConnection } from '@core/common/interfaces/IBaileysConnection';
 import { BaileysPhoneValidationService } from './methods/phoneValidation.service';
 import { IPhoneValidationResult } from '@core/common/interfaces/IPhoneValidationResult';
 
+let qrCodeResetCallback: (() => void) | undefined;
+
+export function setQrCodeResetCallback(callback: () => void): void {
+  qrCodeResetCallback = callback;
+}
+
 @singleton()
 export class BaileysService {
   constructor(
@@ -40,6 +46,12 @@ export class BaileysService {
 
   get socket(): ReturnType<typeof makeWASocket> | undefined {
     return this.connection.getSocket();
+  }
+
+  resetQrCodeCounter(): void {
+    if (qrCodeResetCallback) {
+      qrCodeResetCallback();
+    }
   }
 
   validatePhone(ddi: string, number: string): Promise<IPhoneValidationResult> {
