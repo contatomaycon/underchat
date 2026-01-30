@@ -22,8 +22,6 @@ const protoPath = path.join(
   __dirname,
   '..',
   '..',
-  '..',
-  'packages',
   'proto',
   'worker_connection.proto'
 );

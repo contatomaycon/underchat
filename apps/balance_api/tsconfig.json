@@ -19,6 +19,11 @@
       "@core/*": ["../../packages/*"]
     }
   },
-  "include": ["src/**/*", "../../packages/common/types/**/*.d.ts"],
+  "include": [
+    "src/**/*",
+    "../../packages/common/types/**/*.d.ts",
+    "../../packages/plugins/proto/workerGrpcServer.ts",
+    "../../packages/plugins/proto/workerConnectionGrpcServer.ts"
+  ],
   "exclude": ["node_modules"]
 }

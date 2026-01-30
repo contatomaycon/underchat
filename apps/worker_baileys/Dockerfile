@@ -69,7 +69,6 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/apps/worker_baileys/package*.json ./apps/worker_baileys
 COPY --from=builder /app/packages/proto ./packages/proto
-COPY --from=builder /app/packages/proto ./apps/worker_baileys/packages/proto
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \

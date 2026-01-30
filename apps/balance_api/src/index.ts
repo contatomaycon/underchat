@@ -14,7 +14,7 @@ import authenticateKeyApi from '@core/middlewares/keyapi.middleware';
 import kafkaStreamsPlugin from '@core/plugins/kafkaStreams';
 import centrifugoPlugin from '@core/plugins/centrifugo';
 import redisPlugin from '@core/plugins/redis';
-import workerGrpcServerPlugin from '@core/plugins/workerGrpcServer';
+import workerGrpcServerPlugin from '@core/plugins/proto/workerGrpcServer';
 import fastifyQs from 'fastify-qs';
 import routes from '@/routes';
 import { EPrefixRoutes } from '@core/common/enums/EPrefixRoutes';
