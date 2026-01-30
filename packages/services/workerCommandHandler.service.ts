@@ -518,7 +518,6 @@ export class WorkerCommandHandlerService {
       {
         maxAttempts: 30,
         delayMs: 2000,
-        initialDelayMs: 5000,
       }
     );
 

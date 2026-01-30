@@ -17,19 +17,10 @@ export class ContainerHealthService {
 
   async isServiceHealthy(
     containerId: string,
-    overrides?: {
-      maxAttempts?: number;
-      delayMs?: number;
-      initialDelayMs?: number;
-    }
+    overrides?: { maxAttempts?: number; delayMs?: number }
   ): Promise<boolean> {
     const maxAttempts = overrides?.maxAttempts ?? this.maxAttempts;
     const delayMs = overrides?.delayMs ?? this.delayMs;
-    const initialDelayMs = overrides?.initialDelayMs ?? 0;
-
-    if (initialDelayMs > 0) {
-      await this.sleep(initialDelayMs);
-    }
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       const code = await this.getHttpStatusCode(
