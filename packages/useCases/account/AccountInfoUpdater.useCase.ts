@@ -28,9 +28,6 @@ export class AccountInfoUpdaterUseCase {
     if (body.delete_logo?.value) {
       const currentLogoUrl =
         await this.accountService.viewLogoByAccountInfoId(accountInfoId);
-
-      console.log('currentLogoUrl', currentLogoUrl);
-
       if (currentLogoUrl) {
         await this.storageService.deleteImage(currentLogoUrl);
       }

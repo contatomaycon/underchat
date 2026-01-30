@@ -16,7 +16,6 @@ const CONNECT_TIMEOUT_RECONNECT_MS = 30000;
 const MAX_RETRY_ATTEMPTS = 10;
 let mismatchedStatusSent = false;
 let isNewCreation: boolean | null = null;
-let lastEnsureAt: number | null = null;
 
 const handleEnsureConnectedError = (
   fastify: FastifyInstance,
@@ -26,10 +25,6 @@ const handleEnsureConnectedError = (
 };
 
 const withConnectTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> => {
-  console.log(
-    '[worker_baileys:init] baileysReady.hook: withConnectTimeout criado',
-    { ms, ts: Date.now() }
-  );
   return Promise.race([
     promise,
     new Promise<never>((_, reject) =>
@@ -45,10 +40,6 @@ const updateWorkerMismatchedStatus = async (
   workerId: string,
   accountId: string
 ): Promise<void> => {
-  console.log(
-    '[worker_baileys:init] baileysReady.hook: updateWorkerMismatchedStatus chamado',
-    { workerId, accountId, mismatchedStatusSent, ts: Date.now() }
-  );
   if (mismatchedStatusSent) {
     return;
   }
@@ -74,9 +65,7 @@ const updateWorkerMismatchedStatus = async (
     );
 
     mismatchedStatusSent = true;
-  } catch (error) {
-    console.error('Error updating worker mismatched status:', error);
-  }
+  } catch {}
 };
 
 const ensureConnected = async (
@@ -84,14 +73,7 @@ const ensureConnected = async (
   log: FastifyInstance['log'],
   baileys: BaileysService
 ): Promise<void> => {
-  const t0 = Date.now();
-  const sinceLastEnsure = lastEnsureAt ? t0 - lastEnsureAt : undefined;
-  lastEnsureAt = t0;
   const hasRecentQr = baileys.hasRecentQr();
-  console.log(
-    '[worker_baileys:init] baileysReady.hook: ensureConnected iniciado',
-    { attempt, ts: t0, msSinceLast: sinceLastEnsure, hasRecentQr }
-  );
   log.info({ attempt }, 'Baileys: iniciando verificação de conexão');
 
   if (attempt > MAX_RETRY_ATTEMPTS) {
@@ -114,10 +96,6 @@ const ensureConnected = async (
   }
 
   if (baileys.isConnected()) {
-    console.log(
-      '[worker_baileys:init] baileysReady.hook: ensureConnected já conectado, saindo',
-      { attempt, ms: Date.now() - t0, ts: Date.now() }
-    );
     log.info({ attempt }, 'Baileys conectado com sucesso');
     mismatchedStatusSent = false;
 
@@ -165,33 +143,12 @@ const ensureConnected = async (
   const timeoutMs = isNewCreation
     ? CONNECT_TIMEOUT_NEW_MS
     : CONNECT_TIMEOUT_RECONNECT_MS;
-  console.log(
-    '[worker_baileys:init] baileysReady.hook: ensureConnected chamando baileys.connect',
-    {
-      attempt,
-      timeoutMs,
-      isNewCreation,
-      msDesdeInicio: Date.now() - t0,
-      ts: Date.now(),
-    }
-  );
   log.info({ attempt, timeoutMs }, 'Baileys: iniciando tentativa de conexão');
 
   try {
-    const tConnect = Date.now();
     const state = await withConnectTimeout(
       baileys.connect({ initial_connection: true }),
       timeoutMs
-    );
-    console.log(
-      '[worker_baileys:init] baileysReady.hook: baileys.connect retornou',
-      {
-        status: state.status,
-        attempt,
-        msConnect: Date.now() - tConnect,
-        msTotal: Date.now() - t0,
-        ts: Date.now(),
-      }
     );
     log.info(
       { status: state.status, attempt },
@@ -302,42 +259,17 @@ const runEnsureConnected = (
 };
 
 const baileysReadyHook = fp(async (fastify) => {
-  console.log(
-    '[worker_baileys:init] baileysReady.hook: plugin registrando onReady',
-    { ts: Date.now() }
-  );
   fastify.addHook('onListen', () => {
-    const t0 = Date.now();
-    console.log('[worker_baileys:init] baileysReady.hook: onListen disparado', {
-      ts: t0,
-    });
     try {
-      const tResolve = Date.now();
       const baileysService = container.resolve(BaileysService);
-      console.log(
-        '[worker_baileys:init] baileysReady.hook: BaileysService resolvido',
-        { ms: Date.now() - tResolve, ts: Date.now() }
-      );
       setImmediate(runEnsureConnected, fastify, baileysService);
-      console.log(
-        '[worker_baileys:init] baileysReady.hook: ensureConnected agendado (async)',
-        { ms: Date.now() - t0, ts: Date.now() }
-      );
     } catch (err) {
-      console.log('[worker_baileys:init] baileysReady.hook: erro no onListen', {
-        err,
-        ts: Date.now(),
-      });
       fastify.log.error(
         { err },
         'Baileys: falha ao iniciar verificação de conexão no onListen'
       );
     }
   });
-  console.log(
-    '[worker_baileys:init] baileysReady.hook: plugin registro concluído',
-    { ts: Date.now() }
-  );
 });
 
 export default baileysReadyHook;

@@ -348,7 +348,6 @@ export class ReportAttendancePdfService {
     doc: PDFKit.PDFDocument
   ): boolean {
     if (!data || data.length === 0) {
-      console.log('[PDF] Sem dados para desenhar gráfico');
       doc.moveDown(0.5);
       return false;
     }
@@ -360,7 +359,6 @@ export class ReportAttendancePdfService {
         dataset.data.every((value) => value === 0)
       )
     ) {
-      console.log('[PDF] Dados insuficientes para desenhar gráfico');
       doc.moveDown(0.5);
       return false;
     }

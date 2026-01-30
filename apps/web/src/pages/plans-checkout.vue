@@ -380,7 +380,9 @@ const loadStep4 = async () => {
   step4Loaded.value = true;
 };
 
-const isPaymentMethodEnabled = (method: 'boleto' | 'credit_card' | 'pix'): boolean => {
+const isPaymentMethodEnabled = (
+  method: 'boleto' | 'credit_card' | 'pix'
+): boolean => {
   return enabledPaymentMethods.value.some(
     (mp) => mp.type === method && mp.status === true
   );
@@ -1257,8 +1259,6 @@ const processPayment = async () => {
       await processCreditCardPayment(result.credit_card_payment);
       return;
     }
-
-    console.log('Pagamento processado:', result);
   } finally {
     if (isPixPayment || isCreditCardPayment || isBoletoPayment) {
       processingPayment.value = false;
@@ -1576,11 +1576,7 @@ onMounted(async () => {
                       class="mx-auto mb-2"
                       width="120"
                     />
-                    <VSkeletonLoader
-                      type="text"
-                      class="mx-auto"
-                      width="180"
-                    />
+                    <VSkeletonLoader type="text" class="mx-auto" width="180" />
                   </div>
 
                   <div class="text-center mb-6">
@@ -1589,11 +1585,7 @@ onMounted(async () => {
                       class="mx-auto mb-2"
                       width="140"
                     />
-                    <VSkeletonLoader
-                      type="text"
-                      class="mx-auto"
-                      width="80"
-                    />
+                    <VSkeletonLoader type="text" class="mx-auto" width="80" />
                   </div>
 
                   <VDivider class="mb-4" />
@@ -2031,11 +2023,7 @@ onMounted(async () => {
                           v-if="loadingProducts"
                           class="d-flex flex-column gap-4"
                         >
-                          <VCard
-                            v-for="n in 2"
-                            :key="n"
-                            variant="outlined"
-                          >
+                          <VCard v-for="n in 2" :key="n" variant="outlined">
                             <VCardText>
                               <div class="d-flex flex-column gap-3">
                                 <div>
@@ -2044,20 +2032,14 @@ onMounted(async () => {
                                     width="150"
                                     class="mb-1"
                                   />
-                                  <VSkeletonLoader
-                                    type="text"
-                                    width="250"
-                                  />
+                                  <VSkeletonLoader type="text" width="250" />
                                 </div>
                                 <div class="d-flex align-center gap-2">
                                   <VSkeletonLoader
                                     type="text"
                                     class="flex-grow-1"
                                   />
-                                  <VSkeletonLoader
-                                    type="button"
-                                    width="80"
-                                  />
+                                  <VSkeletonLoader type="button" width="80" />
                                 </div>
                               </div>
                             </VCardText>
@@ -2362,12 +2344,20 @@ onMounted(async () => {
                   <VRow>
                     <!-- Skeleton Informações Pessoais -->
                     <VCol cols="12" md="6">
-                      <VSkeletonLoader type="heading" width="180" class="mb-4" />
+                      <VSkeletonLoader
+                        type="heading"
+                        width="180"
+                        class="mb-4"
+                      />
                       <VCard variant="outlined">
                         <VCardText>
                           <div class="d-flex flex-column gap-3">
                             <div v-for="i in 4" :key="i">
-                              <VSkeletonLoader type="text" width="80" class="mb-1" />
+                              <VSkeletonLoader
+                                type="text"
+                                width="80"
+                                class="mb-1"
+                              />
                               <VSkeletonLoader type="text" width="200" />
                               <VDivider v-if="i < 4" class="mt-3" />
                             </div>
@@ -2378,12 +2368,20 @@ onMounted(async () => {
 
                     <!-- Skeleton Endereço -->
                     <VCol cols="12" md="6">
-                      <VSkeletonLoader type="heading" width="120" class="mb-4" />
+                      <VSkeletonLoader
+                        type="heading"
+                        width="120"
+                        class="mb-4"
+                      />
                       <VCard variant="outlined">
                         <VCardText>
                           <div class="d-flex flex-column gap-3">
                             <div v-for="i in 5" :key="i">
-                              <VSkeletonLoader type="text" width="80" class="mb-1" />
+                              <VSkeletonLoader
+                                type="text"
+                                width="80"
+                                class="mb-1"
+                              />
                               <VSkeletonLoader type="text" width="180" />
                               <VDivider v-if="i < 5" class="mt-3" />
                             </div>
@@ -2596,7 +2594,10 @@ onMounted(async () => {
 
                     <!-- Cartão de Crédito -->
                     <VCol
-                      v-if="!loadingPaymentMethods && isPaymentMethodEnabled('credit_card')"
+                      v-if="
+                        !loadingPaymentMethods &&
+                        isPaymentMethodEnabled('credit_card')
+                      "
                       :cols="getPaymentMethodColClasses.cols"
                       :md="getPaymentMethodColClasses.md"
                     >
@@ -2637,7 +2638,9 @@ onMounted(async () => {
 
                     <!-- PIX -->
                     <VCol
-                      v-if="!loadingPaymentMethods && isPaymentMethodEnabled('pix')"
+                      v-if="
+                        !loadingPaymentMethods && isPaymentMethodEnabled('pix')
+                      "
                       :cols="getPaymentMethodColClasses.cols"
                       :md="getPaymentMethodColClasses.md"
                     >

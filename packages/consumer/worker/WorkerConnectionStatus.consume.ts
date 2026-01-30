@@ -38,16 +38,6 @@ export class WorkerConnectionStatusConsume {
   private async handleConnectionStatus(
     data: StatusConnectionWorkerRequest
   ): Promise<void> {
-    console.log(
-      '[worker_baileys:init] WorkerConnectionStatus.consume: mensagem recebida',
-      {
-        workerId: data.worker_id,
-        status: data.status,
-        type: data.type,
-        phone: data.phone_connection ? 'yes' : 'no',
-        ts: Date.now(),
-      }
-    );
     if (data.status === EWorkerStatus.online) {
       await this.handleOnline(data);
 
@@ -105,15 +95,6 @@ export class WorkerConnectionStatusConsume {
     this.stopConnectionRetry();
     this.activeConnectionRequest = data;
     this.connectionRetryAttempt = 0;
-
-    console.log(
-      '[worker_baileys:init] WorkerConnectionStatus.consume: startConnectionRetry',
-      {
-        workerId: data.worker_id,
-        type: data.type,
-        ts: Date.now(),
-      }
-    );
     this.runConnectionAttempt();
   }
 
@@ -131,28 +112,12 @@ export class WorkerConnectionStatusConsume {
       return;
     }
 
-    console.log(
-      '[worker_baileys:init] WorkerConnectionStatus.consume: agendando nova tentativa',
-      {
-        attempt: this.connectionRetryAttempt + 1,
-        delayMs: this.connectionRetryIntervalMs,
-        ts: Date.now(),
-      }
-    );
     this.connectionRetryTimer = setTimeout(() => {
       this.runConnectionAttempt();
     }, this.connectionRetryIntervalMs);
   }
 
   private publishConnectionAttempt(attempt: number): void {
-    console.log(
-      '[worker_baileys:init] WorkerConnectionStatus.consume: publishConnectionAttempt',
-      {
-        attempt,
-        maxAttempts: this.connectionRetryMinAttempts,
-        ts: Date.now(),
-      }
-    );
     const payload: IBaileysConnectionState = {
       status: EBaileysConnectionStatus.connecting,
       code: ECodeMessage.awaitConnection,
@@ -173,15 +138,6 @@ export class WorkerConnectionStatusConsume {
       return;
     }
 
-    console.log(
-      '[worker_baileys:init] WorkerConnectionStatus.consume: runConnectionAttempt',
-      {
-        attempt: this.connectionRetryAttempt + 1,
-        workerId: request.worker_id,
-        type: request.type,
-        ts: Date.now(),
-      }
-    );
     if (this.baileysService.isConnected()) {
       this.stopConnectionRetry();
       return;

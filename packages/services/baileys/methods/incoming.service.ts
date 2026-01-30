@@ -181,7 +181,6 @@ export class BaileysIncomingMessageService {
 
       if (batch.length > 0) {
         this.pendingQueue.unshift(...batch);
-        console.log(`[RECOVERY] Restored ${batch.length} messages to queue`);
       }
     } finally {
       this.isProcessingQueue = false;
@@ -615,10 +614,6 @@ export class BaileysIncomingMessageService {
     this.stopCleanupInterval();
 
     if (this.pendingQueue.length > 0) {
-      console.log(
-        `[GRACEFUL] Waiting for ${this.pendingQueue.length} pending messages...`
-      );
-
       const startTime = Date.now();
       while (
         this.pendingQueue.length > 0 &&
@@ -628,14 +623,6 @@ export class BaileysIncomingMessageService {
         if (this.pendingQueue.length > 0) {
           await new Promise((resolve) => setTimeout(resolve, 100));
         }
-      }
-
-      if (this.pendingQueue.length > 0) {
-        console.error(
-          `[CRITICAL] Timeout reached, ${this.pendingQueue.length} messages lost`
-        );
-      } else {
-        console.log('[GRACEFUL] All pending messages sent successfully');
       }
     }
 
