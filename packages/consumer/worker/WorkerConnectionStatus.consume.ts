@@ -124,9 +124,7 @@ export class WorkerConnectionStatusConsume {
   }
 
   private scheduleNextAttempt(): void {
-    if (!this.activeConnectionRequest) {
-      return;
-    }
+    if (!this.activeConnectionRequest) return;
 
     this.connectionRetryTimer = setTimeout(() => {
       this.runConnectionAttempt();
