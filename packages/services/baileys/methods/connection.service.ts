@@ -855,6 +855,8 @@ export class BaileysConnectionService {
     this.connecting = false;
     this.awaitingNewLogin = false;
     this.connectionEstablished = false;
+    this.lastQrAt = undefined;
+    this.qrHash = undefined;
 
     if (!skipWebSocketClose) {
       this.socket = undefined;

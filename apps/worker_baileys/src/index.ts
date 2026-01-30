@@ -1,5 +1,6 @@
 import dns from 'node:dns';
 dns.setDefaultResultOrder('ipv4first');
+
 import 'reflect-metadata';
 import 'module-alias/register';
 import fastify from 'fastify';

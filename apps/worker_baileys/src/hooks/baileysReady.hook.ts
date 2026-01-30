@@ -103,16 +103,7 @@ const ensureConnected = async (
   }
 
   const currentStatus = baileys.getStatus();
-  if (currentStatus === EBaileysConnectionStatus.connecting) {
-    if (hasRecentQr) {
-      log.info(
-        { attempt },
-        'Baileys: QR code emitido recentemente. Aguardando scan do usuário...'
-      );
-      setTimeout(() => ensureConnected(attempt + 1, log, baileys), RETRY_DELAY);
-      return;
-    }
-
+  if (currentStatus === EBaileysConnectionStatus.connecting && !hasRecentQr) {
     const hasValidSession = baileys.hasSession();
 
     if (!isNewCreation && hasValidSession && attempt <= MAX_RETRY_ATTEMPTS) {
