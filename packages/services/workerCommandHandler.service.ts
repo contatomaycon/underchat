@@ -143,7 +143,10 @@ export class WorkerCommandHandlerService {
       };
 
       await this.workerService.updateWorkerById(accountId, updateInput);
-      await this.centrifugoPublish(payload);
+      await Promise.all([
+        this.centrifugoPublish(payload),
+        this.centrifugoService.publish(channelsConfigCentrifugo(), payload),
+      ]);
 
       return;
     }
@@ -163,7 +166,10 @@ export class WorkerCommandHandlerService {
       number: phoneNumber,
       connection_date: view.connection_date,
     });
-    await this.centrifugoPublish(payload);
+    await Promise.all([
+      this.centrifugoPublish(payload),
+      this.centrifugoService.publish(channelsConfigCentrifugo(), payload),
+    ]);
   }
 
   private startConnectionRequestRetry(
@@ -418,9 +424,17 @@ export class WorkerCommandHandlerService {
       worker_status_id: EWorkerStatus.disponible,
     };
 
+    const channelConfigPayload: IWorkerPayload = {
+      ...data,
+      worker_status_id: EWorkerStatus.disponible,
+    };
+
     const [result] = await Promise.all([
       this.centrifugoPublish(dataPublish),
-      this.centrifugoService.publish(channelsConfigCentrifugo(), data),
+      this.centrifugoService.publish(
+        channelsConfigCentrifugo(),
+        channelConfigPayload
+      ),
     ]);
     return result;
   }
