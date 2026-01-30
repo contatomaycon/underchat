@@ -247,6 +247,15 @@ export class WorkerCommandHandlerService {
     const workerType = viewWorkerType.worker_type_id as EWorkerType;
     const imageName = getImageWorker(workerType);
 
+    try {
+      await this.kafkaBaileysQueueService.ensure(data.worker_id);
+    } catch (err) {
+      console.error('Failed to pre-create Kafka topics for worker:', {
+        workerId: data.worker_id,
+        error: getErrorMessage(err),
+      });
+    }
+
     const containerId = await this.retryOperation(
       async () =>
         this.workerService.createContainerWorker(
@@ -487,6 +496,15 @@ export class WorkerCommandHandlerService {
     });
 
     const imageName = getImageWorker(data.worker_type_id);
+
+    try {
+      await this.kafkaBaileysQueueService.ensure(data.worker_id);
+    } catch (err) {
+      console.error('Failed to pre-create Kafka topics for worker:', {
+        workerId: data.worker_id,
+        error: getErrorMessage(err),
+      });
+    }
 
     const containerId = await this.retryOperation(
       async () =>

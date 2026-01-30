@@ -32,6 +32,16 @@ export class KafkaBaileysQueueService {
     ];
   };
 
+  ensure = async (workerId: string): Promise<void> => {
+    const allTopics = this.all(workerId);
+
+    await this.kafkaService.createTopics(
+      allTopics,
+      KafkaBaileysQueueService.NUM_PARTITIONS,
+      KafkaBaileysQueueService.REPLICATION_FACTOR
+    );
+  };
+
   delete = (workerId: string): Promise<void> => {
     const allTopics = this.all(workerId);
 

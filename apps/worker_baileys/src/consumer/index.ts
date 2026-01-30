@@ -18,15 +18,13 @@ export function registerConsumersCloseHook(server: FastifyInstance): void {
 }
 
 export function startConsumers(server: FastifyInstance): void {
-  setImmediate(() => {
-    consumers.push(
-      startSendMessageConsume(server),
-      startMarkMessageReadConsume(server),
-      startPhoneValidationConsume(server),
-      startNotificationMessageSendConsume(server),
-      startScheduleMessageConsume(server),
-      startWorkerConfigUpdateConsume(server),
-      startWebhookIntegrationConsume(server)
-    );
-  });
+  consumers.push(
+    startSendMessageConsume(server),
+    startMarkMessageReadConsume(server),
+    startPhoneValidationConsume(server),
+    startNotificationMessageSendConsume(server),
+    startScheduleMessageConsume(server),
+    startWorkerConfigUpdateConsume(server),
+    startWebhookIntegrationConsume(server)
+  );
 }
