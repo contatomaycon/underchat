@@ -135,6 +135,17 @@ export class WorkerConnectionStatusConsume {
         '[worker_baileys:init] WorkerConnectionStatus.consume: connectConsumer callback (conectado)',
         { ms: Date.now() - tConnect, msTotal: Date.now() - t0, ts: Date.now() }
       );
+      if (
+        !this.baileysService.isConnected() &&
+        !this.baileysService.hasSession()
+      ) {
+        const bootstrapPayload: StatusConnectionWorkerRequest = {
+          worker_id: baileysEnvironment.baileysWorkerId,
+          status: EWorkerStatus.online,
+          type: EBaileysConnectionType.qrcode,
+        };
+        this.startConnectionRetry(bootstrapPayload);
+      }
     });
     console.log(
       '[worker_baileys:init] WorkerConnectionStatus.consume: execute concluído (connectConsumer assíncrono)',
@@ -344,6 +355,8 @@ export class WorkerConnectionStatusConsume {
       return;
     }
 
+    this.baileysService.abortConnectionAttempt('new_connection_request');
+
     this.connectionRetryAttempt += 1;
     this.publishConnectionAttempt(this.connectionRetryAttempt);
 
@@ -359,10 +372,6 @@ export class WorkerConnectionStatusConsume {
           console.error('Error disconnecting Baileys after retries:', error);
         });
       return;
-    }
-
-    if (this.connectionRetryAttempt > 1 && !this.baileysService.hasRecentQr()) {
-      this.baileysService.abortConnectionAttempt('retry_attempt');
     }
 
     const connectPromise = this.baileysService
