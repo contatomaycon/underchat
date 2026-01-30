@@ -49,7 +49,9 @@ export class WorkerMonitorService {
     const servers = await this.serverService.listBalanceServers();
     const workers = await this.workerService.listWorkersForMonitor();
 
-    if (!servers.length) return;
+    if (!servers.length) {
+      return;
+    }
 
     const workersById = new Map<string, IWorkerMonitor>(
       workers.map((worker) => [worker.worker_id, worker])
@@ -65,7 +67,6 @@ export class WorkerMonitorService {
     const tasks = servers.map((server) =>
       this.checkServer(server, workersById, workersByServer)
     );
-
     await Promise.all(tasks);
   };
 
@@ -116,12 +117,7 @@ export class WorkerMonitorService {
       return;
     }
 
-    if (
-      (worker.worker_status_id === EWorkerStatus.mismatched ||
-        worker.worker_status_id === EWorkerStatus.disponible ||
-        worker.worker_status_id === EWorkerStatus.offline) &&
-      this.isConnectionCheckTimeout(worker)
-    ) {
+    if (this.shouldStopDueToInactivity(worker)) {
       await this.handleStop(worker, server, sshConfig);
       return;
     }
@@ -221,10 +217,13 @@ export class WorkerMonitorService {
       return;
     }
 
-    const isOffline = worker.worker_status_id === EWorkerStatus.offline;
-    if (isOffline) {
-      if (this.isConnectionCheckTimeout(worker)) {
-        await this.handleStop(worker, server, sshConfig);
+    const isNotOnlineStatus =
+      worker.worker_status_id === EWorkerStatus.offline ||
+      worker.worker_status_id === EWorkerStatus.mismatched ||
+      worker.worker_status_id === EWorkerStatus.disponible;
+    if (isNotOnlineStatus) {
+      if (this.shouldStopDueToInactivity(worker)) {
+        await this.applyStoppedStatus(worker);
       }
       return;
     }
@@ -279,23 +278,7 @@ export class WorkerMonitorService {
     sshConfig: ConnectConfig
   ): Promise<void> => {
     await this.removeContainer(worker.worker_id, server.server_id, sshConfig);
-    await this.workerService.updateStatusWorker(
-      worker.worker_id,
-      EWorkerStatus.stopped
-    );
-
-    const payload: IBaileysConnectionState = {
-      code: ECodeMessage.info,
-      status: EBaileysConnectionStatus.info,
-      worker_id: worker.worker_id,
-      account_id: worker.account_id,
-      worker_status_id: EWorkerStatus.stopped,
-    };
-
-    await this.centrifugoService.publishSub(
-      workerCentrifugoQueue(worker.account_id),
-      payload
-    );
+    await this.applyStoppedStatus(worker);
   };
 
   private readonly handleRecreate = async (
@@ -509,7 +492,8 @@ export class WorkerMonitorService {
     workerId: string
   ): Promise<IWorkerMonitor | null> => {
     const workers = await this.workerService.listWorkersForMonitor();
-    return workers.find((w) => w.worker_id === workerId) || null;
+    const found = workers.find((w) => w.worker_id === workerId) || null;
+    return found;
   };
 
   private readonly sleep = (ms: number): Promise<void> => {
@@ -564,8 +548,8 @@ export class WorkerMonitorService {
       .join('\n')
       .trim();
     const list = combined.split('\n').map((name) => name.trim());
-
-    return list.filter((name) => !!name);
+    const result = list.filter((name) => !!name);
+    return result;
   };
 
   private readonly checkFastify = async (
@@ -583,8 +567,8 @@ export class WorkerMonitorService {
     );
 
     const code = this.parseHttpCode(outputs.map((r) => r.output).join(''));
-
-    return code === 200;
+    const healthy = code === 200;
+    return healthy;
   };
 
   private readonly checkConnection = async (
@@ -604,8 +588,8 @@ export class WorkerMonitorService {
 
       const rawOutput = outputs.map((r) => r.output).join('');
       const code = this.parseHttpCode(rawOutput);
-
-      return code === 200;
+      const healthy = code === 200;
+      return healthy;
     } catch {
       return false;
     }
@@ -647,7 +631,8 @@ export class WorkerMonitorService {
       EWorkerStatus.disponible,
     ];
 
-    return statuses.includes(worker.worker_status_id);
+    const result = statuses.includes(worker.worker_status_id);
+    return result;
   };
 
   private readonly shouldCheckConnection = (
@@ -659,7 +644,8 @@ export class WorkerMonitorService {
       EWorkerStatus.mismatched,
     ];
 
-    return statuses.includes(worker.worker_status_id);
+    const result = statuses.includes(worker.worker_status_id);
+    return result;
   };
 
   private readonly isProvisioning = (worker: IWorkerMonitor): boolean => {
@@ -669,7 +655,8 @@ export class WorkerMonitorService {
       EWorkerStatus.creating,
     ];
 
-    return statuses.includes(worker.worker_status_id);
+    const result = statuses.includes(worker.worker_status_id);
+    return result;
   };
 
   private readonly isStuck = (worker: IWorkerMonitor): boolean => {
@@ -683,7 +670,8 @@ export class WorkerMonitorService {
       return false;
     }
 
-    return this.isOlderThanTimeout(worker.updated_at);
+    const result = this.isOlderThanTimeout(worker.updated_at);
+    return result;
   };
 
   private readonly isDeletingTimeout = (worker: IWorkerMonitor): boolean => {
@@ -691,7 +679,8 @@ export class WorkerMonitorService {
       return false;
     }
 
-    return this.isOlderThanTimeout(worker.updated_at);
+    const result = this.isOlderThanTimeout(worker.updated_at);
+    return result;
   };
 
   private readonly isPlanCancelled = (
@@ -739,8 +728,8 @@ export class WorkerMonitorService {
 
     const diff = Date.now() - parsed.getTime();
     const minutes = diff / 1000 / 60;
-
-    return minutes > this.timeoutMinutes;
+    const result = minutes > this.timeoutMinutes;
+    return result;
   };
 
   private readonly isConnectionCheckTimeout = (
@@ -757,7 +746,71 @@ export class WorkerMonitorService {
 
     const diff = Date.now() - parsed.getTime();
     const minutes = diff / 1000 / 60;
+    const result = minutes > this.stoppedTimeoutMinutes;
+    return result;
+  };
+
+  private readonly isOlderThanOneDay = (dateIso: string | null): boolean => {
+    if (!dateIso) {
+      return true;
+    }
+
+    const parsed = new Date(dateIso);
+    if (Number.isNaN(parsed.getTime())) {
+      return true;
+    }
+
+    const diff = Date.now() - parsed.getTime();
+    const minutes = diff / 1000 / 60;
 
     return minutes > this.stoppedTimeoutMinutes;
+  };
+
+  private readonly shouldStopDueToInactivity = (
+    worker: IWorkerMonitor
+  ): boolean => {
+    const statuses = [
+      EWorkerStatus.offline,
+      EWorkerStatus.mismatched,
+      EWorkerStatus.disponible,
+    ];
+
+    if (!statuses.includes(worker.worker_status_id)) {
+      return false;
+    }
+
+    const hasVerificationDate = !!worker.last_connection_check_at;
+
+    if (!hasVerificationDate) {
+      const createdAtOlderThanOneDay = this.isOlderThanOneDay(
+        worker.created_at
+      );
+      return createdAtOlderThanOneDay;
+    }
+
+    const result = this.isOlderThanOneDay(worker.last_connection_check_at);
+    return result;
+  };
+
+  private readonly applyStoppedStatus = async (
+    worker: IWorkerMonitor
+  ): Promise<void> => {
+    await this.workerService.updateStatusWorker(
+      worker.worker_id,
+      EWorkerStatus.stopped
+    );
+
+    const payload: IBaileysConnectionState = {
+      code: ECodeMessage.info,
+      status: EBaileysConnectionStatus.info,
+      worker_id: worker.worker_id,
+      account_id: worker.account_id,
+      worker_status_id: EWorkerStatus.stopped,
+    };
+
+    await this.centrifugoService.publishSub(
+      workerCentrifugoQueue(worker.account_id),
+      payload
+    );
   };
 }
