@@ -123,6 +123,16 @@ export class WorkerCommandHandlerService {
       workerStatusId === EWorkerStatus.disponible &&
       input.disconnected_user === true;
 
+    const payload: IBaileysConnectionState = {
+      code: ECodeMessage.info,
+      status: EBaileysConnectionStatus.info,
+      worker_id: workerId,
+      account_id: accountId,
+      worker_status_id: workerStatusId,
+      phone: input.phone ?? undefined,
+      disconnected_user: input.disconnected_user ?? undefined,
+    };
+
     if (isDisponibleWithDisconnectedUser) {
       const updateInput: IUpdateWorker = {
         worker_id: workerId,
@@ -133,6 +143,7 @@ export class WorkerCommandHandlerService {
       };
 
       await this.workerService.updateWorkerById(accountId, updateInput);
+      await this.centrifugoPublish(payload);
 
       return;
     }
@@ -152,6 +163,7 @@ export class WorkerCommandHandlerService {
       number: phoneNumber,
       connection_date: view.connection_date,
     });
+    await this.centrifugoPublish(payload);
   }
 
   private startConnectionRequestRetry(
