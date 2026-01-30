@@ -18,7 +18,6 @@ import fastifyQs from 'fastify-qs';
 import routes from '@/routes';
 import { EPrefixRoutes } from '@core/common/enums/EPrefixRoutes';
 import { safePlugin } from '@core/common/functions/safePlugin';
-import baileysReadyHook from './hooks/baileysReady.hook';
 import redisPlugin from '@core/plugins/redis';
 console.log('[worker_baileys:init] index.ts: todos imports carregados', {
   ts: Date.now(),
@@ -99,12 +98,6 @@ console.log(
   '[worker_baileys:init] index.ts: registerConsumersCloseHook concluído',
   { ts: Date.now() }
 );
-tPlugin = Date.now();
-server.register(safePlugin(baileysReadyHook, 'baileysReady'));
-console.log('[worker_baileys:init] index.ts: após register baileysReadyHook', {
-  ts: Date.now(),
-  ms: Date.now() - tPlugin,
-});
 
 const start = async () => {
   try {
