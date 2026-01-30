@@ -27,14 +27,13 @@ const withConnectTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> => {
   ]);
 };
 
-const updateWorkerMismatchedStatus = async (
+const notifyWorkerStatusViaGrpc = async (
   workerId: string,
-  accountId: string
+  accountId: string,
+  workerStatusId: EWorkerStatus,
+  log: FastifyInstance['log'],
+  baileysStatus: EBaileysConnectionStatus = EBaileysConnectionStatus.info
 ): Promise<void> => {
-  if (mismatchedStatusSent) {
-    return;
-  }
-
   try {
     const balanceWorkerStatusGrpcClientService = container.resolve(
       BalanceWorkerStatusGrpcClientService
@@ -42,18 +41,34 @@ const updateWorkerMismatchedStatus = async (
 
     const dataPublish: IBaileysConnectionState = {
       code: ECodeMessage.info,
-      status: EBaileysConnectionStatus.info,
+      status: baileysStatus,
       worker_id: workerId,
       account_id: accountId,
-      worker_status_id: EWorkerStatus.mismatched,
+      worker_status_id: workerStatusId,
     };
 
     await balanceWorkerStatusGrpcClientService.notifyWorkerStatus(dataPublish);
-
-    mismatchedStatusSent = true;
   } catch (error) {
-    console.error('Error updating worker mismatched status:', error);
+    log.error({ err: error }, 'Falha ao enviar status do worker via gRPC');
   }
+};
+
+const updateWorkerMismatchedStatus = async (
+  workerId: string,
+  accountId: string,
+  log: FastifyInstance['log']
+): Promise<void> => {
+  if (mismatchedStatusSent) {
+    return;
+  }
+
+  await notifyWorkerStatusViaGrpc(
+    workerId,
+    accountId,
+    EWorkerStatus.mismatched,
+    log
+  );
+  mismatchedStatusSent = true;
 };
 
 const fireOnReady = (onReady?: () => void): void => {
@@ -77,6 +92,13 @@ const ensureConnected = async (
     log.info({ attempt }, 'Baileys conectado com sucesso');
     mismatchedStatusSent = false;
     QrCodeCounter.reset();
+    await notifyWorkerStatusViaGrpc(
+      baileysEnvironment.baileysWorkerId,
+      baileysEnvironment.baileysAccountId,
+      EWorkerStatus.online,
+      log,
+      EBaileysConnectionStatus.connected
+    );
     fireOnReady(onReady);
 
     return;
@@ -109,7 +131,8 @@ const ensureConnected = async (
 
       await updateWorkerMismatchedStatus(
         baileysEnvironment.baileysWorkerId,
-        baileysEnvironment.baileysAccountId
+        baileysEnvironment.baileysAccountId,
+        log
       );
 
       fireOnReady(onReady);
@@ -128,7 +151,8 @@ const ensureConnected = async (
 
     await updateWorkerMismatchedStatus(
       baileysEnvironment.baileysWorkerId,
-      baileysEnvironment.baileysAccountId
+      baileysEnvironment.baileysAccountId,
+      log
     );
 
     fireOnReady(onReady);
@@ -156,6 +180,13 @@ const ensureConnected = async (
       log.info('Baileys conectado com sucesso');
       mismatchedStatusSent = false;
       QrCodeCounter.reset();
+      await notifyWorkerStatusViaGrpc(
+        baileysEnvironment.baileysWorkerId,
+        baileysEnvironment.baileysAccountId,
+        EWorkerStatus.online,
+        log,
+        EBaileysConnectionStatus.connected
+      );
       fireOnReady(onReady);
       return;
     }
@@ -196,6 +227,12 @@ const ensureConnected = async (
         'Baileys: máximo de tentativas atingido, aguardando QR code'
       );
       QrCodeCounter.reset();
+      await notifyWorkerStatusViaGrpc(
+        baileysEnvironment.baileysWorkerId,
+        baileysEnvironment.baileysAccountId,
+        EWorkerStatus.disponible,
+        log
+      );
       fireOnReady(onReady);
     }
   }
