@@ -723,6 +723,17 @@ export class BaileysConnectionService {
         }
 
         const { qr, connection, isNewLogin, lastDisconnect } = u;
+
+        console.log('[worker_baileys:connection] connection.update', {
+          qr,
+          connection,
+          isNewLogin,
+          lastDisconnect,
+          connectionUpdateCount: this.connectionUpdateCount,
+          connectAttemptId: this.connectAttemptId,
+          socketId: this.socketId,
+        });
+
         this.connectionUpdateCount += 1;
         const msSinceAttempt = this.connectAttemptStartedAt
           ? Date.now() - this.connectAttemptStartedAt
