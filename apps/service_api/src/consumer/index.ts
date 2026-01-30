@@ -18,39 +18,61 @@ import { startAiAgentPromptEmbeddingConsume } from './aiAgentPromptEmbedding.con
 import { startChatHistoryEmbeddingConsume } from './chatHistoryEmbedding.consume';
 import { startContactValidationUpdateConsume } from './contactValidationUpdate.consume';
 import { startConfigChannelsRecreateAllConsume } from './configChannelsRecreateAll.consume';
+import fp from 'fastify-plugin';
 
 const consumers: Array<{ close?: () => Promise<void> }> = [];
 
-export function registerConsumersCloseHook(server: FastifyInstance): void {
-  server.addHook('onClose', async () => {
+const CONSUMER_STAGGER_DELAY_MS = 500;
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export async function startConsumers(server: FastifyInstance): Promise<void> {
+  const starters = [
+    () => startBalanceConsume(server),
+    () => startWorkerConsume(server),
+    () => startMessageUpdateConsume(server),
+    () => startMessageUpsertConsume(server),
+    () => startMessageUpsertDlqConsume(server),
+    () => startMessageStatusUpdateConsume(server),
+    () => startChatSummaryClearConsume(server),
+    () => startPhoneValidationResponseConsume(server),
+    () => startProfileStatusExternalIdUpdateConsume(server),
+    () => startAsaasInvoiceWebhookConsume(server),
+    () => startAsaasNfseWebhookConsume(server),
+    () => startNotificationMessageConsume(server),
+    () => startUserPhoneJidUpdateConsume(server),
+    () => startReportConversationHistoryPdfGenerateConsume(server),
+    () => startScheduleStatusUpdateConsume(server),
+    () => startAiAgentPromptEmbeddingConsume(server),
+    () => startChatHistoryEmbeddingConsume(server),
+    () => startContactValidationUpdateConsume(server),
+    () => startConfigChannelsRecreateAllConsume(server),
+  ];
+
+  for (const start of starters) {
+    try {
+      consumers.push(start());
+    } catch (err) {
+      server.log.error({ err }, 'Erro ao iniciar consumidor Kafka');
+    }
+    await delay(CONSUMER_STAGGER_DELAY_MS);
+  }
+}
+
+const serviceApiConsumersOnListenHook = fp(async (fastify) => {
+  fastify.addHook('onListen', () => {
+    startConsumers(fastify).catch((err) => {
+      fastify.log.error({ err }, 'Service API: falha ao iniciar consumidores');
+    });
+  });
+
+  fastify.addHook('onClose', async () => {
     await Promise.allSettled(
       consumers.map((consumer) => consumer?.close?.() ?? Promise.resolve())
     );
   });
-}
+});
 
-export function startConsumers(server: FastifyInstance): void {
-  setImmediate(() => {
-    consumers.push(
-      startBalanceConsume(server),
-      startWorkerConsume(server),
-      startMessageUpdateConsume(server),
-      startMessageUpsertConsume(server),
-      startMessageUpsertDlqConsume(server),
-      startMessageStatusUpdateConsume(server),
-      startChatSummaryClearConsume(server),
-      startPhoneValidationResponseConsume(server),
-      startProfileStatusExternalIdUpdateConsume(server),
-      startAsaasInvoiceWebhookConsume(server),
-      startAsaasNfseWebhookConsume(server),
-      startNotificationMessageConsume(server),
-      startUserPhoneJidUpdateConsume(server),
-      startReportConversationHistoryPdfGenerateConsume(server),
-      startScheduleStatusUpdateConsume(server),
-      startAiAgentPromptEmbeddingConsume(server),
-      startChatHistoryEmbeddingConsume(server),
-      startContactValidationUpdateConsume(server),
-      startConfigChannelsRecreateAllConsume(server)
-    );
-  });
-}
+export default serviceApiConsumersOnListenHook;

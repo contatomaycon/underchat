@@ -12,7 +12,7 @@ import swaggerPlugin from '@/plugins/swagger';
 import corsPlugin from '@core/plugins/cors';
 import databaseElasticPlugin from '@core/plugins/dbElastic';
 import authenticateKeyApi from '@core/middlewares/keyapi.middleware';
-import { startConsumers, registerConsumersCloseHook } from './consumer';
+import serviceApiConsumersOnListenHook from './consumer';
 import centrifugoPlugin from '@core/plugins/centrifugo';
 import kafkaStreamsPlugin from '@core/plugins/kafkaStreams';
 import redisPlugin from '@core/plugins/redis';
@@ -56,8 +56,9 @@ server.register(safePlugin(routes, 'routes', true), {
   prefix: EPrefixRoutes.v1,
 });
 server.register(safePlugin(fastifyQs, 'fastifyQs'));
-
-registerConsumersCloseHook(server);
+server.register(
+  safePlugin(serviceApiConsumersOnListenHook, 'serviceApiConsumersOnListen')
+);
 
 const start = async () => {
   try {
@@ -66,8 +67,6 @@ const start = async () => {
     console.log('Server running');
 
     setupGracefulShutdown(server);
-
-    startConsumers(server);
   } catch (err) {
     console.log(err);
 
