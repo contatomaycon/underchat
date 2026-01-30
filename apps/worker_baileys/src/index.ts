@@ -50,7 +50,7 @@ server.register(
   safePlugin(workerConnectionGrpcServerPlugin, 'workerConnectionGrpcServer')
 );
 
-registerConsumersCloseHook(server);
+//registerConsumersCloseHook(server);
 server.register(safePlugin(baileysOnListenHook, 'baileysOnListen'));
 
 const start = async () => {
@@ -59,7 +59,7 @@ const start = async () => {
 
     console.log('Server running');
 
-    startConsumers(server);
+    //startConsumers(server);
   } catch {
     process.exit(1);
   }
