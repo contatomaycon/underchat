@@ -81,7 +81,7 @@ export async function installUbuntu2404(
 
     `bash -c "mkdir -p /home/app && \
       chown $USER:$USER /home/app && \
-      git clone --single-branch --branch ${generalEnvironment.gitBranch} https://${generalEnvironment.gitToken}@gitea.devunder.com/${generalEnvironment.gitRepo}.git /home/app"`,
+      git -c http.extraHeader='Cache-Control: no-cache' clone --single-branch --branch ${generalEnvironment.gitBranch} https://${generalEnvironment.gitToken}@gitea.devunder.com/${generalEnvironment.gitRepo}.git /home/app"`,
 
     `bash -c "printf '%b' '${envContent}' > /home/app/.env && chown $USER:$USER /home/app/.env"`,
 
