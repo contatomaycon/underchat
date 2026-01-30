@@ -79,7 +79,7 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-EXPOSE 3005
+EXPOSE 3005 50052
 
 WORKDIR /app/apps/worker_baileys
 

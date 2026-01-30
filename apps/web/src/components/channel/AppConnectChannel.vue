@@ -86,10 +86,12 @@ const formattedTime = computed(() => {
   return `${m}:${s}`;
 });
 
+const connectionMaxAttemptsFallback = 5;
+
 const attemptDisplay = computed(() => {
   if (!connectionAttempt.value) return null;
 
-  const max = connectionMaxAttempts.value ?? 10;
+  const max = connectionMaxAttempts.value ?? connectionMaxAttemptsFallback;
   return connectionAttempt.value > max
     ? `${max}+`
     : String(connectionAttempt.value);
@@ -98,7 +100,7 @@ const attemptDisplay = computed(() => {
 const maxAttemptDisplay = computed(() => {
   if (!connectionAttempt.value) return null;
 
-  const max = connectionMaxAttempts.value ?? 10;
+  const max = connectionMaxAttempts.value ?? connectionMaxAttemptsFallback;
   return String(max);
 });
 
@@ -259,6 +261,8 @@ onMounted(async () => {
     await onMessage(
       workerCentrifugoQueue(accountId.value),
       (data: IBaileysConnectionState) => {
+        console.log('data', data);
+
         if (statusCode.value === ECodeMessage.phoneNotAvailable) return;
 
         if (data.status) {

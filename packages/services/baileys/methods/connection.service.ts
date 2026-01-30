@@ -551,6 +551,17 @@ export class BaileysConnectionService {
     this.pendingResolve = undefined;
 
     if (this.retryCount < this.maxRetries) {
+      const retryPayload: IBaileysConnectionState = {
+        status: Status.connecting,
+        worker_id: WORKER,
+        account_id: ACCOUNT,
+        code: ECodeMessage.awaitConnection,
+        attempt: this.retryCount + 1,
+        max_attempts: this.maxRetries,
+        seconds_until_next_attempt: Math.ceil(this.retryDelay / 1000),
+      };
+      this.publishSub(retryPayload, true);
+
       setTimeout(() => {
         this.retryCount++;
 
@@ -816,13 +827,18 @@ export class BaileysConnectionService {
   }
 
   private state(qr?: string): IBaileysConnectionState {
-    return {
+    const result: IBaileysConnectionState = {
       status: this.status,
       worker_id: WORKER,
       account_id: ACCOUNT,
       qrcode: qr,
       code: this.code,
     };
+    if (this.status === Status.connecting) {
+      result.attempt = this.retryCount + 1;
+      result.max_attempts = this.maxRetries;
+    }
+    return result;
   }
 
   private resolveWebSocket(): WebSocket | undefined {

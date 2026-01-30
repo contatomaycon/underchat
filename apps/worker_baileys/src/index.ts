@@ -18,6 +18,7 @@ import { EPrefixRoutes } from '@core/common/enums/EPrefixRoutes';
 import { safePlugin } from '@core/common/functions/safePlugin';
 import baileysOnListenHook from './hooks/baileysOnListen.hook';
 import redisPlugin from '@core/plugins/redis';
+import workerConnectionGrpcServerPlugin from '@/plugins/workerConnectionGrpcServer';
 
 const server = fastify({
   pluginTimeout: 600000,
@@ -45,6 +46,9 @@ server.register(safePlugin(kafkaStreamsPlugin, 'kafkaStreams'), {
 server.register(safePlugin(centrifugoPlugin, 'centrifugo'), {
   module: ERouteModule.worker_baileys,
 });
+server.register(
+  safePlugin(workerConnectionGrpcServerPlugin, 'workerConnectionGrpcServer')
+);
 
 registerConsumersCloseHook(server);
 server.register(safePlugin(baileysOnListenHook, 'baileysOnListen'));
