@@ -143,14 +143,11 @@ export class WorkerConnectionStatusConsume {
       return;
     }
 
-    this.baileysService.abortConnectionAttempt('new_connection_request');
-
     this.connectionRetryAttempt += 1;
     this.publishConnectionAttempt(this.connectionRetryAttempt);
 
     if (this.connectionRetryAttempt > this.connectionRetryMinAttempts) {
       this.stopConnectionRetry();
-      this.baileysService.abortConnectionAttempt('max_retries_exceeded');
       void this.baileysService
         .disconnect({
           initial_connection: true,
@@ -165,6 +162,7 @@ export class WorkerConnectionStatusConsume {
     const connectPromise = this.baileysService
       .connect({
         initial_connection: true,
+        force_new: true,
         type: request.type as EBaileysConnectionType,
         phone_connection: request.phone_connection,
       })
@@ -191,7 +189,6 @@ export class WorkerConnectionStatusConsume {
           !this.baileysService.isConnected()
         ) {
           this.stopConnectionRetry();
-          this.baileysService.abortConnectionAttempt('max_retries_exceeded');
           void this.baileysService
             .disconnect({
               initial_connection: true,

@@ -10,19 +10,10 @@ import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 
-const RETRY_DELAY = 15000;
-const CONNECT_TIMEOUT_NEW_MS = 15000;
-const CONNECT_TIMEOUT_RECONNECT_MS = 30000;
-const MAX_RETRY_ATTEMPTS = 10;
+const RETRY_DELAY = 10000;
+const CONNECT_TIMEOUT_MS = 60000;
+const MAX_RETRY_ATTEMPTS = 5;
 let mismatchedStatusSent = false;
-let isNewCreation: boolean | null = null;
-
-const handleEnsureConnectedError = (
-  fastify: FastifyInstance,
-  err: unknown
-): void => {
-  fastify.log.error({ err }, 'Baileys ensureConnected falhou inesperadamente');
-};
 
 const withConnectTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> => {
   return Promise.race([
@@ -65,7 +56,9 @@ const updateWorkerMismatchedStatus = async (
     );
 
     mismatchedStatusSent = true;
-  } catch {}
+  } catch (error) {
+    console.error('Error updating worker mismatched status:', error);
+  }
 };
 
 const ensureConnected = async (
@@ -73,27 +66,7 @@ const ensureConnected = async (
   log: FastifyInstance['log'],
   baileys: BaileysService
 ): Promise<void> => {
-  const hasRecentQr = baileys.hasRecentQr();
   log.info({ attempt }, 'Baileys: iniciando verificação de conexão');
-
-  if (attempt > MAX_RETRY_ATTEMPTS) {
-    log.warn(
-      { attempt, maxRetries: MAX_RETRY_ATTEMPTS },
-      'Baileys: máximo de tentativas atingido, encerrando tentativa'
-    );
-    baileys.abortConnectionAttempt('connecting_state');
-    return;
-  }
-
-  if (isNewCreation === null) {
-    isNewCreation = !baileys.hasSession();
-    log.info(
-      { isNewCreation },
-      isNewCreation
-        ? 'Baileys: criação nova detectada, mostrando QR code imediatamente'
-        : 'Baileys: sessão existente detectada, tentando reconexão'
-    );
-  }
 
   if (baileys.isConnected()) {
     log.info({ attempt }, 'Baileys conectado com sucesso');
@@ -103,10 +76,10 @@ const ensureConnected = async (
   }
 
   const currentStatus = baileys.getStatus();
-  if (currentStatus === EBaileysConnectionStatus.connecting && !hasRecentQr) {
+  if (currentStatus === EBaileysConnectionStatus.connecting) {
     const hasValidSession = baileys.hasSession();
 
-    if (!isNewCreation && hasValidSession && attempt <= MAX_RETRY_ATTEMPTS) {
+    if (hasValidSession && attempt <= MAX_RETRY_ATTEMPTS) {
       log.info(
         { attempt, maxRetries: MAX_RETRY_ATTEMPTS },
         'Baileys em estado connecting com sessão válida. Aguardando reconexão automática...'
@@ -115,31 +88,26 @@ const ensureConnected = async (
       return;
     }
 
-    log.info(
-      { attempt, hasSession: hasValidSession, isNewCreation },
-      'Baileys: aguardando QR code ou conexão automática...'
+    log.warn(
+      { attempt, hasSession: hasValidSession },
+      'Baileys aguardando pareamento. Escaneie o QR Code ou aguarde a autorização.'
     );
 
-    if (attempt > Math.floor(MAX_RETRY_ATTEMPTS / 2)) {
-      await updateWorkerMismatchedStatus(
-        baileysEnvironment.baileysWorkerId,
-        baileysEnvironment.baileysAccountId
-      );
-    }
+    await updateWorkerMismatchedStatus(
+      baileysEnvironment.baileysWorkerId,
+      baileysEnvironment.baileysAccountId
+    );
 
-    setTimeout(() => ensureConnected(attempt + 1, log, baileys), RETRY_DELAY);
+    setTimeout(() => ensureConnected(attempt, log, baileys), RETRY_DELAY);
     return;
   }
 
-  const timeoutMs = isNewCreation
-    ? CONNECT_TIMEOUT_NEW_MS
-    : CONNECT_TIMEOUT_RECONNECT_MS;
-  log.info({ attempt, timeoutMs }, 'Baileys: iniciando tentativa de conexão');
+  log.info({ attempt }, 'Baileys: iniciando tentativa de conexão');
 
   try {
     const state = await withConnectTimeout(
       baileys.connect({ initial_connection: true }),
-      timeoutMs
+      CONNECT_TIMEOUT_MS
     );
     log.info(
       { status: state.status, attempt },
@@ -155,110 +123,50 @@ const ensureConnected = async (
       return;
     }
 
-    if (state.status === EBaileysConnectionStatus.connecting) {
-      if (state.qrcode) {
-        baileys.publishConnectionState(state);
-        log.info(
-          { attempt },
-          'Baileys: QR code emitido com sucesso. Aguardando scan do usuário.'
-        );
-        setTimeout(
-          () => ensureConnected(attempt + 1, log, baileys),
-          RETRY_DELAY
-        );
-        return;
-      }
-
-      const hasValidSession = baileys.hasSession();
-
-      if (isNewCreation || !hasValidSession) {
-        log.info(
-          { attempt, hasSession: hasValidSession, isNewCreation },
-          'Baileys: aguardando QR code ou conexão automática...'
-        );
-
-        if (attempt > Math.floor(MAX_RETRY_ATTEMPTS / 2)) {
-          await updateWorkerMismatchedStatus(
-            baileysEnvironment.baileysWorkerId,
-            baileysEnvironment.baileysAccountId
-          );
-        }
-
-        setTimeout(
-          () => ensureConnected(attempt + 1, log, baileys),
-          RETRY_DELAY
-        );
-        return;
-      }
-
-      if (attempt <= MAX_RETRY_ATTEMPTS) {
-        log.info(
-          { attempt, maxRetries: MAX_RETRY_ATTEMPTS },
-          'Baileys em estado connecting com sessão válida. Aguardando reconexão automática...'
-        );
-        setTimeout(
-          () => ensureConnected(attempt + 1, log, baileys),
-          RETRY_DELAY
-        );
-        return;
-      }
-    }
-
     setTimeout(() => ensureConnected(attempt + 1, log, baileys), RETRY_DELAY);
   } catch (error) {
     const hasValidSession = baileys.hasSession();
     log.error(
-      { err: error, attempt, hasSession: hasValidSession, isNewCreation },
+      { err: error, attempt, hasSession: hasValidSession },
       'Baileys connection attempt failed'
     );
 
-    baileys.abortConnectionAttempt('connect_error');
-
-    const isTimeout =
-      error instanceof Error && error.message.toLowerCase().includes('timeout');
-    const nextDelay = isTimeout ? 0 : RETRY_DELAY;
-
-    if (!isNewCreation && hasValidSession && attempt < MAX_RETRY_ATTEMPTS) {
+    if (hasValidSession && attempt < MAX_RETRY_ATTEMPTS) {
       log.info(
         { attempt, nextAttempt: attempt + 1, maxRetries: MAX_RETRY_ATTEMPTS },
         'Baileys: sessão válida encontrada, tentando reconexão...'
       );
       baileys.reconnect({ initial_connection: true });
-      setTimeout(() => ensureConnected(attempt + 1, log, baileys), nextDelay);
+      setTimeout(() => ensureConnected(attempt + 1, log, baileys), RETRY_DELAY);
     } else if (attempt < MAX_RETRY_ATTEMPTS) {
       log.info(
         { attempt, nextAttempt: attempt + 1 },
         'Baileys: tentando nova conexão...'
       );
-      setTimeout(() => ensureConnected(attempt + 1, log, baileys), nextDelay);
+      setTimeout(() => ensureConnected(attempt + 1, log, baileys), RETRY_DELAY);
     } else {
       log.error(
         { attempt, maxRetries: MAX_RETRY_ATTEMPTS },
-        'Baileys: máximo de tentativas atingido, continuando retries'
+        'Baileys: máximo de tentativas atingido, aguardando QR code'
       );
-      setTimeout(() => ensureConnected(attempt + 1, log, baileys), nextDelay);
     }
   }
 };
 
-const runEnsureConnected = (
-  fastify: FastifyInstance,
-  baileysService: BaileysService
-): void => {
-  ensureConnected(1, fastify.log, baileysService).catch((err: unknown) =>
-    handleEnsureConnectedError(fastify, err)
-  );
-};
-
 const baileysReadyHook = fp(async (fastify) => {
-  fastify.addHook('onListen', () => {
+  fastify.addHook('onReady', () => {
     try {
       const baileysService = container.resolve(BaileysService);
-      setImmediate(runEnsureConnected, fastify, baileysService);
+      ensureConnected(1, fastify.log, baileysService).catch((err: unknown) => {
+        fastify.log.error(
+          { err },
+          'Baileys ensureConnected falhou inesperadamente'
+        );
+      });
     } catch (err) {
       fastify.log.error(
         { err },
-        'Baileys: falha ao iniciar verificação de conexão no onListen'
+        'Baileys: falha ao iniciar verificação de conexão no onReady'
       );
     }
   });

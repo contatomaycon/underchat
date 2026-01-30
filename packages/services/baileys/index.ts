@@ -26,10 +26,6 @@ export class BaileysService {
     return this.connection.disconnect(input);
   }
 
-  abortConnectionAttempt(reason?: string): void {
-    return this.connection.abortConnectionAttempt(reason);
-  }
-
   isConnected(): boolean {
     return this.connection.connected;
   }
@@ -42,23 +38,11 @@ export class BaileysService {
     return this.connection.hasSession();
   }
 
-  hasRecentQr(maxAgeMs?: number): boolean {
-    return this.connection.hasRecentQr(maxAgeMs);
-  }
-
-  getLastQrAt(): number | null {
-    return this.connection.getLastQrAt();
-  }
-
   get socket(): ReturnType<typeof makeWASocket> | undefined {
     return this.connection.getSocket();
   }
 
   validatePhone(ddi: string, number: string): Promise<IPhoneValidationResult> {
     return this.phoneValidationService.validatePhone(ddi, number);
-  }
-
-  publishConnectionState(state: IBaileysConnectionState): void {
-    this.connection.publishState(state);
   }
 }

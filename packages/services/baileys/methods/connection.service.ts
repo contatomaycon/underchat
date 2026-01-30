@@ -1,12 +1,10 @@
 import {
   Browsers,
-  fetchLatestBaileysVersion,
   fetchLatestWaWebVersion,
   makeWASocket,
   useMultiFileAuthState,
   type WASocket,
 } from '@whiskeysockets/baileys';
-import Boom from '@hapi/boom';
 import type WebSocket from 'ws';
 import QRCode from 'qrcode';
 import P from 'pino';
@@ -56,11 +54,6 @@ export class BaileysConnectionService {
   private typeConnection: EBaileysConnectionType =
     EBaileysConnectionType.qrcode;
   private phoneConnection?: string = undefined;
-  private connectCallId = 0;
-  private connectAttemptId = 0;
-  private connectAttemptStartedAt?: number;
-  private connectionUpdateCount = 0;
-  private lastQrAt?: number;
 
   private connecting = false;
   private retryCount = 0;
@@ -92,28 +85,20 @@ export class BaileysConnectionService {
     return this.socket;
   }
 
-  hasRecentQr(maxAgeMs = 60_000): boolean {
-    if (!this.lastQrAt) {
-      return false;
-    }
-    if (!this.socket || this.status !== Status.connecting) {
-      return false;
-    }
-    return Date.now() - this.lastQrAt <= maxAgeMs;
-  }
-
-  getLastQrAt(): number | null {
-    return this.lastQrAt ?? null;
-  }
-
-  private handleAlreadyConnecting(): Promise<IBaileysConnectionState> | null {
+  private handleInitialConnectionState(
+    initialConnection: boolean
+  ): Promise<IBaileysConnectionState> | null {
     if (!this.connecting) return null;
+
+    if (initialConnection) {
+      this.cancelAttempt();
+    }
 
     if (this.currentPromise) {
       return this.currentPromise;
     }
 
-    return Promise.resolve(this.reportConnecting());
+    return null;
   }
 
   private canRestoreSession(allowRestore: boolean): boolean {
@@ -152,10 +137,6 @@ export class BaileysConnectionService {
       return Promise.resolve(this.reportConnected());
     }
 
-    if (this.status === Status.connecting && this.socket) {
-      return Promise.resolve(this.reportConnecting());
-    }
-
     return null;
   }
 
@@ -178,25 +159,29 @@ export class BaileysConnectionService {
   }
 
   async connect(input: IBaileysConnection): Promise<IBaileysConnectionState> {
-    this.connectCallId += 1;
     const {
       initial_connection: initialConnection = false,
       allow_restore: allowRestore = true,
       type: typeConnection = EBaileysConnectionType.qrcode,
       phone_connection: phoneConnection,
+      force_new: forceNew = false,
     } = input;
 
     this.initialConnection = initialConnection;
     this.typeConnection = typeConnection;
     this.phoneConnection = phoneConnection;
 
+    if (forceNew) {
+      this.cancelAttempt(false);
+    }
+
     if (this.connected) {
       return this.reportConnected();
     }
 
-    const alreadyConnecting = this.handleAlreadyConnecting();
-    if (alreadyConnecting) {
-      return alreadyConnecting;
+    const initialState = this.handleInitialConnectionState(initialConnection);
+    if (initialState) {
+      return initialState;
     }
 
     if (this.canRestoreSession(allowRestore)) {
@@ -225,9 +210,6 @@ export class BaileysConnectionService {
     this.connecting = true;
     this.retryCount = 0;
     this.socketId += 1;
-    this.connectAttemptId += 1;
-    this.connectAttemptStartedAt = Date.now();
-    this.connectionUpdateCount = 0;
 
     const { socket } = await this.createSocket();
     this.baileysIncomingMessageService.bindTo(socket);
@@ -293,11 +275,6 @@ export class BaileysConnectionService {
     }
   }
 
-  abortConnectionAttempt(reason?: string): void {
-    void reason;
-    this.cancelAttempt(false);
-  }
-
   reconnect(input: IBaileysConnection): void {
     const { initial_connection: initialConnection = true } = input;
 
@@ -314,80 +291,10 @@ export class BaileysConnectionService {
     });
   }
 
-  private async fetchLatestWppConnectVersion(): Promise<
-    [number, number, number]
-  > {
-    const response = await fetch('https://wppconnect.io/whatsapp-versions/', {
-      method: 'GET',
-    });
-    if (!response.ok) {
-      throw Boom.badRequest(
-        `Failed to fetch wppconnect versions: ${response.statusText}`
-      );
-    }
-    const data = await response.text();
-    const regex = /(\d+)\.(\d+)\.(\d+)-alpha/g;
-    const match = regex.exec(data);
-    if (!match) {
-      throw Boom.badRequest('No version found in wppconnect response');
-    }
-    const [, major, minor, patch] = match;
-    return [Number(major), Number(minor), Number(patch)];
-  }
-
-  private async fetchVersionWithFallback(): Promise<[number, number, number]> {
-    const FALLBACK_VERSION: [number, number, number] = [2, 3000, 1015331287];
-    const FETCH_TIMEOUT_MS = 3000;
-    const MAX_ATTEMPTS = 3;
-
-    const withTimeout = <T>(promise: Promise<T>, name: string): Promise<T> => {
-      return Promise.race([
-        promise,
-        new Promise<never>((_, reject) =>
-          setTimeout(
-            () => reject(new Error(`${name} timeout`)),
-            FETCH_TIMEOUT_MS
-          )
-        ),
-      ]);
-    };
-
-    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-      try {
-        const result = await withTimeout(
-          fetchLatestBaileysVersion(),
-          'fetchLatestBaileysVersion'
-        );
-        return result.version;
-      } catch {}
-
-      try {
-        const result = await withTimeout(
-          fetchLatestWaWebVersion(),
-          'fetchLatestWaWebVersion'
-        );
-        return result.version;
-      } catch {}
-
-      try {
-        const result = await withTimeout(
-          this.fetchLatestWppConnectVersion(),
-          'fetchLatestWppConnectVersion'
-        );
-        return result;
-      } catch {}
-
-      if (attempt < MAX_ATTEMPTS) {
-        await new Promise((r) => setTimeout(r, 1000));
-      }
-    }
-
-    return FALLBACK_VERSION;
-  }
-
   private async createSocket() {
     const { state, saveCreds } = await useMultiFileAuthState(FOLDER);
-    const version = await this.fetchVersionWithFallback();
+    const { version } = await fetchLatestWaWebVersion();
+
     const socket = makeWASocket({
       auth: state,
       version,
@@ -461,8 +368,6 @@ export class BaileysConnectionService {
 
         const { qr, connection, isNewLogin, lastDisconnect } = u;
 
-        this.connectionUpdateCount += 1;
-
         if (isNewLogin) {
           return this.onNewLoginAttempt();
         }
@@ -496,7 +401,6 @@ export class BaileysConnectionService {
     qr: string,
     resolve: (s: IBaileysConnectionState) => void
   ): Promise<void> {
-    this.lastQrAt = Date.now();
     if (qr.slice(-20) === this.qrHash) {
       return;
     }
@@ -533,7 +437,6 @@ export class BaileysConnectionService {
   private async onOpen(
     resolve: (s: IBaileysConnectionState) => void
   ): Promise<void> {
-    this.lastQrAt = undefined;
     this.qrHash = undefined;
     this.setStatus(Status.connected, ECodeMessage.connectionEstablished);
     this.connectionEstablished = true;
@@ -738,10 +641,6 @@ export class BaileysConnectionService {
     void this.centrifugo.publishSub(CHANNEL, payload).catch(() => {});
   }
 
-  publishState(payload: IBaileysConnectionState): void {
-    this.publishSub(payload, true);
-  }
-
   private async updateWorkerMismatchedStatus(): Promise<void> {
     const payload: IBaileysConnectionState = {
       code: ECodeMessage.info,
@@ -833,13 +732,22 @@ export class BaileysConnectionService {
     if (!skipWebSocketClose) {
       try {
         const ws = this.resolveWebSocket();
-        if (ws) {
-          const readyState = ws.readyState;
-          if (readyState === 1) {
-            ws.close(1000, 'reconnect');
-          } else if (readyState === 0 || readyState === 2) {
-            ws.terminate?.();
-          }
+        if (!ws) {
+          this.socket = undefined;
+
+          return;
+        }
+
+        const readyState = ws.readyState;
+        if (readyState === 1) {
+          ws.close(1000, 'reconnect');
+
+          return;
+        }
+
+        const isConnectingOrClosing = readyState === 0 || readyState === 2;
+        if (isConnectingOrClosing) {
+          ws.terminate?.();
         }
       } catch {
         this.saveLogWppConnection({
@@ -859,8 +767,6 @@ export class BaileysConnectionService {
     this.connecting = false;
     this.awaitingNewLogin = false;
     this.connectionEstablished = false;
-    this.lastQrAt = undefined;
-    this.qrHash = undefined;
 
     if (!skipWebSocketClose) {
       this.socket = undefined;
@@ -1089,7 +995,12 @@ export class BaileysConnectionService {
           )
         ),
       ]);
+
+      console.log('Keep-alive sent');
     } catch (error) {
+      console.error('Keep-alive error');
+      console.dir(error, { depth: null, colors: true });
+
       const errorMessage =
         error instanceof Error ? error.message : String(error);
 
