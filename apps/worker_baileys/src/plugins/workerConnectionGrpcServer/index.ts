@@ -103,7 +103,6 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync = async (
     );
   });
 
-  grpcServer.start();
   fastify.log.info({ bind }, 'WorkerConnection gRPC server started');
 
   fastify.addHook('onClose', async () => {
