@@ -21,11 +21,10 @@ import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
 import { EWppConnection } from '@core/common/enums/EWppConnection';
 import { wppConnectionMappings } from '@core/mappings/wppConnection.mappings';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
-import { StreamProducerService } from '@core/services/streamProducer.service';
 import { IBaileysConnection } from '@core/common/interfaces/IBaileysConnection';
 import { EBaileysConnectionType } from '@core/common/enums/EBaileysConnectionType';
-import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
+import { BalanceWorkerStatusGrpcClientService } from '@core/services/balanceWorkerStatusGrpcClient.service';
 import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 import { BaileysIncomingMessageService } from './incoming.service';
 import { getPhoneNumber } from '@core/common/functions/getPhoneNumber';
@@ -68,8 +67,7 @@ export class BaileysConnectionService {
   constructor(
     private readonly centrifugo: CentrifugoService,
     private readonly elasticDatabaseService: ElasticDatabaseService,
-    private readonly streamProducerService: StreamProducerService,
-    private readonly kafkaServiceQueueService: KafkaServiceQueueService,
+    private readonly balanceWorkerStatusGrpcClientService: BalanceWorkerStatusGrpcClientService,
     private readonly baileysIncomingMessageService: BaileysIncomingMessageService
   ) {}
 
@@ -262,11 +260,7 @@ export class BaileysConnectionService {
 
     this.publishSub(payload, true);
 
-    await this.streamProducerService.send(
-      this.kafkaServiceQueueService.workerStatus(),
-      payload,
-      WORKER
-    );
+    await this.balanceWorkerStatusGrpcClientService.notifyWorkerStatus(payload);
 
     if (this.initialConnection) {
       this.connect({
@@ -453,11 +447,7 @@ export class BaileysConnectionService {
     this.publishSub(payload);
     this.lastStatusPayload = JSON.stringify(payload);
 
-    await this.streamProducerService.send(
-      this.kafkaServiceQueueService.workerStatus(),
-      payload,
-      WORKER
-    );
+    await this.balanceWorkerStatusGrpcClientService.notifyWorkerStatus(payload);
 
     this.startKeepAlive();
 
@@ -504,10 +494,8 @@ export class BaileysConnectionService {
         this.publishSub(payload, true);
         this.lastStatusPayload = payloadStr;
 
-        await this.streamProducerService.send(
-          this.kafkaServiceQueueService.workerStatus(),
-          payload,
-          WORKER
+        await this.balanceWorkerStatusGrpcClientService.notifyWorkerStatus(
+          payload
         );
 
         this.saveLogWppConnection({
@@ -540,10 +528,8 @@ export class BaileysConnectionService {
 
       this.publishSub(payload, true);
 
-      await this.streamProducerService.send(
-        this.kafkaServiceQueueService.workerStatus(),
-        payload,
-        WORKER
+      await this.balanceWorkerStatusGrpcClientService.notifyWorkerStatus(
+        payload
       );
     }
 
@@ -663,11 +649,7 @@ export class BaileysConnectionService {
 
     this.publishSub(payload);
 
-    await this.streamProducerService.send(
-      this.kafkaServiceQueueService.workerStatus(),
-      payload,
-      WORKER
-    );
+    await this.balanceWorkerStatusGrpcClientService.notifyWorkerStatus(payload);
   }
 
   private async safeLogout(forceLogout = false): Promise<void> {

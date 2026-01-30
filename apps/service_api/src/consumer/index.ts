@@ -1,6 +1,5 @@
 import { FastifyInstance } from 'fastify';
 import { startBalanceConsume } from './balance.consume';
-import { startWorkerConsume } from './worker.consume';
 import { startMessageUpdateConsume } from './messageUpdate.consume';
 import { startMessageUpsertConsume } from './messageUpsert.consume';
 import { startMessageUpsertDlqConsume } from './messageUpsertDlq.consume';
@@ -31,7 +30,6 @@ function delay(ms: number): Promise<void> {
 export async function startConsumers(server: FastifyInstance): Promise<void> {
   const starters = [
     () => startBalanceConsume(server),
-    () => startWorkerConsume(server),
     () => startMessageUpdateConsume(server),
     () => startMessageUpsertConsume(server),
     () => startMessageUpsertDlqConsume(server),

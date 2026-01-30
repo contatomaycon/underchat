@@ -7,6 +7,7 @@ service WorkerCommand {
   rpc DeleteWorker(WorkerPayload) returns (WorkerCommandResponse);
   rpc RecreateWorker(WorkerPayload) returns (WorkerCommandResponse);
   rpc ChangeConnectionStatus(ChangeConnectionStatusRequest) returns (WorkerCommandResponse);
+  rpc NotifyWorkerStatus(NotifyWorkerStatusRequest) returns (WorkerCommandResponse);
 }
 
 message WorkerPayload {
@@ -26,6 +27,14 @@ message ChangeConnectionStatusRequest {
   string status = 3;
   string type = 4;
   string phone_connection = 5;
+}
+
+message NotifyWorkerStatusRequest {
+  string worker_id = 1;
+  string account_id = 2;
+  string worker_status_id = 3;
+  string phone = 4;
+  bool disconnected_user = 5;
 }
 
 message WorkerCommandResponse {}

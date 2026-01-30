@@ -22,6 +22,7 @@ import {
 } from '@core/common/functions/centrifugoQueue';
 import { balanceEnvironment } from '@core/config/environments';
 import { getErrorMessage } from '@core/common/functions/toError';
+import { INotifyWorkerStatusRequestProto } from '@core/common/interfaces/INotifyWorkerStatusRequestProto';
 
 @injectable()
 export class WorkerCommandHandlerService {
@@ -105,6 +106,52 @@ export class WorkerCommandHandlerService {
         throw err;
       }
     }
+  }
+
+  async notifyWorkerStatus(
+    input: INotifyWorkerStatusRequestProto
+  ): Promise<void> {
+    const workerId = input.worker_id;
+    const accountId = input.account_id;
+    const workerStatusId = input.worker_status_id as EWorkerStatus | undefined;
+
+    if (!workerId || !accountId || !workerStatusId) {
+      return;
+    }
+
+    const isDisponibleWithDisconnectedUser =
+      workerStatusId === EWorkerStatus.disponible &&
+      input.disconnected_user === true;
+
+    if (isDisponibleWithDisconnectedUser) {
+      const updateInput: IUpdateWorker = {
+        worker_id: workerId,
+        worker_status_id: EWorkerStatus.disponible,
+        number: null,
+        container_id: null,
+        connection_date: null,
+      };
+
+      await this.workerService.updateWorkerById(accountId, updateInput);
+
+      return;
+    }
+
+    const view =
+      await this.workerService.viewWorkerPhoneConnectionDate(workerId);
+
+    if (!view) {
+      return;
+    }
+
+    const phoneNumber = input.phone ?? view.number;
+
+    await this.workerService.updateWorkerPhoneStatusConnectionDate({
+      worker_id: workerId,
+      status: workerStatusId,
+      number: phoneNumber,
+      connection_date: view.connection_date,
+    });
   }
 
   private startConnectionRequestRetry(

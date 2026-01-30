@@ -4,11 +4,11 @@ import { container } from 'tsyringe';
 import { BaileysService } from '@core/services/baileys';
 import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
 import { baileysEnvironment } from '@core/config/environments';
-import { StreamProducerService } from '@core/services/streamProducer.service';
-import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
+import { BalanceWorkerStatusGrpcClientService } from '@core/services/balanceWorkerStatusGrpcClient.service';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { ECodeMessage } from '@core/common/enums/ECodeMessage';
+import { QrCodeCounter } from './qrCodeCounter';
 
 const RETRY_DELAY = 10000;
 const CONNECT_TIMEOUT_MS = 60000;
@@ -36,9 +36,8 @@ const updateWorkerMismatchedStatus = async (
   }
 
   try {
-    const streamProducerService = container.resolve(StreamProducerService);
-    const kafkaServiceQueueService = container.resolve(
-      KafkaServiceQueueService
+    const balanceWorkerStatusGrpcClientService = container.resolve(
+      BalanceWorkerStatusGrpcClientService
     );
 
     const dataPublish: IBaileysConnectionState = {
@@ -49,11 +48,7 @@ const updateWorkerMismatchedStatus = async (
       worker_status_id: EWorkerStatus.mismatched,
     };
 
-    await streamProducerService.send(
-      kafkaServiceQueueService.workerStatus(),
-      dataPublish,
-      workerId
-    );
+    await balanceWorkerStatusGrpcClientService.notifyWorkerStatus(dataPublish);
 
     mismatchedStatusSent = true;
   } catch (error) {
@@ -73,11 +68,15 @@ const ensureConnected = async (
   baileys: BaileysService,
   onReady?: () => void
 ): Promise<void> => {
-  log.info({ attempt }, 'Baileys: iniciando verificação de conexão');
+  log.info(
+    { attempt, qrCodeCount: QrCodeCounter.getCount() },
+    'Baileys: iniciando verificação de conexão'
+  );
 
   if (baileys.isConnected()) {
     log.info({ attempt }, 'Baileys conectado com sucesso');
     mismatchedStatusSent = false;
+    QrCodeCounter.reset();
     fireOnReady(onReady);
 
     return;
@@ -99,8 +98,31 @@ const ensureConnected = async (
       return;
     }
 
+    if (QrCodeCounter.hasReachedLimit()) {
+      log.warn(
+        {
+          qrCodeCount: QrCodeCounter.getCount(),
+          maxQrCodes: QrCodeCounter.getMaxGenerations(),
+        },
+        'Baileys: limite de gerações de QR Code atingido. Aguardando solicitação do usuário.'
+      );
+
+      await updateWorkerMismatchedStatus(
+        baileysEnvironment.baileysWorkerId,
+        baileysEnvironment.baileysAccountId
+      );
+
+      fireOnReady(onReady);
+      return;
+    }
+
+    const newCount = QrCodeCounter.increment();
     log.warn(
-      { attempt, hasSession: hasValidSession },
+      {
+        attempt,
+        hasSession: hasValidSession,
+        qrCodeCount: newCount,
+      },
       'Baileys aguardando pareamento. Escaneie o QR Code ou aguarde a autorização.'
     );
 
@@ -133,6 +155,7 @@ const ensureConnected = async (
     ) {
       log.info('Baileys conectado com sucesso');
       mismatchedStatusSent = false;
+      QrCodeCounter.reset();
       fireOnReady(onReady);
       return;
     }
@@ -172,6 +195,7 @@ const ensureConnected = async (
         { attempt, maxRetries: MAX_RETRY_ATTEMPTS },
         'Baileys: máximo de tentativas atingido, aguardando QR code'
       );
+      QrCodeCounter.reset();
       fireOnReady(onReady);
     }
   }
@@ -183,6 +207,7 @@ const baileysOnListenHook = fp(async (fastify) => {
   fastify.addHook('onListen', () => {
     try {
       const baileysService = container.resolve(BaileysService);
+      QrCodeCounter.reset();
 
       fastify.baileysInitialized = new Promise<void>((resolve) => {
         ensureConnected(1, fastify.log, baileysService, resolve).catch(
@@ -205,3 +230,4 @@ const baileysOnListenHook = fp(async (fastify) => {
 });
 
 export default baileysOnListenHook;
+export { QrCodeCounter };

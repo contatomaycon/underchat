@@ -19,6 +19,7 @@ import {
 } from '@core/common/functions/workerCommandProtoMapper';
 import { IWorkerPayloadProto } from '@core/common/interfaces/IWorkerPayloadProto';
 import { IChangeConnectionStatusRequestProto } from '@core/common/interfaces/IChangeConnectionStatusRequestProto';
+import { INotifyWorkerStatusRequestProto } from '@core/common/interfaces/INotifyWorkerStatusRequestProto';
 
 const protoPath = path.join(
   __dirname,
@@ -121,6 +122,27 @@ const workerGrpcServerPlugin: FastifyPluginAsync = async (
       });
   };
 
+  const handleNotifyWorkerStatus = (
+    call: ServerUnaryCall<INotifyWorkerStatusRequestProto, unknown>,
+    callback: sendUnaryData<unknown>
+  ) => {
+    const req = call.request;
+
+    handler
+      .notifyWorkerStatus(req)
+      .then(() => {
+        callback(null, {});
+      })
+      .catch((err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        fastify.log.error(
+          { err, workerId: req.worker_id },
+          'NotifyWorkerStatus gRPC handler error'
+        );
+        callback({ code: status.INTERNAL, message: msg, details: msg }, null);
+      });
+  };
+
   grpcServer.addService(WorkerCommandService.service, {
     CreateWorker: (
       call: ServerUnaryCall<IWorkerPayloadProto, unknown>,
@@ -135,6 +157,7 @@ const workerGrpcServerPlugin: FastifyPluginAsync = async (
       cb: sendUnaryData<unknown>
     ) => handleUnary(call, cb, 'recreate'),
     ChangeConnectionStatus: handleChangeConnectionStatus,
+    NotifyWorkerStatus: handleNotifyWorkerStatus,
   });
 
   const port = balanceEnvironment.grpcPort;

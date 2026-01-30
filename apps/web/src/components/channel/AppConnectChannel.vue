@@ -44,7 +44,7 @@ const intervalIdNextAttempt = ref<number | null>(null);
 const phoneNumber = ref<string | null>(null);
 
 const attempt = ref(0);
-const maxAttempts = ref(4);
+const maxAttempts = ref(5);
 
 const removeInPhone = ref(false);
 const isPhoneNumber = ref(false);
@@ -141,7 +141,7 @@ async function sendPhoneNumber() {
 
   phoneSent.value = true;
   totalSeconds.value = 120;
-  maxAttempts.value = 2;
+  maxAttempts.value = 5;
 
   resetPairingCodes();
 

@@ -4,8 +4,7 @@ import { StatusConnectionWorkerRequest } from '@core/schema/worker/statusConnect
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { BaileysService } from '@core/services/baileys';
 import { EBaileysConnectionType } from '@core/common/enums/EBaileysConnectionType';
-import { StreamProducerService } from '@core/services/streamProducer.service';
-import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
+import { BalanceWorkerStatusGrpcClientService } from '@core/services/balanceWorkerStatusGrpcClient.service';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
@@ -22,8 +21,7 @@ export class WorkerConnectionStatusConsume {
 
   constructor(
     private readonly baileysService: BaileysService,
-    private readonly streamProducerService: StreamProducerService,
-    private readonly kafkaServiceQueueService: KafkaServiceQueueService,
+    private readonly balanceWorkerStatusGrpcClientService: BalanceWorkerStatusGrpcClientService,
     private readonly centrifugoService: CentrifugoService
   ) {}
 
@@ -84,11 +82,7 @@ export class WorkerConnectionStatusConsume {
       worker_status_id: EWorkerStatus.disponible,
     };
 
-    await this.streamProducerService.send(
-      this.kafkaServiceQueueService.workerStatus(),
-      payload,
-      workerId
-    );
+    await this.balanceWorkerStatusGrpcClientService.notifyWorkerStatus(payload);
   }
 
   private startConnectionRetry(data: StatusConnectionWorkerRequest): void {
