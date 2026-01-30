@@ -153,8 +153,8 @@ const ensureConnected = async (
   }
 };
 
-const baileysReadyHook = fp(async (fastify) => {
-  fastify.addHook('onReady', () => {
+const baileysOnListenHook = fp(async (fastify) => {
+  fastify.addHook('onListen', () => {
     try {
       const baileysService = container.resolve(BaileysService);
       ensureConnected(1, fastify.log, baileysService).catch((err: unknown) => {
@@ -166,10 +166,10 @@ const baileysReadyHook = fp(async (fastify) => {
     } catch (err) {
       fastify.log.error(
         { err },
-        'Baileys: falha ao iniciar verificação de conexão no onReady'
+        'Baileys: falha ao iniciar verificação de conexão no onListen'
       );
     }
   });
 });
 
-export default baileysReadyHook;
+export default baileysOnListenHook;

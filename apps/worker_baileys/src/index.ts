@@ -16,7 +16,7 @@ import fastifyQs from 'fastify-qs';
 import routes from '@/routes';
 import { EPrefixRoutes } from '@core/common/enums/EPrefixRoutes';
 import { safePlugin } from '@core/common/functions/safePlugin';
-import baileysReadyHook from './hooks/baileysReady.hook';
+import baileysOnListenHook from './hooks/baileysOnListen.hook';
 import redisPlugin from '@core/plugins/redis';
 
 const server = fastify({
@@ -47,7 +47,7 @@ server.register(safePlugin(centrifugoPlugin, 'centrifugo'), {
 });
 
 registerConsumersCloseHook(server);
-server.register(safePlugin(baileysReadyHook, 'baileysReady'));
+server.register(safePlugin(baileysOnListenHook, 'baileysOnListen'));
 
 const start = async () => {
   try {
