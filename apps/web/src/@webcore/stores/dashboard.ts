@@ -156,5 +156,10 @@ export const useDashboardStore = defineStore('dashboard', {
           statusId && statusName ? { id: statusId, name: statusName } : null;
       }
     },
+    removeOfflineChannel(channelId: string) {
+      this.offlineChannels = this.offlineChannels.filter(
+        (ch) => ch.id !== channelId
+      );
+    },
   },
 });

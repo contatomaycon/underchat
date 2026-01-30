@@ -8,6 +8,7 @@ import { formatDateTime } from '@core/common/functions/formatDateTime';
 import { SortRequest } from '@core/schema/common/sortRequestSchema';
 import { EWorkerPermissions } from '@core/common/enums/EPermissions/worker';
 import { useChannelsStore } from '@/@webcore/stores/channels';
+import { useDashboardStore } from '@/@webcore/stores/dashboard';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
@@ -72,6 +73,7 @@ const permissionsProfileStatus = [
 
 const { t } = useI18n();
 const channelsStore = useChannelsStore();
+const dashboardStore = useDashboardStore();
 useSnackbarCleanup(channelsStore);
 const user = getUser();
 
@@ -244,8 +246,10 @@ const openConfigDialog = (id: string) => {
 const handleDelete = async () => {
   if (!channelToDelete.value) return;
 
-  const result = await channelsStore.deleteChannel(channelToDelete.value);
+  const channelId = channelToDelete.value;
+  const result = await channelsStore.deleteChannel(channelId);
   if (result) {
+    dashboardStore.removeOfflineChannel(channelId);
     await channelsStore.listChannels(query.value);
   }
 

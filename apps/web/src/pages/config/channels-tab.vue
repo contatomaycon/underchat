@@ -2,6 +2,7 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { refDebounced } from '@vueuse/core';
 import { useI18n } from 'vue-i18n';
+import { useDashboardStore } from '@/@webcore/stores/dashboard';
 import { useSettingsStore } from '@/@webcore/stores/settings';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import { formatDateTime } from '@core/common/functions/formatDateTime';
@@ -24,6 +25,7 @@ import VDialogHandler from '@/components/VDialogHandler.vue';
 import { ChannelsStatisticsResponse } from '@core/schema/config/channelsStatistics/response.schema';
 
 const { t } = useI18n();
+const dashboardStore = useDashboardStore();
 const settingsStore = useSettingsStore();
 useSnackbarCleanup(settingsStore);
 
@@ -206,8 +208,10 @@ const isDialogRecreateAllShow = ref(false);
 const handleDelete = async () => {
   if (!channelToDelete.value) return;
 
-  const result = await settingsStore.deleteChannel(channelToDelete.value);
+  const channelId = channelToDelete.value;
+  const result = await settingsStore.deleteChannel(channelId);
   if (result) {
+    dashboardStore.removeOfflineChannel(channelId);
     await loadStatistics();
     await loadChannels();
   }
