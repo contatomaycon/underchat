@@ -296,6 +296,26 @@ export class RagService {
     }
   }
 
+  buildPromptsTextFromDetailed(
+    prompts: Array<{
+      ai_agent_prompt_type: string;
+      name: string;
+      value: string;
+    }>
+  ): string {
+    if (!prompts || prompts.length === 0) {
+      return '';
+    }
+    const filtered = prompts.filter(
+      (prompt) => prompt.value && prompt.value.trim().length > 0
+    );
+    if (filtered.length === 0) {
+      return '';
+    }
+    const promptsByType = this.groupPromptsByType(filtered);
+    return this.formatPromptsByType(promptsByType);
+  }
+
   async generateBootstrapSummary(
     accountId: string,
     aiAgentId: string,
@@ -310,24 +330,82 @@ export class RagService {
       return '';
     }
 
-    const summaryPrompt = this.buildBootstrapSummaryPrompt(allPrompts);
+    return this.generateBootstrapSummaryFromPrompts(
+      allPrompts,
+      baseUrl,
+      apiKey,
+      model,
+      aiAgentTypeId
+    );
+  }
 
-    try {
-      const provider = this.summaryProviderFactory.getProvider(
-        aiAgentTypeId,
-        baseUrl
-      );
-      const summary = await provider.generateSummary(
+  async generateBootstrapSummaryFromPrompts(
+    allPrompts: string,
+    baseUrl: string,
+    apiKey: string,
+    model: string,
+    aiAgentTypeId: string
+  ): Promise<string> {
+    if (!allPrompts || allPrompts.trim().length === 0) {
+      return '';
+    }
+
+    const normalizedPrompts = allPrompts.trim();
+    const maxChunkChars = 12000;
+    const chunks = this.splitTextIntoChunks(
+      normalizedPrompts,
+      maxChunkChars,
+      12
+    );
+
+    if (chunks.length === 1) {
+      const summaryPrompt = this.buildBootstrapSummaryPrompt(normalizedPrompts);
+      const summary = await this.generateSummaryWithProvider(
         summaryPrompt,
         baseUrl,
         apiKey,
-        model
+        model,
+        aiAgentTypeId
       );
-      return summary.trim();
-    } catch (error) {
-      console.error('[generateBootstrapSummary] Erro ao gerar summary:', error);
-      return allPrompts.substring(0, 8000);
+      return summary || normalizedPrompts.substring(0, 8000);
     }
+
+    const partialSummaries: string[] = [];
+    for (let i = 0; i < chunks.length; i += 1) {
+      const chunkPrompt = this.buildBootstrapSummaryChunkPrompt(
+        chunks[i],
+        i + 1,
+        chunks.length
+      );
+      const partial = await this.generateSummaryWithProvider(
+        chunkPrompt,
+        baseUrl,
+        apiKey,
+        model,
+        aiAgentTypeId
+      );
+      if (partial) {
+        partialSummaries.push(partial);
+      } else {
+        partialSummaries.push(this.truncateText(chunks[i], 2000));
+      }
+    }
+
+    const combined = partialSummaries.join('\n\n');
+    const mergePrompt = this.buildBootstrapSummaryMergePrompt(combined);
+    const merged = await this.generateSummaryWithProvider(
+      mergePrompt,
+      baseUrl,
+      apiKey,
+      model,
+      aiAgentTypeId
+    );
+
+    if (merged) {
+      return merged;
+    }
+
+    return this.truncateText(combined, this.maxSummaryChars);
   }
 
   async generateOrUpdateConversationSummary(
@@ -416,13 +494,10 @@ export class RagService {
     const {
       contextParts,
       chunksCount,
-      knowledgeContextText,
       knowledgeMaxScore,
       knowledgeRawMaxScore,
       historyMaxScore,
       historyRawMaxScore,
-      hasConversationContext,
-      conversationContextText,
     } = await this.buildContextParts(accountId, aiAgentId, userQuery, {
       ...options,
       includeBootstrapSummaryInPrompt,
@@ -487,24 +562,43 @@ export class RagService {
       }
     }
 
+    const effectiveSignals =
+      this.buildContextSignalsFromParts(adjustedContextParts);
+    const effectiveKnowledgeContextText = effectiveSignals.knowledgeContextText;
+    const effectiveConversationContextText =
+      effectiveSignals.conversationContextText;
+    const effectiveKnowledgeMaxScore = effectiveSignals.hasKnowledgeContext
+      ? knowledgeMaxScore
+      : 0;
+    const effectiveKnowledgeRawMaxScore = effectiveSignals.hasKnowledgeContext
+      ? knowledgeRawMaxScore
+      : 0;
+    const effectiveHistoryMaxScore = effectiveSignals.hasHistoryContext
+      ? historyMaxScore
+      : 0;
+    const effectiveHistoryRawMaxScore = effectiveSignals.hasHistoryContext
+      ? historyRawMaxScore
+      : 0;
+    const effectiveHasConversationContext =
+      effectiveSignals.hasConversationContext;
     const contextScoreThreshold = Math.max(
       this.minContextScore,
       this.normalizeMinScore(options?.minScore ?? this.minContextScore)
     );
     const contextAllowed = this.isQueryWithinContext(userQuery, {
       bootstrapSummary: options?.bootstrapSummary,
-      knowledgeContextText,
-      knowledgeMaxScore,
-      knowledgeRawMaxScore,
-      historyMaxScore,
-      historyRawMaxScore,
-      hasConversationContext,
-      conversationContextText,
+      knowledgeContextText: effectiveKnowledgeContextText,
+      knowledgeMaxScore: effectiveKnowledgeMaxScore,
+      knowledgeRawMaxScore: effectiveKnowledgeRawMaxScore,
+      historyMaxScore: effectiveHistoryMaxScore,
+      historyRawMaxScore: effectiveHistoryRawMaxScore,
+      hasConversationContext: effectiveHasConversationContext,
+      conversationContextText: effectiveConversationContextText,
       scoreThreshold: contextScoreThreshold,
     });
     const contextHints = this.buildContextHints(
       options?.bootstrapSummary,
-      knowledgeContextText
+      effectiveKnowledgeContextText
     );
 
     return {
@@ -578,6 +672,60 @@ Prompts do agente:
 ${allPrompts}
 
 Gere APENAS o sumário, sem introduções ou explicações adicionais.`;
+  }
+
+  private buildBootstrapSummaryChunkPrompt(
+    chunk: string,
+    index: number,
+    total: number
+  ): string {
+    return `Você é um assistente especializado em criar sumários concisos e estruturados de informações.
+
+Este é um trecho (${index}/${total}) da base de conhecimento do agente.
+Resuma o conteúdo abaixo preservando TODAS as regras, fatos, requisitos, fluxos e restrições.
+Não invente informações e não omita detalhes críticos.
+
+Trecho:
+${chunk}
+
+Gere APENAS o sumário desse trecho, sem introduções ou explicações adicionais.`;
+  }
+
+  private buildBootstrapSummaryMergePrompt(partialSummaries: string): string {
+    return `Você é um assistente especializado em consolidar sumários.
+
+Combine os resumos parciais abaixo em um único sumário completo e organizado, preservando TODAS as regras, fatos e informações críticas.
+Evite duplicações e mantenha o máximo de 3000 tokens.
+
+Resumos parciais:
+${partialSummaries}
+
+Gere APENAS o sumário consolidado, sem introduções ou explicações adicionais.`;
+  }
+
+  private async generateSummaryWithProvider(
+    summaryPrompt: string,
+    baseUrl: string,
+    apiKey: string,
+    model: string,
+    aiAgentTypeId: string
+  ): Promise<string> {
+    try {
+      const provider = this.summaryProviderFactory.getProvider(
+        aiAgentTypeId,
+        baseUrl
+      );
+      const summary = await provider.generateSummary(
+        summaryPrompt,
+        baseUrl,
+        apiKey,
+        model
+      );
+      return summary.trim();
+    } catch (error) {
+      console.error('[generateBootstrapSummary] Erro ao gerar summary:', error);
+      return '';
+    }
   }
 
   private formatMessagesForSummary(
@@ -1355,6 +1503,51 @@ ${instructionsText || 'Responda à pergunta do usuário de forma clara e precisa
     return hints;
   }
 
+  private buildContextSignalsFromParts(contextParts: string[]): {
+    knowledgeContextText: string;
+    historyContextText: string;
+    conversationContextText: string;
+    hasKnowledgeContext: boolean;
+    hasHistoryContext: boolean;
+    hasConversationContext: boolean;
+  } {
+    const parsed = contextParts.map((part) => this.parseContextPart(part));
+    const knowledgeParts: string[] = [];
+    const historyParts: string[] = [];
+    const conversationParts: string[] = [];
+
+    for (const part of parsed) {
+      const content = this.normalizeText(part.content);
+      if (!content) {
+        continue;
+      }
+      if (part.type === 'knowledge_context') {
+        knowledgeParts.push(content);
+      } else if (part.type === 'history_context') {
+        historyParts.push(content);
+      } else if (
+        part.type === 'conversation_summary' ||
+        part.type === 'recent_messages' ||
+        part.type === 'last_agent_message'
+      ) {
+        conversationParts.push(content);
+      }
+    }
+
+    const knowledgeContextText = knowledgeParts.join(' ');
+    const historyContextText = historyParts.join(' ');
+    const conversationContextText = conversationParts.join(' ');
+
+    return {
+      knowledgeContextText,
+      historyContextText,
+      conversationContextText,
+      hasKnowledgeContext: knowledgeContextText.length > 0,
+      hasHistoryContext: historyContextText.length > 0,
+      hasConversationContext: conversationContextText.length > 0,
+    };
+  }
+
   private extractKeywords(text: string): string[] {
     const normalized = this.normalizeTextForComparison(text);
     if (!normalized) {
@@ -1455,6 +1648,61 @@ ${instructionsText || 'Responda à pergunta do usuário de forma clara e precisa
       return text;
     }
     return text.slice(0, maxChars);
+  }
+
+  private splitTextIntoChunks(
+    text: string,
+    maxChars: number,
+    maxChunks: number
+  ): string[] {
+    if (!text) {
+      return [];
+    }
+    if (text.length <= maxChars) {
+      return [text];
+    }
+
+    const chunks: string[] = [];
+    let remaining = text;
+
+    while (remaining.length > 0 && chunks.length < maxChunks) {
+      if (remaining.length <= maxChars) {
+        chunks.push(remaining);
+        break;
+      }
+
+      let sliceEnd = maxChars;
+      const slice = remaining.slice(0, maxChars);
+      const lastParagraph = slice.lastIndexOf('\n\n');
+      const lastLine = slice.lastIndexOf('\n');
+      const candidate =
+        lastParagraph > maxChars * 0.5
+          ? lastParagraph
+          : lastLine > maxChars * 0.5
+            ? lastLine
+            : -1;
+
+      if (candidate > 0) {
+        sliceEnd = candidate;
+      }
+
+      const chunk = remaining.slice(0, sliceEnd).trim();
+      if (chunk) {
+        chunks.push(chunk);
+      }
+
+      remaining = remaining.slice(sliceEnd).trim();
+    }
+
+    if (remaining.length > 0 && chunks.length === maxChunks) {
+      const lastIndex = chunks.length - 1;
+      chunks[lastIndex] = this.truncateText(
+        `${chunks[lastIndex]}\n\n${remaining}`,
+        maxChars
+      );
+    }
+
+    return chunks;
   }
 
   private buildCombinedContext(

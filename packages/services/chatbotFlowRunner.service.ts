@@ -370,6 +370,48 @@ export class ChatbotFlowRunnerService {
     return value.trim();
   }
 
+  private async ensureBootstrapSummary(
+    bootstrapSummaryKey: string,
+    promptsText: string,
+    aiAgent: {
+      base_url: string;
+      api_key: string;
+      model: string;
+      ai_agent_type_id: string;
+    }
+  ): Promise<string | null> {
+    const hashKey = `${bootstrapSummaryKey}:hash`;
+    const cachedSummary = await this.redis.get(bootstrapSummaryKey);
+
+    if (!promptsText || promptsText.trim().length === 0) {
+      await this.redis.del(bootstrapSummaryKey, hashKey);
+      return null;
+    }
+
+    const promptsHash = this.hashText(promptsText);
+    const cachedHash = await this.redis.get(hashKey);
+
+    if (cachedSummary && cachedHash === promptsHash) {
+      return cachedSummary;
+    }
+
+    const summary = await this.ragService.generateBootstrapSummaryFromPrompts(
+      promptsText,
+      aiAgent.base_url,
+      aiAgent.api_key,
+      aiAgent.model,
+      aiAgent.ai_agent_type_id
+    );
+
+    if (summary && summary.trim().length > 0) {
+      await this.redis.set(bootstrapSummaryKey, summary, 'EX', 86400);
+      await this.redis.set(hashKey, promptsHash, 'EX', 86400);
+      return summary;
+    }
+
+    return cachedSummary;
+  }
+
   private getConversationSummaryCountKey(
     accountId: string,
     workerId: string,
@@ -4153,7 +4195,48 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
     );
     const currentSectorIds = new Set(currentSectors.map((sector) => sector.id));
     if (!sectors.every((sector) => currentSectorIds.has(sector.id))) {
-      return null;
+      if (currentSectors.length === 0) {
+        return this.executeHumanSupportTransfer(
+          t,
+          createChat,
+          chatbotFlow,
+          flowId,
+          null,
+          customMessages
+        );
+      }
+      if (currentSectors.length === 1) {
+        return this.executeHumanSupportTransfer(
+          t,
+          createChat,
+          chatbotFlow,
+          flowId,
+          currentSectors[0],
+          customMessages
+        );
+      }
+
+      await this.redis.set(
+        sectorSelectionKey,
+        JSON.stringify({
+          sectors: currentSectors,
+          flowId,
+          selectedAiAgentId,
+        }),
+        'EX',
+        1800
+      );
+
+      const sectorMessage = this.buildSectorSelectionMessage(currentSectors);
+      await this.chatMessageService.sendMessage(t, {
+        chat: createChat,
+        accountId: createChat.account.id,
+        type: EMessageType.text,
+        message: sectorMessage,
+        typeUser: ETypeUserChat.bot,
+      });
+
+      return true;
     }
 
     if (!sectors || sectors.length === 0) {
@@ -4232,18 +4315,18 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
       return;
     }
 
-    const bootstrapSummary = await this.ragService.generateBootstrapSummary(
+    const promptsDetailed = await this.ragService.getAllAgentPromptsDetailed(
       createChat.account.id,
-      aiAgentId,
-      aiAgent.base_url,
-      aiAgent.api_key,
-      aiAgent.model,
-      aiAgent.ai_agent_type_id
+      aiAgentId
     );
-
-    if (bootstrapSummary && bootstrapSummary.trim().length > 0) {
-      await this.redis.set(bootstrapSummaryKey, bootstrapSummary, 'EX', 86400);
-    }
+    const promptsText =
+      this.ragService.buildPromptsTextFromDetailed(promptsDetailed);
+    await this.ensureBootstrapSummary(bootstrapSummaryKey, promptsText, {
+      base_url: aiAgent.base_url,
+      api_key: aiAgent.api_key,
+      model: aiAgent.model,
+      ai_agent_type_id: aiAgent.ai_agent_type_id,
+    });
   }
 
   private async updateConversationSummaryAfterResponse(
@@ -5118,7 +5201,12 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       await this.buildEnhancedPromptForAiAgent(
         createChat,
         selectedAiAgentId,
-        aiAgent.model,
+        {
+          base_url: aiAgent.base_url,
+          api_key: aiAgent.api_key,
+          model: aiAgent.model,
+          ai_agent_type_id: aiAgent.ai_agent_type_id,
+        },
         userText,
         bootstrapSummaryKey,
         conversationSummaryKey,
@@ -5280,7 +5368,12 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
   private async buildEnhancedPromptForAiAgent(
     createChat: IChat,
     selectedAiAgentId: string,
-    aiAgentModel: string,
+    aiAgent: {
+      base_url: string;
+      api_key: string;
+      model: string;
+      ai_agent_type_id: string;
+    },
     userText: string,
     bootstrapSummaryKey: string,
     conversationSummaryKey: string,
@@ -5297,7 +5390,13 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
 
     const systemPrompt = this.buildComprehensiveSystemPrompt(allPrompts);
 
-    const bootstrapSummary = await this.redis.get(bootstrapSummaryKey);
+    const promptsText =
+      this.ragService.buildPromptsTextFromDetailed(allPrompts);
+    const bootstrapSummary = await this.ensureBootstrapSummary(
+      bootstrapSummaryKey,
+      promptsText,
+      aiAgent
+    );
     const conversationSummary = await this.redis.get(conversationSummaryKey);
     const lastAgentMessage = await this.getLastAgentResponse(
       createChat.account.id,
@@ -5305,7 +5404,7 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       createChat.chat_id,
       selectedAiAgentId
     );
-    const maxPromptChars = this.estimateMaxPromptChars(aiAgentModel);
+    const maxPromptChars = this.estimateMaxPromptChars(aiAgent.model);
 
     const { enhancedPrompt, contextAllowed, contextHints } =
       await this.ragService.enhancePromptWithRag(
