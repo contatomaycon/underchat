@@ -3963,6 +3963,17 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
     return true;
   }
 
+  private async getAndDeleteCacheValue(key: string): Promise<string | null> {
+    try {
+      const result = await this.redis.multi().get(key).del(key).exec();
+      const value = Array.isArray(result) ? result[0]?.[1] : null;
+      return typeof value === 'string' ? value : null;
+    } catch (error) {
+      console.error('[AI Agent] Erro ao consumir cache do Redis:', error);
+      return null;
+    }
+  }
+
   private async handlePendingSectorSelection(
     t: TFunction<'translation', undefined>,
     data: IUpsertMessage,
@@ -3996,17 +4007,15 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
       createChat.chat_id
     );
 
-    const cachedData = await this.redis.get(sectorSelectionKey);
-    if (!cachedData) {
-      return null;
-    }
-
     const userText = this.getTextFromUpsertMessage(data)?.trim();
     if (!userText) {
       return null;
     }
 
-    await this.redis.del(sectorSelectionKey);
+    const cachedData = await this.getAndDeleteCacheValue(sectorSelectionKey);
+    if (!cachedData) {
+      return null;
+    }
 
     let parsed: {
       sectors: Array<{ id: string; name: string; color?: string | null }>;
@@ -5172,6 +5181,7 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
           includeChatHistory: true,
           isBootstrap: false,
           bootstrapSummary: bootstrapSummary,
+          includeBootstrapSummaryInPrompt: false,
           conversationSummary: conversationSummary,
           recentMessages: recentMessages,
           phone: createChat.phone,
@@ -5215,8 +5225,9 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       '- Você DEVE ler, absorver e internalizar TODOS os textos e conteúdos dos prompts fornecidos abaixo. Nenhum prompt pode ser ignorado.',
       '- Se houver links ou URLs nos prompts, considere que o conteúdo desses links já foi processado e está disponível no contexto RAG. Utilize esse conteúdo para responder.',
       '- Combine TODAS as fontes de conhecimento disponíveis: prompts de texto, conteúdo de links/arquivos, contexto RAG e histórico de conversa.',
-      '- Seja o mais generativo e completo possível. NUNCA entregue respostas vazias, incompletas ou genéricas.',
-      '- Sempre tente ajudar o usuário da melhor forma, trazendo detalhes, exemplos e informações úteis.',
+      '- Use apenas o contexto disponível para responder. Não invente informações que não estejam no contexto.',
+      '- Quando houver contexto suficiente, seja completo e útil, trazendo detalhes, exemplos e informações relevantes.',
+      '- Se a pergunta estiver fora do escopo do contexto, informe isso de forma breve e redirecione para os temas em que você pode ajudar.',
       '- Quando houver múltiplas opções ou alternativas, recomende a melhor e explique rapidamente o porquê.',
       '- Responda de forma natural e humana, sem mencionar termos técnicos como "contexto", "prompt", "RAG" ou "sistema".',
     ];

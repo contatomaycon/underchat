@@ -386,6 +386,7 @@ export class RagService {
       conversationSummary?: string | null;
       recentMessages?: Array<{ role: 'user' | 'assistant'; content: string }>;
       phone?: string;
+      includeBootstrapSummaryInPrompt?: boolean;
     }
   ): Promise<{
     enhancedPrompt: string;
@@ -408,6 +409,8 @@ export class RagService {
       };
     }
 
+    const includeBootstrapSummaryInPrompt =
+      options?.includeBootstrapSummaryInPrompt ?? true;
     const {
       contextParts,
       chunksCount,
@@ -419,12 +422,19 @@ export class RagService {
       historyRawMaxScore,
       hasConversationContext,
       conversationContextText,
-    } = await this.buildContextParts(accountId, aiAgentId, userQuery, options);
+    } = await this.buildContextParts(accountId, aiAgentId, userQuery, {
+      ...options,
+      includeBootstrapSummaryInPrompt,
+    });
+
+    const promptBootstrapSummary = includeBootstrapSummaryInPrompt
+      ? options?.bootstrapSummary
+      : null;
 
     const enhancedPrompt = this.buildEnhancedPrompt(
       systemPrompt,
       contextParts,
-      options?.bootstrapSummary,
+      promptBootstrapSummary,
       options?.conversationSummary,
       hasRelevantContext
     );
@@ -574,8 +584,8 @@ ${allPrompts || '(Nenhuma regra ou conhecimento configurado)'}
 ### Instruções Críticas:
 - Absorva INTEGRALMENTE todo o conteúdo acima: cada texto, cada link, cada regra. Nada pode ser ignorado.
 - SIGA TODAS as regras acima em TODAS as suas respostas sem exceção.
-- Seja o mais generativo e completo possível. NUNCA entregue respostas vazias ou incompletas.
-- Sempre tente ajudar o usuário da melhor forma, trazendo detalhes, exemplos e informações úteis.
+- Use apenas o contexto disponível para responder. Não invente informações que não estejam no contexto.
+- Quando houver contexto suficiente, seja completo e útil, trazendo detalhes, exemplos e informações relevantes.
 - Mantenha o perfil e personalidade definidos nos prompts.
 - Priorize os objetivos estabelecidos nos prompts.
 - Use todo o conhecimento fornecido para responder com a máxima precisão.
@@ -602,6 +612,7 @@ Agora, responda à pergunta do usuário seguindo TODAS as regras e diretrizes ac
       conversationSummary?: string | null;
       recentMessages?: Array<{ role: 'user' | 'assistant'; content: string }>;
       phone?: string;
+      includeBootstrapSummaryInPrompt?: boolean;
     }
   ): Promise<{
     contextParts: string[];
@@ -631,7 +642,10 @@ Agora, responda à pergunta do usuário seguindo TODAS as regras e diretrizes ac
         options.conversationSummary.trim().length > 0
       ) || !!(options?.recentMessages && options.recentMessages.length > 0);
 
+    const includeBootstrapSummaryInPrompt =
+      options?.includeBootstrapSummaryInPrompt ?? true;
     if (
+      includeBootstrapSummaryInPrompt &&
       options?.bootstrapSummary &&
       options.bootstrapSummary.trim().length > 0
     ) {
@@ -788,9 +802,9 @@ ${instructionsText || 'Responda à pergunta do usuário de forma clara e precisa
     hasRelevantContext = false
   ): string {
     let instructionsText =
-      '- Priorize SEMPRE o contexto fornecido (prompts, RAG, histórico) para formular suas respostas. Use todo o conhecimento disponível no contexto para entregar a melhor resposta possível.\n';
+      '- Responda usando apenas o contexto fornecido (prompts, RAG e histórico). Se algo não estiver no contexto, seja transparente e direcione o usuário para os temas que você pode cobrir.\n';
     instructionsText +=
-      '- Seja o mais generativo e completo possível. NUNCA entregue respostas vazias, incompletas ou genéricas. Sempre tente ajudar o usuário da melhor forma, trazendo detalhes, exemplos e informações úteis.\n';
+      '- Quando houver contexto suficiente, seja completo e útil, trazendo detalhes, exemplos e informações relevantes.\n';
     instructionsText +=
       '- Responda de forma natural e humana, como se você fosse uma pessoa real respondendo. Evite mencionar "contexto fornecido", "com base no contexto" ou qualquer referência explícita a limitações técnicas.\n';
     instructionsText +=
@@ -810,7 +824,7 @@ ${instructionsText || 'Responda à pergunta do usuário de forma clara e precisa
       instructionsText +=
         '- Absorva e utilize TODA a base de conhecimento disponível: prompts de texto, conteúdo de links/arquivos, contexto RAG e histórico de conversa. Combine todas essas fontes para entregar a resposta mais completa e precisa possível.\n';
       instructionsText +=
-        '- Se a pergunta do usuário não se encaixar nos temas do agente, gere uma resposta criativa e educada que oriente o usuário naturalmente para os assuntos em que você pode ajudar, sem usar textos padronizados.\n';
+        '- Se a pergunta do usuário não se encaixar nos temas do agente, informe isso de forma breve e oriente o usuário para os assuntos em que você pode ajudar.\n';
     }
 
     return instructionsText;
