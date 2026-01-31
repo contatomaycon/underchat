@@ -5499,7 +5499,8 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
         systemPrompt,
         userText,
         {
-          topK: 12,
+          topK: 28,
+          historyTopK: 24,
           minScore: 0.0,
           chatId: createChat.chat_id,
           includeChatHistory: true,
@@ -5561,6 +5562,7 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
         ? '- Combine TODAS as fontes de conhecimento disponíveis: prompts de texto, resultados do File Search, contexto RAG e histórico de conversa.'
         : '- Combine TODAS as fontes de conhecimento disponíveis: prompts de texto, conteúdo de links/arquivos, contexto RAG e histórico de conversa.',
       '- Use apenas o contexto disponível para responder. Não invente informações que não estejam no contexto.',
+      '- Localize no contexto acima qualquer informação que o usuário mencionar ou perguntar (por exemplo "o que você disse sobre X", "onde está Y") e baseie sua resposta nela.',
       '- Quando houver contexto suficiente, seja completo e útil, trazendo detalhes, exemplos e informações relevantes.',
       '- Se a pergunta estiver fora do escopo do contexto, informe isso de forma breve e redirecione para os temas em que você pode ajudar.',
       '- Quando houver múltiplas opções ou alternativas, recomende a melhor e explique rapidamente o porquê.',

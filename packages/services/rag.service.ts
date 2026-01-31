@@ -10,7 +10,8 @@ import { SummaryProviderFactory } from './summary/summaryProviderFactory.service
 export class RagService {
   private readonly maxTopK = 100;
   private readonly maxChunkChars = 4000;
-  private readonly maxCombinedContextChars = 20000;
+  private readonly maxCombinedContextChars = 28000;
+  private readonly retrievalQuerySummarySnippetChars = 400;
   private readonly maxRecentMessageChars = 1500;
   private readonly maxSummaryChars = 12000;
   private readonly minContextScore = 0.2;
@@ -469,6 +470,7 @@ export class RagService {
     userQuery: string,
     options?: {
       topK?: number;
+      historyTopK?: number;
       minScore?: number;
       chatId?: string;
       includeChatHistory?: boolean;
@@ -821,6 +823,7 @@ Agora, responda à pergunta do usuário seguindo TODAS as regras e diretrizes ac
     userQuery: string,
     options?: {
       topK?: number;
+      historyTopK?: number;
       minScore?: number;
       chatId?: string;
       includeChatHistory?: boolean;
@@ -854,6 +857,20 @@ Agora, responda à pergunta do usuário seguindo TODAS as regras e diretrizes ac
     let historyRawMaxScore = 0;
     let conversationContextText = '';
     const normalizedQuery = this.normalizeText(userQuery);
+    const summarySnippet =
+      options?.conversationSummary &&
+      options.conversationSummary.trim().length > 0
+        ? this.truncateText(
+            this.normalizeText(options.conversationSummary),
+            this.retrievalQuerySummarySnippetChars
+          )
+        : '';
+    const retrievalQuery = [normalizedQuery, summarySnippet]
+      .filter(Boolean)
+      .join(' ')
+      .trim();
+    const queryForRetrieval =
+      retrievalQuery.length > 0 ? retrievalQuery : normalizedQuery;
     const hasConversationContext =
       !!(
         options?.conversationSummary &&
@@ -937,13 +954,14 @@ Agora, responda à pergunta do usuário seguindo TODAS as regras e diretrizes ac
     }
 
     const topK = this.normalizeTopK(options?.topK ?? 12);
+    const historyTopK = this.normalizeTopK(options?.historyTopK ?? 20);
     const minScore = this.normalizeMinScore(options?.minScore ?? 0.0);
 
-    if (normalizedQuery.length > 0 && topK > 0) {
+    if (queryForRetrieval.length > 0 && topK > 0) {
       const relevantContext = await this.getRelevantContext(
         accountId,
         aiAgentId,
-        normalizedQuery,
+        queryForRetrieval,
         topK,
         minScore
       );
@@ -964,7 +982,7 @@ Agora, responda à pergunta do usuário seguindo TODAS as regras e diretrizes ac
     }
 
     if (
-      normalizedQuery.length > 0 &&
+      queryForRetrieval.length > 0 &&
       options?.includeChatHistory &&
       options?.chatId
     ) {
@@ -972,8 +990,8 @@ Agora, responda à pergunta do usuário seguindo TODAS as regras e diretrizes ac
         accountId,
         options.chatId,
         aiAgentId,
-        normalizedQuery,
-        15,
+        queryForRetrieval,
+        historyTopK,
         minScore,
         options.phone
       );
