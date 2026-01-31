@@ -388,6 +388,7 @@ export class RagService {
       phone?: string;
       includeBootstrapSummaryInPrompt?: boolean;
       maxPromptChars?: number;
+      lastAgentMessage?: string | null;
     }
   ): Promise<{
     enhancedPrompt: string;
@@ -635,6 +636,7 @@ Agora, responda à pergunta do usuário seguindo TODAS as regras e diretrizes ac
       phone?: string;
       includeBootstrapSummaryInPrompt?: boolean;
       maxPromptChars?: number;
+      lastAgentMessage?: string | null;
     }
   ): Promise<{
     contextParts: string[];
@@ -662,7 +664,11 @@ Agora, responda à pergunta do usuário seguindo TODAS as regras e diretrizes ac
       !!(
         options?.conversationSummary &&
         options.conversationSummary.trim().length > 0
-      ) || !!(options?.recentMessages && options.recentMessages.length > 0);
+      ) ||
+      !!(options?.recentMessages && options.recentMessages.length > 0) ||
+      !!(
+        options?.lastAgentMessage && options.lastAgentMessage.trim().length > 0
+      );
 
     const includeBootstrapSummaryInPrompt =
       options?.includeBootstrapSummaryInPrompt ?? true;
@@ -692,6 +698,33 @@ Agora, responda à pergunta do usuário seguindo TODAS as regras e diretrizes ac
       );
       if (normalizedSummary) {
         conversationContextText = normalizedSummary;
+      }
+    }
+
+    const normalizedLastAgentMessage = this.normalizeText(
+      options?.lastAgentMessage ?? ''
+    );
+    if (normalizedLastAgentMessage) {
+      let lastAssistantMessage = '';
+      if (options?.recentMessages && options.recentMessages.length > 0) {
+        for (let i = options.recentMessages.length - 1; i >= 0; i -= 1) {
+          const message = options.recentMessages[i];
+          if (message.role === 'assistant') {
+            lastAssistantMessage = this.normalizeText(message.content);
+            break;
+          }
+        }
+      }
+      if (normalizedLastAgentMessage !== lastAssistantMessage) {
+        contextParts.push(
+          `### Última Resposta do Assistente:\n${normalizedLastAgentMessage}`
+        );
+        conversationContextText = [
+          conversationContextText,
+          normalizedLastAgentMessage,
+        ]
+          .filter(Boolean)
+          .join(' ');
       }
     }
 
@@ -941,6 +974,28 @@ ${instructionsText || 'Responda à pergunta do usuário de forma clara e precisa
       }
     }
 
+    if (rebuildPromptLength(workingParts) > maxPromptChars) {
+      const lastMessagePart = workingParts.find(
+        (item) => item.type === 'last_agent_message'
+      );
+      if (lastMessagePart && lastMessagePart.content.length > 0) {
+        const currentLengthAfter = rebuildPromptLength(workingParts);
+        const excess = currentLengthAfter - maxPromptChars;
+        const minChars = 300;
+        const targetLength = Math.max(
+          minChars,
+          lastMessagePart.content.length - excess - 200
+        );
+        if (targetLength < lastMessagePart.content.length) {
+          lastMessagePart.content = this.truncateText(
+            lastMessagePart.content,
+            targetLength
+          );
+          trimmed = true;
+        }
+      }
+    }
+
     const finalContextParts = workingParts.map((item) =>
       this.buildContextPartText(item)
     );
@@ -972,6 +1027,7 @@ ${instructionsText || 'Responda à pergunta do usuário de forma clara e precisa
       | 'bootstrap_summary'
       | 'conversation_summary'
       | 'recent_messages'
+      | 'last_agent_message'
       | 'knowledge_context'
       | 'history_context'
       | 'other';
@@ -985,6 +1041,7 @@ ${instructionsText || 'Responda à pergunta do usuário de forma clara e precisa
       | 'bootstrap_summary'
       | 'conversation_summary'
       | 'recent_messages'
+      | 'last_agent_message'
       | 'knowledge_context'
       | 'history_context'
       | 'other' = 'other';
@@ -999,6 +1056,10 @@ ${instructionsText || 'Responda à pergunta do usuário de forma clara e precisa
       normalizedHeader.startsWith('### últimas mensagens da conversa')
     ) {
       type = 'recent_messages';
+    } else if (
+      normalizedHeader.startsWith('### última resposta do assistente')
+    ) {
+      type = 'last_agent_message';
     } else if (
       normalizedHeader.startsWith(
         '### contexto relevante da base de conhecimento'

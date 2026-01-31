@@ -323,6 +323,53 @@ export class ChatbotFlowRunnerService {
     return `chatbot:ai-agent:interactions:${accountId}:${workerId}:${chatId}:${nodeId}`;
   }
 
+  private getLastAgentResponseKey(
+    accountId: string,
+    workerId: string,
+    chatId: string,
+    aiAgentId: string
+  ): string {
+    return `chatbot:ai-agent:last-response:${accountId}:${workerId}:${chatId}:${aiAgentId}`;
+  }
+
+  private async storeLastAgentResponse(
+    accountId: string,
+    workerId: string,
+    chatId: string,
+    aiAgentId: string,
+    response: string
+  ): Promise<void> {
+    if (!response || response.trim().length === 0) {
+      return;
+    }
+    const key = this.getLastAgentResponseKey(
+      accountId,
+      workerId,
+      chatId,
+      aiAgentId
+    );
+    await this.redis.set(key, response.trim(), 'EX', 86400);
+  }
+
+  private async getLastAgentResponse(
+    accountId: string,
+    workerId: string,
+    chatId: string,
+    aiAgentId: string
+  ): Promise<string | null> {
+    const key = this.getLastAgentResponseKey(
+      accountId,
+      workerId,
+      chatId,
+      aiAgentId
+    );
+    const value = await this.redis.get(key);
+    if (!value || value.trim().length === 0) {
+      return null;
+    }
+    return value.trim();
+  }
+
   private getConversationSummaryCountKey(
     accountId: string,
     workerId: string,
@@ -5248,6 +5295,12 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
 
     const bootstrapSummary = await this.redis.get(bootstrapSummaryKey);
     const conversationSummary = await this.redis.get(conversationSummaryKey);
+    const lastAgentMessage = await this.getLastAgentResponse(
+      createChat.account.id,
+      createChat.worker.id,
+      createChat.chat_id,
+      selectedAiAgentId
+    );
     const maxPromptChars = this.estimateMaxPromptChars(aiAgentModel);
 
     const { enhancedPrompt, contextAllowed, contextHints } =
@@ -5267,6 +5320,7 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
           conversationSummary: conversationSummary,
           recentMessages: recentMessages,
           phone: createChat.phone,
+          lastAgentMessage,
           maxPromptChars,
         }
       );
@@ -5681,6 +5735,14 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       message: aiResponse,
       typeUser: ETypeUserChat.bot,
     });
+
+    await this.storeLastAgentResponse(
+      createChat.account.id,
+      createChat.worker.id,
+      createChat.chat_id,
+      selectedAiAgentId,
+      aiResponse
+    );
 
     const nodeId = currentNode?.id ?? selectedAiAgentId;
     const shouldUpdate = await this.shouldUpdateConversationSummary(
