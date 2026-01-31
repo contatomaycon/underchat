@@ -323,6 +323,35 @@ export class ChatbotFlowRunnerService {
     return `chatbot:ai-agent:interactions:${accountId}:${workerId}:${chatId}:${nodeId}`;
   }
 
+  private getConversationSummaryCountKey(
+    accountId: string,
+    workerId: string,
+    chatId: string,
+    nodeId: string
+  ): string {
+    return `chatbot:ai-agent:summary:${accountId}:${workerId}:${chatId}:${nodeId}`;
+  }
+
+  private async shouldUpdateConversationSummary(
+    accountId: string,
+    workerId: string,
+    chatId: string,
+    nodeId: string
+  ): Promise<boolean> {
+    const key = this.getConversationSummaryCountKey(
+      accountId,
+      workerId,
+      chatId,
+      nodeId
+    );
+    const count = await this.redis.incr(key);
+    await this.redis.expire(key, 86400);
+    if (count === 1) {
+      return true;
+    }
+    return count % 5 === 0;
+  }
+
   private async incrementAiAgentInteractionsCount(
     accountId: string,
     workerId: string,
@@ -3737,7 +3766,7 @@ export class ChatbotFlowRunnerService {
           selectedAiAgentId,
         }),
         'EX',
-        300
+        1800
       );
 
       const sectorMessage = this.buildSectorSelectionMessage(sectors);
@@ -3874,7 +3903,9 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
         userText
       );
 
-      const parsed = Number.parseInt(response.trim(), 10);
+      const normalizedResponse = response.trim();
+      const match = normalizedResponse.match(/\d+/);
+      const parsed = match ? Number.parseInt(match[0], 10) : Number.NaN;
       if (!Number.isNaN(parsed) && parsed >= 1 && parsed <= sectors.length) {
         return sectors[parsed - 1].id;
       }
@@ -3974,6 +4005,52 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
     }
   }
 
+  private parseSectorSelectionCache(cachedData: string): {
+    sectors: Array<{ id: string; name: string; color?: string | null }>;
+    flowId: string;
+    selectedAiAgentId: string;
+  } | null {
+    let parsed: {
+      sectors?: Array<{ id?: string; name?: string; color?: string | null }>;
+      flowId?: string;
+      selectedAiAgentId?: string;
+    };
+    try {
+      parsed = JSON.parse(cachedData);
+    } catch {
+      return null;
+    }
+
+    if (!parsed || typeof parsed.flowId !== 'string') {
+      return null;
+    }
+
+    if (typeof parsed.selectedAiAgentId !== 'string') {
+      return null;
+    }
+
+    if (!Array.isArray(parsed.sectors) || parsed.sectors.length === 0) {
+      return null;
+    }
+
+    const sectors = parsed.sectors.filter(
+      (sector): sector is { id: string; name: string; color?: string | null } =>
+        !!sector &&
+        typeof sector.id === 'string' &&
+        typeof sector.name === 'string'
+    );
+
+    if (sectors.length !== parsed.sectors.length) {
+      return null;
+    }
+
+    return {
+      sectors,
+      flowId: parsed.flowId,
+      selectedAiAgentId: parsed.selectedAiAgentId,
+    };
+  }
+
   private async handlePendingSectorSelection(
     t: TFunction<'translation', undefined>,
     data: IUpsertMessage,
@@ -4017,18 +4094,20 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
       return null;
     }
 
-    let parsed: {
-      sectors: Array<{ id: string; name: string; color?: string | null }>;
-      flowId: string;
-      selectedAiAgentId: string;
-    };
-    try {
-      parsed = JSON.parse(cachedData);
-    } catch {
+    const parsed = this.parseSectorSelectionCache(cachedData);
+    if (!parsed) {
       return null;
     }
 
     const { sectors, flowId, selectedAiAgentId } = parsed;
+
+    const currentSectors = await this.sectorService.listSectorsForTransfer(
+      createChat.account.id
+    );
+    const currentSectorIds = new Set(currentSectors.map((sector) => sector.id));
+    if (!sectors.every((sector) => currentSectorIds.has(sector.id))) {
+      return null;
+    }
 
     if (!sectors || sectors.length === 0) {
       return this.executeHumanSupportTransfer(
@@ -4992,6 +5071,7 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       await this.buildEnhancedPromptForAiAgent(
         createChat,
         selectedAiAgentId,
+        aiAgent.model,
         userText,
         bootstrapSummaryKey,
         conversationSummaryKey,
@@ -5149,6 +5229,7 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
   private async buildEnhancedPromptForAiAgent(
     createChat: IChat,
     selectedAiAgentId: string,
+    aiAgentModel: string,
     userText: string,
     bootstrapSummaryKey: string,
     conversationSummaryKey: string,
@@ -5167,6 +5248,7 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
 
     const bootstrapSummary = await this.redis.get(bootstrapSummaryKey);
     const conversationSummary = await this.redis.get(conversationSummaryKey);
+    const maxPromptChars = this.estimateMaxPromptChars(aiAgentModel);
 
     const { enhancedPrompt, contextAllowed, contextHints } =
       await this.ragService.enhancePromptWithRag(
@@ -5185,6 +5267,7 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
           conversationSummary: conversationSummary,
           recentMessages: recentMessages,
           phone: createChat.phone,
+          maxPromptChars,
         }
       );
 
@@ -5292,6 +5375,54 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
     }
 
     return instructions.join('\n');
+  }
+
+  private estimateMaxPromptChars(model: string): number {
+    const maxTokens = this.estimateContextTokensForModel(model);
+    const promptTokens = Math.max(Math.floor(maxTokens * 0.7), 2000);
+    return Math.max(promptTokens * 4, 8000);
+  }
+
+  private estimateContextTokensForModel(model: string): number {
+    const normalized = (model || '').toLowerCase();
+
+    if (normalized.includes('128k') || normalized.includes('128000')) {
+      return 128000;
+    }
+    if (normalized.includes('64k') || normalized.includes('64000')) {
+      return 64000;
+    }
+    if (normalized.includes('32k') || normalized.includes('32000')) {
+      return 32000;
+    }
+    if (normalized.includes('16k') || normalized.includes('16000')) {
+      return 16000;
+    }
+    if (normalized.includes('8k') || normalized.includes('8000')) {
+      return 8000;
+    }
+    if (normalized.includes('4k') || normalized.includes('4000')) {
+      return 4000;
+    }
+
+    if (
+      normalized.includes('gpt-4o') ||
+      normalized.includes('gpt-4.1') ||
+      normalized.includes('gpt-4-turbo')
+    ) {
+      return 128000;
+    }
+    if (normalized.includes('gpt-4')) {
+      return 8000;
+    }
+    if (normalized.includes('gpt-3.5')) {
+      return 4000;
+    }
+    if (normalized.includes('gemini')) {
+      return 32000;
+    }
+
+    return 8000;
   }
 
   private buildOutOfContextResponse(
@@ -5551,23 +5682,33 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       typeUser: ETypeUserChat.bot,
     });
 
-    const conversationSummary = await this.redis.get(conversationSummaryKey);
-    const recentMessages = await this.getRecentChatMessages(
+    const nodeId = currentNode?.id ?? selectedAiAgentId;
+    const shouldUpdate = await this.shouldUpdateConversationSummary(
       createChat.account.id,
+      createChat.worker.id,
       createChat.chat_id,
-      20
+      nodeId
     );
 
-    await this.updateConversationSummaryAfterResponse(
-      createChat,
-      selectedAiAgentId,
-      conversationSummaryKey,
-      conversationSummary,
-      recentMessages,
-      userText,
-      aiResponse,
-      aiAgent
-    );
+    if (shouldUpdate) {
+      const conversationSummary = await this.redis.get(conversationSummaryKey);
+      const recentMessages = await this.getRecentChatMessages(
+        createChat.account.id,
+        createChat.chat_id,
+        20
+      );
+
+      await this.updateConversationSummaryAfterResponse(
+        createChat,
+        selectedAiAgentId,
+        conversationSummaryKey,
+        conversationSummary,
+        recentMessages,
+        userText,
+        aiResponse,
+        aiAgent
+      );
+    }
 
     await this.sendContinueMessageIfNeeded(t, createChat, currentNode);
   }

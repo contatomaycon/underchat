@@ -15,7 +15,7 @@ export class RagService {
   private readonly maxSummaryChars = 12000;
   private readonly minContextScore = 0.2;
   private readonly minKeywordLength = 3;
-  private readonly minKeywordMatchRatio = 0.2;
+  private readonly minKeywordMatchRatio = 0.4;
   private readonly keywordStopWords = new Set([
     'a',
     'o',
@@ -387,6 +387,7 @@ export class RagService {
       recentMessages?: Array<{ role: 'user' | 'assistant'; content: string }>;
       phone?: string;
       includeBootstrapSummaryInPrompt?: boolean;
+      maxPromptChars?: number;
     }
   ): Promise<{
     enhancedPrompt: string;
@@ -414,7 +415,6 @@ export class RagService {
     const {
       contextParts,
       chunksCount,
-      hasRelevantContext,
       knowledgeContextText,
       knowledgeMaxScore,
       knowledgeRawMaxScore,
@@ -431,13 +431,34 @@ export class RagService {
       ? options?.bootstrapSummary
       : null;
 
-    const enhancedPrompt = this.buildEnhancedPrompt(
+    const maxPromptChars = options?.maxPromptChars;
+    let adjustedContextParts = contextParts;
+    let adjustedBootstrapSummary = promptBootstrapSummary;
+    let adjustedConversationSummary = options?.conversationSummary ?? null;
+    if (maxPromptChars && maxPromptChars > 0) {
+      const trimmed = this.trimContextPartsToMaxChars(
+        systemPrompt,
+        contextParts,
+        promptBootstrapSummary,
+        options?.conversationSummary ?? null,
+        maxPromptChars
+      );
+      adjustedContextParts = trimmed.contextParts;
+      adjustedBootstrapSummary = trimmed.bootstrapSummary;
+      adjustedConversationSummary = trimmed.conversationSummary;
+    }
+
+    let enhancedPrompt = this.buildEnhancedPrompt(
       systemPrompt,
-      contextParts,
-      promptBootstrapSummary,
-      options?.conversationSummary,
-      hasRelevantContext
+      adjustedContextParts,
+      adjustedBootstrapSummary,
+      adjustedConversationSummary,
+      adjustedContextParts.length > 0
     );
+
+    if (maxPromptChars && enhancedPrompt.length > maxPromptChars) {
+      enhancedPrompt = this.truncateText(enhancedPrompt, maxPromptChars);
+    }
 
     const contextScoreThreshold = Math.max(
       this.minContextScore,
@@ -461,7 +482,7 @@ export class RagService {
 
     return {
       enhancedPrompt,
-      contextUsed: contextParts.length > 0,
+      contextUsed: adjustedContextParts.length > 0,
       chunksCount,
       contextAllowed,
       contextHints,
@@ -613,6 +634,7 @@ Agora, responda à pergunta do usuário seguindo TODAS as regras e diretrizes ac
       recentMessages?: Array<{ role: 'user' | 'assistant'; content: string }>;
       phone?: string;
       includeBootstrapSummaryInPrompt?: boolean;
+      maxPromptChars?: number;
     }
   ): Promise<{
     contextParts: string[];
@@ -795,6 +817,217 @@ ${finalContext || '(Nenhum contexto adicional disponível)'}
 ${instructionsText || 'Responda à pergunta do usuário de forma clara e precisa.'}`;
   }
 
+  private trimContextPartsToMaxChars(
+    systemPrompt: string,
+    contextParts: string[],
+    bootstrapSummary: string | null | undefined,
+    conversationSummary: string | null | undefined,
+    maxPromptChars: number
+  ): {
+    contextParts: string[];
+    bootstrapSummary: string | null;
+    conversationSummary: string | null;
+    hasRelevantContext: boolean;
+    trimmed: boolean;
+  } {
+    const parts = contextParts.map((part) => this.parseContextPart(part));
+    let workingParts = [...parts];
+    let trimmed = false;
+
+    const rebuildPromptLength = (
+      nextParts: Array<{
+        type: string;
+        header: string;
+        content: string;
+      }>
+    ): number => {
+      const nextContextParts = nextParts.map((item) =>
+        this.buildContextPartText(item)
+      );
+      const includeBootstrap = nextParts.some(
+        (item) => item.type === 'bootstrap_summary'
+      );
+      const includeConversation = nextParts.some(
+        (item) => item.type === 'conversation_summary'
+      );
+      const effectiveBootstrap = includeBootstrap
+        ? (bootstrapSummary ?? null)
+        : null;
+      const effectiveConversation = includeConversation
+        ? (conversationSummary ?? null)
+        : null;
+      const effectiveHasRelevantContext = nextContextParts.length > 0;
+      return this.buildEnhancedPrompt(
+        systemPrompt,
+        nextContextParts,
+        effectiveBootstrap,
+        effectiveConversation,
+        effectiveHasRelevantContext
+      ).length;
+    };
+
+    const currentLength = rebuildPromptLength(workingParts);
+    if (currentLength <= maxPromptChars) {
+      return {
+        contextParts,
+        bootstrapSummary: bootstrapSummary ?? null,
+        conversationSummary: conversationSummary ?? null,
+        hasRelevantContext: contextParts.length > 0,
+        trimmed,
+      };
+    }
+
+    const removeTypesInOrder = ['recent_messages', 'history_context'];
+    for (const type of removeTypesInOrder) {
+      const filtered = workingParts.filter((item) => item.type !== type);
+      if (filtered.length !== workingParts.length) {
+        workingParts = filtered;
+        trimmed = true;
+        if (rebuildPromptLength(workingParts) <= maxPromptChars) {
+          break;
+        }
+      }
+    }
+
+    if (rebuildPromptLength(workingParts) > maxPromptChars) {
+      const conversationPart = workingParts.find(
+        (item) => item.type === 'conversation_summary'
+      );
+      if (conversationPart && conversationPart.content.length > 0) {
+        const originalContent = conversationPart.content;
+        const targetSizes = [
+          Math.min(2000, originalContent.length),
+          Math.min(1000, originalContent.length),
+        ];
+        let applied = false;
+        for (const size of targetSizes) {
+          if (size <= 0) {
+            continue;
+          }
+          conversationPart.content = this.truncateText(originalContent, size);
+          trimmed = true;
+          applied = true;
+          if (rebuildPromptLength(workingParts) <= maxPromptChars) {
+            break;
+          }
+        }
+        if (applied && rebuildPromptLength(workingParts) > maxPromptChars) {
+          workingParts = workingParts.filter(
+            (item) => item.type !== 'conversation_summary'
+          );
+        }
+      }
+    }
+
+    if (rebuildPromptLength(workingParts) > maxPromptChars) {
+      const knowledgePart = workingParts.find(
+        (item) => item.type === 'knowledge_context'
+      );
+      if (knowledgePart && knowledgePart.content.length > 0) {
+        const currentLengthAfter = rebuildPromptLength(workingParts);
+        const excess = currentLengthAfter - maxPromptChars;
+        const minChars = 500;
+        const targetLength = Math.max(
+          minChars,
+          knowledgePart.content.length - excess - 200
+        );
+        if (targetLength < knowledgePart.content.length) {
+          knowledgePart.content = this.truncateText(
+            knowledgePart.content,
+            targetLength
+          );
+          trimmed = true;
+        }
+      }
+    }
+
+    const finalContextParts = workingParts.map((item) =>
+      this.buildContextPartText(item)
+    );
+    const includeBootstrap = workingParts.some(
+      (item) => item.type === 'bootstrap_summary'
+    );
+    const includeConversation = workingParts.some(
+      (item) => item.type === 'conversation_summary'
+    );
+    const effectiveBootstrap = includeBootstrap
+      ? (bootstrapSummary ?? null)
+      : null;
+    const effectiveConversation = includeConversation
+      ? (conversationSummary ?? null)
+      : null;
+    const effectiveHasRelevantContext = finalContextParts.length > 0;
+
+    return {
+      contextParts: finalContextParts,
+      bootstrapSummary: effectiveBootstrap,
+      conversationSummary: effectiveConversation,
+      hasRelevantContext: effectiveHasRelevantContext,
+      trimmed,
+    };
+  }
+
+  private parseContextPart(part: string): {
+    type:
+      | 'bootstrap_summary'
+      | 'conversation_summary'
+      | 'recent_messages'
+      | 'knowledge_context'
+      | 'history_context'
+      | 'other';
+    header: string;
+    content: string;
+  } {
+    const [header, ...rest] = part.split('\n');
+    const content = rest.join('\n');
+    const normalizedHeader = header.trim().toLowerCase();
+    let type:
+      | 'bootstrap_summary'
+      | 'conversation_summary'
+      | 'recent_messages'
+      | 'knowledge_context'
+      | 'history_context'
+      | 'other' = 'other';
+
+    if (
+      normalizedHeader.startsWith('### regras e conhecimento base do agente')
+    ) {
+      type = 'bootstrap_summary';
+    } else if (normalizedHeader.startsWith('### sumário da conversa')) {
+      type = 'conversation_summary';
+    } else if (
+      normalizedHeader.startsWith('### últimas mensagens da conversa')
+    ) {
+      type = 'recent_messages';
+    } else if (
+      normalizedHeader.startsWith(
+        '### contexto relevante da base de conhecimento'
+      )
+    ) {
+      type = 'knowledge_context';
+    } else if (
+      normalizedHeader.startsWith('### histórico de conversação relevante')
+    ) {
+      type = 'history_context';
+    }
+
+    return {
+      type,
+      header,
+      content,
+    };
+  }
+
+  private buildContextPartText(part: {
+    header: string;
+    content: string;
+  }): string {
+    if (!part.content) {
+      return part.header;
+    }
+    return `${part.header}\n${part.content}`;
+  }
+
   private buildInstructionsText(
     contextParts: string[],
     bootstrapSummary?: string | null,
@@ -863,9 +1096,7 @@ ${instructionsText || 'Responda à pergunta do usuário de forma clara e precisa
 
     const highConfidenceScore =
       options.knowledgeMaxScore >= options.scoreThreshold ||
-      options.historyMaxScore >= options.scoreThreshold ||
-      options.knowledgeRawMaxScore >= options.scoreThreshold ||
-      options.historyRawMaxScore >= options.scoreThreshold;
+      options.historyMaxScore >= options.scoreThreshold;
 
     if (highConfidenceScore) {
       return true;
@@ -891,7 +1122,7 @@ ${instructionsText || 'Responda à pergunta do usuário de forma clara e precisa
 
     const contextKeywordSet = new Set(contextKeywords);
     if (queryKeywords.length === 1) {
-      return contextKeywordSet.has(queryKeywords[0]);
+      return false;
     }
 
     const matchCount = queryKeywords.filter((token) =>
@@ -899,19 +1130,15 @@ ${instructionsText || 'Responda à pergunta do usuário de forma clara e precisa
     ).length;
 
     const matchRatio = matchCount / queryKeywords.length;
-    if (matchCount >= 2) {
+    const requiredRatio = Math.max(this.minKeywordMatchRatio, 0.4);
+    if (matchCount >= 3) {
       return true;
     }
-    if (matchCount > 0 && matchRatio >= this.minKeywordMatchRatio) {
+    if (matchCount >= 2 && matchRatio >= requiredRatio) {
       return true;
     }
 
-    const lowThreshold = Math.min(options.scoreThreshold, 0.1);
-    const hasLowSignal =
-      options.knowledgeRawMaxScore >= lowThreshold ||
-      options.historyRawMaxScore >= lowThreshold;
-
-    return hasLowSignal && matchCount > 0;
+    return false;
   }
 
   private buildContextHints(
