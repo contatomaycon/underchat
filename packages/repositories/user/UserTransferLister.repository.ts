@@ -20,6 +20,8 @@ export class UserTransferListerRepository {
       .select({
         id: user.user_id,
         name: userInfo.name,
+        last_name: userInfo.last_name,
+        nickname: user.email_partial,
         email_partial: user.email_partial,
         photo: userInfo.photo,
       })
@@ -45,6 +47,8 @@ export class UserTransferListerRepository {
         return {
           id: user.id,
           name: user.name || user.email_partial || '',
+          last_name: user.last_name || null,
+          nickname: user.nickname || user.email_partial || null,
           photo: user.photo || null,
           status: status || null,
         };

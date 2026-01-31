@@ -11,7 +11,13 @@ export class OpenAISummaryProvider implements ISummaryProvider {
   ): Promise<string> {
     const url = `${baseUrl}/chat/completions`;
     const tokenParam = this.getTokenParamForModel(model);
-    const requestBody = this.buildRequestBody(prompt, model, tokenParam, 2048);
+    const requestBody = this.buildRequestBody(
+      prompt,
+      model,
+      tokenParam,
+      2048,
+      0.3
+    );
 
     let response = await this.fetchWithRetry(url, {
       method: 'POST',
@@ -25,13 +31,29 @@ export class OpenAISummaryProvider implements ISummaryProvider {
     if (!response.ok) {
       const errorText = await response.text();
       const fallbackTokenParam = this.getFallbackTokenParam(errorText);
+      const fallbackTemperature = this.getFallbackTemperature(errorText);
+
+      let retryTokenParam = tokenParam;
+      let retryTemperature: number | undefined = 0.3;
+      let shouldRetry = false;
 
       if (fallbackTokenParam && fallbackTokenParam !== tokenParam) {
+        retryTokenParam = fallbackTokenParam;
+        shouldRetry = true;
+      }
+
+      if (fallbackTemperature !== null) {
+        retryTemperature = fallbackTemperature;
+        shouldRetry = true;
+      }
+
+      if (shouldRetry) {
         const retryBody = this.buildRequestBody(
           prompt,
           model,
-          fallbackTokenParam,
-          2048
+          retryTokenParam,
+          2048,
+          retryTemperature
         );
         response = await this.fetchWithRetry(url, {
           method: 'POST',
@@ -68,18 +90,19 @@ export class OpenAISummaryProvider implements ISummaryProvider {
     prompt: string,
     model: string,
     tokenParam: 'max_tokens' | 'max_completion_tokens',
-    maxTokens: number
+    maxTokens: number,
+    temperature?: number
   ): {
     model: string;
     messages: Array<{ role: 'system' | 'user'; content: string }>;
-    temperature: number;
+    temperature?: number;
     max_tokens?: number;
     max_completion_tokens?: number;
   } {
     const requestBody: {
       model: string;
       messages: Array<{ role: 'system' | 'user'; content: string }>;
-      temperature: number;
+      temperature?: number;
       max_tokens?: number;
       max_completion_tokens?: number;
     } = {
@@ -95,8 +118,11 @@ export class OpenAISummaryProvider implements ISummaryProvider {
           content: prompt,
         },
       ],
-      temperature: 0.3,
     };
+
+    if (typeof temperature === 'number') {
+      requestBody.temperature = temperature;
+    }
 
     if (tokenParam === 'max_completion_tokens') {
       requestBody.max_completion_tokens = maxTokens;
@@ -146,6 +172,48 @@ export class OpenAISummaryProvider implements ISummaryProvider {
 
     if (errorText.includes('max_completion_tokens')) {
       return 'max_tokens';
+    }
+
+    return null;
+  }
+
+  private getFallbackTemperature(
+    errorText: string
+  ): number | undefined | null {
+    try {
+      const parsed = JSON.parse(errorText) as {
+        error?: { param?: string; code?: string; message?: string };
+      };
+      const param = parsed.error?.param;
+      const code = parsed.error?.code;
+      const message = parsed.error?.message || '';
+
+      if (param !== 'temperature') {
+        return null;
+      }
+
+      if (code === 'unsupported_value') {
+        return 1;
+      }
+
+      if (code === 'unsupported_parameter') {
+        return undefined;
+      }
+
+      if (message.includes('default (1)')) {
+        return 1;
+      }
+    } catch {}
+
+    if (
+      errorText.includes('"temperature"') &&
+      errorText.includes('default (1)')
+    ) {
+      return 1;
+    }
+
+    if (errorText.includes('"temperature"')) {
+      return undefined;
     }
 
     return null;

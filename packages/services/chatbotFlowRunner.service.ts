@@ -115,6 +115,754 @@ export class ChatbotFlowRunnerService {
     return `chatbot:ai-agent:sector-selection:${accountId}:${workerId}:${chatId}`;
   }
 
+  private getUserSelectionCacheKey(
+    accountId: string,
+    workerId: string,
+    chatId: string
+  ): string {
+    return `chatbot:ai-agent:user-selection:${accountId}:${workerId}:${chatId}`;
+  }
+
+  private async extractTransferContextFromAgentContext(
+    createChat: IChat,
+    selectedAiAgentId: string,
+    bootstrapSummaryKey: string,
+    conversationSummaryKey: string
+  ): Promise<{
+    sectorNames: string[];
+    userNames: string[];
+    askOnlyUser: boolean;
+    contextText: string;
+  }> {
+    const defaultResult = {
+      sectorNames: [],
+      userNames: [],
+      askOnlyUser: false,
+      contextText: '',
+    };
+    const agent = await this.aiAgentService.viewAiAgent(
+      selectedAiAgentId,
+      createChat.account.id
+    );
+    if (!agent?.base_url || !agent?.api_key || !agent?.model) {
+      return defaultResult;
+    }
+    const promptsDetailed = await this.ragService.getAllAgentPromptsDetailed(
+      createChat.account.id,
+      selectedAiAgentId
+    );
+    const transferRelevantPrompts = promptsDetailed.filter((prompt) => {
+      const nameMatch =
+        /humano|transfer|atendente|usuario|usu[áa]rio|setor|suporte|equipe/i.test(
+          prompt.name
+        );
+      const valueMatch =
+        /(disponibilize|apenas|somente|direcion|transfer|encaminh|pergunt|escolh).*(setor|atendente|usu[áa]rio|humano|equipe)/i.test(
+          prompt.value
+        );
+      return nameMatch || valueMatch;
+    });
+    const contextText = transferRelevantPrompts
+      .map((prompt) => `#### ${prompt.name}:\n${prompt.value}`)
+      .join('\n\n')
+      .slice(0, 12000);
+    if (!contextText) {
+      return defaultResult;
+    }
+    const extractionPrompt = `Analise o contexto abaixo e extraia as informações para transferência de atendimento. O contexto pode estar escrito de várias formas; interprete o significado e extraia corretamente.
+
+sector_names: array com os nomes dos setores que devem ser oferecidos ao usuário. Considere QUALQUER menção a setores no contexto, por exemplo:
+- "disponibilize o setor Atendimento", "apenas o setor Atendimento", "setor Atendimento" -> ["Atendimento"]
+- "Setor disponível: Financeiro" ou "Setores disponíveis: Financeiro" -> ["Financeiro"]
+- "apenas o setor Atendimento e Vasco" -> ["Atendimento", "Vasco"]
+- Listas como "Setor disponivel\\n- Financeiro" ou "Setores:\\n1. Atendimento\\n2. Financeiro" -> extraia todos os nomes listados
+- Se o contexto listar setores (com marcadores -, •, * ou numerados), inclua todos no array
+- Se não houver nenhuma indicação de quais setores oferecer, retorne []
+
+user_names: array com nomes de atendentes/usuários mencionados para transferência; [] se não houver restrição.
+- "atendente Maycon, Carlos e Francisco" -> ["Maycon", "Carlos", "Francisco"]
+- "disponibilize o atendente João" -> ["João"]
+- "atendente João Francisco" -> ["João Francisco"]
+
+ask_only_user: true somente se o contexto disser que deve perguntar apenas qual usuário (sem perguntar setor); false caso contrário.
+Se houver user_names, o comportamento padrão é perguntar apenas o usuário.
+
+Responda APENAS um JSON válido com as chaves sector_names, user_names e ask_only_user. Sem texto antes ou depois.
+
+Contexto:
+${contextText}`;
+    try {
+      const response = await this.callAiAgentChatApi(
+        agent.base_url,
+        agent.api_key,
+        agent.model,
+        agent.ai_agent_type_id,
+        extractionPrompt,
+        'extração',
+        undefined,
+        undefined,
+        undefined
+      );
+      const stripped = response
+        .replace(/^```(?:json)?\s*/i, '')
+        .replace(/\s*```$/i, '')
+        .trim();
+      const jsonMatch = stripped.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        const fallback = this.fallbackExtractTransferContext(contextText);
+        return { ...fallback, contextText };
+      }
+      let parsed: {
+        sector_names?: string[];
+        user_names?: string[];
+        ask_only_user?: boolean;
+      };
+      try {
+        parsed = JSON.parse(jsonMatch[0]) as typeof parsed;
+      } catch {
+        const fallback = this.fallbackExtractTransferContext(contextText);
+        return { ...fallback, contextText };
+      }
+      const sectorNamesRaw = Array.isArray(parsed.sector_names)
+        ? parsed.sector_names
+            .filter((s): s is string => typeof s === 'string')
+            .map((s) => s.trim())
+            .filter(Boolean)
+        : [];
+      const sectorNamesFromModel = this.splitSectorNamesByE(sectorNamesRaw);
+      const userNamesFromModel = Array.isArray(parsed.user_names)
+        ? parsed.user_names
+            .filter((s): s is string => typeof s === 'string')
+            .map((s) => s.trim())
+            .filter(Boolean)
+        : [];
+      const fallback = this.fallbackExtractTransferContext(contextText);
+      const sectorNames = Array.from(
+        new Set(
+          [...sectorNamesFromModel, ...fallback.sectorNames].filter(Boolean)
+        )
+      );
+      const userNames = Array.from(
+        new Set([...userNamesFromModel, ...fallback.userNames].filter(Boolean))
+      );
+      let askOnlyUser =
+        parsed.ask_only_user === true ||
+        fallback.askOnlyUser ||
+        userNames.length > 0;
+      const result = { sectorNames, userNames, askOnlyUser, contextText };
+      return result;
+    } catch {
+      const fallback = this.fallbackExtractTransferContext(contextText);
+      return { ...fallback, contextText };
+    }
+  }
+
+  private fallbackExtractTransferContext(enhancedPrompt: string): {
+    sectorNames: string[];
+    userNames: string[];
+    askOnlyUser: boolean;
+  } {
+    const sectorNames: string[] = [];
+    const userNames: string[] = [];
+    const addSector = (name: string): void => {
+      const n = name.trim();
+      if (n.length === 0) {
+        return;
+      }
+      const parts = n
+        .split(/\s+e\s+|,\s*|;\s*|\/\s*/i)
+        .map((p) => p.trim())
+        .filter(Boolean);
+      for (const part of parts) {
+        if (
+          part.length > 0 &&
+          !sectorNames.some((s) => s.toLowerCase() === part.toLowerCase())
+        ) {
+          sectorNames.push(part);
+        }
+      }
+    };
+    const addUser = (name: string): void => {
+      const n = name.trim();
+      if (n.length === 0) {
+        return;
+      }
+      const parts = n
+        .split(/\s+e\s+|,\s*|;\s*|\/\s*/i)
+        .map((p) => p.trim())
+        .filter(Boolean);
+      for (const part of parts) {
+        if (
+          part.length > 0 &&
+          !userNames.some((u) => u.toLowerCase() === part.toLowerCase())
+        ) {
+          userNames.push(part);
+        }
+      }
+    };
+
+    const normalizedPrompt = enhancedPrompt.replace(/\s+/g, ' ');
+    const sectorMatch = normalizedPrompt.match(
+      /(?:apenas|somente|disponibilize)?\s*(?:o\s+)?setor(?:es)?\s+([A-Za-zÀ-ú0-9\s,]+?)(?:\s*[.;]|\n|$)/gi
+    );
+    if (sectorMatch && sectorMatch.length > 0) {
+      for (const m of sectorMatch) {
+        const name = m
+          .replace(/^(?:apenas|somente|disponibilize)\s+(?:o\s+)?setor\s+/i, '')
+          .replace(/^setor\s+/i, '')
+          .trim()
+          .replace(/\s*[.,].*$/, '')
+          .trim();
+        addSector(name);
+      }
+    }
+
+    const userMatch = normalizedPrompt.match(
+      /(?:atendente|atendentes|usuario|usuarios|usu[áa]rio|usu[áa]rios)\s+([A-Za-zÀ-ú0-9\s,]+?)(?:\s*[.;]|\n|$)/gi
+    );
+    if (userMatch && userMatch.length > 0) {
+      for (const m of userMatch) {
+        const name = m
+          .replace(
+            /^(?:atendente|atendentes|usuario|usuarios|usu[áa]rio|usu[áa]rios)\s+/i,
+            ''
+          )
+          .trim()
+          .replace(/\s*[.,].*$/, '')
+          .trim();
+        addUser(name);
+      }
+    }
+
+    const setorDisponivelInline = enhancedPrompt.match(
+      /setor(?:es)?\s+dispon[ií]vel(?:is)?\s*:\s*([A-Za-zÀ-ú0-9\s]+?)(?:\n|$)/gi
+    );
+    if (setorDisponivelInline) {
+      for (const m of setorDisponivelInline) {
+        const name = m
+          .replace(/setor(?:es)?\s+dispon[ií]vel(?:is)?\s*:\s*/i, '')
+          .trim();
+        addSector(name);
+      }
+    }
+
+    const listItemPattern =
+      /^\s*[-•*]\s+([A-Za-zÀ-ú0-9\s]+)$|^\s*\d+[.)]\s+([A-Za-zÀ-ú0-9\s]+)$/;
+    const lines = enhancedPrompt.split(/\r?\n/);
+    for (let i = 0; i < lines.length; i += 1) {
+      const line = lines[i];
+      const prev = lines[i - 1] ?? '';
+      const prevHasSetor =
+        /setor(?:es)?\s+dispon[ií]vel(?:is)?/i.test(prev) ||
+        /setor(?:es)?\s*:/i.test(prev) ||
+        /\bsetor(?:es)?\s+(?:dispon|disponibiliz|apenas|somente)/i.test(prev);
+      const prevIsListItem = listItemPattern.test(prev);
+      const hasSetorContext = prevHasSetor || prevIsListItem;
+      const listItem = line.match(listItemPattern);
+      if (hasSetorContext && listItem) {
+        const name = (listItem[1] ?? listItem[2] ?? '').trim();
+        addSector(name);
+      }
+    }
+
+    const setorColon = enhancedPrompt.match(
+      /setor(?:es)?\s*:\s*([A-Za-zÀ-ú0-9\s]+?)(?:\n|$)/gi
+    );
+    if (setorColon) {
+      for (const m of setorColon) {
+        const sectorFromColon = m.replace(/setor(?:es)?\s*:\s*/i, '').trim();
+        addSector(sectorFromColon);
+      }
+    }
+
+    if (sectorNames.length === 0) {
+      const singleSector = normalizedPrompt.match(
+        /(?:apenas o setor|somente o setor|disponibilize o setor)\s+([A-Za-zÀ-ú]+)/i
+      );
+      if (singleSector) {
+        addSector(singleSector[1]);
+      }
+    }
+
+    return {
+      sectorNames,
+      userNames,
+      askOnlyUser: userNames.length > 0,
+    };
+  }
+
+  private splitSectorNamesByE(names: string[]): string[] {
+    const result: string[] = [];
+    for (const name of names) {
+      const parts = name
+        .split(/\s+e\s+|,\s*|;\s*|\/\s*/i)
+        .map((p) => p.trim())
+        .filter(Boolean);
+      for (const part of parts) {
+        if (
+          part.length > 0 &&
+          !result.some((r) => r.toLowerCase() === part.toLowerCase())
+        ) {
+          result.push(part);
+        }
+      }
+    }
+    return result;
+  }
+
+  private filterSectorsByContext(
+    sectors: Array<{ id: string; name: string }>,
+    sectorNamesFromContext: string[]
+  ): Array<{ id: string; name: string }> {
+    if (!sectorNamesFromContext.length) {
+      return sectors;
+    }
+    return sectors.filter((sector) =>
+      this.matchesNameFromContext(sector.name, sectorNamesFromContext)
+    );
+  }
+
+  private filterUsersByContextAndAvailable(
+    users: Array<{
+      id: string;
+      name: string;
+      last_name?: string | null;
+      nickname?: string | null;
+      photo?: string | null;
+      status?: string | null;
+    }>,
+    userNamesFromContext: string[]
+  ): Array<{
+    id: string;
+    name: string;
+    last_name?: string | null;
+    nickname?: string | null;
+    photo?: string | null;
+  }> {
+    if (!userNamesFromContext.length) {
+      return users.map(({ id, name, last_name, nickname, photo }) => ({
+        id,
+        name,
+        last_name,
+        nickname,
+        photo,
+      }));
+    }
+    return users
+      .filter((u) =>
+        this.matchesAnyNameFromContext(
+          [
+            u.name,
+            u.last_name ?? '',
+            u.nickname ?? '',
+            [u.name, u.last_name].filter(Boolean).join(' '),
+          ],
+          userNamesFromContext
+        )
+      )
+      .map(({ id, name, last_name, nickname, photo }) => ({
+        id,
+        name,
+        last_name,
+        nickname,
+        photo,
+      }));
+  }
+
+  private filterUsersByContextTextAndAvailable(
+    users: Array<{
+      id: string;
+      name: string;
+      last_name?: string | null;
+      nickname?: string | null;
+      photo?: string | null;
+      status?: string | null;
+    }>,
+    contextText: string
+  ): Array<{
+    id: string;
+    name: string;
+    last_name?: string | null;
+    nickname?: string | null;
+    photo?: string | null;
+  }> {
+    if (!contextText) {
+      return [];
+    }
+
+    const normalizedContext =
+      normalizeTextForConditionalComparison(contextText);
+    if (!normalizedContext) {
+      return [];
+    }
+
+    return users
+      .filter((u) => this.matchesUserInContextText(u, normalizedContext))
+      .map(({ id, name, last_name, nickname, photo }) => ({
+        id,
+        name,
+        last_name,
+        nickname,
+        photo,
+      }));
+  }
+
+  private async refineSectorsByAiContext(
+    aiAgent: {
+      base_url: string;
+      api_key: string;
+      model: string;
+      ai_agent_type_id: string;
+    },
+    sectors: Array<{ id: string; name: string }>,
+    contextText: string,
+    hasContextRestrictions: boolean
+  ): Promise<Array<{ id: string; name: string }>> {
+    if (!contextText || sectors.length === 0) {
+      return sectors;
+    }
+
+    const contextSnippet = contextText.slice(0, 12000);
+    const sectorList = sectors
+      .map((sector, index) => `${index + 1}. ${sector.id} | ${sector.name}`)
+      .join('\n');
+
+    const validationPrompt = `Você é um validador de setores para transferência humana.
+
+Analise o CONTEXTO e a LISTA de setores disponíveis. Retorne APENAS os IDs dos setores compatíveis com o contexto.
+- Se o contexto restringir setores, inclua somente os setores relacionados às restrições.
+- Se o contexto NÃO restringir setores, retorne TODOS os IDs.
+- Use correspondência parcial (ex.: "Vasco" inclui "Vasco 1").
+- Não invente setores.
+
+O contexto possui restrição explícita de setores: ${hasContextRestrictions ? 'SIM' : 'NÃO/INCERTO'}.
+
+Responda APENAS um JSON válido no formato:
+{"allowed_ids":["id1","id2"]}
+
+Contexto:
+${contextSnippet}
+
+Setores disponíveis:
+${sectorList}`;
+
+    try {
+      const response = await this.callAiAgentChatApi(
+        aiAgent.base_url,
+        aiAgent.api_key,
+        aiAgent.model,
+        aiAgent.ai_agent_type_id,
+        validationPrompt,
+        'validacao setores'
+      );
+
+      const stripped = response
+        .replace(/^```(?:json)?\s*/i, '')
+        .replace(/\s*```$/i, '')
+        .trim();
+      const jsonMatch = stripped.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        return sectors;
+      }
+
+      const parsed = JSON.parse(jsonMatch[0]) as {
+        allowed_ids?: string[];
+      };
+      const allowedIds = Array.isArray(parsed.allowed_ids)
+        ? parsed.allowed_ids.filter(
+            (id): id is string => typeof id === 'string'
+          )
+        : [];
+
+      if (allowedIds.length === 0) {
+        return hasContextRestrictions ? [] : sectors;
+      }
+
+      const allowedSet = new Set(allowedIds);
+      const filtered = sectors.filter((sector) => allowedSet.has(sector.id));
+      if (filtered.length === 0) {
+        return hasContextRestrictions ? [] : sectors;
+      }
+
+      return filtered;
+    } catch {
+      return sectors;
+    }
+  }
+
+  private async refineUsersByAiContext(
+    aiAgent: {
+      base_url: string;
+      api_key: string;
+      model: string;
+      ai_agent_type_id: string;
+    },
+    users: Array<{
+      id: string;
+      name: string;
+      last_name?: string | null;
+      nickname?: string | null;
+    }>,
+    contextText: string,
+    hasContextRestrictions: boolean
+  ): Promise<
+    Array<{
+      id: string;
+      name: string;
+      last_name?: string | null;
+      nickname?: string | null;
+    }>
+  > {
+    if (!contextText || users.length === 0) {
+      return users;
+    }
+
+    const contextSnippet = contextText.slice(0, 12000);
+    const userList = users
+      .map((user, index) => {
+        const fullName = [user.name, user.last_name].filter(Boolean).join(' ');
+        const nickname = user.nickname ? ` | ${user.nickname}` : '';
+        return `${index + 1}. ${user.id} | ${fullName}${nickname}`;
+      })
+      .join('\n');
+
+    const validationPrompt = `Você é um validador de atendentes para transferência humana.
+
+Analise o CONTEXTO e a LISTA de atendentes disponíveis. Retorne APENAS os IDs dos atendentes compatíveis com o contexto.
+- Se o contexto restringir atendentes, inclua somente os atendentes relacionados às restrições.
+- Se o contexto NÃO restringir atendentes, retorne TODOS os IDs.
+- Use correspondência parcial com nome, sobrenome e apelido quando aplicável.
+- Não invente atendentes.
+
+O contexto possui restrição explícita de atendentes: ${
+      hasContextRestrictions ? 'SIM' : 'NÃO/INCERTO'
+    }.
+
+Responda APENAS um JSON válido no formato:
+{"allowed_ids":["id1","id2"]}
+
+Contexto:
+${contextSnippet}
+
+Atendentes disponíveis:
+${userList}`;
+
+    try {
+      const response = await this.callAiAgentChatApi(
+        aiAgent.base_url,
+        aiAgent.api_key,
+        aiAgent.model,
+        aiAgent.ai_agent_type_id,
+        validationPrompt,
+        'validacao atendentes'
+      );
+
+      const stripped = response
+        .replace(/^```(?:json)?\s*/i, '')
+        .replace(/\s*```$/i, '')
+        .trim();
+      const jsonMatch = stripped.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        return users;
+      }
+
+      const parsed = JSON.parse(jsonMatch[0]) as {
+        allowed_ids?: string[];
+      };
+      const allowedIds = Array.isArray(parsed.allowed_ids)
+        ? parsed.allowed_ids.filter(
+            (id): id is string => typeof id === 'string'
+          )
+        : [];
+
+      if (allowedIds.length === 0) {
+        return hasContextRestrictions ? [] : users;
+      }
+
+      const allowedSet = new Set(allowedIds);
+      const filtered = users.filter((user) => allowedSet.has(user.id));
+      if (filtered.length === 0) {
+        return hasContextRestrictions ? [] : users;
+      }
+
+      return filtered;
+    } catch {
+      return users;
+    }
+  }
+
+  private async refineEligibleUsersForTransfer(params: {
+    aiAgentId: string;
+    accountId: string;
+    eligibleUsers: Array<{
+      id: string;
+      name: string;
+      last_name?: string | null;
+      nickname?: string | null;
+    }>;
+    matchedUsersFromContext: Array<{
+      id: string;
+      name: string;
+      last_name?: string | null;
+      nickname?: string | null;
+    }>;
+    contextText: string;
+    hasExplicitUserNames: boolean;
+  }): Promise<
+    Array<{
+      id: string;
+      name: string;
+      last_name?: string | null;
+      nickname?: string | null;
+    }>
+  > {
+    if (params.eligibleUsers.length === 0 || !params.contextText) {
+      return params.eligibleUsers;
+    }
+
+    const aiAgentForValidation = await this.aiAgentService.viewAiAgent(
+      params.aiAgentId,
+      params.accountId
+    );
+
+    if (
+      !aiAgentForValidation?.base_url ||
+      !aiAgentForValidation?.api_key ||
+      !aiAgentForValidation?.model
+    ) {
+      return params.eligibleUsers;
+    }
+
+    const refinedUsers = await this.refineUsersByAiContext(
+      {
+        base_url: aiAgentForValidation.base_url,
+        api_key: aiAgentForValidation.api_key,
+        model: aiAgentForValidation.model,
+        ai_agent_type_id: aiAgentForValidation.ai_agent_type_id,
+      },
+      params.eligibleUsers,
+      params.contextText,
+      params.hasExplicitUserNames
+    );
+
+    if (
+      params.hasExplicitUserNames &&
+      params.matchedUsersFromContext.length > 0 &&
+      refinedUsers.length < params.matchedUsersFromContext.length
+    ) {
+      return params.matchedUsersFromContext;
+    }
+
+    return refinedUsers;
+  }
+
+  private matchesNameFromContext(
+    name: string,
+    contextNames: string[]
+  ): boolean {
+    const normalizedName = normalizeTextForConditionalComparison(name);
+    if (!normalizedName) {
+      return false;
+    }
+
+    const nameTokens = normalizedName.split(/\s+/).filter(Boolean);
+
+    for (const rawTerm of contextNames) {
+      const term = normalizeTextForConditionalComparison(rawTerm);
+      if (!term) {
+        continue;
+      }
+
+      if (term.length <= 2) {
+        if (nameTokens.includes(term)) {
+          return true;
+        }
+        continue;
+      }
+
+      if (normalizedName.includes(term) || term.includes(normalizedName)) {
+        return true;
+      }
+
+      for (const token of nameTokens) {
+        if (token.startsWith(term)) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
+  private matchesAnyNameFromContext(
+    names: string[],
+    contextNames: string[]
+  ): boolean {
+    for (const name of names) {
+      if (name && this.matchesNameFromContext(name, contextNames)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private matchesUserInContextText(
+    user: {
+      name: string;
+      last_name?: string | null;
+      nickname?: string | null;
+    },
+    normalizedContext: string
+  ): boolean {
+    const candidates = [
+      user.name,
+      user.last_name ?? '',
+      user.nickname ?? '',
+      [user.name, user.last_name].filter(Boolean).join(' '),
+    ]
+      .map((name) => normalizeTextForConditionalComparison(name))
+      .filter(Boolean);
+
+    for (const candidate of candidates) {
+      if (candidate.length < 3) {
+        continue;
+      }
+      if (normalizedContext.includes(candidate)) {
+        return true;
+      }
+
+      const tokens = candidate.split(/\\s+/).filter(Boolean);
+      for (const token of tokens) {
+        if (token.length >= 3 && normalizedContext.includes(token)) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
+
+  private buildUserSelectionMessage(
+    users: Array<{
+      id: string;
+      name: string;
+      last_name?: string | null;
+      nickname?: string | null;
+    }>
+  ): string {
+    const lines = users.map((user, index) => {
+      const number = index + 1;
+      const fullName = [user.name, user.last_name].filter(Boolean).join(' ');
+      return `*${number}.* ${fullName || user.name}`;
+    });
+    return [
+      'Para qual atendente você gostaria de ser direcionado?',
+      '',
+      ...lines,
+    ].join('\n');
+  }
+
   private async setMenuDebounce(
     createChat: IChat,
     nodeData: { message: string; options: { id: string; text: string }[] }
@@ -3808,20 +4556,110 @@ export class ChatbotFlowRunnerService {
     if (analysis === 'human_support') {
       await this.resetFailedAttempts(createChat);
 
-      const sectors = await this.sectorService.listSectorsForTransfer(
+      const selectedAiAgentId = currentNode.data?.selectedAiAgent || '';
+      const cacheKey = createChatbotFlowCacheKey(
+        createChat.account.id,
+        createChat.worker.id,
+        createChat.chat_id
+      );
+      const bootstrapSummaryKey = `${cacheKey}:bootstrap-summary`;
+      const conversationSummaryKey = `${cacheKey}:conversation-summary`;
+      const transferContext = await this.extractTransferContextFromAgentContext(
+        createChat,
+        selectedAiAgentId,
+        bootstrapSummaryKey,
+        conversationSummaryKey
+      );
+
+      const allUsers = await this.userService.listUsersForTransfer(
         createChat.account.id
       );
 
-      if (sectors.length === 0) {
+      const usersFromContextText = this.filterUsersByContextTextAndAvailable(
+        allUsers,
+        transferContext.contextText
+      );
+      const hasExplicitUserNames = transferContext.userNames.length > 0;
+      const wantsUserFirst =
+        hasExplicitUserNames || usersFromContextText.length > 0;
+
+      if (wantsUserFirst) {
+        let eligibleUsers = hasExplicitUserNames
+          ? this.filterUsersByContextAndAvailable(
+              allUsers,
+              transferContext.userNames
+            )
+          : usersFromContextText;
+
+        if (eligibleUsers.length === 0 && usersFromContextText.length > 0) {
+          eligibleUsers = usersFromContextText;
+        }
+
+        const matchedUsersFromContext = eligibleUsers;
+
+        eligibleUsers = await this.refineEligibleUsersForTransfer({
+          aiAgentId: selectedAiAgentId,
+          accountId: createChat.account.id,
+          eligibleUsers,
+          matchedUsersFromContext,
+          contextText: transferContext.contextText,
+          hasExplicitUserNames,
+        });
+
+        if (eligibleUsers.length === 1) {
+          return this.executeHumanSupportTransfer(
+            t,
+            createChat,
+            chatbotFlow,
+            currentFlowId,
+            null,
+            customMessages,
+            eligibleUsers[0]
+          );
+        }
+
+        if (eligibleUsers.length > 1) {
+          const userSelectionKey = this.getUserSelectionCacheKey(
+            createChat.account.id,
+            createChat.worker.id,
+            createChat.chat_id
+          );
+          await this.redis.set(
+            userSelectionKey,
+            JSON.stringify({
+              users: eligibleUsers,
+              flowId: currentFlowId,
+              selectedAiAgentId,
+              sectorId: null,
+              sector: null,
+            }),
+            'EX',
+            1800
+          );
+          const userMessage = this.buildUserSelectionMessage(eligibleUsers);
+          await this.chatMessageService.sendMessage(t, {
+            chat: createChat,
+            accountId: createChat.account.id,
+            type: EMessageType.text,
+            message: userMessage,
+            typeUser: ETypeUserChat.bot,
+          });
+          return true;
+        }
+      }
+
+      const allSectors = await this.sectorService.listSectorsForTransfer(
+        createChat.account.id
+      );
+
+      if (allSectors.length === 0) {
         const nextFlowId = this.getNextFlowIdByHumanSupportHandle(
           chatbotFlow,
           currentFlowId
         );
-
         if (!nextFlowId) {
           return false;
         }
-
         return this.processNextNode(
           t,
           createChat,
@@ -3831,36 +4669,75 @@ export class ChatbotFlowRunnerService {
         );
       }
 
-      if (sectors.length === 1) {
-        return this.executeHumanSupportTransfer(
-          t,
-          createChat,
-          chatbotFlow,
-          currentFlowId,
-          sectors[0],
-          customMessages
+      const sectors = this.filterSectorsByContext(
+        allSectors,
+        transferContext.sectorNames
+      );
+      let sectorsToShow = sectors.length > 0 ? sectors : allSectors;
+      const hasContextRestrictedSectors =
+        transferContext.sectorNames.length > 0;
+
+      const aiAgentForValidation = await this.aiAgentService.viewAiAgent(
+        selectedAiAgentId,
+        createChat.account.id
+      );
+      if (
+        aiAgentForValidation?.base_url &&
+        aiAgentForValidation?.api_key &&
+        aiAgentForValidation?.model &&
+        transferContext.contextText
+      ) {
+        sectorsToShow = await this.refineSectorsByAiContext(
+          {
+            base_url: aiAgentForValidation.base_url,
+            api_key: aiAgentForValidation.api_key,
+            model: aiAgentForValidation.model,
+            ai_agent_type_id: aiAgentForValidation.ai_agent_type_id,
+          },
+          sectorsToShow,
+          transferContext.contextText,
+          hasContextRestrictedSectors
         );
       }
 
-      const selectedAiAgentId = currentNode.data?.selectedAiAgent || '';
+      if (sectorsToShow.length === 0) {
+        const nextFlowId = this.getNextFlowIdByHumanSupportHandle(
+          chatbotFlow,
+          currentFlowId
+        );
+        if (!nextFlowId) {
+          return false;
+        }
+        return this.processNextNode(
+          t,
+          createChat,
+          chatbotFlow,
+          nextFlowId,
+          customMessages
+        );
+      }
       const sectorSelectionKey = this.getSectorSelectionCacheKey(
         createChat.account.id,
         createChat.worker.id,
         createChat.chat_id
       );
-
       await this.redis.set(
         sectorSelectionKey,
         JSON.stringify({
-          sectors,
+          sectors: sectorsToShow,
           flowId: currentFlowId,
           selectedAiAgentId,
+          transferContext: {
+            sectorNames: transferContext.sectorNames,
+            userNames: transferContext.userNames,
+            askOnlyUser: transferContext.askOnlyUser,
+          },
         }),
         'EX',
         1800
       );
 
-      const sectorMessage = this.buildSectorSelectionMessage(sectors);
+      const sectorMessage = this.buildSectorSelectionMessage(sectorsToShow);
       await this.chatMessageService.sendMessage(t, {
         chat: createChat,
         accountId: createChat.account.id,
@@ -4022,37 +4899,48 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
       transfer_message_user_enabled?: boolean;
       transfer_message_sector_enabled?: boolean;
       transfer_message_sector_user_enabled?: boolean;
-    }
+    },
+    user?: IChat['user'] | null
   ): Promise<boolean> {
     const chatSector: IChat['sector'] | null = sector
       ? { id: sector.id, name: sector.name, color: sector.color ?? undefined }
       : null;
+    const chatUser = user ?? null;
 
     const updatedChat = await this.updateAndPublishChat(
       t,
       createChat,
-      null,
+      chatUser,
       chatSector
     );
 
     await this.cancelInactivityCheck(updatedChat);
 
-    const rawTransferMessage = sector
-      ? customMessages?.transfer_message_sector ||
-        t('chatbot_transfer_message_sector_default')
-      : customMessages?.transfer_message_user ||
+    let rawTransferMessage: string | undefined;
+    let enabled: boolean | undefined;
+    if (chatUser && chatSector) {
+      rawTransferMessage =
+        customMessages?.transfer_message_sector_user ||
+        t('chatbot_transfer_message_sector_user_default');
+      enabled = customMessages?.transfer_message_sector_user_enabled;
+    } else if (chatSector) {
+      rawTransferMessage =
+        customMessages?.transfer_message_sector ||
+        t('chatbot_transfer_message_sector_default');
+      enabled = customMessages?.transfer_message_sector_enabled;
+    } else {
+      rawTransferMessage =
+        customMessages?.transfer_message_user ||
         t('chatbot_transfer_message_user_default');
-
-    const enabled = sector
-      ? customMessages?.transfer_message_sector_enabled
-      : customMessages?.transfer_message_user_enabled;
+      enabled = customMessages?.transfer_message_user_enabled;
+    }
 
     if (rawTransferMessage && enabled !== false) {
       const transferMessage = await this.replaceVariables(
         t,
         rawTransferMessage,
         updatedChat,
-        null,
+        chatUser,
         chatSector
       );
       await this.chatMessageService.sendMessage(t, {
@@ -4100,11 +4988,21 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
     sectors: Array<{ id: string; name: string; color?: string | null }>;
     flowId: string;
     selectedAiAgentId: string;
+    transferContext?: {
+      sectorNames: string[];
+      userNames: string[];
+      askOnlyUser: boolean;
+    };
   } | null {
     let parsed: {
       sectors?: Array<{ id?: string; name?: string; color?: string | null }>;
       flowId?: string;
       selectedAiAgentId?: string;
+      transferContext?: {
+        sectorNames?: string[];
+        userNames?: string[];
+        askOnlyUser?: boolean;
+      };
     };
     try {
       parsed = JSON.parse(cachedData);
@@ -4135,11 +5033,225 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
       return null;
     }
 
+    const transferContext =
+      parsed.transferContext &&
+      Array.isArray(parsed.transferContext.sectorNames) &&
+      Array.isArray(parsed.transferContext.userNames)
+        ? {
+            sectorNames: parsed.transferContext.sectorNames,
+            userNames: parsed.transferContext.userNames,
+            askOnlyUser: parsed.transferContext.askOnlyUser === true,
+          }
+        : undefined;
+
     return {
       sectors,
       flowId: parsed.flowId,
       selectedAiAgentId: parsed.selectedAiAgentId,
+      transferContext,
     };
+  }
+
+  private parseUserSelectionCache(cachedData: string): {
+    users: Array<{ id: string; name: string; photo?: string | null }>;
+    flowId: string;
+    selectedAiAgentId: string;
+    sectorId: string | null;
+    sector: { id: string; name: string; color?: string | null } | null;
+  } | null {
+    let parsed: {
+      users?: Array<{
+        id?: string;
+        name?: string;
+        photo?: string | null;
+      }>;
+      flowId?: string;
+      selectedAiAgentId?: string;
+      sectorId?: string | null;
+      sector?: { id: string; name: string; color?: string | null } | null;
+    };
+    try {
+      parsed = JSON.parse(cachedData);
+    } catch {
+      return null;
+    }
+
+    if (!parsed || typeof parsed.flowId !== 'string') {
+      return null;
+    }
+
+    if (typeof parsed.selectedAiAgentId !== 'string') {
+      return null;
+    }
+
+    if (!Array.isArray(parsed.users) || parsed.users.length === 0) {
+      return null;
+    }
+
+    const users = parsed.users.filter(
+      (u): u is { id: string; name: string; photo?: string | null } =>
+        !!u && typeof u.id === 'string' && typeof u.name === 'string'
+    );
+
+    if (users.length !== parsed.users.length) {
+      return null;
+    }
+
+    return {
+      users,
+      flowId: parsed.flowId,
+      selectedAiAgentId: parsed.selectedAiAgentId,
+      sectorId: parsed.sectorId ?? null,
+      sector: parsed.sector ?? null,
+    };
+  }
+
+  private async matchUserFromUserResponse(
+    baseUrl: string,
+    apiKey: string,
+    model: string,
+    aiAgentTypeId: string,
+    userText: string,
+    users: Array<{
+      id: string;
+      name: string;
+      last_name?: string | null;
+      nickname?: string | null;
+    }>
+  ): Promise<string | null> {
+    const userList = users
+      .map((u, i) => {
+        const fullName = [u.name, u.last_name].filter(Boolean).join(' ');
+        const nickname = u.nickname ? ` (${u.nickname})` : '';
+        return `${i + 1}. ${fullName || u.name}${nickname}`;
+      })
+      .join('\n');
+
+    const prompt = `Você é um classificador de intenção. O usuário está escolhendo um atendente.
+
+Atendentes disponíveis:
+${userList}
+
+Analise a resposta do usuário e retorne APENAS o número do atendente que mais combina com a resposta. Se nenhum combinar claramente, retorne "0".
+
+Resposta do usuário: "${userText}"
+
+Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
+
+    try {
+      const response = await this.callAiAgentChatApi(
+        baseUrl,
+        apiKey,
+        model,
+        aiAgentTypeId,
+        prompt,
+        userText
+      );
+
+      const normalizedResponse = response.trim();
+      const match = normalizedResponse.match(/\d+/);
+      const parsed = match ? Number.parseInt(match[0], 10) : Number.NaN;
+      if (!Number.isNaN(parsed) && parsed >= 1 && parsed <= users.length) {
+        return users[parsed - 1].id;
+      }
+
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  private async handlePendingUserSelection(
+    t: TFunction<'translation', undefined>,
+    data: IUpsertMessage,
+    createChat: IChat,
+    chatbotFlow: ListChatbotFlowResponse,
+    currentFlowId: string,
+    customMessages?: {
+      transfer_message_user?: string;
+      transfer_message_sector?: string;
+      transfer_message_sector_user?: string;
+      transfer_message_user_enabled?: boolean;
+      transfer_message_sector_enabled?: boolean;
+      transfer_message_sector_user_enabled?: boolean;
+    }
+  ): Promise<boolean | null> {
+    const userSelectionKey = this.getUserSelectionCacheKey(
+      createChat.account.id,
+      createChat.worker.id,
+      createChat.chat_id
+    );
+
+    const userText = this.getTextFromUpsertMessage(data)?.trim();
+    if (!userText) {
+      return null;
+    }
+
+    const cachedData = await this.getAndDeleteCacheValue(userSelectionKey);
+    if (!cachedData) {
+      return null;
+    }
+
+    const parsed = this.parseUserSelectionCache(cachedData);
+    if (!parsed) {
+      return null;
+    }
+
+    const { users, flowId, selectedAiAgentId, sector } = parsed;
+
+    const selectedNumber = Number.parseInt(userText, 10);
+    let matchedUser: {
+      id: string;
+      name: string;
+      photo?: string | null;
+    } | null = null;
+
+    if (
+      !Number.isNaN(selectedNumber) &&
+      selectedNumber >= 1 &&
+      selectedNumber <= users.length
+    ) {
+      matchedUser = users[selectedNumber - 1];
+    }
+
+    if (!matchedUser && selectedAiAgentId) {
+      const aiAgent = await this.aiAgentService.viewAiAgent(
+        selectedAiAgentId,
+        createChat.account.id
+      );
+
+      if (aiAgent?.base_url && aiAgent?.api_key && aiAgent?.model) {
+        const matchedUserId = await this.matchUserFromUserResponse(
+          aiAgent.base_url,
+          aiAgent.api_key,
+          aiAgent.model,
+          aiAgent.ai_agent_type_id,
+          userText,
+          users
+        );
+        matchedUser = matchedUserId
+          ? (users.find((u) => u.id === matchedUserId) ?? null)
+          : null;
+      }
+    }
+
+    const chatUser: IChat['user'] | null = matchedUser
+      ? {
+          id: matchedUser.id,
+          name: matchedUser.name,
+          photo: matchedUser.photo ?? null,
+        }
+      : null;
+
+    return this.executeHumanSupportTransfer(
+      t,
+      createChat,
+      chatbotFlow,
+      flowId,
+      sector,
+      customMessages,
+      chatUser
+    );
   }
 
   private async handlePendingSectorSelection(
@@ -4190,7 +5302,7 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
       return null;
     }
 
-    const { sectors, flowId, selectedAiAgentId } = parsed;
+    const { sectors, flowId, selectedAiAgentId, transferContext } = parsed;
 
     const currentSectors = await this.sectorService.listSectorsForTransfer(
       createChat.account.id
@@ -4218,18 +5330,26 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
         );
       }
 
+      const sectorsToShow = this.filterSectorsByContext(
+        currentSectors,
+        transferContext?.sectorNames ?? []
+      );
+      const listSectors =
+        sectorsToShow.length > 0 ? sectorsToShow : currentSectors;
+
       await this.redis.set(
         sectorSelectionKey,
         JSON.stringify({
-          sectors: currentSectors,
+          sectors: listSectors,
           flowId,
           selectedAiAgentId,
+          transferContext,
         }),
         'EX',
         1800
       );
 
-      const sectorMessage = this.buildSectorSelectionMessage(currentSectors);
+      const sectorMessage = this.buildSectorSelectionMessage(listSectors);
       await this.chatMessageService.sendMessage(t, {
         chat: createChat,
         accountId: createChat.account.id,
@@ -4253,32 +5373,28 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
     }
 
     const selectedNumber = Number.parseInt(userText, 10);
+    let matchedSector: {
+      id: string;
+      name: string;
+      color?: string | null;
+    } | null = null;
+
     if (
       !Number.isNaN(selectedNumber) &&
       selectedNumber >= 1 &&
       selectedNumber <= sectors.length
     ) {
-      const selectedSector = sectors[selectedNumber - 1];
-      return this.executeHumanSupportTransfer(
-        t,
-        createChat,
-        chatbotFlow,
-        flowId,
-        selectedSector,
-        customMessages
-      );
+      matchedSector = sectors[selectedNumber - 1];
     }
 
-    let matchedSectorId: string | null = null;
-
-    if (selectedAiAgentId) {
+    if (!matchedSector && selectedAiAgentId) {
       const aiAgent = await this.aiAgentService.viewAiAgent(
         selectedAiAgentId,
         createChat.account.id
       );
 
       if (aiAgent?.base_url && aiAgent?.api_key && aiAgent?.model) {
-        matchedSectorId = await this.matchSectorFromUserResponse(
+        const matchedSectorId = await this.matchSectorFromUserResponse(
           aiAgent.base_url,
           aiAgent.api_key,
           aiAgent.model,
@@ -4286,21 +5402,83 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
           userText,
           sectors
         );
+        matchedSector = matchedSectorId
+          ? (sectors.find((s) => s.id === matchedSectorId) ?? null)
+          : null;
       }
     }
 
-    const matchedSector = matchedSectorId
-      ? (sectors.find((s) => s.id === matchedSectorId) ?? null)
-      : null;
+    if (!matchedSector) {
+      return this.executeHumanSupportTransfer(
+        t,
+        createChat,
+        chatbotFlow,
+        flowId,
+        null,
+        customMessages
+      );
+    }
 
-    return this.executeHumanSupportTransfer(
-      t,
-      createChat,
-      chatbotFlow,
-      flowId,
-      matchedSector,
-      customMessages
+    const sectorUsers = await this.sectorService.listSectorUsersForTransfer(
+      createChat.account.id,
+      matchedSector.id
     );
+    const userNamesFromContext = transferContext?.userNames ?? [];
+    const eligibleUsers = this.filterUsersByContextAndAvailable(
+      sectorUsers,
+      userNamesFromContext
+    );
+
+    if (eligibleUsers.length === 0) {
+      return this.executeHumanSupportTransfer(
+        t,
+        createChat,
+        chatbotFlow,
+        flowId,
+        matchedSector,
+        customMessages
+      );
+    }
+
+    if (eligibleUsers.length === 1) {
+      return this.executeHumanSupportTransfer(
+        t,
+        createChat,
+        chatbotFlow,
+        flowId,
+        matchedSector,
+        customMessages,
+        eligibleUsers[0]
+      );
+    }
+
+    const userSelectionKey = this.getUserSelectionCacheKey(
+      createChat.account.id,
+      createChat.worker.id,
+      createChat.chat_id
+    );
+    await this.redis.set(
+      userSelectionKey,
+      JSON.stringify({
+        users: eligibleUsers,
+        flowId,
+        selectedAiAgentId,
+        sectorId: matchedSector.id,
+        sector: matchedSector,
+      }),
+      'EX',
+      1800
+    );
+    const userMessage = this.buildUserSelectionMessage(eligibleUsers);
+    await this.chatMessageService.sendMessage(t, {
+      chat: createChat,
+      accountId: createChat.account.id,
+      type: EMessageType.text,
+      message: userMessage,
+      typeUser: ETypeUserChat.bot,
+    });
+
+    return true;
   }
 
   private async generateBootstrapSummaryForChat(
@@ -4878,6 +6056,18 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
         currentFlowId,
         bootstrapSummaryKey
       );
+    }
+
+    const userSelectionResult = await this.handlePendingUserSelection(
+      t,
+      data,
+      createChat,
+      chatbotFlow,
+      currentFlowId,
+      customMessages
+    );
+    if (userSelectionResult !== null) {
+      return userSelectionResult;
     }
 
     const sectorSelectionResult = await this.handlePendingSectorSelection(

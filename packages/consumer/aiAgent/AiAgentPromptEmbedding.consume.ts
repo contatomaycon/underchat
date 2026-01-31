@@ -313,9 +313,7 @@ export class AiAgentPromptEmbeddingConsume {
       if (lastDot > 0 && lastDot < basename.length - 1) {
         return basename.slice(lastDot).toLowerCase();
       }
-    } catch {
-      //
-    }
+    } catch {}
     return null;
   }
 

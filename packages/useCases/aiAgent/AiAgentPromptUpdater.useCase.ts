@@ -7,6 +7,7 @@ import { StorageService } from '@core/services/storage.service';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { EAiAgentPromptType } from '@core/common/enums/EAiAgentPromptType';
+import { EAiAgentStatus } from '@core/common/enums/EAiAgentStatus';
 import { EAiAgentType } from '@core/common/enums/EAiAgentType';
 import { UploadFileRequest } from '@core/schema/upload/request.schema';
 import { IAiAgentPromptEmbeddingRequest } from '@core/common/interfaces/IAiAgentPromptEmbeddingRequest';
@@ -37,6 +38,32 @@ export class AiAgentPromptUpdaterUseCase {
     }
 
     return value as T;
+  }
+
+  private getFieldFromMultipartBody<T>(
+    body: Record<string, unknown>,
+    fieldKey: string
+  ): T | null {
+    const direct = body[fieldKey];
+    const fromDirect = this.getValueFromMultipart(
+      direct as T | { value: T } | null | undefined
+    );
+    if (fromDirect !== null) {
+      return fromDirect;
+    }
+
+    const bracketKey = `${fieldKey}[value]`;
+    const bracketField = body[bracketKey];
+    if (
+      bracketField &&
+      typeof bracketField === 'object' &&
+      'value' in bracketField &&
+      !Array.isArray(bracketField)
+    ) {
+      return (bracketField as { value: T }).value;
+    }
+
+    return null;
   }
 
   private validateFileFormat(
@@ -154,12 +181,17 @@ export class AiAgentPromptUpdaterUseCase {
       throw new Error(t('ai_agent_prompt_not_found'));
     }
 
-    const promptType = this.getValueFromMultipart(body.ai_agent_prompt_type);
+    const bodyRecord = body as unknown as Record<string, unknown>;
+    const promptType = this.getFieldFromMultipartBody<EAiAgentPromptType>(
+      bodyRecord,
+      'ai_agent_prompt_type'
+    );
     const finalPromptType =
       promptType ?? aiAgentPromptExists.ai_agent_prompt_type;
 
     let finalValue =
-      this.getValueFromMultipart(body.value) ?? aiAgentPromptExists.value;
+      this.getFieldFromMultipartBody<string>(bodyRecord, 'value') ??
+      aiAgentPromptExists.value;
 
     if (finalPromptType === EAiAgentPromptType.file && body.file) {
       const newFileUrl = await this.processFileUpdate(
@@ -177,9 +209,12 @@ export class AiAgentPromptUpdaterUseCase {
 
     const updateBody = {
       ai_agent_prompt_type: promptType ?? undefined,
-      name: this.getValueFromMultipart(body.name) ?? undefined,
+      name:
+        this.getFieldFromMultipartBody<string>(bodyRecord, 'name') ?? undefined,
       value: finalValue,
-      status: this.getValueFromMultipart(body.status) ?? undefined,
+      status:
+        this.getFieldFromMultipartBody<EAiAgentStatus>(bodyRecord, 'status') ??
+        undefined,
     };
 
     const aiAgentPromptUpdater =
@@ -222,7 +257,12 @@ export class AiAgentPromptUpdaterUseCase {
 
     try {
       const agent = await this.aiAgentService.viewAiAgent(aiAgentId, accountId);
-      if (!agent || agent.ai_agent_type_id !== EAiAgentType.gpt || !agent.api_key || !agent.base_url) {
+      if (
+        !agent ||
+        agent.ai_agent_type_id !== EAiAgentType.gpt ||
+        !agent.api_key ||
+        !agent.base_url
+      ) {
         return;
       }
 

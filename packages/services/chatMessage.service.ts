@@ -144,6 +144,34 @@ export class ChatMessageService {
     return `${prefix}${text}`;
   }
 
+  private formatMessageForWhatsApp(
+    message: string,
+    typeUser: ETypeUserChat
+  ): string {
+    if (
+      !message ||
+      (typeUser !== ETypeUserChat.bot && typeUser !== ETypeUserChat.system)
+    ) {
+      return message;
+    }
+
+    let formatted = message;
+
+    formatted = formatted.replace(/\s*【[^】]*?†source】/g, '');
+    formatted = formatted.replace(
+      /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
+      '$1: $2'
+    );
+    formatted = formatted.replace(/\*\*(.+?)\*\*/gs, '*$1*');
+    formatted = formatted.replace(/__(.+?)__/gs, '_$1_');
+    formatted = formatted.replace(/~~(.+?)~~/gs, '~$1~');
+    formatted = formatted.replace(/^#{1,6}\s+(.*)$/gm, '*$1*');
+    formatted = formatted.replace(/[ \t]+\n/g, '\n');
+    formatted = formatted.replace(/\n{3,}/g, '\n\n');
+
+    return formatted.trimEnd();
+  }
+
   private async getChatMessage(
     accountId: string,
     chatId: string,
@@ -939,6 +967,10 @@ export class ChatMessageService {
       message,
       type
     );
+    const whatsappMessage = this.formatMessageForWhatsApp(
+      formattedMessage,
+      messageContext.typeUser
+    );
 
     const linkPreview =
       'linkPreview' in options ? options.linkPreview : undefined;
@@ -951,7 +983,7 @@ export class ChatMessageService {
       chat: chatData,
       chatId,
       type,
-      message: formattedMessage,
+      message: whatsappMessage,
       linkPreview: processedLinkPreview,
       messageQuotedId: messageContext.quotedId,
       quotedMessage: messageContext.quotedMessage,
