@@ -125,9 +125,7 @@ export class ChatbotFlowRunnerService {
 
   private async extractTransferContextFromAgentContext(
     createChat: IChat,
-    selectedAiAgentId: string,
-    bootstrapSummaryKey: string,
-    conversationSummaryKey: string
+    selectedAiAgentId: string
   ): Promise<{
     sectorNames: string[];
     userNames: string[];
@@ -841,7 +839,6 @@ ${userList}`;
 
     return false;
   }
-
 
   private buildUserSelectionMessage(
     users: Array<{
@@ -4557,18 +4554,9 @@ ${userList}`;
       await this.resetFailedAttempts(createChat);
 
       const selectedAiAgentId = currentNode.data?.selectedAiAgent || '';
-      const cacheKey = createChatbotFlowCacheKey(
-        createChat.account.id,
-        createChat.worker.id,
-        createChat.chat_id
-      );
-      const bootstrapSummaryKey = `${cacheKey}:bootstrap-summary`;
-      const conversationSummaryKey = `${cacheKey}:conversation-summary`;
       const transferContext = await this.extractTransferContextFromAgentContext(
         createChat,
-        selectedAiAgentId,
-        bootstrapSummaryKey,
-        conversationSummaryKey
+        selectedAiAgentId
       );
 
       const allUsers = await this.userService.listUsersForTransfer(

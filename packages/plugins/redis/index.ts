@@ -17,6 +17,7 @@ export async function safeRedisGet(
   if (isRedisConnectionClosed(redis)) {
     return null;
   }
+
   try {
     return await redis.get(key);
   } catch (error) {
@@ -68,7 +69,11 @@ export async function safeRedisSet(
 const redisPlugin = async (fastify: FastifyInstance) => {
   const startTs = Date.now();
   fastify.log.info(
-    { ts: startTs, host: cacheEnvironment.cacheHost, port: cacheEnvironment.cachePort },
+    {
+      ts: startTs,
+      host: cacheEnvironment.cacheHost,
+      port: cacheEnvironment.cachePort,
+    },
     'Redis plugin inicializando'
   );
   let isShuttingDown = false;

@@ -74,7 +74,12 @@ export class AiAgentPromptDeleterUseCase {
   ): Promise<void> {
     try {
       const agent = await this.aiAgentService.viewAiAgent(aiAgentId, accountId);
-      if (!agent || agent.ai_agent_type_id !== EAiAgentType.gpt || !agent.api_key || !agent.base_url) {
+      if (
+        !agent ||
+        agent.ai_agent_type_id !== EAiAgentType.gpt ||
+        !agent.api_key ||
+        !agent.base_url
+      ) {
         return;
       }
 

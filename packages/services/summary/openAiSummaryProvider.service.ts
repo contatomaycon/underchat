@@ -177,9 +177,7 @@ export class OpenAISummaryProvider implements ISummaryProvider {
     return null;
   }
 
-  private getFallbackTemperature(
-    errorText: string
-  ): number | undefined | null {
+  private getFallbackTemperature(errorText: string): number | undefined | null {
     try {
       const parsed = JSON.parse(errorText) as {
         error?: { param?: string; code?: string; message?: string };

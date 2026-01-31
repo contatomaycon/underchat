@@ -1,6 +1,10 @@
 import { ref } from 'vue';
 import { useRoute } from 'vue-router';
-import { onMessage, unsubscribe, isChannelSubscribed } from '@/@webcore/centrifugo';
+import {
+  onMessage,
+  unsubscribe,
+  isChannelSubscribed,
+} from '@/@webcore/centrifugo';
 import {
   chatAccountCentrifugo,
   chatQueueAccountCentrifugo,
@@ -131,6 +135,24 @@ const createChatSocket = () => {
     pendingChatUpdates.value.get(chatId)?.push(chatData);
   };
 
+  const cleanupUnsubscribe = async () => {
+    const unsubscribePromises = subscriptions.map((sub) =>
+      sub.unsubscribe().catch((error) => {
+        if (import.meta.env.DEV) {
+          console.error('Erro ao fazer unsubscribe:', error);
+        }
+      })
+    );
+
+    await Promise.all(unsubscribePromises);
+
+    subscriptions = [];
+    isInitialized = false;
+    initializingPromise = null;
+    pendingMessages.value.clear();
+    pendingChatUpdates.value.clear();
+  };
+
   const initializeSocket = async () => {
     if (!chatStore.user?.account_id) {
       return;
@@ -147,7 +169,7 @@ const createChatSocket = () => {
         return;
       }
 
-      await cleanup();
+      await cleanupUnsubscribe();
     }
 
     if (initializingPromise) {
