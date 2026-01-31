@@ -11,6 +11,7 @@ import { UserService } from './user.service';
 import { SectorService } from './sector.service';
 import { RagService } from './rag.service';
 import { AiAgentService } from './aiAgent.service';
+import { OpenAIAssistantService } from './openaiAssistant.service';
 import { ElasticDatabaseService } from './elasticDatabase.service';
 import { EAiAgentType } from '@core/common/enums/EAiAgentType';
 import { IChat } from '@core/common/interfaces/IChat';
@@ -64,6 +65,7 @@ export class ChatbotFlowRunnerService {
     private readonly sectorService: SectorService,
     private readonly ragService: RagService,
     private readonly aiAgentService: AiAgentService,
+    private readonly openAIAssistantService: OpenAIAssistantService,
     private readonly elasticDatabaseService: ElasticDatabaseService,
     private readonly streamProducerService: StreamProducerService,
     private readonly kafkaServiceQueueService: KafkaServiceQueueService
@@ -4330,8 +4332,6 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
   }
 
   private async updateConversationSummaryAfterResponse(
-    createChat: IChat,
-    selectedAiAgentId: string,
     conversationSummaryKey: string,
     previousSummary: string | null,
     recentMessages: Array<{ role: 'user' | 'assistant'; content: string }>,
@@ -4713,11 +4713,33 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
     aiAgentTypeId: string,
     prompt: string,
     userQuery: string,
-    history?: Array<{ role: 'user' | 'assistant'; content: string }>
+    history?: Array<{ role: 'user' | 'assistant'; content: string }>,
+    assistantsOptions?: {
+      accountId: string;
+      chatId: string;
+      aiAgentId: string;
+      openaiAssistantId: string;
+    }
   ): Promise<string> {
     if (!baseUrl || !apiKey || !model) {
       throw new InvalidConfigurationError(
         'AI Agent base_url, api_key ou model não está configurado.'
+      );
+    }
+
+    if (
+      aiAgentTypeId === EAiAgentType.gpt &&
+      assistantsOptions?.openaiAssistantId
+    ) {
+      return this.callOpenAiAssistantsApi(
+        baseUrl,
+        apiKey,
+        assistantsOptions.accountId,
+        assistantsOptions.chatId,
+        assistantsOptions.aiAgentId,
+        assistantsOptions.openaiAssistantId,
+        prompt,
+        userQuery
       );
     }
 
@@ -4742,6 +4764,43 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       history
     );
     return response;
+  }
+
+  private async callOpenAiAssistantsApi(
+    baseUrl: string,
+    apiKey: string,
+    accountId: string,
+    chatId: string,
+    aiAgentId: string,
+    assistantId: string,
+    additionalInstructions: string,
+    userQuery: string
+  ): Promise<string> {
+    const threadId = await this.openAIAssistantService.getOrCreateThread(
+      accountId,
+      chatId,
+      aiAgentId,
+      apiKey,
+      baseUrl
+    );
+
+    await this.openAIAssistantService.addMessageToThread(
+      apiKey,
+      baseUrl,
+      threadId,
+      userQuery,
+      'user'
+    );
+
+    const responseText = await this.openAIAssistantService.createRunAndWait(
+      apiKey,
+      baseUrl,
+      threadId,
+      assistantId,
+      additionalInstructions
+    );
+
+    return responseText;
   }
 
   private async processAiAgentNode(
@@ -5197,6 +5256,10 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       50
     );
 
+    const useAssistantsApi =
+      aiAgent.ai_agent_type_id === EAiAgentType.gpt &&
+      !!aiAgent.openai_assistant_id;
+
     const { enhancedPrompt, contextAllowed, contextHints } =
       await this.buildEnhancedPromptForAiAgent(
         createChat,
@@ -5210,8 +5273,19 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
         userText,
         bootstrapSummaryKey,
         conversationSummaryKey,
-        recentMessages
+        recentMessages,
+        useAssistantsApi
       );
+
+    const assistantsOptions =
+      useAssistantsApi && aiAgent.openai_assistant_id
+        ? {
+            accountId: createChat.account.id,
+            chatId: createChat.chat_id,
+            aiAgentId: selectedAiAgentId,
+            openaiAssistantId: aiAgent.openai_assistant_id,
+          }
+        : undefined;
 
     let aiResponse: string;
     let shouldStoreLastAgentResponse = false;
@@ -5225,7 +5299,9 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
           aiAgent.model,
           aiAgent.ai_agent_type_id,
           enhancedPrompt,
-          userText
+          userText,
+          undefined,
+          assistantsOptions
         );
         shouldStoreLastAgentResponse = true;
 
@@ -5248,7 +5324,9 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
             aiAgent.model,
             aiAgent.ai_agent_type_id,
             retryPrompt,
-            userText
+            userText,
+            undefined,
+            assistantsOptions
           );
           shouldStoreLastAgentResponse = true;
 
@@ -5377,7 +5455,8 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
     userText: string,
     bootstrapSummaryKey: string,
     conversationSummaryKey: string,
-    recentMessages: Array<{ role: 'user' | 'assistant'; content: string }>
+    recentMessages: Array<{ role: 'user' | 'assistant'; content: string }>,
+    skipFilePrompts = false
   ): Promise<{
     enhancedPrompt: string;
     contextAllowed: boolean;
@@ -5388,10 +5467,17 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       selectedAiAgentId
     );
 
-    const systemPrompt = this.buildComprehensiveSystemPrompt(allPrompts);
+    const promptsForContext = skipFilePrompts
+      ? allPrompts.filter((prompt) => prompt.ai_agent_prompt_type !== 'file')
+      : allPrompts;
+
+    const systemPrompt = this.buildComprehensiveSystemPrompt(
+      allPrompts,
+      skipFilePrompts
+    );
 
     const promptsText =
-      this.ragService.buildPromptsTextFromDetailed(allPrompts);
+      this.ragService.buildPromptsTextFromDetailed(promptsForContext);
     const bootstrapSummary = await this.ensureBootstrapSummary(
       bootstrapSummaryKey,
       promptsText,
@@ -5425,6 +5511,7 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
           phone: createChat.phone,
           lastAgentMessage,
           maxPromptChars,
+          skipFilePrompts,
         }
       );
 
@@ -5449,22 +5536,30 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       ai_agent_prompt_type: string;
       name: string;
       value: string;
-    }>
+    }>,
+    skipFilePrompts = false
   ): string {
     const textPrompts = prompts.filter(
       (p) => p.ai_agent_prompt_type === 'text'
     );
-    const filePrompts = prompts.filter(
+    const allFilePrompts = prompts.filter(
       (p) => p.ai_agent_prompt_type === 'file'
     );
+    const hasFilePrompts = allFilePrompts.length > 0;
+    const shouldUseFileSearchInstructions = skipFilePrompts && hasFilePrompts;
+    const filePrompts = shouldUseFileSearchInstructions ? [] : allFilePrompts;
 
     const parts: string[] = [
       'Você é um assistente virtual inteligente, prestativo e rigoroso. Você DEVE absorver e seguir ESTRITAMENTE TODO o conteúdo fornecido abaixo sem exceção.',
       '',
       '### INSTRUÇÕES CRÍTICAS DE CONTEXTO:',
       '- Você DEVE ler, absorver e internalizar TODOS os textos e conteúdos dos prompts fornecidos abaixo. Nenhum prompt pode ser ignorado.',
-      '- Se houver links ou URLs nos prompts, considere que o conteúdo desses links já foi processado e está disponível no contexto RAG. Utilize esse conteúdo para responder.',
-      '- Combine TODAS as fontes de conhecimento disponíveis: prompts de texto, conteúdo de links/arquivos, contexto RAG e histórico de conversa.',
+      shouldUseFileSearchInstructions
+        ? '- Documentos e arquivos do agente estão disponíveis via File Search. Consulte a ferramenta sempre que necessário.'
+        : '- Se houver links ou URLs nos prompts, considere que o conteúdo desses links já foi processado e está disponível no contexto RAG. Utilize esse conteúdo para responder.',
+      shouldUseFileSearchInstructions
+        ? '- Combine TODAS as fontes de conhecimento disponíveis: prompts de texto, resultados do File Search, contexto RAG e histórico de conversa.'
+        : '- Combine TODAS as fontes de conhecimento disponíveis: prompts de texto, conteúdo de links/arquivos, contexto RAG e histórico de conversa.',
       '- Use apenas o contexto disponível para responder. Não invente informações que não estejam no contexto.',
       '- Quando houver contexto suficiente, seja completo e útil, trazendo detalhes, exemplos e informações relevantes.',
       '- Se a pergunta estiver fora do escopo do contexto, informe isso de forma breve e redirecione para os temas em que você pode ajudar.',
@@ -5496,11 +5591,21 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       }
     }
 
+    if (shouldUseFileSearchInstructions) {
+      parts.push('');
+      parts.push('### BASE DE CONHECIMENTO — ARQUIVOS');
+      parts.push(
+        'Os arquivos estão disponíveis via File Search. Consulte a ferramenta quando precisar de detalhes ou trechos específicos.'
+      );
+    }
+
     if (prompts.length > 0) {
       parts.push('');
       parts.push('### REGRA FUNDAMENTAL:');
       parts.push(
-        'Você DEVE responder considerando a TOTALIDADE do contexto: todos os prompts de texto acima, todos os conteúdos dos links/arquivos, o contexto RAG e o histórico de conversa. Sua resposta deve ser a melhor possível com base em TODO esse conhecimento combinado.'
+        shouldUseFileSearchInstructions
+          ? 'Você DEVE responder considerando a TOTALIDADE do contexto: todos os prompts de texto acima, os resultados do File Search, o contexto RAG e o histórico de conversa. Sua resposta deve ser a melhor possível com base em TODO esse conhecimento combinado.'
+          : 'Você DEVE responder considerando a TOTALIDADE do contexto: todos os prompts de texto acima, todos os conteúdos dos links/arquivos, o contexto RAG e o histórico de conversa. Sua resposta deve ser a melhor possível com base em TODO esse conhecimento combinado.'
       );
     }
 
@@ -5867,8 +5972,6 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       );
 
       await this.updateConversationSummaryAfterResponse(
-        createChat,
-        selectedAiAgentId,
         conversationSummaryKey,
         conversationSummary,
         recentMessages,

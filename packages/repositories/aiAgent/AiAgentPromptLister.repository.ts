@@ -45,6 +45,7 @@ export class AiAgentPromptListerRepository {
       ai_agent_prompt_type: item.ai_agent_prompt_type,
       name: item.name,
       value: item.value,
+      openai_file_id: item.openai_file_id ?? null,
       status: item.status,
       created_at: item.created_at,
       updated_at: item.updated_at,

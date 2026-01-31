@@ -23,6 +23,7 @@ export const aiAgentPrompt = pgTable(
       .$type<EAiAgentPromptType>(),
     name: varchar({ length: 200 }).notNull(),
     value: text().notNull(),
+    openai_file_id: varchar('openai_file_id', { length: 200 }),
     status: varchar({ length: 20 })
       .notNull()
       .$type<EAiAgentStatus>()

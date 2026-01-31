@@ -236,7 +236,8 @@ export class RagService {
 
   async getAllAgentPrompts(
     accountId: string,
-    aiAgentId: string
+    aiAgentId: string,
+    skipFilePrompts = false
   ): Promise<string> {
     let prompts: Array<{
       ai_agent_prompt_type: string;
@@ -254,9 +255,15 @@ export class RagService {
       return '';
     }
 
-    const activePrompts = prompts.filter(
+    let activePrompts = prompts.filter(
       (prompt) => prompt.status === EAiAgentStatus.active
     );
+
+    if (skipFilePrompts) {
+      activePrompts = activePrompts.filter(
+        (prompt) => prompt.ai_agent_prompt_type !== EAiAgentPromptType.file
+      );
+    }
 
     if (activePrompts.length === 0) {
       return '';
@@ -269,7 +276,8 @@ export class RagService {
 
   async getAllAgentPromptsDetailed(
     accountId: string,
-    aiAgentId: string
+    aiAgentId: string,
+    skipFilePrompts = false
   ): Promise<
     Array<{ ai_agent_prompt_type: string; name: string; value: string }>
   > {
@@ -282,6 +290,11 @@ export class RagService {
 
       return prompts
         .filter((prompt) => prompt.status === EAiAgentStatus.active)
+        .filter(
+          (prompt) =>
+            !skipFilePrompts ||
+            prompt.ai_agent_prompt_type !== EAiAgentPromptType.file
+        )
         .map((prompt) => ({
           ai_agent_prompt_type: prompt.ai_agent_prompt_type,
           name: prompt.name,
@@ -467,6 +480,7 @@ export class RagService {
       includeBootstrapSummaryInPrompt?: boolean;
       maxPromptChars?: number;
       lastAgentMessage?: string | null;
+      skipFilePrompts?: boolean;
     }
   ): Promise<{
     enhancedPrompt: string;
@@ -480,7 +494,8 @@ export class RagService {
     if (isBootstrap) {
       const bootstrapPrompt = await this.buildBootstrapPrompt(
         accountId,
-        aiAgentId
+        aiAgentId,
+        options?.skipFilePrompts
       );
       return {
         ...bootstrapPrompt,
@@ -765,13 +780,18 @@ Gere APENAS o sumário atualizado, sem introduções ou explicações adicionais
 
   private async buildBootstrapPrompt(
     accountId: string,
-    aiAgentId: string
+    aiAgentId: string,
+    skipFilePrompts = false
   ): Promise<{
     enhancedPrompt: string;
     contextUsed: boolean;
     chunksCount: number;
   }> {
-    const allPrompts = await this.getAllAgentPrompts(accountId, aiAgentId);
+    const allPrompts = await this.getAllAgentPrompts(
+      accountId,
+      aiAgentId,
+      skipFilePrompts
+    );
     const bootstrapPrompt = `Você é um assistente virtual inteligente, prestativo e rigoroso.
 
 ### Base Completa de Conhecimento do Agente (Absorva INTEGRALMENTE):

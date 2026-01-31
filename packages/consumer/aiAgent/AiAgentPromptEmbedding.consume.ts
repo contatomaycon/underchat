@@ -9,8 +9,11 @@ import { handleConsumerError } from '@core/common/functions/handleConsumerError'
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 import { commitOffset } from '@core/common/functions/commitOffset';
 import { EmbeddingService } from '@core/services/embedding.service';
+import { OpenAIAssistantService } from '@core/services/openaiAssistant.service';
+import { AiAgentService } from '@core/services/aiAgent.service';
 import { IAiAgentPromptEmbeddingRequest } from '@core/common/interfaces/IAiAgentPromptEmbeddingRequest';
 import { EAiAgentPromptType } from '@core/common/enums/EAiAgentPromptType';
+import { EAiAgentType } from '@core/common/enums/EAiAgentType';
 import mammoth from 'mammoth';
 import { PDFParse } from 'pdf-parse';
 import WordExtractor from 'word-extractor';
@@ -23,7 +26,9 @@ export class AiAgentPromptEmbeddingConsume {
   constructor(
     @inject('Kafka') private readonly kafka: KafkaClient,
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
-    private readonly embeddingService: EmbeddingService
+    private readonly embeddingService: EmbeddingService,
+    private readonly openAIAssistantService: OpenAIAssistantService,
+    private readonly aiAgentService: AiAgentService
   ) {}
 
   private get consumerOrThrow(): KafkaConsumer {
@@ -166,6 +171,92 @@ export class AiAgentPromptEmbeddingConsume {
     console.log(
       `Embeddings gerados para prompt ${data.ai_agent_prompt_id}: ${chunksCount} chunks`
     );
+
+    if (data.prompt_type === EAiAgentPromptType.file) {
+      await this.processOpenAIFileUpload(data);
+    }
+  }
+
+  private async processOpenAIFileUpload(
+    data: IAiAgentPromptEmbeddingRequest
+  ): Promise<void> {
+    try {
+      const agent = await this.aiAgentService.viewAiAgent(
+        data.ai_agent_id,
+        data.account_id
+      );
+
+      if (!agent) {
+        return;
+      }
+
+      const isGpt =
+        data.ai_agent_type_id === EAiAgentType.gpt ||
+        agent.ai_agent_type_id === EAiAgentType.gpt;
+
+      if (!isGpt || !agent.api_key || !agent.base_url) {
+        return;
+      }
+
+      const vectorStoreId = await this.openAIAssistantService.ensureVectorStore(
+        data.ai_agent_id,
+        data.account_id,
+        agent.api_key,
+        agent.base_url
+      );
+
+      if (agent.model) {
+        await this.openAIAssistantService.ensureAssistant(
+          data.ai_agent_id,
+          data.account_id,
+          agent.api_key,
+          agent.base_url,
+          agent.model,
+          this.openAIAssistantService.getDefaultAssistantInstructions(),
+          vectorStoreId
+        );
+      }
+
+      const fileResponse = await fetch(data.value);
+      if (!fileResponse.ok) {
+        console.error(
+          `Falha ao baixar arquivo para upload OpenAI: ${fileResponse.status}`
+        );
+        return;
+      }
+
+      const fileBuffer = Buffer.from(await fileResponse.arrayBuffer());
+      const filename = data.name || 'document';
+
+      const fileId = await this.openAIAssistantService.uploadFileToOpenAI(
+        agent.api_key,
+        agent.base_url,
+        fileBuffer,
+        filename
+      );
+
+      await this.openAIAssistantService.addFileToVectorStore(
+        agent.api_key,
+        agent.base_url,
+        vectorStoreId,
+        fileId
+      );
+
+      await this.aiAgentService.updateAiAgentPromptOpenAIFileId(
+        data.ai_agent_prompt_id,
+        data.account_id,
+        fileId
+      );
+
+      console.log(
+        `Arquivo enviado para OpenAI: prompt ${data.ai_agent_prompt_id}, file_id ${fileId}`
+      );
+    } catch (error) {
+      console.error(
+        `Erro ao enviar arquivo para OpenAI (prompt ${data.ai_agent_prompt_id}):`,
+        error
+      );
+    }
   }
 
   private async extractTextFromFile(fileUrl: string): Promise<string> {

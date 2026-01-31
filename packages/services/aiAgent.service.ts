@@ -223,4 +223,37 @@ export class AiAgentService {
   totalAiAgentByAccountId = async (accountId: string): Promise<number> => {
     return this.aiAgentListerRepository.totalAiAgentByAccountId(accountId);
   };
+
+  updateAiAgentOpenAIIds = async (
+    aiAgentId: string,
+    accountId: string,
+    ids: {
+      openai_assistant_id?: string;
+      openai_vector_store_id?: string;
+    }
+  ): Promise<boolean> => {
+    const result = await this.aiAgentUpdaterRepository.updateAiAgentOpenAIIds(
+      aiAgentId,
+      accountId,
+      ids
+    );
+
+    if (result) {
+      await this.invalidateAiAgentCache(aiAgentId, accountId);
+    }
+
+    return result;
+  };
+
+  updateAiAgentPromptOpenAIFileId = async (
+    aiAgentPromptId: string,
+    accountId: string,
+    openaiFileId: string | null
+  ): Promise<boolean> => {
+    return this.aiAgentPromptUpdaterRepository.updateAiAgentPromptOpenAIFileId(
+      aiAgentPromptId,
+      accountId,
+      openaiFileId
+    );
+  };
 }

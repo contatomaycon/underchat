@@ -21,6 +21,8 @@ export const aiAgent = pgTable(
     embedding_model: varchar({ length: 100 }),
     chunk_size: varchar({ length: 10 }).notNull().default('600'),
     chunk_overlap: varchar({ length: 10 }).notNull().default('100'),
+    openai_assistant_id: varchar('openai_assistant_id', { length: 200 }),
+    openai_vector_store_id: varchar('openai_vector_store_id', { length: 200 }),
     status: varchar({ length: 20 })
       .notNull()
       .$type<EAiAgentStatus>()

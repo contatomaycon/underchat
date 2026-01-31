@@ -11,6 +11,7 @@ export const listAiAgentPromptResponseSchema = Type.Object({
   ]),
   name: Type.String(),
   value: Type.String(),
+  openai_file_id: Type.Union([Type.String(), Type.Null()]),
   status: Type.Union([
     Type.Literal(EAiAgentStatus.active),
     Type.Literal(EAiAgentStatus.inactive),

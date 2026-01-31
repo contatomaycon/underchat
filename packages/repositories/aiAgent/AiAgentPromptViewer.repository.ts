@@ -36,6 +36,7 @@ export class AiAgentPromptViewerRepository {
       ai_agent_prompt_type: result.ai_agent_prompt_type,
       name: result.name,
       value: result.value,
+      openai_file_id: result.openai_file_id ?? null,
       status: result.status,
       created_at: result.created_at,
       updated_at: result.updated_at,

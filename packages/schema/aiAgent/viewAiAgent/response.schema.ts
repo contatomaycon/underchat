@@ -14,6 +14,8 @@ export const viewAiAgentResponseSchema = Type.Object({
     Type.Literal(EAiAgentStatus.active),
     Type.Literal(EAiAgentStatus.inactive),
   ]),
+  openai_assistant_id: Type.Union([Type.String(), Type.Null()]),
+  openai_vector_store_id: Type.Union([Type.String(), Type.Null()]),
   ai_agent_type_id: Type.String({ format: 'uuid' }),
   ai_agent_type_name: Type.String(),
   created_at: Type.Union([Type.String(), Type.Null()]),

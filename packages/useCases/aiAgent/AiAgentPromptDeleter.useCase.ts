@@ -1,14 +1,17 @@
 import { injectable } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { AiAgentService } from '@core/services/aiAgent.service';
+import { OpenAIAssistantService } from '@core/services/openaiAssistant.service';
 import { StorageService } from '@core/services/storage.service';
 import { EmbeddingService } from '@core/services/embedding.service';
 import { EAiAgentPromptType } from '@core/common/enums/EAiAgentPromptType';
+import { EAiAgentType } from '@core/common/enums/EAiAgentType';
 
 @injectable()
 export class AiAgentPromptDeleterUseCase {
   constructor(
     private readonly aiAgentService: AiAgentService,
+    private readonly openAIAssistantService: OpenAIAssistantService,
     private readonly storageService: StorageService,
     private readonly embeddingService: EmbeddingService
   ) {}
@@ -41,6 +44,14 @@ export class AiAgentPromptDeleterUseCase {
       await this.deleteFileFromS3(aiAgentPromptExists.value);
     }
 
+    if (aiAgentPromptExists.openai_file_id) {
+      await this.cleanupOpenAIFileIfNeeded(
+        aiAgentPromptExists.ai_agent_id,
+        accountId,
+        aiAgentPromptExists.openai_file_id
+      );
+    }
+
     const aiAgentPromptDeleted =
       await this.aiAgentService.deleteAiAgentPromptById(
         aiAgentPromptId,
@@ -54,5 +65,27 @@ export class AiAgentPromptDeleterUseCase {
     await this.embeddingService.deletePromptEmbeddings(aiAgentPromptId);
 
     return true;
+  }
+
+  private async cleanupOpenAIFileIfNeeded(
+    aiAgentId: string,
+    accountId: string,
+    openaiFileId: string
+  ): Promise<void> {
+    try {
+      const agent = await this.aiAgentService.viewAiAgent(aiAgentId, accountId);
+      if (!agent || agent.ai_agent_type_id !== EAiAgentType.gpt || !agent.api_key || !agent.base_url) {
+        return;
+      }
+
+      await this.openAIAssistantService.cleanupOpenAIFile(
+        agent.api_key,
+        agent.base_url,
+        agent.openai_vector_store_id,
+        openaiFileId
+      );
+    } catch (error) {
+      console.error('Erro ao limpar arquivo OpenAI na exclusão:', error);
+    }
   }
 }

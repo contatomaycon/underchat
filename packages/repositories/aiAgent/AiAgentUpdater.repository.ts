@@ -71,4 +71,40 @@ export class AiAgentUpdaterRepository {
 
     return result.rowCount === 1;
   };
+
+  updateAiAgentOpenAIIds = async (
+    aiAgentId: string,
+    accountId: string,
+    ids: {
+      openai_assistant_id?: string;
+      openai_vector_store_id?: string;
+    }
+  ): Promise<boolean> => {
+    const updateInput: Partial<typeof aiAgent.$inferInsert> = {};
+
+    if (ids.openai_assistant_id !== undefined) {
+      updateInput.openai_assistant_id = ids.openai_assistant_id;
+    }
+
+    if (ids.openai_vector_store_id !== undefined) {
+      updateInput.openai_vector_store_id = ids.openai_vector_store_id;
+    }
+
+    if (Object.keys(updateInput).length === 0) {
+      return true;
+    }
+
+    const result = await this.dbRw
+      .update(aiAgent)
+      .set(updateInput)
+      .where(
+        and(
+          eq(aiAgent.ai_agent_id, aiAgentId),
+          eq(aiAgent.account_id, accountId)
+        )
+      )
+      .execute();
+
+    return result.rowCount === 1;
+  };
 }

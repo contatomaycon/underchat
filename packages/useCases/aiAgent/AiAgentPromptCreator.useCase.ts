@@ -182,10 +182,13 @@ export class AiAgentPromptCreatorUseCase {
     name: string,
     value: string
   ): Promise<void> {
+    const agent = await this.aiAgentService.viewAiAgent(aiAgentId, accountId);
+
     const payload: IAiAgentPromptEmbeddingRequest = {
       account_id: accountId,
       ai_agent_id: aiAgentId,
       ai_agent_prompt_id: aiAgentPromptId,
+      ai_agent_type_id: agent?.ai_agent_type_id,
       prompt_type: promptType,
       name,
       value,
