@@ -4828,8 +4828,12 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
     contextAllowed: boolean;
     contextHints: string[];
   }> {
-    const systemPrompt =
-      'Você é um assistente virtual prestativo e educado. Sempre entregue a melhor resposta possível com base no contexto e nas regras.';
+    const allPrompts = await this.ragService.getAllAgentPromptsDetailed(
+      createChat.account.id,
+      selectedAiAgentId
+    );
+
+    const systemPrompt = this.buildComprehensiveSystemPrompt(allPrompts);
 
     const bootstrapSummary = await this.redis.get(bootstrapSummaryKey);
     const conversationSummary = await this.redis.get(conversationSummaryKey);
@@ -4869,13 +4873,75 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
     };
   }
 
+  private buildComprehensiveSystemPrompt(
+    prompts: Array<{
+      ai_agent_prompt_type: string;
+      name: string;
+      value: string;
+    }>
+  ): string {
+    const textPrompts = prompts.filter(
+      (p) => p.ai_agent_prompt_type === 'text'
+    );
+    const filePrompts = prompts.filter(
+      (p) => p.ai_agent_prompt_type === 'file'
+    );
+
+    const parts: string[] = [
+      'Você é um assistente virtual inteligente, prestativo e rigoroso. Você DEVE absorver e seguir ESTRITAMENTE TODO o conteúdo fornecido abaixo sem exceção.',
+      '',
+      '### INSTRUÇÕES CRÍTICAS DE CONTEXTO:',
+      '- Você DEVE ler, absorver e internalizar TODOS os textos e conteúdos dos prompts fornecidos abaixo. Nenhum prompt pode ser ignorado.',
+      '- Se houver links ou URLs nos prompts, considere que o conteúdo desses links já foi processado e está disponível no contexto RAG. Utilize esse conteúdo para responder.',
+      '- Combine TODAS as fontes de conhecimento disponíveis: prompts de texto, conteúdo de links/arquivos, contexto RAG e histórico de conversa.',
+      '- Seja o mais generativo e completo possível. NUNCA entregue respostas vazias, incompletas ou genéricas.',
+      '- Sempre tente ajudar o usuário da melhor forma, trazendo detalhes, exemplos e informações úteis.',
+      '- Quando houver múltiplas opções ou alternativas, recomende a melhor e explique rapidamente o porquê.',
+      '- Responda de forma natural e humana, sem mencionar termos técnicos como "contexto", "prompt", "RAG" ou "sistema".',
+    ];
+
+    if (textPrompts.length > 0) {
+      parts.push('');
+      parts.push(
+        '### BASE DE CONHECIMENTO — TEXTOS (Absorva INTEGRALMENTE cada item):'
+      );
+      for (const prompt of textPrompts) {
+        parts.push('');
+        parts.push(`#### ${prompt.name}:`);
+        parts.push(prompt.value);
+      }
+    }
+
+    if (filePrompts.length > 0) {
+      parts.push('');
+      parts.push(
+        '### BASE DE CONHECIMENTO — LINKS E ARQUIVOS (Absorva TODO o conteúdo de cada link/arquivo):'
+      );
+      for (const prompt of filePrompts) {
+        parts.push('');
+        parts.push(`#### ${prompt.name}:`);
+        parts.push(prompt.value);
+      }
+    }
+
+    if (prompts.length > 0) {
+      parts.push('');
+      parts.push('### REGRA FUNDAMENTAL:');
+      parts.push(
+        'Você DEVE responder considerando a TOTALIDADE do contexto: todos os prompts de texto acima, todos os conteúdos dos links/arquivos, o contexto RAG e o histórico de conversa. Sua resposta deve ser a melhor possível com base em TODO esse conhecimento combinado.'
+      );
+    }
+
+    return parts.join('\n');
+  }
+
   private buildAdditionalAiResponseInstructions(
     userText: string,
     recentMessages: Array<{ role: 'user' | 'assistant'; content: string }>
   ): string {
     const instructions: string[] = [
       '- Entregue a melhor resposta possível, escolhendo a alternativa mais adequada ao contexto e às regras. Quando houver opções, recomende a melhor e explique rapidamente o porquê.',
-      '- Responda somente com base no contexto fornecido. Se não houver contexto suficiente, informe que não pode responder.',
+      '- Combine todo o conhecimento dos prompts, RAG e histórico para formular a resposta mais completa. Evite respostas vagas ou incompletas.',
     ];
 
     const repeatedQuestionCount = this.getRepeatedQuestionCount(
@@ -4900,26 +4966,17 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
     userText: string,
     contextHints: string[]
   ): string {
-    const introVariants = [
-      'Desculpe, esse assunto está fora do contexto que posso atender.',
-      'Não posso responder sobre esse tema, pois está fora do contexto disponível.',
-      'Esse pedido não está dentro do contexto da empresa/agente.',
-      'No momento, só posso ajudar com assuntos do contexto da empresa/agente.',
-    ];
-
-    const guidanceVariants = [
-      'Posso responder perguntas relacionadas ao contexto da empresa/agente. Se puder, reformule sua dúvida nesse sentido.',
-      'Se quiser, reformule a pergunta para algo dentro do contexto da empresa/agente.',
-      'Para eu ajudar melhor, traga uma pergunta relacionada ao contexto da empresa/agente.',
-      'Fico à disposição para ajudar com temas ligados ao contexto da empresa/agente.',
-    ];
-
     const seed = `${Date.now()}:${userText}`;
-    const intro = this.pickVariant(seed, introVariants);
-    const guidance = this.pickVariant(`${seed}:g`, guidanceVariants);
     const hintsText = this.formatContextHints(contextHints);
 
-    return [intro, guidance, hintsText].filter(Boolean).join(' ');
+    const responseVariants = [
+      `Entendo sua dúvida! Infelizmente esse tema específico não faz parte dos assuntos que domino. ${hintsText ? `Mas posso te ajudar bastante com temas como: ${hintsText}` : 'Posso te ajudar com outros assuntos — é só perguntar!'} Como posso te ajudar?`,
+      `Boa pergunta! Esse assunto vai além da minha especialidade no momento. ${hintsText ? `Minha área de conhecimento inclui: ${hintsText}` : 'Tenho bastante conhecimento em outros temas que posso compartilhar.'} Quer saber mais sobre algum desses temas?`,
+      `Agradeço pela pergunta! Não tenho informações suficientes sobre esse tema para te dar uma resposta completa e precisa. ${hintsText ? `Meu forte são assuntos como: ${hintsText}` : 'Posso te ajudar com vários outros assuntos.'} Em que mais posso te ajudar?`,
+      `Que bom que me procurou! Esse é um tema que vai um pouco além do que consigo te auxiliar agora. ${hintsText ? `Onde realmente posso fazer a diferença é em: ${hintsText}` : 'Mas tenho muito a oferecer em outros temas!'} O que acha?`,
+    ];
+
+    return this.pickVariant(seed, responseVariants);
   }
 
   private pickVariant(seed: string, variants: string[]): string {

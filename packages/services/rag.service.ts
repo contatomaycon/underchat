@@ -267,6 +267,35 @@ export class RagService {
     return this.formatPromptsByType(promptsByType);
   }
 
+  async getAllAgentPromptsDetailed(
+    accountId: string,
+    aiAgentId: string
+  ): Promise<
+    Array<{ ai_agent_prompt_type: string; name: string; value: string }>
+  > {
+    try {
+      const prompts =
+        await this.aiAgentPromptListerRepository.listAiAgentPrompts(
+          { ai_agent_id: aiAgentId },
+          accountId
+        );
+
+      return prompts
+        .filter((prompt) => prompt.status === EAiAgentStatus.active)
+        .map((prompt) => ({
+          ai_agent_prompt_type: prompt.ai_agent_prompt_type,
+          name: prompt.name,
+          value: prompt.value,
+        }));
+    } catch (error) {
+      console.error(
+        '[getAllAgentPromptsDetailed] Erro ao listar prompts:',
+        error
+      );
+      return [];
+    }
+  }
+
   async generateBootstrapSummary(
     accountId: string,
     aiAgentId: string,
@@ -464,8 +493,8 @@ export class RagService {
 
       const typeLabel =
         type === EAiAgentPromptType.file
-          ? 'Regras e Conhecimento'
-          : 'Configuração';
+          ? 'Base de Conhecimento — Links e Arquivos'
+          : 'Base de Conhecimento — Textos';
       sections.push(`### ${typeLabel}:\n${values.join('\n\n---\n\n')}`);
     }
 
@@ -480,8 +509,12 @@ Com base nos prompts completos do agente abaixo, crie um sumário inicial estrut
 2. Perfil e personalidade do agente
 3. Objetivos e responsabilidades
 4. Informações críticas da base de conhecimento
+5. Conteúdo de TODOS os textos fornecidos — absorva cada informação
+6. Referências a TODOS os links/URLs fornecidos — inclua os pontos-chave de cada um
 
-Este sumário será usado como contexto permanente em todas as conversas. Seja preciso e inclua TODAS as regras importantes.
+IMPORTANTE: Absorva INTEGRALMENTE todo o conteúdo de cada prompt. Se houver links, identifique-os e inclua referência a eles no sumário. Se houver textos, extraia TODAS as informações relevantes sem omitir nenhuma.
+
+Este sumário será usado como contexto permanente em todas as conversas. Seja preciso e inclua TODAS as regras e informações importantes.
 
 Prompts do agente:
 ${allPrompts}
@@ -533,16 +566,19 @@ Gere APENAS o sumário atualizado, sem introduções ou explicações adicionais
     chunksCount: number;
   }> {
     const allPrompts = await this.getAllAgentPrompts(accountId, aiAgentId);
-    const bootstrapPrompt = `Você é um assistente virtual prestativo e educado.
+    const bootstrapPrompt = `Você é um assistente virtual inteligente, prestativo e rigoroso.
 
-### Regras, Perfil e Objetivos do Agente (Base Completa de Conhecimento):
+### Base Completa de Conhecimento do Agente (Absorva INTEGRALMENTE):
 ${allPrompts || '(Nenhuma regra ou conhecimento configurado)'}
 
-### Instruções Importantes:
-- SIGA TODAS as regras acima em TODAS as suas respostas
-- Mantenha o perfil e personalidade definidos
-- Priorize os objetivos estabelecidos
-- Use o conhecimento fornecido para responder com precisão
+### Instruções Críticas:
+- Absorva INTEGRALMENTE todo o conteúdo acima: cada texto, cada link, cada regra. Nada pode ser ignorado.
+- SIGA TODAS as regras acima em TODAS as suas respostas sem exceção.
+- Seja o mais generativo e completo possível. NUNCA entregue respostas vazias ou incompletas.
+- Sempre tente ajudar o usuário da melhor forma, trazendo detalhes, exemplos e informações úteis.
+- Mantenha o perfil e personalidade definidos nos prompts.
+- Priorize os objetivos estabelecidos nos prompts.
+- Use todo o conhecimento fornecido para responder com a máxima precisão.
 
 Agora, responda à pergunta do usuário seguindo TODAS as regras e diretrizes acima:`;
 
@@ -752,17 +788,17 @@ ${instructionsText || 'Responda à pergunta do usuário de forma clara e precisa
     hasRelevantContext = false
   ): string {
     let instructionsText =
-      '- Responda somente com base no contexto acima e nas regras. NUNCA use conhecimento externo ou suposições.\n';
+      '- Priorize SEMPRE o contexto fornecido (prompts, RAG, histórico) para formular suas respostas. Use todo o conhecimento disponível no contexto para entregar a melhor resposta possível.\n';
     instructionsText +=
-      '- Se o contexto não cobrir a pergunta, informe que não pode responder fora do contexto da empresa/agente.\n';
+      '- Seja o mais generativo e completo possível. NUNCA entregue respostas vazias, incompletas ou genéricas. Sempre tente ajudar o usuário da melhor forma, trazendo detalhes, exemplos e informações úteis.\n';
     instructionsText +=
       '- Responda de forma natural e humana, como se você fosse uma pessoa real respondendo. Evite mencionar "contexto fornecido", "com base no contexto" ou qualquer referência explícita a limitações técnicas.\n';
     instructionsText +=
-      '- Quando não souber algo ou a pergunta estiver fora do escopo, responda de forma educada e natural, redirecionando para o que você pode ajudar, sem mencionar que é por limitação de contexto ou sistema.\n';
+      '- Quando a pergunta estiver fora do escopo, crie uma resposta original e educada redirecionando o usuário para os temas que você pode ajudar. NÃO use frases fixas ou genéricas — cada resposta deve ser única, natural e contextualizada ao que o usuário perguntou.\n';
 
     if (bootstrapSummary && bootstrapSummary.trim().length > 0) {
       instructionsText +=
-        '- SIGA TODAS as regras do "Summary Inicial" em TODAS as suas respostas. Essas regras são permanentes e devem ser respeitadas sempre.\n';
+        '- SIGA TODAS as regras do "Summary Inicial" e dos prompts do agente em TODAS as suas respostas. Essas regras são permanentes e devem ser respeitadas sempre.\n';
     }
 
     if (conversationSummary && conversationSummary.trim().length > 0) {
@@ -770,26 +806,13 @@ ${instructionsText || 'Responda à pergunta do usuário de forma clara e precisa
         '- Use o "Sumário da Conversa" para manter consistência e contexto da conversa.\n';
     }
 
-    if (hasRelevantContext) {
+    if (hasRelevantContext || contextParts.length > 0) {
       instructionsText +=
-        '- Use o contexto acima para responder à pergunta do usuário. Sempre priorize as informações do contexto fornecido.\n';
-      return instructionsText;
+        '- Absorva e utilize TODA a base de conhecimento disponível: prompts de texto, conteúdo de links/arquivos, contexto RAG e histórico de conversa. Combine todas essas fontes para entregar a resposta mais completa e precisa possível.\n';
+      instructionsText +=
+        '- Se a pergunta do usuário não se encaixar nos temas do agente, gere uma resposta criativa e educada que oriente o usuário naturalmente para os assuntos em que você pode ajudar, sem usar textos padronizados.\n';
     }
 
-    if (contextParts.length > 0) {
-      instructionsText +=
-        '- Use o contexto acima para responder à pergunta do usuário. Sempre priorize as informações do contexto fornecido.\n';
-      instructionsText +=
-        '- IMPORTANTE: Se a pergunta do usuário estiver fora do contexto ou tema da empresa/agente (não relacionada ao assunto tratado pela empresa), você deve educadamente informar que não pode responder sobre esse assunto e orientar o usuário a fazer perguntas relacionadas ao tema da empresa/agente. Seja prestativo e sugira exemplos de perguntas relevantes ao contexto da empresa.\n';
-      instructionsText +=
-        '- Ao redirecionar para o tema da empresa, faça isso de forma natural e conversacional, como uma pessoa real faria, sem mencionar termos técnicos como "contexto", "sistema" ou "limitações".\n';
-      return instructionsText;
-    }
-
-    instructionsText +=
-      '- IMPORTANTE: Se a pergunta do usuário estiver fora do contexto ou tema da empresa/agente, você deve educadamente informar que não pode responder sobre esse assunto e orientar o usuário a fazer perguntas relacionadas ao tema da empresa/agente. Seja prestativo e sugira exemplos de perguntas relevantes ao contexto da empresa.\n';
-    instructionsText +=
-      '- Ao redirecionar para o tema da empresa, faça isso de forma natural e conversacional, como uma pessoa real faria, sem mencionar termos técnicos como "contexto", "sistema" ou "limitações".\n';
     return instructionsText;
   }
 
