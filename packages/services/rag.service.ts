@@ -111,6 +111,38 @@ export class RagService {
     'atendente',
     'cliente',
   ]);
+  private readonly contextHintStopWords = new Set([
+    'sumario',
+    'resumo',
+    'contexto',
+    'prompt',
+    'rag',
+    'arquivo',
+    'arquivos',
+    'link',
+    'links',
+    'documento',
+    'documentos',
+    'fonte',
+    'fontes',
+    'sistema',
+    'modelo',
+    'assistente',
+    'assistant',
+    'mensagem',
+    'mensagens',
+    'conversa',
+    'historico',
+    'historia',
+    'chat',
+    'chatbot',
+    'bot',
+    'agente',
+    'agent',
+    'ia',
+    'inteligencia',
+    'artificial',
+  ]);
 
   constructor(
     private readonly embeddingService: EmbeddingService,
@@ -1474,20 +1506,44 @@ ${instructionsText || 'Responda à pergunta do usuário de forma clara e precisa
     }
 
     const contextKeywordSet = new Set(contextKeywords);
+    const matchesKeyword = (
+      token: string,
+      keywordSet: Set<string>,
+      keywords: string[]
+    ): boolean => {
+      if (keywordSet.has(token)) {
+        return true;
+      }
+      if (token.length < this.minKeywordLength) {
+        return false;
+      }
+      for (const keyword of keywords) {
+        if (keyword.startsWith(token) || token.startsWith(keyword)) {
+          return true;
+        }
+      }
+      return false;
+    };
     if (queryKeywords.length === 1) {
       const token = queryKeywords[0];
-      if (hasConversationText && conversationKeywordSet.has(token)) {
+      if (
+        hasConversationText &&
+        matchesKeyword(token, conversationKeywordSet, conversationKeywords)
+      ) {
+        return true;
+      }
+      if (matchesKeyword(token, contextKeywordSet, contextKeywords)) {
         return true;
       }
       return false;
     }
 
     const matchCount = queryKeywords.filter((token) =>
-      contextKeywordSet.has(token)
+      matchesKeyword(token, contextKeywordSet, contextKeywords)
     ).length;
 
     const conversationMatchCount = queryKeywords.filter((token) =>
-      conversationKeywordSet.has(token)
+      matchesKeyword(token, conversationKeywordSet, conversationKeywords)
     ).length;
     const conversationMatchRatio =
       conversationMatchCount / queryKeywords.length;
@@ -1528,6 +1584,9 @@ ${instructionsText || 'Responda à pergunta do usuário de forma clara e precisa
     const hints: string[] = [];
 
     for (const keyword of keywords) {
+      if (this.contextHintStopWords.has(keyword)) {
+        continue;
+      }
       if (seen.has(keyword)) {
         continue;
       }

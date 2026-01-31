@@ -5894,6 +5894,14 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       );
     }
 
+    console.log('[AI Agent] callAiAgentChatApi payload', {
+      aiAgentTypeId,
+      model,
+      prompt,
+      userQuery,
+      history,
+    });
+
     if (
       aiAgentTypeId === EAiAgentType.gpt &&
       assistantsOptions?.openaiAssistantId
@@ -6900,12 +6908,15 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
   ): string {
     const seed = `${Date.now()}:${userText}`;
     const hintsText = this.formatContextHints(contextHints);
+    const hintsSentence = hintsText
+      ? `Posso te ajudar com assuntos da empresa como ${hintsText}.`
+      : 'Posso te ajudar com informações sobre nossos serviços e atendimento.';
 
     const responseVariants = [
-      `Entendo sua dúvida! Infelizmente esse tema específico não faz parte dos assuntos que domino. ${hintsText ? `Mas posso te ajudar bastante com temas como: ${hintsText}` : 'Posso te ajudar com outros assuntos — é só perguntar!'} Como posso te ajudar?`,
-      `Boa pergunta! Esse assunto vai além da minha especialidade no momento. ${hintsText ? `Minha área de conhecimento inclui: ${hintsText}` : 'Tenho bastante conhecimento em outros temas que posso compartilhar.'} Quer saber mais sobre algum desses temas?`,
-      `Agradeço pela pergunta! Não tenho informações suficientes sobre esse tema para te dar uma resposta completa e precisa. ${hintsText ? `Meu forte são assuntos como: ${hintsText}` : 'Posso te ajudar com vários outros assuntos.'} Em que mais posso te ajudar?`,
-      `Que bom que me procurou! Esse é um tema que vai um pouco além do que consigo te auxiliar agora. ${hintsText ? `Onde realmente posso fazer a diferença é em: ${hintsText}` : 'Mas tenho muito a oferecer em outros temas!'} O que acha?`,
+      `Entendo sua dúvida! Ainda não encontrei essa informação por aqui. ${hintsSentence} Quer que eu detalhe algum desses pontos?`,
+      `Boa pergunta! Não tenho esse detalhe no momento. ${hintsSentence} Se quiser, posso explicar algum desses temas agora.`,
+      `Agradeço pela pergunta! No momento não tenho uma resposta exata sobre isso. ${hintsSentence} O que você gostaria de saber?`,
+      `Que bom que me procurou! Essa informação não está disponível para mim agora. ${hintsSentence} Posso ajudar com outra dúvida?`,
     ];
 
     return this.pickVariant(seed, responseVariants);
@@ -6943,7 +6954,7 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       return '';
     }
 
-    return `Posso ajudar com temas como: ${uniqueHints.join(', ')}.`;
+    return uniqueHints.join(', ');
   }
 
   private getRepeatedQuestionCount(
