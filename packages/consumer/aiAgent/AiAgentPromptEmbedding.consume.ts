@@ -205,6 +205,26 @@ export class AiAgentPromptEmbeddingConsume {
         agent.base_url
       );
 
+      const currentPrompt = await this.aiAgentService.viewAiAgentPrompt(
+        data.ai_agent_prompt_id,
+        data.account_id
+      );
+      if (currentPrompt?.openai_file_id) {
+        try {
+          await this.openAIAssistantService.cleanupOpenAIFile(
+            agent.api_key,
+            agent.base_url,
+            vectorStoreId,
+            currentPrompt.openai_file_id
+          );
+        } catch (error) {
+          console.error(
+            `Erro ao remover arquivo antigo do vector store (prompt ${data.ai_agent_prompt_id}):`,
+            error
+          );
+        }
+      }
+
       if (agent.model) {
         await this.openAIAssistantService.ensureAssistant(
           data.ai_agent_id,
@@ -226,7 +246,12 @@ export class AiAgentPromptEmbeddingConsume {
       }
 
       const fileBuffer = Buffer.from(await fileResponse.arrayBuffer());
-      const filename = data.name || 'document';
+      const contentType = fileResponse.headers.get('content-type');
+      const filename = this.buildFilenameForOpenAIVectorStore(
+        data.value,
+        contentType,
+        data.name || 'document'
+      );
 
       const fileId = await this.openAIAssistantService.uploadFileToOpenAI(
         agent.api_key,
@@ -235,11 +260,13 @@ export class AiAgentPromptEmbeddingConsume {
         filename
       );
 
-      await this.openAIAssistantService.addFileToVectorStore(
+      await this.openAIAssistantService.addFileToVectorStoreWithRecovery(
         agent.api_key,
         agent.base_url,
         vectorStoreId,
-        fileId
+        fileId,
+        data.ai_agent_id,
+        data.account_id
       );
 
       await this.aiAgentService.updateAiAgentPromptOpenAIFileId(
@@ -257,6 +284,76 @@ export class AiAgentPromptEmbeddingConsume {
         error
       );
     }
+  }
+
+  private buildFilenameForOpenAIVectorStore(
+    fileUrl: string,
+    contentType: string | null,
+    baseName: string
+  ): string {
+    const extensionFromUrl = this.getExtensionFromUrl(fileUrl);
+    if (extensionFromUrl) {
+      return this.ensureExtension(baseName, extensionFromUrl);
+    }
+    const extensionFromContentType =
+      this.getExtensionFromContentType(contentType);
+    if (extensionFromContentType) {
+      return this.ensureExtension(baseName, extensionFromContentType);
+    }
+    return this.ensureExtension(baseName, '.txt');
+  }
+
+  private getExtensionFromUrl(fileUrl: string): string | null {
+    try {
+      const pathname = new URL(fileUrl).pathname;
+      const lastSlash = pathname.lastIndexOf('/');
+      const basename =
+        lastSlash >= 0 ? pathname.slice(lastSlash + 1) : pathname;
+      const lastDot = basename.lastIndexOf('.');
+      if (lastDot > 0 && lastDot < basename.length - 1) {
+        return basename.slice(lastDot).toLowerCase();
+      }
+    } catch {
+      //
+    }
+    return null;
+  }
+
+  private getExtensionFromContentType(
+    contentType: string | null
+  ): string | null {
+    if (!contentType) {
+      return null;
+    }
+    const mime = contentType.split(';')[0].trim().toLowerCase();
+    const mimeToExt: Record<string, string> = {
+      'application/pdf': '.pdf',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+        '.docx',
+      'application/msword': '.doc',
+      'text/plain': '.txt',
+      'text/markdown': '.md',
+      'text/html': '.html',
+      'application/json': '.json',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation':
+        '.pptx',
+    };
+    return mimeToExt[mime] ?? null;
+  }
+
+  private ensureExtension(baseName: string, extension: string): string {
+    const sanitized =
+      baseName.replace(/[/\\?*:|\s]+/g, '_').trim() || 'document';
+    const lowerExt = extension.startsWith('.')
+      ? extension.toLowerCase()
+      : `.${extension.toLowerCase()}`;
+    const lastDot = sanitized.lastIndexOf('.');
+    const existingExt =
+      lastDot > 0 ? sanitized.slice(lastDot).toLowerCase() : '';
+    if (existingExt === lowerExt) {
+      return sanitized;
+    }
+    return `${sanitized}${lowerExt}`;
   }
 
   private async extractTextFromFile(fileUrl: string): Promise<string> {
