@@ -105,6 +105,14 @@ export class ChatbotFlowRunnerService {
     return `underchat:menu-debounce:${accountId}:${workerId}:${chatId}`;
   }
 
+  private getSectorSelectionCacheKey(
+    accountId: string,
+    workerId: string,
+    chatId: string
+  ): string {
+    return `chatbot:ai-agent:sector-selection:${accountId}:${workerId}:${chatId}`;
+  }
+
   private async setMenuDebounce(
     createChat: IChat,
     nodeData: { message: string; options: { id: string; text: string }[] }
@@ -3678,24 +3686,70 @@ export class ChatbotFlowRunnerService {
     }
 
     if (analysis === 'human_support') {
-      const nextFlowId = this.getNextFlowIdByHumanSupportHandle(
-        chatbotFlow,
-        currentFlowId
-      );
-
-      if (!nextFlowId) {
-        return false;
-      }
-
       await this.resetFailedAttempts(createChat);
 
-      return this.processNextNode(
-        t,
-        createChat,
-        chatbotFlow,
-        nextFlowId,
-        customMessages
+      const sectors = await this.sectorService.listSectorsForTransfer(
+        createChat.account.id
       );
+
+      if (sectors.length === 0) {
+        const nextFlowId = this.getNextFlowIdByHumanSupportHandle(
+          chatbotFlow,
+          currentFlowId
+        );
+
+        if (!nextFlowId) {
+          return false;
+        }
+
+        return this.processNextNode(
+          t,
+          createChat,
+          chatbotFlow,
+          nextFlowId,
+          customMessages
+        );
+      }
+
+      if (sectors.length === 1) {
+        return this.executeHumanSupportTransfer(
+          t,
+          createChat,
+          chatbotFlow,
+          currentFlowId,
+          sectors[0],
+          customMessages
+        );
+      }
+
+      const selectedAiAgentId = currentNode.data?.selectedAiAgent || '';
+      const sectorSelectionKey = this.getSectorSelectionCacheKey(
+        createChat.account.id,
+        createChat.worker.id,
+        createChat.chat_id
+      );
+
+      await this.redis.set(
+        sectorSelectionKey,
+        JSON.stringify({
+          sectors,
+          flowId: currentFlowId,
+          selectedAiAgentId,
+        }),
+        'EX',
+        300
+      );
+
+      const sectorMessage = this.buildSectorSelectionMessage(sectors);
+      await this.chatMessageService.sendMessage(t, {
+        chat: createChat,
+        accountId: createChat.account.id,
+        type: EMessageType.text,
+        message: sectorMessage,
+        typeUser: ETypeUserChat.bot,
+      });
+
+      return true;
     }
 
     const targetOptionId = this.findTargetOptionId(t, options, analysis);
@@ -3772,6 +3826,261 @@ export class ChatbotFlowRunnerService {
     }
 
     return null;
+  }
+
+  private buildSectorSelectionMessage(
+    sectors: Array<{ id: string; name: string }>
+  ): string {
+    const lines = sectors.map((sector, index) => {
+      const number = index + 1;
+      return `*${number}.* ${sector.name}`;
+    });
+
+    return [
+      'Para direcionarmos seu atendimento, em qual setor você gostaria de ser atendido?',
+      '',
+      ...lines,
+    ].join('\n');
+  }
+
+  private async matchSectorFromUserResponse(
+    baseUrl: string,
+    apiKey: string,
+    model: string,
+    aiAgentTypeId: string,
+    userText: string,
+    sectors: Array<{ id: string; name: string }>
+  ): Promise<string | null> {
+    const sectorList = sectors.map((s, i) => `${i + 1}. ${s.name}`).join('\n');
+
+    const prompt = `Você é um classificador de intenção. O usuário está escolhendo um setor de atendimento.
+
+Setores disponíveis:
+${sectorList}
+
+Analise a resposta do usuário e retorne APENAS o número do setor que mais combina com a resposta. Se nenhum setor combinar claramente, retorne "0".
+
+Resposta do usuário: "${userText}"
+
+Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
+
+    try {
+      const response = await this.callAiAgentChatApi(
+        baseUrl,
+        apiKey,
+        model,
+        aiAgentTypeId,
+        prompt,
+        userText
+      );
+
+      const parsed = Number.parseInt(response.trim(), 10);
+      if (!Number.isNaN(parsed) && parsed >= 1 && parsed <= sectors.length) {
+        return sectors[parsed - 1].id;
+      }
+
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  private async executeHumanSupportTransfer(
+    t: TFunction<'translation', undefined>,
+    createChat: IChat,
+    chatbotFlow: ListChatbotFlowResponse,
+    currentFlowId: string,
+    sector: { id: string; name: string; color?: string | null } | null,
+    customMessages?: {
+      service_finished_message?: string;
+      transfer_message_user?: string;
+      transfer_message_sector?: string;
+      transfer_message_sector_user?: string;
+      service_finished_message_enabled?: boolean;
+      transfer_message_user_enabled?: boolean;
+      transfer_message_sector_enabled?: boolean;
+      transfer_message_sector_user_enabled?: boolean;
+    }
+  ): Promise<boolean> {
+    const chatSector: IChat['sector'] | null = sector
+      ? { id: sector.id, name: sector.name, color: sector.color ?? undefined }
+      : null;
+
+    const updatedChat = await this.updateAndPublishChat(
+      t,
+      createChat,
+      null,
+      chatSector
+    );
+
+    await this.cancelInactivityCheck(updatedChat);
+
+    const rawTransferMessage = sector
+      ? customMessages?.transfer_message_sector ||
+        t('chatbot_transfer_message_sector_default')
+      : customMessages?.transfer_message_user ||
+        t('chatbot_transfer_message_user_default');
+
+    const enabled = sector
+      ? customMessages?.transfer_message_sector_enabled
+      : customMessages?.transfer_message_user_enabled;
+
+    if (rawTransferMessage && enabled !== false) {
+      const transferMessage = await this.replaceVariables(
+        t,
+        rawTransferMessage,
+        updatedChat,
+        null,
+        chatSector
+      );
+      await this.chatMessageService.sendMessage(t, {
+        chat: updatedChat,
+        accountId: updatedChat.account.id,
+        type: EMessageType.system,
+        message: transferMessage,
+        typeUser: ETypeUserChat.bot,
+      });
+    }
+
+    const nextFlowId = this.getNextFlowIdByHumanSupportHandle(
+      chatbotFlow,
+      currentFlowId
+    );
+
+    if (nextFlowId) {
+      const nextNode = this.getFlowNodeById(chatbotFlow, nextFlowId);
+      if (nextNode && nextNode.type !== 'redirect') {
+        return this.processNextNode(
+          t,
+          updatedChat,
+          chatbotFlow,
+          nextFlowId,
+          customMessages
+        );
+      }
+    }
+
+    return true;
+  }
+
+  private async handlePendingSectorSelection(
+    t: TFunction<'translation', undefined>,
+    data: IUpsertMessage,
+    createChat: IChat,
+    chatbotFlow: ListChatbotFlowResponse,
+    currentFlowId: string,
+    customMessages?: {
+      service_finished_message?: string;
+      invalid_menu_option_message?: string;
+      invalid_satisfaction_option_message?: string;
+      invalid_cpf_message?: string;
+      invalid_cnpj_message?: string;
+      invalid_email_message?: string;
+      transfer_message_user?: string;
+      transfer_message_sector?: string;
+      transfer_message_sector_user?: string;
+      service_finished_message_enabled?: boolean;
+      invalid_menu_option_message_enabled?: boolean;
+      invalid_satisfaction_option_message_enabled?: boolean;
+      invalid_cpf_message_enabled?: boolean;
+      invalid_cnpj_message_enabled?: boolean;
+      invalid_email_message_enabled?: boolean;
+      transfer_message_user_enabled?: boolean;
+      transfer_message_sector_enabled?: boolean;
+      transfer_message_sector_user_enabled?: boolean;
+    }
+  ): Promise<boolean | null> {
+    const sectorSelectionKey = this.getSectorSelectionCacheKey(
+      createChat.account.id,
+      createChat.worker.id,
+      createChat.chat_id
+    );
+
+    const cachedData = await this.redis.get(sectorSelectionKey);
+    if (!cachedData) {
+      return null;
+    }
+
+    const userText = this.getTextFromUpsertMessage(data)?.trim();
+    if (!userText) {
+      return null;
+    }
+
+    await this.redis.del(sectorSelectionKey);
+
+    let parsed: {
+      sectors: Array<{ id: string; name: string; color?: string | null }>;
+      flowId: string;
+      selectedAiAgentId: string;
+    };
+    try {
+      parsed = JSON.parse(cachedData);
+    } catch {
+      return null;
+    }
+
+    const { sectors, flowId, selectedAiAgentId } = parsed;
+
+    if (!sectors || sectors.length === 0) {
+      return this.executeHumanSupportTransfer(
+        t,
+        createChat,
+        chatbotFlow,
+        flowId,
+        null,
+        customMessages
+      );
+    }
+
+    const selectedNumber = Number.parseInt(userText, 10);
+    if (
+      !Number.isNaN(selectedNumber) &&
+      selectedNumber >= 1 &&
+      selectedNumber <= sectors.length
+    ) {
+      const selectedSector = sectors[selectedNumber - 1];
+      return this.executeHumanSupportTransfer(
+        t,
+        createChat,
+        chatbotFlow,
+        flowId,
+        selectedSector,
+        customMessages
+      );
+    }
+
+    let matchedSectorId: string | null = null;
+
+    if (selectedAiAgentId) {
+      const aiAgent = await this.aiAgentService.viewAiAgent(
+        selectedAiAgentId,
+        createChat.account.id
+      );
+
+      if (aiAgent?.base_url && aiAgent?.api_key && aiAgent?.model) {
+        matchedSectorId = await this.matchSectorFromUserResponse(
+          aiAgent.base_url,
+          aiAgent.api_key,
+          aiAgent.model,
+          aiAgent.ai_agent_type_id,
+          userText,
+          sectors
+        );
+      }
+    }
+
+    const matchedSector = matchedSectorId
+      ? (sectors.find((s) => s.id === matchedSectorId) ?? null)
+      : null;
+
+    return this.executeHumanSupportTransfer(
+      t,
+      createChat,
+      chatbotFlow,
+      flowId,
+      matchedSector,
+      customMessages
+    );
   }
 
   private async generateBootstrapSummaryForChat(
@@ -4276,6 +4585,18 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
         currentFlowId,
         bootstrapSummaryKey
       );
+    }
+
+    const sectorSelectionResult = await this.handlePendingSectorSelection(
+      t,
+      data,
+      createChat,
+      chatbotFlow,
+      currentFlowId,
+      customMessages
+    );
+    if (sectorSelectionResult !== null) {
+      return sectorSelectionResult;
     }
 
     const userText = this.getTextFromUpsertMessage(data)?.trim();
