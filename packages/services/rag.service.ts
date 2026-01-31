@@ -458,7 +458,33 @@ export class RagService {
     );
 
     if (maxPromptChars && enhancedPrompt.length > maxPromptChars) {
-      enhancedPrompt = this.truncateText(enhancedPrompt, maxPromptChars);
+      const compactSystemPrompt = this.buildCompactSystemPrompt(
+        systemPrompt,
+        options?.bootstrapSummary ?? null
+      );
+      const compactTrimmed = this.trimContextPartsToMaxChars(
+        compactSystemPrompt,
+        contextParts,
+        promptBootstrapSummary,
+        options?.conversationSummary ?? null,
+        maxPromptChars
+      );
+      const compactPrompt = this.buildEnhancedPrompt(
+        compactSystemPrompt,
+        compactTrimmed.contextParts,
+        compactTrimmed.bootstrapSummary,
+        compactTrimmed.conversationSummary,
+        compactTrimmed.contextParts.length > 0
+      );
+
+      if (compactPrompt.length <= maxPromptChars) {
+        enhancedPrompt = compactPrompt;
+        adjustedContextParts = compactTrimmed.contextParts;
+        adjustedBootstrapSummary = compactTrimmed.bootstrapSummary;
+        adjustedConversationSummary = compactTrimmed.conversationSummary;
+      } else {
+        enhancedPrompt = this.truncateText(compactPrompt, maxPromptChars);
+      }
     }
 
     const contextScoreThreshold = Math.max(
@@ -850,6 +876,71 @@ ${finalContext || '(Nenhum contexto adicional disponível)'}
 ${instructionsText || 'Responda à pergunta do usuário de forma clara e precisa.'}`;
   }
 
+  private buildCompactSystemPrompt(
+    systemPrompt: string,
+    bootstrapSummary: string | null
+  ): string {
+    const instructions = this.extractCriticalInstructions(systemPrompt);
+    const normalizedSummary = this.normalizeText(bootstrapSummary ?? '');
+    const summaryText = normalizedSummary
+      ? this.truncateText(normalizedSummary, this.maxSummaryChars)
+      : this.buildFallbackSystemSummary(systemPrompt);
+
+    const parts: string[] = [];
+    if (instructions) {
+      parts.push(instructions);
+    }
+    if (summaryText) {
+      parts.push('### RESUMO CONSOLIDADO DA BASE:\n' + summaryText);
+    }
+
+    if (parts.length === 0) {
+      return this.truncateText(systemPrompt, 4000);
+    }
+
+    parts.push(
+      '### REGRA FUNDAMENTAL:',
+      'Use o resumo acima como referência principal para responder. Não invente informações fora desse resumo.'
+    );
+
+    return parts.join('\n\n');
+  }
+
+  private extractCriticalInstructions(systemPrompt: string): string {
+    if (!systemPrompt) {
+      return '';
+    }
+    const startIndex = systemPrompt.indexOf(
+      '### INSTRUÇÕES CRÍTICAS DE CONTEXTO:'
+    );
+    if (startIndex === -1) {
+      return this.truncateText(systemPrompt, 2000);
+    }
+
+    const endCandidates = [
+      systemPrompt.indexOf('### BASE DE CONHECIMENTO', startIndex),
+      systemPrompt.indexOf('### REGRA FUNDAMENTAL', startIndex),
+    ].filter((index) => index !== -1);
+    const endIndex =
+      endCandidates.length > 0
+        ? Math.min(...endCandidates)
+        : systemPrompt.length;
+    const slice = systemPrompt.slice(0, endIndex).trim();
+    return this.truncateText(slice, 4000);
+  }
+
+  private buildFallbackSystemSummary(systemPrompt: string): string {
+    if (!systemPrompt) {
+      return '';
+    }
+    const baseIndex = systemPrompt.indexOf('### BASE DE CONHECIMENTO');
+    if (baseIndex === -1) {
+      return this.truncateText(systemPrompt, 2000);
+    }
+    const slice = systemPrompt.slice(baseIndex);
+    return this.truncateText(slice, 4000);
+  }
+
   private trimContextPartsToMaxChars(
     systemPrompt: string,
     contextParts: string[],
@@ -993,6 +1084,16 @@ ${instructionsText || 'Responda à pergunta do usuário de forma clara e precisa
           );
           trimmed = true;
         }
+      }
+    }
+
+    if (rebuildPromptLength(workingParts) > maxPromptChars) {
+      const filtered = workingParts.filter(
+        (item) => item.type !== 'knowledge_context'
+      );
+      if (filtered.length !== workingParts.length) {
+        workingParts = filtered;
+        trimmed = true;
       }
     }
 
@@ -1163,6 +1264,11 @@ ${instructionsText || 'Responda à pergunta do usuário de forma clara e precisa
       return true;
     }
 
+    const conversationKeywords = this.extractKeywords(
+      options.conversationContextText ?? ''
+    );
+    const conversationKeywordSet = new Set(conversationKeywords);
+
     const contextText = [
       options.bootstrapSummary ?? '',
       options.knowledgeContextText ?? '',
@@ -1183,12 +1289,22 @@ ${instructionsText || 'Responda à pergunta do usuário de forma clara e precisa
 
     const contextKeywordSet = new Set(contextKeywords);
     if (queryKeywords.length === 1) {
+      const token = queryKeywords[0];
+      if (hasConversationText && conversationKeywordSet.has(token)) {
+        return true;
+      }
       return false;
     }
 
     const matchCount = queryKeywords.filter((token) =>
       contextKeywordSet.has(token)
     ).length;
+
+    const conversationMatchCount = queryKeywords.filter((token) =>
+      conversationKeywordSet.has(token)
+    ).length;
+    const conversationMatchRatio =
+      conversationMatchCount / queryKeywords.length;
 
     const matchRatio = matchCount / queryKeywords.length;
     const requiredRatio = Math.max(this.minKeywordMatchRatio, 0.4);
@@ -1197,6 +1313,12 @@ ${instructionsText || 'Responda à pergunta do usuário de forma clara e precisa
     }
     if (matchCount >= 2 && matchRatio >= requiredRatio) {
       return true;
+    }
+
+    if (!hasKnowledgeText && hasConversationText) {
+      if (conversationMatchCount >= 1 && conversationMatchRatio >= 0.25) {
+        return true;
+      }
     }
 
     return false;

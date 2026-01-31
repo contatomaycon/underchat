@@ -5126,6 +5126,7 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       );
 
     let aiResponse: string;
+    let shouldStoreLastAgentResponse = false;
     if (!contextAllowed) {
       aiResponse = this.buildOutOfContextResponse(userText, contextHints);
     } else {
@@ -5138,6 +5139,7 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
           enhancedPrompt,
           userText
         );
+        shouldStoreLastAgentResponse = true;
 
         let isDuplicate =
           this.isRepeatedResponse(aiResponse, recentMessages) ||
@@ -5160,6 +5162,7 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
             retryPrompt,
             userText
           );
+          shouldStoreLastAgentResponse = true;
 
           const retryIsDuplicate =
             this.isRepeatedResponse(retryResponse, recentMessages) ||
@@ -5229,7 +5232,8 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
         api_key: aiAgent.api_key,
         model: aiAgent.model,
         ai_agent_type_id: aiAgent.ai_agent_type_id,
-      }
+      },
+      shouldStoreLastAgentResponse
     );
 
     const actionAfterInteractions =
@@ -5726,7 +5730,8 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       api_key: string;
       model: string;
       ai_agent_type_id: string;
-    }
+    },
+    shouldStoreLastAgentResponse: boolean
   ): Promise<void> {
     await this.chatMessageService.sendMessage(t, {
       chat: createChat,
@@ -5736,13 +5741,15 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       typeUser: ETypeUserChat.bot,
     });
 
-    await this.storeLastAgentResponse(
-      createChat.account.id,
-      createChat.worker.id,
-      createChat.chat_id,
-      selectedAiAgentId,
-      aiResponse
-    );
+    if (shouldStoreLastAgentResponse) {
+      await this.storeLastAgentResponse(
+        createChat.account.id,
+        createChat.worker.id,
+        createChat.chat_id,
+        selectedAiAgentId,
+        aiResponse
+      );
+    }
 
     const nodeId = currentNode?.id ?? selectedAiAgentId;
     const shouldUpdate = await this.shouldUpdateConversationSummary(
