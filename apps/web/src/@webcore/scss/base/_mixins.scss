@@ -2,10 +2,17 @@
 @use '@styles/variables/vuetify.scss';
 
 @mixin elevation($z, $important: false) {
-  box-shadow:
-    map.get(vuetify.$shadow-key-umbra, $z),
-    map.get(vuetify.$shadow-key-penumbra, $z),
-    map.get(vuetify.$shadow-key-ambient, $z) if($important, !important, null);
+  @if $important {
+    box-shadow:
+      map.get(vuetify.$shadow-key-umbra, $z),
+      map.get(vuetify.$shadow-key-penumbra, $z),
+      map.get(vuetify.$shadow-key-ambient, $z) !important;
+  } @else {
+    box-shadow:
+      map.get(vuetify.$shadow-key-umbra, $z),
+      map.get(vuetify.$shadow-key-penumbra, $z),
+      map.get(vuetify.$shadow-key-ambient, $z);
+  }
 }
 
 @mixin before-pseudo() {
@@ -31,9 +38,15 @@
 ) {
   #{$component} {
     box-shadow: none !important;
-    #{$border-property}: 1px solid
-      rgba(var(--v-border-color), var(--v-border-opacity))
-      if($important, !important, null);
+    @if $important {
+      #{$border-property}: 1px
+        solid
+        rgba(var(--v-border-color), var(--v-border-opacity)) !important;
+    } @else {
+      #{$border-property}: 1px
+        solid
+        rgba(var(--v-border-color), var(--v-border-opacity));
+    }
   }
 }
 
