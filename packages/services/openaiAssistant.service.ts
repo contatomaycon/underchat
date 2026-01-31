@@ -45,6 +45,13 @@ export class OpenAIAssistantService {
     };
   }
 
+  private buildResponsesApiHeaders(apiKey: string): IOpenAIHeaders {
+    return {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    };
+  }
+
   private normalizeBaseUrl(baseUrl: string): string {
     return baseUrl.replace(/\/+$/, '');
   }
@@ -190,6 +197,84 @@ export class OpenAIAssistantService {
 
     const data = (await response.json()) as { id: string };
     return data.id;
+  }
+
+  async createResponseWithFileSearch(
+    apiKey: string,
+    baseUrl: string,
+    model: string,
+    instructions: string,
+    userQuery: string,
+    vectorStoreId: string,
+    history?: Array<{ role: 'user' | 'assistant'; content: string }>
+  ): Promise<string> {
+    const url = `${this.normalizeBaseUrl(baseUrl)}/responses`;
+
+    const input =
+      history && history.length > 0
+        ? [
+            ...history.map((msg) => ({
+              role: msg.role as 'user' | 'assistant',
+              content: msg.content,
+            })),
+            { role: 'user' as const, content: userQuery },
+          ]
+        : userQuery;
+
+    const body = {
+      model,
+      instructions,
+      input,
+      tools: [
+        {
+          type: 'file_search',
+          vector_store_ids: [vectorStoreId],
+        },
+      ],
+    };
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: this.buildResponsesApiHeaders(apiKey),
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(
+        `OpenAI Responses API error (file search): ${response.status} - ${errorText}`
+      );
+    }
+
+    const data = (await response.json()) as {
+      output?: Array<{
+        type?: string;
+        role?: string;
+        content?: Array<{ type?: string; text?: string }>;
+      }>;
+    };
+
+    const output = data.output;
+    if (!Array.isArray(output)) {
+      return 'Desculpe, não consegui processar sua solicitação.';
+    }
+
+    for (let i = output.length - 1; i >= 0; i -= 1) {
+      const item = output[i];
+      if (
+        item?.type === 'message' &&
+        item?.role === 'assistant' &&
+        item?.content
+      ) {
+        for (const part of item.content) {
+          if (part?.type === 'output_text' && typeof part.text === 'string') {
+            return part.text;
+          }
+        }
+      }
+    }
+
+    return 'Desculpe, não consegui processar sua solicitação.';
   }
 
   async updateAssistantInstructions(

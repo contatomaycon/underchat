@@ -4719,7 +4719,8 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       chatId: string;
       aiAgentId: string;
       openaiAssistantId: string;
-    }
+    },
+    responsesApiFileSearchOptions?: { vectorStoreId: string }
   ): Promise<string> {
     if (!baseUrl || !apiKey || !model) {
       throw new InvalidConfigurationError(
@@ -4740,6 +4741,21 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
         assistantsOptions.openaiAssistantId,
         prompt,
         userQuery
+      );
+    }
+
+    if (
+      aiAgentTypeId === EAiAgentType.gpt &&
+      responsesApiFileSearchOptions?.vectorStoreId
+    ) {
+      return this.openAIAssistantService.createResponseWithFileSearch(
+        apiKey,
+        baseUrl,
+        model,
+        prompt,
+        userQuery,
+        responsesApiFileSearchOptions.vectorStoreId,
+        history
       );
     }
 
@@ -5259,6 +5275,11 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
     const useAssistantsApi =
       aiAgent.ai_agent_type_id === EAiAgentType.gpt &&
       !!aiAgent.openai_assistant_id;
+    const useFileSearchResponsesApi =
+      aiAgent.ai_agent_type_id === EAiAgentType.gpt &&
+      !aiAgent.openai_assistant_id &&
+      !!aiAgent.openai_vector_store_id;
+    const skipFilePrompts = useAssistantsApi || useFileSearchResponsesApi;
 
     const { enhancedPrompt, contextAllowed, contextHints } =
       await this.buildEnhancedPromptForAiAgent(
@@ -5274,7 +5295,7 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
         bootstrapSummaryKey,
         conversationSummaryKey,
         recentMessages,
-        useAssistantsApi
+        skipFilePrompts
       );
 
     const assistantsOptions =
@@ -5285,6 +5306,10 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
             aiAgentId: selectedAiAgentId,
             openaiAssistantId: aiAgent.openai_assistant_id,
           }
+        : undefined;
+    const responsesApiFileSearchOptions =
+      useFileSearchResponsesApi && aiAgent.openai_vector_store_id
+        ? { vectorStoreId: aiAgent.openai_vector_store_id }
         : undefined;
 
     let aiResponse: string;
@@ -5300,8 +5325,9 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
           aiAgent.ai_agent_type_id,
           enhancedPrompt,
           userText,
-          undefined,
-          assistantsOptions
+          recentMessages,
+          assistantsOptions,
+          responsesApiFileSearchOptions
         );
         shouldStoreLastAgentResponse = true;
 
@@ -5325,8 +5351,9 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
             aiAgent.ai_agent_type_id,
             retryPrompt,
             userText,
-            undefined,
-            assistantsOptions
+            recentMessages,
+            assistantsOptions,
+            responsesApiFileSearchOptions
           );
           shouldStoreLastAgentResponse = true;
 
