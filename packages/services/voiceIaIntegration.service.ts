@@ -54,10 +54,11 @@ export class VoiceIaIntegrationService {
 
   async transcribe(
     audioBuffer: Buffer,
-    config: ViewVoiceIaResponse
+    config: ViewVoiceIaResponse,
+    mimetype?: string
   ): Promise<IVoiceIaTranscribeResult | null> {
     if (config.voice_ia_type === EVoiceIaType.eleven_labs) {
-      return this.transcribeElevenLabs(audioBuffer, config);
+      return this.transcribeElevenLabs(audioBuffer, config, mimetype);
     }
     return null;
   }
@@ -117,24 +118,33 @@ export class VoiceIaIntegrationService {
     }
   }
 
-  private buildBlobFromBuffer(buffer: Buffer): Blob {
+  private buildBlobFromBuffer(buffer: Buffer, mimetype = 'audio/mpeg'): Blob {
     const arrayBuffer = new ArrayBuffer(buffer.byteLength);
     new Uint8Array(arrayBuffer).set(buffer);
-    return new Blob([arrayBuffer], { type: 'audio/mpeg' });
+    return new Blob([arrayBuffer], { type: mimetype });
+  }
+
+  private getAudioExtensionFromMimetype(mimetype: string): string {
+    if (mimetype.includes('ogg') || mimetype.includes('opus')) return 'ogg';
+    if (mimetype.includes('mp3') || mimetype.includes('mpeg')) return 'mp3';
+    if (mimetype.includes('webm')) return 'webm';
+    return 'mp3';
   }
 
   private async transcribeElevenLabs(
     audioBuffer: Buffer,
-    config: ViewVoiceIaResponse
+    config: ViewVoiceIaResponse,
+    mimetype = 'audio/mpeg'
   ): Promise<IVoiceIaTranscribeResult | null> {
     const apiKey = config.api_key;
     if (!apiKey) {
       return null;
     }
 
+    const extension = this.getAudioExtensionFromMimetype(mimetype);
     const formData = new FormData();
-    const blob = this.buildBlobFromBuffer(audioBuffer);
-    formData.append('file', blob, 'audio.mp3');
+    const blob = this.buildBlobFromBuffer(audioBuffer, mimetype);
+    formData.append('file', blob, `audio.${extension}`);
     formData.append('model_id', 'scribe_v1');
 
     try {

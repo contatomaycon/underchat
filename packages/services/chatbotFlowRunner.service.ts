@@ -51,6 +51,7 @@ import { IAiAgentUsageCreateInput } from '@core/common/interfaces/IAiAgentUsageC
 import { AiAgentUsageCreatorRepository } from '@core/repositories/aiAgent/AiAgentUsageCreator.repository';
 import { VoiceIaIntegrationService } from './voiceIaIntegration.service';
 import { VoiceIaService } from './voiceIa.service';
+import { EVoiceIaStatus } from '@core/common/enums/EVoiceIaStatus';
 
 @injectable()
 export class ChatbotFlowRunnerService {
@@ -1279,6 +1280,67 @@ ${userList}`;
     }
 
     return null;
+  }
+
+  private async getTextOrTranscribedForAiAgent(
+    data: IUpsertMessage,
+    createChat: IChat,
+    selectedAiAgentId: string
+  ): Promise<string | null> {
+    const text = this.getTextFromUpsertMessage(data)?.trim();
+    if (text) {
+      return text;
+    }
+
+    if (data.type !== EMessageType.audio) {
+      return null;
+    }
+
+    const audioUrl = data.content?.audio?.url;
+    if (!audioUrl) {
+      return null;
+    }
+
+    const aiAgent = await this.aiAgentService.viewAiAgent(
+      selectedAiAgentId,
+      createChat.account.id
+    );
+
+    if (!aiAgent?.voice_ia_id) {
+      return null;
+    }
+
+    const voiceIaConfig = await this.voiceIaService.viewVoiceIa(
+      aiAgent.voice_ia_id,
+      createChat.account.id
+    );
+
+    if (
+      !voiceIaConfig ||
+      !voiceIaConfig.enable_transcription ||
+      voiceIaConfig.status !== EVoiceIaStatus.active ||
+      !voiceIaConfig.api_key?.trim()
+    ) {
+      return null;
+    }
+
+    try {
+      const response = await fetch(audioUrl);
+      if (!response.ok) {
+        return null;
+      }
+      const arrayBuffer = await response.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      const mimetype = data.content?.audio?.mimetype?.trim() || 'audio/mpeg';
+      const result = await this.voiceIaIntegrationService.transcribe(
+        buffer,
+        voiceIaConfig,
+        mimetype
+      );
+      return result?.text?.trim() ?? null;
+    } catch {
+      return null;
+    }
   }
 
   private async sendTextOptionInvalidMessage(
@@ -6216,7 +6278,13 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       return sectorSelectionResult;
     }
 
-    const userText = this.getTextFromUpsertMessage(data)?.trim();
+    const userText = (
+      await this.getTextOrTranscribedForAiAgent(
+        data,
+        createChat,
+        selectedAiAgentId
+      )
+    )?.trim();
 
     if (!userText) {
       return false;

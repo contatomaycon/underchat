@@ -1981,6 +1981,8 @@ export class MessageUpsertConsume {
       await this.handleContactMessage(content, data);
       await this.handleContactsMessage(content, data);
 
+      (data as IUpsertMessage & { content?: IContent }).content = content;
+
       const isFromMe = data.message?.key?.fromMe ?? false;
       const { typeUser, summary } = this.buildTypeUserAndSummary(
         data.type,

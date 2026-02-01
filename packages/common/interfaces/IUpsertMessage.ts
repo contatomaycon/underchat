@@ -1,11 +1,13 @@
 import { WAMessage } from '@whiskeysockets/baileys';
 import { EMessageType } from '../enums/EMessageType';
+import { IContent } from './IChatMessage';
 
 export interface IUpsertMessage {
   worker_id: string;
   account_id: string;
   type: EMessageType;
   message: WAMessage;
+  content?: IContent | null;
   photo?: string | null;
   has_quoted: boolean;
   is_call_event?: boolean;
