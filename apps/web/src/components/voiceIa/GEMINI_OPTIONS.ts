@@ -37,10 +37,6 @@ export const GEMINI_TTS_MODELS = [
     title: 'Gemini 2.5 Flash Preview TTS',
   },
   {
-    value: 'gemini-2.5-flash-lite-preview-tts',
-    title: 'Gemini 2.5 Flash Lite Preview TTS',
-  },
-  {
     value: 'gemini-2.5-pro-preview-tts',
     title: 'Gemini 2.5 Pro Preview TTS',
   },
