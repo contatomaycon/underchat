@@ -22,5 +22,6 @@ export * from './twoFactor';
 export * from './creditcard';
 export * from './payment';
 export * from './aiAgent';
+export * from './voiceIa';
 export * from './push';
 export * from './release';

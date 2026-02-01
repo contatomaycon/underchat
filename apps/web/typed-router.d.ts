@@ -381,6 +381,13 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       | never
     >,
+    'voice-ia': RouteRecordInfo<
+      'voice-ia',
+      '/voice-ia',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
   }
 
   /**
@@ -702,6 +709,12 @@ declare module 'vue-router/auto-routes' {
     'src/pages/user.vue': {
       routes:
         | 'user'
+      views:
+        | never
+    }
+    'src/pages/voice-ia.vue': {
+      routes:
+        | 'voice-ia'
       views:
         | never
     }

@@ -135,6 +135,20 @@ export default [
           EAiAgentPermissions.ai_agent_delete,
         ],
       },
+      {
+        title: 'voice_ia',
+        to: { name: 'voice-ia' as keyof RouteNamedMap },
+        icon: { icon: 'tabler-microphone' },
+        permissions: [
+          EGeneralPermissions.full_access,
+          EGeneralPermissions.full_access_group,
+          EAiAgentPermissions.ai_agent_group,
+          EAiAgentPermissions.ai_agent_view,
+          EAiAgentPermissions.ai_agent_create,
+          EAiAgentPermissions.ai_agent_update,
+          EAiAgentPermissions.ai_agent_delete,
+        ],
+      },
     ],
   },
   {
