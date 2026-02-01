@@ -49,6 +49,8 @@ import { IChatHistoryEmbeddingRequest } from '@core/common/interfaces/IChatHisto
 import { EContactIgnore } from '@core/common/enums/EContactIgnore';
 import { IAiAgentUsageCreateInput } from '@core/common/interfaces/IAiAgentUsageCreateInput';
 import { AiAgentUsageCreatorRepository } from '@core/repositories/aiAgent/AiAgentUsageCreator.repository';
+import { VoiceIaIntegrationService } from './voiceIaIntegration.service';
+import { VoiceIaService } from './voiceIa.service';
 
 @injectable()
 export class ChatbotFlowRunnerService {
@@ -73,7 +75,9 @@ export class ChatbotFlowRunnerService {
     private readonly elasticDatabaseService: ElasticDatabaseService,
     private readonly streamProducerService: StreamProducerService,
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
-    private readonly aiAgentUsageCreatorRepository: AiAgentUsageCreatorRepository
+    private readonly aiAgentUsageCreatorRepository: AiAgentUsageCreatorRepository,
+    private readonly voiceIaIntegrationService: VoiceIaIntegrationService,
+    private readonly voiceIaService: VoiceIaService
   ) {}
 
   private getChatbotFlowCacheKey(
@@ -6718,6 +6722,7 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
         api_key: aiAgent.api_key,
         model: aiAgent.model,
         ai_agent_type_id: aiAgent.ai_agent_type_id,
+        voice_ia_id: aiAgent.voice_ia_id,
       },
       shouldStoreLastAgentResponse
     );
@@ -7479,16 +7484,50 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       api_key: string;
       model: string;
       ai_agent_type_id: string;
+      voice_ia_id: string | null;
     },
     shouldStoreLastAgentResponse: boolean
   ): Promise<void> {
-    await this.chatMessageService.sendMessage(t, {
-      chat: createChat,
-      accountId: createChat.account.id,
-      type: EMessageType.text,
-      message: aiResponse,
-      typeUser: ETypeUserChat.bot,
-    });
+    let messageSent = false;
+    if (aiAgent.voice_ia_id && aiResponse.trim().length > 0) {
+      try {
+        const voiceIaConfig = await this.voiceIaService.viewVoiceIa(
+          aiAgent.voice_ia_id,
+          createChat.account.id
+        );
+        if (voiceIaConfig?.api_key) {
+          const uploadResult =
+            await this.voiceIaIntegrationService.generateSpeechAndUpload(
+              aiResponse,
+              voiceIaConfig,
+              createChat.account.id
+            );
+          if (uploadResult) {
+            await this.chatMessageService.sendMessage(t, {
+              chat: createChat,
+              accountId: createChat.account.id,
+              type: EMessageType.audio,
+              message: aiResponse,
+              audioUrl: uploadResult.url,
+              audioMimetype: uploadResult.mimetype,
+              typeUser: ETypeUserChat.bot,
+            });
+            messageSent = true;
+          }
+        }
+      } catch {
+        messageSent = false;
+      }
+    }
+    if (!messageSent) {
+      await this.chatMessageService.sendMessage(t, {
+        chat: createChat,
+        accountId: createChat.account.id,
+        type: EMessageType.text,
+        message: aiResponse,
+        typeUser: ETypeUserChat.bot,
+      });
+    }
 
     if (shouldStoreLastAgentResponse) {
       await this.storeLastAgentResponse(
