@@ -228,9 +228,10 @@ export class AiAgentPromptUpdaterUseCase {
       throw new Error(t('ai_agent_prompt_update_error'));
     }
 
-    await this.cleanupOpenAIFileIfNeeded(
-      aiAgentPromptExists.ai_agent_id,
+    await this.ensureOpenAIAndCleanupIfNeeded(
       accountId,
+      aiAgentPromptExists.ai_agent_id,
+      finalPromptType,
       aiAgentPromptExists.openai_file_id
     );
 
@@ -246,34 +247,52 @@ export class AiAgentPromptUpdaterUseCase {
     return aiAgentPromptUpdater;
   }
 
-  private async cleanupOpenAIFileIfNeeded(
-    aiAgentId: string,
+  private async ensureOpenAIAndCleanupIfNeeded(
     accountId: string,
+    aiAgentId: string,
+    promptType: EAiAgentPromptType,
     openaiFileId: string | null | undefined
   ): Promise<void> {
-    if (!openaiFileId) {
+    if (promptType !== EAiAgentPromptType.file) {
       return;
     }
 
-    try {
-      const agent = await this.aiAgentService.viewAiAgent(aiAgentId, accountId);
-      if (
-        !agent ||
-        agent.ai_agent_type_id !== EAiAgentType.gpt ||
-        !agent.api_key ||
-        !agent.base_url
-      ) {
-        return;
-      }
+    const agent = await this.aiAgentService.viewAiAgent(aiAgentId, accountId);
+    const isGpt = agent?.ai_agent_type_id === EAiAgentType.gpt;
+    if (!isGpt || !agent?.api_key || !agent?.base_url) {
+      return;
+    }
 
-      await this.openAIAssistantService.cleanupOpenAIFile(
+    const vectorStoreId = await this.openAIAssistantService.ensureVectorStore(
+      aiAgentId,
+      accountId,
+      agent.api_key,
+      agent.base_url
+    );
+
+    if (agent.model) {
+      await this.openAIAssistantService.ensureAssistant(
+        aiAgentId,
+        accountId,
         agent.api_key,
         agent.base_url,
-        agent.openai_vector_store_id,
-        openaiFileId
+        agent.model,
+        this.openAIAssistantService.getDefaultAssistantInstructions(),
+        vectorStoreId
       );
-    } catch (error) {
-      console.error('Erro ao limpar arquivo OpenAI:', error);
+    }
+
+    if (openaiFileId) {
+      try {
+        await this.openAIAssistantService.cleanupOpenAIFile(
+          agent.api_key,
+          agent.base_url,
+          vectorStoreId,
+          openaiFileId
+        );
+      } catch (error) {
+        console.error('Erro ao limpar arquivo OpenAI:', error);
+      }
     }
   }
 
