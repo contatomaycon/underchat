@@ -518,6 +518,7 @@ export class RagService {
     }
   ): Promise<{
     enhancedPrompt: string;
+    contextParts: string[];
     contextUsed: boolean;
     chunksCount: number;
     contextAllowed: boolean;
@@ -533,6 +534,7 @@ export class RagService {
       );
       return {
         ...bootstrapPrompt,
+        contextParts: [],
         contextAllowed: true,
         contextHints: [],
       };
@@ -652,11 +654,32 @@ export class RagService {
 
     return {
       enhancedPrompt,
+      contextParts: adjustedContextParts,
       contextUsed: adjustedContextParts.length > 0,
       chunksCount,
       contextAllowed,
       contextHints,
     };
+  }
+
+  buildEnhancedPromptFromCachedParts(
+    systemPrompt: string,
+    contextParts: string[],
+    contextAllowed: boolean,
+    contextHints: string[]
+  ): {
+    enhancedPrompt: string;
+    contextAllowed: boolean;
+    contextHints: string[];
+  } {
+    const enhancedPrompt = this.buildEnhancedPrompt(
+      systemPrompt,
+      contextParts,
+      undefined,
+      undefined,
+      contextParts.length > 0
+    );
+    return { enhancedPrompt, contextAllowed, contextHints };
   }
 
   private groupPromptsByType(

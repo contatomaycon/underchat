@@ -53,6 +53,9 @@ import { VoiceIaIntegrationService } from './voiceIaIntegration.service';
 import { VoiceIaService } from './voiceIa.service';
 import { EVoiceIaStatus } from '@core/common/enums/EVoiceIaStatus';
 import { stripTextForTts } from '@core/common/functions/stripTextForTts';
+import { ViewAiAgentResponse } from '@core/schema/aiAgent/viewAiAgent/response.schema';
+import { IChatbotCustomMessages } from '@core/common/interfaces/IChatbotCustomMessages';
+import { getContextTokensForModel } from '@core/common/functions/getContextTokensForModel';
 
 @injectable()
 export class ChatbotFlowRunnerService {
@@ -60,6 +63,7 @@ export class ChatbotFlowRunnerService {
   private readonly CHATBOT_FLOW_NODE_CACHE_TTL_SECONDS = 259200;
   private readonly RAG_CACHE_TTL_SECONDS = 600;
   private readonly CONVERSATION_SUMMARY_UPDATE_INTERVAL = 5;
+  private static readonly MIN_PREFIX_MATCH_LENGTH = 8;
 
   constructor(
     @inject('Redis') private readonly redis: Redis,
@@ -148,7 +152,8 @@ export class ChatbotFlowRunnerService {
 
   private async extractTransferContextFromAgentContext(
     createChat: IChat,
-    selectedAiAgentId: string
+    selectedAiAgentId: string,
+    aiAgent?: ViewAiAgentResponse | null
   ): Promise<{
     sectorNames: string[];
     userNames: string[];
@@ -161,10 +166,13 @@ export class ChatbotFlowRunnerService {
       askOnlyUser: false,
       contextText: '',
     };
-    const agent = await this.aiAgentService.viewAiAgent(
-      selectedAiAgentId,
-      createChat.account.id
-    );
+    const agent =
+      aiAgent?.base_url && aiAgent?.api_key && aiAgent?.model
+        ? aiAgent
+        : await this.aiAgentService.viewAiAgent(
+            selectedAiAgentId,
+            createChat.account.id
+          );
     if (!agent?.base_url || !agent?.api_key || !agent?.model) {
       return defaultResult;
     }
@@ -729,6 +737,7 @@ ${userList}`;
     }>;
     contextText: string;
     hasExplicitUserNames: boolean;
+    aiAgent?: ViewAiAgentResponse | null;
   }): Promise<
     Array<{
       id: string;
@@ -741,10 +750,12 @@ ${userList}`;
       return params.eligibleUsers;
     }
 
-    const aiAgentForValidation = await this.aiAgentService.viewAiAgent(
-      params.aiAgentId,
-      params.accountId
-    );
+    const aiAgentForValidation =
+      params.aiAgent ??
+      (await this.aiAgentService.viewAiAgent(
+        params.aiAgentId,
+        params.accountId
+      ));
 
     if (
       !aiAgentForValidation?.base_url ||
@@ -1228,6 +1239,17 @@ ${userList}`;
     return count;
   }
 
+  private hasReachedInteractionLimit(count: number, limit: number): boolean {
+    return count >= limit;
+  }
+
+  private hasExceededInteractionLimitAfterIncrement(
+    newCount: number,
+    limit: number
+  ): boolean {
+    return newCount > limit;
+  }
+
   private async getAiAgentInteractionsCount(
     accountId: string,
     workerId: string,
@@ -1286,7 +1308,7 @@ ${userList}`;
   private async getTextOrTranscribedForAiAgent(
     data: IUpsertMessage,
     createChat: IChat,
-    selectedAiAgentId: string
+    aiAgent: ViewAiAgentResponse | null
   ): Promise<string | null> {
     const text = this.getTextFromUpsertMessage(data)?.trim();
     if (text) {
@@ -1301,11 +1323,6 @@ ${userList}`;
     if (!audioUrl) {
       return null;
     }
-
-    const aiAgent = await this.aiAgentService.viewAiAgent(
-      selectedAiAgentId,
-      createChat.account.id
-    );
 
     if (!aiAgent?.voice_ia_id) {
       return null;
@@ -1966,26 +1983,7 @@ ${userList}`;
     createChat: IChat,
     chatbotFlow: ListChatbotFlowResponse,
     nextFlowId: string,
-    customMessages?: {
-      service_finished_message?: string;
-      invalid_menu_option_message?: string;
-      invalid_satisfaction_option_message?: string;
-      invalid_cpf_message?: string;
-      invalid_cnpj_message?: string;
-      invalid_email_message?: string;
-      transfer_message_user?: string;
-      transfer_message_sector?: string;
-      transfer_message_sector_user?: string;
-      service_finished_message_enabled?: boolean;
-      invalid_menu_option_message_enabled?: boolean;
-      invalid_satisfaction_option_message_enabled?: boolean;
-      invalid_cpf_message_enabled?: boolean;
-      invalid_cnpj_message_enabled?: boolean;
-      invalid_email_message_enabled?: boolean;
-      transfer_message_user_enabled?: boolean;
-      transfer_message_sector_enabled?: boolean;
-      transfer_message_sector_user_enabled?: boolean;
-    },
+    customMessages?: IChatbotCustomMessages,
     data?: IUpsertMessage
   ): Promise<boolean> {
     const nextFlowNode = this.getFlowNodeById(chatbotFlow, nextFlowId);
@@ -2146,26 +2144,7 @@ ${userList}`;
     createChat: IChat,
     node: ListChatbotFlowResponse['nodes'][number],
     chatbotFlow: ListChatbotFlowResponse,
-    customMessages?: {
-      service_finished_message?: string;
-      invalid_menu_option_message?: string;
-      invalid_satisfaction_option_message?: string;
-      invalid_cpf_message?: string;
-      invalid_cnpj_message?: string;
-      invalid_email_message?: string;
-      transfer_message_user?: string;
-      transfer_message_sector?: string;
-      transfer_message_sector_user?: string;
-      service_finished_message_enabled?: boolean;
-      invalid_menu_option_message_enabled?: boolean;
-      invalid_satisfaction_option_message_enabled?: boolean;
-      invalid_cpf_message_enabled?: boolean;
-      invalid_cnpj_message_enabled?: boolean;
-      invalid_email_message_enabled?: boolean;
-      transfer_message_user_enabled?: boolean;
-      transfer_message_sector_enabled?: boolean;
-      transfer_message_sector_user_enabled?: boolean;
-    }
+    customMessages?: IChatbotCustomMessages
   ): Promise<boolean> {
     const continueType = node.data?.continueType;
 
@@ -2207,26 +2186,7 @@ ${userList}`;
     chatbotFlow: ListChatbotFlowResponse,
     currentNode: ListChatbotFlowResponse['nodes'][number],
     currentFlowId: string,
-    customMessages?: {
-      service_finished_message?: string;
-      invalid_menu_option_message?: string;
-      invalid_satisfaction_option_message?: string;
-      invalid_cpf_message?: string;
-      invalid_cnpj_message?: string;
-      invalid_email_message?: string;
-      transfer_message_user?: string;
-      transfer_message_sector?: string;
-      transfer_message_sector_user?: string;
-      service_finished_message_enabled?: boolean;
-      invalid_menu_option_message_enabled?: boolean;
-      invalid_satisfaction_option_message_enabled?: boolean;
-      invalid_cpf_message_enabled?: boolean;
-      invalid_cnpj_message_enabled?: boolean;
-      invalid_email_message_enabled?: boolean;
-      transfer_message_user_enabled?: boolean;
-      transfer_message_sector_enabled?: boolean;
-      transfer_message_sector_user_enabled?: boolean;
-    }
+    customMessages?: IChatbotCustomMessages
   ): Promise<boolean> {
     const continueType = currentNode.data?.continueType;
 
@@ -2358,26 +2318,7 @@ ${userList}`;
     createChat: IChat,
     chatbotFlow: ListChatbotFlowResponse,
     currentFlowId: string,
-    customMessages?: {
-      service_finished_message?: string;
-      invalid_menu_option_message?: string;
-      invalid_satisfaction_option_message?: string;
-      invalid_cpf_message?: string;
-      invalid_cnpj_message?: string;
-      invalid_email_message?: string;
-      transfer_message_user?: string;
-      transfer_message_sector?: string;
-      transfer_message_sector_user?: string;
-      service_finished_message_enabled?: boolean;
-      invalid_menu_option_message_enabled?: boolean;
-      invalid_satisfaction_option_message_enabled?: boolean;
-      invalid_cpf_message_enabled?: boolean;
-      invalid_cnpj_message_enabled?: boolean;
-      invalid_email_message_enabled?: boolean;
-      transfer_message_user_enabled?: boolean;
-      transfer_message_sector_enabled?: boolean;
-      transfer_message_sector_user_enabled?: boolean;
-    }
+    customMessages?: IChatbotCustomMessages
   ): Promise<boolean> {
     const currentNode = this.getFlowNodeById(chatbotFlow, currentFlowId);
 
@@ -2401,7 +2342,9 @@ ${userList}`;
     if (tagType === 'contact') {
       try {
         await this.updateContactTag(t, createChat, selectedTag);
-      } catch {}
+      } catch (error) {
+        console.error('[ChatbotFlow] updateContactTag failed', error);
+      }
     }
 
     const nextFlowId = this.getNextFlowId(chatbotFlow, currentFlowId);
@@ -2423,26 +2366,7 @@ ${userList}`;
     createChat: IChat,
     chatbotFlow: ListChatbotFlowResponse,
     currentFlowId: string,
-    customMessages?: {
-      service_finished_message?: string;
-      invalid_menu_option_message?: string;
-      invalid_satisfaction_option_message?: string;
-      invalid_cpf_message?: string;
-      invalid_cnpj_message?: string;
-      invalid_email_message?: string;
-      transfer_message_user?: string;
-      transfer_message_sector?: string;
-      transfer_message_sector_user?: string;
-      service_finished_message_enabled?: boolean;
-      invalid_menu_option_message_enabled?: boolean;
-      invalid_satisfaction_option_message_enabled?: boolean;
-      invalid_cpf_message_enabled?: boolean;
-      invalid_cnpj_message_enabled?: boolean;
-      invalid_email_message_enabled?: boolean;
-      transfer_message_user_enabled?: boolean;
-      transfer_message_sector_enabled?: boolean;
-      transfer_message_sector_user_enabled?: boolean;
-    }
+    customMessages?: IChatbotCustomMessages
   ): Promise<boolean> {
     const currentNode = this.getFlowNodeById(chatbotFlow, currentFlowId);
 
@@ -2609,16 +2533,7 @@ ${userList}`;
     createChat: IChat,
     chatbotFlow: ListChatbotFlowResponse,
     currentFlowId: string,
-    customMessages?: {
-      service_finished_message?: string;
-      transfer_message_user?: string;
-      transfer_message_sector?: string;
-      transfer_message_sector_user?: string;
-      service_finished_message_enabled?: boolean;
-      transfer_message_user_enabled?: boolean;
-      transfer_message_sector_enabled?: boolean;
-      transfer_message_sector_user_enabled?: boolean;
-    }
+    customMessages?: IChatbotCustomMessages
   ): Promise<boolean> {
     const currentNode = this.getFlowNodeById(chatbotFlow, currentFlowId);
 
@@ -2785,26 +2700,7 @@ ${userList}`;
     createChat: IChat,
     chatbotFlow: ListChatbotFlowResponse,
     currentFlowId: string,
-    customMessages?: {
-      service_finished_message?: string;
-      invalid_menu_option_message?: string;
-      invalid_satisfaction_option_message?: string;
-      invalid_cpf_message?: string;
-      invalid_cnpj_message?: string;
-      invalid_email_message?: string;
-      transfer_message_user?: string;
-      transfer_message_sector?: string;
-      transfer_message_sector_user?: string;
-      service_finished_message_enabled?: boolean;
-      invalid_menu_option_message_enabled?: boolean;
-      invalid_satisfaction_option_message_enabled?: boolean;
-      invalid_cpf_message_enabled?: boolean;
-      invalid_cnpj_message_enabled?: boolean;
-      invalid_email_message_enabled?: boolean;
-      transfer_message_user_enabled?: boolean;
-      transfer_message_sector_enabled?: boolean;
-      transfer_message_sector_user_enabled?: boolean;
-    }
+    customMessages?: IChatbotCustomMessages
   ): Promise<boolean> {
     const nextFlowId = this.getNextFlowId(chatbotFlow, currentFlowId);
     if (nextFlowId) {
@@ -2848,26 +2744,7 @@ ${userList}`;
     createChat: IChat,
     chatbotFlow: ListChatbotFlowResponse,
     currentFlowId: string,
-    customMessages?: {
-      service_finished_message?: string;
-      invalid_menu_option_message?: string;
-      invalid_satisfaction_option_message?: string;
-      invalid_cpf_message?: string;
-      invalid_cnpj_message?: string;
-      invalid_email_message?: string;
-      transfer_message_user?: string;
-      transfer_message_sector?: string;
-      transfer_message_sector_user?: string;
-      service_finished_message_enabled?: boolean;
-      invalid_menu_option_message_enabled?: boolean;
-      invalid_satisfaction_option_message_enabled?: boolean;
-      invalid_cpf_message_enabled?: boolean;
-      invalid_cnpj_message_enabled?: boolean;
-      invalid_email_message_enabled?: boolean;
-      transfer_message_user_enabled?: boolean;
-      transfer_message_sector_enabled?: boolean;
-      transfer_message_sector_user_enabled?: boolean;
-    }
+    customMessages?: IChatbotCustomMessages
   ): Promise<boolean> {
     const userText = this.getTextFromUpsertMessage(data)?.trim();
 
@@ -2893,26 +2770,7 @@ ${userList}`;
     createChat: IChat,
     chatbotFlow: ListChatbotFlowResponse,
     currentFlowId: string,
-    customMessages?: {
-      service_finished_message?: string;
-      invalid_menu_option_message?: string;
-      invalid_satisfaction_option_message?: string;
-      invalid_cpf_message?: string;
-      invalid_cnpj_message?: string;
-      invalid_email_message?: string;
-      transfer_message_user?: string;
-      transfer_message_sector?: string;
-      transfer_message_sector_user?: string;
-      service_finished_message_enabled?: boolean;
-      invalid_menu_option_message_enabled?: boolean;
-      invalid_satisfaction_option_message_enabled?: boolean;
-      invalid_cpf_message_enabled?: boolean;
-      invalid_cnpj_message_enabled?: boolean;
-      invalid_email_message_enabled?: boolean;
-      transfer_message_user_enabled?: boolean;
-      transfer_message_sector_enabled?: boolean;
-      transfer_message_sector_user_enabled?: boolean;
-    }
+    customMessages?: IChatbotCustomMessages
   ): Promise<boolean> {
     const userText = this.getTextFromUpsertMessage(data)?.trim();
 
@@ -2940,26 +2798,7 @@ ${userList}`;
     currentNode: ListChatbotFlowResponse['nodes'][number],
     userText: string,
     customMessage?: string,
-    customMessages?: {
-      service_finished_message?: string;
-      invalid_menu_option_message?: string;
-      invalid_satisfaction_option_message?: string;
-      invalid_cpf_message?: string;
-      invalid_cnpj_message?: string;
-      invalid_email_message?: string;
-      transfer_message_user?: string;
-      transfer_message_sector?: string;
-      transfer_message_sector_user?: string;
-      service_finished_message_enabled?: boolean;
-      invalid_menu_option_message_enabled?: boolean;
-      invalid_satisfaction_option_message_enabled?: boolean;
-      invalid_cpf_message_enabled?: boolean;
-      invalid_cnpj_message_enabled?: boolean;
-      invalid_email_message_enabled?: boolean;
-      transfer_message_user_enabled?: boolean;
-      transfer_message_sector_enabled?: boolean;
-      transfer_message_sector_user_enabled?: boolean;
-    }
+    customMessages?: IChatbotCustomMessages
   ): Promise<boolean> {
     if (!this.isValidEmail(userText)) {
       await this.sendInvalidEmailMessage(
@@ -2995,26 +2834,7 @@ ${userList}`;
     currentNode: ListChatbotFlowResponse['nodes'][number],
     userText: string,
     customMessage?: string,
-    customMessages?: {
-      service_finished_message?: string;
-      invalid_menu_option_message?: string;
-      invalid_satisfaction_option_message?: string;
-      invalid_cpf_message?: string;
-      invalid_cnpj_message?: string;
-      invalid_email_message?: string;
-      transfer_message_user?: string;
-      transfer_message_sector?: string;
-      transfer_message_sector_user?: string;
-      service_finished_message_enabled?: boolean;
-      invalid_menu_option_message_enabled?: boolean;
-      invalid_satisfaction_option_message_enabled?: boolean;
-      invalid_cpf_message_enabled?: boolean;
-      invalid_cnpj_message_enabled?: boolean;
-      invalid_email_message_enabled?: boolean;
-      transfer_message_user_enabled?: boolean;
-      transfer_message_sector_enabled?: boolean;
-      transfer_message_sector_user_enabled?: boolean;
-    }
+    customMessages?: IChatbotCustomMessages
   ): Promise<boolean> {
     if (!this.isValidCPF(userText)) {
       await this.sendInvalidCpfMessage(
@@ -3053,26 +2873,7 @@ ${userList}`;
     currentNode: ListChatbotFlowResponse['nodes'][number],
     userText: string,
     customMessage?: string,
-    customMessages?: {
-      service_finished_message?: string;
-      invalid_menu_option_message?: string;
-      invalid_satisfaction_option_message?: string;
-      invalid_cpf_message?: string;
-      invalid_cnpj_message?: string;
-      invalid_email_message?: string;
-      transfer_message_user?: string;
-      transfer_message_sector?: string;
-      transfer_message_sector_user?: string;
-      service_finished_message_enabled?: boolean;
-      invalid_menu_option_message_enabled?: boolean;
-      invalid_satisfaction_option_message_enabled?: boolean;
-      invalid_cpf_message_enabled?: boolean;
-      invalid_cnpj_message_enabled?: boolean;
-      invalid_email_message_enabled?: boolean;
-      transfer_message_user_enabled?: boolean;
-      transfer_message_sector_enabled?: boolean;
-      transfer_message_sector_user_enabled?: boolean;
-    }
+    customMessages?: IChatbotCustomMessages
   ): Promise<boolean> {
     if (!this.isValidCNPJ(userText)) {
       await this.sendInvalidCnpjMessage(
@@ -3109,26 +2910,7 @@ ${userList}`;
     createChat: IChat,
     chatbotFlow: ListChatbotFlowResponse,
     currentFlowId: string,
-    customMessages?: {
-      service_finished_message?: string;
-      invalid_menu_option_message?: string;
-      invalid_satisfaction_option_message?: string;
-      invalid_cpf_message?: string;
-      invalid_cnpj_message?: string;
-      invalid_email_message?: string;
-      transfer_message_user?: string;
-      transfer_message_sector?: string;
-      transfer_message_sector_user?: string;
-      service_finished_message_enabled?: boolean;
-      invalid_menu_option_message_enabled?: boolean;
-      invalid_satisfaction_option_message_enabled?: boolean;
-      invalid_cpf_message_enabled?: boolean;
-      invalid_cnpj_message_enabled?: boolean;
-      invalid_email_message_enabled?: boolean;
-      transfer_message_user_enabled?: boolean;
-      transfer_message_sector_enabled?: boolean;
-      transfer_message_sector_user_enabled?: boolean;
-    }
+    customMessages?: IChatbotCustomMessages
   ): Promise<boolean> {
     const currentNode = this.getFlowNodeById(chatbotFlow, currentFlowId);
 
@@ -3223,12 +3005,7 @@ ${userList}`;
         selected_sector?: string;
         selected_sector_user?: string;
       };
-      customMessages?: {
-        service_finished_message?: string;
-        transfer_message_user?: string;
-        transfer_message_sector?: string;
-        transfer_message_sector_user?: string;
-      };
+      customMessages?: IChatbotCustomMessages;
     }
   ): Promise<boolean> {
     const currentNode = this.getFlowNodeById(chatbotFlow, currentFlowId);
@@ -3367,26 +3144,7 @@ ${userList}`;
     createChat: IChat,
     chatbotFlow: ListChatbotFlowResponse,
     currentFlowId: string,
-    customMessages?: {
-      service_finished_message?: string;
-      invalid_menu_option_message?: string;
-      invalid_satisfaction_option_message?: string;
-      invalid_cpf_message?: string;
-      invalid_cnpj_message?: string;
-      invalid_email_message?: string;
-      transfer_message_user?: string;
-      transfer_message_sector?: string;
-      transfer_message_sector_user?: string;
-      service_finished_message_enabled?: boolean;
-      invalid_menu_option_message_enabled?: boolean;
-      invalid_satisfaction_option_message_enabled?: boolean;
-      invalid_cpf_message_enabled?: boolean;
-      invalid_cnpj_message_enabled?: boolean;
-      invalid_email_message_enabled?: boolean;
-      transfer_message_user_enabled?: boolean;
-      transfer_message_sector_enabled?: boolean;
-      transfer_message_sector_user_enabled?: boolean;
-    }
+    customMessages?: IChatbotCustomMessages
   ): Promise<boolean> {
     const currentNode = this.getFlowNodeById(chatbotFlow, currentFlowId);
     if (!currentNode) {
@@ -3674,11 +3432,7 @@ ${userList}`;
       selected_sector?: string;
       selected_sector_user?: string;
     },
-    customMessages?: {
-      transfer_message_user?: string;
-      transfer_message_sector?: string;
-      transfer_message_sector_user?: string;
-    },
+    customMessages?: IChatbotCustomMessages,
     enabledFlags?: {
       transfer_message_user_enabled?: boolean;
       transfer_message_sector_enabled?: boolean;
@@ -3715,11 +3469,7 @@ ${userList}`;
     t: TFunction<'translation', undefined>,
     createChat: IChat,
     selectedUser?: string,
-    customMessages?: {
-      transfer_message_user?: string;
-      transfer_message_sector?: string;
-      transfer_message_sector_user?: string;
-    },
+    customMessages?: IChatbotCustomMessages,
     enabledFlags?: {
       transfer_message_user_enabled?: boolean;
       transfer_message_sector_enabled?: boolean;
@@ -3760,11 +3510,7 @@ ${userList}`;
     createChat: IChat,
     selectedSector?: string,
     selectedSectorUser?: string,
-    customMessages?: {
-      transfer_message_user?: string;
-      transfer_message_sector?: string;
-      transfer_message_sector_user?: string;
-    },
+    customMessages?: IChatbotCustomMessages,
     enabledFlags?: {
       transfer_message_user_enabled?: boolean;
       transfer_message_sector_enabled?: boolean;
@@ -3824,11 +3570,7 @@ ${userList}`;
     createChat: IChat,
     customInactivityMessage?: string,
     customServiceFinishedMessage?: string,
-    customMessages?: {
-      transfer_message_user?: string;
-      transfer_message_sector?: string;
-      transfer_message_sector_user?: string;
-    },
+    customMessages?: IChatbotCustomMessages,
     enabledFlags?: {
       inactivity_message_enabled?: boolean;
       service_finished_message_enabled?: boolean;
@@ -3913,11 +3655,7 @@ ${userList}`;
       selected_sector_user?: string;
     },
     customServiceFinishedMessage?: string,
-    customMessages?: {
-      transfer_message_user?: string;
-      transfer_message_sector?: string;
-      transfer_message_sector_user?: string;
-    },
+    customMessages?: IChatbotCustomMessages,
     enabledFlags?: {
       service_finished_message_enabled?: boolean;
       transfer_message_user_enabled?: boolean;
@@ -3961,26 +3699,7 @@ ${userList}`;
       selected_sector?: string;
       selected_sector_user?: string;
     },
-    customMessages?: {
-      service_finished_message?: string;
-      invalid_menu_option_message?: string;
-      invalid_satisfaction_option_message?: string;
-      invalid_cpf_message?: string;
-      invalid_cnpj_message?: string;
-      invalid_email_message?: string;
-      transfer_message_user?: string;
-      transfer_message_sector?: string;
-      transfer_message_sector_user?: string;
-      service_finished_message_enabled?: boolean;
-      invalid_menu_option_message_enabled?: boolean;
-      invalid_satisfaction_option_message_enabled?: boolean;
-      invalid_cpf_message_enabled?: boolean;
-      invalid_cnpj_message_enabled?: boolean;
-      invalid_email_message_enabled?: boolean;
-      transfer_message_user_enabled?: boolean;
-      transfer_message_sector_enabled?: boolean;
-      transfer_message_sector_user_enabled?: boolean;
-    }
+    customMessages?: IChatbotCustomMessages
   ): Promise<boolean> {
     const nodeType =
       currentNode.type === 'satisfaction' ? 'satisfaction' : 'menu';
@@ -4159,11 +3878,7 @@ ${userList}`;
     redirectType?: string,
     user?: IChat['user'] | null | undefined,
     sector?: IChat['sector'] | null | undefined,
-    customMessages?: {
-      transfer_message_user?: string;
-      transfer_message_sector?: string;
-      transfer_message_sector_user?: string;
-    },
+    customMessages?: IChatbotCustomMessages,
     enabledFlags?: {
       transfer_message_user_enabled?: boolean;
       transfer_message_sector_enabled?: boolean;
@@ -4205,11 +3920,7 @@ ${userList}`;
     redirectType?: string,
     user?: IChat['user'] | null | undefined,
     sector?: IChat['sector'] | null | undefined,
-    customMessages?: {
-      transfer_message_user?: string;
-      transfer_message_sector?: string;
-      transfer_message_sector_user?: string;
-    },
+    customMessages?: IChatbotCustomMessages,
     enabledFlags?: {
       transfer_message_user_enabled?: boolean;
       transfer_message_sector_enabled?: boolean;
@@ -4666,17 +4377,8 @@ ${userList}`;
     currentNode: any,
     options: any[],
     analysis: 'positive' | 'negative' | 'question' | 'human_support',
-    customMessages?: {
-      service_finished_message?: string;
-      invalid_menu_option_message?: string;
-      invalid_satisfaction_option_message?: string;
-      invalid_cpf_message?: string;
-      invalid_email_message?: string;
-      invalid_phone_message?: string;
-      transfer_message_user?: string;
-      transfer_message_sector?: string;
-      transfer_message_sector_user?: string;
-    }
+    customMessages: IChatbotCustomMessages | undefined,
+    aiAgent: ViewAiAgentResponse | null
   ): Promise<boolean> {
     if (analysis === 'question') {
       return false;
@@ -4688,7 +4390,8 @@ ${userList}`;
       const selectedAiAgentId = currentNode.data?.selectedAiAgent || '';
       const transferContext = await this.extractTransferContextFromAgentContext(
         createChat,
-        selectedAiAgentId
+        selectedAiAgentId,
+        aiAgent
       );
 
       const allUsers = await this.userService.listUsersForTransfer(
@@ -4724,6 +4427,7 @@ ${userList}`;
           matchedUsersFromContext,
           contextText: transferContext.contextText,
           hasExplicitUserNames,
+          aiAgent,
         });
 
         if (eligibleUsers.length === 1) {
@@ -4797,10 +4501,12 @@ ${userList}`;
       const hasContextRestrictedSectors =
         transferContext.sectorNames.length > 0;
 
-      const aiAgentForValidation = await this.aiAgentService.viewAiAgent(
-        selectedAiAgentId,
-        createChat.account.id
-      );
+      const aiAgentForValidation =
+        aiAgent ??
+        (await this.aiAgentService.viewAiAgent(
+          selectedAiAgentId,
+          createChat.account.id
+        ));
       if (
         aiAgentForValidation?.base_url &&
         aiAgentForValidation?.api_key &&
@@ -4999,7 +4705,8 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
       }
 
       return null;
-    } catch {
+    } catch (error) {
+      console.error('[ChatbotFlow] matchSectorFromUserResponse failed', error);
       return null;
     }
   }
@@ -5010,16 +4717,7 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
     chatbotFlow: ListChatbotFlowResponse,
     currentFlowId: string,
     sector: { id: string; name: string; color?: string | null } | null,
-    customMessages?: {
-      service_finished_message?: string;
-      transfer_message_user?: string;
-      transfer_message_sector?: string;
-      transfer_message_sector_user?: string;
-      service_finished_message_enabled?: boolean;
-      transfer_message_user_enabled?: boolean;
-      transfer_message_sector_enabled?: boolean;
-      transfer_message_sector_user_enabled?: boolean;
-    },
+    customMessages?: IChatbotCustomMessages,
     user?: IChat['user'] | null
   ): Promise<boolean> {
     const chatSector: IChat['sector'] | null = sector
@@ -5276,7 +4974,8 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
       }
 
       return null;
-    } catch {
+    } catch (error) {
+      console.error('[ChatbotFlow] matchUserFromUserResponse failed', error);
       return null;
     }
   }
@@ -5287,14 +4986,8 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
     createChat: IChat,
     chatbotFlow: ListChatbotFlowResponse,
     currentFlowId: string,
-    customMessages?: {
-      transfer_message_user?: string;
-      transfer_message_sector?: string;
-      transfer_message_sector_user?: string;
-      transfer_message_user_enabled?: boolean;
-      transfer_message_sector_enabled?: boolean;
-      transfer_message_sector_user_enabled?: boolean;
-    }
+    customMessages: IChatbotCustomMessages | undefined,
+    aiAgent: ViewAiAgentResponse
   ): Promise<boolean | null> {
     const userSelectionKey = this.getUserSelectionCacheKey(
       createChat.account.id,
@@ -5317,7 +5010,7 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
       return null;
     }
 
-    const { users, flowId, selectedAiAgentId, sector } = parsed;
+    const { users, flowId, sector } = parsed;
 
     const selectedNumber = Number.parseInt(userText, 10);
     let matchedUser: {
@@ -5334,25 +5027,23 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
       matchedUser = users[selectedNumber - 1];
     }
 
-    if (!matchedUser && selectedAiAgentId) {
-      const aiAgent = await this.aiAgentService.viewAiAgent(
-        selectedAiAgentId,
-        createChat.account.id
+    if (
+      !matchedUser &&
+      aiAgent?.base_url &&
+      aiAgent?.api_key &&
+      aiAgent?.model
+    ) {
+      const matchedUserId = await this.matchUserFromUserResponse(
+        aiAgent.base_url,
+        aiAgent.api_key,
+        aiAgent.model,
+        aiAgent.ai_agent_type_id,
+        userText,
+        users
       );
-
-      if (aiAgent?.base_url && aiAgent?.api_key && aiAgent?.model) {
-        const matchedUserId = await this.matchUserFromUserResponse(
-          aiAgent.base_url,
-          aiAgent.api_key,
-          aiAgent.model,
-          aiAgent.ai_agent_type_id,
-          userText,
-          users
-        );
-        matchedUser = matchedUserId
-          ? (users.find((u) => u.id === matchedUserId) ?? null)
-          : null;
-      }
+      matchedUser = matchedUserId
+        ? (users.find((u) => u.id === matchedUserId) ?? null)
+        : null;
     }
 
     const chatUser: IChat['user'] | null = matchedUser
@@ -5380,26 +5071,8 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
     createChat: IChat,
     chatbotFlow: ListChatbotFlowResponse,
     currentFlowId: string,
-    customMessages?: {
-      service_finished_message?: string;
-      invalid_menu_option_message?: string;
-      invalid_satisfaction_option_message?: string;
-      invalid_cpf_message?: string;
-      invalid_cnpj_message?: string;
-      invalid_email_message?: string;
-      transfer_message_user?: string;
-      transfer_message_sector?: string;
-      transfer_message_sector_user?: string;
-      service_finished_message_enabled?: boolean;
-      invalid_menu_option_message_enabled?: boolean;
-      invalid_satisfaction_option_message_enabled?: boolean;
-      invalid_cpf_message_enabled?: boolean;
-      invalid_cnpj_message_enabled?: boolean;
-      invalid_email_message_enabled?: boolean;
-      transfer_message_user_enabled?: boolean;
-      transfer_message_sector_enabled?: boolean;
-      transfer_message_sector_user_enabled?: boolean;
-    }
+    customMessages: IChatbotCustomMessages | undefined,
+    aiAgent: ViewAiAgentResponse
   ): Promise<boolean | null> {
     const sectorSelectionKey = this.getSectorSelectionCacheKey(
       createChat.account.id,
@@ -5507,25 +5180,23 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
       matchedSector = sectors[selectedNumber - 1];
     }
 
-    if (!matchedSector && selectedAiAgentId) {
-      const aiAgent = await this.aiAgentService.viewAiAgent(
-        selectedAiAgentId,
-        createChat.account.id
+    if (
+      !matchedSector &&
+      aiAgent?.base_url &&
+      aiAgent?.api_key &&
+      aiAgent?.model
+    ) {
+      const matchedSectorId = await this.matchSectorFromUserResponse(
+        aiAgent.base_url,
+        aiAgent.api_key,
+        aiAgent.model,
+        aiAgent.ai_agent_type_id,
+        userText,
+        sectors
       );
-
-      if (aiAgent?.base_url && aiAgent?.api_key && aiAgent?.model) {
-        const matchedSectorId = await this.matchSectorFromUserResponse(
-          aiAgent.base_url,
-          aiAgent.api_key,
-          aiAgent.model,
-          aiAgent.ai_agent_type_id,
-          userText,
-          sectors
-        );
-        matchedSector = matchedSectorId
-          ? (sectors.find((s) => s.id === matchedSectorId) ?? null)
-          : null;
-      }
+      matchedSector = matchedSectorId
+        ? (sectors.find((s) => s.id === matchedSectorId) ?? null)
+        : null;
     }
 
     if (!matchedSector) {
@@ -5603,21 +5274,16 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
 
   private async generateBootstrapSummaryForChat(
     createChat: IChat,
-    aiAgentId: string,
+    aiAgent: ViewAiAgentResponse,
     bootstrapSummaryKey: string
   ): Promise<void> {
-    const aiAgent = await this.aiAgentService.viewAiAgent(
-      aiAgentId,
-      createChat.account.id
-    );
-
-    if (!aiAgent || !aiAgent.base_url || !aiAgent.api_key || !aiAgent.model) {
+    if (!aiAgent.base_url || !aiAgent.api_key || !aiAgent.model) {
       return;
     }
 
     const promptsDetailed = await this.ragService.getAllAgentPromptsDetailed(
       createChat.account.id,
-      aiAgentId
+      aiAgent.ai_agent_id
     );
     const promptsText =
       this.ragService.buildPromptsTextFromDetailed(promptsDetailed);
@@ -5687,26 +5353,22 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
     createChat: IChat,
     aiAgentId: string
   ): Promise<void> {
-    try {
-      if (!createChat.phone) {
-        return;
-      }
-
-      const payload: IChatHistoryEmbeddingRequest = {
-        account_id: createChat.account.id,
-        ai_agent_id: aiAgentId,
-        phone: createChat.phone,
-      };
-
-      const topic = this.kafkaServiceQueueService.chatHistoryEmbedding();
-      await this.streamProducerService.send(
-        topic,
-        payload,
-        `${createChat.account.id}:${createChat.phone}:${aiAgentId}`
-      );
-    } catch (error) {
-      throw error;
+    if (!createChat.phone) {
+      return;
     }
+
+    const payload: IChatHistoryEmbeddingRequest = {
+      account_id: createChat.account.id,
+      ai_agent_id: aiAgentId,
+      phone: createChat.phone,
+    };
+
+    const topic = this.kafkaServiceQueueService.chatHistoryEmbedding();
+    await this.streamProducerService.send(
+      topic,
+      payload,
+      `${createChat.account.id}:${createChat.phone}:${aiAgentId}`
+    );
   }
 
   private async getRecentChatMessages(
@@ -6024,7 +5686,9 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
   ): Promise<void> {
     try {
       await this.aiAgentUsageCreatorRepository.create(input);
-    } catch {}
+    } catch (error) {
+      console.error('[ChatbotFlow] saveAiAgentUsage failed', error);
+    }
   }
 
   private async callAiAgentChatApi(
@@ -6200,26 +5864,7 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
     createChat: IChat,
     chatbotFlow: ListChatbotFlowResponse,
     currentFlowId: string,
-    customMessages?: {
-      service_finished_message?: string;
-      invalid_menu_option_message?: string;
-      invalid_satisfaction_option_message?: string;
-      invalid_cpf_message?: string;
-      invalid_cnpj_message?: string;
-      invalid_email_message?: string;
-      transfer_message_user?: string;
-      transfer_message_sector?: string;
-      transfer_message_sector_user?: string;
-      service_finished_message_enabled?: boolean;
-      invalid_menu_option_message_enabled?: boolean;
-      invalid_satisfaction_option_message_enabled?: boolean;
-      invalid_cpf_message_enabled?: boolean;
-      invalid_cnpj_message_enabled?: boolean;
-      invalid_email_message_enabled?: boolean;
-      transfer_message_user_enabled?: boolean;
-      transfer_message_sector_enabled?: boolean;
-      transfer_message_sector_user_enabled?: boolean;
-    }
+    customMessages?: IChatbotCustomMessages
   ): Promise<boolean> {
     const currentNode = this.getFlowNodeById(chatbotFlow, currentFlowId);
 
@@ -6231,6 +5876,21 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
 
     if (!selectedAiAgentId) {
       throw new Error(t('chatbot_flow_validation_ai_agent_required'));
+    }
+
+    const aiAgent = await this.aiAgentService.viewAiAgent(
+      selectedAiAgentId,
+      createChat.account.id
+    );
+
+    if (!aiAgent) {
+      throw new Error(t('ai_agent_not_found'));
+    }
+
+    if (!aiAgent.base_url || !aiAgent.api_key || !aiAgent.model) {
+      throw new InvalidConfigurationError(
+        'AI Agent base_url, api_key ou model não está configurado.'
+      );
     }
 
     const cacheKey = this.getChatbotFlowCacheKey(
@@ -6249,7 +5909,7 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
         t,
         createChat,
         currentNode,
-        selectedAiAgentId,
+        aiAgent,
         currentFlowId,
         bootstrapSummaryKey
       );
@@ -6261,7 +5921,8 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       createChat,
       chatbotFlow,
       currentFlowId,
-      customMessages
+      customMessages,
+      aiAgent
     );
     if (userSelectionResult !== null) {
       return userSelectionResult;
@@ -6273,18 +5934,15 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       createChat,
       chatbotFlow,
       currentFlowId,
-      customMessages
+      customMessages,
+      aiAgent
     );
     if (sectorSelectionResult !== null) {
       return sectorSelectionResult;
     }
 
     const userText = (
-      await this.getTextOrTranscribedForAiAgent(
-        data,
-        createChat,
-        selectedAiAgentId
-      )
+      await this.getTextOrTranscribedForAiAgent(data, createChat, aiAgent)
     )?.trim();
 
     if (!userText) {
@@ -6303,7 +5961,12 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
         currentFlowId
       );
 
-      if (currentInteractionsCount >= interactionsQuantity) {
+      if (
+        this.hasReachedInteractionLimit(
+          currentInteractionsCount,
+          interactionsQuantity
+        )
+      ) {
         const nextFlowId = this.getNextFlowIdByInteractionsHandle(
           chatbotFlow,
           currentFlowId
@@ -6335,7 +5998,8 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       currentFlowId,
       currentNode,
       userText,
-      customMessages
+      customMessages,
+      aiAgent
     );
 
     if (menuResult !== null) {
@@ -6346,7 +6010,7 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       t,
       createChat,
       currentNode,
-      selectedAiAgentId,
+      aiAgent,
       currentFlowId,
       userText,
       bootstrapSummaryKey,
@@ -6360,13 +6024,13 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
     t: TFunction<'translation', undefined>,
     createChat: IChat,
     currentNode: ListChatbotFlowResponse['nodes'][number],
-    selectedAiAgentId: string,
+    aiAgent: ViewAiAgentResponse,
     currentFlowId: string,
     bootstrapSummaryKey: string
   ): Promise<boolean> {
     await this.generateBootstrapSummaryForChat(
       createChat,
-      selectedAiAgentId,
+      aiAgent,
       bootstrapSummaryKey
     );
 
@@ -6378,7 +6042,7 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       currentFlowId
     );
     await this.updateCache(createChat, currentFlowId);
-    await this.scheduleChatHistoryEmbedding(createChat, selectedAiAgentId);
+    await this.scheduleChatHistoryEmbedding(createChat, aiAgent.ai_agent_id);
 
     return true;
   }
@@ -6390,26 +6054,8 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
     currentFlowId: string,
     currentNode: ListChatbotFlowResponse['nodes'][number],
     userText: string,
-    customMessages?: {
-      service_finished_message?: string;
-      invalid_menu_option_message?: string;
-      invalid_satisfaction_option_message?: string;
-      invalid_cpf_message?: string;
-      invalid_cnpj_message?: string;
-      invalid_email_message?: string;
-      transfer_message_user?: string;
-      transfer_message_sector?: string;
-      transfer_message_sector_user?: string;
-      service_finished_message_enabled?: boolean;
-      invalid_menu_option_message_enabled?: boolean;
-      invalid_satisfaction_option_message_enabled?: boolean;
-      invalid_cpf_message_enabled?: boolean;
-      invalid_cnpj_message_enabled?: boolean;
-      invalid_email_message_enabled?: boolean;
-      transfer_message_user_enabled?: boolean;
-      transfer_message_sector_enabled?: boolean;
-      transfer_message_sector_user_enabled?: boolean;
-    }
+    customMessages: IChatbotCustomMessages | undefined,
+    aiAgent: ViewAiAgentResponse
   ): Promise<boolean | null> {
     const options = currentNode.data?.options;
     const continueMessage = currentNode.data?.continueMessage;
@@ -6445,7 +6091,8 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       options,
       continueMessage,
       userText,
-      customMessages
+      customMessages,
+      aiAgent
     );
   }
 
@@ -6456,26 +6103,7 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
     currentFlowId: string,
     options: any[],
     userText: string,
-    customMessages?: {
-      service_finished_message?: string;
-      invalid_menu_option_message?: string;
-      invalid_satisfaction_option_message?: string;
-      invalid_cpf_message?: string;
-      invalid_cnpj_message?: string;
-      invalid_email_message?: string;
-      transfer_message_user?: string;
-      transfer_message_sector?: string;
-      transfer_message_sector_user?: string;
-      service_finished_message_enabled?: boolean;
-      invalid_menu_option_message_enabled?: boolean;
-      invalid_satisfaction_option_message_enabled?: boolean;
-      invalid_cpf_message_enabled?: boolean;
-      invalid_cnpj_message_enabled?: boolean;
-      invalid_email_message_enabled?: boolean;
-      transfer_message_user_enabled?: boolean;
-      transfer_message_sector_enabled?: boolean;
-      transfer_message_sector_user_enabled?: boolean;
-    }
+    customMessages?: IChatbotCustomMessages
   ): Promise<boolean | null> {
     const selectedNumber = Number.parseInt(userText, 10);
 
@@ -6529,26 +6157,8 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
     options: any[],
     continueMessage: string,
     userText: string,
-    customMessages?: {
-      service_finished_message?: string;
-      invalid_menu_option_message?: string;
-      invalid_satisfaction_option_message?: string;
-      invalid_cpf_message?: string;
-      invalid_cnpj_message?: string;
-      invalid_email_message?: string;
-      transfer_message_user?: string;
-      transfer_message_sector?: string;
-      transfer_message_sector_user?: string;
-      service_finished_message_enabled?: boolean;
-      invalid_menu_option_message_enabled?: boolean;
-      invalid_satisfaction_option_message_enabled?: boolean;
-      invalid_cpf_message_enabled?: boolean;
-      invalid_cnpj_message_enabled?: boolean;
-      invalid_email_message_enabled?: boolean;
-      transfer_message_user_enabled?: boolean;
-      transfer_message_sector_enabled?: boolean;
-      transfer_message_sector_user_enabled?: boolean;
-    }
+    customMessages: IChatbotCustomMessages | undefined,
+    aiAgent: ViewAiAgentResponse
   ): Promise<boolean | null> {
     const continueMessageSentKey = `${this.getChatbotFlowCacheKey(
       createChat.account.id,
@@ -6561,33 +6171,17 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       return null;
     }
 
-    const selectedAiAgentId = currentNode.data?.selectedAiAgent;
-
-    if (!selectedAiAgentId) {
-      return false;
-    }
-
-    const aiAgentForAnalysis = await this.aiAgentService.viewAiAgent(
-      selectedAiAgentId,
-      createChat.account.id
-    );
-
-    if (
-      !aiAgentForAnalysis ||
-      !aiAgentForAnalysis.base_url ||
-      !aiAgentForAnalysis.api_key ||
-      !aiAgentForAnalysis.model
-    ) {
+    if (!aiAgent.base_url || !aiAgent.api_key || !aiAgent.model) {
       return false;
     }
 
     const humanSupportEnabled = currentNode.data?.humanSupportEnabled === true;
 
     const analysis = await this.analyzeUserResponse(
-      aiAgentForAnalysis.base_url,
-      aiAgentForAnalysis.api_key,
-      aiAgentForAnalysis.model,
-      aiAgentForAnalysis.ai_agent_type_id,
+      aiAgent.base_url,
+      aiAgent.api_key,
+      aiAgent.model,
+      aiAgent.ai_agent_type_id,
       continueMessage,
       userText,
       humanSupportEnabled
@@ -6603,7 +6197,8 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       currentNode,
       options,
       analysis,
-      customMessages
+      customMessages,
+      aiAgent
     );
 
     if (analysisResult) {
@@ -6617,47 +6212,23 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
     t: TFunction<'translation', undefined>,
     createChat: IChat,
     currentNode: ListChatbotFlowResponse['nodes'][number],
-    selectedAiAgentId: string,
+    aiAgent: ViewAiAgentResponse,
     currentFlowId: string,
     userText: string,
     bootstrapSummaryKey: string,
     conversationSummaryKey: string,
     chatbotFlow: ListChatbotFlowResponse,
-    customMessages?: {
-      service_finished_message?: string;
-      invalid_menu_option_message?: string;
-      invalid_satisfaction_option_message?: string;
-      invalid_cpf_message?: string;
-      invalid_cnpj_message?: string;
-      invalid_email_message?: string;
-      transfer_message_user?: string;
-      transfer_message_sector?: string;
-      transfer_message_sector_user?: string;
-      service_finished_message_enabled?: boolean;
-      invalid_menu_option_message_enabled?: boolean;
-      invalid_satisfaction_option_message_enabled?: boolean;
-      invalid_cpf_message_enabled?: boolean;
-      invalid_cnpj_message_enabled?: boolean;
-      invalid_email_message_enabled?: boolean;
-      transfer_message_user_enabled?: boolean;
-      transfer_message_sector_enabled?: boolean;
-      transfer_message_sector_user_enabled?: boolean;
-    }
+    customMessages?: IChatbotCustomMessages
   ): Promise<boolean> {
-    const aiAgent = await this.aiAgentService.viewAiAgent(
-      selectedAiAgentId,
-      createChat.account.id
-    );
-
-    if (!aiAgent) {
-      throw new Error(t('ai_agent_not_found'));
-    }
-
     if (!aiAgent.base_url || !aiAgent.api_key || !aiAgent.model) {
       throw new InvalidConfigurationError(
         'AI Agent base_url, api_key ou model não está configurado.'
       );
     }
+
+    const baseUrl = aiAgent.base_url;
+    const apiKey = aiAgent.api_key;
+    const model = aiAgent.model;
 
     const recentMessages = await this.getRecentChatMessages(
       createChat.account.id,
@@ -6677,11 +6248,11 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
     const { enhancedPrompt, contextAllowed, contextHints } =
       await this.buildEnhancedPromptForAiAgent(
         createChat,
-        selectedAiAgentId,
+        aiAgent.ai_agent_id,
         {
-          base_url: aiAgent.base_url,
-          api_key: aiAgent.api_key,
-          model: aiAgent.model,
+          base_url: baseUrl,
+          api_key: apiKey,
+          model,
           ai_agent_type_id: aiAgent.ai_agent_type_id,
         },
         userText,
@@ -6696,7 +6267,7 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
         ? {
             accountId: createChat.account.id,
             chatId: createChat.chat_id,
-            aiAgentId: selectedAiAgentId,
+            aiAgentId: aiAgent.ai_agent_id,
             openaiAssistantId: aiAgent.openai_assistant_id,
           }
         : undefined;
@@ -6712,9 +6283,9 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
     } else {
       try {
         aiResponse = await this.callAiAgentChatApi(
-          aiAgent.base_url,
-          aiAgent.api_key,
-          aiAgent.model,
+          baseUrl,
+          apiKey,
+          model,
           aiAgent.ai_agent_type_id,
           enhancedPrompt,
           userText,
@@ -6724,7 +6295,7 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
           {
             accountId: createChat.account.id,
             chatId: createChat.chat_id,
-            aiAgentId: selectedAiAgentId,
+            aiAgentId: aiAgent.ai_agent_id,
           }
         );
         shouldStoreLastAgentResponse = true;
@@ -6734,13 +6305,27 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
           (await this.isResponseRepeatedInHistory(
             createChat.account.id,
             createChat.chat_id,
-            selectedAiAgentId,
+            aiAgent.ai_agent_id,
             userText,
             aiResponse
           ));
 
         if (isDuplicate) {
-          aiResponse = this.appendVariationAddendum(aiResponse, Date.now());
+          aiResponse = await this.resolveDuplicateResponse(
+            aiResponse,
+            enhancedPrompt,
+            userText,
+            recentMessages,
+            createChat.account.id,
+            createChat.chat_id,
+            aiAgent.ai_agent_id,
+            baseUrl,
+            apiKey,
+            model,
+            aiAgent.ai_agent_type_id,
+            assistantsOptions,
+            responsesApiFileSearchOptions
+          );
         }
       } catch (error) {
         const nextFlowId = this.getNextFlowIdByFallbackHandle(
@@ -6767,7 +6352,7 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       await this.storeResponseInHistory(
         createChat.account.id,
         createChat.chat_id,
-        selectedAiAgentId,
+        aiAgent.ai_agent_id,
         userText,
         aiResponse
       );
@@ -6783,17 +6368,18 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       createChat,
       aiResponse,
       currentNode,
-      selectedAiAgentId,
+      aiAgent.ai_agent_id,
       conversationSummaryKey,
       userText,
       {
-        base_url: aiAgent.base_url,
-        api_key: aiAgent.api_key,
-        model: aiAgent.model,
+        base_url: baseUrl,
+        api_key: apiKey,
+        model,
         ai_agent_type_id: aiAgent.ai_agent_type_id,
         voice_ia_id: aiAgent.voice_ia_id,
       },
-      shouldStoreLastAgentResponse
+      shouldStoreLastAgentResponse,
+      recentMessages
     );
 
     const actionAfterInteractions =
@@ -6808,7 +6394,12 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
         currentFlowId
       );
 
-      if (newCount > interactionsQuantity) {
+      if (
+        this.hasExceededInteractionLimitAfterIncrement(
+          newCount,
+          interactionsQuantity
+        )
+      ) {
         const nextFlowId = this.getNextFlowIdByInteractionsHandle(
           chatbotFlow,
           currentFlowId
@@ -6895,10 +6486,18 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       if (cachedRag) {
         try {
           const parsed = JSON.parse(cachedRag) as {
-            enhancedPrompt: string;
+            contextParts: string[];
             contextAllowed: boolean;
             contextHints: string[];
           };
+
+          const { enhancedPrompt } =
+            this.ragService.buildEnhancedPromptFromCachedParts(
+              systemPrompt,
+              parsed.contextParts,
+              parsed.contextAllowed,
+              parsed.contextHints ?? []
+            );
 
           const additionalInstructions =
             this.buildAdditionalAiResponseInstructions(
@@ -6909,14 +6508,14 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
 
           if (!additionalInstructions) {
             return {
-              enhancedPrompt: parsed.enhancedPrompt,
+              enhancedPrompt,
               contextAllowed: combinedAllowed,
               contextHints: parsed.contextHints ?? [],
             };
           }
 
           return {
-            enhancedPrompt: `${parsed.enhancedPrompt}\n\n### Diretrizes Adicionais:\n${additionalInstructions}`,
+            enhancedPrompt: `${enhancedPrompt}\n\n### Diretrizes Adicionais:\n${additionalInstructions}`,
             contextAllowed: combinedAllowed,
             contextHints: parsed.contextHints ?? [],
           };
@@ -6939,7 +6538,7 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
     );
     const maxPromptChars = this.estimateMaxPromptChars(aiAgent.model);
 
-    const { enhancedPrompt, contextAllowed, contextHints } =
+    const { enhancedPrompt, contextParts, contextAllowed, contextHints } =
       await this.ragService.enhancePromptWithRag(
         createChat.account.id,
         selectedAiAgentId,
@@ -6969,7 +6568,7 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
         await this.redis.set(
           ragCacheKey,
           JSON.stringify({
-            enhancedPrompt,
+            contextParts,
             contextAllowed: combinedAllowed,
             contextHints,
           }),
@@ -7110,52 +6709,13 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
     return instructions.join('\n');
   }
 
-  private estimateMaxPromptChars(model: string): number {
-    const maxTokens = this.estimateContextTokensForModel(model);
+  private estimateMaxPromptChars(
+    model: string,
+    overrideContextTokens?: number | null
+  ): number {
+    const maxTokens = getContextTokensForModel(model, overrideContextTokens);
     const promptTokens = Math.max(Math.floor(maxTokens * 0.7), 2000);
     return Math.max(promptTokens * 4, 8000);
-  }
-
-  private estimateContextTokensForModel(model: string): number {
-    const normalized = (model || '').toLowerCase();
-
-    if (normalized.includes('128k') || normalized.includes('128000')) {
-      return 128000;
-    }
-    if (normalized.includes('64k') || normalized.includes('64000')) {
-      return 64000;
-    }
-    if (normalized.includes('32k') || normalized.includes('32000')) {
-      return 32000;
-    }
-    if (normalized.includes('16k') || normalized.includes('16000')) {
-      return 16000;
-    }
-    if (normalized.includes('8k') || normalized.includes('8000')) {
-      return 8000;
-    }
-    if (normalized.includes('4k') || normalized.includes('4000')) {
-      return 4000;
-    }
-
-    if (
-      normalized.includes('gpt-4o') ||
-      normalized.includes('gpt-4.1') ||
-      normalized.includes('gpt-4-turbo')
-    ) {
-      return 128000;
-    }
-    if (normalized.includes('gpt-4')) {
-      return 8000;
-    }
-    if (normalized.includes('gpt-3.5')) {
-      return 4000;
-    }
-    if (normalized.includes('gemini')) {
-      return 32000;
-    }
-
-    return 8000;
   }
 
   private buildOutOfContextResponse(
@@ -7262,6 +6822,87 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
     return strategies[index];
   }
 
+  private buildDiversificationRetryPrompt(): string {
+    return 'A resposta anterior foi considerada repetitiva em relação ao histórico. Forneça uma resposta substantivamente diferente: use outra abordagem, exemplos ou formato, sem adicionar observações genéricas ao final.';
+  }
+
+  private supportsDiversificationRetry(
+    assistantsOptions:
+      | {
+          accountId: string;
+          chatId: string;
+          aiAgentId: string;
+          openaiAssistantId: string;
+        }
+      | undefined
+  ): boolean {
+    return assistantsOptions === undefined;
+  }
+
+  private async resolveDuplicateResponse(
+    duplicateResponse: string,
+    enhancedPrompt: string,
+    userText: string,
+    recentMessages: Array<{ role: 'user' | 'assistant'; content: string }>,
+    accountId: string,
+    chatId: string,
+    aiAgentId: string,
+    baseUrl: string,
+    apiKey: string,
+    model: string,
+    aiAgentTypeId: string,
+    assistantsOptions:
+      | {
+          accountId: string;
+          chatId: string;
+          aiAgentId: string;
+          openaiAssistantId: string;
+        }
+      | undefined,
+    responsesApiFileSearchOptions: { vectorStoreId: string } | undefined
+  ): Promise<string> {
+    if (!this.supportsDiversificationRetry(assistantsOptions)) {
+      return this.appendVariationAddendum(duplicateResponse, Date.now());
+    }
+
+    try {
+      const diversificationInstruction = this.buildDiversificationRetryPrompt();
+      const diversificationPrompt = `${enhancedPrompt}\n\n### Diretrizes Adicionais:\n${diversificationInstruction}`;
+      const retryHistory = [
+        ...recentMessages,
+        { role: 'user' as const, content: userText },
+        { role: 'assistant' as const, content: duplicateResponse },
+      ];
+      const retryResponse = await this.callAiAgentChatApi(
+        baseUrl,
+        apiKey,
+        model,
+        aiAgentTypeId,
+        diversificationPrompt,
+        userText,
+        retryHistory,
+        assistantsOptions,
+        responsesApiFileSearchOptions,
+        { accountId, chatId, aiAgentId }
+      );
+      const isRetryDuplicate =
+        this.isRepeatedResponse(retryResponse, retryHistory) ||
+        (await this.isResponseRepeatedInHistory(
+          accountId,
+          chatId,
+          aiAgentId,
+          userText,
+          retryResponse
+        ));
+      if (!isRetryDuplicate) {
+        return retryResponse;
+      }
+      return this.appendVariationAddendum(duplicateResponse, Date.now());
+    } catch {
+      return this.appendVariationAddendum(duplicateResponse, Date.now());
+    }
+  }
+
   private isRepeatedResponse(
     response: string,
     recentMessages: Array<{ role: 'user' | 'assistant'; content: string }>
@@ -7278,17 +6919,6 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       (msg) =>
         this.normalizeTextForComparison(msg.content) === normalizedResponse
     );
-  }
-
-  private buildDiversificationRetryPrompt(prompt: string): string {
-    const retryInstructions = [
-      '- Sua resposta ficou igual a uma resposta já enviada nesta conversa.',
-      '- Reescreva com outra estrutura e palavras, adicionando detalhes ou exemplos diferentes.',
-      '- Não repita frases, listas nem a ordem dos tópicos.',
-      '- Não mencione que está variando ou que houve repetição.',
-    ].join('\n');
-
-    return `${prompt}\n\n### Diretrizes de Diversificação (Repetição Detectada):\n${retryInstructions}`;
   }
 
   private appendVariationAddendum(response: string, seed: number): string {
@@ -7452,15 +7082,20 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
         return true;
       }
       for (const promptToken of promptTokens) {
-        if (promptToken.startsWith(token) || token.startsWith(promptToken)) {
-          return true;
+        const prefixMatch =
+          promptToken.startsWith(token) || token.startsWith(promptToken);
+        if (prefixMatch) {
+          const minLen = Math.min(token.length, promptToken.length);
+          if (minLen >= ChatbotFlowRunnerService.MIN_PREFIX_MATCH_LENGTH) {
+            return true;
+          }
         }
       }
       return false;
     };
 
     if (queryTokens.length === 1) {
-      return matchesToken(queryTokens[0]);
+      return promptTokenSet.has(queryTokens[0]);
     }
 
     const matchCount = queryTokens.filter((token) =>
@@ -7555,7 +7190,11 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       ai_agent_type_id: string;
       voice_ia_id: string | null;
     },
-    shouldStoreLastAgentResponse: boolean
+    shouldStoreLastAgentResponse: boolean,
+    recentMessagesForSummary?: Array<{
+      role: 'user' | 'assistant';
+      content: string;
+    }>
   ): Promise<void> {
     let messageSent = false;
     if (aiAgent.voice_ia_id && aiResponse.trim().length > 0) {
@@ -7587,7 +7226,11 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
             messageSent = true;
           }
         }
-      } catch {
+      } catch (error) {
+        console.error(
+          '[ChatbotFlow] sendAiAgentResponse voice fallback failed',
+          error
+        );
         messageSent = false;
       }
     }
@@ -7621,11 +7264,19 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
 
     if (shouldUpdate) {
       const conversationSummary = await this.redis.get(conversationSummaryKey);
-      const recentMessages = await this.getRecentChatMessages(
-        createChat.account.id,
-        createChat.chat_id,
-        20
-      );
+      let recentMessages: Array<{
+        role: 'user' | 'assistant';
+        content: string;
+      }>;
+      if (recentMessagesForSummary !== undefined) {
+        recentMessages = recentMessagesForSummary.slice(-20);
+      } else {
+        recentMessages = await this.getRecentChatMessages(
+          createChat.account.id,
+          createChat.chat_id,
+          20
+        );
+      }
 
       await this.updateConversationSummaryAfterResponse(
         conversationSummaryKey,
@@ -7680,26 +7331,7 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
     createChat: IChat,
     chatbotFlow: ListChatbotFlowResponse,
     currentFlowId: string,
-    customMessages?: {
-      service_finished_message?: string;
-      invalid_menu_option_message?: string;
-      invalid_satisfaction_option_message?: string;
-      invalid_cpf_message?: string;
-      invalid_cnpj_message?: string;
-      invalid_email_message?: string;
-      transfer_message_user?: string;
-      transfer_message_sector?: string;
-      transfer_message_sector_user?: string;
-      service_finished_message_enabled?: boolean;
-      invalid_menu_option_message_enabled?: boolean;
-      invalid_satisfaction_option_message_enabled?: boolean;
-      invalid_cpf_message_enabled?: boolean;
-      invalid_cnpj_message_enabled?: boolean;
-      invalid_email_message_enabled?: boolean;
-      transfer_message_user_enabled?: boolean;
-      transfer_message_sector_enabled?: boolean;
-      transfer_message_sector_user_enabled?: boolean;
-    },
+    customMessages?: IChatbotCustomMessages,
     data?: IUpsertMessage
   ): Promise<boolean> {
     const nextFlowId = this.getNextFlowId(chatbotFlow, currentFlowId);
@@ -7895,26 +7527,7 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
     createChat: IChat,
     chatbotFlow: ListChatbotFlowResponse,
     currentFlowId: string,
-    customMessages?: {
-      service_finished_message?: string;
-      invalid_menu_option_message?: string;
-      invalid_satisfaction_option_message?: string;
-      invalid_cpf_message?: string;
-      invalid_cnpj_message?: string;
-      invalid_email_message?: string;
-      transfer_message_user?: string;
-      transfer_message_sector?: string;
-      transfer_message_sector_user?: string;
-      service_finished_message_enabled?: boolean;
-      invalid_menu_option_message_enabled?: boolean;
-      invalid_satisfaction_option_message_enabled?: boolean;
-      invalid_cpf_message_enabled?: boolean;
-      invalid_cnpj_message_enabled?: boolean;
-      invalid_email_message_enabled?: boolean;
-      transfer_message_user_enabled?: boolean;
-      transfer_message_sector_enabled?: boolean;
-      transfer_message_sector_user_enabled?: boolean;
-    }
+    customMessages?: IChatbotCustomMessages
   ): Promise<boolean> {
     const currentNode = this.getFlowNodeById(chatbotFlow, currentFlowId);
 
@@ -8226,16 +7839,7 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
     createChat: IChat,
     chatbotFlow: ListChatbotFlowResponse,
     currentFlowId: string,
-    customMessages?: {
-      service_finished_message?: string;
-      transfer_message_user?: string;
-      transfer_message_sector?: string;
-      transfer_message_sector_user?: string;
-      service_finished_message_enabled?: boolean;
-      transfer_message_user_enabled?: boolean;
-      transfer_message_sector_enabled?: boolean;
-      transfer_message_sector_user_enabled?: boolean;
-    }
+    customMessages?: IChatbotCustomMessages
   ): Promise<boolean> {
     const currentNode = this.getFlowNodeById(chatbotFlow, currentFlowId);
 
