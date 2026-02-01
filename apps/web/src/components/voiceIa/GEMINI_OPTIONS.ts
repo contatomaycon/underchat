@@ -1,0 +1,47 @@
+export const GEMINI_VOICES = [
+  { value: 'Zephyr', title: 'Zephyr' },
+  { value: 'Puck', title: 'Puck' },
+  { value: 'Charon', title: 'Charon' },
+  { value: 'Kore', title: 'Kore' },
+  { value: 'Fenrir', title: 'Fenrir' },
+  { value: 'Leda', title: 'Leda' },
+  { value: 'Orus', title: 'Orus' },
+  { value: 'Aoede', title: 'Aoede' },
+  { value: 'Callirrhoe', title: 'Callirrhoe' },
+  { value: 'Autonoe', title: 'Autonoe' },
+  { value: 'Enceladus', title: 'Enceladus' },
+  { value: 'Iapetus', title: 'Iapetus' },
+  { value: 'Umbriel', title: 'Umbriel' },
+  { value: 'Algieba', title: 'Algieba' },
+  { value: 'Despina', title: 'Despina' },
+  { value: 'Erinome', title: 'Erinome' },
+  { value: 'Algenib', title: 'Algenib' },
+  { value: 'Rasalgethi', title: 'Rasalgethi' },
+  { value: 'Laomedeia', title: 'Laomedeia' },
+  { value: 'Achernar', title: 'Achernar' },
+  { value: 'Alnilam', title: 'Alnilam' },
+  { value: 'Schedar', title: 'Schedar' },
+  { value: 'Gacrux', title: 'Gacrux' },
+  { value: 'Pulcherrima', title: 'Pulcherrima' },
+  { value: 'Achird', title: 'Achird' },
+  { value: 'Zubenelgenubi', title: 'Zubenelgenubi' },
+  { value: 'Vindemiatrix', title: 'Vindemiatrix' },
+  { value: 'Sadachbia', title: 'Sadachbia' },
+  { value: 'Sadaltager', title: 'Sadaltager' },
+  { value: 'Sulafat', title: 'Sulafat' },
+];
+
+export const GEMINI_TTS_MODELS = [
+  {
+    value: 'gemini-2.5-flash-preview-tts',
+    title: 'Gemini 2.5 Flash Preview TTS',
+  },
+  {
+    value: 'gemini-2.5-flash-lite-preview-tts',
+    title: 'Gemini 2.5 Flash Lite Preview TTS',
+  },
+  {
+    value: 'gemini-2.5-pro-preview-tts',
+    title: 'Gemini 2.5 Pro Preview TTS',
+  },
+];

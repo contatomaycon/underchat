@@ -9,6 +9,7 @@ export const createVoiceIaRequestSchema = Type.Object({
     Type.Union([
       Type.Literal(EVoiceIaType.eleven_labs),
       Type.Literal(EVoiceIaType.gpt),
+      Type.Literal(EVoiceIaType.gemini),
     ])
   ),
   voice_id: Type.String({ minLength: 1, maxLength: 100 }),

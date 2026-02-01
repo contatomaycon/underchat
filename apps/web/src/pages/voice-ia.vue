@@ -105,7 +105,8 @@ const handleTableChange = (o: {
 };
 
 const voiceIaTypeChipColor = (typeName: string): string => {
-  if (typeName === 'GPT') return 'deep-purple';
+  if (typeName === 'GPT') return 'success';
+  if (typeName === 'Gemini') return 'cyan';
   if (typeName === 'ElevenLabs') return 'info';
   return 'grey';
 };

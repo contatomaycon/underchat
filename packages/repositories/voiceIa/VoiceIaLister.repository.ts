@@ -59,6 +59,7 @@ export class VoiceIaListerRepository {
     const voiceIaTypeNames: Record<string, string> = {
       [EVoiceIaType.eleven_labs]: 'ElevenLabs',
       [EVoiceIaType.gpt]: 'GPT',
+      [EVoiceIaType.gemini]: 'Gemini',
     };
 
     return result.map((item) => ({

@@ -2319,6 +2319,7 @@
   "voice_ia_type": "Tipo",
   "voice_ia_type_eleven_labs": "ElevenLabs",
   "voice_ia_type_gpt": "GPT",
+  "voice_ia_type_gemini": "Gemini",
   "voice_ia_name_placeholder": "Nombre de Voice IA",
   "voice_ia_api_key": "Token API",
   "voice_ia_api_key_placeholder": "Token de API ElevenLabs",

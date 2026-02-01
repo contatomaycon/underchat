@@ -16,6 +16,7 @@ import {
 } from './ELEVENLABS_OPTIONS';
 import { ELEVENLABS_VOICES_PT_BR } from './ELEVENLABS_VOICES_PT_BR';
 import { GPT_VOICES, GPT_TTS_MODELS } from './GPT_OPTIONS';
+import { GEMINI_VOICES, GEMINI_TTS_MODELS } from './GEMINI_OPTIONS';
 
 const voiceIaStore = useVoiceIaStore();
 const { t } = useI18n();
@@ -48,11 +49,23 @@ const enableTranscription = ref(true);
 const status = ref<EVoiceIaStatus>(EVoiceIaStatus.active);
 
 const isGpt = computed(() => voiceIaType.value === EVoiceIaType.gpt);
+const isGemini = computed(() => voiceIaType.value === EVoiceIaType.gemini);
+const isElevenLabs = computed(
+  () => voiceIaType.value === EVoiceIaType.eleven_labs
+);
 
 const voiceIaTypeItems = computed(() => [
   { title: t('voice_ia_type_eleven_labs'), value: EVoiceIaType.eleven_labs },
   { title: t('voice_ia_type_gpt'), value: EVoiceIaType.gpt },
+  { title: t('voice_ia_type_gemini'), value: EVoiceIaType.gemini },
 ]);
+
+const modelIdItems = computed(() => {
+  if (isGpt.value) return GPT_TTS_MODELS;
+  if (isGemini.value) return GEMINI_TTS_MODELS;
+  return ELEVENLABS_MODELS;
+});
+
 const isCreating = ref(false);
 const refForm = ref<VForm>();
 
@@ -83,7 +96,7 @@ const handleCreate = async () => {
       enable_transcription: enableTranscription.value,
       status: status.value,
     };
-    if (!isGpt.value) {
+    if (isElevenLabs.value) {
       Object.assign(payload, {
         speed: speed.value,
         stability: stability.value,
@@ -122,6 +135,11 @@ watch(voiceIaType, (newType) => {
   if (newType === EVoiceIaType.gpt) {
     voiceId.value = 'alloy';
     modelId.value = 'tts-1';
+    return;
+  }
+  if (newType === EVoiceIaType.gemini) {
+    voiceId.value = 'Kore';
+    modelId.value = 'gemini-2.5-flash-preview-tts';
     return;
   }
   voiceId.value = '';
@@ -196,7 +214,7 @@ watch(isVisible, (newValue) => {
                 :disabled="isCreating"
               />
             </VCol>
-            <VCol v-if="!isGpt" cols="12">
+            <VCol v-if="isElevenLabs" cols="12">
               <VLabel class="text-body-2 mb-1"
                 >{{ $t('voice_ia_language') }}:</VLabel
               >
@@ -213,7 +231,7 @@ watch(isVisible, (newValue) => {
                 >{{ $t('voice_ia_voice') }}:</VLabel
               >
               <AppSelectSearch
-                v-if="!isGpt"
+                v-if="isElevenLabs"
                 v-model="voiceId"
                 :items="ELEVENLABS_VOICES_PT_BR"
                 item-title="title"
@@ -223,9 +241,19 @@ watch(isVisible, (newValue) => {
                 :disabled="isCreating"
               />
               <AppSelect
-                v-else
+                v-else-if="isGpt"
                 v-model="voiceId"
                 :items="GPT_VOICES"
+                item-title="title"
+                item-value="value"
+                :placeholder="$t('voice_ia_voice_placeholder')"
+                :rules="voiceIdRules"
+                :disabled="isCreating"
+              />
+              <AppSelect
+                v-else
+                v-model="voiceId"
+                :items="GEMINI_VOICES"
                 item-title="title"
                 item-value="value"
                 :placeholder="$t('voice_ia_voice_placeholder')"
@@ -239,13 +267,13 @@ watch(isVisible, (newValue) => {
               >
               <AppSelect
                 v-model="modelId"
-                :items="isGpt ? GPT_TTS_MODELS : ELEVENLABS_MODELS"
+                :items="modelIdItems"
                 item-title="title"
                 item-value="value"
                 :disabled="isCreating"
               />
             </VCol>
-            <template v-if="!isGpt">
+            <template v-if="isElevenLabs">
               <VCol cols="6">
                 <VLabel class="text-body-2 mb-1"
                   >{{ $t('voice_ia_speed') }}:</VLabel
