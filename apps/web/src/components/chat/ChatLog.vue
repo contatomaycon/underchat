@@ -144,6 +144,7 @@ const audioPlayStates = reactive<Record<string, boolean>>({});
 const audioCurrentTimes = reactive<Record<string, number>>({});
 const audioDurations = reactive<Record<string, number>>({});
 const audioWaveforms = reactive<Record<string, number[]>>({});
+const audioPlaybackRates = reactive<Record<string, number>>({});
 
 type FeedbackIcon = { icon: string; color?: string };
 
@@ -1055,9 +1056,53 @@ const toggleAudioPlay = (messageId: string, url: string) => {
     audio.pause();
     return;
   }
+  audio.playbackRate = audioPlaybackRates[messageId] || 1;
   audio.play().catch(() => {
     audioPlayStates[messageId] = false;
   });
+};
+
+const getAudioSpeed = (messageId: string): number => {
+  return audioPlaybackRates[messageId] || 1;
+};
+
+const getAudioSpeedLabel = (messageId: string): string => {
+  const speed = getAudioSpeed(messageId);
+  if (speed === 1.5) return '1.5x';
+  if (speed === 2) return '2x';
+  return '1x';
+};
+
+const toggleAudioSpeed = (messageId: string) => {
+  const currentSpeed = getAudioSpeed(messageId);
+  let newSpeed: number;
+  if (currentSpeed === 1) newSpeed = 1.5;
+  else if (currentSpeed === 1.5) newSpeed = 2;
+  else newSpeed = 1;
+
+  audioPlaybackRates[messageId] = newSpeed;
+
+  const audio = audioPlayers.value.get(messageId);
+  if (audio) {
+    audio.playbackRate = newSpeed;
+  }
+};
+
+const seekAudio = (messageId: string, url: string, event: MouseEvent) => {
+  const container = event.currentTarget as HTMLElement;
+  if (!container) return;
+
+  const rect = container.getBoundingClientRect();
+  const clickX = event.clientX - rect.left;
+  const percentage = Math.max(0, Math.min(1, clickX / rect.width));
+
+  const audio = getOrCreateAudioPlayer(messageId, url);
+  const duration = audio.duration;
+
+  if (duration && Number.isFinite(duration)) {
+    audio.currentTime = percentage * duration;
+    audioCurrentTimes[messageId] = audio.currentTime;
+  }
 };
 
 const decodeBase64Waveform = (base64String: string): number[] | null => {
@@ -1170,6 +1215,9 @@ onUnmounted(() => {
   }
   for (const key of Object.keys(audioWaveforms)) {
     delete audioWaveforms[key];
+  }
+  for (const key of Object.keys(audioPlaybackRates)) {
+    delete audioPlaybackRates[key];
   }
 });
 const formatVideoDuration = (duration?: number | null): string => {
@@ -3171,6 +3219,12 @@ onUnmounted(() => {
                     ]"
                   >
                     <div class="audio-player-container">
+                      <button
+                        class="audio-speed-btn"
+                        @click.stop="toggleAudioSpeed(item.message.message_id)"
+                      >
+                        {{ getAudioSpeedLabel(item.message.message_id) }}
+                      </button>
                       <VBtn
                         icon
                         size="36"
@@ -3192,7 +3246,10 @@ onUnmounted(() => {
                         </VIcon>
                       </VBtn>
 
-                      <div class="audio-waveform-container">
+                      <div
+                        class="audio-waveform-container"
+                        @click="seekAudio(item.message.message_id, item.message.content.audio.url, $event)"
+                      >
                         <template
                           v-if="
                             (() => {
@@ -4974,6 +5031,38 @@ onUnmounted(() => {
         }
       }
 
+      .audio-speed-btn {
+        flex-shrink: 0;
+        min-width: 36px;
+        height: 24px;
+        border-radius: 12px;
+        border: 1.5px solid rgba(var(--v-theme-on-surface), 0.3);
+        background: transparent;
+        color: rgba(var(--v-theme-on-surface), 0.7);
+        font-size: 0.7rem;
+        font-weight: 600;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0 6px;
+        transition: all 0.15s ease;
+        user-select: none;
+      }
+
+      .audio-speed-btn:hover {
+        background: rgba(var(--v-theme-on-surface), 0.08);
+      }
+
+      .audio-bubble--right .audio-speed-btn {
+        border-color: rgba(17, 27, 33, 0.35);
+        color: rgba(17, 27, 33, 0.7);
+      }
+
+      .audio-bubble--right .audio-speed-btn:hover {
+        background: rgba(17, 27, 33, 0.08);
+      }
+
       .audio-waveform-container {
         position: relative;
         flex: 1 1 auto;
@@ -4982,6 +5071,7 @@ onUnmounted(() => {
         align-items: center;
         overflow: hidden;
         min-width: 100px;
+        cursor: pointer;
       }
 
       .audio-waveform {
