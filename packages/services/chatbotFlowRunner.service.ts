@@ -54,6 +54,8 @@ import { AiAgentUsageCreatorRepository } from '@core/repositories/aiAgent/AiAgen
 export class ChatbotFlowRunnerService {
   private readonly MENU_DEBOUNCE_SECONDS = 3;
   private readonly CHATBOT_FLOW_NODE_CACHE_TTL_SECONDS = 259200;
+  private readonly RAG_CACHE_TTL_SECONDS = 600;
+  private readonly CONVERSATION_SUMMARY_UPDATE_INTERVAL = 5;
 
   constructor(
     @inject('Redis') private readonly redis: Redis,
@@ -124,6 +126,18 @@ export class ChatbotFlowRunnerService {
     chatId: string
   ): string {
     return `chatbot:ai-agent:user-selection:${accountId}:${workerId}:${chatId}`;
+  }
+
+  private getRagCacheKey(
+    accountId: string,
+    chatId: string,
+    aiAgentId: string,
+    normalizedQuestion: string,
+    promptsHash: string,
+    skipFilePrompts: boolean
+  ): string {
+    const questionHash = this.hashText(normalizedQuestion);
+    return `chatbot:ai-agent:rag:${accountId}:${chatId}:${aiAgentId}:${questionHash}:${promptsHash}:${skipFilePrompts ? '1' : '0'}`;
   }
 
   private async extractTransferContextFromAgentContext(
@@ -1188,7 +1202,7 @@ ${userList}`;
     if (count === 1) {
       return true;
     }
-    return count % 5 === 0;
+    return count % this.CONVERSATION_SUMMARY_UPDATE_INTERVAL === 0;
   }
 
   private async incrementAiAgentInteractionsCount(
@@ -6653,44 +6667,7 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
           ));
 
         if (isDuplicate) {
-          const retryPrompt =
-            this.buildDiversificationRetryPrompt(enhancedPrompt);
-          const retryResponse = await this.callAiAgentChatApi(
-            aiAgent.base_url,
-            aiAgent.api_key,
-            aiAgent.model,
-            aiAgent.ai_agent_type_id,
-            retryPrompt,
-            userText,
-            recentMessages,
-            assistantsOptions,
-            responsesApiFileSearchOptions,
-            {
-              accountId: createChat.account.id,
-              chatId: createChat.chat_id,
-              aiAgentId: selectedAiAgentId,
-            }
-          );
-          shouldStoreLastAgentResponse = true;
-
-          const retryIsDuplicate =
-            this.isRepeatedResponse(retryResponse, recentMessages) ||
-            (await this.isResponseRepeatedInHistory(
-              createChat.account.id,
-              createChat.chat_id,
-              selectedAiAgentId,
-              userText,
-              retryResponse
-            ));
-
-          if (!retryIsDuplicate) {
-            aiResponse = retryResponse;
-          } else {
-            aiResponse = this.appendVariationAddendum(
-              retryResponse,
-              Date.now()
-            );
-          }
+          aiResponse = this.appendVariationAddendum(aiResponse, Date.now());
         }
       } catch (error) {
         const nextFlowId = this.getNextFlowIdByFallbackHandle(
@@ -6825,6 +6802,55 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       userText,
       promptsText
     );
+    const normalizedQuestion = this.normalizeTextForComparison(userText);
+    const promptsHash = promptsText ? this.hashText(promptsText) : '';
+    const ragCacheKey =
+      normalizedQuestion && promptsHash
+        ? this.getRagCacheKey(
+            createChat.account.id,
+            createChat.chat_id,
+            selectedAiAgentId,
+            normalizedQuestion,
+            promptsHash,
+            skipFilePrompts
+          )
+        : null;
+
+    if (ragCacheKey) {
+      const cachedRag = await this.redis.get(ragCacheKey);
+      if (cachedRag) {
+        try {
+          const parsed = JSON.parse(cachedRag) as {
+            enhancedPrompt: string;
+            contextAllowed: boolean;
+            contextHints: string[];
+          };
+
+          const additionalInstructions =
+            this.buildAdditionalAiResponseInstructions(
+              userText,
+              recentMessages
+            );
+          const combinedAllowed = parsed.contextAllowed || promptContextAllowed;
+
+          if (!additionalInstructions) {
+            return {
+              enhancedPrompt: parsed.enhancedPrompt,
+              contextAllowed: combinedAllowed,
+              contextHints: parsed.contextHints ?? [],
+            };
+          }
+
+          return {
+            enhancedPrompt: `${parsed.enhancedPrompt}\n\n### Diretrizes Adicionais:\n${additionalInstructions}`,
+            contextAllowed: combinedAllowed,
+            contextHints: parsed.contextHints ?? [],
+          };
+        } catch (error) {
+          console.error('[AI Agent] RAG cache parse error:', error);
+        }
+      }
+    }
     const bootstrapSummary = await this.ensureBootstrapSummary(
       bootstrapSummaryKey,
       promptsText,
@@ -6863,6 +6889,24 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
         }
       );
 
+    const combinedAllowed = contextAllowed || promptContextAllowed;
+    if (ragCacheKey) {
+      try {
+        await this.redis.set(
+          ragCacheKey,
+          JSON.stringify({
+            enhancedPrompt,
+            contextAllowed: combinedAllowed,
+            contextHints,
+          }),
+          'EX',
+          this.RAG_CACHE_TTL_SECONDS
+        );
+      } catch (error) {
+        console.error('[AI Agent] RAG cache write error:', error);
+      }
+    }
+
     const additionalInstructions = this.buildAdditionalAiResponseInstructions(
       userText,
       recentMessages
@@ -6871,14 +6915,14 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
     if (!additionalInstructions) {
       return {
         enhancedPrompt,
-        contextAllowed: contextAllowed || promptContextAllowed,
+        contextAllowed: combinedAllowed,
         contextHints,
       };
     }
 
     return {
       enhancedPrompt: `${enhancedPrompt}\n\n### Diretrizes Adicionais:\n${additionalInstructions}`,
-      contextAllowed: contextAllowed || promptContextAllowed,
+      contextAllowed: combinedAllowed,
       contextHints,
     };
   }
