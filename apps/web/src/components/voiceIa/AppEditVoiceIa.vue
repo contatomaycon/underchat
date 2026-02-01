@@ -39,7 +39,7 @@ const name = ref('');
 const apiKey = ref('');
 const voiceId = ref('');
 const modelId = ref('eleven_multilingual_v2');
-const languageCode = ref('pt-BR');
+const languageCode = ref('pt');
 const speed = ref('1');
 const stability = ref('0.5');
 const similarityBoost = ref('0.75');
@@ -70,7 +70,8 @@ const loadVoiceIa = async () => {
     apiKey.value = data.api_key ?? '';
     voiceId.value = data.voice_id;
     modelId.value = data.model_id;
-    languageCode.value = data.language_code;
+    languageCode.value =
+      data.language_code === 'pt-BR' ? 'pt' : data.language_code;
     speed.value = data.speed;
     stability.value = data.stability;
     similarityBoost.value = data.similarity_boost;

@@ -7510,6 +7510,7 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
               message: aiResponse,
               audioUrl: uploadResult.url,
               audioMimetype: uploadResult.mimetype,
+              audioPtt: true,
               typeUser: ETypeUserChat.bot,
             });
             messageSent = true;

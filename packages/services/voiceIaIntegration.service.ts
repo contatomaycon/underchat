@@ -79,7 +79,8 @@ export class VoiceIaIntegrationService {
     const body = {
       text,
       model_id: config.model_id || 'eleven_multilingual_v2',
-      language_code: config.language_code || 'pt-BR',
+      language_code:
+        config.language_code === 'pt-BR' ? 'pt' : config.language_code || 'pt',
       voice_settings: {
         stability,
         similarity_boost: similarityBoost,

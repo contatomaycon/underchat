@@ -36,7 +36,7 @@ const name = ref('');
 const apiKey = ref('');
 const voiceId = ref('');
 const modelId = ref('eleven_multilingual_v2');
-const languageCode = ref('pt-BR');
+const languageCode = ref('pt');
 const speed = ref('1');
 const stability = ref('0.5');
 const similarityBoost = ref('0.75');
@@ -89,7 +89,7 @@ const resetForm = () => {
   apiKey.value = '';
   voiceId.value = '';
   modelId.value = 'eleven_multilingual_v2';
-  languageCode.value = 'pt-BR';
+  languageCode.value = 'pt';
   speed.value = '1';
   stability.value = '0.5';
   similarityBoost.value = '0.75';

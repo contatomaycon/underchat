@@ -21,7 +21,7 @@ export const voiceIa = pgTable(
       .$type<EVoiceIaStatus>()
       .default(EVoiceIaStatus.active),
     api_key: varchar({ length: 2000 }),
-    language_code: varchar({ length: 10 }).notNull().default('pt-BR'),
+    language_code: varchar({ length: 10 }).notNull().default('pt'),
     voice_id: varchar({ length: 100 }).notNull(),
     model_id: varchar({ length: 100 })
       .notNull()

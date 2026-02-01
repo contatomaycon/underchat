@@ -1,5 +1,5 @@
 export const ELEVENLABS_LANGUAGES = [
-  { value: 'pt-BR', title: 'Português (Brasil)' },
+  { value: 'pt', title: 'Português (Brasil)' },
 ];
 
 export const ELEVENLABS_MODELS = [
