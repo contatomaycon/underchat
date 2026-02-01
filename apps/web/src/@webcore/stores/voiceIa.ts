@@ -53,6 +53,34 @@ export const useVoiceIaStore = defineStore('voiceIa', {
     hideSnackbar() {
       this.snackbar.status = false;
     },
+    async listActiveVoiceIas(): Promise<
+      Array<{ value: string; title: string }>
+    > {
+      try {
+        const response = await axios.get<
+          IApiResponse<ListVoiceIaFinalResponse>
+        >(`/ai-agent/voice-ia`, {
+          params: {
+            current_page: 1,
+            per_page: 100,
+            status: EVoiceIaStatus.active,
+          },
+        });
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data?.results) {
+          return [];
+        }
+
+        return data.data.results.map((item) => ({
+          value: item.voice_ia_id,
+          title: item.name,
+        }));
+      } catch {
+        return [];
+      }
+    },
     async listVoiceIas(
       input?: IListVoiceIas
     ): Promise<ListVoiceIaFinalResponse | null> {

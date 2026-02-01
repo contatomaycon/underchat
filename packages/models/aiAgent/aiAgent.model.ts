@@ -3,6 +3,7 @@ import { relations } from 'drizzle-orm';
 import { account } from '@core/models';
 import { aiAgentType } from './aiAgentType.model';
 import { aiAgentUsage } from './aiAgentUsage.model';
+import { voiceIa } from '@core/models/voiceIa/voiceIa.model';
 import { EAiAgentStatus } from '@core/common/enums/EAiAgentStatus';
 
 export const aiAgent = pgTable(
@@ -28,6 +29,9 @@ export const aiAgent = pgTable(
       .notNull()
       .$type<EAiAgentStatus>()
       .default(EAiAgentStatus.active),
+    voice_ia_id: uuid().references(() => voiceIa.voice_ia_id, {
+      onDelete: 'set null',
+    }),
     created_at: timestamp('created_at', {
       mode: 'string',
       withTimezone: true,
@@ -44,6 +48,7 @@ export const aiAgent = pgTable(
     index('ai_agent_account_id_status_idx').on(table.account_id, table.status),
     index('ai_agent_embedding_model_idx').on(table.embedding_model),
     index('ai_agent_model_idx').on(table.model),
+    index('ai_agent_voice_ia_id_idx').on(table.voice_ia_id),
   ]
 );
 
@@ -55,6 +60,10 @@ export const aiAgentRelations = relations(aiAgent, ({ one, many }) => ({
   aat: one(aiAgentType, {
     fields: [aiAgent.ai_agent_type_id],
     references: [aiAgentType.ai_agent_type_id],
+  }),
+  via: one(voiceIa, {
+    fields: [aiAgent.voice_ia_id],
+    references: [voiceIa.voice_ia_id],
   }),
   aus: many(aiAgentUsage),
 }));

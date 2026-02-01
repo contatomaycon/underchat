@@ -60,6 +60,7 @@ export class AiAgentCreatorRepository {
         chunk_size: input.chunk_size ?? '600',
         chunk_overlap: input.chunk_overlap ?? '100',
         status: input.status ?? EAiAgentStatus.active,
+        voice_ia_id: input.voice_ia_id ?? null,
       })
       .execute();
 

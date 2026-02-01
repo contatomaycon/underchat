@@ -2,6 +2,7 @@
 import { ref, computed, watch, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useAiAgentStore } from '@/@webcore/stores/aiAgent';
+import { useVoiceIaStore } from '@/@webcore/stores/voiceIa';
 import { requiredValidator } from '@/@webcore/utils/validators';
 import { VForm } from 'vuetify/components/VForm';
 import { EAiAgentType } from '@core/common/enums/EAiAgentType';
@@ -10,6 +11,7 @@ import { ListAiAgentTypeResponse } from '@core/schema/aiAgent/listAiAgentType/re
 import AppInfoTooltip from '@/components/AppInfoTooltip.vue';
 
 const aiAgentStore = useAiAgentStore();
+const voiceIaStore = useVoiceIaStore();
 const { t } = useI18n();
 
 const props = defineProps<{
@@ -35,6 +37,8 @@ const embeddingModel = ref('');
 const chunkSize = ref('');
 const chunkOverlap = ref('');
 const status = ref<EAiAgentStatus>(EAiAgentStatus.active);
+const voiceIaId = ref<string | null>(null);
+const activeVoiceIas = ref<Array<{ value: string; title: string }>>([]);
 const isCreating = ref(false);
 const refForm = ref<VForm>();
 const types = ref<ListAiAgentTypeResponse[]>([]);
@@ -238,6 +242,11 @@ watch(aiAgentTypeId, (newTypeId) => {
   }
 });
 
+const loadActiveVoiceIas = async () => {
+  const list = await voiceIaStore.listActiveVoiceIas();
+  activeVoiceIas.value = list;
+};
+
 watch(isVisible, (newValue) => {
   if (newValue) {
     aiAgentTypeId.value = '';
@@ -249,8 +258,10 @@ watch(isVisible, (newValue) => {
     chunkSize.value = '';
     chunkOverlap.value = '';
     status.value = EAiAgentStatus.active;
+    voiceIaId.value = null;
     refForm.value?.resetValidation();
     loadTypes();
+    loadActiveVoiceIas();
   }
 });
 
@@ -274,6 +285,7 @@ const handleCreateAiAgent = async () => {
       chunk_size: chunkSize.value.trim() || '1200',
       chunk_overlap: chunkOverlap.value.trim() || '200',
       status: status.value,
+      voice_ia_id: voiceIaId.value || undefined,
     });
 
     if (result) {
@@ -402,6 +414,18 @@ const handleCreateAiAgent = async () => {
                 v-model="embeddingModel"
                 :placeholder="$t('embedding_model_placeholder')"
                 :disabled="isCreating"
+              />
+            </VCol>
+            <VCol cols="12">
+              <VLabel class="text-body-2 mb-1">{{ $t('voice_ia') }}:</VLabel>
+              <AppSelectSearch
+                v-model="voiceIaId"
+                :items="activeVoiceIas"
+                item-title="title"
+                item-value="value"
+                :placeholder="$t('voice_ia_select_placeholder')"
+                :disabled="isCreating"
+                clearable
               />
             </VCol>
             <VCol cols="6">

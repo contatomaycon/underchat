@@ -48,6 +48,10 @@ export class AiAgentUpdaterRepository {
       inputUpdate.status = input.status ?? undefined;
     }
 
+    if (input.voice_ia_id !== undefined) {
+      inputUpdate.voice_ia_id = input.voice_ia_id ?? undefined;
+    }
+
     return inputUpdate;
   }
 

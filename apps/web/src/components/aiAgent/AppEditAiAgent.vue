@@ -2,6 +2,7 @@
 import { ref, computed, watch, onMounted, nextTick } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useAiAgentStore } from '@/@webcore/stores/aiAgent';
+import { useVoiceIaStore } from '@/@webcore/stores/voiceIa';
 import { requiredValidator } from '@/@webcore/utils/validators';
 import { VForm } from 'vuetify/components/VForm';
 import { EAiAgentType } from '@core/common/enums/EAiAgentType';
@@ -10,6 +11,7 @@ import { ListAiAgentTypeResponse } from '@core/schema/aiAgent/listAiAgentType/re
 import AppInfoTooltip from '@/components/AppInfoTooltip.vue';
 
 const aiAgentStore = useAiAgentStore();
+const voiceIaStore = useVoiceIaStore();
 const { t } = useI18n();
 
 const props = defineProps<{
@@ -37,6 +39,8 @@ const embeddingModel = ref('');
 const chunkSize = ref('');
 const chunkOverlap = ref('');
 const status = ref<EAiAgentStatus>(EAiAgentStatus.active);
+const voiceIaId = ref<string | null>(null);
+const activeVoiceIas = ref<Array<{ value: string; title: string }>>([]);
 const isUpdating = ref(false);
 const isLoading = ref(false);
 const isApiKeyVisible = ref(false);
@@ -175,6 +179,29 @@ const shouldDisableBaseUrl = computed(
     isGeminiSelected.value || isGptSelected.value || isDeepSeekSelected.value
 );
 
+const voiceIaOptions = computed(() => {
+  const removeOption = { value: '', title: t('voice_ia_remove') };
+  const activeIds = new Set(activeVoiceIas.value.map((v) => v.value));
+  const hasCurrentNotInList =
+    voiceIaId.value &&
+    voiceIaId.value !== '' &&
+    !activeIds.has(voiceIaId.value);
+  const currentOption = hasCurrentNotInList
+    ? [
+        {
+          value: voiceIaId.value as string,
+          title: t('voice_ia_current_unavailable'),
+        },
+      ]
+    : [];
+  return [removeOption, ...currentOption, ...activeVoiceIas.value];
+});
+
+const loadActiveVoiceIas = async () => {
+  const list = await voiceIaStore.listActiveVoiceIas();
+  activeVoiceIas.value = list;
+};
+
 const apiKeyLink = computed(() => {
   if (isGeminiSelected.value) {
     return 'https://aistudio.google.com/app/apikey?utm_source=chatgpt.com';
@@ -204,6 +231,7 @@ const loadAiAgent = async () => {
     chunkSize.value = result.chunk_size || '';
     chunkOverlap.value = result.chunk_overlap || '';
     status.value = result.status;
+    voiceIaId.value = result.voice_ia_id || null;
   }
 };
 
@@ -301,6 +329,7 @@ watch(
       try {
         await loadTypes();
         await loadAiAgent();
+        await loadActiveVoiceIas();
       } finally {
         isLoading.value = false;
       }
@@ -314,6 +343,7 @@ watch(
       chunkSize.value = '';
       chunkOverlap.value = '';
       status.value = EAiAgentStatus.active;
+      voiceIaId.value = null;
       refForm.value?.resetValidation();
       isApiKeyVisible.value = false;
     }
@@ -328,6 +358,7 @@ watch(aiAgentId, async (newId, oldId) => {
     try {
       await loadTypes();
       await loadAiAgent();
+      await loadActiveVoiceIas();
     } finally {
       isLoading.value = false;
     }
@@ -355,6 +386,7 @@ const handleUpdateAiAgent = async () => {
       chunk_size: chunkSize.value.trim() || '1200',
       chunk_overlap: chunkOverlap.value.trim() || '200',
       status: status.value,
+      voice_ia_id: voiceIaId.value === '' ? null : voiceIaId.value || undefined,
     });
 
     if (result) {
@@ -436,6 +468,17 @@ const handleUpdateAiAgent = async () => {
                 v-model="baseUrl"
                 :placeholder="$t('base_url_placeholder')"
                 :disabled="isUpdating || isLoading || shouldDisableBaseUrl"
+              />
+            </VCol>
+            <VCol cols="12">
+              <VLabel class="text-body-2 mb-1">{{ $t('voice_ia') }}:</VLabel>
+              <AppSelectSearch
+                v-model="voiceIaId"
+                :items="voiceIaOptions"
+                item-title="title"
+                item-value="value"
+                :placeholder="$t('voice_ia_select_placeholder')"
+                :disabled="isUpdating || isLoading"
               />
             </VCol>
             <VCol cols="12">

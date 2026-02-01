@@ -30,6 +30,9 @@ export const updateAiAgentBodySchema = Type.Object({
       Type.Null(),
     ])
   ),
+  voice_ia_id: Type.Optional(
+    Type.Union([Type.String({ format: 'uuid' }), Type.Null()])
+  ),
 });
 
 export type UpdateAiAgentParams = Static<typeof updateAiAgentParamsSchema>;
