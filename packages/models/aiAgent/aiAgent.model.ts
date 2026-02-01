@@ -2,6 +2,7 @@ import { pgTable, timestamp, uuid, varchar, index } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 import { account } from '@core/models';
 import { aiAgentType } from './aiAgentType.model';
+import { aiAgentUsage } from './aiAgentUsage.model';
 import { EAiAgentStatus } from '@core/common/enums/EAiAgentStatus';
 
 export const aiAgent = pgTable(
@@ -46,7 +47,7 @@ export const aiAgent = pgTable(
   ]
 );
 
-export const aiAgentRelations = relations(aiAgent, ({ one }) => ({
+export const aiAgentRelations = relations(aiAgent, ({ one, many }) => ({
   acc: one(account, {
     fields: [aiAgent.account_id],
     references: [account.account_id],
@@ -55,4 +56,5 @@ export const aiAgentRelations = relations(aiAgent, ({ one }) => ({
     fields: [aiAgent.ai_agent_type_id],
     references: [aiAgentType.ai_agent_type_id],
   }),
+  aus: many(aiAgentUsage),
 }));

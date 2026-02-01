@@ -47,6 +47,8 @@ import { StreamProducerService } from './streamProducer.service';
 import { KafkaServiceQueueService } from './kafkaServiceQueue.service';
 import { IChatHistoryEmbeddingRequest } from '@core/common/interfaces/IChatHistoryEmbeddingRequest';
 import { EContactIgnore } from '@core/common/enums/EContactIgnore';
+import { IAiAgentUsageCreateInput } from '@core/common/interfaces/IAiAgentUsageCreateInput';
+import { AiAgentUsageCreatorRepository } from '@core/repositories/aiAgent/AiAgentUsageCreator.repository';
 
 @injectable()
 export class ChatbotFlowRunnerService {
@@ -68,7 +70,8 @@ export class ChatbotFlowRunnerService {
     private readonly openAIAssistantService: OpenAIAssistantService,
     private readonly elasticDatabaseService: ElasticDatabaseService,
     private readonly streamProducerService: StreamProducerService,
-    private readonly kafkaServiceQueueService: KafkaServiceQueueService
+    private readonly kafkaServiceQueueService: KafkaServiceQueueService,
+    private readonly aiAgentUsageCreatorRepository: AiAgentUsageCreatorRepository
   ) {}
 
   private getChatbotFlowCacheKey(
@@ -4335,7 +4338,16 @@ ${userList}`;
     prompt: string,
     userQuery: string,
     history?: Array<{ role: 'user' | 'assistant'; content: string }>
-  ): Promise<string> {
+  ): Promise<{
+    text: string;
+    usage?: {
+      prompt_tokens?: number;
+      completion_tokens?: number;
+      total_tokens?: number;
+    };
+    latency_ms?: number;
+  }> {
+    const startMs = Date.now();
     const url = `${baseUrl.replace('/v1', '/v1beta')}/models/${encodeURIComponent(
       model
     )}:generateContent?key=${encodeURIComponent(apiKey)}`;
@@ -4351,6 +4363,8 @@ ${userList}`;
       body: JSON.stringify(requestBody),
     });
 
+    const latency_ms = Date.now() - startMs;
+
     if (!response.ok) {
       const errorText = await response.text();
       throw new Error(`AI Agent API error: ${response.status} - ${errorText}`);
@@ -4364,13 +4378,26 @@ ${userList}`;
           }>;
         };
       }>;
+      usageMetadata?: {
+        promptTokenCount?: number;
+        candidatesTokenCount?: number;
+        totalTokenCount?: number;
+      };
     };
 
-    const responseText =
+    const text =
       data.candidates?.[0]?.content?.parts?.[0]?.text ||
       'Desculpe, não consegui processar sua solicitação.';
 
-    return responseText;
+    const usage = data.usageMetadata
+      ? {
+          prompt_tokens: data.usageMetadata.promptTokenCount,
+          completion_tokens: data.usageMetadata.candidatesTokenCount,
+          total_tokens: data.usageMetadata.totalTokenCount,
+        }
+      : undefined;
+
+    return { text, usage, latency_ms };
   }
 
   private buildGeminiContents(
@@ -4440,7 +4467,16 @@ ${userList}`;
     prompt: string,
     userQuery: string,
     history?: Array<{ role: 'user' | 'assistant'; content: string }>
-  ): Promise<string> {
+  ): Promise<{
+    text: string;
+    usage?: {
+      prompt_tokens?: number;
+      completion_tokens?: number;
+      total_tokens?: number;
+    };
+    latency_ms?: number;
+  }> {
+    const startMs = Date.now();
     const response = await fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
@@ -4466,6 +4502,8 @@ ${userList}`;
       }),
     });
 
+    const latency_ms = Date.now() - startMs;
+
     if (!response.ok) {
       const errorText = await response.text();
       throw new Error(`AI Agent API error: ${response.status} - ${errorText}`);
@@ -4477,13 +4515,26 @@ ${userList}`;
           content?: string;
         };
       }>;
+      usage?: {
+        prompt_tokens?: number;
+        completion_tokens?: number;
+        total_tokens?: number;
+      };
     };
 
     const text =
       data.choices?.[0]?.message?.content ||
       'Desculpe, não consegui processar sua solicitação.';
 
-    return text;
+    const usage = data.usage
+      ? {
+          prompt_tokens: data.usage.prompt_tokens,
+          completion_tokens: data.usage.completion_tokens,
+          total_tokens: data.usage.total_tokens,
+        }
+      : undefined;
+
+    return { text, usage, latency_ms };
   }
 
   private async sendDefaultQuestionMessage(
@@ -5658,6 +5709,19 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
     userResponse: string,
     humanSupportEnabled: boolean = false
   ): Promise<'positive' | 'negative' | 'question' | 'human_support'> {
+    const normalizedResponse = userResponse.toLowerCase().trim();
+
+    if (
+      humanSupportEnabled &&
+      this.containsHumanSupportIndicator(normalizedResponse)
+    ) {
+      return 'human_support';
+    }
+
+    if (this.isQuestionPattern(normalizedResponse)) {
+      return 'question';
+    }
+
     const analysisPrompt = this.buildAnalysisPrompt(
       continueMessage,
       userResponse,
@@ -5746,39 +5810,8 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
     const lowerResponse = userResponse.toLowerCase().trim();
 
     if (humanSupportEnabled) {
-      const humanSupportIndicators = [
-        'falar com humano',
-        'falar com atendente',
-        'falar com operador',
-        'falar com suporte',
-        'quero falar com humano',
-        'quero falar com atendente',
-        'quero falar com operador',
-        'quero falar com suporte',
-        'quero falar com pessoa',
-        'falar com uma pessoa',
-        'atendimento humano',
-        'atendente humano',
-        'suporte humano',
-        'atendimento humano, por favor',
-        'me transfere para humano',
-        'me transfere para atendente',
-        'quero humano',
-        'preciso de humano',
-        'atendente real',
-        'pessoa real',
-        'atendente de verdade',
-        'pessoa de verdade',
-        'quero falar com alguém',
-        'falar com alguém',
-        'quero alguém',
-        'preciso de alguém',
-      ];
-
-      for (const indicator of humanSupportIndicators) {
-        if (lowerResponse.includes(indicator)) {
-          return 'human_support';
-        }
+      if (this.containsHumanSupportIndicator(lowerResponse)) {
+        return 'human_support';
       }
     }
 
@@ -5872,6 +5905,47 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
     );
   }
 
+  private containsHumanSupportIndicator(text: string): boolean {
+    const humanSupportIndicators = [
+      'falar com humano',
+      'falar com atendente',
+      'falar com operador',
+      'falar com suporte',
+      'quero falar com humano',
+      'quero falar com atendente',
+      'quero falar com operador',
+      'quero falar com suporte',
+      'quero falar com pessoa',
+      'falar com uma pessoa',
+      'atendimento humano',
+      'atendente humano',
+      'suporte humano',
+      'atendimento humano, por favor',
+      'me transfere para humano',
+      'me transfere para atendente',
+      'quero humano',
+      'preciso de humano',
+      'atendente real',
+      'pessoa real',
+      'atendente de verdade',
+      'pessoa de verdade',
+      'quero falar com alguém',
+      'falar com alguém',
+      'quero alguém',
+      'preciso de alguém',
+    ];
+
+    return humanSupportIndicators.some((indicator) => text.includes(indicator));
+  }
+
+  private async saveAiAgentUsage(
+    input: IAiAgentUsageCreateInput
+  ): Promise<void> {
+    try {
+      await this.aiAgentUsageCreatorRepository.create(input);
+    } catch {}
+  }
+
   private async callAiAgentChatApi(
     baseUrl: string,
     apiKey: string,
@@ -5886,7 +5960,8 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       aiAgentId: string;
       openaiAssistantId: string;
     },
-    responsesApiFileSearchOptions?: { vectorStoreId: string }
+    responsesApiFileSearchOptions?: { vectorStoreId: string },
+    usageContext?: { accountId: string; chatId: string; aiAgentId: string }
   ): Promise<string> {
     if (!baseUrl || !apiKey || !model) {
       throw new InvalidConfigurationError(
@@ -5894,19 +5969,13 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       );
     }
 
-    console.log('[AI Agent] callAiAgentChatApi payload', {
-      aiAgentTypeId,
-      model,
-      prompt,
-      userQuery,
-      history,
-    });
+    const saveContext = assistantsOptions ?? usageContext;
 
     if (
       aiAgentTypeId === EAiAgentType.gpt &&
       assistantsOptions?.openaiAssistantId
     ) {
-      return this.callOpenAiAssistantsApi(
+      const text = await this.callOpenAiAssistantsApi(
         baseUrl,
         apiKey,
         assistantsOptions.accountId,
@@ -5916,25 +5985,48 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
         prompt,
         userQuery
       );
+      if (saveContext) {
+        await this.saveAiAgentUsage({
+          ai_agent_id: saveContext.aiAgentId,
+          account_id: saveContext.accountId,
+          chat_id: saveContext.chatId,
+          model: model ?? null,
+          success: true,
+          request_type: 'assistant_run',
+        });
+      }
+      return text;
     }
 
     if (
       aiAgentTypeId === EAiAgentType.gpt &&
       responsesApiFileSearchOptions?.vectorStoreId
     ) {
-      return this.openAIAssistantService.createResponseWithFileSearch(
-        apiKey,
-        baseUrl,
-        model,
-        prompt,
-        userQuery,
-        responsesApiFileSearchOptions.vectorStoreId,
-        history
-      );
+      const text =
+        await this.openAIAssistantService.createResponseWithFileSearch(
+          apiKey,
+          baseUrl,
+          model,
+          prompt,
+          userQuery,
+          responsesApiFileSearchOptions.vectorStoreId,
+          history
+        );
+      if (saveContext) {
+        await this.saveAiAgentUsage({
+          ai_agent_id: saveContext.aiAgentId,
+          account_id: saveContext.accountId,
+          chat_id: saveContext.chatId,
+          model: model ?? null,
+          success: true,
+          request_type: 'responses_file_search',
+        });
+      }
+      return text;
     }
 
     if (aiAgentTypeId === EAiAgentType.gemini) {
-      const response = await this.callGeminiChatApi(
+      const result = await this.callGeminiChatApi(
         baseUrl,
         apiKey,
         model,
@@ -5942,10 +6034,24 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
         userQuery,
         history
       );
-      return response;
+      if (saveContext) {
+        await this.saveAiAgentUsage({
+          ai_agent_id: saveContext.aiAgentId,
+          account_id: saveContext.accountId,
+          chat_id: saveContext.chatId,
+          prompt_tokens: result.usage?.prompt_tokens ?? null,
+          completion_tokens: result.usage?.completion_tokens ?? null,
+          total_tokens: result.usage?.total_tokens ?? null,
+          model: model ?? null,
+          latency_ms: result.latency_ms ?? null,
+          success: true,
+          request_type: 'chat',
+        });
+      }
+      return result.text;
     }
 
-    const response = await this.callOpenAiChatApi(
+    const result = await this.callOpenAiChatApi(
       baseUrl,
       apiKey,
       model,
@@ -5953,7 +6059,21 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       userQuery,
       history
     );
-    return response;
+    if (saveContext) {
+      await this.saveAiAgentUsage({
+        ai_agent_id: saveContext.aiAgentId,
+        account_id: saveContext.accountId,
+        chat_id: saveContext.chatId,
+        prompt_tokens: result.usage?.prompt_tokens ?? null,
+        completion_tokens: result.usage?.completion_tokens ?? null,
+        total_tokens: result.usage?.total_tokens ?? null,
+        model: model ?? null,
+        latency_ms: result.latency_ms ?? null,
+        success: true,
+        request_type: 'chat',
+      });
+    }
+    return result.text;
   }
 
   private async callOpenAiAssistantsApi(
@@ -6513,7 +6633,12 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
           userText,
           recentMessages,
           assistantsOptions,
-          responsesApiFileSearchOptions
+          responsesApiFileSearchOptions,
+          {
+            accountId: createChat.account.id,
+            chatId: createChat.chat_id,
+            aiAgentId: selectedAiAgentId,
+          }
         );
         shouldStoreLastAgentResponse = true;
 
@@ -6539,7 +6664,12 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
             userText,
             recentMessages,
             assistantsOptions,
-            responsesApiFileSearchOptions
+            responsesApiFileSearchOptions,
+            {
+              accountId: createChat.account.id,
+              chatId: createChat.chat_id,
+              aiAgentId: selectedAiAgentId,
+            }
           );
           shouldStoreLastAgentResponse = true;
 
@@ -6691,6 +6821,10 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
 
     const promptsText =
       this.ragService.buildPromptsTextFromDetailed(promptsForContext);
+    const promptContextAllowed = this.isQueryWithinPromptText(
+      userText,
+      promptsText
+    );
     const bootstrapSummary = await this.ensureBootstrapSummary(
       bootstrapSummaryKey,
       promptsText,
@@ -6735,12 +6869,16 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
     );
 
     if (!additionalInstructions) {
-      return { enhancedPrompt, contextAllowed, contextHints };
+      return {
+        enhancedPrompt,
+        contextAllowed: contextAllowed || promptContextAllowed,
+        contextHints,
+      };
     }
 
     return {
       enhancedPrompt: `${enhancedPrompt}\n\n### Diretrizes Adicionais:\n${additionalInstructions}`,
-      contextAllowed,
+      contextAllowed: contextAllowed || promptContextAllowed,
       contextHints,
     };
   }
@@ -7068,6 +7206,151 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       .replace(/[\u0300-\u036f]/g, '')
       .replace(/[^a-z0-9]+/g, ' ')
       .trim();
+  }
+
+  private extractKeywordTokens(text: string): string[] {
+    const normalized = this.normalizeTextForComparison(text);
+    if (!normalized) {
+      return [];
+    }
+
+    const stopWords = new Set([
+      'a',
+      'o',
+      'os',
+      'as',
+      'um',
+      'uma',
+      'uns',
+      'umas',
+      'de',
+      'do',
+      'da',
+      'dos',
+      'das',
+      'e',
+      'ou',
+      'que',
+      'como',
+      'qual',
+      'quais',
+      'quando',
+      'onde',
+      'quem',
+      'por',
+      'porque',
+      'pra',
+      'para',
+      'com',
+      'sem',
+      'nao',
+      'sim',
+      'se',
+      'em',
+      'no',
+      'na',
+      'nos',
+      'nas',
+      'sobre',
+      'isso',
+      'isto',
+      'essa',
+      'esse',
+      'aquela',
+      'aquele',
+      'aqui',
+      'ali',
+      'ja',
+      'so',
+      'sou',
+      'estou',
+      'esta',
+      'estao',
+      'ser',
+      'ter',
+      'me',
+      'minha',
+      'meu',
+      'meus',
+      'minhas',
+      'sua',
+      'seu',
+      'seus',
+      'suas',
+      'nosso',
+      'nossa',
+      'voces',
+      'voce',
+      'eu',
+      'tu',
+      'ele',
+      'ela',
+      'eles',
+      'elas',
+      'tudo',
+      'mais',
+      'menos',
+      'tambem',
+      'mesmo',
+      'mesma',
+      'ainda',
+      'agora',
+      'favor',
+      'porfavor',
+      'poderia',
+      'pode',
+      'poder',
+      'quer',
+      'quero',
+      'gostaria',
+    ]);
+
+    return normalized
+      .split(' ')
+      .filter((token) => token.length >= 3 && !stopWords.has(token));
+  }
+
+  private isQueryWithinPromptText(
+    userText: string,
+    promptsText: string
+  ): boolean {
+    if (!userText || !promptsText) {
+      return false;
+    }
+
+    const queryTokens = this.extractKeywordTokens(userText);
+    if (queryTokens.length === 0) {
+      return false;
+    }
+
+    const promptTokens = this.extractKeywordTokens(promptsText);
+    if (promptTokens.length === 0) {
+      return false;
+    }
+
+    const promptTokenSet = new Set(promptTokens);
+    const matchesToken = (token: string): boolean => {
+      if (promptTokenSet.has(token)) {
+        return true;
+      }
+      for (const promptToken of promptTokens) {
+        if (promptToken.startsWith(token) || token.startsWith(promptToken)) {
+          return true;
+        }
+      }
+      return false;
+    };
+
+    if (queryTokens.length === 1) {
+      return matchesToken(queryTokens[0]);
+    }
+
+    const matchCount = queryTokens.filter((token) =>
+      matchesToken(token)
+    ).length;
+    const matchRatio = matchCount / queryTokens.length;
+
+    return matchCount >= 2 || matchRatio >= 0.4;
   }
 
   private hashText(text: string): string {
