@@ -2332,7 +2332,6 @@
   "voice_ia_style_exaggeration": "Exagero de estilo",
   "delete_voice_ia_confirmation": "Tem certeza que deseja excluir esta Voice IA? Esta ação não pode ser desfeita.",
   "voice_ia_select_placeholder": "Selecione a Voice IA (opcional)",
-  "voice_ia_remove": "Remover",
   "voice_ia_current_unavailable": "Voice IA atual (indisponível)",
   "chunk_size_info": "Tamanho do Chunk: Define quantos caracteres/tokens serão processados em cada pedaço (chunk) do documento. Valores menores resultam em chunks mais precisos, mas aumentam o número de processamentos. Valores maiores processam mais informações por vez, mas podem perder contexto.",
   "chunk_overlap_info": "Sobreposição do Chunk: Define quantos caracteres/tokens se sobrepõem entre chunks consecutivos. Isso ajuda a manter o contexto entre partes do documento, evitando perda de informação nas fronteiras entre chunks.",

@@ -180,7 +180,6 @@ const shouldDisableBaseUrl = computed(
 );
 
 const voiceIaOptions = computed(() => {
-  const removeOption = { value: '', title: t('voice_ia_remove') };
   const activeIds = new Set(activeVoiceIas.value.map((v) => v.value));
   const hasCurrentNotInList =
     voiceIaId.value &&
@@ -194,7 +193,7 @@ const voiceIaOptions = computed(() => {
         },
       ]
     : [];
-  return [removeOption, ...currentOption, ...activeVoiceIas.value];
+  return [...currentOption, ...activeVoiceIas.value];
 });
 
 const loadActiveVoiceIas = async () => {
@@ -386,7 +385,8 @@ const handleUpdateAiAgent = async () => {
       chunk_size: chunkSize.value.trim() || '1200',
       chunk_overlap: chunkOverlap.value.trim() || '200',
       status: status.value,
-      voice_ia_id: voiceIaId.value === '' ? null : voiceIaId.value || undefined,
+      voice_ia_id:
+        voiceIaId.value === null ? null : voiceIaId.value || undefined,
     });
 
     if (result) {
@@ -479,6 +479,7 @@ const handleUpdateAiAgent = async () => {
                 item-value="value"
                 :placeholder="$t('voice_ia_select_placeholder')"
                 :disabled="isUpdating || isLoading"
+                clearable
               />
             </VCol>
             <VCol cols="12">
