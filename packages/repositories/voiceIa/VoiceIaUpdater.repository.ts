@@ -43,6 +43,10 @@ export class VoiceIaUpdaterRepository {
     if (input.status !== undefined) {
       inputUpdate.status = input.status ?? undefined;
     }
+    if (input.enable_transcription !== undefined) {
+      inputUpdate.enable_transcription =
+        input.enable_transcription ?? undefined;
+    }
 
     return inputUpdate;
   }

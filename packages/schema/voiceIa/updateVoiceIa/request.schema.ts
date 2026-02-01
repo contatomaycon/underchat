@@ -35,6 +35,9 @@ export const updateVoiceIaBodySchema = Type.Object({
       Type.Null(),
     ])
   ),
+  enable_transcription: Type.Optional(
+    Type.Union([Type.Boolean(), Type.Null()])
+  ),
 });
 
 export type UpdateVoiceIaParams = Static<typeof updateVoiceIaParamsSchema>;

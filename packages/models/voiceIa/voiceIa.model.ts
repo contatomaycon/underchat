@@ -1,4 +1,11 @@
-import { pgTable, timestamp, uuid, varchar, index } from 'drizzle-orm/pg-core';
+import {
+  boolean,
+  index,
+  pgTable,
+  timestamp,
+  uuid,
+  varchar,
+} from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 import { account } from '@core/models';
 import { EVoiceIaStatus } from '@core/common/enums/EVoiceIaStatus';
@@ -30,6 +37,7 @@ export const voiceIa = pgTable(
     stability: varchar({ length: 10 }).notNull().default('0.5'),
     similarity_boost: varchar({ length: 10 }).notNull().default('0.75'),
     style_exaggeration: varchar({ length: 10 }).notNull().default('0'),
+    enable_transcription: boolean().notNull().default(true),
     created_at: timestamp('created_at', {
       mode: 'string',
       withTimezone: true,

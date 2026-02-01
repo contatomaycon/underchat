@@ -33,6 +33,7 @@ export class VoiceIaViewerRepository {
         stability: true,
         similarity_boost: true,
         style_exaggeration: true,
+        enable_transcription: true,
         created_at: true,
         updated_at: true,
       },
@@ -55,6 +56,7 @@ export class VoiceIaViewerRepository {
       stability: result.stability,
       similarity_boost: result.similarity_boost,
       style_exaggeration: result.style_exaggeration,
+      enable_transcription: result.enable_transcription,
       created_at: result.created_at,
       updated_at: result.updated_at,
     };

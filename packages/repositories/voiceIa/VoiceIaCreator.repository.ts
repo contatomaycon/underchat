@@ -32,6 +32,7 @@ export class VoiceIaCreatorRepository {
         similarity_boost: input.similarity_boost ?? '0.75',
         style_exaggeration: input.style_exaggeration ?? '0',
         status: input.status ?? EVoiceIaStatus.active,
+        enable_transcription: input.enable_transcription ?? true,
       })
       .execute();
 

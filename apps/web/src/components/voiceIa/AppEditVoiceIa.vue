@@ -44,6 +44,7 @@ const speed = ref('1');
 const stability = ref('0.5');
 const similarityBoost = ref('0.75');
 const styleExaggeration = ref('0');
+const enableTranscription = ref(true);
 const status = ref<EVoiceIaStatus>(EVoiceIaStatus.active);
 const isUpdating = ref(false);
 const isLoading = ref(false);
@@ -76,6 +77,7 @@ const loadVoiceIa = async () => {
     stability.value = data.stability;
     similarityBoost.value = data.similarity_boost;
     styleExaggeration.value = data.style_exaggeration;
+    enableTranscription.value = data.enable_transcription ?? true;
     status.value = data.status as EVoiceIaStatus;
   }
 };
@@ -95,6 +97,7 @@ const handleUpdate = async () => {
       stability: stability.value,
       similarity_boost: similarityBoost.value,
       style_exaggeration: styleExaggeration.value,
+      enable_transcription: enableTranscription.value,
       status: status.value,
     });
 
@@ -262,6 +265,21 @@ onMounted(() => {
               <AppSelect
                 v-model="styleExaggeration"
                 :items="ELEVENLABS_STYLE_OPTIONS"
+                item-title="title"
+                item-value="value"
+                :disabled="isUpdating"
+              />
+            </VCol>
+            <VCol cols="12">
+              <VLabel class="text-body-2 mb-1"
+                >{{ $t('voice_ia_enable_transcription') }}:</VLabel
+              >
+              <AppSelect
+                v-model="enableTranscription"
+                :items="[
+                  { title: $t('yes'), value: true },
+                  { title: $t('no'), value: false },
+                ]"
                 item-title="title"
                 item-value="value"
                 :disabled="isUpdating"
