@@ -31,12 +31,46 @@ export class AiAgentPromptRefresherUseCase {
       throw new Error(t('ai_agent_prompt_not_found'));
     }
 
-    if (aiAgentPrompt.openai_file_id) {
-      await this.cleanupOpenAIFileIfNeeded(
+    const isFilePrompt =
+      aiAgentPrompt.ai_agent_prompt_type === EAiAgentPromptType.file;
+    const agent = await this.aiAgentService.viewAiAgent(
+      aiAgentPrompt.ai_agent_id,
+      accountId
+    );
+    const isGpt = agent?.ai_agent_type_id === EAiAgentType.gpt;
+
+    if (isFilePrompt && isGpt && agent?.api_key && agent?.base_url) {
+      const vectorStoreId = await this.openAIAssistantService.ensureVectorStore(
         aiAgentPrompt.ai_agent_id,
         accountId,
-        aiAgentPrompt.openai_file_id
+        agent.api_key,
+        agent.base_url
       );
+
+      if (agent.model) {
+        await this.openAIAssistantService.ensureAssistant(
+          aiAgentPrompt.ai_agent_id,
+          accountId,
+          agent.api_key,
+          agent.base_url,
+          agent.model,
+          this.openAIAssistantService.getDefaultAssistantInstructions(),
+          vectorStoreId
+        );
+      }
+
+      if (aiAgentPrompt.openai_file_id) {
+        try {
+          await this.openAIAssistantService.cleanupOpenAIFile(
+            agent.api_key,
+            agent.base_url,
+            vectorStoreId,
+            aiAgentPrompt.openai_file_id
+          );
+        } catch (error) {
+          console.error('Erro ao limpar arquivo OpenAI no refresh:', error);
+        }
+      }
     }
 
     await this.sendToEmbeddingQueue(
@@ -49,33 +83,6 @@ export class AiAgentPromptRefresherUseCase {
     );
 
     return true;
-  }
-
-  private async cleanupOpenAIFileIfNeeded(
-    aiAgentId: string,
-    accountId: string,
-    openaiFileId: string
-  ): Promise<void> {
-    try {
-      const agent = await this.aiAgentService.viewAiAgent(aiAgentId, accountId);
-      if (
-        !agent ||
-        agent.ai_agent_type_id !== EAiAgentType.gpt ||
-        !agent.api_key ||
-        !agent.base_url
-      ) {
-        return;
-      }
-
-      await this.openAIAssistantService.cleanupOpenAIFile(
-        agent.api_key,
-        agent.base_url,
-        agent.openai_vector_store_id,
-        openaiFileId
-      );
-    } catch (error) {
-      console.error('Erro ao limpar arquivo OpenAI no refresh:', error);
-    }
   }
 
   private async sendToEmbeddingQueue(

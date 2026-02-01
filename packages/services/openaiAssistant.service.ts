@@ -113,7 +113,27 @@ export class OpenAIAssistantService {
     return withLock(this.redis, lockKey, async () => {
       const agent = await this.aiAgentService.viewAiAgent(aiAgentId, accountId);
       if (agent?.openai_assistant_id) {
-        return agent.openai_assistant_id;
+        try {
+          await this.retrieveAssistant(
+            apiKey,
+            baseUrl,
+            agent.openai_assistant_id
+          );
+          return agent.openai_assistant_id;
+        } catch (error) {
+          if (!this.isRetrieveNotFoundError(error)) {
+            throw error;
+          }
+          if (vectorStoreId && agent.model) {
+            return this.recreateAssistantAndUpdate(
+              aiAgentId,
+              accountId,
+              apiKey,
+              baseUrl,
+              vectorStoreId
+            );
+          }
+        }
       }
 
       const unsupportedCacheKey = this.getUnsupportedModelCacheKey(
@@ -197,6 +217,55 @@ export class OpenAIAssistantService {
 
     const data = (await response.json()) as { id: string };
     return data.id;
+  }
+
+  private async retrieveAssistant(
+    apiKey: string,
+    baseUrl: string,
+    assistantId: string
+  ): Promise<{ id: string }> {
+    const url = `${this.normalizeBaseUrl(baseUrl)}/assistants/${encodeURIComponent(assistantId)}`;
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: this.buildHeaders(apiKey),
+    });
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(
+        `OpenAI Assistants API error (retrieve assistant): ${response.status} - ${errorText}`
+      );
+    }
+    return (await response.json()) as { id: string };
+  }
+
+  private async retrieveVectorStore(
+    apiKey: string,
+    baseUrl: string,
+    vectorStoreId: string
+  ): Promise<{ id: string }> {
+    const url = `${this.normalizeBaseUrl(baseUrl)}/vector_stores/${encodeURIComponent(vectorStoreId)}`;
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: this.buildHeaders(apiKey),
+    });
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(
+        `OpenAI Assistants API error (retrieve vector store): ${response.status} - ${errorText}`
+      );
+    }
+    return (await response.json()) as { id: string };
+  }
+
+  private isRetrieveNotFoundError(error: unknown): boolean {
+    if (!error || typeof error !== 'object') {
+      return false;
+    }
+    const message =
+      'message' in error && typeof error.message === 'string'
+        ? error.message
+        : '';
+    return message.includes('404');
   }
 
   async createResponseWithFileSearch(
@@ -375,7 +444,24 @@ export class OpenAIAssistantService {
     return withLock(this.redis, lockKey, async () => {
       const agent = await this.aiAgentService.viewAiAgent(aiAgentId, accountId);
       if (agent?.openai_vector_store_id) {
-        return agent.openai_vector_store_id;
+        try {
+          await this.retrieveVectorStore(
+            apiKey,
+            baseUrl,
+            agent.openai_vector_store_id
+          );
+          return agent.openai_vector_store_id;
+        } catch (error) {
+          if (!this.isRetrieveNotFoundError(error)) {
+            throw error;
+          }
+          return this.recreateVectorStoreAndUpdate(
+            aiAgentId,
+            accountId,
+            apiKey,
+            baseUrl
+          );
+        }
       }
 
       const vectorStoreId = await this.createVectorStore(

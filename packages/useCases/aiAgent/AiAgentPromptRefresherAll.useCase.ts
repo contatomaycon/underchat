@@ -33,15 +33,40 @@ export class AiAgentPromptRefresherAllUseCase {
 
     const agent = await this.aiAgentService.viewAiAgent(aiAgentId, accountId);
     const isGpt = agent?.ai_agent_type_id === EAiAgentType.gpt;
+    const hasFilePrompts = prompts.some(
+      (p) => p.ai_agent_prompt_type === EAiAgentPromptType.file
+    );
 
-    if (isGpt && agent?.api_key && agent?.base_url) {
+    if (isGpt && hasFilePrompts && agent?.api_key && agent?.base_url) {
+      const vectorStoreId = await this.openAIAssistantService.ensureVectorStore(
+        aiAgentId,
+        accountId,
+        agent.api_key,
+        agent.base_url
+      );
+
+      if (agent.model) {
+        await this.openAIAssistantService.ensureAssistant(
+          aiAgentId,
+          accountId,
+          agent.api_key,
+          agent.base_url,
+          agent.model,
+          this.openAIAssistantService.getDefaultAssistantInstructions(),
+          vectorStoreId
+        );
+      }
+
       for (const prompt of prompts) {
-        if (prompt.openai_file_id) {
+        if (
+          prompt.ai_agent_prompt_type === EAiAgentPromptType.file &&
+          prompt.openai_file_id
+        ) {
           try {
             await this.openAIAssistantService.cleanupOpenAIFile(
               agent.api_key,
               agent.base_url,
-              agent.openai_vector_store_id,
+              vectorStoreId,
               prompt.openai_file_id
             );
           } catch (error) {
