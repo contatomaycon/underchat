@@ -52,6 +52,7 @@ import { AiAgentUsageCreatorRepository } from '@core/repositories/aiAgent/AiAgen
 import { VoiceIaIntegrationService } from './voiceIaIntegration.service';
 import { VoiceIaService } from './voiceIa.service';
 import { EVoiceIaStatus } from '@core/common/enums/EVoiceIaStatus';
+import { stripTextForTts } from '@core/common/functions/stripTextForTts';
 
 @injectable()
 export class ChatbotFlowRunnerService {
@@ -7564,18 +7565,20 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
           createChat.account.id
         );
         if (voiceIaConfig?.api_key) {
+          const cleanedTextForAudio = stripTextForTts(aiResponse);
           const uploadResult =
-            await this.voiceIaIntegrationService.generateSpeechAndUpload(
-              aiResponse,
-              voiceIaConfig,
-              createChat.account.id
-            );
+            cleanedTextForAudio.trim().length > 0
+              ? await this.voiceIaIntegrationService.generateSpeechAndUpload(
+                  cleanedTextForAudio,
+                  voiceIaConfig,
+                  createChat.account.id
+                )
+              : null;
           if (uploadResult) {
             await this.chatMessageService.sendMessage(t, {
               chat: createChat,
               accountId: createChat.account.id,
               type: EMessageType.audio,
-              message: aiResponse,
               audioUrl: uploadResult.url,
               audioMimetype: uploadResult.mimetype,
               audioPtt: true,
