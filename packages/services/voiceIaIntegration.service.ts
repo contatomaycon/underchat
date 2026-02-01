@@ -25,21 +25,38 @@ export class VoiceIaIntegrationService {
     'https://api.openai.com/v1/audio/transcriptions';
   private readonly GEMINI_BASE_URL =
     'https://generativelanguage.googleapis.com/v1beta';
+  private readonly GENERATE_SPEECH_MAX_RETRIES = 2;
+  private readonly TRANSCRIBE_MAX_RETRIES = 2;
 
   async generateSpeech(
     text: string,
     config: ViewVoiceIaResponse
   ): Promise<IVoiceIaGenerateSpeechResult | null> {
-    if (config.voice_ia_type === EVoiceIaType.eleven_labs) {
-      return this.generateSpeechElevenLabs(text, config);
+    const generate = (): Promise<IVoiceIaGenerateSpeechResult | null> => {
+      if (config.voice_ia_type === EVoiceIaType.eleven_labs) {
+        return this.generateSpeechElevenLabs(text, config);
+      }
+      if (config.voice_ia_type === EVoiceIaType.gpt) {
+        return this.generateSpeechGpt(text, config);
+      }
+      if (config.voice_ia_type === EVoiceIaType.gemini) {
+        return this.generateSpeechGemini(text, config);
+      }
+      return Promise.resolve(null);
+    };
+
+    let result = await generate();
+    for (
+      let attempt = 0;
+      attempt < this.GENERATE_SPEECH_MAX_RETRIES;
+      attempt++
+    ) {
+      if (result !== null) {
+        return result;
+      }
+      result = await generate();
     }
-    if (config.voice_ia_type === EVoiceIaType.gpt) {
-      return this.generateSpeechGpt(text, config);
-    }
-    if (config.voice_ia_type === EVoiceIaType.gemini) {
-      return this.generateSpeechGemini(text, config);
-    }
-    return null;
+    return result;
   }
 
   async generateSpeechAndUpload(
@@ -77,16 +94,27 @@ export class VoiceIaIntegrationService {
     config: ViewVoiceIaResponse,
     mimetype?: string
   ): Promise<IVoiceIaTranscribeResult | null> {
-    if (config.voice_ia_type === EVoiceIaType.eleven_labs) {
-      return this.transcribeElevenLabs(audioBuffer, config, mimetype);
+    const transcribe = (): Promise<IVoiceIaTranscribeResult | null> => {
+      if (config.voice_ia_type === EVoiceIaType.eleven_labs) {
+        return this.transcribeElevenLabs(audioBuffer, config, mimetype);
+      }
+      if (config.voice_ia_type === EVoiceIaType.gpt) {
+        return this.transcribeGpt(audioBuffer, config, mimetype);
+      }
+      if (config.voice_ia_type === EVoiceIaType.gemini) {
+        return this.transcribeGemini(audioBuffer, config, mimetype);
+      }
+      return Promise.resolve(null);
+    };
+
+    let result = await transcribe();
+    for (let attempt = 0; attempt < this.TRANSCRIBE_MAX_RETRIES; attempt++) {
+      if (result !== null) {
+        return result;
+      }
+      result = await transcribe();
     }
-    if (config.voice_ia_type === EVoiceIaType.gpt) {
-      return this.transcribeGpt(audioBuffer, config, mimetype);
-    }
-    if (config.voice_ia_type === EVoiceIaType.gemini) {
-      return this.transcribeGemini(audioBuffer, config, mimetype);
-    }
-    return null;
+    return result;
   }
 
   private async generateSpeechElevenLabs(
