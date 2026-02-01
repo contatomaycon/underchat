@@ -20,6 +20,9 @@ export class VoiceIaIntegrationService {
     'https://api.elevenlabs.io/v1/text-to-speech';
   private readonly ELEVENLABS_STT_URL =
     'https://api.elevenlabs.io/v1/speech-to-text';
+  private readonly OPENAI_SPEECH_URL = 'https://api.openai.com/v1/audio/speech';
+  private readonly OPENAI_TRANSCRIPTIONS_URL =
+    'https://api.openai.com/v1/audio/transcriptions';
 
   async generateSpeech(
     text: string,
@@ -27,6 +30,9 @@ export class VoiceIaIntegrationService {
   ): Promise<IVoiceIaGenerateSpeechResult | null> {
     if (config.voice_ia_type === EVoiceIaType.eleven_labs) {
       return this.generateSpeechElevenLabs(text, config);
+    }
+    if (config.voice_ia_type === EVoiceIaType.gpt) {
+      return this.generateSpeechGpt(text, config);
     }
     return null;
   }
@@ -68,6 +74,9 @@ export class VoiceIaIntegrationService {
   ): Promise<IVoiceIaTranscribeResult | null> {
     if (config.voice_ia_type === EVoiceIaType.eleven_labs) {
       return this.transcribeElevenLabs(audioBuffer, config, mimetype);
+    }
+    if (config.voice_ia_type === EVoiceIaType.gpt) {
+      return this.transcribeGpt(audioBuffer, config, mimetype);
     }
     return null;
   }
@@ -127,6 +136,49 @@ export class VoiceIaIntegrationService {
     }
   }
 
+  private async generateSpeechGpt(
+    text: string,
+    config: ViewVoiceIaResponse
+  ): Promise<IVoiceIaGenerateSpeechResult | null> {
+    const apiKey = config.api_key;
+    if (!apiKey) {
+      return null;
+    }
+
+    const model = config.model_id || 'tts-1';
+    const voice = config.voice_id || 'alloy';
+
+    try {
+      const response = await fetch(this.OPENAI_SPEECH_URL, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model,
+          voice,
+          input: text,
+        }),
+      });
+
+      if (!response.ok) {
+        return null;
+      }
+
+      const arrayBuffer = await response.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+
+      return {
+        buffer,
+        mimetype: 'audio/mpeg',
+        extension: 'mp3',
+      };
+    } catch {
+      return null;
+    }
+  }
+
   private buildBlobFromBuffer(buffer: Buffer, mimetype = 'audio/mpeg'): Blob {
     const arrayBuffer = new ArrayBuffer(buffer.byteLength);
     new Uint8Array(arrayBuffer).set(buffer);
@@ -161,6 +213,44 @@ export class VoiceIaIntegrationService {
         method: 'POST',
         headers: {
           'xi-api-key': apiKey,
+        },
+        body: formData,
+      });
+
+      if (!response.ok) {
+        return null;
+      }
+
+      const data = (await response.json()) as { text?: string };
+      const text = data?.text?.trim() ?? '';
+
+      return { text };
+    } catch {
+      return null;
+    }
+  }
+
+  private async transcribeGpt(
+    audioBuffer: Buffer,
+    config: ViewVoiceIaResponse,
+    mimetype = 'audio/mpeg'
+  ): Promise<IVoiceIaTranscribeResult | null> {
+    const apiKey = config.api_key;
+    if (!apiKey) {
+      return null;
+    }
+
+    const extension = this.getAudioExtensionFromMimetype(mimetype);
+    const formData = new FormData();
+    const blob = this.buildBlobFromBuffer(audioBuffer, mimetype);
+    formData.append('file', blob, `audio.${extension}`);
+    formData.append('model', 'whisper-1');
+
+    try {
+      const response = await fetch(this.OPENAI_TRANSCRIPTIONS_URL, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
         },
         body: formData,
       });

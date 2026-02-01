@@ -16,6 +16,9 @@ export class VoiceIaUpdaterRepository {
   ): Partial<typeof voiceIa.$inferInsert> {
     const inputUpdate: Partial<typeof voiceIa.$inferInsert> = {};
 
+    if (input.voice_ia_type !== undefined) {
+      inputUpdate.voice_ia_type = input.voice_ia_type ?? undefined;
+    }
     if (input.name !== undefined) {
       inputUpdate.name = input.name ?? undefined;
     }

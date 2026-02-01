@@ -1,11 +1,19 @@
 import { Static, Type } from '@sinclair/typebox';
 import { EVoiceIaStatus } from '@core/common/enums/EVoiceIaStatus';
+import { EVoiceIaType } from '@core/common/enums/EVoiceIaType';
 
 export const updateVoiceIaParamsSchema = Type.Object({
   voice_ia_id: Type.String({ format: 'uuid' }),
 });
 
 export const updateVoiceIaBodySchema = Type.Object({
+  voice_ia_type: Type.Optional(
+    Type.Union([
+      Type.Literal(EVoiceIaType.eleven_labs),
+      Type.Literal(EVoiceIaType.gpt),
+      Type.Null(),
+    ])
+  ),
   name: Type.Optional(
     Type.Union([Type.String({ minLength: 1, maxLength: 200 }), Type.Null()])
   ),

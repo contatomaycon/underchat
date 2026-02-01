@@ -5,6 +5,7 @@ import { useVoiceIaStore } from '@/@webcore/stores/voiceIa';
 import { requiredValidator } from '@/@webcore/utils/validators';
 import { VForm } from 'vuetify/components/VForm';
 import { EVoiceIaStatus } from '@core/common/enums/EVoiceIaStatus';
+import { EVoiceIaType } from '@core/common/enums/EVoiceIaType';
 import {
   ELEVENLABS_MODELS,
   ELEVENLABS_LANGUAGES,
@@ -14,6 +15,7 @@ import {
   ELEVENLABS_STYLE_OPTIONS,
 } from './ELEVENLABS_OPTIONS';
 import { ELEVENLABS_VOICES_PT_BR } from './ELEVENLABS_VOICES_PT_BR';
+import { GPT_VOICES, GPT_TTS_MODELS } from './GPT_OPTIONS';
 
 const voiceIaStore = useVoiceIaStore();
 const { t } = useI18n();
@@ -35,6 +37,7 @@ const isVisible = computed({
 
 const voiceIaIdRef = computed(() => props.voiceIaId);
 
+const voiceIaType = ref<EVoiceIaType>(EVoiceIaType.eleven_labs);
 const name = ref('');
 const apiKey = ref('');
 const voiceId = ref('');
@@ -46,6 +49,8 @@ const similarityBoost = ref('0.75');
 const styleExaggeration = ref('0');
 const enableTranscription = ref(true);
 const status = ref<EVoiceIaStatus>(EVoiceIaStatus.active);
+
+const isGpt = computed(() => voiceIaType.value === EVoiceIaType.gpt);
 const isUpdating = ref(false);
 const isLoading = ref(false);
 const isApiKeyVisible = ref(false);
@@ -67,6 +72,8 @@ const loadVoiceIa = async () => {
   isLoading.value = false;
 
   if (data) {
+    voiceIaType.value =
+      (data.voice_ia_type as EVoiceIaType) ?? EVoiceIaType.eleven_labs;
     name.value = data.name;
     apiKey.value = data.api_key ?? '';
     voiceId.value = data.voice_id;
@@ -88,18 +95,26 @@ const handleUpdate = async () => {
 
   isUpdating.value = true;
   try {
-    const result = await voiceIaStore.updateVoiceIa(voiceIaIdRef.value, {
+    const payload = {
       name: name.value.trim(),
       api_key: apiKey.value.trim() || undefined,
       voice_id: voiceId.value,
       model_id: modelId.value,
-      speed: speed.value,
-      stability: stability.value,
-      similarity_boost: similarityBoost.value,
-      style_exaggeration: styleExaggeration.value,
       enable_transcription: enableTranscription.value,
       status: status.value,
-    });
+    };
+    if (!isGpt.value) {
+      Object.assign(payload, {
+        speed: speed.value,
+        stability: stability.value,
+        similarity_boost: similarityBoost.value,
+        style_exaggeration: styleExaggeration.value,
+      });
+    }
+    const result = await voiceIaStore.updateVoiceIa(
+      voiceIaIdRef.value,
+      payload
+    );
 
     if (result) {
       isVisible.value = false;
@@ -157,7 +172,14 @@ onMounted(() => {
               <VLabel class="text-body-2 mb-1"
                 >{{ $t('voice_ia_type') }}:</VLabel
               >
-              <AppTextField model-value="ElevenLabs" disabled />
+              <AppTextField
+                :model-value="
+                  isGpt
+                    ? $t('voice_ia_type_gpt')
+                    : $t('voice_ia_type_eleven_labs')
+                "
+                disabled
+              />
             </VCol>
             <VCol cols="12">
               <VLabel class="text-body-2 mb-1">{{ $t('name') }}:</VLabel>
@@ -184,7 +206,7 @@ onMounted(() => {
                 @click:append-inner="isApiKeyVisible = !isApiKeyVisible"
               />
             </VCol>
-            <VCol cols="12">
+            <VCol v-if="!isGpt" cols="12">
               <VLabel class="text-body-2 mb-1"
                 >{{ $t('voice_ia_language') }}:</VLabel
               >
@@ -201,8 +223,19 @@ onMounted(() => {
                 >{{ $t('voice_ia_voice') }}:</VLabel
               >
               <AppSelectSearch
+                v-if="!isGpt"
                 v-model="voiceId"
                 :items="ELEVENLABS_VOICES_PT_BR"
+                item-title="title"
+                item-value="value"
+                :placeholder="$t('voice_ia_voice_placeholder')"
+                :rules="voiceIdRules"
+                :disabled="isUpdating"
+              />
+              <AppSelect
+                v-else
+                v-model="voiceId"
+                :items="GPT_VOICES"
                 item-title="title"
                 item-value="value"
                 :placeholder="$t('voice_ia_voice_placeholder')"
@@ -216,60 +249,62 @@ onMounted(() => {
               >
               <AppSelect
                 v-model="modelId"
-                :items="ELEVENLABS_MODELS"
+                :items="isGpt ? GPT_TTS_MODELS : ELEVENLABS_MODELS"
                 item-title="title"
                 item-value="value"
                 :disabled="isUpdating"
               />
             </VCol>
-            <VCol cols="6">
-              <VLabel class="text-body-2 mb-1"
-                >{{ $t('voice_ia_speed') }}:</VLabel
-              >
-              <AppSelect
-                v-model="speed"
-                :items="ELEVENLABS_SPEED_OPTIONS"
-                item-title="title"
-                item-value="value"
-                :disabled="isUpdating"
-              />
-            </VCol>
-            <VCol cols="6">
-              <VLabel class="text-body-2 mb-1"
-                >{{ $t('voice_ia_stability') }}:</VLabel
-              >
-              <AppSelect
-                v-model="stability"
-                :items="ELEVENLABS_STABILITY_OPTIONS"
-                item-title="title"
-                item-value="value"
-                :disabled="isUpdating"
-              />
-            </VCol>
-            <VCol cols="6">
-              <VLabel class="text-body-2 mb-1"
-                >{{ $t('voice_ia_similarity') }}:</VLabel
-              >
-              <AppSelect
-                v-model="similarityBoost"
-                :items="ELEVENLABS_SIMILARITY_OPTIONS"
-                item-title="title"
-                item-value="value"
-                :disabled="isUpdating"
-              />
-            </VCol>
-            <VCol cols="6">
-              <VLabel class="text-body-2 mb-1"
-                >{{ $t('voice_ia_style_exaggeration') }}:</VLabel
-              >
-              <AppSelect
-                v-model="styleExaggeration"
-                :items="ELEVENLABS_STYLE_OPTIONS"
-                item-title="title"
-                item-value="value"
-                :disabled="isUpdating"
-              />
-            </VCol>
+            <template v-if="!isGpt">
+              <VCol cols="6">
+                <VLabel class="text-body-2 mb-1"
+                  >{{ $t('voice_ia_speed') }}:</VLabel
+                >
+                <AppSelect
+                  v-model="speed"
+                  :items="ELEVENLABS_SPEED_OPTIONS"
+                  item-title="title"
+                  item-value="value"
+                  :disabled="isUpdating"
+                />
+              </VCol>
+              <VCol cols="6">
+                <VLabel class="text-body-2 mb-1"
+                  >{{ $t('voice_ia_stability') }}:</VLabel
+                >
+                <AppSelect
+                  v-model="stability"
+                  :items="ELEVENLABS_STABILITY_OPTIONS"
+                  item-title="title"
+                  item-value="value"
+                  :disabled="isUpdating"
+                />
+              </VCol>
+              <VCol cols="6">
+                <VLabel class="text-body-2 mb-1"
+                  >{{ $t('voice_ia_similarity') }}:</VLabel
+                >
+                <AppSelect
+                  v-model="similarityBoost"
+                  :items="ELEVENLABS_SIMILARITY_OPTIONS"
+                  item-title="title"
+                  item-value="value"
+                  :disabled="isUpdating"
+                />
+              </VCol>
+              <VCol cols="6">
+                <VLabel class="text-body-2 mb-1"
+                  >{{ $t('voice_ia_style_exaggeration') }}:</VLabel
+                >
+                <AppSelect
+                  v-model="styleExaggeration"
+                  :items="ELEVENLABS_STYLE_OPTIONS"
+                  item-title="title"
+                  item-value="value"
+                  :disabled="isUpdating"
+                />
+              </VCol>
+            </template>
             <VCol cols="12">
               <VLabel class="text-body-2 mb-1"
                 >{{ $t('voice_ia_enable_transcription') }}:</VLabel

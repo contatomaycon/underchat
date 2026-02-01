@@ -104,6 +104,12 @@ const handleTableChange = (o: {
   options.value.sortBy = o.sortBy;
 };
 
+const voiceIaTypeChipColor = (typeName: string): string => {
+  if (typeName === 'GPT') return 'deep-purple';
+  if (typeName === 'ElevenLabs') return 'info';
+  return 'grey';
+};
+
 const deleteVoiceIa = (id: string) => {
   voiceIaToDelete.value = id;
   isDialogDeleterShow.value = true;
@@ -192,7 +198,12 @@ watch(
           </template>
 
           <template #item.voice_ia_type_name="{ item }">
-            {{ item.voice_ia_type_name }}
+            <VChip
+              :color="voiceIaTypeChipColor(item.voice_ia_type_name)"
+              size="small"
+            >
+              {{ item.voice_ia_type_name }}
+            </VChip>
           </template>
 
           <template #item.status="{ item }">
