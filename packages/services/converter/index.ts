@@ -3,7 +3,6 @@ import { Buffer } from 'node:buffer';
 import { IConvertAudioResult } from '@core/common/interfaces/IConvertAudioResult';
 import { IConvertVideoResult } from '@core/common/interfaces/IConvertVideoResult';
 import { AudioFormatDetector } from './audio/audioFormatDetector.service';
-import { AudioFormatValidator } from './audio/audioFormatValidator.service';
 import { AudioFfmpegConverter } from './audio/audioFfmpegConverter.service';
 import { AudioWaveformGenerator } from './audio/audioWaveformGenerator.service';
 import { VideoFormatDetector } from './video/videoFormatDetector.service';
@@ -14,7 +13,6 @@ import { VideoFfmpegConverter } from './video/videoFfmpegConverter.service';
 export class ConverterService {
   constructor(
     private readonly audioFormatDetector: AudioFormatDetector,
-    private readonly audioFormatValidator: AudioFormatValidator,
     private readonly audioFfmpegConverter: AudioFfmpegConverter,
     private readonly audioWaveformGenerator: AudioWaveformGenerator,
     private readonly videoFormatDetector: VideoFormatDetector,

@@ -7,10 +7,14 @@ import {
   IVoiceIaTranscribeResult,
 } from '@core/common/interfaces/IVoiceIaIntegration';
 import { StorageService } from './storage.service';
+import { ConverterService } from './converter';
 
 @injectable()
 export class VoiceIaIntegrationService {
-  constructor(private readonly storageService: StorageService) {}
+  constructor(
+    private readonly storageService: StorageService,
+    private readonly converterService: ConverterService
+  ) {}
 
   private readonly ELEVENLABS_TTS_URL =
     'https://api.elevenlabs.io/v1/text-to-speech';
@@ -36,11 +40,16 @@ export class VoiceIaIntegrationService {
     if (!speechResult) {
       return null;
     }
-    const filename = `voice-ia-${Date.now()}.${speechResult.extension}`;
-    const uploadResult = await this.storageService.uploadAudioFromBuffer(
+    const converted = await this.converterService.convertAudio(
       speechResult.buffer,
-      filename,
       speechResult.mimetype,
+      true
+    );
+    const filename = `voice-ia-${Date.now()}.${converted.extension}`;
+    const uploadResult = await this.storageService.uploadAudioFromBuffer(
+      converted.buffer,
+      filename,
+      converted.mimetype,
       accountId
     );
     if (!uploadResult?.url) {
@@ -48,7 +57,7 @@ export class VoiceIaIntegrationService {
     }
     return {
       url: uploadResult.url,
-      mimetype: speechResult.mimetype,
+      mimetype: converted.mimetype,
     };
   }
 
