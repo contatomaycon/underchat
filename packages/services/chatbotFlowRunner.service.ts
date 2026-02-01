@@ -55,6 +55,7 @@ import { EVoiceIaStatus } from '@core/common/enums/EVoiceIaStatus';
 import { stripTextForTts } from '@core/common/functions/stripTextForTts';
 import { ViewAiAgentResponse } from '@core/schema/aiAgent/viewAiAgent/response.schema';
 import { IChatbotCustomMessages } from '@core/common/interfaces/IChatbotCustomMessages';
+import { IChatbotFlowMenuOption } from '@core/common/interfaces/IChatbotFlowMenuOption';
 import { getContextTokensForModel } from '@core/common/functions/getContextTokensForModel';
 
 @injectable()
@@ -64,6 +65,97 @@ export class ChatbotFlowRunnerService {
   private readonly RAG_CACHE_TTL_SECONDS = 600;
   private readonly CONVERSATION_SUMMARY_UPDATE_INTERVAL = 5;
   private static readonly MIN_PREFIX_MATCH_LENGTH = 8;
+
+  private static readonly STOP_WORDS = new Set<string>([
+    'a',
+    'o',
+    'os',
+    'as',
+    'um',
+    'uma',
+    'uns',
+    'umas',
+    'de',
+    'do',
+    'da',
+    'dos',
+    'das',
+    'e',
+    'ou',
+    'que',
+    'como',
+    'qual',
+    'quais',
+    'quando',
+    'onde',
+    'quem',
+    'por',
+    'porque',
+    'pra',
+    'para',
+    'com',
+    'sem',
+    'nao',
+    'sim',
+    'se',
+    'em',
+    'no',
+    'na',
+    'nos',
+    'nas',
+    'sobre',
+    'isso',
+    'isto',
+    'essa',
+    'esse',
+    'aquela',
+    'aquele',
+    'aqui',
+    'ali',
+    'ja',
+    'so',
+    'sou',
+    'estou',
+    'esta',
+    'estao',
+    'ser',
+    'ter',
+    'me',
+    'minha',
+    'meu',
+    'meus',
+    'minhas',
+    'sua',
+    'seu',
+    'seus',
+    'suas',
+    'nosso',
+    'nossa',
+    'voces',
+    'voce',
+    'eu',
+    'tu',
+    'ele',
+    'ela',
+    'eles',
+    'elas',
+    'tudo',
+    'mais',
+    'menos',
+    'tambem',
+    'mesmo',
+    'mesma',
+    'ainda',
+    'agora',
+    'favor',
+    'porfavor',
+    'poderia',
+    'pode',
+    'poder',
+    'quer',
+    'quero',
+    'gostaria',
+  ]);
 
   constructor(
     @inject('Redis') private readonly redis: Redis,
@@ -248,7 +340,11 @@ ${contextText}`;
       };
       try {
         parsed = JSON.parse(jsonMatch[0]) as typeof parsed;
-      } catch {
+      } catch (error) {
+        console.error(
+          '[ChatbotFlow] extractTransferContextFromAgentContext JSON parse failed',
+          error
+        );
         const fallback = this.fallbackExtractTransferContext(contextText);
         return { ...fallback, contextText };
       }
@@ -280,7 +376,11 @@ ${contextText}`;
         userNames.length > 0;
       const result = { sectorNames, userNames, askOnlyUser, contextText };
       return result;
-    } catch {
+    } catch (error) {
+      console.error(
+        '[ChatbotFlow] extractTransferContextFromAgentContext failed',
+        error
+      );
       const fallback = this.fallbackExtractTransferContext(contextText);
       return { ...fallback, contextText };
     }
@@ -614,7 +714,8 @@ ${sectorList}`;
       }
 
       return filtered;
-    } catch {
+    } catch (error) {
+      console.error('[ChatbotFlow] refineSectorsByAiContext failed', error);
       return sectors;
     }
   }
@@ -715,7 +816,8 @@ ${userList}`;
       }
 
       return filtered;
-    } catch {
+    } catch (error) {
+      console.error('[ChatbotFlow] refineUsersByAiContext failed', error);
       return users;
     }
   }
@@ -1356,7 +1458,11 @@ ${userList}`;
         mimetype
       );
       return result?.text?.trim() ?? null;
-    } catch {
+    } catch (error) {
+      console.error(
+        '[ChatbotFlow] getTextOrTranscribedForAiAgent transcription failed',
+        error
+      );
       return null;
     }
   }
@@ -3331,7 +3437,12 @@ ${userList}`;
     data.chatId = createChat.chat_id;
 
     await Promise.all([
-      this.redis.set(inactivityCacheKey, JSON.stringify(data)),
+      this.redis.set(
+        inactivityCacheKey,
+        JSON.stringify(data),
+        'EX',
+        this.INACTIVITY_CACHE_TTL_SECONDS
+      ),
       this.redis.zadd(scheduleKey, checkTime, inactivityCacheKey),
     ]);
   }
@@ -3383,7 +3494,12 @@ ${userList}`;
       const nextCheckTime = now + timeMinutes * 60 * 1000;
 
       await Promise.all([
-        this.redis.set(inactivityCacheKey, JSON.stringify(updatedData)),
+        this.redis.set(
+          inactivityCacheKey,
+          JSON.stringify(updatedData),
+          'EX',
+          this.INACTIVITY_CACHE_TTL_SECONDS
+        ),
         this.redis.zadd(scheduleKey, nextCheckTime, inactivityCacheKey),
       ]);
 
@@ -3418,7 +3534,12 @@ ${userList}`;
     const nextCheckTime = now + timeMinutes * 60 * 1000;
 
     await Promise.all([
-      this.redis.set(inactivityCacheKey, JSON.stringify(updatedData)),
+      this.redis.set(
+        inactivityCacheKey,
+        JSON.stringify(updatedData),
+        'EX',
+        this.INACTIVITY_CACHE_TTL_SECONDS
+      ),
       this.redis.zadd(scheduleKey, nextCheckTime, inactivityCacheKey),
     ]);
   }
@@ -3956,6 +4077,9 @@ ${userList}`;
     return { rawTransferMessage: undefined, enabled: undefined };
   }
 
+  private readonly FAILED_ATTEMPTS_CACHE_TTL_SECONDS = 86400;
+  private readonly INACTIVITY_CACHE_TTL_SECONDS = 86400;
+
   private async incrementFailedAttempts(createChat: IChat): Promise<number> {
     const key = this.getFailedAttemptsCacheKey(
       createChat.account.id,
@@ -3964,6 +4088,7 @@ ${userList}`;
     );
 
     const newValue = await this.redis.incr(key);
+    await this.redis.expire(key, this.FAILED_ATTEMPTS_CACHE_TTL_SECONDS);
 
     return newValue;
   }
@@ -4332,7 +4457,7 @@ ${userList}`;
   private async sendDefaultQuestionMessage(
     t: TFunction<'translation', undefined>,
     createChat: IChat,
-    currentNode: any,
+    currentNode: ListChatbotFlowResponse['nodes'][number],
     clearCache = false
   ): Promise<void> {
     if (clearCache) {
@@ -4374,8 +4499,8 @@ ${userList}`;
     createChat: IChat,
     chatbotFlow: ListChatbotFlowResponse,
     currentFlowId: string,
-    currentNode: any,
-    options: any[],
+    currentNode: ListChatbotFlowResponse['nodes'][number],
+    options: IChatbotFlowMenuOption[],
     analysis: 'positive' | 'negative' | 'question' | 'human_support',
     customMessages: IChatbotCustomMessages | undefined,
     aiAgent: ViewAiAgentResponse | null
@@ -4627,7 +4752,7 @@ ${userList}`;
 
   private findTargetOptionId(
     t: TFunction<'translation', undefined>,
-    options: any[],
+    options: IChatbotFlowMenuOption[],
     analysis: 'positive' | 'negative' | 'question'
   ): string | null {
     if (analysis === 'positive') {
@@ -4824,7 +4949,11 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
     };
     try {
       parsed = JSON.parse(cachedData);
-    } catch {
+    } catch (error) {
+      console.error(
+        '[ChatbotFlow] parseSectorSelectionCache JSON parse failed',
+        error
+      );
       return null;
     }
 
@@ -4890,7 +5019,11 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
     };
     try {
       parsed = JSON.parse(cachedData);
-    } catch {
+    } catch (error) {
+      console.error(
+        '[ChatbotFlow] parseUserSelectionCache JSON parse failed',
+        error
+      );
       return null;
     }
 
@@ -5484,7 +5617,8 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
       const result = this.parseAnalysisResponse(analysis, humanSupportEnabled);
 
       return result;
-    } catch {
+    } catch (error) {
+      console.error('[ChatbotFlow] analyzeUserResponse failed', error);
       const fallbackResult = this.fallbackAnalysis(
         userResponse,
         humanSupportEnabled
@@ -6101,7 +6235,7 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
     createChat: IChat,
     chatbotFlow: ListChatbotFlowResponse,
     currentFlowId: string,
-    options: any[],
+    options: IChatbotFlowMenuOption[],
     userText: string,
     customMessages?: IChatbotCustomMessages
   ): Promise<boolean | null> {
@@ -6154,7 +6288,7 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
     chatbotFlow: ListChatbotFlowResponse,
     currentFlowId: string,
     currentNode: ListChatbotFlowResponse['nodes'][number],
-    options: any[],
+    options: IChatbotFlowMenuOption[],
     continueMessage: string,
     userText: string,
     customMessages: IChatbotCustomMessages | undefined,
@@ -6248,13 +6382,7 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
     const { enhancedPrompt, contextAllowed, contextHints } =
       await this.buildEnhancedPromptForAiAgent(
         createChat,
-        aiAgent.ai_agent_id,
-        {
-          base_url: baseUrl,
-          api_key: apiKey,
-          model,
-          ai_agent_type_id: aiAgent.ai_agent_type_id,
-        },
+        aiAgent,
         userText,
         bootstrapSummaryKey,
         conversationSummaryKey,
@@ -6430,13 +6558,7 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
 
   private async buildEnhancedPromptForAiAgent(
     createChat: IChat,
-    selectedAiAgentId: string,
-    aiAgent: {
-      base_url: string;
-      api_key: string;
-      model: string;
-      ai_agent_type_id: string;
-    },
+    aiAgent: ViewAiAgentResponse,
     userText: string,
     bootstrapSummaryKey: string,
     conversationSummaryKey: string,
@@ -6449,7 +6571,7 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
   }> {
     const allPrompts = await this.ragService.getAllAgentPromptsDetailed(
       createChat.account.id,
-      selectedAiAgentId
+      aiAgent.ai_agent_id
     );
 
     const promptsForContext = skipFilePrompts
@@ -6474,7 +6596,7 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
         ? this.getRagCacheKey(
             createChat.account.id,
             createChat.chat_id,
-            selectedAiAgentId,
+            aiAgent.ai_agent_id,
             normalizedQuestion,
             promptsHash,
             skipFilePrompts
@@ -6527,21 +6649,29 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
     const bootstrapSummary = await this.ensureBootstrapSummary(
       bootstrapSummaryKey,
       promptsText,
-      aiAgent
+      {
+        base_url: aiAgent.base_url ?? '',
+        api_key: aiAgent.api_key ?? '',
+        model: aiAgent.model ?? '',
+        ai_agent_type_id: aiAgent.ai_agent_type_id,
+      }
     );
     const conversationSummary = await this.redis.get(conversationSummaryKey);
     const lastAgentMessage = await this.getLastAgentResponse(
       createChat.account.id,
       createChat.worker.id,
       createChat.chat_id,
-      selectedAiAgentId
+      aiAgent.ai_agent_id
     );
-    const maxPromptChars = this.estimateMaxPromptChars(aiAgent.model);
+    const maxPromptChars = this.estimateMaxPromptChars(
+      aiAgent.model ?? '',
+      undefined
+    );
 
     const { enhancedPrompt, contextParts, contextAllowed, contextHints } =
       await this.ragService.enhancePromptWithRag(
         createChat.account.id,
-        selectedAiAgentId,
+        aiAgent.ai_agent_id,
         systemPrompt,
         userText,
         {
@@ -6873,13 +7003,15 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
         { role: 'user' as const, content: userText },
         { role: 'assistant' as const, content: duplicateResponse },
       ];
+      const retryUserQuery =
+        'Reformule a resposta anterior de forma substantivamente diferente.';
       const retryResponse = await this.callAiAgentChatApi(
         baseUrl,
         apiKey,
         model,
         aiAgentTypeId,
         diversificationPrompt,
-        userText,
+        retryUserQuery,
         retryHistory,
         assistantsOptions,
         responsesApiFileSearchOptions,
@@ -6898,7 +7030,11 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
         return retryResponse;
       }
       return this.appendVariationAddendum(duplicateResponse, Date.now());
-    } catch {
+    } catch (error) {
+      console.error(
+        '[ChatbotFlow] resolveDuplicateResponse retry failed',
+        error
+      );
       return this.appendVariationAddendum(duplicateResponse, Date.now());
     }
   }
@@ -6962,100 +7098,12 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       return [];
     }
 
-    const stopWords = new Set([
-      'a',
-      'o',
-      'os',
-      'as',
-      'um',
-      'uma',
-      'uns',
-      'umas',
-      'de',
-      'do',
-      'da',
-      'dos',
-      'das',
-      'e',
-      'ou',
-      'que',
-      'como',
-      'qual',
-      'quais',
-      'quando',
-      'onde',
-      'quem',
-      'por',
-      'porque',
-      'pra',
-      'para',
-      'com',
-      'sem',
-      'nao',
-      'sim',
-      'se',
-      'em',
-      'no',
-      'na',
-      'nos',
-      'nas',
-      'sobre',
-      'isso',
-      'isto',
-      'essa',
-      'esse',
-      'aquela',
-      'aquele',
-      'aqui',
-      'ali',
-      'ja',
-      'so',
-      'sou',
-      'estou',
-      'esta',
-      'estao',
-      'ser',
-      'ter',
-      'me',
-      'minha',
-      'meu',
-      'meus',
-      'minhas',
-      'sua',
-      'seu',
-      'seus',
-      'suas',
-      'nosso',
-      'nossa',
-      'voces',
-      'voce',
-      'eu',
-      'tu',
-      'ele',
-      'ela',
-      'eles',
-      'elas',
-      'tudo',
-      'mais',
-      'menos',
-      'tambem',
-      'mesmo',
-      'mesma',
-      'ainda',
-      'agora',
-      'favor',
-      'porfavor',
-      'poderia',
-      'pode',
-      'poder',
-      'quer',
-      'quero',
-      'gostaria',
-    ]);
-
     return normalized
       .split(' ')
-      .filter((token) => token.length >= 3 && !stopWords.has(token));
+      .filter(
+        (token) =>
+          token.length >= 3 && !ChatbotFlowRunnerService.STOP_WORDS.has(token)
+      );
   }
 
   private isQueryWithinPromptText(
@@ -7095,7 +7143,7 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
     };
 
     if (queryTokens.length === 1) {
-      return promptTokenSet.has(queryTokens[0]);
+      return matchesToken(queryTokens[0]);
     }
 
     const matchCount = queryTokens.filter((token) =>
@@ -7170,9 +7218,13 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       normalizedQuestion
     );
     const responseHash = this.hashText(normalizedResponse);
+    const ttlSeconds = 60 * 60 * 24 * 7;
 
-    await this.redis.sadd(key, responseHash);
-    await this.redis.expire(key, 60 * 60 * 24 * 7);
+    await this.redis
+      .multi()
+      .sadd(key, responseHash)
+      .expire(key, ttlSeconds)
+      .exec();
   }
 
   private async sendAiAgentResponse(
