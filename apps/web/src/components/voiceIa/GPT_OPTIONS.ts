@@ -2,16 +2,16 @@ export const GPT_VOICES = [
   { value: 'alloy', title: 'Alloy' },
   { value: 'ash', title: 'Ash' },
   { value: 'ballad', title: 'Ballad' },
+  { value: 'cedar', title: 'Cedar' },
   { value: 'coral', title: 'Coral' },
   { value: 'echo', title: 'Echo' },
   { value: 'fable', title: 'Fable' },
+  { value: 'marin', title: 'Marin' },
   { value: 'nova', title: 'Nova' },
   { value: 'onyx', title: 'Onyx' },
   { value: 'sage', title: 'Sage' },
   { value: 'shimmer', title: 'Shimmer' },
   { value: 'verse', title: 'Verse' },
-  { value: 'marin', title: 'Marin' },
-  { value: 'cedar', title: 'Cedar' },
 ];
 
 export const GPT_TTS_MODELS = [

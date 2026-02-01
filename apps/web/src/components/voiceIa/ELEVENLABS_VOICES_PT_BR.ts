@@ -138,10 +138,26 @@ const formatDefaultVoiceTitle = (name: string) => {
   return `${name} (Free)`;
 };
 
-export const ELEVENLABS_VOICES_PT_BR = [
-  ...DEFAULT_VOICES.map(({ value, name }) => ({
+const buildDefaultVoices = () =>
+  DEFAULT_VOICES.map(({ value, name }) => ({
     value,
     title: formatDefaultVoiceTitle(name),
-  })),
-  ...CUSTOM_VOICES,
-];
+    sortName: name,
+  }));
+
+const buildCustomVoices = () =>
+  CUSTOM_VOICES.map(({ value, title }) => ({
+    value,
+    title,
+    sortName: title,
+  }));
+
+const sortVoicesAsc = (voices: Array<{ sortName: string }>) =>
+  voices.sort((a, b) =>
+    a.sortName.localeCompare(b.sortName, 'pt-BR', { sensitivity: 'base' })
+  );
+
+export const ELEVENLABS_VOICES_PT_BR = sortVoicesAsc([
+  ...buildDefaultVoices(),
+  ...buildCustomVoices(),
+]).map(({ sortName: _sortName, ...voice }) => voice);
