@@ -207,7 +207,16 @@ export class OpenAIAssistantService {
     userQuery: string,
     vectorStoreId: string,
     history?: Array<{ role: 'user' | 'assistant'; content: string }>
-  ): Promise<string> {
+  ): Promise<{
+    text: string;
+    usage?: {
+      prompt_tokens: number;
+      completion_tokens: number;
+      total_tokens: number;
+    };
+    latency_ms?: number;
+  }> {
+    const startMs = Date.now();
     const url = `${this.normalizeBaseUrl(baseUrl)}/responses`;
 
     const input =
@@ -239,6 +248,8 @@ export class OpenAIAssistantService {
       body: JSON.stringify(body),
     });
 
+    const latency_ms = Date.now() - startMs;
+
     if (!response.ok) {
       const errorText = await response.text();
       throw new Error(
@@ -252,29 +263,56 @@ export class OpenAIAssistantService {
         role?: string;
         content?: Array<{ type?: string; text?: string }>;
       }>;
+      usage?: {
+        input_tokens?: number;
+        output_tokens?: number;
+        total_tokens?: number;
+      };
     };
 
     const output = data.output;
-    if (!Array.isArray(output)) {
-      return 'Desculpe, não consegui processar sua solicitação.';
-    }
+    const text = this.extractResponseTextFromOutput(output);
 
+    const usage = data.usage
+      ? {
+          prompt_tokens: data.usage.input_tokens ?? 0,
+          completion_tokens: data.usage.output_tokens ?? 0,
+          total_tokens: data.usage.total_tokens ?? 0,
+        }
+      : undefined;
+
+    return { text, usage, latency_ms };
+  }
+
+  private extractResponseTextFromOutput(
+    output:
+      | Array<{
+          type?: string;
+          role?: string;
+          content?: Array<{ type?: string; text?: string }>;
+        }>
+      | undefined
+  ): string {
+    const defaultText = 'Desculpe, não consegui processar sua solicitação.';
+    if (!Array.isArray(output)) {
+      return defaultText;
+    }
     for (let i = output.length - 1; i >= 0; i -= 1) {
       const item = output[i];
       if (
-        item?.type === 'message' &&
-        item?.role === 'assistant' &&
-        item?.content
+        item?.type !== 'message' ||
+        item?.role !== 'assistant' ||
+        !item?.content
       ) {
-        for (const part of item.content) {
-          if (part?.type === 'output_text' && typeof part.text === 'string') {
-            return part.text;
-          }
+        continue;
+      }
+      for (const part of item.content) {
+        if (part?.type === 'output_text' && typeof part.text === 'string') {
+          return part.text;
         }
       }
     }
-
-    return 'Desculpe, não consegui processar sua solicitação.';
+    return defaultText;
   }
 
   async updateAssistantInstructions(
@@ -824,7 +862,16 @@ export class OpenAIAssistantService {
     threadId: string,
     assistantId: string,
     additionalInstructions?: string
-  ): Promise<string> {
+  ): Promise<{
+    text: string;
+    usage?: {
+      prompt_tokens: number;
+      completion_tokens: number;
+      total_tokens: number;
+    };
+    latency_ms?: number;
+  }> {
+    const startMs = Date.now();
     const runId = await this.createRun(
       apiKey,
       baseUrl,
@@ -833,9 +880,17 @@ export class OpenAIAssistantService {
       additionalInstructions
     );
 
-    await this.pollRunCompletion(apiKey, baseUrl, threadId, runId);
+    const runUsage = await this.pollRunCompletion(
+      apiKey,
+      baseUrl,
+      threadId,
+      runId
+    );
 
-    return this.getRunResponseText(apiKey, baseUrl, threadId);
+    const text = await this.getRunResponseText(apiKey, baseUrl, threadId);
+    const latency_ms = Date.now() - startMs;
+
+    return { text, usage: runUsage, latency_ms };
   }
 
   private async createRun(
@@ -878,7 +933,14 @@ export class OpenAIAssistantService {
     baseUrl: string,
     threadId: string,
     runId: string
-  ): Promise<void> {
+  ): Promise<
+    | {
+        prompt_tokens: number;
+        completion_tokens: number;
+        total_tokens: number;
+      }
+    | undefined
+  > {
     const terminalStatuses = new Set([
       'completed',
       'failed',
@@ -907,10 +969,22 @@ export class OpenAIAssistantService {
       const data = (await response.json()) as {
         status: string;
         last_error?: { message: string } | null;
+        usage?: {
+          prompt_tokens?: number;
+          completion_tokens?: number;
+          total_tokens?: number;
+        };
       };
 
       if (data.status === 'completed') {
-        return;
+        if (data.usage) {
+          return {
+            prompt_tokens: data.usage.prompt_tokens ?? 0,
+            completion_tokens: data.usage.completion_tokens ?? 0,
+            total_tokens: data.usage.total_tokens ?? 0,
+          };
+        }
+        return undefined;
       }
 
       if (terminalStatuses.has(data.status) && data.status !== 'completed') {

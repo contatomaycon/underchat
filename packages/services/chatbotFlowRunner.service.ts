@@ -5854,7 +5854,7 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       aiAgentTypeId === EAiAgentType.gpt &&
       assistantsOptions?.openaiAssistantId
     ) {
-      const text = await this.callOpenAiAssistantsApi(
+      const result = await this.callOpenAiAssistantsApi(
         baseUrl,
         apiKey,
         assistantsOptions.accountId,
@@ -5869,19 +5869,23 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
           ai_agent_id: saveContext.aiAgentId,
           account_id: saveContext.accountId,
           chat_id: saveContext.chatId,
+          prompt_tokens: result.usage?.prompt_tokens ?? null,
+          completion_tokens: result.usage?.completion_tokens ?? null,
+          total_tokens: result.usage?.total_tokens ?? null,
           model: model ?? null,
+          latency_ms: result.latency_ms ?? null,
           success: true,
           request_type: 'assistant_run',
         });
       }
-      return text;
+      return result.text;
     }
 
     if (
       aiAgentTypeId === EAiAgentType.gpt &&
       responsesApiFileSearchOptions?.vectorStoreId
     ) {
-      const text =
+      const result =
         await this.openAIAssistantService.createResponseWithFileSearch(
           apiKey,
           baseUrl,
@@ -5896,12 +5900,16 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
           ai_agent_id: saveContext.aiAgentId,
           account_id: saveContext.accountId,
           chat_id: saveContext.chatId,
+          prompt_tokens: result.usage?.prompt_tokens ?? null,
+          completion_tokens: result.usage?.completion_tokens ?? null,
+          total_tokens: result.usage?.total_tokens ?? null,
           model: model ?? null,
+          latency_ms: result.latency_ms ?? null,
           success: true,
           request_type: 'responses_file_search',
         });
       }
-      return text;
+      return result.text;
     }
 
     if (aiAgentTypeId === EAiAgentType.gemini) {
@@ -5964,7 +5972,15 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
     assistantId: string,
     additionalInstructions: string,
     userQuery: string
-  ): Promise<string> {
+  ): Promise<{
+    text: string;
+    usage?: {
+      prompt_tokens: number;
+      completion_tokens: number;
+      total_tokens: number;
+    };
+    latency_ms?: number;
+  }> {
     const threadId = await this.openAIAssistantService.getOrCreateThread(
       accountId,
       chatId,
@@ -5981,15 +5997,13 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       'user'
     );
 
-    const responseText = await this.openAIAssistantService.createRunAndWait(
+    return this.openAIAssistantService.createRunAndWait(
       apiKey,
       baseUrl,
       threadId,
       assistantId,
       additionalInstructions
     );
-
-    return responseText;
   }
 
   private async processAiAgentNode(
