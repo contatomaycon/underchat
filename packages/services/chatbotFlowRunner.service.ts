@@ -7273,14 +7273,17 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
     }>
   ): Promise<void> {
     let messageSent = false;
+
     if (aiAgent.voice_ia_id && aiResponse.trim().length > 0) {
       try {
         const voiceIaConfig = await this.voiceIaService.viewVoiceIa(
           aiAgent.voice_ia_id,
           createChat.account.id
         );
+
         if (voiceIaConfig?.api_key) {
           const cleanedTextForAudio = stripTextForTts(aiResponse);
+
           const uploadResult =
             cleanedTextForAudio.trim().length > 0
               ? await this.voiceIaIntegrationService.generateSpeechAndUpload(
@@ -7289,6 +7292,7 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
                   createChat.account.id
                 )
               : null;
+
           if (uploadResult) {
             await this.chatMessageService.sendMessage(t, {
               chat: createChat,
