@@ -4,15 +4,17 @@ export const ELEVENLABS_LANGUAGES = [
 
 export const ELEVENLABS_MODELS = [
   {
-    value: 'eleven_multilingual_v2',
-    title: 'Eleven Multilingual v2 (recomendado)',
+    value: 'eleven_v3',
+    title: 'Eleven v3 (alpha, expressivo)',
   },
-  { value: 'eleven_turbo_v2_5', title: 'Eleven Turbo v2.5' },
-  { value: 'eleven_turbo_v2', title: 'Eleven Turbo v2' },
-  { value: 'eleven_flash_v2_5', title: 'Eleven Flash v2.5' },
-  { value: 'eleven_flash_v2', title: 'Eleven Flash v2' },
-  { value: 'eleven_v2_5_flash', title: 'Eleven v2.5 Flash' },
-  { value: 'eleven_v2_flash', title: 'Eleven v2 Flash' },
+  {
+    value: 'eleven_multilingual_v2',
+    title: 'Multilingual v2 (recomendado)',
+  },
+  { value: 'eleven_flash_v2_5', title: 'Flash v2.5' },
+  { value: 'eleven_flash_v2', title: 'Flash v2' },
+  { value: 'eleven_turbo_v2_5', title: 'Turbo v2.5' },
+  { value: 'eleven_turbo_v2', title: 'Turbo v2' },
 ];
 
 export const ELEVENLABS_SPEED_OPTIONS = [

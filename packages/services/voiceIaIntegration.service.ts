@@ -28,6 +28,14 @@ export class VoiceIaIntegrationService {
   private readonly GENERATE_SPEECH_MAX_RETRIES = 2;
   private readonly TRANSCRIBE_MAX_RETRIES = 2;
 
+  private parseNumber(
+    value: string | null | undefined,
+    fallback: number
+  ): number {
+    const parsed = Number.parseFloat(value ?? '');
+    return Number.isFinite(parsed) ? parsed : fallback;
+  }
+
   async generateSpeech(
     text: string,
     config: ViewVoiceIaResponse
@@ -127,9 +135,10 @@ export class VoiceIaIntegrationService {
     }
 
     const url = `${this.ELEVENLABS_TTS_URL}/${config.voice_id}`;
-    const stability = parseFloat(config.stability) || 0.5;
-    const similarityBoost = parseFloat(config.similarity_boost) || 0.75;
-    const style = parseFloat(config.style_exaggeration) || 0;
+    const stability = this.parseNumber(config.stability, 0.5);
+    const similarityBoost = this.parseNumber(config.similarity_boost, 0.75);
+    const style = this.parseNumber(config.style_exaggeration, 0);
+    const speed = this.parseNumber(config.speed, 1);
 
     const body = {
       text,
@@ -140,6 +149,7 @@ export class VoiceIaIntegrationService {
         stability,
         similarity_boost: similarityBoost,
         style,
+        speed,
         use_speaker_boost: true,
       },
     };
