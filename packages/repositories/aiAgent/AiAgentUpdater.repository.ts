@@ -49,7 +49,7 @@ export class AiAgentUpdaterRepository {
     }
 
     if (input.voice_ia_id !== undefined) {
-      inputUpdate.voice_ia_id = input.voice_ia_id ?? undefined;
+      inputUpdate.voice_ia_id = input.voice_ia_id;
     }
 
     return inputUpdate;

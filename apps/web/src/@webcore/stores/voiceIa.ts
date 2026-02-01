@@ -43,6 +43,7 @@ export const useVoiceIaStore = defineStore('voiceIa', {
       count: 0 as number,
       total: 0 as number,
     } as PagingResponseSchema,
+    activeVoiceIasForSelect: [] as Array<{ value: string; title: string }>,
   }),
   actions: {
     showSnackbar(message: string, color: EColor) {
@@ -73,10 +74,14 @@ export const useVoiceIaStore = defineStore('voiceIa', {
           return [];
         }
 
-        return data.data.results.map((item) => ({
+        const list = data.data.results.map((item) => ({
           value: item.voice_ia_id,
           title: item.name,
         }));
+
+        this.activeVoiceIasForSelect = list;
+
+        return list;
       } catch {
         return [];
       }

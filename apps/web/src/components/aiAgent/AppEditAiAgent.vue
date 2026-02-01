@@ -40,7 +40,6 @@ const chunkSize = ref('');
 const chunkOverlap = ref('');
 const status = ref<EAiAgentStatus>(EAiAgentStatus.active);
 const voiceIaId = ref<string | null>(null);
-const activeVoiceIas = ref<Array<{ value: string; title: string }>>([]);
 const isUpdating = ref(false);
 const isLoading = ref(false);
 const isApiKeyVisible = ref(false);
@@ -180,7 +179,8 @@ const shouldDisableBaseUrl = computed(
 );
 
 const voiceIaOptions = computed(() => {
-  const activeIds = new Set(activeVoiceIas.value.map((v) => v.value));
+  const activeList = voiceIaStore.activeVoiceIasForSelect;
+  const activeIds = new Set(activeList.map((v) => v.value));
   const hasCurrentNotInList =
     voiceIaId.value &&
     voiceIaId.value !== '' &&
@@ -193,13 +193,8 @@ const voiceIaOptions = computed(() => {
         },
       ]
     : [];
-  return [...currentOption, ...activeVoiceIas.value];
+  return [...currentOption, ...activeList];
 });
-
-const loadActiveVoiceIas = async () => {
-  const list = await voiceIaStore.listActiveVoiceIas();
-  activeVoiceIas.value = list;
-};
 
 const apiKeyLink = computed(() => {
   if (isGeminiSelected.value) {
@@ -328,7 +323,7 @@ watch(
       try {
         await loadTypes();
         await loadAiAgent();
-        await loadActiveVoiceIas();
+        await voiceIaStore.listActiveVoiceIas();
       } finally {
         isLoading.value = false;
       }
@@ -357,7 +352,7 @@ watch(aiAgentId, async (newId, oldId) => {
     try {
       await loadTypes();
       await loadAiAgent();
-      await loadActiveVoiceIas();
+      await voiceIaStore.listActiveVoiceIas();
     } finally {
       isLoading.value = false;
     }

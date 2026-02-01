@@ -8,6 +8,7 @@ import { SortRequest } from '@core/schema/common/sortRequestSchema';
 import { DataTableHeader } from 'vuetify';
 import { EAiAgentPermissions } from '@core/common/enums/EPermissions/aiAgent';
 import { useAiAgentStore } from '@/@webcore/stores/aiAgent';
+import { useVoiceIaStore } from '@/@webcore/stores/voiceIa';
 import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import { ListAiAgentResponse } from '@core/schema/aiAgent/listAiAgent/response.schema';
 import AppAddAiAgent from '@/components/aiAgent/AppAddAiAgent.vue';
@@ -49,6 +50,7 @@ const permissionsCreate = [
 
 const { t } = useI18n();
 const aiAgentStore = useAiAgentStore();
+const voiceIaStore = useVoiceIaStore();
 useSnackbarCleanup(aiAgentStore);
 
 const canCreateAiAgent = ref(false);
@@ -69,6 +71,8 @@ onMounted(async () => {
   }
 
   canCreateAiAgent.value = true;
+
+  voiceIaStore.listActiveVoiceIas();
 });
 
 const itemsPerPage = ref([

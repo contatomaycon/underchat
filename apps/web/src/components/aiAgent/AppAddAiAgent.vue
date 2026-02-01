@@ -38,7 +38,6 @@ const chunkSize = ref('');
 const chunkOverlap = ref('');
 const status = ref<EAiAgentStatus>(EAiAgentStatus.active);
 const voiceIaId = ref<string | null>(null);
-const activeVoiceIas = ref<Array<{ value: string; title: string }>>([]);
 const isCreating = ref(false);
 const refForm = ref<VForm>();
 const types = ref<ListAiAgentTypeResponse[]>([]);
@@ -242,11 +241,6 @@ watch(aiAgentTypeId, (newTypeId) => {
   }
 });
 
-const loadActiveVoiceIas = async () => {
-  const list = await voiceIaStore.listActiveVoiceIas();
-  activeVoiceIas.value = list;
-};
-
 watch(isVisible, (newValue) => {
   if (newValue) {
     aiAgentTypeId.value = '';
@@ -261,7 +255,6 @@ watch(isVisible, (newValue) => {
     voiceIaId.value = null;
     refForm.value?.resetValidation();
     loadTypes();
-    loadActiveVoiceIas();
   }
 });
 
@@ -420,7 +413,7 @@ const handleCreateAiAgent = async () => {
               <VLabel class="text-body-2 mb-1">{{ $t('voice_ia') }}:</VLabel>
               <AppSelectSearch
                 v-model="voiceIaId"
-                :items="activeVoiceIas"
+                :items="voiceIaStore.activeVoiceIasForSelect"
                 item-title="title"
                 item-value="value"
                 :placeholder="$t('voice_ia_select_placeholder')"
