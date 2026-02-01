@@ -891,6 +891,7 @@
   "ai_agent_not_available_additional": "Límite de agentes de IA alcanzado. Elimine un agente para agregar otro.",
   "ai_agent_type_list_successfully": "Lista de tipos de agente de IA obtenida con éxito!",
   "ai_agent_prompt_list_successfully": "¡Lista de prompts obtenida con éxito!",
+  "ai_agent_usage_list_successfully": "¡Lista de uso del agente obtenida con éxito!",
   "ai_agent_prompt_creator_success": "¡Prompt creado con éxito!",
   "ai_agent_prompt_creator_error": "¡Error al crear el prompt!",
   "ai_agent_prompt_creation_failed": "¡Error al crear el prompt!",

@@ -21,6 +21,10 @@ import { CreateAiAgentPromptRequest } from '@core/schema/aiAgent/createAiAgentPr
 import { UpdateAiAgentPromptRequest } from '@core/schema/aiAgent/updateAiAgentPrompt/request.schema';
 import { ViewAiAgentPromptResponse } from '@core/schema/aiAgent/viewAiAgentPrompt/response.schema';
 import { ViewAiAgentConfigResponse } from '@core/schema/aiAgent/viewAiAgentConfig/response.schema';
+import {
+  ListAiAgentUsageFinalResponse,
+  ListAiAgentUsageResponseItem,
+} from '@core/schema/aiAgent/listAiAgentUsage/response.schema';
 
 interface IListAiAgents {
   page?: number;
@@ -51,6 +55,15 @@ export const useAiAgentStore = defineStore('aiAgent', {
     types: [] as ListAiAgentTypeResponse[],
     prompts: [] as ListAiAgentPromptResponse[],
     aiAgentConfig: null as ViewAiAgentConfigResponse | null,
+    usageList: [] as ListAiAgentUsageResponseItem[],
+    usagePagings: {
+      current_page: 1 as number,
+      total_pages: 1 as number,
+      per_page: 10 as number,
+      count: 0 as number,
+      total: 0 as number,
+    } as PagingResponseSchema,
+    usageLoading: false,
   }),
   actions: {
     showSnackbar(message: string, color: EColor) {
@@ -648,6 +661,46 @@ export const useAiAgentStore = defineStore('aiAgent', {
         this.loading = false;
 
         return false;
+      }
+    },
+
+    async listAiAgentUsage(
+      aiAgentId: string,
+      page = 1,
+      perPage = 10
+    ): Promise<ListAiAgentUsageFinalResponse | null> {
+      try {
+        this.usageLoading = true;
+
+        const response = await axios.get<
+          IApiResponse<ListAiAgentUsageFinalResponse>
+        >(`/ai-agent/${aiAgentId}/usage`, {
+          params: { current_page: page, per_page: perPage },
+        });
+
+        this.usageLoading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const message =
+            data?.message ?? this.i18n.global.t('ai_agent_usage_list_error');
+          this.showSnackbar(message, EColor.error);
+          return null;
+        }
+
+        this.usageList = data.data.results;
+        this.usagePagings = data.data.pagings;
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('ai_agent_usage_list_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+        this.showSnackbar(errorMessage, EColor.error);
+        this.usageLoading = false;
+        return null;
       }
     },
 

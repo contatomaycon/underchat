@@ -21,6 +21,7 @@ import { deleteAiAgentPromptSchema } from '@core/schema/aiAgent/deleteAiAgentPro
 import { viewAiAgentConfigSchema } from '@core/schema/aiAgent/viewAiAgentConfig';
 import { refreshAiAgentPromptSchema } from '@core/schema/aiAgent/refreshAiAgentPrompt';
 import { refreshAllAiAgentPromptsSchema } from '@core/schema/aiAgent/refreshAllAiAgentPrompts';
+import { listAiAgentUsageSchema } from '@core/schema/aiAgent/listAiAgentUsage';
 import { planGuard } from '@/plugins/planGuard';
 import { planStatus } from '@/plugins/planStatus';
 
@@ -63,6 +64,17 @@ export default async function aiAgentRoutes(server: FastifyInstance) {
   server.get('/ai-agent/:ai_agent_id', {
     schema: viewAiAgentSchema,
     handler: aiAgentController.viewAiAgent,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, aiAgentViewPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.get('/ai-agent/:ai_agent_id/usage', {
+    schema: listAiAgentUsageSchema,
+    handler: aiAgentController.listAiAgentUsage,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, aiAgentViewPermissions),

@@ -12,6 +12,8 @@ import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import { ListAiAgentResponse } from '@core/schema/aiAgent/listAiAgent/response.schema';
 import AppAddAiAgent from '@/components/aiAgent/AppAddAiAgent.vue';
 import AppEditAiAgent from '@/components/aiAgent/AppEditAiAgent.vue';
+import AppAiAgentUsage from '@/components/aiAgent/AppAiAgentUsage.vue';
+import AppManageAiAgentPrompt from '@/components/aiAgent/AppManageAiAgentPrompt.vue';
 import VDialogHandler from '@/components/VDialogHandler.vue';
 import TablePagination from '@/@webcore/components/TablePagination.vue';
 
@@ -86,6 +88,8 @@ const isAddAiAgentVisible = ref(false);
 const aiAgentToEdit = ref<string | null>(null);
 const isPromptDialogVisible = ref(false);
 const aiAgentForPrompt = ref<string | null>(null);
+const isUsageDialogVisible = ref(false);
+const aiAgentForUsage = ref<string | null>(null);
 
 const headers: DataTableHeader<ListAiAgentResponse>[] = [
   { title: t('name'), key: 'name' },
@@ -162,6 +166,13 @@ const openPromptDialog = (id: string) => {
   aiAgentForPrompt.value = id;
   nextTick(() => {
     isPromptDialogVisible.value = true;
+  });
+};
+
+const openUsageDialog = (id: string) => {
+  aiAgentForUsage.value = id;
+  nextTick(() => {
+    isUsageDialogVisible.value = true;
   });
 };
 
@@ -294,6 +305,20 @@ watch(
                   transition="scale-transition"
                   activator="parent"
                 >
+                  <span>{{ $t('ai_agent_usage_view') }}</span>
+                </VTooltip>
+                <VIcon
+                  icon="tabler-chart-bar"
+                  @click="openUsageDialog(item.ai_agent_id)"
+                />
+              </IconBtn>
+
+              <IconBtn v-if="$canPermission(permissionsEdit)">
+                <VTooltip
+                  location="top"
+                  transition="scale-transition"
+                  activator="parent"
+                >
                   <span>{{ $t('prompt') }}</span>
                 </VTooltip>
                 <VIcon
@@ -372,6 +397,12 @@ watch(
         v-if="isPromptDialogVisible"
         v-model="isPromptDialogVisible"
         :ai-agent-id="aiAgentForPrompt"
+      />
+
+      <AppAiAgentUsage
+        v-if="isUsageDialogVisible"
+        v-model="isUsageDialogVisible"
+        :ai-agent-id="aiAgentForUsage"
       />
     </VCard>
 

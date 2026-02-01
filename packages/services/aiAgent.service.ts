@@ -11,6 +11,7 @@ import { AiAgentPromptCreatorRepository } from '@core/repositories/aiAgent/AiAge
 import { AiAgentPromptViewerRepository } from '@core/repositories/aiAgent/AiAgentPromptViewer.repository';
 import { AiAgentPromptUpdaterRepository } from '@core/repositories/aiAgent/AiAgentPromptUpdater.repository';
 import { AiAgentPromptDeleterRepository } from '@core/repositories/aiAgent/AiAgentPromptDeleter.repository';
+import { AiAgentUsageListerRepository } from '@core/repositories/aiAgent/AiAgentUsageLister.repository';
 import { ListAiAgentRequest } from '@core/schema/aiAgent/listAiAgent/request.schema';
 import { CreateAiAgentRequest } from '@core/schema/aiAgent/createAiAgent/request.schema';
 import { ViewAiAgentResponse } from '@core/schema/aiAgent/viewAiAgent/response.schema';
@@ -23,6 +24,7 @@ import { ViewAiAgentPromptResponse } from '@core/schema/aiAgent/viewAiAgentPromp
 import { ICreateAiAgentPromptInput } from '@core/common/interfaces/ICreateAiAgentPromptInput';
 import { IUpdateAiAgentPromptInput } from '@core/common/interfaces/IUpdateAiAgentPromptInput';
 import { ListChatbotAiAgentsResponse } from '@core/schema/chatbot/listAiAgents/response.schema';
+import { ListAiAgentUsageResponseItem } from '@core/schema/aiAgent/listAiAgentUsage/response.schema';
 
 @injectable()
 export class AiAgentService {
@@ -41,6 +43,7 @@ export class AiAgentService {
     private readonly aiAgentPromptViewerRepository: AiAgentPromptViewerRepository,
     private readonly aiAgentPromptUpdaterRepository: AiAgentPromptUpdaterRepository,
     private readonly aiAgentPromptDeleterRepository: AiAgentPromptDeleterRepository,
+    private readonly aiAgentUsageListerRepository: AiAgentUsageListerRepository,
     @inject('Redis') private readonly redis: Redis
   ) {}
 
@@ -255,5 +258,24 @@ export class AiAgentService {
       accountId,
       openaiFileId
     );
+  };
+
+  listAiAgentUsage = async (
+    aiAgentId: string,
+    accountId: string,
+    perPage: number,
+    currentPage: number
+  ): Promise<[ListAiAgentUsageResponseItem[], number]> => {
+    const [results, total] = await Promise.all([
+      this.aiAgentUsageListerRepository.listByAiAgentId(
+        aiAgentId,
+        accountId,
+        perPage,
+        currentPage
+      ),
+      this.aiAgentUsageListerRepository.totalByAiAgentId(aiAgentId, accountId),
+    ]);
+
+    return [results, total];
   };
 }

@@ -891,6 +891,7 @@
   "ai_agent_not_available_additional": "AI agent limit reached. Remove an agent to add another.",
   "ai_agent_type_list_successfully": "AI agent types list retrieved successfully!",
   "ai_agent_prompt_list_successfully": "Prompts list retrieved successfully!",
+  "ai_agent_usage_list_successfully": "Agent usage list retrieved successfully!",
   "ai_agent_prompt_creator_success": "Prompt created successfully!",
   "ai_agent_prompt_creator_error": "Error creating prompt!",
   "ai_agent_prompt_creation_failed": "Failed to create prompt!",
