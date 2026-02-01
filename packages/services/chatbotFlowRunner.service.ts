@@ -6574,6 +6574,8 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       aiAgent.ai_agent_id
     );
 
+    const allowExternalContext = skipFilePrompts;
+
     const promptsForContext = skipFilePrompts
       ? allPrompts.filter((prompt) => prompt.ai_agent_prompt_type !== 'file')
       : allPrompts;
@@ -6626,7 +6628,10 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
               userText,
               recentMessages
             );
-          const combinedAllowed = parsed.contextAllowed || promptContextAllowed;
+          const combinedAllowed =
+            parsed.contextAllowed ||
+            promptContextAllowed ||
+            allowExternalContext;
 
           if (!additionalInstructions) {
             return {
@@ -6692,7 +6697,8 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
         }
       );
 
-    const combinedAllowed = contextAllowed || promptContextAllowed;
+    const combinedAllowed =
+      contextAllowed || promptContextAllowed || allowExternalContext;
     if (ragCacheKey) {
       try {
         await this.redis.set(
@@ -7124,6 +7130,10 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       return false;
     }
 
+    const minPrefixMatchLength =
+      queryTokens.length <= 2
+        ? 4
+        : ChatbotFlowRunnerService.MIN_PREFIX_MATCH_LENGTH;
     const promptTokenSet = new Set(promptTokens);
     const matchesToken = (token: string): boolean => {
       if (promptTokenSet.has(token)) {
@@ -7134,7 +7144,7 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
           promptToken.startsWith(token) || token.startsWith(promptToken);
         if (prefixMatch) {
           const minLen = Math.min(token.length, promptToken.length);
-          if (minLen >= ChatbotFlowRunnerService.MIN_PREFIX_MATCH_LENGTH) {
+          if (minLen >= minPrefixMatchLength) {
             return true;
           }
         }

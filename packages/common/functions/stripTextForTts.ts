@@ -5,7 +5,7 @@ export function stripTextForTts(text: string): string {
 
   let cleaned = text;
 
-  cleaned = cleaned.replace(/\s*【[^】]*?†source】/g, '');
+  cleaned = cleaned.replace(/\s*【[^】]*?】/g, '');
   cleaned = cleaned.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '$1');
   cleaned = cleaned.replace(/\*\*(.+?)\*\*/gs, '$1');
   cleaned = cleaned.replace(/__(.+?)__/gs, '$1');

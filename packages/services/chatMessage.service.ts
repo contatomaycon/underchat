@@ -157,7 +157,7 @@ export class ChatMessageService {
 
     let formatted = message;
 
-    formatted = formatted.replace(/\s*【[^】]*?†source】/g, '');
+    formatted = formatted.replace(/\s*【[^】]*?】/g, '');
     formatted = formatted.replace(
       /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
       '$1: $2'

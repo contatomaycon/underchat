@@ -10,7 +10,7 @@ export class OpenAIAssistantService {
   private readonly RUN_POLL_INTERVAL_MS = 1000;
   private readonly RUN_MAX_POLL_ATTEMPTS = 120;
   private readonly VECTOR_STORE_FILE_POLL_INTERVAL_MS = 2000;
-  private readonly VECTOR_STORE_FILE_MAX_POLL_ATTEMPTS = 60;
+  private readonly VECTOR_STORE_FILE_MAX_POLL_ATTEMPTS = 120;
   private readonly UNSUPPORTED_MODEL_CACHE_TTL_SECONDS = 86400;
   private readonly DEFAULT_ASSISTANT_INSTRUCTIONS = [
     'Você é um assistente virtual inteligente, prestativo e rigoroso.',
