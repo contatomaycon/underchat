@@ -5,7 +5,6 @@ import { OpenAIAssistantService } from '@core/services/openaiAssistant.service';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { IAiAgentPromptEmbeddingRequest } from '@core/common/interfaces/IAiAgentPromptEmbeddingRequest';
-import { EAiAgentPromptType } from '@core/common/enums/EAiAgentPromptType';
 import { EAiAgentType } from '@core/common/enums/EAiAgentType';
 
 @injectable()
@@ -31,15 +30,13 @@ export class AiAgentPromptRefresherUseCase {
       throw new Error(t('ai_agent_prompt_not_found'));
     }
 
-    const isFilePrompt =
-      aiAgentPrompt.ai_agent_prompt_type === EAiAgentPromptType.file;
     const agent = await this.aiAgentService.viewAiAgent(
       aiAgentPrompt.ai_agent_id,
       accountId
     );
     const isGpt = agent?.ai_agent_type_id === EAiAgentType.gpt;
 
-    if (isFilePrompt && isGpt && agent?.api_key && agent?.base_url) {
+    if (isGpt && agent?.api_key && agent?.base_url) {
       const vectorStoreId = await this.openAIAssistantService.ensureVectorStore(
         aiAgentPrompt.ai_agent_id,
         accountId,
@@ -77,8 +74,6 @@ export class AiAgentPromptRefresherUseCase {
       accountId,
       aiAgentPrompt.ai_agent_id,
       aiAgentPromptId,
-      aiAgentPrompt.ai_agent_prompt_type,
-      aiAgentPrompt.name,
       aiAgentPrompt.value
     );
 
@@ -89,8 +84,6 @@ export class AiAgentPromptRefresherUseCase {
     accountId: string,
     aiAgentId: string,
     aiAgentPromptId: string,
-    promptType: EAiAgentPromptType,
-    name: string,
     value: string
   ): Promise<void> {
     const agent = await this.aiAgentService.viewAiAgent(aiAgentId, accountId);
@@ -100,8 +93,6 @@ export class AiAgentPromptRefresherUseCase {
       ai_agent_id: aiAgentId,
       ai_agent_prompt_id: aiAgentPromptId,
       ai_agent_type_id: agent?.ai_agent_type_id,
-      prompt_type: promptType,
-      name,
       value,
     };
 

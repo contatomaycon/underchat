@@ -39,6 +39,7 @@ const embeddingModel = ref('');
 const chunkSize = ref('');
 const chunkOverlap = ref('');
 const status = ref<EAiAgentStatus>(EAiAgentStatus.active);
+const systemPrompt = ref('');
 const voiceIaId = ref<string | null>(null);
 const isUpdating = ref(false);
 const isLoading = ref(false);
@@ -225,6 +226,7 @@ const loadAiAgent = async () => {
     chunkSize.value = result.chunk_size || '';
     chunkOverlap.value = result.chunk_overlap || '';
     status.value = result.status;
+    systemPrompt.value = result.system_prompt ?? '';
     voiceIaId.value = result.voice_ia_id || null;
   }
 };
@@ -337,6 +339,7 @@ watch(
       chunkSize.value = '';
       chunkOverlap.value = '';
       status.value = EAiAgentStatus.active;
+      systemPrompt.value = '';
       voiceIaId.value = null;
       refForm.value?.resetValidation();
       isApiKeyVisible.value = false;
@@ -380,6 +383,7 @@ const handleUpdateAiAgent = async () => {
       chunk_size: chunkSize.value.trim() || '1200',
       chunk_overlap: chunkOverlap.value.trim() || '200',
       status: status.value,
+      system_prompt: systemPrompt.value.trim() || null,
       voice_ia_id:
         voiceIaId.value === null ? null : voiceIaId.value || undefined,
     });
@@ -475,6 +479,19 @@ const handleUpdateAiAgent = async () => {
                 :placeholder="$t('voice_ia_select_placeholder')"
                 :disabled="isUpdating || isLoading"
                 clearable
+              />
+            </VCol>
+            <VCol cols="12">
+              <VLabel class="text-body-2 mb-1"
+                >{{ $t('system_prompt') }}:</VLabel
+              >
+              <VTextarea
+                v-model="systemPrompt"
+                :placeholder="$t('system_prompt_placeholder')"
+                :disabled="isUpdating || isLoading"
+                rows="6"
+                variant="outlined"
+                no-resize
               />
             </VCol>
             <VCol cols="12">

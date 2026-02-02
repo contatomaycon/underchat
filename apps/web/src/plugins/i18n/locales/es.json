@@ -2316,6 +2316,8 @@
   "ai_agent_not_available_plan_message": "Esta opción no está disponible en el plan actual. Actualice su plan o compre un complemento para usar esta funcionalidad.",
   "ai_agent_not_available_additional": "Límite de agentes de IA alcanzado. Elimine un agente para agregar otro.",
   "voice_ia": "Voice IA",
+  "system_prompt": "Prompt de sistema",
+  "system_prompt_placeholder": "Ingrese el prompt de sistema del agente (opcional)",
   "voice_ia_type": "Tipo",
   "voice_ia_type_eleven_labs": "ElevenLabs",
   "voice_ia_type_gpt": "GPT",

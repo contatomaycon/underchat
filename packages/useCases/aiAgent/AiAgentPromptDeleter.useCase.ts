@@ -4,7 +4,6 @@ import { AiAgentService } from '@core/services/aiAgent.service';
 import { OpenAIAssistantService } from '@core/services/openaiAssistant.service';
 import { StorageService } from '@core/services/storage.service';
 import { EmbeddingService } from '@core/services/embedding.service';
-import { EAiAgentPromptType } from '@core/common/enums/EAiAgentPromptType';
 import { EAiAgentType } from '@core/common/enums/EAiAgentType';
 
 @injectable()
@@ -40,9 +39,7 @@ export class AiAgentPromptDeleterUseCase {
       throw new Error(t('ai_agent_prompt_not_found'));
     }
 
-    if (aiAgentPromptExists.ai_agent_prompt_type === EAiAgentPromptType.file) {
-      await this.deleteFileFromS3(aiAgentPromptExists.value);
-    }
+    await this.deleteFileFromS3(aiAgentPromptExists.value);
 
     if (aiAgentPromptExists.openai_file_id) {
       await this.cleanupOpenAIFileIfNeeded(

@@ -6,7 +6,6 @@ import { StorageService } from '@core/services/storage.service';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { CreateAiAgentPromptRequest } from '@core/schema/aiAgent/createAiAgentPrompt/request.schema';
-import { EAiAgentPromptType } from '@core/common/enums/EAiAgentPromptType';
 import { EAiAgentType } from '@core/common/enums/EAiAgentType';
 import { UploadFileRequest } from '@core/schema/upload/request.schema';
 import { EAiAgentStatus } from '@core/common/enums/EAiAgentStatus';
@@ -43,20 +42,10 @@ export class AiAgentPromptCreatorUseCase {
 
   private validateRequiredFields(
     aiAgentId: string | null,
-    aiAgentPromptType: EAiAgentPromptType | null,
-    name: string | null,
     t: TFunction<'translation', undefined>
   ): void {
     if (!aiAgentId) {
       throw new Error(t('ai_agent_not_found'));
-    }
-
-    if (!aiAgentPromptType) {
-      throw new Error(t('ai_agent_prompt_type_required'));
-    }
-
-    if (!name) {
-      throw new Error(t('name_required'));
     }
   }
 
@@ -126,36 +115,12 @@ export class AiAgentPromptCreatorUseCase {
     return uploadResult.url;
   }
 
-  private async processPromptValue(
-    promptType: EAiAgentPromptType,
-    value: string | { value: string } | null | undefined,
-    file: UploadFileRequest | null | undefined,
-    accountId: string,
-    t: TFunction<'translation', undefined>
-  ): Promise<string> {
-    if (promptType === EAiAgentPromptType.file) {
-      return this.uploadFileToS3(file, accountId, t);
-    }
-
-    const textValue = this.getValueFromMultipart(value);
-
-    if (!textValue) {
-      throw new Error(t('ai_agent_prompt_value_required'));
-    }
-
-    return textValue;
-  }
-
   private processInput(input: CreateAiAgentPromptRequest): {
     aiAgentId: string | null;
-    aiAgentPromptType: EAiAgentPromptType | null;
-    name: string | null;
     status: EAiAgentStatus | null;
   } {
     return {
       aiAgentId: this.getValueFromMultipart(input.ai_agent_id),
-      aiAgentPromptType: this.getValueFromMultipart(input.ai_agent_prompt_type),
-      name: this.getValueFromMultipart(input.name),
       status: this.getValueFromMultipart(input.status),
     };
   }
@@ -179,13 +144,8 @@ export class AiAgentPromptCreatorUseCase {
 
   private async ensureOpenAIIfNeeded(
     accountId: string,
-    aiAgentId: string,
-    promptType: EAiAgentPromptType
+    aiAgentId: string
   ): Promise<void> {
-    if (promptType !== EAiAgentPromptType.file) {
-      return;
-    }
-
     const agent = await this.aiAgentService.viewAiAgent(aiAgentId, accountId);
     const isGpt = agent?.ai_agent_type_id === EAiAgentType.gpt;
     if (!isGpt || !agent?.api_key || !agent?.base_url) {
@@ -216,8 +176,6 @@ export class AiAgentPromptCreatorUseCase {
     accountId: string,
     aiAgentId: string,
     aiAgentPromptId: string,
-    promptType: EAiAgentPromptType,
-    name: string,
     value: string
   ): Promise<void> {
     const agent = await this.aiAgentService.viewAiAgent(aiAgentId, accountId);
@@ -227,8 +185,6 @@ export class AiAgentPromptCreatorUseCase {
       ai_agent_id: aiAgentId,
       ai_agent_prompt_id: aiAgentPromptId,
       ai_agent_type_id: agent?.ai_agent_type_id,
-      prompt_type: promptType,
-      name,
       value,
     };
 
@@ -242,27 +198,18 @@ export class AiAgentPromptCreatorUseCase {
     input: CreateAiAgentPromptRequest,
     accountId: string
   ): Promise<string | null> {
-    const { aiAgentId, aiAgentPromptType, name, status } =
-      this.processInput(input);
+    const { aiAgentId, status } = this.processInput(input);
 
-    this.validateRequiredFields(aiAgentId, aiAgentPromptType, name, t);
+    this.validateRequiredFields(aiAgentId, t);
 
-    if (!aiAgentId || !aiAgentPromptType || !name) {
+    if (!aiAgentId) {
       throw new Error(t('ai_agent_prompt_creation_failed'));
     }
 
-    const finalValue = await this.processPromptValue(
-      aiAgentPromptType,
-      input.value,
-      input.file,
-      accountId,
-      t
-    );
+    const finalValue = await this.uploadFileToS3(input.file, accountId, t);
 
     const processedInput: ICreateAiAgentPromptInput = {
       ai_agent_id: aiAgentId,
-      ai_agent_prompt_type: aiAgentPromptType,
-      name,
       value: finalValue,
       status: status ?? EAiAgentStatus.active,
     };
@@ -273,14 +220,12 @@ export class AiAgentPromptCreatorUseCase {
       t
     );
 
-    await this.ensureOpenAIIfNeeded(accountId, aiAgentId, aiAgentPromptType);
+    await this.ensureOpenAIIfNeeded(accountId, aiAgentId);
 
     await this.sendToEmbeddingQueue(
       accountId,
       aiAgentId,
       aiAgentPromptId,
-      aiAgentPromptType,
-      name,
       finalValue
     );
 

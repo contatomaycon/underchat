@@ -49,8 +49,6 @@ export class AiAgentPromptCreatorRepository {
       .values({
         ai_agent_prompt_id: aiAgentPromptId,
         ai_agent_id: input.ai_agent_id,
-        ai_agent_prompt_type: input.ai_agent_prompt_type,
-        name: input.name,
         value: input.value,
         status: input.status,
       })

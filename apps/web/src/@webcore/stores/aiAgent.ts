@@ -361,16 +361,9 @@ export const useAiAgentStore = defineStore('aiAgent', {
 
         const formData = new FormData();
         formData.append('ai_agent_id', input.ai_agent_id.value);
-        formData.append(
-          'ai_agent_prompt_type',
-          input.ai_agent_prompt_type.value
-        );
-        formData.append('name', input.name.value);
 
-        if (input.ai_agent_prompt_type.value === 'file' && file) {
+        if (file) {
           formData.append('file', file);
-        } else if (input.value) {
-          formData.append('value', input.value.value);
         }
 
         if (input.status) {
@@ -467,21 +460,6 @@ export const useAiAgentStore = defineStore('aiAgent', {
         this.loading = true;
 
         const formData = new FormData();
-
-        if (input.ai_agent_prompt_type !== undefined) {
-          formData.append(
-            'ai_agent_prompt_type[value]',
-            input.ai_agent_prompt_type.value
-          );
-        }
-
-        if (input.name !== undefined) {
-          formData.append('name[value]', input.name.value);
-        }
-
-        if (input.value !== undefined) {
-          formData.append('value[value]', input.value.value);
-        }
 
         if (input.status !== undefined) {
           formData.append('status[value]', input.status.value);

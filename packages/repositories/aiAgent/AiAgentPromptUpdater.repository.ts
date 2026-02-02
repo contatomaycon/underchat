@@ -33,17 +33,6 @@ export class AiAgentPromptUpdaterRepository {
 
     const updateInput: Partial<typeof aiAgentPrompt.$inferInsert> = {};
 
-    if (
-      input.ai_agent_prompt_type !== undefined &&
-      input.ai_agent_prompt_type !== null
-    ) {
-      updateInput.ai_agent_prompt_type = input.ai_agent_prompt_type;
-    }
-
-    if (input.name !== undefined && input.name !== null) {
-      updateInput.name = input.name;
-    }
-
     if (input.value !== undefined && input.value !== null) {
       updateInput.value = input.value;
     }

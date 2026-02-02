@@ -1,4 +1,11 @@
-import { pgTable, timestamp, uuid, varchar, index } from 'drizzle-orm/pg-core';
+import {
+  pgTable,
+  text,
+  timestamp,
+  uuid,
+  varchar,
+  index,
+} from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 import { account } from '@core/models';
 import { aiAgentType } from './aiAgentType.model';
@@ -29,6 +36,7 @@ export const aiAgent = pgTable(
       .notNull()
       .$type<EAiAgentStatus>()
       .default(EAiAgentStatus.active),
+    system_prompt: text('system_prompt'),
     voice_ia_id: uuid().references(() => voiceIa.voice_ia_id, {
       onDelete: 'set null',
     }),

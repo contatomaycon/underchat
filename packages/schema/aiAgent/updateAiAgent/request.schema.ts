@@ -30,6 +30,7 @@ export const updateAiAgentBodySchema = Type.Object({
       Type.Null(),
     ])
   ),
+  system_prompt: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   voice_ia_id: Type.Optional(
     Type.Union([Type.String({ format: 'uuid' }), Type.Null()])
   ),

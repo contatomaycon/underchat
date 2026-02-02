@@ -160,4 +160,4 @@ const sortVoicesAsc = (voices: Array<{ sortName: string }>) =>
 export const ELEVENLABS_VOICES_PT_BR = sortVoicesAsc([
   ...buildDefaultVoices(),
   ...buildCustomVoices(),
-]).map(({ sortName: _sortName, ...voice }) => voice);
+]).map(({ sortName, ...voice }) => (void sortName, voice));

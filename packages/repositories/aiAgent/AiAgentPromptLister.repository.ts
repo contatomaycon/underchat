@@ -42,8 +42,6 @@ export class AiAgentPromptListerRepository {
     return result.map((item) => ({
       ai_agent_prompt_id: item.ai_agent_prompt_id,
       ai_agent_id: item.ai_agent_id,
-      ai_agent_prompt_type: item.ai_agent_prompt_type,
-      name: item.name,
       value: item.value,
       openai_file_id: item.openai_file_id ?? null,
       status: item.status,

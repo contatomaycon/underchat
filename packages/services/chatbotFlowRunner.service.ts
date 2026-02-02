@@ -235,11 +235,10 @@ export class ChatbotFlowRunnerService {
     chatId: string,
     aiAgentId: string,
     normalizedQuestion: string,
-    promptsHash: string,
-    skipFilePrompts: boolean
+    promptsHash: string
   ): string {
     const questionHash = this.hashText(normalizedQuestion);
-    return `chatbot:ai-agent:rag:${accountId}:${chatId}:${aiAgentId}:${questionHash}:${promptsHash}:${skipFilePrompts ? '1' : '0'}`;
+    return `chatbot:ai-agent:rag:${accountId}:${chatId}:${aiAgentId}:${questionHash}:${promptsHash}`;
   }
 
   private async extractTransferContextFromAgentContext(
@@ -272,21 +271,25 @@ export class ChatbotFlowRunnerService {
       createChat.account.id,
       selectedAiAgentId
     );
-    const transferRelevantPrompts = promptsDetailed.filter((prompt) => {
-      const nameMatch =
-        /humano|transfer|atendente|usuario|usu[áa]rio|setor|suporte|equipe/i.test(
-          prompt.name
-        );
-      const valueMatch =
+    const allTransferSources: string[] = [];
+    if (agent?.system_prompt) {
+      const systemPromptMatch =
         /(disponibilize|apenas|somente|direcion|transfer|encaminh|pergunt|escolh).*(setor|atendente|usu[áa]rio|humano|equipe)/i.test(
-          prompt.value
+          agent.system_prompt
         );
-      return nameMatch || valueMatch;
+      if (systemPromptMatch) {
+        allTransferSources.push(agent.system_prompt);
+      }
+    }
+    const transferRelevantPrompts = promptsDetailed.filter((prompt) => {
+      return /(disponibilize|apenas|somente|direcion|transfer|encaminh|pergunt|escolh).*(setor|atendente|usu[áa]rio|humano|equipe)/i.test(
+        prompt.value
+      );
     });
-    const contextText = transferRelevantPrompts
-      .map((prompt) => `#### ${prompt.name}:\n${prompt.value}`)
-      .join('\n\n')
-      .slice(0, 12000);
+    for (const prompt of transferRelevantPrompts) {
+      allTransferSources.push(prompt.value);
+    }
+    const contextText = allTransferSources.join('\n\n').slice(0, 12000);
     if (!contextText) {
       return defaultResult;
     }
@@ -6391,8 +6394,6 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       aiAgent.ai_agent_type_id === EAiAgentType.gpt &&
       !aiAgent.openai_assistant_id &&
       !!aiAgent.openai_vector_store_id;
-    const skipFilePrompts = useAssistantsApi || useFileSearchResponsesApi;
-
     const { enhancedPrompt, contextAllowed, contextHints } =
       await this.buildEnhancedPromptForAiAgent(
         createChat,
@@ -6400,8 +6401,7 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
         userText,
         bootstrapSummaryKey,
         conversationSummaryKey,
-        recentMessages,
-        skipFilePrompts
+        recentMessages
       );
 
     const assistantsOptions =
@@ -6576,13 +6576,21 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
     userText: string,
     bootstrapSummaryKey: string,
     conversationSummaryKey: string,
-    recentMessages: Array<{ role: 'user' | 'assistant'; content: string }>,
-    skipFilePrompts = false
+    recentMessages: Array<{ role: 'user' | 'assistant'; content: string }>
   ): Promise<{
     enhancedPrompt: string;
     contextAllowed: boolean;
     contextHints: string[];
   }> {
+    const useAssistantsApi =
+      aiAgent.ai_agent_type_id === EAiAgentType.gpt &&
+      !!aiAgent.openai_assistant_id;
+    const useFileSearchResponsesApi =
+      aiAgent.ai_agent_type_id === EAiAgentType.gpt &&
+      !aiAgent.openai_assistant_id &&
+      !!aiAgent.openai_vector_store_id;
+    const skipFilePrompts = useAssistantsApi || useFileSearchResponsesApi;
+
     const allPrompts = await this.ragService.getAllAgentPromptsDetailed(
       createChat.account.id,
       aiAgent.ai_agent_id
@@ -6590,17 +6598,19 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
 
     const allowExternalContext = skipFilePrompts;
 
-    const promptsForContext = skipFilePrompts
-      ? allPrompts.filter((prompt) => prompt.ai_agent_prompt_type !== 'file')
-      : allPrompts;
+    const promptsForContext = skipFilePrompts ? [] : allPrompts;
 
     const systemPrompt = this.buildComprehensiveSystemPrompt(
+      aiAgent.system_prompt,
       allPrompts,
       skipFilePrompts
     );
 
-    const promptsText =
+    let promptsText =
       this.ragService.buildPromptsTextFromDetailed(promptsForContext);
+    if (aiAgent.system_prompt) {
+      promptsText = aiAgent.system_prompt + '\n\n' + promptsText;
+    }
     const promptContextAllowed = this.isQueryWithinPromptText(
       userText,
       promptsText
@@ -6614,8 +6624,7 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
             createChat.chat_id,
             aiAgent.ai_agent_id,
             normalizedQuestion,
-            promptsHash,
-            skipFilePrompts
+            promptsHash
           )
         : null;
 
@@ -6707,7 +6716,6 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
           phone: createChat.phone,
           lastAgentMessage,
           maxPromptChars,
-          skipFilePrompts,
         }
       );
 
@@ -6751,22 +6759,15 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
   }
 
   private buildComprehensiveSystemPrompt(
-    prompts: Array<{
-      ai_agent_prompt_type: string;
-      name: string;
-      value: string;
-    }>,
+    agentSystemPrompt: string | null,
+    filePrompts: Array<{ value: string }>,
     skipFilePrompts = false
   ): string {
-    const textPrompts = prompts.filter(
-      (p) => p.ai_agent_prompt_type === 'text'
-    );
-    const allFilePrompts = prompts.filter(
-      (p) => p.ai_agent_prompt_type === 'file'
-    );
-    const hasFilePrompts = allFilePrompts.length > 0;
+    const hasFilePrompts = filePrompts.length > 0;
     const shouldUseFileSearchInstructions = skipFilePrompts && hasFilePrompts;
-    const filePrompts = shouldUseFileSearchInstructions ? [] : allFilePrompts;
+    const includedFilePrompts = shouldUseFileSearchInstructions
+      ? []
+      : filePrompts;
 
     const parts: string[] = [
       'Você é um assistente virtual inteligente, prestativo e rigoroso. Você DEVE absorver e seguir ESTRITAMENTE TODO o conteúdo fornecido abaixo sem exceção.',
@@ -6787,26 +6788,20 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       '- Responda de forma natural e humana, sem mencionar termos técnicos como "contexto", "prompt", "RAG" ou "sistema".',
     ];
 
-    if (textPrompts.length > 0) {
+    if (agentSystemPrompt && agentSystemPrompt.trim().length > 0) {
       parts.push('');
-      parts.push(
-        '### BASE DE CONHECIMENTO — TEXTOS (Absorva INTEGRALMENTE cada item):'
-      );
-      for (const prompt of textPrompts) {
-        parts.push('');
-        parts.push(`#### ${prompt.name}:`);
-        parts.push(prompt.value);
-      }
+      parts.push('### BASE DE CONHECIMENTO — TEXTOS (Absorva INTEGRALMENTE):');
+      parts.push('');
+      parts.push(agentSystemPrompt);
     }
 
-    if (filePrompts.length > 0) {
+    if (includedFilePrompts.length > 0) {
       parts.push('');
       parts.push(
-        '### BASE DE CONHECIMENTO — LINKS E ARQUIVOS (Absorva TODO o conteúdo de cada link/arquivo):'
+        '### BASE DE CONHECIMENTO — ARQUIVOS (Absorva TODO o conteúdo de cada arquivo):'
       );
-      for (const prompt of filePrompts) {
+      for (const prompt of includedFilePrompts) {
         parts.push('');
-        parts.push(`#### ${prompt.name}:`);
         parts.push(prompt.value);
       }
     }
@@ -6819,13 +6814,13 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       );
     }
 
-    if (prompts.length > 0) {
+    if (agentSystemPrompt || filePrompts.length > 0) {
       parts.push('');
       parts.push('### REGRA FUNDAMENTAL:');
       parts.push(
         shouldUseFileSearchInstructions
           ? 'Você DEVE responder considerando a TOTALIDADE do contexto: todos os prompts de texto acima, os resultados do File Search, o contexto RAG e o histórico de conversa. Sua resposta deve ser a melhor possível com base em TODO esse conhecimento combinado.'
-          : 'Você DEVE responder considerando a TOTALIDADE do contexto: todos os prompts de texto acima, todos os conteúdos dos links/arquivos, o contexto RAG e o histórico de conversa. Sua resposta deve ser a melhor possível com base em TODO esse conhecimento combinado.'
+          : 'Você DEVE responder considerando a TOTALIDADE do contexto: todos os prompts de texto acima, todos os conteúdos dos arquivos, o contexto RAG e o histórico de conversa. Sua resposta deve ser a melhor possível com base em TODO esse conhecimento combinado.'
       );
     }
 

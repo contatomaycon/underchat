@@ -4,7 +4,6 @@ import { useI18n } from 'vue-i18n';
 import { useAiAgentStore } from '@/@webcore/stores/aiAgent';
 import { DataTableHeader } from 'vuetify';
 import { ListAiAgentPromptResponse } from '@core/schema/aiAgent/listAiAgentPrompt/response.schema';
-import { EAiAgentPromptType } from '@core/common/enums/EAiAgentPromptType';
 import { ViewAiAgentResponse } from '@core/schema/aiAgent/viewAiAgent/response.schema';
 import AppAddEditAiAgentPrompt from './AppAddEditAiAgentPrompt.vue';
 import TablePagination from '@/@webcore/components/TablePagination.vue';
@@ -67,8 +66,6 @@ const handleTableChange = (o: {
 };
 
 const headers: DataTableHeader<ListAiAgentPromptResponse>[] = [
-  { title: t('name'), key: 'name' },
-  { title: t('ai_agent_prompt_type'), key: 'ai_agent_prompt_type' },
   { title: t('value'), key: 'value' },
   { title: t('status'), key: 'status' },
   { title: t('actions'), key: 'actions', sortable: false },
@@ -173,13 +170,6 @@ const handleRefreshAll = async () => {
   }
 };
 
-const getPromptTypeLabel = (type: EAiAgentPromptType): string => {
-  if (type === EAiAgentPromptType.file) {
-    return t('file');
-  }
-  return t('text');
-};
-
 const truncateValue = (value: string, maxLength: number = 50): string => {
   if (value.length <= maxLength) {
     return value;
@@ -253,31 +243,16 @@ onMounted(() => {
           @update:options="handleTableChange"
           :loading-text="$t('loading_text')"
         >
-          <template #item.name="{ item }">
-            {{ item.name }}
-          </template>
-
-          <template #item.ai_agent_prompt_type="{ item }">
-            <VChip size="small" color="primary">
-              {{ getPromptTypeLabel(item.ai_agent_prompt_type) }}
-            </VChip>
-          </template>
-
           <template #item.value="{ item }">
-            <div v-if="item.ai_agent_prompt_type === EAiAgentPromptType.file">
-              <a
-                :href="item.value"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="text-primary text-decoration-none d-inline-flex align-center gap-1"
-              >
-                <VIcon icon="tabler-external-link" size="16" />
-                <span>{{ $t('view_file') }}</span>
-              </a>
-            </div>
-            <div v-else>
-              {{ truncateValue(item.value) }}
-            </div>
+            <a
+              :href="item.value"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="text-primary text-decoration-none d-inline-flex align-center gap-1"
+            >
+              <VIcon icon="tabler-external-link" size="16" />
+              <span>{{ $t('view_file') }}</span>
+            </a>
           </template>
 
           <template #item.status="{ item }">

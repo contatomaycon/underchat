@@ -18,6 +18,7 @@ export const createAiAgentRequestSchema = Type.Object({
       Type.Literal(EAiAgentStatus.inactive),
     ])
   ),
+  system_prompt: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   voice_ia_id: Type.Optional(
     Type.Union([Type.String({ format: 'uuid' }), Type.Null()])
   ),

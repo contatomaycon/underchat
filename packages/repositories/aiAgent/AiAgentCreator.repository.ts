@@ -61,6 +61,7 @@ export class AiAgentCreatorRepository {
         chunk_overlap: input.chunk_overlap ?? '100',
         status: input.status ?? EAiAgentStatus.active,
         voice_ia_id: input.voice_ia_id ?? null,
+        system_prompt: input.system_prompt ?? null,
       })
       .execute();
 

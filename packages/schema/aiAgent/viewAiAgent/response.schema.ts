@@ -18,6 +18,7 @@ export const viewAiAgentResponseSchema = Type.Object({
   openai_vector_store_id: Type.Union([Type.String(), Type.Null()]),
   ai_agent_type_id: Type.String({ format: 'uuid' }),
   ai_agent_type_name: Type.String(),
+  system_prompt: Type.Union([Type.String(), Type.Null()]),
   voice_ia_id: Type.Union([Type.String({ format: 'uuid' }), Type.Null()]),
   created_at: Type.Union([Type.String(), Type.Null()]),
   updated_at: Type.Union([Type.String(), Type.Null()]),

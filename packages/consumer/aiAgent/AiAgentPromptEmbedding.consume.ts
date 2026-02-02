@@ -12,7 +12,6 @@ import { EmbeddingService } from '@core/services/embedding.service';
 import { OpenAIAssistantService } from '@core/services/openaiAssistant.service';
 import { AiAgentService } from '@core/services/aiAgent.service';
 import { IAiAgentPromptEmbeddingRequest } from '@core/common/interfaces/IAiAgentPromptEmbeddingRequest';
-import { EAiAgentPromptType } from '@core/common/enums/EAiAgentPromptType';
 import { EAiAgentType } from '@core/common/enums/EAiAgentType';
 import mammoth from 'mammoth';
 import { PDFParse } from 'pdf-parse';
@@ -148,11 +147,7 @@ export class AiAgentPromptEmbeddingConsume {
   private async processEmbedding(
     data: IAiAgentPromptEmbeddingRequest
   ): Promise<void> {
-    let textContent = data.value;
-
-    if (data.prompt_type === EAiAgentPromptType.file) {
-      textContent = await this.extractTextFromFile(data.value);
-    }
+    const textContent = await this.extractTextFromFile(data.value);
 
     if (!textContent || textContent.trim() === '') {
       console.warn(
@@ -172,9 +167,7 @@ export class AiAgentPromptEmbeddingConsume {
       `Embeddings gerados para prompt ${data.ai_agent_prompt_id}: ${chunksCount} chunks`
     );
 
-    if (data.prompt_type === EAiAgentPromptType.file) {
-      await this.processOpenAIFileUpload(data);
-    }
+    await this.processOpenAIFileUpload(data);
   }
 
   private async processOpenAIFileUpload(
@@ -250,7 +243,7 @@ export class AiAgentPromptEmbeddingConsume {
       const filename = this.buildFilenameForOpenAIVectorStore(
         data.value,
         contentType,
-        data.name || 'document'
+        'document'
       );
 
       const fileId = await this.openAIAssistantService.uploadFileToOpenAI(

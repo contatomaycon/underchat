@@ -2,7 +2,6 @@ import { injectable } from 'tsyringe';
 import { EmbeddingService } from './embedding.service';
 import { IRagContext } from '@core/common/interfaces/IRagContext';
 import { AiAgentPromptListerRepository } from '@core/repositories/aiAgent/AiAgentPromptLister.repository';
-import { EAiAgentPromptType } from '@core/common/enums/EAiAgentPromptType';
 import { EAiAgentStatus } from '@core/common/enums/EAiAgentStatus';
 import { SummaryProviderFactory } from './summary/summaryProviderFactory.service';
 
@@ -269,12 +268,9 @@ export class RagService {
 
   async getAllAgentPrompts(
     accountId: string,
-    aiAgentId: string,
-    skipFilePrompts = false
+    aiAgentId: string
   ): Promise<string> {
     let prompts: Array<{
-      ai_agent_prompt_type: string;
-      name: string;
       value: string;
       status: EAiAgentStatus;
     }> = [];
@@ -288,32 +284,21 @@ export class RagService {
       return '';
     }
 
-    let activePrompts = prompts.filter(
+    const activePrompts = prompts.filter(
       (prompt) => prompt.status === EAiAgentStatus.active
     );
-
-    if (skipFilePrompts) {
-      activePrompts = activePrompts.filter(
-        (prompt) => prompt.ai_agent_prompt_type !== EAiAgentPromptType.file
-      );
-    }
 
     if (activePrompts.length === 0) {
       return '';
     }
 
-    const promptsByType = this.groupPromptsByType(activePrompts);
-
-    return this.formatPromptsByType(promptsByType);
+    return this.formatFilePrompts(activePrompts);
   }
 
   async getAllAgentPromptsDetailed(
     accountId: string,
-    aiAgentId: string,
-    skipFilePrompts = false
-  ): Promise<
-    Array<{ ai_agent_prompt_type: string; name: string; value: string }>
-  > {
+    aiAgentId: string
+  ): Promise<Array<{ value: string }>> {
     try {
       const prompts =
         await this.aiAgentPromptListerRepository.listAiAgentPrompts(
@@ -323,14 +308,7 @@ export class RagService {
 
       return prompts
         .filter((prompt) => prompt.status === EAiAgentStatus.active)
-        .filter(
-          (prompt) =>
-            !skipFilePrompts ||
-            prompt.ai_agent_prompt_type !== EAiAgentPromptType.file
-        )
         .map((prompt) => ({
-          ai_agent_prompt_type: prompt.ai_agent_prompt_type,
-          name: prompt.name,
           value: prompt.value,
         }));
     } catch (error) {
@@ -342,13 +320,7 @@ export class RagService {
     }
   }
 
-  buildPromptsTextFromDetailed(
-    prompts: Array<{
-      ai_agent_prompt_type: string;
-      name: string;
-      value: string;
-    }>
-  ): string {
+  buildPromptsTextFromDetailed(prompts: Array<{ value: string }>): string {
     if (!prompts || prompts.length === 0) {
       return '';
     }
@@ -358,8 +330,7 @@ export class RagService {
     if (filtered.length === 0) {
       return '';
     }
-    const promptsByType = this.groupPromptsByType(filtered);
-    return this.formatPromptsByType(promptsByType);
+    return this.formatFilePrompts(filtered);
   }
 
   async generateBootstrapSummary(
@@ -514,7 +485,6 @@ export class RagService {
       includeBootstrapSummaryInPrompt?: boolean;
       maxPromptChars?: number;
       lastAgentMessage?: string | null;
-      skipFilePrompts?: boolean;
     }
   ): Promise<{
     enhancedPrompt: string;
@@ -529,8 +499,7 @@ export class RagService {
     if (isBootstrap) {
       const bootstrapPrompt = await this.buildBootstrapPrompt(
         accountId,
-        aiAgentId,
-        options?.skipFilePrompts
+        aiAgentId
       );
       return {
         ...bootstrapPrompt,
@@ -682,47 +651,16 @@ export class RagService {
     return { enhancedPrompt, contextAllowed, contextHints };
   }
 
-  private groupPromptsByType(
-    activePrompts: Array<{
-      ai_agent_prompt_type: string;
-      name: string;
-      value: string;
-    }>
-  ): Record<string, string[]> {
-    const promptsByType: Record<string, string[]> = {};
+  private formatFilePrompts(activePrompts: Array<{ value: string }>): string {
+    const values = activePrompts
+      .filter((prompt) => prompt.value && prompt.value.trim().length > 0)
+      .map((prompt) => prompt.value);
 
-    for (const prompt of activePrompts) {
-      const type = prompt.ai_agent_prompt_type;
-      if (!promptsByType[type]) {
-        promptsByType[type] = [];
-      }
-      if (prompt.value && prompt.value.trim().length > 0) {
-        const formattedPrompt = prompt.name
-          ? `${prompt.name}:\n${prompt.value}`
-          : prompt.value;
-        promptsByType[type].push(formattedPrompt);
-      }
+    if (values.length === 0) {
+      return '';
     }
 
-    return promptsByType;
-  }
-
-  private formatPromptsByType(promptsByType: Record<string, string[]>): string {
-    const sections: string[] = [];
-
-    for (const [type, values] of Object.entries(promptsByType)) {
-      if (values.length === 0) {
-        continue;
-      }
-
-      const typeLabel =
-        type === EAiAgentPromptType.file
-          ? 'Base de Conhecimento — Links e Arquivos'
-          : 'Base de Conhecimento — Textos';
-      sections.push(`### ${typeLabel}:\n${values.join('\n\n---\n\n')}`);
-    }
-
-    return sections.join('\n\n');
+    return `### Base de Conhecimento — Arquivos:\n${values.join('\n\n---\n\n')}`;
   }
 
   private buildBootstrapSummaryPrompt(allPrompts: string): string {
@@ -837,18 +775,13 @@ Gere APENAS o sumário atualizado, sem introduções ou explicações adicionais
 
   private async buildBootstrapPrompt(
     accountId: string,
-    aiAgentId: string,
-    skipFilePrompts = false
+    aiAgentId: string
   ): Promise<{
     enhancedPrompt: string;
     contextUsed: boolean;
     chunksCount: number;
   }> {
-    const allPrompts = await this.getAllAgentPrompts(
-      accountId,
-      aiAgentId,
-      skipFilePrompts
-    );
+    const allPrompts = await this.getAllAgentPrompts(accountId, aiAgentId);
     const bootstrapPrompt = `Você é um assistente virtual inteligente, prestativo e rigoroso.
 
 ### Base Completa de Conhecimento do Agente (Absorva INTEGRALMENTE):

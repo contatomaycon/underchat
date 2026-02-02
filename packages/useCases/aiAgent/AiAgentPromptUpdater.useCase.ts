@@ -6,7 +6,6 @@ import { OpenAIAssistantService } from '@core/services/openaiAssistant.service';
 import { StorageService } from '@core/services/storage.service';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
-import { EAiAgentPromptType } from '@core/common/enums/EAiAgentPromptType';
 import { EAiAgentStatus } from '@core/common/enums/EAiAgentStatus';
 import { EAiAgentType } from '@core/common/enums/EAiAgentType';
 import { UploadFileRequest } from '@core/schema/upload/request.schema';
@@ -147,16 +146,11 @@ export class AiAgentPromptUpdaterUseCase {
   }
 
   private async processFileUpdate(
-    promptType: EAiAgentPromptType | null,
     file: UploadFileRequest | null | undefined,
     currentValue: string,
     accountId: string,
     t: TFunction<'translation', undefined>
   ): Promise<string | null> {
-    if (promptType !== EAiAgentPromptType.file) {
-      return null;
-    }
-
     if (!file) {
       return currentValue;
     }
@@ -182,20 +176,12 @@ export class AiAgentPromptUpdaterUseCase {
     }
 
     const bodyRecord = body as unknown as Record<string, unknown>;
-    const promptType = this.getFieldFromMultipartBody<EAiAgentPromptType>(
-      bodyRecord,
-      'ai_agent_prompt_type'
-    );
-    const finalPromptType =
-      promptType ?? aiAgentPromptExists.ai_agent_prompt_type;
-
     let finalValue =
       this.getFieldFromMultipartBody<string>(bodyRecord, 'value') ??
       aiAgentPromptExists.value;
 
-    if (finalPromptType === EAiAgentPromptType.file && body.file) {
+    if (body.file) {
       const newFileUrl = await this.processFileUpdate(
-        finalPromptType,
         body.file,
         aiAgentPromptExists.value,
         accountId,
@@ -208,9 +194,6 @@ export class AiAgentPromptUpdaterUseCase {
     }
 
     const updateBody = {
-      ai_agent_prompt_type: promptType ?? undefined,
-      name:
-        this.getFieldFromMultipartBody<string>(bodyRecord, 'name') ?? undefined,
       value: finalValue,
       status:
         this.getFieldFromMultipartBody<EAiAgentStatus>(bodyRecord, 'status') ??
@@ -231,7 +214,6 @@ export class AiAgentPromptUpdaterUseCase {
     await this.ensureOpenAIAndCleanupIfNeeded(
       accountId,
       aiAgentPromptExists.ai_agent_id,
-      finalPromptType,
       aiAgentPromptExists.openai_file_id
     );
 
@@ -239,8 +221,6 @@ export class AiAgentPromptUpdaterUseCase {
       accountId,
       aiAgentPromptExists.ai_agent_id,
       aiAgentPromptId,
-      finalPromptType,
-      updateBody.name ?? aiAgentPromptExists.name,
       finalValue
     );
 
@@ -250,13 +230,8 @@ export class AiAgentPromptUpdaterUseCase {
   private async ensureOpenAIAndCleanupIfNeeded(
     accountId: string,
     aiAgentId: string,
-    promptType: EAiAgentPromptType,
     openaiFileId: string | null | undefined
   ): Promise<void> {
-    if (promptType !== EAiAgentPromptType.file) {
-      return;
-    }
-
     const agent = await this.aiAgentService.viewAiAgent(aiAgentId, accountId);
     const isGpt = agent?.ai_agent_type_id === EAiAgentType.gpt;
     if (!isGpt || !agent?.api_key || !agent?.base_url) {
@@ -300,8 +275,6 @@ export class AiAgentPromptUpdaterUseCase {
     accountId: string,
     aiAgentId: string,
     aiAgentPromptId: string,
-    promptType: EAiAgentPromptType,
-    name: string,
     value: string
   ): Promise<void> {
     const agent = await this.aiAgentService.viewAiAgent(aiAgentId, accountId);
@@ -311,8 +284,6 @@ export class AiAgentPromptUpdaterUseCase {
       ai_agent_id: aiAgentId,
       ai_agent_prompt_id: aiAgentPromptId,
       ai_agent_type_id: agent?.ai_agent_type_id,
-      prompt_type: promptType,
-      name,
       value,
     };
 
