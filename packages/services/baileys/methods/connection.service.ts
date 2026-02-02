@@ -384,17 +384,17 @@ export class BaileysConnectionService {
 
         const { qr, connection, isNewLogin, lastDisconnect } = u;
 
-        if (isNewLogin) {
-          return this.onNewLoginAttempt();
-        }
-
         if (
           qr &&
           this.canShowQr() &&
-          this.typeConnection === EBaileysConnectionType.qrcode &&
-          !this.awaitingNewLogin
+          this.typeConnection === EBaileysConnectionType.qrcode
         ) {
+          this.awaitingNewLogin = false;
           return this.onQr(qr, resolve);
+        }
+
+        if (isNewLogin) {
+          return this.onNewLoginAttempt();
         }
 
         if (connection === 'open' && !opened) {
@@ -608,7 +608,7 @@ export class BaileysConnectionService {
   }
 
   private canShowQr(): boolean {
-    return this.initialConnection && !this.connected && !this.awaitingNewLogin;
+    return this.initialConnection && !this.connected;
   }
 
   hasSession(): boolean {
