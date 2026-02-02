@@ -42,13 +42,17 @@ export class AiAgentPromptRefresherAllUseCase {
       );
 
       if (agent.model) {
+        const instructions =
+          this.openAIAssistantService.getAssistantInstructionsFromSystemPrompt(
+            agent.system_prompt
+          );
         await this.openAIAssistantService.ensureAssistant(
           aiAgentId,
           accountId,
           agent.api_key,
           agent.base_url,
           agent.model,
-          this.openAIAssistantService.getDefaultAssistantInstructions(),
+          instructions,
           vectorStoreId
         );
       }

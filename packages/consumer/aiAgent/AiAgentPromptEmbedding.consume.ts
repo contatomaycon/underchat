@@ -219,13 +219,17 @@ export class AiAgentPromptEmbeddingConsume {
       }
 
       if (agent.model) {
+        const instructions =
+          this.openAIAssistantService.getAssistantInstructionsFromSystemPrompt(
+            agent.system_prompt
+          );
         await this.openAIAssistantService.ensureAssistant(
           data.ai_agent_id,
           data.account_id,
           agent.api_key,
           agent.base_url,
           agent.model,
-          this.openAIAssistantService.getDefaultAssistantInstructions(),
+          instructions,
           vectorStoreId
         );
       }

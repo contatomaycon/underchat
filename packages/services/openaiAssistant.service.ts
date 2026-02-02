@@ -12,26 +12,6 @@ export class OpenAIAssistantService {
   private readonly VECTOR_STORE_FILE_POLL_INTERVAL_MS = 2000;
   private readonly VECTOR_STORE_FILE_MAX_POLL_ATTEMPTS = 120;
   private readonly UNSUPPORTED_MODEL_CACHE_TTL_SECONDS = 86400;
-  private readonly DEFAULT_ASSISTANT_INSTRUCTIONS = [
-    'Você é um assistente virtual inteligente, prestativo e rigoroso.',
-    '',
-    '### INSTRUÇÕES CRÍTICAS DE CONTEXTO:',
-    '- Você DEVE ler, absorver e internalizar TODAS as instruções que receber. Nada pode ser ignorado.',
-    '- Documentos e arquivos do agente estão disponíveis via File Search. Consulte a ferramenta sempre que necessário.',
-    '- Combine TODAS as fontes de conhecimento disponíveis: prompts de texto, resultados do File Search, contexto RAG e histórico do thread.',
-    '- Use apenas o contexto disponível para responder. Não invente informações que não estejam no contexto.',
-    '- Quando houver contexto suficiente, seja completo e útil, trazendo detalhes, exemplos e informações relevantes.',
-    '- Se a pergunta estiver fora do escopo do contexto, informe isso de forma breve e redirecione para os temas em que você pode ajudar.',
-    '- Quando houver múltiplas opções ou alternativas, recomende a melhor e explique rapidamente o porquê.',
-    '- Responda de forma natural e humana, sem mencionar termos técnicos como "contexto", "prompt", "RAG", "sistema" ou "file_search".',
-    '',
-    '### DIRETRIZES DE RESPOSTA:',
-    '- Siga o perfil, personalidade e objetivos definidos nas instruções do agente.',
-    '- Priorize precisão e consistência com todas as regras fornecidas.',
-    '- Evite respostas vagas; foque em resolver a necessidade do usuário.',
-    '- Se a pergunta for repetida, evite repetir a mesma estrutura de resposta e traga novos detalhes quando possível.',
-  ].join('\n');
-
   constructor(
     @inject('Redis') private readonly redis: Redis,
     private readonly aiAgentService: AiAgentService
@@ -56,8 +36,11 @@ export class OpenAIAssistantService {
     return baseUrl.replace(/\/+$/, '');
   }
 
-  getDefaultAssistantInstructions(): string {
-    return this.DEFAULT_ASSISTANT_INSTRUCTIONS;
+  getAssistantInstructionsFromSystemPrompt(
+    systemPrompt: string | null
+  ): string {
+    const trimmed = (systemPrompt ?? '').trim();
+    return trimmed.length > 0 ? trimmed : 'Você é um assistente prestativo.';
   }
 
   private buildBlobFromBuffer(fileBuffer: Buffer | ArrayBuffer): Blob {
@@ -119,6 +102,12 @@ export class OpenAIAssistantService {
             baseUrl,
             agent.openai_assistant_id
           );
+          await this.updateAssistantInstructions(
+            agent.openai_assistant_id,
+            apiKey,
+            baseUrl,
+            instructions
+          );
           return agent.openai_assistant_id;
         } catch (error) {
           if (!this.isRetrieveNotFoundError(error)) {
@@ -130,7 +119,8 @@ export class OpenAIAssistantService {
               accountId,
               apiKey,
               baseUrl,
-              vectorStoreId
+              vectorStoreId,
+              instructions
             );
           }
         }
@@ -676,7 +666,8 @@ export class OpenAIAssistantService {
     accountId: string,
     apiKey: string,
     baseUrl: string,
-    vectorStoreId: string
+    vectorStoreId: string,
+    instructions?: string
   ): Promise<string> {
     const agent = await this.aiAgentService.viewAiAgent(aiAgentId, accountId);
     if (!agent?.model) {
@@ -684,11 +675,14 @@ export class OpenAIAssistantService {
         'Agente sem model configurado para recriar assistente OpenAI'
       );
     }
+    const effectiveInstructions =
+      instructions ??
+      this.getAssistantInstructionsFromSystemPrompt(agent.system_prompt);
     const assistantId = await this.createAssistant(
       apiKey,
       baseUrl,
       agent.model,
-      this.getDefaultAssistantInstructions(),
+      effectiveInstructions,
       vectorStoreId
     );
     await this.aiAgentService.updateAiAgentOpenAIIds(aiAgentId, accountId, {
@@ -722,12 +716,20 @@ export class OpenAIAssistantService {
         );
       } catch (error) {
         if (error instanceof Error && this.isAssistantNotFoundError(error)) {
+          const agent = await this.aiAgentService.viewAiAgent(
+            aiAgentId,
+            accountId
+          );
+          const instructions = this.getAssistantInstructionsFromSystemPrompt(
+            agent?.system_prompt ?? null
+          );
           await this.recreateAssistantAndUpdate(
             aiAgentId,
             accountId,
             apiKey,
             baseUrl,
-            vectorStoreId
+            vectorStoreId,
+            instructions
           );
         } else {
           throw error;

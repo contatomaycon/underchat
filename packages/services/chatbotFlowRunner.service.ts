@@ -5811,11 +5811,10 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
     );
 
     const allowExternalContext = skipFilePrompts;
-
     const promptsForContext = skipFilePrompts ? [] : allPrompts;
 
     const systemPrompt = this.buildComprehensiveSystemPrompt(
-      aiAgent.system_prompt,
+      useAssistantsApi ? null : aiAgent.system_prompt,
       allPrompts,
       skipFilePrompts
     );
@@ -5983,30 +5982,39 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       ? []
       : filePrompts;
 
-    const parts: string[] = [
-      'Você é um assistente virtual inteligente, prestativo e rigoroso. Você DEVE absorver e seguir ESTRITAMENTE TODO o conteúdo fornecido abaixo sem exceção.',
-      '',
-      '### INSTRUÇÕES CRÍTICAS DE CONTEXTO:',
-      '- Você DEVE ler, absorver e internalizar TODOS os textos e conteúdos dos prompts fornecidos abaixo. Nenhum prompt pode ser ignorado.',
-      shouldUseFileSearchInstructions
-        ? '- Documentos e arquivos do agente estão disponíveis via File Search. Consulte a ferramenta sempre que necessário.'
-        : '- Se houver links ou URLs nos prompts, considere que o conteúdo desses links já foi processado e está disponível no contexto RAG. Utilize esse conteúdo para responder.',
-      shouldUseFileSearchInstructions
-        ? '- Combine TODAS as fontes de conhecimento disponíveis: prompts de texto, resultados do File Search, contexto RAG e histórico de conversa.'
-        : '- Combine TODAS as fontes de conhecimento disponíveis: prompts de texto, conteúdo de links/arquivos, contexto RAG e histórico de conversa.',
-      '- Use apenas o contexto disponível para responder. Não invente informações que não estejam no contexto.',
-      '- Localize no contexto acima qualquer informação que o usuário mencionar ou perguntar (por exemplo "o que você disse sobre X", "onde está Y") e baseie sua resposta nela.',
-      '- Quando houver contexto suficiente, seja completo e útil, trazendo detalhes, exemplos e informações relevantes.',
-      '- Se a pergunta estiver fora do escopo do contexto, informe isso de forma breve e redirecione para os temas em que você pode ajudar.',
-      '- Quando houver múltiplas opções ou alternativas, recomende a melhor e explique rapidamente o porquê.',
-      '- Responda de forma natural e humana, sem mencionar termos técnicos como "contexto", "prompt", "RAG" ou "sistema".',
-    ];
+    const baseInstruction = (agentSystemPrompt ?? '').trim();
+    const parts: string[] = [];
 
-    if (agentSystemPrompt && agentSystemPrompt.trim().length > 0) {
+    if (baseInstruction.length > 0) {
+      parts.push(baseInstruction);
+    } else if (!hasFilePrompts) {
+      parts.push('Você é um assistente prestativo.');
+    }
+
+    if (hasFilePrompts || baseInstruction.length > 0) {
       parts.push('');
-      parts.push('### BASE DE CONHECIMENTO — TEXTOS (Absorva INTEGRALMENTE):');
-      parts.push('');
-      parts.push(agentSystemPrompt);
+      parts.push('### INSTRUÇÕES DE CONTEXTO:');
+      parts.push(
+        '- Use apenas o contexto disponível para responder. Não invente informações que não estejam no contexto.'
+      );
+      if (shouldUseFileSearchInstructions) {
+        parts.push(
+          '- Documentos e arquivos estão disponíveis via File Search. Consulte a ferramenta quando necessário.'
+        );
+        parts.push(
+          '- Combine prompts de texto, resultados do File Search, contexto RAG e histórico de conversa.'
+        );
+      } else {
+        parts.push(
+          '- Se houver links ou URLs nos prompts, o conteúdo já foi processado e está no contexto RAG.'
+        );
+        parts.push(
+          '- Combine prompts de texto, conteúdo de links/arquivos, contexto RAG e histórico de conversa.'
+        );
+      }
+      parts.push(
+        '- Responda de forma natural e humana, sem mencionar termos técnicos como "contexto", "prompt" ou "RAG".'
+      );
     }
 
     if (includedFilePrompts.length > 0) {
