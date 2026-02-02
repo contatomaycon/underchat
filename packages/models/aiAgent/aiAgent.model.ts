@@ -1,4 +1,5 @@
 import {
+  boolean,
   pgTable,
   text,
   timestamp,
@@ -37,6 +38,7 @@ export const aiAgent = pgTable(
       .$type<EAiAgentStatus>()
       .default(EAiAgentStatus.active),
     system_prompt: text('system_prompt'),
+    enable_human_transfer: boolean('enable_human_transfer').default(false),
     voice_ia_id: uuid().references(() => voiceIa.voice_ia_id, {
       onDelete: 'set null',
     }),

@@ -12,6 +12,8 @@ import { AiAgentPromptViewerRepository } from '@core/repositories/aiAgent/AiAgen
 import { AiAgentPromptUpdaterRepository } from '@core/repositories/aiAgent/AiAgentPromptUpdater.repository';
 import { AiAgentPromptDeleterRepository } from '@core/repositories/aiAgent/AiAgentPromptDeleter.repository';
 import { AiAgentUsageListerRepository } from '@core/repositories/aiAgent/AiAgentUsageLister.repository';
+import { AiAgentHumanTransferTargetListerRepository } from '@core/repositories/aiAgent/AiAgentHumanTransferTargetLister.repository';
+import { AiAgentHumanTransferUpserterTransactionRepository } from '@core/repositories/aiAgent/AiAgentHumanTransferUpserterTransaction.repository';
 import { ListAiAgentRequest } from '@core/schema/aiAgent/listAiAgent/request.schema';
 import { CreateAiAgentRequest } from '@core/schema/aiAgent/createAiAgent/request.schema';
 import { ViewAiAgentResponse } from '@core/schema/aiAgent/viewAiAgent/response.schema';
@@ -25,6 +27,9 @@ import { ICreateAiAgentPromptInput } from '@core/common/interfaces/ICreateAiAgen
 import { IUpdateAiAgentPromptInput } from '@core/common/interfaces/IUpdateAiAgentPromptInput';
 import { ListChatbotAiAgentsResponse } from '@core/schema/chatbot/listAiAgents/response.schema';
 import { ListAiAgentUsageResponseItem } from '@core/schema/aiAgent/listAiAgentUsage/response.schema';
+import { ViewAiAgentHumanTransferResponse } from '@core/schema/aiAgent/viewAiAgentHumanTransfer/response.schema';
+import { UpsertAiAgentHumanTransferBody } from '@core/schema/aiAgent/upsertAiAgentHumanTransfer/request.schema';
+import { EAiAgentHumanTransferTargetType } from '@core/common/enums/EAiAgentHumanTransferTargetType';
 
 @injectable()
 export class AiAgentService {
@@ -44,6 +49,8 @@ export class AiAgentService {
     private readonly aiAgentPromptUpdaterRepository: AiAgentPromptUpdaterRepository,
     private readonly aiAgentPromptDeleterRepository: AiAgentPromptDeleterRepository,
     private readonly aiAgentUsageListerRepository: AiAgentUsageListerRepository,
+    private readonly aiAgentHumanTransferTargetListerRepository: AiAgentHumanTransferTargetListerRepository,
+    private readonly aiAgentHumanTransferUpserterTransactionRepository: AiAgentHumanTransferUpserterTransactionRepository,
     @inject('Redis') private readonly redis: Redis
   ) {}
 
@@ -215,6 +222,70 @@ export class AiAgentService {
       aiAgentPromptId,
       accountId
     );
+  };
+
+  viewAiAgentHumanTransfer = async (
+    aiAgentId: string,
+    accountId: string
+  ): Promise<ViewAiAgentHumanTransferResponse | null> => {
+    const agent = await this.viewAiAgent(aiAgentId, accountId);
+    if (!agent) {
+      return null;
+    }
+
+    const targets =
+      await this.aiAgentHumanTransferTargetListerRepository.listByAiAgentId(
+        aiAgentId,
+        accountId
+      );
+
+    const sector_ids: string[] = [];
+    const user_ids: string[] = [];
+    for (const row of targets) {
+      if (
+        row.target_type === EAiAgentHumanTransferTargetType.sector &&
+        row.sector_id
+      ) {
+        sector_ids.push(row.sector_id);
+      }
+      if (
+        row.target_type === EAiAgentHumanTransferTargetType.user &&
+        row.user_id
+      ) {
+        user_ids.push(row.user_id);
+      }
+    }
+
+    return {
+      enable_human_transfer: agent.enable_human_transfer ?? false,
+      sector_ids,
+      user_ids,
+    };
+  };
+
+  upsertAiAgentHumanTransfer = async (
+    aiAgentId: string,
+    accountId: string,
+    body: UpsertAiAgentHumanTransferBody
+  ): Promise<boolean> => {
+    const agent = await this.viewAiAgent(aiAgentId, accountId);
+    if (!agent) {
+      return false;
+    }
+
+    const success =
+      await this.aiAgentHumanTransferUpserterTransactionRepository.upsert(
+        aiAgentId,
+        accountId,
+        body
+      );
+
+    if (!success) {
+      return false;
+    }
+
+    await this.invalidateAiAgentCache(aiAgentId, accountId);
+    return true;
   };
 
   listActiveAiAgentsForChatbot = async (

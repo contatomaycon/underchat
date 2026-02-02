@@ -21,6 +21,7 @@ import { SectorTransferListerRepository } from '@core/repositories/sector/Sector
 import { TransferSector } from '@core/schema/chat/listTransferOptions/response.schema';
 import { TransferSectorResponse } from '@core/schema/chat/listTransferSectors/response.schema';
 import { TransferSectorUserResponse } from '@core/schema/chat/listTransferSectorUsers/response.schema';
+import { ListAiAgentHumanTransferSectorUsersResponse } from '@core/schema/aiAgent/listAiAgentHumanTransferSectorUsers/response.schema';
 
 @injectable()
 export class SectorService {
@@ -160,6 +161,28 @@ export class SectorService {
       nickname: user.email_partial || null,
       photo: user.user_info?.photo || null,
       status: user.chat_user?.status || null,
+    }));
+  };
+
+  listSectorUsersForTransferBySectorIds = async (
+    accountId: string,
+    sectorIds: string[]
+  ): Promise<ListAiAgentHumanTransferSectorUsersResponse> => {
+    const result =
+      await this.sectorUsersListerRepository.listSectorUsersBySectorIds(
+        accountId,
+        sectorIds
+      );
+
+    if (!result || result.length === 0) {
+      return [];
+    }
+
+    return result.map((user) => ({
+      id: user.user_id,
+      name: user.user_info?.name || user.email_partial || '',
+      last_name: user.user_info?.last_name ?? undefined,
+      nickname: user.email_partial ?? undefined,
     }));
   };
 

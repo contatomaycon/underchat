@@ -62,6 +62,7 @@ export class AiAgentCreatorRepository {
         status: input.status ?? EAiAgentStatus.active,
         voice_ia_id: input.voice_ia_id ?? null,
         system_prompt: input.system_prompt ?? null,
+        enable_human_transfer: input.enable_human_transfer ?? false,
       })
       .execute();
 

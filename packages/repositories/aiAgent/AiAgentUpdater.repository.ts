@@ -56,6 +56,10 @@ export class AiAgentUpdaterRepository {
       inputUpdate.system_prompt = input.system_prompt;
     }
 
+    if (input.enable_human_transfer !== undefined) {
+      inputUpdate.enable_human_transfer = input.enable_human_transfer;
+    }
+
     return inputUpdate;
   }
 

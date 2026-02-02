@@ -19,6 +19,7 @@ export const createAiAgentRequestSchema = Type.Object({
     ])
   ),
   system_prompt: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  enable_human_transfer: Type.Optional(Type.Boolean()),
   voice_ia_id: Type.Optional(
     Type.Union([Type.String({ format: 'uuid' }), Type.Null()])
   ),

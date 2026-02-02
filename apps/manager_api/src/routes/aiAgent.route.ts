@@ -22,6 +22,11 @@ import { viewAiAgentConfigSchema } from '@core/schema/aiAgent/viewAiAgentConfig'
 import { refreshAiAgentPromptSchema } from '@core/schema/aiAgent/refreshAiAgentPrompt';
 import { refreshAllAiAgentPromptsSchema } from '@core/schema/aiAgent/refreshAllAiAgentPrompts';
 import { listAiAgentUsageSchema } from '@core/schema/aiAgent/listAiAgentUsage';
+import { viewAiAgentHumanTransferSchema } from '@core/schema/aiAgent/viewAiAgentHumanTransfer';
+import { upsertAiAgentHumanTransferSchema } from '@core/schema/aiAgent/upsertAiAgentHumanTransfer';
+import { listAiAgentHumanTransferSectorsSchema } from '@core/schema/aiAgent/listAiAgentHumanTransferSectors';
+import { listAiAgentHumanTransferSectorUsersSchema } from '@core/schema/aiAgent/listAiAgentHumanTransferSectorUsers';
+import { listAiAgentHumanTransferSectorUsersBySectorIdsSchema } from '@core/schema/aiAgent/listAiAgentHumanTransferSectorUsersBySectorIds';
 import { planGuard } from '@/plugins/planGuard';
 import { planStatus } from '@/plugins/planStatus';
 
@@ -188,6 +193,61 @@ export default async function aiAgentRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, aiAgentViewPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.get('/ai-agent/human-transfer/sectors', {
+    schema: listAiAgentHumanTransferSectorsSchema,
+    handler: aiAgentController.listAiAgentHumanTransferSectors,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, aiAgentViewPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.get('/ai-agent/human-transfer/sectors/users', {
+    schema: listAiAgentHumanTransferSectorUsersBySectorIdsSchema,
+    handler: aiAgentController.listAiAgentHumanTransferSectorUsersBySectorIds,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, aiAgentViewPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.get('/ai-agent/human-transfer/sectors/:sector_id/users', {
+    schema: listAiAgentHumanTransferSectorUsersSchema,
+    handler: aiAgentController.listAiAgentHumanTransferSectorUsers,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, aiAgentViewPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.get('/ai-agent/:ai_agent_id/human-transfer', {
+    schema: viewAiAgentHumanTransferSchema,
+    handler: aiAgentController.viewAiAgentHumanTransfer,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, aiAgentViewPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.put('/ai-agent/:ai_agent_id/human-transfer', {
+    schema: upsertAiAgentHumanTransferSchema,
+    handler: aiAgentController.upsertAiAgentHumanTransfer,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, aiAgentUpdatePermissions),
       planGuard,
       planStatus,
     ],

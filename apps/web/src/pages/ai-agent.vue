@@ -15,6 +15,7 @@ import AppAddAiAgent from '@/components/aiAgent/AppAddAiAgent.vue';
 import AppEditAiAgent from '@/components/aiAgent/AppEditAiAgent.vue';
 import AppAiAgentUsage from '@/components/aiAgent/AppAiAgentUsage.vue';
 import AppManageAiAgentPrompt from '@/components/aiAgent/AppManageAiAgentPrompt.vue';
+import AppHumanTransferAiAgent from '@/components/aiAgent/AppHumanTransferAiAgent.vue';
 import VDialogHandler from '@/components/VDialogHandler.vue';
 import TablePagination from '@/@webcore/components/TablePagination.vue';
 
@@ -94,6 +95,8 @@ const isPromptDialogVisible = ref(false);
 const aiAgentForPrompt = ref<string | null>(null);
 const isUsageDialogVisible = ref(false);
 const aiAgentForUsage = ref<string | null>(null);
+const isHumanTransferDialogVisible = ref(false);
+const aiAgentForHumanTransfer = ref<string | null>(null);
 
 const headers: DataTableHeader<ListAiAgentResponse>[] = [
   { title: t('name'), key: 'name' },
@@ -177,6 +180,13 @@ const openUsageDialog = (id: string) => {
   aiAgentForUsage.value = id;
   nextTick(() => {
     isUsageDialogVisible.value = true;
+  });
+};
+
+const openHumanTransferDialog = (id: string) => {
+  aiAgentForHumanTransfer.value = id;
+  nextTick(() => {
+    isHumanTransferDialogVisible.value = true;
   });
 };
 
@@ -337,6 +347,20 @@ watch(
                   transition="scale-transition"
                   activator="parent"
                 >
+                  <span>{{ $t('human_transfer') }}</span>
+                </VTooltip>
+                <VIcon
+                  icon="tabler-users"
+                  @click="openHumanTransferDialog(item.ai_agent_id)"
+                />
+              </IconBtn>
+
+              <IconBtn v-if="$canPermission(permissionsEdit)">
+                <VTooltip
+                  location="top"
+                  transition="scale-transition"
+                  activator="parent"
+                >
                   <span>{{ $t('edit') }}</span>
                 </VTooltip>
                 <VIcon
@@ -407,6 +431,12 @@ watch(
         v-if="isUsageDialogVisible"
         v-model="isUsageDialogVisible"
         :ai-agent-id="aiAgentForUsage"
+      />
+
+      <AppHumanTransferAiAgent
+        v-if="isHumanTransferDialogVisible"
+        v-model="isHumanTransferDialogVisible"
+        :ai-agent-id="aiAgentForHumanTransfer"
       />
     </VCard>
 

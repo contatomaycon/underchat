@@ -25,6 +25,10 @@ import {
   ListAiAgentUsageFinalResponse,
   ListAiAgentUsageResponseItem,
 } from '@core/schema/aiAgent/listAiAgentUsage/response.schema';
+import { ViewAiAgentHumanTransferResponse } from '@core/schema/aiAgent/viewAiAgentHumanTransfer/response.schema';
+import { UpsertAiAgentHumanTransferBody } from '@core/schema/aiAgent/upsertAiAgentHumanTransfer/request.schema';
+import { ListAiAgentHumanTransferSectorsResponse } from '@core/schema/aiAgent/listAiAgentHumanTransferSectors/response.schema';
+import { ListAiAgentHumanTransferSectorUsersResponse } from '@core/schema/aiAgent/listAiAgentHumanTransferSectorUsers/response.schema';
 
 interface IListAiAgents {
   page?: number;
@@ -309,6 +313,152 @@ export const useAiAgentStore = defineStore('aiAgent', {
         this.loading = false;
 
         return false;
+      }
+    },
+
+    async viewAiAgentHumanTransfer(
+      aiAgentId: string
+    ): Promise<ViewAiAgentHumanTransferResponse | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.get<
+          IApiResponse<ViewAiAgentHumanTransferResponse>
+        >(`/ai-agent/${aiAgentId}/human-transfer`);
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('ai_agent_not_found');
+          this.showSnackbar(mensage, EColor.error);
+          return null;
+        }
+
+        return data.data;
+      } catch (error) {
+        const errorMessage = this.i18n.global.t('ai_agent_not_found');
+        const msg =
+          error instanceof AxiosError
+            ? (error?.response?.data?.message ?? errorMessage)
+            : errorMessage;
+        this.showSnackbar(msg, EColor.error);
+        this.loading = false;
+        return null;
+      }
+    },
+
+    async upsertAiAgentHumanTransfer(
+      aiAgentId: string,
+      body: UpsertAiAgentHumanTransferBody
+    ): Promise<boolean> {
+      try {
+        this.loading = true;
+
+        const response = await axios.put<IApiResponse<{ success: boolean }>>(
+          `/ai-agent/${aiAgentId}/human-transfer`,
+          body
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('ai_agent_update_error');
+          this.showSnackbar(mensage, EColor.error);
+          return false;
+        }
+
+        this.showSnackbar(
+          this.i18n.global.t('ai_agent_human_transfer_upsert_successfully'),
+          EColor.success
+        );
+        return true;
+      } catch (error) {
+        const errorMessage = this.i18n.global.t('ai_agent_update_error');
+        const msg =
+          error instanceof AxiosError
+            ? (error?.response?.data?.message ?? errorMessage)
+            : errorMessage;
+        this.showSnackbar(msg, EColor.error);
+        this.loading = false;
+        return false;
+      }
+    },
+
+    async listHumanTransferSectors(): Promise<ListAiAgentHumanTransferSectorsResponse> {
+      try {
+        const response = await axios.get<
+          IApiResponse<ListAiAgentHumanTransferSectorsResponse>
+        >('/ai-agent/human-transfer/sectors');
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return [];
+        }
+
+        return data.data;
+      } catch {
+        const errorMessage = this.i18n.global.t(
+          'error_loading_transfer_sectors'
+        );
+        this.showSnackbar(errorMessage, EColor.error);
+        return [];
+      }
+    },
+
+    async listHumanTransferSectorUsers(
+      sectorId: string
+    ): Promise<ListAiAgentHumanTransferSectorUsersResponse> {
+      try {
+        const response = await axios.get<
+          IApiResponse<ListAiAgentHumanTransferSectorUsersResponse>
+        >(`/ai-agent/human-transfer/sectors/${sectorId}/users`);
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return [];
+        }
+
+        return data.data;
+      } catch {
+        const errorMessage = this.i18n.global.t('transfer_sector_users_error');
+        this.showSnackbar(errorMessage, EColor.error);
+        return [];
+      }
+    },
+
+    async listHumanTransferSectorUsersBySectorIds(
+      sectorIds: string[]
+    ): Promise<ListAiAgentHumanTransferSectorUsersResponse> {
+      if (sectorIds.length === 0) {
+        return [];
+      }
+
+      try {
+        const response = await axios.get<
+          IApiResponse<ListAiAgentHumanTransferSectorUsersResponse>
+        >('/ai-agent/human-transfer/sectors/users', {
+          params: { sector_ids: sectorIds },
+        });
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return [];
+        }
+
+        return data.data;
+      } catch {
+        const errorMessage = this.i18n.global.t('transfer_sector_users_error');
+        this.showSnackbar(errorMessage, EColor.error);
+        return [];
       }
     },
 

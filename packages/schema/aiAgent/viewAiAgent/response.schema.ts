@@ -19,6 +19,7 @@ export const viewAiAgentResponseSchema = Type.Object({
   ai_agent_type_id: Type.String({ format: 'uuid' }),
   ai_agent_type_name: Type.String(),
   system_prompt: Type.Union([Type.String(), Type.Null()]),
+  enable_human_transfer: Type.Boolean(),
   voice_ia_id: Type.Union([Type.String({ format: 'uuid' }), Type.Null()]),
   created_at: Type.Union([Type.String(), Type.Null()]),
   updated_at: Type.Union([Type.String(), Type.Null()]),
