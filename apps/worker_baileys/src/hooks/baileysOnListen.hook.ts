@@ -1,7 +1,11 @@
 import type { FastifyInstance } from 'fastify';
 import fp from 'fastify-plugin';
 import { container } from 'tsyringe';
-import { BaileysService, setQrCodeResetCallback } from '@core/services/baileys';
+import {
+  BaileysService,
+  setQrCodeResetCallback,
+  setConnectionEstablishedCallback,
+} from '@core/services/baileys';
 import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
 import { baileysEnvironment } from '@core/config/environments';
 import { BalanceWorkerStatusGrpcClientService } from '@core/services/balanceWorkerStatusGrpcClient.service';
@@ -243,6 +247,28 @@ const baileysOnListenHook = fp(async (fastify) => {
 
   setQrCodeResetCallback(() => {
     QrCodeCounter.reset();
+  });
+
+  setConnectionEstablishedCallback(async () => {
+    try {
+      fastify.log.info(
+        'Baileys: nova conexão estabelecida, iniciando ensureConnected...'
+      );
+      const baileysService = container.resolve(BaileysService);
+      QrCodeCounter.reset();
+      mismatchedStatusSent = false;
+
+      await ensureConnected(1, fastify.log, baileysService);
+
+      fastify.log.info(
+        'Baileys: ensureConnected executado com sucesso após nova conexão'
+      );
+    } catch (err) {
+      fastify.log.error(
+        { err },
+        'Baileys: erro ao processar nova conexão estabelecida'
+      );
+    }
   });
 
   fastify.addHook('onListen', () => {

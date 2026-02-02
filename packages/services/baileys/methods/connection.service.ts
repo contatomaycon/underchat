@@ -29,6 +29,7 @@ import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 import { BaileysIncomingMessageService } from './incoming.service';
 import { getPhoneNumber } from '@core/common/functions/getPhoneNumber';
 import { buildWppConnectionDocumentId } from '@core/common/functions/buildWppConnectionDocumentId';
+import { triggerConnectionEstablished } from '../index';
 
 const FOLDER = `/app/data/storage/${baileysEnvironment.baileysWorkerId}`;
 const CHANNEL = workerCentrifugoQueue(baileysEnvironment.baileysAccountId);
@@ -450,6 +451,9 @@ export class BaileysConnectionService {
     await this.balanceWorkerStatusGrpcClientService.notifyWorkerStatus(payload);
 
     this.startKeepAlive();
+
+    // Dispara o gatilho para iniciar o baileysOnListen
+    triggerConnectionEstablished();
 
     resolve(this.state());
 
