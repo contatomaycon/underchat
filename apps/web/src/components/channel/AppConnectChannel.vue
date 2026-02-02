@@ -261,31 +261,64 @@ onMounted(async () => {
     await onMessage(
       workerCentrifugoQueue(accountId.value),
       (data: IBaileysConnectionState) => {
-        console.log('data', data);
+        if (!channelId.value || data.worker_id !== channelId.value) return;
 
-        if (statusCode.value === ECodeMessage.phoneNotAvailable) return;
+        const incomingStatus = data.status as EBaileysConnectionStatus;
+        const incomingCode = data.code as ECodeMessage;
+        const isConnectedEvent =
+          incomingStatus === EBaileysConnectionStatus.connected ||
+          incomingCode === ECodeMessage.connectionEstablished;
+
+        if (
+          statusCode.value === ECodeMessage.phoneNotAvailable &&
+          !isConnectedEvent
+        ) {
+          return;
+        }
 
         if (data.status) {
-          statusConnection.value = data.status as EBaileysConnectionStatus;
-          if (statusConnection.value === EBaileysConnectionStatus.connected) {
+          const isInfo = incomingStatus === EBaileysConnectionStatus.info;
+          if (
+            !isInfo ||
+            statusConnection.value !== EBaileysConnectionStatus.connected
+          ) {
+            statusConnection.value = incomingStatus;
+          }
+
+          if (isConnectedEvent) {
+            statusConnection.value = EBaileysConnectionStatus.connected;
+            statusCode.value = ECodeMessage.connectionEstablished;
             phoneNumber.value = null;
             isPhoneNumber.value = false;
             phoneSent.value = false;
             connectionType.value = EBaileysConnectionType.qrcode;
             connectionAttempt.value = null;
             connectionMaxAttempts.value = null;
+            removeInPhone.value = false;
+            qrcode.value = null;
 
+            clearTimer();
+            if (intervalIdNextAttempt.value !== null) {
+              clearInterval(intervalIdNextAttempt.value);
+              intervalIdNextAttempt.value = null;
+            }
+            secondsNextAttempt.value = 0;
             resetPairingCodes();
           }
         }
 
         if (data.qrcode) qrcode.value = data.qrcode;
         if (data.code) {
-          if (!(data.code === ECodeMessage.awaitConnection && qrcode.value)) {
-            statusCode.value = data.code as ECodeMessage;
+          const shouldIgnoreCode =
+            isConnectedEvent && incomingCode === ECodeMessage.info;
+          if (
+            !shouldIgnoreCode &&
+            !(incomingCode === ECodeMessage.awaitConnection && qrcode.value)
+          ) {
+            statusCode.value = incomingCode;
           }
 
-          if (data.code === ECodeMessage.loggedOut) {
+          if (incomingCode === ECodeMessage.loggedOut) {
             attempt.value = 0;
             removeInPhone.value = true;
           }
@@ -366,7 +399,11 @@ onUnmounted(() => {
             </VCardText>
           </div>
 
-          <div v-else-if="statusCode === ECodeMessage.newLoginAttempt">
+          <div
+            v-else-if="
+              statusCode === ECodeMessage.newLoginAttempt && !isConnected
+            "
+          >
             <VCardText class="d-flex justify-center">
               <VIcon icon="tabler-brand-whatsapp" size="150" />
             </VCardText>
@@ -375,7 +412,11 @@ onUnmounted(() => {
             </VCardText>
           </div>
 
-          <div v-else-if="statusCode === ECodeMessage.awaitConnection">
+          <div
+            v-else-if="
+              statusCode === ECodeMessage.awaitConnection && !isConnected
+            "
+          >
             <VCardText class="d-flex justify-center">
               <div class="qrcode-skeleton">
                 <svg
@@ -509,7 +550,8 @@ onUnmounted(() => {
           <VCardText
             v-else-if="
               statusCode === ECodeMessage.phoneNotAvailable &&
-              secondsNextAttempt
+              secondsNextAttempt &&
+              !isConnected
             "
           >
             <VCardText class="d-flex justify-center">
