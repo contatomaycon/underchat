@@ -709,18 +709,6 @@ const removeInteractionsEdge = (nodeId: string) => {
   );
 };
 
-const removeHumanSupportEdge = (nodeId: string) => {
-  const sourceHandle = 'human-support-source';
-  const normalizedHandle = 'human-support';
-  edges.value = edges.value.filter(
-    (e) =>
-      !(
-        e.source === nodeId &&
-        (e.sourceHandle === sourceHandle || e.sourceHandle === normalizedHandle)
-      )
-  );
-};
-
 const addMenuNode = (position?: { x: number; y: number }) => {
   const nodeId = `menu-${nodeIdCounter++}`;
   const newNode: Node = {
@@ -979,7 +967,6 @@ const addAiAgentNode = (position?: { x: number; y: number }) => {
       onRemove: () => removeNode(nodeId),
       onRemoveOption: (optionId: string) => removeOptionEdge(nodeId, optionId),
       onRemoveInteractionsEdge: () => removeInteractionsEdge(nodeId),
-      onRemoveHumanSupportEdge: () => removeHumanSupportEdge(nodeId),
     },
   };
   nodes.value.push(newNode);
@@ -1026,7 +1013,6 @@ const isValidConnection = (connection: Connection): boolean => {
       lowerId.includes('-source') ||
       lowerId.endsWith('source') ||
       lowerId === 'interactions-quantity' ||
-      lowerId === 'human-support' ||
       lowerId === 'fallback' ||
       lowerId === 'default'
     );
@@ -1034,10 +1020,7 @@ const isValidConnection = (connection: Connection): boolean => {
 
   const isTargetHandleById = (handleId: string): boolean => {
     const lowerId = handleId.toLowerCase();
-    return (
-      lowerId.includes('-target') ||
-      lowerId.endsWith('target')
-    );
+    return lowerId.includes('-target') || lowerId.endsWith('target');
   };
 
   if (sourceHandleId && targetHandleId) {
@@ -1079,7 +1062,11 @@ const isValidConnection = (connection: Connection): boolean => {
     }
   }
 
-  if (sourceHandleId && isTargetHandleById(sourceHandleId) && !isSourceHandleById(sourceHandleId)) {
+  if (
+    sourceHandleId &&
+    isTargetHandleById(sourceHandleId) &&
+    !isSourceHandleById(sourceHandleId)
+  ) {
     chatbotStore.showSnackbar(
       t('chatbot_flow_validation_invalid_source_handle'),
       EColor.error
@@ -1087,7 +1074,11 @@ const isValidConnection = (connection: Connection): boolean => {
     return false;
   }
 
-  if (targetHandleId && isSourceHandleById(targetHandleId) && !isTargetHandleById(targetHandleId)) {
+  if (
+    targetHandleId &&
+    isSourceHandleById(targetHandleId) &&
+    !isTargetHandleById(targetHandleId)
+  ) {
     chatbotStore.showSnackbar(
       t('chatbot_flow_validation_invalid_target_handle'),
       EColor.error
@@ -1434,17 +1425,13 @@ const handleSave = async () => {
     const defaultHandleId = 'default-source';
     const normalizedDefaultHandle = 'default';
 
-    const outgoingEdges = edges.value.filter(
-      (edge) => edge.source === node.id
-    );
+    const outgoingEdges = edges.value.filter((edge) => edge.source === node.id);
 
     const hasDefaultConnection = outgoingEdges.some((edge) => {
       const edgeHandleId = normalizeHandleId(
         edge.sourceHandle ? String(edge.sourceHandle) : null
       );
-      const rawHandleId = edge.sourceHandle
-        ? String(edge.sourceHandle)
-        : null;
+      const rawHandleId = edge.sourceHandle ? String(edge.sourceHandle) : null;
 
       return (
         edgeHandleId === normalizedDefaultHandle ||
@@ -1724,8 +1711,6 @@ const processLoadedNode = (node: Node): Node => {
     if (node.type === 'aiAgent') {
       node.data.onRemoveInteractionsEdge = () =>
         removeInteractionsEdge(node.id);
-      node.data.onRemoveHumanSupportEdge = () =>
-        removeHumanSupportEdge(node.id);
     }
   }
 

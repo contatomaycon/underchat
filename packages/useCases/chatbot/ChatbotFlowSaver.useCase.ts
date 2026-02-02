@@ -294,43 +294,6 @@ export class ChatbotFlowSaverUseCase {
         }
       }
 
-      const humanSupportEnabled = node.data?.humanSupportEnabled === true;
-
-      if (humanSupportEnabled) {
-        const humanSupportHandleId = 'human-support-source';
-        const normalizedHumanSupportHandle = 'human-support';
-
-        const hasHumanSupportConnection = outgoingEdges.some((edge) => {
-          const edgeHandleId = this.normalizeHandleId(
-            typeof edge.sourceHandle === 'string' ||
-              typeof edge.sourceHandle === 'number'
-              ? String(edge.sourceHandle)
-              : null
-          );
-          const rawHandleId =
-            typeof edge.sourceHandle === 'string'
-              ? edge.sourceHandle
-              : typeof edge.sourceHandle === 'number'
-                ? String(edge.sourceHandle)
-                : null;
-
-          return (
-            edgeHandleId === normalizedHumanSupportHandle ||
-            rawHandleId === humanSupportHandleId ||
-            rawHandleId === 'human-support'
-          );
-        });
-
-        if (!hasHumanSupportConnection) {
-          const nodeLabel = this.getNodeLabel(t, node);
-          errors.push(
-            t('chatbot_flow_validation_human_support_handle_required', {
-              nodeLabel,
-            })
-          );
-        }
-      }
-
       const fallbackHandleId = 'fallback-source';
       const normalizedFallbackHandle = 'fallback';
 
@@ -850,7 +813,6 @@ export class ChatbotFlowSaverUseCase {
       lowerId.includes('-source') ||
       lowerId.endsWith('source') ||
       lowerId === 'interactions-quantity' ||
-      lowerId === 'human-support' ||
       lowerId === 'fallback' ||
       lowerId === 'default'
     );

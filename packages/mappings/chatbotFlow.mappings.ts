@@ -247,9 +247,6 @@ export const chatbotFlowMappings = () => {
                 interactionsQuantity: {
                   type: 'integer',
                 },
-                humanSupportEnabled: {
-                  type: 'boolean',
-                },
                 distributionType: {
                   type: 'keyword',
                 },

@@ -18,11 +18,9 @@ interface AiAgentData {
   options: AiAgentOption[];
   actionAfterInteractions?: boolean | null;
   interactionsQuantity?: number | null;
-  humanSupportEnabled?: boolean | null;
   onRemove?: () => void;
   onRemoveOption?: (optionId: string) => void;
   onRemoveInteractionsEdge?: () => void;
-  onRemoveHumanSupportEdge?: () => void;
 }
 
 const props = defineProps<NodeProps>();
@@ -46,7 +44,6 @@ const getInitialData = (): AiAgentData => {
     null;
   const actionAfterInteractions = data?.actionAfterInteractions ?? true;
   const interactionsQuantity = data?.interactionsQuantity ?? 5;
-  const humanSupportEnabled = data?.humanSupportEnabled ?? false;
   const defaultOptions: AiAgentOption[] = [
     {
       id: 'positive-option',
@@ -129,9 +126,6 @@ const getInitialData = (): AiAgentData => {
     if (data.interactionsQuantity === undefined) {
       data.interactionsQuantity = interactionsQuantity;
     }
-    if (data.humanSupportEnabled === undefined) {
-      data.humanSupportEnabled = humanSupportEnabled;
-    }
     data.options = options;
   }
 
@@ -142,7 +136,6 @@ const getInitialData = (): AiAgentData => {
     options,
     actionAfterInteractions,
     interactionsQuantity,
-    humanSupportEnabled,
   };
 };
 
@@ -170,22 +163,6 @@ const showInteractionsFields = computed(() => {
   return aiAgentData.value.actionAfterInteractions === true;
 });
 
-const showHumanSupportHandler = computed(() => {
-  return aiAgentData.value.humanSupportEnabled === true;
-});
-
-const humanSupportEnabledComputed = computed({
-  get: () => {
-    return aiAgentData.value.humanSupportEnabled ?? false;
-  },
-  set: (value: boolean) => {
-    aiAgentData.value.humanSupportEnabled = value;
-    if (!value && props.data?.onRemoveHumanSupportEdge) {
-      props.data.onRemoveHumanSupportEdge();
-    }
-  },
-});
-
 const actionAfterInteractionsComputed = computed({
   get: () => {
     return aiAgentData.value.actionAfterInteractions ?? true;
@@ -210,7 +187,6 @@ const updateNodeData = () => {
   const newContinueMessage = aiAgentData.value.continueMessage;
   const newActionAfterInteractions = aiAgentData.value.actionAfterInteractions;
   const newInteractionsQuantity = aiAgentData.value.interactionsQuantity;
-  const newHumanSupportEnabled = aiAgentData.value.humanSupportEnabled;
   const newOptions = [...aiAgentData.value.options];
 
   data.selectedAiAgent = newSelectedValue;
@@ -218,7 +194,6 @@ const updateNodeData = () => {
   data.continueMessage = newContinueMessage;
   data.actionAfterInteractions = newActionAfterInteractions;
   data.interactionsQuantity = newInteractionsQuantity;
-  data.humanSupportEnabled = newHumanSupportEnabled;
   data.options = newOptions;
 
   nextTick(() => {
@@ -327,18 +302,6 @@ onMounted(async () => {
     aiAgentData.value.interactionsQuantity = savedInteractionsQuantity;
   } else {
     aiAgentData.value.interactionsQuantity = 5;
-  }
-
-  const savedHumanSupportEnabled = (props.data as AiAgentData)
-    ?.humanSupportEnabled;
-
-  if (
-    savedHumanSupportEnabled !== null &&
-    savedHumanSupportEnabled !== undefined
-  ) {
-    aiAgentData.value.humanSupportEnabled = savedHumanSupportEnabled;
-  } else {
-    aiAgentData.value.humanSupportEnabled = false;
   }
 
   if (
@@ -516,47 +479,6 @@ watch(
 );
 
 watch(
-  () => aiAgentData.value.humanSupportEnabled,
-  (newValue, oldValue) => {
-    if (newValue !== oldValue) {
-      if (newValue === false) {
-        const data = props.data as AiAgentData;
-        const removeHumanSupportEdge = data?.onRemoveHumanSupportEdge;
-
-        if (removeHumanSupportEdge) {
-          removeHumanSupportEdge();
-        }
-      }
-      updateNodeData();
-    }
-  },
-  { immediate: false }
-);
-
-watch(
-  () => (props.data as AiAgentData)?.humanSupportEnabled,
-  (newValue) => {
-    if (isUpdatingFromProps) {
-      return;
-    }
-    if (newValue !== aiAgentData.value.humanSupportEnabled) {
-      aiAgentData.value.humanSupportEnabled = newValue ?? false;
-    }
-  },
-  { flush: 'post' }
-);
-
-watch(
-  () => aiAgentData.value.humanSupportEnabled,
-  (newValue, oldValue) => {
-    if (newValue !== oldValue) {
-      updateNodeData();
-    }
-  },
-  { immediate: false }
-);
-
-watch(
   () => aiAgentData.value,
   () => {
     updateNodeData();
@@ -592,7 +514,12 @@ const handleRemove = () => {
 
 <template>
   <div class="chatbot-ai-agent-node">
-    <Handle id="target" type="target" :position="Position.Top" class="handle-target" />
+    <Handle
+      id="target"
+      type="target"
+      :position="Position.Top"
+      class="handle-target"
+    />
 
     <VCard class="ai-agent-card" elevation="2">
       <VCardTitle
@@ -739,42 +666,6 @@ const handleRemove = () => {
               @touchstart.stop
             />
           </div>
-        </div>
-        <VLabel class="text-body-2 mb-1 mt-2">{{
-          t('chatbot_ai_agent_human_support_label')
-        }}</VLabel>
-        <VLabel
-          class="text-caption text-disabled mb-1 human-support-description"
-          >{{ t('chatbot_ai_agent_human_support_description') }}</VLabel
-        >
-        <AppSelectSearch
-          v-model="humanSupportEnabledComputed"
-          :items="[
-            { id: true, title: t('yes') },
-            { id: false, title: t('no') },
-          ]"
-          item-value="id"
-          item-title="title"
-          :clearable="false"
-          class="mb-3"
-        />
-        <div v-if="showHumanSupportHandler" class="human-support-item nodrag">
-          <VTextField
-            :model-value="t('chatbot_ai_agent_human_support_placeholder')"
-            variant="outlined"
-            density="compact"
-            class="human-support-field"
-            disabled
-            hide-details
-          />
-          <Handle
-            id="human-support-source"
-            type="source"
-            :position="Position.Right"
-            class="human-support-handle handle-source"
-            @mousedown.stop
-            @touchstart.stop
-          />
         </div>
         <VLabel class="text-body-2 mb-0 mt-2">{{
           t('chatbot_ai_agent_fallback_label')
@@ -927,30 +818,5 @@ const handleRemove = () => {
   white-space: normal;
   word-wrap: break-word;
   line-height: 1.4;
-}
-
-.human-support-description {
-  white-space: normal;
-  word-wrap: break-word;
-  line-height: 1.4;
-}
-
-.human-support-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
-  position: relative;
-}
-
-.human-support-field {
-  flex: 1;
-}
-
-.human-support-handle {
-  position: absolute;
-  right: -8px;
-  top: 50%;
-  transform: translateY(-50%);
 }
 </style>
