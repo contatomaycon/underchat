@@ -2489,18 +2489,34 @@ const resetRecordingState = () => {
 
 const handleRecorderStop = async (
   savedMessageText?: string | null,
-  savedReply?: ListMessageResult | null
+  savedReply?: ListMessageResult | null,
+  sessionId?: number,
+  capturedChunks?: Blob[],
+  capturedRecorder?: MediaRecorder | null,
+  capturedShouldPersist?: boolean,
+  capturedViewOnce?: boolean,
+  capturedElapsedMs?: number
 ) => {
-  const recorder = mediaRecorderRef.value;
-  const saveRecording = shouldPersistRecording.value;
-  shouldPersistRecording.value = false;
+  const isCurrentSession = () =>
+    sessionId === undefined || sessionId === recordingSessionId;
 
-  if (!saveRecording && recordedAudioUrl.value) {
+  const recorder = capturedRecorder ?? mediaRecorderRef.value;
+  const chunks = capturedChunks ?? audioChunksRef.value;
+  const saveRecording =
+    capturedShouldPersist ?? shouldPersistRecording.value;
+  const viewOnce = capturedViewOnce ?? audioPendingViewOnce.value;
+  const elapsedMs = capturedElapsedMs ?? audioRecordingElapsedMs.value;
+
+  if (isCurrentSession()) {
+    shouldPersistRecording.value = false;
+  }
+
+  if (!saveRecording && recordedAudioUrl.value && isCurrentSession()) {
     URL.revokeObjectURL(recordedAudioUrl.value);
     recordedAudioUrl.value = null;
   }
 
-  if (saveRecording && recorder && audioChunksRef.value.length > 0) {
+  if (saveRecording && recorder && chunks.length > 0) {
     let mimeType = recorder.mimeType || 'audio/ogg;codecs=opus';
 
     const allowedMimeTypes = [
@@ -2524,49 +2540,58 @@ const handleRecorderStop = async (
       mimeType = 'audio/ogg;codecs=opus';
     }
 
-    const blob = new Blob(audioChunksRef.value, { type: mimeType });
-    recordedAudioBlob.value = blob;
-    if (recordedAudioUrl.value) URL.revokeObjectURL(recordedAudioUrl.value);
-    recordedAudioUrl.value = URL.createObjectURL(blob);
-    audioRecordingDurationSeconds.value = Math.round(
-      audioRecordingElapsedMs.value / 1000
-    );
+    const blob = new Blob(chunks, { type: mimeType });
+    const durationSeconds = Math.round(elapsedMs / 1000);
+
+    if (isCurrentSession()) {
+      recordedAudioBlob.value = blob;
+      if (recordedAudioUrl.value) URL.revokeObjectURL(recordedAudioUrl.value);
+      recordedAudioUrl.value = URL.createObjectURL(blob);
+      audioRecordingDurationSeconds.value = durationSeconds;
+    }
 
     const audioWithinLimit = blob.size <= MAX_AUDIO_SIZE_BYTES;
     if (!audioWithinLimit) {
       chatStore.showSnackbar(t('audio_size_exceeded'), EColor.error);
-      if (recordedAudioUrl.value) {
+      if (isCurrentSession() && recordedAudioUrl.value) {
         URL.revokeObjectURL(recordedAudioUrl.value);
+        recordedAudioUrl.value = null;
       }
-      recordedAudioUrl.value = null;
     }
     if (audioWithinLimit) {
       await sendAudioMessage(
         blob,
         mimeType,
-        audioRecordingDurationSeconds.value,
-        audioPendingViewOnce.value,
+        durationSeconds,
+        viewOnce,
         savedMessageText,
         savedReply || undefined
       );
-      recordedAudioUrl.value = null;
+      if (isCurrentSession()) {
+        recordedAudioUrl.value = null;
+      }
     }
-    recordedAudioBlob.value = null;
+    if (isCurrentSession()) {
+      recordedAudioBlob.value = null;
+    }
   }
 
-  releaseAudioResources();
+  if (isCurrentSession()) {
+    releaseAudioResources();
 
-  audioViewOnce.value = false;
-  audioPendingViewOnce.value = false;
-  audioRecordingStartAt.value = null;
-  audioRecordingAccumulated.value = 0;
-  audioRecordingElapsedMs.value = 0;
-  audioRecordingDurationSeconds.value = null;
-  audioChunksRef.value = [];
+    audioViewOnce.value = false;
+    audioPendingViewOnce.value = false;
+    audioRecordingStartAt.value = null;
+    audioRecordingAccumulated.value = 0;
+    audioRecordingElapsedMs.value = 0;
+    audioRecordingDurationSeconds.value = null;
+    audioChunksRef.value = [];
+  }
 };
 
 let savedMessageTextForRecording: string | null | undefined = undefined;
 let savedReplyForRecording: ListMessageResult | null | undefined = undefined;
+let recordingSessionId = 0;
 
 const stopAudioRecordingInternal = (
   savedMessageText?: string | null,
@@ -2582,22 +2607,46 @@ const stopAudioRecordingInternal = (
   }
   updateRecordingElapsed();
 
-  if (mediaRecorderRef.value) {
-    mediaRecorderRef.value.onstop = (_ev: Event) => {
+  const sessionAtStop = recordingSessionId;
+  const capturedChunks = [...audioChunksRef.value];
+  const capturedRecorder = mediaRecorderRef.value;
+  const capturedShouldPersist = shouldPersistRecording.value;
+  const capturedViewOnce = audioPendingViewOnce.value;
+  const capturedElapsedMs = audioRecordingElapsedMs.value;
+
+  if (capturedRecorder) {
+    capturedRecorder.ondataavailable = (event) => {
+      if (event.data?.size > 0) {
+        capturedChunks.push(event.data);
+      }
+    };
+    capturedRecorder.onstop = (_ev: Event) => {
       handleRecorderStop(
         savedMessageTextForRecording,
-        savedReplyForRecording
+        savedReplyForRecording,
+        sessionAtStop,
+        capturedChunks,
+        capturedRecorder,
+        capturedShouldPersist,
+        capturedViewOnce,
+        capturedElapsedMs
       ).catch(() => {});
     };
-    if (mediaRecorderRef.value.state !== 'inactive') {
-      mediaRecorderRef.value.stop();
+    if (capturedRecorder.state !== 'inactive') {
+      capturedRecorder.stop();
       return;
     }
   }
 
   handleRecorderStop(
     savedMessageTextForRecording,
-    savedReplyForRecording
+    savedReplyForRecording,
+    sessionAtStop,
+    capturedChunks,
+    capturedRecorder,
+    capturedShouldPersist,
+    capturedViewOnce,
+    capturedElapsedMs
   ).catch(() => {});
 };
 
@@ -2693,6 +2742,8 @@ const toggleViewOnceAudio = () => {
 const startAudioRecording = async () => {
   if (isRecordingAudio.value) return;
 
+  recordingSessionId++;
+
   releaseAudioResources();
   resetRecordingState();
 
@@ -2739,10 +2790,12 @@ const startAudioRecording = async () => {
         audioChunksRef.value.push(event.data);
       }
     };
+    const currentSession = recordingSessionId;
     mediaRecorder.onstop = (_ev: Event) => {
       handleRecorderStop(
         savedMessageTextForRecording,
-        savedReplyForRecording
+        savedReplyForRecording,
+        currentSession
       ).catch(() => {});
     };
 
