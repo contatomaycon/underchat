@@ -184,7 +184,8 @@ export class WorkerChangeStatusConnectionUseCase {
     try {
       await this.workerGrpcClientService.changeConnectionStatus(
         serverId,
-        payload
+        payload,
+        accountId
       );
     } catch (err) {
       throw new Error(t('grpc_error'), { cause: err });

@@ -81,7 +81,8 @@ export class WorkerCommandHandlerService {
   }
 
   async handleChangeConnectionStatus(
-    input: StatusConnectionWorkerRequest
+    input: StatusConnectionWorkerRequest,
+    accountId?: string
   ): Promise<void> {
     const payload: StatusConnectionWorkerRequest = {
       worker_id: input.worker_id,
@@ -91,6 +92,13 @@ export class WorkerCommandHandlerService {
     };
 
     if (payload.status === EWorkerStatus.online) {
+      const ensured = await this.ensureContainerAndRequestConnection(
+        input.worker_id,
+        accountId
+      );
+      if (ensured) {
+        return;
+      }
       this.startConnectionRequestRetry(payload);
       return;
     }
@@ -170,6 +178,55 @@ export class WorkerCommandHandlerService {
       this.centrifugoPublish(payload),
       this.centrifugoService.publish(channelsConfigCentrifugo(), payload),
     ]);
+  }
+
+  private async ensureContainerAndRequestConnection(
+    workerId: string,
+    accountId?: string
+  ): Promise<boolean> {
+    let accountIdResolved: string;
+    let serverId: string;
+    let workerTypeId: EWorkerType;
+
+    if (accountId) {
+      const view = await this.workerService.viewWorker(accountId, workerId);
+      if (!view?.server?.id || !view?.type?.id) {
+        return false;
+      }
+      accountIdResolved = accountId;
+      serverId = view.server.id;
+      workerTypeId = view.type.id as EWorkerType;
+    } else {
+      const monitorView =
+        await this.workerService.viewWorkerForMonitor(workerId);
+      if (
+        !monitorView?.account_id ||
+        !monitorView?.server_id ||
+        !monitorView?.worker_type_id
+      ) {
+        return false;
+      }
+      accountIdResolved = monitorView.account_id;
+      serverId = monitorView.server_id;
+      workerTypeId = monitorView.worker_type_id as EWorkerType;
+    }
+
+    const existsContainer =
+      await this.workerService.existsContainerWorkerById(workerId);
+    if (existsContainer) {
+      return false;
+    }
+
+    const createPayload: IWorkerPayload = {
+      action: EWorkerAction.create,
+      worker_id: workerId,
+      server_id: serverId,
+      account_id: accountIdResolved,
+      worker_type_id: workerTypeId,
+    };
+
+    await this.createWorker(createPayload);
+    return true;
   }
 
   private startConnectionRequestRetry(

@@ -108,7 +108,7 @@ const workerGrpcServerPlugin: FastifyPluginAsync = async (
     }
 
     handler
-      .handleChangeConnectionStatus(payload)
+      .handleChangeConnectionStatus(payload, req.account_id)
       .then(() => {
         callback(null, {});
       })

@@ -51,7 +51,8 @@ export class WorkerGrpcClientService {
 
   async changeConnectionStatus(
     serverId: string,
-    payload: StatusConnectionWorkerRequest
+    payload: StatusConnectionWorkerRequest,
+    accountId: string
   ): Promise<void> {
     const { host, port } =
       await this.workerGrpcRegistryService.getAddress(serverId);
@@ -61,7 +62,7 @@ export class WorkerGrpcClientService {
       credentials.createInsecure()
     );
 
-    const protoPayload = statusConnectionRequestToProto(payload);
+    const protoPayload = statusConnectionRequestToProto(payload, accountId);
 
     await new Promise<void>((resolve, reject) => {
       (client as any).ChangeConnectionStatus(

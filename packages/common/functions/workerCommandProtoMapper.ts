@@ -85,7 +85,8 @@ export function protoToStatusConnectionRequest(
 }
 
 export function statusConnectionRequestToProto(
-  payload: StatusConnectionWorkerRequest
+  payload: StatusConnectionWorkerRequest,
+  accountId?: string
 ): IChangeConnectionStatusRequestProto {
   const proto: IChangeConnectionStatusRequestProto = {
     worker_id: payload.worker_id,
@@ -94,6 +95,9 @@ export function statusConnectionRequestToProto(
   };
   if (payload.phone_connection) {
     proto.phone_connection = payload.phone_connection;
+  }
+  if (accountId) {
+    proto.account_id = accountId;
   }
   return proto;
 }
