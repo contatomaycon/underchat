@@ -93,7 +93,7 @@ export class WorkerCommandHandlerService {
 
     if (payload.status === EWorkerStatus.online) {
       const ensured = await this.ensureContainerAndRequestConnection(
-        input.worker_id,
+        payload,
         accountId
       );
       if (ensured) {
@@ -181,9 +181,10 @@ export class WorkerCommandHandlerService {
   }
 
   private async ensureContainerAndRequestConnection(
-    workerId: string,
+    payload: StatusConnectionWorkerRequest,
     accountId?: string
   ): Promise<boolean> {
+    const workerId = payload.worker_id;
     const workerData = await this.resolveWorkerDataForContainer(
       workerId,
       accountId
@@ -195,10 +196,19 @@ export class WorkerCommandHandlerService {
     const existsContainer =
       await this.workerService.existsContainerWorkerById(workerId);
     if (existsContainer) {
-      return false;
+      const healthy = await this.containerHealthService.isServiceHealthy(
+        workerId,
+        {
+          maxAttempts: 3,
+          delayMs: 1000,
+        }
+      );
+      if (healthy) {
+        return false;
+      }
     }
 
-    await this.createWorkerWithPayload(workerId, workerData);
+    await this.createWorkerWithPayload(workerId, workerData, payload);
     return true;
   }
 
@@ -270,7 +280,8 @@ export class WorkerCommandHandlerService {
       accountIdResolved: string;
       serverId: string;
       workerTypeId: EWorkerType;
-    }
+    },
+    connectionRequest?: StatusConnectionWorkerRequest
   ): Promise<void> {
     const createPayload: IWorkerPayload = {
       action: EWorkerAction.create,
@@ -280,7 +291,7 @@ export class WorkerCommandHandlerService {
       worker_type_id: workerData.workerTypeId,
     };
 
-    await this.createWorker(createPayload);
+    await this.createWorker(createPayload, connectionRequest);
   }
 
   private startConnectionRequestRetry(
@@ -651,7 +662,10 @@ export class WorkerCommandHandlerService {
     return result;
   }
 
-  private async createWorker(data: IWorkerPayload): Promise<PublishResult> {
+  private async createWorker(
+    data: IWorkerPayload,
+    connectionRequest?: StatusConnectionWorkerRequest
+  ): Promise<PublishResult> {
     if (!data?.worker_type_id) {
       await this.updateWorkerErrorStatus(data.worker_id, data.account_id);
       throw new Error('Worker type ID is required');
@@ -756,8 +770,11 @@ export class WorkerCommandHandlerService {
     if (data.worker_type_id === EWorkerType.baileys) {
       const payload: StatusConnectionWorkerRequest = {
         worker_id: data.worker_id,
-        status: EWorkerStatus.online,
-        type: EBaileysConnectionType.qrcode,
+        status: connectionRequest?.status ?? EWorkerStatus.online,
+        type: connectionRequest?.type ?? EBaileysConnectionType.qrcode,
+        ...(connectionRequest?.phone_connection
+          ? { phone_connection: connectionRequest.phone_connection }
+          : {}),
       };
 
       void this.workerBaileysGrpcClientService
