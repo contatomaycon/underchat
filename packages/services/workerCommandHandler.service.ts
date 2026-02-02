@@ -184,31 +184,12 @@ export class WorkerCommandHandlerService {
     workerId: string,
     accountId?: string
   ): Promise<boolean> {
-    let accountIdResolved: string;
-    let serverId: string;
-    let workerTypeId: EWorkerType;
-
-    if (accountId) {
-      const view = await this.workerService.viewWorker(accountId, workerId);
-      if (!view?.server?.id || !view?.type?.id) {
-        return false;
-      }
-      accountIdResolved = accountId;
-      serverId = view.server.id;
-      workerTypeId = view.type.id as EWorkerType;
-    } else {
-      const monitorView =
-        await this.workerService.viewWorkerForMonitor(workerId);
-      if (
-        !monitorView?.account_id ||
-        !monitorView?.server_id ||
-        !monitorView?.worker_type_id
-      ) {
-        return false;
-      }
-      accountIdResolved = monitorView.account_id;
-      serverId = monitorView.server_id;
-      workerTypeId = monitorView.worker_type_id as EWorkerType;
+    const workerData = await this.resolveWorkerDataForContainer(
+      workerId,
+      accountId
+    );
+    if (!workerData) {
+      return false;
     }
 
     const existsContainer =
@@ -217,16 +198,89 @@ export class WorkerCommandHandlerService {
       return false;
     }
 
+    await this.createWorkerWithPayload(workerId, workerData);
+    return true;
+  }
+
+  private async resolveWorkerDataForContainer(
+    workerId: string,
+    accountId?: string
+  ): Promise<{
+    accountIdResolved: string;
+    serverId: string;
+    workerTypeId: EWorkerType;
+  } | null> {
+    if (accountId) {
+      const fromView = await this.resolveWorkerDataFromView(
+        accountId,
+        workerId
+      );
+      if (fromView) {
+        return fromView;
+      }
+    }
+
+    return this.resolveWorkerDataFromMonitor(workerId);
+  }
+
+  private async resolveWorkerDataFromView(
+    accountId: string,
+    workerId: string
+  ): Promise<{
+    accountIdResolved: string;
+    serverId: string;
+    workerTypeId: EWorkerType;
+  } | null> {
+    const view = await this.workerService.viewWorker(accountId, workerId);
+    if (!view?.server?.id || !view?.type?.id) {
+      return null;
+    }
+
+    return {
+      accountIdResolved: accountId,
+      serverId: view.server.id,
+      workerTypeId: view.type.id as EWorkerType,
+    };
+  }
+
+  private async resolveWorkerDataFromMonitor(workerId: string): Promise<{
+    accountIdResolved: string;
+    serverId: string;
+    workerTypeId: EWorkerType;
+  } | null> {
+    const monitorView = await this.workerService.viewWorkerForMonitor(workerId);
+    if (
+      !monitorView?.account_id ||
+      !monitorView?.server_id ||
+      !monitorView?.worker_type_id
+    ) {
+      return null;
+    }
+
+    return {
+      accountIdResolved: monitorView.account_id,
+      serverId: monitorView.server_id,
+      workerTypeId: monitorView.worker_type_id as EWorkerType,
+    };
+  }
+
+  private async createWorkerWithPayload(
+    workerId: string,
+    workerData: {
+      accountIdResolved: string;
+      serverId: string;
+      workerTypeId: EWorkerType;
+    }
+  ): Promise<void> {
     const createPayload: IWorkerPayload = {
       action: EWorkerAction.create,
       worker_id: workerId,
-      server_id: serverId,
-      account_id: accountIdResolved,
-      worker_type_id: workerTypeId,
+      server_id: workerData.serverId,
+      account_id: workerData.accountIdResolved,
+      worker_type_id: workerData.workerTypeId,
     };
 
     await this.createWorker(createPayload);
-    return true;
   }
 
   private startConnectionRequestRetry(
