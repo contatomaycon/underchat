@@ -19,6 +19,7 @@ export class WorkerConnectionStatusConsume {
   private readonly connectionRetryIntervalMs = 15_000;
   private readonly connectionRetryMinAttempts = 10;
   private activeConnectionRequest: StatusConnectionWorkerRequest | null = null;
+  private restartAfterDisconnect = false;
 
   constructor(
     private readonly baileysService: BaileysService,
@@ -105,12 +106,26 @@ export class WorkerConnectionStatusConsume {
     };
 
     await this.balanceWorkerStatusGrpcClientService.notifyWorkerStatus(payload);
+
+    const defaultConnectionRequest: StatusConnectionWorkerRequest = {
+      worker_id: workerId,
+      status: EWorkerStatus.online,
+      type: EBaileysConnectionType.qrcode,
+    };
+
+    this.startConnectionRetry(defaultConnectionRequest, {
+      fromDisconnectRestart: true,
+    });
   }
 
-  private startConnectionRetry(data: StatusConnectionWorkerRequest): void {
+  private startConnectionRetry(
+    data: StatusConnectionWorkerRequest,
+    options?: { fromDisconnectRestart?: boolean }
+  ): void {
     this.stopConnectionRetry();
     this.activeConnectionRequest = data;
     this.connectionRetryAttempt = 0;
+    this.restartAfterDisconnect = options?.fromDisconnectRestart ?? false;
     this.runConnectionAttempt();
   }
 
@@ -121,6 +136,7 @@ export class WorkerConnectionStatusConsume {
     }
     this.activeConnectionRequest = null;
     this.connectionRetryAttempt = 0;
+    this.restartAfterDisconnect = false;
   }
 
   private scheduleNextAttempt(): void {
@@ -173,10 +189,17 @@ export class WorkerConnectionStatusConsume {
       return;
     }
 
+    const fromDisconnectRestart = this.restartAfterDisconnect;
+    if (fromDisconnectRestart) {
+      this.restartAfterDisconnect = false;
+    }
+
     const connectPromise = this.baileysService
       .connect({
         initial_connection: true,
         force_new: true,
+        requested_by_user: !fromDisconnectRestart,
+        from_disconnect_restart: fromDisconnectRestart,
         type: request.type as EBaileysConnectionType,
         phone_connection: request.phone_connection,
       })

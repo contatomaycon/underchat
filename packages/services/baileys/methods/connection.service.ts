@@ -60,6 +60,7 @@ export class BaileysConnectionService {
   private currentPromise?: Promise<IBaileysConnectionState>;
   private pendingResolve?: (s: IBaileysConnectionState) => void;
   private connectionEstablished = false;
+  private userRequestedDisconnect = false;
   private keepAliveInterval?: NodeJS.Timeout;
   private readonly keepAliveIntervalMs = 600_000;
   private isKeepAliveRunning = false;
@@ -82,6 +83,10 @@ export class BaileysConnectionService {
 
   getSocket(): WASocket | undefined {
     return this.socket;
+  }
+
+  clearUserRequestedDisconnect(): void {
+    this.userRequestedDisconnect = false;
   }
 
   private handleInitialConnectionState(
@@ -164,7 +169,17 @@ export class BaileysConnectionService {
       type: typeConnection = EBaileysConnectionType.qrcode,
       phone_connection: phoneConnection,
       force_new: forceNew = false,
+      requested_by_user: requestedByUser = false,
+      from_disconnect_restart: fromDisconnectRestart = false,
     } = input;
+
+    if (requestedByUser) {
+      this.userRequestedDisconnect = false;
+    }
+
+    if (this.userRequestedDisconnect && !fromDisconnectRestart) {
+      return this.state();
+    }
 
     this.initialConnection = initialConnection;
     this.typeConnection = typeConnection;
@@ -236,6 +251,10 @@ export class BaileysConnectionService {
     this.initialConnection = initialConnection;
     this.connectionEstablished = false;
 
+    if (disconnectedUser) {
+      this.userRequestedDisconnect = true;
+    }
+
     await this.safeLogout(true);
     this.cancelAttempt(false);
     this.clearFolder();
@@ -263,7 +282,9 @@ export class BaileysConnectionService {
 
     await this.balanceWorkerStatusGrpcClientService.notifyWorkerStatus(payload);
 
-    if (this.initialConnection) {
+    const shouldReconnect = this.initialConnection && !disconnectedUser;
+
+    if (shouldReconnect) {
       this.connect({
         initial_connection: true,
       });

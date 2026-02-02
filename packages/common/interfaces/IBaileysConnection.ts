@@ -7,4 +7,6 @@ export interface IBaileysConnection {
   disconnected_user?: boolean;
   phone_connection?: string;
   force_new?: boolean;
+  requested_by_user?: boolean;
+  from_disconnect_restart?: boolean;
 }
