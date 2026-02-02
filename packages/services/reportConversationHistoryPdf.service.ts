@@ -906,12 +906,33 @@ export class ReportConversationHistoryPdfService {
 
     const ephemeral = content.ephemeral;
     if (ephemeral) {
+      let main: string;
+      if (ephemeral.user_name) {
+        main = ephemeral.enabled
+          ? t('message_ephemeral_activated_by_user', {
+              name: ephemeral.user_name,
+            })
+          : t('message_ephemeral_deactivated_by_user', {
+              name: ephemeral.user_name,
+            });
+      } else if (ephemeral.user_phone) {
+        main = ephemeral.enabled
+          ? t('message_ephemeral_activated_by_phone', {
+              phone: ephemeral.user_phone,
+            })
+          : t('message_ephemeral_deactivated_by_phone', {
+              phone: ephemeral.user_phone,
+            });
+      } else {
+        main = ephemeral.enabled
+          ? t('message_ephemeral_activated_default')
+          : t('message_ephemeral_deactivated_default');
+      }
       if (ephemeral.enabled) {
-        const main = t('message_ephemeral_activated');
         const desc = t('message_ephemeral_activated_description');
         return `${main} ${desc}`;
       }
-      return t('message_ephemeral_deactivated');
+      return main;
     }
 
     const pin = content.pin;

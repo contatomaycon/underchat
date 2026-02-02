@@ -844,6 +844,18 @@ export const mensageMappings = () => {
                 expiration_seconds: {
                   type: 'integer',
                 },
+                user_name: {
+                  type: 'text',
+                  fields: {
+                    keyword: {
+                      type: 'keyword',
+                      ignore_above: 256,
+                    },
+                  },
+                },
+                user_phone: {
+                  type: 'keyword',
+                },
               },
             },
           },

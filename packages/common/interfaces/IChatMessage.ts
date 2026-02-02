@@ -96,6 +96,8 @@ export interface IPinMessage {
 export interface IEphemeralMessage {
   enabled: boolean;
   expiration_seconds?: number | null;
+  user_name?: string | null;
+  user_phone?: string | null;
 }
 
 export interface IContent {

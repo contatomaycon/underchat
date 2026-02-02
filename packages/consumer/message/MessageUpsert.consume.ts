@@ -2266,12 +2266,28 @@ export class MessageUpsertConsume {
     if (data.type === EMessageType.set_disappearing_messages) {
       const protocolMessage = (data?.message?.message as any)?.protocolMessage;
       const expiration = protocolMessage?.ephemeralExpiration ?? 0;
+      const jid = remoteJid(data.message?.key);
+      const jidAlt = remoteJidAlt(data.message?.key);
+      const phone = getPhoneFromJid(jid, jidAlt);
+      const pushName = data.message?.pushName;
+
+      let formattedPhone: string | null = null;
+      if (phone) {
+        const phoneWithPlus = `+${phone}`;
+        const phoneAndDdi = extractPhoneAndDdi(phoneWithPlus);
+        formattedPhone = phoneAndDdi
+          ? `${phoneAndDdi.phone_ddi} ${phoneAndDdi.phone}`
+          : phone;
+      }
+
       content = {
         ...content,
         type: EMessageType.system,
         ephemeral: {
           enabled: expiration > 0,
           expiration_seconds: expiration > 0 ? expiration : null,
+          user_name: pushName ?? null,
+          user_phone: formattedPhone,
         },
       };
     }

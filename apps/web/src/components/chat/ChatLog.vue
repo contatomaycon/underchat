@@ -688,9 +688,25 @@ const getEphemeralMessageText = (message: ListMessageResult): string | null => {
   if (!message.content?.ephemeral) return null;
 
   const ephemeral = message.content.ephemeral;
+  if (ephemeral.user_name) {
+    return ephemeral.enabled
+      ? t('message_ephemeral_activated_by_user', { name: ephemeral.user_name })
+      : t('message_ephemeral_deactivated_by_user', {
+          name: ephemeral.user_name,
+        });
+  }
+  if (ephemeral.user_phone) {
+    return ephemeral.enabled
+      ? t('message_ephemeral_activated_by_phone', {
+          phone: ephemeral.user_phone,
+        })
+      : t('message_ephemeral_deactivated_by_phone', {
+          phone: ephemeral.user_phone,
+        });
+  }
   return ephemeral.enabled
-    ? t('message_ephemeral_activated')
-    : t('message_ephemeral_deactivated');
+    ? t('message_ephemeral_activated_default')
+    : t('message_ephemeral_deactivated_default');
 };
 
 const getEphemeralMessageDescription = (

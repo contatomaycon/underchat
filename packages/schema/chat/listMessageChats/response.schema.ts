@@ -227,6 +227,8 @@ export const pinMessageSchema = Type.Object({
 export const ephemeralMessageSchema = Type.Object({
   enabled: Type.Boolean(),
   expiration_seconds: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
+  user_name: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  user_phone: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 });
 
 export const contentSchema = Type.Object(
