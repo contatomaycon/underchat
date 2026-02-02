@@ -2321,6 +2321,8 @@
   "enable_human_transfer_yes": "Sim",
   "enable_human_transfer_no": "Não",
   "ai_agent_human_transfer_upsert_successfully": "Configuração de atendimento humano salva com sucesso!",
+  "select_users_of_sector": "Selecione os usuários do setor {sectorName}",
+  "human_transfer_users_section": "Seleção de usuários por setor",
   "system_prompt": "Prompt de sistema",
   "system_prompt_placeholder": "Digite o prompt de sistema do agente (opcional)",
   "voice_ia_type": "Tipo",

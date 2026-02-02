@@ -3,6 +3,7 @@ import { ref, computed, watch, nextTick, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import AppSelectSearch from '@/components/AppSelectSearch.vue';
 import { useAiAgentStore } from '@/@webcore/stores/aiAgent';
+import { EColor } from '@core/common/enums/EColor';
 import { ListAiAgentHumanTransferSectorsResponse } from '@core/schema/aiAgent/listAiAgentHumanTransferSectors/response.schema';
 import { ListAiAgentHumanTransferSectorUsersResponse } from '@core/schema/aiAgent/listAiAgentHumanTransferSectorUsers/response.schema';
 
@@ -26,38 +27,60 @@ const isVisible = computed({
 const aiAgentId = computed(() => props.aiAgentId);
 const enableHumanTransfer = ref(false);
 const sectorIds = ref<string[]>([]);
-const userIds = ref<string[]>([]);
+const sectorUserIds = ref<Record<string, string[]>>({});
 const sectors = ref<ListAiAgentHumanTransferSectorsResponse>([]);
-const usersBySector = ref<ListAiAgentHumanTransferSectorUsersResponse>([]);
+const usersBySectorId = ref<
+  Record<string, ListAiAgentHumanTransferSectorUsersResponse>
+>({});
 const isLoading = ref(false);
 const isSaving = ref(false);
 const isInitialLoad = ref(false);
-const isLoadingUsers = ref(false);
+const loadingUsersBySector = ref<Record<string, boolean>>({});
 
 const sectorOptions = computed(() =>
   sectors.value.map((s) => ({ value: s.id, title: s.name }))
 );
 
-const userOptions = computed(() => {
-  const seen = new Set<string>();
-  const list: { value: string; title: string }[] = [];
-  for (const u of usersBySector.value) {
-    if (u.id && !seen.has(u.id)) {
-      seen.add(u.id);
-      const name =
-        [u.name, u.last_name].filter(Boolean).join(' ').trim() ||
-        u.nickname ||
-        u.id;
-      list.push({ value: u.id, title: name });
-    }
-  }
-  return list;
-});
-
 const enableHumanTransferOptions = computed(() => [
   { value: true, title: t('enable_human_transfer_yes') },
   { value: false, title: t('enable_human_transfer_no') },
 ]);
+
+const sectorRules = computed(() => {
+  if (!enableHumanTransfer.value) return [];
+  return [
+    (v: string[] | unknown) =>
+      (Array.isArray(v) && v.length > 0) || t('sector_required'),
+  ];
+});
+
+function getSectorName(sectorId: string): string {
+  return sectors.value.find((s) => s.id === sectorId)?.name ?? sectorId;
+}
+
+function getSectorUserIds(sectorId: string): string[] {
+  return sectorUserIds.value[sectorId] ?? [];
+}
+
+function setSectorUserIds(sectorId: string, value: string[]) {
+  sectorUserIds.value = { ...sectorUserIds.value, [sectorId]: value };
+}
+
+function userOptionsForSector(
+  sectorId: string
+): { value: string; title: string }[] {
+  const list = usersBySectorId.value[sectorId] ?? [];
+  const result: { value: string; title: string }[] = [];
+  for (const u of list) {
+    if (!u.id) continue;
+    const name =
+      [u.name, u.last_name].filter(Boolean).join(' ').trim() ||
+      u.nickname ||
+      u.id;
+    result.push({ value: u.id, title: name });
+  }
+  return result;
+}
 
 const loadData = async () => {
   if (!aiAgentId.value) return;
@@ -72,56 +95,86 @@ const loadData = async () => {
 
     sectors.value = sectorList ?? [];
 
-    if (config) {
+    if (config?.sector_targets?.length) {
       enableHumanTransfer.value = config.enable_human_transfer;
-      sectorIds.value = [...config.sector_ids];
-      userIds.value = [...config.user_ids];
+      sectorIds.value = config.sector_targets.map((t) => t.sector_id);
+      sectorUserIds.value = Object.fromEntries(
+        config.sector_targets.map((t) => [t.sector_id, [...(t.user_ids ?? [])]])
+      );
     } else {
-      enableHumanTransfer.value = false;
+      enableHumanTransfer.value = config?.enable_human_transfer ?? false;
       sectorIds.value = [];
-      userIds.value = [];
+      sectorUserIds.value = {};
     }
 
-    await loadUsersForSectors(sectorIds.value);
+    await loadUsersForSelectedSectors();
   } finally {
     isLoading.value = false;
     isInitialLoad.value = false;
   }
 };
 
-const loadUsersForSectors = async (ids: string[]) => {
+const loadUsersForSelectedSectors = async () => {
+  const ids = sectorIds.value;
   if (ids.length === 0) {
-    usersBySector.value = [];
+    usersBySectorId.value = {};
     return;
   }
 
-  isLoadingUsers.value = true;
+  for (const id of ids) {
+    loadingUsersBySector.value = { ...loadingUsersBySector.value, [id]: true };
+  }
   try {
-    const all = await aiAgentStore.listHumanTransferSectorUsersBySectorIds(ids);
-    usersBySector.value = all ?? [];
-    userIds.value = userIds.value.filter((id) =>
-      (all ?? []).some((u) => u.id === id)
+    const results = await Promise.all(
+      ids.map(async (id) => {
+        const users = await aiAgentStore.listHumanTransferSectorUsers(id);
+        return { id, users };
+      })
     );
+    const next: Record<string, ListAiAgentHumanTransferSectorUsersResponse> =
+      {};
+    for (const { id, users } of results) {
+      next[id] = users ?? [];
+    }
+    usersBySectorId.value = next;
   } finally {
-    isLoadingUsers.value = false;
+    for (const id of ids) {
+      loadingUsersBySector.value = {
+        ...loadingUsersBySector.value,
+        [id]: false,
+      };
+    }
   }
 };
 
 const handleSectorsChange = () => {
-  loadUsersForSectors(sectorIds.value);
+  const next: Record<string, string[]> = {};
+  for (const id of sectorIds.value) {
+    next[id] = sectorUserIds.value[id] ?? [];
+  }
+  sectorUserIds.value = next;
+  loadUsersForSelectedSectors();
 };
 
 const handleSave = async () => {
   if (!aiAgentId.value) return;
 
+  if (enableHumanTransfer.value && sectorIds.value.length === 0) {
+    aiAgentStore.showSnackbar(t('sector_required'), EColor.error);
+    return;
+  }
+
   isSaving.value = true;
   try {
+    const sector_targets = sectorIds.value.map((sector_id) => ({
+      sector_id,
+      user_ids: sectorUserIds.value[sector_id] ?? [],
+    }));
     const success = await aiAgentStore.upsertAiAgentHumanTransfer(
       aiAgentId.value,
       {
         enable_human_transfer: enableHumanTransfer.value,
-        sector_ids: enableHumanTransfer.value ? sectorIds.value : [],
-        user_ids: enableHumanTransfer.value ? userIds.value : [],
+        sector_targets: enableHumanTransfer.value ? sector_targets : [],
       }
     );
     if (success) {
@@ -146,8 +199,8 @@ watch(
     if (newIds.length > 0) {
       handleSectorsChange();
     } else {
-      usersBySector.value = [];
-      userIds.value = [];
+      usersBySectorId.value = {};
+      sectorUserIds.value = {};
     }
   },
   { deep: true }
@@ -203,6 +256,7 @@ onMounted(() => {
                 v-model="sectorIds"
                 :items="sectorOptions"
                 :label="$t('sector')"
+                :rules="sectorRules"
                 item-value="value"
                 item-title="title"
                 :disabled="isSaving || isLoading"
@@ -212,15 +266,35 @@ onMounted(() => {
               />
             </VCol>
 
-            <VCol v-if="sectorIds.length > 0" cols="12">
+            <VCol v-if="sectorIds.length > 0" cols="12" class="pt-2">
+              <VDivider class="mb-3" />
+              <p class="text-body-2 text-medium-emphasis font-weight-bold mb-3">
+                {{ $t('human_transfer_users_section') }}
+              </p>
+            </VCol>
+
+            <VCol v-for="sectorId in sectorIds" :key="sectorId" cols="12">
               <AppSelectSearch
-                v-model="userIds"
-                :items="userOptions"
-                :label="$t('user')"
+                :model-value="getSectorUserIds(sectorId)"
+                @update:model-value="
+                  (v) =>
+                    setSectorUserIds(
+                      sectorId,
+                      Array.isArray(v)
+                        ? v.filter((x): x is string => typeof x === 'string')
+                        : []
+                    )
+                "
+                :items="userOptionsForSector(sectorId)"
+                :label="
+                  t('select_users_of_sector', {
+                    sectorName: getSectorName(sectorId),
+                  })
+                "
                 item-value="value"
                 item-title="title"
-                :disabled="isSaving || isLoading || isLoadingUsers"
-                :loading="isLoadingUsers"
+                :disabled="isSaving || isLoading"
+                :loading="loadingUsersBySector[sectorId] === true"
                 multiple
                 chips
                 closable-chips

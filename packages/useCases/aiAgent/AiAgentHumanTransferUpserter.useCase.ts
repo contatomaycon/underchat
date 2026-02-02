@@ -13,6 +13,10 @@ export class AiAgentHumanTransferUpserterUseCase {
     body: UpsertAiAgentHumanTransferBody,
     accountId: string
   ): Promise<boolean> {
+    if (body.enable_human_transfer && body.sector_targets.length === 0) {
+      throw new Error(t('ai_agent_human_transfer_sector_required'));
+    }
+
     const agent = await this.aiAgentService.viewAiAgent(aiAgentId, accountId);
     if (!agent) {
       throw new Error(t('ai_agent_not_found'));

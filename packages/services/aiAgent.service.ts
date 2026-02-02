@@ -29,7 +29,6 @@ import { ListChatbotAiAgentsResponse } from '@core/schema/chatbot/listAiAgents/r
 import { ListAiAgentUsageResponseItem } from '@core/schema/aiAgent/listAiAgentUsage/response.schema';
 import { ViewAiAgentHumanTransferResponse } from '@core/schema/aiAgent/viewAiAgentHumanTransfer/response.schema';
 import { UpsertAiAgentHumanTransferBody } from '@core/schema/aiAgent/upsertAiAgentHumanTransfer/request.schema';
-import { EAiAgentHumanTransferTargetType } from '@core/common/enums/EAiAgentHumanTransferTargetType';
 
 @injectable()
 export class AiAgentService {
@@ -239,27 +238,24 @@ export class AiAgentService {
         accountId
       );
 
-    const sector_ids: string[] = [];
-    const user_ids: string[] = [];
+    const sectorMap = new Map<string, string[]>();
     for (const row of targets) {
-      if (
-        row.target_type === EAiAgentHumanTransferTargetType.sector &&
-        row.sector_id
-      ) {
-        sector_ids.push(row.sector_id);
+      if (!row.sector_id) continue;
+      if (!sectorMap.has(row.sector_id)) {
+        sectorMap.set(row.sector_id, []);
       }
-      if (
-        row.target_type === EAiAgentHumanTransferTargetType.user &&
-        row.user_id
-      ) {
-        user_ids.push(row.user_id);
+      if (row.user_id) {
+        const arr = sectorMap.get(row.sector_id);
+        if (arr) arr.push(row.user_id);
       }
     }
+    const sector_targets = Array.from(sectorMap.entries()).map(
+      ([sector_id, user_ids]) => ({ sector_id, user_ids })
+    );
 
     return {
       enable_human_transfer: agent.enable_human_transfer ?? false,
-      sector_ids,
-      user_ids,
+      sector_targets,
     };
   };
 

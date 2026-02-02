@@ -32,10 +32,7 @@ export class AiAgentHumanTransferUpserterTransactionRepository {
 
       await this.deleteTargetsByAiAgentId(tx, aiAgentId);
 
-      if (
-        body.enable_human_transfer &&
-        (body.sector_ids.length > 0 || body.user_ids.length > 0)
-      ) {
+      if (body.enable_human_transfer && body.sector_targets.length > 0) {
         const rows = this.buildTargetRows(aiAgentId, accountId, body);
         if (rows.length > 0) {
           await this.insertTargetRows(tx, rows);
@@ -81,23 +78,23 @@ export class AiAgentHumanTransferUpserterTransactionRepository {
     body: UpsertAiAgentHumanTransferBody
   ): IAiAgentHumanTransferTargetInsertRow[] => {
     const rows: IAiAgentHumanTransferTargetInsertRow[] = [];
-    for (const sectorId of body.sector_ids) {
+    for (const target of body.sector_targets) {
       rows.push({
         ai_agent_id: aiAgentId,
         account_id: accountId,
         target_type: EAiAgentHumanTransferTargetType.sector,
-        sector_id: sectorId,
+        sector_id: target.sector_id,
         user_id: null,
       });
-    }
-    for (const userId of body.user_ids) {
-      rows.push({
-        ai_agent_id: aiAgentId,
-        account_id: accountId,
-        target_type: EAiAgentHumanTransferTargetType.user,
-        sector_id: null,
-        user_id: userId,
-      });
+      for (const userId of target.user_ids) {
+        rows.push({
+          ai_agent_id: aiAgentId,
+          account_id: accountId,
+          target_type: EAiAgentHumanTransferTargetType.user,
+          sector_id: target.sector_id,
+          user_id: userId,
+        });
+      }
     }
     return rows;
   };
