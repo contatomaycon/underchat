@@ -104,6 +104,24 @@ const maxAttemptDisplay = computed(() => {
   return String(max);
 });
 
+const showQrSkeleton = computed(() => {
+  if (isConnected.value || qrcode.value) return false;
+  if (attempt.value > maxAttempts.value && !isPhoneNumber.value) return false;
+  if (isPhoneNumber.value && !phoneSent.value) return false;
+  if (statusCode.value === ECodeMessage.phoneNotAvailable) return false;
+
+  const disconnectedWithRemovedMessage =
+    isDisconnected.value &&
+    (removeInPhone.value ||
+      statusCode.value === ECodeMessage.connectionLost ||
+      statusCode.value === ECodeMessage.connectionClosed ||
+      statusCode.value === ECodeMessage.connectionReplaced ||
+      statusCode.value === ECodeMessage.loggedOut);
+  if (disconnectedWithRemovedMessage) return false;
+
+  return true;
+});
+
 function calculateProgress(seconds: number, max = totalSeconds.value) {
   const value = Math.min(Math.round((seconds / max) * 100), 100);
 
@@ -375,14 +393,6 @@ onUnmounted(() => {
   <VDialog v-model="isVisible" max-width="600">
     <DialogCloseBtn @click="isVisible = false" />
 
-    <VOverlay
-      :model-value="channelStore.loading"
-      class="align-center justify-center"
-      contained
-    >
-      <VProgressCircular color="primary" indeterminate size="64" />
-    </VOverlay>
-
     <VCard>
       <VRow no-gutters>
         <VCol cols="12" sm="8" md="12" lg="7" order="2" order-lg="1">
@@ -390,35 +400,12 @@ onUnmounted(() => {
             <VCardTitle>{{ $t('conection') }}</VCardTitle>
           </VCardItem>
 
-          <div v-if="attempt > maxAttempts && !isConnected && !isPhoneNumber">
-            <VCardText class="d-flex justify-center">
-              <VIcon icon="tabler-mobiledata-off" size="150" />
-            </VCardText>
-            <VCardText class="text-center">
-              <i>{{ $t('connection_timeout') }}</i>
-            </VCardText>
-          </div>
-
           <div
-            v-else-if="
-              statusCode === ECodeMessage.newLoginAttempt && !isConnected
-            "
+            v-if="showQrSkeleton"
+            class="qrcode-skeleton-wrapper"
           >
             <VCardText class="d-flex justify-center">
-              <VIcon icon="tabler-brand-whatsapp" size="150" />
-            </VCardText>
-            <VCardText class="text-center">
-              <i>{{ $t('connection_in_progress') }}</i>
-            </VCardText>
-          </div>
-
-          <div
-            v-else-if="
-              statusCode === ECodeMessage.awaitConnection && !isConnected
-            "
-          >
-            <VCardText class="d-flex justify-center">
-              <div class="qrcode-skeleton">
+              <div class="qrcode-skeleton qrcode-skeleton--shimmer">
                 <svg
                   viewBox="0 0 21 21"
                   fill="none"
@@ -518,6 +505,28 @@ onUnmounted(() => {
               <div class="text-body-2 mt-2">
                 {{ $t('keep_screen_open') }}
               </div>
+            </VCardText>
+          </div>
+
+          <div v-else-if="attempt > maxAttempts && !isConnected && !isPhoneNumber">
+            <VCardText class="d-flex justify-center">
+              <VIcon icon="tabler-mobiledata-off" size="150" />
+            </VCardText>
+            <VCardText class="text-center">
+              <i>{{ $t('connection_timeout') }}</i>
+            </VCardText>
+          </div>
+
+          <div
+            v-else-if="
+              statusCode === ECodeMessage.newLoginAttempt && !isConnected
+            "
+          >
+            <VCardText class="d-flex justify-center">
+              <VIcon icon="tabler-brand-whatsapp" size="150" />
+            </VCardText>
+            <VCardText class="text-center">
+              <i>{{ $t('connection_in_progress') }}</i>
             </VCardText>
           </div>
 
@@ -874,6 +883,25 @@ onUnmounted(() => {
     width: 100%;
     height: 100%;
     display: block;
+  }
+
+  &--shimmer .qrcode-skeleton__grid {
+    animation: qrcode-skeleton-shimmer 1.5s ease-in-out infinite;
+  }
+}
+
+.qrcode-skeleton-wrapper {
+  min-height: 0;
+  overflow: hidden;
+}
+
+@keyframes qrcode-skeleton-shimmer {
+  0%,
+  100% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
   }
 }
 
