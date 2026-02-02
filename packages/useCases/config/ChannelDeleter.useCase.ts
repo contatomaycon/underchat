@@ -2,8 +2,6 @@ import { injectable } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { WorkerService } from '@core/services/worker.service';
 import { ConfigService } from '@core/services/config.service';
-import { IUpdateWorker } from '@core/common/interfaces/IUpdateWorker';
-import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { IWorkerPayload } from '@core/common/interfaces/IWorkerPayload';
 import { EWorkerAction } from '@core/common/enums/EWorkerAction';
 import { CentrifugoService } from '@core/services/centrifugo.service';
@@ -49,15 +47,10 @@ export class ChannelDeleterUseCase {
     }
   }
 
-  private async onChannelDeleted(
-    t: TFunction<'translation', undefined>,
-    payload: IWorkerPayload
-  ): Promise<void> {
-    try {
-      await this.workerGrpcClientService.deleteWorker(payload);
-    } catch (err) {
-      throw new Error(t('grpc_error'), { cause: err });
-    }
+  private async onChannelDeleted(payload: IWorkerPayload): Promise<void> {
+    void this.workerGrpcClientService.deleteWorker(payload).catch((err) => {
+      console.error('Failed to request channel deletion via gRPC:', err);
+    });
   }
 
   async execute(
@@ -88,16 +81,13 @@ export class ChannelDeleterUseCase {
       this.centrifugoService.publish(channelsConfigCentrifugo(), inputDeleter),
     ]);
 
-    await this.onChannelDeleted(t, inputDeleter);
-
-    const inputUpdate: IUpdateWorker = {
-      worker_id: channelId,
-      worker_status_id: EWorkerStatus.deleting,
-    };
-
-    return this.workerService.updateWorkerById(
+    const deleted = await this.workerService.deleteWorkerById(
       viewWorkerBalancer.account_id,
-      inputUpdate
+      channelId
     );
+
+    this.onChannelDeleted(inputDeleter);
+
+    return deleted;
   }
 }

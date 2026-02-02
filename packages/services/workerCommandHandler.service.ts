@@ -567,14 +567,12 @@ export class WorkerCommandHandlerService {
       data.worker_id
     );
 
-    if (!exists) {
-      await this.updateWorkerErrorStatus(
-        data.worker_id,
-        data.account_id,
-        data.action,
-        data.server_id
-      );
-      throw new Error('Worker not found');
+    const alreadyDeleted = !exists;
+    if (alreadyDeleted) {
+      console.warn('Worker not found during delete. Continuing cleanup.', {
+        workerId: data.worker_id,
+        accountId: data.account_id,
+      });
     }
 
     const inputUpdate: IUpdateWorker = {
@@ -585,18 +583,20 @@ export class WorkerCommandHandlerService {
       connection_date: null,
     };
 
-    const updated = await this.retryOperation(
-      async () =>
-        this.workerService.updateWorkerById(data.account_id, inputUpdate),
-      (r) => !r
-    );
+    if (!alreadyDeleted) {
+      const updated = await this.retryOperation(
+        async () =>
+          this.workerService.updateWorkerById(data.account_id, inputUpdate),
+        (r) => !r
+      );
 
-    if (!updated) {
-      console.error('Failed to update worker status before delete', {
-        workerId: data.worker_id,
-        accountId: data.account_id,
-        action: data.action,
-      });
+      if (!updated) {
+        console.error('Failed to update worker status before delete', {
+          workerId: data.worker_id,
+          accountId: data.account_id,
+          action: data.action,
+        });
+      }
     }
 
     const payload: StatusConnectionWorkerRequest = {
@@ -612,16 +612,38 @@ export class WorkerCommandHandlerService {
       );
     } catch (err) {
       if (!this.isTopicOrPartitionMissing(err)) {
-        throw err;
+        console.error('Failed to request worker disconnect before delete', {
+          workerId: data.worker_id,
+          accountId: data.account_id,
+          error: getErrorMessage(err),
+        });
       }
     }
 
-    const containerId = await this.retryOperation(
-      async () => this.workerService.removeContainerWorker(data.worker_id),
-      (r) => !r
-    );
+    let containerRemoved = false;
+    try {
+      containerRemoved = await this.retryOperation(
+        async () => this.workerService.removeContainerWorker(data.worker_id),
+        (r) => !r
+      );
+    } catch (err) {
+      if (!alreadyDeleted) {
+        await this.updateWorkerErrorStatus(
+          data.worker_id,
+          data.account_id,
+          data.action,
+          data.server_id
+        );
+        throw err;
+      }
+      console.error('Failed to remove container for deleted worker', {
+        workerId: data.worker_id,
+        accountId: data.account_id,
+        error: getErrorMessage(err),
+      });
+    }
 
-    if (!containerId) {
+    if (!containerRemoved && !alreadyDeleted) {
       await this.updateWorkerErrorStatus(
         data.worker_id,
         data.account_id,
@@ -631,20 +653,22 @@ export class WorkerCommandHandlerService {
       throw new Error('Worker removal failed');
     }
 
-    const deleted = await this.retryOperation(
-      async () =>
-        this.workerService.deleteWorkerById(data.account_id, data.worker_id),
-      (r) => !r
-    );
-
-    if (!deleted) {
-      await this.updateWorkerErrorStatus(
-        data.worker_id,
-        data.account_id,
-        data.action,
-        data.server_id
+    if (!alreadyDeleted) {
+      const deleted = await this.retryOperation(
+        async () =>
+          this.workerService.deleteWorkerById(data.account_id, data.worker_id),
+        (r) => !r
       );
-      throw new Error('Failed to delete worker');
+
+      if (!deleted) {
+        await this.updateWorkerErrorStatus(
+          data.worker_id,
+          data.account_id,
+          data.action,
+          data.server_id
+        );
+        throw new Error('Failed to delete worker');
+      }
     }
 
     const dataPublish: IBaileysConnectionState = {

@@ -1,13 +1,10 @@
 import { injectable } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { WorkerService } from '@core/services/worker.service';
-import { IUpdateWorker } from '@core/common/interfaces/IUpdateWorker';
-import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { IWorkerPayload } from '@core/common/interfaces/IWorkerPayload';
 import { EWorkerAction } from '@core/common/enums/EWorkerAction';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
-import { currentTime } from '@core/common/functions/currentTime';
 import { WorkerGrpcClientService } from '@core/services/workerGrpcClient.service';
 
 @injectable()
@@ -33,15 +30,10 @@ export class WorkerDeleterUseCase {
     }
   }
 
-  private async onWorkerDeleted(
-    t: TFunction<'translation', undefined>,
-    payload: IWorkerPayload
-  ): Promise<void> {
-    try {
-      await this.workerGrpcClientService.deleteWorker(payload);
-    } catch (err) {
-      throw new Error(t('grpc_error'), { cause: err });
-    }
+  private async onWorkerDeleted(payload: IWorkerPayload): Promise<void> {
+    void this.workerGrpcClientService.deleteWorker(payload).catch((err) => {
+      console.error('Failed to request worker deletion via gRPC:', err);
+    });
   }
 
   async execute(
@@ -72,16 +64,13 @@ export class WorkerDeleterUseCase {
       inputDeleter
     );
 
-    try {
-      await this.onWorkerDeleted(t, inputDeleter);
-    } catch {}
+    const deleted = await this.workerService.deleteWorkerById(
+      accountId,
+      workerId
+    );
 
-    const inputUpdate: IUpdateWorker = {
-      worker_id: workerId,
-      worker_status_id: EWorkerStatus.deleting,
-      deleted_at: currentTime(),
-    };
+    this.onWorkerDeleted(inputDeleter);
 
-    return this.workerService.updateWorkerById(accountId, inputUpdate);
+    return deleted;
   }
 }
