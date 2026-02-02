@@ -224,6 +224,11 @@ export const pinMessageSchema = Type.Object({
   pin_user_phone: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 });
 
+export const ephemeralMessageSchema = Type.Object({
+  enabled: Type.Boolean(),
+  expiration_seconds: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
+});
+
 export const contentSchema = Type.Object(
   {
     type: Type.String({ enum: Object.values(EMessageType) }),
@@ -252,6 +257,7 @@ export const contentSchema = Type.Object(
     context_info: Type.Optional(Type.Union([contextInfoSchema, Type.Null()])),
     template: Type.Optional(Type.Union([templateMessageSchema, Type.Null()])),
     pin: Type.Optional(Type.Union([pinMessageSchema, Type.Null()])),
+    ephemeral: Type.Optional(Type.Union([ephemeralMessageSchema, Type.Null()])),
   },
   { additionalProperties: true }
 );

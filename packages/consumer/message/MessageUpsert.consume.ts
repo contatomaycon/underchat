@@ -679,7 +679,10 @@ export class MessageUpsertConsume {
     typeUser: ETypeUserChat;
     summary: IChatMessage['summary'];
   } {
-    if (messageType === EMessageType.system) {
+    if (
+      messageType === EMessageType.system ||
+      messageType === EMessageType.set_disappearing_messages
+    ) {
       return {
         typeUser: ETypeUserChat.system,
         summary: {
@@ -2197,6 +2200,10 @@ export class MessageUpsertConsume {
   }
 
   private isMessageEmpty(data: IUpsertMessage): boolean {
+    if (data.type === EMessageType.set_disappearing_messages) {
+      return false;
+    }
+
     const messageText =
       data.message?.message?.extendedTextMessage?.text ??
       data.message?.message?.conversation;
@@ -2248,13 +2255,26 @@ export class MessageUpsertConsume {
       }
     }
 
-    const content: IContent = {
+    let content: IContent = {
       type: data.type,
       message: messageText,
       link_preview: linkPreview,
       quoted: buildQuotedTextFromExtended(data.message),
       context_info: buildContextInfoFromMessage(data.message),
     };
+
+    if (data.type === EMessageType.set_disappearing_messages) {
+      const protocolMessage = (data?.message?.message as any)?.protocolMessage;
+      const expiration = protocolMessage?.ephemeralExpiration ?? 0;
+      content = {
+        ...content,
+        type: EMessageType.system,
+        ephemeral: {
+          enabled: expiration > 0,
+          expiration_seconds: expiration > 0 ? expiration : null,
+        },
+      };
+    }
 
     const messageQuotedId = content.quoted?.key.id ?? null;
     if (messageQuotedId) {

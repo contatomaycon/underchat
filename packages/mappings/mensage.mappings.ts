@@ -835,6 +835,17 @@ export const mensageMappings = () => {
                 },
               },
             },
+            ephemeral: {
+              type: 'nested',
+              properties: {
+                enabled: {
+                  type: 'boolean',
+                },
+                expiration_seconds: {
+                  type: 'integer',
+                },
+              },
+            },
           },
         },
         summary: {

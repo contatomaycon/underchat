@@ -904,6 +904,16 @@ export class ReportConversationHistoryPdfService {
       return content.message.replaceAll('\n', '<br>');
     }
 
+    const ephemeral = content.ephemeral;
+    if (ephemeral) {
+      if (ephemeral.enabled) {
+        const main = t('message_ephemeral_activated');
+        const desc = t('message_ephemeral_activated_description');
+        return `${main} ${desc}`;
+      }
+      return t('message_ephemeral_deactivated');
+    }
+
     const pin = content.pin;
     if (!pin) {
       return '';

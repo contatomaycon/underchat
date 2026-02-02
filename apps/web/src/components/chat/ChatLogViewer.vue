@@ -397,6 +397,22 @@ const getPinMessageText = (message: ListMessageResult): string | null => {
   return t('message_pinned_default');
 };
 
+const getEphemeralMessageText = (message: ListMessageResult): string | null => {
+  if (!message.content?.ephemeral) return null;
+
+  const ephemeral = message.content.ephemeral;
+  return ephemeral.enabled
+    ? t('message_ephemeral_activated')
+    : t('message_ephemeral_deactivated');
+};
+
+const getEphemeralMessageDescription = (
+  message: ListMessageResult
+): string | null => {
+  if (!message.content?.ephemeral?.enabled) return null;
+  return t('message_ephemeral_activated_description');
+};
+
 const getLatestMessageText = (message: ListMessageResult): string => {
   if (!message.content) return '';
 
@@ -412,6 +428,14 @@ const getLatestMessageText = (message: ListMessageResult): string => {
   if (message.content.type === EMessageType.system && !hasMessageContent) {
     const pinText = getPinMessageText(message);
     if (pinText) return pinText;
+
+    const ephemeralMain = getEphemeralMessageText(message);
+    if (ephemeralMain) {
+      const ephemeralDesc = getEphemeralMessageDescription(message);
+      return ephemeralDesc
+        ? `${ephemeralMain}\n${ephemeralDesc}`
+        : ephemeralMain;
+    }
   }
 
   return message.content.message || '';
@@ -2224,60 +2248,81 @@ const handleContactClick = (message: ListMessageResult) => {
                       item.message.content?.type !== EMessageType.audio &&
                       !item.message.message_key?.is_view_once
                     "
-                    class="d-flex align-center"
+                    :class="
+                      item.message.content?.ephemeral
+                        ? 'd-flex flex-column'
+                        : 'd-flex align-center'
+                    "
                   >
-                    <p
-                      v-if="shouldFormatMessage(item.message)"
-                      class="mr-6 text-base message-text"
-                      :class="{
-                        'mb-2':
-                          !hasMessageVersions(item.message) &&
-                          !item.message.deleted,
-                        'mb-6':
-                          hasMessageVersions(item.message) ||
-                          item.message.deleted,
-                        'mr-2': item.message.content?.pin,
-                      }"
-                      :style="{
-                        color: isTypeUser(item.message)
-                          ? 'rgb(var(--v-theme-on-surface))'
-                          : 'rgb(var(--v-theme-title))',
-                      }"
-                      v-html="
-                        formatWhatsAppText(getLatestMessageText(item.message))
-                      "
-                    ></p>
-                    <p
-                      v-else
-                      class="mr-6 text-base message-text"
-                      :class="{
-                        'mb-2':
-                          !hasMessageVersions(item.message) &&
-                          !item.message.deleted,
-                        'mb-6':
-                          hasMessageVersions(item.message) ||
-                          item.message.deleted,
-                        'mr-2': item.message.content?.pin,
-                      }"
-                      :style="{
-                        color: isTypeUser(item.message)
-                          ? 'rgb(var(--v-theme-on-surface))'
-                          : 'rgb(var(--v-theme-title))',
-                      }"
-                    >
-                      {{ getLatestMessageText(item.message) }}
-                    </p>
-                    <VIcon
-                      v-if="
-                        item.message.content?.pin &&
-                        item.message.content?.message?.trim()
-                      "
-                      size="16"
-                      color="grey-600"
-                      class="pin-icon"
-                    >
-                      tabler-pin
-                    </VIcon>
+                    <div class="d-flex align-center">
+                      <VIcon
+                        v-if="item.message.content?.ephemeral"
+                        size="20"
+                        color="grey-600"
+                        class="mr-2"
+                      >
+                        tabler-clock
+                      </VIcon>
+                      <p
+                        v-if="shouldFormatMessage(item.message)"
+                        class="mr-6 text-base message-text mb-0"
+                        :class="{
+                          'mb-2':
+                            !item.message.content?.ephemeral &&
+                            (!hasMessageVersions(item.message) &&
+                              !item.message.deleted),
+                          'mb-6':
+                            !item.message.content?.ephemeral &&
+                            (hasMessageVersions(item.message) ||
+                              item.message.deleted),
+                          'mr-2': item.message.content?.pin,
+                        }"
+                        :style="{
+                          color: isTypeUser(item.message)
+                            ? 'rgb(var(--v-theme-on-surface))'
+                            : 'rgb(var(--v-theme-title))',
+                        }"
+                        v-html="
+                          formatWhatsAppText(
+                            getLatestMessageText(item.message)
+                          )
+                        "
+                      ></p>
+                      <p
+                        v-else
+                        class="mr-6 text-base message-text mb-0"
+                        :class="{
+                          'mb-2':
+                            !item.message.content?.ephemeral &&
+                            (!hasMessageVersions(item.message) &&
+                              !item.message.deleted),
+                          'mb-6':
+                            !item.message.content?.ephemeral &&
+                            (hasMessageVersions(item.message) ||
+                              item.message.deleted),
+                          'mr-2': item.message.content?.pin,
+                        }"
+                        :style="{
+                          color: isTypeUser(item.message)
+                            ? 'rgb(var(--v-theme-on-surface))'
+                            : 'rgb(var(--v-theme-title))',
+                        }"
+                      >
+                        {{ getLatestMessageText(item.message) }}
+                      </p>
+                      <VIcon
+                        v-if="
+                          item.message.content?.pin &&
+                          !item.message.content?.ephemeral &&
+                          item.message.content?.message?.trim()
+                        "
+                        size="16"
+                        color="grey-600"
+                        class="pin-icon"
+                      >
+                        tabler-pin
+                      </VIcon>
+                    </div>
                   </div>
 
                   <div

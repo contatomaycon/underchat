@@ -93,6 +93,11 @@ export interface IPinMessage {
   pin_user_phone?: string | null;
 }
 
+export interface IEphemeralMessage {
+  enabled: boolean;
+  expiration_seconds?: number | null;
+}
+
 export interface IContent {
   type: EMessageType;
   message?: string | null;
@@ -113,6 +118,7 @@ export interface IContent {
   context_info?: IMessageContextInfo | null;
   template?: ITemplateMessage | null;
   pin?: IPinMessage | null;
+  ephemeral?: IEphemeralMessage | null;
 }
 
 export interface IMessageKey {
