@@ -153,12 +153,6 @@ const ensureConnected = async (
       'Baileys aguardando pareamento. Escaneie o QR Code ou aguarde a autorização.'
     );
 
-    await updateWorkerMismatchedStatus(
-      baileysEnvironment.baileysWorkerId,
-      baileysEnvironment.baileysAccountId,
-      log
-    );
-
     fireOnReady(onReady);
 
     setTimeout(() => ensureConnected(attempt, log, baileys), RETRY_DELAY);
