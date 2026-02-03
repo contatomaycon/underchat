@@ -4812,10 +4812,6 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
       return 'human_support';
     }
 
-    if (this.isQuestionPattern(normalizedResponse)) {
-      return 'question';
-    }
-
     const analysisPrompt = this.buildAnalysisPrompt(
       continueMessage,
       userResponse,
