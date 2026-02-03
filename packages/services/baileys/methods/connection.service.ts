@@ -86,10 +86,6 @@ export class BaileysConnectionService {
   private pendingResolve?: (s: IBaileysConnectionState) => void;
   private connectionEstablished = false;
   private userRequestedDisconnect = false;
-  private keepAliveInterval?: NodeJS.Timeout;
-  private readonly keepAliveIntervalMs = 600_000;
-  private isKeepAliveRunning = false;
-  private keepAliveTimeoutMs = 30_000;
 
   constructor(
     private readonly centrifugo: CentrifugoService,
@@ -272,7 +268,6 @@ export class BaileysConnectionService {
       disconnected_user: disconnectedUser = false,
     } = input;
 
-    this.stopKeepAlive();
     this.initialConnection = initialConnection;
     this.connectionEstablished = false;
 
@@ -497,8 +492,6 @@ export class BaileysConnectionService {
 
     await this.balanceWorkerStatusGrpcClientService.notifyWorkerStatus(payload);
 
-    this.startKeepAlive();
-
     // Dispara o gatilho para iniciar o baileysOnListen
     triggerConnectionEstablished();
 
@@ -511,7 +504,6 @@ export class BaileysConnectionService {
     last: IBaileysUpdateEvent['lastDisconnect'],
     resolve: (s: IBaileysConnectionState) => void
   ): Promise<void> {
-    this.stopKeepAlive();
     this.connectionEstablished = false;
     const statusCode = this.extractStatusCode(last?.error);
     const statusMessage = this.extractStatusMessage(last?.error);
@@ -779,8 +771,6 @@ export class BaileysConnectionService {
   }
 
   private cancelAttempt(skipWebSocketClose = false) {
-    this.stopKeepAlive();
-
     try {
       this.socket?.ev.removeAllListeners('connection.update');
     } catch {
@@ -931,32 +921,6 @@ export class BaileysConnectionService {
     return undefined;
   }
 
-  private isWebSocketOpen(ws: WebSocket | undefined): boolean {
-    if (!ws) {
-      return false;
-    }
-
-    const wsAny = ws as unknown;
-    if (typeof wsAny !== 'object' || wsAny === null) {
-      return false;
-    }
-
-    const hasReadyState = 'readyState' in wsAny;
-    const hasPrivateReadyState = '_readyState' in wsAny;
-
-    if (hasReadyState) {
-      const state = (wsAny as { readyState: number }).readyState;
-      return state === 1;
-    }
-
-    if (hasPrivateReadyState) {
-      const state = (wsAny as { _readyState: number })._readyState;
-      return state === 1;
-    }
-
-    return false;
-  }
-
   private extractStatusCode(error: unknown): ECodeMessage | undefined {
     if (!error || typeof error !== 'object') {
       return undefined;
@@ -1001,128 +965,6 @@ export class BaileysConnectionService {
     }
 
     return undefined;
-  }
-
-  private startKeepAlive(): void {
-    this.stopKeepAlive();
-
-    if (!this.socket) {
-      return;
-    }
-
-    if (!this.connected) {
-      return;
-    }
-
-    this.keepAliveInterval = setInterval(() => {
-      void this.checkAndMaintainActivity();
-    }, this.keepAliveIntervalMs);
-  }
-
-  private stopKeepAlive(): void {
-    if (this.keepAliveInterval) {
-      clearInterval(this.keepAliveInterval);
-      this.keepAliveInterval = undefined;
-    }
-
-    this.isKeepAliveRunning = false;
-  }
-
-  private async checkAndMaintainActivity(): Promise<void> {
-    if (this.isKeepAliveRunning) {
-      return;
-    }
-
-    if (!this.connected) {
-      this.stopKeepAlive();
-      return;
-    }
-
-    if (!this.socket) {
-      this.stopKeepAlive();
-      return;
-    }
-
-    if (!this.socket.user?.id) {
-      return;
-    }
-
-    const ws = this.resolveWebSocket();
-
-    if (!this.isWebSocketOpen(ws)) {
-      this.stopKeepAlive();
-      return;
-    }
-
-    this.isKeepAliveRunning = true;
-
-    try {
-      await Promise.race([
-        this.socket.sendPresenceUpdate('available'),
-        new Promise<never>((_, reject) =>
-          setTimeout(
-            () => reject(new Error('Keep-alive timeout')),
-            this.keepAliveTimeoutMs
-          )
-        ),
-      ]);
-
-      console.log('Keep-alive sent');
-    } catch (error) {
-      console.error('Keep-alive error');
-      console.dir(error, { depth: null, colors: true });
-
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
-
-      const isConnectionError = this.isConnectionRelatedError(errorMessage);
-
-      if (!isConnectionError) {
-        return;
-      }
-
-      this.saveLogWppConnection({
-        worker_id: WORKER,
-        status: this.status,
-        code: ECodeMessage.connectionLost,
-        message: `Keep-alive falhou: ${errorMessage}`,
-        date: new Date(),
-      });
-
-      this.stopKeepAlive();
-      this.connectionEstablished = false;
-
-      this.reconnect({
-        initial_connection: this.initialConnection,
-      });
-    } finally {
-      this.isKeepAliveRunning = false;
-    }
-  }
-
-  private isConnectionRelatedError(errorMessage: string): boolean {
-    const connectionErrorPatterns = [
-      'timeout',
-      'ECONNRESET',
-      'ETIMEDOUT',
-      'ENOTFOUND',
-      'ECONNREFUSED',
-      'EPIPE',
-      'socket hang up',
-      'Connection',
-      'connection closed',
-      'WebSocket',
-    ];
-
-    const lowerMessage = errorMessage.toLowerCase();
-
-    for (const pattern of connectionErrorPatterns) {
-      if (lowerMessage.includes(pattern.toLowerCase())) {
-        return true;
-      }
-    }
-
-    return false;
   }
 
   private readonly saveLogWppConnection = async (
