@@ -14,3 +14,10 @@ export const forwardToOutputChatbotPermissions = [
   EChatPermissions.chat_group,
   EChatPermissions.forward_to_output_chatbot,
 ];
+
+export const generateMessageWithAiPermissions = [
+  EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  EChatPermissions.chat_group,
+  EChatPermissions.generate_message_with_ai,
+];

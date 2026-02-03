@@ -7370,6 +7370,24 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
     );
   }
 
+  private isNonTriggerableSystemEvent(data: IUpsertMessage): boolean {
+    if (data.type === EMessageType.set_disappearing_messages) {
+      return true;
+    }
+
+    if (data.type === EMessageType.system) {
+      const pinMessage = (
+        data?.message?.message as proto.IMessage & {
+          pinInChatMessage?: unknown;
+        }
+      )?.pinInChatMessage;
+
+      return Boolean(pinMessage);
+    }
+
+    return false;
+  }
+
   execute = async (
     t: TFunction<'translation', undefined>,
     data: IUpsertMessage,
@@ -7377,6 +7395,10 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
     chatbotId: string
   ): Promise<string | null> => {
     if (createChat.contact?.ignore === EContactIgnore.ignore_automation) {
+      return null;
+    }
+
+    if (this.isNonTriggerableSystemEvent(data)) {
       return null;
     }
 
