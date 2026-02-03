@@ -17,7 +17,7 @@ export class WorkerConnectionStatusConsume {
   private connectionRetryTimer: NodeJS.Timeout | null = null;
   private connectionRetryAttempt = 0;
   private readonly connectionRetryIntervalMs = 15_000;
-  private readonly connectionRetryMinAttempts = 10;
+  private readonly connectionRetryMinAttempts = 5;
   private activeConnectionRequest: StatusConnectionWorkerRequest | null = null;
   private restartAfterDisconnect = false;
 
