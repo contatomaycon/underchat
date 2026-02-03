@@ -40,8 +40,6 @@ import { EContactDocumentType } from '@core/common/enums/EContactDocumentType';
 import { UpdateContactRequest } from '@core/schema/contact/editContact/request.schema';
 import InvalidConfigurationError from '@core/common/exceptions/InvalidConfigurationError';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
-import { IChatMessage } from '@core/common/interfaces/IChatMessage';
-import { extractMessageTextFromContent } from '@core/common/functions/extractMessageTextFromContent';
 import { normalizeTextForConditionalComparison } from '@core/common/functions/normalizeTextForConditionalComparison';
 import { StreamProducerService } from './streamProducer.service';
 import { KafkaServiceQueueService } from './kafkaServiceQueue.service';
@@ -478,6 +476,80 @@ export class ChatbotFlowRunnerService {
     aiAgentId: string
   ): string {
     return `chatbot:ai-agent:last-response:${accountId}:${workerId}:${chatId}:${aiAgentId}`;
+  }
+
+  private getConversationHistoryCacheKey(
+    accountId: string,
+    workerId: string,
+    chatId: string,
+    aiAgentId: string
+  ): string {
+    return `chatbot:ai-agent:conversation:${accountId}:${workerId}:${chatId}:${aiAgentId}`;
+  }
+
+  private readonly CONVERSATION_HISTORY_MAX_ITEMS = 20;
+  private readonly CONVERSATION_HISTORY_TTL_SECONDS = 86400;
+
+  private async pushToConversationHistory(
+    accountId: string,
+    workerId: string,
+    chatId: string,
+    aiAgentId: string,
+    role: 'user' | 'assistant',
+    content: string
+  ): Promise<void> {
+    if (!content || content.trim().length === 0) {
+      return;
+    }
+    const key = this.getConversationHistoryCacheKey(
+      accountId,
+      workerId,
+      chatId,
+      aiAgentId
+    );
+    const item = JSON.stringify({ role, content: content.trim() });
+    await this.redis
+      .multi()
+      .rpush(key, item)
+      .ltrim(key, -this.CONVERSATION_HISTORY_MAX_ITEMS, -1)
+      .expire(key, this.CONVERSATION_HISTORY_TTL_SECONDS)
+      .exec();
+  }
+
+  private async getConversationHistory(
+    accountId: string,
+    workerId: string,
+    chatId: string,
+    aiAgentId: string,
+    limit: number = 20
+  ): Promise<Array<{ role: 'user' | 'assistant'; content: string }>> {
+    const key = this.getConversationHistoryCacheKey(
+      accountId,
+      workerId,
+      chatId,
+      aiAgentId
+    );
+    const raw = await this.redis.lrange(key, -limit, -1);
+    const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+    for (const s of raw) {
+      try {
+        const parsed = JSON.parse(s) as { role?: string; content?: string };
+        if (
+          parsed &&
+          (parsed.role === 'user' || parsed.role === 'assistant') &&
+          typeof parsed.content === 'string' &&
+          parsed.content.trim().length > 0
+        ) {
+          messages.push({
+            role: parsed.role as 'user' | 'assistant',
+            content: parsed.content.trim(),
+          });
+        }
+      } catch {
+        continue;
+      }
+    }
+    return messages;
   }
 
   private async storeLastAgentResponse(
@@ -4722,78 +4794,6 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
     );
   }
 
-  private async getRecentChatMessages(
-    accountId: string,
-    chatId: string,
-    limit: number = 20
-  ): Promise<Array<{ role: 'user' | 'assistant'; content: string }>> {
-    const queryElastic = {
-      size: limit,
-      sort: [{ date: { order: 'desc' } }],
-      query: {
-        bool: {
-          must: [
-            {
-              nested: {
-                path: 'account',
-                query: {
-                  term: {
-                    'account.id': accountId,
-                  },
-                },
-              },
-            },
-          ],
-          filter: [
-            {
-              term: {
-                chat_id: chatId,
-              },
-            },
-            {
-              terms: {
-                'content.type': [
-                  EMessageType.text,
-                  EMessageType.system,
-                  EMessageType.annotation,
-                ],
-              },
-            },
-          ],
-        },
-      },
-    };
-
-    const result = await this.elasticDatabaseService.select<IChatMessage>(
-      EElasticIndex.message,
-      queryElastic
-    );
-
-    if (!result || !result.hits.hits) {
-      return [];
-    }
-
-    const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [];
-
-    for (const hit of result.hits.hits.reverse()) {
-      const message = hit._source as IChatMessage;
-      if (!message.content) {
-        continue;
-      }
-
-      const text = extractMessageTextFromContent(message.content);
-      if (!text || text.trim().length === 0) {
-        continue;
-      }
-
-      const role: 'user' | 'assistant' =
-        message.type_user === ETypeUserChat.bot ? 'assistant' : 'user';
-      messages.push({ role, content: text });
-    }
-
-    return messages;
-  }
-
   private async analyzeUserResponse(
     baseUrl: string,
     apiKey: string,
@@ -5595,10 +5595,12 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
     const apiKey = aiAgent.api_key;
     const model = aiAgent.model;
 
-    const recentMessages = await this.getRecentChatMessages(
+    const recentMessages = await this.getConversationHistory(
       createChat.account.id,
+      createChat.worker.id,
       createChat.chat_id,
-      50
+      aiAgent.ai_agent_id,
+      20
     );
 
     const useAssistantsApi =
@@ -5719,6 +5721,29 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       );
     }
 
+    await this.pushToConversationHistory(
+      createChat.account.id,
+      createChat.worker.id,
+      createChat.chat_id,
+      aiAgent.ai_agent_id,
+      'user',
+      userText
+    );
+    await this.pushToConversationHistory(
+      createChat.account.id,
+      createChat.worker.id,
+      createChat.chat_id,
+      aiAgent.ai_agent_id,
+      'assistant',
+      aiResponse
+    );
+
+    const recentMessagesForSummary = [
+      ...recentMessages,
+      { role: 'user' as const, content: userText },
+      { role: 'assistant' as const, content: aiResponse },
+    ];
+
     await this.sendAiAgentResponse(
       t,
       createChat,
@@ -5735,7 +5760,7 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
         voice_ia_id: aiAgent.voice_ia_id,
       },
       shouldStoreLastAgentResponse,
-      recentMessages
+      recentMessagesForSummary
     );
 
     const actionAfterInteractions =
@@ -5898,12 +5923,6 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       }
     );
     const conversationSummary = await this.redis.get(conversationSummaryKey);
-    const lastAgentMessage = await this.getLastAgentResponse(
-      createChat.account.id,
-      createChat.worker.id,
-      createChat.chat_id,
-      aiAgent.ai_agent_id
-    );
     const maxPromptChars = this.estimateMaxPromptChars(
       aiAgent.model ?? '',
       undefined
@@ -5927,7 +5946,6 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
           conversationSummary: conversationSummary,
           recentMessages: recentMessages,
           phone: createChat.phone,
-          lastAgentMessage,
           maxPromptChars,
         }
       );
@@ -6568,9 +6586,11 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       if (recentMessagesForSummary !== undefined) {
         recentMessages = recentMessagesForSummary.slice(-20);
       } else {
-        recentMessages = await this.getRecentChatMessages(
+        recentMessages = await this.getConversationHistory(
           createChat.account.id,
+          createChat.worker.id,
           createChat.chat_id,
+          selectedAiAgentId,
           20
         );
       }
