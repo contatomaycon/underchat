@@ -4240,7 +4240,9 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
     analysis: 'negative' | 'question'
   ): string | null {
     if (analysis === 'negative') {
-      const negativeOption = options.find((opt) => opt.id === 'negative-option');
+      const negativeOption = options.find(
+        (opt) => opt.id === 'negative-option'
+      );
       return (negativeOption?.id ?? null) as string | null;
     }
 
