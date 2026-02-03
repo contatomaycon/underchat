@@ -13,8 +13,6 @@ interface AiAgentOption {
 
 interface AiAgentData {
   selectedAiAgent: string | null;
-  defaultQuestion: string | null;
-  continueMessage: string | null;
   options: AiAgentOption[];
   actionAfterInteractions?: boolean | null;
   interactionsQuantity?: number | null;
@@ -37,88 +35,20 @@ const normalizeValue = (value?: string | null): string | null => {
 const getInitialData = (): AiAgentData => {
   const data = props.data as AiAgentData | undefined;
   const selectedAiAgent = normalizeValue(data?.selectedAiAgent);
-  const defaultQuestion = normalizeValue(data?.defaultQuestion) || null;
-  const continueMessage =
-    normalizeValue(data?.continueMessage) ||
-    t('chatbot_ai_agent_continue_option') ||
-    null;
   const actionAfterInteractions = data?.actionAfterInteractions ?? true;
   const interactionsQuantity = data?.interactionsQuantity ?? 5;
-  const defaultOptions: AiAgentOption[] = [
-    {
-      id: 'positive-option',
-      text: t('chatbot_ai_agent_positive_option'),
-      required: true,
-    },
-    {
-      id: 'negative-option',
-      text: t('chatbot_ai_agent_negative_option'),
-      required: true,
-    },
-  ];
 
-  let options: AiAgentOption[] = defaultOptions;
-  if (
-    data?.options &&
-    Array.isArray(data.options) &&
-    data.options.length === 2
-  ) {
-    const hasPositiveOption = data.options.some(
-      (opt) =>
-        opt.text === t('chatbot_ai_agent_positive_option') ||
-        opt.id === 'positive-option'
-    );
-    const hasNegativeOption = data.options.some(
-      (opt) =>
-        opt.text === t('chatbot_ai_agent_negative_option') ||
-        opt.id === 'negative-option'
-    );
+  const resolvedOption: AiAgentOption = {
+    id: 'negative-option',
+    text: t('chatbot_ai_agent_resolved_option'),
+    required: true,
+  };
 
-    if (hasPositiveOption && hasNegativeOption) {
-      const mappedOptions: AiAgentOption[] = [];
-
-      for (const opt of data.options) {
-        if (
-          opt.text === t('chatbot_ai_agent_positive_option') ||
-          opt.id === 'positive-option'
-        ) {
-          mappedOptions.push({
-            id: 'positive-option',
-            text: t('chatbot_ai_agent_positive_option'),
-            required: true,
-          });
-        } else if (
-          opt.text === t('chatbot_ai_agent_negative_option') ||
-          opt.id === 'negative-option'
-        ) {
-          mappedOptions.push({
-            id: 'negative-option',
-            text: t('chatbot_ai_agent_negative_option'),
-            required: true,
-          });
-        }
-      }
-
-      if (mappedOptions.length === 2) {
-        options = mappedOptions;
-      } else {
-        options = defaultOptions;
-      }
-    } else {
-      options = defaultOptions;
-    }
-  }
+  const options: AiAgentOption[] = [resolvedOption];
 
   if (data) {
     if (data.selectedAiAgent === undefined) {
       data.selectedAiAgent = selectedAiAgent;
-    }
-    if (data.defaultQuestion === undefined) {
-      data.defaultQuestion = defaultQuestion;
-    }
-    if (data.continueMessage === undefined) {
-      data.continueMessage =
-        continueMessage || t('chatbot_ai_agent_continue_option');
     }
     if (data.actionAfterInteractions === undefined) {
       data.actionAfterInteractions = actionAfterInteractions;
@@ -131,8 +61,6 @@ const getInitialData = (): AiAgentData => {
 
   return {
     selectedAiAgent,
-    defaultQuestion,
-    continueMessage,
     options,
     actionAfterInteractions,
     interactionsQuantity,
@@ -182,19 +110,10 @@ const updateNodeData = () => {
   }
   isUpdatingFromProps = true;
   const data = props.data as AiAgentData;
-  const newSelectedValue = aiAgentData.value.selectedAiAgent;
-  const newDefaultQuestion = aiAgentData.value.defaultQuestion;
-  const newContinueMessage = aiAgentData.value.continueMessage;
-  const newActionAfterInteractions = aiAgentData.value.actionAfterInteractions;
-  const newInteractionsQuantity = aiAgentData.value.interactionsQuantity;
-  const newOptions = [...aiAgentData.value.options];
-
-  data.selectedAiAgent = newSelectedValue;
-  data.defaultQuestion = newDefaultQuestion;
-  data.continueMessage = newContinueMessage;
-  data.actionAfterInteractions = newActionAfterInteractions;
-  data.interactionsQuantity = newInteractionsQuantity;
-  data.options = newOptions;
+  data.selectedAiAgent = aiAgentData.value.selectedAiAgent;
+  data.actionAfterInteractions = aiAgentData.value.actionAfterInteractions;
+  data.interactionsQuantity = aiAgentData.value.interactionsQuantity;
+  data.options = [...aiAgentData.value.options];
 
   nextTick(() => {
     isUpdatingFromProps = false;
@@ -253,12 +172,6 @@ onMounted(async () => {
   const savedSelectedValue = normalizeValue(
     (props.data as AiAgentData)?.selectedAiAgent
   );
-  const savedDefaultQuestion = normalizeValue(
-    (props.data as AiAgentData)?.defaultQuestion
-  );
-  const savedContinueMessage = normalizeValue(
-    (props.data as AiAgentData)?.continueMessage
-  );
   const savedActionAfterInteractions = (props.data as AiAgentData)
     ?.actionAfterInteractions;
   const savedInteractionsQuantity = (props.data as AiAgentData)
@@ -266,24 +179,6 @@ onMounted(async () => {
 
   if (savedSelectedValue) {
     aiAgentData.value.selectedAiAgent = savedSelectedValue;
-  }
-
-  if (savedDefaultQuestion) {
-    aiAgentData.value.defaultQuestion = savedDefaultQuestion;
-  } else if (
-    aiAgentData.value.defaultQuestion === null ||
-    aiAgentData.value.defaultQuestion === undefined
-  ) {
-    aiAgentData.value.defaultQuestion = t('chatbot_ai_agent_default_question');
-  }
-
-  if (savedContinueMessage) {
-    aiAgentData.value.continueMessage = savedContinueMessage;
-  } else if (
-    aiAgentData.value.continueMessage === null ||
-    aiAgentData.value.continueMessage === undefined
-  ) {
-    aiAgentData.value.continueMessage = t('chatbot_ai_agent_continue_option');
   }
 
   if (
@@ -304,33 +199,14 @@ onMounted(async () => {
     aiAgentData.value.interactionsQuantity = 5;
   }
 
-  if (
-    !aiAgentData.value.options ||
-    aiAgentData.value.options.length !== 2 ||
-    !aiAgentData.value.options.some(
-      (opt) =>
-        opt.text === t('chatbot_ai_agent_positive_option') ||
-        opt.id === 'positive-option'
-    ) ||
-    !aiAgentData.value.options.some(
-      (opt) =>
-        opt.text === t('chatbot_ai_agent_negative_option') ||
-        opt.id === 'negative-option'
-    )
-  ) {
-    aiAgentData.value.options = [
-      {
-        id: 'positive-option',
-        text: t('chatbot_ai_agent_positive_option'),
-        required: true,
-      },
-      {
-        id: 'negative-option',
-        text: t('chatbot_ai_agent_negative_option'),
-        required: true,
-      },
-    ];
-  }
+  // Ensure single resolved option
+  aiAgentData.value.options = [
+    {
+      id: 'negative-option',
+      text: t('chatbot_ai_agent_resolved_option'),
+      required: true,
+    },
+  ];
 
   await loadAiAgents();
 
@@ -367,34 +243,6 @@ watch(
 );
 
 watch(
-  () => (props.data as AiAgentData)?.defaultQuestion,
-  (newValue) => {
-    if (isUpdatingFromProps) {
-      return;
-    }
-    const normalized = normalizeValue(newValue);
-    if (normalized !== aiAgentData.value.defaultQuestion) {
-      aiAgentData.value.defaultQuestion = normalized;
-    }
-  },
-  { flush: 'post' }
-);
-
-watch(
-  () => (props.data as AiAgentData)?.continueMessage,
-  (newValue) => {
-    if (isUpdatingFromProps) {
-      return;
-    }
-    const normalized = normalizeValue(newValue);
-    if (normalized !== aiAgentData.value.continueMessage) {
-      aiAgentData.value.continueMessage = normalized;
-    }
-  },
-  { flush: 'post' }
-);
-
-watch(
   () => (props.data as AiAgentData)?.actionAfterInteractions,
   (newValue) => {
     if (isUpdatingFromProps) {
@@ -422,26 +270,6 @@ watch(
 
 watch(
   () => aiAgentData.value.selectedAiAgent,
-  (newValue, oldValue) => {
-    if (newValue !== oldValue) {
-      updateNodeData();
-    }
-  },
-  { immediate: false }
-);
-
-watch(
-  () => aiAgentData.value.defaultQuestion,
-  (newValue, oldValue) => {
-    if (newValue !== oldValue) {
-      updateNodeData();
-    }
-  },
-  { immediate: false }
-);
-
-watch(
-  () => aiAgentData.value.continueMessage,
   (newValue, oldValue) => {
     if (newValue !== oldValue) {
       updateNodeData();
@@ -555,28 +383,6 @@ const handleRemove = () => {
           item-title="title"
           class="mb-3"
           @update:model-value="handleAiAgentChange"
-        />
-        <VLabel class="text-body-2 mb-1"
-          >{{ t('chatbot_ai_agent_default_question_label') }}:</VLabel
-        >
-        <VTextField
-          v-model="aiAgentData.defaultQuestion"
-          :placeholder="t('chatbot_ai_agent_default_question_placeholder')"
-          variant="outlined"
-          density="compact"
-          class="mb-3"
-          hide-details="auto"
-        />
-        <VLabel class="text-body-2 mb-1">{{
-          t('chatbot_ai_agent_continue_message_label')
-        }}</VLabel>
-        <VTextField
-          v-model="aiAgentData.continueMessage"
-          :placeholder="t('chatbot_ai_agent_continue_message_placeholder')"
-          variant="outlined"
-          density="compact"
-          class="mb-1"
-          hide-details="auto"
         />
         <div v-if="aiAgentData.options.length > 0" class="options-list nodrag">
           <div

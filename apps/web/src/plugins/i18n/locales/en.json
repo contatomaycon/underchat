@@ -1634,6 +1634,7 @@
   "chatbot_ai_agent_continue_message_placeholder": "Can we help you with anything else?",
   "chatbot_ai_agent_positive_option": "Yes",
   "chatbot_ai_agent_negative_option": "No",
+  "chatbot_ai_agent_resolved_option": "Service completed",
   "chatbot_ai_agent_action_after_interactions_label": "Action after x interaction(s)",
   "chatbot_ai_agent_interactions_quantity_label": "Number of interactions",
   "chatbot_ai_agent_human_support_label": "Human Support",

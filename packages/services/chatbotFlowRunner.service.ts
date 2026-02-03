@@ -1447,29 +1447,23 @@ export class ChatbotFlowRunnerService {
         previousFlowId && previousFlowId === nextFlowId;
 
       if (!isReturningToAiAgent) {
-        const nodeDefaultQuestion = nextFlowNode.data?.defaultQuestion;
-        const defaultQuestion =
-          nodeDefaultQuestion && nodeDefaultQuestion.trim().length > 0
-            ? nodeDefaultQuestion
-            : t('ai_agent_default_question');
-        const questionMessage = await this.replaceVariables(
-          t,
-          defaultQuestion,
-          createChat,
-          createChat.user,
-          createChat.sector
-        );
-
-        await this.chatMessageService.sendMessage(t, {
-          chat: createChat,
-          accountId: createChat.account.id,
-          type: EMessageType.text,
-          message: questionMessage,
-          typeUser: ETypeUserChat.bot,
-        });
-
         const selectedAiAgentId = nextFlowNode.data?.selectedAiAgent;
         if (selectedAiAgentId) {
+          const aiAgent = await this.aiAgentService.viewAiAgent(
+            selectedAiAgentId,
+            createChat.account.id
+          );
+          if (aiAgent) {
+            await this.generateAndSendAiWelcomeMessage(t, createChat, aiAgent);
+          } else {
+            await this.chatMessageService.sendMessage(t, {
+              chat: createChat,
+              accountId: createChat.account.id,
+              type: EMessageType.text,
+              message: t('ai_agent_default_question'),
+              typeUser: ETypeUserChat.bot,
+            });
+          }
           await this.scheduleChatHistoryEmbedding(
             createChat,
             selectedAiAgentId
@@ -3791,44 +3785,274 @@ export class ChatbotFlowRunnerService {
     return { text, usage, latency_ms };
   }
 
-  private async sendDefaultQuestionMessage(
+  private async generateAndSendAiWelcomeMessage(
     t: TFunction<'translation', undefined>,
     createChat: IChat,
-    currentNode: ListChatbotFlowResponse['nodes'][number],
-    clearCache = false
+    aiAgent: ViewAiAgentResponse
   ): Promise<void> {
-    if (clearCache) {
-      const cacheKey = this.getChatbotFlowCacheKey(
-        createChat.account.id,
-        createChat.worker.id,
-        createChat.chat_id
-      );
-      await this.redis.del(cacheKey);
-      const continueMessageSentKey = `${cacheKey}:continue-message-sent`;
-      await this.redis.del(continueMessageSentKey);
+    if (!aiAgent.base_url || !aiAgent.api_key || !aiAgent.model) {
+      const fallback = t('ai_agent_default_question');
+      await this.chatMessageService.sendMessage(t, {
+        chat: createChat,
+        accountId: createChat.account.id,
+        type: EMessageType.text,
+        message: fallback,
+        typeUser: ETypeUserChat.bot,
+      });
+      return;
     }
 
-    const nodeDefaultQuestion = currentNode.data?.defaultQuestion;
-    const defaultQuestion =
-      nodeDefaultQuestion && nodeDefaultQuestion.trim().length > 0
-        ? nodeDefaultQuestion
-        : t('ai_agent_default_question');
+    const contactName = await this.getContactName(createChat);
+    const greeting = this.getGreeting(t);
+    const name = contactName || createChat.name || '';
 
-    const questionMessage = await this.replaceVariables(
+    const systemPrompt = `Você é um assistente de atendimento ao cliente amigável e profissional. Gere uma mensagem de boas-vindas curta e natural para iniciar uma conversa de atendimento.
+
+Diretrizes:
+- Seja caloroso, gentil e profissional
+- ${name ? `Use o nome do cliente: ${name}` : 'O nome do cliente não está disponível, não use nome'}
+- Pergunte como pode ajudar
+- Mantenha a mensagem breve (máximo 2-3 frases)
+- Varie a mensagem - não use sempre a mesma saudação
+- Não mencione que é uma IA ou robô
+- Use a saudação apropriada para o horário: ${greeting}
+${aiAgent.system_prompt ? `\nContexto do agente:\n${aiAgent.system_prompt.substring(0, 300)}` : ''}`;
+
+    let finalMessage: string;
+
+    try {
+      const welcomeMessage = await this.callAiAgentChatApi(
+        aiAgent.base_url,
+        aiAgent.api_key,
+        aiAgent.model,
+        aiAgent.ai_agent_type_id,
+        systemPrompt,
+        'Gere uma mensagem de boas-vindas para o início do atendimento.'
+      );
+      finalMessage =
+        welcomeMessage && welcomeMessage.trim().length > 0
+          ? welcomeMessage.trim()
+          : this.buildFallbackWelcomeMessage(name, greeting);
+    } catch (error) {
+      console.error(
+        '[ChatbotFlow] generateAndSendAiWelcomeMessage failed, using fallback',
+        error
+      );
+      finalMessage = this.buildFallbackWelcomeMessage(name, greeting);
+    }
+
+    const voiceSent = await this.trySendAsVoiceMessage(
       t,
-      defaultQuestion,
       createChat,
-      createChat.user,
-      createChat.sector
+      aiAgent,
+      finalMessage
     );
 
-    await this.chatMessageService.sendMessage(t, {
-      chat: createChat,
-      accountId: createChat.account.id,
-      type: EMessageType.text,
-      message: questionMessage,
-      typeUser: ETypeUserChat.bot,
-    });
+    if (!voiceSent) {
+      await this.chatMessageService.sendMessage(t, {
+        chat: createChat,
+        accountId: createChat.account.id,
+        type: EMessageType.text,
+        message: finalMessage,
+        typeUser: ETypeUserChat.bot,
+      });
+    }
+
+    await this.pushToConversationHistory(
+      createChat.account.id,
+      createChat.worker.id,
+      createChat.chat_id,
+      aiAgent.ai_agent_id,
+      'assistant',
+      finalMessage
+    );
+  }
+
+  private buildFallbackWelcomeMessage(name: string, greeting: string): string {
+    return name
+      ? `${greeting}, ${name}! Como posso ajudar você hoje?`
+      : `${greeting}! Como posso ajudar você hoje?`;
+  }
+
+  private async trySendAsVoiceMessage(
+    t: TFunction<'translation', undefined>,
+    createChat: IChat,
+    aiAgent: ViewAiAgentResponse,
+    text: string
+  ): Promise<boolean> {
+    if (!aiAgent.voice_ia_id) {
+      return false;
+    }
+
+    try {
+      const voiceIaConfig = await this.voiceIaService.viewVoiceIa(
+        aiAgent.voice_ia_id,
+        createChat.account.id
+      );
+
+      if (!voiceIaConfig?.api_key) {
+        return false;
+      }
+
+      const cleanedText = stripTextForTts(text);
+      if (cleanedText.trim().length === 0) {
+        return false;
+      }
+
+      const uploadResult =
+        await this.voiceIaIntegrationService.generateSpeechAndUpload(
+          cleanedText,
+          voiceIaConfig,
+          createChat.account.id
+        );
+
+      if (!uploadResult) {
+        return false;
+      }
+
+      await this.chatMessageService.sendMessage(t, {
+        chat: createChat,
+        accountId: createChat.account.id,
+        type: EMessageType.audio,
+        audioUrl: uploadResult.url,
+        audioMimetype: uploadResult.mimetype,
+        audioPtt: true,
+        typeUser: ETypeUserChat.bot,
+      });
+
+      return true;
+    } catch (error) {
+      console.error('[ChatbotFlow] trySendAsVoiceMessage failed', error);
+      return false;
+    }
+  }
+
+  private async analyzeUserIntentWithContext(
+    aiAgent: ViewAiAgentResponse,
+    userText: string,
+    recentMessages: Array<{ role: 'user' | 'assistant'; content: string }>,
+    humanSupportEnabled: boolean
+  ): Promise<'needs_help' | 'resolved' | 'human_support'> {
+    const normalizedResponse = userText.toLowerCase().trim();
+
+    if (
+      humanSupportEnabled &&
+      this.containsHumanSupportIndicator(normalizedResponse)
+    ) {
+      return 'human_support';
+    }
+
+    if (!aiAgent.base_url || !aiAgent.api_key || !aiAgent.model) {
+      return 'needs_help';
+    }
+
+    const conversationContext = recentMessages
+      .slice(-20)
+      .map(
+        (msg) =>
+          `${msg.role === 'user' ? 'Usuário' : 'Assistente'}: ${msg.content}`
+      )
+      .join('\n');
+
+    const humanSupportSection = humanSupportEnabled
+      ? `- "human_support": O usuário quer EXPLICITAMENTE falar com um atendente humano, operador ou pessoa real. Exemplos: "quero falar com humano", "falar com atendente", "me transfere para uma pessoa".\n`
+      : '';
+
+    const validOptions = humanSupportEnabled
+      ? 'needs_help, resolved ou human_support'
+      : 'needs_help ou resolved';
+
+    const analysisPrompt = `Você é um classificador de intenção especializado em atendimento ao cliente. Analise a mensagem mais recente do usuário NO CONTEXTO da conversa completa para determinar a intenção.
+
+Classificações possíveis:
+- "needs_help": O usuário tem uma pergunta, precisa de assistência, quer mais informações, está continuando a conversa sobre qualquer tópico, ou enviou qualquer mensagem que não seja CLARAMENTE uma despedida ou encerramento. Use esta classificação para QUALQUER dúvida, mesmo que pareça simples.
+- "resolved": O usuário sinalizou CLARA e EXPLICITAMENTE que sua questão foi resolvida e não precisa de mais ajuda. Exemplos: "obrigado, era só isso", "não preciso de mais nada", "pode encerrar", "já resolvi minha dúvida", "tudo certo, obrigado, era isso mesmo", "é só isso mesmo", "não tenho mais dúvidas".
+${humanSupportSection}
+REGRAS IMPORTANTES:
+1. Quando houver QUALQUER dúvida, classifique como "needs_help". O padrão é SEMPRE "needs_help".
+2. Um simples "obrigado", "ok", "valeu" ou "entendi" sozinho NÃO é suficiente para "resolved" - o usuário DEVE sinalizar explicitamente que não precisa de mais ajuda.
+3. Se o usuário fizer qualquer pergunta ou continuar interagindo sobre o tema, SEMPRE classifique como "needs_help".
+4. Só classifique como "resolved" quando for ABSOLUTAMENTE claro pelo contexto que o usuário não tem mais dúvidas e quer encerrar.
+5. Se o usuário disser algo como "obrigado" seguido de uma pergunta ou comentário, classifique como "needs_help".
+6. Considere o contexto COMPLETO da conversa para tomar a decisão.
+7. Mensagens curtas como "ok", "certo", "entendi" sem contexto de encerramento devem ser "needs_help".
+
+Histórico recente da conversa:
+${conversationContext || '(sem histórico anterior)'}
+
+Mensagem mais recente do usuário: "${userText}"
+
+Retorne APENAS uma das palavras: ${validOptions}.`;
+
+    try {
+      const analysis = await this.callAiAgentChatApi(
+        aiAgent.base_url,
+        aiAgent.api_key,
+        aiAgent.model,
+        aiAgent.ai_agent_type_id,
+        analysisPrompt,
+        userText,
+        recentMessages.slice(-20)
+      );
+
+      const normalized = analysis.trim().toLowerCase();
+      if (humanSupportEnabled && normalized.includes('human_support')) {
+        return 'human_support';
+      }
+      if (normalized.includes('resolved')) {
+        return 'resolved';
+      }
+      return 'needs_help';
+    } catch (error) {
+      console.error('[ChatbotFlow] analyzeUserIntentWithContext failed', error);
+      return this.fallbackIntentAnalysis(userText, humanSupportEnabled);
+    }
+  }
+
+  private fallbackIntentAnalysis(
+    userText: string,
+    humanSupportEnabled: boolean
+  ): 'needs_help' | 'resolved' | 'human_support' {
+    const lower = userText.toLowerCase().trim();
+
+    if (humanSupportEnabled && this.containsHumanSupportIndicator(lower)) {
+      return 'human_support';
+    }
+
+    const resolvedIndicators = [
+      'não preciso de mais nada',
+      'nao preciso de mais nada',
+      'não preciso mais',
+      'nao preciso mais',
+      'era só isso',
+      'era so isso',
+      'pode encerrar',
+      'já resolvi',
+      'ja resolvi',
+      'tudo certo, obrigado',
+      'tudo certo, obrigada',
+      'não preciso de ajuda',
+      'nao preciso de ajuda',
+      'não preciso mais de ajuda',
+      'nao preciso mais de ajuda',
+      'era isso mesmo',
+      'é só isso',
+      'e so isso',
+      'é só isso mesmo',
+      'e so isso mesmo',
+      'não tenho mais dúvidas',
+      'nao tenho mais duvidas',
+      'sem mais dúvidas',
+      'sem mais duvidas',
+    ];
+
+    for (const indicator of resolvedIndicators) {
+      if (lower.includes(indicator)) {
+        return 'resolved';
+      }
+    }
+
+    return 'needs_help';
   }
 
   private async processTextResponseAnalysis(
@@ -3838,7 +4062,7 @@ export class ChatbotFlowRunnerService {
     currentFlowId: string,
     currentNode: ListChatbotFlowResponse['nodes'][number],
     options: IChatbotFlowMenuOption[],
-    analysis: 'positive' | 'negative' | 'question' | 'human_support',
+    analysis: 'negative' | 'question' | 'human_support',
     customMessages: IChatbotCustomMessages | undefined
   ): Promise<boolean> {
     if (analysis === 'question') {
@@ -3984,7 +4208,7 @@ export class ChatbotFlowRunnerService {
       return true;
     }
 
-    const targetOptionId = this.findTargetOptionId(t, options, analysis);
+    const targetOptionId = this.findTargetOptionId(options, analysis);
 
     if (!targetOptionId) {
       return false;
@@ -4000,29 +4224,6 @@ export class ChatbotFlowRunnerService {
       return false;
     }
 
-    if (analysis === 'positive') {
-      const nodeDefaultQuestion = currentNode.data?.defaultQuestion;
-      const defaultQuestion =
-        nodeDefaultQuestion && nodeDefaultQuestion.trim().length > 0
-          ? nodeDefaultQuestion
-          : t('ai_agent_default_question');
-      const questionMessage = await this.replaceVariables(
-        t,
-        defaultQuestion,
-        createChat,
-        createChat.user,
-        createChat.sector
-      );
-
-      await this.chatMessageService.sendMessage(t, {
-        chat: createChat,
-        accountId: createChat.account.id,
-        type: EMessageType.text,
-        message: questionMessage,
-        typeUser: ETypeUserChat.bot,
-      });
-    }
-
     await this.resetFailedAttempts(createChat);
 
     return this.processNextNode(
@@ -4035,25 +4236,11 @@ export class ChatbotFlowRunnerService {
   }
 
   private findTargetOptionId(
-    t: TFunction<'translation', undefined>,
     options: IChatbotFlowMenuOption[],
-    analysis: 'positive' | 'negative' | 'question'
+    analysis: 'negative' | 'question'
   ): string | null {
-    if (analysis === 'positive') {
-      const positiveOptionText = t('chatbot_ai_agent_positive_option');
-      const positiveOption = options.find(
-        (opt) => opt.text === positiveOptionText || opt.id === 'positive-option'
-      );
-
-      return (positiveOption?.id ?? null) as string | null;
-    }
-
     if (analysis === 'negative') {
-      const negativeOptionText = t('chatbot_ai_agent_negative_option');
-      const negativeOption = options.find(
-        (opt) => opt.text === negativeOptionText || opt.id === 'negative-option'
-      );
-
+      const negativeOption = options.find((opt) => opt.id === 'negative-option');
       return (negativeOption?.id ?? null) as string | null;
     }
 
@@ -4794,208 +4981,6 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
     );
   }
 
-  private async analyzeUserResponse(
-    baseUrl: string,
-    apiKey: string,
-    model: string,
-    aiAgentTypeId: string,
-    continueMessage: string,
-    userResponse: string,
-    humanSupportEnabled: boolean = false
-  ): Promise<'positive' | 'negative' | 'question' | 'human_support'> {
-    const normalizedResponse = userResponse.toLowerCase().trim();
-
-    if (
-      humanSupportEnabled &&
-      this.containsHumanSupportIndicator(normalizedResponse)
-    ) {
-      return 'human_support';
-    }
-
-    const analysisPrompt = this.buildAnalysisPrompt(
-      continueMessage,
-      userResponse,
-      humanSupportEnabled
-    );
-
-    try {
-      const analysis = await this.callAiAgentChatApi(
-        baseUrl,
-        apiKey,
-        model,
-        aiAgentTypeId,
-        analysisPrompt,
-        userResponse
-      );
-
-      const result = this.parseAnalysisResponse(analysis, humanSupportEnabled);
-
-      return result;
-    } catch (error) {
-      console.error('[ChatbotFlow] analyzeUserResponse failed', error);
-      const fallbackResult = this.fallbackAnalysis(
-        userResponse,
-        humanSupportEnabled
-      );
-
-      return fallbackResult;
-    }
-  }
-
-  private buildAnalysisPrompt(
-    continueMessage: string,
-    userResponse: string,
-    humanSupportEnabled: boolean = false
-  ): string {
-    const humanSupportSection = humanSupportEnabled
-      ? `- "human_support": se o usuário QUER falar com um atendente humano, operador, suporte humano ou pessoa real. Exemplos: "quero falar com humano", "falar com atendente", "falar com operador", "falar com suporte", "quero falar com pessoa", "preciso de atendimento humano", "quero atendimento humano", "me transfere para humano", "quero falar com alguém", "falar com uma pessoa"
-`
-      : '';
-
-    const validOptions = humanSupportEnabled
-      ? 'positive, negative, question ou human_support'
-      : 'positive, negative ou question';
-
-    return `Você é um classificador de intenção. Analise a resposta do usuário considerando o contexto da mensagem de continuidade e escolha EXATAMENTE UMA etiqueta:
-
-- "positive": o usuário quer continuar no MESMO tópico, pede mais detalhes, confirmação, passos ou esclarecimento sobre o assunto já discutido. Pode ser pergunta de continuação do mesmo tema. Exemplos: "pode explicar melhor?", "como faço isso exatamente?", "sim, quero continuar", "me dá mais detalhes", "tenho outra dúvida sobre isso"
-- "negative": o usuário está satisfeito, quer encerrar, agradece ou diz que não precisa mais. Exemplos: "não, obrigado", "tudo certo", "já resolvi", "ok, valeu", "está tudo bem", "não preciso mais"
-- "question": o usuário traz NOVO tópico/problema/situação, muda de assunto ou algo que NÃO é continuação do tema anterior. Exemplos: "tenho outro problema...", "mudando de assunto...", "e sobre X?", "no meu caso acontece Y", "agora preciso de ajuda com outra coisa"
-${humanSupportSection}
-Regras de decisão (ordem de prioridade):
-1) Se houver pedido explícito para falar com humano/pessoa real/atendente/operador, classifique como "human_support" (quando disponível), mesmo que haja outras intenções.
-2) Se a resposta indica encerramento/agradecimento/solução e NÃO há novo pedido, classifique como "negative".
-3) Se a resposta pede continuidade/mais ajuda no MESMO assunto da mensagem de continuidade, classifique como "positive" (mesmo se for uma pergunta de continuação).
-4) Se a resposta introduz NOVO assunto/problema/situação, classifique como "question".
-5) Se houver dúvida real entre "positive" e "question", prefira "question".
-
-Pergunta/Contexto da mensagem de continuidade: "${continueMessage}"
-Resposta do usuário: "${userResponse}"
-
-Retorne APENAS uma das palavras: ${validOptions}.`;
-  }
-
-  private parseAnalysisResponse(
-    analysis: string,
-    humanSupportEnabled: boolean = false
-  ): 'positive' | 'negative' | 'question' | 'human_support' {
-    const normalized = analysis.trim().toLowerCase();
-    if (humanSupportEnabled && normalized.includes('human_support')) {
-      return 'human_support';
-    }
-
-    if (normalized.includes('positive')) {
-      return 'positive';
-    }
-    if (normalized.includes('negative')) {
-      return 'negative';
-    }
-
-    return 'question';
-  }
-
-  private fallbackAnalysis(
-    userResponse: string,
-    humanSupportEnabled: boolean = false
-  ): 'positive' | 'negative' | 'question' | 'human_support' {
-    const lowerResponse = userResponse.toLowerCase().trim();
-
-    if (humanSupportEnabled) {
-      if (this.containsHumanSupportIndicator(lowerResponse)) {
-        return 'human_support';
-      }
-    }
-
-    const negativeIndicators = [
-      'não',
-      'nao',
-      'no',
-      'não preciso',
-      'nao preciso',
-      'não preciso mais',
-      'nao preciso mais',
-      'tudo certo',
-      'obrigado',
-      'obrigada',
-      'valeu',
-      'já resolvi',
-      'já entendi',
-      'está tudo bem',
-      'está tudo certo',
-      'não preciso de ajuda',
-      'nao preciso de ajuda',
-      'já está resolvido',
-      'já está certo',
-      'tudo certo, obrigado',
-      'tudo certo, obrigada',
-      'não preciso mais de ajuda',
-      'nao preciso mais de ajuda',
-    ];
-
-    const positiveIndicators = [
-      'sim, preciso',
-      'sim preciso',
-      'yes',
-      'quero',
-      'preciso',
-      'ajuda',
-      'tenho dúvida',
-      'tenho duvida',
-      'quero saber',
-      'me ajuda',
-      'preciso de ajuda',
-      'tenho outra',
-      'outra dúvida',
-      'outra duvida',
-    ];
-
-    for (const indicator of negativeIndicators) {
-      if (lowerResponse.includes(indicator)) {
-        return 'negative';
-      }
-    }
-
-    if (
-      lowerResponse === 'ok' ||
-      lowerResponse === 'sim' ||
-      lowerResponse === 'yes'
-    ) {
-      return 'positive';
-    }
-
-    for (const indicator of positiveIndicators) {
-      if (lowerResponse.includes(indicator)) {
-        return 'positive';
-      }
-    }
-
-    if (this.isQuestionPattern(lowerResponse)) {
-      return 'question';
-    }
-
-    if (
-      lowerResponse.includes('obrigado') ||
-      lowerResponse.includes('obrigada') ||
-      lowerResponse.includes('tudo certo')
-    ) {
-      return 'negative';
-    }
-
-    return 'negative';
-  }
-
-  private isQuestionPattern(text: string): boolean {
-    return (
-      text.includes('?') ||
-      text.startsWith('como') ||
-      text.startsWith('qual') ||
-      text.startsWith('quando') ||
-      text.startsWith('onde') ||
-      text.startsWith('quem') ||
-      text.startsWith('por que')
-    );
-  }
-
   private containsHumanSupportIndicator(text: string): boolean {
     const humanSupportIndicators = [
       'falar com humano',
@@ -5270,7 +5255,6 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       return this.handleBootstrapEntry(
         t,
         createChat,
-        currentNode,
         aiAgent,
         currentFlowId,
         bootstrapSummaryKey
@@ -5353,19 +5337,58 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       }
     }
 
-    const menuResult = await this.handleMenuOptionIfExists(
-      t,
-      createChat,
-      chatbotFlow,
-      currentFlowId,
-      currentNode,
-      userText,
-      customMessages,
-      aiAgent
+    const recentMessages = await this.getConversationHistory(
+      createChat.account.id,
+      createChat.worker.id,
+      createChat.chat_id,
+      selectedAiAgentId,
+      20
     );
 
-    if (menuResult !== null) {
-      return menuResult;
+    const humanSupportEnabled = aiAgent.enable_human_transfer === true;
+
+    const intent = await this.analyzeUserIntentWithContext(
+      aiAgent,
+      userText,
+      recentMessages,
+      humanSupportEnabled
+    );
+
+    if (intent === 'resolved') {
+      const resolvedNextFlowId = this.getNextFlowIdByOption(
+        chatbotFlow,
+        currentFlowId,
+        'negative-option'
+      );
+      if (resolvedNextFlowId) {
+        await this.resetFailedAttempts(createChat);
+        return this.processNextNode(
+          t,
+          createChat,
+          chatbotFlow,
+          resolvedNextFlowId,
+          customMessages
+        );
+      }
+    }
+
+    if (intent === 'human_support') {
+      const options = currentNode.data?.options;
+      if (options && Array.isArray(options) && options.length > 0) {
+        const humanSupportResult = await this.processTextResponseAnalysis(
+          t,
+          createChat,
+          chatbotFlow,
+          currentFlowId,
+          currentNode,
+          options as IChatbotFlowMenuOption[],
+          'human_support',
+          customMessages
+        );
+        if (humanSupportResult) {
+          return true;
+        }
+      }
     }
 
     return this.processAiAgentResponse(
@@ -5385,7 +5408,6 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
   private async handleBootstrapEntry(
     t: TFunction<'translation', undefined>,
     createChat: IChat,
-    currentNode: ListChatbotFlowResponse['nodes'][number],
     aiAgent: ViewAiAgentResponse,
     currentFlowId: string,
     bootstrapSummaryKey: string
@@ -5396,7 +5418,7 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       bootstrapSummaryKey
     );
 
-    await this.sendDefaultQuestionMessage(t, createChat, currentNode, false);
+    await this.generateAndSendAiWelcomeMessage(t, createChat, aiAgent);
     await this.resetAiAgentInteractionsCount(
       createChat.account.id,
       createChat.worker.id,
@@ -5407,166 +5429,6 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
     await this.scheduleChatHistoryEmbedding(createChat, aiAgent.ai_agent_id);
 
     return true;
-  }
-
-  private async handleMenuOptionIfExists(
-    t: TFunction<'translation', undefined>,
-    createChat: IChat,
-    chatbotFlow: ListChatbotFlowResponse,
-    currentFlowId: string,
-    currentNode: ListChatbotFlowResponse['nodes'][number],
-    userText: string,
-    customMessages: IChatbotCustomMessages | undefined,
-    aiAgent: ViewAiAgentResponse
-  ): Promise<boolean | null> {
-    const options = currentNode.data?.options;
-    const continueMessage = currentNode.data?.continueMessage;
-
-    if (!options || !Array.isArray(options) || options.length < 2) {
-      return null;
-    }
-
-    const numericResult = await this.handleNumericMenuOption(
-      t,
-      createChat,
-      chatbotFlow,
-      currentFlowId,
-      options,
-      userText,
-      customMessages
-    );
-
-    if (numericResult !== null) {
-      return numericResult;
-    }
-
-    if (!continueMessage) {
-      return false;
-    }
-
-    return this.handleContinueMessageAnalysis(
-      t,
-      createChat,
-      chatbotFlow,
-      currentFlowId,
-      currentNode,
-      options,
-      continueMessage,
-      userText,
-      customMessages,
-      aiAgent
-    );
-  }
-
-  private async handleNumericMenuOption(
-    t: TFunction<'translation', undefined>,
-    createChat: IChat,
-    chatbotFlow: ListChatbotFlowResponse,
-    currentFlowId: string,
-    options: IChatbotFlowMenuOption[],
-    userText: string,
-    customMessages?: IChatbotCustomMessages
-  ): Promise<boolean | null> {
-    const selectedNumber = Number.parseInt(userText, 10);
-
-    if (
-      Number.isNaN(selectedNumber) ||
-      selectedNumber < 1 ||
-      selectedNumber > options.length
-    ) {
-      return null;
-    }
-
-    const selectedOption = options[selectedNumber - 1];
-
-    if (!selectedOption) {
-      return false;
-    }
-
-    const continueMessageSentKey = `${this.getChatbotFlowCacheKey(
-      createChat.account.id,
-      createChat.worker.id,
-      createChat.chat_id
-    )}:continue-message-sent`;
-    await this.redis.del(continueMessageSentKey);
-
-    const nextFlowId = this.getNextFlowIdByOption(
-      chatbotFlow,
-      currentFlowId,
-      selectedOption.id
-    );
-
-    if (!nextFlowId) {
-      return false;
-    }
-
-    await this.resetFailedAttempts(createChat);
-    return this.processNextNode(
-      t,
-      createChat,
-      chatbotFlow,
-      nextFlowId,
-      customMessages
-    );
-  }
-
-  private async handleContinueMessageAnalysis(
-    t: TFunction<'translation', undefined>,
-    createChat: IChat,
-    chatbotFlow: ListChatbotFlowResponse,
-    currentFlowId: string,
-    currentNode: ListChatbotFlowResponse['nodes'][number],
-    options: IChatbotFlowMenuOption[],
-    continueMessage: string,
-    userText: string,
-    customMessages: IChatbotCustomMessages | undefined,
-    aiAgent: ViewAiAgentResponse
-  ): Promise<boolean | null> {
-    const continueMessageSentKey = `${this.getChatbotFlowCacheKey(
-      createChat.account.id,
-      createChat.worker.id,
-      createChat.chat_id
-    )}:continue-message-sent`;
-    const continueMessageSent = await this.redis.get(continueMessageSentKey);
-
-    if (continueMessageSent !== 'true') {
-      return null;
-    }
-
-    if (!aiAgent.base_url || !aiAgent.api_key || !aiAgent.model) {
-      return false;
-    }
-
-    const humanSupportEnabled = aiAgent.enable_human_transfer === true;
-
-    const analysis = await this.analyzeUserResponse(
-      aiAgent.base_url,
-      aiAgent.api_key,
-      aiAgent.model,
-      aiAgent.ai_agent_type_id,
-      continueMessage,
-      userText,
-      humanSupportEnabled
-    );
-
-    await this.redis.del(continueMessageSentKey);
-
-    const analysisResult = await this.processTextResponseAnalysis(
-      t,
-      createChat,
-      chatbotFlow,
-      currentFlowId,
-      currentNode,
-      options,
-      analysis,
-      customMessages
-    );
-
-    if (analysisResult) {
-      return true;
-    }
-
-    return null;
   }
 
   private async processAiAgentResponse(
@@ -6600,43 +6462,6 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
         aiAgent
       );
     }
-
-    await this.sendContinueMessageIfNeeded(t, createChat, currentNode);
-  }
-
-  private async sendContinueMessageIfNeeded(
-    t: TFunction<'translation', undefined>,
-    createChat: IChat,
-    currentNode: ListChatbotFlowResponse['nodes'][number]
-  ): Promise<void> {
-    const continueMessage = currentNode.data?.continueMessage;
-
-    if (!continueMessage || continueMessage.trim().length === 0) {
-      return;
-    }
-
-    const continueMessageText = await this.replaceVariables(
-      t,
-      continueMessage,
-      createChat,
-      createChat.user,
-      createChat.sector
-    );
-
-    await this.chatMessageService.sendMessage(t, {
-      chat: createChat,
-      accountId: createChat.account.id,
-      type: EMessageType.text,
-      message: continueMessageText,
-      typeUser: ETypeUserChat.bot,
-    });
-
-    const continueMessageSentKey = `${this.getChatbotFlowCacheKey(
-      createChat.account.id,
-      createChat.worker.id,
-      createChat.chat_id
-    )}:continue-message-sent`;
-    await this.redis.set(continueMessageSentKey, 'true', 'EX', 3600);
   }
 
   private async processStartNode(

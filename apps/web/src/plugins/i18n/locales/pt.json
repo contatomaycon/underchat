@@ -1642,6 +1642,7 @@
   "chatbot_ai_agent_fallback_placeholder": "Fallback",
   "chatbot_ai_agent_positive_option": "Sim",
   "chatbot_ai_agent_negative_option": "Não",
+  "chatbot_ai_agent_resolved_option": "Atendimento concluído",
   "chatbot_not_contact_option": "Não é contato",
   "chatbot_configurations": "Configurações",
   "chatbot_inactivity_alert": "Alerta de inatividade",

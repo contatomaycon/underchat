@@ -650,10 +650,7 @@ export class ChatbotFlowSaverUseCase {
     }
   }
 
-  private normalizeAiAgentNode(
-    t: TFunction<'translation', undefined>,
-    node: any
-  ): void {
+  private normalizeAiAgentNode(node: any): void {
     if (node.type !== 'aiAgent') {
       return;
     }
@@ -663,13 +660,6 @@ export class ChatbotFlowSaverUseCase {
       return;
     }
 
-    if (
-      !data.defaultQuestion ||
-      (typeof data.defaultQuestion === 'string' &&
-        data.defaultQuestion.trim().length === 0)
-    ) {
-      data.defaultQuestion = t('ai_agent_default_question');
-    }
   }
 
   private validateAiAgentNode(
@@ -691,19 +681,6 @@ export class ChatbotFlowSaverUseCase {
       const nodeLabel = node.data?.title || node.label || node.id || 'aiAgent';
       errors.push(
         t('chatbot_flow_validation_ai_agent_required', {
-          nodeLabel,
-        })
-      );
-    }
-
-    if (
-      !data.defaultQuestion ||
-      (typeof data.defaultQuestion === 'string' &&
-        data.defaultQuestion.trim().length === 0)
-    ) {
-      const nodeLabel = node.data?.title || node.label || node.id || 'aiAgent';
-      errors.push(
-        t('chatbot_flow_validation_ai_agent_default_question_required', {
           nodeLabel,
         })
       );
@@ -901,7 +878,7 @@ export class ChatbotFlowSaverUseCase {
 
     for (const node of requestData.nodes) {
       if (node.type === 'aiAgent') {
-        this.normalizeAiAgentNode(t, node);
+        this.normalizeAiAgentNode(node);
       }
 
       this.validateNodeConnections(t, node, requestData, errors);

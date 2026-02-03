@@ -937,8 +937,6 @@ const addConditionalNode = (position?: { x: number; y: number }) => {
 
 const addAiAgentNode = (position?: { x: number; y: number }) => {
   const nodeId = `aiAgent-${nodeIdCounter++}`;
-  const positiveOptionId = crypto.randomUUID();
-  const negativeOptionId = crypto.randomUUID();
   const newNode: Node = {
     id: nodeId,
     type: 'aiAgent',
@@ -948,19 +946,12 @@ const addAiAgentNode = (position?: { x: number; y: number }) => {
     },
     data: {
       selectedAiAgent: null,
-      defaultQuestion: null,
-      continueMessage: null,
       actionAfterInteractions: true,
       interactionsQuantity: 5,
       options: [
         {
-          id: positiveOptionId,
-          text: t('chatbot_ai_agent_positive_option'),
-          required: true,
-        },
-        {
-          id: negativeOptionId,
-          text: t('chatbot_ai_agent_negative_option'),
+          id: 'negative-option',
+          text: t('chatbot_ai_agent_resolved_option'),
           required: true,
         },
       ],
@@ -1292,20 +1283,8 @@ const prepareNodesForSave = (
       if (nodeData.selectedAiAgent === undefined) {
         nodeData.selectedAiAgent = null;
       }
-      if (
-        !nodeData.defaultQuestion ||
-        (typeof nodeData.defaultQuestion === 'string' &&
-          nodeData.defaultQuestion.trim().length === 0)
-      ) {
-        nodeData.defaultQuestion = null;
-      }
-      if (
-        !nodeData.continueMessage ||
-        (typeof nodeData.continueMessage === 'string' &&
-          nodeData.continueMessage.trim().length === 0)
-      ) {
-        nodeData.continueMessage = null;
-      }
+      delete nodeData.defaultQuestion;
+      delete nodeData.continueMessage;
       if (
         nodeData.actionAfterInteractions === undefined ||
         nodeData.actionAfterInteractions === null
@@ -1573,28 +1552,19 @@ const processAnnotationNodeData = (nodeData: any): void => {
 
 const processAiAgentNodeData = (nodeData: any): void => {
   if (nodeData.selectedAiAgent === undefined) nodeData.selectedAiAgent = null;
-  if (nodeData.defaultQuestion === undefined) nodeData.defaultQuestion = null;
-  if (nodeData.continueMessage === undefined) nodeData.continueMessage = null;
+  delete nodeData.defaultQuestion;
+  delete nodeData.continueMessage;
   if (nodeData.actionAfterInteractions === undefined)
     nodeData.actionAfterInteractions = true;
   if (nodeData.interactionsQuantity === undefined)
     nodeData.interactionsQuantity = 5;
-  if (!nodeData.options || nodeData.options.length === 0) {
-    const positiveOptionId = crypto.randomUUID();
-    const negativeOptionId = crypto.randomUUID();
-    nodeData.options = [
-      {
-        id: positiveOptionId,
-        text: t('chatbot_ai_agent_positive_option'),
-        required: true,
-      },
-      {
-        id: negativeOptionId,
-        text: t('chatbot_ai_agent_negative_option'),
-        required: true,
-      },
-    ];
-  }
+  nodeData.options = [
+    {
+      id: 'negative-option',
+      text: t('chatbot_ai_agent_resolved_option'),
+      required: true,
+    },
+  ];
 };
 
 const processMessageNodeData = (nodeData: any): void => {
