@@ -1,5 +1,6 @@
 import {
   Browsers,
+  fetchLatestBaileysVersion,
   fetchLatestWaWebVersion,
   makeWASocket,
   useMultiFileAuthState,
@@ -35,6 +36,30 @@ const FOLDER = `/app/data/storage/${baileysEnvironment.baileysWorkerId}`;
 const CHANNEL = workerCentrifugoQueue(baileysEnvironment.baileysAccountId);
 const WORKER = baileysEnvironment.baileysWorkerId;
 const ACCOUNT = baileysEnvironment.baileysAccountId;
+const WA_VERSION_TTL_MS = 6 * 60 * 60 * 1000;
+let cachedWaVersion: {
+  version: [number, number, number];
+  fetchedAt: number;
+} | null = null;
+
+async function getCachedWaWebVersion(): Promise<[number, number, number]> {
+  if (
+    cachedWaVersion &&
+    Date.now() - cachedWaVersion.fetchedAt < WA_VERSION_TTL_MS
+  ) {
+    return cachedWaVersion.version;
+  }
+
+  const waResult = await fetchLatestWaWebVersion();
+  if (!('error' in waResult)) {
+    cachedWaVersion = { version: waResult.version, fetchedAt: Date.now() };
+    return waResult.version;
+  }
+
+  const baileysResult = await fetchLatestBaileysVersion();
+  cachedWaVersion = { version: baileysResult.version, fetchedAt: Date.now() };
+  return baileysResult.version;
+}
 
 @singleton()
 export class BaileysConnectionService {
@@ -309,7 +334,7 @@ export class BaileysConnectionService {
 
   private async createSocket() {
     const { state, saveCreds } = await useMultiFileAuthState(FOLDER);
-    const { version } = await fetchLatestWaWebVersion();
+    const version = await getCachedWaWebVersion();
 
     const socket = makeWASocket({
       auth: state,
@@ -325,6 +350,7 @@ export class BaileysConnectionService {
       defaultQueryTimeoutMs: 60_000,
       maxMsgRetryCount: 10,
       syncFullHistory: false,
+      shouldSyncHistoryMessage: () => false,
     });
 
     socket.ev.on('creds.update', saveCreds);
@@ -489,6 +515,28 @@ export class BaileysConnectionService {
     this.connectionEstablished = false;
     const statusCode = this.extractStatusCode(last?.error);
     const statusMessage = this.extractStatusMessage(last?.error);
+
+    if (statusCode === ECodeMessage.restartRequired) {
+      this.setStatus(Status.connecting, ECodeMessage.awaitConnection);
+      resolve(this.state());
+      this.pendingResolve = undefined;
+
+      setTimeout(() => {
+        this.connect({
+          initial_connection: this.initialConnection,
+        }).catch(() => {
+          this.saveLogWppConnection({
+            worker_id: WORKER,
+            status: this.status ?? Status.disconnected,
+            code: this.code ?? ECodeMessage.connectionLost,
+            message: 'Reconnect failed after restartRequired',
+            date: new Date(),
+          });
+        });
+      }, 0);
+
+      return;
+    }
 
     const disconnectionCode =
       statusCode ?? this.code ?? ECodeMessage.connectionLost;
