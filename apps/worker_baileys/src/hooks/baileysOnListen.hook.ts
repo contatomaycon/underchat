@@ -17,6 +17,8 @@ import { QrCodeCounter } from './qrCodeCounter';
 const RETRY_DELAY = 10000;
 const CONNECT_TIMEOUT_MS = 60000;
 const MAX_RETRY_ATTEMPTS = 5;
+const STATUS_NOTIFY_MAX_RETRIES = 5;
+const STATUS_NOTIFY_RETRY_DELAY_MS = 2000;
 let mismatchedStatusSent = false;
 
 const withConnectTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> => {
@@ -31,6 +33,9 @@ const withConnectTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> => {
   ]);
 };
 
+const sleep = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms));
+
 const notifyWorkerStatusViaGrpc = async (
   workerId: string,
   accountId: string,
@@ -38,23 +43,47 @@ const notifyWorkerStatusViaGrpc = async (
   log: FastifyInstance['log'],
   baileysStatus: EBaileysConnectionStatus = EBaileysConnectionStatus.info
 ): Promise<void> => {
-  try {
-    const balanceWorkerStatusGrpcClientService = container.resolve(
-      BalanceWorkerStatusGrpcClientService
-    );
+  const balanceWorkerStatusGrpcClientService = container.resolve(
+    BalanceWorkerStatusGrpcClientService
+  );
 
-    const dataPublish: IBaileysConnectionState = {
-      code: ECodeMessage.info,
-      status: baileysStatus,
-      worker_id: workerId,
-      account_id: accountId,
-      worker_status_id: workerStatusId,
-    };
+  const dataPublish: IBaileysConnectionState = {
+    code: ECodeMessage.info,
+    status: baileysStatus,
+    worker_id: workerId,
+    account_id: accountId,
+    worker_status_id: workerStatusId,
+  };
 
-    await balanceWorkerStatusGrpcClientService.notifyWorkerStatus(dataPublish);
-  } catch (error) {
-    log.error({ err: error }, 'Falha ao enviar status do worker via gRPC');
+  let lastError: Error | null = null;
+
+  for (let attempt = 1; attempt <= STATUS_NOTIFY_MAX_RETRIES; attempt++) {
+    try {
+      await balanceWorkerStatusGrpcClientService.notifyWorkerStatus(
+        dataPublish
+      );
+      return;
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      log.warn(
+        {
+          err: lastError,
+          attempt,
+          maxRetries: STATUS_NOTIFY_MAX_RETRIES,
+        },
+        'Falha ao enviar status do worker via gRPC, tentando novamente'
+      );
+
+      if (attempt < STATUS_NOTIFY_MAX_RETRIES) {
+        await sleep(STATUS_NOTIFY_RETRY_DELAY_MS);
+      }
+    }
   }
+
+  log.error(
+    { err: lastError, maxRetries: STATUS_NOTIFY_MAX_RETRIES },
+    'Falha ao enviar status do worker via gRPC após todas as tentativas'
+  );
 };
 
 const updateWorkerMismatchedStatus = async (
