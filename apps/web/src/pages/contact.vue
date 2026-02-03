@@ -209,6 +209,10 @@
   const isDialogDeleterShow = ref(false);
   const contactToDelete = ref<string | null>(null);
   
+  const isDialogBulkDeleterShow = ref(false);
+  const contactsToDelete = ref<string[]>([]);
+  const isDeletingAll = ref(false);
+  
   const isDialogValidateContactShow = ref(false);
   const contactToValidate = ref<string | null>(null);
   
@@ -217,7 +221,10 @@
   const isAddImportContactVisible = ref(false);
   const contactToEdit = ref<string | null>(null);
   
+  const selectedContacts = ref<string[]>([]);
+  
   const headers: DataTableHeader<ListContactResponse>[] = [
+    { title: '', key: 'select', sortable: false, width: '50px' },
     { title: '', key: 'photo', sortable: false, width: '80px' },
     { title: t('name'), key: 'name' },
     { title: t('lastname'), key: 'last_name' },
@@ -274,6 +281,61 @@
     }
   
     contactToDelete.value = null;
+  };
+  
+  const openBulkDeleteDialog = (deleteAll: boolean = false) => {
+    isDeletingAll.value = deleteAll;
+    
+    if (deleteAll) {
+      contactsToDelete.value = contactStore.list.map((c) => c.contact_id);
+    } else {
+      contactsToDelete.value = [...selectedContacts.value];
+    }
+    
+    if (contactsToDelete.value.length === 0) {
+      return;
+    }
+    
+    isDialogBulkDeleterShow.value = true;
+  };
+  
+  const handleBulkDelete = async () => {
+    if (contactsToDelete.value.length === 0) return;
+  
+    const result = await contactStore.bulkDeleteContacts(contactsToDelete.value);
+    if (result) {
+      selectedContacts.value = [];
+      await contactStore.listContact(query.value);
+    }
+  
+    contactsToDelete.value = [];
+  };
+  
+  const selectAllContacts = async () => {
+    const allContacts = await contactStore.exportContacts();
+    selectedContacts.value = allContacts.map((c) => c.contact_id);
+  };
+  
+  const clearSelection = () => {
+    selectedContacts.value = [];
+  };
+  
+  const isAllSelected = computed(() => {
+    if (contactStore.list.length === 0) return false;
+    return contactStore.list.every((c) =>
+      selectedContacts.value.includes(c.contact_id)
+    );
+  });
+  
+  const hasSelectedContacts = computed(() => selectedContacts.value.length > 0);
+  
+  const toggleContactSelection = (contactId: string) => {
+    const index = selectedContacts.value.indexOf(contactId);
+    if (index > -1) {
+      selectedContacts.value.splice(index, 1);
+    } else {
+      selectedContacts.value.push(contactId);
+    }
   };
   
   const openEditDialog = (id: string) => {
@@ -424,6 +486,50 @@
               @update:options="handleTableChange"
               :loading-text="$t('loading_text')"
             >
+              <template #top>
+                <div
+                  v-if="hasSelectedContacts"
+                  class="d-flex align-center justify-end pa-4"
+                >
+                  <div class="d-flex gap-2">
+                    <VBtn
+                      v-if="isAllSelected"
+                      variant="text"
+                      size="small"
+                      @click="clearSelection"
+                    >
+                      {{ $t('clear_selection') }}
+                    </VBtn>
+                    <VBtn
+                      v-else
+                      variant="text"
+                      size="small"
+                      @click="selectAllContacts"
+                    >
+                      {{ $t('select_all') }}
+                    </VBtn>
+                    <VBtn
+                      v-if="$canPermission(permissionsDelete)"
+                      color="error"
+                      variant="outlined"
+                      size="small"
+                      prepend-icon="tabler-trash"
+                      @click="openBulkDeleteDialog(false)"
+                    >
+                      {{ $t('delete_selected', { count: selectedContacts.length }) }}
+                    </VBtn>
+                  </div>
+                </div>
+              </template>
+
+              <template #item.select="{ item }">
+                <VCheckbox
+                  :model-value="selectedContacts.includes(item.contact_id)"
+                  @update:model-value="toggleContactSelection(item.contact_id)"
+                  hide-details
+                  density="compact"
+                />
+              </template>
               <template #item.photo="{ item }">
                 <div
                   class="contact-photo-square"
@@ -595,6 +701,14 @@
           :title="$t('delete_contact')"
           :message="$t('delete_contact_confirmation')"
           @confirm="handleDelete"
+        />
+  
+        <VDialogHandler
+          v-if="isDialogBulkDeleterShow"
+          v-model="isDialogBulkDeleterShow"
+          :title="isDeletingAll ? $t('delete_all_contacts') : $t('delete_selected_contacts')"
+          :message="isDeletingAll ? $t('delete_all_contacts_confirmation', { count: contactsToDelete.length }) : $t('delete_selected_contacts_confirmation', { count: contactsToDelete.length })"
+          @confirm="handleBulkDelete"
         />
   
         <VDialogHandler

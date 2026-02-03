@@ -25,6 +25,7 @@ import { ListAccountRequest } from '@core/schema/account/listAccount/request.sch
 import { ListAccountResponse } from '@core/schema/account/listAccount/response.schema';
 import { EAccountStatus } from '@core/common/enums/EAccountStatus';
 import { EAccountFilterStatus } from '@core/common/enums/EAccountFilterStatus';
+import { EPlanStatus } from '@core/common/enums/EPlanStatus';
 
 @injectable()
 export class AccountAllListerWithDetailsRepository {
@@ -167,6 +168,7 @@ export class AccountAllListerWithDetailsRepository {
             INNER JOIN ${plan} p ON p.plan_id = pa.plan_id
             WHERE pa.account_id = ${account.account_id}
               AND p.is_test = true
+              AND p.status = ${EPlanStatus.active}
               AND p.deleted_at IS NULL
           )`
         );

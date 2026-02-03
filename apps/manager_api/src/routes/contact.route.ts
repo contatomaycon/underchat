@@ -14,6 +14,7 @@ import { viewContactPhoneSchema } from '@core/schema/contact/viewContactPhone';
 import { viewContactEmailSchema } from '@core/schema/contact/viewContactEmail';
 import { viewContactDocumentSchema } from '@core/schema/contact/viewContactDocument';
 import { deleteContactSchema } from '@core/schema/contact/deleteContact';
+import { bulkDeleteContactSchema } from '@core/schema/contact/bulkDeleteContact';
 import { editContactSchema } from '@core/schema/contact/editContact';
 import { exportContactSchema } from '@core/schema/contact/exportContact';
 import { validateContactSchema } from '@core/schema/contact/validateContact';
@@ -95,6 +96,17 @@ export default async function contactRoutes(server: FastifyInstance) {
   server.delete('/contact/:contact_id', {
     schema: deleteContactSchema,
     handler: contactController.deleteContact,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, contactDeletePermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.delete('/contact/bulk', {
+    schema: bulkDeleteContactSchema,
+    handler: contactController.bulkDeleteContact,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, contactDeletePermissions),

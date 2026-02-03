@@ -11,6 +11,7 @@ import { ICreateContact } from '@core/common/interfaces/ICreateContact';
 import { ContactViewerRepository } from '@core/repositories/contact/ContactViewer.repository';
 import { ViewContactResponse } from '@core/schema/contact/viewContact/response.schema';
 import { ContactDeleterRepository } from '@core/repositories/contact/ContactDeleter.repository';
+import { ContactBulkDeleterRepository } from '@core/repositories/contact/ContactBulkDeleter.repository';
 import { ContactUpdaterRepository } from '@core/repositories/contact/ContactUpdater.repository';
 import { IUpdateContact } from '@core/common/interfaces/IUpdateContact';
 import { UpdateContactRequest } from '@core/schema/contact/editContact/request.schema';
@@ -41,6 +42,7 @@ export class ContactService {
     private readonly contactCreatorRepository: ContactCreatorRepository,
     private readonly contactViewerRepository: ContactViewerRepository,
     private readonly contactDeleterRepository: ContactDeleterRepository,
+    private readonly contactBulkDeleterRepository: ContactBulkDeleterRepository,
     private readonly contactUpdaterRepository: ContactUpdaterRepository,
     private readonly passwordEncryptorService: PasswordEncryptorService,
     private readonly contactSensitiveDataRepository: ContactSensitiveDataRepository,
@@ -444,6 +446,10 @@ export class ContactService {
 
   deleteContactById = async (contactId: string): Promise<boolean> => {
     return this.contactDeleterRepository.deleteContactById(contactId);
+  };
+
+  deleteContactsByIds = async (contactIds: string[]): Promise<number> => {
+    return this.contactBulkDeleterRepository.deleteContactsByIds(contactIds);
   };
 
   private determineIsValided(

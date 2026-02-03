@@ -5,6 +5,7 @@ import { viewContactPhone } from './methods/viewContactPhone';
 import { viewContactEmail } from './methods/viewContactEmail';
 import { viewContactDocument } from './methods/viewContactDocument';
 import { deleteContact } from './methods/deleteContact';
+import { bulkDeleteContact } from './methods/bulkDeleteContact';
 import { editContact } from './methods/editContact';
 import { createContact } from './methods/createContact';
 import { exportContact } from './methods/exportContact';
@@ -21,6 +22,7 @@ class ContactController {
   public viewContactEmail = viewContactEmail;
   public viewContactDocument = viewContactDocument;
   public deleteContact = deleteContact;
+  public bulkDeleteContact = bulkDeleteContact;
   public editContact = editContact;
   public createContact = createContact;
   public exportContact = exportContact;
