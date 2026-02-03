@@ -630,6 +630,64 @@ export const useContactStore = defineStore('contact', {
       }
     },
 
+    async bulkDeleteContacts(contactIds: string[]): Promise<boolean> {
+      try {
+        this.loading = true;
+
+        const response = await axios.delete<
+          IApiResponse<{ deleted_count: number; failed_count: number }>
+        >('/contact/bulk', {
+          data: { contact_ids: contactIds },
+        });
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status) {
+          const mensage =
+            data?.message ?? this.i18n.global.t('contacts_bulk_delete_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return false;
+        }
+
+        const result = data.data;
+        if (result) {
+          if (result.failed_count > 0) {
+            this.showSnackbar(
+              this.i18n.global.t('contacts_bulk_deleted_partial', {
+                deleted: result.deleted_count,
+                failed: result.failed_count,
+              }),
+              EColor.warning
+            );
+          } else {
+            this.showSnackbar(
+              this.i18n.global.t('contacts_bulk_deleted_success', {
+                count: result.deleted_count,
+              }),
+              EColor.success
+            );
+          }
+        }
+
+        return true;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('contacts_bulk_delete_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return false;
+      }
+    },
+
     async getContactPhoneDecrypted(contactId: string): Promise<string | null> {
       try {
         const response = await axios.get<
