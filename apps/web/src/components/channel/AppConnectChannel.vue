@@ -325,10 +325,15 @@ onMounted(async () => {
           }
         }
 
-        if (data.qrcode) qrcode.value = data.qrcode;
+        if (data.qrcode) {
+          qrcode.value = data.qrcode;
+        }
         if (data.code) {
           const shouldIgnoreCode =
-            isConnectedEvent && incomingCode === ECodeMessage.info;
+            (isConnectedEvent && incomingCode === ECodeMessage.info) ||
+            (incomingCode === ECodeMessage.info &&
+              qrcode.value &&
+              !isConnected.value);
           if (
             !shouldIgnoreCode &&
             !(incomingCode === ECodeMessage.awaitConnection && qrcode.value)
@@ -400,10 +405,7 @@ onUnmounted(() => {
             <VCardTitle>{{ $t('conection') }}</VCardTitle>
           </VCardItem>
 
-          <div
-            v-if="showQrSkeleton"
-            class="qrcode-skeleton-wrapper"
-          >
+          <div v-if="showQrSkeleton" class="qrcode-skeleton-wrapper">
             <VCardText class="d-flex justify-center">
               <div class="qrcode-skeleton qrcode-skeleton--shimmer">
                 <svg
@@ -508,7 +510,9 @@ onUnmounted(() => {
             </VCardText>
           </div>
 
-          <div v-else-if="attempt > maxAttempts && !isConnected && !isPhoneNumber">
+          <div
+            v-else-if="attempt > maxAttempts && !isConnected && !isPhoneNumber"
+          >
             <VCardText class="d-flex justify-center">
               <VIcon icon="tabler-mobiledata-off" size="150" />
             </VCardText>
