@@ -1,5 +1,6 @@
 import { inject, singleton } from 'tsyringe';
 import Redis from 'ioredis';
+import { Buffer } from 'node:buffer';
 import {
   AnyMessageContent,
   MessageUserReceiptUpdate,
@@ -64,6 +65,8 @@ export class BaileysIncomingMessageService {
 
   private readonly PHOTO_CACHE_TTL = 86400;
   private readonly PHOTO_CACHE_PREFIX = 'photo:jid:';
+  private readonly MESSAGE_CACHE_TTL_SECONDS = 60 * 60 * 24;
+  private readonly MESSAGE_CACHE_PREFIX = 'wa:msg:';
 
   constructor(
     private readonly streamProducerService: StreamProducerService,
@@ -87,6 +90,74 @@ export class BaileysIncomingMessageService {
     if (!jidToUse) return null;
 
     return `${jidToUse}:${id}:${fromMe}`;
+  }
+
+  private buildMessageCacheKey(key?: WAMessageKey | null): string | null {
+    if (!key?.id) return null;
+
+    const jid = remoteJid(key) || remoteJidAlt(key);
+    if (!jid) return null;
+
+    return `${this.MESSAGE_CACHE_PREFIX}${baileysEnvironment.baileysAccountId}:${jid}:${key.id}`;
+  }
+
+  private hasPollCreationMessage(
+    message: proto.IMessage | null | undefined
+  ): boolean {
+    if (!message) return false;
+
+    return Boolean(
+      message.pollCreationMessage ||
+      message.pollCreationMessageV2 ||
+      message.pollCreationMessageV3 ||
+      message.pollCreationMessageV4 ||
+      message.pollCreationMessageV5 ||
+      message.pollCreationOptionImageMessage
+    );
+  }
+
+  private shouldCacheMessage(m: WAMessage, isRetry = false): boolean {
+    if (isRetry) return true;
+    if (m.key?.fromMe) return true;
+    return this.hasPollCreationMessage(m.message);
+  }
+
+  private async cacheMessage(
+    m: WAMessage,
+    opts?: { isRetry?: boolean }
+  ): Promise<void> {
+    if (!this.shouldCacheMessage(m, opts?.isRetry ?? false)) return;
+
+    const cacheKey = this.buildMessageCacheKey(m.key);
+    if (!cacheKey || !m.message) return;
+
+    try {
+      const encoded = proto.Message.encode(m.message).finish();
+      const payload = Buffer.from(encoded).toString('base64');
+      await this.redis.set(
+        cacheKey,
+        payload,
+        'EX',
+        this.MESSAGE_CACHE_TTL_SECONDS
+      );
+    } catch {}
+  }
+
+  async getCachedMessage(
+    key: WAMessageKey
+  ): Promise<proto.IMessage | undefined> {
+    const cacheKey = this.buildMessageCacheKey(key);
+    if (!cacheKey) return undefined;
+
+    try {
+      const payload = await this.redis.get(cacheKey);
+      if (!payload) return undefined;
+
+      const decoded = proto.Message.decode(Buffer.from(payload, 'base64'));
+      return decoded as proto.IMessage;
+    } catch {
+      return undefined;
+    }
   }
 
   private startCleanupInterval() {
@@ -164,6 +235,10 @@ export class BaileysIncomingMessageService {
         if (result.status === 'rejected') {
           const item = batch[i];
           item.retries++;
+
+          if (item.retries === 1) {
+            void this.cacheMessage(item.inputUpsert.message, { isRetry: true });
+          }
 
           if (item.retries < this.MAX_RETRIES) {
             this.pendingQueue.push(item);
@@ -258,6 +333,7 @@ export class BaileysIncomingMessageService {
       if (!e?.messages?.length) return;
 
       for (const m of e.messages) {
+        void this.cacheMessage(m);
         this.processMessage(socket, m, e.type);
       }
     });
@@ -278,6 +354,7 @@ export class BaileysIncomingMessageService {
       if (!history?.messages?.length) return;
 
       for (const message of history.messages) {
+        void this.cacheMessage(message);
         this.processHistoryMessage(socket, message);
       }
     });

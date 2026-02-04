@@ -338,6 +338,8 @@ export class BaileysConnectionService {
       browser: Browsers.windows('Chrome'),
       logger: P({ level: 'silent' }),
       printQRInTerminal: false,
+      getMessage: async (key) =>
+        this.baileysIncomingMessageService.getCachedMessage(key),
       enableAutoSessionRecreation: true,
       enableRecentMessageCache: true,
       retryRequestDelayMs: 5_000,
