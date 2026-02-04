@@ -14,6 +14,7 @@ import { isTypeUser } from '@core/common/functions/isTypeUser';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { formatDate } from '@/@webcore/utils/formatters';
 import { useI18n } from 'vue-i18n';
+import { useTheme } from 'vuetify';
 import { MglMap, MglMarker } from 'vue-maplibre-gl';
 import { useChatStore } from '@/@webcore/stores/chat';
 import { EColor } from '@core/common/enums/EColor';
@@ -36,9 +37,15 @@ const props = withDefaults(defineProps<Props>(), {
 });
 
 const { t } = useI18n();
+const { global } = useTheme();
 const chatStore = useChatStore();
 
 const chatLogViewerRef = ref<HTMLElement | null>(null);
+const isDarkMode = computed(() => global.name.value === 'dark');
+const systemMessageBackground = computed(() => {
+  if (isDarkMode.value) return 'rgba(var(--v-theme-on-surface), 0.14)';
+  return 'rgb(227, 242, 253)';
+});
 const scrollElementRef = ref<HTMLElement | null>(null);
 const showScrollToBottom = ref(false);
 const fixedDateLabel = ref<string>('');
@@ -1520,7 +1527,7 @@ const handleContactClick = (message: ListMessageResult) => {
                     item.message.content?.type === EMessageType.annotation
                       ? 'rgb(255, 243, 205)'
                       : item.message.content?.type === EMessageType.system
-                        ? 'rgb(227, 242, 253)'
+                        ? systemMessageBackground
                         : isTypeUser(item.message)
                           ? 'rgb(var(--v-theme-surface))'
                           : 'rgb(217, 253, 211)',
@@ -3189,12 +3196,13 @@ const handleContactClick = (message: ListMessageResult) => {
       border-radius: 6px;
       text-align: center;
       margin: 0 auto;
+      color: rgba(var(--v-theme-on-surface), 0.87);
 
       .message-meta {
-        color: rgba(17, 27, 33, 0.6);
+        color: rgba(var(--v-theme-on-surface), 0.65);
 
         .message-time {
-          color: rgba(17, 27, 33, 0.6);
+          color: rgba(var(--v-theme-on-surface), 0.65);
         }
       }
     }

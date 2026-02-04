@@ -28,6 +28,7 @@ import data from 'emoji-mart-vue-fast/data/all.json';
 import 'emoji-mart-vue-fast/css/emoji-mart.css';
 import { formatDate } from '@/@webcore/utils/formatters';
 import { useI18n } from 'vue-i18n';
+import { useTheme } from 'vuetify';
 import { MglMap, MglMarker } from 'vue-maplibre-gl';
 import { can } from '@layouts/plugins/casl';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
@@ -36,9 +37,15 @@ import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { CreateContactRequest } from '@core/schema/contact/createContact/request.schema';
 
 const { t } = useI18n();
+const { global } = useTheme();
 const chatStore = useChatStore();
 const { activeChat } = storeToRefs(chatStore);
 const chatLogContainer = ref<HTMLElement | null>(null);
+const isDarkMode = computed(() => global.name.value === 'dark');
+const systemMessageBackground = computed(() => {
+  if (isDarkMode.value) return 'rgba(var(--v-theme-on-surface), 0.14)';
+  return 'rgb(227, 242, 253)';
+});
 
 const showSkeleton = computed(
   () => chatStore.loading && chatStore.listMessages.length === 0
@@ -2357,7 +2364,7 @@ onUnmounted(() => {
                     item.message.content?.type === EMessageType.annotation
                       ? 'rgb(255, 243, 205)'
                       : item.message.content?.type === EMessageType.system
-                        ? 'rgb(227, 242, 253)'
+                        ? systemMessageBackground
                         : item.message.content?.type ===
                               EMessageType.contact_card ||
                             item.message.content?.type === EMessageType.contacts
@@ -4612,8 +4619,9 @@ onUnmounted(() => {
       &.chat-center {
         border-radius: 6px;
         margin: 0 auto;
+        color: rgba(var(--v-theme-on-surface), 0.87);
         .message-meta {
-          color: rgba(17, 27, 33, 0.6);
+          color: rgba(var(--v-theme-on-surface), 0.65);
         }
       }
 
