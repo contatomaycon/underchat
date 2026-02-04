@@ -83,10 +83,16 @@ export class WorkerConnectionStatusConsume {
     }
 
     const currentStatus = this.baileysService.getStatus();
+    const currentCode = this.baileysService.getCode();
     const hasActiveSocket = Boolean(this.baileysService.socket);
+    const awaitingUserAction =
+      currentCode === ECodeMessage.awaitingReadQrCode ||
+      currentCode === ECodeMessage.awaitingPairingCode ||
+      currentCode === ECodeMessage.newLoginAttempt;
     if (
       currentStatus === EBaileysConnectionStatus.connecting &&
-      hasActiveSocket
+      hasActiveSocket &&
+      awaitingUserAction
     ) {
       const attempt =
         this.connectionRetryAttempt > 0 ? this.connectionRetryAttempt : 1;

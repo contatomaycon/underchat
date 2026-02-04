@@ -2,6 +2,7 @@ import { singleton } from 'tsyringe';
 import makeWASocket from '@whiskeysockets/baileys';
 import { BaileysConnectionService } from './methods/connection.service';
 import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
+import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { IBaileysConnection } from '@core/common/interfaces/IBaileysConnection';
 import { BaileysPhoneValidationService } from './methods/phoneValidation.service';
@@ -49,6 +50,10 @@ export class BaileysService {
 
   getStatus(): EBaileysConnectionStatus {
     return this.connection.getStatus();
+  }
+
+  getCode(): ECodeMessage {
+    return this.connection.getCode();
   }
 
   hasSession(): boolean {

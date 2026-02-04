@@ -103,6 +103,10 @@ export class BaileysConnectionService {
     return this.status;
   }
 
+  getCode(): ECodeMessage {
+    return this.code;
+  }
+
   getSocket(): WASocket | undefined {
     return this.socket;
   }
