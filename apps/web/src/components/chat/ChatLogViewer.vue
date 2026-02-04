@@ -3,8 +3,10 @@ import {
   computed,
   ref,
   reactive,
+  onMounted,
   onUnmounted,
   watch,
+  nextTick,
   onErrorCaptured,
 } from 'vue';
 import { ListMessageResult } from '@core/schema/chat/listMessageChats/response.schema';
@@ -35,6 +37,32 @@ const props = withDefaults(defineProps<Props>(), {
 
 const { t } = useI18n();
 const chatStore = useChatStore();
+
+const chatLogViewerRef = ref<HTMLElement | null>(null);
+const scrollElementRef = ref<HTMLElement | null>(null);
+const showScrollToBottom = ref(false);
+const fixedDateLabel = ref<string>('');
+const fixedDateIndicatorTop = ref(0);
+const fixedDateIndicatorLeft = ref(0);
+const fixedDateIndicatorWidth = ref(0);
+
+const shouldShowFixedDate = computed(() => {
+  return !props.loading &&
+    props.messages.length > 0 &&
+    showScrollToBottom.value &&
+    !!fixedDateLabel.value;
+});
+
+const getScrollParent = (el: HTMLElement | null): HTMLElement | null => {
+  if (!el) return null;
+  let parent = el.parentElement;
+  while (parent) {
+    const style = getComputedStyle(parent);
+    if (/(auto|scroll|overlay)/.test(style.overflowY)) return parent;
+    parent = parent.parentElement;
+  }
+  return null;
+};
 
 const audioPlayers = ref<Map<string, HTMLAudioElement>>(new Map());
 const audioPlayStates = reactive<Record<string, boolean>>({});
@@ -265,7 +293,36 @@ watch(
   { deep: true, immediate: true }
 );
 
+const setupScrollListener = () => {
+  nextTick(() => {
+    const scrollParent = getScrollParent(chatLogViewerRef.value);
+    if (scrollParent && chatLogViewerRef.value) {
+      scrollElementRef.value = scrollParent;
+      const scrollRect = scrollParent.getBoundingClientRect();
+      const messagesRect = chatLogViewerRef.value.getBoundingClientRect();
+      fixedDateIndicatorTop.value = scrollRect.top;
+      fixedDateIndicatorLeft.value = messagesRect.left;
+      fixedDateIndicatorWidth.value = messagesRect.width;
+      scrollParent.addEventListener('scroll', handleScroll, { passive: true });
+      checkIfShouldShowScrollButton(scrollParent);
+    }
+  });
+};
+
+watch(() => props.messages, () => {
+  setupScrollListener();
+}, { immediate: false });
+
+onMounted(() => {
+  setupScrollListener();
+});
+
 onUnmounted(() => {
+  const scrollElement = scrollElementRef.value;
+  if (scrollElement) {
+    scrollElement.removeEventListener('scroll', handleScroll);
+  }
+
   for (const audio of audioPlayers.value.values()) {
     audio.pause();
     audio.src = '';
@@ -707,6 +764,80 @@ const messagesWithSeparators = computed<MessageWithSeparator[]>(() => {
 
   return result;
 });
+
+const checkIfShouldShowScrollButton = (target: HTMLElement): boolean => {
+  if (!target) {
+    showScrollToBottom.value = false;
+    fixedDateLabel.value = '';
+    return false;
+  }
+
+  const scrollTop = target.scrollTop;
+  const scrollHeight = target.scrollHeight;
+  const clientHeight = target.clientHeight;
+  const threshold = 50;
+
+  const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+  const isAtBottom = distanceFromBottom <= threshold;
+
+  showScrollToBottom.value = !isAtBottom;
+
+  if (!isAtBottom) {
+    updateFixedDateLabel(target);
+    return false;
+  }
+
+  fixedDateLabel.value = '';
+  return true;
+};
+
+const updateFixedDateLabel = (scrollElement: HTMLElement) => {
+  const separators = chatLogViewerRef.value?.querySelectorAll(
+    '.date-separator-wrapper[data-separator-date]'
+  );
+  if (!separators?.length) return;
+
+  const scrollRect = scrollElement.getBoundingClientRect();
+  const viewportTop = scrollRect.top + 60;
+  const floatingZoneBottom = scrollRect.top + 60;
+
+  let activeLabel = '';
+  let activeSeparatorRect: DOMRect | null = null;
+
+  for (let i = 0; i < separators.length; i++) {
+    const el = separators[i] as HTMLElement;
+    const rect = el.getBoundingClientRect();
+    if (rect.top <= viewportTop) {
+      activeLabel = el.getAttribute('data-separator-label') ?? '';
+      activeSeparatorRect = rect;
+    }
+  }
+
+  const separatorStillVisible =
+    activeSeparatorRect &&
+    activeSeparatorRect.bottom >= scrollRect.top &&
+    activeSeparatorRect.top <= floatingZoneBottom;
+
+  if (activeLabel && !separatorStillVisible) {
+    fixedDateLabel.value = activeLabel;
+  } else if (separatorStillVisible) {
+    fixedDateLabel.value = '';
+  }
+};
+
+const handleScroll = (e: Event) => {
+  const target = e.target as HTMLElement;
+  if (!target) return;
+  checkIfShouldShowScrollButton(target);
+  
+  const messagesContainer = chatLogViewerRef.value;
+  if (messagesContainer) {
+    const rect = messagesContainer.getBoundingClientRect();
+    fixedDateIndicatorTop.value = target.getBoundingClientRect().top;
+    fixedDateIndicatorLeft.value = rect.left;
+    fixedDateIndicatorWidth.value = rect.width;
+  }
+};
 
 const resolveQuotedName = (m: ListMessageResult): string => {
   const fromMe = m.content?.quoted?.key?.from_me ?? null;
@@ -1220,7 +1351,11 @@ const handleContactClick = (message: ListMessageResult) => {
 </script>
 
 <template>
-  <div class="chat-log-viewer" style="min-height: 100%">
+  <div
+    ref="chatLogViewerRef"
+    class="chat-log-viewer position-relative"
+    style="min-height: 100%"
+  >
     <div
       v-if="loading"
       class="d-flex justify-center align-center"
@@ -1252,6 +1387,8 @@ const handleContactClick = (message: ListMessageResult) => {
           v-if="item.type === 'separator'"
           class="d-flex justify-center align-center my-4 date-separator-wrapper"
           style="width: 100%; gap: 8px"
+          :data-separator-date="item.separatorDate"
+          :data-separator-label="item.separatorLabel"
         >
           <div
             class="date-separator-line"
@@ -2883,9 +3020,60 @@ const handleContactClick = (message: ListMessageResult) => {
       </VCardText>
     </VCard>
   </VDialog>
+
+  <Teleport to="body">
+    <Transition name="fade">
+      <div
+        v-if="shouldShowFixedDate"
+        class="fixed-date-indicator"
+        :style="{
+          top: `${fixedDateIndicatorTop + 8}px`,
+          left: `${fixedDateIndicatorLeft}px`,
+          width: `${fixedDateIndicatorWidth}px`,
+        }"
+      >
+        <div class="fixed-date-indicator-badge">{{ fixedDateLabel }}</div>
+      </div>
+    </Transition>
+  </Teleport>
 </template>
 
 <style lang="scss" scoped>
+.fixed-date-indicator {
+  position: fixed;
+  z-index: 2400;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  pointer-events: none;
+}
+
+.fixed-date-indicator-badge {
+  font-size: 0.75rem;
+  font-weight: 500;
+  background-color: rgba(var(--v-theme-on-surface), 0.12);
+  color: rgba(var(--v-theme-on-surface), 0.65);
+  padding: 4px 12px;
+  border-radius: 7.5px;
+  display: inline-block;
+  min-width: fit-content;
+  white-space: nowrap;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.fade-enter-active,
+.fade-leave-active {
+  transition:
+    opacity 0.3s ease,
+    transform 0.3s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+  transform: translateY(-8px);
+}
+
 .chat-log-viewer {
   width: 100%;
   min-height: 100%;

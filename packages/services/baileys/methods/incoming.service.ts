@@ -37,6 +37,7 @@ import { EMessageType } from '@core/common/enums/EMessageType';
 interface PendingMessage {
   inputUpsert: IUpsertMessage;
   messageKey: string;
+  topic: string;
   retries: number;
   addedAt: number;
 }
@@ -198,7 +199,7 @@ export class BaileysIncomingMessageService {
     }
 
     await this.streamProducerService.send(
-      this.kafkaServiceQueueService.upsertMessage(),
+      item.topic,
       item.inputUpsert,
       item.messageKey
     );
@@ -206,7 +207,8 @@ export class BaileysIncomingMessageService {
 
   private enqueueMessage(
     inputUpsert: IUpsertMessage,
-    messageKey: string
+    messageKey: string,
+    topic: string = this.kafkaServiceQueueService.upsertMessage()
   ): PendingMessage | null {
     if (this.isDestroying) {
       return null;
@@ -223,6 +225,7 @@ export class BaileysIncomingMessageService {
     const item: PendingMessage = {
       inputUpsert,
       messageKey,
+      topic,
       retries: 0,
       addedAt: Date.now(),
     };
@@ -271,7 +274,13 @@ export class BaileysIncomingMessageService {
       void this.handlePresenceUpdate(data);
     });
 
-    socket.ev.on('messaging-history.set', () => {});
+    socket.ev.on('messaging-history.set', (history) => {
+      if (!history?.messages?.length) return;
+
+      for (const message of history.messages) {
+        this.processHistoryMessage(socket, message);
+      }
+    });
 
     socket.ev.on('call', (callEvents: WACallEvent[]) => {
       if (!callEvents) return;
@@ -289,13 +298,36 @@ export class BaileysIncomingMessageService {
     m: WAMessage,
     upsertType: string
   ): void {
+    this.processIncomingMessage(
+      socket,
+      m,
+      upsertType,
+      this.kafkaServiceQueueService.upsertMessage()
+    );
+  }
+
+  private processHistoryMessage(socket: WASocket, m: WAMessage): void {
+    this.processIncomingMessage(
+      socket,
+      m,
+      null,
+      this.kafkaServiceQueueService.upsertMessageHistory()
+    );
+  }
+
+  private processIncomingMessage(
+    socket: WASocket,
+    m: WAMessage,
+    upsertType: string | null,
+    topic: string
+  ): void {
     try {
       if (m.category === 'peer') return;
 
       const chatKind = getChatKind(m);
       if (
         chatKind !== EChatKind.user ||
-        upsertType !== EMessageUpsertType.notify
+        (upsertType && upsertType !== EMessageUpsertType.notify)
       ) {
         return;
       }
@@ -327,7 +359,7 @@ export class BaileysIncomingMessageService {
         has_quoted: hasQuoted,
       };
 
-      const pendingItem = this.enqueueMessage(inputUpsert, messageKey);
+      const pendingItem = this.enqueueMessage(inputUpsert, messageKey, topic);
       if (!pendingItem) return;
 
       this.fetchPhotoNonBlocking(socket, pendingItem);

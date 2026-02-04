@@ -47,6 +47,10 @@ const reactionEmojiIndex = new EmojiIndex(data);
 const showScrollToBottom = ref(false);
 const shouldAutoScrollOnNewMessage = ref(true);
 const scrollElementRef = ref<HTMLElement | null>(null);
+const fixedDateLabel = ref<string>('');
+const fixedDateIndicatorTop = ref(0);
+const fixedDateIndicatorLeft = ref(0);
+const fixedDateIndicatorWidth = ref(0);
 
 const viewerOpen = ref(false);
 const viewerSrc = ref<string>('');
@@ -1752,6 +1756,7 @@ const downloadViewerMedia = () => {
 const checkIfShouldShowScrollButton = (target: HTMLElement): boolean => {
   if (!target) {
     showScrollToBottom.value = false;
+    fixedDateLabel.value = '';
     return false;
   }
 
@@ -1764,12 +1769,59 @@ const checkIfShouldShowScrollButton = (target: HTMLElement): boolean => {
   const isAtBottom = distanceFromBottom <= threshold;
 
   showScrollToBottom.value = !isAtBottom;
-  return isAtBottom;
+
+  if (!isAtBottom) {
+    updateFixedDateLabel(target);
+    return false;
+  }
+
+  fixedDateLabel.value = '';
+  return true;
+};
+
+const updateFixedDateLabel = (scrollElement: HTMLElement) => {
+  const separators = chatLogContainer.value?.querySelectorAll(
+    '.date-separator-wrapper'
+  );
+  if (!separators?.length) return;
+
+  const scrollRect = scrollElement.getBoundingClientRect();
+  const viewportTop = scrollRect.top + 80;
+  const floatingZoneBottom = scrollRect.top + 60;
+
+  let activeLabel = '';
+  let activeSeparatorRect: DOMRect | null = null;
+
+  for (let i = 0; i < separators.length; i++) {
+    const el = separators[i] as HTMLElement;
+    const rect = el.getBoundingClientRect();
+    const label = el.getAttribute('data-separator-label');
+    if (rect.top <= viewportTop && label) {
+      activeLabel = label;
+      activeSeparatorRect = rect;
+    }
+  }
+
+  const separatorStillVisible =
+    activeSeparatorRect &&
+    activeSeparatorRect.bottom >= scrollRect.top &&
+    activeSeparatorRect.top <= floatingZoneBottom;
+
+  if (activeLabel && !separatorStillVisible) {
+    fixedDateLabel.value = activeLabel;
+  } else if (separatorStillVisible) {
+    fixedDateLabel.value = '';
+  }
 };
 
 const handleScroll = async (e: Event) => {
   const target = e.target as HTMLElement;
   if (!target) return;
+
+  const rect = target.getBoundingClientRect();
+  fixedDateIndicatorTop.value = rect.top;
+  fixedDateIndicatorLeft.value = rect.left;
+  fixedDateIndicatorWidth.value = rect.width;
 
   const isAtBottom = checkIfShouldShowScrollButton(target);
   shouldAutoScrollOnNewMessage.value = isAtBottom;
@@ -2000,11 +2052,17 @@ onMounted(() => {
   nextTick(() => {
     const psContainer = chatLogContainer.value?.closest('.ps') as HTMLElement;
     const scrollElement =
+      (psContainer?.querySelector('.ps__container') as HTMLElement) ||
       (psContainer?.querySelector('.ps__rail-y')
-        ?.parentElement as HTMLElement) || psContainer;
+        ?.parentElement as HTMLElement) ||
+      psContainer;
 
     if (scrollElement) {
       scrollElementRef.value = scrollElement;
+      const rect = scrollElement.getBoundingClientRect();
+      fixedDateIndicatorTop.value = rect.top;
+      fixedDateIndicatorLeft.value = rect.left;
+      fixedDateIndicatorWidth.value = rect.width;
       scrollElement.addEventListener('scroll', handleScroll, { passive: true });
 
       setTimeout(() => {
@@ -2027,11 +2085,7 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
-  const psContainer = chatLogContainer.value?.closest('.ps') as HTMLElement;
-  const scrollElement =
-    (psContainer?.querySelector('.ps__rail-y')?.parentElement as HTMLElement) ||
-    psContainer;
-
+  const scrollElement = scrollElementRef.value;
   if (scrollElement) {
     scrollElement.removeEventListener('scroll', handleScroll);
   }
@@ -2127,6 +2181,8 @@ onUnmounted(() => {
           v-if="item.type === 'separator'"
           class="d-flex justify-center align-center my-4 date-separator-wrapper"
           style="width: 100%; gap: 8px"
+          :data-separator-date="item.separatorDate"
+          :data-separator-label="item.separatorLabel"
         >
           <div
             class="date-separator-line"
@@ -3988,6 +4044,23 @@ onUnmounted(() => {
       </template>
     </template>
   </div>
+
+  <Teleport to="body">
+    <Transition name="fade">
+      <div
+        v-if="showScrollToBottom && fixedDateLabel"
+        class="fixed-date-indicator"
+        :style="{
+          top: `${fixedDateIndicatorTop + 8}px`,
+          left: `${fixedDateIndicatorLeft}px`,
+          width: `${fixedDateIndicatorWidth}px`,
+          right: 'auto',
+        }"
+      >
+        <div class="fixed-date-indicator-badge">{{ fixedDateLabel }}</div>
+      </div>
+    </Transition>
+  </Teleport>
 
   <Transition name="fade">
     <VBtn
@@ -6277,6 +6350,28 @@ onUnmounted(() => {
     background: rgba(var(--v-theme-on-surface), 0.05);
     color: rgba(var(--v-theme-on-surface), 0.6);
   }
+}
+
+.fixed-date-indicator {
+  position: fixed;
+  z-index: 1000;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  pointer-events: none;
+}
+
+.fixed-date-indicator-badge {
+  font-size: 0.75rem;
+  font-weight: 500;
+  background-color: rgba(var(--v-theme-on-surface), 0.12);
+  color: rgba(var(--v-theme-on-surface), 0.65);
+  padding: 4px 12px;
+  border-radius: 7.5px;
+  display: inline-block;
+  min-width: fit-content;
+  white-space: nowrap;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 
 .scroll-to-bottom-btn {
