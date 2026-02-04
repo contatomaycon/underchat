@@ -13,7 +13,6 @@ import {
 import { container } from 'tsyringe';
 import { baileysEnvironment } from '@core/config/environments';
 import { WorkerConnectionStatusConsume } from '@core/consumer/worker/WorkerConnectionStatus.consume';
-import { BaileysService } from '@core/services/baileys';
 import { StatusConnectionWorkerRequest } from '@core/schema/worker/statusConnection/request.schema';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { EBaileysConnectionType } from '@core/common/enums/EBaileysConnectionType';
@@ -54,7 +53,6 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync = async (
   fastify: FastifyInstance
 ) => {
   const connectionConsume = container.resolve(WorkerConnectionStatusConsume);
-  const baileysService = container.resolve(BaileysService);
   const grpcServer = new Server();
 
   const handleRequestConnection = (
@@ -108,15 +106,6 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync = async (
       grpcServer.tryShutdown(() => resolve());
     });
   });
-
-  if (!baileysService.isConnected() && !baileysService.hasSession()) {
-    const bootstrapPayload: StatusConnectionWorkerRequest = {
-      worker_id: baileysEnvironment.baileysWorkerId,
-      status: EWorkerStatus.online,
-      type: EBaileysConnectionType.qrcode,
-    };
-    connectionConsume.requestConnection(bootstrapPayload);
-  }
 };
 
 export default fp(workerConnectionGrpcServerPlugin, {

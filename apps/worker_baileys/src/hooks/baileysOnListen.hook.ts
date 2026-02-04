@@ -15,6 +15,7 @@ import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 import { QrCodeCounter } from './qrCodeCounter';
 
 const RETRY_DELAY = 10000;
+const RECONNECT_CHECK_DELAY = 2000;
 const CONNECT_TIMEOUT_MS = 60000;
 const MAX_RETRY_ATTEMPTS = 5;
 const STATUS_NOTIFY_MAX_RETRIES = 5;
@@ -281,9 +282,13 @@ const ensureConnectedInner = async (
       return;
     }
 
+    const delay =
+      state.status === EBaileysConnectionStatus.connecting
+        ? RECONNECT_CHECK_DELAY
+        : RETRY_DELAY;
     setTimeout(
       () => ensureConnectedInner(attempt + 1, log, baileys, onReady),
-      RETRY_DELAY
+      delay
     );
   } catch (error) {
     const hasValidSession = baileys.hasSession();
@@ -360,6 +365,7 @@ const baileysOnListenHook = fp(async (fastify) => {
       QrCodeCounter.reset();
       mismatchedStatusSent = false;
 
+      ensureConnectedLock = false;
       await ensureConnected(1, fastify.log, baileysService);
 
       fastify.log.info(
