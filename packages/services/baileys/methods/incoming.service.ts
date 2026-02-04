@@ -79,28 +79,6 @@ export class BaileysIncomingMessageService {
     this.startQueueProcessor();
   }
 
-  private async enrichMessageWithRemoteJidAlt(
-    socket: WASocket,
-    m: WAMessage
-  ): Promise<WAMessage> {
-    const key = m.key;
-    if (!key?.remoteJid || key.remoteJidAlt) return m;
-
-    const remoteJidStr = String(key.remoteJid);
-    if (
-      !remoteJidStr.endsWith('@lid') &&
-      !remoteJidStr.endsWith('@hosted.lid')
-    ) {
-      return m;
-    }
-
-    const pn =
-      await socket.signalRepository.lidMapping.getPNForLID(remoteJidStr);
-    if (!pn || typeof pn !== 'string') return m;
-
-    return { ...m, key: { ...key, remoteJidAlt: pn } };
-  }
-
   private getMessageKey(m: WAMessage): string | null {
     const jid = remoteJid(m.key);
     const jidAlt = remoteJidAlt(m.key);
@@ -355,7 +333,7 @@ export class BaileysIncomingMessageService {
 
       for (const m of e.messages) {
         void this.cacheMessage(m);
-        void this.processMessage(socket, m, e.type);
+        this.processMessage(socket, m, e.type);
       }
     });
 
@@ -376,7 +354,7 @@ export class BaileysIncomingMessageService {
 
       for (const message of history.messages) {
         void this.cacheMessage(message);
-        void this.processHistoryMessage(socket, message);
+        this.processHistoryMessage(socket, message);
       }
     });
 
@@ -391,12 +369,12 @@ export class BaileysIncomingMessageService {
     });
   }
 
-  private async processMessage(
+  private processMessage(
     socket: WASocket,
     m: WAMessage,
     upsertType: string
-  ): Promise<void> {
-    await this.processIncomingMessage(
+  ): void {
+    this.processIncomingMessage(
       socket,
       m,
       upsertType,
@@ -404,11 +382,8 @@ export class BaileysIncomingMessageService {
     );
   }
 
-  private async processHistoryMessage(
-    socket: WASocket,
-    m: WAMessage
-  ): Promise<void> {
-    await this.processIncomingMessage(
+  private processHistoryMessage(socket: WASocket, m: WAMessage): void {
+    this.processIncomingMessage(
       socket,
       m,
       null,
@@ -417,13 +392,13 @@ export class BaileysIncomingMessageService {
     );
   }
 
-  private async processIncomingMessage(
+  private processIncomingMessage(
     socket: WASocket,
     m: WAMessage,
     upsertType: string | null,
     topic: string,
     fromHistorySync = false
-  ): Promise<void> {
+  ): void {
     try {
       if (m.category === 'peer') return;
 
@@ -453,16 +428,11 @@ export class BaileysIncomingMessageService {
         return;
       }
 
-      const messageEnriched = await this.enrichMessageWithRemoteJidAlt(
-        socket,
-        m
-      );
-
       const inputUpsert: IUpsertMessage = {
         worker_id: baileysEnvironment.baileysWorkerId,
         account_id: baileysEnvironment.baileysAccountId,
         type,
-        message: messageEnriched,
+        message: m,
         photo: null,
         has_quoted: hasQuoted,
         from_history_sync: fromHistorySync,
