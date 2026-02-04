@@ -34,14 +34,7 @@ import {
 import { IMessageStatusUpdate } from '@core/common/interfaces/IMessageStatusUpdate';
 import { getPhoneFromJid } from '@core/common/functions/getPhoneFromJid';
 import { EMessageType } from '@core/common/enums/EMessageType';
-
-interface PendingMessage {
-  inputUpsert: IUpsertMessage;
-  messageKey: string;
-  topic: string;
-  retries: number;
-  addedAt: number;
-}
+import { IBaileysPendingMessage } from '@core/common/interfaces/IBaileysPendingMessage';
 
 @singleton()
 export class BaileysIncomingMessageService {
@@ -53,7 +46,7 @@ export class BaileysIncomingMessageService {
   private cleanupInterval?: NodeJS.Timeout;
   private rejectCallConfig: boolean = false;
 
-  private readonly pendingQueue: PendingMessage[] = [];
+  private readonly pendingQueue: IBaileysPendingMessage[] = [];
   private isProcessingQueue = false;
   private readonly MAX_RETRIES = 100;
   private readonly RETRY_BASE_DELAY_MS = 50;
@@ -219,7 +212,7 @@ export class BaileysIncomingMessageService {
     if (this.isProcessingQueue || this.pendingQueue.length === 0) return;
 
     this.isProcessingQueue = true;
-    let batch: PendingMessage[] = [];
+    let batch: IBaileysPendingMessage[] = [];
 
     try {
       const batchSize = Math.min(50, this.pendingQueue.length);
@@ -262,7 +255,9 @@ export class BaileysIncomingMessageService {
     }
   }
 
-  private async sendToKafkaWithRetry(item: PendingMessage): Promise<void> {
+  private async sendToKafkaWithRetry(
+    item: IBaileysPendingMessage
+  ): Promise<void> {
     const delay = Math.min(
       this.RETRY_BASE_DELAY_MS * Math.pow(2, item.retries),
       this.MAX_RETRY_DELAY_MS
@@ -283,7 +278,7 @@ export class BaileysIncomingMessageService {
     inputUpsert: IUpsertMessage,
     messageKey: string,
     topic: string = this.kafkaServiceQueueService.upsertMessage()
-  ): PendingMessage | null {
+  ): IBaileysPendingMessage | null {
     if (this.isDestroying) {
       return null;
     }
@@ -296,7 +291,7 @@ export class BaileysIncomingMessageService {
       this.pendingQueue.splice(0, dropCount);
     }
 
-    const item: PendingMessage = {
+    const item: IBaileysPendingMessage = {
       inputUpsert,
       messageKey,
       topic,
@@ -449,7 +444,7 @@ export class BaileysIncomingMessageService {
 
   private fetchPhotoNonBlocking(
     socket: WASocket,
-    pendingItem: PendingMessage,
+    pendingItem: IBaileysPendingMessage,
     jid?: string
   ): void {
     const resolvedJid =
