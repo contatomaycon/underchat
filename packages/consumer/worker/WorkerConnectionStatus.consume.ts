@@ -119,13 +119,9 @@ export class WorkerConnectionStatusConsume {
       hasActiveSocket &&
       awaitingUserAction
     ) {
-      const attempt =
-        this.connectionRetryAttempt > 0 ? this.connectionRetryAttempt : 1;
       console.log(
-        '[WorkerConnectionStatus] Publishing existing connection attempt',
-        { attempt }
+        '[WorkerConnectionStatus] Already awaiting user action, skipping'
       );
-      this.publishConnectionAttempt(attempt);
       return;
     }
 
