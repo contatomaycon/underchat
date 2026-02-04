@@ -62,6 +62,8 @@ export class ChatbotFlowRunnerService {
   private readonly CHATBOT_FLOW_NODE_CACHE_TTL_SECONDS = 259200;
   private readonly RAG_CACHE_TTL_SECONDS = 600;
   private readonly CONVERSATION_SUMMARY_UPDATE_INTERVAL = 5;
+  private readonly AI_AGENT_API_RETRY_ATTEMPTS = 3;
+  private readonly AI_AGENT_API_RETRY_BASE_DELAY_MS = 500;
   private static readonly MIN_PREFIX_MATCH_LENGTH = 8;
 
   private static readonly STOP_WORDS = new Set<string>([
@@ -590,6 +592,31 @@ export class ChatbotFlowRunnerService {
     return value.trim();
   }
 
+  private async delay(ms: number): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private async retryOperation<T>(
+    operation: () => Promise<T>,
+    attempts: number = this.AI_AGENT_API_RETRY_ATTEMPTS,
+    baseDelayMs: number = this.AI_AGENT_API_RETRY_BASE_DELAY_MS
+  ): Promise<T> {
+    let lastError: unknown;
+
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      try {
+        return await operation();
+      } catch (error) {
+        lastError = error;
+        if (attempt < attempts) {
+          await this.delay(baseDelayMs * attempt);
+        }
+      }
+    }
+
+    throw lastError;
+  }
+
   private async ensureBootstrapSummary(
     bootstrapSummaryKey: string,
     promptsText: string,
@@ -615,13 +642,25 @@ export class ChatbotFlowRunnerService {
       return cachedSummary;
     }
 
-    const summary = await this.ragService.generateBootstrapSummaryFromPrompts(
-      promptsText,
-      aiAgent.base_url,
-      aiAgent.api_key,
-      aiAgent.model,
-      aiAgent.ai_agent_type_id
-    );
+    let summary: string | null = null;
+
+    try {
+      summary = await this.retryOperation(() =>
+        this.ragService.generateBootstrapSummaryFromPrompts(
+          promptsText,
+          aiAgent.base_url,
+          aiAgent.api_key,
+          aiAgent.model,
+          aiAgent.ai_agent_type_id
+        )
+      );
+    } catch (error) {
+      console.error(
+        '[ChatbotFlow] generateBootstrapSummary failed, skipping summary',
+        error
+      );
+      return cachedSummary ?? null;
+    }
 
     if (summary && summary.trim().length > 0) {
       await this.redis.set(bootstrapSummaryKey, summary, 'EX', 86400);
@@ -3821,7 +3860,7 @@ ${aiAgent.system_prompt ? `\nContexto do agente:\n${aiAgent.system_prompt.substr
     let finalMessage: string;
 
     try {
-      const welcomeMessage = await this.callAiAgentChatApi(
+      const welcomeMessage = await this.callAiAgentChatApiWithRetry(
         aiAgent.base_url,
         aiAgent.api_key,
         aiAgent.model,
@@ -3934,11 +3973,11 @@ ${aiAgent.system_prompt ? `\nContexto do agente:\n${aiAgent.system_prompt.substr
     humanSupportEnabled: boolean
   ): Promise<'needs_help' | 'resolved' | 'human_support'> {
     const normalizedResponse = userText.toLowerCase().trim();
-
-    if (
+    const userRequestedHuman =
       humanSupportEnabled &&
-      this.containsHumanSupportIndicator(normalizedResponse)
-    ) {
+      this.containsHumanSupportIndicator(normalizedResponse);
+
+    if (userRequestedHuman) {
       return 'human_support';
     }
 
@@ -3985,7 +4024,7 @@ Mensagem mais recente do usuário: "${userText}"
 Retorne APENAS uma das palavras: ${validOptions}.`;
 
     try {
-      const analysis = await this.callAiAgentChatApi(
+      const analysis = await this.callAiAgentChatApiWithRetry(
         aiAgent.base_url,
         aiAgent.api_key,
         aiAgent.model,
@@ -3996,11 +4035,16 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       );
 
       const normalized = analysis.trim().toLowerCase();
-      if (humanSupportEnabled && normalized.includes('human_support')) {
-        return 'human_support';
-      }
-      if (normalized.includes('resolved')) {
+      const fallbackIntent = this.fallbackIntentAnalysis(
+        userText,
+        humanSupportEnabled
+      );
+
+      if (normalized.includes('resolved') && fallbackIntent === 'resolved') {
         return 'resolved';
+      }
+      if (normalized.includes('human_support') && userRequestedHuman) {
+        return 'human_support';
       }
       return 'needs_help';
     } catch (error) {
@@ -5026,6 +5070,39 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
     }
   }
 
+  private async callAiAgentChatApiWithRetry(
+    baseUrl: string,
+    apiKey: string,
+    model: string,
+    aiAgentTypeId: string,
+    prompt: string,
+    userQuery: string,
+    history?: Array<{ role: 'user' | 'assistant'; content: string }>,
+    assistantsOptions?: {
+      accountId: string;
+      chatId: string;
+      aiAgentId: string;
+      openaiAssistantId: string;
+    },
+    responsesApiFileSearchOptions?: { vectorStoreId: string },
+    usageContext?: { accountId: string; chatId: string; aiAgentId: string }
+  ): Promise<string> {
+    return this.retryOperation(() =>
+      this.callAiAgentChatApi(
+        baseUrl,
+        apiKey,
+        model,
+        aiAgentTypeId,
+        prompt,
+        userQuery,
+        history,
+        assistantsOptions,
+        responsesApiFileSearchOptions,
+        usageContext
+      )
+    );
+  }
+
   private async callAiAgentChatApi(
     baseUrl: string,
     apiKey: string,
@@ -5387,6 +5464,7 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
           'human_support',
           customMessages
         );
+
         if (humanSupportResult) {
           return true;
         }
@@ -5470,8 +5548,13 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
       aiAgent.ai_agent_type_id === EAiAgentType.gpt &&
       !aiAgent.openai_assistant_id &&
       !!aiAgent.openai_vector_store_id;
-    const { enhancedPrompt, contextAllowed, contextHints } =
-      await this.buildEnhancedPromptForAiAgent(
+    let enhancedPrompt =
+      aiAgent.system_prompt?.trim() || 'Você é um assistente prestativo.';
+    let contextAllowed = true;
+    let contextHints: string[] = [];
+
+    try {
+      const promptData = await this.buildEnhancedPromptForAiAgent(
         createChat,
         aiAgent,
         userText,
@@ -5479,6 +5562,15 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
         conversationSummaryKey,
         recentMessages
       );
+      enhancedPrompt = promptData.enhancedPrompt;
+      contextAllowed = promptData.contextAllowed;
+      contextHints = promptData.contextHints;
+    } catch (error) {
+      console.error(
+        '[ChatbotFlow] buildEnhancedPromptForAiAgent failed, using fallback prompt',
+        error
+      );
+    }
 
     const assistantsOptions =
       useAssistantsApi && aiAgent.openai_assistant_id
@@ -5500,7 +5592,7 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
       aiResponse = this.buildOutOfContextResponse(userText, contextHints);
     } else {
       try {
-        aiResponse = await this.callAiAgentChatApi(
+        aiResponse = await this.callAiAgentChatApiWithRetry(
           baseUrl,
           apiKey,
           model,
