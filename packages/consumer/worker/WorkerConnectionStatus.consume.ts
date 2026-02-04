@@ -78,8 +78,19 @@ export class WorkerConnectionStatusConsume {
       return;
     }
 
+    if (this.activeConnectionRequest) {
+      return;
+    }
+
     const currentStatus = this.baileysService.getStatus();
-    if (currentStatus === EBaileysConnectionStatus.connecting) {
+    const hasActiveSocket = Boolean(this.baileysService.socket);
+    if (
+      currentStatus === EBaileysConnectionStatus.connecting &&
+      hasActiveSocket
+    ) {
+      const attempt =
+        this.connectionRetryAttempt > 0 ? this.connectionRetryAttempt : 1;
+      this.publishConnectionAttempt(attempt);
       return;
     }
 
@@ -197,6 +208,10 @@ export class WorkerConnectionStatusConsume {
     const fromDisconnectRestart = this.restartAfterDisconnect;
     if (fromDisconnectRestart) {
       this.restartAfterDisconnect = false;
+    }
+
+    if (fromDisconnectRestart) {
+      this.baileysService.clearUserRequestedDisconnect();
     }
 
     const connectPromise = this.baileysService
