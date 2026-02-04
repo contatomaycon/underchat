@@ -58,6 +58,7 @@ import { getContextTokensForModel } from '@core/common/functions/getContextToken
 @injectable()
 export class ChatbotFlowRunnerService {
   private readonly MENU_DEBOUNCE_SECONDS = 3;
+  private readonly AI_AGENT_DEBOUNCE_SECONDS = 3;
   private readonly CHATBOT_FLOW_NODE_CACHE_TTL_SECONDS = 259200;
   private readonly RAG_CACHE_TTL_SECONDS = 600;
   private readonly CONVERSATION_SUMMARY_UPDATE_INTERVAL = 5;
@@ -213,6 +214,14 @@ export class ChatbotFlowRunnerService {
     return `underchat:menu-debounce:${accountId}:${workerId}:${chatId}`;
   }
 
+  private getAiAgentDebounceCacheKey(
+    accountId: string,
+    workerId: string,
+    chatId: string
+  ): string {
+    return `chatbot:ai-agent:debounce:${accountId}:${workerId}:${chatId}`;
+  }
+
   private getSectorSelectionCacheKey(
     accountId: string,
     workerId: string,
@@ -304,6 +313,116 @@ export class ChatbotFlowRunnerService {
     );
 
     await this.redis.del(key);
+  }
+
+  private async setAiAgentDebounce(
+    createChat: IChat,
+    payload: {
+      expiresAt: number;
+      messages: string[];
+      flowId: string;
+      selectedAiAgentId: string;
+    }
+  ): Promise<void> {
+    const key = this.getAiAgentDebounceCacheKey(
+      createChat.account.id,
+      createChat.worker.id,
+      createChat.chat_id
+    );
+
+    await this.redis.set(
+      key,
+      JSON.stringify(payload),
+      'EX',
+      this.AI_AGENT_DEBOUNCE_SECONDS + 2
+    );
+  }
+
+  private async getAiAgentDebounce(createChat: IChat): Promise<{
+    expiresAt: number;
+    messages: string[];
+    flowId: string;
+    selectedAiAgentId: string;
+  } | null> {
+    const key = this.getAiAgentDebounceCacheKey(
+      createChat.account.id,
+      createChat.worker.id,
+      createChat.chat_id
+    );
+
+    const data = await this.redis.get(key);
+    if (!data) return null;
+
+    return JSON.parse(data);
+  }
+
+  private async deleteAiAgentDebounce(createChat: IChat): Promise<void> {
+    const key = this.getAiAgentDebounceCacheKey(
+      createChat.account.id,
+      createChat.worker.id,
+      createChat.chat_id
+    );
+
+    await this.redis.del(key);
+  }
+
+  private scheduleAiAgentDebouncedResponse(
+    t: TFunction<'translation', undefined>,
+    createChat: IChat,
+    currentNode: ListChatbotFlowResponse['nodes'][number],
+    aiAgent: ViewAiAgentResponse,
+    currentFlowId: string,
+    bootstrapSummaryKey: string,
+    conversationSummaryKey: string,
+    chatbotFlow: ListChatbotFlowResponse,
+    customMessages?: IChatbotCustomMessages
+  ): void {
+    setTimeout(
+      async () => {
+        const debounceData = await this.getAiAgentDebounce(createChat);
+
+        if (!debounceData) {
+          return;
+        }
+
+        const now = Date.now();
+        if (now < debounceData.expiresAt) {
+          return;
+        }
+
+        await this.deleteAiAgentDebounce(createChat);
+
+        const combinedText = debounceData.messages
+          .map((msg) => msg.trim())
+          .filter(Boolean)
+          .join('\n');
+
+        if (!combinedText) {
+          return;
+        }
+
+        try {
+          await this.processAiAgentUserText(
+            t,
+            createChat,
+            currentNode,
+            aiAgent,
+            debounceData.flowId || currentFlowId,
+            combinedText,
+            bootstrapSummaryKey,
+            conversationSummaryKey,
+            chatbotFlow,
+            customMessages
+          );
+        } catch (error) {
+          console.error(
+            '[ChatbotFlow] processAiAgentUserText debounce failed',
+            error
+          );
+        }
+      },
+      (this.AI_AGENT_DEBOUNCE_SECONDS + 0.5) * 1000
+    );
   }
 
   private scheduleMenuSend(
@@ -5233,6 +5352,78 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
       return false;
     }
 
+    const existingDebounce = await this.getAiAgentDebounce(createChat);
+    const shouldResetDebounce =
+      existingDebounce &&
+      (existingDebounce.flowId !== currentFlowId ||
+        existingDebounce.selectedAiAgentId !== selectedAiAgentId);
+    const mergedMessages = shouldResetDebounce
+      ? []
+      : (existingDebounce?.messages ?? []);
+    mergedMessages.push(userText);
+
+    const expiresAt = Date.now() + this.AI_AGENT_DEBOUNCE_SECONDS * 1000;
+
+    await this.setAiAgentDebounce(createChat, {
+      expiresAt,
+      messages: mergedMessages,
+      flowId: currentFlowId,
+      selectedAiAgentId,
+    });
+
+    this.scheduleAiAgentDebouncedResponse(
+      t,
+      createChat,
+      currentNode,
+      aiAgent,
+      currentFlowId,
+      bootstrapSummaryKey,
+      conversationSummaryKey,
+      chatbotFlow,
+      customMessages
+    );
+
+    return true;
+  }
+
+  private async handleBootstrapEntry(
+    t: TFunction<'translation', undefined>,
+    createChat: IChat,
+    aiAgent: ViewAiAgentResponse,
+    currentFlowId: string,
+    bootstrapSummaryKey: string
+  ): Promise<boolean> {
+    await this.generateBootstrapSummaryForChat(
+      createChat,
+      aiAgent,
+      bootstrapSummaryKey
+    );
+
+    await this.generateAndSendAiWelcomeMessage(t, createChat, aiAgent);
+    await this.resetAiAgentInteractionsCount(
+      createChat.account.id,
+      createChat.worker.id,
+      createChat.chat_id,
+      currentFlowId
+    );
+    await this.updateCache(createChat, currentFlowId);
+    await this.scheduleChatHistoryEmbedding(createChat, aiAgent.ai_agent_id);
+
+    return true;
+  }
+
+  private async processAiAgentUserText(
+    t: TFunction<'translation', undefined>,
+    createChat: IChat,
+    currentNode: ListChatbotFlowResponse['nodes'][number],
+    aiAgent: ViewAiAgentResponse,
+    currentFlowId: string,
+    userText: string,
+    bootstrapSummaryKey: string,
+    conversationSummaryKey: string,
+    chatbotFlow: ListChatbotFlowResponse,
+    customMessages?: IChatbotCustomMessages
+  ): Promise<boolean> {
     const actionAfterInteractions =
       currentNode.data?.actionAfterInteractions === true;
     const interactionsQuantity = currentNode.data?.interactionsQuantity ?? 0;
@@ -5279,7 +5470,7 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
       createChat.account.id,
       createChat.worker.id,
       createChat.chat_id,
-      selectedAiAgentId,
+      aiAgent.ai_agent_id,
       20
     );
 
@@ -5291,8 +5482,6 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
       recentMessages,
       humanSupportEnabled
     );
-
-    console.log('[AI Agent] Intent:', intent);
 
     if (intent === 'resolved') {
       const resolvedNextFlowId = this.getNextFlowIdByOption(
@@ -5339,32 +5528,6 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
       chatbotFlow,
       customMessages
     );
-  }
-
-  private async handleBootstrapEntry(
-    t: TFunction<'translation', undefined>,
-    createChat: IChat,
-    aiAgent: ViewAiAgentResponse,
-    currentFlowId: string,
-    bootstrapSummaryKey: string
-  ): Promise<boolean> {
-    await this.generateBootstrapSummaryForChat(
-      createChat,
-      aiAgent,
-      bootstrapSummaryKey
-    );
-
-    await this.generateAndSendAiWelcomeMessage(t, createChat, aiAgent);
-    await this.resetAiAgentInteractionsCount(
-      createChat.account.id,
-      createChat.worker.id,
-      createChat.chat_id,
-      currentFlowId
-    );
-    await this.updateCache(createChat, currentFlowId);
-    await this.scheduleChatHistoryEmbedding(createChat, aiAgent.ai_agent_id);
-
-    return true;
   }
 
   private async processAiAgentResponse(
