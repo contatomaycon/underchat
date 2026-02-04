@@ -78,6 +78,11 @@ export class WorkerConnectionStatusConsume {
       return;
     }
 
+    const currentStatus = this.baileysService.getStatus();
+    if (currentStatus === EBaileysConnectionStatus.connecting) {
+      return;
+    }
+
     this.baileysService.resetQrCodeCounter();
     this.startConnectionRetry(data);
   }
