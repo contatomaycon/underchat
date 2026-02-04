@@ -89,6 +89,9 @@ export class MessageHistorySyncConsume {
         return;
       }
 
+      console.log('[MessageHistorySync] Received message:');
+      console.dir(data, { depth: null, colors: true });
+
       const partition = message.partition;
       const offset = message.offset;
 
