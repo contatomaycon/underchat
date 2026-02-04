@@ -59,23 +59,16 @@ export class WorkerConnectionStatusConsume {
     data: StatusConnectionWorkerRequest
   ): Promise<void> {
     if (this.baileysService.isConnected()) {
-      const workerId = baileysEnvironment.baileysWorkerId;
-      const accountId = baileysEnvironment.baileysAccountId;
-
-      const payload: IBaileysConnectionState = {
-        status: EBaileysConnectionStatus.connected,
-        worker_id: workerId,
-        account_id: accountId,
-        code: ECodeMessage.connectionEstablished,
-        phone: getPhoneNumber(this.baileysService.socket?.user?.id),
-        worker_status_id: EWorkerStatus.online,
-      };
-
-      await this.centrifugoService
-        .publishSub(workerCentrifugoQueue(accountId), payload)
-        .catch(() => {});
-
+      await this.publishConnectedStatus();
       return;
+    }
+
+    if (this.baileysService.hasSession()) {
+      await this.waitForReconnection(3000, 500);
+      if (this.baileysService.isConnected()) {
+        await this.publishConnectedStatus();
+        return;
+      }
     }
 
     if (this.activeConnectionRequest) {
@@ -182,6 +175,37 @@ export class WorkerConnectionStatusConsume {
     void this.centrifugoService
       .publishSub(workerCentrifugoQueue(payload.account_id), payload)
       .catch(() => {});
+  }
+
+  private async publishConnectedStatus(): Promise<void> {
+    const workerId = baileysEnvironment.baileysWorkerId;
+    const accountId = baileysEnvironment.baileysAccountId;
+
+    const payload: IBaileysConnectionState = {
+      status: EBaileysConnectionStatus.connected,
+      worker_id: workerId,
+      account_id: accountId,
+      code: ECodeMessage.connectionEstablished,
+      phone: getPhoneNumber(this.baileysService.socket?.user?.id),
+      worker_status_id: EWorkerStatus.online,
+    };
+
+    await this.centrifugoService
+      .publishSub(workerCentrifugoQueue(accountId), payload)
+      .catch(() => {});
+  }
+
+  private async waitForReconnection(
+    maxWaitMs: number,
+    intervalMs: number
+  ): Promise<void> {
+    const start = Date.now();
+    while (Date.now() - start < maxWaitMs) {
+      if (this.baileysService.isConnected()) {
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    }
   }
 
   private async runConnectionAttempt(): Promise<void> {

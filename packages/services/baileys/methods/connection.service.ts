@@ -797,22 +797,13 @@ export class BaileysConnectionService {
     if (!skipWebSocketClose) {
       try {
         const ws = this.resolveWebSocket();
-        if (!ws) {
-          this.socket = undefined;
-
-          return;
-        }
-
-        const readyState = ws.readyState;
-        if (readyState === 1) {
-          ws.close(1000, 'reconnect');
-
-          return;
-        }
-
-        const isConnectingOrClosing = readyState === 0 || readyState === 2;
-        if (isConnectingOrClosing) {
-          ws.terminate?.();
+        if (ws) {
+          const readyState = ws.readyState;
+          if (readyState === 1) {
+            ws.close(1000, 'reconnect');
+          } else if (readyState === 0 || readyState === 2) {
+            ws.terminate?.();
+          }
         }
       } catch {
         this.saveLogWppConnection({
