@@ -659,7 +659,6 @@ export class ChatbotFlowSaverUseCase {
     if (!data) {
       return;
     }
-
   }
 
   private validateAiAgentNode(
