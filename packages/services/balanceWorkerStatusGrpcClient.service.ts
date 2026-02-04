@@ -25,6 +25,8 @@ if (!WorkerCommandClient) {
   throw new Error('WorkerCommand client not found in proto');
 }
 
+const GRPC_DEADLINE_MS = 10000;
+
 @injectable()
 export class BalanceWorkerStatusGrpcClientService {
   async notifyWorkerStatus(payload: IBaileysConnectionState): Promise<void> {
@@ -42,9 +44,12 @@ export class BalanceWorkerStatusGrpcClientService {
       disconnected_user: payload.disconnected_user ?? false,
     };
 
+    const deadline = new Date(Date.now() + GRPC_DEADLINE_MS);
+
     await new Promise<void>((resolve, reject) => {
       (client as any).NotifyWorkerStatus(
         protoPayload,
+        { deadline },
         (err: ServiceError | null) => {
           client.close();
           if (err) {

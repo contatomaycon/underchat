@@ -19,7 +19,9 @@ const CONNECT_TIMEOUT_MS = 60000;
 const MAX_RETRY_ATTEMPTS = 5;
 const STATUS_NOTIFY_MAX_RETRIES = 5;
 const STATUS_NOTIFY_RETRY_DELAY_MS = 2000;
+const STATUS_NOTIFY_FALLBACK_DELAY_MS = 30000;
 let mismatchedStatusSent = false;
+let ensureConnectedLock = false;
 
 const withConnectTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> => {
   return Promise.race([
@@ -42,7 +44,7 @@ const notifyWorkerStatusViaGrpc = async (
   workerStatusId: EWorkerStatus,
   log: FastifyInstance['log'],
   baileysStatus: EBaileysConnectionStatus = EBaileysConnectionStatus.info
-): Promise<void> => {
+): Promise<boolean> => {
   const balanceWorkerStatusGrpcClientService = container.resolve(
     BalanceWorkerStatusGrpcClientService
   );
@@ -62,7 +64,11 @@ const notifyWorkerStatusViaGrpc = async (
       await balanceWorkerStatusGrpcClientService.notifyWorkerStatus(
         dataPublish
       );
-      return;
+      log.info(
+        { workerStatusId, workerId },
+        'Status do worker notificado via gRPC com sucesso'
+      );
+      return true;
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
       log.warn(
@@ -84,6 +90,60 @@ const notifyWorkerStatusViaGrpc = async (
     { err: lastError, maxRetries: STATUS_NOTIFY_MAX_RETRIES },
     'Falha ao enviar status do worker via gRPC após todas as tentativas'
   );
+  return false;
+};
+
+const scheduleStatusRetry = (
+  workerId: string,
+  accountId: string,
+  workerStatusId: EWorkerStatus,
+  log: FastifyInstance['log'],
+  baileysStatus: EBaileysConnectionStatus
+): void => {
+  log.warn(
+    { retryDelayMs: STATUS_NOTIFY_FALLBACK_DELAY_MS },
+    'Agendando re-tentativa de notificação de status via gRPC'
+  );
+  setTimeout(() => {
+    notifyWorkerStatusViaGrpc(
+      workerId,
+      accountId,
+      workerStatusId,
+      log,
+      baileysStatus
+    ).catch((err) => {
+      log.error(
+        { err },
+        'Falha na re-tentativa agendada de notificação de status via gRPC'
+      );
+    });
+  }, STATUS_NOTIFY_FALLBACK_DELAY_MS);
+};
+
+const notifyAndEnsureDelivery = async (
+  workerId: string,
+  accountId: string,
+  workerStatusId: EWorkerStatus,
+  log: FastifyInstance['log'],
+  baileysStatus: EBaileysConnectionStatus = EBaileysConnectionStatus.info
+): Promise<void> => {
+  const success = await notifyWorkerStatusViaGrpc(
+    workerId,
+    accountId,
+    workerStatusId,
+    log,
+    baileysStatus
+  );
+
+  if (!success) {
+    scheduleStatusRetry(
+      workerId,
+      accountId,
+      workerStatusId,
+      log,
+      baileysStatus
+    );
+  }
 };
 
 const updateWorkerMismatchedStatus = async (
@@ -95,7 +155,7 @@ const updateWorkerMismatchedStatus = async (
     return;
   }
 
-  await notifyWorkerStatusViaGrpc(
+  await notifyAndEnsureDelivery(
     workerId,
     accountId,
     EWorkerStatus.mismatched,
@@ -110,7 +170,7 @@ const fireOnReady = (onReady?: () => void): void => {
   }
 };
 
-const ensureConnected = async (
+const ensureConnectedInner = async (
   attempt: number,
   log: FastifyInstance['log'],
   baileys: BaileysService,
@@ -125,7 +185,7 @@ const ensureConnected = async (
     log.info({ attempt }, 'Baileys conectado com sucesso');
     mismatchedStatusSent = false;
     QrCodeCounter.reset();
-    await notifyWorkerStatusViaGrpc(
+    await notifyAndEnsureDelivery(
       baileysEnvironment.baileysWorkerId,
       baileysEnvironment.baileysAccountId,
       EWorkerStatus.online,
@@ -133,6 +193,7 @@ const ensureConnected = async (
       EBaileysConnectionStatus.connected
     );
     fireOnReady(onReady);
+    ensureConnectedLock = false;
 
     return;
   }
@@ -147,7 +208,7 @@ const ensureConnected = async (
         'Baileys em estado connecting com sessão válida. Aguardando reconexão automática...'
       );
       setTimeout(
-        () => ensureConnected(attempt + 1, log, baileys, onReady),
+        () => ensureConnectedInner(attempt + 1, log, baileys, onReady),
         RETRY_DELAY
       );
       return;
@@ -169,6 +230,7 @@ const ensureConnected = async (
       );
 
       fireOnReady(onReady);
+      ensureConnectedLock = false;
       return;
     }
 
@@ -184,7 +246,7 @@ const ensureConnected = async (
 
     fireOnReady(onReady);
 
-    setTimeout(() => ensureConnected(attempt, log, baileys), RETRY_DELAY);
+    setTimeout(() => ensureConnectedInner(attempt, log, baileys), RETRY_DELAY);
     return;
   }
 
@@ -207,7 +269,7 @@ const ensureConnected = async (
       log.info('Baileys conectado com sucesso');
       mismatchedStatusSent = false;
       QrCodeCounter.reset();
-      await notifyWorkerStatusViaGrpc(
+      await notifyAndEnsureDelivery(
         baileysEnvironment.baileysWorkerId,
         baileysEnvironment.baileysAccountId,
         EWorkerStatus.online,
@@ -215,11 +277,12 @@ const ensureConnected = async (
         EBaileysConnectionStatus.connected
       );
       fireOnReady(onReady);
+      ensureConnectedLock = false;
       return;
     }
 
     setTimeout(
-      () => ensureConnected(attempt + 1, log, baileys, onReady),
+      () => ensureConnectedInner(attempt + 1, log, baileys, onReady),
       RETRY_DELAY
     );
   } catch (error) {
@@ -236,7 +299,7 @@ const ensureConnected = async (
       );
       baileys.reconnect({ initial_connection: true });
       setTimeout(
-        () => ensureConnected(attempt + 1, log, baileys, onReady),
+        () => ensureConnectedInner(attempt + 1, log, baileys, onReady),
         RETRY_DELAY
       );
     } else if (attempt < MAX_RETRY_ATTEMPTS) {
@@ -245,7 +308,7 @@ const ensureConnected = async (
         'Baileys: tentando nova conexão...'
       );
       setTimeout(
-        () => ensureConnected(attempt + 1, log, baileys, onReady),
+        () => ensureConnectedInner(attempt + 1, log, baileys, onReady),
         RETRY_DELAY
       );
     } else {
@@ -254,15 +317,31 @@ const ensureConnected = async (
         'Baileys: máximo de tentativas atingido, aguardando QR code'
       );
       QrCodeCounter.reset();
-      await notifyWorkerStatusViaGrpc(
+      await notifyAndEnsureDelivery(
         baileysEnvironment.baileysWorkerId,
         baileysEnvironment.baileysAccountId,
         EWorkerStatus.disponible,
         log
       );
       fireOnReady(onReady);
+      ensureConnectedLock = false;
     }
   }
+};
+
+const ensureConnected = async (
+  attempt: number,
+  log: FastifyInstance['log'],
+  baileys: BaileysService,
+  onReady?: () => void
+): Promise<void> => {
+  if (ensureConnectedLock) {
+    log.info('ensureConnected já em execução, ignorando chamada concorrente');
+    fireOnReady(onReady);
+    return;
+  }
+  ensureConnectedLock = true;
+  return ensureConnectedInner(attempt, log, baileys, onReady);
 };
 
 const baileysOnListenHook = fp(async (fastify) => {

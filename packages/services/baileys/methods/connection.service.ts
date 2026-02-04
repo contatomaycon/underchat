@@ -494,9 +494,6 @@ export class BaileysConnectionService {
     this.publishSub(payload);
     this.lastStatusPayload = JSON.stringify(payload);
 
-    await this.balanceWorkerStatusGrpcClientService.notifyWorkerStatus(payload);
-
-    // Dispara o gatilho para iniciar o baileysOnListen
     triggerConnectionEstablished();
 
     resolve(this.state());
@@ -563,9 +560,11 @@ export class BaileysConnectionService {
         this.publishSub(payload, true);
         this.lastStatusPayload = payloadStr;
 
-        await this.balanceWorkerStatusGrpcClientService.notifyWorkerStatus(
-          payload
-        );
+        try {
+          await this.balanceWorkerStatusGrpcClientService.notifyWorkerStatus(
+            payload
+          );
+        } catch {}
 
         this.saveLogWppConnection({
           worker_id: WORKER,
@@ -597,9 +596,11 @@ export class BaileysConnectionService {
 
       this.publishSub(payload, true);
 
-      await this.balanceWorkerStatusGrpcClientService.notifyWorkerStatus(
-        payload
-      );
+      try {
+        await this.balanceWorkerStatusGrpcClientService.notifyWorkerStatus(
+          payload
+        );
+      } catch {}
     }
 
     resolve(this.state());
