@@ -4114,13 +4114,14 @@ Classificações possíveis:
 ${humanSupportSection}
 REGRAS IMPORTANTES:
 1. Se o usuário pedir EXPLICITAMENTE para falar com humano/operador/atendente/suporte/pessoa real, classifique como "human_support" (prioridade máxima, mesmo que exista contexto anterior).
-2. Quando houver QUALQUER dúvida, classifique como "needs_help". O padrão é SEMPRE "needs_help".
-3. Um simples "obrigado", "ok", "valeu" ou "entendi" sozinho NÃO é suficiente para "resolved" - o usuário DEVE sinalizar explicitamente que não precisa de mais ajuda.
-4. Se o usuário fizer qualquer pergunta ou continuar interagindo sobre o tema, SEMPRE classifique como "needs_help".
-5. Só classifique como "resolved" quando for ABSOLUTAMENTE claro pelo contexto que o usuário não tem mais dúvidas e quer encerrar.
-6. Se o usuário disser algo como "obrigado" seguido de uma pergunta ou comentário, classifique como "needs_help".
-7. Considere o contexto COMPLETO da conversa para tomar a decisão.
-8. Mensagens curtas como "ok", "certo", "entendi" sem contexto de encerramento devem ser "needs_help".
+2. Se a transferência humana NÃO estiver habilitada, NUNCA classifique como "human_support". Nesses casos, classifique como "needs_help".
+3. Quando houver QUALQUER dúvida, classifique como "needs_help". O padrão é SEMPRE "needs_help".
+4. Um simples "obrigado", "ok", "valeu" ou "entendi" sozinho NÃO é suficiente para "resolved" - o usuário DEVE sinalizar explicitamente que não precisa de mais ajuda.
+5. Se o usuário fizer qualquer pergunta ou continuar interagindo sobre o tema, SEMPRE classifique como "needs_help".
+6. Só classifique como "resolved" quando for ABSOLUTAMENTE claro pelo contexto que o usuário não tem mais dúvidas e quer encerrar.
+7. Se o usuário disser algo como "obrigado" seguido de uma pergunta ou comentário, classifique como "needs_help".
+8. Considere o contexto COMPLETO da conversa para tomar a decisão.
+9. Mensagens curtas como "ok", "certo", "entendi" sem contexto de encerramento devem ser "needs_help".
 
 Histórico recente da conversa:
 ${conversationContext || '(sem histórico anterior)'}
@@ -4146,7 +4147,7 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
 
       const normalized = analysis.trim().toLowerCase();
       if (normalized.includes('human_support')) {
-        return 'human_support';
+        return humanSupportEnabled ? 'human_support' : 'needs_help';
       }
       if (normalized.includes('resolved')) {
         return 'resolved';
@@ -5858,7 +5859,8 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
           const additionalInstructions =
             this.buildAdditionalAiResponseInstructions(
               userText,
-              recentMessages
+              recentMessages,
+              aiAgent.enable_human_transfer === true
             );
           const combinedAllowed =
             parsed.contextAllowed ||
@@ -5942,7 +5944,8 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
 
     const additionalInstructions = this.buildAdditionalAiResponseInstructions(
       userText,
-      recentMessages
+      recentMessages,
+      aiAgent.enable_human_transfer === true
     );
 
     if (!additionalInstructions) {
@@ -6040,7 +6043,8 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
 
   private buildAdditionalAiResponseInstructions(
     userText: string,
-    recentMessages: Array<{ role: 'user' | 'assistant'; content: string }>
+    recentMessages: Array<{ role: 'user' | 'assistant'; content: string }>,
+    humanSupportEnabled: boolean
   ): string {
     const instructions: string[] = [
       '- Entregue a melhor resposta possível, escolhendo a alternativa mais adequada ao contexto e às regras. Quando houver opções, recomende a melhor e explique rapidamente o porquê.',
@@ -6051,6 +6055,12 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
       userText,
       recentMessages
     );
+
+    if (!humanSupportEnabled) {
+      instructions.push(
+        '- Se o usuário pedir atendimento humano, informe que você está apto para ajudar e vai tentar da melhor forma possível, e então responda normalmente ao que foi solicitado.'
+      );
+    }
 
     if (repeatedQuestionCount > 0) {
       instructions.push(
