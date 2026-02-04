@@ -74,6 +74,10 @@ export class BaileysService {
     this.connection.clearUserRequestedDisconnect();
   }
 
+  republishLastState(): void {
+    this.connection.republishLastState();
+  }
+
   validatePhone(ddi: string, number: string): Promise<IPhoneValidationResult> {
     return this.phoneValidationService.validatePhone(ddi, number);
   }

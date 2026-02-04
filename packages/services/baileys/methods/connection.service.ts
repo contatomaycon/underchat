@@ -115,6 +115,30 @@ export class BaileysConnectionService {
     this.userRequestedDisconnect = false;
   }
 
+  republishLastState(): void {
+    if (!this.lastPayload || !this.initialConnection) {
+      return;
+    }
+
+    try {
+      const payload = JSON.parse(this.lastPayload) as IBaileysConnectionState;
+      console.log('[BaileysConnection] Republishing last state', {
+        channel: CHANNEL,
+        payload,
+      });
+      void this.centrifugo
+        .publishSub(CHANNEL, payload)
+        .then(() => {
+          console.log('[BaileysConnection] Republished successfully');
+        })
+        .catch((error) => {
+          console.error('[BaileysConnection] Republish failed', error);
+        });
+    } catch (error) {
+      console.error('[BaileysConnection] Failed to parse lastPayload', error);
+    }
+  }
+
   private handleInitialConnectionState(
     initialConnection: boolean
   ): Promise<IBaileysConnectionState> | null {

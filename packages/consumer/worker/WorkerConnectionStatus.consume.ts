@@ -120,8 +120,9 @@ export class WorkerConnectionStatusConsume {
       awaitingUserAction
     ) {
       console.log(
-        '[WorkerConnectionStatus] Already awaiting user action, skipping'
+        '[WorkerConnectionStatus] Already awaiting user action, republishing last state for frontend'
       );
+      this.baileysService.republishLastState();
       return;
     }
 
