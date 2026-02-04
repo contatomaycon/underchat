@@ -65,7 +65,8 @@ export class BaileysIncomingMessageService {
 
   private readonly PHOTO_CACHE_TTL = 86400;
   private readonly PHOTO_CACHE_PREFIX = 'photo:jid:';
-  private readonly MESSAGE_CACHE_TTL_SECONDS = 60 * 60 * 24;
+  private readonly MESSAGE_CACHE_TTL_SECONDS_DEFAULT = 60 * 60 * 8;
+  private readonly MESSAGE_CACHE_TTL_SECONDS_POLL = 60 * 60 * 24 * 7;
   private readonly MESSAGE_CACHE_PREFIX = 'wa:msg:';
 
   constructor(
@@ -132,14 +133,12 @@ export class BaileysIncomingMessageService {
     if (!cacheKey || !m.message) return;
 
     try {
+      const ttlSeconds = this.hasPollCreationMessage(m.message)
+        ? this.MESSAGE_CACHE_TTL_SECONDS_POLL
+        : this.MESSAGE_CACHE_TTL_SECONDS_DEFAULT;
       const encoded = proto.Message.encode(m.message).finish();
       const payload = Buffer.from(encoded).toString('base64');
-      await this.redis.set(
-        cacheKey,
-        payload,
-        'EX',
-        this.MESSAGE_CACHE_TTL_SECONDS
-      );
+      await this.redis.set(cacheKey, payload, 'EX', ttlSeconds);
     } catch {}
   }
 
