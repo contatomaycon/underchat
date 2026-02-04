@@ -169,6 +169,7 @@ export class AccountAllListerWithDetailsRepository {
             WHERE pa.account_id = ${account.account_id}
               AND p.is_test = true
               AND p.status = ${EPlanStatus.active}
+              AND p.name IS NOT NULL
               AND p.deleted_at IS NULL
           )`
         );
