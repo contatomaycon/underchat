@@ -53,7 +53,6 @@ import { EVoiceIaStatus } from '@core/common/enums/EVoiceIaStatus';
 import { stripTextForTts } from '@core/common/functions/stripTextForTts';
 import { ViewAiAgentResponse } from '@core/schema/aiAgent/viewAiAgent/response.schema';
 import { IChatbotCustomMessages } from '@core/common/interfaces/IChatbotCustomMessages';
-import { IChatbotFlowMenuOption } from '@core/common/interfaces/IChatbotFlowMenuOption';
 import { getContextTokensForModel } from '@core/common/functions/getContextTokensForModel';
 
 @injectable()
@@ -3972,19 +3971,6 @@ ${aiAgent.system_prompt ? `\nContexto do agente:\n${aiAgent.system_prompt.substr
     recentMessages: Array<{ role: 'user' | 'assistant'; content: string }>,
     humanSupportEnabled: boolean
   ): Promise<'needs_help' | 'resolved' | 'human_support'> {
-    const normalizedResponse = userText.toLowerCase().trim();
-    const userRequestedHuman =
-      humanSupportEnabled &&
-      this.containsHumanSupportIndicator(normalizedResponse);
-
-    if (userRequestedHuman) {
-      return 'human_support';
-    }
-
-    if (!aiAgent.base_url || !aiAgent.api_key || !aiAgent.model) {
-      return 'needs_help';
-    }
-
     const conversationContext = recentMessages
       .slice(-20)
       .map(
@@ -3994,7 +3980,7 @@ ${aiAgent.system_prompt ? `\nContexto do agente:\n${aiAgent.system_prompt.substr
       .join('\n');
 
     const humanSupportSection = humanSupportEnabled
-      ? `- "human_support": O usuário quer EXPLICITAMENTE falar com um atendente humano, operador ou pessoa real. Exemplos: "quero falar com humano", "falar com atendente", "me transfere para uma pessoa".\n`
+      ? `- "human_support": O usuário quer EXPLICITAMENTE falar com um atendente humano, operador ou pessoa real. Exemplos: "quero falar com humano", "quero falar com um operador", "falar com operador", "falar com atendente", "quero falar com suporte", "me transfere para uma pessoa", "preciso falar com um atendente".\n`
       : '';
 
     const validOptions = humanSupportEnabled
@@ -4008,13 +3994,14 @@ Classificações possíveis:
 - "resolved": O usuário sinalizou CLARA e EXPLICITAMENTE que sua questão foi resolvida e não precisa de mais ajuda. Exemplos: "obrigado, era só isso", "não preciso de mais nada", "pode encerrar", "já resolvi minha dúvida", "tudo certo, obrigado, era isso mesmo", "é só isso mesmo", "não tenho mais dúvidas".
 ${humanSupportSection}
 REGRAS IMPORTANTES:
-1. Quando houver QUALQUER dúvida, classifique como "needs_help". O padrão é SEMPRE "needs_help".
-2. Um simples "obrigado", "ok", "valeu" ou "entendi" sozinho NÃO é suficiente para "resolved" - o usuário DEVE sinalizar explicitamente que não precisa de mais ajuda.
-3. Se o usuário fizer qualquer pergunta ou continuar interagindo sobre o tema, SEMPRE classifique como "needs_help".
-4. Só classifique como "resolved" quando for ABSOLUTAMENTE claro pelo contexto que o usuário não tem mais dúvidas e quer encerrar.
-5. Se o usuário disser algo como "obrigado" seguido de uma pergunta ou comentário, classifique como "needs_help".
-6. Considere o contexto COMPLETO da conversa para tomar a decisão.
-7. Mensagens curtas como "ok", "certo", "entendi" sem contexto de encerramento devem ser "needs_help".
+1. Se o usuário pedir EXPLICITAMENTE para falar com humano/operador/atendente/suporte/pessoa real, classifique como "human_support" (prioridade máxima, mesmo que exista contexto anterior).
+2. Quando houver QUALQUER dúvida, classifique como "needs_help". O padrão é SEMPRE "needs_help".
+3. Um simples "obrigado", "ok", "valeu" ou "entendi" sozinho NÃO é suficiente para "resolved" - o usuário DEVE sinalizar explicitamente que não precisa de mais ajuda.
+4. Se o usuário fizer qualquer pergunta ou continuar interagindo sobre o tema, SEMPRE classifique como "needs_help".
+5. Só classifique como "resolved" quando for ABSOLUTAMENTE claro pelo contexto que o usuário não tem mais dúvidas e quer encerrar.
+6. Se o usuário disser algo como "obrigado" seguido de uma pergunta ou comentário, classifique como "needs_help".
+7. Considere o contexto COMPLETO da conversa para tomar a decisão.
+8. Mensagens curtas como "ok", "certo", "entendi" sem contexto de encerramento devem ser "needs_help".
 
 Histórico recente da conversa:
 ${conversationContext || '(sem histórico anterior)'}
@@ -4022,6 +4009,10 @@ ${conversationContext || '(sem histórico anterior)'}
 Mensagem mais recente do usuário: "${userText}"
 
 Retorne APENAS uma das palavras: ${validOptions}.`;
+
+    if (!aiAgent.base_url || !aiAgent.api_key || !aiAgent.model) {
+      return 'needs_help';
+    }
 
     try {
       const analysis = await this.callAiAgentChatApiWithRetry(
@@ -4035,68 +4026,17 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       );
 
       const normalized = analysis.trim().toLowerCase();
-      const fallbackIntent = this.fallbackIntentAnalysis(
-        userText,
-        humanSupportEnabled
-      );
-
-      if (normalized.includes('resolved') && fallbackIntent === 'resolved') {
-        return 'resolved';
-      }
-      if (normalized.includes('human_support') && userRequestedHuman) {
+      if (normalized.includes('human_support')) {
         return 'human_support';
+      }
+      if (normalized.includes('resolved')) {
+        return 'resolved';
       }
       return 'needs_help';
     } catch (error) {
       console.error('[ChatbotFlow] analyzeUserIntentWithContext failed', error);
-      return this.fallbackIntentAnalysis(userText, humanSupportEnabled);
+      return 'needs_help';
     }
-  }
-
-  private fallbackIntentAnalysis(
-    userText: string,
-    humanSupportEnabled: boolean
-  ): 'needs_help' | 'resolved' | 'human_support' {
-    const lower = userText.toLowerCase().trim();
-
-    if (humanSupportEnabled && this.containsHumanSupportIndicator(lower)) {
-      return 'human_support';
-    }
-
-    const resolvedIndicators = [
-      'não preciso de mais nada',
-      'nao preciso de mais nada',
-      'não preciso mais',
-      'nao preciso mais',
-      'era só isso',
-      'era so isso',
-      'pode encerrar',
-      'já resolvi',
-      'ja resolvi',
-      'tudo certo, obrigado',
-      'tudo certo, obrigada',
-      'não preciso de ajuda',
-      'nao preciso de ajuda',
-      'não preciso mais de ajuda',
-      'nao preciso mais de ajuda',
-      'era isso mesmo',
-      'é só isso',
-      'e so isso',
-      'é só isso mesmo',
-      'e so isso mesmo',
-      'não tenho mais dúvidas',
-      'nao tenho mais duvidas',
-      'sem mais dúvidas',
-      'sem mais duvidas',
-    ];
-
-    for (const indicator of resolvedIndicators) {
-      if (lower.includes(indicator)) {
-        return 'resolved';
-      }
-    }
-
-    return 'needs_help';
   }
 
   private async processTextResponseAnalysis(
@@ -4105,192 +4045,144 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
     chatbotFlow: ListChatbotFlowResponse,
     currentFlowId: string,
     currentNode: ListChatbotFlowResponse['nodes'][number],
-    options: IChatbotFlowMenuOption[],
-    analysis: 'negative' | 'question' | 'human_support',
     customMessages: IChatbotCustomMessages | undefined
   ): Promise<boolean> {
-    if (analysis === 'question') {
-      return false;
+    await this.resetFailedAttempts(createChat);
+
+    const selectedAiAgentId = currentNode.data?.selectedAiAgent || '';
+    const config = await this.aiAgentService.viewAiAgentHumanTransfer(
+      selectedAiAgentId,
+      createChat.account.id
+    );
+
+    const goToHumanSupportNextNode = (): Promise<boolean> => {
+      const nextFlowId = this.getNextFlowIdByHumanSupportHandle(
+        chatbotFlow,
+        currentFlowId
+      );
+      if (!nextFlowId) {
+        return Promise.resolve(false);
+      }
+      return this.processNextNode(
+        t,
+        createChat,
+        chatbotFlow,
+        nextFlowId,
+        customMessages
+      );
+    };
+
+    if (!config?.enable_human_transfer || !config.sector_targets?.length) {
+      return goToHumanSupportNextNode();
     }
 
-    if (analysis === 'human_support') {
-      await this.resetFailedAttempts(createChat);
+    const sectorIdsSet = new Set(
+      config.sector_targets.map((target) => target.sector_id)
+    );
+    const allSectors = await this.sectorService.listSectorsForTransfer(
+      createChat.account.id
+    );
+    const sectors = allSectors.filter((s) => sectorIdsSet.has(s.id));
 
-      const selectedAiAgentId = currentNode.data?.selectedAiAgent || '';
-      const config = await this.aiAgentService.viewAiAgentHumanTransfer(
-        selectedAiAgentId,
-        createChat.account.id
-      );
+    if (sectors.length === 0) {
+      return goToHumanSupportNextNode();
+    }
 
-      const goToHumanSupportNextNode = (): Promise<boolean> => {
-        const nextFlowId = this.getNextFlowIdByHumanSupportHandle(
-          chatbotFlow,
-          currentFlowId
-        );
-        if (!nextFlowId) {
-          return Promise.resolve(false);
-        }
-        return this.processNextNode(
+    const allUsers = await this.userService.listUsersForTransfer(
+      createChat.account.id
+    );
+
+    const getUsersForSector = (
+      sectorId: string
+    ): Array<{ id: string; name: string; photo?: string | null }> => {
+      const userIds =
+        config.sector_targets?.find((t) => t.sector_id === sectorId)
+          ?.user_ids ?? [];
+      return allUsers.filter((u) => userIds.includes(u.id));
+    };
+
+    if (sectors.length === 1) {
+      const sector = sectors[0];
+      const usersForSector = getUsersForSector(sector.id);
+
+      if (usersForSector.length === 0) {
+        return this.executeHumanSupportTransfer(
           t,
           createChat,
           chatbotFlow,
-          nextFlowId,
-          customMessages
+          currentFlowId,
+          sector,
+          customMessages,
+          null
         );
-      };
-
-      if (!config?.enable_human_transfer || !config.sector_targets?.length) {
-        return goToHumanSupportNextNode();
       }
 
-      const sectorIdsSet = new Set(
-        config.sector_targets.map((target) => target.sector_id)
-      );
-      const allSectors = await this.sectorService.listSectorsForTransfer(
-        createChat.account.id
-      );
-      const sectors = allSectors.filter((s) => sectorIdsSet.has(s.id));
-
-      if (sectors.length === 0) {
-        return goToHumanSupportNextNode();
+      if (usersForSector.length === 1) {
+        const user = usersForSector[0];
+        return this.executeHumanSupportTransfer(
+          t,
+          createChat,
+          chatbotFlow,
+          currentFlowId,
+          sector,
+          customMessages,
+          user
+        );
       }
 
-      const allUsers = await this.userService.listUsersForTransfer(
-        createChat.account.id
-      );
-
-      const getUsersForSector = (
-        sectorId: string
-      ): Array<{ id: string; name: string; photo?: string | null }> => {
-        const userIds =
-          config.sector_targets?.find((t) => t.sector_id === sectorId)
-            ?.user_ids ?? [];
-        return allUsers.filter((u) => userIds.includes(u.id));
-      };
-
-      if (sectors.length === 1) {
-        const sector = sectors[0];
-        const usersForSector = getUsersForSector(sector.id);
-
-        if (usersForSector.length === 0) {
-          return this.executeHumanSupportTransfer(
-            t,
-            createChat,
-            chatbotFlow,
-            currentFlowId,
-            sector,
-            customMessages,
-            null
-          );
-        }
-
-        if (usersForSector.length === 1) {
-          const user = usersForSector[0];
-          return this.executeHumanSupportTransfer(
-            t,
-            createChat,
-            chatbotFlow,
-            currentFlowId,
-            sector,
-            customMessages,
-            user
-          );
-        }
-
-        const userSelectionKey = this.getUserSelectionCacheKey(
-          createChat.account.id,
-          createChat.worker.id,
-          createChat.chat_id
-        );
-        await this.redis.set(
-          userSelectionKey,
-          JSON.stringify({
-            users: usersForSector,
-            flowId: currentFlowId,
-            selectedAiAgentId,
-            sectorId: sector.id,
-            sector,
-          }),
-          'EX',
-          1800
-        );
-        const userMessage = this.buildUserSelectionMessage(usersForSector);
-        await this.chatMessageService.sendMessage(t, {
-          chat: createChat,
-          accountId: createChat.account.id,
-          type: EMessageType.text,
-          message: userMessage,
-          typeUser: ETypeUserChat.bot,
-        });
-        return true;
-      }
-
-      const sectorSelectionKey = this.getSectorSelectionCacheKey(
+      const userSelectionKey = this.getUserSelectionCacheKey(
         createChat.account.id,
         createChat.worker.id,
         createChat.chat_id
       );
       await this.redis.set(
-        sectorSelectionKey,
+        userSelectionKey,
         JSON.stringify({
-          sectors,
+          users: usersForSector,
           flowId: currentFlowId,
           selectedAiAgentId,
-          sector_targets: config.sector_targets,
+          sectorId: sector.id,
+          sector,
         }),
         'EX',
         1800
       );
-      const sectorMessage = this.buildSectorSelectionMessage(sectors);
+      const userMessage = this.buildUserSelectionMessage(usersForSector);
       await this.chatMessageService.sendMessage(t, {
         chat: createChat,
         accountId: createChat.account.id,
         type: EMessageType.text,
-        message: sectorMessage,
+        message: userMessage,
         typeUser: ETypeUserChat.bot,
       });
       return true;
     }
 
-    const targetOptionId = this.findTargetOptionId(options, analysis);
-
-    if (!targetOptionId) {
-      return false;
-    }
-
-    const nextFlowId = this.getNextFlowIdByOption(
-      chatbotFlow,
-      currentFlowId,
-      targetOptionId
+    const sectorSelectionKey = this.getSectorSelectionCacheKey(
+      createChat.account.id,
+      createChat.worker.id,
+      createChat.chat_id
     );
-
-    if (!nextFlowId) {
-      return false;
-    }
-
-    await this.resetFailedAttempts(createChat);
-
-    return this.processNextNode(
-      t,
-      createChat,
-      chatbotFlow,
-      nextFlowId,
-      customMessages
+    await this.redis.set(
+      sectorSelectionKey,
+      JSON.stringify({
+        sectors,
+        flowId: currentFlowId,
+        selectedAiAgentId,
+        sector_targets: config.sector_targets,
+      }),
+      'EX',
+      1800
     );
-  }
-
-  private findTargetOptionId(
-    options: IChatbotFlowMenuOption[],
-    analysis: 'negative' | 'question'
-  ): string | null {
-    if (analysis === 'negative') {
-      const negativeOption = options.find(
-        (opt) => opt.id === 'negative-option'
-      );
-      return (negativeOption?.id ?? null) as string | null;
-    }
-
-    return null;
+    const sectorMessage = this.buildSectorSelectionMessage(sectors);
+    await this.chatMessageService.sendMessage(t, {
+      chat: createChat,
+      accountId: createChat.account.id,
+      type: EMessageType.text,
+      message: sectorMessage,
+      typeUser: ETypeUserChat.bot,
+    });
+    return true;
   }
 
   private buildSectorSelectionMessage(
@@ -5027,39 +4919,6 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
     );
   }
 
-  private containsHumanSupportIndicator(text: string): boolean {
-    const humanSupportIndicators = [
-      'falar com humano',
-      'falar com atendente',
-      'falar com operador',
-      'falar com suporte',
-      'quero falar com humano',
-      'quero falar com atendente',
-      'quero falar com operador',
-      'quero falar com suporte',
-      'quero falar com pessoa',
-      'falar com uma pessoa',
-      'atendimento humano',
-      'atendente humano',
-      'suporte humano',
-      'atendimento humano, por favor',
-      'me transfere para humano',
-      'me transfere para atendente',
-      'quero humano',
-      'preciso de humano',
-      'atendente real',
-      'pessoa real',
-      'atendente de verdade',
-      'pessoa de verdade',
-      'quero falar com alguém',
-      'falar com alguém',
-      'quero alguém',
-      'preciso de alguém',
-    ];
-
-    return humanSupportIndicators.some((indicator) => text.includes(indicator));
-  }
-
   private async saveAiAgentUsage(
     input: IAiAgentUsageCreateInput
   ): Promise<void> {
@@ -5433,6 +5292,8 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
       humanSupportEnabled
     );
 
+    console.log('[AI Agent] Intent:', intent);
+
     if (intent === 'resolved') {
       const resolvedNextFlowId = this.getNextFlowIdByOption(
         chatbotFlow,
@@ -5452,22 +5313,17 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
     }
 
     if (intent === 'human_support') {
-      const options = currentNode.data?.options;
-      if (options && Array.isArray(options) && options.length > 0) {
-        const humanSupportResult = await this.processTextResponseAnalysis(
-          t,
-          createChat,
-          chatbotFlow,
-          currentFlowId,
-          currentNode,
-          options as IChatbotFlowMenuOption[],
-          'human_support',
-          customMessages
-        );
+      const humanSupportResult = await this.processTextResponseAnalysis(
+        t,
+        createChat,
+        chatbotFlow,
+        currentFlowId,
+        currentNode,
+        customMessages
+      );
 
-        if (humanSupportResult) {
-          return true;
-        }
+      if (humanSupportResult) {
+        return true;
       }
     }
 
