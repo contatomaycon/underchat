@@ -387,7 +387,8 @@ export class BaileysIncomingMessageService {
       socket,
       m,
       null,
-      this.kafkaServiceQueueService.upsertMessageHistory()
+      this.kafkaServiceQueueService.upsertMessageHistory(),
+      true
     );
   }
 
@@ -395,7 +396,8 @@ export class BaileysIncomingMessageService {
     socket: WASocket,
     m: WAMessage,
     upsertType: string | null,
-    topic: string
+    topic: string,
+    fromHistorySync = false
   ): void {
     try {
       if (m.category === 'peer') return;
@@ -433,6 +435,7 @@ export class BaileysIncomingMessageService {
         message: m,
         photo: null,
         has_quoted: hasQuoted,
+        from_history_sync: fromHistorySync,
       };
 
       const pendingItem = this.enqueueMessage(inputUpsert, messageKey, topic);

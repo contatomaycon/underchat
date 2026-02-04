@@ -20,4 +20,5 @@ export interface IUpsertMessage {
   transfer_sector_id?: string;
   transfer_sector_user_id?: string;
   transfer_user_id?: string;
+  from_history_sync?: boolean;
 }

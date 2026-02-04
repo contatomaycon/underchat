@@ -5,6 +5,7 @@ import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.servi
 import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
 import { WorkerService } from '@core/services/worker.service';
 import { StreamProducerService } from '@core/services/streamProducer.service';
+import { ICachedWorkerDates } from '@core/common/interfaces/ICachedWorkerDates';
 import { IUpsertMessage } from '@core/common/interfaces/IUpsertMessage';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { startHeartbeat } from '@core/common/functions/startHeartbeat';
@@ -15,11 +16,6 @@ import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 import { commitOffset } from '@core/common/functions/commitOffset';
 import { WAMessage } from '@whiskeysockets/baileys';
 
-type CachedConnectionDate = {
-  value: number | null;
-  expiresAt: number;
-};
-
 @singleton()
 export class MessageHistorySyncConsume {
   private consumer: KafkaConsumer | null = null;
@@ -27,8 +23,8 @@ export class MessageHistorySyncConsume {
   private partitionChains: Map<number, Promise<void>> = new Map();
 
   private readonly HISTORY_WINDOW_MS = 6 * 60 * 60 * 1000;
-  private readonly CONNECTION_DATE_CACHE_TTL_MS = 60 * 1000;
-  private connectionDateCache: Map<string, CachedConnectionDate> = new Map();
+  private readonly WORKER_DATES_CACHE_TTL_MS = 60 * 1000;
+  private workerDatesCache: Map<string, ICachedWorkerDates> = new Map();
 
   constructor(
     @inject('Kafka') private readonly kafka: KafkaClient,
@@ -175,7 +171,10 @@ export class MessageHistorySyncConsume {
       return;
     }
 
-    const minTimestampMs = await this.getMinAllowedTimestampMs(data.worker_id);
+    const minTimestampMs = await this.getMinAllowedTimestampMs(
+      data.account_id,
+      data.worker_id
+    );
     if (messageTimestampMs < minTimestampMs) {
       return;
     }
@@ -188,9 +187,14 @@ export class MessageHistorySyncConsume {
       return;
     }
 
+    const payload: IUpsertMessage = {
+      ...data,
+      from_history_sync: true,
+    };
+
     await this.streamProducerService.send(
       this.kafkaServiceQueueService.upsertMessage(),
-      data,
+      payload,
       data.message.key.id
     );
   }
@@ -233,44 +237,59 @@ export class MessageHistorySyncConsume {
     return fallback > 1_000_000_000_000 ? fallback : fallback * 1000;
   }
 
-  private async getMinAllowedTimestampMs(workerId: string): Promise<number> {
+  private async getMinAllowedTimestampMs(
+    accountId: string,
+    workerId: string
+  ): Promise<number> {
     const now = Date.now();
     const historyCutoff = now - this.HISTORY_WINDOW_MS;
-    const connectionDateMs = await this.getConnectionDateMs(workerId);
+    const dates = await this.getWorkerDatesMs(accountId, workerId);
 
-    if (connectionDateMs && Number.isFinite(connectionDateMs)) {
-      return Math.max(historyCutoff, connectionDateMs);
-    }
+    const connectionDateMs = dates.connectionDateMs ?? 0;
+    const createdAtMs = dates.createdAtMs ?? 0;
 
-    return historyCutoff;
+    return Math.max(historyCutoff, connectionDateMs, createdAtMs);
   }
 
-  private async getConnectionDateMs(workerId: string): Promise<number | null> {
-    if (!workerId) {
-      return null;
+  private async getWorkerDatesMs(
+    accountId: string,
+    workerId: string
+  ): Promise<{ connectionDateMs: number | null; createdAtMs: number | null }> {
+    if (!accountId || !workerId) {
+      return { connectionDateMs: null, createdAtMs: null };
     }
 
-    const cached = this.connectionDateCache.get(workerId);
+    const cacheKey = `${accountId}:${workerId}`;
+    const cached = this.workerDatesCache.get(cacheKey);
     const now = Date.now();
 
     if (cached && cached.expiresAt > now) {
-      return cached.value;
+      return {
+        connectionDateMs: cached.connectionDateMs,
+        createdAtMs: cached.createdAtMs,
+      };
     }
 
-    const view =
-      await this.workerService.viewWorkerPhoneConnectionDate(workerId);
+    const view = await this.workerService.viewWorker(accountId, workerId);
     const connectionDate = view?.connection_date;
-    const parsed =
+    const createdAt = view?.created_at;
+
+    const connectionDateMs =
       connectionDate && !Number.isNaN(Date.parse(connectionDate))
         ? new Date(connectionDate).getTime()
         : null;
+    const createdAtMs =
+      createdAt && !Number.isNaN(Date.parse(createdAt))
+        ? new Date(createdAt).getTime()
+        : null;
 
-    this.connectionDateCache.set(workerId, {
-      value: parsed,
-      expiresAt: now + this.CONNECTION_DATE_CACHE_TTL_MS,
+    this.workerDatesCache.set(cacheKey, {
+      connectionDateMs,
+      createdAtMs,
+      expiresAt: now + this.WORKER_DATES_CACHE_TTL_MS,
     });
 
-    return parsed;
+    return { connectionDateMs, createdAtMs };
   }
 
   private async messageExistsInElastic(

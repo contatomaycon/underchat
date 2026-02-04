@@ -2516,6 +2516,21 @@ export class MessageUpsertConsume {
     return this.chatbotFlowRunnerService.execute(t, data, chat, chatbotId);
   }
 
+  private resolveInitialStatusForNewChat(
+    fromHistorySync: boolean | undefined,
+    isFromMe: boolean
+  ): EChatStatus {
+    if (fromHistorySync) {
+      return EChatStatus.queue;
+    }
+
+    if (isFromMe) {
+      return EChatStatus.in_chat;
+    }
+
+    return EChatStatus.queue;
+  }
+
   private async createOrUpdateChatQueue(
     t: TFunction<'translation', undefined>,
     getChat: IChat | null,
@@ -2523,7 +2538,10 @@ export class MessageUpsertConsume {
   ): Promise<void> {
     if (!getChat) {
       const isFromMe = data.message?.key?.fromMe ?? false;
-      const initialStatus = isFromMe ? EChatStatus.in_chat : EChatStatus.queue;
+      const initialStatus = this.resolveInitialStatusForNewChat(
+        data.from_history_sync,
+        isFromMe
+      );
 
       const createChat = await this.createChat(data, initialStatus);
       if (!createChat) {
