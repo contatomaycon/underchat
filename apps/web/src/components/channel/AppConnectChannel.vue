@@ -279,21 +279,7 @@ onMounted(async () => {
     await onMessage(
       workerCentrifugoQueue(accountId.value),
       (data: IBaileysConnectionState) => {
-        console.log('[AppConnectChannel] Received Centrifugo message', {
-          channelId: channelId.value,
-          worker_id: data.worker_id,
-          status: data.status,
-          code: data.code,
-          hasQrcode: Boolean(data.qrcode),
-          hasPairingCode: Boolean(data.pairing_code),
-          attempt: data.attempt,
-          max_attempts: data.max_attempts,
-        });
-
         if (!channelId.value || data.worker_id !== channelId.value) {
-          console.log(
-            '[AppConnectChannel] Message filtered out (worker_id mismatch)'
-          );
           return;
         }
 
@@ -303,21 +289,10 @@ onMounted(async () => {
           incomingStatus === EBaileysConnectionStatus.connected ||
           incomingCode === ECodeMessage.connectionEstablished;
 
-        console.log('[AppConnectChannel] Processing message', {
-          incomingStatus,
-          incomingCode,
-          isConnectedEvent,
-          currentStatus: statusConnection.value,
-          currentCode: statusCode.value,
-        });
-
         if (
           statusCode.value === ECodeMessage.phoneNotAvailable &&
           !isConnectedEvent
         ) {
-          console.log(
-            '[AppConnectChannel] Message filtered out (phoneNotAvailable)'
-          );
           return;
         }
 
@@ -327,17 +302,10 @@ onMounted(async () => {
             !isInfo ||
             statusConnection.value !== EBaileysConnectionStatus.connected
           ) {
-            console.log('[AppConnectChannel] Updating status', {
-              from: statusConnection.value,
-              to: incomingStatus,
-            });
             statusConnection.value = incomingStatus;
           }
 
           if (isConnectedEvent) {
-            console.log(
-              '[AppConnectChannel] Connected event - resetting state'
-            );
             statusConnection.value = EBaileysConnectionStatus.connected;
             statusCode.value = ECodeMessage.connectionEstablished;
             phoneNumber.value = null;
