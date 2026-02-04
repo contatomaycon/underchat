@@ -58,20 +58,44 @@ export class WorkerConnectionStatusConsume {
   private async handleOnline(
     data: StatusConnectionWorkerRequest
   ): Promise<void> {
+    console.log('[WorkerConnectionStatus] handleOnline - START', {
+      isConnected: this.baileysService.isConnected(),
+      hasSession: this.baileysService.hasSession(),
+      status: this.baileysService.getStatus(),
+      code: this.baileysService.getCode(),
+      hasActiveSocket: Boolean(this.baileysService.socket),
+      activeConnectionRequest: Boolean(this.activeConnectionRequest),
+    });
+
     if (this.baileysService.isConnected()) {
+      console.log(
+        '[WorkerConnectionStatus] Already connected, publishing connected status'
+      );
       await this.publishConnectedStatus();
       return;
     }
 
     if (this.baileysService.hasSession()) {
+      console.log(
+        '[WorkerConnectionStatus] Has session, waiting for reconnection...'
+      );
       await this.waitForReconnection(3000, 500);
       if (this.baileysService.isConnected()) {
+        console.log(
+          '[WorkerConnectionStatus] Reconnected after waiting, publishing connected status'
+        );
         await this.publishConnectedStatus();
         return;
       }
+      console.log(
+        '[WorkerConnectionStatus] Reconnection wait timeout, not connected'
+      );
     }
 
     if (this.activeConnectionRequest) {
+      console.log(
+        '[WorkerConnectionStatus] Active connection request already exists, skipping'
+      );
       return;
     }
 
@@ -82,6 +106,14 @@ export class WorkerConnectionStatusConsume {
       currentCode === ECodeMessage.awaitingReadQrCode ||
       currentCode === ECodeMessage.awaitingPairingCode ||
       currentCode === ECodeMessage.newLoginAttempt;
+
+    console.log('[WorkerConnectionStatus] Checking if awaiting user action', {
+      currentStatus,
+      currentCode,
+      hasActiveSocket,
+      awaitingUserAction,
+    });
+
     if (
       currentStatus === EBaileysConnectionStatus.connecting &&
       hasActiveSocket &&
@@ -89,10 +121,15 @@ export class WorkerConnectionStatusConsume {
     ) {
       const attempt =
         this.connectionRetryAttempt > 0 ? this.connectionRetryAttempt : 1;
+      console.log(
+        '[WorkerConnectionStatus] Publishing existing connection attempt',
+        { attempt }
+      );
       this.publishConnectionAttempt(attempt);
       return;
     }
 
+    console.log('[WorkerConnectionStatus] Starting connection retry');
     this.baileysService.resetQrCodeCounter();
     this.startConnectionRetry(data);
   }
@@ -172,6 +209,12 @@ export class WorkerConnectionStatusConsume {
       max_attempts: this.connectionRetryMinAttempts,
     };
 
+    console.log('[WorkerConnectionStatus] publishConnectionAttempt', {
+      attempt,
+      channel: workerCentrifugoQueue(payload.account_id),
+      payload,
+    });
+
     void this.centrifugoService
       .publishSub(workerCentrifugoQueue(payload.account_id), payload)
       .catch(() => {});
@@ -190,9 +233,27 @@ export class WorkerConnectionStatusConsume {
       worker_status_id: EWorkerStatus.online,
     };
 
+    console.log(
+      '[WorkerConnectionStatus] publishConnectedStatus - Publishing',
+      {
+        channel: workerCentrifugoQueue(accountId),
+        payload,
+      }
+    );
+
     await this.centrifugoService
       .publishSub(workerCentrifugoQueue(accountId), payload)
-      .catch(() => {});
+      .then(() => {
+        console.log(
+          '[WorkerConnectionStatus] publishConnectedStatus - Published successfully'
+        );
+      })
+      .catch((error) => {
+        console.error(
+          '[WorkerConnectionStatus] publishConnectedStatus - Failed',
+          error
+        );
+      });
   }
 
   private async waitForReconnection(

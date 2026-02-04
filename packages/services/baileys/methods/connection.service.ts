@@ -699,17 +699,41 @@ export class BaileysConnectionService {
   }
 
   private publishSub(payload: IBaileysConnectionState, force = false): void {
+    console.log('[BaileysConnection] publishSub - START', {
+      initialConnection: this.initialConnection,
+      force,
+      status: payload.status,
+      code: payload.code,
+    });
+
     if (!this.initialConnection && !force) {
+      console.log(
+        '[BaileysConnection] publishSub - SKIPPED (not initial and not forced)'
+      );
       return;
     }
 
     const data = JSON.stringify(payload);
     if (data === this.lastPayload && !force) {
+      console.log(
+        '[BaileysConnection] publishSub - SKIPPED (duplicate payload)'
+      );
       return;
     }
 
     this.lastPayload = data;
-    void this.centrifugo.publishSub(CHANNEL, payload).catch(() => {});
+    console.log('[BaileysConnection] publishSub - Publishing to Centrifugo', {
+      channel: CHANNEL,
+      payload,
+    });
+    void this.centrifugo
+      .publishSub(CHANNEL, payload)
+      .then(() => {
+        console.log('[BaileysConnection] publishSub - Published successfully');
+      })
+      .catch((error) => {
+        console.error('[BaileysConnection] publishSub - Failed', error);
+      });
   }
 
   private async updateWorkerMismatchedStatus(): Promise<void> {
@@ -830,17 +854,35 @@ export class BaileysConnectionService {
   }
 
   private reportConnected(): IBaileysConnectionState {
+    console.log('[BaileysConnection] reportConnected - START', {
+      initialConnection: this.initialConnection,
+      status: this.status,
+      connected: this.connected,
+      hasSocket: Boolean(this.socket),
+    });
+
     if (this.initialConnection) {
       this.lastPayload = null;
 
-      this.publishSub({
+      const payload = {
         status: this.status,
         code: ECodeMessage.connectionEstablished,
         worker_id: WORKER,
         account_id: ACCOUNT,
         phone: getPhoneNumber(this.socket?.user?.id),
         worker_status_id: EWorkerStatus.online,
+      };
+
+      console.log('[BaileysConnection] reportConnected - Publishing', {
+        channel: CHANNEL,
+        payload,
       });
+
+      this.publishSub(payload);
+    } else {
+      console.log(
+        '[BaileysConnection] reportConnected - Skipping publish (not initial connection)'
+      );
     }
 
     return this.state();
