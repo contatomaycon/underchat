@@ -2743,6 +2743,11 @@ export class MessageUpsertConsume {
 
         const isFromMe = data.message?.key?.fromMe ?? false;
 
+        if (data.from_history_sync) {
+          await this.createOrUpdateChatQueue(t, getChat, data);
+          return;
+        }
+
         if (data.webhook_message_type === 'message') {
           await this.createOrUpdateChatQueue(t, getChat, data);
           return;
