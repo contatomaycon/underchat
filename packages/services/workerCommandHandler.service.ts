@@ -162,17 +162,13 @@ export class WorkerCommandHandlerService {
     const view =
       await this.workerService.viewWorkerPhoneConnectionDate(workerId);
 
-    if (!view) {
-      return;
-    }
-
-    const phoneNumber = input.phone ?? view.number;
+    const phoneNumber = input.phone ?? view?.number ?? null;
 
     await this.workerService.updateWorkerPhoneStatusConnectionDate({
       worker_id: workerId,
       status: workerStatusId,
       number: phoneNumber,
-      connection_date: view.connection_date,
+      connection_date: view?.connection_date,
     });
     await Promise.all([
       this.centrifugoPublish(payload),
