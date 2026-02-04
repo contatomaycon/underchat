@@ -171,6 +171,8 @@ export class AccountAllListerWithDetailsRepository {
               AND p.status = ${EPlanStatus.active}
               AND p.name IS NOT NULL
               AND p.deleted_at IS NULL
+              AND pa.next_payment_date IS NOT NULL
+              AND pa.next_payment_date > ${now}
           )`
         );
       }
