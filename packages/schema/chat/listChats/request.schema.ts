@@ -2,9 +2,12 @@ import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { Static, Type } from '@sinclair/typebox';
 import { pagingRequestSchema } from '@core/schema/common/pagingRequestSchema';
 
+export const MY_CHATS_STATUS = 'my_chats';
+
 export const listChatsQuerySchema = Type.Object({
   ...pagingRequestSchema.properties,
   status: Type.Union([
+    Type.Literal(MY_CHATS_STATUS),
     Type.String({ enum: Object.values(EChatStatus) }),
     Type.Array(Type.String({ enum: Object.values(EChatStatus) })),
   ]),

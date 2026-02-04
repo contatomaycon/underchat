@@ -1,7 +1,10 @@
 import { injectable } from 'tsyringe';
 import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
-import { ListChatsQuery } from '@core/schema/chat/listChats/request.schema';
+import {
+  ListChatsQuery,
+  MY_CHATS_STATUS,
+} from '@core/schema/chat/listChats/request.schema';
 import {
   ListChatsResponse,
   ListChatsResult,
@@ -88,13 +91,14 @@ export class ChatListerUseCase {
   ): { sortBy: string; sortOrder: string } {
     const statusArray = Array.isArray(status) ? status : [status];
 
-    const isMyChats =
-      statusArray.length === 2 &&
-      statusArray.includes(EChatStatus.in_chat) &&
-      statusArray.includes(EChatStatus.queue) &&
-      (filterStatus === null || filterStatus === undefined);
+    const isMyChatsStatus =
+      status === MY_CHATS_STATUS ||
+      (statusArray.length === 2 &&
+        statusArray.includes(EChatStatus.in_chat) &&
+        statusArray.includes(EChatStatus.queue) &&
+        (filterStatus === null || filterStatus === undefined));
 
-    if (isMyChats) {
+    if (isMyChatsStatus) {
       return {
         sortBy: preferences.sortByMyChatsOrder,
         sortOrder: preferences.sortMyChatsOrder,
@@ -280,27 +284,33 @@ export class ChatListerUseCase {
     ];
 
     const filterClauses: IElasticsearchBoolClause[] = [];
+    const baseFiltersForCounts: IElasticsearchBoolClause[] = [];
 
-    const statusArray = Array.isArray(query.status)
-      ? query.status
-      : [query.status];
+    const isMyChats = query.status === MY_CHATS_STATUS;
+    const statusArray = isMyChats
+      ? [EChatStatus.queue, EChatStatus.in_chat]
+      : Array.isArray(query.status)
+        ? query.status
+        : [query.status];
 
-    if (statusArray.length === 1) {
-      filterClauses.push({
-        term: {
-          status: statusArray[0],
-        },
-      });
-    } else {
-      filterClauses.push({
-        terms: {
-          status: statusArray,
-        },
-      } as unknown as IElasticsearchBoolClause);
+    if (!isMyChats) {
+      if (statusArray.length === 1) {
+        filterClauses.push({
+          term: {
+            status: statusArray[0],
+          },
+        });
+      } else {
+        filterClauses.push({
+          terms: {
+            status: statusArray,
+          },
+        } as unknown as IElasticsearchBoolClause);
+      }
     }
 
     if (query.filter_label_template_id) {
-      filterClauses.push({
+      const labelFilter = {
         nested: {
           path: 'label',
           query: {
@@ -309,11 +319,13 @@ export class ChatListerUseCase {
             },
           },
         },
-      });
+      };
+      filterClauses.push(labelFilter);
+      baseFiltersForCounts.push(labelFilter);
     }
 
     if (query.filter_worker_id) {
-      filterClauses.push({
+      const workerFilter = {
         nested: {
           path: 'worker',
           query: {
@@ -322,14 +334,16 @@ export class ChatListerUseCase {
             },
           },
         },
-      });
+      };
+      filterClauses.push(workerFilter);
+      baseFiltersForCounts.push(workerFilter);
     }
 
     if (
       query.filter_sector_id &&
       this.canListAllChatsWithoutSectorLimit(actions)
     ) {
-      filterClauses.push({
+      const sectorFilter = {
         nested: {
           path: 'sector',
           query: {
@@ -338,11 +352,13 @@ export class ChatListerUseCase {
             },
           },
         },
-      });
+      };
+      filterClauses.push(sectorFilter);
+      baseFiltersForCounts.push(sectorFilter);
     }
 
     if (query.filter_name) {
-      filterClauses.push({
+      const nameFilter = {
         bool: {
           should: [
             {
@@ -390,13 +406,15 @@ export class ChatListerUseCase {
           ],
           minimum_should_match: 1,
         },
-      } as unknown as IElasticsearchBoolClause);
+      } as unknown as IElasticsearchBoolClause;
+      filterClauses.push(nameFilter);
+      baseFiltersForCounts.push(nameFilter);
     }
 
     if (query.filter_phone) {
       const phoneFilter = query.filter_phone.replace(/\D/g, '');
       if (phoneFilter.length > 0) {
-        filterClauses.push({
+        const phoneFilterClause = {
           bool: {
             should: [
               {
@@ -446,12 +464,14 @@ export class ChatListerUseCase {
             ],
             minimum_should_match: 1,
           },
-        } as unknown as IElasticsearchBoolClause);
+        } as unknown as IElasticsearchBoolClause;
+        filterClauses.push(phoneFilterClause);
+        baseFiltersForCounts.push(phoneFilterClause);
       }
     }
 
     if (query.filter_protocol) {
-      filterClauses.push({
+      const protocolFilter = {
         bool: {
           should: [
             {
@@ -481,7 +501,9 @@ export class ChatListerUseCase {
           ],
           minimum_should_match: 1,
         },
-      } as unknown as IElasticsearchBoolClause);
+      } as unknown as IElasticsearchBoolClause;
+      filterClauses.push(protocolFilter);
+      baseFiltersForCounts.push(protocolFilter);
     }
 
     if (query.filter_date_start || query.filter_date_end) {
@@ -492,17 +514,119 @@ export class ChatListerUseCase {
       if (query.filter_date_end) {
         dateRange.lte = query.filter_date_end;
       }
-      filterClauses.push({
+      const dateFilter = {
         range: {
           date: dateRange,
         },
-      } as unknown as IElasticsearchBoolClause);
+      } as unknown as IElasticsearchBoolClause;
+      filterClauses.push(dateFilter);
+      baseFiltersForCounts.push(dateFilter);
     }
 
     const canViewOthers = this.canViewOthersChats(actions);
     const canListAll = this.canListAllChatsWithoutSectorLimit(actions);
 
-    if (!canViewOthers) {
+    if (isMyChats) {
+      const queueVisibility: IElasticsearchBoolClause = {
+        bool: {
+          should: [
+            {
+              nested: {
+                path: 'user',
+                query: {
+                  term: {
+                    'user.id': userId,
+                  },
+                },
+              },
+            },
+            {
+              bool: {
+                must: [
+                  {
+                    bool: {
+                      must_not: {
+                        nested: {
+                          path: 'user',
+                          query: {
+                            exists: {
+                              field: 'user.id',
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+                  userSectors.length > 0
+                    ? ({
+                        nested: {
+                          path: 'sector',
+                          query: {
+                            terms: {
+                              'sector.id': userSectors,
+                            },
+                          },
+                        },
+                      } as unknown as IElasticsearchBoolClause)
+                    : ({
+                        bool: {
+                          must_not: {
+                            nested: {
+                              path: 'sector',
+                              query: {
+                                exists: {
+                                  field: 'sector.id',
+                                },
+                              },
+                            },
+                          },
+                        },
+                      } as unknown as IElasticsearchBoolClause),
+                ],
+              },
+            } as unknown as IElasticsearchBoolClause,
+          ],
+          minimum_should_match: 1,
+        },
+      } as unknown as IElasticsearchBoolClause;
+
+      const myChatsFilter: IElasticsearchBoolClause = {
+        bool: {
+          should: [
+            {
+              bool: {
+                must: [
+                  { term: { status: EChatStatus.queue } },
+                  queueVisibility,
+                ],
+              },
+            } as unknown as IElasticsearchBoolClause,
+            {
+              bool: {
+                must: [
+                  { term: { status: EChatStatus.in_chat } },
+                  {
+                    nested: {
+                      path: 'user',
+                      query: {
+                        term: {
+                          'user.id': userId,
+                        },
+                      },
+                    },
+                  },
+                ],
+              },
+            } as unknown as IElasticsearchBoolClause,
+          ],
+          minimum_should_match: 1,
+        },
+      } as unknown as IElasticsearchBoolClause;
+
+      filterClauses.push(myChatsFilter);
+    }
+
+    if (!isMyChats && !canViewOthers) {
       if (statusArray.includes(EChatStatus.in_chat)) {
         filterClauses.push({
           nested: {
@@ -517,7 +641,7 @@ export class ChatListerUseCase {
       }
     }
 
-    if (!canListAll) {
+    if (!isMyChats && !canListAll) {
       if (statusArray.includes(EChatStatus.queue)) {
         const queueVisibility: IElasticsearchBoolClause = {
           bool: {
@@ -615,14 +739,9 @@ export class ChatListerUseCase {
     };
 
     const buildQueueCountFilter = (): IElasticsearchBoolClause[] => {
-      const baseFilters = filterClauses.filter(
-        (clause) =>
-          !(clause as any).term?.status && !(clause as any).terms?.status
-      );
-
       if (canListAll) {
         return [
-          ...baseFilters,
+          ...baseFiltersForCounts,
           {
             term: {
               status: EChatStatus.queue,
@@ -695,7 +814,7 @@ export class ChatListerUseCase {
       } as unknown as IElasticsearchBoolClause;
 
       return [
-        ...baseFilters,
+        ...baseFiltersForCounts,
         {
           term: {
             status: EChatStatus.queue,
@@ -706,14 +825,9 @@ export class ChatListerUseCase {
     };
 
     const buildInChatCountFilter = (): IElasticsearchBoolClause[] => {
-      const baseFilters = filterClauses.filter(
-        (clause) =>
-          !(clause as any).term?.status && !(clause as any).terms?.status
-      );
-
       if (canViewOthers) {
         return [
-          ...baseFilters,
+          ...baseFiltersForCounts,
           {
             term: {
               status: EChatStatus.in_chat,
@@ -723,7 +837,7 @@ export class ChatListerUseCase {
       }
 
       return [
-        ...baseFilters,
+        ...baseFiltersForCounts,
         {
           term: {
             status: EChatStatus.in_chat,
@@ -743,11 +857,6 @@ export class ChatListerUseCase {
     };
 
     const buildChatbotCountFilter = (): IElasticsearchBoolClause[] => {
-      const baseFilters = filterClauses.filter(
-        (clause) =>
-          !(clause as any).term?.status && !(clause as any).terms?.status
-      );
-
       const canViewChatbotMessages = hasRequiredPermission(actions, [
         EGeneralPermissions.full_access,
         EGeneralPermissions.full_access_group,
@@ -757,7 +866,7 @@ export class ChatListerUseCase {
 
       if (canViewChatbotMessages) {
         return [
-          ...baseFilters,
+          ...baseFiltersForCounts,
           {
             terms: {
               status: [
@@ -772,7 +881,7 @@ export class ChatListerUseCase {
       }
 
       return [
-        ...baseFilters,
+        ...baseFiltersForCounts,
         {
           terms: {
             status: [
@@ -797,29 +906,103 @@ export class ChatListerUseCase {
     };
 
     const buildMyChatsCountFilter = (): IElasticsearchBoolClause[] => {
-      const baseFilters = filterClauses.filter(
-        (clause) =>
-          !(clause as any).term?.status && !(clause as any).terms?.status
-      );
-
-      return [
-        ...baseFilters,
-        {
-          terms: {
-            status: [EChatStatus.queue, EChatStatus.in_chat],
-          },
-        } as unknown as IElasticsearchBoolClause,
-        {
-          nested: {
-            path: 'user',
-            query: {
-              term: {
-                'user.id': userId,
+      const queueVisibility: IElasticsearchBoolClause = {
+        bool: {
+          should: [
+            {
+              nested: {
+                path: 'user',
+                query: {
+                  term: {
+                    'user.id': userId,
+                  },
+                },
               },
             },
-          },
-        } as unknown as IElasticsearchBoolClause,
-      ];
+            {
+              bool: {
+                must: [
+                  {
+                    bool: {
+                      must_not: {
+                        nested: {
+                          path: 'user',
+                          query: {
+                            exists: {
+                              field: 'user.id',
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+                  userSectors.length > 0
+                    ? ({
+                        nested: {
+                          path: 'sector',
+                          query: {
+                            terms: {
+                              'sector.id': userSectors,
+                            },
+                          },
+                        },
+                      } as unknown as IElasticsearchBoolClause)
+                    : ({
+                        bool: {
+                          must_not: {
+                            nested: {
+                              path: 'sector',
+                              query: {
+                                exists: {
+                                  field: 'sector.id',
+                                },
+                              },
+                            },
+                          },
+                        },
+                      } as unknown as IElasticsearchBoolClause),
+                ],
+              },
+            } as unknown as IElasticsearchBoolClause,
+          ],
+          minimum_should_match: 1,
+        },
+      } as unknown as IElasticsearchBoolClause;
+
+      const myChatsFilter: IElasticsearchBoolClause = {
+        bool: {
+          should: [
+            {
+              bool: {
+                must: [
+                  { term: { status: EChatStatus.queue } },
+                  queueVisibility,
+                ],
+              },
+            } as unknown as IElasticsearchBoolClause,
+            {
+              bool: {
+                must: [
+                  { term: { status: EChatStatus.in_chat } },
+                  {
+                    nested: {
+                      path: 'user',
+                      query: {
+                        term: {
+                          'user.id': userId,
+                        },
+                      },
+                    },
+                  },
+                ],
+              },
+            } as unknown as IElasticsearchBoolClause,
+          ],
+          minimum_should_match: 1,
+        },
+      } as unknown as IElasticsearchBoolClause;
+
+      return [...baseFiltersForCounts, myChatsFilter];
     };
 
     const queueCountQuery: any = {

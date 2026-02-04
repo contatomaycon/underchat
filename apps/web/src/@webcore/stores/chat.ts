@@ -9,7 +9,10 @@ import {
   ListChatsResponse,
   ListChatsResult,
 } from '@core/schema/chat/listChats/response.schema';
-import { ListChatsQuery } from '@core/schema/chat/listChats/request.schema';
+import {
+  ListChatsQuery,
+  MY_CHATS_STATUS,
+} from '@core/schema/chat/listChats/request.schema';
 import { SearchChatsResponse } from '@core/schema/chat/searchChats/response.schema';
 import { SearchChatsQuery } from '@core/schema/chat/searchChats/request.schema';
 import { UpdateChatsUserRequest } from '@core/schema/chat/updateChatsUser/request.schema';
@@ -1778,7 +1781,7 @@ export const useChatStore = defineStore('chat', {
     },
 
     async resolveChatEndpoint(
-      status: EChatStatus | EChatStatus[],
+      status: EChatStatus | EChatStatus[] | typeof MY_CHATS_STATUS,
       filters: ChatFilters,
       hasAppliedAdvancedFilters: boolean,
       pagination: { current_page: number; per_page: number },
@@ -1806,7 +1809,7 @@ export const useChatStore = defineStore('chat', {
         }
 
         return this.handleSearchEndpoint(
-          statusArray,
+          statusArray as EChatStatus[],
           normalizedSearch,
           searchFilters,
           pagination,
@@ -1815,9 +1818,17 @@ export const useChatStore = defineStore('chat', {
         );
       }
 
+      const isMyChats =
+        status === MY_CHATS_STATUS ||
+        (statusArray.length === 1 && statusArray[0] === MY_CHATS_STATUS);
+
+      if (isMyChats) {
+        return this.handleMyChatsListEndpoint(baseFilters, pagination, append);
+      }
+
       if (statusArray.length > 1) {
         return this.handleMultiStatusListEndpoint(
-          statusArray,
+          statusArray as EChatStatus[],
           baseFilters,
           pagination,
           append
@@ -1825,11 +1836,57 @@ export const useChatStore = defineStore('chat', {
       }
 
       return this.handleSingleStatusListEndpoint(
-        statusArray[0],
+        statusArray[0] as EChatStatus,
         baseFilters,
         pagination,
         append
       );
+    },
+
+    async handleMyChatsListEndpoint(
+      filters: Partial<ChatFilters>,
+      pagination: { current_page: number; per_page: number },
+      append: boolean
+    ): Promise<ResolveChatEndpointResult> {
+      try {
+        this.loading = true;
+
+        const params = {
+          current_page: pagination.current_page,
+          per_page: pagination.per_page,
+          status: MY_CHATS_STATUS,
+          ...pickDefinedFilters(filters, [...LIST_FILTER_KEYS]),
+        };
+
+        const response = await axios.get<IApiResponse<ListChatsResponse>>(
+          `/chat`,
+          { params }
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+        if (!data?.status || !data?.data) {
+          return { results: [], counts: null };
+        }
+
+        this.updateListsByStatus(
+          [EChatStatus.queue, EChatStatus.in_chat],
+          data.data.results,
+          append
+        );
+
+        this.queuePagings = { ...data.data.pagings };
+        this.inChatPagings = { ...data.data.pagings };
+
+        return {
+          results: data.data.results,
+          counts: data.data.counts,
+        };
+      } catch {
+        this.loading = false;
+        return { results: [], counts: null };
+      }
     },
 
     async handleSearchEndpoint(
@@ -1885,16 +1942,16 @@ export const useChatStore = defineStore('chat', {
       }
     ): void {
       if (statusArray.includes(EChatStatus.queue)) {
-        this.queuePagings = pagings;
+        this.queuePagings = { ...pagings };
       }
       if (statusArray.includes(EChatStatus.in_chat)) {
-        this.inChatPagings = pagings;
+        this.inChatPagings = { ...pagings };
       }
       if (statusArray.some((s) => this.isChatbotStatus(s))) {
-        this.chatbotPagings = pagings;
+        this.chatbotPagings = { ...pagings };
       }
       if (statusArray.includes(EChatStatus.closed)) {
-        this.closedPagings = pagings;
+        this.closedPagings = { ...pagings };
       }
     },
 
@@ -1929,16 +1986,16 @@ export const useChatStore = defineStore('chat', {
         this.updateListsByStatus(statusArray, data.data.results, append);
 
         if (statusArray.includes(EChatStatus.queue)) {
-          this.queuePagings = data.data.pagings;
+          this.queuePagings = { ...data.data.pagings };
         }
         if (statusArray.includes(EChatStatus.in_chat)) {
-          this.inChatPagings = data.data.pagings;
+          this.inChatPagings = { ...data.data.pagings };
         }
         if (statusArray.some((s) => this.isChatbotStatus(s))) {
-          this.chatbotPagings = data.data.pagings;
+          this.chatbotPagings = { ...data.data.pagings };
         }
         if (statusArray.includes(EChatStatus.closed)) {
-          this.closedPagings = data.data.pagings;
+          this.closedPagings = { ...data.data.pagings };
         }
 
         return { results: data.data.results, counts: data.data.counts };

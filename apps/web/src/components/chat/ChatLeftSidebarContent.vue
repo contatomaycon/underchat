@@ -10,7 +10,7 @@ import ChatSortModal from '@/components/chat/ChatSortModal.vue';
 import { useChatStore } from '@/@webcore/stores/chat';
 import { useChannelsStore } from '@/@webcore/stores/channels';
 import { ListChatContactsResponse } from '@core/schema/chat/listContacts/response.schema';
-import { ListChatsQuery } from '@core/schema/chat/listChats/request.schema';
+import { MY_CHATS_STATUS } from '@core/schema/chat/listChats/request.schema';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { ListChatsResult } from '@core/schema/chat/listChats/response.schema';
 import type { IChat } from '@core/common/interfaces/IChat';
@@ -1140,13 +1140,9 @@ const loadAllChats = async (append = false) => {
   const filters = getChatUserFilters();
   const searchTerm = getSearchTerm();
 
-  const shouldUseCombinedSearch =
-    activeFilter.value === 'my_chats' &&
-    (hasAppliedAdvancedFilters.value || searchTerm);
-
-  if (shouldUseCombinedSearch) {
+  if (activeFilter.value === 'my_chats') {
     const response = await chatStore.resolveChatEndpoint(
-      [EChatStatus.queue, EChatStatus.in_chat],
+      MY_CHATS_STATUS,
       filters,
       hasAppliedAdvancedFilters.value,
       {
