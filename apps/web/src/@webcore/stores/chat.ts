@@ -489,6 +489,91 @@ export const useChatStore = defineStore('chat', {
       };
     },
 
+    handleQueueAuthorization(params: {
+      resolvedChat: IChat;
+      incomingChat: IChat;
+      existingSnapshot: ListChatsResult | null;
+      permissions: EPermissionsRoles[];
+      canViewOthersChats: boolean;
+      canListAllChatsInSector: boolean;
+      canListAllChatsWithoutSectorLimit: boolean;
+      hasPermissionToViewAll: boolean;
+    }): boolean {
+      const {
+        resolvedChat,
+        incomingChat,
+        existingSnapshot,
+        permissions,
+        canViewOthersChats,
+        canListAllChatsInSector,
+        canListAllChatsWithoutSectorLimit,
+        hasPermissionToViewAll,
+      } = params;
+
+      const chatUserId = resolvedChat.user?.id ?? null;
+
+      if (chatUserId && chatUserId !== this.user?.user_id) {
+        this.logChatDebug('remove-queue-not-authorized', {
+          chatId: resolvedChat.chat_id,
+          status: resolvedChat.status,
+          chatUserId,
+          currentUserId: this.user?.user_id ?? null,
+          sectorId: resolvedChat.sector?.id ?? null,
+          permissions,
+          canViewOthersChats,
+          canListAllChatsInSector,
+          canListAllChatsWithoutSectorLimit,
+          hasPermissionToViewAll,
+          incomingChat,
+          resolvedChat,
+          snapshot: existingSnapshot ?? null,
+        });
+        this.removeChatIfNotAuthorized(resolvedChat);
+        return false;
+      }
+
+      if (chatUserId) {
+        return true;
+      }
+
+      const userSectors = getSectors();
+      if (!this.shouldRemoveQueueChat(resolvedChat, userSectors)) {
+        return true;
+      }
+
+      const sectorId = resolvedChat.sector?.id ?? null;
+      const isChatInUserSectors = !!sectorId && userSectors.includes(sectorId);
+      const isAlreadyVisible =
+        this.activeChat?.chat_id === resolvedChat.chat_id ||
+        this.isChatInAnyList(resolvedChat.chat_id);
+
+      if (canListAllChatsInSector && sectorId && !isChatInUserSectors) {
+        if (isAlreadyVisible) {
+          return true;
+        }
+      }
+
+      this.logChatDebug('remove-queue-sector-mismatch', {
+        chatId: resolvedChat.chat_id,
+        status: resolvedChat.status,
+        chatUserId,
+        currentUserId: this.user?.user_id ?? null,
+        sectorId: resolvedChat.sector?.id ?? null,
+        userSectors,
+        isAlreadyVisible,
+        permissions,
+        canViewOthersChats,
+        canListAllChatsInSector,
+        canListAllChatsWithoutSectorLimit,
+        hasPermissionToViewAll,
+        incomingChat,
+        resolvedChat,
+        snapshot: existingSnapshot ?? null,
+      });
+      this.removeChatIfNotAuthorized(resolvedChat);
+      return false;
+    },
+
     addChat(chat: IChat, skipEvents = false) {
       const permissions = getPermissions();
       const previousChat = this.findChatInLists(chat.chat_id);
@@ -572,51 +657,19 @@ export const useChatStore = defineStore('chat', {
 
       if (!hasPermissionToViewAll) {
         if (resolvedChat.status === EChatStatus.queue) {
-          if (
-            resolvedChat.user?.id &&
-            resolvedChat.user.id !== this.user?.user_id
-          ) {
-            this.logChatDebug('remove-queue-not-authorized', {
-              chatId: resolvedChat.chat_id,
-              status: resolvedChat.status,
-              chatUserId: resolvedChat.user?.id ?? null,
-              currentUserId: this.user?.user_id ?? null,
-              sectorId: resolvedChat.sector?.id ?? null,
-              permissions,
-              canViewOthersChats,
-              canListAllChatsInSector,
-              canListAllChatsWithoutSectorLimit,
-              hasPermissionToViewAll,
-              incomingChat: chat,
-              resolvedChat,
-              snapshot: existingSnapshot ?? null,
-            });
-            this.removeChatIfNotAuthorized(resolvedChat);
-            return;
-          }
+          const canContinue = this.handleQueueAuthorization({
+            resolvedChat,
+            incomingChat: chat,
+            existingSnapshot,
+            permissions,
+            canViewOthersChats,
+            canListAllChatsInSector,
+            canListAllChatsWithoutSectorLimit,
+            hasPermissionToViewAll,
+          });
 
-          if (!resolvedChat.user?.id) {
-            const userSectors = getSectors();
-            if (this.shouldRemoveQueueChat(resolvedChat, userSectors)) {
-              this.logChatDebug('remove-queue-sector-mismatch', {
-                chatId: resolvedChat.chat_id,
-                status: resolvedChat.status,
-                chatUserId: resolvedChat.user?.id ?? null,
-                currentUserId: this.user?.user_id ?? null,
-                sectorId: resolvedChat.sector?.id ?? null,
-                userSectors,
-                permissions,
-                canViewOthersChats,
-                canListAllChatsInSector,
-                canListAllChatsWithoutSectorLimit,
-                hasPermissionToViewAll,
-                incomingChat: chat,
-                resolvedChat,
-                snapshot: existingSnapshot ?? null,
-              });
-              this.removeChatIfNotAuthorized(resolvedChat);
-              return;
-            }
+          if (!canContinue) {
+            return;
           }
         }
       }
@@ -915,6 +968,14 @@ export const useChatStore = defineStore('chat', {
           existingStatus === EChatStatus.closed)
       ) {
         return true;
+      }
+
+      if (
+        existingStatus === EChatStatus.in_chat &&
+        incomingStatus === EChatStatus.queue &&
+        incomingChat.forward_to_output_chatbot === true
+      ) {
+        return false;
       }
 
       const existingRank = this.getStatusRank(existingChat.status);
@@ -1224,6 +1285,13 @@ export const useChatStore = defineStore('chat', {
           perm === EGeneralPermissions.full_access_group ||
           perm === EChatPermissions.chat_group
       );
+      const canListAllChatsInSector = permissions.some(
+        (perm: EPermissionsRoles) =>
+          perm === EGeneralPermissions.full_access ||
+          perm === EGeneralPermissions.full_access_group ||
+          perm === EChatPermissions.chat_group ||
+          perm === EChatPermissions.list_all_chats_in_sector
+      );
       const canListAllChatsWithoutSectorLimit = permissions.some(
         (perm: EPermissionsRoles) =>
           perm === EGeneralPermissions.full_access ||
@@ -1263,49 +1331,64 @@ export const useChatStore = defineStore('chat', {
         const isStillMine = chat.user?.id === this.user?.user_id;
 
         if (!isStillMine && !hasPermissionToViewAll) {
-          this.logChatDebug('remove-in-chat-queue-update', {
-            chatId: chat.chat_id,
-            status: chat.status,
-            chatUserId: chat.user?.id ?? null,
-            currentUserId: this.user?.user_id ?? null,
-            permissions,
-            hasPermissionToViewAll,
-            previousStatus,
-          });
-          this.removeFromList(this.listInChat, chat.chat_id);
-          this.removeFromList(this.listQueue, chat.chat_id);
-          this.removeFromList(this.listChatbot, chat.chat_id);
-          this.removeFromList(this.listClosed, chat.chat_id);
+          const userSectors = getSectors();
+          const sectorId = chat.sector?.id ?? null;
+          const isChatInUserSectors =
+            !!sectorId && userSectors.includes(sectorId);
+          const canViewBySector =
+            canListAllChatsInSector && (isChatInUserSectors || wasInInChat);
 
-          if (this.inChatPagings.total > 0) {
-            this.inChatPagings.total = Math.max(
-              0,
-              this.inChatPagings.total - 1
-            );
-          }
+          if (!canViewBySector) {
+            this.logChatDebug('remove-in-chat-queue-update', {
+              chatId: chat.chat_id,
+              status: chat.status,
+              chatUserId: chat.user?.id ?? null,
+              currentUserId: this.user?.user_id ?? null,
+              permissions,
+              hasPermissionToViewAll,
+              canListAllChatsInSector,
+              sectorId,
+              userSectors,
+              previousStatus,
+            });
+            this.removeFromList(this.listInChat, chat.chat_id);
+            this.removeFromList(this.listQueue, chat.chat_id);
+            this.removeFromList(this.listChatbot, chat.chat_id);
+            this.removeFromList(this.listClosed, chat.chat_id);
 
-          if (previousWasInQueue && this.queuePagings.total > 0) {
-            this.queuePagings.total = Math.max(0, this.queuePagings.total - 1);
-          }
+            if (this.inChatPagings.total > 0) {
+              this.inChatPagings.total = Math.max(
+                0,
+                this.inChatPagings.total - 1
+              );
+            }
 
-          if (previousWasInChatbot && this.chatbotPagings.total > 0) {
-            this.chatbotPagings.total = Math.max(
-              0,
-              this.chatbotPagings.total - 1
-            );
-          }
+            if (previousWasInQueue && this.queuePagings.total > 0) {
+              this.queuePagings.total = Math.max(
+                0,
+                this.queuePagings.total - 1
+              );
+            }
 
-          if (previousWasInClosed && this.closedPagings.total > 0) {
-            this.closedPagings.total = Math.max(
-              0,
-              this.closedPagings.total - 1
-            );
-          }
+            if (previousWasInChatbot && this.chatbotPagings.total > 0) {
+              this.chatbotPagings.total = Math.max(
+                0,
+                this.chatbotPagings.total - 1
+              );
+            }
 
-          if (this.activeChat?.chat_id === chat.chat_id) {
-            this.activeChat = null;
+            if (previousWasInClosed && this.closedPagings.total > 0) {
+              this.closedPagings.total = Math.max(
+                0,
+                this.closedPagings.total - 1
+              );
+            }
+
+            if (this.activeChat?.chat_id === chat.chat_id) {
+              this.activeChat = null;
+            }
+            return;
           }
-          return;
         }
       }
 
