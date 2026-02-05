@@ -17,6 +17,8 @@ import { AccountService } from '@core/services/account.service';
 import { StorageService } from '@core/services/storage.service';
 import { PermissionService } from '@core/services/permission.service';
 import { validatePassword } from '@core/common/utils/passwordValidator';
+import { CentrifugoService } from '@core/services/centrifugo.service';
+import { chatAccountCentrifugo } from '@core/common/functions/centrifugoQueue';
 
 @injectable()
 export class UserUpdaterUseCase {
@@ -27,7 +29,8 @@ export class UserUpdaterUseCase {
     private readonly CountryService: CountryService,
     private readonly accountService: AccountService,
     private readonly storageService: StorageService,
-    private readonly permissionService: PermissionService
+    private readonly permissionService: PermissionService,
+    private readonly centrifugoService: CentrifugoService
   ) {}
 
   private extractStringValue(
@@ -907,6 +910,29 @@ export class UserUpdaterUseCase {
     await this.userService.updateUserChannels(userId, accountId, channelIds);
   }
 
+  private async publishUserChannelsUpdate(
+    userId: string,
+    accountId: string
+  ): Promise<void> {
+    try {
+      const channels = await this.userService.listUserChannelsWithNames(
+        accountId,
+        userId
+      );
+
+      await this.centrifugoService.publishSub(
+        chatAccountCentrifugo(accountId),
+        {
+          event: 'user_channels_updated',
+          user_id: userId,
+          channels,
+        }
+      );
+    } catch {
+      // Best-effort: do not block user updates if realtime notification fails.
+    }
+  }
+
   private async validateUserExistsInAccount(
     t: TFunction<'translation', undefined>,
     userId: string,
@@ -1076,6 +1102,12 @@ export class UserUpdaterUseCase {
     );
 
     await Promise.all(updatePromises);
+
+    if (body.channel_ids !== undefined) {
+      const userAccountId =
+        (await this.userService.getUserAccountId(userId)) ?? accountId;
+      await this.publishUserChannelsUpdate(userId, userAccountId);
+    }
 
     return true;
   }

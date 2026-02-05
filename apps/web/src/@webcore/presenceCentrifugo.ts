@@ -5,6 +5,7 @@ import { useUsersStore } from '@webcore/stores/user';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import { AuthUserResponse } from '@core/schema/auth/login/response.schema';
 import { refreshPresenceForCurrentRoute } from './presence';
+import { setChannels } from './localStorage/user';
 
 let initializedAccountId: string | null = null;
 
@@ -104,6 +105,18 @@ export const initUserPresenceSubscription = async (
     }, 2000);
   };
 
+  const handleUserChannelsUpdate = (data: {
+    event: string;
+    user_id: string;
+    channels?: { id: string; name: string }[];
+  }): void => {
+    if (data.user_id !== chatStore.user?.user_id) return;
+
+    const channels = Array.isArray(data.channels) ? data.channels : [];
+    setChannels(channels);
+    chatStore.revalidateChannelAccess();
+  };
+
   await onMessage(channel, (data: any) => {
     if (!data || typeof data !== 'object') return;
 
@@ -113,6 +126,10 @@ export const initUserPresenceSubscription = async (
 
     if ('event' in data && data.event === 'force_logout') {
       handleForceLogoutEvent(data).catch(() => {});
+    }
+
+    if ('event' in data && data.event === 'user_channels_updated') {
+      handleUserChannelsUpdate(data);
     }
   });
 };

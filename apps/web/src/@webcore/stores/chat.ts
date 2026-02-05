@@ -1297,6 +1297,39 @@ export const useChatStore = defineStore('chat', {
       );
     },
 
+    revalidateChannelAccess(): void {
+      const userChannels = getChannels();
+      if (userChannels.length === 0) {
+        return;
+      }
+
+      const channelIds = new Set(userChannels.map((c) => c.id));
+      const shouldRemove = (
+        chat: ListChatsResult | null | undefined
+      ): boolean => !chat?.worker?.id || !channelIds.has(chat.worker.id);
+
+      const chatsToRemove = new Map<string, IChat>();
+
+      const collect = (chat: ListChatsResult): void => {
+        if (shouldRemove(chat)) {
+          chatsToRemove.set(chat.chat_id, chat as IChat);
+        }
+      };
+
+      this.listQueue.forEach(collect);
+      this.listInChat.forEach(collect);
+      this.listChatbot.forEach(collect);
+      this.listClosed.forEach(collect);
+
+      if (this.activeChat && shouldRemove(this.activeChat)) {
+        chatsToRemove.set(this.activeChat.chat_id, this.activeChat as IChat);
+      }
+
+      for (const chat of chatsToRemove.values()) {
+        this.removeChatIfNotAuthorized(chat);
+      }
+    },
+
     handleQueueStatusChat(
       input: ListChatsResult,
       chat: IChat,
