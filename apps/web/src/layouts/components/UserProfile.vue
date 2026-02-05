@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import axiosAuth from '@/@webcore/axios';
 import { clearAllData } from '@/@webcore/utils/clearAllData';
 import { presenceOffline } from '@/@webcore/presence';
 import { initUserPresenceSubscription } from '@/@webcore/presenceCentrifugo';
@@ -626,6 +627,10 @@ const logout = async () => {
     await presenceOffline().catch(() => {});
 
     await unsubscribeFromPushNotifications().catch(() => {});
+
+    try {
+      await axiosAuth.post('/auth/logout');
+    } catch {}
 
     clearAllData();
 

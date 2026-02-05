@@ -3,6 +3,7 @@
   "login_error": "Error de inicio de sesión",
   "login_invalid": "Inicio de sesión inválido",
   "login_success": "¡Inicio de sesión exitoso!",
+  "logout_success": "Cierre de sesión exitoso",
   "account_blocked_contact_support": "Su cuenta está bloqueada. Por favor, contacte con el soporte para más información.",
   "internal_server_error": "Error interno del servidor",
   "database_query_error": "Error al procesar consulta en la base de datos",

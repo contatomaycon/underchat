@@ -3,6 +3,7 @@
   "login_error": "Login error!",
   "login_invalid": "Invalid login!",
   "login_success": "Login success!",
+  "logout_success": "Logout successful",
   "account_blocked_contact_support": "Your account is blocked. Please contact support for more information.",
   "internal_server_error": "Internal server error!",
   "database_query_error": "Error processing database query",

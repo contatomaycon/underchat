@@ -9,7 +9,11 @@ import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
 import { EColor } from '@core/common/enums/EColor';
 import { SearchChatsQuery } from '@core/schema/chat/searchChats/request.schema';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
-import { getPermissions, getSectors, getUser } from '@/@webcore/localStorage/user';
+import {
+  getPermissions,
+  getSectors,
+  getUser,
+} from '@/@webcore/localStorage/user';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
 import { ListMessageResult } from '@core/schema/chat/listMessageChats/response.schema';
@@ -55,12 +59,15 @@ const canListAllChats = computed(() => {
     (perm) =>
       perm === EGeneralPermissions.full_access ||
       perm === EGeneralPermissions.full_access_group ||
-      perm === EChatPermissions.list_all_chats_without_sector_limit ||
-      perm === EChatPermissions.chat_group
+      perm === EChatPermissions.chat_group ||
+      perm === EChatPermissions.list_all_chats_in_sector ||
+      perm === EChatPermissions.list_all_chats_without_sector_limit
   );
 });
 
-const formatAttendanceDate = (dateString: string | null | undefined): string => {
+const formatAttendanceDate = (
+  dateString: string | null | undefined
+): string => {
   if (!dateString) return '-';
 
   const date = new Date(dateString);
@@ -79,7 +86,9 @@ const formatAttendanceDate = (dateString: string | null | undefined): string => 
   return formatDate(dateString);
 };
 
-const formatLastInteractionDate = (dateString: string | null | undefined): string => {
+const formatLastInteractionDate = (
+  dateString: string | null | undefined
+): string => {
   if (!dateString) return '-';
   const date = new Date(dateString);
   const today = new Date();
@@ -87,7 +96,9 @@ const formatLastInteractionDate = (dateString: string | null | undefined): strin
   yesterday.setDate(yesterday.getDate() - 1);
 
   if (date.toDateString() === today.toDateString()) {
-    return formatDateTime(dateString).split(' às ')[1] || formatDate(dateString);
+    return (
+      formatDateTime(dateString).split(' às ')[1] || formatDate(dateString)
+    );
   }
 
   if (date.toDateString() === yesterday.toDateString()) {
@@ -418,17 +429,9 @@ onUnmounted(() => {
           class="d-flex flex-column flex-grow-1"
           style="gap: 16px"
         >
-          <div
-            v-for="i in 5"
-            :key="i"
-            class="attendance-history-skeleton"
-          >
+          <div v-for="i in 5" :key="i" class="attendance-history-skeleton">
             <div class="d-flex align-start gap-3">
-              <VSkeletonLoader
-                type="avatar"
-                width="40"
-                height="40"
-              />
+              <VSkeletonLoader type="avatar" width="40" height="40" />
               <div class="flex-grow-1">
                 <VSkeletonLoader type="text" width="40%" class="mb-1" />
                 <VSkeletonLoader type="text" width="70%" class="mb-1" />
@@ -455,7 +458,9 @@ onUnmounted(() => {
               <div class="d-flex align-start gap-3">
                 <VAvatar
                   size="40"
-                  :variant="!(chat.photo ?? chat.contact?.photo) ? 'tonal' : undefined"
+                  :variant="
+                    !(chat.photo ?? chat.contact?.photo) ? 'tonal' : undefined
+                  "
                   color="primary"
                 >
                   <VImg
@@ -474,10 +479,19 @@ onUnmounted(() => {
                     {{ formatAttendanceDate(chat.date) }}
                   </div>
                   <div class="text-caption text-medium-emphasis mb-1">
-                    {{ $t('last_interaction') }}: {{ formatLastInteractionDate(chat.summary?.last_date ?? null) }}
+                    {{ $t('last_interaction') }}:
+                    {{
+                      formatLastInteractionDate(chat.summary?.last_date ?? null)
+                    }}
                   </div>
                   <div class="text-caption text-medium-emphasis">
-                    {{ $t('attendance_time') }}: {{ calculateAttendanceTime(chat.started_at ?? null, chat.closed_at ?? null) }}
+                    {{ $t('attendance_time') }}:
+                    {{
+                      calculateAttendanceTime(
+                        chat.started_at ?? null,
+                        chat.closed_at ?? null
+                      )
+                    }}
                   </div>
                 </div>
               </div>
@@ -490,7 +504,9 @@ onUnmounted(() => {
             <VProgressCircular indeterminate color="primary" size="24" />
           </div>
           <div
-            v-else-if="currentPage >= totalPages && attendanceHistory.length > 0"
+            v-else-if="
+              currentPage >= totalPages && attendanceHistory.length > 0
+            "
             class="d-flex justify-center align-center pa-4"
           >
             <p class="text-caption text-medium-emphasis">
@@ -499,10 +515,7 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <div
-          v-else
-          class="d-flex justify-center align-center flex-grow-1"
-        >
+        <div v-else class="d-flex justify-center align-center flex-grow-1">
           <p class="text-body-2 text-medium-emphasis">
             {{ $t('no_attendance_history') }}
           </p>
@@ -521,7 +534,11 @@ onUnmounted(() => {
         <div class="d-flex align-center gap-3">
           <VAvatar
             size="40"
-            :variant="!(selectedChat?.photo ?? selectedChat?.contact?.photo) ? 'tonal' : undefined"
+            :variant="
+              !(selectedChat?.photo ?? selectedChat?.contact?.photo)
+                ? 'tonal'
+                : undefined
+            "
             color="primary"
           >
             <VImg
@@ -539,7 +556,10 @@ onUnmounted(() => {
             <div class="text-h6">
               {{ selectedChat?.contact?.name ?? selectedChat?.name ?? '' }}
             </div>
-            <div v-if="selectedChat?.phone" class="text-caption text-medium-emphasis">
+            <div
+              v-if="selectedChat?.phone"
+              class="text-caption text-medium-emphasis"
+            >
               {{ formatPhoneBR(selectedChat.phone) }}
             </div>
           </div>
@@ -559,16 +579,16 @@ onUnmounted(() => {
           background-color: rgb(var(--v-theme-background));
         "
       >
-        <div
-          ref="conversationScrollRef"
-          class="pa-4"
-          style="min-height: 100%"
-        >
+        <div ref="conversationScrollRef" class="pa-4" style="min-height: 100%">
           <ChatLogViewer
             :messages="conversationMessages"
-            :client-name="selectedChat?.contact?.name ?? selectedChat?.name ?? ''"
+            :client-name="
+              selectedChat?.contact?.name ?? selectedChat?.name ?? ''
+            "
             :operator-name="selectedChat?.user?.name ?? ''"
-            :client-photo="selectedChat?.contact?.photo ?? selectedChat?.photo ?? null"
+            :client-photo="
+              selectedChat?.contact?.photo ?? selectedChat?.photo ?? null
+            "
             :loading="loadingMessages"
             @open-image="handleOpenImage"
             @open-video="handleOpenVideo"
@@ -587,10 +607,7 @@ onUnmounted(() => {
     :kind="imageViewerKind"
   />
 
-  <ChatContactViewModal
-    v-model="contactModalOpen"
-    :contact="selectedContact"
-  />
+  <ChatContactViewModal v-model="contactModalOpen" :contact="selectedContact" />
 
   <VDialog v-model="locationModalOpen" max-width="800" :scrollable="false">
     <VCard v-if="locationData">

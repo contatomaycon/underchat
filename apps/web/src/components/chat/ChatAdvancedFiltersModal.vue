@@ -56,6 +56,7 @@ const canUseUserAndSectorFilters = computed(() => {
     EGeneralPermissions.full_access,
     EGeneralPermissions.full_access_group,
     EChatPermissions.chat_group,
+    EChatPermissions.list_all_chats_in_sector,
     EChatPermissions.list_all_chats_without_sector_limit,
   ]);
 });

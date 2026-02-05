@@ -82,7 +82,17 @@ export class ChatStatusUpdaterUseCase {
       EGeneralPermissions.full_access,
       EGeneralPermissions.full_access_group,
       EChatPermissions.chat_group,
-      EChatPermissions.view_others_chats,
+    ];
+
+    return hasRequiredPermission(actions, permissions);
+  }
+
+  private canViewChatsInSector(actions: IJwtGroupHierarchy[]): boolean {
+    const permissions = [
+      EGeneralPermissions.full_access,
+      EGeneralPermissions.full_access_group,
+      EChatPermissions.chat_group,
+      EChatPermissions.list_all_chats_in_sector,
     ];
 
     return hasRequiredPermission(actions, permissions);
@@ -304,9 +314,25 @@ export class ChatStatusUpdaterUseCase {
   ): Promise<void> {
     const canViewOthers = this.canViewOthersChats(actions);
     const canListAll = this.canListAllChatsWithoutSectorLimit(actions);
+    const canViewInSector = this.canViewChatsInSector(actions);
     const hasPermissionToViewAll = canViewOthers || canListAll;
 
     if (hasPermissionToViewAll) return;
+
+    if (
+      canViewInSector &&
+      userSectors.length > 0 &&
+      chat.sector?.id &&
+      userSectors.includes(chat.sector.id)
+    ) {
+      return;
+    }
+
+    if (canViewInSector && userSectors.length === 0 && !chat.sector?.id) {
+      return;
+    }
+
+    if (chat.user?.id && chat.user.id === userId) return;
 
     if (chat.user?.id && chat.user.id !== userId) {
       throw new Error('chat_access_denied');

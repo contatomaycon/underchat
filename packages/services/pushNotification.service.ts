@@ -211,8 +211,14 @@ export class PushNotificationService {
       (action) =>
         action === EGeneralPermissions.full_access ||
         action === EGeneralPermissions.full_access_group ||
+        action === EChatPermissions.chat_group
+    );
+    const canListAllChatsInSector = permissionActions.some(
+      (action) =>
+        action === EGeneralPermissions.full_access ||
+        action === EGeneralPermissions.full_access_group ||
         action === EChatPermissions.chat_group ||
-        action === EChatPermissions.view_others_chats
+        action === EChatPermissions.list_all_chats_in_sector
     );
     const canListAllChatsWithoutSectorLimit = permissionActions.some(
       (action) =>
@@ -225,8 +231,20 @@ export class PushNotificationService {
     const hasPermissionToViewAll =
       canViewOthersChats || canListAllChatsWithoutSectorLimit;
 
+    const userSectors = await this.userSectorsListerRepository.listUserSectors(
+      accountId,
+      userId
+    );
+    const isChatInUserSectors =
+      (userSectors.length > 0 &&
+        chat.sector?.id &&
+        userSectors.includes(chat.sector.id)) ||
+      (userSectors.length === 0 && !chat.sector?.id);
+
     if (chat.status === EChatStatus.in_chat) {
-      return chat.user?.id === userId;
+      if (chat.user?.id === userId) return true;
+      if (hasPermissionToViewAll) return true;
+      return canListAllChatsInSector && isChatInUserSectors;
     }
 
     if (hasPermissionToViewAll) {
@@ -237,12 +255,6 @@ export class PushNotificationService {
       if (chat.user?.id) {
         return chat.user.id === userId;
       }
-
-      const userSectors =
-        await this.userSectorsListerRepository.listUserSectors(
-          accountId,
-          userId
-        );
 
       if (userSectors.length > 0) {
         if (!chat.sector?.id) {

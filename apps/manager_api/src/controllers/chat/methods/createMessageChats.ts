@@ -30,7 +30,8 @@ export const createMessageChats = async (
       request.body,
       ETypeUserChat.operator,
       tokenJwtData.user_id,
-      tokenJwtData.actions
+      tokenJwtData.actions,
+      tokenJwtData.sectors
     );
 
     if (response) {

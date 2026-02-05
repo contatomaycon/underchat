@@ -76,12 +76,19 @@ function canReceiveMessageNotification(
   }
 
   const permissions = getPermissions();
+  const userSectors = getSectors();
   const canViewOthersChats = permissions.some(
     (perm: EPermissionsRoles) =>
       perm === EGeneralPermissions.full_access ||
       perm === EGeneralPermissions.full_access_group ||
+      perm === EChatPermissions.chat_group
+  );
+  const canListAllChatsInSector = permissions.some(
+    (perm: EPermissionsRoles) =>
+      perm === EGeneralPermissions.full_access ||
+      perm === EGeneralPermissions.full_access_group ||
       perm === EChatPermissions.chat_group ||
-      perm === EChatPermissions.view_others_chats
+      perm === EChatPermissions.list_all_chats_in_sector
   );
   const canListAllChatsWithoutSectorLimit = permissions.some(
     (perm: EPermissionsRoles) =>
@@ -93,9 +100,17 @@ function canReceiveMessageNotification(
 
   const hasPermissionToViewAll =
     canViewOthersChats || canListAllChatsWithoutSectorLimit;
+  const isChatInUserSectors =
+    (userSectors.length > 0 &&
+      chat.sector?.id &&
+      userSectors.includes(chat.sector.id)) ||
+    (userSectors.length === 0 && !chat.sector?.id);
 
   if (chat.status === EChatStatus.in_chat) {
-    return hasPermissionToViewAll || chat.user?.id === chatStore.user?.user_id;
+    if (hasPermissionToViewAll || chat.user?.id === chatStore.user?.user_id) {
+      return true;
+    }
+    return canListAllChatsInSector && isChatInUserSectors;
   }
 
   if (hasPermissionToViewAll) {

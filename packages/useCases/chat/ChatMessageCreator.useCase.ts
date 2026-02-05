@@ -48,10 +48,42 @@ export class ChatMessageCreatorUseCase {
       EGeneralPermissions.full_access,
       EGeneralPermissions.full_access_group,
       EChatPermissions.chat_group,
-      EChatPermissions.view_others_chats,
     ];
 
     return hasRequiredPermission(actions, permissions);
+  }
+
+  private canViewChatsInSector(actions: IJwtGroupHierarchy[]): boolean {
+    const permissions = [
+      EGeneralPermissions.full_access,
+      EGeneralPermissions.full_access_group,
+      EChatPermissions.chat_group,
+      EChatPermissions.list_all_chats_in_sector,
+    ];
+
+    return hasRequiredPermission(actions, permissions);
+  }
+
+  private canAccessChat(
+    chat: IChat,
+    userId: string,
+    actions: IJwtGroupHierarchy[],
+    userSectors: string[]
+  ): boolean {
+    const canViewOthers = this.canViewOthersChats(actions);
+    if (canViewOthers) return true;
+    const isOwnChat = chat.user?.id === userId;
+    if (isOwnChat) return true;
+    const canViewInSector = this.canViewChatsInSector(actions);
+    if (!canViewInSector) return false;
+    if (
+      userSectors.length > 0 &&
+      chat.sector?.id &&
+      userSectors.includes(chat.sector.id)
+    )
+      return true;
+    if (userSectors.length === 0 && !chat.sector?.id) return true;
+    return false;
   }
 
   private async getChat(
@@ -787,7 +819,8 @@ export class ChatMessageCreatorUseCase {
     body: CreateMessageChatsBody,
     typeUser: ETypeUserChat,
     userId: string,
-    actions: IJwtGroupHierarchy[]
+    actions: IJwtGroupHierarchy[],
+    userSectors: string[]
   ): Promise<boolean> {
     this.validate(t, body);
 
@@ -796,12 +829,8 @@ export class ChatMessageCreatorUseCase {
       throw new Error(t('chat_not_found'));
     }
 
-    if (!this.canViewOthersChats(actions)) {
-      if (chat.user?.id) {
-        if (chat.user.id !== userId) {
-          throw new Error(t('chat_access_denied'));
-        }
-      }
+    if (!this.canAccessChat(chat, userId, actions, userSectors)) {
+      throw new Error(t('chat_access_denied'));
     }
 
     const quickTemplateData = await this.resolveQuickMessageTemplate(

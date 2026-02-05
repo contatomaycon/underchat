@@ -32,7 +32,17 @@ export class ChatMessageSearcherUseCase {
       EGeneralPermissions.full_access,
       EGeneralPermissions.full_access_group,
       EChatPermissions.chat_group,
-      EChatPermissions.view_others_chats,
+    ];
+
+    return hasRequiredPermission(actions, permissions);
+  }
+
+  private canViewChatsInSector(actions: IJwtGroupHierarchy[]): boolean {
+    const permissions = [
+      EGeneralPermissions.full_access,
+      EGeneralPermissions.full_access_group,
+      EChatPermissions.chat_group,
+      EChatPermissions.list_all_chats_in_sector,
     ];
 
     return hasRequiredPermission(actions, permissions);
@@ -44,7 +54,8 @@ export class ChatMessageSearcherUseCase {
     query: SearchMessagesQuery,
     params: SearchMessagesParams,
     userId: string,
-    actions: IJwtGroupHierarchy[]
+    actions: IJwtGroupHierarchy[],
+    userSectors: string[]
   ): Promise<SearchMessagesResponse> {
     const chat = await this.chatService.findChatByChatId(
       accountId,
@@ -55,12 +66,21 @@ export class ChatMessageSearcherUseCase {
       throw new Error(t('chat_not_found'));
     }
 
-    if (!this.canViewOthersChats(actions)) {
-      if (chat.user?.id) {
-        if (chat.user.id !== userId) {
-          throw new Error(t('chat_access_denied'));
-        }
-      }
+    const canViewOthers = this.canViewOthersChats(actions);
+    const canViewInSector = this.canViewChatsInSector(actions);
+    const isOwnChat = chat.user?.id === userId;
+    const isChatInUserSectors =
+      (userSectors.length > 0 &&
+        chat.sector?.id &&
+        userSectors.includes(chat.sector.id)) ||
+      (userSectors.length === 0 && !chat.sector?.id);
+
+    if (
+      !canViewOthers &&
+      !isOwnChat &&
+      !(canViewInSector && isChatInUserSectors)
+    ) {
+      throw new Error(t('chat_access_denied'));
     }
 
     const searchTerm = query.search.trim();

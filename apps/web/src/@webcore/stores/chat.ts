@@ -420,8 +420,14 @@ export const useChatStore = defineStore('chat', {
         (perm: EPermissionsRoles) =>
           perm === EGeneralPermissions.full_access ||
           perm === EGeneralPermissions.full_access_group ||
+          perm === EChatPermissions.chat_group
+      );
+      const canListAllChatsInSector = permissions.some(
+        (perm: EPermissionsRoles) =>
+          perm === EGeneralPermissions.full_access ||
+          perm === EGeneralPermissions.full_access_group ||
           perm === EChatPermissions.chat_group ||
-          perm === EChatPermissions.view_others_chats
+          perm === EChatPermissions.list_all_chats_in_sector
       );
       const canListAllChatsWithoutSectorLimit = permissions.some(
         (perm: EPermissionsRoles) =>
@@ -436,8 +442,16 @@ export const useChatStore = defineStore('chat', {
 
       if (chat.status === EChatStatus.in_chat) {
         if (!hasPermissionToViewAll && chat.user?.id !== this.user?.user_id) {
-          this.removeChatIfNotAuthorized(chat);
-          return;
+          const userSectors = getSectors();
+          const isChatInUserSectors =
+            (userSectors.length > 0 &&
+              chat.sector?.id &&
+              userSectors.includes(chat.sector.id)) ||
+            (userSectors.length === 0 && !chat.sector?.id);
+          if (!(canListAllChatsInSector && isChatInUserSectors)) {
+            this.removeChatIfNotAuthorized(chat);
+            return;
+          }
         }
       }
 
@@ -964,14 +978,20 @@ export const useChatStore = defineStore('chat', {
 
     canViewChat(chat: IChat): boolean {
       const permissions = getPermissions();
+      const userSectors = getSectors();
       const canViewOthersChats = permissions.some(
         (perm: EPermissionsRoles) =>
           perm === EGeneralPermissions.full_access ||
           perm === EGeneralPermissions.full_access_group ||
-          perm === EChatPermissions.chat_group ||
-          perm === EChatPermissions.view_others_chats
+          perm === EChatPermissions.chat_group
       );
-
+      const canListAllChatsInSector = permissions.some(
+        (perm: EPermissionsRoles) =>
+          perm === EGeneralPermissions.full_access ||
+          perm === EGeneralPermissions.full_access_group ||
+          perm === EChatPermissions.chat_group ||
+          perm === EChatPermissions.list_all_chats_in_sector
+      );
       const canListAllChatsWithoutSectorLimit = permissions.some(
         (perm: EPermissionsRoles) =>
           perm === EGeneralPermissions.full_access ||
@@ -982,12 +1002,20 @@ export const useChatStore = defineStore('chat', {
 
       const hasPermissionToViewAll =
         canViewOthersChats || canListAllChatsWithoutSectorLimit;
+      const isChatInUserSectors =
+        (userSectors.length > 0 &&
+          chat.sector?.id &&
+          userSectors.includes(chat.sector.id)) ||
+        (userSectors.length === 0 && !chat.sector?.id);
 
       if (chat.status === EChatStatus.in_chat) {
         if (hasPermissionToViewAll) {
           return true;
         }
-        return chat.user?.id === this.user?.user_id;
+        if (chat.user?.id === this.user?.user_id) {
+          return true;
+        }
+        return canListAllChatsInSector && isChatInUserSectors;
       }
 
       const canViewChatbotMessages = permissions.some(
@@ -1004,7 +1032,11 @@ export const useChatStore = defineStore('chat', {
         return canViewChatbotMessages || isOwnChat;
       }
 
-      return canViewOthersChats || isOwnChat;
+      return (
+        canViewOthersChats ||
+        isOwnChat ||
+        (canListAllChatsInSector && isChatInUserSectors)
+      );
     },
 
     handleQueueStatusChat(
@@ -1018,8 +1050,7 @@ export const useChatStore = defineStore('chat', {
         (perm: EPermissionsRoles) =>
           perm === EGeneralPermissions.full_access ||
           perm === EGeneralPermissions.full_access_group ||
-          perm === EChatPermissions.chat_group ||
-          perm === EChatPermissions.view_others_chats
+          perm === EChatPermissions.chat_group
       );
       const canListAllChatsWithoutSectorLimit = permissions.some(
         (perm: EPermissionsRoles) =>
