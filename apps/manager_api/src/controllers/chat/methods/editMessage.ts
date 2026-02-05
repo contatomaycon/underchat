@@ -24,7 +24,8 @@ export const editMessage = async (
       t,
       tokenJwtData.account_id,
       request.params,
-      request.body
+      request.body,
+      tokenJwtData.channels
     );
 
     if (response) {

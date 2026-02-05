@@ -325,7 +325,8 @@ export class ChatListerUseCase {
     query: ListChatsQuery,
     userId: string,
     actions: IJwtGroupHierarchy[],
-    userSectors: string[]
+    userSectors: string[],
+    userChannels: { id: string; name: string }[] = []
   ): Promise<ListChatsResponse> {
     const currentPage = query.current_page ?? 1;
     const perPage = query.per_page ?? 10;
@@ -345,6 +346,22 @@ export class ChatListerUseCase {
 
     const filterClauses: IElasticsearchBoolClause[] = [];
     const baseFiltersForCounts: IElasticsearchBoolClause[] = [];
+
+    if (userChannels.length > 0) {
+      const channelIds = userChannels.map((c) => c.id);
+      const channelFilter: IElasticsearchBoolClause = {
+        nested: {
+          path: 'worker',
+          query: {
+            terms: {
+              'worker.id': channelIds,
+            },
+          },
+        },
+      } as unknown as IElasticsearchBoolClause;
+      filterClauses.push(channelFilter);
+      baseFiltersForCounts.push(channelFilter);
+    }
 
     const isMyChats = query.status === MY_CHATS_STATUS;
     const statusArray = isMyChats

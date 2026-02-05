@@ -52,8 +52,16 @@ export class StartChatWithContactUseCase {
     t: TFunction<'translation', undefined>,
     accountId: string,
     userId: string,
-    body: StartChatWithContactRequest
+    body: StartChatWithContactRequest,
+    userChannels: { id: string; name: string }[] = []
   ): Promise<IChat> {
+    if (userChannels.length > 0) {
+      const channelIds = userChannels.map((c) => c.id);
+      if (!body.worker_id || !channelIds.includes(body.worker_id)) {
+        throw new Error(t('chat_access_denied'));
+      }
+    }
+
     const contactData = await this.validateAndGetContactData(
       t,
       body.contact_id,

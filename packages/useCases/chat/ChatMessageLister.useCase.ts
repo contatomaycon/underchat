@@ -63,8 +63,16 @@ export class ChatMessageListerUseCase {
     chat: IChat,
     userId: string,
     actions: IJwtGroupHierarchy[],
-    userSectors: string[]
+    userSectors: string[],
+    userChannels: { id: string; name: string }[] = []
   ): boolean {
+    if (userChannels.length > 0) {
+      const channelIds = userChannels.map((c) => c.id);
+      if (!chat.worker?.id || !channelIds.includes(chat.worker.id)) {
+        return false;
+      }
+    }
+
     const canViewOthers = this.canViewOthersChats(actions);
     const canListAll = this.canListAllChatsWithoutSectorLimit(actions);
     if (canViewOthers || canListAll) return true;
@@ -144,7 +152,8 @@ export class ChatMessageListerUseCase {
     params: ListMessageChatsParams,
     userId: string,
     actions: IJwtGroupHierarchy[],
-    userSectors: string[]
+    userSectors: string[],
+    userChannels: { id: string; name: string }[] = []
   ): Promise<ListMessageResponse> {
     const currentPage = query.current_page ?? 1;
     const perPage = query.per_page ?? 10;
@@ -158,7 +167,7 @@ export class ChatMessageListerUseCase {
       throw new Error(t('chat_not_found'));
     }
 
-    if (!this.canAccessChat(chat, userId, actions, userSectors)) {
+    if (!this.canAccessChat(chat, userId, actions, userSectors, userChannels)) {
       throw new Error(t('chat_access_denied'));
     }
 

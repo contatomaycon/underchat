@@ -6,10 +6,18 @@ import { ListChatWorkersResponse } from '@core/schema/chat/listChatWorkers/respo
 export class ChatWorkersListerUseCase {
   constructor(private readonly workerService: WorkerService) {}
 
-  async execute(accountId: string): Promise<ListChatWorkersResponse> {
+  async execute(
+    accountId: string,
+    userChannels: { id: string; name: string }[] = []
+  ): Promise<ListChatWorkersResponse> {
     const workers = await this.workerService.listAllWorkers(accountId);
 
-    return workers.map((worker) => ({
+    const filteredWorkers =
+      userChannels.length > 0
+        ? workers.filter((w) => userChannels.some((c) => c.id === w.id))
+        : workers;
+
+    return filteredWorkers.map((worker) => ({
       id: worker.id,
       name: worker.name,
       number: worker.number,

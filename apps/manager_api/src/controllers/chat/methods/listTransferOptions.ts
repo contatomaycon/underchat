@@ -16,7 +16,8 @@ export const listTransferOptions = async (
 
   try {
     const response = await chatTransferOptionsListerUseCase.execute(
-      tokenJwtData.account_id
+      tokenJwtData.account_id,
+      tokenJwtData.channels
     );
 
     return sendResponse(reply, {

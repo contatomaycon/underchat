@@ -140,10 +140,14 @@ export class AuthLoginUseCase {
       }
     );
 
-    const [permissions, accountInfo, sectors] = await Promise.all([
+    const [permissions, accountInfo, sectors, channels] = await Promise.all([
       this.permissionService.viewPermissionByUserId(result.user_id),
       this.accountService.viewAccountInfoByAccountId(result.account_id),
       this.userService.listUserSectors(result.account_id, result.user_id),
+      this.userService.listUserChannelsWithNames(
+        result.account_id,
+        result.user_id
+      ),
     ]);
 
     const planIsActive = await this.accountService.isPlanActive(
@@ -163,6 +167,7 @@ export class AuthLoginUseCase {
       permissions,
       layout: accountInfo,
       sectors,
+      channels,
       plan_is_active: planIsActive,
     };
   }

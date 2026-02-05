@@ -7,3 +7,11 @@ export const listTransferSectorUsersParamsSchema = Type.Object({
 export type ListTransferSectorUsersParams = Static<
   typeof listTransferSectorUsersParamsSchema
 >;
+
+export const listTransferSectorUsersQuerySchema = Type.Object({
+  chat_id: Type.Optional(Type.String({ format: 'uuid' })),
+});
+
+export type ListTransferSectorUsersQuery = Static<
+  typeof listTransferSectorUsersQuerySchema
+>;

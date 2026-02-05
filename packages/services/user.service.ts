@@ -695,6 +695,26 @@ export class UserService {
     );
   };
 
+  listUserIdsWithAccessToChannel = async (
+    accountId: string,
+    channelId: string
+  ): Promise<string[]> => {
+    return this.userChannelChannelsListerRepository.listUserIdsWithAccessToChannel(
+      accountId,
+      channelId
+    );
+  };
+
+  listUserChannelsWithNames = async (
+    accountId: string,
+    userId: string
+  ): Promise<{ id: string; name: string }[]> => {
+    return this.userChannelChannelsListerRepository.listChannelsWithNamesByUserAndAccount(
+      userId,
+      accountId
+    );
+  };
+
   updateUserChannels = async (
     userId: string,
     accountId: string,

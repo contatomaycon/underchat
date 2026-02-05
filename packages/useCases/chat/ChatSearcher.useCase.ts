@@ -298,58 +298,35 @@ export class ChatSearcherUseCase {
     } as unknown as IElasticsearchBoolClause;
   }
 
-  private async getUserSortPreferences(userId: string): Promise<{
-    sortByChatOrder: string;
-    sortInChatOrder: string;
-    sortByMyChatsOrder: string;
-    sortMyChatsOrder: string;
-    sortByQueueOrder: string;
-    sortQueueOrder: string;
-    sortByChatbotOrder: string;
-    sortChatbotOrder: string;
-  }> {
-    const chatUser = await this.chatUserService.viewChatUser(userId);
-
-    return {
-      sortByChatOrder: chatUser?.sort_by_chat_order ?? 'summary.last_message',
-      sortInChatOrder: chatUser?.sort_in_chat_order ?? 'desc',
-      sortByMyChatsOrder:
-        chatUser?.sort_by_my_chats_order ?? 'summary.last_message',
-      sortMyChatsOrder: chatUser?.sort_my_chats_order ?? 'desc',
-      sortByQueueOrder: chatUser?.sort_by_queue_order ?? 'summary.last_message',
-      sortQueueOrder: chatUser?.sort_queue_order ?? 'desc',
-      sortByChatbotOrder:
-        chatUser?.sort_by_chatbot_order ?? 'summary.last_message',
-      sortChatbotOrder: chatUser?.sort_chatbot_order ?? 'desc',
-    };
-  }
-
-  async execute(
-    accountId: string,
+  private buildFilterClauses(
     query: SearchChatsQuery,
-    userId: string,
     actions: IJwtGroupHierarchy[],
-    userSectors: string[]
-  ): Promise<SearchChatsResponse> {
-    const currentPage = query.current_page ?? 1;
-    const perPage = query.per_page ?? 10;
-    const searchTerm = query.search?.trim() || '';
+    userSectors: string[],
+    userChannels: { id: string; name: string }[]
+  ): {
+    filterClauses: IElasticsearchBoolClause[];
+    baseFiltersForCounts: IElasticsearchBoolClause[];
+    isMyChats: boolean;
+    statusArray: string[];
+  } {
+    const filterClauses: IElasticsearchBoolClause[] = [];
+    const baseFiltersForCounts: IElasticsearchBoolClause[] = [];
 
-    const mustClauses: IElasticsearchBoolClause[] = [
-      {
+    if (userChannels.length > 0) {
+      const channelIds = userChannels.map((c) => c.id);
+      const channelFilter: IElasticsearchBoolClause = {
         nested: {
-          path: 'account',
+          path: 'worker',
           query: {
-            term: {
-              'account.id': accountId,
+            terms: {
+              'worker.id': channelIds,
             },
           },
         },
-      },
-    ];
-
-    const filterClauses: IElasticsearchBoolClause[] = [];
-    const baseFiltersForCounts: IElasticsearchBoolClause[] = [];
+      } as unknown as IElasticsearchBoolClause;
+      filterClauses.push(channelFilter);
+      baseFiltersForCounts.push(channelFilter);
+    }
 
     if (query.filter_label_template_id) {
       const labelFilter = {
@@ -608,6 +585,74 @@ export class ChatSearcherUseCase {
         } as unknown as IElasticsearchBoolClause);
       }
     }
+
+    return {
+      filterClauses,
+      baseFiltersForCounts,
+      isMyChats,
+      statusArray,
+    };
+  }
+
+  private async getUserSortPreferences(userId: string): Promise<{
+    sortByChatOrder: string;
+    sortInChatOrder: string;
+    sortByMyChatsOrder: string;
+    sortMyChatsOrder: string;
+    sortByQueueOrder: string;
+    sortQueueOrder: string;
+    sortByChatbotOrder: string;
+    sortChatbotOrder: string;
+  }> {
+    const chatUser = await this.chatUserService.viewChatUser(userId);
+
+    return {
+      sortByChatOrder: chatUser?.sort_by_chat_order ?? 'summary.last_message',
+      sortInChatOrder: chatUser?.sort_in_chat_order ?? 'desc',
+      sortByMyChatsOrder:
+        chatUser?.sort_by_my_chats_order ?? 'summary.last_message',
+      sortMyChatsOrder: chatUser?.sort_my_chats_order ?? 'desc',
+      sortByQueueOrder: chatUser?.sort_by_queue_order ?? 'summary.last_message',
+      sortQueueOrder: chatUser?.sort_queue_order ?? 'desc',
+      sortByChatbotOrder:
+        chatUser?.sort_by_chatbot_order ?? 'summary.last_message',
+      sortChatbotOrder: chatUser?.sort_chatbot_order ?? 'desc',
+    };
+  }
+
+  async execute(
+    accountId: string,
+    query: SearchChatsQuery,
+    userId: string,
+    actions: IJwtGroupHierarchy[],
+    userSectors: string[],
+    userChannels: { id: string; name: string }[] = []
+  ): Promise<SearchChatsResponse> {
+    const currentPage = query.current_page ?? 1;
+    const perPage = query.per_page ?? 10;
+    const searchTerm = query.search?.trim() || '';
+
+    const mustClauses: IElasticsearchBoolClause[] = [
+      {
+        nested: {
+          path: 'account',
+          query: {
+            term: {
+              'account.id': accountId,
+            },
+          },
+        },
+      },
+    ];
+
+    const filterResult = this.buildFilterClauses(
+      query,
+      actions,
+      userSectors,
+      userChannels
+    );
+    const { filterClauses, baseFiltersForCounts, isMyChats, statusArray } =
+      filterResult;
 
     const canViewOthers = this.canViewOthersChats(actions);
     const canListAll = this.canListAllChatsWithoutSectorLimit(actions);

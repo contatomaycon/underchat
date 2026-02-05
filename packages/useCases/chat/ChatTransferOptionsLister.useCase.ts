@@ -10,15 +10,23 @@ export class ChatTransferOptionsListerUseCase {
     private readonly workerService: WorkerService
   ) {}
 
-  async execute(accountId: string): Promise<ListTransferOptionsResponse> {
+  async execute(
+    accountId: string,
+    userChannels: { id: string; name: string }[] = []
+  ): Promise<ListTransferOptionsResponse> {
     const [sectors, workers] = await Promise.all([
       this.sectorService.listAllSectors(accountId),
       this.workerService.listAllWorkers(accountId),
     ]);
 
+    const filteredWorkers =
+      userChannels.length > 0
+        ? workers.filter((w) => userChannels.some((c) => c.id === w.id))
+        : workers;
+
     return {
       sectors,
-      workers,
+      workers: filteredWorkers,
     };
   }
 }

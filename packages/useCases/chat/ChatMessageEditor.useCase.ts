@@ -23,7 +23,8 @@ export class ChatMessageEditorUseCase {
     t: TFunction<'translation', undefined>,
     accountId: string,
     params: EditMessageParams,
-    body: EditMessageBody
+    body: EditMessageBody,
+    userChannels: { id: string; name: string }[] = []
   ): Promise<boolean> {
     const message = await this.chatService.findMessageByMessageId(
       accountId,
@@ -32,6 +33,13 @@ export class ChatMessageEditorUseCase {
 
     if (!message) {
       throw new Error(t('message_not_found'));
+    }
+
+    if (userChannels.length > 0) {
+      const channelIds = userChannels.map((c) => c.id);
+      if (!message.worker?.id || !channelIds.includes(message.worker.id)) {
+        throw new Error(t('chat_access_denied'));
+      }
     }
 
     if (message.chat_id !== params.chat_id) {

@@ -3,6 +3,7 @@ import {
   AuthUserResponse,
   AccountInfoResponse,
 } from '@core/schema/auth/login/response.schema';
+import { IUserChannel } from '@core/common/interfaces/ITokenJwtData';
 
 const PLAN_STATUS_KEY = 'plan_is_active';
 
@@ -13,6 +14,15 @@ export const setSectors = (sectors: string[]): void => {
 export const getSectors = (): string[] => {
   const sectors = localStorage.getItem('sectors');
   return sectors ? JSON.parse(sectors) : [];
+};
+
+export const setChannels = (channels: IUserChannel[]): void => {
+  localStorage.setItem('channels', JSON.stringify(channels));
+};
+
+export const getChannels = (): IUserChannel[] => {
+  const channels = localStorage.getItem('channels');
+  return channels ? JSON.parse(channels) : [];
 };
 
 export const setToken = (token: string): void => {
@@ -80,6 +90,7 @@ export const removeUserData = (): boolean => {
   localStorage.removeItem('user');
   localStorage.removeItem('layout');
   localStorage.removeItem('sectors');
+  localStorage.removeItem('channels');
   localStorage.removeItem(PLAN_STATUS_KEY);
 
   return !getToken() && !getUser() && getPermissions().length === 0;

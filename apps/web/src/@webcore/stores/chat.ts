@@ -21,6 +21,7 @@ import {
   setUser,
   getPermissions,
   getSectors,
+  getChannels,
 } from '../localStorage/user';
 import type { ListChatWorkersResponse } from '@core/schema/chat/listChatWorkers/response.schema';
 import type { ListChatUsersResponse } from '@core/schema/chat/listChatUsers/response.schema';
@@ -340,6 +341,38 @@ export const useChatStore = defineStore('chat', {
       return 'created';
     },
 
+    removeChatFromListsByRestriction(
+      chat: IChat,
+      previousWasInQueue: boolean,
+      previousWasInChatbot: boolean,
+      previousWasInClosed: boolean
+    ): void {
+      this.removeFromList(this.listInChat, chat.chat_id);
+      this.removeFromList(this.listQueue, chat.chat_id);
+      this.removeFromList(this.listChatbot, chat.chat_id);
+      this.removeFromList(this.listClosed, chat.chat_id);
+
+      if (this.inChatPagings.total > 0) {
+        this.inChatPagings.total = Math.max(0, this.inChatPagings.total - 1);
+      }
+
+      if (previousWasInQueue && this.queuePagings.total > 0) {
+        this.queuePagings.total = Math.max(0, this.queuePagings.total - 1);
+      }
+
+      if (previousWasInChatbot && this.chatbotPagings.total > 0) {
+        this.chatbotPagings.total = Math.max(0, this.chatbotPagings.total - 1);
+      }
+
+      if (previousWasInClosed && this.closedPagings.total > 0) {
+        this.closedPagings.total = Math.max(0, this.closedPagings.total - 1);
+      }
+
+      if (this.activeChat?.chat_id === chat.chat_id) {
+        this.activeChat = null;
+      }
+    },
+
     removeChatIfNotAuthorized(chat: IChat): void {
       const previousChat =
         this.activeChat?.chat_id === chat.chat_id
@@ -398,6 +431,14 @@ export const useChatStore = defineStore('chat', {
       userSectors: string[],
       canListAllChatsInSector = false
     ): boolean {
+      const userChannels = getChannels();
+      if (userChannels.length > 0) {
+        const channelIds = userChannels.map((c) => c.id);
+        if (!chat.worker?.id || !channelIds.includes(chat.worker.id)) {
+          return true;
+        }
+      }
+
       if (canListAllChatsInSector && !chat.sector?.id) {
         return false;
       }
@@ -501,6 +542,18 @@ export const useChatStore = defineStore('chat', {
     }): boolean {
       const { resolvedChat, canListAllChatsInSector } = params;
 
+      const userChannels = getChannels();
+      if (userChannels.length > 0) {
+        const channelIds = userChannels.map((c) => c.id);
+        if (
+          !resolvedChat.worker?.id ||
+          !channelIds.includes(resolvedChat.worker.id)
+        ) {
+          this.removeChatIfNotAuthorized(resolvedChat);
+          return false;
+        }
+      }
+
       const chatUserId = resolvedChat.user?.id ?? null;
 
       if (chatUserId && chatUserId !== this.user?.user_id) {
@@ -579,6 +632,18 @@ export const useChatStore = defineStore('chat', {
 
       const hasPermissionToViewAll =
         canViewOthersChats || canListAllChatsWithoutSectorLimit;
+
+      const userChannels = getChannels();
+      if (userChannels.length > 0) {
+        const channelIds = userChannels.map((c) => c.id);
+        if (
+          !resolvedChat.worker?.id ||
+          !channelIds.includes(resolvedChat.worker.id)
+        ) {
+          this.removeChatIfNotAuthorized(resolvedChat);
+          return;
+        }
+      }
 
       if (resolvedChat.status === EChatStatus.in_chat) {
         if (
@@ -1157,6 +1222,15 @@ export const useChatStore = defineStore('chat', {
     canViewChat(chat: IChat): boolean {
       const permissions = getPermissions();
       const userSectors = getSectors();
+      const userChannels = getChannels();
+
+      if (userChannels.length > 0) {
+        const channelIds = userChannels.map((c) => c.id);
+        if (!chat.worker?.id || !channelIds.includes(chat.worker.id)) {
+          return false;
+        }
+      }
+
       const canViewOthersChats = permissions.some(
         (perm: EPermissionsRoles) =>
           perm === EGeneralPermissions.full_access ||
@@ -1282,6 +1356,22 @@ export const useChatStore = defineStore('chat', {
         const isStillMine = chat.user?.id === this.user?.user_id;
 
         if (!isStillMine && !hasPermissionToViewAll) {
+          const userChannels = getChannels();
+          const channelIds = userChannels.map((c) => c.id);
+          const isChatOutsideUserChannels =
+            userChannels.length > 0 &&
+            (!chat.worker?.id || !channelIds.includes(chat.worker.id));
+
+          if (isChatOutsideUserChannels) {
+            this.removeChatFromListsByRestriction(
+              chat,
+              previousWasInQueue,
+              previousWasInChatbot,
+              previousWasInClosed
+            );
+            return;
+          }
+
           const userSectors = getSectors();
           const sectorId = chat.sector?.id ?? null;
           const isChatInUserSectors =
@@ -1291,42 +1381,12 @@ export const useChatStore = defineStore('chat', {
             canListAllChatsInSector && (isChatInUserSectors || wasInInChat);
 
           if (!canViewBySector) {
-            this.removeFromList(this.listInChat, chat.chat_id);
-            this.removeFromList(this.listQueue, chat.chat_id);
-            this.removeFromList(this.listChatbot, chat.chat_id);
-            this.removeFromList(this.listClosed, chat.chat_id);
-
-            if (this.inChatPagings.total > 0) {
-              this.inChatPagings.total = Math.max(
-                0,
-                this.inChatPagings.total - 1
-              );
-            }
-
-            if (previousWasInQueue && this.queuePagings.total > 0) {
-              this.queuePagings.total = Math.max(
-                0,
-                this.queuePagings.total - 1
-              );
-            }
-
-            if (previousWasInChatbot && this.chatbotPagings.total > 0) {
-              this.chatbotPagings.total = Math.max(
-                0,
-                this.chatbotPagings.total - 1
-              );
-            }
-
-            if (previousWasInClosed && this.closedPagings.total > 0) {
-              this.closedPagings.total = Math.max(
-                0,
-                this.closedPagings.total - 1
-              );
-            }
-
-            if (this.activeChat?.chat_id === chat.chat_id) {
-              this.activeChat = null;
-            }
+            this.removeChatFromListsByRestriction(
+              chat,
+              previousWasInQueue,
+              previousWasInChatbot,
+              previousWasInClosed
+            );
             return;
           }
         }
@@ -4118,10 +4178,12 @@ export const useChatStore = defineStore('chat', {
       }
     },
 
-    async listTransferUsers(): Promise<TransferUserResponse[]> {
+    async listTransferUsers(chatId?: string): Promise<TransferUserResponse[]> {
       try {
+        const params = chatId ? { chat_id: chatId } : {};
         const response = await axios.get<IApiResponse<TransferUserResponse[]>>(
-          '/chat/transfer/users'
+          '/chat/transfer/users',
+          { params }
         );
 
         const data = response?.data;
@@ -4161,12 +4223,14 @@ export const useChatStore = defineStore('chat', {
     },
 
     async listTransferSectorUsers(
-      sectorId: string
+      sectorId: string,
+      chatId?: string
     ): Promise<TransferSectorUserResponse[]> {
       try {
+        const params = chatId ? { chat_id: chatId } : {};
         const response = await axios.get<
           IApiResponse<TransferSectorUserResponse[]>
-        >(`/chat/transfer/sectors/${sectorId}/users`);
+        >(`/chat/transfer/sectors/${sectorId}/users`, { params });
 
         const data = response?.data;
 

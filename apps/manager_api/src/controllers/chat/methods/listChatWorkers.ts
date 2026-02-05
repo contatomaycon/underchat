@@ -14,7 +14,8 @@ export const listChatWorkers = async (
 
   try {
     const response = await chatWorkersListerUseCase.execute(
-      tokenJwtData.account_id
+      tokenJwtData.account_id,
+      tokenJwtData.channels
     );
 
     return sendResponse(reply, {

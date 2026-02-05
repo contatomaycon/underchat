@@ -29,7 +29,8 @@ export const searchMessages = async (
       request.params,
       tokenJwtData.user_id,
       tokenJwtData.actions,
-      tokenJwtData.sectors
+      tokenJwtData.sectors,
+      tokenJwtData.channels
     );
 
     return sendResponse(reply, {

@@ -3,6 +3,7 @@ import {
   userResponseSchema,
   accountInfoResponseSchema,
 } from '@core/schema/masterSession/login/response.schema';
+import { userChannelResponseSchema } from '@core/schema/auth/login/response.schema';
 
 export const sessionLoginResponseSchema = Type.Object({
   user: userResponseSchema,
@@ -10,6 +11,7 @@ export const sessionLoginResponseSchema = Type.Object({
   layout: Type.Union([accountInfoResponseSchema, Type.Null()]),
   token: Type.String(),
   sectors: Type.Array(Type.String()),
+  channels: Type.Array(userChannelResponseSchema),
   plan_is_active: Type.Boolean(),
 });
 

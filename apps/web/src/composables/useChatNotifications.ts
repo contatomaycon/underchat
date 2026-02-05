@@ -1,7 +1,11 @@
 import { ref, watch, onMounted, onUnmounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useChatStore } from '@/@webcore/stores/chat';
-import { getPermissions, getSectors } from '@/@webcore/localStorage/user';
+import {
+  getPermissions,
+  getSectors,
+  getChannels,
+} from '@/@webcore/localStorage/user';
 import type { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import type { IChat } from '@core/common/interfaces/IChat';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
@@ -73,6 +77,14 @@ function canReceiveMessageNotification(
 ): boolean {
   if (!chatStore.user?.account_id) {
     return false;
+  }
+
+  const userChannels = getChannels();
+  if (userChannels.length > 0) {
+    const channelIds = userChannels.map((c) => c.id);
+    if (!chat.worker?.id || !channelIds.includes(chat.worker.id)) {
+      return false;
+    }
   }
 
   const permissions = getPermissions();

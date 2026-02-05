@@ -6,7 +6,9 @@ import { container } from 'tsyringe';
 import { ChatTransferUsersListerUseCase } from '@core/useCases/chat/ChatTransferUsersLister.useCase';
 
 export const listTransferUsers = async (
-  request: FastifyRequest,
+  request: FastifyRequest<{
+    Querystring: { chat_id?: string };
+  }>,
   reply: FastifyReply
 ) => {
   const chatTransferUsersListerUseCase = container.resolve(
@@ -16,7 +18,8 @@ export const listTransferUsers = async (
 
   try {
     const response = await chatTransferUsersListerUseCase.execute(
-      tokenJwtData.account_id
+      tokenJwtData.account_id,
+      request.query.chat_id
     );
 
     return sendResponse(reply, {

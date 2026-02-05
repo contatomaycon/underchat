@@ -84,12 +84,18 @@ export const accountInfoResponseSchema = Type.Object({
   dark_secondary_color: Type.Union([Type.String(), Type.Null()]),
 });
 
+export const userChannelResponseSchema = Type.Object({
+  id: Type.String(),
+  name: Type.String(),
+});
+
 export const authLoginResponseSchema = Type.Object({
   user: authUserResponseSchema,
   permissions: Type.Array(Type.String()),
   layout: Type.Union([accountInfoResponseSchema, Type.Null()]),
   token: Type.String(),
   sectors: Type.Array(Type.String()),
+  channels: Type.Array(userChannelResponseSchema),
   plan_is_active: Type.Boolean(),
 });
 

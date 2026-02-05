@@ -15,6 +15,7 @@ import {
   setLayout,
   setPermissions,
   setSectors,
+  setChannels,
   setToken,
   setUser,
   initializePlanStatus,
@@ -110,6 +111,7 @@ export const useAuthStore = defineStore('auth', {
         setPermissions(this.permissions);
         setLayout(this.layout);
         setSectors(data.data.sectors ?? []);
+        setChannels(data.data.channels ?? []);
         persistPlanStatus(this.planIsActive);
         updateAbilityPermissions(this.permissions);
 
@@ -161,6 +163,7 @@ export const useAuthStore = defineStore('auth', {
         setPermissions(this.permissions);
         setLayout(this.layout);
         setSectors(data.data.sectors ?? []);
+        setChannels(data.data.channels ?? []);
         persistPlanStatus(this.planIsActive);
         updateAbilityPermissions(this.permissions);
 
@@ -189,6 +192,7 @@ export const useAuthStore = defineStore('auth', {
       setPermissions(this.permissions);
       setLayout(this.layout);
       setSectors(data.sectors ?? []);
+      setChannels(data.channels ?? []);
       persistPlanStatus(this.planIsActive);
       updateAbilityPermissions(this.permissions);
     },

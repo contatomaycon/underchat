@@ -1,6 +1,7 @@
 import { Type } from '@sinclair/typebox';
 import { ELanguage } from '@core/common/enums/ELanguage';
 import { ETagSwagger } from '@core/common/enums/ETagSwagger';
+import { listTransferUsersQuerySchema } from './request.schema';
 import { listTransferUsersResponseSchema } from './response.schema';
 
 export const listTransferUsersSchema = {
@@ -12,6 +13,7 @@ export const listTransferUsersSchema = {
       authenticateJwt: [],
     },
   ],
+  querystring: listTransferUsersQuerySchema,
   headers: Type.Object({
     'Accept-Language': Type.Optional(
       Type.String({

@@ -22,7 +22,8 @@ export const startChatWithContact = async (
       t,
       tokenJwtData.account_id,
       tokenJwtData.user_id,
-      request.body
+      request.body,
+      tokenJwtData.channels
     );
 
     return sendResponse(reply, {

@@ -27,7 +27,8 @@ export const updateChatStatus = async (
       tokenJwtData.sectors,
       request.params,
       request.body,
-      tokenJwtData.actions
+      tokenJwtData.actions,
+      tokenJwtData.channels
     );
 
     if (response) {

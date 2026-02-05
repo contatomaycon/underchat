@@ -14,7 +14,8 @@ export class WorkerConfigForChatViewerUseCase {
   async execute(
     t: TFunction<'translation', undefined>,
     accountId: string,
-    workerId: string
+    workerId: string,
+    userChannels: { id: string; name: string }[] = []
   ): Promise<ViewWorkerConfigForChatResponse> {
     const existsWorkerById = await this.workerService.existsWorkerById(
       accountId,
@@ -23,6 +24,13 @@ export class WorkerConfigForChatViewerUseCase {
 
     if (!existsWorkerById) {
       throw new Error(t('worker_not_found'));
+    }
+
+    if (userChannels.length > 0) {
+      const channelIds = userChannels.map((c) => c.id);
+      if (!channelIds.includes(workerId)) {
+        throw new Error(t('chat_access_denied'));
+      }
     }
 
     return this.chatService.viewWorkerConfigForChat(workerId);

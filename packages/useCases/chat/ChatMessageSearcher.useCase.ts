@@ -68,7 +68,8 @@ export class ChatMessageSearcherUseCase {
     params: SearchMessagesParams,
     userId: string,
     actions: IJwtGroupHierarchy[],
-    userSectors: string[]
+    userSectors: string[],
+    userChannels: { id: string; name: string }[] = []
   ): Promise<SearchMessagesResponse> {
     const chat = await this.chatService.findChatByChatId(
       accountId,
@@ -77,6 +78,13 @@ export class ChatMessageSearcherUseCase {
 
     if (!chat) {
       throw new Error(t('chat_not_found'));
+    }
+
+    if (userChannels.length > 0) {
+      const channelIds = userChannels.map((c) => c.id);
+      if (!chat.worker?.id || !channelIds.includes(chat.worker.id)) {
+        throw new Error(t('chat_access_denied'));
+      }
     }
 
     const canViewOthers = this.canViewOthersChats(actions);

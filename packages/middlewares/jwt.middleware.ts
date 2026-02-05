@@ -76,9 +76,13 @@ async function generateTokenJwtAccess(
   )?.permission_role_id;
 
   let sectors: string[] = [];
+  let channels: ITokenJwtData['channels'] = [];
   if (accountId) {
     const userService = container.resolve(UserService);
-    sectors = await userService.listUserSectors(accountId, userId);
+    [sectors, channels] = await Promise.all([
+      userService.listUserSectors(accountId, userId),
+      userService.listUserChannelsWithNames(accountId, userId),
+    ]);
   }
 
   return {
@@ -88,6 +92,7 @@ async function generateTokenJwtAccess(
     permission_role_id: permissionRoleId,
     actions: responseAuth.actions,
     sectors,
+    channels,
     plan_is_active: responseAuth.plan_is_active,
   } as ITokenJwtData;
 }

@@ -2,7 +2,10 @@ import { Type } from '@sinclair/typebox';
 import { ELanguage } from '@core/common/enums/ELanguage';
 import { ETagSwagger } from '@core/common/enums/ETagSwagger';
 import { listTransferSectorUsersResponseSchema } from './response.schema';
-import { listTransferSectorUsersParamsSchema } from './request.schema';
+import {
+  listTransferSectorUsersParamsSchema,
+  listTransferSectorUsersQuerySchema,
+} from './request.schema';
 
 export const listTransferSectorUsersSchema = {
   description: 'Listar usuários de um setor para transferência de chat',
@@ -23,6 +26,7 @@ export const listTransferSectorUsersSchema = {
     ),
   }),
   params: listTransferSectorUsersParamsSchema,
+  querystring: listTransferSectorUsersQuerySchema,
   response: {
     200: Type.Object(
       {

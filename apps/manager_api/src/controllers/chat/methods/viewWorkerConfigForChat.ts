@@ -21,7 +21,8 @@ export const viewWorkerConfigForChat = async (
     const response = await workerConfigForChatViewerUseCase.execute(
       t,
       tokenJwtData.account_id,
-      request.params.worker_id
+      request.params.worker_id,
+      tokenJwtData.channels
     );
 
     return sendResponse(reply, {

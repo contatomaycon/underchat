@@ -24,7 +24,8 @@ export const clearChatSummary = async (
       t,
       tokenJwtData.account_id,
       tokenJwtData.user_id,
-      request.params
+      request.params,
+      tokenJwtData.channels
     );
 
     if (response) {

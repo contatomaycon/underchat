@@ -525,7 +525,8 @@ const loadTransferUsers = async () => {
 
   isLoadingTransferUsers.value = true;
   try {
-    const users = await chatStore.listTransferUsers();
+    const chatId = chatStore.activeChat?.chat_id;
+    const users = await chatStore.listTransferUsers(chatId);
     transferUsers.value = users.map((user) => ({
       value: user.id,
       title: user.name,
@@ -560,7 +561,8 @@ const loadTransferSectorUsers = async (sectorId: string) => {
 
   isLoadingTransferSectorUsers.value = true;
   try {
-    const users = await chatStore.listTransferSectorUsers(sectorId);
+    const chatId = chatStore.activeChat?.chat_id;
+    const users = await chatStore.listTransferSectorUsers(sectorId, chatId);
     transferSectorUsers.value = users.map((user) => ({
       value: user.id,
       title: user.name,

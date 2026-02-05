@@ -19,7 +19,8 @@ export class ChatSummaryClearUseCase {
     t: TFunction<'translation', undefined>,
     accountId: string,
     userId: string,
-    params: ClearChatSummaryParams
+    params: ClearChatSummaryParams,
+    userChannels: { id: string; name: string }[] = []
   ): Promise<boolean> {
     try {
       const chat = await this.chatService.findChatByChatId(
@@ -29,6 +30,13 @@ export class ChatSummaryClearUseCase {
 
       if (!chat) {
         return false;
+      }
+
+      if (userChannels.length > 0) {
+        const channelIds = userChannels.map((c) => c.id);
+        if (!chat.worker?.id || !channelIds.includes(chat.worker.id)) {
+          return false;
+        }
       }
 
       if (chat.status !== EChatStatus.in_chat) {

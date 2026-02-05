@@ -156,10 +156,11 @@ export class AuthForgotPasswordResetPasswordUseCase {
       }
     );
 
-    const [permissions, accountInfo, sectors] = await Promise.all([
+    const [permissions, accountInfo, sectors, channels] = await Promise.all([
       this.permissionService.viewPermissionByUserId(userId),
       this.accountService.viewAccountInfoByAccountId(accountId),
       this.userService.listUserSectors(accountId, userId),
+      this.userService.listUserChannelsWithNames(accountId, userId),
     ]);
 
     const planIsActive = await this.accountService.isPlanActive(accountId);
@@ -177,6 +178,7 @@ export class AuthForgotPasswordResetPasswordUseCase {
       permissions,
       layout: accountInfo,
       sectors,
+      channels,
       plan_is_active: planIsActive,
     };
   }

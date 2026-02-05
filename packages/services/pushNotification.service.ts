@@ -5,6 +5,7 @@ import { PushSubscriptionDeleterRepository } from '@core/repositories/push/PushS
 import { UsersWithNotificationsListerRepository } from '@core/repositories/push/UsersWithNotificationsLister.repository';
 import { PermissionAssignmentUserViewerRepository } from '@core/repositories/permission/PermissionAssignmentUserViewer.repository';
 import { UserSectorsListerRepository } from '@core/repositories/user/UserSectorsLister.repository';
+import { UserChannelChannelsListerRepository } from '@core/repositories/user/UserChannelChannelsLister.repository';
 import { IPushNotificationPayload } from '@core/common/interfaces/IPushNotificationPayload';
 import { IChat } from '@core/common/interfaces/IChat';
 import { IChatMessage } from '@core/common/interfaces/IChatMessage';
@@ -26,7 +27,8 @@ export class PushNotificationService {
     private readonly pushSubscriptionDeleterRepository: PushSubscriptionDeleterRepository,
     private readonly usersWithNotificationsListerRepository: UsersWithNotificationsListerRepository,
     private readonly permissionAssignmentUserViewerRepository: PermissionAssignmentUserViewerRepository,
-    private readonly userSectorsListerRepository: UserSectorsListerRepository
+    private readonly userSectorsListerRepository: UserSectorsListerRepository,
+    private readonly userChannelChannelsListerRepository: UserChannelChannelsListerRepository
   ) {
     this.initializeVapidKeys();
   }
@@ -200,6 +202,19 @@ export class PushNotificationService {
     accountId: string,
     chat: IChat
   ): Promise<boolean> {
+    const userChannels =
+      await this.userChannelChannelsListerRepository.listChannelsWithNamesByUserAndAccount(
+        userId,
+        accountId
+      );
+
+    if (userChannels.length > 0) {
+      const channelIds = userChannels.map((c) => c.id);
+      if (!chat.worker?.id || !channelIds.includes(chat.worker.id)) {
+        return false;
+      }
+    }
+
     const permissions =
       await this.permissionAssignmentUserViewerRepository.viewPermissionByUserId(
         userId

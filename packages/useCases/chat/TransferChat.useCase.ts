@@ -276,7 +276,8 @@ export class TransferChatUseCase {
     t: TFunction<'translation', undefined>,
     accountId: string,
     params: TransferChatParams,
-    body: TransferChatBody
+    body: TransferChatBody,
+    userChannels: { id: string; name: string }[] = []
   ): Promise<{ chat_id: string; status: boolean }> {
     const chat = await this.chatService.findChatByChatId(
       accountId,
@@ -285,6 +286,13 @@ export class TransferChatUseCase {
 
     if (!chat) {
       throw new Error(t('chat_not_found'));
+    }
+
+    if (userChannels.length > 0) {
+      const channelIds = userChannels.map((c) => c.id);
+      if (!chat.worker?.id || !channelIds.includes(chat.worker.id)) {
+        throw new Error(t('chat_access_denied'));
+      }
     }
 
     const { userData, sectorData } = await this.loadUserAndSector(

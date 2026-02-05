@@ -81,8 +81,16 @@ export class ChatMessageCreatorUseCase {
     chat: IChat,
     userId: string,
     actions: IJwtGroupHierarchy[],
-    userSectors: string[]
+    userSectors: string[],
+    userChannels: { id: string; name: string }[] = []
   ): boolean {
+    if (userChannels.length > 0) {
+      const channelIds = userChannels.map((c) => c.id);
+      if (!chat.worker?.id || !channelIds.includes(chat.worker.id)) {
+        return false;
+      }
+    }
+
     const canViewOthers = this.canViewOthersChats(actions);
     const canListAll = this.canListAllChatsWithoutSectorLimit(actions);
     if (canViewOthers || canListAll) return true;
@@ -835,7 +843,8 @@ export class ChatMessageCreatorUseCase {
     typeUser: ETypeUserChat,
     userId: string,
     actions: IJwtGroupHierarchy[],
-    userSectors: string[]
+    userSectors: string[],
+    userChannels: { id: string; name: string }[] = []
   ): Promise<boolean> {
     this.validate(t, body);
 
@@ -844,7 +853,7 @@ export class ChatMessageCreatorUseCase {
       throw new Error(t('chat_not_found'));
     }
 
-    if (!this.canAccessChat(chat, userId, actions, userSectors)) {
+    if (!this.canAccessChat(chat, userId, actions, userSectors, userChannels)) {
       throw new Error(t('chat_access_denied'));
     }
 

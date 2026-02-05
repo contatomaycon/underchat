@@ -310,8 +310,16 @@ export class ChatStatusUpdaterUseCase {
     chat: IChat,
     userId: string,
     actions: IJwtGroupHierarchy[],
-    userSectors: string[]
+    userSectors: string[],
+    userChannels: { id: string; name: string }[] = []
   ): Promise<void> {
+    if (userChannels.length > 0) {
+      const channelIds = userChannels.map((c) => c.id);
+      if (!chat.worker?.id || !channelIds.includes(chat.worker.id)) {
+        throw new Error('chat_access_denied');
+      }
+    }
+
     const canViewOthers = this.canViewOthersChats(actions);
     const canListAll = this.canListAllChatsWithoutSectorLimit(actions);
     const canViewInSector = this.canViewChatsInSector(actions);
@@ -415,7 +423,8 @@ export class ChatStatusUpdaterUseCase {
     userSectors: string[],
     params: UpdateChatStatusParams,
     body: UpdateChatStatusBody,
-    actions: IJwtGroupHierarchy[]
+    actions: IJwtGroupHierarchy[],
+    userChannels: { id: string; name: string }[] = []
   ): Promise<IChat | null> {
     const chat = await this.chatService.findChatByChatId(
       accountId,
@@ -426,7 +435,7 @@ export class ChatStatusUpdaterUseCase {
       throw new Error(t('chat_not_found'));
     }
 
-    await this.validateAccess(chat, userId, actions, userSectors);
+    await this.validateAccess(chat, userId, actions, userSectors, userChannels);
 
     const status = body.status as EChatStatus;
     const currentDate = new Date().toISOString();
