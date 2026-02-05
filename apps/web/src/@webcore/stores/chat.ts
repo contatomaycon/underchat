@@ -210,6 +210,13 @@ export const useChatStore = defineStore('chat', {
     loadingChatContacts: {} as Record<string, boolean>,
   }),
   actions: {
+    logChatDebug(action: string, payload: Record<string, unknown>): void {
+      if (!import.meta.env.DEV) {
+        return;
+      }
+      console.log('[chat-store]', action, payload);
+    },
+
     showSnackbar(message: string, color: EColor) {
       if (!message || message.trim() === '') {
         return;
@@ -403,6 +410,85 @@ export const useChatStore = defineStore('chat', {
       return result;
     },
 
+    resolveChatSnapshot(
+      incomingChat: IChat,
+      snapshot: ListChatsResult | null
+    ): IChat {
+      if (!snapshot) {
+        return incomingChat;
+      }
+
+      const isPartialUpdate =
+        typeof incomingChat.account === 'undefined' ||
+        typeof incomingChat.worker === 'undefined' ||
+        typeof incomingChat.name === 'undefined' ||
+        typeof incomingChat.phone === 'undefined' ||
+        typeof incomingChat.date === 'undefined';
+
+      const resolveOptionalPartialNull = <T>(
+        incoming: T | null | undefined,
+        fallback: T | null | undefined
+      ) => {
+        if (typeof incoming === 'undefined') {
+          return fallback;
+        }
+        if (incoming === null && isPartialUpdate) {
+          return fallback;
+        }
+        return incoming;
+      };
+      const resolveRequired = <T>(incoming: T | undefined, fallback: T): T =>
+        typeof incoming === 'undefined' ? fallback : incoming;
+
+      return {
+        ...incomingChat,
+        summary: resolveOptionalPartialNull(
+          incomingChat.summary,
+          snapshot.summary
+        ),
+        account: resolveRequired(incomingChat.account, snapshot.account),
+        worker: resolveRequired(incomingChat.worker, snapshot.worker),
+        sector: resolveOptionalPartialNull(
+          incomingChat.sector,
+          snapshot.sector
+        ),
+        user: resolveOptionalPartialNull(incomingChat.user, snapshot.user),
+        contact: resolveOptionalPartialNull(
+          incomingChat.contact,
+          snapshot.contact
+        ),
+        photo: resolveOptionalPartialNull(incomingChat.photo, snapshot.photo),
+        name: resolveRequired(incomingChat.name, snapshot.name),
+        phone: resolveRequired(incomingChat.phone, snapshot.phone),
+        date: resolveRequired(incomingChat.date, snapshot.date),
+        started_at: resolveOptionalPartialNull(
+          incomingChat.started_at,
+          snapshot.started_at
+        ),
+        closed_at: resolveOptionalPartialNull(
+          incomingChat.closed_at,
+          snapshot.closed_at
+        ),
+        protocol_ura: resolveOptionalPartialNull(
+          incomingChat.protocol_ura,
+          snapshot.protocol_ura
+        ),
+        protocol_start: resolveOptionalPartialNull(
+          incomingChat.protocol_start,
+          snapshot.protocol_start
+        ),
+        protocol_transfer: resolveOptionalPartialNull(
+          incomingChat.protocol_transfer,
+          snapshot.protocol_transfer
+        ),
+        label: resolveOptionalPartialNull(incomingChat.label, snapshot.label),
+        forward_to_output_chatbot: resolveOptionalPartialNull(
+          incomingChat.forward_to_output_chatbot,
+          snapshot.forward_to_output_chatbot
+        ),
+      };
+    },
+
     addChat(chat: IChat, skipEvents = false) {
       const permissions = getPermissions();
       const previousChat = this.findChatInLists(chat.chat_id);
@@ -416,6 +502,8 @@ export const useChatStore = defineStore('chat', {
       if (this.shouldIgnoreChatUpdate(existingSnapshot, chat, skipEvents)) {
         return;
       }
+
+      const resolvedChat = this.resolveChatSnapshot(chat, existingSnapshot);
       const canViewOthersChats = permissions.some(
         (perm: EPermissionsRoles) =>
           perm === EGeneralPermissions.full_access ||
@@ -440,32 +528,93 @@ export const useChatStore = defineStore('chat', {
       const hasPermissionToViewAll =
         canViewOthersChats || canListAllChatsWithoutSectorLimit;
 
-      if (chat.status === EChatStatus.in_chat) {
-        if (!hasPermissionToViewAll && chat.user?.id !== this.user?.user_id) {
+      if (resolvedChat.status === EChatStatus.in_chat) {
+        if (
+          !hasPermissionToViewAll &&
+          resolvedChat.user?.id !== this.user?.user_id
+        ) {
           const userSectors = getSectors();
+          const isAlreadyVisible =
+            this.activeChat?.chat_id === resolvedChat.chat_id ||
+            this.isChatInAnyList(resolvedChat.chat_id);
           const isChatInUserSectors =
             (userSectors.length > 0 &&
-              chat.sector?.id &&
-              userSectors.includes(chat.sector.id)) ||
-            (userSectors.length === 0 && !chat.sector?.id);
-          if (!(canListAllChatsInSector && isChatInUserSectors)) {
-            this.removeChatIfNotAuthorized(chat);
+              resolvedChat.sector?.id &&
+              userSectors.includes(resolvedChat.sector.id)) ||
+            (userSectors.length === 0 && !resolvedChat.sector?.id);
+          const canViewBySector =
+            canListAllChatsInSector &&
+            (isChatInUserSectors || isAlreadyVisible);
+          if (!canViewBySector) {
+            this.logChatDebug('remove-in-chat-not-authorized', {
+              chatId: resolvedChat.chat_id,
+              status: resolvedChat.status,
+              chatUserId: resolvedChat.user?.id ?? null,
+              currentUserId: this.user?.user_id ?? null,
+              sectorId: resolvedChat.sector?.id ?? null,
+              userSectors,
+              isAlreadyVisible,
+              permissions,
+              canListAllChatsInSector,
+              canViewOthersChats,
+              canListAllChatsWithoutSectorLimit,
+              hasPermissionToViewAll,
+              isChatInUserSectors,
+              incomingChat: chat,
+              resolvedChat,
+              snapshot: existingSnapshot ?? null,
+            });
+            this.removeChatIfNotAuthorized(resolvedChat);
             return;
           }
         }
       }
 
       if (!hasPermissionToViewAll) {
-        if (chat.status === EChatStatus.queue) {
-          if (chat.user?.id && chat.user.id !== this.user?.user_id) {
-            this.removeChatIfNotAuthorized(chat);
+        if (resolvedChat.status === EChatStatus.queue) {
+          if (
+            resolvedChat.user?.id &&
+            resolvedChat.user.id !== this.user?.user_id
+          ) {
+            this.logChatDebug('remove-queue-not-authorized', {
+              chatId: resolvedChat.chat_id,
+              status: resolvedChat.status,
+              chatUserId: resolvedChat.user?.id ?? null,
+              currentUserId: this.user?.user_id ?? null,
+              sectorId: resolvedChat.sector?.id ?? null,
+              permissions,
+              canViewOthersChats,
+              canListAllChatsInSector,
+              canListAllChatsWithoutSectorLimit,
+              hasPermissionToViewAll,
+              incomingChat: chat,
+              resolvedChat,
+              snapshot: existingSnapshot ?? null,
+            });
+            this.removeChatIfNotAuthorized(resolvedChat);
             return;
           }
 
-          if (!chat.user?.id) {
+          if (!resolvedChat.user?.id) {
             const userSectors = getSectors();
-            if (this.shouldRemoveQueueChat(chat, userSectors)) {
-              this.removeChatIfNotAuthorized(chat);
+            if (this.shouldRemoveQueueChat(resolvedChat, userSectors)) {
+              this.logChatDebug('remove-queue-sector-mismatch', {
+                chatId: resolvedChat.chat_id,
+                status: resolvedChat.status,
+                chatUserId: resolvedChat.user?.id ?? null,
+                currentUserId: this.user?.user_id ?? null,
+                sectorId: resolvedChat.sector?.id ?? null,
+                userSectors,
+                permissions,
+                canViewOthersChats,
+                canListAllChatsInSector,
+                canListAllChatsWithoutSectorLimit,
+                hasPermissionToViewAll,
+                incomingChat: chat,
+                resolvedChat,
+                snapshot: existingSnapshot ?? null,
+              });
+              this.removeChatIfNotAuthorized(resolvedChat);
               return;
             }
           }
@@ -480,55 +629,73 @@ export const useChatStore = defineStore('chat', {
         : (previousChat?.user?.id ?? null);
 
       const input: ListChatsResult = {
-        chat_id: chat.chat_id,
-        summary: chat.summary,
-        account: chat.account,
-        worker: chat.worker,
-        sector: chat.sector,
-        user: chat.user,
-        contact: chat.contact,
-        photo: chat.photo,
-        name: chat.name,
-        phone: chat.phone,
-        status: chat.status,
-        date: chat.date,
-        started_at: chat.started_at,
-        closed_at: chat.closed_at,
-        label: chat.label ?? null,
-        forward_to_output_chatbot:
-          chat.forward_to_output_chatbot ??
-          existingSnapshot?.forward_to_output_chatbot,
+        chat_id: resolvedChat.chat_id,
+        summary: resolvedChat.summary,
+        account: resolvedChat.account,
+        worker: resolvedChat.worker,
+        sector: resolvedChat.sector,
+        user: resolvedChat.user,
+        contact: resolvedChat.contact,
+        photo: resolvedChat.photo,
+        name: resolvedChat.name,
+        phone: resolvedChat.phone,
+        status: resolvedChat.status,
+        date: resolvedChat.date,
+        started_at: resolvedChat.started_at,
+        closed_at: resolvedChat.closed_at,
+        label: resolvedChat.label ?? null,
+        forward_to_output_chatbot: resolvedChat.forward_to_output_chatbot,
       };
 
-      this.updateActiveChatSummaryIfNeeded(chat, isActiveChat);
+      this.updateActiveChatSummaryIfNeeded(resolvedChat, isActiveChat);
 
-      if (this.pendingStatusUpdateChatId === chat.chat_id) {
+      if (this.pendingStatusUpdateChatId === resolvedChat.chat_id) {
         this.loading = false;
         this.pendingStatusUpdateChatId = null;
       }
 
-      if (chat.status === EChatStatus.queue) {
-        this.handleQueueStatusChat(input, chat, isActiveChat, previousStatus);
-      } else if (chat.status === EChatStatus.in_chat) {
-        this.handleInChatStatusChat(input, chat, isActiveChat, previousStatus);
-      } else if (this.isChatbotStatus(chat.status)) {
-        this.handleUraStatusChat(input, chat, isActiveChat, previousStatus);
-      } else if (chat.status === EChatStatus.closed) {
-        this.handleClosedStatusChat(input, chat, isActiveChat, previousStatus);
+      if (resolvedChat.status === EChatStatus.queue) {
+        this.handleQueueStatusChat(
+          input,
+          resolvedChat,
+          isActiveChat,
+          previousStatus
+        );
+      } else if (resolvedChat.status === EChatStatus.in_chat) {
+        this.handleInChatStatusChat(
+          input,
+          resolvedChat,
+          isActiveChat,
+          previousStatus
+        );
+      } else if (this.isChatbotStatus(resolvedChat.status)) {
+        this.handleUraStatusChat(
+          input,
+          resolvedChat,
+          isActiveChat,
+          previousStatus
+        );
+      } else if (resolvedChat.status === EChatStatus.closed) {
+        this.handleClosedStatusChat(
+          input,
+          resolvedChat,
+          isActiveChat,
+          previousStatus
+        );
       }
 
       this.updateMyChatsTotalFromTransition(
         previousStatus,
         previousUserId,
-        chat.status,
-        chat.user?.id ?? null
+        resolvedChat.status,
+        resolvedChat.user?.id ?? null
       );
 
       if (!shouldSkipEvents && !wasInAnyList) {
-        this.markSkipChatStatusEvents(chat.chat_id);
+        this.markSkipChatStatusEvents(resolvedChat.chat_id);
         globalThis.dispatchEvent(
           new CustomEvent('chat-status-changed', {
-            detail: { chat, reason: 'new' },
+            detail: { chat: resolvedChat, reason: 'new' },
           })
         );
       }
@@ -1002,6 +1169,9 @@ export const useChatStore = defineStore('chat', {
 
       const hasPermissionToViewAll =
         canViewOthersChats || canListAllChatsWithoutSectorLimit;
+      const isAlreadyVisible =
+        this.activeChat?.chat_id === chat.chat_id ||
+        this.isChatInAnyList(chat.chat_id);
       const isChatInUserSectors =
         (userSectors.length > 0 &&
           chat.sector?.id &&
@@ -1015,7 +1185,9 @@ export const useChatStore = defineStore('chat', {
         if (chat.user?.id === this.user?.user_id) {
           return true;
         }
-        return canListAllChatsInSector && isChatInUserSectors;
+        return (
+          canListAllChatsInSector && (isChatInUserSectors || isAlreadyVisible)
+        );
       }
 
       const canViewChatbotMessages = permissions.some(
@@ -1091,6 +1263,15 @@ export const useChatStore = defineStore('chat', {
         const isStillMine = chat.user?.id === this.user?.user_id;
 
         if (!isStillMine && !hasPermissionToViewAll) {
+          this.logChatDebug('remove-in-chat-queue-update', {
+            chatId: chat.chat_id,
+            status: chat.status,
+            chatUserId: chat.user?.id ?? null,
+            currentUserId: this.user?.user_id ?? null,
+            permissions,
+            hasPermissionToViewAll,
+            previousStatus,
+          });
           this.removeFromList(this.listInChat, chat.chat_id);
           this.removeFromList(this.listQueue, chat.chat_id);
           this.removeFromList(this.listChatbot, chat.chat_id);
@@ -1192,6 +1373,16 @@ export const useChatStore = defineStore('chat', {
         wasInClosed || previousStatus === EChatStatus.closed;
 
       if (!this.canViewChat(chat)) {
+        this.logChatDebug('remove-in-chat-cannot-view', {
+          chatId: chat.chat_id,
+          status: chat.status,
+          chatUserId: chat.user?.id ?? null,
+          currentUserId: this.user?.user_id ?? null,
+          sectorId: chat.sector?.id ?? null,
+          permissions: getPermissions(),
+          userSectors: getSectors(),
+          previousStatus,
+        });
         this.removeFromList(this.listInChat, chat.chat_id);
         this.removeFromList(this.listQueue, chat.chat_id);
         this.removeFromList(this.listChatbot, chat.chat_id);
