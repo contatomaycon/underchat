@@ -54,6 +54,12 @@ import { stripTextForTts } from '@core/common/functions/stripTextForTts';
 import { ViewAiAgentResponse } from '@core/schema/aiAgent/viewAiAgent/response.schema';
 import { IChatbotCustomMessages } from '@core/common/interfaces/IChatbotCustomMessages';
 import { getContextTokensForModel } from '@core/common/functions/getContextTokensForModel';
+import {
+  HumanTransferMode,
+  IPromptTransferDecision,
+  ITransferSectorOption,
+  ITransferUserOption,
+} from '@core/common/interfaces/IChatbotHumanTransfer';
 
 @injectable()
 export class ChatbotFlowRunnerService {
@@ -247,6 +253,18 @@ export class ChatbotFlowRunnerService {
   ): string {
     const questionHash = this.hashText(normalizedQuestion);
     return `chatbot:ai-agent:rag:${accountId}:${chatId}:${aiAgentId}:${questionHash}:${promptsHash}`;
+  }
+
+  private resolveHumanTransferMode(
+    aiAgent: ViewAiAgentResponse
+  ): HumanTransferMode {
+    if (aiAgent.enable_human_transfer_by_prompt === true) {
+      return 'prompt';
+    }
+    if (aiAgent.enable_human_transfer === true) {
+      return 'standard';
+    }
+    return 'disabled';
   }
 
   private buildUserSelectionMessage(
@@ -4159,6 +4177,285 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
     }
   }
 
+  private buildHumanTransferDecisionPrompt(
+    systemPrompt: string,
+    conversationContext: string,
+    userText: string,
+    sectors: ITransferSectorOption[],
+    users: ITransferUserOption[]
+  ): string {
+    const sectorPayload = sectors.map((sector) => ({
+      id: sector.id,
+      name: sector.name,
+    }));
+    const userPayload = users.map((user) => ({
+      id: user.id,
+      name: user.name,
+      last_name: user.last_name ?? null,
+      nickname: user.nickname ?? null,
+      status: user.status ?? null,
+    }));
+
+    const parts: string[] = [];
+    const trimmedSystemPrompt = systemPrompt?.trim();
+    if (trimmedSystemPrompt) {
+      parts.push(trimmedSystemPrompt, '');
+    }
+
+    parts.push(
+      '### TAREFA: TRANSFERÊNCIA HUMANA',
+      'Siga estritamente as regras acima. Analise o contexto da conversa e decida se deve transferir para atendimento humano.',
+      'Use SOMENTE os IDs das listas fornecidas.',
+      '',
+      'Contexto recente da conversa:',
+      conversationContext || '(sem histórico anterior)',
+      '',
+      `Mensagem mais recente do usuário: "${userText}"`,
+      '',
+      'Setores disponíveis (JSON):',
+      JSON.stringify(sectorPayload, null, 2) || '[]',
+      '',
+      'Atendentes disponíveis (JSON):',
+      JSON.stringify(userPayload, null, 2) || '[]',
+      '',
+      'REGRAS:',
+      '1. Só retorne "human_support" se o prompt acima indicar claramente que deve transferir.',
+      '2. Se o prompt não mencionar transferência para este caso, retorne "no_transfer".',
+      '3. Se o prompt pedir um setor/usuário que não existe na lista, retorne "no_transfer".',
+      '4. Você pode escolher apenas sector_id, apenas user_id, ou ambos.',
+      '5. Se "human_support", gere uma mensagem natural para o usuário confirmando o encaminhamento, sem mencionar prompts, listas ou IDs.',
+      '6. Se "no_transfer", use message como string vazia.',
+      '',
+      'Responda APENAS com JSON válido, sem texto extra, no formato:',
+      '{"intent":"human_support|no_transfer","sector_id":null|string,"user_id":null|string,"message":string}'
+    );
+
+    return parts.join('\n');
+  }
+
+  private parseHumanTransferDecision(
+    response: string
+  ): IPromptTransferDecision | null {
+    if (!response) {
+      return null;
+    }
+
+    const match = response.match(/\{[\s\S]*?\}/);
+    if (!match) {
+      return null;
+    }
+
+    try {
+      const parsed = JSON.parse(match[0]) as Record<string, unknown>;
+      const rawIntent = String(parsed.intent ?? parsed.action ?? '')
+        .trim()
+        .toLowerCase();
+
+      let intent: 'human_support' | 'no_transfer' | null = null;
+      if (
+        rawIntent === 'human_support' ||
+        rawIntent === 'transfer' ||
+        rawIntent === 'human'
+      ) {
+        intent = 'human_support';
+      } else if (
+        rawIntent === 'no_transfer' ||
+        rawIntent === 'none' ||
+        rawIntent === 'needs_help'
+      ) {
+        intent = 'no_transfer';
+      }
+
+      if (!intent) {
+        return null;
+      }
+
+      const rawSectorId =
+        typeof parsed.sector_id === 'string'
+          ? parsed.sector_id
+          : typeof parsed.sectorId === 'string'
+            ? parsed.sectorId
+            : null;
+      const rawUserId =
+        typeof parsed.user_id === 'string'
+          ? parsed.user_id
+          : typeof parsed.userId === 'string'
+            ? parsed.userId
+            : null;
+      const rawMessage =
+        typeof parsed.message === 'string' ? parsed.message : '';
+
+      const sectorId = rawSectorId?.trim() || null;
+      const userId = rawUserId?.trim() || null;
+      const message = rawMessage.trim();
+
+      return {
+        intent,
+        sector_id: sectorId,
+        user_id: userId,
+        message,
+      };
+    } catch (error) {
+      console.error('[ChatbotFlow] parseHumanTransferDecision failed', error);
+      return null;
+    }
+  }
+
+  private async listTransferTargetsForPrompt(accountId: string): Promise<{
+    sectors: ITransferSectorOption[];
+    users: ITransferUserOption[];
+  }> {
+    const [sectors, users] = await Promise.all([
+      this.sectorService.listSectorsForTransfer(accountId),
+      this.userService.listUsersForTransfer(accountId),
+    ]);
+
+    return { sectors, users };
+  }
+
+  private async resolveHumanTransferByPrompt(
+    aiAgent: ViewAiAgentResponse,
+    createChat: IChat,
+    userText: string,
+    recentMessages: Array<{ role: 'user' | 'assistant'; content: string }>
+  ): Promise<{
+    shouldTransfer: boolean;
+    sector: ITransferSectorOption | null;
+    user: IChat['user'] | null;
+    message: string;
+  }> {
+    if (!aiAgent.base_url || !aiAgent.api_key || !aiAgent.model) {
+      return {
+        shouldTransfer: false,
+        sector: null,
+        user: null,
+        message: '',
+      };
+    }
+
+    const { sectors, users } = await this.listTransferTargetsForPrompt(
+      createChat.account.id
+    );
+
+    const conversationContext = recentMessages
+      .slice(-20)
+      .map(
+        (msg) =>
+          `${msg.role === 'user' ? 'Usuário' : 'Assistente'}: ${msg.content}`
+      )
+      .join('\n');
+
+    const useAssistantsApi =
+      aiAgent.ai_agent_type_id === EAiAgentType.gpt &&
+      !!aiAgent.openai_assistant_id;
+    const useFileSearchResponsesApi =
+      aiAgent.ai_agent_type_id === EAiAgentType.gpt &&
+      !aiAgent.openai_assistant_id &&
+      !!aiAgent.openai_vector_store_id;
+    const skipFilePrompts = useAssistantsApi || useFileSearchResponsesApi;
+
+    const allPrompts = await this.ragService.getAllAgentPromptsDetailed(
+      createChat.account.id,
+      aiAgent.ai_agent_id
+    );
+
+    const systemPrompt = this.buildComprehensiveSystemPrompt(
+      useAssistantsApi ? null : aiAgent.system_prompt,
+      allPrompts,
+      skipFilePrompts
+    );
+
+    const decisionPrompt = this.buildHumanTransferDecisionPrompt(
+      systemPrompt,
+      conversationContext || '(sem histórico anterior)',
+      userText,
+      sectors,
+      users
+    );
+
+    const assistantsOptions =
+      useAssistantsApi && aiAgent.openai_assistant_id
+        ? {
+            accountId: createChat.account.id,
+            chatId: createChat.chat_id,
+            aiAgentId: aiAgent.ai_agent_id,
+            openaiAssistantId: aiAgent.openai_assistant_id,
+          }
+        : undefined;
+    const responsesApiFileSearchOptions =
+      useFileSearchResponsesApi && aiAgent.openai_vector_store_id
+        ? { vectorStoreId: aiAgent.openai_vector_store_id }
+        : undefined;
+
+    try {
+      const response = await this.callAiAgentChatApiWithRetry(
+        aiAgent.base_url,
+        aiAgent.api_key,
+        aiAgent.model,
+        aiAgent.ai_agent_type_id,
+        decisionPrompt,
+        userText,
+        undefined,
+        assistantsOptions,
+        responsesApiFileSearchOptions,
+        {
+          accountId: createChat.account.id,
+          chatId: createChat.chat_id,
+          aiAgentId: aiAgent.ai_agent_id,
+        }
+      );
+
+      const decision = this.parseHumanTransferDecision(response);
+      if (!decision || decision.intent !== 'human_support') {
+        return {
+          shouldTransfer: false,
+          sector: null,
+          user: null,
+          message: '',
+        };
+      }
+
+      const sector = decision.sector_id
+        ? (sectors.find((item) => item.id === decision.sector_id) ?? null)
+        : null;
+      const user = decision.user_id
+        ? (users.find((item) => item.id === decision.user_id) ?? null)
+        : null;
+
+      if ((decision.sector_id && !sector) || (decision.user_id && !user)) {
+        return {
+          shouldTransfer: false,
+          sector: null,
+          user: null,
+          message: '',
+        };
+      }
+
+      const chatUser: IChat['user'] | null = user
+        ? {
+            id: user.id,
+            name: user.name,
+            photo: user.photo ?? null,
+          }
+        : null;
+
+      return {
+        shouldTransfer: true,
+        sector,
+        user: chatUser,
+        message: decision.message ?? '',
+      };
+    } catch (error) {
+      console.error('[ChatbotFlow] resolveHumanTransferByPrompt failed', error);
+      return {
+        shouldTransfer: false,
+        sector: null,
+        user: null,
+        message: '',
+      };
+    }
+  }
+
   private async processTextResponseAnalysis(
     t: TFunction<'translation', undefined>,
     createChat: IChat,
@@ -4372,7 +4669,8 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
     currentFlowId: string,
     sector: { id: string; name: string; color?: string | null } | null,
     customMessages?: IChatbotCustomMessages,
-    user?: IChat['user'] | null
+    user?: IChat['user'] | null,
+    transferMessageOverride?: string | null
   ): Promise<boolean> {
     const chatSector: IChat['sector'] | null = sector
       ? { id: sector.id, name: sector.name, color: sector.color ?? undefined }
@@ -4388,40 +4686,54 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
 
     await this.cancelInactivityCheck(updatedChat);
 
-    let rawTransferMessage: string | undefined;
-    let enabled: boolean | undefined;
-    if (chatUser && chatSector) {
-      rawTransferMessage =
-        customMessages?.transfer_message_sector_user ||
-        t('chatbot_transfer_message_sector_user_default');
-      enabled = customMessages?.transfer_message_sector_user_enabled;
-    } else if (chatSector) {
-      rawTransferMessage =
-        customMessages?.transfer_message_sector ||
-        t('chatbot_transfer_message_sector_default');
-      enabled = customMessages?.transfer_message_sector_enabled;
+    const hasOverride = typeof transferMessageOverride === 'string';
+    if (hasOverride) {
+      const transferMessage = transferMessageOverride.trim();
+      if (transferMessage.length > 0) {
+        await this.chatMessageService.sendMessage(t, {
+          chat: updatedChat,
+          accountId: updatedChat.account.id,
+          type: EMessageType.system,
+          message: transferMessage,
+          typeUser: ETypeUserChat.bot,
+        });
+      }
     } else {
-      rawTransferMessage =
-        customMessages?.transfer_message_user ||
-        t('chatbot_transfer_message_user_default');
-      enabled = customMessages?.transfer_message_user_enabled;
-    }
+      let rawTransferMessage: string | undefined;
+      let enabled: boolean | undefined;
+      if (chatUser && chatSector) {
+        rawTransferMessage =
+          customMessages?.transfer_message_sector_user ||
+          t('chatbot_transfer_message_sector_user_default');
+        enabled = customMessages?.transfer_message_sector_user_enabled;
+      } else if (chatSector) {
+        rawTransferMessage =
+          customMessages?.transfer_message_sector ||
+          t('chatbot_transfer_message_sector_default');
+        enabled = customMessages?.transfer_message_sector_enabled;
+      } else {
+        rawTransferMessage =
+          customMessages?.transfer_message_user ||
+          t('chatbot_transfer_message_user_default');
+        enabled = customMessages?.transfer_message_user_enabled;
+      }
 
-    if (rawTransferMessage && enabled !== false) {
-      const transferMessage = await this.replaceVariables(
-        t,
-        rawTransferMessage,
-        updatedChat,
-        chatUser,
-        chatSector
-      );
-      await this.chatMessageService.sendMessage(t, {
-        chat: updatedChat,
-        accountId: updatedChat.account.id,
-        type: EMessageType.system,
-        message: transferMessage,
-        typeUser: ETypeUserChat.bot,
-      });
+      if (rawTransferMessage && enabled !== false) {
+        const transferMessage = await this.replaceVariables(
+          t,
+          rawTransferMessage,
+          updatedChat,
+          chatUser,
+          chatSector
+        );
+        await this.chatMessageService.sendMessage(t, {
+          chat: updatedChat,
+          accountId: updatedChat.account.id,
+          type: EMessageType.system,
+          message: transferMessage,
+          typeUser: ETypeUserChat.bot,
+        });
+      }
     }
 
     const nextFlowId = this.getNextFlowIdByHumanSupportHandle(
@@ -5298,6 +5610,8 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
       );
     }
 
+    const transferMode = this.resolveHumanTransferMode(aiAgent);
+
     const cacheKey = this.getChatbotFlowCacheKey(
       createChat.account.id,
       createChat.worker.id,
@@ -5319,30 +5633,32 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
       );
     }
 
-    const userSelectionResult = await this.handlePendingUserSelection(
-      t,
-      data,
-      createChat,
-      chatbotFlow,
-      currentFlowId,
-      customMessages,
-      aiAgent
-    );
-    if (userSelectionResult !== null) {
-      return userSelectionResult;
-    }
+    if (transferMode === 'standard') {
+      const userSelectionResult = await this.handlePendingUserSelection(
+        t,
+        data,
+        createChat,
+        chatbotFlow,
+        currentFlowId,
+        customMessages,
+        aiAgent
+      );
+      if (userSelectionResult !== null) {
+        return userSelectionResult;
+      }
 
-    const sectorSelectionResult = await this.handlePendingSectorSelection(
-      t,
-      data,
-      createChat,
-      chatbotFlow,
-      currentFlowId,
-      customMessages,
-      aiAgent
-    );
-    if (sectorSelectionResult !== null) {
-      return sectorSelectionResult;
+      const sectorSelectionResult = await this.handlePendingSectorSelection(
+        t,
+        data,
+        createChat,
+        chatbotFlow,
+        currentFlowId,
+        customMessages,
+        aiAgent
+      );
+      if (sectorSelectionResult !== null) {
+        return sectorSelectionResult;
+      }
     }
 
     const userText = (
@@ -5475,7 +5791,34 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
       20
     );
 
-    const humanSupportEnabled = aiAgent.enable_human_transfer === true;
+    const transferMode = this.resolveHumanTransferMode(aiAgent);
+    let suppressTransferMention = false;
+
+    if (transferMode === 'prompt') {
+      const promptTransferDecision = await this.resolveHumanTransferByPrompt(
+        aiAgent,
+        createChat,
+        userText,
+        recentMessages
+      );
+
+      if (promptTransferDecision.shouldTransfer) {
+        return this.executeHumanSupportTransfer(
+          t,
+          createChat,
+          chatbotFlow,
+          currentFlowId,
+          promptTransferDecision.sector,
+          customMessages,
+          promptTransferDecision.user,
+          promptTransferDecision.message ?? ''
+        );
+      }
+
+      suppressTransferMention = true;
+    }
+
+    const humanSupportEnabled = transferMode === 'standard';
 
     const intent = await this.analyzeUserIntentWithContext(
       aiAgent,
@@ -5527,7 +5870,8 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
       bootstrapSummaryKey,
       conversationSummaryKey,
       chatbotFlow,
-      customMessages
+      customMessages,
+      { suppressTransferMention, transferMode }
     );
   }
 
@@ -5541,7 +5885,11 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
     bootstrapSummaryKey: string,
     conversationSummaryKey: string,
     chatbotFlow: ListChatbotFlowResponse,
-    customMessages?: IChatbotCustomMessages
+    customMessages?: IChatbotCustomMessages,
+    transferOptions?: {
+      suppressTransferMention?: boolean;
+      transferMode?: HumanTransferMode;
+    }
   ): Promise<boolean> {
     if (!aiAgent.base_url || !aiAgent.api_key || !aiAgent.model) {
       throw new InvalidConfigurationError(
@@ -5568,6 +5916,8 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
       aiAgent.ai_agent_type_id === EAiAgentType.gpt &&
       !aiAgent.openai_assistant_id &&
       !!aiAgent.openai_vector_store_id;
+    const transferMode =
+      transferOptions?.transferMode ?? this.resolveHumanTransferMode(aiAgent);
     let enhancedPrompt =
       aiAgent.system_prompt?.trim() || 'Você é um assistente prestativo.';
     let contextAllowed = true;
@@ -5580,7 +5930,11 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
         userText,
         bootstrapSummaryKey,
         conversationSummaryKey,
-        recentMessages
+        recentMessages,
+        transferMode,
+        {
+          suppressTransferMention: transferOptions?.suppressTransferMention,
+        }
       );
       enhancedPrompt = promptData.enhancedPrompt;
       contextAllowed = promptData.contextAllowed;
@@ -5787,7 +6141,9 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
     userText: string,
     bootstrapSummaryKey: string,
     conversationSummaryKey: string,
-    recentMessages: Array<{ role: 'user' | 'assistant'; content: string }>
+    recentMessages: Array<{ role: 'user' | 'assistant'; content: string }>,
+    humanTransferMode: HumanTransferMode,
+    options?: { suppressTransferMention?: boolean }
   ): Promise<{
     enhancedPrompt: string;
     contextAllowed: boolean;
@@ -5860,7 +6216,8 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
             this.buildAdditionalAiResponseInstructions(
               userText,
               recentMessages,
-              aiAgent.enable_human_transfer === true
+              humanTransferMode,
+              options
             );
           const combinedAllowed =
             parsed.contextAllowed ||
@@ -5945,7 +6302,8 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
     const additionalInstructions = this.buildAdditionalAiResponseInstructions(
       userText,
       recentMessages,
-      aiAgent.enable_human_transfer === true
+      humanTransferMode,
+      options
     );
 
     if (!additionalInstructions) {
@@ -6044,7 +6402,8 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
   private buildAdditionalAiResponseInstructions(
     userText: string,
     recentMessages: Array<{ role: 'user' | 'assistant'; content: string }>,
-    humanSupportEnabled: boolean
+    humanTransferMode: HumanTransferMode,
+    options?: { suppressTransferMention?: boolean }
   ): string {
     const instructions: string[] = [
       '- Entregue a melhor resposta possível, escolhendo a alternativa mais adequada ao contexto e às regras. Quando houver opções, recomende a melhor e explique rapidamente o porquê.',
@@ -6056,9 +6415,16 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
       recentMessages
     );
 
-    if (!humanSupportEnabled) {
+    if (humanTransferMode === 'disabled') {
       instructions.push(
+        '- Transferência humana está desativada. Não prometa transferência nem diga que vai transferir.',
         '- Se o usuário pedir atendimento humano, informe que você está apto para ajudar e vai tentar da melhor forma possível, e então responda normalmente ao que foi solicitado.'
+      );
+    }
+
+    if (options?.suppressTransferMention) {
+      instructions.push(
+        '- Não ofereça ou prometa transferência humana nesta resposta. Responda normalmente ao que foi solicitado.'
       );
     }
 
