@@ -763,6 +763,10 @@ export class UserUpdaterUseCase {
     return body.sector_ids !== undefined;
   }
 
+  private hasChannelIdsField(body: UpdateUserRequest): boolean {
+    return body.channel_ids !== undefined;
+  }
+
   private async validatePermissionRoleExists(
     t: TFunction<'translation', undefined>,
     permissionRoleId: string,
@@ -881,6 +885,28 @@ export class UserUpdaterUseCase {
     await this.userService.updateUserSectors(t, userId, sectorIds);
   }
 
+  private async updateUserChannelsData(
+    t: TFunction<'translation', undefined>,
+    userId: string,
+    body: UpdateUserRequest
+  ): Promise<void> {
+    const accountId = await this.userService.getUserAccountId(userId);
+
+    if (!accountId) {
+      throw new Error(t('user_not_found'));
+    }
+
+    if (body.channel_ids?.value === null) {
+      await this.userService.updateUserChannels(userId, accountId, []);
+      return;
+    }
+
+    const channelIdsValue = body.channel_ids?.value;
+    const channelIds = Array.isArray(channelIdsValue) ? channelIdsValue : [];
+
+    await this.userService.updateUserChannels(userId, accountId, channelIds);
+  }
+
   private async validateUserExistsInAccount(
     t: TFunction<'translation', undefined>,
     userId: string,
@@ -947,6 +973,10 @@ export class UserUpdaterUseCase {
       updatePromises.push(this.updateUserSectorsData(t, userId, body));
     }
 
+    if (this.hasChannelIdsField(body)) {
+      updatePromises.push(this.updateUserChannelsData(t, userId, body));
+    }
+
     return updatePromises;
   }
 
@@ -980,6 +1010,36 @@ export class UserUpdaterUseCase {
     }
   }
 
+  private processChannelIdsFromMultipartFormData(body: any): void {
+    if (
+      body.channel_ids === 'null' ||
+      body.channel_ids === null ||
+      body.channel_ids === ''
+    ) {
+      body.channel_ids = { value: null };
+      return;
+    }
+
+    const channelIdsArray: string[] = [];
+
+    Object.keys(body).forEach((key) => {
+      const match = key.match(/^channel_ids\[(\d+)\]$/);
+      if (!match) {
+        return;
+      }
+
+      const index = parseInt(match[1], 10);
+      const field = body[key];
+      const value =
+        typeof field === 'object' && field.value ? field.value : field;
+      channelIdsArray[index] = value;
+    });
+
+    if (channelIdsArray.length > 0) {
+      body.channel_ids = { value: channelIdsArray.filter(Boolean) };
+    }
+  }
+
   async execute(
     t: TFunction<'translation', undefined>,
     userId: string,
@@ -989,6 +1049,7 @@ export class UserUpdaterUseCase {
     currentUserId?: string
   ): Promise<boolean> {
     this.processSectorIdsFromMultipartFormData(body);
+    this.processChannelIdsFromMultipartFormData(body);
 
     if (
       currentUserId &&

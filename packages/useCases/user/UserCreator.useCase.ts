@@ -104,12 +104,34 @@ export class UserCreatorUseCase {
     }
   }
 
+  private processChannelIdsFromMultipartFormData(input: any): void {
+    const channelIdsArray: string[] = [];
+
+    Object.keys(input).forEach((key) => {
+      const match = key.match(/^channel_ids\[(\d+)\]$/);
+      if (!match) {
+        return;
+      }
+
+      const index = parseInt(match[1], 10);
+      const field = input[key];
+      const value =
+        typeof field === 'object' && field.value ? field.value : field;
+      channelIdsArray[index] = value;
+    });
+
+    if (channelIdsArray.length > 0) {
+      input.channel_ids = channelIdsArray.filter(Boolean);
+    }
+  }
+
   async execute(
     t: TFunction<'translation', undefined>,
     input: CreateUserRequest,
     accountId: string
   ): Promise<boolean> {
     this.processSectorIdsFromMultipartFormData(input);
+    this.processChannelIdsFromMultipartFormData(input);
 
     await this.validate(t, input, accountId);
 

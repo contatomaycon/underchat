@@ -29,6 +29,8 @@ import { ViewUserRoleResponse } from '@core/schema/user/viewUserRole/response.sc
 import { ListAllUsersResponse } from '@core/schema/user/listAllUsers/response.schema';
 import { ListUserRolesResponse } from '@core/schema/user/listUserRoles/response.schema';
 import { ListUserSectorsResponse } from '@core/schema/user/listUserSectors/response.schema';
+import { ListUserChannelsResponse } from '@core/schema/user/listUserChannels/response.schema';
+import { ListUserAccountsResponse } from '@core/schema/user/listUserAccounts/response.schema';
 
 export const useUsersStore = defineStore('users', {
   state: () => ({
@@ -329,6 +331,17 @@ export const useUsersStore = defineStore('users', {
         }
       }
 
+      if (body.channel_ids !== undefined) {
+        const channelIdsValue = body.channel_ids.value;
+        if (channelIdsValue === null) {
+          formData.append('channel_ids', '');
+        } else if (Array.isArray(channelIdsValue)) {
+          channelIdsValue.forEach((channelId, index) => {
+            formData.append(`channel_ids[${index}]`, channelId);
+          });
+        }
+      }
+
       if (body.photo_url?.value !== undefined) {
         formData.append('photo_url', body.photo_url.value ?? '');
       }
@@ -410,6 +423,17 @@ export const useUsersStore = defineStore('users', {
           (payload as any).sector_ids.forEach(
             (sectorId: string, index: number) => {
               formData.append(`sector_ids[${index}]`, sectorId);
+            }
+          );
+        }
+
+        if (
+          (payload as any).channel_ids !== undefined &&
+          Array.isArray((payload as any).channel_ids)
+        ) {
+          (payload as any).channel_ids.forEach(
+            (channelId: string, index: number) => {
+              formData.append(`channel_ids[${index}]`, channelId);
             }
           );
         }
@@ -851,6 +875,116 @@ export const useUsersStore = defineStore('users', {
         return data.data;
       } catch (error) {
         let errorMessage = this.i18n.global.t('user_sectors_list_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return null;
+      }
+    },
+
+    async listUserAccounts(): Promise<ListUserAccountsResponse | null> {
+      try {
+        this.loading = true;
+
+        const response =
+          await axios.get<IApiResponse<ListUserAccountsResponse>>(
+            `/user/accounts`
+          );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const message =
+            data?.message ?? this.i18n.global.t('user_accounts_list_error');
+
+          this.showSnackbar(message, EColor.error);
+
+          return null;
+        }
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('user_accounts_list_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return null;
+      }
+    },
+
+    async listUserChannels(): Promise<ListUserChannelsResponse | null> {
+      try {
+        this.loading = true;
+
+        const response =
+          await axios.get<IApiResponse<ListUserChannelsResponse>>(
+            `/user/channels`
+          );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const message =
+            data?.message ?? this.i18n.global.t('user_channels_list_error');
+
+          this.showSnackbar(message, EColor.error);
+
+          return null;
+        }
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('user_channels_list_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return null;
+      }
+    },
+
+    async listUserChannelsByUserId(userId: string): Promise<string[] | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.get<IApiResponse<string[]>>(
+          `/user/${userId}/channels`
+        );
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const message =
+            data?.message ?? this.i18n.global.t('user_channels_view_error');
+
+          this.showSnackbar(message, EColor.error);
+
+          return null;
+        }
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('user_channels_view_error');
         if (error instanceof AxiosError) {
           errorMessage = error?.response?.data?.message ?? errorMessage;
         }

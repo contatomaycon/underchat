@@ -9,6 +9,7 @@ import {
   notifications,
   schedule,
   apiKey,
+  userChannel,
 } from '@core/models';
 import { relations } from 'drizzle-orm';
 
@@ -89,4 +90,5 @@ export const workerRelations = relations(worker, ({ one, many }) => ({
   wwn: many(notifications),
   wsc: many(schedule),
   wak: many(apiKey),
+  uch: many(userChannel),
 }));

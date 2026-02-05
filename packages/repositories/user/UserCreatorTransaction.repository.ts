@@ -19,6 +19,7 @@ import { PasswordEncryptorService } from '@core/services/passwordEncryptor.servi
 import { ChatUserCreatorRepository } from '../chat/ChatUserCreator.repository';
 import { PermissionAssignmentCreatorRepository } from '../permission/PermissionAssignmentCreator.repository';
 import { SectorUserCreatorRepository } from '../sector/SectorUserCreator.repository';
+import { UserChannelCreatorRepository } from './UserChannelCreator.repository';
 
 @injectable()
 export class UserTransactionCreatorRepository {
@@ -33,7 +34,8 @@ export class UserTransactionCreatorRepository {
     private readonly userExistsByEmailAndPhoneRepository: UserExistsByEmailAndPhoneRepository,
     private readonly chatUserCreatorRepository: ChatUserCreatorRepository,
     private readonly permissionAssignmentCreatorRepository: PermissionAssignmentCreatorRepository,
-    private readonly sectorUserCreatorRepository: SectorUserCreatorRepository
+    private readonly sectorUserCreatorRepository: SectorUserCreatorRepository,
+    private readonly userChannelCreatorRepository: UserChannelCreatorRepository
   ) {}
 
   private validateBirthDate(
@@ -292,6 +294,19 @@ export class UserTransactionCreatorRepository {
               tx,
               createUserId,
               sectorId
+            )
+          )
+        );
+      }
+
+      if (input.channel_ids && input.channel_ids.length > 0) {
+        await Promise.all(
+          input.channel_ids.map((channelId) =>
+            this.userChannelCreatorRepository.createUserChannelInTransaction(
+              tx,
+              createUserId,
+              channelId,
+              accountId
             )
           )
         );

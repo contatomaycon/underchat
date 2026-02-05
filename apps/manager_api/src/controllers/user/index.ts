@@ -16,6 +16,9 @@ import { uploadPhoto } from './methods/uploadPhoto';
 import { deletePhoto } from './methods/deletePhoto';
 import { listUserRoles } from './methods/listUserRoles';
 import { listUserSectors } from './methods/listUserSectors';
+import { listUserChannels } from './methods/listUserChannels';
+import { viewUserChannels } from './methods/viewUserChannels';
+import { listUserAccounts } from './methods/listUserAccounts';
 import { viewUserSectors } from './methods/viewUserSectors';
 import { sessionLogin } from './methods/sessionLogin';
 
@@ -39,6 +42,9 @@ class UserController {
   public listUserRoles = listUserRoles;
   public listUserSectors = listUserSectors;
   public viewUserSectors = viewUserSectors;
+  public listUserChannels = listUserChannels;
+  public viewUserChannels = viewUserChannels;
+  public listUserAccounts = listUserAccounts;
   public sessionLogin = sessionLogin;
 }
 

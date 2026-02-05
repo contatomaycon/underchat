@@ -10,6 +10,7 @@ import {
   chatUser,
   userCard,
   userCustomer,
+  userChannel,
 } from '@core/models';
 
 export const user = pgTable(
@@ -103,4 +104,5 @@ export const userRelations = relations(user, ({ one, many }) => ({
   }),
   ucd: many(userCard),
   uct: many(userCustomer),
+  uch: many(userChannel),
 }));

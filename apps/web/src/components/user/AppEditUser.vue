@@ -1,7 +1,6 @@
 <script lang="ts" setup>
 import { nextTick, computed, watch, type Ref, toRef, ref } from 'vue';
 import { useUsersStore } from '@/@webcore/stores/user';
-import { useAccountStore } from '@/@webcore/stores/account';
 import { ECountry } from '@core/common/enums/ECountry';
 import { EUserDocumentType } from '@core/common/enums/EUserDocumentType';
 import { EUserStatus } from '@core/common/enums/EUserStatus';
@@ -24,7 +23,6 @@ import { can } from '@/@layouts/plugins/casl';
 import { getUser } from '@/@webcore/localStorage/user';
 
 const userStore = useUsersStore();
-const accountStore = useAccountStore();
 const { items: countryCodes } = useCountryCodes();
 const {
   states,
@@ -60,6 +58,11 @@ const initialSectorIds = ref<string[]>([]);
 const sectorsOptions = ref<
   { sector_id: string; name: string; color: string }[]
 >([]);
+const channelIds = ref<string[]>([]);
+const initialChannelIds = ref<string[]>([]);
+const channelsOptions = ref<
+  { channel_id: string; name: string; number: string | null }[]
+>([]);
 
 const uniqueSectorsOptions = computed(() => {
   const seen = new Set<string>();
@@ -76,6 +79,14 @@ const uniqueSectorsOptions = computed(() => {
     color: sector.color,
   }));
 });
+const uniqueChannelsOptions = computed(() =>
+  channelsOptions.value.map((channel) => ({
+    value: channel.channel_id,
+    title: channel.number
+      ? `${channel.name} (${channel.number})`
+      : channel.name,
+  }))
+);
 
 const props = defineProps<{
   modelValue: boolean;
@@ -337,19 +348,21 @@ const validateStep3 = async (): Promise<boolean> => {
 };
 
 const navigateToNextTab = (currentTab: string): string => {
-  if (currentTab === 'user_data') return 'additional_info';
+  if (currentTab === 'user_data') return 'permissions';
+  if (currentTab === 'permissions') return 'additional_info';
   if (currentTab === 'additional_info') return 'address';
   return currentTab;
 };
 
 const navigateToPrevTab = (currentTab: string): string => {
-  if (currentTab === 'additional_info') return 'user_data';
+  if (currentTab === 'permissions') return 'user_data';
+  if (currentTab === 'additional_info') return 'permissions';
   if (currentTab === 'address') return 'additional_info';
   return currentTab;
 };
 
 const isAdvancing = (fromTab: string, toTab: string): boolean => {
-  const tabOrder = ['user_data', 'additional_info', 'address'];
+  const tabOrder = ['user_data', 'permissions', 'additional_info', 'address'];
   const fromIndex = tabOrder.indexOf(fromTab);
   const toIndex = tabOrder.indexOf(toTab);
   return toIndex > fromIndex;
@@ -380,6 +393,11 @@ const onTabChange = async (newTab: string | unknown) => {
     return;
   }
 
+  if (currentTab === 'permissions') {
+    tab.value = newTab;
+    return;
+  }
+
   if (currentTab === 'additional_info') {
     const isValid = await validateStep2();
     if (!isValid) return;
@@ -400,6 +418,8 @@ const onTabChange = async (newTab: string | unknown) => {
 const loadTabData = async (tabName: string): Promise<void> => {
   if (tabName === 'user_data') {
     await loadUserDataTab();
+  } else if (tabName === 'permissions') {
+    await loadPermissionsTab();
   } else if (tabName === 'additional_info') {
     await loadAdditionalInfoTab();
   } else if (tabName === 'address') {
@@ -411,6 +431,10 @@ const goNext = async () => {
   if (tab.value === 'user_data') {
     const isValid = await validateStep1();
     if (!isValid) return;
+    tab.value = navigateToNextTab(tab.value);
+    return;
+  }
+  if (tab.value === 'permissions') {
     tab.value = navigateToNextTab(tab.value);
     return;
   }
@@ -1810,6 +1834,26 @@ const buildUpdateUserBody = (): UpdateUserRequest => {
     }
   }
 
+  if (Array.isArray(channelIds.value)) {
+    const currentFilteredIds = channelIds.value
+      .filter((id) => id && typeof id === 'string' && id.trim() !== '')
+      .sort();
+    const initialFilteredIds = initialChannelIds.value
+      .filter((id) => id && typeof id === 'string' && id.trim() !== '')
+      .sort();
+
+    const channelIdsChanged =
+      JSON.stringify(currentFilteredIds) !== JSON.stringify(initialFilteredIds);
+
+    if (channelIdsChanged) {
+      if (currentFilteredIds.length > 0) {
+        body.channel_ids = { value: currentFilteredIds };
+      } else {
+        body.channel_ids = { value: null };
+      }
+    }
+  }
+
   if (hasFullAccess.value) {
     const initialAccountId = initialValues.value.account_id;
     if (accountId.value !== initialAccountId) {
@@ -1977,7 +2021,7 @@ const loadAccounts = async () => {
 
   accountsLoading.value = true;
   try {
-    const accounts = await accountStore.listAllAccounts();
+    const accounts = await userStore.listUserAccounts();
     if (accounts) {
       accountsOptions.value = accounts.map((acc) => ({
         id: acc.account_id,
@@ -2014,6 +2058,32 @@ const loadUserSectors = async () => {
     sectorIds.value = userSectors;
     initialSectorIds.value = [...userSectors];
   }
+};
+
+const loadChannels = async () => {
+  const channels = await userStore.listUserChannels();
+  if (channels) {
+    channelsOptions.value = channels;
+  }
+};
+
+const loadUserChannels = async () => {
+  if (!userId.value) return;
+
+  const userChannels = await userStore.listUserChannelsByUserId(userId.value);
+  if (userChannels) {
+    channelIds.value = userChannels;
+    initialChannelIds.value = [...userChannels];
+  }
+};
+
+const loadPermissionsTab = async () => {
+  if (loadedTabs.value.has('permissions')) return;
+
+  await loadSectors();
+  await loadChannels();
+
+  loadedTabs.value.add('permissions');
 };
 
 const setFieldValue = <K extends keyof typeof initialValues.value>(
@@ -2238,8 +2308,10 @@ const loadUserDataTab = async (force = false): Promise<void> => {
   await loadAccounts();
   await loadRoles();
   await loadSectors();
+  await loadChannels();
   await loadUserRole();
   await loadUserSectors();
+  await loadUserChannels();
 
   const responseUser = await userStore.viewUserById(userId.value);
   if (!responseUser) {
@@ -2394,6 +2466,7 @@ watch(
 
       <VTabs :model-value="tab" @update:model-value="onTabChange" class="px-6">
         <VTab value="user_data">{{ t('user_data') }}</VTab>
+        <VTab value="permissions">{{ t('permissions') }}</VTab>
         <VTab value="additional_info">{{ t('additional_info') }}</VTab>
         <VTab value="address">{{ t('address') }}</VTab>
       </VTabs>
@@ -2537,61 +2610,6 @@ watch(
                     </VRow>
 
                     <VDivider class="mb-4" />
-                    <VRow class="mb-4">
-                      <VCol cols="12" md="6">
-                        <VLabel class="text-body-2 mb-1"
-                          >{{ $t('access_group') }}:</VLabel
-                        >
-                        <AppSelectSearch
-                          v-model="permissionRoleId"
-                          :items="rolesOptions"
-                          :placeholder="$t('select_role')"
-                          :clearable="true"
-                          :disabled="isEditingOwnUser"
-                          item-value="id"
-                          item-title="name"
-                        />
-                      </VCol>
-                      <VCol cols="12" md="6">
-                        <VLabel class="text-body-2 mb-1"
-                          >{{ $t('sector') }}:</VLabel
-                        >
-                        <VAutocomplete
-                          v-model="sectorIds"
-                          :items="uniqueSectorsOptions"
-                          item-title="title"
-                          item-value="value"
-                          multiple
-                          chips
-                          closable-chips
-                          :placeholder="$t('select_sectors')"
-                        >
-                          <template #chip="{ props: chipProps, item }">
-                            <VChip
-                              v-bind="chipProps"
-                              :style="{
-                                backgroundColor: item.raw.color,
-                                color: 'white',
-                              }"
-                            >
-                              {{ item.raw.title }}
-                            </VChip>
-                          </template>
-                          <template #item="{ props: itemProps, item }">
-                            <VListItem v-bind="itemProps">
-                              <template #prepend>
-                                <VAvatar
-                                  size="20"
-                                  :style="{ backgroundColor: item.raw.color }"
-                                />
-                              </template>
-                            </VListItem>
-                          </template>
-                        </VAutocomplete>
-                      </VCol>
-                    </VRow>
-
-                    <VDivider class="mb-4" />
                     <VRow class="mb-2">
                       <VCol cols="12" md="6">
                         <VLabel class="text-body-2 mb-1"
@@ -2702,6 +2720,87 @@ watch(
                   >
                     {{ $t('cancel') }}
                   </VBtn>
+                  <VBtn @click="goNext">{{ $t('next') }}</VBtn>
+                </VCardText>
+              </VForm>
+            </VWindowItem>
+
+            <VWindowItem value="permissions">
+              <VForm class="mt-4" @submit.prevent>
+                <VRow class="mb-4">
+                  <VCol cols="12" md="6">
+                    <VLabel class="text-body-2 mb-1"
+                      >{{ $t('access_group') }}:</VLabel
+                    >
+                    <AppSelectSearch
+                      v-model="permissionRoleId"
+                      :items="rolesOptions"
+                      :placeholder="$t('select_role')"
+                      :clearable="true"
+                      :disabled="isEditingOwnUser"
+                      item-value="id"
+                      item-title="name"
+                    />
+                  </VCol>
+                  <VCol cols="12" md="6">
+                    <VLabel class="text-body-2 mb-1"
+                      >{{ $t('sector') }}:</VLabel
+                    >
+                    <VAutocomplete
+                      v-model="sectorIds"
+                      :items="uniqueSectorsOptions"
+                      item-title="title"
+                      item-value="value"
+                      multiple
+                      chips
+                      closable-chips
+                      :placeholder="$t('select_sectors')"
+                    >
+                      <template #chip="{ props: chipProps, item }">
+                        <VChip
+                          v-bind="chipProps"
+                          :style="{
+                            backgroundColor: item.raw.color,
+                            color: 'white',
+                          }"
+                        >
+                          {{ item.raw.title }}
+                        </VChip>
+                      </template>
+                      <template #item="{ props: itemProps, item }">
+                        <VListItem v-bind="itemProps">
+                          <template #prepend>
+                            <VAvatar
+                              size="20"
+                              :style="{ backgroundColor: item.raw.color }"
+                            />
+                          </template>
+                        </VListItem>
+                      </template>
+                    </VAutocomplete>
+                  </VCol>
+                </VRow>
+                <VRow class="mb-4">
+                  <VCol cols="12">
+                    <VLabel class="text-body-2 mb-1"
+                      >{{ $t('channels') }}:</VLabel
+                    >
+                    <VAutocomplete
+                      v-model="channelIds"
+                      :items="uniqueChannelsOptions"
+                      item-title="title"
+                      item-value="value"
+                      multiple
+                      chips
+                      closable-chips
+                      :placeholder="$t('select_channels')"
+                    />
+                  </VCol>
+                </VRow>
+                <VCardText class="d-flex justify-space-between px-0">
+                  <VBtn variant="outlined" @click="goPrev">{{
+                    $t('back')
+                  }}</VBtn>
                   <VBtn @click="goNext">{{ $t('next') }}</VBtn>
                 </VCardText>
               </VForm>

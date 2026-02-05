@@ -46,6 +46,8 @@ import { UserTransferListerRepository } from '@core/repositories/user/UserTransf
 import { UserMasterViewerRepository } from '@core/repositories/user/UserMasterViewer.repository';
 import { UserSectorsListerRepository } from '@core/repositories/user/UserSectorsLister.repository';
 import { UserSectorsUpdaterTransactionRepository } from '@core/repositories/user/UserSectorsUpdaterTransaction.repository';
+import { UserChannelChannelsListerRepository } from '@core/repositories/user/UserChannelChannelsLister.repository';
+import { UserChannelsUpdaterTransactionRepository } from '@core/repositories/user/UserChannelsUpdaterTransaction.repository';
 import { EncryptService } from './encrypt.service';
 import { ForgotPasswordViewerRepository } from '@core/repositories/auth/ForgotPasswordViewer.repository';
 import { IUserSensitiveDataDecrypted } from '@core/common/interfaces/IUserSensitiveDataDecrypted';
@@ -99,6 +101,8 @@ export class UserService {
     private readonly userMasterViewerRepository: UserMasterViewerRepository,
     private readonly userSectorsListerRepository: UserSectorsListerRepository,
     private readonly userSectorsUpdaterTransactionRepository: UserSectorsUpdaterTransactionRepository,
+    private readonly userChannelChannelsListerRepository: UserChannelChannelsListerRepository,
+    private readonly userChannelsUpdaterTransactionRepository: UserChannelsUpdaterTransactionRepository,
     private readonly forgotPasswordViewerRepository: ForgotPasswordViewerRepository
   ) {}
 
@@ -679,6 +683,28 @@ export class UserService {
     userId: string
   ): Promise<string[]> => {
     return this.userSectorsListerRepository.listUserSectors(accountId, userId);
+  };
+
+  listUserChannelsByUserId = async (
+    accountId: string,
+    userId: string
+  ): Promise<string[]> => {
+    return this.userChannelChannelsListerRepository.listChannelIdsByUserAndAccount(
+      userId,
+      accountId
+    );
+  };
+
+  updateUserChannels = async (
+    userId: string,
+    accountId: string,
+    channelIds: string[]
+  ): Promise<boolean> => {
+    return this.userChannelsUpdaterTransactionRepository.updateUserChannels(
+      userId,
+      accountId,
+      channelIds
+    );
   };
 
   updateUserSectors = async (

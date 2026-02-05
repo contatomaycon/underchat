@@ -26,6 +26,9 @@ import { deletePhotoSchema } from '@core/schema/user/deletePhoto';
 import { listUserRolesSchema } from '@core/schema/user/listUserRoles';
 import { listUserSectorsSchema } from '@core/schema/user/listUserSectors';
 import { viewUserSectorsSchema } from '@core/schema/user/viewUserSectors';
+import { listUserChannelsSchema } from '@core/schema/user/listUserChannels';
+import { viewUserChannelsSchema } from '@core/schema/user/viewUserChannels';
+import { listUserAccountsSchema } from '@core/schema/user/listUserAccounts';
 import { sessionLoginSchema } from '@core/schema/user/sessionLogin';
 import { planGuard } from '@/plugins/planGuard';
 import { planStatus } from '@/plugins/planStatus';
@@ -223,6 +226,39 @@ export default function userRoutes(server: FastifyInstance) {
   server.get('/user/:user_id/sectors', {
     schema: viewUserSectorsSchema,
     handler: userController.viewUserSectors,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, userViewPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.get('/user/accounts', {
+    schema: listUserAccountsSchema,
+    handler: userController.listUserAccounts,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, userViewPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.get('/user/channels', {
+    schema: listUserChannelsSchema,
+    handler: userController.listUserChannels,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, userViewPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.get('/user/:user_id/channels', {
+    schema: viewUserChannelsSchema,
+    handler: userController.viewUserChannels,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, userViewPermissions),
