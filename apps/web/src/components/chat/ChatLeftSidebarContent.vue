@@ -384,7 +384,7 @@ const showClosedTitle = computed(() => {
 });
 
 const shouldUseEndpointCounts = computed(() => {
-  return hasActiveFilters.value || activeFilter.value === 'my_chats';
+  return hasActiveFilters.value;
 });
 
 const allChatsCount = computed(() => {

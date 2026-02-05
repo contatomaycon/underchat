@@ -706,6 +706,10 @@ const handleTransfer = async () => {
         true
       );
 
+      if (chatStore.activeChat?.chat_id === activeChat.chat_id) {
+        chatStore.activeChat = null;
+      }
+
       chatStore.showSnackbar(t('transfer_successfully'), EColor.success);
     }
   } catch (error) {

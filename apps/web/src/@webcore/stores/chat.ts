@@ -210,13 +210,6 @@ export const useChatStore = defineStore('chat', {
     loadingChatContacts: {} as Record<string, boolean>,
   }),
   actions: {
-    logChatDebug(action: string, payload: Record<string, unknown>): void {
-      if (!import.meta.env.DEV) {
-        return;
-      }
-      console.log('[chat-store]', action, payload);
-    },
-
     showSnackbar(message: string, color: EColor) {
       if (!message || message.trim() === '') {
         return;
@@ -506,35 +499,11 @@ export const useChatStore = defineStore('chat', {
       canListAllChatsWithoutSectorLimit: boolean;
       hasPermissionToViewAll: boolean;
     }): boolean {
-      const {
-        resolvedChat,
-        incomingChat,
-        existingSnapshot,
-        permissions,
-        canViewOthersChats,
-        canListAllChatsInSector,
-        canListAllChatsWithoutSectorLimit,
-        hasPermissionToViewAll,
-      } = params;
+      const { resolvedChat, canListAllChatsInSector } = params;
 
       const chatUserId = resolvedChat.user?.id ?? null;
 
       if (chatUserId && chatUserId !== this.user?.user_id) {
-        this.logChatDebug('remove-queue-not-authorized', {
-          chatId: resolvedChat.chat_id,
-          status: resolvedChat.status,
-          chatUserId,
-          currentUserId: this.user?.user_id ?? null,
-          sectorId: resolvedChat.sector?.id ?? null,
-          permissions,
-          canViewOthersChats,
-          canListAllChatsInSector,
-          canListAllChatsWithoutSectorLimit,
-          hasPermissionToViewAll,
-          incomingChat,
-          resolvedChat,
-          snapshot: existingSnapshot ?? null,
-        });
         this.removeChatIfNotAuthorized(resolvedChat);
         return false;
       }
@@ -568,23 +537,6 @@ export const useChatStore = defineStore('chat', {
         }
       }
 
-      this.logChatDebug('remove-queue-sector-mismatch', {
-        chatId: resolvedChat.chat_id,
-        status: resolvedChat.status,
-        chatUserId,
-        currentUserId: this.user?.user_id ?? null,
-        sectorId: resolvedChat.sector?.id ?? null,
-        userSectors,
-        isAlreadyVisible,
-        permissions,
-        canViewOthersChats,
-        canListAllChatsInSector,
-        canListAllChatsWithoutSectorLimit,
-        hasPermissionToViewAll,
-        incomingChat,
-        resolvedChat,
-        snapshot: existingSnapshot ?? null,
-      });
       this.removeChatIfNotAuthorized(resolvedChat);
       return false;
     },
@@ -647,24 +599,6 @@ export const useChatStore = defineStore('chat', {
             canListAllChatsInSector &&
             (isChatInUserSectors || isAlreadyVisible);
           if (!canViewBySector) {
-            this.logChatDebug('remove-in-chat-not-authorized', {
-              chatId: resolvedChat.chat_id,
-              status: resolvedChat.status,
-              chatUserId: resolvedChat.user?.id ?? null,
-              currentUserId: this.user?.user_id ?? null,
-              sectorId: resolvedChat.sector?.id ?? null,
-              userSectors,
-              isAlreadyVisible,
-              permissions,
-              canListAllChatsInSector,
-              canViewOthersChats,
-              canListAllChatsWithoutSectorLimit,
-              hasPermissionToViewAll,
-              isChatInUserSectors,
-              incomingChat: chat,
-              resolvedChat,
-              snapshot: existingSnapshot ?? null,
-            });
             this.removeChatIfNotAuthorized(resolvedChat);
             return;
           }
@@ -1357,18 +1291,6 @@ export const useChatStore = defineStore('chat', {
             canListAllChatsInSector && (isChatInUserSectors || wasInInChat);
 
           if (!canViewBySector) {
-            this.logChatDebug('remove-in-chat-queue-update', {
-              chatId: chat.chat_id,
-              status: chat.status,
-              chatUserId: chat.user?.id ?? null,
-              currentUserId: this.user?.user_id ?? null,
-              permissions,
-              hasPermissionToViewAll,
-              canListAllChatsInSector,
-              sectorId,
-              userSectors,
-              previousStatus,
-            });
             this.removeFromList(this.listInChat, chat.chat_id);
             this.removeFromList(this.listQueue, chat.chat_id);
             this.removeFromList(this.listChatbot, chat.chat_id);
@@ -1474,16 +1396,6 @@ export const useChatStore = defineStore('chat', {
         wasInClosed || previousStatus === EChatStatus.closed;
 
       if (!this.canViewChat(chat)) {
-        this.logChatDebug('remove-in-chat-cannot-view', {
-          chatId: chat.chat_id,
-          status: chat.status,
-          chatUserId: chat.user?.id ?? null,
-          currentUserId: this.user?.user_id ?? null,
-          sectorId: chat.sector?.id ?? null,
-          permissions: getPermissions(),
-          userSectors: getSectors(),
-          previousStatus,
-        });
         this.removeFromList(this.listInChat, chat.chat_id);
         this.removeFromList(this.listQueue, chat.chat_id);
         this.removeFromList(this.listChatbot, chat.chat_id);
