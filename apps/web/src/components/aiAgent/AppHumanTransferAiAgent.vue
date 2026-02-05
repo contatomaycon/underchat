@@ -26,6 +26,7 @@ const isVisible = computed({
 
 const aiAgentId = computed(() => props.aiAgentId);
 const enableHumanTransfer = ref(false);
+const enableHumanTransferByPrompt = ref(false);
 const sectorIds = ref<string[]>([]);
 const sectorUserIds = ref<Record<string, string[]>>({});
 const sectors = ref<ListAiAgentHumanTransferSectorsResponse>([]);
@@ -44,6 +45,11 @@ const sectorOptions = computed(() =>
 const enableHumanTransferOptions = computed(() => [
   { value: true, title: t('enable_human_transfer_yes') },
   { value: false, title: t('enable_human_transfer_no') },
+]);
+
+const enableHumanTransferByPromptOptions = computed(() => [
+  { value: true, title: t('enable_human_transfer_by_prompt_yes') },
+  { value: false, title: t('enable_human_transfer_by_prompt_no') },
 ]);
 
 const sectorRules = computed(() => {
@@ -97,12 +103,16 @@ const loadData = async () => {
 
     if (config?.sector_targets?.length) {
       enableHumanTransfer.value = config.enable_human_transfer;
+      enableHumanTransferByPrompt.value =
+        config.enable_human_transfer_by_prompt ?? false;
       sectorIds.value = config.sector_targets.map((t) => t.sector_id);
       sectorUserIds.value = Object.fromEntries(
         config.sector_targets.map((t) => [t.sector_id, [...(t.user_ids ?? [])]])
       );
     } else {
       enableHumanTransfer.value = config?.enable_human_transfer ?? false;
+      enableHumanTransferByPrompt.value =
+        config?.enable_human_transfer_by_prompt ?? false;
       sectorIds.value = [];
       sectorUserIds.value = {};
     }
@@ -174,6 +184,7 @@ const handleSave = async () => {
       aiAgentId.value,
       {
         enable_human_transfer: enableHumanTransfer.value,
+        enable_human_transfer_by_prompt: enableHumanTransferByPrompt.value,
         sector_targets: enableHumanTransfer.value ? sector_targets : [],
       }
     );
@@ -184,6 +195,21 @@ const handleSave = async () => {
     isSaving.value = false;
   }
 };
+
+function onEnableHumanTransferChange(newVal: boolean) {
+  if (newVal) {
+    enableHumanTransferByPrompt.value = false;
+  }
+}
+
+function onEnableHumanTransferByPromptChange(newVal: boolean) {
+  if (newVal) {
+    enableHumanTransfer.value = false;
+  }
+}
+
+watch(enableHumanTransfer, onEnableHumanTransferChange);
+watch(enableHumanTransferByPrompt, onEnableHumanTransferByPromptChange);
 
 watch(isVisible, async (newVal) => {
   if (newVal && aiAgentId.value) {
@@ -302,6 +328,18 @@ onMounted(() => {
               />
             </VCol>
           </template>
+
+          <VCol cols="12" class="pt-4">
+            <VDivider class="mb-4" />
+            <AppSelectSearch
+              v-model="enableHumanTransferByPrompt"
+              :items="enableHumanTransferByPromptOptions"
+              :label="$t('enable_human_transfer_by_prompt')"
+              item-value="value"
+              item-title="title"
+              :disabled="isSaving || isLoading"
+            />
+          </VCol>
         </VRow>
       </VCardText>
       <VCardText class="d-flex justify-end flex-wrap gap-3">

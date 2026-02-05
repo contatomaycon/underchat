@@ -20,11 +20,12 @@ export class AiAgentHumanTransferUpserterTransactionRepository {
     body: UpsertAiAgentHumanTransferBody
   ): Promise<boolean> => {
     return this.dbRw.transaction(async (tx) => {
-      const updated = await this.updateEnableHumanTransfer(
+      const updated = await this.updateHumanTransferFlags(
         tx,
         aiAgentId,
         accountId,
-        body.enable_human_transfer
+        body.enable_human_transfer,
+        body.enable_human_transfer_by_prompt
       );
       if (!updated) {
         return false;
@@ -43,15 +44,19 @@ export class AiAgentHumanTransferUpserterTransactionRepository {
     });
   };
 
-  private updateEnableHumanTransfer = async (
+  private updateHumanTransferFlags = async (
     tx: Transaction,
     aiAgentId: string,
     accountId: string,
-    enableHumanTransfer: boolean
+    enableHumanTransfer: boolean,
+    enableHumanTransferByPrompt: boolean
   ): Promise<boolean> => {
     const result = await tx
       .update(aiAgent)
-      .set({ enable_human_transfer: enableHumanTransfer })
+      .set({
+        enable_human_transfer: enableHumanTransfer,
+        enable_human_transfer_by_prompt: enableHumanTransferByPrompt,
+      })
       .where(
         and(
           eq(aiAgent.ai_agent_id, aiAgentId),

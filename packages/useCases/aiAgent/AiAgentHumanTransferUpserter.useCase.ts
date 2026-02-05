@@ -13,6 +13,9 @@ export class AiAgentHumanTransferUpserterUseCase {
     body: UpsertAiAgentHumanTransferBody,
     accountId: string
   ): Promise<boolean> {
+    if (body.enable_human_transfer && body.enable_human_transfer_by_prompt) {
+      throw new Error(t('ai_agent_human_transfer_only_one_enabled_allowed'));
+    }
     if (body.enable_human_transfer && body.sector_targets.length === 0) {
       throw new Error(t('ai_agent_human_transfer_sector_required'));
     }

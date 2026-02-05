@@ -39,6 +39,9 @@ export const aiAgent = pgTable(
       .default(EAiAgentStatus.active),
     system_prompt: text('system_prompt'),
     enable_human_transfer: boolean('enable_human_transfer').default(false),
+    enable_human_transfer_by_prompt: boolean(
+      'enable_human_transfer_by_prompt'
+    ).default(false),
     voice_ia_id: uuid().references(() => voiceIa.voice_ia_id, {
       onDelete: 'set null',
     }),

@@ -35,6 +35,7 @@ export class AiAgentViewerRepository {
         voice_ia_id: true,
         system_prompt: true,
         enable_human_transfer: true,
+        enable_human_transfer_by_prompt: true,
         created_at: true,
         updated_at: true,
       },
@@ -67,6 +68,8 @@ export class AiAgentViewerRepository {
       voice_ia_id: result.voice_ia_id ?? null,
       system_prompt: result.system_prompt ?? null,
       enable_human_transfer: result.enable_human_transfer ?? false,
+      enable_human_transfer_by_prompt:
+        result.enable_human_transfer_by_prompt ?? false,
       ai_agent_type_id: result.aat.ai_agent_type_id,
       ai_agent_type_name: result.aat.name,
       created_at: result.created_at,

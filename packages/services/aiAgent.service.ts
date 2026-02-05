@@ -255,6 +255,8 @@ export class AiAgentService {
 
     return {
       enable_human_transfer: agent.enable_human_transfer ?? false,
+      enable_human_transfer_by_prompt:
+        agent.enable_human_transfer_by_prompt ?? false,
       sector_targets,
     };
   };

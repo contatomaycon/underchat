@@ -902,6 +902,7 @@
   "ai_agent_human_transfer_sectors_listed_successfully": "Sectors for human transfer listed successfully!",
   "ai_agent_human_transfer_sector_users_listed_successfully": "Sector users listed successfully!",
   "ai_agent_human_transfer_sector_required": "When enabling human transfer, sector is required.",
+  "ai_agent_human_transfer_only_one_enabled_allowed": "Only one human transfer option can be active at a time. Disable one to enable the other.",
   "ai_agent_not_available": "AI agent not available in the current plan. Upgrade your plan or purchase an add-on to use this feature.",
   "ai_agent_not_available_additional": "AI agent limit reached. Remove an agent to add another.",
   "ai_agent_type_list_successfully": "AI agent types list retrieved successfully!",

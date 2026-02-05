@@ -11,6 +11,7 @@ const sectorTargetItemSchema = Type.Object({
 
 export const upsertAiAgentHumanTransferBodySchema = Type.Object({
   enable_human_transfer: Type.Boolean(),
+  enable_human_transfer_by_prompt: Type.Boolean(),
   sector_targets: Type.Array(sectorTargetItemSchema),
 });
 
