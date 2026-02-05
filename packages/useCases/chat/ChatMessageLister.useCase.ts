@@ -46,6 +46,19 @@ export class ChatMessageListerUseCase {
     return hasRequiredPermission(actions, permissions);
   }
 
+  private canListAllChatsWithoutSectorLimit(
+    actions: IJwtGroupHierarchy[]
+  ): boolean {
+    const permissions = [
+      EGeneralPermissions.full_access,
+      EGeneralPermissions.full_access_group,
+      EChatPermissions.chat_group,
+      EChatPermissions.list_all_chats_without_sector_limit,
+    ];
+
+    return hasRequiredPermission(actions, permissions);
+  }
+
   private canAccessChat(
     chat: IChat,
     userId: string,
@@ -53,7 +66,8 @@ export class ChatMessageListerUseCase {
     userSectors: string[]
   ): boolean {
     const canViewOthers = this.canViewOthersChats(actions);
-    if (canViewOthers) return true;
+    const canListAll = this.canListAllChatsWithoutSectorLimit(actions);
+    if (canViewOthers || canListAll) return true;
     const isOwnChat = chat.user?.id === userId;
     if (isOwnChat) return true;
     const canViewInSector = this.canViewChatsInSector(actions);

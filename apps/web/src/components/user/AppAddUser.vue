@@ -1683,57 +1683,50 @@ onMounted(resetForm);
                     />
                   </VCol>
                   <VCol cols="12" md="6">
-                    <VLabel class="text-body-2 mb-1"
-                      >{{ $t('sector') }}:</VLabel
-                    >
-                    <VAutocomplete
+                    <AppSelectSearch
                       v-model="sectorIds"
                       :items="uniqueSectorsOptions"
-                      item-title="title"
+                      :label="$t('sector')"
                       item-value="value"
+                      item-title="title"
+                      :placeholder="$t('select_sectors')"
                       multiple
                       chips
                       closable-chips
-                      :placeholder="$t('select_sectors')"
+                      clearable
                     >
-                      <template #chip="{ props: chipProps, item }">
+                      <template #chip="{ item }">
                         <VChip
-                          v-bind="chipProps"
                           :style="{
-                            backgroundColor: item.raw.color,
+                            backgroundColor: item.color,
                             color: 'white',
                           }"
                         >
-                          {{ item.raw.title }}
+                          {{ item.title }}
                         </VChip>
                       </template>
-                      <template #item="{ props: itemProps, item }">
-                        <VListItem v-bind="itemProps">
-                          <template #prepend>
-                            <VAvatar
-                              size="20"
-                              :style="{ backgroundColor: item.raw.color }"
-                            />
-                          </template>
-                        </VListItem>
+                      <template #item-prepend="{ item }">
+                        <VAvatar
+                          size="20"
+                          :style="{ backgroundColor: item.color }"
+                        />
                       </template>
-                    </VAutocomplete>
+                    </AppSelectSearch>
                   </VCol>
                 </VRow>
                 <VRow class="mb-4">
                   <VCol cols="12">
-                    <VLabel class="text-body-2 mb-1"
-                      >{{ $t('channels') }}:</VLabel
-                    >
-                    <VAutocomplete
+                    <AppSelectSearch
                       v-model="channelIds"
                       :items="uniqueChannelsOptions"
-                      item-title="title"
+                      :label="$t('channels')"
                       item-value="value"
+                      item-title="title"
+                      :placeholder="$t('select_channels')"
                       multiple
                       chips
                       closable-chips
-                      :placeholder="$t('select_channels')"
+                      clearable
                     />
                   </VCol>
                 </VRow>

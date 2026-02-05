@@ -261,7 +261,7 @@ export class PushNotificationService {
         if (!chat.sector?.id) {
           return canListAllChatsInSector;
         }
-        return userSectors.includes(chat.sector.id);
+        return canListAllChatsInSector && userSectors.includes(chat.sector.id);
       }
 
       return !chat.sector?.id;
