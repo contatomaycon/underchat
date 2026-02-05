@@ -169,6 +169,10 @@ export class MessageHistorySyncConsume {
       return;
     }
 
+    if (data.message?.key?.fromMe) {
+      return;
+    }
+
     const messageTimestampMs = this.getMessageTimestampMs(data.message);
     if (!messageTimestampMs) {
       return;
