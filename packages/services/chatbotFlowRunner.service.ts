@@ -4219,12 +4219,14 @@ Retorne APENAS uma das palavras: ${validOptions}.`;
       JSON.stringify(userPayload, null, 2) || '[]',
       '',
       'REGRAS:',
-      '1. Só retorne "human_support" se o prompt acima indicar claramente que deve transferir.',
-      '2. Se o prompt não mencionar transferência para este caso, retorne "no_transfer".',
-      '3. Se o prompt pedir um setor/usuário que não existe na lista, retorne "no_transfer".',
-      '4. Você pode escolher apenas sector_id, apenas user_id, ou ambos.',
-      '5. Se "human_support", gere uma mensagem natural para o usuário confirmando o encaminhamento, sem mencionar prompts, listas ou IDs.',
-      '6. Se "no_transfer", use message como string vazia.',
+      '1. Se o usuário pedir explicitamente para falar com humano/operador/atendente/suporte/pessoa real, retorne "human_support" (prioridade máxima).',
+      '2. Só retorne "human_support" se o prompt acima indicar claramente que deve transferir.',
+      '3. Se o prompt não mencionar transferência para este caso, retorne "no_transfer".',
+      '4. Se o prompt exigir alguma confirmação/comando antes da transferência e isso ainda não ocorreu, retorne "no_transfer" e gere a mensagem de instrução conforme o prompt.',
+      '5. Se o prompt pedir um setor/usuário que não existe na lista, retorne "no_transfer".',
+      '6. Você pode escolher apenas sector_id, apenas user_id, ou ambos.',
+      '7. Se "human_support", gere uma mensagem natural para o usuário confirmando o encaminhamento, sem mencionar prompts, listas ou IDs.',
+      '8. Se "no_transfer", use message como string vazia.',
       '',
       'Responda APENAS com JSON válido, sem texto extra, no formato:',
       '{"intent":"human_support|no_transfer","sector_id":null|string,"user_id":null|string,"message":string}'
@@ -5814,8 +5816,6 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
           promptTransferDecision.message ?? ''
         );
       }
-
-      suppressTransferMention = true;
     }
 
     const humanSupportEnabled = transferMode === 'standard';
