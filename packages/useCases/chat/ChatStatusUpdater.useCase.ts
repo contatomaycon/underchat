@@ -332,6 +332,10 @@ export class ChatStatusUpdaterUseCase {
       return;
     }
 
+    if (canViewInSector && !chat.sector?.id) {
+      return;
+    }
+
     if (chat.user?.id && chat.user.id === userId) return;
 
     if (chat.user?.id && chat.user.id !== userId) {

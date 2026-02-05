@@ -104,7 +104,8 @@ function canReceiveMessageNotification(
     (userSectors.length > 0 &&
       chat.sector?.id &&
       userSectors.includes(chat.sector.id)) ||
-    (userSectors.length === 0 && !chat.sector?.id);
+    (userSectors.length === 0 && !chat.sector?.id) ||
+    (canListAllChatsInSector && !chat.sector?.id);
 
   if (chat.status === EChatStatus.in_chat) {
     if (hasPermissionToViewAll || chat.user?.id === chatStore.user?.user_id) {
@@ -126,7 +127,7 @@ function canReceiveMessageNotification(
 
     if (userSectors.length > 0) {
       if (!chat.sector?.id) {
-        return false;
+        return canListAllChatsInSector;
       }
       return userSectors.includes(chat.sector.id);
     }

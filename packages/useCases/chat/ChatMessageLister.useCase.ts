@@ -65,6 +65,7 @@ export class ChatMessageListerUseCase {
     )
       return true;
     if (userSectors.length === 0 && !chat.sector?.id) return true;
+    if (canViewInSector && !chat.sector?.id) return true;
     return false;
   }
 

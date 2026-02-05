@@ -60,32 +60,41 @@ export class ChatSearcherUseCase {
     userId: string,
     userSectors: string[]
   ): IElasticsearchBoolClause {
+    const noSectorClause = {
+      bool: {
+        must_not: {
+          nested: {
+            path: 'sector',
+            query: {
+              exists: {
+                field: 'sector.id',
+              },
+            },
+          },
+        },
+      },
+    } as unknown as IElasticsearchBoolClause;
     const closedSectorFilter: IElasticsearchBoolClause =
       userSectors.length > 0
         ? ({
-            nested: {
-              path: 'sector',
-              query: {
-                terms: {
-                  'sector.id': userSectors,
-                },
-              },
-            },
-          } as unknown as IElasticsearchBoolClause)
-        : ({
             bool: {
-              must_not: {
-                nested: {
-                  path: 'sector',
-                  query: {
-                    exists: {
-                      field: 'sector.id',
+              should: [
+                {
+                  nested: {
+                    path: 'sector',
+                    query: {
+                      terms: {
+                        'sector.id': userSectors,
+                      },
                     },
                   },
                 },
-              },
+                noSectorClause,
+              ],
+              minimum_should_match: 1,
             },
-          } as unknown as IElasticsearchBoolClause);
+          } as unknown as IElasticsearchBoolClause)
+        : noSectorClause;
 
     return {
       bool: {
@@ -118,6 +127,168 @@ export class ChatSearcherUseCase {
                   },
                 },
                 closedSectorFilter,
+              ],
+            },
+          } as unknown as IElasticsearchBoolClause,
+        ],
+        minimum_should_match: 1,
+      },
+    } as unknown as IElasticsearchBoolClause;
+  }
+
+  private buildInChatVisibilityIncludingNoSector(
+    userId: string,
+    userSectors: string[]
+  ): IElasticsearchBoolClause {
+    const inChatShould: unknown[] = [
+      {
+        nested: {
+          path: 'user',
+          query: {
+            term: {
+              'user.id': userId,
+            },
+          },
+        },
+      },
+      {
+        bool: {
+          must_not: {
+            nested: {
+              path: 'sector',
+              query: {
+                exists: {
+                  field: 'sector.id',
+                },
+              },
+            },
+          },
+        },
+      },
+    ];
+    if (userSectors.length > 0) {
+      inChatShould.push({
+        nested: {
+          path: 'sector',
+          query: {
+            terms: {
+              'sector.id': userSectors,
+            },
+          },
+        },
+      });
+    }
+    return {
+      bool: {
+        should: inChatShould,
+        minimum_should_match: 1,
+      },
+    } as unknown as IElasticsearchBoolClause;
+  }
+
+  private buildQueueSectorClause(
+    userSectors: string[],
+    canViewInSector: boolean
+  ): IElasticsearchBoolClause {
+    if (userSectors.length > 0) {
+      if (canViewInSector) {
+        return {
+          bool: {
+            should: [
+              {
+                nested: {
+                  path: 'sector',
+                  query: {
+                    terms: {
+                      'sector.id': userSectors,
+                    },
+                  },
+                },
+              },
+              {
+                bool: {
+                  must_not: {
+                    nested: {
+                      path: 'sector',
+                      query: {
+                        exists: {
+                          field: 'sector.id',
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            ],
+            minimum_should_match: 1,
+          },
+        } as unknown as IElasticsearchBoolClause;
+      }
+      return {
+        nested: {
+          path: 'sector',
+          query: {
+            terms: {
+              'sector.id': userSectors,
+            },
+          },
+        },
+      } as unknown as IElasticsearchBoolClause;
+    }
+    return {
+      bool: {
+        must_not: {
+          nested: {
+            path: 'sector',
+            query: {
+              exists: {
+                field: 'sector.id',
+              },
+            },
+          },
+        },
+      },
+    } as unknown as IElasticsearchBoolClause;
+  }
+
+  private buildQueueVisibility(
+    userId: string,
+    userSectors: string[],
+    canViewInSector: boolean
+  ): IElasticsearchBoolClause {
+    const queueSectorClause = this.buildQueueSectorClause(
+      userSectors,
+      canViewInSector
+    );
+    return {
+      bool: {
+        should: [
+          {
+            nested: {
+              path: 'user',
+              query: {
+                term: {
+                  'user.id': userId,
+                },
+              },
+            },
+          },
+          {
+            bool: {
+              must: [
+                {
+                  bool: {
+                    must_not: {
+                      nested: {
+                        path: 'user',
+                        query: {
+                          match_all: {},
+                        },
+                      },
+                    },
+                  },
+                },
+                queueSectorClause,
               ],
             },
           } as unknown as IElasticsearchBoolClause,
@@ -474,34 +645,10 @@ export class ChatSearcherUseCase {
         !canViewOthers &&
         statusArray.includes(EChatStatus.in_chat)
       ) {
-        if (canViewInSector && userSectors.length > 0) {
-          filterClauses.push({
-            bool: {
-              should: [
-                {
-                  nested: {
-                    path: 'user',
-                    query: {
-                      term: {
-                        'user.id': userId,
-                      },
-                    },
-                  },
-                },
-                {
-                  nested: {
-                    path: 'sector',
-                    query: {
-                      terms: {
-                        'sector.id': userSectors,
-                      },
-                    },
-                  },
-                },
-              ],
-              minimum_should_match: 1,
-            },
-          } as unknown as IElasticsearchBoolClause);
+        if (canViewInSector) {
+          filterClauses.push(
+            this.buildInChatVisibilityIncludingNoSector(userId, userSectors)
+          );
         } else {
           filterClauses.push({
             nested: {
@@ -521,71 +668,14 @@ export class ChatSearcherUseCase {
         !canListAll &&
         statusArray.includes(EChatStatus.queue)
       ) {
-        const queueVisibility: IElasticsearchBoolClause = {
-          bool: {
-            should: [
-              {
-                nested: {
-                  path: 'user',
-                  query: {
-                    term: {
-                      'user.id': userId,
-                    },
-                  },
-                },
-              },
-              {
-                bool: {
-                  must: [
-                    {
-                      bool: {
-                        must_not: {
-                          nested: {
-                            path: 'user',
-                            query: {
-                              match_all: {},
-                            },
-                          },
-                        },
-                      },
-                    },
-                    userSectors.length > 0
-                      ? ({
-                          nested: {
-                            path: 'sector',
-                            query: {
-                              terms: {
-                                'sector.id': userSectors,
-                              },
-                            },
-                          },
-                        } as unknown as IElasticsearchBoolClause)
-                      : ({
-                          bool: {
-                            must_not: {
-                              nested: {
-                                path: 'sector',
-                                query: {
-                                  match_all: {},
-                                },
-                              },
-                            },
-                          },
-                        } as unknown as IElasticsearchBoolClause),
-                  ],
-                },
-              } as unknown as IElasticsearchBoolClause,
-            ],
-            minimum_should_match: 1,
-          },
-        } as unknown as IElasticsearchBoolClause;
-
-        filterClauses.push(queueVisibility);
+        filterClauses.push(
+          this.buildQueueVisibility(userId, userSectors, canViewInSector)
+        );
       }
 
       if (!isMyChats && statusArray.includes(EChatStatus.closed)) {
         if (!canViewOthers) {
-          if (canViewInSector && userSectors.length > 0) {
+          if (canViewInSector) {
             filterClauses.push(
               this.buildClosedVisibilityForSector(userId, userSectors)
             );

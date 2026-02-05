@@ -400,7 +400,14 @@ export const useChatStore = defineStore('chat', {
       }
     },
 
-    shouldRemoveQueueChat(chat: IChat, userSectors: string[]): boolean {
+    shouldRemoveQueueChat(
+      chat: IChat,
+      userSectors: string[],
+      canListAllChatsInSector = false
+    ): boolean {
+      if (canListAllChatsInSector && !chat.sector?.id) {
+        return false;
+      }
       if (userSectors.length > 0) {
         const result =
           !chat.sector?.id || !userSectors.includes(chat.sector.id);
@@ -537,12 +544,20 @@ export const useChatStore = defineStore('chat', {
       }
 
       const userSectors = getSectors();
-      if (!this.shouldRemoveQueueChat(resolvedChat, userSectors)) {
+      if (
+        !this.shouldRemoveQueueChat(
+          resolvedChat,
+          userSectors,
+          canListAllChatsInSector
+        )
+      ) {
         return true;
       }
 
       const sectorId = resolvedChat.sector?.id ?? null;
-      const isChatInUserSectors = !!sectorId && userSectors.includes(sectorId);
+      const isChatInUserSectors =
+        (!!sectorId && userSectors.includes(sectorId)) ||
+        (canListAllChatsInSector && !sectorId);
       const isAlreadyVisible =
         this.activeChat?.chat_id === resolvedChat.chat_id ||
         this.isChatInAnyList(resolvedChat.chat_id);
@@ -626,7 +641,8 @@ export const useChatStore = defineStore('chat', {
             (userSectors.length > 0 &&
               resolvedChat.sector?.id &&
               userSectors.includes(resolvedChat.sector.id)) ||
-            (userSectors.length === 0 && !resolvedChat.sector?.id);
+            (userSectors.length === 0 && !resolvedChat.sector?.id) ||
+            (canListAllChatsInSector && !resolvedChat.sector?.id);
           const canViewBySector =
             canListAllChatsInSector &&
             (isChatInUserSectors || isAlreadyVisible);
@@ -1237,7 +1253,8 @@ export const useChatStore = defineStore('chat', {
         (userSectors.length > 0 &&
           chat.sector?.id &&
           userSectors.includes(chat.sector.id)) ||
-        (userSectors.length === 0 && !chat.sector?.id);
+        (userSectors.length === 0 && !chat.sector?.id) ||
+        (canListAllChatsInSector && !chat.sector?.id);
 
       if (chat.status === EChatStatus.in_chat) {
         if (hasPermissionToViewAll) {
@@ -1334,7 +1351,8 @@ export const useChatStore = defineStore('chat', {
           const userSectors = getSectors();
           const sectorId = chat.sector?.id ?? null;
           const isChatInUserSectors =
-            !!sectorId && userSectors.includes(sectorId);
+            (!!sectorId && userSectors.includes(sectorId)) ||
+            (canListAllChatsInSector && !sectorId);
           const canViewBySector =
             canListAllChatsInSector && (isChatInUserSectors || wasInInChat);
 

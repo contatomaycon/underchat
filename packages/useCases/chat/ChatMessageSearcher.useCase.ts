@@ -73,7 +73,8 @@ export class ChatMessageSearcherUseCase {
       (userSectors.length > 0 &&
         chat.sector?.id &&
         userSectors.includes(chat.sector.id)) ||
-      (userSectors.length === 0 && !chat.sector?.id);
+      (userSectors.length === 0 && !chat.sector?.id) ||
+      (canViewInSector && !chat.sector?.id);
 
     if (
       !canViewOthers &&

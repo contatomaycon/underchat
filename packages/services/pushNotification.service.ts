@@ -239,7 +239,8 @@ export class PushNotificationService {
       (userSectors.length > 0 &&
         chat.sector?.id &&
         userSectors.includes(chat.sector.id)) ||
-      (userSectors.length === 0 && !chat.sector?.id);
+      (userSectors.length === 0 && !chat.sector?.id) ||
+      (canListAllChatsInSector && !chat.sector?.id);
 
     if (chat.status === EChatStatus.in_chat) {
       if (chat.user?.id === userId) return true;
@@ -258,7 +259,7 @@ export class PushNotificationService {
 
       if (userSectors.length > 0) {
         if (!chat.sector?.id) {
-          return false;
+          return canListAllChatsInSector;
         }
         return userSectors.includes(chat.sector.id);
       }
