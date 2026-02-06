@@ -76,32 +76,121 @@ export class CsvFileReaderService {
     return semicolonCount > commaCount ? ';' : ',';
   }
 
-  private _buildColumnIndexes(header: string[]) {
+  private _findColumnIndices(
+    header: string[],
+    namesInOrder: string[]
+  ): number[] {
+    const indices: number[] = [];
+    const seen = new Set<number>();
+    for (const name of namesInOrder) {
+      const i = header.indexOf(name);
+      if (i >= 0 && !seen.has(i)) {
+        indices.push(i);
+        seen.add(i);
+      }
+    }
+    return indices;
+  }
+
+  private _firstNonEmpty(cols: string[], indices: number[]): string {
+    for (const i of indices) {
+      const v = (cols[i] ?? '').trim();
+      if (v) return v;
+    }
+    return '';
+  }
+
+  private _splitFullName(full: string): { first: string; last: string } {
+    const s = full.trim();
+    if (!s) return { first: '', last: '' };
+    const space = s.indexOf(' ');
+    if (space <= 0) return { first: s, last: '' };
     return {
-      nome: header.findIndex((h) =>
-        ['nome', 'first name', 'given name'].includes(h)
-      ),
-      sobrenome: header.findIndex((h) =>
-        ['sobrenome', 'last name', 'family name'].includes(h)
-      ),
-      email: header.findIndex((h) => ['e-mail', 'email'].includes(h)),
-      ddi: header.findIndex((h) =>
-        [
-          'ddi',
-          'phone_ddi',
-          'phone ddi',
-          'código país',
-          'codigo pais',
-          'country code',
-        ].includes(h)
-      ),
-      telefone: header.findIndex((h) => ['telefone', 'phone'].includes(h)),
-      apelido: header.findIndex((h) => ['apelido', 'nickname'].includes(h)),
-      documento: header.findIndex((h) => ['documento', 'document'].includes(h)),
-      aniversario: header.findIndex((h) =>
-        ['aniversário', 'aniversario', 'birthday'].includes(h)
-      ),
-      notas: header.findIndex((h) => ['notas', 'notes'].includes(h)),
+      first: s.slice(0, space).trim(),
+      last: s.slice(space).trim(),
+    };
+  }
+
+  private _buildColumnIndexes(header: string[]) {
+    const nomeNames = ['given name', 'first name', 'nome', 'first name (yomi)'];
+    const sobrenomeNames = [
+      'family name',
+      'last name',
+      'sobrenome',
+      'family name (yomi)',
+    ];
+    const nameFullNames = ['name'];
+    const emailNames = [
+      'e-mail 1 - value',
+      'e-mail 2 - value',
+      'e-mail 3 - value',
+      'email address',
+      'e-mail',
+      'email',
+    ];
+    const telefoneNames = [
+      'phone 1 - value',
+      'phone 2 - value',
+      'phone 3 - value',
+      'mobile phone',
+      'business phone',
+      'home phone',
+      'home phone 2',
+      'primary phone',
+      'telefone',
+      'phone',
+    ];
+    const ddiNames = [
+      'ddi',
+      'phone_ddi',
+      'phone ddi',
+      'código país',
+      'codigo pais',
+      'country code',
+    ];
+    const apelidoNames = ['nickname', 'apelido', 'short name'];
+    const documentoNames = ['documento', 'document'];
+    const aniversarioNames = ['birthday', 'aniversário', 'aniversario'];
+    const notasNames = ['notes', 'notas'];
+
+    const nome =
+      this._findColumnIndices(header, nomeNames)[0] ??
+      header.findIndex((h) => nomeNames.includes(h));
+    const sobrenome =
+      this._findColumnIndices(header, sobrenomeNames)[0] ??
+      header.findIndex((h) => sobrenomeNames.includes(h));
+    const nameFull =
+      this._findColumnIndices(header, nameFullNames)[0] ??
+      header.findIndex((h) => nameFullNames.includes(h));
+    const emailIndices = this._findColumnIndices(header, emailNames);
+    if (emailIndices.length === 0) {
+      emailIndices.push(
+        header.findIndex((h) => ['e-mail', 'email'].includes(h))
+      );
+    }
+    const telefoneIndices = this._findColumnIndices(header, telefoneNames);
+    if (telefoneIndices.length === 0) {
+      telefoneIndices.push(
+        header.findIndex((h) => ['telefone', 'phone'].includes(h))
+      );
+    }
+    const ddi = header.findIndex((h) => ddiNames.includes(h));
+    const apelido = header.findIndex((h) => apelidoNames.includes(h));
+    const documento = header.findIndex((h) => documentoNames.includes(h));
+    const aniversario = header.findIndex((h) => aniversarioNames.includes(h));
+    const notas = header.findIndex((h) => notasNames.includes(h));
+
+    return {
+      nome: nome >= 0 ? nome : -1,
+      sobrenome: sobrenome >= 0 ? sobrenome : -1,
+      nameFull: nameFull >= 0 ? nameFull : -1,
+      emailIndices: emailIndices.filter((i) => i >= 0),
+      telefoneIndices: telefoneIndices.filter((i) => i >= 0),
+      ddi,
+      apelido,
+      documento,
+      aniversario,
+      notas,
     };
   }
 
@@ -109,10 +198,18 @@ export class CsvFileReaderService {
     cols: string[],
     idx: ReturnType<typeof this._buildColumnIndexes>
   ): boolean {
-    const first = this._val(cols, idx.nome);
-    const last = this._val(cols, idx.sobrenome);
-    const email = this._val(cols, idx.email);
-    const phone = this._val(cols, idx.telefone);
+    const first =
+      this._val(cols, idx.nome) ||
+      (idx.nameFull >= 0
+        ? this._splitFullName(cols[idx.nameFull] ?? '').first
+        : '');
+    const last =
+      this._val(cols, idx.sobrenome) ||
+      (idx.nameFull >= 0
+        ? this._splitFullName(cols[idx.nameFull] ?? '').last
+        : '');
+    const email = this._firstNonEmpty(cols, idx.emailIndices);
+    const phone = this._firstNonEmpty(cols, idx.telefoneIndices);
 
     return !first && !last && !email && !phone;
   }
@@ -193,9 +290,9 @@ export class CsvFileReaderService {
 
       if (this._shouldSkipRow(cols, idx)) continue;
 
-      const emailRaw = this._val(cols, idx.email);
+      const emailRaw = this._firstNonEmpty(cols, idx.emailIndices);
       const ddiRaw = this._val(cols, idx.ddi);
-      const phoneRaw = this._val(cols, idx.telefone);
+      const phoneRaw = this._firstNonEmpty(cols, idx.telefoneIndices);
 
       const processedEmail = this.processEmail(emailRaw);
       const processedPhone = this.processPhone(phoneRaw);
@@ -209,9 +306,18 @@ export class CsvFileReaderService {
       const { document, contact_document_type_id } =
         this._validateAndGetDocumentType(documentRaw);
 
+      const nameFromCols = this._val(cols, idx.nome);
+      const lastFromCols = this._val(cols, idx.sobrenome);
+      const fullName =
+        idx.nameFull >= 0 ? (cols[idx.nameFull] ?? '').trim() : '';
+      const { first: nameFromFull, last: lastFromFull } =
+        this._splitFullName(fullName);
+      const name = nameFromCols || nameFromFull;
+      const last_name = lastFromCols || lastFromFull;
+
       out.push({
-        name: this._val(cols, idx.nome),
-        last_name: this._val(cols, idx.sobrenome),
+        name,
+        last_name,
         email: processedEmail,
         phone: normalizedPhone ? normalizedPhone.phone : processedPhone,
         phone_ddi: phoneDdi,
