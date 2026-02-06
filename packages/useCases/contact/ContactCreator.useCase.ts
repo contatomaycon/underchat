@@ -47,6 +47,23 @@ export class ContactCreatorUseCase {
     return extractArrayFieldValue(field);
   }
 
+  private validateChannelIds(
+    t: TFunction<'translation', undefined>,
+    channelIds: string[],
+    allowedChannelIds: string[]
+  ): void {
+    if (channelIds.length === 0 || allowedChannelIds.length === 0) {
+      return;
+    }
+
+    const allowedSet = new Set(allowedChannelIds);
+    for (const channelId of channelIds) {
+      if (!allowedSet.has(channelId)) {
+        throw new Error(t('contact_channel_not_allowed'));
+      }
+    }
+  }
+
   private validateBirthDate(
     t: TFunction<'translation', undefined>,
     birthDate: string
@@ -218,7 +235,8 @@ export class ContactCreatorUseCase {
   async execute(
     t: TFunction<'translation', undefined>,
     input: CreateContactRequest,
-    accountId: string
+    accountId: string,
+    allowedChannelIds: string[] = []
   ): Promise<boolean> {
     const normalizedInput = normalizeContactRequest(input);
 
@@ -226,6 +244,7 @@ export class ContactCreatorUseCase {
       normalizedInput.label_template_ids
     );
     const channelIds = this.extractChannelIds(normalizedInput.channel_ids);
+    this.validateChannelIds(t, channelIds, allowedChannelIds);
     const name = extractFieldValue(normalizedInput.name as FieldValue);
     const lastName = extractFieldValue(normalizedInput.last_name as FieldValue);
     const email = extractFieldValue(normalizedInput.email as FieldValue);

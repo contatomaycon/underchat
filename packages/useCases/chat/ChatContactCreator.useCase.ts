@@ -27,7 +27,8 @@ export class ChatContactCreatorUseCase {
   async execute(
     t: TFunction<'translation', undefined>,
     input: CreateChatContactRequest,
-    accountId: string
+    accountId: string,
+    allowedChannelIds: string[] = []
   ): Promise<boolean> {
     const normalizedInput = normalizeContactRequest(input);
     const chatId = this.extractChatId(normalizedInput.chat_id);
@@ -56,7 +57,8 @@ export class ChatContactCreatorUseCase {
     const result = await this.contactCreatorUseCase.execute(
       t,
       contactRequest,
-      accountId
+      accountId,
+      allowedChannelIds
     );
 
     return !!result;

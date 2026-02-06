@@ -11,12 +11,14 @@ export class ChatContactByPhoneViewerUseCase {
     t: TFunction<'translation', undefined>,
     accountId: string,
     phone: string,
-    phoneDdi: string
+    phoneDdi: string,
+    allowedChannelIds: string[] = []
   ): Promise<ViewChatContactByPhoneResponse | null> {
     const contact = await this.chatContactService.viewChatContactByPhone(
       accountId,
       phone,
-      phoneDdi
+      phoneDdi,
+      allowedChannelIds
     );
 
     if (!contact) {

@@ -370,6 +370,7 @@
   "user_address_view_successfully": "Endereço completo recuperado com sucesso!",
   "user_additional_info_view_successfully": "Informações adicionais recuperadas com sucesso!",
   "contact_not_found": "Contato não encontrado!",
+  "contact_channel_not_allowed": "Você não tem permissão para selecionar um ou mais canais.",
   "contact_must_be_validated": "O contato deve estar validado para abrir uma conversa!",
   "contact_phone_required": "O contato precisa ter um telefone para iniciar uma conversa!",
   "contact_deleted_successfully": "Contato excluído com sucesso!",

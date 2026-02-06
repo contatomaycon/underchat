@@ -8,9 +8,20 @@ export class ContactChannelsListerUseCase {
     private readonly contactChannelsListerRepository: ContactChannelsListerRepository
   ) {}
 
-  async execute(accountId: string): Promise<ListContactChannelsResponse> {
-    return this.contactChannelsListerRepository.listChannelsByAccount(
-      accountId
-    );
+  async execute(
+    accountId: string,
+    allowedChannelIds: string[]
+  ): Promise<ListContactChannelsResponse> {
+    const allChannels =
+      await this.contactChannelsListerRepository.listChannelsByAccount(
+        accountId
+      );
+
+    if (allowedChannelIds.length === 0) {
+      return allChannels;
+    }
+
+    const allowedSet = new Set(allowedChannelIds);
+    return allChannels.filter((ch) => allowedSet.has(ch.channel_id));
   }
 }

@@ -265,6 +265,23 @@ export class ContactUpdaterUseCase {
     return extractArrayFieldValue(field);
   }
 
+  private validateChannelIds(
+    t: TFunction<'translation', undefined>,
+    channelIds: string[],
+    allowedChannelIds: string[]
+  ): void {
+    if (channelIds.length === 0 || allowedChannelIds.length === 0) {
+      return;
+    }
+
+    const allowedSet = new Set(allowedChannelIds);
+    for (const channelId of channelIds) {
+      if (!allowedSet.has(channelId)) {
+        throw new Error(t('contact_channel_not_allowed'));
+      }
+    }
+  }
+
   private async validateLabelTemplates(
     t: TFunction<'translation', undefined>,
     labelTemplateIds?: string[] | null
@@ -289,7 +306,8 @@ export class ContactUpdaterUseCase {
     t: TFunction<'translation', undefined>,
     accountId: string,
     contactId: string,
-    body: UpdateContactRequest
+    body: UpdateContactRequest,
+    allowedChannelIds: string[] = []
   ): Promise<boolean> {
     const normalizedBody = normalizeContactRequest(body);
 
@@ -311,6 +329,7 @@ export class ContactUpdaterUseCase {
     const channelIds = hasChannelIds
       ? this.extractChannelIds(normalizedBody.channel_ids)
       : null;
+    this.validateChannelIds(t, channelIds ?? [], allowedChannelIds);
     const name = extractFieldValue(normalizedBody.name as FieldValue);
     const lastName = extractFieldValue(normalizedBody.last_name as FieldValue);
     const email = extractFieldValue(normalizedBody.email as FieldValue);

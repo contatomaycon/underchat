@@ -27,7 +27,8 @@ export class ChatContactService {
     perPage: number,
     currentPage: number,
     accountId: string,
-    query?: ListChatContactsRequest
+    query?: ListChatContactsRequest,
+    allowedChannelIds: string[] = []
   ): Promise<[ListChatContactsResponse[], number]> => {
     let emailHash: string | null = null;
     let phoneHashes: string[] | null = null;
@@ -59,14 +60,16 @@ export class ChatContactService {
         query,
         emailHash,
         phoneHashes,
-        documentHash
+        documentHash,
+        allowedChannelIds
       ),
       this.chatContactListerRepository.listChatContactsTotal(
         accountId,
         query,
         emailHash,
         phoneHashes,
-        documentHash
+        documentHash,
+        allowedChannelIds
       ),
     ]);
 
@@ -75,18 +78,21 @@ export class ChatContactService {
 
   viewChatContactById = async (
     contactId: string,
-    accountId: string
+    accountId: string,
+    allowedChannelIds: string[] = []
   ): Promise<ViewChatContactResponse | null> => {
     return this.chatContactViewerRepository.viewChatContactById(
       contactId,
-      accountId
+      accountId,
+      allowedChannelIds
     );
   };
 
   viewChatContactByPhone = async (
     accountId: string,
     phone: string,
-    phoneDdi: string
+    phoneDdi: string,
+    allowedChannelIds: string[] = []
   ): Promise<ViewChatContactByPhoneResponse | null> => {
     const phoneDigits = onlyDigits(phone);
     const phoneDdiToSave = phoneDdi ?? '55';
@@ -98,17 +104,20 @@ export class ChatContactService {
     return this.chatContactViewerRepository.viewChatContactByPhone(
       accountId,
       phonesC,
-      phoneDdiToSave
+      phoneDdiToSave,
+      allowedChannelIds
     );
   };
 
   viewChatContactsByIds = async (
     contactIds: string[],
-    accountId: string
+    accountId: string,
+    allowedChannelIds: string[] = []
   ): Promise<ViewChatContactsBatchResponse> => {
     return this.chatContactViewerRepository.viewChatContactsByIds(
       contactIds,
-      accountId
+      accountId,
+      allowedChannelIds
     );
   };
 

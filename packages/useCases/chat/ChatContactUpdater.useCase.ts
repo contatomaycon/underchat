@@ -14,7 +14,8 @@ export class ChatContactUpdaterUseCase {
     t: TFunction<'translation', undefined>,
     accountId: string,
     contactId: string,
-    body: UpdateChatContactRequest
+    body: UpdateChatContactRequest,
+    allowedChannelIds: string[] = []
   ): Promise<boolean> {
     const normalizedBody = normalizeContactRequest(body);
 
@@ -48,7 +49,8 @@ export class ChatContactUpdaterUseCase {
       t,
       accountId,
       contactId,
-      contactRequest
+      contactRequest,
+      allowedChannelIds
     );
 
     return !!result;

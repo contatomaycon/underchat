@@ -18,12 +18,14 @@ export const listContacts = async (
   try {
     const perPage = request.query.per_page ?? 50;
     const currentPage = request.query.current_page ?? 1;
+    const allowedChannelIds = tokenJwtData.channels?.map((c) => c.id) ?? [];
 
     const response = await chatContactListerUseCase.execute(
       perPage,
       currentPage,
       tokenJwtData.account_id,
-      request.query
+      request.query,
+      allowedChannelIds
     );
 
     return sendResponse(reply, {

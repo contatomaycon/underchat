@@ -10,11 +10,13 @@ export class ChatContactViewerUseCase {
   async execute(
     t: TFunction<'translation', undefined>,
     contactId: string,
-    accountId: string
+    accountId: string,
+    allowedChannelIds: string[] = []
   ): Promise<ViewChatContactResponse | null> {
     const contact = await this.chatContactService.viewChatContactById(
       contactId,
-      accountId
+      accountId,
+      allowedChannelIds
     );
 
     if (!contact) {

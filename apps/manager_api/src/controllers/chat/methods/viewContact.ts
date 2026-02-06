@@ -16,10 +16,13 @@ export const viewContact = async (
   const { t, tokenJwtData } = request;
 
   try {
+    const allowedChannelIds = tokenJwtData.channels?.map((c) => c.id) ?? [];
+
     const response = await chatContactViewerUseCase.execute(
       t,
       request.params.contact_id,
-      tokenJwtData.account_id
+      tokenJwtData.account_id,
+      allowedChannelIds
     );
 
     if (response) {

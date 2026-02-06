@@ -10,7 +10,7 @@ import {
 } from '@core/models';
 import { ViewChatContactResponse } from '@core/schema/chat/viewContact/response.schema';
 import { ViewChatContactByPhoneResponse } from '@core/schema/chat/viewContactByPhone/response.schema';
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, notExists, or, sql } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 
@@ -22,10 +22,11 @@ export class ChatContactViewerRepository {
 
   viewChatContactById = async (
     contactId: string,
-    accountId: string
+    accountId: string,
+    allowedChannelIds: string[] = []
   ): Promise<ViewChatContactResponse | null> => {
     const [contactData, labels, channelIds] = await Promise.all([
-      this.findChatContactById(contactId, accountId),
+      this.findChatContactById(contactId, accountId, allowedChannelIds),
       this.findLabelsByContactId(contactId),
       this.findChannelIdsByContactId(contactId, accountId),
     ]);
@@ -39,8 +40,23 @@ export class ChatContactViewerRepository {
 
   private readonly findChatContactById = async (
     contactId: string,
-    accountId: string
+    accountId: string,
+    allowedChannelIds: string[] = []
   ) => {
+    const channelCondition = this.buildChannelAccessConditionForIds(
+      accountId,
+      allowedChannelIds
+    );
+
+    const whereConditions = [
+      eq(contact.contact_id, contactId),
+      eq(contact.account_id, accountId),
+      isNull(contact.deleted_at),
+    ];
+    if (channelCondition) {
+      whereConditions.push(channelCondition);
+    }
+
     const result = await this.dbRo
       .select({
         contact_id: contact.contact_id,
@@ -82,13 +98,7 @@ export class ChatContactViewerRepository {
       )
       .leftJoin(user, eq(contact.user_id, user.user_id))
       .leftJoin(userInfo, eq(user.user_id, userInfo.user_id))
-      .where(
-        and(
-          eq(contact.contact_id, contactId),
-          eq(contact.account_id, accountId),
-          isNull(contact.deleted_at)
-        )
-      )
+      .where(and(...whereConditions))
       .limit(1)
       .execute();
 
@@ -228,21 +238,30 @@ export class ChatContactViewerRepository {
   viewChatContactByPhone = async (
     accountId: string,
     phonesC: string[],
-    phoneDdi: string
+    phoneDdi: string,
+    allowedChannelIds: string[] = []
   ): Promise<ViewChatContactByPhoneResponse | null> => {
+    const channelCondition = this.buildChannelAccessConditionForIds(
+      accountId,
+      allowedChannelIds
+    );
+
+    const whereConditions = [
+      eq(contact.account_id, accountId),
+      inArray(contact.phone_c, phonesC),
+      eq(contact.phone_ddi, phoneDdi),
+      isNull(contact.deleted_at),
+    ];
+    if (channelCondition) {
+      whereConditions.push(channelCondition);
+    }
+
     const result = await this.dbRo
       .select({
         contact_id: contact.contact_id,
       })
       .from(contact)
-      .where(
-        and(
-          eq(contact.account_id, accountId),
-          inArray(contact.phone_c, phonesC),
-          eq(contact.phone_ddi, phoneDdi),
-          isNull(contact.deleted_at)
-        )
-      )
+      .where(and(...whereConditions))
       .limit(1)
       .execute();
 
@@ -255,7 +274,8 @@ export class ChatContactViewerRepository {
 
   viewChatContactsByIds = async (
     contactIds: string[],
-    accountId: string
+    accountId: string,
+    allowedChannelIds: string[] = []
   ): Promise<ViewChatContactResponse[]> => {
     if (!contactIds.length) {
       return [];
@@ -263,7 +283,7 @@ export class ChatContactViewerRepository {
 
     const [contacts, labelsByContactId, channelIdsByContactId] =
       await Promise.all([
-        this.findChatContactsByIds(contactIds, accountId),
+        this.findChatContactsByIds(contactIds, accountId, allowedChannelIds),
         this.findLabelsByContactIds(contactIds),
         this.findChannelIdsByContactIds(contactIds, accountId),
       ]);
@@ -275,10 +295,61 @@ export class ChatContactViewerRepository {
     );
   };
 
+  private readonly buildChannelAccessConditionForIds = (
+    accountId: string,
+    allowedChannelIds: string[]
+  ): ReturnType<typeof or> | null => {
+    if (allowedChannelIds.length === 0) {
+      return null;
+    }
+
+    const contactHasNoChannels = notExists(
+      this.dbRo
+        .select()
+        .from(contactChannel)
+        .where(
+          and(
+            eq(contactChannel.contact_id, contact.contact_id),
+            eq(contactChannel.account_id, accountId)
+          )
+        )
+    );
+
+    const contactHasAllowedChannel = inArray(
+      contact.contact_id,
+      this.dbRo
+        .select({ contact_id: contactChannel.contact_id })
+        .from(contactChannel)
+        .where(
+          and(
+            eq(contactChannel.account_id, accountId),
+            inArray(contactChannel.channel_id, allowedChannelIds)
+          )
+        )
+    );
+
+    return or(contactHasNoChannels, contactHasAllowedChannel);
+  };
+
   private readonly findChatContactsByIds = async (
     contactIds: string[],
-    accountId: string
+    accountId: string,
+    allowedChannelIds: string[] = []
   ) => {
+    const channelCondition = this.buildChannelAccessConditionForIds(
+      accountId,
+      allowedChannelIds
+    );
+
+    const whereConditions = [
+      inArray(contact.contact_id, contactIds),
+      eq(contact.account_id, accountId),
+      isNull(contact.deleted_at),
+    ];
+    if (channelCondition) {
+      whereConditions.push(channelCondition);
+    }
+
     const result = await this.dbRo
       .select({
         contact_id: contact.contact_id,
@@ -320,13 +391,7 @@ export class ChatContactViewerRepository {
       )
       .leftJoin(user, eq(contact.user_id, user.user_id))
       .leftJoin(userInfo, eq(user.user_id, userInfo.user_id))
-      .where(
-        and(
-          inArray(contact.contact_id, contactIds),
-          eq(contact.account_id, accountId),
-          isNull(contact.deleted_at)
-        )
-      )
+      .where(and(...whereConditions))
       .execute();
 
     return result;

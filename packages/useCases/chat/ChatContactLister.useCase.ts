@@ -12,13 +12,15 @@ export class ChatContactListerUseCase {
     perPage: number,
     currentPage: number,
     accountId: string,
-    query?: ListChatContactsRequest
+    query?: ListChatContactsRequest,
+    allowedChannelIds: string[] = []
   ): Promise<ListChatContactsFinalResponse> {
     const [results, total] = await this.chatContactService.listChatContacts(
       perPage,
       currentPage,
       accountId,
-      query
+      query,
+      allowedChannelIds
     );
 
     const pagings = setPaginationData(

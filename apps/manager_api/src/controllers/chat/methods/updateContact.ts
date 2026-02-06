@@ -22,11 +22,13 @@ export const updateContact = async (
   const { t, tokenJwtData } = request;
 
   try {
+    const allowedChannelIds = tokenJwtData.channels?.map((c) => c.id) ?? [];
     const response = await chatContactUpdaterUseCase.execute(
       t,
       tokenJwtData.account_id,
       request.params.contact_id,
-      request.body
+      request.body,
+      allowedChannelIds
     );
 
     if (response) {

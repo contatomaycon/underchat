@@ -18,10 +18,12 @@ export const createContact = async (
   const { t, tokenJwtData } = request;
 
   try {
+    const allowedChannelIds = tokenJwtData.channels?.map((c) => c.id) ?? [];
     const response = await chatContactCreatorUseCase.execute(
       t,
       request.body,
-      tokenJwtData.account_id
+      tokenJwtData.account_id,
+      allowedChannelIds
     );
 
     if (response) {

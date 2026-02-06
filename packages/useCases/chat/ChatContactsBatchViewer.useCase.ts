@@ -8,8 +8,13 @@ export class ChatContactsBatchViewerUseCase {
 
   async execute(
     contactIds: string[],
-    accountId: string
+    accountId: string,
+    allowedChannelIds: string[] = []
   ): Promise<ViewChatContactsBatchResponse> {
-    return this.chatContactService.viewChatContactsByIds(contactIds, accountId);
+    return this.chatContactService.viewChatContactsByIds(
+      contactIds,
+      accountId,
+      allowedChannelIds
+    );
   }
 }

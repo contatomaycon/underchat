@@ -1,5 +1,10 @@
 import * as schema from '@core/models';
-import { contact, labelTemplate, contactLabelTemplate } from '@core/models';
+import {
+  contact,
+  contactChannel,
+  labelTemplate,
+  contactLabelTemplate,
+} from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import {
@@ -10,6 +15,7 @@ import {
   eq,
   ilike,
   isNull,
+  notExists,
   or,
   SQL,
   SQLWrapper,
@@ -187,7 +193,8 @@ export class ChatContactListerRepository {
     query?: ListChatContactsRequest,
     emailHash?: string | null,
     phoneHashes?: string[] | null,
-    documentHash?: string | null
+    documentHash?: string | null,
+    allowedChannelIds: string[] = []
   ): Promise<ListChatContactsResponse[]> => {
     const contacts = await this.findContacts(
       accountId,
@@ -196,7 +203,8 @@ export class ChatContactListerRepository {
       query,
       emailHash,
       phoneHashes,
-      documentHash
+      documentHash,
+      allowedChannelIds
     );
 
     if (!contacts.length) {
@@ -216,14 +224,16 @@ export class ChatContactListerRepository {
     query: ListChatContactsRequest | undefined,
     emailHash: string | null | undefined,
     phoneHashes: string[] | null | undefined,
-    documentHash: string | null | undefined
+    documentHash: string | null | undefined,
+    allowedChannelIds: string[] = []
   ) => {
     const whereConditions = this.buildWhereConditions(
       accountId,
       query,
       emailHash,
       phoneHashes,
-      documentHash
+      documentHash,
+      allowedChannelIds
     );
 
     const result = await this.dbRo
@@ -246,17 +256,62 @@ export class ChatContactListerRepository {
     return result;
   };
 
+  private readonly buildChannelAccessCondition = (
+    accountId: string,
+    allowedChannelIds: string[]
+  ): SQLWrapper | null => {
+    if (allowedChannelIds.length === 0) {
+      return null;
+    }
+
+    const contactHasNoChannels = notExists(
+      this.dbRo
+        .select()
+        .from(contactChannel)
+        .where(
+          and(
+            eq(contactChannel.contact_id, contact.contact_id),
+            eq(contactChannel.account_id, accountId)
+          )
+        )
+    );
+
+    const contactHasAllowedChannel = inArray(
+      contact.contact_id,
+      this.dbRo
+        .select({ contact_id: contactChannel.contact_id })
+        .from(contactChannel)
+        .where(
+          and(
+            eq(contactChannel.account_id, accountId),
+            inArray(contactChannel.channel_id, allowedChannelIds)
+          )
+        )
+    );
+
+    return or(contactHasNoChannels, contactHasAllowedChannel) as SQLWrapper;
+  };
+
   private readonly buildWhereConditions = (
     accountId: string,
     query: ListChatContactsRequest | undefined,
     emailHash: string | null | undefined,
     phoneHashes: string[] | null | undefined,
-    documentHash: string | null | undefined
+    documentHash: string | null | undefined,
+    allowedChannelIds: string[] = []
   ): SQLWrapper[] => {
     const whereConditions: SQLWrapper[] = [
       eq(contact.account_id, accountId),
       isNull(contact.deleted_at),
     ];
+
+    const channelCondition = this.buildChannelAccessCondition(
+      accountId,
+      allowedChannelIds
+    );
+    if (channelCondition) {
+      whereConditions.push(channelCondition);
+    }
 
     if (query?.search) {
       const searchConditions = this.buildSearchConditions(query.search);
@@ -370,14 +425,16 @@ export class ChatContactListerRepository {
     query?: ListChatContactsRequest,
     emailHash?: string | null,
     phoneHashes?: string[] | null,
-    documentHash?: string | null
+    documentHash?: string | null,
+    allowedChannelIds: string[] = []
   ): Promise<number> => {
     const whereConditions = this.buildWhereConditions(
       accountId,
       query,
       emailHash,
       phoneHashes,
-      documentHash
+      documentHash,
+      allowedChannelIds
     );
 
     const result = await this.dbRo

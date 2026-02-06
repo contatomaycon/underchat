@@ -18,11 +18,14 @@ export const viewContactByPhone = async (
   const { t, tokenJwtData } = request;
 
   try {
+    const allowedChannelIds = tokenJwtData.channels?.map((c) => c.id) ?? [];
+
     const response = await chatContactByPhoneViewerUseCase.execute(
       t,
       tokenJwtData.account_id,
       request.query.phone,
-      request.query.phone_ddi
+      request.query.phone_ddi,
+      allowedChannelIds
     );
 
     if (response) {

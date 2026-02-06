@@ -371,6 +371,7 @@
   "user_address_view_successfully": "Complete address retrieved successfully!",
   "user_additional_info_view_successfully": "Additional information retrieved successfully!",
   "contact_not_found": "Contact not found!",
+  "contact_channel_not_allowed": "You do not have permission to select one or more channels.",
   "contact_must_be_validated": "The contact must be validated to open a conversation!",
   "contact_phone_required": "The contact needs to have a phone number to start a conversation!",
   "contact_deleted_successfully": "Contact deleted successfully!",
