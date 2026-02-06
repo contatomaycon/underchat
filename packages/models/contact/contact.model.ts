@@ -13,6 +13,7 @@ import { contactGroupAssignment } from './contactGroupAssignment.model';
 import { workerProfileStatusContact } from '../worker/workerProfileStatusContact.model';
 import { scheduledContact } from '../schedule';
 import { contactDocumentType } from './contactDocumentType.model';
+import { contactChannel } from './contactChannel.model';
 import { contactLabelTemplate } from './contactLabelTemplate.model';
 import { user } from '../user/user.model';
 import { EContactIgnore } from '@core/common/enums/EContactIgnore';
@@ -110,6 +111,7 @@ export const contactRelations = relations(contact, ({ one, many }) => ({
     references: [user.user_id],
   }),
   cga: many(contactGroupAssignment),
+  cch: many(contactChannel),
   clt: many(contactLabelTemplate),
   cpc: many(workerProfileStatusContact),
   csc: many(scheduledContact),

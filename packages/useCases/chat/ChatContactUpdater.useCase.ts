@@ -21,11 +21,13 @@ export class ChatContactUpdaterUseCase {
     const labelTemplateIds = extractArrayFieldValue(
       normalizedBody.label_template_ids
     );
+    const channelIds = extractArrayFieldValue(normalizedBody.channel_ids);
 
     const contactRequest: UpdateContactRequest = {
       label_template_ids: labelTemplateIds
         ? labelTemplateIds.map((id) => ({ value: id }))
         : undefined,
+      channel_ids: channelIds.length > 0 ? channelIds : undefined,
       name: normalizedBody.name,
       last_name: normalizedBody.last_name,
       email: normalizedBody.email,

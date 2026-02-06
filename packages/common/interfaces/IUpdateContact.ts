@@ -1,4 +1,5 @@
 export interface IUpdateContact {
+  channel_ids?: string[] | null;
   label_template_ids?: string[] | null;
   name?: string | null;
   last_name?: string | null;

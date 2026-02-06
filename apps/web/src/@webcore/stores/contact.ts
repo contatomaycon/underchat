@@ -25,6 +25,8 @@ import { ViewContactEmailResponse } from '@core/schema/contact/viewContactEmail/
 import { ViewContactDocumentResponse } from '@core/schema/contact/viewContactDocument/response.schema';
 import { ExportContactResponse } from '@core/schema/contact/exportContact/response.schema';
 import { ListContactUsersResponse } from '@core/schema/contact/listUsers/response.schema';
+import { ListContactChannelsResponse } from '@core/schema/contact/listContactChannels/response.schema';
+import { ListContactLabelTemplatesResponse } from '@core/schema/contact/listLabelTemplates/response.schema';
 
 type FieldValue = string | { value: string } | null;
 
@@ -175,6 +177,24 @@ export const useContactStore = defineStore('contact', {
       photoFile?: File | null
     ): FormData {
       const formData = new FormData();
+      if (body.channel_ids !== undefined) {
+        const channelIds = extractArrayFieldValue(
+          body.channel_ids as
+            | string[]
+            | Array<{ value: string }>
+            | { value: string[] }
+            | { value: string[] | null }
+            | null
+            | undefined
+        );
+        if (channelIds.length === 0) {
+          formData.append('channel_ids', '');
+        } else {
+          for (let i = 0; i < channelIds.length; i += 1) {
+            formData.append(`channel_ids[${i}]`, channelIds[i]);
+          }
+        }
+      }
       if (body.label_template_ids !== undefined) {
         const labelTemplateIds = extractArrayFieldValue(
           body.label_template_ids as
@@ -188,8 +208,8 @@ export const useContactStore = defineStore('contact', {
         if (labelTemplateIds.length === 0) {
           formData.append('label_template_ids', '');
         } else {
-          for (const labelTemplateId of labelTemplateIds) {
-            formData.append('label_template_ids', labelTemplateId);
+          for (let i = 0; i < labelTemplateIds.length; i += 1) {
+            formData.append(`label_template_ids[${i}]`, labelTemplateIds[i]);
           }
         }
       }
@@ -285,6 +305,17 @@ export const useContactStore = defineStore('contact', {
         this.loading = true;
 
         const formData = new FormData();
+        const channelIds = extractArrayFieldValue(
+          payload.channel_ids as
+            | string[]
+            | Array<{ value: string }>
+            | { value: string[] }
+            | null
+            | undefined
+        );
+        for (let i = 0; i < channelIds.length; i += 1) {
+          formData.append(`channel_ids[${i}]`, channelIds[i]);
+        }
         const labelTemplateIds = extractArrayFieldValue(
           payload.label_template_ids as
             | string[]
@@ -294,8 +325,8 @@ export const useContactStore = defineStore('contact', {
             | null
             | undefined
         );
-        for (const labelTemplateId of labelTemplateIds) {
-          formData.append('label_template_ids', labelTemplateId);
+        for (let i = 0; i < labelTemplateIds.length; i += 1) {
+          formData.append(`label_template_ids[${i}]`, labelTemplateIds[i]);
         }
         formData.append(
           'name',
@@ -785,6 +816,69 @@ export const useContactStore = defineStore('contact', {
       }
     },
 
+    async listContactChannels(): Promise<ListContactChannelsResponse | null> {
+      try {
+        const response =
+          await axios.get<IApiResponse<ListContactChannelsResponse>>(
+            `/contact/channels`
+          );
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const message =
+            data?.message ?? this.i18n.global.t('contact_channels_list_error');
+
+          this.showSnackbar(message, EColor.error);
+
+          return null;
+        }
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('contact_channels_list_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        return null;
+      }
+    },
+
+    async viewContactChannelsByContactId(
+      contactId: string
+    ): Promise<string[] | null> {
+      try {
+        const response = await axios.get<IApiResponse<string[]>>(
+          `/contact/${contactId}/channels`
+        );
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const message =
+            data?.message ?? this.i18n.global.t('contact_channels_view_error');
+
+          this.showSnackbar(message, EColor.error);
+
+          return null;
+        }
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('contact_channels_view_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        return null;
+      }
+    },
+
     async listContactUsers(): Promise<ListContactUsersResponse[] | null> {
       try {
         this.loading = true;
@@ -817,6 +911,40 @@ export const useContactStore = defineStore('contact', {
         this.showSnackbar(errorMessage, EColor.error);
 
         this.loading = false;
+
+        return null;
+      }
+    },
+
+    async listLabelTemplates(): Promise<
+      ListContactLabelTemplatesResponse[] | null
+    > {
+      try {
+        const response = await axios.get<
+          IApiResponse<ListContactLabelTemplatesResponse[]>
+        >(`/contact/label-templates`);
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const message =
+            data?.message ??
+            this.i18n.global.t('label_template_all_list_error');
+
+          this.showSnackbar(message, EColor.error);
+
+          return null;
+        }
+
+        return data.data;
+      } catch (error) {
+        const errorMessage =
+          error instanceof AxiosError
+            ? (error?.response?.data?.message ??
+              this.i18n.global.t('label_template_all_list_error'))
+            : this.i18n.global.t('label_template_all_list_error');
+
+        this.showSnackbar(errorMessage, EColor.error);
 
         return null;
       }

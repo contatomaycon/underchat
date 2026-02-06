@@ -124,6 +124,17 @@ export const createContactRequestSchema = Type.Object({
       value: Type.Union([Type.Enum(EContactIgnore), Type.Null()]),
     })
   ),
+  channel_ids: Type.Optional(
+    Type.Union([
+      Type.Array(Type.String({ format: 'uuid' })),
+      Type.Object({
+        value: Type.Union([
+          Type.Array(Type.String({ format: 'uuid' })),
+          Type.Null(),
+        ]),
+      }),
+    ])
+  ),
 });
 
 export type CreateContactRequest = Static<typeof createContactRequestSchema>;

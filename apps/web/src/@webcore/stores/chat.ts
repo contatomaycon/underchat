@@ -66,6 +66,7 @@ import { TransferUserResponse } from '@core/schema/chat/listTransferUsers/respon
 import { TransferSectorResponse } from '@core/schema/chat/listTransferSectors/response.schema';
 import { TransferSectorUserResponse } from '@core/schema/chat/listTransferSectorUsers/response.schema';
 import { ListTransferOptionsResponse } from '@core/schema/chat/listTransferOptions/response.schema';
+import { ListChatContactChannelsResponse } from '@core/schema/chat/listContactChannels/response.schema';
 import { extractFieldValue } from '@core/common/functions/extractFieldValue';
 import { extractArrayFieldValue } from '@core/common/functions/extractArrayFieldValue';
 
@@ -3781,6 +3782,74 @@ export const useChatStore = defineStore('chat', {
       }
     },
 
+    async listContactChannels(): Promise<ListChatContactChannelsResponse | null> {
+      try {
+        const response = await axios.get<
+          IApiResponse<ListChatContactChannelsResponse>
+        >('/chat/contact-channels');
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const message =
+            data?.message ??
+            this.i18n.global.t('chat_contact_channels_list_error');
+
+          this.showSnackbar(message, EColor.error);
+
+          return null;
+        }
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t(
+          'chat_contact_channels_list_error'
+        );
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        return null;
+      }
+    },
+
+    async viewContactChannelsByContactId(
+      contactId: string
+    ): Promise<string[] | null> {
+      try {
+        const response = await axios.get<IApiResponse<string[]>>(
+          `/chat/contacts/${contactId}/channels`
+        );
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const message =
+            data?.message ??
+            this.i18n.global.t('chat_contact_channels_view_error');
+
+          this.showSnackbar(message, EColor.error);
+
+          return null;
+        }
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t(
+          'chat_contact_channels_view_error'
+        );
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        return null;
+      }
+    },
+
     async listQuickMessageTemplates(
       command?: string | null
     ): Promise<ListQuickMessageTemplatesResponse[]> {
@@ -3819,6 +3888,17 @@ export const useChatStore = defineStore('chat', {
         this.loading = true;
 
         const formData = new FormData();
+        const channelIds = extractArrayFieldValue(
+          payload.channel_ids as
+            | string[]
+            | Array<{ value: string }>
+            | { value: string[] }
+            | null
+            | undefined
+        );
+        for (let i = 0; i < channelIds.length; i += 1) {
+          formData.append(`channel_ids[${i}]`, channelIds[i]);
+        }
         const labelTemplateIds = extractArrayFieldValue(
           payload.label_template_ids as
             | string[]
@@ -3828,8 +3908,8 @@ export const useChatStore = defineStore('chat', {
             | null
             | undefined
         );
-        for (const labelTemplateId of labelTemplateIds) {
-          formData.append('label_template_ids', labelTemplateId);
+        for (let i = 0; i < labelTemplateIds.length; i += 1) {
+          formData.append(`label_template_ids[${i}]`, labelTemplateIds[i]);
         }
         formData.append(
           'name',
@@ -3957,6 +4037,24 @@ export const useChatStore = defineStore('chat', {
         this.loading = true;
 
         const formData = new FormData();
+        if (body.channel_ids !== undefined) {
+          const channelIds = extractArrayFieldValue(
+            body.channel_ids as
+              | string[]
+              | Array<{ value: string }>
+              | { value: string[] }
+              | { value: string[] | null }
+              | null
+              | undefined
+          );
+          if (channelIds.length === 0) {
+            formData.append('channel_ids', '');
+          } else {
+            for (let i = 0; i < channelIds.length; i += 1) {
+              formData.append(`channel_ids[${i}]`, channelIds[i]);
+            }
+          }
+        }
         if (body.label_template_ids !== undefined) {
           const labelTemplateIds = extractArrayFieldValue(
             body.label_template_ids as
@@ -3970,8 +4068,8 @@ export const useChatStore = defineStore('chat', {
           if (labelTemplateIds.length === 0) {
             formData.append('label_template_ids', '');
           } else {
-            for (const labelTemplateId of labelTemplateIds) {
-              formData.append('label_template_ids', labelTemplateId);
+            for (let i = 0; i < labelTemplateIds.length; i += 1) {
+              formData.append(`label_template_ids[${i}]`, labelTemplateIds[i]);
             }
           }
         }

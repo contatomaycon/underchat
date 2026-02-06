@@ -21,6 +21,9 @@ import { validateContactSchema } from '@core/schema/contact/validateContact';
 import { deleteContactPhotoSchema } from '@core/schema/contact/deletePhoto';
 import { listContactUsersSchema } from '@core/schema/contact/listUsers';
 import { removeContactLabelTemplateSchema } from '@core/schema/contact/removeContactLabelTemplate';
+import { listContactChannelsSchema } from '@core/schema/contact/listContactChannels';
+import { viewContactChannelsByContactIdSchema } from '@core/schema/contact/viewContactChannelsByContactId';
+import { listContactLabelTemplatesSchema } from '@core/schema/contact/listLabelTemplates';
 import { planGuard } from '@/plugins/planGuard';
 import { planStatus } from '@/plugins/planStatus';
 
@@ -44,6 +47,50 @@ export default async function contactRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, contactCreatePermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.get('/contact/channels', {
+    schema: listContactChannelsSchema,
+    handler: contactController.listContactChannels,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, contactViewPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.get('/contact/users', {
+    schema: listContactUsersSchema,
+    handler: contactController.listUsers,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, contactViewPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.get('/contact/label-templates', {
+    schema: listContactLabelTemplatesSchema,
+    handler: contactController.listLabelTemplates,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, contactViewPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.get('/contact/export', {
+    schema: exportContactSchema,
+    handler: contactController.exportContact,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, contactViewPermissions),
       planGuard,
       planStatus,
     ],
@@ -104,6 +151,17 @@ export default async function contactRoutes(server: FastifyInstance) {
     ],
   });
 
+  server.get('/contact/:contact_id/channels', {
+    schema: viewContactChannelsByContactIdSchema,
+    handler: contactController.viewContactChannelsByContactId,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, contactViewPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
   server.delete('/contact/bulk', {
     schema: bulkDeleteContactSchema,
     handler: contactController.bulkDeleteContact,
@@ -126,17 +184,6 @@ export default async function contactRoutes(server: FastifyInstance) {
     ],
   });
 
-  server.get('/contact/export', {
-    schema: exportContactSchema,
-    handler: contactController.exportContact,
-    preHandler: [
-      (request, reply) =>
-        server.authenticateJwt(request, reply, contactViewPermissions),
-      planGuard,
-      planStatus,
-    ],
-  });
-
   server.post('/contact/:contact_id/validate', {
     schema: validateContactSchema,
     handler: contactController.validateContact,
@@ -154,17 +201,6 @@ export default async function contactRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, contactUpdatePermissions),
-      planGuard,
-      planStatus,
-    ],
-  });
-
-  server.get('/contact/users', {
-    schema: listContactUsersSchema,
-    handler: contactController.listUsers,
-    preHandler: [
-      (request, reply) =>
-        server.authenticateJwt(request, reply, contactViewPermissions),
       planGuard,
       planStatus,
     ],

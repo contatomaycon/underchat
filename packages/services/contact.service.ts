@@ -28,6 +28,8 @@ import { extractPhoneAndDdi } from '@core/common/functions/extractPhoneAndDdi';
 import { ContactLabelTemplateViewerExistsRepository } from '@core/repositories/contact/ContactLabelTemplateViewerExists.repository';
 import { ContactLabelTemplateCreatorRepository } from '@core/repositories/contact/ContactLabelTemplateCreator.repository';
 import { ContactLabelTemplateDeleterRepository } from '@core/repositories/contact/ContactLabelTemplateDeleter.repository';
+import { ContactChannelChannelsListerRepository } from '@core/repositories/contact/ContactChannelChannelsLister.repository';
+import { ContactChannelsUpdaterTransactionRepository } from '@core/repositories/contact/ContactChannelsUpdaterTransaction.repository';
 import { extractFieldValue } from '@core/common/functions/extractFieldValue';
 import { extractArrayFieldValue } from '@core/common/functions/extractArrayFieldValue';
 
@@ -51,8 +53,32 @@ export class ContactService {
     private readonly storageService: StorageService,
     private readonly contactLabelTemplateViewerExistsRepository: ContactLabelTemplateViewerExistsRepository,
     private readonly contactLabelTemplateCreatorRepository: ContactLabelTemplateCreatorRepository,
-    private readonly contactLabelTemplateDeleterRepository: ContactLabelTemplateDeleterRepository
+    private readonly contactLabelTemplateDeleterRepository: ContactLabelTemplateDeleterRepository,
+    private readonly contactChannelChannelsListerRepository: ContactChannelChannelsListerRepository,
+    private readonly contactChannelsUpdaterTransactionRepository: ContactChannelsUpdaterTransactionRepository
   ) {}
+
+  listContactChannelsByContactId = async (
+    accountId: string,
+    contactId: string
+  ): Promise<string[]> => {
+    return this.contactChannelChannelsListerRepository.listChannelIdsByContactAndAccount(
+      contactId,
+      accountId
+    );
+  };
+
+  updateContactChannels = async (
+    contactId: string,
+    accountId: string,
+    channelIds: string[]
+  ): Promise<boolean> => {
+    return this.contactChannelsUpdaterTransactionRepository.updateContactChannels(
+      contactId,
+      accountId,
+      channelIds
+    );
+  };
 
   listContacts = async (
     perPage: number,
@@ -85,6 +111,17 @@ export class ContactService {
   existsContactById = async (contactId: string): Promise<boolean> => {
     return this.contactViewerExistsRepository.existsContactById(contactId);
   };
+
+  private extractChannelIds(
+    field:
+      | string[]
+      | Array<{ value: string }>
+      | { value: string[] | null }
+      | null
+      | undefined
+  ): string[] {
+    return extractArrayFieldValue(field);
+  }
 
   private normalizeUserId(rawUserId: string | null): string | null {
     if (!rawUserId || typeof rawUserId !== 'string') {
@@ -239,6 +276,7 @@ export class ContactService {
     const labelTemplateIds = extractArrayFieldValue(
       createInput.label_template_ids
     );
+    const channelIds = this.extractChannelIds(createInput.channel_ids);
     const name = extractFieldValue(createInput.name as FieldValue);
     const lastName = extractFieldValue(createInput.last_name as FieldValue);
     const phoneDdi = extractFieldValue(createInput.phone_ddi as FieldValue);
@@ -271,6 +309,7 @@ export class ContactService {
 
     return {
       account_id: accountId,
+      channel_ids: channelIds.length > 0 ? channelIds : undefined,
       label_template_ids: labelTemplateIds,
       contact_document_type_id: contactDocumentTypeId,
       is_valided: isValidated,
@@ -551,6 +590,10 @@ export class ContactService {
     const labelTemplateIds = hasLabelTemplateIds
       ? extractArrayFieldValue(input.label_template_ids)
       : null;
+    const hasChannelIds = input.channel_ids !== undefined;
+    const channelIds = hasChannelIds
+      ? this.extractChannelIds(input.channel_ids)
+      : null;
     const name = extractFieldValue(input.name as FieldValue);
     const lastName = extractFieldValue(input.last_name as FieldValue);
     const nickname = extractFieldValue(input.nickname as FieldValue);
@@ -603,6 +646,10 @@ export class ContactService {
       payload.label_template_ids = labelTemplateIds;
     }
 
+    if (hasChannelIds) {
+      payload.channel_ids = channelIds;
+    }
+
     if (input.user_id !== undefined) {
       payload.user_id = userId;
     }
@@ -623,7 +670,11 @@ export class ContactService {
       payload.document_c = shouldClearDocument ? null : documentC;
     }
 
-    return this.contactUpdaterRepository.updateContactById(contactId, payload);
+    return this.contactUpdaterRepository.updateContactById(
+      contactId,
+      payload,
+      accountId
+    );
   };
 
   getContactPhoneDecrypted = (

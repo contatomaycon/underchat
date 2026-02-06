@@ -45,6 +45,8 @@ import { listChatWorkersSchema } from '@core/schema/chat/listChatWorkers';
 import { listChatUsersSchema } from '@core/schema/chat/listChatUsers';
 import { listChatSectorsSchema } from '@core/schema/chat/listChatSectors';
 import { removeChatContactLabelTemplateSchema } from '@core/schema/chat/removeContactLabelTemplate';
+import { listChatContactChannelsSchema } from '@core/schema/chat/listContactChannels';
+import { viewChatContactChannelsByContactIdSchema } from '@core/schema/chat/viewContactChannelsByContactId';
 
 export default function chatRoutes(server: FastifyInstance) {
   const chatController = container.resolve(ChatController);
@@ -258,9 +260,31 @@ export default function chatRoutes(server: FastifyInstance) {
     ],
   });
 
+  server.get('/chat/contact-channels', {
+    schema: listChatContactChannelsSchema,
+    handler: chatController.listContactChannels,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, chatPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
   server.get('/chat/contacts', {
     schema: listChatContactsSchema,
     handler: chatController.listContacts,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, chatPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.get('/chat/contacts/:contact_id/channels', {
+    schema: viewChatContactChannelsByContactIdSchema,
+    handler: chatController.viewContactChannelsByContactId,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, chatPermissions),

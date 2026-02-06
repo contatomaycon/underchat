@@ -2,38 +2,38 @@ import { proto, WAMessage } from '@whiskeysockets/baileys';
 import { EMessageType } from '../enums/EMessageType';
 import { remoteJid } from './remoteJid';
 import { IMapCtx } from '../interfaces/IMapCtx';
+import { unwrapMessage } from './unwrapMessage';
 
 function getText(msg: proto.IMessage): string {
-  if (msg.conversation) return msg.conversation;
-  if (msg.extendedTextMessage?.text) return msg.extendedTextMessage.text;
-  if ((msg as any).templateMessage?.hydratedTemplate?.hydratedContentText)
-    return (msg as any).templateMessage.hydratedTemplate.hydratedContentText;
-  if ((msg as any).ephemeralMessage?.message)
-    return getText((msg as any).ephemeralMessage.message as proto.IMessage);
+  const base = unwrapMessage(msg, { keepViewOnce: true }) ?? msg;
+
+  if (base.conversation) return base.conversation;
+  if (base.extendedTextMessage?.text) return base.extendedTextMessage.text;
+  if ((base as any).templateMessage?.hydratedTemplate?.hydratedContentText)
+    return (base as any).templateMessage.hydratedTemplate.hydratedContentText;
 
   return '';
 }
 
 function hasQuotedRecursive(msg: proto.IMessage): boolean {
+  const base = unwrapMessage(msg, { keepViewOnce: true }) ?? msg;
+
   const contextSources = [
-    msg.extendedTextMessage,
-    msg.imageMessage,
-    msg.videoMessage,
-    msg.ptvMessage,
-    msg.audioMessage,
-    msg.documentMessage,
-    msg.stickerMessage,
-    msg.buttonsMessage,
-    msg.templateButtonReplyMessage,
-    msg.interactiveResponseMessage,
+    base.extendedTextMessage,
+    base.imageMessage,
+    base.videoMessage,
+    base.ptvMessage,
+    base.audioMessage,
+    base.documentMessage,
+    base.stickerMessage,
+    base.buttonsMessage,
+    base.templateButtonReplyMessage,
+    base.interactiveResponseMessage,
   ]
     .map((entry) => entry?.contextInfo)
     .filter(Boolean);
 
   if (contextSources.some((ctx) => ctx?.quotedMessage)) return true;
-
-  if (msg.ephemeralMessage?.message)
-    return hasQuotedRecursive(msg.ephemeralMessage.message as proto.IMessage);
 
   return false;
 }
@@ -48,42 +48,8 @@ function getViewOnceInner(msg: proto.IMessage): proto.IMessage | undefined {
   return v1 || v2 || v3;
 }
 
-function unwrapMessage(msg: proto.IMessage): proto.IMessage {
-  const ephemeral = msg.ephemeralMessage?.message as proto.IMessage | undefined;
-  if (ephemeral) return unwrapMessage(ephemeral);
-
-  const viewOnce = msg.viewOnceMessage?.message as proto.IMessage | undefined;
-  if (viewOnce) return unwrapMessage(viewOnce);
-
-  const viewOnceV2 = msg.viewOnceMessageV2?.message as
-    | proto.IMessage
-    | undefined;
-  if (viewOnceV2) return unwrapMessage(viewOnceV2);
-
-  const viewOnceV2Ext = msg.viewOnceMessageV2Extension?.message as
-    | proto.IMessage
-    | undefined;
-  if (viewOnceV2Ext) return unwrapMessage(viewOnceV2Ext);
-
-  const documentWithCaption = (msg as any).documentWithCaptionMessage
-    ?.message as proto.IMessage | undefined;
-  if (documentWithCaption) return unwrapMessage(documentWithCaption);
-
-  const imageWithCaption = (msg as any).imageWithCaptionMessage?.message as
-    | proto.IMessage
-    | undefined;
-  if (imageWithCaption) return unwrapMessage(imageWithCaption);
-
-  const videoWithCaption = (msg as any).videoWithCaptionMessage?.message as
-    | proto.IMessage
-    | undefined;
-  if (videoWithCaption) return unwrapMessage(videoWithCaption);
-
-  return msg;
-}
-
 function detectReactionOrPin({ msg }: IMapCtx): EMessageType | undefined {
-  const unwrapped = unwrapMessage(msg);
+  const unwrapped = unwrapMessage(msg) ?? msg;
   if (unwrapped.reactionMessage) return EMessageType.react;
   if ((unwrapped as any).encReactionMessage) return EMessageType.react;
   if ((msg as any).pinInChatMessage) return EMessageType.system;
@@ -91,7 +57,7 @@ function detectReactionOrPin({ msg }: IMapCtx): EMessageType | undefined {
 }
 
 function detectMedia({ msg }: IMapCtx): EMessageType | undefined {
-  const unwrapped = unwrapMessage(msg);
+  const unwrapped = unwrapMessage(msg) ?? msg;
   if (msg.imageMessage || unwrapped.imageMessage) return EMessageType.image;
   if (msg.ptvMessage || unwrapped.ptvMessage) return EMessageType.video_note;
   if (msg.videoMessage || unwrapped.videoMessage) return EMessageType.video;
@@ -125,7 +91,7 @@ function detectTemplate({ msg }: IMapCtx): EMessageType | undefined {
     return EMessageType.text;
   }
 
-  const unwrapped = unwrapMessage(msg);
+  const unwrapped = unwrapMessage(msg) ?? msg;
   const unwrappedTemplate = (unwrapped as any).templateMessage;
   if (unwrappedTemplate?.hydratedTemplate) {
     return EMessageType.text;
@@ -141,7 +107,7 @@ function detectText({ text, msg }: IMapCtx): EMessageType | undefined {
     return EMessageType.text;
   }
 
-  const unwrapped = unwrapMessage(msg);
+  const unwrapped = unwrapMessage(msg) ?? msg;
   if (unwrapped.extendedTextMessage || unwrapped.conversation !== undefined) {
     return EMessageType.text;
   }

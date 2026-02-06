@@ -318,6 +318,18 @@ const isVisible = computed({
 const contactId = toRef(props, 'contactId');
 
 const label_template_ids = ref<string[]>([]);
+const channelIds = ref<string[]>([]);
+const channelsOptions = ref<
+  { channel_id: string; name: string; number: string | null }[]
+>([]);
+const uniqueChannelsOptions = computed(() =>
+  channelsOptions.value.map((channel) => ({
+    value: channel.channel_id,
+    title: channel.number
+      ? `${channel.name} (${channel.number})`
+      : channel.name,
+  }))
+);
 const name = ref<string | null>(null);
 const last_name = ref<string | null>(null);
 const email = ref<string | null>(null);
@@ -484,6 +496,10 @@ const loadContactData = async () => {
     if (contact) {
       label_template_ids.value =
         contact.label_templates?.map((lt) => lt.label_template_id) ?? [];
+      const contactChannels = await chatStore.viewContactChannelsByContactId(
+        contactId.value
+      );
+      channelIds.value = contactChannels ?? [];
       name.value = contact.name;
       last_name.value = contact.last_name ?? null;
 
@@ -555,6 +571,7 @@ const updateContact = async () => {
 
     const body: UpdateContactRequest = {
       label_template_ids: label_template_ids.value.map((id) => ({ value: id })),
+      channel_ids: channelIds.value,
       name: name.value,
       last_name: last_name.value,
       email: emailToSave,
@@ -1162,6 +1179,13 @@ const handleRemovePhotoConfirm = async () => {
   }
 };
 
+const loadChannels = async () => {
+  const channels = await chatStore.listContactChannels();
+  if (channels) {
+    channelsOptions.value = channels;
+  }
+};
+
 const loadLabelTemplates = async () => {
   if (labelTemplates.value.length === 0) {
     const templates = await chatStore.listChatLabelTemplates();
@@ -1215,7 +1239,7 @@ const loadUsers = async () => {
 
 watch([contactId, isVisible], async ([newContactId, newIsVisible]) => {
   if (newIsVisible) {
-    await Promise.all([loadLabelTemplates(), loadUsers()]);
+    await Promise.all([loadLabelTemplates(), loadUsers(), loadChannels()]);
     if (newContactId) {
       await loadContactData();
     }
@@ -1681,7 +1705,7 @@ onMounted(() => {
             </VRow>
             <VDivider class="my-4" />
             <VRow>
-              <VCol cols="12">
+              <VCol cols="12" md="6">
                 <VLabel class="text-body-2 mb-1">{{ $t('label') }}:</VLabel>
                 <AppSelectSearch
                   v-model="label_template_ids"
@@ -1747,6 +1771,20 @@ onMounted(() => {
                     {{ itemsLabel.find((l) => l.value === labelId)?.title }}
                   </VChip>
                 </div>
+              </VCol>
+              <VCol cols="12" md="6">
+                <AppSelectSearch
+                  v-model="channelIds"
+                  :items="uniqueChannelsOptions"
+                  :label="$t('channels')"
+                  item-value="value"
+                  item-title="title"
+                  :placeholder="$t('select_channels')"
+                  multiple
+                  chips
+                  closable-chips
+                  clearable
+                />
               </VCol>
             </VRow>
             <VDivider class="my-4" />

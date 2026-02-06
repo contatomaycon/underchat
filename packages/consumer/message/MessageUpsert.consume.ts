@@ -8,6 +8,7 @@ import { IChat } from '@core/common/interfaces/IChat';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { getPhoneFromJid } from '@core/common/functions/getPhoneFromJid';
 import { v7 as uuidv7 } from 'uuid';
+import { createHash } from 'node:crypto';
 import { AccountService } from '@core/services/account.service';
 import { WorkerService } from '@core/services/worker.service';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
@@ -33,6 +34,7 @@ import {
 } from '@core/schema/chat/listMessageChats/response.schema';
 import { buildQuotedTextFromExtended } from '@core/common/functions/buildQuotedTextFromExtended';
 import { buildContextInfoFromMessage } from '@core/common/functions/buildContextInfoFromMessage';
+import { unwrapMessage } from '@core/common/functions/unwrapMessage';
 import { createConsumer } from '@core/common/functions/createConsumer';
 import { connectConsumer } from '@core/common/functions/connectConsumer';
 import { handleConsumerError } from '@core/common/functions/handleConsumerError';
@@ -43,6 +45,7 @@ import { EMessageType } from '@core/common/enums/EMessageType';
 import {
   downloadMediaMessage,
   proto,
+  WAMessage,
   WAMessageKey,
 } from '@whiskeysockets/baileys';
 import { Buffer } from 'node:buffer';
@@ -482,8 +485,9 @@ export class MessageUpsertConsume {
   ): Promise<boolean | null> {
     if (data.type !== EMessageType.edit_text) return null;
 
-    const editedMessage = (data.message?.message?.editedMessage ??
-      data.message?.message) as proto.Message.IFutureProofMessage &
+    const baseMessage = this.getBaseMessage(data);
+    const editedMessage = (baseMessage?.message?.editedMessage ??
+      baseMessage?.message) as proto.Message.IFutureProofMessage &
       proto.IMessage;
 
     const protocolMessage =
@@ -545,12 +549,12 @@ export class MessageUpsertConsume {
   ): Promise<boolean | null> {
     if (
       data.type !== EMessageType.delete_message ||
-      !data.message?.message?.protocolMessage?.key?.id
+      !this.getBaseMessage(data)?.message?.protocolMessage?.key?.id
     ) {
       return null;
     }
 
-    const protocolMessage = data.message.message.protocolMessage;
+    const protocolMessage = this.getBaseMessage(data)?.message?.protocolMessage;
     const targetMessageId = protocolMessage?.key?.id;
     if (!targetMessageId) {
       return true;
@@ -609,7 +613,8 @@ export class MessageUpsertConsume {
       return;
     }
 
-    const pinMessage = (data?.message?.message as any)?.pinInChatMessage;
+    const pinMessage = (this.getBaseMessage(data)?.message as any)
+      ?.pinInChatMessage;
     if (!pinMessage?.key?.id) {
       return;
     }
@@ -878,7 +883,7 @@ export class MessageUpsertConsume {
   private getDocumentMessage(
     data: IUpsertMessage
   ): proto.Message.IDocumentMessage | null {
-    const msg = data.message?.message;
+    const msg = this.getInnerMessage(data);
     if (!msg) return null;
 
     if (msg.documentMessage?.url) {
@@ -897,7 +902,7 @@ export class MessageUpsertConsume {
   private getImageMessage(
     data: IUpsertMessage
   ): proto.Message.IImageMessage | null {
-    const msg = data.message?.message;
+    const msg = this.getInnerMessage(data);
     if (!msg) return null;
 
     if (msg.imageMessage?.url) {
@@ -916,7 +921,7 @@ export class MessageUpsertConsume {
   private getVideoMessage(
     data: IUpsertMessage
   ): proto.Message.IVideoMessage | null {
-    const msg = data.message?.message as
+    const msg = this.getInnerMessage(data) as
       | (proto.IMessage & { ptvMessage?: proto.Message.IVideoMessage })
       | undefined;
     if (!msg) return null;
@@ -953,7 +958,10 @@ export class MessageUpsertConsume {
     }
 
     try {
-      const buffer = await this.downloadMediaMessageWithTimeout(data.message);
+      const baseMessage = this.getBaseMessage(data);
+      if (!baseMessage) return;
+
+      const buffer = await this.downloadMediaMessageWithTimeout(baseMessage);
 
       const photoResult = await this.storageService.uploadFromBuffer(
         buffer,
@@ -997,7 +1005,10 @@ export class MessageUpsertConsume {
     }
 
     try {
-      const buffer = await this.downloadMediaMessageWithTimeout(data.message);
+      const baseMessage = this.getBaseMessage(data);
+      if (!baseMessage) return;
+
+      const buffer = await this.downloadMediaMessageWithTimeout(baseMessage);
 
       const inferredVideoName =
         (videoMsg as { fileName?: string | null })?.fileName ?? undefined;
@@ -1047,14 +1058,20 @@ export class MessageUpsertConsume {
   ): Promise<void> {
     if (
       content.type !== EMessageType.audio ||
-      !data.message?.message?.audioMessage?.url
+      !this.getInnerMessage(data)?.audioMessage?.url
     ) {
       return;
     }
 
     try {
-      const audioMsg = data.message.message.audioMessage;
-      const buffer = await this.downloadMediaMessageWithTimeout(data.message);
+      const msg = this.getInnerMessage(data);
+      if (!msg?.audioMessage) return;
+
+      const audioMsg = msg.audioMessage;
+      const baseMessage = this.getBaseMessage(data);
+      if (!baseMessage) return;
+
+      const buffer = await this.downloadMediaMessageWithTimeout(baseMessage);
 
       const inferredAudioName =
         (audioMsg as { fileName?: string | null })?.fileName ?? undefined;
@@ -1106,7 +1123,10 @@ export class MessageUpsertConsume {
     }
 
     try {
-      const buffer = await this.downloadMediaMessageWithTimeout(data.message);
+      const baseMessage = this.getBaseMessage(data);
+      if (!baseMessage) return;
+
+      const buffer = await this.downloadMediaMessageWithTimeout(baseMessage);
 
       const documentResult = await this.storageService.uploadFromBuffer(
         buffer,
@@ -1141,14 +1161,20 @@ export class MessageUpsertConsume {
   ): Promise<void> {
     if (
       content.type !== EMessageType.sticker ||
-      !data.message?.message?.stickerMessage?.url
+      !this.getInnerMessage(data)?.stickerMessage?.url
     ) {
       return;
     }
 
     try {
-      const stickerMsg = data.message.message.stickerMessage;
-      const buffer = await this.downloadMediaMessageWithTimeout(data.message);
+      const msg = this.getInnerMessage(data);
+      if (!msg?.stickerMessage) return;
+
+      const stickerMsg = msg.stickerMessage;
+      const baseMessage = this.getBaseMessage(data);
+      if (!baseMessage) return;
+
+      const buffer = await this.downloadMediaMessageWithTimeout(baseMessage);
 
       const stickerResult = await this.storageService.uploadFromBuffer(
         buffer,
@@ -1181,12 +1207,15 @@ export class MessageUpsertConsume {
   ): Promise<void> {
     if (
       content.type !== EMessageType.location ||
-      !data.message?.message?.locationMessage
+      !this.getInnerMessage(data)?.locationMessage
     ) {
       return;
     }
 
-    const locationMsg = data.message.message.locationMessage;
+    const msg = this.getInnerMessage(data);
+    if (!msg?.locationMessage) return;
+
+    const locationMsg = msg.locationMessage;
 
     content.location = {
       latitude: locationMsg.degreesLatitude ?? null,
@@ -1403,13 +1432,16 @@ export class MessageUpsertConsume {
   ): Promise<void> {
     if (
       content.type !== EMessageType.contact_card ||
-      !data.message?.message?.contactMessage?.vcard
+      !this.getInnerMessage(data)?.contactMessage?.vcard
     ) {
       return;
     }
 
     try {
-      const contactMsg = data.message.message.contactMessage;
+      const msg = this.getInnerMessage(data);
+      if (!msg?.contactMessage) return;
+
+      const contactMsg = msg.contactMessage;
       const vcard = contactMsg.vcard ?? '';
       const parsed = this.parseVCard(vcard);
 
@@ -1470,13 +1502,15 @@ export class MessageUpsertConsume {
   ): Promise<void> {
     if (
       content.type !== EMessageType.contacts ||
-      !data.message?.message?.contactsArrayMessage?.contacts?.length
+      !this.getInnerMessage(data)?.contactsArrayMessage?.contacts?.length
     ) {
       return;
     }
 
     try {
-      const contactsArray = data.message.message.contactsArrayMessage.contacts;
+      const msg = this.getInnerMessage(data);
+      const contactsArray = msg?.contactsArrayMessage?.contacts;
+      if (!contactsArray?.length) return;
       const processedContacts: IContactMessage[] = [];
 
       for (const contactMsg of contactsArray) {
@@ -1993,7 +2027,7 @@ export class MessageUpsertConsume {
       );
 
       const inputChatMessage: IChatMessage = {
-        message_id: uuidv7(),
+        message_id: this.buildDeterministicMessageId(getChat, data),
         chat_id: getChat.chat_id,
         message_key: {
           remote_jid: jid,
@@ -2199,21 +2233,54 @@ export class MessageUpsertConsume {
     return name;
   }
 
+  private getInnerMessage(data: IUpsertMessage): proto.IMessage | null {
+    const msg = data.message?.message;
+    if (!msg) return null;
+
+    const keepViewOnce = data.type === EMessageType.view_once;
+    return unwrapMessage(msg, { keepViewOnce }) ?? msg;
+  }
+
+  private getBaseMessage(data: IUpsertMessage): WAMessage | null {
+    const raw = data.message;
+    if (!raw) return null;
+
+    const inner = this.getInnerMessage(data);
+    if (!inner || inner === raw.message) return raw;
+
+    return { ...raw, message: inner };
+  }
+
+  private buildDeterministicMessageId(
+    getChat: IChat,
+    data: IUpsertMessage
+  ): string {
+    const keyId = data.message?.key?.id;
+    if (!keyId) {
+      return uuidv7();
+    }
+
+    const fromMe = data.message?.key?.fromMe ? '1' : '0';
+    const base = `${data.account_id}:${getChat.chat_id}:${fromMe}:${keyId}`;
+    const hash = createHash('sha1').update(base).digest('hex');
+    return `wa_${hash}`;
+  }
+
   private isMessageEmpty(data: IUpsertMessage): boolean {
     if (data.type === EMessageType.set_disappearing_messages) {
       return false;
     }
 
-    const messageText =
-      data.message?.message?.extendedTextMessage?.text ??
-      data.message?.message?.conversation;
+    const msg = this.getInnerMessage(data);
+    const messageText = msg?.extendedTextMessage?.text ?? msg?.conversation;
     return !messageText || messageText.trim() === '';
   }
 
   private buildMessageContent(data: IUpsertMessage): IContent {
-    const extended = data?.message?.message?.extendedTextMessage;
-    const templateMessage =
-      data?.message?.message?.templateMessage?.hydratedTemplate;
+    const baseMessage = this.getBaseMessage(data);
+    const msg = baseMessage?.message;
+    const extended = msg?.extendedTextMessage;
+    const templateMessage = (msg as any)?.templateMessage?.hydratedTemplate;
 
     const linkPreview = extended
       ? ({
@@ -2226,9 +2293,7 @@ export class MessageUpsertConsume {
       : undefined;
 
     let messageText: string | undefined =
-      data.message?.message?.extendedTextMessage?.text ??
-      data.message?.message?.conversation ??
-      undefined;
+      msg?.extendedTextMessage?.text ?? msg?.conversation ?? undefined;
 
     if (!messageText && data.type === EMessageType.document) {
       const documentMsg = this.getDocumentMessage(data);
@@ -2259,12 +2324,14 @@ export class MessageUpsertConsume {
       type: data.type,
       message: messageText,
       link_preview: linkPreview,
-      quoted: buildQuotedTextFromExtended(data.message),
-      context_info: buildContextInfoFromMessage(data.message),
+      quoted: baseMessage ? buildQuotedTextFromExtended(baseMessage) : null,
+      context_info: baseMessage
+        ? buildContextInfoFromMessage(baseMessage)
+        : null,
     };
 
     if (data.type === EMessageType.set_disappearing_messages) {
-      const protocolMessage = (data?.message?.message as any)?.protocolMessage;
+      const protocolMessage = (msg as any)?.protocolMessage;
       const expiration = protocolMessage?.ephemeralExpiration ?? 0;
       const jid = remoteJid(data.message?.key);
       const jidAlt = remoteJidAlt(data.message?.key);
@@ -2312,7 +2379,7 @@ export class MessageUpsertConsume {
           hydratedButtons && hydratedButtons.length > 0
             ? hydratedButtons
             : null,
-        templateId: data?.message?.message?.templateMessage?.templateId ?? null,
+        templateId: (msg as any)?.templateMessage?.templateId ?? null,
         verifiedBizName: data.message?.verifiedBizName ?? null,
       };
 
@@ -2322,7 +2389,7 @@ export class MessageUpsertConsume {
     }
 
     if (data.type === EMessageType.system) {
-      const pinMessage = (data?.message?.message as any)?.pinInChatMessage;
+      const pinMessage = (msg as any)?.pinInChatMessage;
       if (pinMessage) {
         const jid = remoteJid(data.message?.key);
         const jidAlt = remoteJidAlt(data.message?.key);

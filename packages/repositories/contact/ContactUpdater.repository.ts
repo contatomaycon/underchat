@@ -12,13 +12,15 @@ import { nullIfEmpty } from '@core/common/functions/nullIfEmpty';
 import { EContactIgnore } from '@core/common/enums/EContactIgnore';
 import { ContactLabelTemplateDeleterRepository } from './ContactLabelTemplateDeleter.repository';
 import { ContactLabelTemplateCreatorRepository } from './ContactLabelTemplateCreator.repository';
+import { ContactChannelsUpdaterTransactionRepository } from './ContactChannelsUpdaterTransaction.repository';
 
 @injectable()
 export class ContactUpdaterRepository {
   constructor(
     @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>,
     private readonly contactLabelTemplateDeleterRepository: ContactLabelTemplateDeleterRepository,
-    private readonly contactLabelTemplateCreatorRepository: ContactLabelTemplateCreatorRepository
+    private readonly contactLabelTemplateCreatorRepository: ContactLabelTemplateCreatorRepository,
+    private readonly contactChannelsUpdaterTransactionRepository: ContactChannelsUpdaterTransactionRepository
   ) {}
 
   private updateInput(
@@ -155,9 +157,11 @@ export class ContactUpdaterRepository {
 
   updateContactById = async (
     contactId: string,
-    input: IUpdateContact
+    input: IUpdateContact,
+    accountId?: string | null
   ): Promise<boolean> => {
     const hasLabelTemplates = input.label_template_ids !== undefined;
+    const hasChannelIds = input.channel_ids !== undefined;
 
     if (hasLabelTemplates) {
       return this.dbRw.transaction(async (tx) => {
@@ -169,8 +173,24 @@ export class ContactUpdaterRepository {
           labelTemplateIds
         );
 
+        if (hasChannelIds && accountId) {
+          await this.contactChannelsUpdaterTransactionRepository.updateContactChannels(
+            contactId,
+            accountId,
+            input.channel_ids ?? []
+          );
+        }
+
         return this.updateContactInTransaction(tx, contactId, input);
       });
+    }
+
+    if (hasChannelIds && accountId) {
+      await this.contactChannelsUpdaterTransactionRepository.updateContactChannels(
+        contactId,
+        accountId,
+        input.channel_ids ?? []
+      );
     }
 
     return this.updateContactWithoutTransaction(contactId, input);

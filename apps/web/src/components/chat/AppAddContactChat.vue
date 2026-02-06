@@ -177,6 +177,18 @@ const itemsLabel = computed(() =>
 );
 
 const label_template_ids = ref<string[]>([]);
+const channelIds = ref<string[]>([]);
+const channelsOptions = ref<
+  { channel_id: string; name: string; number: string | null }[]
+>([]);
+const uniqueChannelsOptions = computed(() =>
+  channelsOptions.value.map((channel) => ({
+    value: channel.channel_id,
+    title: channel.number
+      ? `${channel.name} (${channel.number})`
+      : channel.name,
+  }))
+);
 const name = ref<string | null>(null);
 const last_name = ref<string | null>(null);
 const email = ref<string | null>(null);
@@ -280,6 +292,7 @@ const addContact = async () => {
           label_template_ids.value.length > 0
             ? label_template_ids.value.map((id) => ({ value: id }))
             : undefined,
+        channel_ids: channelIds.value.length > 0 ? channelIds.value : undefined,
         name: name.value,
         last_name: last_name.value ?? null,
         email: email.value ?? null,
@@ -367,8 +380,22 @@ const resetForm = () => {
       (extractFieldValue(
         props.initialData.ignore as FieldValue
       ) as EContactIgnore) ?? EContactIgnore.not_ignore;
+    const channelIdsValue = props.initialData.channel_ids;
+    if (Array.isArray(channelIdsValue)) {
+      channelIds.value = [...channelIdsValue];
+    } else if (
+      channelIdsValue &&
+      typeof channelIdsValue === 'object' &&
+      'value' in channelIdsValue &&
+      Array.isArray(channelIdsValue.value)
+    ) {
+      channelIds.value = [...channelIdsValue.value];
+    } else {
+      channelIds.value = [];
+    }
   } else {
     label_template_ids.value = [];
+    channelIds.value = [];
     name.value = null;
     last_name.value = null;
     email.value = null;
@@ -387,6 +414,13 @@ const resetForm = () => {
   cropDialog.value.imageSrc = '';
   cropDialog.value.croppedImage = '';
   refFormAddContact.value?.resetValidation();
+};
+
+const loadChannels = async () => {
+  const channels = await chatStore.listContactChannels();
+  if (channels) {
+    channelsOptions.value = channels;
+  }
 };
 
 const openFileSelector = () => {
@@ -976,7 +1010,7 @@ onMounted(() => {
 watch(isVisible, async (visible) => {
   if (visible) {
     resetForm();
-    await Promise.all([loadLabelTemplates(), loadUsers()]);
+    await Promise.all([loadLabelTemplates(), loadUsers(), loadChannels()]);
   }
 });
 
@@ -1187,7 +1221,7 @@ watch(
           </VRow>
           <VDivider class="my-4" />
           <VRow>
-            <VCol cols="12">
+            <VCol cols="12" md="6">
               <VLabel class="text-body-2 mb-1">{{ $t('label') }}:</VLabel>
               <AppSelectSearch
                 v-model="label_template_ids"
@@ -1251,6 +1285,20 @@ watch(
                   {{ itemsLabel.find((l) => l.value === labelId)?.title }}
                 </VChip>
               </div>
+            </VCol>
+            <VCol cols="12" md="6">
+              <AppSelectSearch
+                v-model="channelIds"
+                :items="uniqueChannelsOptions"
+                :label="$t('channels')"
+                item-value="value"
+                item-title="title"
+                :placeholder="$t('select_channels')"
+                multiple
+                chips
+                closable-chips
+                clearable
+              />
             </VCol>
           </VRow>
           <VDivider class="my-4" />

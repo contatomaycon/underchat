@@ -12,6 +12,7 @@ import { v7 as uuidv7 } from 'uuid';
 import { nullIfEmpty } from '@core/common/functions/nullIfEmpty';
 import { ContactGroupAssignmentCreatorRepository } from '../contactGroup/ContactGroupAssignmentCreator.repository';
 import { ContactLabelTemplateCreatorRepository } from './ContactLabelTemplateCreator.repository';
+import { ContactChannelCreatorRepository } from './ContactChannelCreator.repository';
 import { TFunction } from 'i18next';
 import { EContactIgnore } from '@core/common/enums/EContactIgnore';
 
@@ -20,7 +21,8 @@ export class ContactCreatorRepository {
   constructor(
     @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>,
     private readonly contactGroupAssignmentCreatorRepository: ContactGroupAssignmentCreatorRepository,
-    private readonly contactLabelTemplateCreatorRepository: ContactLabelTemplateCreatorRepository
+    private readonly contactLabelTemplateCreatorRepository: ContactLabelTemplateCreatorRepository,
+    private readonly contactChannelCreatorRepository: ContactChannelCreatorRepository
   ) {}
 
   private truncateField(
@@ -63,16 +65,19 @@ export class ContactCreatorRepository {
     const validatedInput = this.validateAndTruncateContact(input);
     const contactId = uuidv7();
     const hasLabels = this.hasLabelTemplates(validatedInput);
+    const hasChannels = this.hasChannels(validatedInput);
+    const needsTransaction = (hasLabels || hasChannels) && !tx;
 
-    if (hasLabels && !tx) {
-      return this.createContactWithLabels(validatedInput, contactId);
+    if (needsTransaction) {
+      return this.createContactWithLabelsAndChannels(validatedInput, contactId);
     }
 
     return this.executeCreateContact(
       validatedInput,
       contactId,
       tx || this.dbRw,
-      tx ? hasLabels : false
+      tx ? hasLabels : false,
+      tx ? hasChannels : false
     );
   };
 
@@ -85,7 +90,13 @@ export class ContactCreatorRepository {
     );
   };
 
-  private readonly createContactWithLabels = async (
+  private readonly hasChannels = (validatedInput: ICreateContact): boolean => {
+    return (
+      !!validatedInput.channel_ids && validatedInput.channel_ids.length > 0
+    );
+  };
+
+  private readonly createContactWithLabelsAndChannels = async (
     validatedInput: ICreateContact,
     contactId: string
   ): Promise<string | null> => {
@@ -106,6 +117,13 @@ export class ContactCreatorRepository {
         validatedInput.label_template_ids ?? []
       );
 
+      await this.createContactChannels(
+        transaction,
+        contactId,
+        validatedInput.channel_ids ?? [],
+        validatedInput.account_id ?? null
+      );
+
       return contactId;
     });
   };
@@ -120,7 +138,8 @@ export class ContactCreatorRepository {
           typeof schema,
           ExtractTablesWithRelations<typeof schema>
         >,
-    createLabels: boolean
+    createLabels: boolean,
+    createChannels: boolean
   ): Promise<string | null> => {
     try {
       const insertResult = await this.insertContact(
@@ -133,15 +152,26 @@ export class ContactCreatorRepository {
         return null;
       }
 
+      const tx = dbOrTx as PgTransaction<
+        NodePgQueryResultHKT,
+        typeof schema,
+        ExtractTablesWithRelations<typeof schema>
+      >;
+
       if (createLabels) {
         await this.createLabelTemplates(
-          dbOrTx as PgTransaction<
-            NodePgQueryResultHKT,
-            typeof schema,
-            ExtractTablesWithRelations<typeof schema>
-          >,
+          tx,
           contactId,
           validatedInput.label_template_ids ?? []
+        );
+      }
+
+      if (createChannels) {
+        await this.createContactChannels(
+          tx,
+          contactId,
+          validatedInput.channel_ids ?? [],
+          validatedInput.account_id ?? null
         );
       }
 
@@ -218,6 +248,34 @@ export class ContactCreatorRepository {
           tx,
           contactId,
           labelTemplateId
+        )
+      )
+    );
+  };
+
+  private readonly createContactChannels = async (
+    tx: PgTransaction<
+      NodePgQueryResultHKT,
+      typeof schema,
+      ExtractTablesWithRelations<typeof schema>
+    >,
+    contactId: string,
+    channelIds: string[],
+    accountId: string | null
+  ) => {
+    if (!accountId || channelIds.length === 0) {
+      return;
+    }
+
+    const validChannelIds = channelIds.filter((channelId) => channelId);
+
+    await Promise.all(
+      validChannelIds.map((channelId) =>
+        this.contactChannelCreatorRepository.createContactChannelInTransaction(
+          tx,
+          contactId,
+          channelId,
+          accountId
         )
       )
     );

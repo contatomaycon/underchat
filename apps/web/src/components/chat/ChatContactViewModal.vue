@@ -45,6 +45,17 @@ const isViewDocumentDecrypted = ref(false);
 const isLoadingViewEmail = ref(false);
 const isLoadingViewPhone = ref(false);
 const isLoadingViewDocument = ref(false);
+const contactChannelIds = ref<string[]>([]);
+const channelsOptions = ref<
+  { channel_id: string; name: string; number: string | null }[]
+>([]);
+const contactChannelsDisplay = computed(() => {
+  if (contactChannelIds.value.length === 0) return [];
+  return contactChannelIds.value
+    .map((id) => channelsOptions.value.find((c) => c.channel_id === id))
+    .filter(Boolean)
+    .map((c) => (c!.number ? `${c!.name} (${c!.number})` : c!.name));
+});
 
 const viewContactEmailFormatted = computed(() => {
   if (isViewEmailDecrypted.value) {
@@ -211,9 +222,23 @@ const removeLabelTemplate = async (labelTemplateId: string) => {
   }
 };
 
+const loadContactChannels = async () => {
+  if (!props.contact?.contact_id || props.useReportStore) return;
+  const [channelIds, channels] = await Promise.all([
+    chatStore.viewContactChannelsByContactId(props.contact.contact_id),
+    chatStore.listContactChannels(),
+  ]);
+  if (channelIds) {
+    contactChannelIds.value = channelIds;
+  }
+  if (channels) {
+    channelsOptions.value = channels;
+  }
+};
+
 watch(
   () => props.contact,
-  (contact) => {
+  async (contact) => {
     if (contact) {
       viewContactEmailPartial.value = contact.email_partial ?? null;
       viewContactEmail.value = null;
@@ -224,6 +249,9 @@ watch(
       viewContactDocumentPartial.value = contact.document_partial ?? null;
       viewContactDocument.value = null;
       isViewDocumentDecrypted.value = false;
+      contactChannelIds.value = [];
+      channelsOptions.value = [];
+      await loadContactChannels();
     }
   },
   { immediate: true }
@@ -363,6 +391,24 @@ watch(
                 "
               >
                 {{ labelTemplate.label }}
+              </VChip>
+            </div>
+            <div v-else class="text-body-2 text-medium-emphasis mt-1">-</div>
+          </VCol>
+          <VCol cols="12" md="6" v-if="!useReportStore">
+            <span class="text-body-2 mb-1 d-inline-block">
+              {{ $t('channels') + ':' }}
+            </span>
+            <div
+              v-if="contactChannelsDisplay.length > 0"
+              class="d-flex flex-wrap align-center gap-2 mt-1"
+            >
+              <VChip
+                v-for="(channelName, idx) in contactChannelsDisplay"
+                :key="idx"
+                size="small"
+              >
+                {{ channelName }}
               </VChip>
             </div>
             <div v-else class="text-body-2 text-medium-emphasis mt-1">-</div>

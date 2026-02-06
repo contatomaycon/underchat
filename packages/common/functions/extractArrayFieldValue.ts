@@ -4,6 +4,7 @@ export const extractArrayFieldValue = (
     | Array<{ value: string }>
     | { value: string }
     | { value: string[] }
+    | { value: string[] | null }
     | { value: string | null }
     | null
     | undefined

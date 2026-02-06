@@ -1,12 +1,10 @@
 <script lang="ts" setup>
 import { useContactStore } from '@/@webcore/stores/contact';
-import { useLabelTemplateStore } from '@/@webcore/stores/labelTemplate';
 import { CreateContactRequest } from '@core/schema/contact/createContact/request.schema';
 import { VForm } from 'vuetify/components/VForm';
 import { useCountryCodes } from '@/composables/useCountryCodes';
 import { requiredValidator } from '@/@webcore/utils/validators';
 import { EColor } from '@core/common/enums/EColor';
-import { useChatStore } from '@/@webcore/stores/chat';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { ELabelTemplatePermissions } from '@core/common/enums/EPermissions/labelTemplate';
 import { can } from '@layouts/plugins/casl';
@@ -17,8 +15,6 @@ import { validateCnpj } from '@core/common/functions/validateCnpj';
 import AppInfoTooltip from '@/components/AppInfoTooltip.vue';
 
 const contactStore = useContactStore();
-const labelTemplateStore = useLabelTemplateStore();
-const chatStore = useChatStore();
 const { items: countryCodes } = useCountryCodes();
 const labelTemplates = ref<
   Array<{ label_template_id: string; label: string; color?: string }>
@@ -202,6 +198,18 @@ const itemsLabel = computed(() =>
 );
 
 const label_template_ids = ref<string[]>([]);
+const channelIds = ref<string[]>([]);
+const channelsOptions = ref<
+  { channel_id: string; name: string; number: string | null }[]
+>([]);
+const uniqueChannelsOptions = computed(() =>
+  channelsOptions.value.map((channel) => ({
+    value: channel.channel_id,
+    title: channel.number
+      ? `${channel.name} (${channel.number})`
+      : channel.name,
+  }))
+);
 const name = ref<string | null>(null);
 const last_name = ref<string | null>(null);
 const email = ref<string | null>(null);
@@ -280,6 +288,7 @@ const addContact = async () => {
           label_template_ids.value.length > 0
             ? label_template_ids.value.map((id) => ({ value: id }))
             : undefined,
+        channel_ids: channelIds.value.length > 0 ? channelIds.value : undefined,
         name: name.value,
         last_name: last_name.value ?? null,
         email: email.value ?? null,
@@ -367,8 +376,22 @@ const resetForm = () => {
       (extractFieldValue(
         props.initialData.ignore as FieldValue
       ) as EContactIgnore) ?? EContactIgnore.not_ignore;
+    const channelIdsValue = props.initialData.channel_ids;
+    if (Array.isArray(channelIdsValue)) {
+      channelIds.value = [...channelIdsValue];
+    } else if (
+      channelIdsValue &&
+      typeof channelIdsValue === 'object' &&
+      'value' in channelIdsValue &&
+      Array.isArray(channelIdsValue.value)
+    ) {
+      channelIds.value = [...channelIdsValue.value];
+    } else {
+      channelIds.value = [];
+    }
   } else {
     label_template_ids.value = [];
+    channelIds.value = [];
     name.value = null;
     last_name.value = null;
     email.value = null;
@@ -410,6 +433,13 @@ const loadUsers = async () => {
   isLoadingUsers.value = false;
 };
 
+const loadChannels = async () => {
+  const channels = await contactStore.listContactChannels();
+  if (channels) {
+    channelsOptions.value = channels;
+  }
+};
+
 const openFileSelector = () => {
   const input = globalThis.document.createElement('input');
   input.type = 'file';
@@ -426,7 +456,7 @@ const openFileSelector = () => {
 
 const handleImageSelect = (file: File) => {
   if (file.size > MAX_FILE_SIZE_BYTES) {
-    chatStore.showSnackbar(
+    contactStore.showSnackbar(
       t('profile_status_file_size_exceeded', { max: '16 MB' }),
       EColor.error
     );
@@ -887,7 +917,7 @@ const cropImage = () => {
   const ctx = canvas.getContext('2d');
 
   if (!ctx || !img.complete) {
-    chatStore.showSnackbar(t('wait_image_load'), EColor.warning);
+    contactStore.showSnackbar(t('wait_image_load'), EColor.warning);
     return;
   }
 
@@ -956,19 +986,7 @@ const cancelCrop = () => {
 };
 
 const loadLabelTemplates = async () => {
-  let templates: Array<{
-    label_template_id: string;
-    label: string;
-    color?: string;
-  }> | null = null;
-
-  if (canAccessLabelTemplate.value) {
-    templates = await labelTemplateStore.listLabelTemplateAll();
-  }
-
-  if (!templates || templates.length === 0) {
-    templates = await chatStore.listChatLabelTemplates();
-  }
+  const templates = await contactStore.listLabelTemplates();
 
   labelTemplates.value =
     templates?.map((lt) => ({
@@ -982,6 +1000,7 @@ onMounted(async () => {
   resetForm();
   await loadLabelTemplates();
   await loadUsers();
+  await loadChannels();
 });
 
 watch(isVisible, (visible) => {
@@ -989,6 +1008,7 @@ watch(isVisible, (visible) => {
     resetForm();
     loadLabelTemplates();
     loadUsers();
+    loadChannels();
   }
 });
 
@@ -1190,7 +1210,7 @@ watch(
           </VRow>
           <VDivider class="my-4" />
           <VRow>
-            <VCol cols="12">
+            <VCol cols="12" md="6">
               <VLabel class="text-body-2 mb-1">{{ $t('label') }}:</VLabel>
               <AppSelectSearch
                 v-model="label_template_ids"
@@ -1244,6 +1264,20 @@ watch(
                   {{ itemsLabel.find((l) => l.value === labelId)?.title }}
                 </VChip>
               </div>
+            </VCol>
+            <VCol cols="12" md="6">
+              <AppSelectSearch
+                v-model="channelIds"
+                :items="uniqueChannelsOptions"
+                :label="$t('channels')"
+                item-value="value"
+                item-title="title"
+                :placeholder="$t('select_channels')"
+                multiple
+                chips
+                closable-chips
+                clearable
+              />
             </VCol>
           </VRow>
           <VDivider class="my-4" />

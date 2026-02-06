@@ -24,6 +24,7 @@ import { EChatKind } from '@core/common/enums/EChatKind';
 import { EMessageUpsertType } from '@core/common/enums/EMessageUpsertType';
 import { remoteJid } from '@core/common/functions/remoteJid';
 import { remoteJidAlt } from '@core/common/functions/remoteJidAlt';
+import { normalizeJid } from '@core/common/functions/normalizeJid';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { chatAccountCentrifugo } from '@core/common/functions/centrifugoQueue';
 import { IChatTyping } from '@core/common/interfaces/IChatTyping';
@@ -73,8 +74,8 @@ export class BaileysIncomingMessageService {
   }
 
   private getMessageKey(m: WAMessage): string | null {
-    const jid = remoteJid(m.key);
-    const jidAlt = remoteJidAlt(m.key);
+    const jid = normalizeJid(remoteJid(m.key));
+    const jidAlt = normalizeJid(remoteJidAlt(m.key));
     const id = m.key?.id;
     const fromMe = m.key?.fromMe ?? false;
 
@@ -89,7 +90,7 @@ export class BaileysIncomingMessageService {
   private buildMessageCacheKey(key?: WAMessageKey | null): string | null {
     if (!key?.id) return null;
 
-    const jid = remoteJid(key) || remoteJidAlt(key);
+    const jid = normalizeJid(remoteJid(key)) || normalizeJid(remoteJidAlt(key));
     if (!jid) return null;
 
     return `${this.MESSAGE_CACHE_PREFIX}${baileysEnvironment.baileysAccountId}:${jid}:${key.id}`;

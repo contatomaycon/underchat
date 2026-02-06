@@ -1,5 +1,6 @@
 export interface ICreateContact {
   account_id?: string | null;
+  channel_ids?: string[] | null;
   label_template_ids?: string[] | null;
   contact_document_type_id?: string | null;
   is_valided?: boolean;

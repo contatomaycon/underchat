@@ -13,6 +13,9 @@ import { validateContact } from './methods/validateContact';
 import { deletePhoto } from './methods/deletePhoto';
 import { listUsers } from './methods/listUsers';
 import { removeContactLabelTemplate } from './methods/removeContactLabelTemplate';
+import { listContactChannels } from './methods/listContactChannels';
+import { viewContactChannelsByContactId } from './methods/viewContactChannelsByContactId';
+import { listLabelTemplates } from './methods/listLabelTemplates';
 
 @injectable()
 class ContactController {
@@ -30,6 +33,9 @@ class ContactController {
   public deletePhoto = deletePhoto;
   public listUsers = listUsers;
   public removeContactLabelTemplate = removeContactLabelTemplate;
+  public listContactChannels = listContactChannels;
+  public viewContactChannelsByContactId = viewContactChannelsByContactId;
+  public listLabelTemplates = listLabelTemplates;
 }
 
 export default ContactController;

@@ -37,6 +37,8 @@ import { listChatWorkers } from './methods/listChatWorkers';
 import { listChatUsers } from './methods/listChatUsers';
 import { listChatSectors } from './methods/listChatSectors';
 import { removeChatContactLabelTemplate } from './methods/removeContactLabelTemplate';
+import { listChatContactChannels } from './methods/listContactChannels';
+import { viewChatContactChannelsByContactId } from './methods/viewContactChannelsByContactId';
 
 @injectable()
 class ChatController {
@@ -78,6 +80,8 @@ class ChatController {
   public listChatUsers = listChatUsers;
   public listChatSectors = listChatSectors;
   public removeContactLabelTemplate = removeChatContactLabelTemplate;
+  public listContactChannels = listChatContactChannels;
+  public viewContactChannelsByContactId = viewChatContactChannelsByContactId;
 }
 
 export default ChatController;

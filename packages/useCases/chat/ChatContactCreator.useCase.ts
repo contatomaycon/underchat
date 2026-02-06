@@ -4,6 +4,7 @@ import { CreateChatContactRequest } from '@core/schema/chat/createContact/reques
 import { CreateContactRequest } from '@core/schema/contact/createContact/request.schema';
 import { ContactCreatorUseCase } from '@core/useCases/contact/ContactCreator.useCase';
 import { normalizeContactRequest } from '@core/common/functions/normalizeContactRequest';
+import { extractArrayFieldValue } from '@core/common/functions/extractArrayFieldValue';
 
 @injectable()
 export class ChatContactCreatorUseCase {
@@ -30,9 +31,11 @@ export class ChatContactCreatorUseCase {
   ): Promise<boolean> {
     const normalizedInput = normalizeContactRequest(input);
     const chatId = this.extractChatId(normalizedInput.chat_id);
+    const channelIds = extractArrayFieldValue(normalizedInput.channel_ids);
 
     const contactRequest: CreateContactRequest = {
       label_template_ids: normalizedInput.label_template_ids,
+      channel_ids: channelIds.length > 0 ? channelIds : undefined,
       name: normalizedInput.name,
       last_name: normalizedInput.last_name,
       email: normalizedInput.email,

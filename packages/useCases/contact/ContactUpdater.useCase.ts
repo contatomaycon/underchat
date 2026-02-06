@@ -254,6 +254,17 @@ export class ContactUpdaterUseCase {
     }
   }
 
+  private extractChannelIds(
+    field:
+      | string[]
+      | Array<{ value: string }>
+      | { value: string[] | null }
+      | null
+      | undefined
+  ): string[] {
+    return extractArrayFieldValue(field);
+  }
+
   private async validateLabelTemplates(
     t: TFunction<'translation', undefined>,
     labelTemplateIds?: string[] | null
@@ -295,6 +306,10 @@ export class ContactUpdaterUseCase {
       : null;
     const labelTemplateIds = hasLabelTemplateIds
       ? (extractedLabelTemplateIds ?? [])
+      : null;
+    const hasChannelIds = normalizedBody.channel_ids !== undefined;
+    const channelIds = hasChannelIds
+      ? this.extractChannelIds(normalizedBody.channel_ids)
       : null;
     const name = extractFieldValue(normalizedBody.name as FieldValue);
     const lastName = extractFieldValue(normalizedBody.last_name as FieldValue);
@@ -338,6 +353,8 @@ export class ContactUpdaterUseCase {
         hasLabelTemplateIds && labelTemplateIds !== null
           ? labelTemplateIds.map((id) => ({ value: id }))
           : undefined,
+      channel_ids:
+        hasChannelIds && channelIds !== null ? channelIds : undefined,
       name,
       last_name: lastName,
       email,

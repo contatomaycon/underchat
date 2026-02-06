@@ -36,6 +36,17 @@ export class ContactCreatorUseCase {
     private readonly planAccountService: PlanAccountService
   ) {}
 
+  private extractChannelIds(
+    field:
+      | string[]
+      | Array<{ value: string }>
+      | { value: string[] | null }
+      | null
+      | undefined
+  ): string[] {
+    return extractArrayFieldValue(field);
+  }
+
   private validateBirthDate(
     t: TFunction<'translation', undefined>,
     birthDate: string
@@ -214,6 +225,7 @@ export class ContactCreatorUseCase {
     const labelTemplateIds = extractArrayFieldValue(
       normalizedInput.label_template_ids
     );
+    const channelIds = this.extractChannelIds(normalizedInput.channel_ids);
     const name = extractFieldValue(normalizedInput.name as FieldValue);
     const lastName = extractFieldValue(normalizedInput.last_name as FieldValue);
     const email = extractFieldValue(normalizedInput.email as FieldValue);
@@ -286,6 +298,7 @@ export class ContactCreatorUseCase {
       label_template_ids: labelTemplateIds
         ? labelTemplateIds.map((id) => ({ value: id }))
         : undefined,
+      channel_ids: channelIds.length > 0 ? channelIds : undefined,
       name,
       last_name: lastName,
       email,
