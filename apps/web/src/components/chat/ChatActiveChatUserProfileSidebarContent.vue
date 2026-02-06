@@ -502,6 +502,7 @@ const loadContactData = async () => {
     if (contact) {
       label_template_ids.value =
         contact.label_templates?.map((lt) => lt.label_template_id) ?? [];
+      channelIds.value = contact.channel_ids ?? [];
       name.value = contact.name;
       last_name.value = contact.last_name ?? null;
 
@@ -638,8 +639,7 @@ const addContact = async () => {
       label_template_ids.value.length > 0
         ? label_template_ids.value.map((id) => ({ value: id }))
         : undefined,
-    channel_ids:
-      channelIds.value.length > 0 ? channelIds.value : undefined,
+    channel_ids: channelIds.value.length > 0 ? channelIds.value : undefined,
     name: name.value,
     last_name: last_name.value ?? null,
     email: email.value ?? null,
@@ -1346,11 +1346,7 @@ watch(
   () => props.isOpen,
   async (isOpen) => {
     if (isOpen) {
-      await Promise.all([
-        loadLabelTemplates(),
-        loadUsers(),
-        loadChannels(),
-      ]);
+      await Promise.all([loadLabelTemplates(), loadUsers(), loadChannels()]);
       loadChatData();
     }
   }
@@ -1358,7 +1354,7 @@ watch(
 
 onMounted(async () => {
   if (props.isOpen) {
-    await Promise.all([loadLabelTemplates(), loadUsers()]);
+    await Promise.all([loadLabelTemplates(), loadUsers(), loadChannels()]);
     loadChatData();
   }
 });

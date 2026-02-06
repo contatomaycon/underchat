@@ -37,6 +37,7 @@ export const viewChatContactResponseSchema = Type.Object({
   ),
   user: Type.Optional(Type.Union([userSchema, Type.Null()])),
   ignore: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  channel_ids: Type.Optional(Type.Array(Type.String({ format: 'uuid' }))),
 });
 
 export type ViewChatContactResponse = Static<

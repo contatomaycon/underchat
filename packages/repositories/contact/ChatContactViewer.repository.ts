@@ -1,6 +1,7 @@
 import * as schema from '@core/models';
 import {
   contact,
+  contactChannel,
   labelTemplate,
   contactDocumentType,
   contactLabelTemplate,
@@ -23,16 +24,17 @@ export class ChatContactViewerRepository {
     contactId: string,
     accountId: string
   ): Promise<ViewChatContactResponse | null> => {
-    const [contactData, labels] = await Promise.all([
+    const [contactData, labels, channelIds] = await Promise.all([
       this.findChatContactById(contactId, accountId),
       this.findLabelsByContactId(contactId),
+      this.findChannelIdsByContactId(contactId, accountId),
     ]);
 
     if (!contactData) {
       return null;
     }
 
-    return this.buildChatContactResponse(contactData, labels);
+    return this.buildChatContactResponse(contactData, labels, channelIds);
   };
 
   private readonly findChatContactById = async (
@@ -114,11 +116,61 @@ export class ChatContactViewerRepository {
     return result;
   };
 
+  private readonly findChannelIdsByContactId = async (
+    contactId: string,
+    accountId: string
+  ): Promise<string[]> => {
+    const result = await this.dbRo
+      .select({ channel_id: contactChannel.channel_id })
+      .from(contactChannel)
+      .where(
+        and(
+          eq(contactChannel.contact_id, contactId),
+          eq(contactChannel.account_id, accountId)
+        )
+      )
+      .execute();
+
+    return result?.map((item) => item.channel_id) ?? [];
+  };
+
+  private readonly findChannelIdsByContactIds = async (
+    contactIds: string[],
+    accountId: string
+  ): Promise<Map<string, string[]>> => {
+    if (contactIds.length === 0) {
+      return new Map();
+    }
+
+    const result = await this.dbRo
+      .select({
+        contact_id: contactChannel.contact_id,
+        channel_id: contactChannel.channel_id,
+      })
+      .from(contactChannel)
+      .where(
+        and(
+          inArray(contactChannel.contact_id, contactIds),
+          eq(contactChannel.account_id, accountId)
+        )
+      )
+      .execute();
+
+    const channelIdsByContactId = new Map<string, string[]>();
+    for (const row of result) {
+      const existing = channelIdsByContactId.get(row.contact_id) ?? [];
+      existing.push(row.channel_id);
+      channelIdsByContactId.set(row.contact_id, existing);
+    }
+    return channelIdsByContactId;
+  };
+
   private readonly buildChatContactResponse = (
     contactData: NonNullable<
       Awaited<ReturnType<typeof this.findChatContactById>>
     >,
-    labels: Awaited<ReturnType<typeof this.findLabelsByContactId>>
+    labels: Awaited<ReturnType<typeof this.findLabelsByContactId>>,
+    channelIds: string[]
   ): ViewChatContactResponse => {
     const labelTemplates = this.formatLabels(labels);
     const formattedUser = this.formatUser(contactData.user);
@@ -141,6 +193,7 @@ export class ChatContactViewerRepository {
       contact_document_type: contactData.contact_document_type,
       user: formattedUser,
       ignore: contactData.ignore ?? null,
+      channel_ids: channelIds.length > 0 ? channelIds : undefined,
     };
   };
 
@@ -208,12 +261,18 @@ export class ChatContactViewerRepository {
       return [];
     }
 
-    const [contacts, labelsByContactId] = await Promise.all([
-      this.findChatContactsByIds(contactIds, accountId),
-      this.findLabelsByContactIds(contactIds),
-    ]);
+    const [contacts, labelsByContactId, channelIdsByContactId] =
+      await Promise.all([
+        this.findChatContactsByIds(contactIds, accountId),
+        this.findLabelsByContactIds(contactIds),
+        this.findChannelIdsByContactIds(contactIds, accountId),
+      ]);
 
-    return this.buildChatContactsResponse(contacts, labelsByContactId);
+    return this.buildChatContactsResponse(
+      contacts,
+      labelsByContactId,
+      channelIdsByContactId
+    );
   };
 
   private readonly findChatContactsByIds = async (
@@ -337,11 +396,16 @@ export class ChatContactViewerRepository {
 
   private readonly buildChatContactsResponse = (
     contacts: Awaited<ReturnType<typeof this.findChatContactsByIds>>,
-    labelsByContactId: Awaited<ReturnType<typeof this.findLabelsByContactIds>>
+    labelsByContactId: Awaited<ReturnType<typeof this.findLabelsByContactIds>>,
+    channelIdsByContactId: Awaited<
+      ReturnType<typeof this.findChannelIdsByContactIds>
+    >
   ): ViewChatContactResponse[] => {
     return contacts.map((contactData) => {
       const labelTemplates =
         labelsByContactId.get(contactData.contact_id) ?? [];
+      const channelIds =
+        channelIdsByContactId.get(contactData.contact_id) ?? [];
       const formattedUser = this.formatUser(contactData.user);
 
       return {
@@ -362,6 +426,7 @@ export class ChatContactViewerRepository {
         contact_document_type: contactData.contact_document_type,
         user: formattedUser,
         ignore: contactData.ignore ?? null,
+        channel_ids: channelIds.length > 0 ? channelIds : undefined,
       };
     });
   };

@@ -496,10 +496,7 @@ const loadContactData = async () => {
     if (contact) {
       label_template_ids.value =
         contact.label_templates?.map((lt) => lt.label_template_id) ?? [];
-      const contactChannels = await chatStore.viewContactChannelsByContactId(
-        contactId.value
-      );
-      channelIds.value = contactChannels ?? [];
+      channelIds.value = contact.channel_ids ?? [];
       name.value = contact.name;
       last_name.value = contact.last_name ?? null;
 
@@ -1246,9 +1243,10 @@ watch([contactId, isVisible], async ([newContactId, newIsVisible]) => {
   }
 });
 
-onMounted(() => {
+onMounted(async () => {
   if (contactId.value && isVisible.value) {
-    loadContactData();
+    await Promise.all([loadLabelTemplates(), loadUsers(), loadChannels()]);
+    await loadContactData();
   }
 });
 </script>
