@@ -165,16 +165,30 @@ const subscribeToImportProgress = async (sessionId: string) => {
         const validCount = data.results.filter(
           (r: ContactImportStatus) => r.status === 'valid'
         ).length;
+        const duplicateCount = data.results.filter(
+          (r: ContactImportStatus) => r.status === 'duplicate'
+        ).length;
         const total = data.results.length;
+        const successCount = validCount + duplicateCount;
 
-        if (validCount > 0) {
-          contactGroupStore.showSnackbar(
-            contactGroupStore.i18n.global.t(
-              'contact_group_assignment_add_success'
-            ) +
-              ` (${validCount}/${total} ${contactGroupStore.i18n.global.t('valid')})`,
-            EColor.success
+        if (successCount > 0) {
+          let message = contactGroupStore.i18n.global.t(
+            'contact_group_assignment_add_success'
           );
+          if (validCount > 0 && duplicateCount > 0) {
+            message += ` (${contactGroupStore.i18n.global.t(
+              'contact_import_success_both',
+              { valid: validCount, duplicate: duplicateCount }
+            )})`;
+          } else if (validCount > 0) {
+            message += ` (${validCount}/${total} ${contactGroupStore.i18n.global.t('valid')})`;
+          } else {
+            message += ` (${contactGroupStore.i18n.global.t(
+              'contact_import_success_duplicates_only',
+              { count: duplicateCount }
+            )})`;
+          }
+          contactGroupStore.showSnackbar(message, EColor.success);
         } else {
           contactGroupStore.showSnackbar(
             contactGroupStore.i18n.global.t('no_valid_contacts_found'),
