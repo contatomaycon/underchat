@@ -10,6 +10,7 @@ import { EContactIgnore } from '@core/common/enums/EContactIgnore';
 import { validateCpf } from '@core/common/functions/validateCpf';
 import { validateCnpj } from '@core/common/functions/validateCnpj';
 import { extractPhoneAndDdi } from '@core/common/functions/extractPhoneAndDdi';
+import type { FieldValue } from '@core/common/interfaces/IFieldValue';
 
 const chatStore = useChatStore();
 const { items: countryCodes } = useCountryCodes();
@@ -23,8 +24,6 @@ const isLoadingUsers = ref(false);
 const isLoadingAddContact = ref(false);
 
 const { t } = useI18n();
-
-type FieldValue = string | { value: string } | null;
 
 const props = defineProps<{
   modelValue: boolean;

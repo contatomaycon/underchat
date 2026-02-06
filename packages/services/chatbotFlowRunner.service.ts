@@ -41,6 +41,7 @@ import { UpdateContactRequest } from '@core/schema/contact/editContact/request.s
 import InvalidConfigurationError from '@core/common/exceptions/InvalidConfigurationError';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { normalizeTextForConditionalComparison } from '@core/common/functions/normalizeTextForConditionalComparison';
+import { truncateContactName } from '@core/common/functions/truncateContactName';
 import { StreamProducerService } from './streamProducer.service';
 import { KafkaServiceQueueService } from './kafkaServiceQueue.service';
 import { IChatHistoryEmbeddingRequest } from '@core/common/interfaces/IChatHistoryEmbeddingRequest';
@@ -2328,13 +2329,6 @@ export class ChatbotFlowRunnerService {
     return true;
   }
 
-  private truncateContactName(name: string, maxLength: number = 100): string {
-    if (name.length <= maxLength) {
-      return name;
-    }
-    return name.substring(0, maxLength);
-  }
-
   private async updateContactData(
     createChat: IChat,
     updateData: UpdateContactRequest
@@ -2361,7 +2355,7 @@ export class ChatbotFlowRunnerService {
     const userText = this.getTextFromUpsertMessage(data)?.trim();
 
     if (userText && createChat.contact?.id) {
-      const truncatedName = this.truncateContactName(userText);
+      const truncatedName = truncateContactName(userText) ?? userText;
       await this.updateContactData(createChat, {
         name: truncatedName,
       });
@@ -2387,7 +2381,7 @@ export class ChatbotFlowRunnerService {
     const userText = this.getTextFromUpsertMessage(data)?.trim();
 
     if (userText && createChat.contact?.id) {
-      const truncatedLastName = this.truncateContactName(userText);
+      const truncatedLastName = truncateContactName(userText) ?? userText;
       await this.updateContactData(createChat, {
         last_name: truncatedLastName,
       });

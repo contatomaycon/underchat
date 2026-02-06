@@ -15,6 +15,7 @@ const props = defineProps<{
   cannotAttendDueToLimit: boolean;
   workerConfigForChat: ViewWorkerConfigForChatResponse | null;
   loading?: boolean;
+  actionLoading?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -83,6 +84,7 @@ const tooltipText = computed(() => {
 });
 
 const handleClick = () => {
+  if (props.actionLoading) return;
   if (props.isClosedStatus) {
     emit('reopen');
     return;
@@ -116,7 +118,11 @@ const handleClick = () => {
               <VBtn
                 color="primary"
                 size="small"
-                :disabled="props.isClosedStatus && !props.canReopenChat"
+                :loading="props.actionLoading"
+                :disabled="
+                  props.actionLoading ||
+                  (props.isClosedStatus && !props.canReopenChat)
+                "
                 @click="handleClick"
               >
                 {{ buttonText }}
@@ -128,7 +134,11 @@ const handleClick = () => {
           v-else
           color="primary"
           size="small"
-          :disabled="props.isClosedStatus && !props.canReopenChat"
+          :loading="props.actionLoading"
+          :disabled="
+            props.actionLoading ||
+            (props.isClosedStatus && !props.canReopenChat)
+          "
           @click="handleClick"
         >
           {{ buttonText }}

@@ -32,8 +32,10 @@ import { ContactChannelChannelsListerRepository } from '@core/repositories/conta
 import { ContactChannelsUpdaterTransactionRepository } from '@core/repositories/contact/ContactChannelsUpdaterTransaction.repository';
 import { extractFieldValue } from '@core/common/functions/extractFieldValue';
 import { extractArrayFieldValue } from '@core/common/functions/extractArrayFieldValue';
-
-type FieldValue = string | { value: string } | null;
+import { truncateContactName } from '@core/common/functions/truncateContactName';
+import { ContactGroupAssignmentCreatorRepository } from '@core/repositories/contactGroup/ContactGroupAssignmentCreator.repository';
+import { ContactGroupAssignmentViewerExistsRepository } from '@core/repositories/contactGroup/ContactGroupAssignmentViewerExists.repository';
+import type { FieldValue } from '@core/common/interfaces/IFieldValue';
 
 @injectable()
 export class ContactService {
@@ -55,7 +57,9 @@ export class ContactService {
     private readonly contactLabelTemplateCreatorRepository: ContactLabelTemplateCreatorRepository,
     private readonly contactLabelTemplateDeleterRepository: ContactLabelTemplateDeleterRepository,
     private readonly contactChannelChannelsListerRepository: ContactChannelChannelsListerRepository,
-    private readonly contactChannelsUpdaterTransactionRepository: ContactChannelsUpdaterTransactionRepository
+    private readonly contactChannelsUpdaterTransactionRepository: ContactChannelsUpdaterTransactionRepository,
+    private readonly contactGroupAssignmentCreatorRepository: ContactGroupAssignmentCreatorRepository,
+    private readonly contactGroupAssignmentViewerExistsRepository: ContactGroupAssignmentViewerExistsRepository
   ) {}
 
   listContactChannelsByContactId = async (
@@ -675,6 +679,116 @@ export class ContactService {
       payload,
       accountId
     );
+  };
+
+  updateContactFromImport = async (
+    contactId: string,
+    accountId: string,
+    csvContact: ICreateContact
+  ): Promise<boolean> => {
+    const currentContact = await this.viewContactById(contactId, accountId);
+    if (!currentContact) {
+      return false;
+    }
+
+    const payload: IUpdateContact = {
+      is_valided: currentContact.is_valided ?? false,
+    };
+
+    const nameValue =
+      truncateContactName(csvContact.name) ?? csvContact.name?.trim();
+    if (nameValue) {
+      payload.name = nameValue;
+    }
+
+    const lastNameValue =
+      truncateContactName(csvContact.last_name) ?? csvContact.last_name?.trim();
+    if (lastNameValue) {
+      payload.last_name = lastNameValue;
+    }
+
+    const nicknameValue =
+      truncateContactName(csvContact.nickname) ?? csvContact.nickname?.trim();
+    if (nicknameValue) {
+      payload.nickname = nicknameValue;
+    }
+
+    const emailValue = csvContact.email ?? csvContact.email_partial ?? null;
+    if (emailValue && typeof emailValue === 'string' && emailValue.trim()) {
+      const emailFields = this.processEmailFields(
+        { ...csvContact, email: emailValue },
+        !!csvContact.email_c
+      );
+      payload.email = emailFields.emailCEncrypted;
+      payload.email_partial = emailFields.emailPartialEncrypted;
+      payload.email_c = emailFields.emailC;
+    }
+
+    const notesValue = csvContact.notes;
+    if (notesValue && typeof notesValue === 'string' && notesValue.trim()) {
+      payload.notes = notesValue.trim();
+    }
+
+    const birthdayValue = csvContact.birthday;
+    if (
+      birthdayValue &&
+      typeof birthdayValue === 'string' &&
+      birthdayValue.trim()
+    ) {
+      payload.birthday = birthdayValue.trim();
+    }
+
+    if (
+      csvContact.document !== undefined &&
+      csvContact.document !== null &&
+      typeof csvContact.document === 'string' &&
+      csvContact.document.trim()
+    ) {
+      const documentFields = this.processDocumentFields(
+        { ...csvContact, document: csvContact.document },
+        !!csvContact.document_c
+      );
+      payload.contact_document_type_id =
+        csvContact.contact_document_type_id ?? null;
+      payload.document = documentFields.documentCEncrypted;
+      payload.document_partial = documentFields.documentPartialEncrypted;
+      payload.document_c = documentFields.documentC;
+    }
+
+    const result = await this.contactUpdaterRepository.updateContactById(
+      contactId,
+      payload,
+      accountId
+    );
+
+    return result === true;
+  };
+
+  addContactToGroupIfNotExists = async (
+    contactId: string,
+    contactGroupId: string
+  ): Promise<boolean> => {
+    if (!contactGroupId?.trim()) {
+      return true;
+    }
+
+    const exists =
+      await this.contactGroupAssignmentViewerExistsRepository.existsContactGroupAssignmentByContactAndGroup(
+        contactGroupId,
+        contactId
+      );
+
+    if (exists) {
+      return true;
+    }
+
+    const assignmentId =
+      await this.contactGroupAssignmentCreatorRepository.createContactGroupAssignmentDirectly(
+        contactGroupId,
+        contactId
+      );
+
+    return assignmentId !== null;
   };
 
   getContactPhoneDecrypted = (

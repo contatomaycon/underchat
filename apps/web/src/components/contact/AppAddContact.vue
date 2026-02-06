@@ -13,6 +13,7 @@ import { EContactIgnore } from '@core/common/enums/EContactIgnore';
 import { validateCpf } from '@core/common/functions/validateCpf';
 import { validateCnpj } from '@core/common/functions/validateCnpj';
 import AppInfoTooltip from '@/components/AppInfoTooltip.vue';
+import type { FieldValue } from '@core/common/interfaces/IFieldValue';
 
 const contactStore = useContactStore();
 const { items: countryCodes } = useCountryCodes();
@@ -26,8 +27,6 @@ const isLoadingUsers = ref(false);
 const isAddingContact = ref(false);
 
 const { t } = useI18n();
-
-type FieldValue = string | { value: string } | null;
 
 const props = defineProps<{
   modelValue: boolean;

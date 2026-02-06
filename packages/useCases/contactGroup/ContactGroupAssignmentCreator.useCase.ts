@@ -6,6 +6,7 @@ import { ContactService } from '@core/services/contact.service';
 import { IContactImportStatus } from '@core/common/interfaces/IContactImportStatus';
 import { ICreateContact } from '@core/common/interfaces/ICreateContact';
 import { buildCandidatesWithDdi } from '@core/common/functions/buildCandidatesBR';
+import { truncateContactName } from '@core/common/functions/truncateContactName';
 import { EncryptService } from '@core/services/encrypt.service';
 import { onlyDigits } from '@core/common/functions/onlyDigits';
 import { extractPhoneAndDdi } from '@core/common/functions/extractPhoneAndDdi';
@@ -101,28 +102,55 @@ export class ContactGroupAssignmentCreatorUseCase {
     contactGroupId: string | null
   ): Promise<IContactImportStatus> {
     try {
-      const phoneExists = await this.contactService.existsContactByPhone(
+      const { phone: phoneToSave, phoneDdi: phoneDdiToSave } =
+        this.normalizePhoneFromValidation(contact.phone, contact.phone_ddi);
+
+      const existingContact = await this.contactService.getContactByPhone(
         accountId,
-        phonesC
+        phoneToSave,
+        phoneDdiToSave
       );
 
-      if (phoneExists) {
+      if (existingContact) {
+        const updated = await this.contactService.updateContactFromImport(
+          existingContact.contact_id,
+          accountId,
+          contact
+        );
+
+        if (!updated) {
+          return this.createStatusResult(
+            contact,
+            'invalid',
+            t('contact_creation_failed')
+          );
+        }
+
+        if (contactGroupId) {
+          await this.contactService.addContactToGroupIfNotExists(
+            existingContact.contact_id,
+            contactGroupId
+          );
+        }
+
         return this.createStatusResult(
           contact,
           'duplicate',
-          t('contact_already_exists_phone')
+          t('contact_import_updated')
         );
       }
 
       await this.planAccountService.validateCanCreateContact(t, accountId);
 
-      const { phone: phoneToSave, phoneDdi: phoneDdiToSave } =
-        this.normalizePhoneFromValidation(contact.phone, contact.phone_ddi);
-
       const contactCreated = await this.contactService.createContactWithGroup(
         t,
         {
           ...contact,
+          name: truncateContactName(contact.name) ?? contact.name ?? '',
+          last_name:
+            truncateContactName(contact.last_name) ?? contact.last_name ?? null,
+          nickname:
+            truncateContactName(contact.nickname) ?? contact.nickname ?? null,
           phone: phoneToSave,
           phone_ddi: phoneDdiToSave,
         },

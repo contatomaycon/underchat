@@ -357,6 +357,7 @@
   "contact_creation_failed": "Contact creation failed!",
   "contact_field_too_long": "Contact field exceeds maximum allowed length!",
   "contact_import_started": "Contact import started!",
+  "contact_import_updated": "Contact updated successfully!",
   "contact_view_successfully": "Contact viewed successfully!",
   "contacts_view_successfully": "Contacts viewed successfully!",
   "contact_phone_view_successfully": "Decrypted phone retrieved successfully!",

@@ -18,8 +18,7 @@ import { IChat } from '@core/common/interfaces/IChat';
 import { normalizeContactRequest } from '@core/common/functions/normalizeContactRequest';
 import { extractFieldValue } from '@core/common/functions/extractFieldValue';
 import { extractArrayFieldValue } from '@core/common/functions/extractArrayFieldValue';
-
-type FieldValue = string | { value: string } | null;
+import type { FieldValue } from '@core/common/interfaces/IFieldValue';
 
 @injectable()
 export class ContactUpdaterUseCase {

@@ -69,8 +69,7 @@ import { ListTransferOptionsResponse } from '@core/schema/chat/listTransferOptio
 import { ListChatContactChannelsResponse } from '@core/schema/chat/listContactChannels/response.schema';
 import { extractFieldValue } from '@core/common/functions/extractFieldValue';
 import { extractArrayFieldValue } from '@core/common/functions/extractArrayFieldValue';
-
-type FieldValue = string | { value: string } | null;
+import type { FieldValue } from '@core/common/interfaces/IFieldValue';
 
 type LocalMessageState = {
   status: 'uploading' | 'error';

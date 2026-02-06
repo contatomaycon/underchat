@@ -323,7 +323,10 @@ const loadWorkerConfigForChat = async (forceReload = false) => {
     return;
   }
 
-  if (isLoadingWorkerConfig.value && lastLoadedWorkerConfigId.value === workerId) {
+  if (
+    isLoadingWorkerConfig.value &&
+    lastLoadedWorkerConfigId.value === workerId
+  ) {
     return;
   }
 
@@ -372,34 +375,46 @@ watch(
   }
 );
 
+const isAttendReopenLoading = ref(false);
+
 const handleAttendChat = async () => {
-  if (!chatStore.activeChat?.chat_id) return;
+  if (!chatStore.activeChat?.chat_id || isAttendReopenLoading.value) return;
 
-  const success = await chatStore.updateChatStatus(
-    chatStore.activeChat.chat_id,
-    EChatStatus.in_chat
-  );
+  isAttendReopenLoading.value = true;
+  try {
+    const success = await chatStore.updateChatStatus(
+      chatStore.activeChat.chat_id,
+      EChatStatus.in_chat
+    );
 
-  if (success) {
-    chatStore.showSnackbar(t('chat_attended_successfully'), EColor.success);
-    await nextTick();
-    leftSidebarRef.value?.scrollToTop();
+    if (success) {
+      chatStore.showSnackbar(t('chat_attended_successfully'), EColor.success);
+      await nextTick();
+      leftSidebarRef.value?.scrollToTop();
+    }
+  } finally {
+    isAttendReopenLoading.value = false;
   }
 };
 
 const handleReopenChat = async () => {
-  if (!chatStore.activeChat?.chat_id) return;
+  if (!chatStore.activeChat?.chat_id || isAttendReopenLoading.value) return;
 
-  const success = await chatStore.updateChatStatus(
-    chatStore.activeChat.chat_id,
-    EChatStatus.in_chat
-  );
+  isAttendReopenLoading.value = true;
+  try {
+    const success = await chatStore.updateChatStatus(
+      chatStore.activeChat.chat_id,
+      EChatStatus.in_chat
+    );
 
-  if (success) {
-    chatStore.showSnackbar(t('chat_reopened_successfully'), EColor.success);
-    await leftSidebarRef.value?.clearAdvancedFilters();
-    await nextTick();
-    leftSidebarRef.value?.scrollToTop();
+    if (success) {
+      chatStore.showSnackbar(t('chat_reopened_successfully'), EColor.success);
+      await leftSidebarRef.value?.clearAdvancedFilters();
+      await nextTick();
+      leftSidebarRef.value?.scrollToTop();
+    }
+  } finally {
+    isAttendReopenLoading.value = false;
   }
 };
 
@@ -2508,8 +2523,7 @@ const handleRecorderStop = async (
 
   const recorder = capturedRecorder ?? mediaRecorderRef.value;
   const chunks = capturedChunks ?? audioChunksRef.value;
-  const saveRecording =
-    capturedShouldPersist ?? shouldPersistRecording.value;
+  const saveRecording = capturedShouldPersist ?? shouldPersistRecording.value;
   const viewOnce = capturedViewOnce ?? audioPendingViewOnce.value;
   const elapsedMs = capturedElapsedMs ?? audioRecordingElapsedMs.value;
 
@@ -5530,6 +5544,7 @@ onBeforeUnmount(() => {
             :cannot-attend-due-to-limit="cannotAttendDueToLimit"
             :worker-config-for-chat="workerConfigForChat"
             :loading="isLoadingWorkerConfig"
+            :action-loading="isAttendReopenLoading"
             @attend="handleAttendChat"
             @reopen="handleReopenChat"
           />

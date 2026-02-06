@@ -27,8 +27,8 @@ export const contact = pgTable(
       () => contactDocumentType.contact_document_type_id
     ),
     is_valided: boolean().default(false),
-    name: varchar({ length: 100 }).notNull(),
-    last_name: varchar({ length: 100 }),
+    name: varchar({ length: 250 }).notNull(),
+    last_name: varchar({ length: 250 }),
     email: varchar({ length: 500 }),
     email_partial: varchar({ length: 50 }),
     email_c: varchar({ length: 500 }),
@@ -36,7 +36,7 @@ export const contact = pgTable(
     phone: varchar({ length: 500 }),
     phone_partial: varchar({ length: 15 }),
     phone_c: varchar({ length: 500 }),
-    nickname: varchar({ length: 100 }),
+    nickname: varchar({ length: 250 }),
     photo: varchar({ length: 500 }),
     birthday: timestamp({
       mode: 'string',

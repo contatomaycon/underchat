@@ -25,18 +25,18 @@ export const updateChatContactRequestSchema = Type.Object({
   ),
   name: Type.Optional(
     Type.Union([
-      Type.String({ maxLength: 100 }),
+      Type.String({ maxLength: 250 }),
       Type.Object({
-        value: Type.String({ maxLength: 100 }),
+        value: Type.String({ maxLength: 250 }),
       }),
       Type.Null(),
     ])
   ),
   last_name: Type.Optional(
     Type.Union([
-      Type.String({ maxLength: 100 }),
+      Type.String({ maxLength: 250 }),
       Type.Object({
-        value: Type.String({ maxLength: 100 }),
+        value: Type.String({ maxLength: 250 }),
       }),
       Type.Null(),
     ])
@@ -70,9 +70,9 @@ export const updateChatContactRequestSchema = Type.Object({
   ),
   nickname: Type.Optional(
     Type.Union([
-      Type.String({ maxLength: 100 }),
+      Type.String({ maxLength: 250 }),
       Type.Object({
-        value: Type.String({ maxLength: 100 }),
+        value: Type.String({ maxLength: 250 }),
       }),
       Type.Null(),
     ])

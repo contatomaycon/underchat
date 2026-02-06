@@ -41,4 +41,26 @@ export class ContactGroupAssignmentCreatorRepository {
 
     return contactGroupAssignmentId;
   };
+
+  createContactGroupAssignmentDirectly = async (
+    contactGroupId: string,
+    contactId: string
+  ): Promise<string | null> => {
+    const contactGroupAssignmentId = uuidv7();
+
+    const result = await this.dbRw
+      .insert(contactGroupAssignment)
+      .values({
+        contact_group_assignment_id: contactGroupAssignmentId,
+        contact_group_id: contactGroupId,
+        contact_id: contactId,
+      })
+      .execute();
+
+    if (!result) {
+      return null;
+    }
+
+    return contactGroupAssignmentId;
+  };
 }

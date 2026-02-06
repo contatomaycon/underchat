@@ -10,6 +10,7 @@ import { PgTransaction } from 'drizzle-orm/pg-core';
 import { inject, injectable } from 'tsyringe';
 import { v7 as uuidv7 } from 'uuid';
 import { nullIfEmpty } from '@core/common/functions/nullIfEmpty';
+import { truncateContactName } from '@core/common/functions/truncateContactName';
 import { ContactGroupAssignmentCreatorRepository } from '../contactGroup/ContactGroupAssignmentCreator.repository';
 import { ContactLabelTemplateCreatorRepository } from './ContactLabelTemplateCreator.repository';
 import { ContactChannelCreatorRepository } from './ContactChannelCreator.repository';
@@ -37,8 +38,8 @@ export class ContactCreatorRepository {
   private validateAndTruncateContact(input: ICreateContact): ICreateContact {
     return {
       ...input,
-      name: this.truncateField(input.name, 100) ?? '',
-      last_name: this.truncateField(input.last_name, 100),
+      name: truncateContactName(input.name) ?? '',
+      last_name: truncateContactName(input.last_name),
       email: this.truncateField(input.email, 500),
       email_partial: this.truncateField(input.email_partial, 50),
       email_c: this.truncateField(input.email_c, 500),
@@ -46,7 +47,7 @@ export class ContactCreatorRepository {
       phone: this.truncateField(input.phone, 500),
       phone_partial: this.truncateField(input.phone_partial, 15),
       phone_c: this.truncateField(input.phone_c, 500),
-      nickname: this.truncateField(input.nickname, 100),
+      nickname: truncateContactName(input.nickname),
       photo: this.truncateField(input.photo, 500),
       document: this.truncateField(input.document, 500),
       document_partial: this.truncateField(input.document_partial, 20),

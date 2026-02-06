@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 import { extractFieldValue } from '@core/common/functions/extractFieldValue';
 import { extractArrayFieldValue } from '@core/common/functions/extractArrayFieldValue';
+import type { FieldValue } from '@core/common/interfaces/IFieldValue';
 import { IApiResponse } from '@core/common/interfaces/IApiResponse';
 import { getI18n } from '@/plugins/i18n';
 import { EColor } from '@core/common/enums/EColor';
@@ -27,8 +28,6 @@ import { ExportContactResponse } from '@core/schema/contact/exportContact/respon
 import { ListContactUsersResponse } from '@core/schema/contact/listUsers/response.schema';
 import { ListContactChannelsResponse } from '@core/schema/contact/listContactChannels/response.schema';
 import { ListContactLabelTemplatesResponse } from '@core/schema/contact/listLabelTemplates/response.schema';
-
-type FieldValue = string | { value: string } | null;
 
 export const useContactStore = defineStore('contact', {
   state: () => ({
