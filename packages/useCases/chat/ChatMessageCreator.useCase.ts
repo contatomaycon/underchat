@@ -22,6 +22,7 @@ import { UploadFileRequest } from '@core/schema/upload/request.schema';
 import { chatAccountCentrifugo } from '@core/common/functions/centrifugoQueue';
 import { MessageTemplateService } from '@core/services/messageTemplate.service';
 import { ChatMessageService } from '@core/services/chatMessage.service';
+import { UserService } from '@core/services/user.service';
 import { IMessageContext } from '@core/common/interfaces/IMessageContext';
 import { IChatContext } from '@core/common/interfaces/IChatContext';
 import { IJwtGroupHierarchy } from '@core/common/interfaces/IJwtGroupHierarchy';
@@ -40,8 +41,26 @@ export class ChatMessageCreatorUseCase {
     private readonly streamProducerService: StreamProducerService,
     private readonly centrifugoService: CentrifugoService,
     private readonly messageTemplateService: MessageTemplateService,
-    private readonly chatMessageService: ChatMessageService
+    private readonly chatMessageService: ChatMessageService,
+    private readonly userService: UserService
   ) {}
+
+  private async resolveSenderName(
+    chat: IChat,
+    typeUser: ETypeUserChat,
+    userId: string
+  ): Promise<string | null> {
+    if (typeUser !== ETypeUserChat.operator) {
+      return null;
+    }
+
+    if (chat.user?.id && chat.user.id === userId && chat.user.name) {
+      return chat.user.name;
+    }
+
+    const user = await this.userService.viewUserNamePhoto(userId);
+    return user?.name ?? null;
+  }
 
   private canViewOthersChats(actions: IJwtGroupHierarchy[]): boolean {
     const permissions = [
@@ -596,6 +615,7 @@ export class ChatMessageCreatorUseCase {
       messageQuotedId: contactData.messageQuotedId,
       hash: messageContext.hash,
       typeUser: messageContext.typeUser,
+      senderName: messageContext.senderName,
       contactIds: contactData.contacts,
     });
   }
@@ -627,6 +647,7 @@ export class ChatMessageCreatorUseCase {
       messageQuotedId: messageData.messageQuotedId,
       hash: messageContext.hash,
       typeUser: messageContext.typeUser,
+      senderName: messageContext.senderName,
       latitude: locationData.latitude,
       longitude: locationData.longitude,
       name: locationData.name,
@@ -660,6 +681,7 @@ export class ChatMessageCreatorUseCase {
       messageQuotedId: messageData.messageQuotedId,
       hash: messageContext.hash,
       typeUser: messageContext.typeUser,
+      senderName: messageContext.senderName,
       documents:
         documentData.documents.length > 0 ? documentData.documents : undefined,
       documentUrl: documentData.isQuickMessage
@@ -701,6 +723,7 @@ export class ChatMessageCreatorUseCase {
       messageQuotedId: messageData.messageQuotedId,
       hash: messageContext.hash,
       typeUser: messageContext.typeUser,
+      senderName: messageContext.senderName,
       videos: videoData.videos.length > 0 ? videoData.videos : undefined,
       videoUrl: videoData.isQuickMessage
         ? videoData.quickMessageUrl
@@ -753,6 +776,7 @@ export class ChatMessageCreatorUseCase {
       messageQuotedId: messageData.messageQuotedId,
       hash: messageContext.hash,
       typeUser: messageContext.typeUser,
+      senderName: messageContext.senderName,
       audios: audioData.audios.length > 0 ? audioData.audios : undefined,
       audioUrl: audioData.isQuickMessage
         ? audioData.quickMessageUrl
@@ -796,6 +820,7 @@ export class ChatMessageCreatorUseCase {
       messageQuotedId: messageData.messageQuotedId,
       hash: messageContext.hash,
       typeUser: messageContext.typeUser,
+      senderName: messageContext.senderName,
       images: imageData.images.length > 0 ? imageData.images : undefined,
       imageUrl: imageData.isQuickMessage
         ? imageData.quickMessageUrl
@@ -831,6 +856,7 @@ export class ChatMessageCreatorUseCase {
       messageQuotedId: messageData.messageQuotedId,
       hash: messageContext.hash,
       typeUser: messageContext.typeUser,
+      senderName: messageContext.senderName,
       linkPreview,
     });
   }
@@ -856,6 +882,8 @@ export class ChatMessageCreatorUseCase {
     if (!this.canAccessChat(chat, userId, actions, userSectors, userChannels)) {
       throw new Error(t('chat_access_denied'));
     }
+
+    const senderName = await this.resolveSenderName(chat, typeUser, userId);
 
     const quickTemplateData = await this.resolveQuickMessageTemplate(
       t,
@@ -887,7 +915,7 @@ export class ChatMessageCreatorUseCase {
       chat,
       params.chat_id,
       accountId,
-      { t, hash: normalizedFields.hash, typeUser }
+      { t, hash: normalizedFields.hash, typeUser, senderName }
     );
     if (actionResult !== null) {
       return actionResult;
@@ -897,7 +925,7 @@ export class ChatMessageCreatorUseCase {
 
     if (normalizedFields.contacts.length > 0) {
       result = await this.sendContactMessage(
-        { t, hash: normalizedFields.hash, typeUser },
+        { t, hash: normalizedFields.hash, typeUser, senderName },
         chat,
         accountId,
         {
@@ -915,7 +943,7 @@ export class ChatMessageCreatorUseCase {
       normalizedFields.locationLongitude !== null
     ) {
       result = await this.sendLocationMessage(
-        { t, hash: normalizedFields.hash, typeUser },
+        { t, hash: normalizedFields.hash, typeUser, senderName },
         chat,
         accountId,
         {
@@ -933,7 +961,7 @@ export class ChatMessageCreatorUseCase {
 
     if (!result && type === EMessageType.document) {
       result = await this.sendDocumentMessage(
-        { t, hash: normalizedFields.hash, typeUser },
+        { t, hash: normalizedFields.hash, typeUser, senderName },
         chat,
         accountId,
         {
@@ -951,7 +979,7 @@ export class ChatMessageCreatorUseCase {
 
     if (!result && type === EMessageType.video) {
       result = await this.sendVideoMessage(
-        { t, hash: normalizedFields.hash, typeUser },
+        { t, hash: normalizedFields.hash, typeUser, senderName },
         chat,
         accountId,
         {
@@ -973,7 +1001,7 @@ export class ChatMessageCreatorUseCase {
 
     if (!result && type === EMessageType.audio) {
       result = await this.sendAudioMessage(
-        { t, hash: normalizedFields.hash, typeUser },
+        { t, hash: normalizedFields.hash, typeUser, senderName },
         chat,
         accountId,
         {
@@ -999,7 +1027,7 @@ export class ChatMessageCreatorUseCase {
         (isQuickMessage && quickMessageUrl && type === EMessageType.image))
     ) {
       result = await this.sendImageMessage(
-        { t, hash: normalizedFields.hash, typeUser },
+        { t, hash: normalizedFields.hash, typeUser, senderName },
         chat,
         accountId,
         {
@@ -1019,7 +1047,7 @@ export class ChatMessageCreatorUseCase {
 
     if (!result) {
       result = await this.sendTextMessage(
-        { t, hash: normalizedFields.hash, typeUser },
+        { t, hash: normalizedFields.hash, typeUser, senderName },
         chat,
         accountId,
         {

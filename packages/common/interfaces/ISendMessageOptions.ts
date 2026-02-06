@@ -11,6 +11,7 @@ export interface ISendMessageOptions {
   messageQuotedId?: string | null;
   hash?: string | null;
   typeUser: ETypeUserChat;
+  senderName?: string | null;
   linkPreview?: any;
 }
 

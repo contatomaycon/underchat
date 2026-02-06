@@ -5,4 +5,5 @@ export interface IMessageContext {
   t: TFunction<'translation', undefined>;
   hash: string | null;
   typeUser: ETypeUserChat;
+  senderName?: string | null;
 }

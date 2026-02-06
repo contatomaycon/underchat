@@ -115,17 +115,26 @@ export class ChatMessageService {
   private async formatOperatorTextWithAttendeeName(
     chat: IChat,
     message: string | null,
-    messageType?: EMessageType
+    messageType?: EMessageType,
+    typeUser?: ETypeUserChat,
+    senderName?: string | null
   ): Promise<string> {
     const text = message ?? '';
 
+    if (!text || !chat.worker?.id) {
+      return text;
+    }
+
     if (
-      !text ||
-      !chat.worker?.id ||
-      !chat.user?.name ||
       messageType === EMessageType.system ||
-      messageType === EMessageType.annotation
+      messageType === EMessageType.annotation ||
+      typeUser !== ETypeUserChat.operator
     ) {
+      return text;
+    }
+
+    const attendeeName = senderName?.trim() || chat.user?.name;
+    if (!attendeeName) {
       return text;
     }
 
@@ -136,7 +145,7 @@ export class ChatMessageService {
       return text;
     }
 
-    const prefix = `*${chat.user.name}*:\n\n`;
+    const prefix = `*${attendeeName}*:\n\n`;
     if (text.startsWith(prefix)) {
       return text;
     }
@@ -960,12 +969,15 @@ export class ChatMessageService {
       quotedMessage: IQuotedMessage | null;
       normalizedHash: string | null;
       typeUser: ETypeUserChat;
+      senderName?: string | null;
     }
   ): Promise<boolean> {
     const formattedMessage = await this.formatOperatorTextWithAttendeeName(
       chatData,
       message,
-      type
+      type,
+      messageContext.typeUser,
+      messageContext.senderName
     );
     const whatsappMessage = this.formatMessageForWhatsApp(
       formattedMessage,
@@ -1111,6 +1123,7 @@ export class ChatMessageService {
       quotedMessage: IQuotedMessage | null;
       normalizedHash: string | null;
       typeUser: ETypeUserChat;
+      senderName?: string | null;
     }
   ): Promise<boolean> {
     let imageData: UploadFileResponse | null = null;
@@ -1133,11 +1146,19 @@ export class ChatMessageService {
       return false;
     }
 
+    const formattedMessage = await this.formatOperatorTextWithAttendeeName(
+      chatData,
+      message,
+      type,
+      messageContext.typeUser,
+      messageContext.senderName
+    );
+
     const imageMessage = this.createImageMessage({
       chat: chatData,
       chatId,
       type,
-      message,
+      message: formattedMessage,
       imageData,
       messageQuotedId: messageContext.quotedId,
       quotedMessage: messageContext.quotedMessage,
@@ -1160,6 +1181,7 @@ export class ChatMessageService {
       quotedMessage: IQuotedMessage | null;
       normalizedHash: string | null;
       typeUser: ETypeUserChat;
+      senderName?: string | null;
     }
   ): Promise<boolean> {
     let videoData:
@@ -1192,12 +1214,20 @@ export class ChatMessageService {
     const finalDuration =
       videoOptions.videoDuration ?? videoData.duration ?? null;
 
+    const formattedMessage = await this.formatOperatorTextWithAttendeeName(
+      chatData,
+      message,
+      type,
+      messageContext.typeUser,
+      messageContext.senderName
+    );
+
     const videoMessage = this.createVideoMessage(
       {
         chat: chatData,
         chatId,
         type,
-        message,
+        message: formattedMessage,
         videoData,
         messageQuotedId: messageContext.quotedId,
         quotedMessage: messageContext.quotedMessage,
@@ -1222,6 +1252,7 @@ export class ChatMessageService {
       quotedMessage: IQuotedMessage | null;
       normalizedHash: string | null;
       typeUser: ETypeUserChat;
+      senderName?: string | null;
     }
   ): Promise<boolean> {
     let audioData:
@@ -1252,12 +1283,20 @@ export class ChatMessageService {
     const finalDuration =
       audioOptions.audioDuration ?? audioData.duration ?? null;
 
+    const formattedMessage = await this.formatOperatorTextWithAttendeeName(
+      chatData,
+      message,
+      type,
+      messageContext.typeUser,
+      messageContext.senderName
+    );
+
     const audioMessage = this.createAudioMessage(
       {
         chat: chatData,
         chatId,
         type,
-        message,
+        message: formattedMessage,
         audioData,
         messageQuotedId: messageContext.quotedId,
         quotedMessage: messageContext.quotedMessage,
@@ -1284,6 +1323,7 @@ export class ChatMessageService {
       quotedMessage: IQuotedMessage | null;
       normalizedHash: string | null;
       typeUser: ETypeUserChat;
+      senderName?: string | null;
     }
   ): Promise<boolean> {
     let documentData: UploadFileResponse | null = null;
@@ -1307,11 +1347,19 @@ export class ChatMessageService {
       return false;
     }
 
+    const formattedMessage = await this.formatOperatorTextWithAttendeeName(
+      chatData,
+      message,
+      type,
+      messageContext.typeUser,
+      messageContext.senderName
+    );
+
     const documentMessage = this.createDocumentMessage({
       chat: chatData,
       chatId,
       type,
-      message,
+      message: formattedMessage,
       documentData,
       messageQuotedId: messageContext.quotedId,
       quotedMessage: messageContext.quotedMessage,
@@ -1333,8 +1381,17 @@ export class ChatMessageService {
       quotedMessage: IQuotedMessage | null;
       normalizedHash: string | null;
       typeUser: ETypeUserChat;
+      senderName?: string | null;
     }
   ): Promise<boolean> {
+    const formattedMessage = await this.formatOperatorTextWithAttendeeName(
+      chatData,
+      message,
+      type,
+      messageContext.typeUser,
+      messageContext.senderName
+    );
+
     const locationMessage: IChatMessage = {
       message_id: uuidv7(),
       chat_id: chatId,
@@ -1358,7 +1415,7 @@ export class ChatMessageService {
       has_quoted: !!messageContext.quotedMessage,
       content: {
         type,
-        message,
+        message: formattedMessage,
         message_quoted_id: messageContext.quotedId,
         quoted: messageContext.quotedMessage,
         location: {
@@ -1423,6 +1480,7 @@ export class ChatMessageService {
       quotedMessage: IQuotedMessage | null;
       normalizedHash: string | null;
       typeUser: ETypeUserChat;
+      senderName?: string | null;
     }
   ): Promise<boolean> {
     if (contactOptions.contactIds.length === 0) {
@@ -1462,6 +1520,14 @@ export class ChatMessageService {
       return false;
     }
 
+    const formattedMessage = await this.formatOperatorTextWithAttendeeName(
+      chatData,
+      message,
+      type,
+      messageContext.typeUser,
+      messageContext.senderName
+    );
+
     const publishTasks = validContacts.map((contactData) => {
       const messageHash = messageContext.normalizedHash || uuidv7();
       const contactMessage: IChatMessage = {
@@ -1487,7 +1553,7 @@ export class ChatMessageService {
         has_quoted: !!messageContext.quotedMessage,
         content: {
           type,
-          message,
+          message: formattedMessage,
           message_quoted_id: messageContext.quotedId,
           quoted: messageContext.quotedMessage,
           contact: {
@@ -1518,8 +1584,16 @@ export class ChatMessageService {
     t: TFunction<'translation', undefined>,
     options: SendMessageOptions
   ): Promise<boolean> {
-    const { chat, accountId, type, message, messageQuotedId, hash, typeUser } =
-      options;
+    const {
+      chat,
+      accountId,
+      type,
+      message,
+      messageQuotedId,
+      hash,
+      typeUser,
+      senderName,
+    } = options;
 
     let chatData: IChat | null = null;
 
@@ -1561,6 +1635,7 @@ export class ChatMessageService {
           quotedMessage,
           normalizedHash,
           typeUser,
+          senderName,
         }
       );
     }
@@ -1578,6 +1653,7 @@ export class ChatMessageService {
           quotedMessage,
           normalizedHash,
           typeUser,
+          senderName,
         }
       );
     }
@@ -1595,6 +1671,7 @@ export class ChatMessageService {
           quotedMessage,
           normalizedHash,
           typeUser,
+          senderName,
         }
       );
     }
@@ -1612,6 +1689,7 @@ export class ChatMessageService {
           quotedMessage,
           normalizedHash,
           typeUser,
+          senderName,
         }
       );
     }
@@ -1629,6 +1707,7 @@ export class ChatMessageService {
           quotedMessage,
           normalizedHash,
           typeUser,
+          senderName,
         }
       );
     }
@@ -1645,6 +1724,7 @@ export class ChatMessageService {
           quotedMessage,
           normalizedHash,
           typeUser,
+          senderName,
         }
       );
     }
@@ -1662,6 +1742,7 @@ export class ChatMessageService {
           quotedMessage,
           normalizedHash,
           typeUser,
+          senderName,
         }
       );
     }
