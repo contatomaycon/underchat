@@ -3,7 +3,7 @@ import { KafkaService } from './kafka.service';
 
 @injectable()
 export class KafkaBalanceQueueService {
-  static readonly NUM_PARTITIONS = 6;
+  static readonly NUM_PARTITIONS = 1;
   static readonly REPLICATION_FACTOR = 3;
 
   constructor(private readonly kafkaService: KafkaService) {}
