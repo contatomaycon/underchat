@@ -138,6 +138,7 @@ const searchChatsCounts = ref<{
 const isLoadingWorkerConfigs = ref(false);
 const isLoadingMoreQueue = ref(false);
 const isLoadingMoreInChat = ref(false);
+const inChatSectionRef = ref<HTMLElement | null>(null);
 const chatScrollContainer = ref<InstanceType<typeof PerfectScrollbar> | null>(
   null
 );
@@ -1136,7 +1137,9 @@ const buildLoadKey = (append: boolean): string | null => {
   return JSON.stringify(base);
 };
 
-const loadAllChats = async (append = false) => {
+type LoadAllChatsSection = 'in_chat' | 'queue';
+
+const loadAllChats = async (append = false, section?: LoadAllChatsSection) => {
   const filters = getChatUserFilters();
   const searchTerm = getSearchTerm();
 
@@ -1165,8 +1168,33 @@ const loadAllChats = async (append = false) => {
     return;
   }
 
-  const [inChatResponse, queueResponse] = await Promise.all([
-    chatStore.resolveChatEndpoint(
+  if (!append) {
+      const response = await chatStore.resolveChatEndpoint(
+        [EChatStatus.in_chat, EChatStatus.queue],
+        filters,
+        hasAppliedAdvancedFilters.value,
+        {
+          current_page: 1,
+          per_page: perPageInChat.value + perPageQueue.value,
+        },
+        false,
+        searchTerm
+      );
+
+      if (response.counts) {
+        applyCounts(response.counts);
+      }
+
+      const allChats = [...chatStore.listQueue, ...chatStore.listInChat];
+      await Promise.all([
+        loadWorkerConfigs(allChats),
+        loadChatContacts(allChats),
+      ]);
+      return;
+    }
+
+    if (section === 'in_chat') {
+    const response = await chatStore.resolveChatEndpoint(
       EChatStatus.in_chat,
       filters,
       hasAppliedAdvancedFilters.value,
@@ -1174,10 +1202,23 @@ const loadAllChats = async (append = false) => {
         current_page: currentPageInChat.value,
         per_page: perPageInChat.value,
       },
-      append,
+      true,
       searchTerm
-    ),
-    chatStore.resolveChatEndpoint(
+    );
+
+    if (response.counts) {
+      applyCounts(response.counts);
+    }
+
+    await Promise.all([
+      loadWorkerConfigs(chatStore.listInChat),
+      loadChatContacts(chatStore.listInChat),
+    ]);
+    return;
+  }
+
+  if (section === 'queue') {
+    const response = await chatStore.resolveChatEndpoint(
       EChatStatus.queue,
       filters,
       hasAppliedAdvancedFilters.value,
@@ -1185,30 +1226,19 @@ const loadAllChats = async (append = false) => {
         current_page: currentPageQueue.value,
         per_page: perPageQueue.value,
       },
-      append,
+      true,
       searchTerm
-    ),
-  ]);
+    );
 
-  if (inChatResponse.counts || queueResponse.counts) {
-    const queueCount =
-      queueResponse.counts?.queue ?? inChatResponse.counts?.queue ?? 0;
-    const inChatCount =
-      inChatResponse.counts?.in_chat ?? queueResponse.counts?.in_chat ?? 0;
-    const combinedCounts = {
-      total:
-        inChatResponse.counts?.total ??
-        queueResponse.counts?.total ??
-        queueCount + inChatCount,
-      queue: queueCount,
-      in_chat: inChatCount,
-      chatbot:
-        inChatResponse.counts?.chatbot ?? queueResponse.counts?.chatbot ?? 0,
-      closed: inChatResponse.counts?.closed ?? queueResponse.counts?.closed,
-      my_chats:
-        inChatResponse.counts?.my_chats ?? queueResponse.counts?.my_chats ?? 0,
-    };
-    applyCounts(combinedCounts);
+    if (response.counts) {
+      applyCounts(response.counts);
+    }
+
+    await Promise.all([
+      loadWorkerConfigs(chatStore.listQueue),
+      loadChatContacts(chatStore.listQueue),
+    ]);
+    return;
   }
 
   const allChats = [...chatStore.listQueue, ...chatStore.listInChat];
@@ -1271,7 +1301,10 @@ const loadQueueChats = async (append = false) => {
   ]);
 };
 
-const loadChatsByFilter = async (append = false) => {
+const loadChatsByFilter = async (
+  append = false,
+  section?: LoadAllChatsSection
+) => {
   const loadKey = buildLoadKey(append);
   if (loadKey && inFlightLoadKey === loadKey && inFlightLoadPromise) {
     return inFlightLoadPromise;
@@ -1279,7 +1312,7 @@ const loadChatsByFilter = async (append = false) => {
 
   const runLoad = async () => {
     if (activeFilter.value === 'all') {
-      await loadAllChats(append);
+      await loadAllChats(append, section);
       return;
     }
 
@@ -1528,19 +1561,40 @@ const handleChatScroll = async (event?: Event) => {
       !isLoadingAllChatsWithFilters.value
     ) {
       if (activeFilter.value === 'all' && hasActiveFilters.value) {
-        const hasMore = hasMoreQueue.value || hasMoreInChat.value;
-        if (hasMore) {
-          isLoadingMoreQueue.value = true;
-          isLoadingMoreInChat.value = true;
-          allChatsWithFiltersPagings.value.current_page += 1;
-
-          if (searchQuery.value && searchQuery.value.trim().length > 0) {
+        if (searchQuery.value && searchQuery.value.trim().length > 0) {
+          const hasMore = hasMoreQueue.value || hasMoreInChat.value;
+          if (hasMore) {
+            isLoadingMoreQueue.value = true;
+            isLoadingMoreInChat.value = true;
+            allChatsWithFiltersPagings.value.current_page += 1;
             await performSearch(true);
-          } else {
-            await loadChatsByFilter(true);
+            isLoadingMoreQueue.value = false;
+            isLoadingMoreInChat.value = false;
+            await updateScrollbar();
           }
+          return;
+        }
 
+        const shouldLoadQueue = hasMoreQueue.value;
+        const shouldLoadInChat = hasMoreInChat.value;
+        const queueSectionOffsetTop =
+          inChatSectionRef.value?.offsetTop ?? 0;
+        const scrolledPastInChat =
+          scrollTop >= queueSectionOffsetTop - threshold;
+
+        if (scrolledPastInChat && shouldLoadQueue) {
+          isLoadingMoreQueue.value = true;
+          currentPageQueue.value += 1;
+          await loadChatsByFilter(true, 'queue');
           isLoadingMoreQueue.value = false;
+          await updateScrollbar();
+          return;
+        }
+
+        if (!scrolledPastInChat && shouldLoadInChat) {
+          isLoadingMoreInChat.value = true;
+          currentPageInChat.value += 1;
+          await loadChatsByFilter(true, 'in_chat');
           isLoadingMoreInChat.value = false;
           await updateScrollbar();
         }
@@ -1566,20 +1620,22 @@ const handleChatScroll = async (event?: Event) => {
       const shouldLoadQueue = hasMoreQueue.value;
       const shouldLoadInChat = hasMoreInChat.value;
 
-      if (shouldLoadQueue || shouldLoadInChat) {
-        if (shouldLoadQueue) {
-          isLoadingMoreQueue.value = true;
-          currentPageQueue.value += 1;
-        }
+      const queueSectionOffsetTop = inChatSectionRef.value?.offsetTop ?? 0;
+      const scrolledPastInChat = scrollTop >= queueSectionOffsetTop - threshold;
 
-        if (shouldLoadInChat) {
-          isLoadingMoreInChat.value = true;
-          currentPageInChat.value += 1;
-        }
-
-        await loadChatsByFilter(true);
-
+      if (scrolledPastInChat && shouldLoadQueue) {
+        isLoadingMoreQueue.value = true;
+        currentPageQueue.value += 1;
+        await loadChatsByFilter(true, 'queue');
         isLoadingMoreQueue.value = false;
+        await updateScrollbar();
+        return;
+      }
+
+      if (!scrolledPastInChat && shouldLoadInChat) {
+        isLoadingMoreInChat.value = true;
+        currentPageInChat.value += 1;
+        await loadChatsByFilter(true, 'in_chat');
         isLoadingMoreInChat.value = false;
         await updateScrollbar();
       }
@@ -3299,7 +3355,7 @@ defineExpose({
           {{ $t('no_chat_in_service') }}
         </li>
 
-        <li v-if="showQueueTitle" class="list-none pt-2">
+        <li ref="inChatSectionRef" v-if="showQueueTitle" class="list-none pt-2">
           <h5 class="chat-header text-primary text-h5">
             {{ $t('waiting_for_service') }}
           </h5>
