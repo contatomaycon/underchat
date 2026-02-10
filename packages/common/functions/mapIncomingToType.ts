@@ -80,6 +80,7 @@ function detectProtocol({ pType, msg }: IMapCtx): EMessageType | undefined {
   if (pType === T.MESSAGE_EDIT) return EMessageType.edit_text;
   if (
     pType === T.EPHEMERAL_SETTING ||
+    pType === T.EPHEMERAL_SYNC_RESPONSE ||
     (msg as any).disappearingMessagesInChat !== undefined
   )
     return EMessageType.set_disappearing_messages;

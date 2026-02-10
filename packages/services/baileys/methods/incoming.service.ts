@@ -424,6 +424,10 @@ export class BaileysIncomingMessageService {
         return;
       }
 
+      if (type === EMessageType.set_disappearing_messages) {
+        return;
+      }
+
       const inputUpsert: IUpsertMessage = {
         worker_id: baileysEnvironment.baileysWorkerId,
         account_id: baileysEnvironment.baileysAccountId,

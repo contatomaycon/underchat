@@ -2266,6 +2266,20 @@ export class MessageUpsertConsume {
     return `wa_${hash}`;
   }
 
+  private shouldDiscardUpsert(data: IUpsertMessage): boolean {
+    if (data.type === EMessageType.set_disappearing_messages) {
+      return true;
+    }
+
+    const msg = this.getInnerMessage(data);
+    const pType = msg?.protocolMessage?.type;
+
+    return (
+      pType === proto.Message.ProtocolMessage.Type.EPHEMERAL_SETTING ||
+      pType === proto.Message.ProtocolMessage.Type.EPHEMERAL_SYNC_RESPONSE
+    );
+  }
+
   private isMessageEmpty(data: IUpsertMessage): boolean {
     if (data.type === EMessageType.set_disappearing_messages) {
       return false;
@@ -2782,6 +2796,10 @@ export class MessageUpsertConsume {
     data: IUpsertMessage,
     phone: string
   ): Promise<void> {
+    if (this.shouldDiscardUpsert(data)) {
+      return;
+    }
+
     const normalizedPhone = this.normalizePhoneForLock(phone);
     const lockKey = `chat-create:${data.account_id}:${data.worker_id}:${normalizedPhone}`;
 
@@ -2912,6 +2930,10 @@ export class MessageUpsertConsume {
       const currentChain = previousChain
         .then(async () => {
           const processMessage = async (): Promise<boolean> => {
+            if (this.shouldDiscardUpsert(data)) {
+              return true;
+            }
+
             const jid = remoteJid(data.message?.key);
             const jidAlt = remoteJidAlt(data.message?.key);
 
