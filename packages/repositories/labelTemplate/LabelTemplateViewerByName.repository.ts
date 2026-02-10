@@ -5,7 +5,7 @@ import {
   NodePgQueryResultHKT,
 } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, eq, isNull, ExtractTablesWithRelations } from 'drizzle-orm';
+import { and, eq, isNull, ExtractTablesWithRelations, sql } from 'drizzle-orm';
 import { PgTransaction } from 'drizzle-orm/pg-core';
 
 @injectable()
@@ -32,7 +32,7 @@ export class LabelTemplateViewerByNameRepository {
       .where(
         and(
           eq(labelTemplate.account_id, accountId),
-          eq(labelTemplate.label, labelName),
+          sql`LOWER(${labelTemplate.label}) = LOWER(${labelName})`,
           isNull(labelTemplate.deleted_at)
         )
       )
@@ -69,7 +69,7 @@ export class LabelTemplateViewerByNameRepository {
       .where(
         and(
           eq(labelTemplate.account_id, accountId),
-          eq(labelTemplate.label, labelName),
+          sql`LOWER(${labelTemplate.label}) = LOWER(${labelName})`,
           isNull(labelTemplate.deleted_at)
         )
       )

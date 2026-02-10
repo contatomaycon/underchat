@@ -1,5 +1,11 @@
 import { Static, Type } from '@sinclair/typebox';
 
+const labelTemplateSchema = Type.Object({
+  label_template_id: Type.String({ format: 'uuid' }),
+  label: Type.String(),
+  color: Type.String(),
+});
+
 export const exportContactResponseSchema = Type.Object({
   contact_id: Type.String({ format: 'uuid' }),
   name: Type.String(),
@@ -14,6 +20,7 @@ export const exportContactResponseSchema = Type.Object({
     Type.Union([Type.String(), Type.Null()])
   ),
   document: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  labels: Type.Array(labelTemplateSchema),
 });
 
 export type ExportContactResponse = Static<typeof exportContactResponseSchema>;
