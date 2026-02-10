@@ -152,6 +152,14 @@ export class CsvFileReaderService {
     const documentoNames = ['documento', 'document'];
     const aniversarioNames = ['birthday', 'aniversário', 'aniversario'];
     const notasNames = ['notes', 'notas'];
+    const labelNames = [
+      'label',
+      'etiqueta',
+      'labels',
+      'etiquetas',
+      'tag',
+      'tags',
+    ];
 
     const nome =
       this._findColumnIndices(header, nomeNames)[0] ??
@@ -179,6 +187,7 @@ export class CsvFileReaderService {
     const documento = header.findIndex((h) => documentoNames.includes(h));
     const aniversario = header.findIndex((h) => aniversarioNames.includes(h));
     const notas = header.findIndex((h) => notasNames.includes(h));
+    const label = header.findIndex((h) => labelNames.includes(h));
 
     return {
       nome: nome >= 0 ? nome : -1,
@@ -191,6 +200,7 @@ export class CsvFileReaderService {
       documento,
       aniversario,
       notas,
+      label: label >= 0 ? label : -1,
     };
   }
 
@@ -315,6 +325,9 @@ export class CsvFileReaderService {
       const name = nameFromCols || nameFromFull;
       const last_name = lastFromCols || lastFromFull;
 
+      const labelValue = idx.label >= 0 ? this._val(cols, idx.label) : null;
+      const label = labelValue ? labelValue.trim() : null;
+
       out.push({
         name,
         last_name,
@@ -326,6 +339,7 @@ export class CsvFileReaderService {
         contact_document_type_id,
         birthday: this._normDate(this._val(cols, idx.aniversario)),
         notes: this._toNull(this._val(cols, idx.notas)),
+        label: label || null,
       });
     }
     return out;

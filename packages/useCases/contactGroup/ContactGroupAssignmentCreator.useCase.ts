@@ -12,15 +12,22 @@ import { onlyDigits } from '@core/common/functions/onlyDigits';
 import { extractPhoneAndDdi } from '@core/common/functions/extractPhoneAndDdi';
 import { PlanAccountService } from '@core/services/planAccount.service';
 import { CentrifugoService } from '@core/services/centrifugo.service';
+import { LabelTemplateViewerByNameRepository } from '@core/repositories/labelTemplate/LabelTemplateViewerByName.repository';
+import { LabelTemplateCreatorRepository } from '@core/repositories/labelTemplate/LabelTemplateCreator.repository';
+import { ELabelStatus } from '@core/common/enums/ELabelStatus';
 
 @injectable()
 export class ContactGroupAssignmentCreatorUseCase {
+  private labelCache: Map<string, string> = new Map();
+
   constructor(
     private readonly csvFileReaderService: CsvFileReaderService,
     private readonly contactService: ContactService,
     private readonly encryptService: EncryptService,
     private readonly planAccountService: PlanAccountService,
-    private readonly centrifugoService: CentrifugoService
+    private readonly centrifugoService: CentrifugoService,
+    private readonly labelTemplateViewerByNameRepository: LabelTemplateViewerByNameRepository,
+    private readonly labelTemplateCreatorRepository: LabelTemplateCreatorRepository
   ) {}
 
   private buildCompletePhone(
@@ -94,6 +101,81 @@ export class ContactGroupAssignmentCreatorUseCase {
     return { phone, phoneDdi: ddi };
   }
 
+  private truncateLabelName = (name: string, maxLength: number): string => {
+    if (name.length <= maxLength) {
+      return name;
+    }
+    return name.substring(0, maxLength);
+  };
+
+  private generateRandomColor = (): string => {
+    const colors = [
+      '#1976D2',
+      '#388E3C',
+      '#F57C00',
+      '#7B1FA2',
+      '#C2185B',
+      '#00796B',
+      '#0288D1',
+      '#5D4037',
+      '#455A64',
+      '#E64A19',
+    ];
+    return colors[Math.floor(Math.random() * colors.length)];
+  };
+
+  private async resolveOrCreateLabel(
+    accountId: string,
+    labelName: string
+  ): Promise<string | null> {
+    if (!labelName || typeof labelName !== 'string') {
+      return null;
+    }
+
+    const trimmedName = labelName.trim();
+    if (!trimmedName) {
+      return null;
+    }
+
+    const truncatedName = this.truncateLabelName(trimmedName, 255);
+    const cacheKey = `${accountId}:${truncatedName.toLowerCase()}`;
+
+    if (this.labelCache.has(cacheKey)) {
+      return this.labelCache.get(cacheKey) ?? null;
+    }
+
+    const existingLabel =
+      await this.labelTemplateViewerByNameRepository.viewLabelTemplateByName(
+        accountId,
+        truncatedName
+      );
+
+    if (existingLabel) {
+      this.labelCache.set(cacheKey, existingLabel.label_template_id);
+      return existingLabel.label_template_id;
+    }
+
+    const color = this.generateRandomColor();
+    const labelTemplateId =
+      await this.labelTemplateCreatorRepository.createLabelTemplate(
+        {
+          label: truncatedName,
+          color,
+          label_status: {
+            label_status_id: ELabelStatus.active,
+          },
+        },
+        accountId
+      );
+
+    if (labelTemplateId) {
+      this.labelCache.set(cacheKey, labelTemplateId);
+      return labelTemplateId;
+    }
+
+    return null;
+  }
+
   private async processContact(
     t: TFunction<'translation', undefined>,
     contact: ICreateContact,
@@ -104,6 +186,17 @@ export class ContactGroupAssignmentCreatorUseCase {
     try {
       const { phone: phoneToSave, phoneDdi: phoneDdiToSave } =
         this.normalizePhoneFromValidation(contact.phone, contact.phone_ddi);
+
+      let labelTemplateIds: string[] = [];
+      if (contact.label) {
+        const labelTemplateId = await this.resolveOrCreateLabel(
+          accountId,
+          contact.label
+        );
+        if (labelTemplateId) {
+          labelTemplateIds.push(labelTemplateId);
+        }
+      }
 
       const existingContact = await this.contactService.getContactByPhone(
         accountId,
@@ -133,6 +226,15 @@ export class ContactGroupAssignmentCreatorUseCase {
           );
         }
 
+        if (labelTemplateIds.length > 0) {
+          for (const labelTemplateId of labelTemplateIds) {
+            await this.contactService.addContactLabelTemplateIfNotExists(
+              existingContact.contact_id,
+              labelTemplateId
+            );
+          }
+        }
+
         return this.createStatusResult(
           contact,
           'duplicate',
@@ -153,6 +255,8 @@ export class ContactGroupAssignmentCreatorUseCase {
             truncateContactName(contact.nickname) ?? contact.nickname ?? null,
           phone: phoneToSave,
           phone_ddi: phoneDdiToSave,
+          label_template_ids:
+            labelTemplateIds.length > 0 ? labelTemplateIds : undefined,
         },
         contactGroupId,
         accountId,
@@ -197,6 +301,8 @@ export class ContactGroupAssignmentCreatorUseCase {
     importSessionId?: string
   ): Promise<IContactImportStatus[]> {
     if (!input.contacts) return [];
+
+    this.labelCache.clear();
 
     const contacts = await this.csvFileReaderService.read(input.contacts);
 

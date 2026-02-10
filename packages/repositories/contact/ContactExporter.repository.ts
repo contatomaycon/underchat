@@ -1,8 +1,13 @@
 import * as schema from '@core/models';
-import { contact, contactDocumentType } from '@core/models';
+import {
+  contact,
+  contactDocumentType,
+  contactLabelTemplate,
+  labelTemplate,
+} from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { ExportContactResponse } from '@core/schema/contact/exportContact/response.schema';
 import { isDefinedFilter } from '@core/common/functions/isDefinedFilter';
 
@@ -11,6 +16,54 @@ export class ContactExporterRepository {
   constructor(
     @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
+
+  private readonly findLabelsByContactIds = async (
+    contactIds: string[]
+  ): Promise<
+    Map<
+      string,
+      Array<{ label_template_id: string; label: string; color: string }>
+    >
+  > => {
+    if (contactIds.length === 0) {
+      return new Map();
+    }
+
+    const labelsResult = await this.dbRo
+      .select({
+        contact_id: contactLabelTemplate.contact_id,
+        label_template_id: labelTemplate.label_template_id,
+        label: labelTemplate.label,
+        color: labelTemplate.color,
+      })
+      .from(contactLabelTemplate)
+      .innerJoin(
+        labelTemplate,
+        eq(
+          labelTemplate.label_template_id,
+          contactLabelTemplate.label_template_id
+        )
+      )
+      .where(inArray(contactLabelTemplate.contact_id, contactIds))
+      .execute();
+
+    const labelsByContactId = new Map<
+      string,
+      Array<{ label_template_id: string; label: string; color: string }>
+    >();
+
+    for (const label of labelsResult) {
+      const existing = labelsByContactId.get(label.contact_id) ?? [];
+      existing.push({
+        label_template_id: label.label_template_id,
+        label: label.label,
+        color: label.color,
+      });
+      labelsByContactId.set(label.contact_id, existing);
+    }
+
+    return labelsByContactId;
+  };
 
   exportContacts = async (
     accountId: string
@@ -48,6 +101,12 @@ export class ContactExporterRepository {
       .orderBy(contact.created_at)
       .execute();
 
-    return result as ExportContactResponse[];
+    const contactIds = result.map((r) => r.contact_id);
+    const labelsByContactId = await this.findLabelsByContactIds(contactIds);
+
+    return result.map((item) => ({
+      ...item,
+      labels: labelsByContactId.get(item.contact_id) ?? [],
+    })) as ExportContactResponse[];
   };
 }

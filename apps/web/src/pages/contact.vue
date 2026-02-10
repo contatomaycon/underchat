@@ -144,6 +144,7 @@
       t('nickname'),
       t('birthday'),
       t('notes'),
+      t('labels'),
     ];
   
     const rows = contacts.map((item) => {
@@ -160,6 +161,9 @@
           documentFormatted = document;
         }
       }
+      const labelsText = item.labels && item.labels.length > 0
+        ? item.labels.map((label) => label.label).join(', ')
+        : '';
       return [
         item.name ?? '',
         item.last_name ?? '',
@@ -171,6 +175,7 @@
         item.nickname ?? '',
         item.birthday ?? '',
         item.notes ?? '',
+        labelsText,
       ];
     });
   
