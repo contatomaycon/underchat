@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
   FlatList,
   Animated,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { pt } from '../locales/pt';
@@ -84,17 +85,18 @@ function formatDateForApi(
 function SkeletonRow() {
   const opacity = useRef(new Animated.Value(0.3)).current;
   useEffect(() => {
+    const useNative = Platform.OS !== 'web';
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(opacity, {
           toValue: 0.7,
           duration: 600,
-          useNativeDriver: true,
+          useNativeDriver: useNative,
         }),
         Animated.timing(opacity, {
           toValue: 0.3,
           duration: 600,
-          useNativeDriver: true,
+          useNativeDriver: useNative,
         }),
       ])
     );

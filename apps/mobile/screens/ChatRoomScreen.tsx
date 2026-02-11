@@ -6,11 +6,11 @@ import {
   FlatList,
   TextInput,
   Pressable,
-  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   Image,
   Linking,
+  Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -64,6 +64,66 @@ function formatAudioTime(seconds: number): string {
   const m = Math.floor(seconds / 60);
   const s = Math.floor(seconds % 60);
   return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+function ChatRoomSkeleton() {
+  const opacity = useRef(new Animated.Value(0.3)).current;
+  useEffect(() => {
+    const useNative = Platform.OS !== 'web';
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(opacity, {
+          toValue: 0.7,
+          duration: 600,
+          useNativeDriver: useNative,
+        }),
+        Animated.timing(opacity, {
+          toValue: 0.3,
+          duration: 600,
+          useNativeDriver: useNative,
+        }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [opacity]);
+  const bubble = (align: 'left' | 'right') => (
+    <View
+      style={[
+        styles.skeletonBubbleWrap,
+        align === 'right' && styles.skeletonBubbleWrapRight,
+      ]}
+    >
+      <Animated.View
+        style={[
+          styles.skeletonBubble,
+          align === 'right' && styles.skeletonBubbleRight,
+          { opacity },
+        ]}
+      >
+        <Animated.View
+          style={[styles.skeletonBubbleLine, styles.skeletonBubbleLineWide, { opacity }]}
+        />
+        <Animated.View
+          style={[styles.skeletonBubbleLine, styles.skeletonBubbleLineShort, { opacity }]}
+        />
+      </Animated.View>
+    </View>
+  );
+  return (
+    <View style={styles.skeletonContainer}>
+      <View style={styles.dateSeparatorWrap}>
+        <View style={styles.skeletonDateLine} />
+        <Animated.View style={[styles.skeletonDatePill, { opacity }]} />
+        <View style={styles.skeletonDateLine} />
+      </View>
+      {bubble('left')}
+      {bubble('right')}
+      {bubble('left')}
+      {bubble('right')}
+      {bubble('left')}
+    </View>
+  );
 }
 
 const EMessageType = {
@@ -917,9 +977,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       keyboardVerticalOffset={0}
     >
       {loading ? (
-        <View style={styles.loading}>
-          <ActivityIndicator size="large" color={colors.primary} />
-        </View>
+        <ChatRoomSkeleton />
       ) : (
         <FlatList
           data={messagesWithSeparators}
@@ -974,10 +1032,54 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
-  loading: {
+  skeletonContainer: {
     flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
+    padding: 12,
+    paddingBottom: 8,
+  },
+  skeletonDateLine: {
+    flex: 0.25,
+    height: 1,
+    backgroundColor: 'rgba(47, 43, 61, 0.12)',
+  },
+  skeletonDatePill: {
+    width: 80,
+    height: 20,
+    borderRadius: 7.5,
+    backgroundColor: colors.grey300,
+  },
+  skeletonBubbleWrap: {
+    marginVertical: 2,
+    alignItems: 'flex-start',
+  },
+  skeletonBubbleWrapRight: {
+    alignItems: 'flex-end',
+  },
+  skeletonBubble: {
+    maxWidth: '80%',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderBottomLeftRadius: 4,
+    backgroundColor: colors.grey300,
+  },
+  skeletonBubbleRight: {
+    backgroundColor: colors.grey300,
+    borderBottomLeftRadius: 8,
+    borderBottomRightRadius: 4,
+  },
+  skeletonBubbleLine: {
+    height: 12,
+    borderRadius: 4,
+    backgroundColor: colors.grey400,
+    marginBottom: 6,
+  },
+  skeletonBubbleLineWide: {
+    width: 180,
+  },
+  skeletonBubbleLineShort: {
+    width: 80,
+    marginBottom: 0,
   },
   listContent: {
     padding: 12,
