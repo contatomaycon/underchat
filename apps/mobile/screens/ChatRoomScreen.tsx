@@ -66,6 +66,49 @@ function formatAudioTime(seconds: number): string {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
+const WAVEFORM_BAR_WIDTH = 2;
+const WAVEFORM_BAR_GAP = 2;
+const WAVEFORM_HORIZONTAL_INSET = 2;
+const WAVEFORM_FALLBACK_MAX_BARS = 28;
+
+function fitWaveformToWidth(
+  waveform: number[],
+  width: number
+): number[] {
+  if (waveform.length <= 1) return waveform;
+
+  const usableWidth = Math.max(0, width - WAVEFORM_HORIZONTAL_INSET * 2);
+  const maxBars =
+    usableWidth > 0
+      ? Math.max(
+          8,
+          Math.floor(
+            (usableWidth + WAVEFORM_BAR_GAP) /
+              (WAVEFORM_BAR_WIDTH + WAVEFORM_BAR_GAP)
+          )
+        )
+      : WAVEFORM_FALLBACK_MAX_BARS;
+
+  if (waveform.length <= maxBars) return waveform;
+
+  const bucketSize = waveform.length / maxBars;
+  const reduced: number[] = [];
+
+  for (let i = 0; i < maxBars; i++) {
+    const start = Math.floor(i * bucketSize);
+    const end = Math.max(start + 1, Math.floor((i + 1) * bucketSize));
+    let peak = 0;
+
+    for (let j = start; j < end && j < waveform.length; j++) {
+      peak = Math.max(peak, waveform[j] ?? 0);
+    }
+
+    reduced.push(Math.max(0.15, peak));
+  }
+
+  return reduced;
+}
+
 function ChatRoomSkeleton() {
   const opacity = useRef(new Animated.Value(0.3)).current;
   useEffect(() => {
@@ -242,6 +285,9 @@ const DEFAULT_AUDIO_STATE: AudioState = {
 
 function useChatAudio() {
   const [state, setState] = useState<Record<string, AudioState>>({});
+  const [waveformWidths, setWaveformWidths] = useState<Record<string, number>>(
+    {}
+  );
   const soundRefs = useRef<Record<string, AudioPlayer | null>>({});
   const waveformCache = useRef<Record<string, number[]>>({});
 
@@ -293,7 +339,7 @@ function useChatAudio() {
         player.pause();
       } else {
         const rate = cur?.rate ?? 1;
-        player.playbackRate = rate;
+        player.setPlaybackRate(rate);
         player.play();
       }
     },
@@ -324,7 +370,7 @@ function useChatAudio() {
       const player = soundRefs.current[messageId];
       if (player) {
         try {
-          player.playbackRate = nextRate;
+          player.setPlaybackRate(nextRate);
         } catch {
           //
         }
@@ -369,13 +415,16 @@ function useChatAudio() {
     [state]
   );
 
-  const waveformWidths = useRef<Record<string, number>>({});
   const setWaveformWidth = useCallback((messageId: string, w: number) => {
-    waveformWidths.current[messageId] = w;
+    const nextWidth = Math.max(0, Math.round(w));
+    setWaveformWidths((prev) => {
+      if (prev[messageId] === nextWidth) return prev;
+      return { ...prev, [messageId]: nextWidth };
+    });
   }, []);
   const getWaveformWidth = useCallback((messageId: string): number => {
-    return waveformWidths.current[messageId] ?? 0;
-  }, []);
+    return waveformWidths[messageId] ?? 0;
+  }, [waveformWidths]);
 
   return {
     getState,
@@ -552,9 +601,12 @@ function BubbleContent({
       audioState.duration > 0 ? audioState.duration : fallbackDuration;
     const currentTime =
       audioState.isPlaying || audioState.position > 0 ? audioState.position : 0;
-    const progressPercent =
-      durationSec > 0 ? (currentTime / durationSec) * 100 : 0;
+    const progressPercent = durationSec > 0
+      ? Math.max(0, Math.min(100, (currentTime / durationSec) * 100))
+      : 0;
     const currentTimeStr = formatAudioTime(currentTime);
+    const waveformWidth = audioCtrl.getWaveformWidth(messageId);
+    const waveformToRender = fitWaveformToWidth(waveform, waveformWidth);
 
     return (
       <View style={styles.audioBubble}>
@@ -634,8 +686,8 @@ function BubbleContent({
             }}
           >
             <View style={styles.audioWaveform}>
-              {waveform.map((barValue, index) => {
-                const barProgress = (index / waveform.length) * 100;
+              {waveformToRender.map((barValue, index) => {
+                const barProgress = (index / waveformToRender.length) * 100;
                 const isActive = progressPercent > barProgress;
                 return (
                   <View
@@ -803,6 +855,7 @@ function MessageBubble({
   const timeStr = formatMessageTime(msg.date);
   const isSystem = content?.type === EMessageType.system;
   const isAnnotation = content?.type === EMessageType.annotation;
+  const isAudio = content?.type === EMessageType.audio && !!content.audio?.url;
   const isContactCard =
     content?.type === EMessageType.contact_card ||
     content?.type === EMessageType.contacts;
@@ -883,6 +936,7 @@ function MessageBubble({
           { backgroundColor: bubbleBg },
           isSystem && styles.bubbleSystem,
           isContactCard && styles.bubbleContact,
+          isAudio && styles.bubbleAudio,
         ]}
       >
         <BubbleContent
@@ -891,7 +945,7 @@ function MessageBubble({
           content={content}
           audioCtrl={audioCtrl}
         />
-        <View style={styles.bubbleMeta}>
+        <View style={[styles.bubbleMeta, isAudio && styles.bubbleMetaAudio]}>
           {timeStr ? (
             <Text
               style={[
@@ -1171,6 +1225,16 @@ const styles = StyleSheet.create({
   bubbleContact: {
     minWidth: 160,
   },
+  bubbleAudio: {
+    minWidth: 240,
+    width: '75%',
+    maxWidth: '75%',
+    paddingRight: 12,
+    overflow: 'hidden',
+  },
+  bubbleMetaAudio: {
+    marginTop: 6,
+  },
   bubbleAnnotation: {
     backgroundColor: '#FFF3CD',
   },
@@ -1287,23 +1351,29 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   audioBubble: {
-    maxWidth: 380,
+    maxWidth: '100%',
     width: '100%',
     gap: 6,
+    alignSelf: 'stretch',
     overflow: 'hidden',
   },
   audioPlayerContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+    maxWidth: '100%',
+    width: '100%',
     paddingVertical: 8,
     paddingHorizontal: 14,
     borderRadius: 20,
     backgroundColor: 'rgba(47, 43, 61, 0.06)',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(47, 43, 61, 0.1)',
     overflow: 'hidden',
   },
   audioPlayerContainerRight: {
     backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    borderBottomColor: 'rgba(17, 27, 33, 0.08)',
   },
   audioSpeedBtn: {
     minWidth: 36,
@@ -1343,6 +1413,7 @@ const styles = StyleSheet.create({
   audioPlayAndTimeWrap: {
     alignItems: 'center',
     justifyContent: 'center',
+    flexShrink: 0,
     gap: 4,
   },
   audioTimeBelowPlay: {
@@ -1356,8 +1427,10 @@ const styles = StyleSheet.create({
     color: 'rgba(17, 27, 33, 0.6)',
   },
   audioWaveformContainer: {
-    flex: 1,
-    minWidth: 100,
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 100,
+    minWidth: 0,
     height: 36,
     position: 'relative',
     justifyContent: 'center',
@@ -1365,21 +1438,19 @@ const styles = StyleSheet.create({
   },
   audioWaveform: {
     position: 'absolute',
-    left: 0,
-    right: 0,
+    left: WAVEFORM_HORIZONTAL_INSET,
+    right: WAVEFORM_HORIZONTAL_INSET,
     top: 0,
     bottom: 0,
     flexDirection: 'row',
     alignItems: 'flex-end',
-    justifyContent: 'space-between',
-    gap: 3,
+    justifyContent: 'flex-start',
+    gap: WAVEFORM_BAR_GAP,
     paddingVertical: 6,
     overflow: 'hidden',
   },
   audioWaveformBar: {
-    flex: 1,
-    minWidth: 3,
-    maxWidth: 4,
+    width: WAVEFORM_BAR_WIDTH,
     minHeight: 4,
     backgroundColor: 'rgba(47, 43, 61, 0.4)',
     borderRadius: 2,
