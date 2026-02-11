@@ -22,9 +22,11 @@ import type { ChatStackParamList } from '../navigation/types';
 import {
   type ListMessageResult,
   type MessageContent,
+  type MessageContentVideo,
   ETypeUserChat,
 } from '../types/chat';
 import { createAudioPlayer, type AudioPlayer } from 'expo-audio';
+import { VideoView, useVideoPlayer } from 'expo-video';
 import { Directory, File, Paths } from 'expo-file-system';
 import { listMessages, createMessage } from '../api/chatApi';
 import {
@@ -83,6 +85,8 @@ const WAVEFORM_BAR_WIDTH = 2;
 const WAVEFORM_BAR_GAP = 2;
 const WAVEFORM_HORIZONTAL_INSET = 2;
 const WAVEFORM_FALLBACK_MAX_BARS = 28;
+const VIDEO_FULLSCREEN_DISABLED = { enable: false } as const;
+const VIDEO_FULLSCREEN_ENABLED = { enable: true } as const;
 
 function fitWaveformToWidth(
   waveform: number[],
@@ -221,6 +225,45 @@ function getExtensionFromUrl(url: string): string | null {
   return match ? match[1].toLowerCase() : null;
 }
 
+function resolveMediaUri(url: string | null | undefined): string | null {
+  if (!url) return null;
+  return resolveImageUri(url) ?? url;
+}
+
+function formatVideoDuration(seconds: number | null | undefined): string {
+  if (typeof seconds !== 'number') return '';
+  if (!Number.isFinite(seconds) || seconds < 0) return '';
+  const total = Math.floor(seconds);
+  const minutes = Math.floor(total / 60);
+  const remainingSeconds = total % 60;
+  return `${minutes}:${String(remainingSeconds).padStart(2, '0')}`;
+}
+
+function resolveVideoMeta(video: MessageContentVideo | null | undefined): string {
+  if (!video) return '';
+  const ext = (video.extension ?? '').replace(/^\./, '').toUpperCase() || 'VIDEO';
+  const size = formatFileSize(video.size);
+  const duration = formatVideoDuration(video.duration);
+  return [ext, size, duration].filter((value) => value && value.length > 0).join(' • ');
+}
+
+function resolveVideoDownloadName(
+  video: MessageContentVideo | null | undefined
+): string {
+  if (!video) return 'video.mp4';
+  if (video.name && video.name.trim().length > 0) {
+    return sanitizeFilename(video.name);
+  }
+  const ext = (video.extension ?? '').replace(/^\./, '').toLowerCase() || 'mp4';
+  return `video.${ext}`;
+}
+
+function resolveStickerDownloadName(msg: ListMessageResult): string {
+  const sticker = msg.content?.sticker;
+  const ext = (sticker?.extension ?? '').replace(/^\./, '').toLowerCase() || 'webp';
+  return `sticker-${msg.message_id.slice(-8)}.${ext}`;
+}
+
 function resolveImageDownloadName(msg: ListMessageResult, sourceUrl: string): string {
   const image = msg.content?.image;
   const extFromPayload = image?.extension?.replace(/^\./, '').toLowerCase();
@@ -347,8 +390,9 @@ type MessageWithSeparator =
       separatorLabel: string;
     };
 
-type ImageViewerState = {
+type MediaViewerState = {
   visible: boolean;
+  kind: 'image' | 'video';
   src: string;
   caption: string;
   downloadName: string;
@@ -594,18 +638,84 @@ function DateSeparator({ label }: { label: string }) {
 
 type AudioCtrl = ReturnType<typeof useChatAudio>;
 
+function VideoMessagePreview({
+  sourceUri,
+  thumbnailUri,
+  isVideoNote,
+  onPress,
+}: {
+  sourceUri: string;
+  thumbnailUri: string | null;
+  isVideoNote: boolean;
+  onPress: () => void;
+}) {
+  const [thumbnailLoadError, setThumbnailLoadError] = useState(false);
+  const shouldUseVideoFramePreview = !thumbnailUri || thumbnailLoadError;
+
+  const previewPlayer = useVideoPlayer(
+    shouldUseVideoFramePreview ? { uri: sourceUri } : null,
+    (player) => {
+      player.loop = false;
+      player.muted = true;
+    }
+  );
+
+  useEffect(() => {
+    if (!shouldUseVideoFramePreview) return;
+
+    try {
+      previewPlayer.pause();
+      previewPlayer.currentTime = 0;
+    } catch {
+      //
+    }
+  }, [previewPlayer, shouldUseVideoFramePreview]);
+
+  return (
+    <Pressable
+      style={isVideoNote ? styles.videoNoteThumbWrap : styles.videoThumbWrap}
+      onPress={onPress}
+    >
+      {shouldUseVideoFramePreview ? (
+        <VideoView
+          player={previewPlayer}
+          style={isVideoNote ? styles.videoNoteThumbVideo : styles.videoThumbVideo}
+          contentFit="cover"
+          nativeControls={false}
+          fullscreenOptions={VIDEO_FULLSCREEN_DISABLED}
+          allowsPictureInPicture={false}
+          playsInline
+        />
+      ) : (
+        <Image
+          source={{ uri: thumbnailUri || sourceUri }}
+          style={isVideoNote ? styles.videoNoteThumb : styles.videoThumb}
+          resizeMode="cover"
+          onError={() => setThumbnailLoadError(true)}
+        />
+      )}
+
+      <View style={styles.videoOverlay}>
+        <Ionicons name="play-circle" size={48} color="#fff" />
+      </View>
+    </Pressable>
+  );
+}
+
 function BubbleContent({
   msg,
   fromMe,
   content,
   audioCtrl,
   onOpenImage,
+  onOpenVideo,
 }: {
   msg: ListMessageResult;
   fromMe: boolean;
   content: MessageContent;
   audioCtrl: AudioCtrl | null;
   onOpenImage: (msg: ListMessageResult) => void;
+  onOpenVideo: (msg: ListMessageResult) => void;
 }) {
   const type = content.type;
   const textColor = fromMe ? styles.bubbleTextRight : styles.bubbleTextLeft;
@@ -622,7 +732,7 @@ function BubbleContent({
 
   if (type === EMessageType.image && content.image?.url) {
     const cap = content.image.caption;
-    const imageUri = resolveImageUri(content.image.url);
+    const imageUri = resolveMediaUri(content.image.url);
     if (!imageUri) return null;
     return (
       <View style={styles.mediaBubble}>
@@ -645,38 +755,24 @@ function BubbleContent({
     content.video?.url
   ) {
     const cap = content.video.caption;
-    const videoUrl = resolveImageUri(content.video.url) ?? content.video.url;
-    const thumbUri = resolveImageUri(content.video.thumbnail);
+    const isVideoNote = type === EMessageType.video_note;
+    const videoUri = resolveMediaUri(content.video.url);
+    const thumbUri = resolveMediaUri(content.video.thumbnail);
+    if (!videoUri) return null;
+    const videoMeta = isVideoNote
+      ? formatVideoDuration(content.video.duration) ||
+        resolveVideoMeta(content.video)
+      : resolveVideoMeta(content.video);
+
     return (
       <View style={styles.mediaBubble}>
-        <Pressable
-          style={styles.videoThumbWrap}
-          onPress={() => videoUrl && Linking.openURL(videoUrl)}
-        >
-          {thumbUri ? (
-            <Image
-              source={{ uri: thumbUri }}
-              style={styles.videoThumb}
-              resizeMode="cover"
-            />
-          ) : (
-            <View style={styles.videoPlaceholder}>
-              <Ionicons name="videocam" size={40} color={colors.grey500} />
-            </View>
-          )}
-          <View style={styles.videoOverlay}>
-            <Ionicons name="play-circle" size={48} color="#fff" />
-          </View>
-        </Pressable>
-        {content.video.duration != null ? (
-          <Text style={styles.mediaMeta}>
-            {Math.floor((content.video.duration ?? 0) / 60)}:
-            {String(Math.floor((content.video.duration ?? 0) % 60)).padStart(
-              2,
-              '0'
-            )}
-          </Text>
-        ) : null}
+        <VideoMessagePreview
+          sourceUri={videoUri}
+          thumbnailUri={thumbUri}
+          isVideoNote={isVideoNote}
+          onPress={() => onOpenVideo(msg)}
+        />
+        {videoMeta ? <Text style={styles.mediaMeta}>{videoMeta}</Text> : null}
         {cap ? (
           <Text style={[styles.mediaCaption, textColor]}>{cap}</Text>
         ) : null}
@@ -685,14 +781,16 @@ function BubbleContent({
   }
 
   if (type === EMessageType.sticker && content.sticker?.url) {
-    const stickerUri = resolveImageUri(content.sticker.url);
+    const stickerUri = resolveMediaUri(content.sticker.url);
     if (!stickerUri) return null;
     return (
-      <Image
-        source={{ uri: stickerUri }}
-        style={styles.stickerThumb}
-        resizeMode="contain"
-      />
+      <Pressable onPress={() => onOpenImage(msg)}>
+        <Image
+          source={{ uri: stickerUri }}
+          style={styles.stickerThumb}
+          resizeMode="contain"
+        />
+      </Pressable>
     );
   }
 
@@ -723,7 +821,7 @@ function BubbleContent({
 
   if (type === EMessageType.audio && content.audio?.url) {
     const messageId = msg.message_id;
-    const url = content.audio.url;
+    const url = resolveMediaUri(content.audio.url) ?? content.audio.url;
     const cap = content.message;
     const fallbackDuration = content.audio.duration ?? 0;
     if (!audioCtrl) {
@@ -869,28 +967,57 @@ function BubbleContent({
 
   if (type === EMessageType.document && content.document?.url) {
     const doc = content.document;
+    const docUrl = resolveMediaUri(doc.url);
+    if (!docUrl) return null;
     const ext = (doc.extension ?? '').toUpperCase() || 'FILE';
+    const extLabel = ext.slice(0, 4);
     const sizeStr = formatFileSize(doc.size);
-    const name = doc.name ?? pt.document;
+    const name = doc.name?.trim() || pt.document;
+    const meta = [ext, sizeStr].filter(Boolean).join(' • ');
     const cap = content.message;
     return (
       <View>
-        <Pressable
-          style={styles.documentWrap}
-          onPress={() => Linking.openURL(doc.url!)}
-        >
-          <Ionicons name="document" size={32} color={colors.primary} />
-          <View style={styles.documentInfo}>
-            <Text style={[styles.documentName, textColor]} numberOfLines={2}>
-              {name}
-            </Text>
-            <Text style={styles.documentMeta}>
-              {ext}
-              {sizeStr ? ` • ${sizeStr}` : ''}
-            </Text>
-          </View>
-          <Ionicons name="download-outline" size={22} color={colors.grey600} />
-        </Pressable>
+        <View style={[styles.documentCard, fromMe && styles.documentCardRight]}>
+          <Pressable
+            style={styles.documentMainAction}
+            onPress={() => Linking.openURL(docUrl)}
+          >
+            <View
+              style={[
+                styles.documentIconCircle,
+                fromMe && styles.documentIconCircleRight,
+              ]}
+            >
+              <Ionicons
+                name="document-text-outline"
+                size={18}
+                color={colors.primary}
+              />
+              <Text style={styles.documentTypeText}>{extLabel}</Text>
+            </View>
+            <View style={styles.documentInfo}>
+              <Text style={styles.documentName} numberOfLines={1}>
+                {name}
+              </Text>
+              {meta ? <Text style={styles.documentMeta}>{meta}</Text> : null}
+            </View>
+          </Pressable>
+
+          <Pressable
+            style={[
+              styles.documentDownloadBtn,
+              fromMe && styles.documentDownloadBtnRight,
+            ]}
+            onPress={() => Linking.openURL(docUrl)}
+            accessibilityLabel={pt.download}
+          >
+            <Ionicons
+              name="download-outline"
+              size={18}
+              color={colors.primary}
+            />
+          </Pressable>
+        </View>
         {cap ? (
           <Text
             style={[styles.mediaCaption, textColor, styles.documentCaption]}
@@ -993,17 +1120,21 @@ function MessageBubble({
   fromMe,
   audioCtrl,
   onOpenImage,
+  onOpenVideo,
 }: {
   msg: ListMessageResult;
   fromMe: boolean;
   audioCtrl: AudioCtrl | null;
   onOpenImage: (msg: ListMessageResult) => void;
+  onOpenVideo: (msg: ListMessageResult) => void;
 }) {
   const content = msg.content;
   const timeStr = formatMessageTime(msg.date);
   const isSystem = content?.type === EMessageType.system;
   const isAnnotation = content?.type === EMessageType.annotation;
   const isAudio = content?.type === EMessageType.audio && !!content.audio?.url;
+  const isDocument =
+    content?.type === EMessageType.document && !!content.document?.url;
   const isContactCard =
     content?.type === EMessageType.contact_card ||
     content?.type === EMessageType.contacts;
@@ -1085,6 +1216,7 @@ function MessageBubble({
           isSystem && styles.bubbleSystem,
           isContactCard && styles.bubbleContact,
           isAudio && styles.bubbleAudio,
+          isDocument && styles.bubbleDocument,
         ]}
       >
         <BubbleContent
@@ -1093,8 +1225,15 @@ function MessageBubble({
           content={content}
           audioCtrl={audioCtrl}
           onOpenImage={onOpenImage}
+          onOpenVideo={onOpenVideo}
         />
-        <View style={[styles.bubbleMeta, isAudio && styles.bubbleMetaAudio]}>
+        <View
+          style={[
+            styles.bubbleMeta,
+            isAudio && styles.bubbleMetaAudio,
+            isDocument && styles.bubbleMetaDocument,
+          ]}
+        >
           {timeStr ? (
             <Text
               style={[
@@ -1124,14 +1263,23 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const [loading, setLoading] = useState(true);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
-  const [viewer, setViewer] = useState<ImageViewerState>({
+  const [viewer, setViewer] = useState<MediaViewerState>({
     visible: false,
+    kind: 'image',
     src: '',
     caption: '',
     downloadName: '',
   });
-  const [downloadingViewerImage, setDownloadingViewerImage] = useState(false);
+  const [downloadingViewerMedia, setDownloadingViewerMedia] = useState(false);
   const audioCtrl = useChatAudio();
+  const viewerVideoPlayer = useVideoPlayer(
+    viewer.kind === 'video' && viewer.src
+      ? { uri: viewer.src }
+      : null,
+    (player) => {
+      player.loop = false;
+    }
+  );
 
   useEffect(() => {
     setChatInfo(chat);
@@ -1149,36 +1297,109 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     });
   }, []);
 
-  const closeImageViewer = useCallback(() => {
+  useEffect(() => {
+    if (viewer.visible && viewer.kind === 'video') {
+      return;
+    }
+
+    try {
+      viewerVideoPlayer.pause();
+      viewerVideoPlayer.currentTime = 0;
+    } catch {
+      //
+    }
+  }, [viewer.kind, viewer.visible, viewerVideoPlayer]);
+
+  const closeMediaViewer = useCallback(() => {
     setViewer({
       visible: false,
+      kind: 'image',
       src: '',
       caption: '',
       downloadName: '',
     });
-    setDownloadingViewerImage(false);
+    setDownloadingViewerMedia(false);
   }, []);
 
   const openImageViewer = useCallback((msg: ListMessageResult) => {
+    const stickerUrl = msg.content?.sticker?.url;
+    if (stickerUrl) {
+      const stickerSrc = resolveMediaUri(stickerUrl);
+      if (!stickerSrc) return;
+      setViewer({
+        visible: true,
+        kind: 'image',
+        src: stickerSrc,
+        caption: '',
+        downloadName: resolveStickerDownloadName(msg),
+      });
+      return;
+    }
+
     const imageUrl = msg.content?.image?.url;
     if (!imageUrl) return;
-    const imageSrc = resolveImageUri(imageUrl) ?? imageUrl;
+    const imageSrc = resolveMediaUri(imageUrl);
     if (!imageSrc) return;
 
     setViewer({
       visible: true,
+      kind: 'image',
       src: imageSrc,
       caption: msg.content?.image?.caption ?? '',
       downloadName: resolveImageDownloadName(msg, imageSrc),
     });
   }, []);
 
-  const handleDownloadViewerImage = useCallback(async () => {
-    if (!viewer.src || downloadingViewerImage) return;
+  const openVideoViewer = useCallback((msg: ListMessageResult) => {
+    const video = msg.content?.video;
+    if (!video?.url) return;
+    const videoSrc = resolveMediaUri(video.url);
+    if (!videoSrc) return;
 
-    setDownloadingViewerImage(true);
+    setViewer({
+      visible: true,
+      kind: 'video',
+      src: videoSrc,
+      caption: video.caption ?? msg.content?.message ?? '',
+      downloadName: resolveVideoDownloadName(video),
+    });
+  }, []);
+
+  const handleDownloadViewerMedia = useCallback(async () => {
+    if (!viewer.src || downloadingViewerMedia) return;
+
+    setDownloadingViewerMedia(true);
     try {
+      const defaultName =
+        viewer.kind === 'video' ? `video-${Date.now()}.mp4` : `imagem-${Date.now()}.jpg`;
+      const fileName =
+        sanitizeFilename(viewer.downloadName || '') || defaultName;
+
       if (Platform.OS === 'web') {
+        const webDocument = (globalThis as { document?: any }).document;
+        const webURL = (globalThis as { URL?: any }).URL;
+
+        if (webDocument?.createElement && webURL?.createObjectURL) {
+          try {
+            const response = await fetch(viewer.src);
+            const blob = await response.blob();
+            const blobUrl = webURL.createObjectURL(blob);
+            const anchor = webDocument.createElement('a');
+            anchor.href = blobUrl;
+            anchor.download = fileName;
+            anchor.style.display = 'none';
+            webDocument.body?.appendChild?.(anchor);
+            anchor.click();
+            anchor.remove?.();
+            setTimeout(() => {
+              webURL.revokeObjectURL?.(blobUrl);
+            }, 100);
+            return;
+          } catch {
+            //
+          }
+        }
+
         Linking.openURL(viewer.src);
         return;
       }
@@ -1188,20 +1409,28 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         downloadDirectory.create({ intermediates: true, idempotent: true });
       }
 
-      const fileName =
-        sanitizeFilename(viewer.downloadName || '') || `imagem-${Date.now()}.jpg`;
       const destinationFile = new File(downloadDirectory, fileName);
 
       await File.downloadFileAsync(viewer.src, destinationFile, {
         idempotent: true,
       });
-      Alert.alert(pt.download, pt.image_download_success);
+      Alert.alert(
+        pt.download,
+        viewer.kind === 'video'
+          ? pt.video_download_success
+          : pt.image_download_success
+      );
     } catch {
-      Alert.alert(pt.download, pt.image_download_error);
+      Alert.alert(
+        pt.download,
+        viewer.kind === 'video'
+          ? pt.video_download_error
+          : pt.image_download_error
+      );
     } finally {
-      setDownloadingViewerImage(false);
+      setDownloadingViewerMedia(false);
     }
-  }, [downloadingViewerImage, viewer.downloadName, viewer.src]);
+  }, [downloadingViewerMedia, viewer.downloadName, viewer.kind, viewer.src]);
 
   const loadMessages = useCallback(async () => {
     setLoading(true);
@@ -1380,6 +1609,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                 fromMe={item.message.type_user !== ETypeUserChat.client}
                 audioCtrl={audioCtrl}
                 onOpenImage={openImageViewer}
+                onOpenVideo={openVideoViewer}
               />
             )
           }
@@ -1413,10 +1643,10 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         visible={viewer.visible}
         transparent
         animationType="fade"
-        onRequestClose={closeImageViewer}
+        onRequestClose={closeMediaViewer}
         statusBarTranslucent
       >
-        <Pressable style={styles.viewerOverlay} onPress={closeImageViewer}>
+        <Pressable style={styles.viewerOverlay} onPress={closeMediaViewer}>
           <Pressable
             style={styles.viewerContent}
             onPress={(event) => event.stopPropagation()}
@@ -1425,28 +1655,41 @@ export function ChatRoomScreen({ route, navigation }: Props) {
               <Pressable
                 style={[
                   styles.viewerActionBtn,
-                  downloadingViewerImage && styles.viewerActionBtnDisabled,
+                  downloadingViewerMedia && styles.viewerActionBtnDisabled,
                 ]}
-                onPress={handleDownloadViewerImage}
-                disabled={downloadingViewerImage}
+                onPress={handleDownloadViewerMedia}
+                disabled={downloadingViewerMedia}
               >
-                {downloadingViewerImage ? (
+                {downloadingViewerMedia ? (
                   <ActivityIndicator size="small" color="#FFFFFF" />
                 ) : (
                   <Ionicons name="download-outline" size={20} color="#FFFFFF" />
                 )}
               </Pressable>
-              <Pressable style={styles.viewerActionBtn} onPress={closeImageViewer}>
+              <Pressable style={styles.viewerActionBtn} onPress={closeMediaViewer}>
                 <Ionicons name="close" size={20} color="#FFFFFF" />
               </Pressable>
             </View>
 
             <View style={styles.viewerMediaContainer}>
-              <Image
-                source={{ uri: viewer.src }}
-                style={styles.viewerImage}
-                resizeMode="contain"
-              />
+              {viewer.kind === 'video' ? (
+                <VideoView
+                  key={viewer.src}
+                  player={viewerVideoPlayer}
+                  style={styles.viewerVideo}
+                  contentFit="contain"
+                  nativeControls
+                  fullscreenOptions={VIDEO_FULLSCREEN_ENABLED}
+                  allowsPictureInPicture
+                  playsInline
+                />
+              ) : (
+                <Image
+                  source={{ uri: viewer.src }}
+                  style={styles.viewerImage}
+                  resizeMode="contain"
+                />
+              )}
             </View>
 
             {viewer.caption ? (
@@ -1612,8 +1855,16 @@ const styles = StyleSheet.create({
     paddingRight: 12,
     overflow: 'hidden',
   },
+  bubbleDocument: {
+    minWidth: 250,
+    maxWidth: '78%',
+    paddingRight: 12,
+  },
   bubbleMetaAudio: {
     marginTop: 6,
+  },
+  bubbleMetaDocument: {
+    marginTop: 2,
   },
   bubbleAnnotation: {
     backgroundColor: '#FFF3CD',
@@ -1648,12 +1899,38 @@ const styles = StyleSheet.create({
     height: 160,
     position: 'relative',
     borderRadius: 6,
+    overflow: 'hidden',
   },
   videoThumb: {
     width: '100%',
     height: '100%',
     maxWidth: 260,
     borderRadius: 6,
+  },
+  videoThumbVideo: {
+    width: '100%',
+    height: '100%',
+    maxWidth: 260,
+    borderRadius: 6,
+    backgroundColor: '#000000',
+  },
+  videoNoteThumbWrap: {
+    width: 116,
+    height: 176,
+    position: 'relative',
+    borderRadius: 10,
+    overflow: 'hidden',
+  },
+  videoNoteThumb: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 10,
+  },
+  videoNoteThumbVideo: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 10,
+    backgroundColor: '#000000',
   },
   videoPlaceholder: {
     position: 'absolute',
@@ -1663,6 +1940,17 @@ const styles = StyleSheet.create({
     bottom: 0,
     backgroundColor: colors.grey200,
     borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  videoNotePlaceholder: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    backgroundColor: colors.grey200,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1859,11 +2147,45 @@ const styles = StyleSheet.create({
   audioCaption: {
     marginTop: 8,
   },
-  documentWrap: {
+  documentCard: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    paddingVertical: 4,
+    padding: 12,
+    borderRadius: 10,
+    backgroundColor: 'rgba(47, 43, 61, 0.04)',
+    marginBottom: 6,
+    width: '100%',
+    minWidth: 220,
+  },
+  documentCardRight: {
+    backgroundColor: 'rgba(255, 255, 255, 0.28)',
+  },
+  documentMainAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+    minWidth: 0,
+  },
+  documentIconCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 1,
+    backgroundColor: 'rgba(40, 101, 183, 0.12)',
+  },
+  documentIconCircleRight: {
+    backgroundColor: 'rgba(40, 101, 183, 0.18)',
+  },
+  documentTypeText: {
+    fontSize: 8,
+    lineHeight: 10,
+    fontWeight: '700',
+    color: colors.primary,
+    letterSpacing: 0.4,
   },
   documentInfo: {
     flex: 1,
@@ -1871,15 +2193,27 @@ const styles = StyleSheet.create({
   },
   documentName: {
     fontSize: 14,
-    fontWeight: '500',
+    fontWeight: '600',
+    color: colors.primary,
   },
   documentMeta: {
     fontSize: 11,
     color: colors.grey600,
     marginTop: 2,
   },
+  documentDownloadBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(40, 101, 183, 0.1)',
+  },
+  documentDownloadBtnRight: {
+    backgroundColor: 'rgba(40, 101, 183, 0.2)',
+  },
   documentCaption: {
-    marginTop: 8,
+    marginTop: 2,
   },
   contactWrap: {
     flexDirection: 'row',
@@ -1953,6 +2287,11 @@ const styles = StyleSheet.create({
   viewerImage: {
     width: '100%',
     height: '100%',
+  },
+  viewerVideo: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#000000',
   },
   viewerCaption: {
     position: 'absolute',

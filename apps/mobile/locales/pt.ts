@@ -90,6 +90,8 @@ export const pt = {
   download: 'Baixar',
   image_download_success: 'Imagem baixada com sucesso.',
   image_download_error: 'Não foi possível baixar a imagem.',
+  video_download_success: 'Vídeo baixado com sucesso.',
+  video_download_error: 'Não foi possível baixar o vídeo.',
   document: 'Documento',
   location: 'Localização',
   contacts_other: 'contatos',
