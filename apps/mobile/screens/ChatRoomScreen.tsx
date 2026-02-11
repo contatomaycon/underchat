@@ -639,7 +639,7 @@ function BubbleContent({
             >
               <Ionicons
                 name={audioState.isPlaying ? 'pause' : 'play'}
-                size={18}
+                size={16}
                 color={colors.primary}
               />
             </Pressable>
@@ -1163,7 +1163,7 @@ const styles = StyleSheet.create({
     color: 'rgba(47, 43, 61, 0.65)',
   },
   bubbleWrap: {
-    marginVertical: 2,
+    marginVertical: 5,
   },
   bubbleWrapLeft: {
     alignItems: 'flex-start',
@@ -1226,9 +1226,9 @@ const styles = StyleSheet.create({
     minWidth: 160,
   },
   bubbleAudio: {
-    minWidth: 240,
-    width: '75%',
-    maxWidth: '75%',
+    minWidth: 220,
+    width: '70%',
+    maxWidth: '70%',
     paddingRight: 12,
     overflow: 'hidden',
   },
@@ -1360,12 +1360,12 @@ const styles = StyleSheet.create({
   audioPlayerContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 10,
     maxWidth: '100%',
     width: '100%',
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 20,
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+    borderRadius: 18,
     backgroundColor: 'rgba(47, 43, 61, 0.06)',
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(47, 43, 61, 0.1)',
@@ -1376,8 +1376,8 @@ const styles = StyleSheet.create({
     borderBottomColor: 'rgba(17, 27, 33, 0.08)',
   },
   audioSpeedBtn: {
-    minWidth: 36,
-    height: 24,
+    minWidth: 34,
+    height: 22,
     borderRadius: 12,
     borderWidth: 1.5,
     borderColor: 'rgba(47, 43, 61, 0.3)',
@@ -1397,9 +1397,9 @@ const styles = StyleSheet.create({
     color: 'rgba(17, 27, 33, 0.7)',
   },
   audioPlayBtnCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     backgroundColor: 'rgba(255, 255, 255, 0.95)',
     borderWidth: 2,
     borderColor: colors.primary,
@@ -1414,10 +1414,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
-    gap: 4,
+    gap: 3,
   },
   audioTimeBelowPlay: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '500',
   },
   audioTimeBelowPlayLeft: {
@@ -1431,7 +1431,7 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     flexBasis: 100,
     minWidth: 0,
-    height: 36,
+    height: 34,
     position: 'relative',
     justifyContent: 'center',
     overflow: 'hidden',
