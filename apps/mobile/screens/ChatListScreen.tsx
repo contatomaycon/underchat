@@ -22,7 +22,7 @@ import {
   listChats,
   searchChats,
 } from '../api/chatApi';
-import { getUser, getPermissions } from '../storage/authStorage';
+import { getUser, getPermissions, getSectors } from '../storage/authStorage';
 import { canUseUserAndSectorFilters as checkUserSectorFilters } from '../constants/permissions';
 import { AdvancedFilterModal } from '../components/AdvancedFilterModal';
 import type { AdvancedFilterValues } from '../components/AdvancedFilterModal';
@@ -32,6 +32,10 @@ import { pt } from '../locales/pt';
 import { colors } from '../theme/colors';
 import { useChatFilter } from '../context/ChatFilterContext';
 import { resolveImageUri } from '../utils/imageUri';
+import {
+  addChatSocketListener,
+  type SocketChatPayload,
+} from '../socket/chatSocket';
 
 type Props = NativeStackScreenProps<ChatStackParamList, 'ChatList'>;
 
@@ -42,6 +46,35 @@ const CHAT_STATUS = {
   closed: 'closed' as const,
   chatbot: 'ura' as const,
 };
+
+const SOCKET_CHAT_LIST_ALL_PERMISSIONS = [
+  'full_access',
+  'full_access_group',
+  'chat_group',
+  'list_all_chats_without_sector_limit',
+] as const;
+
+function readString(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const out = value.trim();
+  return out.length > 0 ? out : null;
+}
+
+function resolveSocketChatId(data: SocketChatPayload): string | null {
+  return readString((data as { chat_id?: unknown }).chat_id);
+}
+
+function resolveSocketChatUserId(data: SocketChatPayload): string | null {
+  const user = (data as { user?: unknown }).user;
+  if (!user || typeof user !== 'object') return null;
+  return readString((user as { id?: unknown }).id);
+}
+
+function resolveSocketChatSectorId(data: SocketChatPayload): string | null {
+  const sector = (data as { sector?: unknown }).sector;
+  if (!sector || typeof sector !== 'object') return null;
+  return readString((sector as { id?: unknown }).id);
+}
 
 const EMPTY_FILTER_VALUES: AdvancedFilterValues = {
   filter_label_template_id: null,
@@ -257,7 +290,13 @@ export function ChatListScreen({ route, navigation }: Props) {
   const [filterModalVisible, setFilterModalVisible] = useState(false);
   const [canUseUserAndSectorFilters, setCanUseUserAndSectorFilters] =
     useState(false);
+  const [socketPermissions, setSocketPermissions] = useState<string[]>([]);
+  const [userSectors, setUserSectors] = useState<string[]>([]);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [sidebarVisible, setSidebarVisible] = useState(false);
+  const realtimeReloadTimer = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
 
   useEffect(() => {
     getUser().then((user) => {
@@ -267,12 +306,26 @@ export function ChatListScreen({ route, navigation }: Props) {
           : undefined;
       const photo = info && info.photo ? String(info.photo) : null;
       setUserPhoto(photo && photo !== 'null' ? photo : null);
+      const userId =
+        user && typeof user === 'object'
+          ? (user as { user_id?: unknown }).user_id
+          : null;
+      setCurrentUserId(
+        typeof userId === 'string' && userId.trim().length > 0 ? userId : null
+      );
     });
   }, []);
 
   useEffect(() => {
     getPermissions().then((permissions) => {
       setCanUseUserAndSectorFilters(checkUserSectorFilters(permissions));
+      setSocketPermissions(permissions);
+    });
+  }, []);
+
+  useEffect(() => {
+    getSectors().then((sectors) => {
+      setUserSectors(sectors);
     });
   }, []);
 
@@ -378,10 +431,91 @@ export function ChatListScreen({ route, navigation }: Props) {
     }
   }, [tab, search, advancedFilterValues]);
 
+  const canReceiveChatNotification = useCallback(
+    (chatData: SocketChatPayload): boolean => {
+      const canListAllChatsWithoutSectorLimit = socketPermissions.some((perm) =>
+        SOCKET_CHAT_LIST_ALL_PERMISSIONS.includes(
+          perm as (typeof SOCKET_CHAT_LIST_ALL_PERMISSIONS)[number]
+        )
+      );
+
+      if (canListAllChatsWithoutSectorLimit) {
+        return true;
+      }
+
+      const chatId = resolveSocketChatId(chatData);
+      if (!chatId) return false;
+
+      const chatExistsInList =
+        queue.some((c) => c.chat_id === chatId) ||
+        inChat.some((c) => c.chat_id === chatId);
+      if (chatExistsInList) {
+        return true;
+      }
+
+      const chatUserId = resolveSocketChatUserId(chatData);
+      if (chatUserId && currentUserId && chatUserId === currentUserId) {
+        return true;
+      }
+
+      const status = readString((chatData as { status?: unknown }).status);
+      const sectorId = resolveSocketChatSectorId(chatData);
+
+      if (status === 'queue' && !sectorId && !chatUserId) {
+        return true;
+      }
+
+      if (userSectors.length === 0) {
+        return !sectorId;
+      }
+
+      if (!sectorId) {
+        return false;
+      }
+
+      return userSectors.includes(sectorId);
+    },
+    [socketPermissions, queue, inChat, currentUserId, userSectors]
+  );
+
+  const scheduleRealtimeReload = useCallback(() => {
+    if (realtimeReloadTimer.current) {
+      return;
+    }
+    realtimeReloadTimer.current = setTimeout(() => {
+      realtimeReloadTimer.current = null;
+      load();
+    }, 250);
+  }, [load]);
+
   useFocusEffect(
     useCallback(() => {
       load();
     }, [load])
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      const offMessage = addChatSocketListener('message', () => {
+        scheduleRealtimeReload();
+      });
+
+      const offChatUpdate = addChatSocketListener('chatUpdate', (chatData) => {
+        if (!canReceiveChatNotification(chatData)) {
+          return;
+        }
+        scheduleRealtimeReload();
+      });
+
+      return () => {
+        offMessage();
+        offChatUpdate();
+        if (realtimeReloadTimer.current) {
+          clearTimeout(realtimeReloadTimer.current);
+          realtimeReloadTimer.current = null;
+        }
+      };
+    }, [canReceiveChatNotification, scheduleRealtimeReload])
   );
 
   const openChat = (chat: ListChatsResult) => {

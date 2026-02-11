@@ -16,6 +16,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { ChatStackParamList } from '../navigation/types';
 import {
@@ -26,6 +27,14 @@ import {
 import { createAudioPlayer, type AudioPlayer } from 'expo-audio';
 import { Directory, File, Paths } from 'expo-file-system';
 import { listMessages, createMessage } from '../api/chatApi';
+import {
+  addChatSocketListener,
+  consumePendingChatUpdates,
+  consumePendingMessages,
+  type SocketChatPayload,
+  type SocketMessagePayload,
+} from '../socket/chatSocket';
+import { getUser } from '../storage/authStorage';
 import { pt } from '../locales/pt';
 import { colors } from '../theme/colors';
 import { resolveImageUri } from '../utils/imageUri';
@@ -229,6 +238,103 @@ function getLatestMessageText(msg: ListMessageResult): string {
   if (c?.video?.caption) return c.video.caption;
   if (c?.audio?.url && c?.message) return c.message;
   return '';
+}
+
+function readNonEmptyString(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function normalizeTypeUser(value: unknown): ETypeUserChat {
+  if (value === ETypeUserChat.client) return ETypeUserChat.client;
+  if (value === ETypeUserChat.operator) return ETypeUserChat.operator;
+  if (value === ETypeUserChat.bot) return ETypeUserChat.bot;
+  if (value === ETypeUserChat.system) return ETypeUserChat.system;
+  return ETypeUserChat.client;
+}
+
+function normalizeSocketMessageToListMessage(
+  payload: SocketMessagePayload
+): ListMessageResult | null {
+  const messageId = readNonEmptyString(
+    (payload as { message_id?: unknown }).message_id
+  );
+  const chatId = readNonEmptyString((payload as { chat_id?: unknown }).chat_id);
+  if (!messageId || !chatId) return null;
+
+  const dateValue = readNonEmptyString((payload as { date?: unknown }).date);
+  const deletedValue = (payload as { deleted?: unknown }).deleted;
+  const hasQuotedValue = (payload as { has_quoted?: unknown }).has_quoted;
+
+  return {
+    message_id: messageId,
+    chat_id: chatId,
+    date: dateValue ?? new Date().toISOString(),
+    type_user: normalizeTypeUser((payload as { type_user?: unknown }).type_user),
+    user:
+      (payload as { user?: unknown }).user && typeof payload.user === 'object'
+        ? (payload.user as ListMessageResult['user'])
+        : null,
+    content:
+      (payload as { content?: unknown }).content &&
+      typeof payload.content === 'object'
+        ? (payload.content as MessageContent)
+        : null,
+    summary:
+      (payload as { summary?: unknown }).summary &&
+      typeof payload.summary === 'object'
+        ? (payload.summary as ListMessageResult['summary'])
+        : null,
+    message_key:
+      (payload as { message_key?: unknown }).message_key &&
+      typeof payload.message_key === 'object'
+        ? (payload.message_key as ListMessageResult['message_key'])
+        : null,
+    deleted: typeof deletedValue === 'boolean' ? deletedValue : false,
+    has_quoted: typeof hasQuotedValue === 'boolean' ? hasQuotedValue : false,
+    hash: readNonEmptyString((payload as { hash?: unknown }).hash),
+  };
+}
+
+function mergeMessageLists(
+  current: ListMessageResult[],
+  incoming: ListMessageResult
+): ListMessageResult[] {
+  const existingIndex = current.findIndex(
+    (message) => message.message_id === incoming.message_id
+  );
+
+  if (existingIndex >= 0) {
+    const next = [...current];
+    next[existingIndex] = { ...next[existingIndex], ...incoming };
+    return next;
+  }
+
+  const next = [...current, incoming];
+  next.sort((a, b) => {
+    const ta = new Date(a.date).getTime();
+    const tb = new Date(b.date).getTime();
+    if (Number.isNaN(ta) && Number.isNaN(tb)) return 0;
+    if (Number.isNaN(ta)) return -1;
+    if (Number.isNaN(tb)) return 1;
+    return ta - tb;
+  });
+  return next;
+}
+
+function mergePendingSocketMessages(
+  current: ListMessageResult[],
+  pending: SocketMessagePayload[]
+): ListMessageResult[] {
+  if (pending.length === 0) return current;
+  let next = current;
+  for (const payload of pending) {
+    const normalized = normalizeSocketMessageToListMessage(payload);
+    if (!normalized) continue;
+    next = mergeMessageLists(next, normalized);
+  }
+  return next;
 }
 
 type Props = NativeStackScreenProps<ChatStackParamList, 'ChatRoom'>;
@@ -1012,6 +1118,8 @@ function MessageBubble({
 
 export function ChatRoomScreen({ route, navigation }: Props) {
   const { chat } = route.params;
+  const [chatInfo, setChatInfo] = useState(chat);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ListMessageResult[]>([]);
   const [loading, setLoading] = useState(true);
   const [input, setInput] = useState('');
@@ -1024,6 +1132,22 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   });
   const [downloadingViewerImage, setDownloadingViewerImage] = useState(false);
   const audioCtrl = useChatAudio();
+
+  useEffect(() => {
+    setChatInfo(chat);
+  }, [chat]);
+
+  useEffect(() => {
+    getUser().then((user) => {
+      const userId =
+        user && typeof user === 'object'
+          ? (user as { user_id?: unknown }).user_id
+          : null;
+      setCurrentUserId(
+        typeof userId === 'string' && userId.trim().length > 0 ? userId : null
+      );
+    });
+  }, []);
 
   const closeImageViewer = useCallback(() => {
     setViewer({
@@ -1081,10 +1205,14 @@ export function ChatRoomScreen({ route, navigation }: Props) {
 
   const loadMessages = useCallback(async () => {
     setLoading(true);
-    const res = await listMessages(chat.chat_id, 1, 50);
+    const res = await listMessages(chatInfo.chat_id, 1, 50);
     setLoading(false);
-    if (res?.results) setMessages(res.results.reverse());
-  }, [chat.chat_id]);
+    if (res?.results) {
+      const baseMessages = res.results.reverse();
+      const pending = consumePendingMessages(chatInfo.chat_id);
+      setMessages(mergePendingSocketMessages(baseMessages, pending));
+    }
+  }, [chatInfo.chat_id]);
 
   const messagesWithSeparators = useMemo((): MessageWithSeparator[] => {
     const list: MessageWithSeparator[] = [];
@@ -1107,13 +1235,112 @@ export function ChatRoomScreen({ route, navigation }: Props) {
 
   useEffect(() => {
     navigation.setOptions({
-      title: chat.name ?? chat.contact?.name ?? chat.phone ?? 'Chat',
+      title: chatInfo.name ?? chatInfo.contact?.name ?? chatInfo.phone ?? 'Chat',
     });
-  }, [navigation, chat.name, chat.contact?.name, chat.phone]);
+  }, [navigation, chatInfo.name, chatInfo.contact?.name, chatInfo.phone]);
 
   useEffect(() => {
     loadMessages();
   }, [loadMessages]);
+
+  const handleSocketMessage = useCallback(
+    (payload: SocketMessagePayload) => {
+      if (payload.chat_id !== chatInfo.chat_id) return;
+      const normalized = normalizeSocketMessageToListMessage(payload);
+      if (!normalized) return;
+      setMessages((prev) => mergeMessageLists(prev, normalized));
+    },
+    [chatInfo.chat_id]
+  );
+
+  const handleSocketChatUpdate = useCallback(
+    (payload: SocketChatPayload) => {
+      if (payload.chat_id !== chatInfo.chat_id) return;
+
+      setChatInfo((prev) => {
+        const next = { ...prev };
+        const incoming = payload as Record<string, unknown>;
+
+        const status = readNonEmptyString(incoming.status);
+        if (status) {
+          next.status = status as typeof prev.status;
+        }
+
+        const name = readNonEmptyString(incoming.name);
+        if (name) {
+          next.name = name;
+        }
+
+        const phone = readNonEmptyString(incoming.phone);
+        if (phone) {
+          next.phone = phone;
+        }
+
+        if (incoming.contact && typeof incoming.contact === 'object') {
+          next.contact = {
+            ...(next.contact ?? {}),
+            ...(incoming.contact as NonNullable<typeof prev.contact>),
+          };
+        }
+
+        if (incoming.user && typeof incoming.user === 'object') {
+          next.user = {
+            ...(next.user ?? {}),
+            ...(incoming.user as NonNullable<typeof prev.user>),
+          };
+        }
+
+        if (incoming.sector && typeof incoming.sector === 'object') {
+          next.sector = {
+            ...(next.sector ?? {}),
+            ...(incoming.sector as NonNullable<typeof prev.sector>),
+          };
+        }
+
+        return next;
+      });
+
+      const payloadAny = payload as Record<string, unknown>;
+      const isActive =
+        typeof payloadAny._active === 'boolean' ? payloadAny._active : false;
+      const payloadUser =
+        payloadAny.user && typeof payloadAny.user === 'object'
+          ? (payloadAny.user as { id?: unknown })
+          : null;
+      const payloadUserId = readNonEmptyString(payloadUser?.id);
+
+      if (isActive && payloadUserId && currentUserId === payloadUserId) {
+        loadMessages();
+      }
+    },
+    [chatInfo.chat_id, currentUserId, loadMessages]
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      const pendingMessages = consumePendingMessages(chatInfo.chat_id);
+      if (pendingMessages.length > 0) {
+        setMessages((prev) => mergePendingSocketMessages(prev, pendingMessages));
+      }
+
+      const pendingChatUpdates = consumePendingChatUpdates(chatInfo.chat_id);
+      if (pendingChatUpdates.length > 0) {
+        const lastUpdate = pendingChatUpdates[pendingChatUpdates.length - 1];
+        handleSocketChatUpdate(lastUpdate);
+      }
+
+      const offMessage = addChatSocketListener('message', handleSocketMessage);
+      const offChatUpdate = addChatSocketListener(
+        'chatUpdate',
+        handleSocketChatUpdate
+      );
+
+      return () => {
+        offMessage();
+        offChatUpdate();
+      };
+    }, [chatInfo.chat_id, handleSocketMessage, handleSocketChatUpdate])
+  );
 
   const handleSend = async () => {
     const text = input.trim();
@@ -1121,7 +1348,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
 
     setSending(true);
     setInput('');
-    const newMsg = await createMessage(chat.chat_id, 'text', text);
+    const newMsg = await createMessage(chatInfo.chat_id, 'text', text);
     setSending(false);
     if (newMsg) {
       setMessages((prev) => [...prev, newMsg]);

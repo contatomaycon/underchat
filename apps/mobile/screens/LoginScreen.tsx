@@ -13,7 +13,12 @@ import {
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { login } from '../api/authApi';
-import { setToken, setUser, setPermissions } from '../storage/authStorage';
+import {
+  setToken,
+  setUser,
+  setPermissions,
+  setSectors,
+} from '../storage/authStorage';
 import { pt } from '../locales/pt';
 import { colors } from '../theme/colors';
 
@@ -62,6 +67,7 @@ export function LoginScreen({ onLoginSuccess }: Props) {
       await setToken(result.data.token);
       await setUser(result.data.user);
       await setPermissions(result.data.permissions ?? []);
+      await setSectors(result.data.sectors ?? []);
       onLoginSuccess();
       return;
     }
