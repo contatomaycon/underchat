@@ -307,3 +307,43 @@ export async function searchChats(
   const res = await apiGet<SearchChatsResponse>('/chat/search', q);
   return res?.data ?? null;
 }
+
+export interface ListChatContactResult {
+  contact_id: string;
+  name: string;
+  last_name?: string | null;
+  email_partial?: string | null;
+  phone_partial?: string | null;
+  photo?: string | null;
+  is_valided?: boolean | null;
+  label_templates: Array<{
+    label_template_id: string;
+    label: string;
+    color: string;
+  }>;
+}
+
+export interface ListChatContactsResponse {
+  results: ListChatContactResult[];
+  current_page: number;
+  total_pages: number;
+  per_page: number;
+  count: number;
+  total: number;
+}
+
+export async function listChatContacts(
+  page = 1,
+  perPage = 50,
+  search?: string | null
+): Promise<ListChatContactsResponse | null> {
+  const params: Record<string, string | number> = {
+    current_page: page,
+    per_page: perPage,
+  };
+  if (search !== undefined && search !== null && search.trim() !== '') {
+    params.search = search.trim();
+  }
+  const res = await apiGet<ListChatContactsResponse>('/chat/contacts', params);
+  return res?.data ?? null;
+}

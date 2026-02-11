@@ -70,4 +70,8 @@ export const pt = {
   clear_filter: 'Limpar',
   clear_filters: 'Limpar filtros',
   no_conversations_found: 'Nenhuma conversa encontrada.',
+  search_contacts: 'Buscar contatos...',
+  logout: 'Sair',
+  contacts: 'Contatos',
+  no_contacts_found: 'Nenhum contato encontrado.',
 };

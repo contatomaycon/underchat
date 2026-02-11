@@ -24,8 +24,10 @@ import { getUser, getPermissions } from '../storage/authStorage';
 import { canUseUserAndSectorFilters as checkUserSectorFilters } from '../constants/permissions';
 import { AdvancedFilterModal } from '../components/AdvancedFilterModal';
 import type { AdvancedFilterValues } from '../components/AdvancedFilterModal';
+import { UserSidebar } from '../components/UserSidebar';
 import { pt } from '../locales/pt';
 import { colors } from '../theme/colors';
+import { useChatFilter } from '../context/ChatFilterContext';
 
 type Props = NativeStackScreenProps<ChatStackParamList, 'ChatList'>;
 
@@ -154,15 +156,16 @@ function ChatRow({
             <View style={styles.tag}>
               <Text style={styles.tagText}>{pt.contact}</Text>
             </View>
-            {item.phone ? (
-              <Text style={styles.phonePartial}>{item.phone}</Text>
-            ) : null}
           </View>
         ) : null}
       </View>
       {item.user?.name ? (
         <View style={styles.workerLabel}>
-          <Text style={styles.workerLabelText}>{item.user.name}</Text>
+          <View style={styles.workerLabelInner}>
+            <Text style={styles.workerLabelText} numberOfLines={1}>
+              {item.user.name}
+            </Text>
+          </View>
         </View>
       ) : null}
     </Pressable>
@@ -179,6 +182,7 @@ function SectionHeader({ title }: { title: string }) {
 
 export function ChatListScreen({ route, navigation }: Props) {
   const { tab } = route.params;
+  const { setHasAppliedAdvancedFilters } = useChatFilter();
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [userPhoto, setUserPhoto] = useState<string | null>(null);
@@ -193,6 +197,7 @@ export function ChatListScreen({ route, navigation }: Props) {
     useState<AdvancedFilterValues>(EMPTY_FILTER_VALUES);
   const [canUseUserAndSectorFilters, setCanUseUserAndSectorFilters] =
     useState(false);
+  const [sidebarVisible, setSidebarVisible] = useState(false);
 
   useEffect(() => {
     getUser().then((user) => {
@@ -341,7 +346,10 @@ export function ChatListScreen({ route, navigation }: Props) {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <View style={styles.avatarPlaceholder}>
+        <Pressable
+          style={styles.avatarPlaceholder}
+          onPress={() => setSidebarVisible(true)}
+        >
           {userPhoto ? (
             <Image
               source={{ uri: userPhoto }}
@@ -355,7 +363,7 @@ export function ChatListScreen({ route, navigation }: Props) {
               color={colors.grey400}
             />
           )}
-        </View>
+        </Pressable>
         <TextInput
           style={styles.searchInput}
           placeholder={pt.search_service}
@@ -372,13 +380,25 @@ export function ChatListScreen({ route, navigation }: Props) {
         {hasAppliedAdvancedFilters(advancedFilterValues) ? (
           <Pressable
             style={styles.clearFilterBtn}
-            onPress={() => setAdvancedFilterValues(EMPTY_FILTER_VALUES)}
+            onPress={() => {
+              if (tab === 'closed') {
+                (
+                  navigation.getParent() as { navigate: (n: string) => void }
+                )?.navigate('InChat');
+              }
+              setAdvancedFilterValues(EMPTY_FILTER_VALUES);
+              setHasAppliedAdvancedFilters(false);
+            }}
             accessibilityLabel={pt.clear_filters}
           >
             <Ionicons name="close" size={16} color={colors.onPrimary} />
           </Pressable>
         ) : null}
       </View>
+      <UserSidebar
+        visible={sidebarVisible}
+        onClose={() => setSidebarVisible(false)}
+      />
       <AdvancedFilterModal
         visible={filterModalVisible}
         onClose={() => setFilterModalVisible(false)}
@@ -389,6 +409,7 @@ export function ChatListScreen({ route, navigation }: Props) {
         }}
         onApply={(values) => {
           setAdvancedFilterValues(values);
+          setHasAppliedAdvancedFilters(true);
           setFilterModalVisible(false);
         }}
         canUseUserAndSectorFilters={canUseUserAndSectorFilters}
@@ -576,16 +597,34 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: colors.tagText,
   },
-  phonePartial: {
-    fontSize: 11,
-    color: colors.grey600,
-  },
   workerLabel: {
+    width: 28,
     marginLeft: 8,
+    marginRight: -12,
+    marginBottom: -10,
+    marginTop: -10,
+    alignSelf: 'stretch',
+    backgroundColor: 'rgba(47, 43, 61, 0.06)',
+    borderLeftWidth: 1,
+    borderLeftColor: 'rgba(47, 43, 61, 0.12)',
+    borderTopRightRadius: 4,
+    borderBottomRightRadius: 4,
+    paddingVertical: 6,
+    paddingHorizontal: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  workerLabelInner: {
+    transform: [{ rotate: '-90deg' }],
+    width: 100,
+    height: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   workerLabelText: {
     fontSize: 11,
-    color: colors.grey600,
+    fontWeight: '500',
+    color: colors.onSurface,
   },
   empty: {
     flex: 1,

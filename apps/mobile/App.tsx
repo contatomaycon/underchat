@@ -3,12 +3,15 @@ import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { LoginScreen } from './screens/LoginScreen';
-import { getToken } from './storage/authStorage';
+import { getToken, getPermissions } from './storage/authStorage';
+import { canViewChatbotTab as checkCanViewChatbotTab } from './constants/permissions';
+import { ChatFilterProvider } from './context/ChatFilterContext';
 import { RootNavigator } from './navigation/RootNavigator';
 
 export default function App() {
   const [ready, setReady] = useState(false);
   const [authenticated, setAuthenticated] = useState(false);
+  const [canViewChatbotTab, setCanViewChatbotTab] = useState(false);
 
   useEffect(() => {
     getToken().then((token) => {
@@ -16,6 +19,13 @@ export default function App() {
       setReady(true);
     });
   }, []);
+
+  useEffect(() => {
+    if (!authenticated) return;
+    getPermissions().then((permissions) => {
+      setCanViewChatbotTab(checkCanViewChatbotTab(permissions));
+    });
+  }, [authenticated]);
 
   useEffect(() => {
     const onUnauthorized = () => setAuthenticated(false);
@@ -34,10 +44,12 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-      <NavigationContainer>
-        <RootNavigator />
-        <StatusBar style="dark" />
-      </NavigationContainer>
+      <ChatFilterProvider canViewChatbotTab={canViewChatbotTab}>
+        <NavigationContainer>
+          <RootNavigator />
+          <StatusBar style="dark" />
+        </NavigationContainer>
+      </ChatFilterProvider>
     </SafeAreaProvider>
   );
 }

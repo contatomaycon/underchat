@@ -3,6 +3,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { ChatStackNavigator } from './ChatStack';
 import type { ChatTab } from './types';
 import { colors } from '../theme/colors';
+import { useChatFilter } from '../context/ChatFilterContext';
 
 type TabParamList = {
   InChat: { tab: ChatTab };
@@ -14,6 +15,8 @@ type TabParamList = {
 const Tab = createBottomTabNavigator<TabParamList>();
 
 export function RootNavigator() {
+  const { hasAppliedAdvancedFilters, canViewChatbotTab } = useChatFilter();
+
   return (
     <Tab.Navigator
       screenOptions={{
@@ -48,28 +51,32 @@ export function RootNavigator() {
           ),
         }}
       />
-      <Tab.Screen
-        name="Closed"
-        component={ChatStackNavigator}
-        initialParams={{ tab: 'closed' }}
-        options={{
-          tabBarLabel: 'Encerrados',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="time" size={size} color={color} />
-          ),
-        }}
-      />
-      <Tab.Screen
-        name="Chatbot"
-        component={ChatStackNavigator}
-        initialParams={{ tab: 'chatbot' }}
-        options={{
-          tabBarLabel: 'Chatbot',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="hardware-chip" size={size} color={color} />
-          ),
-        }}
-      />
+      {hasAppliedAdvancedFilters ? (
+        <Tab.Screen
+          name="Closed"
+          component={ChatStackNavigator}
+          initialParams={{ tab: 'closed' }}
+          options={{
+            tabBarLabel: 'Encerrados',
+            tabBarIcon: ({ color, size }) => (
+              <Ionicons name="time" size={size} color={color} />
+            ),
+          }}
+        />
+      ) : null}
+      {canViewChatbotTab ? (
+        <Tab.Screen
+          name="Chatbot"
+          component={ChatStackNavigator}
+          initialParams={{ tab: 'chatbot' }}
+          options={{
+            tabBarLabel: 'Chatbot',
+            tabBarIcon: ({ color, size }) => (
+              <Ionicons name="hardware-chip" size={size} color={color} />
+            ),
+          }}
+        />
+      ) : null}
     </Tab.Navigator>
   );
 }
