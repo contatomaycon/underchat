@@ -10,6 +10,7 @@ import {
   Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { ChatStackParamList } from '../navigation/types';
 import type { ListChatsResult } from '../types/chat';
@@ -185,7 +186,12 @@ function SectionHeader({ title }: { title: string }) {
 
 export function ChatListScreen({ route, navigation }: Props) {
   const { tab } = route.params;
-  const { setHasAppliedAdvancedFilters } = useChatFilter();
+  const {
+    setHasAppliedAdvancedFilters,
+    advancedFilterValues,
+    setAdvancedFilterValues,
+    clearAdvancedFilters,
+  } = useChatFilter();
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [userPhoto, setUserPhoto] = useState<string | null>(null);
@@ -196,8 +202,6 @@ export function ChatListScreen({ route, navigation }: Props) {
     in_chat: 0,
   });
   const [filterModalVisible, setFilterModalVisible] = useState(false);
-  const [advancedFilterValues, setAdvancedFilterValues] =
-    useState<AdvancedFilterValues>(EMPTY_FILTER_VALUES);
   const [canUseUserAndSectorFilters, setCanUseUserAndSectorFilters] =
     useState(false);
   const [sidebarVisible, setSidebarVisible] = useState(false);
@@ -222,7 +226,9 @@ export function ChatListScreen({ route, navigation }: Props) {
   const load = useCallback(async () => {
     setLoading(true);
     const status = CHAT_STATUS[tab];
-    const useSearch = hasAppliedAdvancedFilters(advancedFilterValues);
+    const hasFilters = hasAppliedAdvancedFilters(advancedFilterValues);
+    const hasSearchText = (search ?? '').trim().length > 0;
+    const useSearch = hasFilters || hasSearchText;
     try {
       if (useSearch) {
         const res = await searchChats({
@@ -319,9 +325,11 @@ export function ChatListScreen({ route, navigation }: Props) {
     }
   }, [tab, search, advancedFilterValues]);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load])
+  );
 
   const openChat = (chat: ListChatsResult) => {
     navigation.navigate('ChatRoom', { chat });
@@ -394,8 +402,7 @@ export function ChatListScreen({ route, navigation }: Props) {
                   navigation.getParent() as { navigate: (n: string) => void }
                 )?.navigate('InChat');
               }
-              setAdvancedFilterValues(EMPTY_FILTER_VALUES);
-              setHasAppliedAdvancedFilters(false);
+              clearAdvancedFilters();
             }}
             accessibilityLabel={pt.clear_filters}
           >
