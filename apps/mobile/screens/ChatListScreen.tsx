@@ -482,6 +482,25 @@ export function ChatListScreen({ route, navigation }: Props) {
       />
       {loading ? (
         <ChatListSkeleton />
+      ) : sections.every((s) => s.data.length === 0) ? (
+        <View style={styles.empty}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>
+              {sections[0]?.title ?? pt.chatbot}
+            </Text>
+          </View>
+          <View style={styles.emptyContent}>
+            <Ionicons
+              name="chatbubbles-outline"
+              size={64}
+              color={colors.grey400}
+              style={styles.emptyIcon}
+            />
+            <Text style={styles.emptyText}>
+              {pt.no_conversations_found}
+            </Text>
+          </View>
+        </View>
       ) : (
         <SectionList
           sections={sections}
@@ -494,15 +513,6 @@ export function ChatListScreen({ route, navigation }: Props) {
           )}
           stickySectionHeadersEnabled
           contentContainerStyle={styles.listContent}
-          ListEmptyComponent={
-            !loading && sections.every((s) => s.data.length === 0) ? (
-              <View style={styles.empty}>
-                <Text style={styles.emptyText}>
-                  {pt.no_conversations_found}
-                </Text>
-              </View>
-            ) : null
-          }
         />
       )}
     </View>
@@ -730,12 +740,20 @@ const styles = StyleSheet.create({
   },
   empty: {
     flex: 1,
+  },
+  emptyContent: {
+    flex: 1,
+    minHeight: 280,
     alignItems: 'center',
     justifyContent: 'center',
     padding: 24,
   },
+  emptyIcon: {
+    marginBottom: 16,
+  },
   emptyText: {
     fontSize: 14,
     color: colors.grey600,
+    textAlign: 'center',
   },
 });

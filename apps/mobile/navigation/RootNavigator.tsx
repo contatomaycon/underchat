@@ -72,7 +72,11 @@ export function RootNavigator() {
           options={{
             tabBarLabel: 'Chatbot',
             tabBarIcon: ({ color, size }) => (
-              <Ionicons name="hardware-chip" size={size} color={color} />
+              <Ionicons
+                name="chatbubbles-outline"
+                size={size}
+                color={color}
+              />
             ),
           }}
         />
