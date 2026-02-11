@@ -25,9 +25,11 @@ import { canUseUserAndSectorFilters as checkUserSectorFilters } from '../constan
 import { AdvancedFilterModal } from '../components/AdvancedFilterModal';
 import type { AdvancedFilterValues } from '../components/AdvancedFilterModal';
 import { UserSidebar } from '../components/UserSidebar';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { pt } from '../locales/pt';
 import { colors } from '../theme/colors';
 import { useChatFilter } from '../context/ChatFilterContext';
+import { resolveImageUri } from '../utils/imageUri';
 
 type Props = NativeStackScreenProps<ChatStackParamList, 'ChatList'>;
 
@@ -120,12 +122,13 @@ function ChatRow({
   const lastDate = formatDate(item.summary?.last_date ?? item.date);
   const unread = item.summary?.unread_count ?? 0;
   const photo = item.photo ?? item.contact?.photo ?? null;
+  const photoUri = resolveImageUri(photo);
 
   return (
     <Pressable style={styles.chatRow} onPress={onPress}>
       <View style={styles.chatAvatar}>
-        {photo ? (
-          <Image source={{ uri: photo }} style={styles.chatAvatarImage} />
+        {photoUri ? (
+          <Image source={{ uri: photoUri }} style={styles.chatAvatarImage} />
         ) : (
           <View style={styles.chatAvatarPlaceholder}>
             <Ionicons name="person" size={24} color={colors.grey600} />
@@ -343,26 +346,31 @@ export function ChatListScreen({ route, navigation }: Props) {
     sections.push({ title: emptyTitle, data: [] });
   }
 
+  const insets = useSafeAreaInsets();
+
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
       <View style={styles.header}>
         <Pressable
           style={styles.avatarPlaceholder}
           onPress={() => setSidebarVisible(true)}
         >
-          {userPhoto ? (
-            <Image
-              source={{ uri: userPhoto }}
-              style={styles.headerAvatarImage}
-              resizeMode="cover"
-            />
-          ) : (
+          {(() => {
+            const uri = resolveImageUri(userPhoto);
+            return uri ? (
+              <Image
+                source={{ uri }}
+                style={styles.headerAvatarImage}
+                resizeMode="cover"
+              />
+            ) : (
             <Ionicons
               name="person-circle-outline"
               size={40}
               color={colors.grey400}
             />
-          )}
+          );
+          })()}
         </Pressable>
         <TextInput
           style={styles.searchInput}

@@ -7,6 +7,7 @@ import { getToken, getPermissions } from './storage/authStorage';
 import { canViewChatbotTab as checkCanViewChatbotTab } from './constants/permissions';
 import { ChatFilterProvider } from './context/ChatFilterContext';
 import { RootNavigator } from './navigation/RootNavigator';
+import { addAuthUnauthorizedListener } from './utils/authEvents';
 
 export default function App() {
   const [ready, setReady] = useState(false);
@@ -29,9 +30,7 @@ export default function App() {
 
   useEffect(() => {
     const onUnauthorized = () => setAuthenticated(false);
-    globalThis.addEventListener('auth:unauthorized', onUnauthorized);
-    return () =>
-      globalThis.removeEventListener('auth:unauthorized', onUnauthorized);
+    return addAuthUnauthorizedListener(onUnauthorized);
   }, []);
 
   if (!ready) {

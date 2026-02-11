@@ -20,10 +20,11 @@ import {
   type MessageContent,
   ETypeUserChat,
 } from '../types/chat';
-import { Audio } from 'expo-av';
+import { createAudioPlayer, type AudioPlayer } from 'expo-audio';
 import { listMessages, createMessage } from '../api/chatApi';
 import { pt } from '../locales/pt';
 import { colors } from '../theme/colors';
+import { resolveImageUri } from '../utils/imageUri';
 
 function decodeBase64Waveform(base64: string): number[] | null {
   try {
@@ -181,7 +182,7 @@ const DEFAULT_AUDIO_STATE: AudioState = {
 
 function useChatAudio() {
   const [state, setState] = useState<Record<string, AudioState>>({});
-  const soundRefs = useRef<Record<string, Audio.Sound | null>>({});
+  const soundRefs = useRef<Record<string, AudioPlayer | null>>({});
   const waveformCache = useRef<Record<string, number[]>>({});
 
   const updateState = useCallback(
@@ -195,33 +196,26 @@ function useChatAudio() {
   );
 
   const getOrCreateSound = useCallback(
-    async (messageId: string, url: string): Promise<Audio.Sound | null> => {
+    (messageId: string, url: string): AudioPlayer | null => {
       if (soundRefs.current[messageId]) return soundRefs.current[messageId];
       try {
-        const { sound } = await Audio.Sound.createAsync(
-          { uri: url },
-          { shouldPlay: false },
-          (status) => {
-            if (!status.isLoaded) return;
-            const position = (status.positionMillis ?? 0) / 1000;
-            const duration = (status.durationMillis ?? 0) / 1000;
-            const isPlaying = status.isPlaying ?? false;
-            setState((prev) => {
-              const cur = prev[messageId];
-              return {
-                ...prev,
-                [messageId]: {
-                  isPlaying,
-                  position,
-                  duration: cur?.duration || duration,
-                  rate: cur?.rate ?? 1,
-                },
-              };
-            });
-          }
-        );
-        soundRefs.current[messageId] = sound;
-        return sound;
+        const player = createAudioPlayer(url, { updateInterval: 300 });
+        player.addListener('playbackStatusUpdate', (status) => {
+          setState((prev) => {
+            const cur = prev[messageId];
+            return {
+              ...prev,
+              [messageId]: {
+                isPlaying: status.playing,
+                position: status.currentTime,
+                duration: cur?.duration || status.duration || 0,
+                rate: cur?.rate ?? status.playbackRate ?? 1,
+              },
+            };
+          });
+        });
+        soundRefs.current[messageId] = player;
+        return player;
       } catch {
         return null;
       }
@@ -230,48 +224,47 @@ function useChatAudio() {
   );
 
   const playPause = useCallback(
-    async (messageId: string, url: string) => {
-      const sound = await getOrCreateSound(messageId, url);
-      if (!sound) return;
+    (messageId: string, url: string) => {
+      const player = getOrCreateSound(messageId, url);
+      if (!player) return;
       const cur = state[messageId];
       const isPlaying = cur?.isPlaying ?? false;
       if (isPlaying) {
-        await sound.pauseAsync();
+        player.pause();
       } else {
         const rate = cur?.rate ?? 1;
-        await sound.setRateAsync(rate, true);
-        await sound.playAsync();
+        player.playbackRate = rate;
+        player.play();
       }
     },
     [getOrCreateSound, state]
   );
 
   const seek = useCallback(
-    async (messageId: string, url: string, percentage: number) => {
-      const sound = await getOrCreateSound(messageId, url);
-      if (!sound) return;
+    (messageId: string, url: string, percentage: number) => {
+      const player = getOrCreateSound(messageId, url);
+      if (!player) return;
       const cur = state[messageId];
       const durationSec = cur?.duration ?? 0;
       if (durationSec <= 0) return;
-      const positionMs =
-        Math.max(0, Math.min(1, percentage)) * durationSec * 1000;
-      await sound.setPositionAsync(positionMs);
-      updateState(messageId, { position: positionMs / 1000 });
+      const positionSec = Math.max(0, Math.min(1, percentage)) * durationSec;
+      player.seekTo(positionSec).then(() => {
+        updateState(messageId, { position: positionSec });
+      });
     },
     [getOrCreateSound, state, updateState]
   );
 
   const toggleSpeed = useCallback(
-    async (messageId: string) => {
+    (messageId: string) => {
       const cur = state[messageId];
       const currentRate = cur?.rate ?? 1;
-      const nextRate =
-        currentRate === 1 ? 1.5 : currentRate === 1.5 ? 2 : 1;
+      const nextRate = currentRate === 1 ? 1.5 : currentRate === 1.5 ? 2 : 1;
       updateState(messageId, { rate: nextRate });
-      const sound = soundRefs.current[messageId];
-      if (sound) {
+      const player = soundRefs.current[messageId];
+      if (player) {
         try {
-          await sound.setRateAsync(nextRate, true);
+          player.playbackRate = nextRate;
         } catch {
           //
         }
@@ -281,7 +274,10 @@ function useChatAudio() {
   );
 
   const getWaveform = useCallback(
-    (messageId: string, data: string | number[] | null | undefined): number[] => {
+    (
+      messageId: string,
+      data: string | number[] | null | undefined
+    ): number[] => {
       if (waveformCache.current[messageId])
         return waveformCache.current[messageId];
       const parsed = parseWaveform(data);
@@ -296,9 +292,12 @@ function useChatAudio() {
     []
   );
 
-  const getState = useCallback((messageId: string): AudioState => {
-    return state[messageId] ?? DEFAULT_AUDIO_STATE;
-  }, [state]);
+  const getState = useCallback(
+    (messageId: string): AudioState => {
+      return state[messageId] ?? DEFAULT_AUDIO_STATE;
+    },
+    [state]
+  );
 
   const getSpeedLabel = useCallback(
     (messageId: string): string => {
@@ -370,10 +369,12 @@ function BubbleContent({
 
   if (type === EMessageType.image && content.image?.url) {
     const cap = content.image.caption;
+    const imageUri = resolveImageUri(content.image.url);
+    if (!imageUri) return null;
     return (
       <View style={styles.mediaBubble}>
         <Image
-          source={{ uri: content.image.url }}
+          source={{ uri: imageUri }}
           style={styles.imageThumb}
           resizeMode="cover"
         />
@@ -389,15 +390,17 @@ function BubbleContent({
     content.video?.url
   ) {
     const cap = content.video.caption;
+    const videoUrl = resolveImageUri(content.video.url) ?? content.video.url;
+    const thumbUri = resolveImageUri(content.video.thumbnail);
     return (
       <View style={styles.mediaBubble}>
         <Pressable
           style={styles.videoThumbWrap}
-          onPress={() => Linking.openURL(content.video!.url!)}
+          onPress={() => videoUrl && Linking.openURL(videoUrl)}
         >
-          {content.video.thumbnail ? (
+          {thumbUri ? (
             <Image
-              source={{ uri: content.video.thumbnail }}
+              source={{ uri: thumbUri }}
               style={styles.videoThumb}
               resizeMode="cover"
             />
@@ -427,9 +430,11 @@ function BubbleContent({
   }
 
   if (type === EMessageType.sticker && content.sticker?.url) {
+    const stickerUri = resolveImageUri(content.sticker.url);
+    if (!stickerUri) return null;
     return (
       <Image
-        source={{ uri: content.sticker.url }}
+        source={{ uri: stickerUri }}
         style={styles.stickerThumb}
         resizeMode="contain"
       />
@@ -468,9 +473,7 @@ function BubbleContent({
     const fallbackDuration = content.audio.duration ?? 0;
     if (!audioCtrl) {
       const durStr =
-        fallbackDuration > 0
-          ? formatAudioTime(fallbackDuration)
-          : pt.audio;
+        fallbackDuration > 0 ? formatAudioTime(fallbackDuration) : pt.audio;
       return (
         <View style={styles.audioWrap}>
           <Text style={[styles.audioDuration, textColor]}>{durStr}</Text>
@@ -488,9 +491,7 @@ function BubbleContent({
     const durationSec =
       audioState.duration > 0 ? audioState.duration : fallbackDuration;
     const currentTime =
-      audioState.isPlaying || audioState.position > 0
-        ? audioState.position
-        : 0;
+      audioState.isPlaying || audioState.position > 0 ? audioState.position : 0;
     const progressPercent =
       durationSec > 0 ? (currentTime / durationSec) * 100 : 0;
     const currentTimeStr = formatAudioTime(currentTime);
@@ -504,10 +505,7 @@ function BubbleContent({
           ]}
         >
           <Pressable
-            style={[
-              styles.audioSpeedBtn,
-              fromMe && styles.audioSpeedBtnRight,
-            ]}
+            style={[styles.audioSpeedBtn, fromMe && styles.audioSpeedBtnRight]}
             onPress={() => audioCtrl.toggleSpeed(messageId)}
           >
             <Text
@@ -521,7 +519,10 @@ function BubbleContent({
           </Pressable>
           <View style={styles.audioPlayAndTimeWrap}>
             <Pressable
-              style={[styles.audioPlayBtnCircle, fromMe && styles.audioPlayBtnCircleRight]}
+              style={[
+                styles.audioPlayBtnCircle,
+                fromMe && styles.audioPlayBtnCircleRight,
+              ]}
               onPress={() => audioCtrl.playPause(messageId, url)}
             >
               <Ionicons
@@ -533,7 +534,9 @@ function BubbleContent({
             <Text
               style={[
                 styles.audioTimeBelowPlay,
-                fromMe ? styles.audioTimeBelowPlayRight : styles.audioTimeBelowPlayLeft,
+                fromMe
+                  ? styles.audioTimeBelowPlayRight
+                  : styles.audioTimeBelowPlayLeft,
               ]}
             >
               {currentTimeStr}
@@ -662,7 +665,8 @@ function BubbleContent({
     const list = content.contacts;
     const first = list[0];
     const name = first?.name ?? pt.contact;
-    const extra = list.length > 1 ? ` e ${list.length - 1} ${pt.contacts_other}` : '';
+    const extra =
+      list.length > 1 ? ` e ${list.length - 1} ${pt.contacts_other}` : '';
     return (
       <View style={styles.contactWrap}>
         <Ionicons name="people" size={32} color={colors.primary} />

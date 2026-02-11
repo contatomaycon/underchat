@@ -9,14 +9,15 @@ import {
   StyleSheet,
   ActivityIndicator,
   Image,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { pt } from '../locales/pt';
 import { colors } from '../theme/colors';
 import { listChatContacts, type ListChatContactResult } from '../api/chatApi';
 import { clearAuth } from '../storage/authStorage';
-
-const AUTH_UNAUTHORIZED = 'auth:unauthorized';
+import { emitAuthUnauthorized } from '../utils/authEvents';
+import { resolveImageUri } from '../utils/imageUri';
 
 interface UserSidebarProps {
   visible: boolean;
@@ -40,14 +41,17 @@ function ContactRow({
   return (
     <Pressable style={styles.contactRow} onPress={onPress}>
       <View style={styles.contactAvatar}>
-        {item.photo ? (
-          <Image
-            source={{ uri: item.photo }}
-            style={styles.contactAvatarImage}
-          />
-        ) : (
-          <Ionicons name="person" size={24} color={colors.grey500} />
-        )}
+        {(() => {
+          const uri = resolveImageUri(item.photo);
+          return uri ? (
+            <Image
+              source={{ uri }}
+              style={styles.contactAvatarImage}
+            />
+          ) : (
+            <Ionicons name="person" size={24} color={colors.grey500} />
+          );
+        })()}
       </View>
       <View style={styles.contactInfo}>
         <Text style={styles.contactName} numberOfLines={1}>
@@ -85,7 +89,7 @@ export function UserSidebar({ visible, onClose, onLogout }: UserSidebarProps) {
   const handleLogout = async () => {
     setLogoutLoading(true);
     await clearAuth();
-    globalThis.dispatchEvent(new CustomEvent(AUTH_UNAUTHORIZED));
+    emitAuthUnauthorized();
     setLogoutLoading(false);
     onClose();
     onLogout?.();
@@ -187,11 +191,15 @@ const styles = StyleSheet.create({
     width: 320,
     maxWidth: '85%',
     backgroundColor: colors.surface,
-    shadowColor: '#000',
-    shadowOffset: { width: -2, height: 0 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 8,
+    ...(Platform.OS === 'web'
+      ? { boxShadow: '-2px 0 8px rgba(0,0,0,0.15)' }
+      : {
+          shadowColor: '#000',
+          shadowOffset: { width: -2, height: 0 },
+          shadowOpacity: 0.15,
+          shadowRadius: 8,
+          elevation: 8,
+        }),
   },
   sidebarHeader: {
     flexDirection: 'row',

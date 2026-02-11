@@ -1,13 +1,12 @@
 import { BACKEND_URL } from '../config';
 import { getToken, clearAuth } from '../storage/authStorage';
+import { emitAuthUnauthorized } from '../utils/authEvents';
 
 const BASE = `${BACKEND_URL}/v1`;
 
-const AUTH_UNAUTHORIZED = 'auth:unauthorized';
-
 async function handleUnauthorized(): Promise<void> {
   await clearAuth();
-  globalThis.dispatchEvent(new CustomEvent(AUTH_UNAUTHORIZED));
+  emitAuthUnauthorized();
 }
 
 export async function apiGet<T>(
