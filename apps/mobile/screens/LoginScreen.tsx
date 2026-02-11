@@ -13,8 +13,9 @@ import {
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { login } from '../api/authApi';
-import { setToken, setUser } from '../storage/authStorage';
+import { setToken, setUser, setPermissions } from '../storage/authStorage';
 import { pt } from '../locales/pt';
+import { colors } from '../theme/colors';
 
 const APP_TITLE = pt.app_title;
 
@@ -53,6 +54,7 @@ export function LoginScreen({ onLoginSuccess }: Props) {
     if (result.success) {
       await setToken(result.data.token);
       await setUser(result.data.user);
+      await setPermissions(result.data.permissions ?? []);
       onLoginSuccess();
       return;
     }
@@ -110,7 +112,7 @@ export function LoginScreen({ onLoginSuccess }: Props) {
                 <Ionicons
                   name={passwordVisible ? 'eye-off-outline' : 'eye-outline'}
                   size={22}
-                  color="#666"
+                  color={colors.grey600}
                 />
               </Pressable>
             </View>
@@ -123,9 +125,7 @@ export function LoginScreen({ onLoginSuccess }: Props) {
               <Text style={styles.link}>{pt.forgot_password}</Text>
             </Pressable>
 
-            {error ? (
-              <Text style={styles.error}>{error}</Text>
-            ) : null}
+            {error ? <Text style={styles.error}>{error}</Text> : null}
 
             <Pressable
               style={[styles.button, !canSubmit && styles.buttonDisabled]}
@@ -148,7 +148,7 @@ export function LoginScreen({ onLoginSuccess }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: colors.background,
   },
   scrollContent: {
     flexGrow: 1,
@@ -165,11 +165,11 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 24,
     fontWeight: '600',
-    color: '#1a1a1a',
+    color: colors.onSurface,
   },
   subtitle: {
     fontSize: 14,
-    color: '#666',
+    color: colors.grey600,
     marginBottom: 8,
   },
   form: {
@@ -177,32 +177,32 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: 12,
-    color: '#333',
+    color: colors.grey800,
     marginBottom: -4,
   },
   input: {
     borderWidth: 1,
-    borderColor: '#ccc',
+    borderColor: colors.grey300,
     borderRadius: 8,
     borderCurve: 'continuous',
     paddingHorizontal: 12,
     paddingVertical: 12,
     fontSize: 16,
-    color: '#1a1a1a',
+    color: colors.onSurface,
   },
   passwordInputWrap: {
     position: 'relative',
   },
   inputWithIcon: {
     borderWidth: 1,
-    borderColor: '#ccc',
+    borderColor: colors.grey300,
     borderRadius: 8,
     borderCurve: 'continuous',
     paddingHorizontal: 12,
     paddingVertical: 12,
     paddingRight: 44,
     fontSize: 16,
-    color: '#1a1a1a',
+    color: colors.onSurface,
   },
   passwordIcon: {
     position: 'absolute',
@@ -212,7 +212,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   placeholder: {
-    color: '#999',
+    color: colors.grey500,
   },
   forgotLink: {
     alignSelf: 'flex-start',
@@ -220,14 +220,14 @@ const styles = StyleSheet.create({
   },
   link: {
     fontSize: 14,
-    color: '#7367f0',
+    color: colors.primary,
   },
   error: {
     fontSize: 14,
-    color: '#ea5455',
+    color: colors.error,
   },
   button: {
-    backgroundColor: '#7367f0',
+    backgroundColor: colors.primary,
     borderRadius: 8,
     borderCurve: 'continuous',
     paddingVertical: 14,
@@ -242,6 +242,6 @@ const styles = StyleSheet.create({
   buttonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#fff',
+    color: colors.onPrimary,
   },
 });
