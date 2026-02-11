@@ -3,6 +3,8 @@
   "include": [
     "apps/balance_api/src/**/*.ts",
     "apps/manager_api/src/**/*.ts",
+    "apps/mobile/**/*.ts",
+    "apps/mobile/**/*.tsx",
     "apps/public_api/src/**/*.ts",
     "apps/schedule/src/**/*.ts",
     "apps/service_api/src/**/*.ts",

@@ -2,7 +2,12 @@
 
 set -e
 
-RDKAFKA_PATH=$(find node_modules/.pnpm/node-rdkafka@* -type d -name "node-rdkafka" -path "*/node_modules/node-rdkafka" | head -1)
+RDKAFKA_PATH=""
+if [ -d "node_modules/node-rdkafka" ]; then
+  RDKAFKA_PATH="node_modules/node-rdkafka"
+else
+  RDKAFKA_PATH=$(find node_modules/.pnpm/node-rdkafka@* -type d -name "node-rdkafka" -path "*/node_modules/node-rdkafka" 2>/dev/null | head -1)
+fi
 
 if [ -n "$RDKAFKA_PATH" ]; then
   if [ ! -f "$RDKAFKA_PATH/build/Release/node-librdkafka.node" ]; then
