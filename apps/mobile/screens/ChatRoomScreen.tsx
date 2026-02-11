@@ -11,6 +11,9 @@ import {
   Image,
   Linking,
   Animated,
+  Modal,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -21,6 +24,7 @@ import {
   ETypeUserChat,
 } from '../types/chat';
 import { createAudioPlayer, type AudioPlayer } from 'expo-audio';
+import { Directory, File, Paths } from 'expo-file-system';
 import { listMessages, createMessage } from '../api/chatApi';
 import { pt } from '../locales/pt';
 import { colors } from '../theme/colors';
@@ -193,6 +197,31 @@ function formatFileSize(bytes: number | null | undefined): string {
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
 }
 
+function sanitizeFilename(value: string): string {
+  return value
+    .trim()
+    .replace(/\s+/g, ' ')
+    .replace(/[<>:"/\\|?*\u0000-\u001F]/g, '_')
+    .slice(0, 80);
+}
+
+function getExtensionFromUrl(url: string): string | null {
+  const withoutQuery = url.split('?')[0]?.split('#')[0] ?? '';
+  const fileName = withoutQuery.split('/').pop() ?? '';
+  const match = fileName.match(/\.([a-zA-Z0-9]+)$/);
+  return match ? match[1].toLowerCase() : null;
+}
+
+function resolveImageDownloadName(msg: ListMessageResult, sourceUrl: string): string {
+  const image = msg.content?.image;
+  const extFromPayload = image?.extension?.replace(/^\./, '').toLowerCase();
+  const extension = extFromPayload || getExtensionFromUrl(sourceUrl) || 'jpg';
+  const captionName = image?.caption ? sanitizeFilename(image.caption) : '';
+  const fallbackName = `imagem-${msg.message_id.slice(-8)}`;
+  const baseName = captionName || fallbackName;
+  return `${baseName}.${extension}`;
+}
+
 function getLatestMessageText(msg: ListMessageResult): string {
   const c = msg.content;
   if (c?.message) return c.message;
@@ -211,6 +240,13 @@ type MessageWithSeparator =
       separatorDate: string;
       separatorLabel: string;
     };
+
+type ImageViewerState = {
+  visible: boolean;
+  src: string;
+  caption: string;
+  downloadName: string;
+};
 
 function formatMessageTime(dateStr: string | null | undefined): string {
   if (!dateStr) return '';
@@ -457,11 +493,13 @@ function BubbleContent({
   fromMe,
   content,
   audioCtrl,
+  onOpenImage,
 }: {
   msg: ListMessageResult;
   fromMe: boolean;
   content: MessageContent;
   audioCtrl: AudioCtrl | null;
+  onOpenImage: (msg: ListMessageResult) => void;
 }) {
   const type = content.type;
   const textColor = fromMe ? styles.bubbleTextRight : styles.bubbleTextLeft;
@@ -482,11 +520,13 @@ function BubbleContent({
     if (!imageUri) return null;
     return (
       <View style={styles.mediaBubble}>
-        <Image
-          source={{ uri: imageUri }}
-          style={styles.imageThumb}
-          resizeMode="cover"
-        />
+        <Pressable onPress={() => onOpenImage(msg)}>
+          <Image
+            source={{ uri: imageUri }}
+            style={styles.imageThumb}
+            resizeMode="cover"
+          />
+        </Pressable>
         {cap ? (
           <Text style={[styles.mediaCaption, textColor]}>{cap}</Text>
         ) : null}
@@ -846,10 +886,12 @@ function MessageBubble({
   msg,
   fromMe,
   audioCtrl,
+  onOpenImage,
 }: {
   msg: ListMessageResult;
   fromMe: boolean;
   audioCtrl: AudioCtrl | null;
+  onOpenImage: (msg: ListMessageResult) => void;
 }) {
   const content = msg.content;
   const timeStr = formatMessageTime(msg.date);
@@ -944,6 +986,7 @@ function MessageBubble({
           fromMe={fromMe}
           content={content}
           audioCtrl={audioCtrl}
+          onOpenImage={onOpenImage}
         />
         <View style={[styles.bubbleMeta, isAudio && styles.bubbleMetaAudio]}>
           {timeStr ? (
@@ -973,7 +1016,68 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const [loading, setLoading] = useState(true);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
+  const [viewer, setViewer] = useState<ImageViewerState>({
+    visible: false,
+    src: '',
+    caption: '',
+    downloadName: '',
+  });
+  const [downloadingViewerImage, setDownloadingViewerImage] = useState(false);
   const audioCtrl = useChatAudio();
+
+  const closeImageViewer = useCallback(() => {
+    setViewer({
+      visible: false,
+      src: '',
+      caption: '',
+      downloadName: '',
+    });
+    setDownloadingViewerImage(false);
+  }, []);
+
+  const openImageViewer = useCallback((msg: ListMessageResult) => {
+    const imageUrl = msg.content?.image?.url;
+    if (!imageUrl) return;
+    const imageSrc = resolveImageUri(imageUrl) ?? imageUrl;
+    if (!imageSrc) return;
+
+    setViewer({
+      visible: true,
+      src: imageSrc,
+      caption: msg.content?.image?.caption ?? '',
+      downloadName: resolveImageDownloadName(msg, imageSrc),
+    });
+  }, []);
+
+  const handleDownloadViewerImage = useCallback(async () => {
+    if (!viewer.src || downloadingViewerImage) return;
+
+    setDownloadingViewerImage(true);
+    try {
+      if (Platform.OS === 'web') {
+        Linking.openURL(viewer.src);
+        return;
+      }
+
+      const downloadDirectory = new Directory(Paths.document, 'downloads');
+      if (!downloadDirectory.exists) {
+        downloadDirectory.create({ intermediates: true, idempotent: true });
+      }
+
+      const fileName =
+        sanitizeFilename(viewer.downloadName || '') || `imagem-${Date.now()}.jpg`;
+      const destinationFile = new File(downloadDirectory, fileName);
+
+      await File.downloadFileAsync(viewer.src, destinationFile, {
+        idempotent: true,
+      });
+      Alert.alert(pt.download, pt.image_download_success);
+    } catch {
+      Alert.alert(pt.download, pt.image_download_error);
+    } finally {
+      setDownloadingViewerImage(false);
+    }
+  }, [downloadingViewerImage, viewer.downloadName, viewer.src]);
 
   const loadMessages = useCallback(async () => {
     setLoading(true);
@@ -1048,6 +1152,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                 msg={item.message}
                 fromMe={item.message.type_user !== ETypeUserChat.client}
                 audioCtrl={audioCtrl}
+                onOpenImage={openImageViewer}
               />
             )
           }
@@ -1077,6 +1182,54 @@ export function ChatRoomScreen({ route, navigation }: Props) {
           <Ionicons name="send" size={22} color="#fff" />
         </Pressable>
       </View>
+      <Modal
+        visible={viewer.visible}
+        transparent
+        animationType="fade"
+        onRequestClose={closeImageViewer}
+        statusBarTranslucent
+      >
+        <Pressable style={styles.viewerOverlay} onPress={closeImageViewer}>
+          <Pressable
+            style={styles.viewerContent}
+            onPress={(event) => event.stopPropagation()}
+          >
+            <View style={styles.viewerActions}>
+              <Pressable
+                style={[
+                  styles.viewerActionBtn,
+                  downloadingViewerImage && styles.viewerActionBtnDisabled,
+                ]}
+                onPress={handleDownloadViewerImage}
+                disabled={downloadingViewerImage}
+              >
+                {downloadingViewerImage ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Ionicons name="download-outline" size={20} color="#FFFFFF" />
+                )}
+              </Pressable>
+              <Pressable style={styles.viewerActionBtn} onPress={closeImageViewer}>
+                <Ionicons name="close" size={20} color="#FFFFFF" />
+              </Pressable>
+            </View>
+
+            <View style={styles.viewerMediaContainer}>
+              <Image
+                source={{ uri: viewer.src }}
+                style={styles.viewerImage}
+                resizeMode="contain"
+              />
+            </View>
+
+            {viewer.caption ? (
+              <Text style={styles.viewerCaption} numberOfLines={4}>
+                {viewer.caption}
+              </Text>
+            ) : null}
+          </Pressable>
+        </Pressable>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -1534,6 +1687,58 @@ const styles = StyleSheet.create({
   templateTitle: {
     fontSize: 15,
     fontWeight: '600',
+  },
+  viewerOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.9)',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: Platform.OS === 'ios' ? 42 : 24,
+  },
+  viewerContent: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  viewerActions: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    zIndex: 2,
+    flexDirection: 'row',
+    gap: 10,
+  },
+  viewerActionBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  viewerActionBtnDisabled: {
+    opacity: 0.7,
+  },
+  viewerMediaContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  viewerImage: {
+    width: '100%',
+    height: '100%',
+  },
+  viewerCaption: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    color: '#FFFFFF',
+    fontSize: 14,
+    lineHeight: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 8,
   },
   inputRow: {
     flexDirection: 'row',
