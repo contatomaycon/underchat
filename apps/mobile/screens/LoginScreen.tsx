@@ -47,7 +47,14 @@ export function LoginScreen({ onLoginSuccess }: Props) {
     setError('');
     setLoading(true);
 
-    const result = await login(emailTrimmed, password);
+    let result;
+    try {
+      result = await login(emailTrimmed, password);
+    } catch (err) {
+      setLoading(false);
+      setError(pt.network_error);
+      return;
+    }
 
     setLoading(false);
 

@@ -10,6 +10,8 @@ export const pt = {
   login_error: 'Ocorreu um erro ao fazer login. Por favor, tente novamente.',
   login_invalid:
     'Credenciais de login inválidas. Verifique seu e-mail/usuário e senha.',
+  network_error:
+    'Erro de conexão. Verifique a rede e a URL do backend (EXPO_PUBLIC_BACKEND_URL).',
   app_title: 'Underchat',
   email_placeholder: 'email@email.com',
   password_placeholder: '············',
