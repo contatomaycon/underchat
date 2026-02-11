@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -6,8 +6,8 @@ import {
   SectionList,
   Pressable,
   TextInput,
-  ActivityIndicator,
   Image,
+  Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
@@ -180,6 +180,57 @@ function SectionHeader({ title }: { title: string }) {
   return (
     <View style={styles.sectionHeader}>
       <Text style={styles.sectionTitle}>{title}</Text>
+    </View>
+  );
+}
+
+function ChatListSkeleton() {
+  const opacity = useRef(new Animated.Value(0.3)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(opacity, {
+          toValue: 0.7,
+          duration: 600,
+          useNativeDriver: true,
+        }),
+        Animated.timing(opacity, {
+          toValue: 0.3,
+          duration: 600,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [opacity]);
+  return (
+    <View style={styles.skeletonList}>
+      <View style={styles.sectionHeader}>
+        <Animated.View
+          style={[styles.skeletonSectionTitle, { opacity }]}
+        />
+      </View>
+      {Array.from({ length: 8 }, (_, i) => (
+        <View key={i} style={styles.chatRow}>
+          <Animated.View
+            style={[styles.skeletonAvatar, { opacity }]}
+          />
+          <View style={styles.skeletonContent}>
+            <View style={styles.skeletonRowTop}>
+              <Animated.View
+                style={[styles.skeletonLine, styles.skeletonName, { opacity }]}
+              />
+              <Animated.View
+                style={[styles.skeletonLine, styles.skeletonDate, { opacity }]}
+              />
+            </View>
+            <Animated.View
+              style={[styles.skeletonLine, styles.skeletonMessage, { opacity }]}
+            />
+          </View>
+        </View>
+      ))}
     </View>
   );
 }
@@ -430,9 +481,7 @@ export function ChatListScreen({ route, navigation }: Props) {
         canUseUserAndSectorFilters={canUseUserAndSectorFilters}
       />
       {loading ? (
-        <View style={styles.loading}>
-          <ActivityIndicator size="large" color={colors.primary} />
-        </View>
+        <ChatListSkeleton />
       ) : (
         <SectionList
           sections={sections}
@@ -510,10 +559,48 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  loading: {
+  skeletonList: {
     flex: 1,
+    paddingBottom: 24,
+  },
+  skeletonAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: colors.grey300,
+    marginRight: 12,
+  },
+  skeletonContent: {
+    flex: 1,
+    minWidth: 0,
+  },
+  skeletonRowTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  skeletonLine: {
+    backgroundColor: colors.grey300,
+    borderRadius: 4,
+  },
+  skeletonName: {
+    height: 14,
+    width: '55%',
+  },
+  skeletonDate: {
+    height: 12,
+    width: 60,
+  },
+  skeletonMessage: {
+    height: 12,
+    width: '80%',
+  },
+  skeletonSectionTitle: {
+    height: 16,
+    width: 140,
+    borderRadius: 4,
+    backgroundColor: colors.grey300,
   },
   listContent: {
     paddingBottom: 24,
