@@ -154,16 +154,44 @@ export async function listInChatChats(
   });
 }
 
+interface ApiListMessageResponse {
+  pagings?: {
+    current_page: number;
+    total_pages: number;
+    per_page: number;
+    count: number;
+    total: number;
+  };
+  results?: ListMessageResult[];
+}
+
 export async function listMessages(
   chatId: string,
   page = 1,
   perPage = 50
 ): Promise<ListMessageResponse | null> {
-  const res = await apiGet<ListMessageResponse>(`/chat/${chatId}`, {
+  const res = await apiGet<ApiListMessageResponse>(`/chat/${chatId}`, {
     current_page: page,
     per_page: perPage,
   });
-  return res?.data ?? null;
+  const data = res?.data;
+  if (!data) return null;
+  const pagings = data.pagings ?? {
+    current_page: page,
+    total_pages: 1,
+    per_page: perPage,
+    count: (data.results ?? []).length,
+    total: (data.results ?? []).length,
+  };
+  const results = data.results ?? [];
+  return {
+    results,
+    current_page: pagings.current_page,
+    total_pages: pagings.total_pages,
+    per_page: pagings.per_page,
+    count: pagings.count,
+    total: pagings.total,
+  };
 }
 
 export async function createMessage(

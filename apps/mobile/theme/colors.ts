@@ -27,4 +27,6 @@ export const colors = {
   inputBg: '#F5F5F5',
   tagBg: '#E3F2FD',
   tagText: '#1976D2',
+  bubbleSent: '#D9FDD3',
+  bubbleSentTime: 'rgba(17, 27, 33, 0.6)',
 } as const;
