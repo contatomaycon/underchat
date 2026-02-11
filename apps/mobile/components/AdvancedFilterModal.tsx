@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   StyleSheet,
   ActivityIndicator,
   FlatList,
+  Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { pt } from '../locales/pt';
@@ -78,6 +79,33 @@ function formatDateForApi(
   const mm = String(date.getMonth() + 1).padStart(2, '0');
   const dd = String(date.getDate()).padStart(2, '0');
   return `${yy}-${mm}-${dd}`;
+}
+
+function SkeletonRow() {
+  const opacity = useRef(new Animated.Value(0.3)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(opacity, {
+          toValue: 0.7,
+          duration: 600,
+          useNativeDriver: true,
+        }),
+        Animated.timing(opacity, {
+          toValue: 0.3,
+          duration: 600,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [opacity]);
+  return (
+    <View style={styles.skeletonWrap}>
+      <Animated.View style={[styles.skeletonBar, { opacity }]} />
+    </View>
+  );
 }
 
 interface AdvancedFilterModalProps {
@@ -298,7 +326,7 @@ export function AdvancedFilterModal({
               <View style={styles.field}>
                 <Text style={styles.label}>{pt.filter_by_tag}</Text>
                 {loadingTags ? (
-                  <ActivityIndicator size="small" color={colors.primary} />
+                  <SkeletonRow />
                 ) : (
                   <Pressable
                     style={styles.selectTouch}
@@ -308,7 +336,11 @@ export function AdvancedFilterModal({
                       {tags.find((x) => x.label_template_id === filterLabel)
                         ?.label ?? pt.select_tag_filter}
                     </Text>
-                    <Ionicons name="chevron-down" size={18} color={colors.grey600} />
+                    <Ionicons
+                      name="chevron-down"
+                      size={18}
+                      color={colors.grey600}
+                    />
                   </Pressable>
                 )}
               </View>
@@ -317,7 +349,7 @@ export function AdvancedFilterModal({
                 <View style={styles.field}>
                   <Text style={styles.label}>{pt.filter_by_sector}</Text>
                   {loadingSectors ? (
-                    <ActivityIndicator size="small" color={colors.primary} />
+                    <SkeletonRow />
                   ) : (
                     <Pressable
                       style={styles.selectTouch}
@@ -327,7 +359,11 @@ export function AdvancedFilterModal({
                         {sectors.find((x) => x.id === filterSector)?.name ??
                           pt.select_sector_filter}
                       </Text>
-                      <Ionicons name="chevron-down" size={18} color={colors.grey600} />
+                      <Ionicons
+                        name="chevron-down"
+                        size={18}
+                        color={colors.grey600}
+                      />
                     </Pressable>
                   )}
                 </View>
@@ -336,7 +372,7 @@ export function AdvancedFilterModal({
               <View style={styles.field}>
                 <Text style={styles.label}>{pt.filter_by_channel}</Text>
                 {loadingWorkers ? (
-                  <ActivityIndicator size="small" color={colors.primary} />
+                  <SkeletonRow />
                 ) : (
                   <Pressable
                     style={styles.selectTouch}
@@ -346,7 +382,11 @@ export function AdvancedFilterModal({
                       {workers.find((x) => x.id === filterWorker)?.name ??
                         pt.select_channel_filter}
                     </Text>
-                    <Ionicons name="chevron-down" size={18} color={colors.grey600} />
+                    <Ionicons
+                      name="chevron-down"
+                      size={18}
+                      color={colors.grey600}
+                    />
                   </Pressable>
                 )}
               </View>
@@ -355,7 +395,7 @@ export function AdvancedFilterModal({
                 <View style={styles.field}>
                   <Text style={styles.label}>{pt.filter_by_attendant}</Text>
                   {loadingUsers ? (
-                    <ActivityIndicator size="small" color={colors.primary} />
+                    <SkeletonRow />
                   ) : (
                     <Pressable
                       style={styles.selectTouch}
@@ -367,7 +407,11 @@ export function AdvancedFilterModal({
                             ?.user_id ??
                           pt.select_attendant_filter}
                       </Text>
-                      <Ionicons name="chevron-down" size={18} color={colors.grey600} />
+                      <Ionicons
+                        name="chevron-down"
+                        size={18}
+                        color={colors.grey600}
+                      />
                     </Pressable>
                   )}
                 </View>
@@ -439,7 +483,11 @@ export function AdvancedFilterModal({
                       {SORT_FIELD_OPTIONS.find((x) => x.value === sortField)
                         ?.title ?? pt.select_sort_field}
                     </Text>
-                    <Ionicons name="chevron-down" size={18} color={colors.grey600} />
+                    <Ionicons
+                      name="chevron-down"
+                      size={18}
+                      color={colors.grey600}
+                    />
                   </Pressable>
                 </View>
                 <View style={[styles.field, styles.half]}>
@@ -452,7 +500,11 @@ export function AdvancedFilterModal({
                       {SORT_ORDER_OPTIONS.find((x) => x.value === sortOrder)
                         ?.title ?? pt.select_sort_order}
                     </Text>
-                    <Ionicons name="chevron-down" size={18} color={colors.grey600} />
+                    <Ionicons
+                      name="chevron-down"
+                      size={18}
+                      color={colors.grey600}
+                    />
                   </Pressable>
                 </View>
               </View>
@@ -580,6 +632,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     fontSize: 14,
     color: colors.onSurface,
+  },
+  skeletonWrap: {
+    height: 44,
+    justifyContent: 'center',
+  },
+  skeletonBar: {
+    height: 24,
+    borderRadius: 6,
+    backgroundColor: colors.grey300,
   },
   selectTouch: {
     flexDirection: 'row',
