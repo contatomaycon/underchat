@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { AsaasInstallmentBasicServices } from './asaasInstallmentBasicServices';
 import { AsaasInstallmentAdvancedServices } from './asaasInstallmentAdvancedServices';
 
@@ -8,7 +8,9 @@ export class AsaasInstallmentsServices {
   public readonly advanced: AsaasInstallmentAdvancedServices;
 
   constructor(
+    @inject(AsaasInstallmentBasicServices)
     basic: AsaasInstallmentBasicServices,
+    @inject(AsaasInstallmentAdvancedServices)
     advanced: AsaasInstallmentAdvancedServices
   ) {
     this.basic = basic;

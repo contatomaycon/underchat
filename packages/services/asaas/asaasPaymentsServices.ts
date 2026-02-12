@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { ListPaymentsService } from './payments';
 import { AsaasPaymentBasicServices } from './asaasPaymentBasicServices';
 import { AsaasPaymentInfoServices } from './asaasPaymentInfoServices';
@@ -12,9 +12,13 @@ export class AsaasPaymentsServices {
   public readonly documents: AsaasPaymentDocumentsServices;
 
   constructor(
+    @inject(AsaasPaymentBasicServices)
     basic: AsaasPaymentBasicServices,
+    @inject(AsaasPaymentInfoServices)
     info: AsaasPaymentInfoServices,
+    @inject(ListPaymentsService)
     list: ListPaymentsService,
+    @inject(AsaasPaymentDocumentsServices)
     documents: AsaasPaymentDocumentsServices
   ) {
     this.basic = basic;

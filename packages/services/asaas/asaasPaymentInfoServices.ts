@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import {
   GetPaymentStatusService,
   GetPaymentIdentificationFieldService,
@@ -16,10 +16,15 @@ export class AsaasPaymentInfoServices {
   public readonly getViewingInfo: GetPaymentViewingInfoService;
 
   constructor(
+    @inject(GetPaymentStatusService)
     getStatus: GetPaymentStatusService,
+    @inject(GetPaymentIdentificationFieldService)
     getIdentificationField: GetPaymentIdentificationFieldService,
+    @inject(GetPaymentPixQrCodeService)
     getPixQrCode: GetPaymentPixQrCodeService,
+    @inject(GetPaymentBillingInfoService)
     getBillingInfo: GetPaymentBillingInfoService,
+    @inject(GetPaymentViewingInfoService)
     getViewingInfo: GetPaymentViewingInfoService
   ) {
     this.getStatus = getStatus;

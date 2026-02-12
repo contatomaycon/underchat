@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import {
   CreateSubscriptionInvoiceSettingsService,
   GetSubscriptionInvoiceSettingsService,
@@ -14,9 +14,13 @@ export class AsaasSubscriptionInvoiceSettingsServices {
   public readonly delete: DeleteSubscriptionInvoiceSettingsService;
 
   constructor(
+    @inject(CreateSubscriptionInvoiceSettingsService)
     create: CreateSubscriptionInvoiceSettingsService,
+    @inject(GetSubscriptionInvoiceSettingsService)
     get: GetSubscriptionInvoiceSettingsService,
+    @inject(UpdateSubscriptionInvoiceSettingsService)
     update: UpdateSubscriptionInvoiceSettingsService,
+    @inject(DeleteSubscriptionInvoiceSettingsService)
     deleteService: DeleteSubscriptionInvoiceSettingsService
   ) {
     this.create = create;

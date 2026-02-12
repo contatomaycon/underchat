@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import {
   UploadPaymentLinkImageService,
   ListPaymentLinkImagesService,
@@ -16,10 +16,15 @@ export class AsaasPaymentLinkImagesServices {
   public readonly setAsMain: SetPaymentLinkImageAsMainService;
 
   constructor(
+    @inject(UploadPaymentLinkImageService)
     upload: UploadPaymentLinkImageService,
+    @inject(ListPaymentLinkImagesService)
     list: ListPaymentLinkImagesService,
+    @inject(GetPaymentLinkImageService)
     get: GetPaymentLinkImageService,
+    @inject(DeletePaymentLinkImageService)
     deleteService: DeletePaymentLinkImageService,
+    @inject(SetPaymentLinkImageAsMainService)
     setAsMain: SetPaymentLinkImageAsMainService
   ) {
     this.upload = upload;

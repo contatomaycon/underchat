@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import {
   CaptureAuthorizedPaymentService,
   PayWithCreditCardService,
@@ -10,7 +10,9 @@ export class AsaasPaymentActionServices {
   public readonly payWithCreditCard: PayWithCreditCardService;
 
   constructor(
+    @inject(CaptureAuthorizedPaymentService)
     captureAuthorized: CaptureAuthorizedPaymentService,
+    @inject(PayWithCreditCardService)
     payWithCreditCard: PayWithCreditCardService
   ) {
     this.captureAuthorized = captureAuthorized;

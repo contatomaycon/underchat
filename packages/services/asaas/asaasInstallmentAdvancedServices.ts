@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import {
   ListInstallmentPaymentsService,
   GetInstallmentPaymentBookService,
@@ -14,9 +14,13 @@ export class AsaasInstallmentAdvancedServices {
   public readonly refund: RefundInstallmentService;
 
   constructor(
+    @inject(ListInstallmentPaymentsService)
     listPayments: ListInstallmentPaymentsService,
+    @inject(GetInstallmentPaymentBookService)
     getPaymentBook: GetInstallmentPaymentBookService,
+    @inject(UpdateInstallmentSplitsService)
     updateSplits: UpdateInstallmentSplitsService,
+    @inject(RefundInstallmentService)
     refund: RefundInstallmentService
   ) {
     this.listPayments = listPayments;

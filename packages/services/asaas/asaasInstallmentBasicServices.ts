@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import {
   CreateInstallmentService,
   CreateInstallmentWithCreditCardService,
@@ -16,10 +16,15 @@ export class AsaasInstallmentBasicServices {
   public readonly list: ListInstallmentsService;
 
   constructor(
+    @inject(CreateInstallmentService)
     create: CreateInstallmentService,
+    @inject(CreateInstallmentWithCreditCardService)
     createWithCreditCard: CreateInstallmentWithCreditCardService,
+    @inject(GetInstallmentService)
     get: GetInstallmentService,
+    @inject(DeleteInstallmentService)
     deleteService: DeleteInstallmentService,
+    @inject(ListInstallmentsService)
     list: ListInstallmentsService
   ) {
     this.create = create;

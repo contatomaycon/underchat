@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { AsaasSubscriptionCrudServices } from './asaasSubscriptionCrudServices';
 import { AsaasSubscriptionUpdateServices } from './asaasSubscriptionUpdateServices';
 
@@ -8,7 +8,9 @@ export class AsaasSubscriptionBasicServices {
   public readonly updateServices: AsaasSubscriptionUpdateServices;
 
   constructor(
+    @inject(AsaasSubscriptionCrudServices)
     crud: AsaasSubscriptionCrudServices,
+    @inject(AsaasSubscriptionUpdateServices)
     updateServices: AsaasSubscriptionUpdateServices
   ) {
     this.crud = crud;

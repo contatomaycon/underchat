@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { AsaasPaymentCrudServices } from './asaasPaymentCrudServices';
 import { AsaasPaymentActionServices } from './asaasPaymentActionServices';
 
@@ -8,7 +8,9 @@ export class AsaasPaymentBasicServices {
   public readonly actions: AsaasPaymentActionServices;
 
   constructor(
+    @inject(AsaasPaymentCrudServices)
     crud: AsaasPaymentCrudServices,
+    @inject(AsaasPaymentActionServices)
     actions: AsaasPaymentActionServices
   ) {
     this.crud = crud;
