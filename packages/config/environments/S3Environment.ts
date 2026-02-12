@@ -35,6 +35,10 @@ export class S3Environment {
     return process.env.S3_ENDPOINT;
   }
 
+  public get s3BucketPrefix(): string | undefined {
+    return process.env.S3_BUCKET_PREFIX ?? undefined;
+  }
+
   public get s3EndpointBackup(): string {
     if (!process.env.S3_ENDPOINT_BACKUP) {
       throw new InvalidConfigurationError('S3_ENDPOINT_BACKUP is not defined.');
@@ -69,5 +73,9 @@ export class S3Environment {
     }
 
     return process.env.S3_REGION_BACKUP;
+  }
+
+  public get s3BucketPrefixBackup(): string | undefined {
+    return process.env.S3_BUCKET_PREFIX_BACKUP ?? undefined;
   }
 }

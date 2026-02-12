@@ -43,10 +43,55 @@ export class StorageService {
     accountId: string,
     useBackup: boolean = false
   ): string {
-    const baseUrl = useBackup
+    const base = this.getBaseUrl(useBackup);
+    const bucketPrefix = this.getBucketPrefix(accountId, useBackup);
+
+    if (this.hasPathPrefix(path)) {
+      return this.buildUrlWithPathPrefix(base, bucketPrefix, path);
+    }
+
+    return this.buildUrlWithoutPathPrefix(base, bucketPrefix, accountId, path);
+  }
+
+  private getBaseUrl(useBackup: boolean): string {
+    const endpoint = useBackup
       ? s3Environment.s3EndpointBackup
       : s3Environment.s3Endpoint;
-    return `${baseUrl}/${accountId}/${path}`;
+    return endpoint.replace(/\/$/, '');
+  }
+
+  private getBucketPrefix(accountId: string, useBackup: boolean): string {
+    if (useBackup) {
+      return s3Environment.s3BucketPrefixBackup ?? accountId;
+    }
+    return s3Environment.s3BucketPrefix ?? accountId;
+  }
+
+  private hasPathPrefix(path: string): boolean {
+    return path.indexOf('/') > 0;
+  }
+
+  private buildUrlWithPathPrefix(
+    base: string,
+    bucketPrefix: string,
+    path: string
+  ): string {
+    const slashIndex = path.indexOf('/');
+    const prefix = path.slice(0, slashIndex);
+    const rest = path.slice(slashIndex + 1);
+    return `${base}/${bucketPrefix}:${prefix}/${rest}`;
+  }
+
+  private buildUrlWithoutPathPrefix(
+    base: string,
+    bucketPrefix: string,
+    accountId: string,
+    path: string
+  ): string {
+    if (bucketPrefix !== accountId) {
+      return `${base}/${bucketPrefix}:${accountId}/${path}`;
+    }
+    return `${base}/${accountId}/${path}`;
   }
 
   public async uploadImage(
@@ -296,7 +341,8 @@ export class StorageService {
   public async uploadFromUrl(
     url: string,
     accountId: string,
-    filenameHint?: string
+    filenameHint?: string,
+    pathPrefix?: string
   ): Promise<UploadFileResponse | null> {
     const res = await fetch(url);
     if (!res.ok) {
@@ -336,7 +382,11 @@ export class StorageService {
     const baseName = this.fileProcessor.getFileExtension(guessedName)
       ? guessedName
       : `${guessedName}.${finalExt}`;
-    const key = this.fileProcessor.normalizeFilename(baseName);
+    const normalizedBaseName = this.fileProcessor.normalizeFilename(baseName);
+    const key = pathPrefix
+      ? `${pathPrefix}/${normalizedBaseName}`
+      : normalizedBaseName;
+
     const mimeToStore = sniffedMime ?? contentTypeHeader;
 
     let width: number | null = null;

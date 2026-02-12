@@ -141,6 +141,19 @@ export class BucketManager {
     }
   }
 
+  private isPublicAccessBlockUnsupportedError(error: any): boolean {
+    if (!error) return false;
+    const code = error.name ?? error.Code;
+    const msg = (error.message ?? error.Message ?? '').toLowerCase();
+    return (
+      code === 'InvalidRequest' ||
+      code === 'AccessDenied' ||
+      code === 'NotImplemented' ||
+      msg.includes('publicaccessblock') ||
+      msg.includes('not supported')
+    );
+  }
+
   private async removePublicAccessBlock(bucketId: string): Promise<void> {
     const MAX_RETRIES = 3;
     const RETRY_DELAY_MS = 1000;
@@ -157,7 +170,8 @@ export class BucketManager {
         if (
           error.name === 'NoSuchPublicAccessBlockConfiguration' ||
           this.isBucketExistsError(error) ||
-          this.isNoSuchBucketError(error)
+          this.isNoSuchBucketError(error) ||
+          this.isPublicAccessBlockUnsupportedError(error)
         ) {
           return;
         }
@@ -179,14 +193,15 @@ export class BucketManager {
 
   private async setPublicPolicy(bucketId: string): Promise<void> {
     const publicReadPolicy = {
+      Id: 'PublicReadGetObject',
       Version: '2012-10-17',
       Statement: [
         {
           Sid: 'PublicReadGetObject',
           Effect: 'Allow',
           Principal: '*',
-          Action: 's3:GetObject',
-          Resource: `arn:aws:s3:::${bucketId}/*`,
+          Action: ['s3:GetObject'],
+          Resource: [`arn:aws:s3:::${bucketId}/*`],
         },
       ],
     };
