@@ -204,6 +204,7 @@ const SHOW_SCROLL_TO_BOTTOM_THRESHOLD = 160;
 const TYPING_TIMEOUT_MS = 5000;
 const VOICE_LOCK_SWIPE_THRESHOLD = 70;
 const VOICE_RELEASE_LOCK_GRACE_MS = 220;
+const VOICE_CANCEL_SWIPE_THRESHOLD = 90;
 const RECORDING_WAVEFORM_MAX_BARS = 44;
 const RECORDING_WAVEFORM_MIN_BARS = 26;
 type DownloadKind = 'image' | 'video' | 'document';
@@ -2831,10 +2832,13 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const listRef = useRef<FlatList<MessageWithSeparator> | null>(null);
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const micPressActiveRef = useRef(false);
+  const micStartXRef = useRef<number | null>(null);
   const micStartYRef = useRef<number | null>(null);
   const pendingReleaseBeforeReadyRef = useRef(false);
   const recordingStartedAtRef = useRef<number | null>(null);
   const recordingActiveRef = useRef(false);
+  const recordingStartTokenRef = useRef(0);
+  const cancelArmedRef = useRef(false);
   const inputRef = useRef('');
   const sendingRef = useRef(false);
   const isQueueOrUraStatusRef = useRef(false);
@@ -2888,6 +2892,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const [isRecordingPaused, setIsRecordingPaused] = useState(false);
   const [isPreparingRecording, setIsPreparingRecording] = useState(false);
   const [sendingVoiceRecording, setSendingVoiceRecording] = useState(false);
+  const [isRecordingCancelArmed, setIsRecordingCancelArmed] = useState(false);
   const [recordingWaveform, setRecordingWaveform] = useState<number[]>([]);
   const [showRecordingHint, setShowRecordingHint] = useState(false);
   const [resolvedContactCards, setResolvedContactCards] = useState<
@@ -3736,16 +3741,50 @@ export function ChatRoomScreen({ route, navigation }: Props) {
 
   const resetRecordingComposerState = useCallback(() => {
     micPressActiveRef.current = false;
+    micStartXRef.current = null;
     micStartYRef.current = null;
     pendingReleaseBeforeReadyRef.current = false;
     recordingStartedAtRef.current = null;
+    cancelArmedRef.current = false;
+    isRecordingVoiceRef.current = false;
+    isRecordingLockedRef.current = false;
+    isPreparingRecordingRef.current = false;
     setIsMicPressActive(false);
     setIsRecordingVoice(false);
     setIsRecordingLocked(false);
     setIsRecordingPaused(false);
     setIsPreparingRecording(false);
+    setIsRecordingCancelArmed(false);
     setShowRecordingHint(false);
     setRecordingWaveform([]);
+  }, []);
+
+  const applyRecordingAudioMode = useCallback(async (enabled: boolean) => {
+    try {
+      if (enabled) {
+        await setAudioModeAsync({
+          allowsRecording: true,
+          playsInSilentMode: true,
+          interruptionMode: 'duckOthers',
+          // Avoid passing `undefined` values on Android native module.
+          shouldPlayInBackground: false,
+          shouldRouteThroughEarpiece: false,
+          allowsBackgroundRecording: false,
+        });
+        return;
+      }
+
+      await setAudioModeAsync({
+        allowsRecording: false,
+        playsInSilentMode: true,
+        interruptionMode: 'mixWithOthers',
+        shouldPlayInBackground: false,
+        shouldRouteThroughEarpiece: false,
+        allowsBackgroundRecording: false,
+      });
+    } catch {
+      //
+    }
   }, []);
 
   const stopVoiceRecorder = useCallback(async () => {
@@ -3756,9 +3795,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       await recorder.stop();
     } catch {}
 
-    try {
-      await setAudioModeAsync({ allowsRecording: false });
-    } catch {}
+    await applyRecordingAudioMode(false);
 
     const uri = recorder.uri ?? recorderState.url;
     if (!uri) return null;
@@ -3777,7 +3814,12 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       fileName,
       mimeType,
     };
-  }, [recorder, recorderState.durationMillis, recorderState.url]);
+  }, [
+    applyRecordingAudioMode,
+    recorder,
+    recorderState.durationMillis,
+    recorderState.url,
+  ]);
 
   const sendRecordedVoiceMessage = useCallback(async () => {
     if (sendingVoiceRecording) return;
@@ -3832,6 +3874,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const lockVoiceRecording = useCallback(() => {
     if (!isRecordingVoice) return;
     if (isRecordingLocked) return;
+    isRecordingLockedRef.current = true;
     setIsRecordingLocked(true);
     setShowRecordingHint(false);
   }, [isRecordingLocked, isRecordingVoice]);
@@ -3843,12 +3886,11 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       await recorder.stop();
     } catch {}
 
-    try {
-      await setAudioModeAsync({ allowsRecording: false });
-    } catch {}
+    await applyRecordingAudioMode(false);
 
     resetRecordingComposerState();
   }, [
+    applyRecordingAudioMode,
     isRecordingPaused,
     isRecordingVoice,
     recorder,
@@ -3876,22 +3918,25 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     }
     if (isRecordingVoice) return;
 
+    const startToken = ++recordingStartTokenRef.current;
+    isPreparingRecordingRef.current = true;
     setIsPreparingRecording(true);
     try {
       const permission = await requestRecordingPermissionsAsync();
+      if (startToken !== recordingStartTokenRef.current) return;
       if (!permission.granted) {
         resetRecordingComposerState();
         return;
       }
 
-      await setAudioModeAsync({
-        allowsRecording: true,
-        playsInSilentMode: true,
-        interruptionMode: 'duckOthers',
-      });
+      await applyRecordingAudioMode(true);
+      if (startToken !== recordingStartTokenRef.current) return;
       await recorder.prepareToRecordAsync(recorderOptions);
+      if (startToken !== recordingStartTokenRef.current) return;
       recorder.record();
 
+      isRecordingVoiceRef.current = true;
+      isRecordingLockedRef.current = false;
       setIsRecordingVoice(true);
       setIsRecordingLocked(false);
       setIsRecordingPaused(false);
@@ -3902,18 +3947,19 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       if (pendingReleaseBeforeReadyRef.current) {
         pendingReleaseBeforeReadyRef.current = false;
 
+        isRecordingLockedRef.current = true;
         setIsRecordingLocked(true);
         setShowRecordingHint(false);
       }
     } catch {
       resetRecordingComposerState();
-      try {
-        await setAudioModeAsync({ allowsRecording: false });
-      } catch {}
+      await applyRecordingAudioMode(false);
     } finally {
+      isPreparingRecordingRef.current = false;
       setIsPreparingRecording(false);
     }
   }, [
+    applyRecordingAudioMode,
     isPreparingRecording,
     isQueueOrUraStatus,
     isRecordingVoice,
@@ -3939,7 +3985,19 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     lockVoiceRecordingCbRef.current = lockVoiceRecording;
   }, [lockVoiceRecording]);
 
-  const handleMicPressGrant = useCallback((pageY: number) => {
+  const cancelVoiceRecording = useCallback(async () => {
+    // Invalidate any in-flight `startVoiceRecording` so it can't "finish" after cancel.
+    recordingStartTokenRef.current += 1;
+
+    try {
+      await recorder.stop();
+    } catch {}
+
+    await applyRecordingAudioMode(false);
+    resetRecordingComposerState();
+  }, [applyRecordingAudioMode, recorder, resetRecordingComposerState]);
+
+  const handleMicPressGrant = useCallback((pageX: number, pageY: number) => {
     if (inputRef.current.trim().length > 0) return;
     if (sendingRef.current || isQueueOrUraStatusRef.current) return;
     if (sendingCapturedMediaRef.current || sendingVoiceRecordingRef.current) {
@@ -3948,14 +4006,34 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     if (isPreparingRecordingRef.current || isRecordingVoiceRef.current) return;
 
     pendingReleaseBeforeReadyRef.current = false;
+    cancelArmedRef.current = false;
+    setIsRecordingCancelArmed(false);
     micPressActiveRef.current = true;
+    micStartXRef.current = pageX;
     micStartYRef.current = pageY;
     setIsMicPressActive(true);
     void startVoiceRecordingCbRef.current();
   }, []);
 
-  const handleMicPressMove = useCallback((pageY: number) => {
+  const handleMicPressMove = useCallback((pageX: number, pageY: number) => {
     if (!isRecordingVoiceRef.current || isRecordingLockedRef.current) return;
+    const startX = micStartXRef.current;
+    if (startX != null) {
+      const deltaX = pageX - startX;
+      const nextCancelArmed = deltaX <= -VOICE_CANCEL_SWIPE_THRESHOLD;
+      if (nextCancelArmed !== cancelArmedRef.current) {
+        cancelArmedRef.current = nextCancelArmed;
+        setIsRecordingCancelArmed(nextCancelArmed);
+        if (nextCancelArmed) {
+          setShowRecordingHint(false);
+        } else {
+          setShowRecordingHint(true);
+        }
+      }
+    }
+
+    if (cancelArmedRef.current) return;
+
     const startY = micStartYRef.current;
     if (startY == null) return;
     const deltaY = startY - pageY;
@@ -3966,12 +4044,21 @@ export function ChatRoomScreen({ route, navigation }: Props) {
 
   const handleMicPressRelease = useCallback(() => {
     const wasMicPressActive = micPressActiveRef.current;
+    const wasCancelArmed = cancelArmedRef.current;
     micPressActiveRef.current = false;
+    micStartXRef.current = null;
     micStartYRef.current = null;
+    cancelArmedRef.current = false;
+    setIsRecordingCancelArmed(false);
     setIsMicPressActive(false);
     setShowRecordingHint(false);
 
     if (!wasMicPressActive) return;
+
+    if (wasCancelArmed) {
+      void cancelVoiceRecording();
+      return;
+    }
 
     if (!isRecordingVoiceRef.current) {
       pendingReleaseBeforeReadyRef.current = true;
@@ -3993,12 +4080,21 @@ export function ChatRoomScreen({ route, navigation }: Props) {
 
   const handleMicPressTerminate = useCallback(() => {
     const wasMicPressActive = micPressActiveRef.current;
+    const wasCancelArmed = cancelArmedRef.current;
     micPressActiveRef.current = false;
+    micStartXRef.current = null;
     micStartYRef.current = null;
+    cancelArmedRef.current = false;
+    setIsRecordingCancelArmed(false);
     setIsMicPressActive(false);
     setShowRecordingHint(false);
 
     if (!wasMicPressActive) return;
+
+    if (wasCancelArmed) {
+      void cancelVoiceRecording();
+      return;
+    }
 
     if (!isRecordingVoiceRef.current) {
       pendingReleaseBeforeReadyRef.current = true;
@@ -4017,10 +4113,10 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       onMoveShouldSetPanResponderCapture: () => true,
       onShouldBlockNativeResponder: () => true,
       onPanResponderGrant: (event) => {
-        handleMicPressGrant(event.nativeEvent.pageY);
+        handleMicPressGrant(event.nativeEvent.pageX, event.nativeEvent.pageY);
       },
       onPanResponderMove: (event) => {
-        handleMicPressMove(event.nativeEvent.pageY);
+        handleMicPressMove(event.nativeEvent.pageX, event.nativeEvent.pageY);
       },
       onPanResponderRelease: () => {
         handleMicPressRelease();
@@ -4186,9 +4282,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       try {
         recorder.stop();
       } catch {}
-      void setAudioModeAsync({ allowsRecording: false });
+      void applyRecordingAudioMode(false);
     };
-  }, [recorder]);
+  }, [applyRecordingAudioMode, recorder]);
 
   useEffect(() => {
     if (!recordingActiveRef.current) return;
@@ -4254,6 +4350,10 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     !isPreparingRecording &&
     !sendingVoiceRecording &&
     !sendingCapturedMedia;
+  const showRecordingHoldOverlay =
+    isMicPressActive &&
+    !isRecordingLocked &&
+    (isPreparingRecording || isRecordingVoice);
   const showRecordingComposer =
     isRecordingVoice && (isRecordingLocked || !isMicPressActive);
   const canShowIconActions = !hasInputText && !showRecordingComposer;
@@ -4485,16 +4585,76 @@ export function ChatRoomScreen({ route, navigation }: Props) {
           </View>
         ) : (
           <>
-            <TextInput
-              style={styles.input}
-              placeholder={pt.type_message}
-              placeholderTextColor={colors.grey500}
-              value={input}
-              onChangeText={setInput}
-              multiline
-              maxLength={65535}
-              editable={!sending && !sendingCapturedMedia}
-            />
+            <View style={styles.inputStack}>
+              <TextInput
+                style={styles.input}
+                placeholder={pt.type_message}
+                placeholderTextColor={colors.grey500}
+                value={input}
+                onChangeText={setInput}
+                multiline
+                maxLength={65535}
+                editable={
+                  !sending &&
+                  !sendingCapturedMedia &&
+                  !isPreparingRecording &&
+                  !isRecordingVoice
+                }
+              />
+              {showRecordingHoldOverlay ? (
+                <View pointerEvents="none" style={styles.recordingHoldOverlay}>
+                  <View style={styles.recordingHoldLeft}>
+                    <Animated.View
+                      style={[
+                        styles.recordingDot,
+                        !isRecordingVoice && styles.recordingDotPaused,
+                        {
+                          transform: [{ scale: recordingPulse }],
+                        },
+                      ]}
+                    />
+                    <Text style={styles.recordingHoldTime}>
+                      {recordingDurationLabel}
+                    </Text>
+                  </View>
+
+                  <View style={styles.recordingHoldCenter}>
+                    <Text
+                      style={[
+                        styles.recordingHoldCancelText,
+                        isRecordingCancelArmed &&
+                          styles.recordingHoldCancelTextArmed,
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {isRecordingCancelArmed
+                        ? pt.release_to_cancel
+                        : pt.slide_left_to_cancel}
+                    </Text>
+                    <Ionicons
+                      name="chevron-back-outline"
+                      size={18}
+                      color={
+                        isRecordingCancelArmed ? '#EF4444' : colors.grey600
+                      }
+                    />
+                  </View>
+
+                  <View style={styles.recordingHoldRight}>
+                    <Ionicons
+                      name="lock-closed-outline"
+                      size={15}
+                      color={colors.grey600}
+                    />
+                    <Ionicons
+                      name="chevron-up-outline"
+                      size={18}
+                      color={colors.grey600}
+                    />
+                  </View>
+                </View>
+              ) : null}
+            </View>
 
             {hasInputText ? (
               <Pressable
@@ -4509,7 +4669,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
               </Pressable>
             ) : (
               <View style={styles.composerActionsWrap}>
-                {!isRecordingVoice ? (
+                {!isRecordingVoice && !showRecordingHoldOverlay ? (
                   <Pressable
                     style={[
                       styles.composerActionBtn,
@@ -4523,53 +4683,44 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                   </Pressable>
                 ) : null}
 
-                {isRecordingVoice && isMicPressActive && !isRecordingLocked ? (
-                  <Animated.View
-                    pointerEvents="none"
-                    style={[
-                      styles.micHoldHintWrap,
-                      {
-                        opacity: recordingHintOpacity,
-                        transform: [{ translateY: recordingHintOffset }],
-                      },
-                    ]}
-                  >
-                    <View style={styles.micHoldHintDuration}>
-                      <Animated.View
-                        style={[
-                          styles.recordingDot,
-                          {
-                            transform: [{ scale: recordingPulse }],
-                          },
-                        ]}
-                      />
-                      <Text style={styles.micHoldHintDurationText}>
-                        {recordingDurationLabel}
-                      </Text>
-                    </View>
-                    <View style={styles.micHoldHintTextWrap}>
-                      <Ionicons
-                        name="chevron-up-outline"
-                        size={14}
-                        color={colors.primary}
-                      />
-                      <Text style={styles.micHoldHintText}>
-                        {pt.slide_up_to_lock}
-                      </Text>
-                    </View>
-                  </Animated.View>
-                ) : null}
-
                 {canShowIconActions ? (
                   <View
-                    {...micPanResponder.panHandlers}
-                    style={styles.micGestureTouchable}
+                    style={styles.micGestureWrap}
+                    collapsable={false}
                   >
+                    {showRecordingHoldOverlay && !isRecordingCancelArmed ? (
+                      <Animated.View
+                        pointerEvents="none"
+                        style={[
+                          styles.micLockHintPill,
+                          {
+                            opacity: recordingHintOpacity,
+                            transform: [{ translateY: recordingHintOffset }],
+                          },
+                        ]}
+                      >
+                        <Ionicons
+                          name="lock-closed"
+                          size={14}
+                          color={colors.grey700}
+                        />
+                        <Ionicons
+                          name="chevron-up-outline"
+                          size={18}
+                          color={colors.grey700}
+                        />
+                      </Animated.View>
+                    ) : null}
+
                     <Animated.View
+                      {...micPanResponder.panHandlers}
+                      collapsable={false}
                       style={[
                         styles.composerActionBtn,
                         styles.micActionBtn,
-                        isRecordingVoice && styles.micActionBtnRecording,
+                        (isPreparingRecording || isRecordingVoice) &&
+                          styles.micActionBtnRecording,
+                        styles.micActionBtnLarge,
                         !canUseComposerActions && styles.sendBtnDisabled,
                         {
                           transform: [{ scale: recordingPulse }],
@@ -4579,7 +4730,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                       {isPreparingRecording ? (
                         <ActivityIndicator size="small" color="#FFFFFF" />
                       ) : (
-                        <Ionicons name="mic" size={20} color="#FFFFFF" />
+                        <Ionicons name="mic" size={22} color="#FFFFFF" />
                       )}
                     </Animated.View>
                   </View>
@@ -5865,6 +6016,56 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: colors.onSurface,
   },
+  inputStack: {
+    flex: 1,
+    position: 'relative',
+  },
+  recordingHoldOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    borderRadius: 20,
+    backgroundColor: colors.inputBg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+  },
+  recordingHoldLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexShrink: 0,
+  },
+  recordingHoldTime: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.onSurface,
+    minWidth: 46,
+  },
+  recordingHoldCenter: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingHorizontal: 8,
+  },
+  recordingHoldCancelText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.grey600,
+  },
+  recordingHoldCancelTextArmed: {
+    color: '#EF4444',
+  },
+  recordingHoldRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    flexShrink: 0,
+  },
   recordingComposerWrap: {
     flex: 1,
     minHeight: 48,
@@ -5967,47 +6168,27 @@ const styles = StyleSheet.create({
   micActionBtnRecording: {
     backgroundColor: '#EF4444',
   },
-  micGestureTouchable: {
-    borderRadius: 20,
+  micActionBtnLarge: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
   },
-  micHoldHintWrap: {
+  micGestureWrap: {
+    position: 'relative',
+  },
+  micLockHintPill: {
     position: 'absolute',
-    right: 50,
-    bottom: 46,
-    alignItems: 'flex-end',
-    gap: 4,
-  },
-  micHoldHintDuration: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    borderRadius: 999,
-    paddingVertical: 4,
-    paddingHorizontal: 8,
+    right: 0,
+    bottom: 54,
+    width: 44,
+    paddingVertical: 6,
+    borderRadius: 22,
     backgroundColor: '#FFFFFF',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(47, 43, 61, 0.12)',
-  },
-  micHoldHintDurationText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: colors.onSurface,
-  },
-  micHoldHintTextWrap: {
-    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 2,
-    borderRadius: 999,
-    paddingVertical: 3,
-    paddingHorizontal: 8,
-    backgroundColor: '#FFFFFF',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(40, 101, 183, 0.2)',
-  },
-  micHoldHintText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: colors.primary,
+    borderColor: 'rgba(47, 43, 61, 0.16)',
   },
   sendBtn: {
     width: 40,

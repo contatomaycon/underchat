@@ -66,7 +66,7 @@ export class BaileysHelpersService {
     const text = this.extractText(content);
     const durationMs = this.estimateTypingMs(text);
 
-    const preThink = this.rand(150, 600);
+    const preThink = this.rand(200, 900);
     await this.sleep(preThink);
 
     const start = Date.now();
@@ -75,13 +75,25 @@ export class BaileysHelpersService {
     while (Date.now() - start < durationMs) {
       const elapsed = Date.now() - start;
       const remaining = durationMs - elapsed;
-      const tick = Math.min(1800, remaining);
+
+      const baseTick = this.rand(1200, 2400);
+      const tick = Math.min(baseTick, remaining);
       await this.sleep(tick);
+
       if (Date.now() - start < durationMs) {
-        await sock.sendPresenceUpdate('composing', jid);
+        if (this.rngFloat() < 0.12) {
+          await sock.sendPresenceUpdate('paused', jid);
+          const thinkPause = this.rand(500, 1500);
+          await this.sleep(thinkPause);
+          await sock.sendPresenceUpdate('composing', jid);
+        } else {
+          await sock.sendPresenceUpdate('composing', jid);
+        }
       }
     }
 
+    const windDown = this.rand(150, 500);
+    await this.sleep(windDown);
     await sock.sendPresenceUpdate('paused', jid);
   }
 
@@ -168,8 +180,8 @@ export class BaileysHelpersService {
     const jitter = base * (this.rand(-5, 12) / 100);
     const total = base + punctPause + newlinePause + emojiPause + jitter;
 
-    const minMs = 400;
-    const maxMs = 3000;
+    const minMs = 500;
+    const maxMs = 10000;
     const clamped = Math.max(minMs, Math.min(total, maxMs));
 
     return Math.round(clamped);

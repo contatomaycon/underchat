@@ -104,6 +104,8 @@ export const pt = {
   camera_permission_denied: 'Permissão da câmera negada.',
   microphone_permission_denied: 'Permissão de microfone negada.',
   audio_recording_error: 'Não foi possível iniciar a gravação de áudio.',
+  slide_left_to_cancel: 'Deslize para cancelar',
+  release_to_cancel: 'Solte para cancelar',
   slide_up_to_lock: 'Deslize para cima para travar',
   recording: 'Gravando',
   delete_recording: 'Excluir gravação',
