@@ -169,6 +169,20 @@ export interface MessageContentContact {
   photo?: string | null;
 }
 
+export interface MessageQuoted {
+  key?: MessageKey | null;
+  message?: string | null;
+  type?: string | null;
+  image?: MessageContentImage | null;
+  video?: MessageContentVideo | null;
+  audio?: MessageContentAudio | null;
+  document?: MessageContentDocument | null;
+  sticker?: MessageContentSticker | null;
+  location?: MessageContentLocation | null;
+  contact?: MessageContentContact | null;
+  contacts?: MessageContentContact[] | null;
+}
+
 export interface MessageTemplateButton {
   displayText: string;
   id: string;
@@ -192,7 +206,7 @@ export interface MessageContent {
   type: string;
   message?: string | null;
   message_quoted_id?: string | null;
-  quoted?: unknown;
+  quoted?: MessageQuoted | null;
   image?: MessageContentImage | null;
   video?: MessageContentVideo | null;
   sticker?: MessageContentSticker | null;
