@@ -30,6 +30,7 @@ export const pt = {
   send: 'Enviar',
   type_message: 'Digite uma mensagem',
   is_typing: 'está digitando...',
+  scroll_to_latest: 'Ir para o final',
   chat_list_error: 'Erro ao carregar conversas.',
   messages_error: 'Erro ao carregar mensagens.',
   send_error: 'Erro ao enviar mensagem.',

@@ -139,6 +139,7 @@ const VIDEO_FULLSCREEN_DISABLED = { enable: false } as const;
 const VIDEO_FULLSCREEN_ENABLED = { enable: true } as const;
 const CHAT_MESSAGES_PER_PAGE = 10;
 const LOAD_OLDER_SCROLL_THRESHOLD = 180;
+const SHOW_SCROLL_TO_BOTTOM_THRESHOLD = 160;
 const TYPING_TIMEOUT_MS = 5000;
 type DownloadKind = 'image' | 'video' | 'document';
 const UUID_PATTERN =
@@ -2795,6 +2796,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [currentUserName, setCurrentUserName] = useState<string | null>(null);
   const [isTyping, setIsTyping] = useState(false);
+  const [showScrollToBottomButton, setShowScrollToBottomButton] =
+    useState(false);
   const [highlightedMessageId, setHighlightedMessageId] = useState<
     string | null
   >(null);
@@ -2849,6 +2852,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     setMessages([]);
     setLoading(true);
     setHighlightedMessageId(null);
+    setShowScrollToBottomButton(false);
     setLoadingOlder(false);
   }, [chatInfo.chat_id]);
 
@@ -3134,11 +3138,25 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const handleListScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
       const offsetY = event.nativeEvent.contentOffset.y;
+      const viewportHeight = event.nativeEvent.layoutMeasurement.height;
+      const contentHeight =
+        event.nativeEvent.contentSize.height || contentHeightRef.current;
+      const distanceFromBottom = Math.max(
+        0,
+        contentHeight - (offsetY + viewportHeight)
+      );
       scrollOffsetRef.current = offsetY;
 
       if (pendingScrollToBottomRef.current) {
+        if (distanceFromBottom <= SHOW_SCROLL_TO_BOTTOM_THRESHOLD) {
+          setShowScrollToBottomButton(false);
+        }
         return;
       }
+
+      setShowScrollToBottomButton(
+        distanceFromBottom > SHOW_SCROLL_TO_BOTTOM_THRESHOLD
+      );
 
       if (offsetY <= LOAD_OLDER_SCROLL_THRESHOLD) {
         void loadOlderMessages();
@@ -3152,9 +3170,11 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       if (!pendingScrollToBottomRef.current) return;
 
       listRef.current?.scrollToEnd({ animated: false });
+      setShowScrollToBottomButton(false);
 
       if (remaining <= 0) {
         pendingScrollToBottomRef.current = false;
+        scrollOffsetRef.current = Math.max(0, contentHeightRef.current);
         return;
       }
 
@@ -3165,6 +3185,12 @@ export function ChatRoomScreen({ route, navigation }: Props) {
 
     attempt(retries);
   }, []);
+
+  const jumpToBottom = useCallback(() => {
+    pendingScrollToBottomRef.current = true;
+    setShowScrollToBottomButton(false);
+    scrollToBottomWithRetries(12);
+  }, [scrollToBottomWithRetries]);
 
   const handleListContentSizeChange = useCallback(
     (_width: number, height: number) => {
@@ -3288,6 +3314,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       scrollOffsetRef.current = 0;
       contentHeightRef.current = 0;
       preserveScrollOnPrependRef.current = null;
+      setShowScrollToBottomButton(false);
       void loadMessages();
     }, [loadMessages])
   );
@@ -3318,11 +3345,30 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     (payload: SocketMessagePayload) => {
       if (payload.chat_id !== chatInfo.chat_id) return;
       setTypingIndicator(false);
+
+      const incomingMessageId = readNonEmptyString(payload.message_id);
+      const shouldAutoScroll =
+        !!incomingMessageId &&
+        !messagesRef.current.some(
+          (message) => message.message_id === incomingMessageId
+        );
+
+      if (shouldAutoScroll) {
+        pendingScrollToBottomRef.current = true;
+        setShowScrollToBottomButton(false);
+      }
+
       const normalized = normalizeSocketMessageToListMessage(payload);
       if (!normalized) return;
       setMessages((prev) => mergeMessageLists(prev, normalized));
+
+      if (shouldAutoScroll) {
+        requestAnimationFrame(() => {
+          scrollToBottomWithRetries(10);
+        });
+      }
     },
-    [chatInfo.chat_id, setTypingIndicator]
+    [chatInfo.chat_id, setTypingIndicator, scrollToBottomWithRetries]
   );
 
   const handleSocketTyping = useCallback(
@@ -3480,7 +3526,12 @@ export function ChatRoomScreen({ route, navigation }: Props) {
           text
         );
         if (newMsg) {
+          pendingScrollToBottomRef.current = true;
+          setShowScrollToBottomButton(false);
           setMessages((prev) => mergeMessageLists(prev, newMsg));
+          requestAnimationFrame(() => {
+            scrollToBottomWithRetries(10);
+          });
           return true;
         }
       } finally {
@@ -3488,7 +3539,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       }
       return false;
     },
-    [chatInfo.chat_id, sending]
+    [chatInfo.chat_id, sending, scrollToBottomWithRetries]
   );
 
   const handleTemplateButtonPress = useCallback(
@@ -3582,6 +3633,18 @@ export function ChatRoomScreen({ route, navigation }: Props) {
           ) : null}
         </>
       )}
+      {showScrollToBottomButton ? (
+        <Pressable
+          style={[
+            styles.scrollToBottomButton,
+            isTyping && styles.scrollToBottomButtonWithTyping,
+          ]}
+          onPress={jumpToBottom}
+          accessibilityLabel={pt.scroll_to_latest}
+        >
+          <Ionicons name="chevron-down" size={20} color={colors.onPrimary} />
+        </Pressable>
+      ) : null}
       {isTyping ? (
         <View style={styles.typingIndicatorWrap}>
           <Ionicons name="create-outline" size={18} color={colors.primary} />
@@ -4723,6 +4786,26 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontStyle: 'italic',
     fontWeight: '400',
+  },
+  scrollToBottomButton: {
+    position: 'absolute',
+    right: 16,
+    bottom: Platform.OS === 'ios' ? 88 : 74,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primary,
+    zIndex: 25,
+    shadowColor: '#000',
+    shadowOpacity: 0.16,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 4,
+  },
+  scrollToBottomButtonWithTyping: {
+    bottom: Platform.OS === 'ios' ? 112 : 98,
   },
   inputRow: {
     flexDirection: 'row',
