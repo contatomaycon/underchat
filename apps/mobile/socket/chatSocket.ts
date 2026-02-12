@@ -1,4 +1,5 @@
 import {
+  addCentrifugoRecoveryFailedListener,
   onMessage,
   unsubscribe,
   isChannelSubscribed,
@@ -52,10 +53,15 @@ export type SocketChatPayload = {
   [key: string]: unknown;
 };
 
+export type SocketRecoveryFailedPayload = {
+  channel: string;
+};
+
 type SocketEventMap = {
   typing: SocketTypingPayload;
   message: SocketMessagePayload;
   chatUpdate: SocketChatPayload;
+  recoveryFailed: SocketRecoveryFailedPayload;
 };
 
 type SocketEventName = keyof SocketEventMap;
@@ -68,13 +74,22 @@ let subscriptions: Array<{
   channel: string;
   unsubscribe: () => Promise<void>;
 }> = [];
+let removeRecoveryFailedListener: (() => void) | null = null;
 
 const pendingMessages = new Map<string, SocketMessagePayload[]>();
 const pendingChatUpdates = new Map<string, SocketChatPayload[]>();
 
+const MESSAGE_BATCH_DELAY_MS = 50;
+const CHAT_UPDATE_BATCH_DELAY_MS = 100;
+let messageBatchTimer: ReturnType<typeof setTimeout> | null = null;
+let chatUpdateBatchTimer: ReturnType<typeof setTimeout> | null = null;
+let messageBatchBuffer: SocketMessagePayload[] = [];
+let chatUpdateBatchBuffer: SocketChatPayload[] = [];
+
 const typingListeners = new Set<SocketListener<'typing'>>();
 const messageListeners = new Set<SocketListener<'message'>>();
 const chatUpdateListeners = new Set<SocketListener<'chatUpdate'>>();
+const recoveryFailedListeners = new Set<SocketListener<'recoveryFailed'>>();
 
 const emitTyping = (payload: SocketTypingPayload): void => {
   for (const listener of typingListeners) {
@@ -106,6 +121,16 @@ const emitChatUpdate = (payload: SocketChatPayload): void => {
   }
 };
 
+const emitRecoveryFailed = (payload: SocketRecoveryFailedPayload): void => {
+  for (const listener of recoveryFailedListeners) {
+    try {
+      listener(payload);
+    } catch {
+      //
+    }
+  }
+};
+
 const getStringField = (value: unknown): string | null => {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
@@ -126,6 +151,74 @@ const queuePendingChatUpdate = (payload: SocketChatPayload): void => {
     pendingChatUpdates.set(chatId, []);
   }
   pendingChatUpdates.get(chatId)?.push(payload);
+};
+
+const flushMessageBatch = (): void => {
+  if (messageBatchBuffer.length === 0) return;
+
+  const buffer = [...messageBatchBuffer];
+  messageBatchBuffer = [];
+  messageBatchTimer = null;
+
+  const latestByMessageId = new Map<string, SocketMessagePayload>();
+  for (const item of buffer) {
+    latestByMessageId.set(item.message_id, item);
+  }
+
+  for (const payload of latestByMessageId.values()) {
+    queuePendingMessage(payload);
+    emitMessage(payload);
+  }
+};
+
+const flushChatUpdateBatch = (): void => {
+  if (chatUpdateBatchBuffer.length === 0) return;
+
+  const buffer = [...chatUpdateBatchBuffer];
+  chatUpdateBatchBuffer = [];
+  chatUpdateBatchTimer = null;
+
+  const latestByChatId = new Map<string, SocketChatPayload>();
+  for (const item of buffer) {
+    latestByChatId.set(item.chat_id, item);
+  }
+
+  for (const payload of latestByChatId.values()) {
+    queuePendingChatUpdate(payload);
+    emitChatUpdate(payload);
+  }
+};
+
+const queueMessageBatch = (payload: SocketMessagePayload): void => {
+  messageBatchBuffer.push(payload);
+  if (messageBatchTimer) {
+    clearTimeout(messageBatchTimer);
+  }
+  messageBatchTimer = setTimeout(flushMessageBatch, MESSAGE_BATCH_DELAY_MS);
+};
+
+const queueChatUpdateBatch = (payload: SocketChatPayload): void => {
+  chatUpdateBatchBuffer.push(payload);
+  if (chatUpdateBatchTimer) {
+    clearTimeout(chatUpdateBatchTimer);
+  }
+  chatUpdateBatchTimer = setTimeout(
+    flushChatUpdateBatch,
+    CHAT_UPDATE_BATCH_DELAY_MS
+  );
+};
+
+const clearBatchTimers = (): void => {
+  if (messageBatchTimer) {
+    clearTimeout(messageBatchTimer);
+    messageBatchTimer = null;
+  }
+  if (chatUpdateBatchTimer) {
+    clearTimeout(chatUpdateBatchTimer);
+    chatUpdateBatchTimer = null;
+  }
+  flushMessageBatch();
+  flushChatUpdateBatch();
 };
 
 const parseIncomingPayload = (
@@ -186,6 +279,13 @@ const isMessagePayload = (
 };
 
 const cleanupUnsubscribe = async (): Promise<void> => {
+  clearBatchTimers();
+
+  if (removeRecoveryFailedListener) {
+    removeRecoveryFailedListener();
+    removeRecoveryFailedListener = null;
+  }
+
   const unsubscribePromises = subscriptions.map((sub) =>
     sub.unsubscribe().catch(() => {
       //
@@ -235,6 +335,15 @@ export const initializeChatSocket = async (accountId: string): Promise<void> => 
 
   initializingPromise = (async () => {
     try {
+      if (removeRecoveryFailedListener) {
+        removeRecoveryFailedListener();
+      }
+      removeRecoveryFailedListener = addCentrifugoRecoveryFailedListener(
+        (channel) => {
+          emitRecoveryFailed({ channel });
+        }
+      );
+
       await onMessage(chatChannel, (incoming) => {
         const parsed = parseIncomingPayload(incoming);
         if (!parsed) return;
@@ -245,13 +354,11 @@ export const initializeChatSocket = async (accountId: string): Promise<void> => 
         }
 
         if (isMessagePayload(parsed)) {
-          queuePendingMessage(parsed);
-          emitMessage(parsed);
+          queueMessageBatch(parsed);
           return;
         }
 
-        queuePendingChatUpdate(parsed);
-        emitChatUpdate(parsed);
+        queueChatUpdateBatch(parsed);
       });
 
       await onMessage(queueChannel, (incoming) => {
@@ -260,8 +367,7 @@ export const initializeChatSocket = async (accountId: string): Promise<void> => 
         if (isTypingPayload(parsed)) return;
         if (isMessagePayload(parsed)) return;
 
-        queuePendingChatUpdate(parsed);
-        emitChatUpdate(parsed);
+        queueChatUpdateBatch(parsed);
       });
 
       subscriptions.push(
@@ -306,6 +412,15 @@ export const addChatSocketListener = <K extends SocketEventName>(
     messageListeners.add(listener as SocketListener<'message'>);
     return () => {
       messageListeners.delete(listener as SocketListener<'message'>);
+    };
+  }
+
+  if (eventName === 'recoveryFailed') {
+    recoveryFailedListeners.add(listener as SocketListener<'recoveryFailed'>);
+    return () => {
+      recoveryFailedListeners.delete(
+        listener as SocketListener<'recoveryFailed'>
+      );
     };
   }
 

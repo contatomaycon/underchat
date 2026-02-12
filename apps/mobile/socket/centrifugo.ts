@@ -1,6 +1,8 @@
 import {
   Centrifuge,
+  type PublishResult,
   type PublicationContext,
+  type SubscribedContext,
   State,
   type Subscription,
   SubscriptionState,
@@ -26,6 +28,11 @@ const channelHandlers = new Map<
   Set<(data: unknown, ctx: PublicationContext) => void>
 >();
 const channelSubscriptions = new Map<string, Subscription>();
+const channelStreamPositions = new Map<
+  string,
+  { offset: number; epoch: string }
+>();
+const recoveryFailedListeners = new Set<(channel: string) => void>();
 
 const generateTokenAndUrl = async (): Promise<AuthTokenResponse> => {
   const now = Date.now();
@@ -226,7 +233,21 @@ export const onMessage = async (
 
   let sub = channelSubscriptions.get(channel);
   if (!sub) {
-    sub = client.getSubscription(channel) ?? client.newSubscription(channel);
+    const existingSub = client.getSubscription(channel);
+    if (existingSub) {
+      sub = existingSub;
+    } else {
+      const streamPosition = channelStreamPositions.get(channel);
+      sub = client.newSubscription(channel, {
+        recoverable: true,
+        ...(streamPosition && {
+          since: {
+            offset: streamPosition.offset,
+            epoch: streamPosition.epoch,
+          },
+        }),
+      });
+    }
     channelSubscriptions.set(channel, sub);
 
     sub.on('publication', (ctx) => {
@@ -242,12 +263,39 @@ export const onMessage = async (
       }
     });
 
+    sub.on('subscribed', (ctx: SubscribedContext) => {
+      if (ctx.streamPosition) {
+        channelStreamPositions.set(channel, {
+          offset: ctx.streamPosition.offset,
+          epoch: ctx.streamPosition.epoch,
+        });
+      }
+
+      if (ctx.wasRecovering && !ctx.recovered) {
+        for (const listener of recoveryFailedListeners) {
+          try {
+            listener(channel);
+          } catch {
+            //
+          }
+        }
+      }
+    });
+
     if (sub.state !== SubscriptionState.Subscribed) {
       sub.subscribe();
     }
   }
 
   return sub;
+};
+
+export const publish = async (
+  channel: string,
+  data: unknown
+): Promise<PublishResult> => {
+  const client = await getConnection();
+  return client.publish(channel, data);
 };
 
 const removeSubscription = (channel: string): void => {
@@ -292,6 +340,15 @@ export const isChannelSubscribed = (channel: string): boolean => {
   return sub !== undefined && sub.state === SubscriptionState.Subscribed;
 };
 
+export const addCentrifugoRecoveryFailedListener = (
+  listener: (channel: string) => void
+): (() => void) => {
+  recoveryFailedListeners.add(listener);
+  return () => {
+    recoveryFailedListeners.delete(listener);
+  };
+};
+
 export const resetConnection = (): void => {
   if (centrifugeClient) {
     try {
@@ -305,4 +362,15 @@ export const resetConnection = (): void => {
   cachedToken = null;
   channelHandlers.clear();
   channelSubscriptions.clear();
+  channelStreamPositions.clear();
+};
+
+export const getStreamPosition = (
+  channel: string
+): { offset: number; epoch: string } | undefined => {
+  return channelStreamPositions.get(channel);
+};
+
+export const clearStreamPosition = (channel: string): void => {
+  channelStreamPositions.delete(channel);
 };

@@ -199,6 +199,9 @@ const WAVEFORM_FALLBACK_MAX_BARS = 28;
 const VIDEO_FULLSCREEN_DISABLED = { enable: false } as const;
 const VIDEO_FULLSCREEN_ENABLED = { enable: true } as const;
 const CHAT_MESSAGES_PER_PAGE = 10;
+const CHAT_SOCKET_SYNC_PER_PAGE = 20;
+const CHAT_SOCKET_SYNC_INTERVAL_MS = 30000;
+const CHAT_SOCKET_SYNC_DEBOUNCE_MS = 5000;
 const LOAD_OLDER_SCROLL_THRESHOLD = 180;
 const SHOW_SCROLL_TO_BOTTOM_THRESHOLD = 160;
 const TYPING_TIMEOUT_MS = 5000;
@@ -2853,6 +2856,10 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const loadingOlderRef = useRef(false);
   const currentPageRef = useRef(1);
   const totalPagesRef = useRef(1);
+  const socketSyncIntervalRef = useRef<ReturnType<typeof setInterval> | null>(
+    null
+  );
+  const lastSocketSyncTimeRef = useRef(0);
   const clearSummaryAttemptedForChatRef = useRef<string | null>(null);
   const preserveScrollOnPrependRef = useRef<{
     previousOffset: number;
@@ -3298,6 +3305,26 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     setMessages((prev) => mergeMessageBatch(prev, latestMessages));
   }, [chatInfo.chat_id]);
 
+  const syncMessagesStatus = useCallback(
+    async (force = false) => {
+      const now = Date.now();
+      if (
+        !force &&
+        now - lastSocketSyncTimeRef.current < CHAT_SOCKET_SYNC_DEBOUNCE_MS
+      ) {
+        return;
+      }
+      lastSocketSyncTimeRef.current = now;
+
+      const res = await listMessages(chatInfo.chat_id, 1, CHAT_SOCKET_SYNC_PER_PAGE);
+      if (!res) return;
+
+      const latestMessages = [...res.results].reverse();
+      setMessages((prev) => mergeMessageBatch(prev, latestMessages));
+    },
+    [chatInfo.chat_id]
+  );
+
   const loadOlderMessages = useCallback(async () => {
     if (loading || loadingOlderRef.current) return;
     if (currentPageRef.current >= totalPagesRef.current) return;
@@ -3519,6 +3546,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       pendingScrollToBottomRef.current = true;
       scrollOffsetRef.current = 0;
       contentHeightRef.current = 0;
+      lastSocketSyncTimeRef.current = 0;
       preserveScrollOnPrependRef.current = null;
       setShowScrollToBottomButton(false);
       void loadMessages();
@@ -3677,13 +3705,6 @@ export function ChatRoomScreen({ route, navigation }: Props) {
 
   useFocusEffect(
     useCallback(() => {
-      const pendingMessages = consumePendingMessages(chatInfo.chat_id);
-      if (pendingMessages.length > 0) {
-        setMessages((prev) =>
-          mergePendingSocketMessages(prev, pendingMessages)
-        );
-      }
-
       const pendingChatUpdates = consumePendingChatUpdates(chatInfo.chat_id);
       if (pendingChatUpdates.length > 0) {
         const lastUpdate = pendingChatUpdates[pendingChatUpdates.length - 1];
@@ -3696,18 +3717,39 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         'chatUpdate',
         handleSocketChatUpdate
       );
+      const offRecoveryFailed = addChatSocketListener(
+        'recoveryFailed',
+        () => {
+          void syncMessagesStatus(true);
+        }
+      );
+
+      const runPeriodicSync = () => {
+        void syncMessagesStatus();
+      };
+      runPeriodicSync();
+      socketSyncIntervalRef.current = setInterval(
+        runPeriodicSync,
+        CHAT_SOCKET_SYNC_INTERVAL_MS
+      );
 
       return () => {
         setTypingIndicator(false);
         offMessage();
         offTyping();
         offChatUpdate();
+        offRecoveryFailed();
+        if (socketSyncIntervalRef.current) {
+          clearInterval(socketSyncIntervalRef.current);
+          socketSyncIntervalRef.current = null;
+        }
       };
     }, [
       chatInfo.chat_id,
       handleSocketMessage,
       handleSocketTyping,
       handleSocketChatUpdate,
+      syncMessagesStatus,
       setTypingIndicator,
     ])
   );

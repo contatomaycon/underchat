@@ -548,10 +548,14 @@ export function ChatListScreen({ route, navigation }: Props) {
         }
         scheduleRealtimeReload();
       });
+      const offRecoveryFailed = addChatSocketListener('recoveryFailed', () => {
+        scheduleRealtimeReload();
+      });
 
       return () => {
         offMessage();
         offChatUpdate();
+        offRecoveryFailed();
         if (realtimeReloadTimer.current) {
           clearTimeout(realtimeReloadTimer.current);
           realtimeReloadTimer.current = null;
