@@ -30,6 +30,14 @@ let lastSyncTime = 0;
 const SYNC_INTERVAL_MS = 30_000;
 const SYNC_DEBOUNCE_MS = 5_000;
 
+const MESSAGE_BATCH_DELAY_MS = 50;
+const CHAT_UPDATE_BATCH_DELAY_MS = 100;
+
+let messageBatchBuffer: IChatMessage[] = [];
+let messageBatchTimer: ReturnType<typeof setTimeout> | null = null;
+let chatUpdateBatchBuffer: IChat[] = [];
+let chatUpdateBatchTimer: ReturnType<typeof setTimeout> | null = null;
+
 const createChatSocket = () => {
   const chatStore = useChatStore();
   const route = useRoute();
@@ -138,66 +146,137 @@ const createChatSocket = () => {
     syncMessagesStatus();
   };
 
-  const handleMessageEvent = async (
-    messageData: IChatMessage
-  ): Promise<void> => {
-    const isActiveChat =
-      isChatRoute() && chatStore.activeChat?.chat_id === messageData.chat_id;
+  const flushMessageBatch = () => {
+    if (messageBatchBuffer.length === 0) return;
 
-    if (isActiveChat) {
-      chatStore.addMessageActiveChat(messageData);
-      globalThis.dispatchEvent(
-        new CustomEvent('chat-message', { detail: messageData })
-      );
-    } else {
-      await handleNewMessage(messageData);
+    const messages = [...messageBatchBuffer];
+    messageBatchBuffer = [];
+    messageBatchTimer = null;
+
+    const messagesByChat = new Map<string, IChatMessage[]>();
+    for (const msg of messages) {
+      const chatId = msg.chat_id;
+      const chatMessages = messagesByChat.get(chatId) ?? [];
+      chatMessages.push(msg);
+      messagesByChat.set(chatId, chatMessages);
     }
 
-    const chatId = messageData.chat_id;
-    if (!pendingMessages.value.has(chatId)) {
-      pendingMessages.value.set(chatId, []);
-    }
-    pendingMessages.value.get(chatId)?.push(messageData);
-  };
+    for (const [chatId, chatMessages] of messagesByChat) {
+      const isActiveChat =
+        isChatRoute() && chatStore.activeChat?.chat_id === chatId;
 
-  const handleChatUpdateEvent = async (chatData: IChat): Promise<void> => {
-    const isActiveChat =
-      isChatRoute() && chatStore.activeChat?.chat_id === chatData.chat_id;
+      if (isActiveChat) {
+        const latestByMessageId = new Map<string, IChatMessage>();
+        for (const msg of chatMessages) {
+          latestByMessageId.set(msg.message_id, msg);
+        }
 
-    chatStore.addChat(chatData);
+        for (const msg of latestByMessageId.values()) {
+          chatStore.addMessageActiveChat(msg);
+        }
 
-    if (
-      isActiveChat &&
-      chatData.status === EChatStatus.in_chat &&
-      chatData.user?.id === chatStore.user?.user_id
-    ) {
-      chatStore.clearActiveChatUnreadCountLocally();
-    }
-
-    if (
-      isChatRoute() &&
-      (chatData as any)._active &&
-      chatData.user?.id === chatStore.user?.user_id
-    ) {
-      if (chatStore.activeChat?.chat_id === chatData.chat_id) {
-        await refreshActiveChat();
-        return;
+        globalThis.dispatchEvent(
+          new CustomEvent('chat-messages-batch', {
+            detail: { messages: Array.from(latestByMessageId.values()) },
+          })
+        );
+      } else {
+        for (const msg of chatMessages) {
+          handleNewMessage(msg);
+        }
       }
 
-      chatStore.setActiveChat(chatData.chat_id);
-      await refreshActiveChat();
-      return;
+      const pending = pendingMessages.value.get(chatId) ?? [];
+      pending.push(...chatMessages);
+      pendingMessages.value.set(chatId, pending);
+    }
+  };
+
+  const flushChatUpdateBatch = () => {
+    if (chatUpdateBatchBuffer.length === 0) return;
+
+    const updates = [...chatUpdateBatchBuffer];
+    chatUpdateBatchBuffer = [];
+    chatUpdateBatchTimer = null;
+
+    const latestByChatId = new Map<string, IChat>();
+    for (const chat of updates) {
+      latestByChatId.set(chat.chat_id, chat);
     }
 
-    const chatId = chatData.chat_id;
-    if (!pendingChatUpdates.value.has(chatId)) {
-      pendingChatUpdates.value.set(chatId, []);
+    for (const chatData of latestByChatId.values()) {
+      const isActiveChat =
+        isChatRoute() && chatStore.activeChat?.chat_id === chatData.chat_id;
+
+      chatStore.addChat(chatData);
+
+      if (
+        isActiveChat &&
+        chatData.status === EChatStatus.in_chat &&
+        chatData.user?.id === chatStore.user?.user_id
+      ) {
+        chatStore.clearActiveChatUnreadCountLocally();
+      }
+
+      if (
+        isChatRoute() &&
+        (chatData as any)._active &&
+        chatData.user?.id === chatStore.user?.user_id
+      ) {
+        if (chatStore.activeChat?.chat_id === chatData.chat_id) {
+          refreshActiveChat();
+        } else {
+          chatStore.setActiveChat(chatData.chat_id);
+          refreshActiveChat();
+        }
+      }
+
+      const chatId = chatData.chat_id;
+      const pendingUpdates = pendingChatUpdates.value.get(chatId) ?? [];
+      pendingUpdates.push(chatData);
+      pendingChatUpdates.value.set(chatId, pendingUpdates);
     }
-    pendingChatUpdates.value.get(chatId)?.push(chatData);
+  };
+
+  const handleMessageEvent = (messageData: IChatMessage): void => {
+    messageBatchBuffer.push(messageData);
+
+    if (messageBatchTimer) {
+      clearTimeout(messageBatchTimer);
+    }
+
+    messageBatchTimer = setTimeout(flushMessageBatch, MESSAGE_BATCH_DELAY_MS);
+  };
+
+  const handleChatUpdateEvent = (chatData: IChat): void => {
+    chatUpdateBatchBuffer.push(chatData);
+
+    if (chatUpdateBatchTimer) {
+      clearTimeout(chatUpdateBatchTimer);
+    }
+
+    chatUpdateBatchTimer = setTimeout(
+      flushChatUpdateBatch,
+      CHAT_UPDATE_BATCH_DELAY_MS
+    );
+  };
+
+  const clearBatchTimers = () => {
+    if (messageBatchTimer) {
+      clearTimeout(messageBatchTimer);
+      messageBatchTimer = null;
+    }
+    if (chatUpdateBatchTimer) {
+      clearTimeout(chatUpdateBatchTimer);
+      chatUpdateBatchTimer = null;
+    }
+    flushMessageBatch();
+    flushChatUpdateBatch();
   };
 
   const cleanupUnsubscribe = async () => {
     stopPeriodicSync();
+    clearBatchTimers();
 
     globalThis.removeEventListener(
       'centrifugo-recovery-failed',
@@ -253,7 +332,7 @@ const createChatSocket = () => {
 
         await onMessage(
           chatAccountCentrifugo(accountId),
-          async (data: IChatMessage | IChatTyping | IChat | any) => {
+          (data: IChatMessage | IChatTyping | IChat | any) => {
             if ('type' in data && data.type === 'typing') {
               globalThis.dispatchEvent(
                 new CustomEvent('chat-typing', { detail: data })
@@ -263,21 +342,11 @@ const createChatSocket = () => {
 
             if ('message_id' in data) {
               handleMessageEvent(data as IChatMessage);
-              if (isChatRoute()) {
-                globalThis.dispatchEvent(
-                  new CustomEvent('chat-message', { detail: data })
-                );
-              }
               return;
             }
 
             if ('chat_id' in data && !('message_id' in data)) {
-              await handleChatUpdateEvent(data as IChat);
-              if (isChatRoute()) {
-                globalThis.dispatchEvent(
-                  new CustomEvent('chat-update', { detail: data })
-                );
-              }
+              handleChatUpdateEvent(data as IChat);
             }
           }
         );
@@ -329,6 +398,7 @@ const createChatSocket = () => {
 
   const cleanup = async () => {
     stopPeriodicSync();
+    clearBatchTimers();
 
     globalThis.removeEventListener(
       'centrifugo-recovery-failed',
