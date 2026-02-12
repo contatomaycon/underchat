@@ -19,7 +19,9 @@ export class WorkerConfigUpdateConsume {
 
   constructor(
     @inject('Kafka') private readonly kafka: KafkaClient,
+    @inject(KafkaServiceQueueService)
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
+    @inject(BaileysIncomingMessageService)
     private readonly baileysIncomingMessageService: BaileysIncomingMessageService
   ) {}
 

@@ -18,7 +18,9 @@ export class NotificationMessageConsume {
 
   constructor(
     @inject('Kafka') private readonly kafka: KafkaClient,
+    @inject(KafkaServiceQueueService)
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
+    @inject(NotificationMessageService)
     private readonly notificationMessageService: NotificationMessageService
   ) {}
 

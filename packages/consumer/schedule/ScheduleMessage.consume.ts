@@ -35,12 +35,19 @@ export class ScheduleMessageConsume {
   constructor(
     @inject('Kafka') private readonly kafka: KafkaClient,
     @inject('Redis') private readonly redis: Redis,
+    @inject(KafkaServiceQueueService)
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
+    @inject(KafkaBaileysQueueService)
     private readonly kafkaBaileysQueueService: KafkaBaileysQueueService,
+    @inject(StreamProducerService)
     private readonly streamProducerService: StreamProducerService,
+    @inject(BaileysMessageTextService)
     private readonly baileysMessageTextService: BaileysMessageTextService,
+    @inject(BaileysMessageMediaService)
     private readonly baileysMessageMediaService: BaileysMessageMediaService,
+    @inject(BaileysPhoneValidationService)
     private readonly baileysPhoneValidationService: BaileysPhoneValidationService,
+    @inject(ElasticDatabaseService)
     private readonly elasticDatabaseService: ElasticDatabaseService
   ) {}
 

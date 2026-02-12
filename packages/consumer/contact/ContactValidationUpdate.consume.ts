@@ -18,7 +18,9 @@ export class ContactValidationUpdateConsume {
 
   constructor(
     @inject('Kafka') private readonly kafka: KafkaClient,
+    @inject(KafkaServiceQueueService)
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
+    @inject(ContactService)
     private readonly contactService: ContactService
   ) {}
 

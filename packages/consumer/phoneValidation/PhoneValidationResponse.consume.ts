@@ -19,6 +19,7 @@ export class PhoneValidationResponseConsume {
   constructor(
     @inject('Kafka') private readonly kafka: KafkaClient,
     @inject('Redis') private readonly redis: Redis,
+    @inject(KafkaServiceQueueService)
     private readonly kafkaServiceQueueService: KafkaServiceQueueService
   ) {}
 

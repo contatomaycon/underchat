@@ -23,8 +23,11 @@ export class ReportConversationHistoryPdfGenerateConsume {
 
   constructor(
     @inject('Kafka') private readonly kafka: KafkaClient,
+    @inject(KafkaServiceQueueService)
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
+    @inject(ReportConversationHistoryPdfService)
     private readonly pdfService: ReportConversationHistoryPdfService,
+    @inject(CentrifugoService)
     private readonly centrifugoService: CentrifugoService
   ) {}
 

@@ -42,7 +42,9 @@ export class MessageStatusUpdateConsume {
 
   constructor(
     @inject('Kafka') private readonly kafka: KafkaClient,
+    @inject(KafkaServiceQueueService)
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
+    @inject(MessageStatusService)
     private readonly messageStatusService: MessageStatusService,
     @inject('Redis') private readonly redis: Redis
   ) {}

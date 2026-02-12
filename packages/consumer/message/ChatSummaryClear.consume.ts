@@ -21,8 +21,11 @@ export class ChatSummaryClearConsume {
 
   constructor(
     @inject('Kafka') private readonly kafka: KafkaClient,
+    @inject(KafkaServiceQueueService)
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
+    @inject(ChatService)
     private readonly chatService: ChatService,
+    @inject(CentrifugoService)
     private readonly centrifugoService: CentrifugoService
   ) {}
 

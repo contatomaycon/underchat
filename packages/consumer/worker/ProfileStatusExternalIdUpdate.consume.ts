@@ -19,7 +19,9 @@ export class ProfileStatusExternalIdUpdateConsume {
 
   constructor(
     @inject('Kafka') private readonly kafka: KafkaClient,
+    @inject(KafkaServiceQueueService)
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
+    @inject(WorkerProfileStatusService)
     private readonly workerProfileStatusService: WorkerProfileStatusService
   ) {}
 

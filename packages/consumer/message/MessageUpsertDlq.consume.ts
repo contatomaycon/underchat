@@ -24,6 +24,7 @@ export class MessageUpsertDlqConsume {
 
   constructor(
     @inject('Kafka') private readonly kafka: KafkaClient,
+    @inject(KafkaServiceQueueService)
     private readonly kafkaServiceQueueService: KafkaServiceQueueService
   ) {
     this.messageUpsertConsume = container.resolve(MessageUpsertConsume);

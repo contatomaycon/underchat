@@ -92,22 +92,39 @@ export class MessageUpsertConsume {
   constructor(
     @inject('Redis') private readonly redis: Redis,
     @inject('Kafka') private readonly kafka: KafkaClient,
+    @inject(KafkaServiceQueueService)
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
+    @inject(ElasticDatabaseService)
     private readonly elasticDatabaseService: ElasticDatabaseService,
+    @inject(AccountService)
     private readonly accountService: AccountService,
+    @inject(WorkerService)
     private readonly workerService: WorkerService,
+    @inject(ChatService)
     private readonly chatService: ChatService,
+    @inject(CentrifugoService)
     private readonly centrifugoService: CentrifugoService,
+    @inject(StorageService)
     private readonly storageService: StorageService,
+    @inject(StreamProducerService)
     private readonly streamProducerService: StreamProducerService,
+    @inject(EncryptService)
     private readonly encryptService: EncryptService,
+    @inject(ContactService)
     private readonly contactService: ContactService,
+    @inject(ChatMessageService)
     private readonly chatMessageService: ChatMessageService,
+    @inject(WorkerConfigService)
     private readonly workerConfigService: WorkerConfigService,
+    @inject(ChatbotFlowRunnerService)
     private readonly chatbotFlowRunnerService: ChatbotFlowRunnerService,
+    @inject(PlanAccountService)
     private readonly planAccountService: PlanAccountService,
+    @inject(PushNotificationService)
     private readonly pushNotificationService: PushNotificationService,
+    @inject(SectorService)
     private readonly sectorService: SectorService,
+    @inject(UserService)
     private readonly userService: UserService
   ) {}
 

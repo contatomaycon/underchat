@@ -19,7 +19,9 @@ export class AsaasNfseWebhookConsume {
 
   constructor(
     @inject('Kafka') private readonly kafka: KafkaClient,
+    @inject(KafkaServiceQueueService)
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
+    @inject(NfseProcessorService)
     private readonly nfseProcessorService: NfseProcessorService
   ) {}
 

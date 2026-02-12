@@ -21,9 +21,13 @@ export class NotificationMessageSendConsume {
 
   constructor(
     @inject('Kafka') private readonly kafka: KafkaClient,
+    @inject(KafkaBaileysQueueService)
     private readonly kafkaBaileysQueueService: KafkaBaileysQueueService,
+    @inject(BaileysMessageTextService)
     private readonly baileysMessageTextService: BaileysMessageTextService,
+    @inject(BaileysPhoneValidationService)
     private readonly baileysPhoneValidationService: BaileysPhoneValidationService,
+    @inject(StreamProducerService)
     private readonly streamProducerService: StreamProducerService
   ) {}
 

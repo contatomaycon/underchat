@@ -29,8 +29,11 @@ export class ScheduleStatusUpdateConsume {
 
   constructor(
     @inject('Kafka') private readonly kafka: KafkaClient,
+    @inject(KafkaServiceQueueService)
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
+    @inject(ElasticDatabaseService)
     private readonly elasticDatabaseService: ElasticDatabaseService,
+    @inject(ScheduleStatusUpdaterRepository)
     private readonly scheduleStatusUpdaterRepository: ScheduleStatusUpdaterRepository
   ) {}
 

@@ -1,4 +1,4 @@
-import { singleton } from 'tsyringe';
+import { singleton, inject } from 'tsyringe';
 import { baileysEnvironment } from '@core/config/environments';
 import { StatusConnectionWorkerRequest } from '@core/schema/worker/statusConnection/request.schema';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
@@ -22,8 +22,11 @@ export class WorkerConnectionStatusConsume {
   private restartAfterDisconnect = false;
 
   constructor(
+    @inject(BaileysService)
     private readonly baileysService: BaileysService,
+    @inject(BalanceWorkerStatusGrpcClientService)
     private readonly balanceWorkerStatusGrpcClientService: BalanceWorkerStatusGrpcClientService,
+    @inject(CentrifugoService)
     private readonly centrifugoService: CentrifugoService
   ) {}
 

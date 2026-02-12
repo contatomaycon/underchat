@@ -19,7 +19,9 @@ export class UserPhoneJidUpdateConsume {
 
   constructor(
     @inject('Kafka') private readonly kafka: KafkaClient,
+    @inject(KafkaBaileysQueueService)
     private readonly kafkaBaileysQueueService: KafkaBaileysQueueService,
+    @inject(UserService)
     private readonly userService: UserService
   ) {}
 

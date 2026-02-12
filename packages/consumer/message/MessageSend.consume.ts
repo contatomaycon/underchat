@@ -45,16 +45,27 @@ export class MessageSendConsume {
 
   constructor(
     @inject('Kafka') private readonly kafka: KafkaClient,
+    @inject(KafkaBaileysQueueService)
     private readonly kafkaBaileysQueueService: KafkaBaileysQueueService,
+    @inject(BaileysMessageTextService)
     private readonly baileysMessageTextService: BaileysMessageTextService,
+    @inject(BaileysMessageMediaService)
     private readonly baileysMessageMediaService: BaileysMessageMediaService,
+    @inject(BaileysMessageReactionsInteractionsService)
     private readonly baileysMessageReactionsInteractionsService: BaileysMessageReactionsInteractionsService,
+    @inject(BaileysMessageEditDeleteService)
     private readonly baileysMessageEditDeleteService: BaileysMessageEditDeleteService,
+    @inject(BaileysMessageLocationContactService)
     private readonly baileysMessageLocationContactService: BaileysMessageLocationContactService,
+    @inject(BaileysMessageStatusStoriesService)
     private readonly baileysMessageStatusStoriesService: BaileysMessageStatusStoriesService,
+    @inject(BaileysProfileService)
     private readonly baileysProfileService: BaileysProfileService,
+    @inject(StreamProducerService)
     private readonly streamProducerService: StreamProducerService,
+    @inject(KafkaServiceQueueService)
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
+    @inject(KeyedSequencerService)
     private readonly keyedSequencerService: KeyedSequencerService
   ) {}
 

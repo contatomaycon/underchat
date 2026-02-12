@@ -28,9 +28,13 @@ export class BalanceCreatorConsume {
 
   constructor(
     @inject('Kafka') private readonly kafka: KafkaClient,
+    @inject(SshService)
     private readonly sshService: SshService,
+    @inject(ServerService)
     private readonly serverService: ServerService,
+    @inject(PasswordEncryptorService)
     private readonly passwordEncryptorService: PasswordEncryptorService,
+    @inject(KafkaServiceQueueService)
     private readonly kafkaServiceQueueService: KafkaServiceQueueService
   ) {}
 

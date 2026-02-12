@@ -28,9 +28,13 @@ export class MessageHistorySyncConsume {
 
   constructor(
     @inject('Kafka') private readonly kafka: KafkaClient,
+    @inject(KafkaServiceQueueService)
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
+    @inject(ElasticDatabaseService)
     private readonly elasticDatabaseService: ElasticDatabaseService,
+    @inject(WorkerService)
     private readonly workerService: WorkerService,
+    @inject(StreamProducerService)
     private readonly streamProducerService: StreamProducerService
   ) {}
 

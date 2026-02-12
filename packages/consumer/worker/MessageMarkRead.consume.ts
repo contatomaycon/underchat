@@ -23,8 +23,11 @@ export class MessageMarkReadConsume {
 
   constructor(
     @inject('Kafka') private readonly kafka: KafkaClient,
+    @inject(KafkaServiceQueueService)
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
+    @inject(BaileysIncomingMessageService)
     private readonly baileysIncomingMessageService: BaileysIncomingMessageService,
+    @inject(StreamProducerService)
     private readonly streamProducerService: StreamProducerService
   ) {}
 

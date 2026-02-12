@@ -24,9 +24,13 @@ export class AiAgentPromptEmbeddingConsume {
 
   constructor(
     @inject('Kafka') private readonly kafka: KafkaClient,
+    @inject(KafkaServiceQueueService)
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
+    @inject(EmbeddingService)
     private readonly embeddingService: EmbeddingService,
+    @inject(OpenAIAssistantService)
     private readonly openAIAssistantService: OpenAIAssistantService,
+    @inject(AiAgentService)
     private readonly aiAgentService: AiAgentService
   ) {}
 

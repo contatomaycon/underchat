@@ -27,9 +27,13 @@ export class WebhookIntegrationConsume {
 
   constructor(
     @inject('Kafka') private readonly kafka: KafkaClient,
+    @inject(KafkaBaileysQueueService)
     private readonly kafkaBaileysQueueService: KafkaBaileysQueueService,
+    @inject(BaileysService)
     private readonly baileysService: BaileysService,
+    @inject(StreamProducerService)
     private readonly streamProducerService: StreamProducerService,
+    @inject(KafkaServiceQueueService)
     private readonly kafkaServiceQueueService: KafkaServiceQueueService
   ) {}
 
