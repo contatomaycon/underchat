@@ -450,12 +450,34 @@ export class BaileysIncomingMessageService {
     }
   }
 
-  private fetchPhotoNonBlocking(
+  private async fetchPhotoNonBlocking(
     socket: WASocket,
     pendingItem: IBaileysPendingMessage,
     jid?: string
-  ): void {
+  ): Promise<Promise<void> | void> {
     const resolvedJid =
+      jid ||
+      remoteJid(pendingItem.inputUpsert.message?.key) ||
+      remoteJidAlt(pendingItem.inputUpsert.message?.key);
+
+    if (!resolvedJid) return;
+
+    const result = await socket
+      .profilePictureUrl(resolvedJid, 'image')
+      .then((photo) => {
+        if (photo) {
+          if (pendingItem.retries === 0) {
+            pendingItem.inputUpsert.photo = photo;
+          }
+        }
+      });
+
+    console.log('Result:');
+    console.dir(result, { depth: null, colors: true });
+
+    return result;
+
+    /* const resolvedJid =
       jid ||
       remoteJid(pendingItem.inputUpsert.message?.key) ||
       remoteJidAlt(pendingItem.inputUpsert.message?.key);
@@ -489,7 +511,7 @@ export class BaileysIncomingMessageService {
           })
           .catch(() => {});
       })
-      .catch(() => {});
+      .catch(() => {}); */
   }
 
   private async handlePresenceUpdate(data: {
