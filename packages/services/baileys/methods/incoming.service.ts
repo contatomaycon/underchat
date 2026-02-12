@@ -466,14 +466,14 @@ export class BaileysIncomingMessageService {
       .profilePictureUrl(resolvedJid, 'image')
       .then((photo) => {
         if (photo) {
+          console.log('photo:');
+          console.dir(photo, { depth: null, colors: true });
+
           if (pendingItem.retries === 0) {
             pendingItem.inputUpsert.photo = photo;
           }
         }
       });
-
-    console.log('Result:');
-    console.dir(result, { depth: null, colors: true });
 
     return result;
 
