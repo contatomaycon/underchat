@@ -14,9 +14,13 @@ import { EPlanProduct } from '@core/common/enums/EPlanProduct';
 export class AccountAddonsListerRepository {
   constructor(
     @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>,
+    @inject(WorkerTotalViewerRepository)
     private readonly workerTotalViewerRepository: WorkerTotalViewerRepository,
+    @inject(UserTotalViewerRepository)
     private readonly userTotalViewerRepository: UserTotalViewerRepository,
+    @inject(RoleTotalViewerRepository)
     private readonly roleTotalViewerRepository: RoleTotalViewerRepository,
+    @inject(AiAgentService)
     private readonly aiAgentService: AiAgentService
   ) {}
 

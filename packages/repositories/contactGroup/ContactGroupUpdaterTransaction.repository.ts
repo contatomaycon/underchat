@@ -12,9 +12,13 @@ import { ContactGroupUpdaterRepository } from './ContactGroupUpdater.repository'
 export class ContactGroupUpdaterTransactionRepository {
   constructor(
     @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>,
+    @inject(ContactGroupAssignmentDeleterRepository)
     private readonly contactGroupAssignmentDeleterRepository: ContactGroupAssignmentDeleterRepository,
+    @inject(ContactGroupAssignmentCreatorRepository)
     private readonly contactGroupAssignmentCreatorRepository: ContactGroupAssignmentCreatorRepository,
+    @inject(ContactGroupAssignmentViewerExistsRepository)
     private readonly contactGroupAssignmentViewerExistsRepository: ContactGroupAssignmentViewerExistsRepository,
+    @inject(ContactGroupUpdaterRepository)
     private readonly contactGroupUpdaterRepository: ContactGroupUpdaterRepository
   ) {}
 

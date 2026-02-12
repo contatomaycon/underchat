@@ -10,7 +10,9 @@ import { eq } from 'drizzle-orm';
 export class UserSectorsUpdaterTransactionRepository {
   constructor(
     @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>,
+    @inject(SectorUserCreatorRepository)
     private readonly sectorUserCreatorRepository: SectorUserCreatorRepository,
+    @inject(SectorUserUpdaterRepository)
     private readonly sectorUserUpdaterRepository: SectorUserUpdaterRepository
   ) {}
 

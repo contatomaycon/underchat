@@ -14,6 +14,7 @@ export class UserOnlineListerRepository {
   constructor(
     @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>,
     @inject('Redis') private readonly redis: Redis,
+    @inject(PresenceService)
     private readonly presenceService: PresenceService
   ) {}
 

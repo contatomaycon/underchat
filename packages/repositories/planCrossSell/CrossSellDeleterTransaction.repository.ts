@@ -10,8 +10,11 @@ import { CrossSellDeleterRepository } from './CrossSellDeleter.repository';
 export class CrossSellDeleterTransactionRepository {
   constructor(
     @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>,
+    @inject(CrossSellAccountDeleterRepository)
     private readonly crossSellAccountDeleterRepository: CrossSellAccountDeleterRepository,
+    @inject(CrossSellDeleterRepository)
     private readonly crossSellDeleterRepository: CrossSellDeleterRepository,
+    @inject(CrossSellAccountViewerExistsRepository)
     private readonly crossSellAccountViewerExistsRepository: CrossSellAccountViewerExistsRepository
   ) {}
 

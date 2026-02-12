@@ -14,10 +14,15 @@ import { IVisibilityData } from '@core/common/interfaces/IVisibilityData';
 export class WorkerProfileStatusCreatorTransactionRepository {
   constructor(
     @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>,
+    @inject(WorkerProfileStatusCreatorRepository)
     private readonly workerProfileStatusCreatorRepository: WorkerProfileStatusCreatorRepository,
+    @inject(WorkerProfileStatusContactCreatorRepository)
     private readonly workerProfileStatusContactCreatorRepository: WorkerProfileStatusContactCreatorRepository,
+    @inject(WorkerProfileStatusContactDeleterRepository)
     private readonly workerProfileStatusContactDeleterRepository: WorkerProfileStatusContactDeleterRepository,
+    @inject(ContactListerByAccountRepository)
     private readonly contactListerByAccountRepository: ContactListerByAccountRepository,
+    @inject(ContactListerByGroupRepository)
     private readonly contactListerByGroupRepository: ContactListerByGroupRepository
   ) {}
 

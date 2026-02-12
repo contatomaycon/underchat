@@ -10,7 +10,9 @@ import { IUpdateUser } from '@core/common/interfaces/IUpdateUser';
 export class UserUpdaterTransactionRepository {
   constructor(
     @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>,
+    @inject(UserUpdaterRepository)
     private readonly userUpdaterRepository: UserUpdaterRepository,
+    @inject(PermissionAssignmentDeleterRepository)
     private readonly permissionAssignmentDeleterRepository: PermissionAssignmentDeleterRepository
   ) {}
 

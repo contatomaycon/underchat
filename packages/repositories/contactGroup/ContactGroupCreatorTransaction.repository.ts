@@ -10,7 +10,9 @@ import { CreateContactGroupRequest } from '@core/schema/contactGroup/createConta
 export class ContactGroupCreatorTransactionRepository {
   constructor(
     @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>,
+    @inject(ContactGroupCreatorRepository)
     private readonly contactGroupCreatorRepository: ContactGroupCreatorRepository,
+    @inject(ContactGroupAssignmentCreatorRepository)
     private readonly contactGroupAssignmentCreatorRepository: ContactGroupAssignmentCreatorRepository
   ) {}
 

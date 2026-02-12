@@ -11,6 +11,7 @@ import { EChatStatus } from '@core/common/enums/EChatStatus';
 export class DashboardAttendanceRepository {
   constructor(
     @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>,
+    @inject(ElasticDatabaseService)
     private readonly elasticDatabaseService: ElasticDatabaseService
   ) {}
 

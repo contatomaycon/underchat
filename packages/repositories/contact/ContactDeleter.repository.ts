@@ -14,6 +14,7 @@ import { ContactLabelTemplateDeleterRepository } from './ContactLabelTemplateDel
 export class ContactDeleterRepository {
   constructor(
     @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>,
+    @inject(ContactLabelTemplateDeleterRepository)
     private readonly contactLabelTemplateDeleterRepository: ContactLabelTemplateDeleterRepository
   ) {}
 

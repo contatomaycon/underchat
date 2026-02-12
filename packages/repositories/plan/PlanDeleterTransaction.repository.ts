@@ -10,8 +10,11 @@ import { PlanDeleterRepository } from './PlanDeleter.repository';
 export class PlanDeleterTransactionRepository {
   constructor(
     @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>,
+    @inject(PlanItemsDeleterRepository)
     private readonly planItemsDeleterRepository: PlanItemsDeleterRepository,
+    @inject(PlanDeleterRepository)
     private readonly planDeleterRepository: PlanDeleterRepository,
+    @inject(PlanItemsViewerExistsRepository)
     private readonly planItemsViewerExistsRepository: PlanItemsViewerExistsRepository
   ) {}
 

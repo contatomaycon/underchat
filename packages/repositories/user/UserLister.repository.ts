@@ -31,6 +31,7 @@ import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 export class UserListerRepository {
   constructor(
     @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>,
+    @inject(PresenceService)
     private readonly presenceService: PresenceService
   ) {}
 
