@@ -1,4 +1,4 @@
-import { apiGet, apiPost } from './client';
+import { apiGet, apiPost, apiPostForm } from './client';
 import {
   MY_CHATS_STATUS,
   type ListChatsResponse,
@@ -204,6 +204,20 @@ export async function createMessage(
     message: message ?? '',
   });
   return res?.data ?? null;
+}
+
+export async function createMessageWithFormData(
+  chatId: string,
+  formData: FormData
+): Promise<{ ok: boolean; message: ListMessageResult | null }> {
+  const res = await apiPostForm<ListMessageResult | null>(
+    `/chat/${chatId}`,
+    formData
+  );
+  if (!res) {
+    return { ok: false, message: null };
+  }
+  return { ok: true, message: res.data ?? null };
 }
 
 export async function clearChatSummary(chatId: string): Promise<boolean> {

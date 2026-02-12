@@ -4,7 +4,10 @@ export interface ScheduleStatusUpdateScriptParams extends Record<
   string,
   unknown
 > {
-  status: EScheduleStatus.sent | EScheduleStatus.failed;
+  status:
+    | EScheduleStatus.sent
+    | EScheduleStatus.failed
+    | EScheduleStatus.ignored;
   event_time_iso: string;
   event_time_epoch_millis: number;
   last_event_sort_key: string;
@@ -12,7 +15,10 @@ export interface ScheduleStatusUpdateScriptParams extends Record<
 }
 
 export interface ScheduleDocumentBaseline extends Record<string, unknown> {
-  status: EScheduleStatus.sent | EScheduleStatus.failed;
+  status:
+    | EScheduleStatus.sent
+    | EScheduleStatus.failed
+    | EScheduleStatus.ignored;
   updated_at: string;
   updated_at_epoch_millis: number;
   last_event_sort_key: string;

@@ -182,6 +182,10 @@ export class ScheduleStatusUpdateConsume {
       tracker.failedMessages.add(messageKey);
     }
 
+    if (data.status === EScheduleStatus.ignored) {
+      tracker.ignoredMessages.add(messageKey);
+    }
+
     tracker.lastUpdateTime = Date.now();
 
     this.resetTimeout(tracker);
@@ -202,6 +206,7 @@ export class ScheduleStatusUpdateConsume {
         totalMessages,
         completedMessages: new Set(),
         failedMessages: new Set(),
+        ignoredMessages: new Set(),
         lastUpdateTime: Date.now(),
         timeoutTimer: null,
       };
@@ -341,7 +346,9 @@ export class ScheduleStatusUpdateConsume {
     tracker: IScheduleTracker
   ): Promise<void> {
     const totalProcessed =
-      tracker.completedMessages.size + tracker.failedMessages.size;
+      tracker.completedMessages.size +
+      tracker.failedMessages.size +
+      tracker.ignoredMessages.size;
 
     if (totalProcessed >= tracker.totalMessages) {
       await this.finalizeSchedule(tracker);
@@ -354,8 +361,10 @@ export class ScheduleStatusUpdateConsume {
       tracker.timeoutTimer = null;
     }
 
-    const allFailed = tracker.failedMessages.size === tracker.totalMessages;
-    const finalStatus = allFailed
+    const allFailedOrIgnored =
+      tracker.failedMessages.size + tracker.ignoredMessages.size ===
+      tracker.totalMessages;
+    const finalStatus = allFailedOrIgnored
       ? EScheduleStatus.failed
       : EScheduleStatus.sent;
 

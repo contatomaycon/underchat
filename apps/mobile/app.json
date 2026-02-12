@@ -40,6 +40,21 @@
           }
         }
       ],
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Permitir acesso à câmera para capturar fotos e vídeos.",
+          "microphonePermission": "Permitir acesso ao microfone para gravar vídeos.",
+          "photosPermission": "Permitir acesso para salvar e selecionar mídias."
+        }
+      ],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Permitir acesso ao microfone para gravar mensagens de voz.",
+          "recordAudioAndroid": true
+        }
+      ],
       "expo-video"
     ],
     "updates": {

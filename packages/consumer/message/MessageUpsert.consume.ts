@@ -1822,7 +1822,9 @@ export class MessageUpsertConsume {
         let chat = await this.chatService.findChatByPhone(
           data.account_id,
           data.worker_id,
-          callPhone
+          callPhone,
+          data.call_jid,
+          data.call_jid_alt
         );
 
         if (!chat) {
@@ -2807,12 +2809,17 @@ export class MessageUpsertConsume {
       this.redis,
       lockKey,
       async () => {
+        const jid = remoteJid(data.message?.key);
+        const jidAlt = remoteJidAlt(data.message?.key);
+
         const [chatbotsConfig, getChat] = await Promise.all([
           this.workerConfigService.viewChatbots(data.worker_id),
           this.chatService.findChatByPhone(
             data.account_id,
             data.worker_id,
-            phone
+            phone,
+            jid,
+            jidAlt
           ),
         ]);
 

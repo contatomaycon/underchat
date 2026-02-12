@@ -78,3 +78,38 @@ export async function apiPost<T>(
   if (!res.ok || !data?.status) return null;
   return data;
 }
+
+export async function apiPostForm<T>(
+  path: string,
+  body: FormData
+): Promise<{ status: boolean; data: T } | null> {
+  const token = await getToken();
+  if (!token) return null;
+
+  const url = path.startsWith('http')
+    ? path
+    : `${BASE}${path.startsWith('/') ? '' : '/'}${path}`;
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Accept-Language': 'pt',
+      Authorization: `Bearer ${token}`,
+    },
+    body,
+  });
+
+  if (res.status === 401) {
+    await handleUnauthorized();
+    return null;
+  }
+
+  try {
+    const data = (await res.json()) as { status: boolean; data: T };
+    if (!res.ok || !data?.status) return null;
+    return data;
+  } catch {
+    return null;
+  }
+}

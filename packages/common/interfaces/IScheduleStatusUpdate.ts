@@ -4,5 +4,8 @@ export interface IScheduleStatusUpdate {
   schedule_id: string;
   contact_id: string;
   message_id: string;
-  status: EScheduleStatus.sent | EScheduleStatus.failed;
+  status:
+    | EScheduleStatus.sent
+    | EScheduleStatus.failed
+    | EScheduleStatus.ignored;
 }

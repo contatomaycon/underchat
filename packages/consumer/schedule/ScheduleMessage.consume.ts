@@ -193,38 +193,76 @@ export class ScheduleMessageConsume {
       const phone = data.message.phone;
       const phoneDdi = data.message.phone_ddi || '55';
 
-      try {
-        if (!phone) {
-          throw new Error('Não foi possível extrair o telefone do JID');
-        }
+      if (!phone) {
+        await this.sendStatusUpdate(
+          data.schedule_id,
+          data.contact_id,
+          data.message.message_id,
+          EScheduleStatus.ignored
+        );
+        return;
+      }
 
-        const validationResult =
-          await this.baileysPhoneValidationService.validatePhone(
-            phoneDdi,
-            phone
+      const maxRetries = 3;
+      let isValid = false;
+      let lastError: Error | null = null;
+
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          const validationResult =
+            await this.baileysPhoneValidationService.validatePhone(
+              phoneDdi,
+              phone
+            );
+
+          if (validationResult.valid && validationResult.phone) {
+            const contactUpdate: IContactValidationUpdate = {
+              contact_id: data.contact_id,
+              phone: validationResult.phone,
+              is_validated: true,
+            };
+
+            const topic = this.kafkaServiceQueueService.contactValidationUpdate();
+            await this.streamProducerService.send(topic, contactUpdate);
+            isValid = true;
+            break;
+          } else {
+            lastError = new Error('Phone validation returned invalid');
+          }
+        } catch (error) {
+          lastError = error instanceof Error ? error : new Error(String(error));
+          console.warn(
+            `[ScheduleMessageConsume] Phone validation attempt ${attempt}/${maxRetries} failed for contact ${data.contact_id}:`,
+            lastError.message
           );
 
-        if (validationResult.valid && validationResult.phone) {
-          const contactUpdate: IContactValidationUpdate = {
-            contact_id: data.contact_id,
-            phone: validationResult.phone,
-            is_validated: true,
-          };
-
-          const topic = this.kafkaServiceQueueService.contactValidationUpdate();
-          await this.streamProducerService.send(topic, contactUpdate);
-        } else {
-          const contactUpdate: IContactValidationUpdate = {
-            contact_id: data.contact_id,
-            phone: phone,
-            is_validated: false,
-          };
-
-          const topic = this.kafkaServiceQueueService.contactValidationUpdate();
-          await this.streamProducerService.send(topic, contactUpdate);
+          if (attempt < maxRetries) {
+            await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+          }
         }
-      } catch (error) {
-        throw error;
+      }
+
+      if (!isValid) {
+        const contactUpdate: IContactValidationUpdate = {
+          contact_id: data.contact_id,
+          phone: phone,
+          is_validated: false,
+        };
+
+        const topic = this.kafkaServiceQueueService.contactValidationUpdate();
+        await this.streamProducerService.send(topic, contactUpdate);
+
+        console.warn(
+          `[ScheduleMessageConsume] Phone validation failed after ${maxRetries} attempts for contact ${data.contact_id}. Ignoring message.`
+        );
+
+        await this.sendStatusUpdate(
+          data.schedule_id,
+          data.contact_id,
+          data.message.message_id,
+          EScheduleStatus.ignored
+        );
+        return;
       }
     }
 
@@ -446,7 +484,7 @@ export class ScheduleMessageConsume {
     scheduleId: string,
     contactId: string,
     messageId: string,
-    status: EScheduleStatus.sent | EScheduleStatus.failed
+    status: EScheduleStatus.sent | EScheduleStatus.failed | EScheduleStatus.ignored
   ): Promise<void> {
     const statusUpdate: IScheduleStatusUpdate = {
       schedule_id: scheduleId,

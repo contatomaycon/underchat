@@ -1467,7 +1467,9 @@ export class ChatService {
   findChatByPhone = async (
     accountId: string,
     workerId: string,
-    phone: string
+    phone: string,
+    remoteJid?: string | null,
+    remoteJidAlt?: string | null
   ): Promise<IChat | null> => {
     const cacheKey = createChatCacheKey(accountId, workerId, phone);
     const cache = await safeRedisGet(this.redis, cacheKey);
@@ -1481,6 +1483,36 @@ export class ChatService {
 
     if (Array.isArray(candidates) && candidates.length) {
       shouldClauses.push({ terms: { phone: candidates } });
+    }
+
+    if (remoteJid) {
+      shouldClauses.push({
+        nested: {
+          path: 'message_key',
+          query: { term: { 'message_key.remote_jid': remoteJid } },
+        },
+      });
+      shouldClauses.push({
+        nested: {
+          path: 'message_key',
+          query: { term: { 'message_key.remote_jid_alt': remoteJid } },
+        },
+      });
+    }
+
+    if (remoteJidAlt) {
+      shouldClauses.push({
+        nested: {
+          path: 'message_key',
+          query: { term: { 'message_key.remote_jid_alt': remoteJidAlt } },
+        },
+      });
+      shouldClauses.push({
+        nested: {
+          path: 'message_key',
+          query: { term: { 'message_key.remote_jid': remoteJidAlt } },
+        },
+      });
     }
 
     const queryElastic = {
