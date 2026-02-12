@@ -25,6 +25,10 @@ let subscriptions: Array<{
 }> = [];
 const pendingMessages = ref<Map<string, IChatMessage[]>>(new Map());
 const pendingChatUpdates = ref<Map<string, IChat[]>>(new Map());
+let syncIntervalId: ReturnType<typeof setInterval> | null = null;
+let lastSyncTime = 0;
+const SYNC_INTERVAL_MS = 30_000;
+const SYNC_DEBOUNCE_MS = 5_000;
 
 const createChatSocket = () => {
   const chatStore = useChatStore();
@@ -75,6 +79,63 @@ const createChatSocket = () => {
       per_page: 10,
     };
     await chatStore.getChatById(requestQueue);
+  };
+
+  const syncMessagesStatus = async () => {
+    const now = Date.now();
+    if (now - lastSyncTime < SYNC_DEBOUNCE_MS) {
+      return;
+    }
+    lastSyncTime = now;
+
+    if (!isChatRoute() || !chatStore.activeChat?.chat_id) {
+      return;
+    }
+
+    try {
+      const requestQueue: ListMessageChatsQuery = {
+        current_page: 1,
+        per_page: 20,
+      };
+      await chatStore.getChatById(requestQueue);
+
+      if (import.meta.env.DEV) {
+        console.info('[ChatSocket] Synced message status for active chat');
+      }
+    } catch (error) {
+      if (import.meta.env.DEV) {
+        console.error('[ChatSocket] Error syncing message status:', error);
+      }
+    }
+  };
+
+  const startPeriodicSync = () => {
+    if (syncIntervalId) {
+      return;
+    }
+
+    syncIntervalId = setInterval(() => {
+      if (isChatRoute() && chatStore.activeChat?.chat_id) {
+        syncMessagesStatus();
+      }
+    }, SYNC_INTERVAL_MS);
+  };
+
+  const stopPeriodicSync = () => {
+    if (syncIntervalId) {
+      clearInterval(syncIntervalId);
+      syncIntervalId = null;
+    }
+  };
+
+  const handleRecoveryFailed = (event: CustomEvent<{ channel: string }>) => {
+    if (import.meta.env.DEV) {
+      console.warn(
+        '[ChatSocket] Recovery failed for channel:',
+        event.detail.channel
+      );
+    }
+    syncMessagesStatus();
   };
 
   const handleMessageEvent = async (
@@ -136,6 +197,13 @@ const createChatSocket = () => {
   };
 
   const cleanupUnsubscribe = async () => {
+    stopPeriodicSync();
+
+    globalThis.removeEventListener(
+      'centrifugo-recovery-failed',
+      handleRecoveryFailed as EventListener
+    );
+
     const unsubscribePromises = subscriptions.map((sub) =>
       sub.unsubscribe().catch((error) => {
         if (import.meta.env.DEV) {
@@ -178,6 +246,11 @@ const createChatSocket = () => {
 
     initializingPromise = (async () => {
       try {
+        globalThis.addEventListener(
+          'centrifugo-recovery-failed',
+          handleRecoveryFailed as EventListener
+        );
+
         await onMessage(
           chatAccountCentrifugo(accountId),
           async (data: IChatMessage | IChatTyping | IChat | any) => {
@@ -239,6 +312,8 @@ const createChatSocket = () => {
           }
         );
 
+        startPeriodicSync();
+
         isInitialized = true;
       } catch (error) {
         if (import.meta.env.DEV) {
@@ -253,6 +328,13 @@ const createChatSocket = () => {
   };
 
   const cleanup = async () => {
+    stopPeriodicSync();
+
+    globalThis.removeEventListener(
+      'centrifugo-recovery-failed',
+      handleRecoveryFailed as EventListener
+    );
+
     const unsubscribePromises = subscriptions.map((sub) =>
       sub.unsubscribe().catch((error) => {
         if (import.meta.env.DEV) {
@@ -277,6 +359,9 @@ const createChatSocket = () => {
     processPendingMessages,
     processPendingChatUpdates,
     isInitialized: () => isInitialized,
+    syncMessagesStatus,
+    startPeriodicSync,
+    stopPeriodicSync,
   };
 };
 

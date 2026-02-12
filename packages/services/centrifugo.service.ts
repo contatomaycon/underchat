@@ -1086,6 +1086,133 @@ export class CentrifugoService {
     }
   }
 
+  /**
+   * Publishes a message immediately without debounce or deduplication.
+   * Use this for critical real-time updates like message status changes.
+   * Also enables history for message recovery on client reconnect.
+   */
+  async publishSubImmediate(
+    channel: string,
+    data: unknown
+  ): Promise<PublishResult> {
+    try {
+      const subId = this.extractSubId(channel);
+
+      if (!subId) {
+        logger.warn(
+          {
+            type: 'centrifugo_invalid_channel',
+            channel,
+          },
+          'Invalid channel format for publishSubImmediate'
+        );
+        return {} as PublishResult;
+      }
+
+      return await this.withPublishRetry(
+        () => this.publishViaHttpApiDirectWithHistory(channel, data),
+        {
+          channel,
+          subId,
+        }
+      );
+    } catch (error) {
+      return this.handlePublishError(
+        error,
+        channel,
+        'centrifugo_publish_sub_immediate_error'
+      );
+    }
+  }
+
+  /**
+   * Publishes directly via HTTP API with history enabled for recovery.
+   * No debounce, no deduplication, no rate limiting queue.
+   */
+  private async publishViaHttpApiDirectWithHistory(
+    channel: string,
+    data: unknown
+  ): Promise<PublishResult> {
+    if (await this.isCircuitOpen()) {
+      throw new Error('Centrifugo circuit breaker is open');
+    }
+
+    const url = centrifugoEnvironment.centrifugoHttpApiUrl;
+    const apiKey = centrifugoEnvironment.centrifugoHttpApiKey;
+
+    if (!url || !apiKey) {
+      throw new Error('Centrifugo HTTP API is not configured.');
+    }
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.httpApiTimeoutMs);
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `apikey ${apiKey}`,
+        },
+        body: JSON.stringify({
+          method: 'publish',
+          params: {
+            channel,
+            data,
+          },
+        }),
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        const bodyText = await response.text().catch(() => '');
+        const error = new Error(
+          `Centrifugo HTTP API error: ${response.status} ${response.statusText}${
+            bodyText ? ` - ${bodyText}` : ''
+          }`
+        );
+        (error as { status?: number }).status = response.status;
+        await this.recordCircuitFailure();
+        throw error;
+      }
+
+      const payload = (await response.json().catch(() => null)) as {
+        result?: PublishResult;
+        error?: { message?: string };
+      } | null;
+
+      if (payload?.error) {
+        await this.recordCircuitFailure();
+        throw new Error(
+          `Centrifugo HTTP API error: ${payload.error.message ?? 'unknown'}`
+        );
+      }
+
+      await this.recordCircuitSuccess();
+      return (payload?.result ?? {}) as PublishResult;
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        await this.recordCircuitFailure();
+        throw new Error('Centrifugo HTTP API timeout');
+      }
+
+      if (error instanceof Error && (error as { status?: number }).status) {
+        throw error;
+      }
+
+      if (error instanceof Error) {
+        await this.recordCircuitFailure();
+        const wrapped = new Error('Centrifugo HTTP API connection error');
+        (wrapped as { cause?: unknown }).cause = error;
+        throw wrapped;
+      }
+
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
   async onMessage(
     channel: string,
     handler: (data: unknown, ctx: PublicationContext) => void

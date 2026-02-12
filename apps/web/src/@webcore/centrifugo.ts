@@ -5,6 +5,7 @@ import {
   Subscription,
   SubscriptionState,
   PublishResult,
+  SubscribedContext,
 } from 'centrifuge';
 import axios from '@webcore/axios';
 import { IApiResponse } from '@core/common/interfaces/IApiResponse';
@@ -22,6 +23,10 @@ const channelHandlers = new Map<
   Set<(data: any, ctx: PublicationContext) => void>
 >();
 const channelSubscriptions = new Map<string, Subscription>();
+const channelStreamPositions = new Map<
+  string,
+  { offset: number; epoch: string }
+>();
 
 const generateTokenAndUrl = async (): Promise<AuthTokenResponse> => {
   const now = Date.now();
@@ -228,7 +233,21 @@ export const onMessage = async (
 
   let sub = channelSubscriptions.get(channel);
   if (!sub) {
-    sub = client.getSubscription(channel) ?? client.newSubscription(channel);
+    const existingSub = client.getSubscription(channel);
+    if (existingSub) {
+      sub = existingSub;
+    } else {
+      const streamPosition = channelStreamPositions.get(channel);
+      sub = client.newSubscription(channel, {
+        recoverable: true,
+        ...(streamPosition && {
+          since: {
+            offset: streamPosition.offset,
+            epoch: streamPosition.epoch,
+          },
+        }),
+      });
+    }
     channelSubscriptions.set(channel, sub);
 
     sub.on('publication', (ctx) => {
@@ -243,6 +262,40 @@ export const onMessage = async (
             }
           }
         }
+      }
+    });
+
+    sub.on('subscribed', (ctx: SubscribedContext) => {
+      if (ctx.streamPosition) {
+        channelStreamPositions.set(channel, {
+          offset: ctx.streamPosition.offset,
+          epoch: ctx.streamPosition.epoch,
+        });
+      }
+
+      if (ctx.wasRecovering && ctx.recovered) {
+        if (import.meta.env.DEV) {
+          console.info(
+            `[Centrifugo] Channel ${channel} recovered successfully`
+          );
+        }
+      } else if (ctx.wasRecovering && !ctx.recovered) {
+        if (import.meta.env.DEV) {
+          console.warn(
+            `[Centrifugo] Channel ${channel} recovery failed, may have missed messages`
+          );
+        }
+        globalThis.dispatchEvent(
+          new CustomEvent('centrifugo-recovery-failed', {
+            detail: { channel },
+          })
+        );
+      }
+    });
+
+    sub.on('unsubscribed', () => {
+      if (import.meta.env.DEV) {
+        console.info(`[Centrifugo] Unsubscribed from ${channel}`);
       }
     });
 
@@ -316,4 +369,15 @@ export const resetConnection = (): void => {
   cachedToken = null;
   channelHandlers.clear();
   channelSubscriptions.clear();
+  channelStreamPositions.clear();
+};
+
+export const getStreamPosition = (
+  channel: string
+): { offset: number; epoch: string } | undefined => {
+  return channelStreamPositions.get(channel);
+};
+
+export const clearStreamPosition = (channel: string): void => {
+  channelStreamPositions.delete(channel);
 };

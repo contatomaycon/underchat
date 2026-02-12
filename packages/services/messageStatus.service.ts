@@ -75,40 +75,42 @@ export class MessageStatusService {
       await this.invalidateMessageCache(accountId, messageId);
     }
 
-    const [centrifugoResult] = await Promise.allSettled([
-      this.publishCentrifugoWithRetry(
-        chatAccountCentrifugo(channelAccountId),
-        updatedMessage
-      ),
-    ]);
-
-    if (centrifugoResult.status === 'rejected') {
-      await this.publishCentrifugoWithRetry(
-        chatAccountCentrifugo(channelAccountId),
-        updatedMessage
-      );
-    }
+    await this.publishCentrifugoImmediate(
+      chatAccountCentrifugo(channelAccountId),
+      updatedMessage
+    );
 
     return updatedMessage;
   }
 
-  private async publishCentrifugoWithRetry(
+  /**
+   * Publishes message status update immediately without debounce or deduplication.
+   * Uses the immediate publish method for critical real-time updates.
+   */
+  private async publishCentrifugoImmediate(
     channel: string,
-    message: IChatMessage,
-    maxRetries = 3
+    message: IChatMessage
   ): Promise<void> {
-    for (let attempt = 0; attempt < maxRetries; attempt++) {
-      try {
-        await this.centrifugoService.publishSub(channel, message);
-        return;
-      } catch (error) {
-        if (attempt === maxRetries - 1) {
-          throw error;
-        }
-
-        const backoffMs = Math.min(100 * Math.pow(2, attempt), 1000);
-        await new Promise((resolve) => setTimeout(resolve, backoffMs));
-      }
+    try {
+      await this.centrifugoService.publishSubImmediate(channel, message);
+    } catch (error) {
+      logger.error(
+        {
+          err: error,
+          type: 'message_status_centrifugo_publish_error',
+          message_id: message.message_id,
+          channel,
+        },
+        'Failed to publish message status update to Centrifugo'
+      );
+      captureException(error, {
+        level: 'error',
+        messageStatus: {
+          type: 'centrifugo_publish_error',
+          message_id: message.message_id,
+          channel,
+        },
+      });
     }
   }
 

@@ -20,21 +20,33 @@
         "allow_user_limited_channels": true,
         "allow_subscribe_for_client": true,
         "allow_publish_for_client": true,
-        "presence": true
+        "presence": true,
+        "history_size": 100,
+        "history_ttl": "120s",
+        "force_recovery": true,
+        "allow_recover_for_client": true
       },
       {
         "name": "chat",
         "allow_user_limited_channels": true,
         "allow_subscribe_for_client": true,
         "allow_publish_for_client": true,
-        "presence": true
+        "presence": true,
+        "history_size": 500,
+        "history_ttl": "300s",
+        "force_recovery": true,
+        "allow_recover_for_client": true
       },
       {
         "name": "chat.queue",
         "allow_user_limited_channels": true,
         "allow_subscribe_for_client": true,
         "allow_publish_for_client": true,
-        "presence": true
+        "presence": true,
+        "history_size": 200,
+        "history_ttl": "300s",
+        "force_recovery": true,
+        "allow_recover_for_client": true
       },
       {
         "name": "presence",
@@ -47,19 +59,31 @@
         "allow_user_limited_channels": true,
         "allow_subscribe_for_client": true,
         "allow_publish_for_client": true,
-        "presence": true
+        "presence": true,
+        "history_size": 50,
+        "history_ttl": "120s",
+        "force_recovery": true,
+        "allow_recover_for_client": true
       },
       {
         "name": "channels",
         "allow_subscribe_for_client": true,
         "allow_publish_for_client": true,
-        "presence": false
+        "presence": false,
+        "history_size": 50,
+        "history_ttl": "120s",
+        "force_recovery": true,
+        "allow_recover_for_client": true
       },
       {
         "name": "reports",
         "allow_subscribe_for_client": true,
         "allow_publish_for_client": true,
-        "presence": false
+        "presence": false,
+        "history_size": 50,
+        "history_ttl": "120s",
+        "force_recovery": true,
+        "allow_recover_for_client": true
       }
     ]
   }
