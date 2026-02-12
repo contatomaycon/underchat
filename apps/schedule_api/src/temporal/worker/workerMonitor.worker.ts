@@ -1,16 +1,18 @@
+import path from 'path';
 import { FastifyInstance } from 'fastify';
 import { Worker } from '@temporalio/worker';
 import { container } from 'tsyringe';
 import { WorkerMonitorActivity } from '@core/temporal/activities/workerMonitor.activities';
-import '@core/temporal/workflows/workerMonitor.workflow';
 
 export const workerMonitorWorker = async (fastify: FastifyInstance) => {
   const activity = container.resolve(WorkerMonitorActivity);
 
   const worker = await Worker.create({
     connection: fastify.temporal.nativeConnection,
-    workflowsPath:
-      require.resolve('@core/temporal/workflows/workerMonitor.workflow'),
+    workflowsPath: path.resolve(
+      __dirname,
+      '../../../../../packages/temporal/workflows/workerMonitor.workflow'
+    ),
     activities: {
       monitor: activity.monitor,
     },

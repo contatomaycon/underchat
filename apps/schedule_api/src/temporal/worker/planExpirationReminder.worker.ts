@@ -1,8 +1,8 @@
+import path from 'path';
 import { FastifyInstance } from 'fastify';
 import { Worker } from '@temporalio/worker';
 import { container } from 'tsyringe';
 import { PlanExpirationReminderActivity } from '@core/temporal/activities/planExpirationReminder.activities';
-import '@core/temporal/workflows/planExpirationReminder.workflow';
 
 export const planExpirationReminderWorker = async (
   fastify: FastifyInstance
@@ -11,8 +11,10 @@ export const planExpirationReminderWorker = async (
 
   const worker = await Worker.create({
     connection: fastify.temporal.nativeConnection,
-    workflowsPath:
-      require.resolve('@core/temporal/workflows/planExpirationReminder.workflow'),
+    workflowsPath: path.resolve(
+      __dirname,
+      '../../../../../packages/temporal/workflows/planExpirationReminder.workflow'
+    ),
     activities: {
       processPlanExpirationReminders: activity.processPlanExpirationReminders,
     },
