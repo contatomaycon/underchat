@@ -56,7 +56,8 @@ ARG VITE_BACKEND_URL
 ARG VITE_API_PUBLIC_URL
 ENV VITE_BACKEND_URL=${VITE_BACKEND_URL} \
     VITE_API_PUBLIC_URL=${VITE_API_PUBLIC_URL} \
-    CI=true
+    CI=true \
+    PATH="/app/node_modules/.bin:$PATH"
 
 WORKDIR /app/apps/web
 
