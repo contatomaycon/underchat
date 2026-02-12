@@ -359,7 +359,9 @@ function resolveMediaUri(url: string | null | undefined): string | null {
   return resolveImageUri(url) ?? url;
 }
 
-function resolvePreviewThumbnail(value: string | null | undefined): string | null {
+function resolvePreviewThumbnail(
+  value: string | null | undefined
+): string | null {
   const normalized = readNonEmptyString(value);
   if (!normalized) return null;
 
@@ -458,9 +460,7 @@ async function openLocationInMaps(
     try {
       await Linking.openURL(geoUrl);
       return;
-    } catch {
-      //
-    }
+    } catch {}
   }
 
   if (Platform.OS === 'ios') {
@@ -470,16 +470,12 @@ async function openLocationInMaps(
     try {
       await Linking.openURL(appleMapsUrl);
       return;
-    } catch {
-      //
-    }
+    } catch {}
   }
 
   try {
     await Linking.openURL(webUrl);
-  } catch {
-    //
-  }
+  } catch {}
 }
 
 function formatVideoDuration(seconds: number | null | undefined): string {
@@ -657,9 +653,7 @@ async function forceDownloadToDevice(
           webURL.revokeObjectURL?.(blobUrl);
         }, 100);
         return;
-      } catch {
-        //
-      }
+      } catch {}
     }
 
     if (webDocument?.createElement) {
@@ -702,9 +696,7 @@ async function forceDownloadToDevice(
     if (!downloadedFile.exists) return;
     try {
       downloadedFile.delete();
-    } catch {
-      //
-    }
+    } catch {}
   };
 
   if ((kind === 'image' || kind === 'video') && !isExpoGoEnvironment()) {
@@ -721,9 +713,7 @@ async function forceDownloadToDevice(
         cleanupDownloadedFile();
         return;
       }
-    } catch {
-      //
-    }
+    } catch {}
   }
 
   const copyToDirectory = (directoryUri: string): boolean => {
@@ -753,9 +743,7 @@ async function forceDownloadToDevice(
     if (copyToDirectory(preferredNativeDownloadDirectoryUri)) {
       return;
     }
-  } catch {
-    //
-  }
+  } catch {}
 
   const fallbackDirectory = new Directory(Paths.document, 'downloads');
   if (!fallbackDirectory.exists) {
@@ -837,8 +825,7 @@ function resolveTypingDisplayName(chatInfo: ListChatsResult): string {
   const chatName = chatInfo.name?.trim();
   if (chatName) return chatName;
 
-  const phone =
-    chatInfo.contact?.phone?.trim() || chatInfo.phone?.trim() || '';
+  const phone = chatInfo.contact?.phone?.trim() || chatInfo.phone?.trim() || '';
   const ddi = chatInfo.contact?.phone_ddi?.trim() || '';
 
   if (ddi && phone) {
@@ -1531,9 +1518,7 @@ function useChatAudio() {
       if (player) {
         try {
           player.setPlaybackRate(nextRate);
-        } catch {
-          //
-        }
+        } catch {}
       }
     },
     [state, updateState]
@@ -1643,9 +1628,7 @@ function VideoMessagePreview({
     try {
       previewPlayer.pause();
       previewPlayer.currentTime = 0;
-    } catch {
-      //
-    }
+    } catch {}
   }, [previewPlayer, shouldUseVideoFramePreview]);
 
   return (
@@ -1774,9 +1757,7 @@ function LinkPreviewMessage({
     if (!previewUrl) return;
     try {
       await Linking.openURL(previewUrl);
-    } catch {
-      //
-    }
+    } catch {}
   };
 
   return (
@@ -1846,9 +1827,7 @@ function ExternalAdReplyMessage({
     if (!sourceUrl) return;
     try {
       await Linking.openURL(sourceUrl);
-    } catch {
-      //
-    }
+    } catch {}
   };
 
   return (
@@ -2095,18 +2074,18 @@ function BubbleContent({
   const externalAdReply = content.context_info?.external_ad_reply;
   const hasLinkPreview = Boolean(
     linkPreview &&
-      (readNonEmptyString(linkPreview.title) ||
-        readNonEmptyString(linkPreview.description) ||
-        resolvePreviewImage(linkPreview) ||
-        resolvePreviewUrl(linkPreview))
+    (readNonEmptyString(linkPreview.title) ||
+      readNonEmptyString(linkPreview.description) ||
+      resolvePreviewImage(linkPreview) ||
+      resolvePreviewUrl(linkPreview))
   );
   const hasExternalAdReply = Boolean(
     externalAdReply &&
-      (readNonEmptyString(externalAdReply.title) ||
-        readNonEmptyString(externalAdReply.greeting_message_body) ||
-        readNonEmptyString(externalAdReply.source_url) ||
-        readNonEmptyString(externalAdReply.source_app) ||
-        resolveMediaUri(externalAdReply.thumbnail_url))
+    (readNonEmptyString(externalAdReply.title) ||
+      readNonEmptyString(externalAdReply.greeting_message_body) ||
+      readNonEmptyString(externalAdReply.source_url) ||
+      readNonEmptyString(externalAdReply.source_app) ||
+      resolveMediaUri(externalAdReply.thumbnail_url))
   );
   const renderWithContextCards = (child: ReactElement | null) => {
     if (!hasLinkPreview && !hasExternalAdReply) return child;
@@ -2521,8 +2500,7 @@ function BubbleContent({
             {templateButtons.map((button, index) => {
               const displayText =
                 readNonEmptyString(button.displayText) ?? button.displayText;
-              const disabled =
-                disableTemplateButtons || !onTemplateButtonPress;
+              const disabled = disableTemplateButtons || !onTemplateButtonPress;
 
               return (
                 <Pressable
@@ -3035,9 +3013,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     try {
       viewerVideoPlayer.pause();
       viewerVideoPlayer.currentTime = 0;
-    } catch {
-      //
-    }
+    } catch {}
   }, [viewer.kind, viewer.visible, viewerVideoPlayer]);
 
   useEffect(() => {
@@ -3046,9 +3022,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     try {
       cameraPreviewPlayer.pause();
       cameraPreviewPlayer.currentTime = 0;
-    } catch {
-      //
-    }
+    } catch {}
   }, [cameraDraft?.kind, cameraPreviewPlayer]);
 
   useEffect(() => {
@@ -3276,7 +3250,6 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       const fileName = viewer.downloadName || defaultName;
       await forceDownloadToDevice(viewer.src, fileName, viewer.kind);
     } catch {
-      //
     } finally {
       setDownloadingViewerMedia(false);
     }
@@ -3285,7 +3258,11 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const loadMessages = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await listMessages(chatInfo.chat_id, 1, CHAT_MESSAGES_PER_PAGE);
+      const res = await listMessages(
+        chatInfo.chat_id,
+        1,
+        CHAT_MESSAGES_PER_PAGE
+      );
       if (!res) {
         setMessages([]);
         currentPageRef.current = 1;
@@ -3777,22 +3754,20 @@ export function ChatRoomScreen({ route, navigation }: Props) {
 
     try {
       await recorder.stop();
-    } catch {
-      //
-    }
+    } catch {}
 
     try {
       await setAudioModeAsync({ allowsRecording: false });
-    } catch {
-      //
-    }
+    } catch {}
 
     const uri = recorder.uri ?? recorderState.url;
     if (!uri) return null;
 
     const recordedFile = new File(uri);
     const extension = recordedFile.extension || '.m4a';
-    const normalizedExt = extension.startsWith('.') ? extension : `.${extension}`;
+    const normalizedExt = extension.startsWith('.')
+      ? extension
+      : `.${extension}`;
     const fileName = recordedFile.name || `audio-${Date.now()}${normalizedExt}`;
     const mimeType = resolveMimeTypeFromExtension(extension);
 
@@ -3825,7 +3800,10 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         mimeType: recorded.mimeType,
       });
 
-      const result = await createMessageWithFormData(chatInfo.chat_id, formData);
+      const result = await createMessageWithFormData(
+        chatInfo.chat_id,
+        formData
+      );
       if (!result.ok) return;
 
       pendingScrollToBottomRef.current = true;
@@ -3863,15 +3841,11 @@ export function ChatRoomScreen({ route, navigation }: Props) {
 
     try {
       await recorder.stop();
-    } catch {
-      //
-    }
+    } catch {}
 
     try {
       await setAudioModeAsync({ allowsRecording: false });
-    } catch {
-      //
-    }
+    } catch {}
 
     resetRecordingComposerState();
   }, [
@@ -3893,9 +3867,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       }
       recorder.pause();
       setIsRecordingPaused(true);
-    } catch {
-      //
-    }
+    } catch {}
   }, [isRecordingPaused, isRecordingVoice, recorder]);
 
   const startVoiceRecording = useCallback(async () => {
@@ -3929,15 +3901,15 @@ export function ChatRoomScreen({ route, navigation }: Props) {
 
       if (pendingReleaseBeforeReadyRef.current) {
         pendingReleaseBeforeReadyRef.current = false;
-        lockVoiceRecording();
+
+        setIsRecordingLocked(true);
+        setShowRecordingHint(false);
       }
     } catch {
       resetRecordingComposerState();
       try {
         await setAudioModeAsync({ allowsRecording: false });
-      } catch {
-        //
-      }
+      } catch {}
     } finally {
       setIsPreparingRecording(false);
     }
@@ -3947,7 +3919,6 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     isRecordingVoice,
     recorder,
     recorderOptions,
-    lockVoiceRecording,
     resetRecordingComposerState,
     sendingVoiceRecording,
   ]);
@@ -4088,7 +4059,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       const fallbackMime = kind === 'video' ? 'video/mp4' : 'image/jpeg';
       const originalName = asset.fileName?.trim();
       const hasExtension =
-        typeof originalName === 'string' && /\.[a-z0-9]{2,5}$/i.test(originalName);
+        typeof originalName === 'string' &&
+        /\.[a-z0-9]{2,5}$/i.test(originalName);
       const fileName =
         originalName && hasExtension
           ? originalName
@@ -4164,7 +4136,10 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         });
       }
 
-      const result = await createMessageWithFormData(chatInfo.chat_id, formData);
+      const result = await createMessageWithFormData(
+        chatInfo.chat_id,
+        formData
+      );
       if (!result.ok) return;
 
       setCameraDraft(null);
@@ -4210,9 +4185,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       if (!recordingActiveRef.current) return;
       try {
         recorder.stop();
-      } catch {
-        //
-      }
+      } catch {}
       void setAudioModeAsync({ allowsRecording: false });
     };
   }, [recorder]);
@@ -4434,9 +4407,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                   style={styles.recordActionBtn}
                   onPress={togglePauseVoiceRecording}
                   accessibilityLabel={
-                    isRecordingPaused
-                      ? pt.resume_recording
-                      : pt.pause_recording
+                    isRecordingPaused ? pt.resume_recording : pt.pause_recording
                   }
                 >
                   <Ionicons
@@ -4636,7 +4607,11 @@ export function ChatRoomScreen({ route, navigation }: Props) {
               style={styles.cameraPickerAction}
               onPress={handlePickPhotoCapture}
             >
-              <Ionicons name="camera-outline" size={18} color={colors.primary} />
+              <Ionicons
+                name="camera-outline"
+                size={18}
+                color={colors.primary}
+              />
               <Text style={styles.cameraPickerActionText}>{pt.take_photo}</Text>
             </Pressable>
             <Pressable
@@ -4648,7 +4623,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                 size={18}
                 color={colors.primary}
               />
-              <Text style={styles.cameraPickerActionText}>{pt.record_video}</Text>
+              <Text style={styles.cameraPickerActionText}>
+                {pt.record_video}
+              </Text>
             </Pressable>
             <Pressable
               style={[styles.cameraPickerAction, styles.cameraPickerCancel]}
