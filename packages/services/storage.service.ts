@@ -38,8 +38,15 @@ export class StorageService {
     return this.bucketManager.ensurePublicBucket(accountId);
   }
 
-  private createUrl(path: string, accountId: string): string {
-    return `${s3Environment.s3Endpoint}/${accountId}/${path}`;
+  private createUrl(
+    path: string,
+    accountId: string,
+    useBackup: boolean = false
+  ): string {
+    const baseUrl = useBackup
+      ? s3Environment.s3EndpointBackup
+      : s3Environment.s3Endpoint;
+    return `${baseUrl}/${accountId}/${path}`;
   }
 
   public async uploadImage(
@@ -74,7 +81,7 @@ export class StorageService {
 
     const bucketId = await this.ensureBucket(accountId);
 
-    await this.uploader.uploadWithRetry({
+    const { usedBackup } = await this.uploader.uploadWithRetry({
       bucket: bucketId,
       key: path,
       body: buffer,
@@ -82,7 +89,7 @@ export class StorageService {
     });
 
     return {
-      url: this.createUrl(path, bucketId),
+      url: this.createUrl(path, bucketId, usedBackup),
       name: generatedFilename,
       extension,
       size: buffer.byteLength,
@@ -112,7 +119,7 @@ export class StorageService {
 
     const bucketId = await this.ensureBucket(accountId);
 
-    await this.uploader.uploadWithRetry({
+    const { usedBackup } = await this.uploader.uploadWithRetry({
       bucket: bucketId,
       key,
       body: buffer,
@@ -120,7 +127,7 @@ export class StorageService {
     });
 
     return {
-      url: this.createUrl(key, bucketId),
+      url: this.createUrl(key, bucketId, usedBackup),
       name: normalizedName,
       extension,
       size: buffer.byteLength,
@@ -152,7 +159,7 @@ export class StorageService {
 
     const bucketId = await this.ensureBucket(accountId);
 
-    await this.uploader.uploadWithRetry({
+    const { usedBackup } = await this.uploader.uploadWithRetry({
       bucket: bucketId,
       key,
       body: buffer,
@@ -160,7 +167,7 @@ export class StorageService {
     });
 
     return {
-      url: this.createUrl(key, bucketId),
+      url: this.createUrl(key, bucketId, usedBackup),
       name: normalizedName,
       extension,
       size: buffer.byteLength,
@@ -192,7 +199,7 @@ export class StorageService {
 
     const bucketId = await this.ensureBucket(accountId);
 
-    await this.uploader.uploadWithRetry({
+    const { usedBackup } = await this.uploader.uploadWithRetry({
       bucket: bucketId,
       key,
       body: buffer,
@@ -200,7 +207,7 @@ export class StorageService {
     });
 
     return {
-      url: this.createUrl(key, bucketId),
+      url: this.createUrl(key, bucketId, usedBackup),
       name: normalizedName,
       extension,
       size: buffer.byteLength,
@@ -230,7 +237,7 @@ export class StorageService {
 
     const bucketId = await this.ensureBucket(accountId);
 
-    await this.uploader.uploadWithRetry({
+    const { usedBackup } = await this.uploader.uploadWithRetry({
       bucket: bucketId,
       key,
       body: buffer,
@@ -238,7 +245,7 @@ export class StorageService {
     });
 
     return {
-      url: this.createUrl(key, bucketId),
+      url: this.createUrl(key, bucketId, usedBackup),
       name: normalizedName,
       extension,
       size: buffer.byteLength,
@@ -268,7 +275,7 @@ export class StorageService {
 
     const bucketId = await this.ensureBucket(accountId);
 
-    await this.uploader.uploadWithRetry({
+    const { usedBackup } = await this.uploader.uploadWithRetry({
       bucket: bucketId,
       key,
       body: buffer,
@@ -276,7 +283,7 @@ export class StorageService {
     });
 
     return {
-      url: this.createUrl(key, bucketId),
+      url: this.createUrl(key, bucketId, usedBackup),
       name: normalizedName,
       extension,
       size: buffer.byteLength,
@@ -348,7 +355,7 @@ export class StorageService {
 
     const bucketId = await this.ensureBucket(accountId);
 
-    await this.uploader.uploadWithRetry({
+    const { usedBackup } = await this.uploader.uploadWithRetry({
       bucket: bucketId,
       key,
       body: buffer,
@@ -356,7 +363,7 @@ export class StorageService {
     });
 
     return {
-      url: this.createUrl(key, bucketId),
+      url: this.createUrl(key, bucketId, usedBackup),
       name: baseName,
       extension: finalExt,
       size: buffer.byteLength,
@@ -394,7 +401,7 @@ export class StorageService {
 
     const bucketId = await this.ensureBucket(accountId);
 
-    await this.uploader.uploadWithRetry({
+    const { usedBackup } = await this.uploader.uploadWithRetry({
       bucket: bucketId,
       key,
       body: buffer,
@@ -402,7 +409,7 @@ export class StorageService {
     });
 
     return {
-      url: this.createUrl(key, bucketId),
+      url: this.createUrl(key, bucketId, usedBackup),
       name: baseName,
       extension: ext,
       size: buffer.byteLength,
@@ -421,14 +428,14 @@ export class StorageService {
 
     const bucketId = await this.ensureBucket(accountId);
 
-    await this.uploader.uploadWithRetry({
+    const { usedBackup } = await this.uploader.uploadWithRetry({
       bucket: bucketId,
       key,
       body: pdfBuffer,
       contentType: 'application/pdf',
     });
 
-    return this.createUrl(key, bucketId);
+    return this.createUrl(key, bucketId, usedBackup);
   }
 
   public async deleteImage(url: string): Promise<boolean> {

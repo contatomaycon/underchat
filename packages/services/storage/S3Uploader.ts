@@ -4,25 +4,34 @@ import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 1000;
 
-interface UploadParams {
+export interface UploadParams {
   bucket: string;
   key: string;
   body: Buffer;
   contentType: string;
 }
 
+export interface UploadWithRetryResult {
+  usedBackup: boolean;
+}
+
 @injectable()
 export class S3Uploader {
   constructor(
     @inject('S3Client')
-    private readonly client: S3Client
+    private readonly client: S3Client,
+    @inject('S3ClientBackup')
+    private readonly backupClient: S3Client
   ) {}
 
   private async sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
-  private async attemptUpload(params: UploadParams): Promise<void> {
+  private async attemptUpload(
+    client: S3Client,
+    params: UploadParams
+  ): Promise<void> {
     const command = new PutObjectCommand({
       Bucket: params.bucket,
       Key: params.key,
@@ -30,7 +39,7 @@ export class S3Uploader {
       ContentType: params.contentType,
     });
 
-    await this.client.send(command);
+    await client.send(command);
   }
 
   private isRetryableError(error: any): boolean {
@@ -67,12 +76,15 @@ export class S3Uploader {
     return false;
   }
 
-  async uploadWithRetry(params: UploadParams): Promise<void> {
+  private async uploadWithRetryToClient(
+    client: S3Client,
+    params: UploadParams
+  ): Promise<void> {
     let lastError: Error | null = null;
 
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
       try {
-        await this.attemptUpload(params);
+        await this.attemptUpload(client, params);
         return;
       } catch (error: any) {
         lastError = error;
@@ -91,5 +103,15 @@ export class S3Uploader {
     }
 
     throw lastError || new Error('Upload failed after all retries');
+  }
+
+  async uploadWithRetry(params: UploadParams): Promise<UploadWithRetryResult> {
+    try {
+      await this.uploadWithRetryToClient(this.client, params);
+      return { usedBackup: false };
+    } catch {
+      await this.uploadWithRetryToClient(this.backupClient, params);
+      return { usedBackup: true };
+    }
   }
 }

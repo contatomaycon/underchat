@@ -34,4 +34,40 @@ export class S3Environment {
 
     return process.env.S3_ENDPOINT;
   }
+
+  public get s3EndpointBackup(): string {
+    if (!process.env.S3_ENDPOINT_BACKUP) {
+      throw new InvalidConfigurationError('S3_ENDPOINT_BACKUP is not defined.');
+    }
+
+    return process.env.S3_ENDPOINT_BACKUP;
+  }
+
+  public get s3AccessKeyIdBackup(): string {
+    if (!process.env.S3_ACCESS_KEY_ID_BACKUP) {
+      throw new InvalidConfigurationError(
+        'S3_ACCESS_KEY_ID_BACKUP is not defined.'
+      );
+    }
+
+    return process.env.S3_ACCESS_KEY_ID_BACKUP;
+  }
+
+  public get s3SecretAccessKeyBackup(): string {
+    if (!process.env.S3_SECRET_ACCESS_KEY_BACKUP) {
+      throw new InvalidConfigurationError(
+        'S3_SECRET_ACCESS_KEY_BACKUP is not defined.'
+      );
+    }
+
+    return process.env.S3_SECRET_ACCESS_KEY_BACKUP;
+  }
+
+  public get s3RegionBackup(): string {
+    if (!process.env.S3_REGION_BACKUP) {
+      throw new InvalidConfigurationError('S3_REGION_BACKUP is not defined.');
+    }
+
+    return process.env.S3_REGION_BACKUP;
+  }
 }

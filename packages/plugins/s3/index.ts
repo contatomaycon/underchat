@@ -14,8 +14,22 @@ const s3Plugin = async () => {
     forcePathStyle: true,
   });
 
+  const backupClient = new S3Client({
+    region: s3Environment.s3RegionBackup,
+    credentials: {
+      accessKeyId: s3Environment.s3AccessKeyIdBackup,
+      secretAccessKey: s3Environment.s3SecretAccessKeyBackup,
+    },
+    endpoint: s3Environment.s3EndpointBackup,
+    forcePathStyle: true,
+  });
+
   container.register<S3Client>('S3Client', {
     useValue: client,
+  });
+
+  container.register<S3Client>('S3ClientBackup', {
+    useValue: backupClient,
   });
 };
 
