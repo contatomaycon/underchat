@@ -22,6 +22,7 @@ import { ReleaseViewViewerRepository } from './ReleaseViewViewer.repository';
 export class ReleaseListerRepository {
   constructor(
     @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>,
+    @inject(ReleaseViewViewerRepository)
     private readonly releaseViewViewerRepository: ReleaseViewViewerRepository
   ) {}
 

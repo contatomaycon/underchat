@@ -21,8 +21,11 @@ import { EContactIgnore } from '@core/common/enums/EContactIgnore';
 export class ContactCreatorRepository {
   constructor(
     @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>,
+    @inject(ContactGroupAssignmentCreatorRepository)
     private readonly contactGroupAssignmentCreatorRepository: ContactGroupAssignmentCreatorRepository,
+    @inject(ContactLabelTemplateCreatorRepository)
     private readonly contactLabelTemplateCreatorRepository: ContactLabelTemplateCreatorRepository,
+    @inject(ContactChannelCreatorRepository)
     private readonly contactChannelCreatorRepository: ContactChannelCreatorRepository
   ) {}
 

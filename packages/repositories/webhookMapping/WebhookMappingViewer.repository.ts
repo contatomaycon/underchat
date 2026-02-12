@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { webhookMappingMappings } from '@core/mappings/webhookMapping.mappings';
@@ -6,6 +6,7 @@ import { webhookMappingMappings } from '@core/mappings/webhookMapping.mappings';
 @injectable()
 export class WebhookMappingViewerRepository {
   constructor(
+    @inject(ElasticDatabaseService)
     private readonly elasticDatabaseService: ElasticDatabaseService
   ) {}
 

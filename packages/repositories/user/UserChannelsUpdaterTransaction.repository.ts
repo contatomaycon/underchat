@@ -9,6 +9,7 @@ import { UserChannelCreatorRepository } from './UserChannelCreator.repository';
 export class UserChannelsUpdaterTransactionRepository {
   constructor(
     @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>,
+    @inject(UserChannelCreatorRepository)
     private readonly userChannelCreatorRepository: UserChannelCreatorRepository
   ) {}
 

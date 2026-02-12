@@ -18,8 +18,11 @@ import { ContactChannelsUpdaterTransactionRepository } from './ContactChannelsUp
 export class ContactUpdaterRepository {
   constructor(
     @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>,
+    @inject(ContactLabelTemplateDeleterRepository)
     private readonly contactLabelTemplateDeleterRepository: ContactLabelTemplateDeleterRepository,
+    @inject(ContactLabelTemplateCreatorRepository)
     private readonly contactLabelTemplateCreatorRepository: ContactLabelTemplateCreatorRepository,
+    @inject(ContactChannelsUpdaterTransactionRepository)
     private readonly contactChannelsUpdaterTransactionRepository: ContactChannelsUpdaterTransactionRepository
   ) {}
 

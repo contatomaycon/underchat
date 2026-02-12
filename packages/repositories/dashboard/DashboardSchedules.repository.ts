@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { EScheduleStatus } from '@core/common/enums/EScheduleStatus';
@@ -10,8 +10,11 @@ import { PlanAccountUpdaterRepository } from '@core/repositories/planAccount/Pla
 @injectable()
 export class DashboardSchedulesRepository {
   constructor(
+    @inject(ElasticDatabaseService)
     private readonly elasticDatabaseService: ElasticDatabaseService,
+    @inject(AccountQuantityProductViewerRepository)
     private readonly accountQuantityProductViewerRepository: AccountQuantityProductViewerRepository,
+    @inject(PlanAccountUpdaterRepository)
     private readonly planAccountUpdaterRepository: PlanAccountUpdaterRepository
   ) {}
 

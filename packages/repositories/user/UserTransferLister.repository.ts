@@ -10,6 +10,7 @@ import { PresenceService } from '@core/services/presence.service';
 export class UserTransferListerRepository {
   constructor(
     @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>,
+    @inject(PresenceService)
     private readonly presenceService: PresenceService
   ) {}
 

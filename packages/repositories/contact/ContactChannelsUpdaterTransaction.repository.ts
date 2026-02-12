@@ -9,6 +9,7 @@ import { ContactChannelCreatorRepository } from './ContactChannelCreator.reposit
 export class ContactChannelsUpdaterTransactionRepository {
   constructor(
     @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>,
+    @inject(ContactChannelCreatorRepository)
     private readonly contactChannelCreatorRepository: ContactChannelCreatorRepository
   ) {}
 

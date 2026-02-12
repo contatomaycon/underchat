@@ -25,16 +25,27 @@ import { UserChannelCreatorRepository } from './UserChannelCreator.repository';
 export class UserTransactionCreatorRepository {
   constructor(
     @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>,
+    @inject(EncryptService)
     private readonly encryptService: EncryptService,
+    @inject(PasswordEncryptorService)
     private readonly passwordEncryptorService: PasswordEncryptorService,
+    @inject(UserCreatorRepository)
     private readonly userCreatorRepository: UserCreatorRepository,
+    @inject(UserAddressCreatorRepository)
     private readonly userAddressCreatorRepository: UserAddressCreatorRepository,
+    @inject(UserDocumentCreatorRepository)
     private readonly userDocumentCreatorRepository: UserDocumentCreatorRepository,
+    @inject(UserInfoCreatorRepository)
     private readonly userInfoCreatorRepository: UserInfoCreatorRepository,
+    @inject(UserExistsByEmailAndPhoneRepository)
     private readonly userExistsByEmailAndPhoneRepository: UserExistsByEmailAndPhoneRepository,
+    @inject(ChatUserCreatorRepository)
     private readonly chatUserCreatorRepository: ChatUserCreatorRepository,
+    @inject(PermissionAssignmentCreatorRepository)
     private readonly permissionAssignmentCreatorRepository: PermissionAssignmentCreatorRepository,
+    @inject(SectorUserCreatorRepository)
     private readonly sectorUserCreatorRepository: SectorUserCreatorRepository,
+    @inject(UserChannelCreatorRepository)
     private readonly userChannelCreatorRepository: UserChannelCreatorRepository
   ) {}
 
