@@ -20,6 +20,8 @@ import {
   Animated,
   Modal,
   ActivityIndicator,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
@@ -102,12 +104,27 @@ function formatAudioTime(seconds: number): string {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
+function toPositiveInt(value: unknown, fallback: number): number {
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+    return Math.floor(value);
+  }
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return Math.floor(parsed);
+    }
+  }
+  return fallback;
+}
+
 const WAVEFORM_BAR_WIDTH = 2;
 const WAVEFORM_BAR_GAP = 2;
 const WAVEFORM_HORIZONTAL_INSET = 2;
 const WAVEFORM_FALLBACK_MAX_BARS = 28;
 const VIDEO_FULLSCREEN_DISABLED = { enable: false } as const;
 const VIDEO_FULLSCREEN_ENABLED = { enable: true } as const;
+const CHAT_MESSAGES_PER_PAGE = 50;
+const LOAD_OLDER_SCROLL_THRESHOLD = 180;
 type DownloadKind = 'image' | 'video' | 'document';
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -872,6 +889,19 @@ function mergePendingSocketMessages(
     const normalized = normalizeSocketMessageToListMessage(payload);
     if (!normalized) continue;
     next = mergeMessageLists(next, normalized);
+  }
+  return next;
+}
+
+function mergeMessageBatch(
+  current: ListMessageResult[],
+  incoming: ListMessageResult[]
+): ListMessageResult[] {
+  if (incoming.length === 0) return current;
+
+  let next = current;
+  for (const message of incoming) {
+    next = mergeMessageLists(next, message);
   }
   return next;
 }
@@ -2664,6 +2694,16 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const { chat } = route.params;
   const listRef = useRef<FlatList<MessageWithSeparator> | null>(null);
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingScrollToBottomRef = useRef(true);
+  const scrollOffsetRef = useRef(0);
+  const contentHeightRef = useRef(0);
+  const loadingOlderRef = useRef(false);
+  const currentPageRef = useRef(1);
+  const totalPagesRef = useRef(1);
+  const preserveScrollOnPrependRef = useRef<{
+    previousOffset: number;
+    previousContentHeight: number;
+  } | null>(null);
   const [chatInfo, setChatInfo] = useState(chat);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [currentUserName, setCurrentUserName] = useState<string | null>(null);
@@ -2672,6 +2712,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   >(null);
   const [messages, setMessages] = useState<ListMessageResult[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingOlder, setLoadingOlder] = useState(false);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [viewer, setViewer] = useState<MediaViewerState>({
@@ -2698,6 +2739,17 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   useEffect(() => {
     setChatInfo(chat);
   }, [chat]);
+
+  useEffect(() => {
+    pendingScrollToBottomRef.current = true;
+    scrollOffsetRef.current = 0;
+    contentHeightRef.current = 0;
+    loadingOlderRef.current = false;
+    currentPageRef.current = 1;
+    totalPagesRef.current = 1;
+    preserveScrollOnPrependRef.current = null;
+    setLoadingOlder(false);
+  }, [chatInfo.chat_id]);
 
   useEffect(() => {
     return () => {
@@ -2879,14 +2931,119 @@ export function ChatRoomScreen({ route, navigation }: Props) {
 
   const loadMessages = useCallback(async () => {
     setLoading(true);
-    const res = await listMessages(chatInfo.chat_id, 1, 50);
-    setLoading(false);
-    if (res?.results) {
-      const baseMessages = res.results.reverse();
+    try {
+      const res = await listMessages(chatInfo.chat_id, 1, CHAT_MESSAGES_PER_PAGE);
+      if (!res) {
+        setMessages([]);
+        currentPageRef.current = 1;
+        totalPagesRef.current = 1;
+        preserveScrollOnPrependRef.current = null;
+        return;
+      }
+
+      const baseMessages = [...res.results].reverse();
       const pending = consumePendingMessages(chatInfo.chat_id);
-      setMessages(mergePendingSocketMessages(baseMessages, pending));
+      const mergedMessages = mergePendingSocketMessages(baseMessages, pending);
+
+      currentPageRef.current = toPositiveInt(res.current_page, 1);
+      totalPagesRef.current = toPositiveInt(res.total_pages, 1);
+      preserveScrollOnPrependRef.current = null;
+      pendingScrollToBottomRef.current = true;
+
+      setMessages(mergedMessages);
+    } finally {
+      setLoading(false);
     }
   }, [chatInfo.chat_id]);
+
+  const loadOlderMessages = useCallback(async () => {
+    if (loading || loadingOlderRef.current) return;
+    if (currentPageRef.current >= totalPagesRef.current) return;
+
+    loadingOlderRef.current = true;
+    setLoadingOlder(true);
+    preserveScrollOnPrependRef.current = {
+      previousOffset: scrollOffsetRef.current,
+      previousContentHeight: contentHeightRef.current,
+    };
+
+    try {
+      const nextPage = currentPageRef.current + 1;
+      const res = await listMessages(
+        chatInfo.chat_id,
+        nextPage,
+        CHAT_MESSAGES_PER_PAGE
+      );
+
+      if (!res) {
+        preserveScrollOnPrependRef.current = null;
+        return;
+      }
+
+      currentPageRef.current = toPositiveInt(res.current_page, nextPage);
+      totalPagesRef.current = Math.max(
+        currentPageRef.current,
+        toPositiveInt(res.total_pages, totalPagesRef.current)
+      );
+
+      const olderMessages = [...res.results].reverse();
+      if (olderMessages.length === 0) {
+        preserveScrollOnPrependRef.current = null;
+        return;
+      }
+
+      setMessages((prev) => mergeMessageBatch(prev, olderMessages));
+    } finally {
+      loadingOlderRef.current = false;
+      setLoadingOlder(false);
+    }
+  }, [chatInfo.chat_id, loading]);
+
+  const handleListScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const offsetY = event.nativeEvent.contentOffset.y;
+      scrollOffsetRef.current = offsetY;
+
+      if (offsetY <= LOAD_OLDER_SCROLL_THRESHOLD) {
+        void loadOlderMessages();
+      }
+    },
+    [loadOlderMessages]
+  );
+
+  const handleListContentSizeChange = useCallback(
+    (_width: number, height: number) => {
+      contentHeightRef.current = height;
+
+      const preserveData = preserveScrollOnPrependRef.current;
+      if (preserveData && height >= preserveData.previousContentHeight) {
+        const delta = height - preserveData.previousContentHeight;
+        const targetOffset = Math.max(0, preserveData.previousOffset + delta);
+        preserveScrollOnPrependRef.current = null;
+
+        requestAnimationFrame(() => {
+          listRef.current?.scrollToOffset({
+            offset: targetOffset,
+            animated: false,
+          });
+          scrollOffsetRef.current = targetOffset;
+        });
+        return;
+      }
+
+      if (pendingScrollToBottomRef.current && !loading) {
+        pendingScrollToBottomRef.current = false;
+
+        requestAnimationFrame(() => {
+          listRef.current?.scrollToEnd({ animated: false });
+          requestAnimationFrame(() => {
+            listRef.current?.scrollToEnd({ animated: false });
+          });
+        });
+      }
+    },
+    [loading]
+  );
 
   const messagesWithSeparators = useMemo((): MessageWithSeparator[] => {
     const list: MessageWithSeparator[] = [];
@@ -3177,7 +3334,17 @@ export function ChatRoomScreen({ route, navigation }: Props) {
             );
           }}
           onScrollToIndexFailed={handleScrollToIndexFailed}
+          onScroll={handleListScroll}
+          scrollEventThrottle={16}
+          onContentSizeChange={handleListContentSizeChange}
           contentContainerStyle={styles.listContent}
+          ListHeaderComponent={
+            loadingOlder ? (
+              <View style={styles.loadingOlderWrap}>
+                <ActivityIndicator size="small" color={colors.primary} />
+              </View>
+            ) : null
+          }
           inverted={false}
         />
       )}
@@ -3328,6 +3495,11 @@ const styles = StyleSheet.create({
   listContent: {
     padding: 12,
     paddingBottom: 8,
+  },
+  loadingOlderWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
   },
   dateSeparatorWrap: {
     flexDirection: 'row',

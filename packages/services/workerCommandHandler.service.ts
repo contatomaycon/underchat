@@ -23,6 +23,7 @@ import {
 import { balanceEnvironment } from '@core/config/environments';
 import { getErrorMessage } from '@core/common/functions/toError';
 import { INotifyWorkerStatusRequestProto } from '@core/common/interfaces/INotifyWorkerStatusRequestProto';
+import { currentTime } from '@core/common/functions/currentTime';
 
 @injectable()
 export class WorkerCommandHandlerService {
@@ -164,11 +165,16 @@ export class WorkerCommandHandlerService {
 
     const phoneNumber = input.phone ?? view?.number ?? null;
 
+    let connectionDate = view?.connection_date;
+    if (workerStatusId === EWorkerStatus.online && phoneNumber) {
+      connectionDate = currentTime();
+    }
+
     await this.workerService.updateWorkerPhoneStatusConnectionDate({
       worker_id: workerId,
       status: workerStatusId,
       number: phoneNumber,
-      connection_date: view?.connection_date,
+      connection_date: connectionDate,
     });
     await Promise.all([
       this.centrifugoPublish(payload),
