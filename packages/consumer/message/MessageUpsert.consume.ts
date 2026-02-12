@@ -745,8 +745,8 @@ export class MessageUpsertConsume {
   ): Promise<void> {
     if (!data.photo) return;
 
-    const needsPhotoUpdate = !getChat.photo;
-    const needsContactPhotoUpdate = getChat.contact && !getChat.contact.photo;
+    const needsPhotoUpdate = true;
+    const needsContactPhotoUpdate = Boolean(getChat.contact);
 
     if (!needsPhotoUpdate && !needsContactPhotoUpdate) return;
 
@@ -759,9 +759,23 @@ export class MessageUpsertConsume {
 
       if (!photoResult?.url) return;
 
-      if (needsPhotoUpdate) getChat.photo = photoResult.url;
+      const previousChatPhoto = getChat.photo;
+      if (previousChatPhoto && previousChatPhoto !== photoResult.url) {
+        await this.storageService
+          .deleteImage(previousChatPhoto)
+          .catch(() => {});
+      }
+
+      getChat.photo = photoResult.url;
 
       if (needsContactPhotoUpdate && getChat.contact?.id) {
+        const previousContactPhoto = getChat.contact.photo ?? null;
+        if (previousContactPhoto && previousContactPhoto !== photoResult.url) {
+          await this.storageService
+            .deleteImage(previousContactPhoto)
+            .catch(() => {});
+        }
+
         await this.contactService.updateContactById(
           {
             image_url: photoResult.url,
@@ -776,21 +790,18 @@ export class MessageUpsertConsume {
         };
       }
 
-      const updateData: Partial<IChat> = {};
-      if (needsPhotoUpdate) {
-        updateData.photo = photoResult.url;
-      }
+      const updateData: Partial<IChat> = {
+        photo: photoResult.url,
+      };
 
-      if (needsContactPhotoUpdate && getChat.contact) {
+      if (getChat.contact) {
         updateData.contact = getChat.contact;
       }
 
-      if (Object.keys(updateData).length > 0) {
-        await this.chatService.saveChat({
-          ...getChat,
-          ...updateData,
-        });
-      }
+      await this.chatService.saveChat({
+        ...getChat,
+        ...updateData,
+      });
     } catch (error) {
       console.error(
         `[MessageUpsert] Failed to update chat photo for chat ${getChat.chat_id}:`,

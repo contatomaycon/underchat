@@ -58,7 +58,9 @@ export class BaileysIncomingMessageService {
   private isDestroying = false;
 
   private readonly PHOTO_CACHE_TTL = 86400;
+  private readonly PHOTO_CACHE_NO_PHOTO_TTL = 300;
   private readonly PHOTO_CACHE_PREFIX = 'photo:jid:';
+  private readonly PHOTO_CACHE_NO_PHOTO = '__no_photo__';
   private readonly MESSAGE_CACHE_TTL_SECONDS_DEFAULT = 60 * 60 * 8;
   private readonly MESSAGE_CACHE_TTL_SECONDS_POLL = 60 * 60 * 24 * 7;
   private readonly MESSAGE_CACHE_PREFIX = 'wa:msg:';
@@ -450,34 +452,12 @@ export class BaileysIncomingMessageService {
     }
   }
 
-  private async fetchPhotoNonBlocking(
+  private fetchPhotoNonBlocking(
     socket: WASocket,
     pendingItem: IBaileysPendingMessage,
     jid?: string
-  ): Promise<Promise<void> | void> {
+  ): void {
     const resolvedJid =
-      jid ||
-      remoteJid(pendingItem.inputUpsert.message?.key) ||
-      remoteJidAlt(pendingItem.inputUpsert.message?.key);
-
-    if (!resolvedJid) return;
-
-    const result = await socket
-      .profilePictureUrl(resolvedJid, 'image')
-      .then((photo) => {
-        if (photo) {
-          console.log('photo:');
-          console.dir(photo, { depth: null, colors: true });
-
-          if (pendingItem.retries === 0) {
-            pendingItem.inputUpsert.photo = photo;
-          }
-        }
-      });
-
-    return result;
-
-    /* const resolvedJid =
       jid ||
       remoteJid(pendingItem.inputUpsert.message?.key) ||
       remoteJidAlt(pendingItem.inputUpsert.message?.key);
@@ -489,6 +469,10 @@ export class BaileysIncomingMessageService {
     this.redis
       .get(cacheKey)
       .then((cachedPhoto) => {
+        if (cachedPhoto === this.PHOTO_CACHE_NO_PHOTO) {
+          return;
+        }
+
         if (cachedPhoto) {
           if (pendingItem.retries === 0) {
             pendingItem.inputUpsert.photo = cachedPhoto;
@@ -507,11 +491,21 @@ export class BaileysIncomingMessageService {
               if (pendingItem.retries === 0) {
                 pendingItem.inputUpsert.photo = photo;
               }
+              return;
             }
+
+            this.redis
+              .set(
+                cacheKey,
+                this.PHOTO_CACHE_NO_PHOTO,
+                'EX',
+                this.PHOTO_CACHE_NO_PHOTO_TTL
+              )
+              .catch(() => {});
           })
           .catch(() => {});
       })
-      .catch(() => {}); */
+      .catch(() => {});
   }
 
   private async handlePresenceUpdate(data: {
