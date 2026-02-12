@@ -12,7 +12,6 @@ import {
   Linking,
   Animated,
   Modal,
-  Alert,
   ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -20,15 +19,25 @@ import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { ChatStackParamList } from '../navigation/types';
 import {
+  type ListChatsResult,
   type ListMessageResult,
   type MessageContent,
+  type MessageContentContact,
+  type MessageContentDocument,
   type MessageContentVideo,
   ETypeUserChat,
 } from '../types/chat';
 import { createAudioPlayer, type AudioPlayer } from 'expo-audio';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { Directory, File, Paths } from 'expo-file-system';
-import { listMessages, createMessage } from '../api/chatApi';
+import * as MediaLibrary from 'expo-media-library';
+import {
+  listMessages,
+  createMessage,
+  getChatContactById,
+  getChatContactByPhone,
+  type ChatContactLookupResult,
+} from '../api/chatApi';
 import {
   addChatSocketListener,
   consumePendingChatUpdates,
@@ -87,6 +96,9 @@ const WAVEFORM_HORIZONTAL_INSET = 2;
 const WAVEFORM_FALLBACK_MAX_BARS = 28;
 const VIDEO_FULLSCREEN_DISABLED = { enable: false } as const;
 const VIDEO_FULLSCREEN_ENABLED = { enable: true } as const;
+type DownloadKind = 'image' | 'video' | 'document';
+
+let preferredNativeDownloadDirectoryUri: string | null = null;
 
 function fitWaveformToWidth(
   waveform: number[],
@@ -230,6 +242,72 @@ function resolveMediaUri(url: string | null | undefined): string | null {
   return resolveImageUri(url) ?? url;
 }
 
+type ContactCardDisplayData = {
+  name: string;
+  phone: string | null;
+  photoUri: string | null;
+};
+
+function buildLocationPreviewCandidates(
+  latitude: number,
+  longitude: number
+): string[] {
+  const lat = Number(latitude.toFixed(6));
+  const lng = Number(longitude.toFixed(6));
+  const center = `${lat},${lng}`;
+  const marker = `${lat},${lng},red-pushpin`;
+
+  const osm = `https://staticmap.openstreetmap.de/staticmap.php?center=${encodeURIComponent(
+    center
+  )}&zoom=15&size=600x340&markers=${encodeURIComponent(marker)}`;
+  const yandex = `https://static-maps.yandex.ru/1.x/?lang=en-US&ll=${lng},${lat}&z=15&l=map&size=600,340&pt=${lng},${lat},pm2rdm`;
+  const google = `https://maps.googleapis.com/maps/api/staticmap?center=${encodeURIComponent(
+    center
+  )}&zoom=15&size=600x340&markers=color:red|${encodeURIComponent(center)}`;
+
+  return [osm, yandex, google];
+}
+
+async function openLocationInMaps(
+  latitude: number,
+  longitude: number,
+  label: string | null | undefined
+): Promise<void> {
+  const name = (label ?? pt.location).trim() || pt.location;
+  const query = `${latitude},${longitude}`;
+  const webUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
+
+  if (Platform.OS === 'android') {
+    const geoUrl = `geo:${latitude},${longitude}?q=${latitude},${longitude}(${encodeURIComponent(
+      name
+    )})`;
+    try {
+      await Linking.openURL(geoUrl);
+      return;
+    } catch {
+      //
+    }
+  }
+
+  if (Platform.OS === 'ios') {
+    const appleMapsUrl = `http://maps.apple.com/?ll=${latitude},${longitude}&q=${encodeURIComponent(
+      name
+    )}`;
+    try {
+      await Linking.openURL(appleMapsUrl);
+      return;
+    } catch {
+      //
+    }
+  }
+
+  try {
+    await Linking.openURL(webUrl);
+  } catch {
+    //
+  }
+}
+
 function formatVideoDuration(seconds: number | null | undefined): string {
   if (typeof seconds !== 'number') return '';
   if (!Number.isFinite(seconds) || seconds < 0) return '';
@@ -258,6 +336,17 @@ function resolveVideoDownloadName(
   return `video.${ext}`;
 }
 
+function resolveDocumentDownloadName(
+  document: MessageContentDocument | null | undefined
+): string {
+  if (document?.name && document.name.trim().length > 0) {
+    return sanitizeFilename(document.name);
+  }
+  const ext =
+    (document?.extension ?? '').replace(/^\./, '').toLowerCase() || 'pdf';
+  return `documento.${ext}`;
+}
+
 function resolveStickerDownloadName(msg: ListMessageResult): string {
   const sticker = msg.content?.sticker;
   const ext = (sticker?.extension ?? '').replace(/^\./, '').toLowerCase() || 'webp';
@@ -272,6 +361,220 @@ function resolveImageDownloadName(msg: ListMessageResult, sourceUrl: string): st
   const fallbackName = `imagem-${msg.message_id.slice(-8)}`;
   const baseName = captionName || fallbackName;
   return `${baseName}.${extension}`;
+}
+
+function normalizePhoneDigits(value: string | null | undefined): string {
+  if (!value) return '';
+  return value.replace(/\D/g, '');
+}
+
+function isPhoneMatch(
+  firstPhone: string | null | undefined,
+  secondPhone: string | null | undefined
+): boolean {
+  const firstDigits = normalizePhoneDigits(firstPhone);
+  const secondDigits = normalizePhoneDigits(secondPhone);
+  if (!firstDigits || !secondDigits) return false;
+  if (firstDigits === secondDigits) return true;
+  if (Math.min(firstDigits.length, secondDigits.length) < 8) return false;
+  return (
+    firstDigits.endsWith(secondDigits) || secondDigits.endsWith(firstDigits)
+  );
+}
+
+function resolveContactCardDisplayData(
+  contact: MessageContentContact,
+  chatInfo: ListChatsResult | null | undefined
+): ContactCardDisplayData {
+  const payloadName =
+    [contact.name, contact.last_name].filter(Boolean).join(' ').trim() ||
+    pt.contact;
+  const payloadPhone = contact.phone ?? contact.phone_partial ?? null;
+  const payloadPhoto = resolveMediaUri(contact.photo) ?? null;
+
+  const systemContact = chatInfo?.contact;
+  if (!systemContact) {
+    return {
+      name: payloadName,
+      phone: payloadPhone,
+      photoUri: payloadPhoto,
+    };
+  }
+
+  const hasSameContactId =
+    !!contact.contact_id &&
+    !!systemContact.id &&
+    contact.contact_id === systemContact.id;
+  const hasSamePhone =
+    isPhoneMatch(contact.phone, systemContact.phone) ||
+    isPhoneMatch(contact.phone_partial, systemContact.phone) ||
+    isPhoneMatch(contact.phone, chatInfo?.phone) ||
+    isPhoneMatch(contact.phone_partial, chatInfo?.phone);
+
+  if (!hasSameContactId && !hasSamePhone) {
+    return {
+      name: payloadName,
+      phone: payloadPhone,
+      photoUri: payloadPhoto,
+    };
+  }
+
+  return {
+    name: systemContact.name?.trim() || payloadName,
+    phone: systemContact.phone || payloadPhone,
+    photoUri: resolveMediaUri(systemContact.photo) ?? payloadPhoto,
+  };
+}
+
+function buildContactCardDisplayFromLookup(
+  lookup: ChatContactLookupResult | null | undefined,
+  fallback: ContactCardDisplayData
+): ContactCardDisplayData {
+  if (!lookup) return fallback;
+
+  const resolvedName = [lookup.name, lookup.last_name]
+    .filter((value) => !!value && value.trim().length > 0)
+    .join(' ')
+    .trim();
+  const resolvedPhone = lookup.phone ?? lookup.phone_partial ?? null;
+  const resolvedPhoto = resolveMediaUri(lookup.photo) ?? null;
+
+  return {
+    name: resolvedName || fallback.name,
+    phone: resolvedPhone || fallback.phone,
+    photoUri: resolvedPhoto || fallback.photoUri,
+  };
+}
+
+async function forceDownloadToDevice(
+  sourceUrl: string,
+  preferredFileName: string,
+  kind: DownloadKind = 'document'
+): Promise<void> {
+  const fileName =
+    sanitizeFilename(preferredFileName || '') || `arquivo-${Date.now()}`;
+
+  if (Platform.OS === 'web') {
+    const webDocument = (globalThis as { document?: any }).document;
+    const webURL = (globalThis as { URL?: any }).URL;
+
+    if (webDocument?.createElement && webURL?.createObjectURL) {
+      try {
+        const response = await fetch(sourceUrl);
+        const blob = await response.blob();
+        const blobUrl = webURL.createObjectURL(blob);
+        const anchor = webDocument.createElement('a');
+        anchor.href = blobUrl;
+        anchor.download = fileName;
+        anchor.style.display = 'none';
+        webDocument.body?.appendChild?.(anchor);
+        anchor.click();
+        anchor.remove?.();
+        setTimeout(() => {
+          webURL.revokeObjectURL?.(blobUrl);
+        }, 100);
+        return;
+      } catch {
+        //
+      }
+    }
+
+    if (webDocument?.createElement) {
+      const anchor = webDocument.createElement('a');
+      anchor.href = sourceUrl;
+      anchor.download = fileName;
+      anchor.rel = 'noopener';
+      anchor.target = '_blank';
+      anchor.style.display = 'none';
+      webDocument.body?.appendChild?.(anchor);
+      anchor.click();
+      anchor.remove?.();
+      return;
+    }
+
+    Linking.openURL(sourceUrl);
+    return;
+  }
+
+  const temporaryDirectory = new Directory(Paths.cache, 'chat-downloads');
+  if (!temporaryDirectory.exists) {
+    temporaryDirectory.create({ intermediates: true, idempotent: true });
+  }
+
+  const temporaryFileName = `${Date.now()}-${fileName}`;
+  const temporaryFile = new File(temporaryDirectory, temporaryFileName);
+  if (temporaryFile.exists) {
+    temporaryFile.delete();
+  }
+
+  const downloadedFile = await File.downloadFileAsync(sourceUrl, temporaryFile, {
+    idempotent: true,
+  });
+
+  const cleanupDownloadedFile = () => {
+    if (!downloadedFile.exists) return;
+    try {
+      downloadedFile.delete();
+    } catch {
+      //
+    }
+  };
+
+  if (kind === 'image' || kind === 'video') {
+    try {
+      const granularPermissions: MediaLibrary.GranularPermission[] =
+        kind === 'image' ? ['photo'] : ['video'];
+      const permission = await MediaLibrary.requestPermissionsAsync(
+        true,
+        granularPermissions
+      );
+
+      if (permission.granted) {
+        await MediaLibrary.saveToLibraryAsync(downloadedFile.uri);
+        cleanupDownloadedFile();
+        return;
+      }
+    } catch {
+      //
+    }
+  }
+
+  const copyToDirectory = (directoryUri: string): boolean => {
+    try {
+      const directory = new Directory(directoryUri);
+      const destinationFile = new File(directory, fileName);
+      if (destinationFile.exists) {
+        destinationFile.delete();
+      }
+      downloadedFile.copy(destinationFile);
+      cleanupDownloadedFile();
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  if (preferredNativeDownloadDirectoryUri) {
+    const copied = copyToDirectory(preferredNativeDownloadDirectoryUri);
+    if (copied) return;
+    preferredNativeDownloadDirectoryUri = null;
+  }
+
+  try {
+    const pickedDirectory = await Directory.pickDirectoryAsync();
+    preferredNativeDownloadDirectoryUri = pickedDirectory.uri;
+    if (copyToDirectory(preferredNativeDownloadDirectoryUri)) {
+      return;
+    }
+  } catch {
+    //
+  }
+
+  const fallbackDirectory = new Directory(Paths.document, 'downloads');
+  if (!fallbackDirectory.exists) {
+    fallbackDirectory.create({ intermediates: true, idempotent: true });
+  }
+  copyToDirectory(fallbackDirectory.uri);
 }
 
 function getLatestMessageText(msg: ListMessageResult): string {
@@ -702,10 +1005,75 @@ function VideoMessagePreview({
   );
 }
 
+function LocationMessagePreview({
+  latitude,
+  longitude,
+  name,
+  address,
+}: {
+  latitude: number;
+  longitude: number;
+  name: string | null | undefined;
+  address: string | null | undefined;
+}) {
+  const [previewSourceIndex, setPreviewSourceIndex] = useState(0);
+  const [previewLoadError, setPreviewLoadError] = useState(false);
+  const previewCandidates = useMemo(
+    () => buildLocationPreviewCandidates(latitude, longitude),
+    [latitude, longitude]
+  );
+  const previewUri =
+    previewCandidates[Math.min(previewSourceIndex, previewCandidates.length - 1)];
+  const title = name?.trim() || pt.location;
+
+  const handleOpen = useCallback(() => {
+    void openLocationInMaps(latitude, longitude, title || address);
+  }, [address, latitude, longitude, title]);
+
+  return (
+    <Pressable style={styles.locationBubble} onPress={handleOpen}>
+      <View style={styles.locationMapPreview}>
+        {previewLoadError ? (
+          <View style={styles.locationMapFallback}>
+            <Ionicons name="location" size={28} color={colors.primary} />
+          </View>
+        ) : (
+          <Image
+            key={previewUri}
+            source={{ uri: previewUri }}
+            style={styles.locationMapImage}
+            resizeMode="cover"
+            onError={() => {
+              if (previewSourceIndex < previewCandidates.length - 1) {
+                setPreviewSourceIndex((current) => current + 1);
+                return;
+              }
+              setPreviewLoadError(true);
+            }}
+          />
+        )}
+      </View>
+
+      <View style={styles.locationInfo}>
+        <Text style={styles.locationName} numberOfLines={1}>
+          {title}
+        </Text>
+        {address ? (
+          <Text style={styles.locationAddress} numberOfLines={2}>
+            {address}
+          </Text>
+        ) : null}
+      </View>
+    </Pressable>
+  );
+}
+
 function BubbleContent({
   msg,
   fromMe,
   content,
+  chatInfo,
+  resolvedContactDisplay,
   audioCtrl,
   onOpenImage,
   onOpenVideo,
@@ -713,6 +1081,8 @@ function BubbleContent({
   msg: ListMessageResult;
   fromMe: boolean;
   content: MessageContent;
+  chatInfo: ListChatsResult;
+  resolvedContactDisplay?: ContactCardDisplayData;
   audioCtrl: AudioCtrl | null;
   onOpenImage: (msg: ListMessageResult) => void;
   onOpenVideo: (msg: ListMessageResult) => void;
@@ -799,23 +1169,17 @@ function BubbleContent({
     content.location?.latitude != null &&
     content.location?.longitude != null
   ) {
-    const lat = content.location.latitude!;
-    const lng = content.location.longitude!;
-    const url = `https://www.google.com/maps?q=${lat},${lng}`;
-    const name = content.location.name ?? pt.location;
-    const address = content.location.address;
+    const latitude = Number(content.location.latitude);
+    const longitude = Number(content.location.longitude);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+
     return (
-      <Pressable onPress={() => Linking.openURL(url)}>
-        <View style={styles.locationWrap}>
-          <Ionicons name="location" size={24} color={colors.primary} />
-          <View style={styles.locationText}>
-            <Text style={[styles.locationName, textColor]}>{name}</Text>
-            {address ? (
-              <Text style={styles.locationAddress}>{address}</Text>
-            ) : null}
-          </View>
-        </View>
-      </Pressable>
+      <LocationMessagePreview
+        latitude={latitude}
+        longitude={longitude}
+        name={content.location.name}
+        address={content.location.address}
+      />
     );
   }
 
@@ -1008,7 +1372,13 @@ function BubbleContent({
               styles.documentDownloadBtn,
               fromMe && styles.documentDownloadBtnRight,
             ]}
-            onPress={() => Linking.openURL(docUrl)}
+            onPress={() => {
+              void forceDownloadToDevice(
+                docUrl,
+                resolveDocumentDownloadName(doc),
+                'document'
+              );
+            }}
             accessibilityLabel={pt.download}
           >
             <Ionicons
@@ -1030,17 +1400,36 @@ function BubbleContent({
   }
 
   if (type === EMessageType.contact_card && content.contact) {
-    const name =
-      [content.contact.name, content.contact.last_name]
-        .filter(Boolean)
-        .join(' ') || pt.contact;
-    const phone = content.contact.phone ?? content.contact.phone_partial;
+    const contactDisplay =
+      resolvedContactDisplay ??
+      resolveContactCardDisplayData(content.contact, chatInfo);
     return (
-      <View style={styles.contactWrap}>
-        <Ionicons name="person-circle" size={32} color={colors.primary} />
+      <View style={[styles.contactWrap, fromMe && styles.contactWrapRight]}>
+        <View
+          style={[
+            styles.contactAvatarWrap,
+            fromMe && styles.contactAvatarWrapRight,
+          ]}
+        >
+          {contactDisplay.photoUri ? (
+            <Image
+              source={{ uri: contactDisplay.photoUri }}
+              style={styles.contactAvatar}
+              resizeMode="cover"
+            />
+          ) : (
+            <Ionicons name="person" size={18} color={colors.primary} />
+          )}
+        </View>
         <View style={styles.contactInfo}>
-          <Text style={[styles.contactName, textColor]}>{name}</Text>
-          {phone ? <Text style={styles.contactPhone}>{phone}</Text> : null}
+          <Text style={styles.contactName} numberOfLines={2}>
+            {contactDisplay.name}
+          </Text>
+          {contactDisplay.phone ? (
+            <Text style={styles.contactPhone} numberOfLines={1}>
+              {contactDisplay.phone}
+            </Text>
+          ) : null}
         </View>
       </View>
     );
@@ -1118,12 +1507,16 @@ function BubbleContent({
 function MessageBubble({
   msg,
   fromMe,
+  chatInfo,
+  resolvedContactDisplay,
   audioCtrl,
   onOpenImage,
   onOpenVideo,
 }: {
   msg: ListMessageResult;
   fromMe: boolean;
+  chatInfo: ListChatsResult;
+  resolvedContactDisplay?: ContactCardDisplayData;
   audioCtrl: AudioCtrl | null;
   onOpenImage: (msg: ListMessageResult) => void;
   onOpenVideo: (msg: ListMessageResult) => void;
@@ -1223,6 +1616,8 @@ function MessageBubble({
           msg={msg}
           fromMe={fromMe}
           content={content}
+          chatInfo={chatInfo}
+          resolvedContactDisplay={resolvedContactDisplay}
           audioCtrl={audioCtrl}
           onOpenImage={onOpenImage}
           onOpenVideo={onOpenVideo}
@@ -1270,6 +1665,11 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     caption: '',
     downloadName: '',
   });
+  const [resolvedContactCards, setResolvedContactCards] = useState<
+    Record<string, ContactCardDisplayData>
+  >({});
+  const resolvingContactCards = useRef<Set<string>>(new Set());
+  const resolvedContactLookupDone = useRef<Set<string>>(new Set());
   const [downloadingViewerMedia, setDownloadingViewerMedia] = useState(false);
   const audioCtrl = useChatAudio();
   const viewerVideoPlayer = useVideoPlayer(
@@ -1365,6 +1765,73 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     });
   }, []);
 
+  const resolveContactCardForMessage = useCallback(
+    async (message: ListMessageResult) => {
+      const contact = message.content?.contact;
+      if (!contact) return;
+
+      const messageId = message.message_id;
+      if (
+        resolvedContactLookupDone.current.has(messageId) ||
+        resolvingContactCards.current.has(messageId)
+      ) {
+        return;
+      }
+
+      const fallback = resolveContactCardDisplayData(contact, chatInfo);
+      setResolvedContactCards((prev) =>
+        prev[messageId] ? prev : { ...prev, [messageId]: fallback }
+      );
+
+      resolvingContactCards.current.add(messageId);
+      try {
+        let lookup: ChatContactLookupResult | null = null;
+        const contactId = contact.contact_id?.trim();
+        if (contactId) {
+          lookup = await getChatContactById(contactId);
+        }
+
+        if (!lookup) {
+          const phone = normalizePhoneDigits(contact.phone ?? contact.phone_partial);
+          const phoneDdi =
+            contact.phone_ddi?.trim() ||
+            chatInfo.contact?.phone_ddi?.trim() ||
+            '55';
+          if (phone) {
+            lookup = await getChatContactByPhone(phone, phoneDdi);
+          }
+        }
+
+        const resolved = buildContactCardDisplayFromLookup(lookup, fallback);
+        setResolvedContactCards((prev) => ({ ...prev, [messageId]: resolved }));
+      } catch {
+        setResolvedContactCards((prev) => ({ ...prev, [messageId]: fallback }));
+      } finally {
+        resolvingContactCards.current.delete(messageId);
+        resolvedContactLookupDone.current.add(messageId);
+      }
+    },
+    [chatInfo]
+  );
+
+  useEffect(() => {
+    setResolvedContactCards({});
+    resolvingContactCards.current.clear();
+    resolvedContactLookupDone.current.clear();
+  }, [chatInfo.chat_id]);
+
+  useEffect(() => {
+    for (const message of messages) {
+      if (
+        message.content?.type !== EMessageType.contact_card ||
+        !message.content.contact
+      ) {
+        continue;
+      }
+      void resolveContactCardForMessage(message);
+    }
+  }, [messages, resolveContactCardForMessage]);
+
   const handleDownloadViewerMedia = useCallback(async () => {
     if (!viewer.src || downloadingViewerMedia) return;
 
@@ -1372,61 +1839,10 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     try {
       const defaultName =
         viewer.kind === 'video' ? `video-${Date.now()}.mp4` : `imagem-${Date.now()}.jpg`;
-      const fileName =
-        sanitizeFilename(viewer.downloadName || '') || defaultName;
-
-      if (Platform.OS === 'web') {
-        const webDocument = (globalThis as { document?: any }).document;
-        const webURL = (globalThis as { URL?: any }).URL;
-
-        if (webDocument?.createElement && webURL?.createObjectURL) {
-          try {
-            const response = await fetch(viewer.src);
-            const blob = await response.blob();
-            const blobUrl = webURL.createObjectURL(blob);
-            const anchor = webDocument.createElement('a');
-            anchor.href = blobUrl;
-            anchor.download = fileName;
-            anchor.style.display = 'none';
-            webDocument.body?.appendChild?.(anchor);
-            anchor.click();
-            anchor.remove?.();
-            setTimeout(() => {
-              webURL.revokeObjectURL?.(blobUrl);
-            }, 100);
-            return;
-          } catch {
-            //
-          }
-        }
-
-        Linking.openURL(viewer.src);
-        return;
-      }
-
-      const downloadDirectory = new Directory(Paths.document, 'downloads');
-      if (!downloadDirectory.exists) {
-        downloadDirectory.create({ intermediates: true, idempotent: true });
-      }
-
-      const destinationFile = new File(downloadDirectory, fileName);
-
-      await File.downloadFileAsync(viewer.src, destinationFile, {
-        idempotent: true,
-      });
-      Alert.alert(
-        pt.download,
-        viewer.kind === 'video'
-          ? pt.video_download_success
-          : pt.image_download_success
-      );
+      const fileName = viewer.downloadName || defaultName;
+      await forceDownloadToDevice(viewer.src, fileName, viewer.kind);
     } catch {
-      Alert.alert(
-        pt.download,
-        viewer.kind === 'video'
-          ? pt.video_download_error
-          : pt.image_download_error
-      );
+      //
     } finally {
       setDownloadingViewerMedia(false);
     }
@@ -1607,6 +2023,10 @@ export function ChatRoomScreen({ route, navigation }: Props) {
               <MessageBubble
                 msg={item.message}
                 fromMe={item.message.type_user !== ETypeUserChat.client}
+                chatInfo={chatInfo}
+                resolvedContactDisplay={
+                  resolvedContactCards[item.message.message_id]
+                }
                 audioCtrl={audioCtrl}
                 onOpenImage={openImageViewer}
                 onOpenVideo={openVideoViewer}
@@ -1846,7 +2266,7 @@ const styles = StyleSheet.create({
     maxWidth: '90%',
   },
   bubbleContact: {
-    minWidth: 160,
+    minWidth: 210,
   },
   bubbleAudio: {
     minWidth: 220,
@@ -1980,23 +2400,44 @@ const styles = StyleSheet.create({
     maxWidth: 100,
     maxHeight: 100,
   },
-  locationWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingVertical: 4,
+  locationBubble: {
+    width: 200,
+    maxWidth: 200,
+    minWidth: 175,
+    borderRadius: 8,
+    overflow: 'hidden',
+    backgroundColor: '#FFFFFF',
   },
-  locationText: {
-    flex: 1,
+  locationMapPreview: {
+    width: '100%',
+    height: 112,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(47, 43, 61, 0.08)',
+  },
+  locationMapImage: {
+    width: '100%',
+    height: '100%',
+  },
+  locationMapFallback: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  locationInfo: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    minWidth: 0,
   },
   locationName: {
-    fontSize: 15,
-    fontWeight: '500',
+    fontSize: 14,
+    fontWeight: '600',
+    color: 'rgba(17, 27, 33, 0.95)',
   },
   locationAddress: {
     fontSize: 12,
-    color: colors.grey600,
-    marginTop: 2,
+    color: colors.grey700,
+    marginTop: 3,
   },
   audioWrap: {
     flexDirection: 'row',
@@ -2219,18 +2660,45 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    paddingVertical: 4,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    backgroundColor: '#FFFFFF',
+    minWidth: 210,
+  },
+  contactWrapRight: {
+    backgroundColor: 'rgba(255, 255, 255, 0.94)',
+  },
+  contactAvatarWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(40, 101, 183, 0.14)',
+    overflow: 'hidden',
+    flexShrink: 0,
+  },
+  contactAvatarWrapRight: {
+    backgroundColor: 'rgba(40, 101, 183, 0.2)',
+  },
+  contactAvatar: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 21,
   },
   contactInfo: {
     flex: 1,
+    minWidth: 0,
   },
   contactName: {
-    fontSize: 15,
-    fontWeight: '500',
+    fontSize: 16,
+    fontWeight: '600',
+    color: 'rgba(17, 27, 33, 0.95)',
   },
   contactPhone: {
-    fontSize: 12,
-    color: colors.grey600,
+    fontSize: 14,
+    color: colors.grey700,
     marginTop: 2,
   },
   systemWrap: {

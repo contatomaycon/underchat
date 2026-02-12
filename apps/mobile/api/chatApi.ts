@@ -375,3 +375,35 @@ export async function listChatContacts(
   const res = await apiGet<ListChatContactsResponse>('/chat/contacts', params);
   return res?.data ?? null;
 }
+
+export interface ChatContactLookupResult {
+  contact_id?: string | null;
+  name?: string | null;
+  last_name?: string | null;
+  phone?: string | null;
+  phone_partial?: string | null;
+  phone_ddi?: string | null;
+  photo?: string | null;
+}
+
+export async function getChatContactById(
+  contactId: string
+): Promise<ChatContactLookupResult | null> {
+  if (!contactId || contactId.trim().length === 0) return null;
+  const res = await apiGet<ChatContactLookupResult>(
+    `/chat/contacts/${contactId}`
+  );
+  return res?.data ?? null;
+}
+
+export async function getChatContactByPhone(
+  phone: string,
+  phoneDdi: string
+): Promise<ChatContactLookupResult | null> {
+  if (!phone || phone.trim().length === 0) return null;
+  const res = await apiGet<ChatContactLookupResult>('/chat/contacts/by-phone', {
+    phone,
+    phone_ddi: phoneDdi,
+  });
+  return res?.data ?? null;
+}
