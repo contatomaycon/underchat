@@ -354,7 +354,7 @@ export class BaileysConnectionService {
     const socket = makeWASocket({
       auth: state,
       version,
-      browser: Browsers.windows('Chrome'),
+      browser: Browsers.ubuntu('Chrome'),
       logger: P({ level: 'silent' }),
       printQRInTerminal: false,
       getMessage: async (key) =>
