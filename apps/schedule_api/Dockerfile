@@ -72,6 +72,7 @@ COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/apps/schedule_api/package*.json ./apps/schedule_api
 COPY --from=builder /build_locales ./packages/plugins/i18next/locales
 COPY --from=builder /app/packages/proto ./packages/proto
+COPY --from=builder /app/packages/temporal ./packages/temporal
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
