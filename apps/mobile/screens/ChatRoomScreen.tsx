@@ -252,18 +252,18 @@ function buildLocationPreviewCandidates(
   latitude: number,
   longitude: number
 ): string[] {
+  const previewZoom = 18;
   const lat = Number(latitude.toFixed(6));
   const lng = Number(longitude.toFixed(6));
   const center = `${lat},${lng}`;
-  const marker = `${lat},${lng},red-pushpin`;
 
   const osm = `https://staticmap.openstreetmap.de/staticmap.php?center=${encodeURIComponent(
     center
-  )}&zoom=15&size=600x340&markers=${encodeURIComponent(marker)}`;
-  const yandex = `https://static-maps.yandex.ru/1.x/?lang=en-US&ll=${lng},${lat}&z=15&l=map&size=600,340&pt=${lng},${lat},pm2rdm`;
+  )}&zoom=${previewZoom}&size=600x340`;
+  const yandex = `https://static-maps.yandex.ru/1.x/?lang=en-US&ll=${lng},${lat}&z=${previewZoom}&l=map&size=600,340`;
   const google = `https://maps.googleapis.com/maps/api/staticmap?center=${encodeURIComponent(
     center
-  )}&zoom=15&size=600x340&markers=color:red|${encodeURIComponent(center)}`;
+  )}&zoom=${previewZoom}&size=600x340`;
 
   return [osm, yandex, google];
 }
@@ -1038,19 +1038,24 @@ function LocationMessagePreview({
             <Ionicons name="location" size={28} color={colors.primary} />
           </View>
         ) : (
-          <Image
-            key={previewUri}
-            source={{ uri: previewUri }}
-            style={styles.locationMapImage}
-            resizeMode="cover"
-            onError={() => {
-              if (previewSourceIndex < previewCandidates.length - 1) {
-                setPreviewSourceIndex((current) => current + 1);
-                return;
-              }
-              setPreviewLoadError(true);
-            }}
-          />
+          <>
+            <Image
+              key={previewUri}
+              source={{ uri: previewUri }}
+              style={styles.locationMapImage}
+              resizeMode="cover"
+              onError={() => {
+                if (previewSourceIndex < previewCandidates.length - 1) {
+                  setPreviewSourceIndex((current) => current + 1);
+                  return;
+                }
+                setPreviewLoadError(true);
+              }}
+            />
+            <View style={styles.locationPinOverlay}>
+              <Ionicons name="location-sharp" size={36} color="#EF4444" />
+            </View>
+          </>
         )}
       </View>
 
@@ -2423,6 +2428,17 @@ const styles = StyleSheet.create({
     height: '100%',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  locationPinOverlay: {
+    position: 'absolute',
+    left: '50%',
+    top: '50%',
+    transform: [{ translateX: -18 }, { translateY: -32 }],
+    shadowColor: '#000',
+    shadowOpacity: 0.28,
+    shadowRadius: 5,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
   },
   locationInfo: {
     paddingHorizontal: 12,
