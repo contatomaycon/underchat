@@ -1697,7 +1697,7 @@ function BubbleContent({
     const imageUri = resolveMediaUri(content.image.url);
     if (!imageUri) return null;
     return (
-      <View style={styles.mediaBubble}>
+      <View style={[styles.mediaBubble, styles.mediaBubbleImage]}>
         <Pressable onPress={() => onOpenImage(msg)}>
           <Image
             source={{ uri: imageUri }}
@@ -3297,10 +3297,13 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     borderRadius: 8,
   },
+  mediaBubbleImage: {
+    maxWidth: 210,
+  },
   imageThumb: {
     width: '100%',
-    maxWidth: 232,
-    maxHeight: 320,
+    maxWidth: 210,
+    maxHeight: 280,
     aspectRatio: 1,
     borderRadius: 6,
   },
