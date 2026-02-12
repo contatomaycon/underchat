@@ -50,6 +50,7 @@ FROM deps AS builder
 WORKDIR /app
 
 COPY --from=pruned /app/out/full/ .
+COPY --from=deps /app/node_modules ./node_modules
 
 ARG VITE_BACKEND_URL
 ARG VITE_API_PUBLIC_URL
