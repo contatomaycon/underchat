@@ -23,7 +23,6 @@ RUN apt-get update && \
 
 RUN corepack enable && \
     corepack prepare pnpm@10.14.0 --activate && \
-    corepack prepare yarn@4.9.2 --activate && \
     npm add -g turbo
  
 FROM turbo AS pruned
@@ -40,9 +39,10 @@ WORKDIR /app
 
 COPY --from=pruned /app/out/json/ .
 
-ENV npm_config_build_from_source=true \
+ENV CI=true \
+    npm_config_build_from_source=true \
     npm_config_loglevel=verbose
-RUN pnpm install --unsafe-perm
+RUN pnpm install --unsafe-perm --no-frozen-lockfile --ignore-scripts
 RUN RDKAFKA_PATH=$(find /app/node_modules -type d -name "node-rdkafka" 2>/dev/null | head -1) && \
     if [ -z "$RDKAFKA_PATH" ]; then echo "node-rdkafka não encontrado em node_modules"; exit 1; fi && \
     if [ ! -f "$RDKAFKA_PATH/build/Release/node-librdkafka.node" ]; then \
