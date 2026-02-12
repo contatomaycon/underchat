@@ -203,6 +203,7 @@ const LOAD_OLDER_SCROLL_THRESHOLD = 180;
 const SHOW_SCROLL_TO_BOTTOM_THRESHOLD = 160;
 const TYPING_TIMEOUT_MS = 5000;
 const VOICE_LOCK_SWIPE_THRESHOLD = 70;
+const VOICE_RELEASE_LOCK_GRACE_MS = 220;
 const RECORDING_WAVEFORM_MAX_BARS = 44;
 const RECORDING_WAVEFORM_MIN_BARS = 26;
 type DownloadKind = 'image' | 'video' | 'document';
@@ -2853,7 +2854,17 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const micPressActiveRef = useRef(false);
   const micStartYRef = useRef<number | null>(null);
+  const pendingReleaseBeforeReadyRef = useRef(false);
+  const recordingStartedAtRef = useRef<number | null>(null);
   const recordingActiveRef = useRef(false);
+  const inputRef = useRef('');
+  const sendingRef = useRef(false);
+  const isQueueOrUraStatusRef = useRef(false);
+  const sendingCapturedMediaRef = useRef(false);
+  const sendingVoiceRecordingRef = useRef(false);
+  const isRecordingVoiceRef = useRef(false);
+  const isRecordingLockedRef = useRef(false);
+  const isPreparingRecordingRef = useRef(false);
   const pendingScrollToBottomRef = useRef(true);
   const scrollOffsetRef = useRef(0);
   const contentHeightRef = useRef(0);
@@ -2894,6 +2905,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   );
   const [sendingCapturedMedia, setSendingCapturedMedia] = useState(false);
   const [isRecordingVoice, setIsRecordingVoice] = useState(false);
+  const [isMicPressActive, setIsMicPressActive] = useState(false);
   const [isRecordingLocked, setIsRecordingLocked] = useState(false);
   const [isRecordingPaused, setIsRecordingPaused] = useState(false);
   const [isPreparingRecording, setIsPreparingRecording] = useState(false);
@@ -3725,9 +3737,32 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     chatInfo.status === 'ura_schedule' ||
     chatInfo.status === 'ura_webhook';
 
+  useEffect(() => {
+    inputRef.current = input;
+    sendingRef.current = sending;
+    isQueueOrUraStatusRef.current = isQueueOrUraStatus;
+    sendingCapturedMediaRef.current = sendingCapturedMedia;
+    sendingVoiceRecordingRef.current = sendingVoiceRecording;
+    isRecordingVoiceRef.current = isRecordingVoice;
+    isRecordingLockedRef.current = isRecordingLocked;
+    isPreparingRecordingRef.current = isPreparingRecording;
+  }, [
+    input,
+    isPreparingRecording,
+    isQueueOrUraStatus,
+    isRecordingLocked,
+    isRecordingVoice,
+    sending,
+    sendingCapturedMedia,
+    sendingVoiceRecording,
+  ]);
+
   const resetRecordingComposerState = useCallback(() => {
     micPressActiveRef.current = false;
     micStartYRef.current = null;
+    pendingReleaseBeforeReadyRef.current = false;
+    recordingStartedAtRef.current = null;
+    setIsMicPressActive(false);
     setIsRecordingVoice(false);
     setIsRecordingLocked(false);
     setIsRecordingPaused(false);
@@ -3816,6 +3851,13 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     syncLatestMessages,
   ]);
 
+  const lockVoiceRecording = useCallback(() => {
+    if (!isRecordingVoice) return;
+    if (isRecordingLocked) return;
+    setIsRecordingLocked(true);
+    setShowRecordingHint(false);
+  }, [isRecordingLocked, isRecordingVoice]);
+
   const discardVoiceRecording = useCallback(async () => {
     if (!isRecordingVoice && !isRecordingPaused && !recorderState.url) return;
 
@@ -3883,10 +3925,11 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       setIsRecordingPaused(false);
       setShowRecordingHint(true);
       setRecordingWaveform([]);
+      recordingStartedAtRef.current = Date.now();
 
-      if (!micPressActiveRef.current) {
-        setShowRecordingHint(false);
-        void sendRecordedVoiceMessage();
+      if (pendingReleaseBeforeReadyRef.current) {
+        pendingReleaseBeforeReadyRef.current = false;
+        lockVoiceRecording();
       }
     } catch {
       resetRecordingComposerState();
@@ -3904,76 +3947,119 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     isRecordingVoice,
     recorder,
     recorderOptions,
+    lockVoiceRecording,
     resetRecordingComposerState,
-    sendRecordedVoiceMessage,
     sendingVoiceRecording,
   ]);
 
-  const handleMicPressGrant = useCallback(
-    (pageY: number) => {
-      if (input.trim().length > 0) return;
-      if (sending || isQueueOrUraStatus) return;
-      if (sendingCapturedMedia || sendingVoiceRecording) return;
+  const startVoiceRecordingCbRef = useRef(startVoiceRecording);
+  const sendRecordedVoiceMessageCbRef = useRef(sendRecordedVoiceMessage);
+  const lockVoiceRecordingCbRef = useRef(lockVoiceRecording);
 
-      micPressActiveRef.current = true;
-      micStartYRef.current = pageY;
-      void startVoiceRecording();
-    },
-    [
-      input,
-      isQueueOrUraStatus,
-      sending,
-      sendingCapturedMedia,
-      sendingVoiceRecording,
-      startVoiceRecording,
-    ]
-  );
+  useEffect(() => {
+    startVoiceRecordingCbRef.current = startVoiceRecording;
+  }, [startVoiceRecording]);
 
-  const handleMicPressMove = useCallback(
-    (pageY: number) => {
-      if (!isRecordingVoice || isRecordingLocked) return;
-      const startY = micStartYRef.current;
-      if (startY == null) return;
-      const deltaY = startY - pageY;
-      if (deltaY < VOICE_LOCK_SWIPE_THRESHOLD) return;
+  useEffect(() => {
+    sendRecordedVoiceMessageCbRef.current = sendRecordedVoiceMessage;
+  }, [sendRecordedVoiceMessage]);
 
-      setIsRecordingLocked(true);
-      setShowRecordingHint(false);
-    },
-    [isRecordingLocked, isRecordingVoice]
-  );
+  useEffect(() => {
+    lockVoiceRecordingCbRef.current = lockVoiceRecording;
+  }, [lockVoiceRecording]);
+
+  const handleMicPressGrant = useCallback((pageY: number) => {
+    if (inputRef.current.trim().length > 0) return;
+    if (sendingRef.current || isQueueOrUraStatusRef.current) return;
+    if (sendingCapturedMediaRef.current || sendingVoiceRecordingRef.current) {
+      return;
+    }
+    if (isPreparingRecordingRef.current || isRecordingVoiceRef.current) return;
+
+    pendingReleaseBeforeReadyRef.current = false;
+    micPressActiveRef.current = true;
+    micStartYRef.current = pageY;
+    setIsMicPressActive(true);
+    void startVoiceRecordingCbRef.current();
+  }, []);
+
+  const handleMicPressMove = useCallback((pageY: number) => {
+    if (!isRecordingVoiceRef.current || isRecordingLockedRef.current) return;
+    const startY = micStartYRef.current;
+    if (startY == null) return;
+    const deltaY = startY - pageY;
+    if (deltaY < VOICE_LOCK_SWIPE_THRESHOLD) return;
+
+    lockVoiceRecordingCbRef.current();
+  }, []);
 
   const handleMicPressRelease = useCallback(() => {
+    const wasMicPressActive = micPressActiveRef.current;
     micPressActiveRef.current = false;
     micStartYRef.current = null;
+    setIsMicPressActive(false);
     setShowRecordingHint(false);
 
-    if (!isRecordingVoice) return;
-    if (isRecordingLocked) return;
-    void sendRecordedVoiceMessage();
-  }, [isRecordingLocked, isRecordingVoice, sendRecordedVoiceMessage]);
+    if (!wasMicPressActive) return;
 
-  const micPanResponder = useMemo(
-    () =>
-      PanResponder.create({
-        onStartShouldSetPanResponder: () => true,
-        onMoveShouldSetPanResponder: () => true,
-        onPanResponderGrant: (event) => {
-          handleMicPressGrant(event.nativeEvent.pageY);
-        },
-        onPanResponderMove: (event) => {
-          handleMicPressMove(event.nativeEvent.pageY);
-        },
-        onPanResponderRelease: () => {
-          handleMicPressRelease();
-        },
-        onPanResponderTerminate: () => {
-          handleMicPressRelease();
-        },
-        onPanResponderTerminationRequest: () => false,
-      }),
-    [handleMicPressGrant, handleMicPressMove, handleMicPressRelease]
-  );
+    if (!isRecordingVoiceRef.current) {
+      pendingReleaseBeforeReadyRef.current = true;
+      return;
+    }
+    if (isRecordingLockedRef.current) return;
+
+    const recordingStartedAt = recordingStartedAtRef.current;
+    const elapsedMs = recordingStartedAt
+      ? Date.now() - recordingStartedAt
+      : Number.POSITIVE_INFINITY;
+    if (elapsedMs < VOICE_RELEASE_LOCK_GRACE_MS) {
+      lockVoiceRecordingCbRef.current();
+      return;
+    }
+
+    void sendRecordedVoiceMessageCbRef.current();
+  }, []);
+
+  const handleMicPressTerminate = useCallback(() => {
+    const wasMicPressActive = micPressActiveRef.current;
+    micPressActiveRef.current = false;
+    micStartYRef.current = null;
+    setIsMicPressActive(false);
+    setShowRecordingHint(false);
+
+    if (!wasMicPressActive) return;
+
+    if (!isRecordingVoiceRef.current) {
+      pendingReleaseBeforeReadyRef.current = true;
+      return;
+    }
+    if (isRecordingLockedRef.current) return;
+
+    lockVoiceRecordingCbRef.current();
+  }, []);
+
+  const micPanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onStartShouldSetPanResponderCapture: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponderCapture: () => true,
+      onShouldBlockNativeResponder: () => true,
+      onPanResponderGrant: (event) => {
+        handleMicPressGrant(event.nativeEvent.pageY);
+      },
+      onPanResponderMove: (event) => {
+        handleMicPressMove(event.nativeEvent.pageY);
+      },
+      onPanResponderRelease: () => {
+        handleMicPressRelease();
+      },
+      onPanResponderTerminate: () => {
+        handleMicPressTerminate();
+      },
+      onPanResponderTerminationRequest: () => false,
+    })
+  ).current;
 
   const launchCameraCapture = useCallback(
     async (mediaType: 'images' | 'videos') => {
@@ -4023,11 +4109,21 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   );
 
   const handleOpenCameraPicker = useCallback(() => {
-    if (isQueueOrUraStatus || sendingCapturedMedia || sendingVoiceRecording) {
+    if (
+      isQueueOrUraStatus ||
+      sendingCapturedMedia ||
+      sendingVoiceRecording ||
+      isRecordingVoice
+    ) {
       return;
     }
     setCameraPickerVisible(true);
-  }, [isQueueOrUraStatus, sendingCapturedMedia, sendingVoiceRecording]);
+  }, [
+    isQueueOrUraStatus,
+    sendingCapturedMedia,
+    sendingVoiceRecording,
+    isRecordingVoice,
+  ]);
 
   const handlePickPhotoCapture = useCallback(() => {
     setCameraPickerVisible(false);
@@ -4185,7 +4281,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     !isPreparingRecording &&
     !sendingVoiceRecording &&
     !sendingCapturedMedia;
-  const canShowIconActions = !hasInputText && !isRecordingVoice;
+  const showRecordingComposer =
+    isRecordingVoice && (isRecordingLocked || !isMicPressActive);
+  const canShowIconActions = !hasInputText && !showRecordingComposer;
 
   return (
     <KeyboardAvoidingView
@@ -4284,10 +4382,10 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         style={[
           styles.inputRow,
           isTyping && styles.inputRowWithTyping,
-          isRecordingVoice && styles.inputRowRecording,
+          showRecordingComposer && styles.inputRowRecording,
         ]}
       >
-        {isRecordingVoice ? (
+        {showRecordingComposer ? (
           <View style={styles.recordingComposerWrap}>
             {isRecordingLocked ? (
               <>
@@ -4440,17 +4538,56 @@ export function ChatRoomScreen({ route, navigation }: Props) {
               </Pressable>
             ) : (
               <View style={styles.composerActionsWrap}>
-                <Pressable
-                  style={[
-                    styles.composerActionBtn,
-                    !canUseComposerActions && styles.sendBtnDisabled,
-                  ]}
-                  onPress={handleOpenCameraPicker}
-                  disabled={!canUseComposerActions}
-                  accessibilityLabel={pt.open_camera}
-                >
-                  <Ionicons name="camera-outline" size={21} color="#FFFFFF" />
-                </Pressable>
+                {!isRecordingVoice ? (
+                  <Pressable
+                    style={[
+                      styles.composerActionBtn,
+                      !canUseComposerActions && styles.sendBtnDisabled,
+                    ]}
+                    onPress={handleOpenCameraPicker}
+                    disabled={!canUseComposerActions}
+                    accessibilityLabel={pt.open_camera}
+                  >
+                    <Ionicons name="camera-outline" size={21} color="#FFFFFF" />
+                  </Pressable>
+                ) : null}
+
+                {isRecordingVoice && isMicPressActive && !isRecordingLocked ? (
+                  <Animated.View
+                    pointerEvents="none"
+                    style={[
+                      styles.micHoldHintWrap,
+                      {
+                        opacity: recordingHintOpacity,
+                        transform: [{ translateY: recordingHintOffset }],
+                      },
+                    ]}
+                  >
+                    <View style={styles.micHoldHintDuration}>
+                      <Animated.View
+                        style={[
+                          styles.recordingDot,
+                          {
+                            transform: [{ scale: recordingPulse }],
+                          },
+                        ]}
+                      />
+                      <Text style={styles.micHoldHintDurationText}>
+                        {recordingDurationLabel}
+                      </Text>
+                    </View>
+                    <View style={styles.micHoldHintTextWrap}>
+                      <Ionicons
+                        name="chevron-up-outline"
+                        size={14}
+                        color={colors.primary}
+                      />
+                      <Text style={styles.micHoldHintText}>
+                        {pt.slide_up_to_lock}
+                      </Text>
+                    </View>
+                  </Animated.View>
+                ) : null}
 
                 {canShowIconActions ? (
                   <View
@@ -4461,6 +4598,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                       style={[
                         styles.composerActionBtn,
                         styles.micActionBtn,
+                        isRecordingVoice && styles.micActionBtnRecording,
                         !canUseComposerActions && styles.sendBtnDisabled,
                         {
                           transform: [{ scale: recordingPulse }],
@@ -5849,8 +5987,50 @@ const styles = StyleSheet.create({
   micActionBtn: {
     backgroundColor: '#2563EB',
   },
+  micActionBtnRecording: {
+    backgroundColor: '#EF4444',
+  },
   micGestureTouchable: {
     borderRadius: 20,
+  },
+  micHoldHintWrap: {
+    position: 'absolute',
+    right: 50,
+    bottom: 46,
+    alignItems: 'flex-end',
+    gap: 4,
+  },
+  micHoldHintDuration: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: 999,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    backgroundColor: '#FFFFFF',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(47, 43, 61, 0.12)',
+  },
+  micHoldHintDurationText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.onSurface,
+  },
+  micHoldHintTextWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    borderRadius: 999,
+    paddingVertical: 3,
+    paddingHorizontal: 8,
+    backgroundColor: '#FFFFFF',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(40, 101, 183, 0.2)',
+  },
+  micHoldHintText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.primary,
   },
   sendBtn: {
     width: 40,
