@@ -56,11 +56,10 @@ WORKDIR /app
 
 COPY --from=deps /app/node_modules/ .
 COPY --from=pruned /app/out/full/ .
-COPY packages ./packages
+COPY --from=pruned /app/packages ./packages
 
 RUN pnpm build:schedule
 RUN mkdir -p /build_locales
-
 COPY packages/plugins/i18next/locales /build_locales
 
 FROM node:24.12.0-bookworm-slim
