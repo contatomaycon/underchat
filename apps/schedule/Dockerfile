@@ -56,7 +56,7 @@ WORKDIR /app
 
 COPY --from=deps /app/node_modules/ .
 COPY --from=pruned /app/out/full/ .
-COPY --from=pruned /app/packages ./packages
+COPY packages ./packages
 
 RUN pnpm build:schedule
 RUN mkdir -p /build_locales
