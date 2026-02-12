@@ -43,7 +43,7 @@ ENV CI=true \
 
 RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
     ulimit -n 1048576 || true && \
-    pnpm install --frozen-lockfile --ignore-scripts --unsafe-perm
+    pnpm install --no-frozen-lockfile --ignore-scripts --unsafe-perm
 
 FROM deps AS builder
 
