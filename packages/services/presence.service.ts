@@ -23,7 +23,9 @@ export class PresenceService {
 
   constructor(
     @inject('Redis') private readonly redis: Redis,
+    @inject(PresenceCentrifugoService)
     private readonly presenceCentrifugoService: PresenceCentrifugoService,
+    @inject(UserAccountViewerRepository)
     private readonly userAccountViewerRepository: UserAccountViewerRepository
   ) {}
 

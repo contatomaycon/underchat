@@ -15,10 +15,12 @@ export class PresenceCentrifugoConsume {
   private readonly userExistsCacheTtl = 86400;
 
   constructor(
+    @inject(CentrifugoService)
     private readonly centrifugoService: CentrifugoService,
-    private readonly presenceService: PresenceService,
-    private readonly userAccountViewerRepository: UserAccountViewerRepository,
-    @inject('Redis') private readonly redis: Redis
+    @inject('Redis') private readonly redis: Redis,
+    @inject(PresenceService) private readonly presenceService: PresenceService,
+    @inject(UserAccountViewerRepository)
+    private readonly userAccountViewerRepository: UserAccountViewerRepository
   ) {}
 
   async start(): Promise<void> {

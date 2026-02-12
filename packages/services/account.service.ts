@@ -41,26 +41,47 @@ import Redis from 'ioredis';
 @injectable()
 export class AccountService {
   constructor(
+    @inject(AccountInfoViewerRepository)
     private readonly accountInfoViewerRepository: AccountInfoViewerRepository,
+    @inject(AccountQuantityProductViewerRepository)
     private readonly accountQuantityProductViewerRepository: AccountQuantityProductViewerRepository,
+    @inject(AccountViewerExistsRepository)
     private readonly accountViewerExistsRepository: AccountViewerExistsRepository,
+    @inject(AccountNameViewerRepository)
     private readonly accountNameViewerRepository: AccountNameViewerRepository,
+    @inject(AccountListerRepository)
     private readonly accountListerRepository: AccountListerRepository,
+    @inject(AccountCreatorRepository)
     private readonly accountCreatorRepository: AccountCreatorRepository,
+    @inject(AccountViewerRepository)
     private readonly accountViewerRepository: AccountViewerRepository,
+    @inject(AccountDeleterRepository)
     private readonly accountDeleterRepository: AccountDeleterRepository,
+    @inject(AccountUpdaterRepository)
     private readonly accountUpdaterRepository: AccountUpdaterRepository,
+    @inject(AccountInfoViewerExistsRepository)
     private readonly accountInfoViewerExistsRepository: AccountInfoViewerExistsRepository,
+    @inject(AccountInfoCreatorRepository)
     private readonly accountInfoCreatorRepository: AccountInfoCreatorRepository,
+    @inject(AccountInfoUpdaterRepository)
     private readonly accountInfoUpdaterRepository: AccountInfoUpdaterRepository,
+    @inject(AccountInfoByIdViewerExistsRepository)
     private readonly accountInfoByIdViewerExistsRepository: AccountInfoByIdViewerExistsRepository,
+    @inject(AccountAllListerRepository)
     private readonly accountAllListerRepository: AccountAllListerRepository,
+    @inject(AccountSubscriptionsListerRepository)
     private readonly accountSubscriptionsListerRepository: AccountSubscriptionsListerRepository,
+    @inject(PlanAccountStatusViewerRepository)
     private readonly planAccountStatusViewerRepository: PlanAccountStatusViewerRepository,
+    @inject(AccountAllListerWithDetailsRepository)
     private readonly accountAllListerWithDetailsRepository: AccountAllListerWithDetailsRepository,
+    @inject(PlanAccountExclusiveListerRepository)
     private readonly planAccountExclusiveListerRepository: PlanAccountExclusiveListerRepository,
+    @inject(PlanAccountExclusiveCreatorRepository)
     private readonly planAccountExclusiveCreatorRepository: PlanAccountExclusiveCreatorRepository,
+    @inject(PlanAccountExclusiveDeleterRepository)
     private readonly planAccountExclusiveDeleterRepository: PlanAccountExclusiveDeleterRepository,
+    @inject(ExclusivePlansListerRepository)
     private readonly exclusivePlansListerRepository: ExclusivePlansListerRepository,
     @inject('Redis') private readonly redis: Redis
   ) {}
