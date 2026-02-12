@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { ChatService } from '@core/services/chat.service';
 import { EMessageType } from '@core/common/enums/EMessageType';
@@ -14,8 +14,11 @@ import { IChatMessage } from '@core/common/interfaces/IChatMessage';
 @injectable()
 export class ChatMessageEditorUseCase {
   constructor(
+    @inject(ChatService)
     private readonly chatService: ChatService,
+    @inject(StreamProducerService)
     private readonly streamProducerService: StreamProducerService,
+    @inject(KafkaBaileysQueueService)
     private readonly kafkaBaileysQueueService: KafkaBaileysQueueService
   ) {}
 

@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { AiAgentService } from '@core/services/aiAgent.service';
 import { OpenAIAssistantService } from '@core/services/openaiAssistant.service';
@@ -10,9 +10,13 @@ import { EAiAgentType } from '@core/common/enums/EAiAgentType';
 @injectable()
 export class AiAgentPromptRefresherUseCase {
   constructor(
+    @inject(AiAgentService)
     private readonly aiAgentService: AiAgentService,
+    @inject(OpenAIAssistantService)
     private readonly openAIAssistantService: OpenAIAssistantService,
+    @inject(StreamProducerService)
     private readonly streamProducerService: StreamProducerService,
+    @inject(KafkaServiceQueueService)
     private readonly kafkaServiceQueueService: KafkaServiceQueueService
   ) {}
 

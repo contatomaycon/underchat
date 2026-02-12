@@ -18,11 +18,17 @@ import Redis from 'ioredis';
 @injectable()
 export class UserSessionLoginUseCase {
   constructor(
+    @inject(AuthService)
     private readonly authService: AuthService,
+    @inject(PermissionService)
     private readonly permissionService: PermissionService,
+    @inject(AccountService)
     private readonly accountService: AccountService,
+    @inject(UserService)
     private readonly userService: UserService,
+    @inject(PresenceService)
     private readonly presenceService: PresenceService,
+    @inject(CentrifugoService)
     private readonly centrifugoService: CentrifugoService,
     @inject('Redis') private readonly redis: Redis
   ) {}

@@ -1,10 +1,11 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { MessageTemplateService } from '@core/services/messageTemplate.service';
 
 @injectable()
 export class MessageTemplateDeleterUseCase {
   constructor(
+    @inject(MessageTemplateService)
     private readonly messageTemplateService: MessageTemplateService
   ) {}
 

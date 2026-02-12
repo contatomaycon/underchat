@@ -1,10 +1,13 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { VoiceIaService } from '@core/services/voiceIa.service';
 import { CreateVoiceIaRequest } from '@core/schema/voiceIa/createVoiceIa/request.schema';
 
 @injectable()
 export class VoiceIaCreatorUseCase {
-  constructor(private readonly voiceIaService: VoiceIaService) {}
+  constructor(
+    @inject(VoiceIaService)
+    private readonly voiceIaService: VoiceIaService
+  ) {}
 
   async execute(
     input: CreateVoiceIaRequest,

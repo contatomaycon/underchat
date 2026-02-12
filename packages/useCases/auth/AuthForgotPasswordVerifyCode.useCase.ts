@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { AuthForgotPasswordVerifyCodeRequest } from '@core/schema/auth/forgotPassword/verifyCode/request.schema';
 import { AuthForgotPasswordVerifyCodeResponse } from '@core/schema/auth/forgotPassword/verifyCode/response.schema';
@@ -12,8 +12,11 @@ import { AuthRepository } from '@core/repositories/auth/Auth.repository';
 @injectable()
 export class AuthForgotPasswordVerifyCodeUseCase {
   constructor(
+    @inject(TwoFactorService)
     private readonly twoFactorService: TwoFactorService,
+    @inject(AuthRepository)
     private readonly authRepository: AuthRepository,
+    @inject(AccountService)
     private readonly accountService: AccountService
   ) {}
 

@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
 import { SectorService } from '@core/services/sector.service';
 import { UserService } from '@core/services/user.service';
@@ -25,8 +25,11 @@ const SEM_ANALYST_ID = '__sem_analyst__';
 @injectable()
 export class ReportSatisfactionListerUseCase {
   constructor(
+    @inject(ElasticDatabaseService)
     private readonly elasticDatabaseService: ElasticDatabaseService,
+    @inject(SectorService)
     private readonly sectorService: SectorService,
+    @inject(UserService)
     private readonly userService: UserService
   ) {}
 

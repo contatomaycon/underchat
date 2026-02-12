@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { WorkerService } from '@core/services/worker.service';
 import { AccountService } from '@core/services/account.service';
@@ -8,7 +8,9 @@ import { IUpdateWorker } from '@core/common/interfaces/IUpdateWorker';
 @injectable()
 export class WorkerUpdaterUseCase {
   constructor(
+    @inject(WorkerService)
     private readonly workerService: WorkerService,
+    @inject(AccountService)
     private readonly accountService: AccountService
   ) {}
 

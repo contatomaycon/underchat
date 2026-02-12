@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { LabelTemplateService } from '@core/services/labelTemplate.service';
 import { AccountService } from '@core/services/account.service';
@@ -7,7 +7,9 @@ import { ListLabelTemplateAllResponse } from '@core/schema/labelTemplate/listLab
 @injectable()
 export class LabelTemplateAllListerUseCase {
   constructor(
+    @inject(LabelTemplateService)
     private readonly labelTemplateService: LabelTemplateService,
+    @inject(AccountService)
     private readonly accountService: AccountService
   ) {}
 

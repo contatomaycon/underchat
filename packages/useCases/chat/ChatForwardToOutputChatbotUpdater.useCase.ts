@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import {
   UpdateForwardToOutputChatbotParams,
@@ -15,7 +15,9 @@ import { IChat } from '@core/common/interfaces/IChat';
 @injectable()
 export class ChatForwardToOutputChatbotUpdaterUseCase {
   constructor(
+    @inject(ChatService)
     private readonly chatService: ChatService,
+    @inject(CentrifugoService)
     private readonly centrifugoService: CentrifugoService
   ) {}
 

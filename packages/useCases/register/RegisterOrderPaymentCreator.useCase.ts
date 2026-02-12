@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { AccountService } from '@core/services/account.service';
 import { UserService } from '@core/services/user.service';
@@ -15,9 +15,13 @@ import { EncryptService } from '@core/services/encrypt.service';
 @injectable()
 export class RegisterOrderPaymentCreatorUseCase {
   constructor(
+    @inject(AccountService)
     private readonly accountService: AccountService,
+    @inject(UserService)
     private readonly userService: UserService,
+    @inject(OrderPaymentCreatorUseCase)
     private readonly orderPaymentCreatorUseCase: OrderPaymentCreatorUseCase,
+    @inject(EncryptService)
     private readonly encryptService: EncryptService
   ) {}
 

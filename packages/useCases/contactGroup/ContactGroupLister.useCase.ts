@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { setPaginationData } from '@core/common/functions/createPaginationData';
 import { ListContactGroupFinalResponse } from '@core/schema/contactGroup/listContactGroup/response.schema';
 import { ListContactGroupRequest } from '@core/schema/contactGroup/listContactGroup/request.schema';
@@ -6,7 +6,10 @@ import { ContactGroupService } from '@core/services/contactGroup.service';
 
 @injectable()
 export class ContactGroupListerUseCase {
-  constructor(private readonly contactGroupService: ContactGroupService) {}
+  constructor(
+    @inject(ContactGroupService)
+    private readonly contactGroupService: ContactGroupService
+  ) {}
 
   async execute(
     query: ListContactGroupRequest,

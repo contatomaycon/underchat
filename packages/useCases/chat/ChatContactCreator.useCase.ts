@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { CreateChatContactRequest } from '@core/schema/chat/createContact/request.schema';
 import { CreateContactRequest } from '@core/schema/contact/createContact/request.schema';
@@ -8,7 +8,10 @@ import { extractArrayFieldValue } from '@core/common/functions/extractArrayField
 
 @injectable()
 export class ChatContactCreatorUseCase {
-  constructor(private readonly contactCreatorUseCase: ContactCreatorUseCase) {}
+  constructor(
+    @inject(ContactCreatorUseCase)
+    private readonly contactCreatorUseCase: ContactCreatorUseCase
+  ) {}
 
   private extractChatId(
     chatId: CreateChatContactRequest['chat_id']

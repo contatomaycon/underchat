@@ -1,10 +1,11 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { ContactPhotoDeleterUseCase } from '@core/useCases/contact/ContactPhotoDeleter.useCase';
 
 @injectable()
 export class ChatContactPhotoDeleterUseCase {
   constructor(
+    @inject(ContactPhotoDeleterUseCase)
     private readonly contactPhotoDeleterUseCase: ContactPhotoDeleterUseCase
   ) {}
 

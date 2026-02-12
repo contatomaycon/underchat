@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { AsaasNfseWebhookRequest } from '@core/schema/nfse/Webhook/request.schema';
@@ -6,7 +6,9 @@ import { AsaasNfseWebhookRequest } from '@core/schema/nfse/Webhook/request.schem
 @injectable()
 export class NfseWebhookUseCase {
   constructor(
+    @inject(StreamProducerService)
     private readonly streamProducerService: StreamProducerService,
+    @inject(KafkaServiceQueueService)
     private readonly kafkaServiceQueueService: KafkaServiceQueueService
   ) {}
 

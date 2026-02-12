@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { WorkerService } from '@core/services/worker.service';
 import { IWorkerPayload } from '@core/common/interfaces/IWorkerPayload';
@@ -10,8 +10,11 @@ import { WorkerGrpcClientService } from '@core/services/workerGrpcClient.service
 @injectable()
 export class WorkerDeleterUseCase {
   constructor(
+    @inject(WorkerService)
     private readonly workerService: WorkerService,
+    @inject(CentrifugoService)
     private readonly centrifugoService: CentrifugoService,
+    @inject(WorkerGrpcClientService)
     private readonly workerGrpcClientService: WorkerGrpcClientService
   ) {}
 

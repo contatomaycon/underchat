@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { ContactExporterRepository } from '@core/repositories/contact/ContactExporter.repository';
 import { ExportContactResponse } from '@core/schema/contact/exportContact/response.schema';
@@ -7,7 +7,9 @@ import { ContactService } from '@core/services/contact.service';
 @injectable()
 export class ContactExporterUseCase {
   constructor(
+    @inject(ContactExporterRepository)
     private readonly contactExporterRepository: ContactExporterRepository,
+    @inject(ContactService)
     private readonly contactService: ContactService
   ) {}
 

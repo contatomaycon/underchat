@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { UpdatePlanAccountRequest } from '@core/schema/planAccount/updatePlanAccount/request.schema';
 import { PlanAccountService } from '@core/services/planAccount.service';
@@ -7,7 +7,9 @@ import { AccountService } from '@core/services/account.service';
 @injectable()
 export class PlanAccountUpdaterUseCase {
   constructor(
+    @inject(PlanAccountService)
     private readonly planAccountService: PlanAccountService,
+    @inject(AccountService)
     private readonly accountService: AccountService
   ) {}
 

@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { setPaginationData } from '@core/common/functions/createPaginationData';
 import { ListLabelTemplateRequest } from '@core/schema/labelTemplate/listLabelTemplate/request.schema';
 import { ListLabelTemplateFinalResponse } from '@core/schema/labelTemplate/listLabelTemplate/response.schema';
@@ -6,7 +6,10 @@ import { LabelTemplateService } from '@core/services/labelTemplate.service';
 
 @injectable()
 export class LabelTemplateListerUseCase {
-  constructor(private readonly labelTemplateService: LabelTemplateService) {}
+  constructor(
+    @inject(LabelTemplateService)
+    private readonly labelTemplateService: LabelTemplateService
+  ) {}
 
   async execute(
     query: ListLabelTemplateRequest,

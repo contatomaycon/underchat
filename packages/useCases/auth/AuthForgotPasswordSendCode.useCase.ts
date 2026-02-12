@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { AuthForgotPasswordSendCodeRequest } from '@core/schema/auth/forgotPassword/sendCode/request.schema';
 import { AuthForgotPasswordSendCodeResponse } from '@core/schema/auth/forgotPassword/sendCode/response.schema';
@@ -9,8 +9,11 @@ import { UserService } from '@core/services/user.service';
 @injectable()
 export class AuthForgotPasswordSendCodeUseCase {
   constructor(
+    @inject(NotificationMessageService)
     private readonly notificationMessageService: NotificationMessageService,
+    @inject(EncryptService)
     private readonly encryptService: EncryptService,
+    @inject(UserService)
     private readonly userService: UserService
   ) {}
 

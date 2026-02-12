@@ -12,7 +12,9 @@ import { createJwtSessionKey } from '@core/common/functions/createCacheKey';
 @injectable()
 export class AuthRefreshTokenUseCase {
   constructor(
+    @inject(AccountService)
     private readonly accountService: AccountService,
+    @inject(UserService)
     private readonly userService: UserService,
     @inject('Redis') private readonly redis: Redis
   ) {}

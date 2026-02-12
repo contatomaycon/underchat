@@ -1,10 +1,13 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { ReleaseService } from '@core/services/release.service';
 import { EditReleaseBodyRequest } from '@core/schema/release/editRelease/request.schema';
 
 @injectable()
 export class ReleaseUpdaterUseCase {
-  constructor(private readonly releaseService: ReleaseService) {}
+  constructor(
+    @inject(ReleaseService)
+    private readonly releaseService: ReleaseService
+  ) {}
 
   async execute(
     releaseId: string,

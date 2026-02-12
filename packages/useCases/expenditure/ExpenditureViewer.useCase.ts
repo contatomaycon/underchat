@@ -1,11 +1,14 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { ExpenditureService } from '@core/services/expenditure.service';
 import { ViewExpenditureResponse } from '@core/schema/expenditure/viewExpenditure/response.schema';
 
 @injectable()
 export class ExpenditureViewerUseCase {
-  constructor(private readonly expenditureService: ExpenditureService) {}
+  constructor(
+    @inject(ExpenditureService)
+    private readonly expenditureService: ExpenditureService
+  ) {}
 
   async execute(
     t: TFunction<'translation', undefined>,

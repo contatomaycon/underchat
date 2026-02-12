@@ -1,11 +1,14 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { AiAgentService } from '@core/services/aiAgent.service';
 import { ViewAiAgentPromptResponse } from '@core/schema/aiAgent/viewAiAgentPrompt/response.schema';
 
 @injectable()
 export class AiAgentPromptViewerUseCase {
-  constructor(private readonly aiAgentService: AiAgentService) {}
+  constructor(
+    @inject(AiAgentService)
+    private readonly aiAgentService: AiAgentService
+  ) {}
 
   async execute(
     t: TFunction<'translation', undefined>,

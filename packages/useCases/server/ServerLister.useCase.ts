@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { ServerService } from '@core/services/server.service';
 import { TFunction } from 'i18next';
 import { ListServerRequest } from '@core/schema/server/listServer/request.schema';
@@ -7,7 +7,10 @@ import { setPaginationData } from '@core/common/functions/createPaginationData';
 
 @injectable()
 export class ServerListerUseCase {
-  constructor(private readonly serverService: ServerService) {}
+  constructor(
+    @inject(ServerService)
+    private readonly serverService: ServerService
+  ) {}
 
   async execute(
     t: TFunction<'translation', undefined>,

@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { setPaginationData } from '@core/common/functions/createPaginationData';
 import { ListMessageTemplateFinalResponse } from '@core/schema/messageTemplate/listMessageTemplate/response.schema';
 import { MessageTemplateService } from '@core/services/messageTemplate.service';
@@ -7,6 +7,7 @@ import { ListMessageTemplateRequest } from '@core/schema/messageTemplate/listMes
 @injectable()
 export class MessageTemplateListerUseCase {
   constructor(
+    @inject(MessageTemplateService)
     private readonly messageTemplateService: MessageTemplateService
   ) {}
 

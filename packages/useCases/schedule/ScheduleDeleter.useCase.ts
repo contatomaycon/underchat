@@ -1,10 +1,13 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { ScheduleService } from '@core/services/schedule.service';
 
 @injectable()
 export class ScheduleDeleterUseCase {
-  constructor(private readonly scheduleService: ScheduleService) {}
+  constructor(
+    @inject(ScheduleService)
+    private readonly scheduleService: ScheduleService
+  ) {}
 
   async execute(
     t: TFunction<'translation', undefined>,

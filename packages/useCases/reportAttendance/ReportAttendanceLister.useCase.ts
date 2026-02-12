@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { ListReportAttendanceRequest } from '@core/schema/reportAttendance/listReportAttendance/request.schema';
@@ -15,6 +15,7 @@ type ReportType = 'queue' | 'analyst' | 'general';
 @injectable()
 export class ReportAttendanceListerUseCase {
   constructor(
+    @inject(ElasticDatabaseService)
     private readonly elasticDatabaseService: ElasticDatabaseService
   ) {}
 

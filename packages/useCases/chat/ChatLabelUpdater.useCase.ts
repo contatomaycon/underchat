@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import {
   UpdateChatLabelParams,
@@ -17,8 +17,11 @@ import { extractArrayFieldValue } from '@core/common/functions/extractArrayField
 @injectable()
 export class ChatLabelUpdaterUseCase {
   constructor(
+    @inject(ChatService)
     private readonly chatService: ChatService,
+    @inject(LabelTemplateViewerRepository)
     private readonly labelTemplateViewerRepository: LabelTemplateViewerRepository,
+    @inject(CentrifugoService)
     private readonly centrifugoService: CentrifugoService
   ) {}
 

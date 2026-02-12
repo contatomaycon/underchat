@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { SectorService } from '@core/services/sector.service';
 import { WorkerService } from '@core/services/worker.service';
 import { ListTransferOptionsResponse } from '@core/schema/chat/listTransferOptions/response.schema';
@@ -6,7 +6,9 @@ import { ListTransferOptionsResponse } from '@core/schema/chat/listTransferOptio
 @injectable()
 export class ChatTransferOptionsListerUseCase {
   constructor(
+    @inject(SectorService)
     private readonly sectorService: SectorService,
+    @inject(WorkerService)
     private readonly workerService: WorkerService
   ) {}
 

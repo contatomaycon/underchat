@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import {
   UpdateChatStatusBody,
@@ -32,13 +32,21 @@ import { WAMessage } from '@whiskeysockets/baileys';
 @injectable()
 export class ChatStatusUpdaterUseCase {
   constructor(
+    @inject(ChatService)
     private readonly chatService: ChatService,
+    @inject(CentrifugoService)
     private readonly centrifugoService: CentrifugoService,
+    @inject(UserService)
     private readonly userService: UserService,
+    @inject(WorkerService)
     private readonly workerService: WorkerService,
+    @inject(WorkerConfigService)
     private readonly workerConfigService: WorkerConfigService,
+    @inject(ChatMessageService)
     private readonly chatMessageService: ChatMessageService,
+    @inject(PresenceService)
     private readonly presenceService: PresenceService,
+    @inject(ChatbotFlowRunnerService)
     private readonly chatbotFlowRunnerService: ChatbotFlowRunnerService
   ) {}
 

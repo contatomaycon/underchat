@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { ContactService } from '@core/services/contact.service';
 import { ContactViewerRepository } from '@core/repositories/contact/ContactViewer.repository';
@@ -6,7 +6,9 @@ import { ContactViewerRepository } from '@core/repositories/contact/ContactViewe
 @injectable()
 export class ContactLabelTemplateRemoverUseCase {
   constructor(
+    @inject(ContactService)
     private readonly contactService: ContactService,
+    @inject(ContactViewerRepository)
     private readonly contactViewerRepository: ContactViewerRepository
   ) {}
 

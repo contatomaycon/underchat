@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { ConfigService } from '@core/services/config.service';
 import { ChatService } from '@core/services/chat.service';
@@ -6,7 +6,9 @@ import { ChatService } from '@core/services/chat.service';
 @injectable()
 export class ChannelOpenConversationsCheckerUseCase {
   constructor(
+    @inject(ConfigService)
     private readonly configService: ConfigService,
+    @inject(ChatService)
     private readonly chatService: ChatService
   ) {}
 

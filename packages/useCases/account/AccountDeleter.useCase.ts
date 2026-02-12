@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { AccountService } from '@core/services/account.service';
 import { ApiKeyService } from '@core/services/apiKey.service';
@@ -8,8 +8,11 @@ import { EAccountStatus } from '@core/common/enums/EAccountStatus';
 @injectable()
 export class AccountDeleterUseCase {
   constructor(
+    @inject(AccountService)
     private readonly accountService: AccountService,
+    @inject(ApiKeyService)
     private readonly apiKeyService: ApiKeyService,
+    @inject(PlanAccountCancellationService)
     private readonly planAccountCancellationService: PlanAccountCancellationService
   ) {}
 

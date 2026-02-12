@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { UserCardDeleterRepository } from '@core/repositories/accountSettings/UserCardDeleter.repository';
 import { PlanRecurringUpdaterRepository } from '@core/repositories/accountSettings/PlanRecurringUpdater.repository';
@@ -10,10 +10,15 @@ import { EAccountStatus } from '@core/common/enums/EAccountStatus';
 @injectable()
 export class UserCardDeleterUseCase {
   constructor(
+    @inject(UserCardDeleterRepository)
     private readonly userCardDeleterRepository: UserCardDeleterRepository,
+    @inject(PlanRecurringUpdaterRepository)
     private readonly planRecurringUpdaterRepository: PlanRecurringUpdaterRepository,
+    @inject(PlanCurrentInvoiceViewerRepository)
     private readonly planCurrentInvoiceViewerRepository: PlanCurrentInvoiceViewerRepository,
+    @inject(UserCardsListerRepository)
     private readonly userCardsListerRepository: UserCardsListerRepository,
+    @inject(UserCardDefaultUpdaterRepository)
     private readonly userCardDefaultUpdaterRepository: UserCardDefaultUpdaterRepository
   ) {}
 

@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import {
@@ -21,7 +21,9 @@ import { IChat } from '@core/common/interfaces/IChat';
 @injectable()
 export class ChatMessageListerUseCase {
   constructor(
+    @inject(ElasticDatabaseService)
     private readonly elasticDatabaseService: ElasticDatabaseService,
+    @inject(ChatService)
     private readonly chatService: ChatService
   ) {}
 

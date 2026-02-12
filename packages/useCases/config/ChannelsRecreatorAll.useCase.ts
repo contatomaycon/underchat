@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { ConfigService } from '@core/services/config.service';
 import { ChannelRecreatorUseCase } from './ChannelRecreator.useCase';
@@ -6,7 +6,9 @@ import { ChannelRecreatorUseCase } from './ChannelRecreator.useCase';
 @injectable()
 export class ChannelsRecreatorAllUseCase {
   constructor(
+    @inject(ConfigService)
     private readonly configService: ConfigService,
+    @inject(ChannelRecreatorUseCase)
     private readonly channelRecreatorUseCase: ChannelRecreatorUseCase
   ) {}
 

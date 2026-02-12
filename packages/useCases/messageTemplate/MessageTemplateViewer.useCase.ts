@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { ViewMessageTemplateResponse } from '@core/schema/messageTemplate/viewMessageTemplate/response.schema';
 import { MessageTemplateService } from '@core/services/messageTemplate.service';
@@ -6,6 +6,7 @@ import { MessageTemplateService } from '@core/services/messageTemplate.service';
 @injectable()
 export class MessageTemplateViewerUseCase {
   constructor(
+    @inject(MessageTemplateService)
     private readonly messageTemplateService: MessageTemplateService
   ) {}
 

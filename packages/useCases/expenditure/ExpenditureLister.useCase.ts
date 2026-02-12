@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { setPaginationData } from '@core/common/functions/createPaginationData';
 import { ExpenditureService } from '@core/services/expenditure.service';
@@ -7,7 +7,10 @@ import { ListExpenditureRequest } from '@core/schema/expenditure/listExpenditure
 
 @injectable()
 export class ExpenditureListerUseCase {
-  constructor(private readonly expenditureService: ExpenditureService) {}
+  constructor(
+    @inject(ExpenditureService)
+    private readonly expenditureService: ExpenditureService
+  ) {}
 
   async execute(
     t: TFunction<'translation', undefined>,

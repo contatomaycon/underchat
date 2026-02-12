@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { UserService } from '@core/services/user.service';
 import { PermissionService } from '@core/services/permission.service';
@@ -7,7 +7,9 @@ import { AssignUserRoleRequest } from '@core/schema/user/assignUserRole/request.
 @injectable()
 export class UserRoleAssignerUseCase {
   constructor(
+    @inject(UserService)
     private readonly userService: UserService,
+    @inject(PermissionService)
     private readonly permissionService: PermissionService
   ) {}
 

@@ -1,10 +1,13 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { DashboardService } from '@core/services/dashboard.service';
 import { GetDashboardStatsResponse } from '@core/schema/dashboard/getDashboardStats/response.schema';
 
 @injectable()
 export class DashboardStatsViewerUseCase {
-  constructor(private readonly dashboardService: DashboardService) {}
+  constructor(
+    @inject(DashboardService)
+    private readonly dashboardService: DashboardService
+  ) {}
 
   execute = async (
     accountId: string

@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { PlanRecurringUpdaterRepository } from '@core/repositories/accountSettings/PlanRecurringUpdater.repository';
 import { UserCardsListerRepository } from '@core/repositories/plan/UserCardsLister.repository';
@@ -8,8 +8,11 @@ import { UpdatePlanRecurringRequest } from '@core/schema/accountSettings/updateP
 @injectable()
 export class PlanRecurringUpdaterUseCase {
   constructor(
+    @inject(PlanRecurringUpdaterRepository)
     private readonly planRecurringUpdaterRepository: PlanRecurringUpdaterRepository,
+    @inject(UserCardsListerRepository)
     private readonly userCardsListerRepository: UserCardsListerRepository,
+    @inject(PlanCurrentInvoiceViewerRepository)
     private readonly planCurrentInvoiceViewerRepository: PlanCurrentInvoiceViewerRepository
   ) {}
 

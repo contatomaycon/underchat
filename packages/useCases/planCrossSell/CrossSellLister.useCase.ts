@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { setPaginationData } from '@core/common/functions/createPaginationData';
 import { ListCrossSellRequest } from '@core/schema/planCrossSell/listCrossSell/request.schema';
@@ -7,7 +7,10 @@ import { CrossSellService } from '@core/services/crossSell.service';
 
 @injectable()
 export class CrossSellListerUseCase {
-  constructor(private readonly crossSellService: CrossSellService) {}
+  constructor(
+    @inject(CrossSellService)
+    private readonly crossSellService: CrossSellService
+  ) {}
 
   async execute(
     t: TFunction<'translation', undefined>,

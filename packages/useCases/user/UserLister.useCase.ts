@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { setPaginationData } from '@core/common/functions/createPaginationData';
 import { ListUserRequest } from '@core/schema/user/listUser/request.schema';
@@ -9,7 +9,9 @@ import { ListUserFinalResponse } from '@core/schema/user/listUser/response.schem
 @injectable()
 export class UserListerUseCase {
   constructor(
+    @inject(UserService)
     private readonly userService: UserService,
+    @inject(AccountService)
     private readonly accountService: AccountService
   ) {}
 

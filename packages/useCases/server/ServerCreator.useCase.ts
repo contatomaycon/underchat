@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { ServerService } from '@core/services/server.service';
 import { CreateServerRequest } from '@core/schema/server/createServer/request.schema';
 import { CreateServerResponse } from '@core/schema/server/createServer/response.schema';
@@ -12,9 +12,13 @@ import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.servi
 @injectable()
 export class ServerCreatorUseCase {
   constructor(
+    @inject(ServerService)
     private readonly serverService: ServerService,
+    @inject(SshService)
     private readonly sshService: SshService,
+    @inject(StreamProducerService)
     private readonly streamProducerService: StreamProducerService,
+    @inject(KafkaServiceQueueService)
     private readonly kafkaServiceQueueService: KafkaServiceQueueService
   ) {}
 

@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { AccountSettingsAddressViewerRepository } from '@core/repositories/accountSettings/AccountSettingsAddressViewer.repository';
 import { ViewAddressResponse } from '@core/schema/accountSettings/viewAddress/response.schema';
@@ -6,6 +6,7 @@ import { ViewAddressResponse } from '@core/schema/accountSettings/viewAddress/re
 @injectable()
 export class AccountSettingsAddressViewerUseCase {
   constructor(
+    @inject(AccountSettingsAddressViewerRepository)
     private readonly accountSettingsAddressViewerRepository: AccountSettingsAddressViewerRepository
   ) {}
 

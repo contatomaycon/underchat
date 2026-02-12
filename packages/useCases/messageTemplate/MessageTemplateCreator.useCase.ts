@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { AccountService } from '@core/services/account.service';
 import { CreateMessageTemplateRequest } from '@core/schema/messageTemplate/createMessageTemplate/request.schema';
@@ -43,9 +43,13 @@ export class MessageTemplateCreatorUseCase {
   ];
 
   constructor(
+    @inject(MessageTemplateService)
     private readonly messageTemplateService: MessageTemplateService,
+    @inject(AccountService)
     private readonly accountService: AccountService,
+    @inject(StorageService)
     private readonly storageService: StorageService,
+    @inject(ConverterService)
     private readonly converterService: ConverterService
   ) {}
 

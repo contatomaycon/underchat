@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { ReportConversationHistoryPdfDeleterRepository } from '@core/repositories/reportConversationHistory/ReportConversationHistoryPdfDeleter.repository';
 import { ReportConversationHistoryPdfViewerRepository } from '@core/repositories/reportConversationHistory/ReportConversationHistoryPdfViewer.repository';
 import { ReportConversationHistoryPdfService } from '@core/services/reportConversationHistoryPdf.service';
@@ -7,8 +7,11 @@ import { DeleteReportConversationHistoryPdfResponse } from '@core/schema/reportC
 @injectable()
 export class ReportConversationHistoryPdfDeleterUseCase {
   constructor(
+    @inject(ReportConversationHistoryPdfDeleterRepository)
     private readonly pdfDeleterRepository: ReportConversationHistoryPdfDeleterRepository,
+    @inject(ReportConversationHistoryPdfViewerRepository)
     private readonly pdfViewerRepository: ReportConversationHistoryPdfViewerRepository,
+    @inject(ReportConversationHistoryPdfService)
     private readonly pdfService: ReportConversationHistoryPdfService
   ) {}
 

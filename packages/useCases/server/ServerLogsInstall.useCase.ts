@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { ServerService } from '@core/services/server.service';
 import { TFunction } from 'i18next';
 import { ServerLogsInstallQuery } from '@core/schema/server/serverLogsInstall/request.schema';
@@ -10,7 +10,9 @@ import { ServerLogsInstallResponse } from '@core/schema/server/serverLogsInstall
 @injectable()
 export class ServerLogsInstallUseCase {
   constructor(
+    @inject(ServerService)
     private readonly serverService: ServerService,
+    @inject(ElasticDatabaseService)
     private readonly elasticDatabaseService: ElasticDatabaseService
   ) {}
 

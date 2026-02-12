@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { UserService } from '@core/services/user.service';
 import { UploadPhotoRequest } from '@core/schema/user/uploadPhoto/request.schema';
@@ -9,7 +9,10 @@ import { UploadFileRequest } from '@core/schema/upload/request.schema';
 export class UserPhotoUploaderUseCase {
   MAX_FILE_SIZE_BYTES = 16 * 1024 * 1024;
 
-  constructor(private readonly userService: UserService) {}
+  constructor(
+    @inject(UserService)
+    private readonly userService: UserService
+  ) {}
 
   private async validateFileSize(
     file: UploadFileRequest,

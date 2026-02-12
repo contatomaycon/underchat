@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { ReportConversationHistoryPdfUpserterRepository } from '@core/repositories/reportConversationHistory/ReportConversationHistoryPdfUpserter.repository';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
@@ -7,8 +7,11 @@ import { GenerateReportConversationHistoryPdfResponse } from '@core/schema/repor
 @injectable()
 export class ReportConversationHistoryPdfGeneratorUseCase {
   constructor(
+    @inject(ReportConversationHistoryPdfUpserterRepository)
     private readonly pdfUpserterRepository: ReportConversationHistoryPdfUpserterRepository,
+    @inject(StreamProducerService)
     private readonly streamProducerService: StreamProducerService,
+    @inject(KafkaServiceQueueService)
     private readonly kafkaServiceQueueService: KafkaServiceQueueService
   ) {}
 

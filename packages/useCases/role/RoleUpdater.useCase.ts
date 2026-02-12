@@ -1,10 +1,13 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { RoleService } from '@core/services/role.service';
 
 @injectable()
 export class RoleUpdaterUseCase {
-  constructor(private readonly roleService: RoleService) {}
+  constructor(
+    @inject(RoleService)
+    private readonly roleService: RoleService
+  ) {}
 
   async execute(
     t: TFunction<'translation', undefined>,

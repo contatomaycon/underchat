@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { DownloadReportSatisfactionPdfRequest } from '@core/schema/reportSatisfaction/downloadReportSatisfactionPdf/request.schema';
 import { ReportSatisfactionListerUseCase } from './ReportSatisfactionLister.useCase';
@@ -7,7 +7,9 @@ import { ReportSatisfactionPdfService } from '@core/services/reportSatisfactionP
 @injectable()
 export class ReportSatisfactionPdfGeneratorUseCase {
   constructor(
+    @inject(ReportSatisfactionListerUseCase)
     private readonly reportSatisfactionListerUseCase: ReportSatisfactionListerUseCase,
+    @inject(ReportSatisfactionPdfService)
     private readonly reportSatisfactionPdfService: ReportSatisfactionPdfService
   ) {}
 

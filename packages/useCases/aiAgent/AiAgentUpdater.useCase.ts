@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { UpdateAiAgentRequest } from '@core/schema/aiAgent/updateAiAgent/request.schema';
 import { AiAgentService } from '@core/services/aiAgent.service';
@@ -8,7 +8,9 @@ import { EAiAgentType } from '@core/common/enums/EAiAgentType';
 @injectable()
 export class AiAgentUpdaterUseCase {
   constructor(
+    @inject(AiAgentService)
     private readonly aiAgentService: AiAgentService,
+    @inject(OpenAIAssistantService)
     private readonly openAIAssistantService: OpenAIAssistantService
   ) {}
 

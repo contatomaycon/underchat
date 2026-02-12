@@ -1,11 +1,14 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { ViewLabelTemplateResponse } from '@core/schema/labelTemplate/viewLabelTemplate/response.schema';
 import { LabelTemplateService } from '@core/services/labelTemplate.service';
 
 @injectable()
 export class LabelTemplateViewerUseCase {
-  constructor(private readonly labelTemplateService: LabelTemplateService) {}
+  constructor(
+    @inject(LabelTemplateService)
+    private readonly labelTemplateService: LabelTemplateService
+  ) {}
 
   async execute(
     t: TFunction<'translation', undefined>,

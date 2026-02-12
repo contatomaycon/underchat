@@ -1,10 +1,13 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { WorkerService } from '@core/services/worker.service';
 import { ListChatWorkersResponse } from '@core/schema/chat/listChatWorkers/response.schema';
 
 @injectable()
 export class ChatWorkersListerUseCase {
-  constructor(private readonly workerService: WorkerService) {}
+  constructor(
+    @inject(WorkerService)
+    private readonly workerService: WorkerService
+  ) {}
 
   async execute(
     accountId: string,

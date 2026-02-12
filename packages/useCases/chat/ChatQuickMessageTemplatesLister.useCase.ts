@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { ChatService } from '@core/services/chat.service';
 import { ListQuickMessageTemplatesRequest } from '@core/schema/chat/listQuickMessageTemplates/request.schema';
@@ -6,7 +6,10 @@ import { ListQuickMessageTemplatesFinalResponse } from '@core/schema/chat/listQu
 
 @injectable()
 export class ChatQuickMessageTemplatesListerUseCase {
-  constructor(private readonly chatService: ChatService) {}
+  constructor(
+    @inject(ChatService)
+    private readonly chatService: ChatService
+  ) {}
 
   async execute(
     t: TFunction<'translation', undefined>,

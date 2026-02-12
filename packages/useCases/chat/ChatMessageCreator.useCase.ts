@@ -35,13 +35,21 @@ import { createChatCacheKeyChatId } from '@core/common/functions/createCacheKey'
 export class ChatMessageCreatorUseCase {
   constructor(
     @inject('Redis') private readonly redis: Redis,
+    @inject(ChatService)
     private readonly chatService: ChatService,
+    @inject(ElasticDatabaseService)
     private readonly elasticDatabaseService: ElasticDatabaseService,
+    @inject(KafkaBaileysQueueService)
     private readonly kafkaBaileysQueueService: KafkaBaileysQueueService,
+    @inject(StreamProducerService)
     private readonly streamProducerService: StreamProducerService,
+    @inject(CentrifugoService)
     private readonly centrifugoService: CentrifugoService,
+    @inject(MessageTemplateService)
     private readonly messageTemplateService: MessageTemplateService,
+    @inject(ChatMessageService)
     private readonly chatMessageService: ChatMessageService,
+    @inject(UserService)
     private readonly userService: UserService
   ) {}
 

@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { AccountService } from '@core/services/account.service';
 import { LabelTemplateService } from '@core/services/labelTemplate.service';
@@ -25,13 +25,21 @@ import type { FieldValue } from '@core/common/interfaces/IFieldValue';
 @injectable()
 export class ContactCreatorUseCase {
   constructor(
+    @inject(LabelTemplateService)
     private readonly labelTemplateService: LabelTemplateService,
+    @inject(AccountService)
     private readonly accountService: AccountService,
+    @inject(ContactService)
     private readonly contactService: ContactService,
+    @inject(EncryptService)
     private readonly encryptService: EncryptService,
+    @inject(PhoneValidationService)
     private readonly phoneValidationService: PhoneValidationService,
+    @inject(ChatService)
     private readonly chatService: ChatService,
+    @inject(CentrifugoService)
     private readonly centrifugoService: CentrifugoService,
+    @inject(PlanAccountService)
     private readonly planAccountService: PlanAccountService
   ) {}
 

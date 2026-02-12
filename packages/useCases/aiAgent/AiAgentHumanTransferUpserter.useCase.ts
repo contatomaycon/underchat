@@ -1,11 +1,14 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { AiAgentService } from '@core/services/aiAgent.service';
 import { UpsertAiAgentHumanTransferBody } from '@core/schema/aiAgent/upsertAiAgentHumanTransfer/request.schema';
 
 @injectable()
 export class AiAgentHumanTransferUpserterUseCase {
-  constructor(private readonly aiAgentService: AiAgentService) {}
+  constructor(
+    @inject(AiAgentService)
+    private readonly aiAgentService: AiAgentService
+  ) {}
 
   async execute(
     t: TFunction<'translation', undefined>,

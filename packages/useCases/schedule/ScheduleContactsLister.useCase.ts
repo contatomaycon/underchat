@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { setPaginationData } from '@core/common/functions/createPaginationData';
 import { ScheduleService } from '@core/services/schedule.service';
 import { ListScheduleContactsRequest } from '@core/schema/schedule/listScheduleContacts/request.schema';
@@ -6,7 +6,10 @@ import { ListScheduleContactsFinalResponse } from '@core/schema/schedule/listSch
 
 @injectable()
 export class ScheduleContactsListerUseCase {
-  constructor(private readonly scheduleService: ScheduleService) {}
+  constructor(
+    @inject(ScheduleService)
+    private readonly scheduleService: ScheduleService
+  ) {}
 
   async execute(
     query: ListScheduleContactsRequest,

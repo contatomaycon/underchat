@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { ServerService } from '@core/services/server.service';
 import { TFunction } from 'i18next';
 import { SshService } from '@core/services/ssh.service';
@@ -13,10 +13,15 @@ import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.servi
 @injectable()
 export class ServerReinstallServerUseCase {
   constructor(
+    @inject(ServerService)
     private readonly serverService: ServerService,
+    @inject(SshService)
     private readonly sshService: SshService,
+    @inject(PasswordEncryptorService)
     private readonly passwordEncryptorService: PasswordEncryptorService,
+    @inject(StreamProducerService)
     private readonly streamProducerService: StreamProducerService,
+    @inject(KafkaServiceQueueService)
     private readonly kafkaServiceQueueService: KafkaServiceQueueService
   ) {}
 

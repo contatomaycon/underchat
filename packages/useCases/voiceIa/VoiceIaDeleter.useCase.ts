@@ -1,10 +1,13 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { VoiceIaService } from '@core/services/voiceIa.service';
 
 @injectable()
 export class VoiceIaDeleterUseCase {
-  constructor(private readonly voiceIaService: VoiceIaService) {}
+  constructor(
+    @inject(VoiceIaService)
+    private readonly voiceIaService: VoiceIaService
+  ) {}
 
   async execute(
     t: TFunction<'translation', undefined>,

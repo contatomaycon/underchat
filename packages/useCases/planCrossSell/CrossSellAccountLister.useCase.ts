@@ -1,11 +1,14 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { CrossSellService } from '@core/services/crossSell.service';
 import { ListCrossSellAccountResponse } from '@core/schema/planCrossSell/listCrossSellAccount/response.schema';
 
 @injectable()
 export class CrossSellAccountListerUseCase {
-  constructor(private readonly crossSellService: CrossSellService) {}
+  constructor(
+    @inject(CrossSellService)
+    private readonly crossSellService: CrossSellService
+  ) {}
 
   async execute(
     t: TFunction<'translation', undefined>,

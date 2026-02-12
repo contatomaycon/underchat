@@ -1,11 +1,14 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { ZipcodeResponseSchema } from '@core/schema/zipcode/viewZipcode/response.schema';
 import { ZipcodeService } from '@core/services/zipcode.service';
 import { ViewZipcodeRequest } from '@core/schema/zipcode/viewZipcode/request.schema';
 
 @injectable()
 export class ZipcodeViewerUseCase {
-  constructor(private readonly zipcodeService: ZipcodeService) {}
+  constructor(
+    @inject(ZipcodeService)
+    private readonly zipcodeService: ZipcodeService
+  ) {}
 
   async execute(
     request: ViewZipcodeRequest

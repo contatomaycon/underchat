@@ -1,10 +1,13 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { ReleaseService } from '@core/services/release.service';
 
 @injectable()
 export class ReleaseDeleterUseCase {
-  constructor(private readonly releaseService: ReleaseService) {}
+  constructor(
+    @inject(ReleaseService)
+    private readonly releaseService: ReleaseService
+  ) {}
 
   async execute(
     t: TFunction<'translation', undefined>,

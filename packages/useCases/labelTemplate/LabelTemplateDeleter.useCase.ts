@@ -1,10 +1,13 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { LabelTemplateService } from '@core/services/labelTemplate.service';
 
 @injectable()
 export class LabelTemplateDeleterUseCase {
-  constructor(private readonly labelTemplateService: LabelTemplateService) {}
+  constructor(
+    @inject(LabelTemplateService)
+    private readonly labelTemplateService: LabelTemplateService
+  ) {}
 
   async execute(
     t: TFunction<'translation', undefined>,

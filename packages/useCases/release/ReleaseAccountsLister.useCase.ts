@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { ReleaseService } from '@core/services/release.service';
 import { ListReleaseAccountsResponse } from '@core/schema/release/listReleaseAccounts/response.schema';
@@ -8,7 +8,10 @@ import { IJwtGroupHierarchy } from '@core/common/interfaces/IJwtGroupHierarchy';
 
 @injectable()
 export class ReleaseAccountsListerUseCase {
-  constructor(private readonly releaseService: ReleaseService) {}
+  constructor(
+    @inject(ReleaseService)
+    private readonly releaseService: ReleaseService
+  ) {}
 
   async execute(
     t: TFunction<'translation', undefined>,

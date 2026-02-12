@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { ListMessageResult } from '@core/schema/chat/listMessageChats/response.schema';
@@ -7,6 +7,7 @@ import { ListReportConversationHistoryMessagesResponse } from '@core/schema/repo
 @injectable()
 export class ReportConversationHistoryMessagesListerUseCase {
   constructor(
+    @inject(ElasticDatabaseService)
     private readonly elasticDatabaseService: ElasticDatabaseService
   ) {}
 

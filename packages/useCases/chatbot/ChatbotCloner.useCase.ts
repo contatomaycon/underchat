@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { AccountService } from '@core/services/account.service';
 import { CloneChatbotRequest } from '@core/schema/chatbot/cloneChatbot/request.schema';
@@ -16,10 +16,15 @@ import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
 @injectable()
 export class ChatbotClonerUseCase {
   constructor(
+    @inject(ChatbotClonerRepository)
     private readonly chatbotClonerRepository: ChatbotClonerRepository,
+    @inject(ChatbotService)
     private readonly chatbotService: ChatbotService,
+    @inject(AccountService)
     private readonly accountService: AccountService,
+    @inject(PlanAccountService)
     private readonly planAccountService: PlanAccountService,
+    @inject(ElasticDatabaseService)
     private readonly elasticDatabaseService: ElasticDatabaseService
   ) {}
 

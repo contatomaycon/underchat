@@ -35,15 +35,25 @@ import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 @injectable()
 export class StartChatWithContactUseCase {
   constructor(
+    @inject(ChatService)
     private readonly chatService: ChatService,
+    @inject(CentrifugoService)
     private readonly centrifugoService: CentrifugoService,
+    @inject(AccountService)
     private readonly accountService: AccountService,
+    @inject(UserService)
     private readonly userService: UserService,
+    @inject(WorkerService)
     private readonly workerService: WorkerService,
+    @inject(WorkerConfigService)
     private readonly workerConfigService: WorkerConfigService,
+    @inject(ContactService)
     private readonly contactService: ContactService,
+    @inject(SectorService)
     private readonly sectorService: SectorService,
+    @inject(EncryptService)
     private readonly encryptService: EncryptService,
+    @inject(ChatUserViewerRepository)
     private readonly chatUserViewerRepository: ChatUserViewerRepository,
     @inject('Redis') private readonly redis: Redis
   ) {}

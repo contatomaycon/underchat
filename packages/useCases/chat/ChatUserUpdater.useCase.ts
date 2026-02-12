@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { ChatUserService } from '@core/services/chatUser.service';
 import { UpdateChatsUserRequest } from '@core/schema/chat/updateChatsUser/request.schema';
@@ -8,7 +8,9 @@ import { PresenceService } from '@core/services/presence.service';
 @injectable()
 export class ChatUserUpdaterUseCase {
   constructor(
+    @inject(ChatUserService)
     private readonly chatUserService: ChatUserService,
+    @inject(PresenceService)
     private readonly presenceService: PresenceService
   ) {}
 

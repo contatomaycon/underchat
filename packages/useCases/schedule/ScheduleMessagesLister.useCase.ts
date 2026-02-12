@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { ScheduleMessagesListerRepository } from '@core/repositories/schedule/ScheduleMessagesLister.repository';
 import { ListScheduleMessagesRequest } from '@core/schema/schedule/listScheduleMessages/request.schema';
 import { ListScheduleMessagesResponse } from '@core/schema/schedule/listScheduleMessages/response.schema';
@@ -7,6 +7,7 @@ import { setPaginationData } from '@core/common/functions/createPaginationData';
 @injectable()
 export class ScheduleMessagesListerUseCase {
   constructor(
+    @inject(ScheduleMessagesListerRepository)
     private readonly scheduleMessagesListerRepository: ScheduleMessagesListerRepository
   ) {}
 

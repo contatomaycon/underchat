@@ -1,10 +1,13 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { ContactGroupService } from '@core/services/contactGroup.service';
 
 @injectable()
 export class ContactGroupDeleterUseCase {
-  constructor(private readonly contactGroupService: ContactGroupService) {}
+  constructor(
+    @inject(ContactGroupService)
+    private readonly contactGroupService: ContactGroupService
+  ) {}
 
   async execute(
     t: TFunction<'translation', undefined>,

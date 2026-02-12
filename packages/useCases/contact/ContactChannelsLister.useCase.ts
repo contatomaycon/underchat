@@ -1,10 +1,11 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { ContactChannelsListerRepository } from '@core/repositories/contact/ContactChannelsLister.repository';
 import { ListContactChannelsResponse } from '@core/schema/contact/listContactChannels/response.schema';
 
 @injectable()
 export class ContactChannelsListerUseCase {
   constructor(
+    @inject(ContactChannelsListerRepository)
     private readonly contactChannelsListerRepository: ContactChannelsListerRepository
   ) {}
 

@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { RoleService } from '@core/services/role.service';
 import { CreateRoleResponse } from '@core/schema/role/createRole/response.schema';
@@ -7,7 +7,9 @@ import { PlanAccountService } from '@core/services/planAccount.service';
 @injectable()
 export class RoleCreatorUseCase {
   constructor(
+    @inject(RoleService)
     private readonly roleService: RoleService,
+    @inject(PlanAccountService)
     private readonly planAccountService: PlanAccountService
   ) {}
 

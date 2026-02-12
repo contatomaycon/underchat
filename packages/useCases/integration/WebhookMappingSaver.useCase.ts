@@ -1,11 +1,14 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { IntegrationService } from '@core/services/integration.service';
 import { WebhookMappingValidationError } from '@core/common/exceptions/WebhookMappingValidationError';
 
 @injectable()
 export class WebhookMappingSaverUseCase {
-  constructor(private readonly integrationService: IntegrationService) {}
+  constructor(
+    @inject(IntegrationService)
+    private readonly integrationService: IntegrationService
+  ) {}
 
   async execute(
     t: TFunction<'translation', undefined>,

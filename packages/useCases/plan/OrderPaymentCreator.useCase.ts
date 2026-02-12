@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { PaymentService } from '@core/services/payment.service';
 import { PlanService } from '@core/services/plan.service';
@@ -18,13 +18,21 @@ import { randomUUID } from 'node:crypto';
 @injectable()
 export class OrderPaymentCreatorUseCase {
   constructor(
+    @inject(PaymentService)
     private readonly paymentService: PaymentService,
+    @inject(PlanService)
     private readonly planService: PlanService,
+    @inject(PlanReleaseService)
     private readonly planReleaseService: PlanReleaseService,
+    @inject(AccountTestService)
     private readonly accountTestService: AccountTestService,
+    @inject(UserMasterViewerRepository)
     private readonly userMasterViewerRepository: UserMasterViewerRepository,
+    @inject(UserService)
     private readonly userService: UserService,
+    @inject(CreditCardFeeService)
     private readonly creditCardFeeService: CreditCardFeeService,
+    @inject(MethodPaymentService)
     private readonly methodPaymentService: MethodPaymentService
   ) {}
 

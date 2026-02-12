@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { setPaginationData } from '@core/common/functions/createPaginationData';
 import { ReleaseService } from '@core/services/release.service';
 import { ListReleaseFinalResponse } from '@core/schema/release/listRelease/response.schema';
@@ -6,7 +6,10 @@ import { ListReleaseRequest } from '@core/schema/release/listRelease/request.sch
 
 @injectable()
 export class ReleaseListerUseCase {
-  constructor(private readonly releaseService: ReleaseService) {}
+  constructor(
+    @inject(ReleaseService)
+    private readonly releaseService: ReleaseService
+  ) {}
 
   async execute(
     query: ListReleaseRequest,

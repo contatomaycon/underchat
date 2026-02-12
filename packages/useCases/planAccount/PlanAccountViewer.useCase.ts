@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { PlanAccountService } from '@core/services/planAccount.service';
 import { AccountService } from '@core/services/account.service';
@@ -7,7 +7,9 @@ import { ViewPlanAccountResponse } from '@core/schema/planAccount/viewPlanAccoun
 @injectable()
 export class PlanAccountViewerUseCase {
   constructor(
+    @inject(PlanAccountService)
     private readonly planAccountService: PlanAccountService,
+    @inject(AccountService)
     private readonly accountService: AccountService
   ) {}
 

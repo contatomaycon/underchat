@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { MessageTemplateService } from '@core/services/messageTemplate.service';
 import { UpdateMessageTemplateRequest } from '@core/schema/messageTemplate/editMessageTemplate/request.schema';
@@ -12,8 +12,11 @@ import { EMessageType } from '@core/common/enums/EMessageType';
 @injectable()
 export class MessageTemplateUpdaterUseCase {
   constructor(
+    @inject(MessageTemplateService)
     private readonly messageTemplateService: MessageTemplateService,
+    @inject(StorageService)
     private readonly storageService: StorageService,
+    @inject(ConverterService)
     private readonly converterService: ConverterService
   ) {}
 

@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { ChatContactService } from '@core/services/chatContact.service';
 import { ListChatContactsFinalResponse } from '@core/schema/chat/listContacts/response.schema';
 import { ListChatContactsRequest } from '@core/schema/chat/listContacts/request.schema';
@@ -6,7 +6,10 @@ import { setPaginationData } from '@core/common/functions/createPaginationData';
 
 @injectable()
 export class ChatContactListerUseCase {
-  constructor(private readonly chatContactService: ChatContactService) {}
+  constructor(
+    @inject(ChatContactService)
+    private readonly chatContactService: ChatContactService
+  ) {}
 
   async execute(
     perPage: number,

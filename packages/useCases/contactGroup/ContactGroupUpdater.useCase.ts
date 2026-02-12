@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { ContactGroupService } from '@core/services/contactGroup.service';
 import { ContactService } from '@core/services/contact.service';
@@ -7,7 +7,9 @@ import { UpdateContactGroupRequest } from '@core/schema/contactGroup/editContact
 @injectable()
 export class ContactGroupUpdaterUseCase {
   constructor(
+    @inject(ContactGroupService)
     private readonly contactGroupService: ContactGroupService,
+    @inject(ContactService)
     private readonly contactService: ContactService
   ) {}
 

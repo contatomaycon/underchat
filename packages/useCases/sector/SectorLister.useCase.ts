@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { setPaginationData } from '@core/common/functions/createPaginationData';
 import { ListSectorRequest } from '@core/schema/sector/listSector/request.schema';
@@ -9,7 +9,9 @@ import { AccountService } from '@core/services/account.service';
 @injectable()
 export class SectorListerUseCase {
   constructor(
+    @inject(SectorService)
     private readonly sectorService: SectorService,
+    @inject(AccountService)
     private readonly accountService: AccountService
   ) {}
 

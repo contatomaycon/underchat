@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { PermissionService } from '@core/services/permission.service';
 import { PermissionGroupRequest } from '@core/schema/permission/updateRolePermissions/request.schema';
@@ -7,7 +7,10 @@ import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 
 @injectable()
 export class RolePermissionsUpdaterUseCase {
-  constructor(private readonly permissionService: PermissionService) {}
+  constructor(
+    @inject(PermissionService)
+    private readonly permissionService: PermissionService
+  ) {}
 
   private hasPermission(
     actions: IJwtGroupHierarchy[],

@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { AccountService } from '@core/services/account.service';
 import { PlanAccountService } from '@core/services/planAccount.service';
@@ -7,7 +7,9 @@ import { ViewAccountCustomizationResponse } from '@core/schema/accountSettings/v
 @injectable()
 export class AccountCustomizationViewerUseCase {
   constructor(
+    @inject(AccountService)
     private readonly accountService: AccountService,
+    @inject(PlanAccountService)
     private readonly planAccountService: PlanAccountService
   ) {}
 

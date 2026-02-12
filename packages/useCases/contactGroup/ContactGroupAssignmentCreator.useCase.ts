@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { CreateContactGroupAssignmentRequest } from '@core/schema/contactGroup/createContactGroupAssignment/request.schema';
 import { CsvFileReaderService } from '@core/services/csv.service';
@@ -21,12 +21,19 @@ export class ContactGroupAssignmentCreatorUseCase {
   private labelCache: Map<string, string> = new Map();
 
   constructor(
+    @inject(CsvFileReaderService)
     private readonly csvFileReaderService: CsvFileReaderService,
+    @inject(ContactService)
     private readonly contactService: ContactService,
+    @inject(EncryptService)
     private readonly encryptService: EncryptService,
+    @inject(PlanAccountService)
     private readonly planAccountService: PlanAccountService,
+    @inject(CentrifugoService)
     private readonly centrifugoService: CentrifugoService,
+    @inject(LabelTemplateViewerByNameRepository)
     private readonly labelTemplateViewerByNameRepository: LabelTemplateViewerByNameRepository,
+    @inject(LabelTemplateCreatorRepository)
     private readonly labelTemplateCreatorRepository: LabelTemplateCreatorRepository
   ) {}
 

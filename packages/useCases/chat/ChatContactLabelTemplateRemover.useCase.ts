@@ -1,10 +1,11 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { ContactLabelTemplateRemoverUseCase } from '@core/useCases/contact/ContactLabelTemplateRemover.useCase';
 
 @injectable()
 export class ChatContactLabelTemplateRemoverUseCase {
   constructor(
+    @inject(ContactLabelTemplateRemoverUseCase)
     private readonly contactLabelTemplateRemoverUseCase: ContactLabelTemplateRemoverUseCase
   ) {}
 

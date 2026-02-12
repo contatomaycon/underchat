@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { setPaginationData } from '@core/common/functions/createPaginationData';
 import { AccountService } from '@core/services/account.service';
 import { ListAccountFinalResponse } from '@core/schema/account/listAccount/response.schema';
@@ -6,7 +6,10 @@ import { ListAccountRequest } from '@core/schema/account/listAccount/request.sch
 
 @injectable()
 export class AccountListerUseCase {
-  constructor(private readonly accountService: AccountService) {}
+  constructor(
+    @inject(AccountService)
+    private readonly accountService: AccountService
+  ) {}
 
   async execute(query: ListAccountRequest): Promise<ListAccountFinalResponse> {
     const perPage = query.per_page ?? 10;

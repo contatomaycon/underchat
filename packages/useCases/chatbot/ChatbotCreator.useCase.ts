@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { AccountService } from '@core/services/account.service';
 import { CreateChatbotRequest } from '@core/schema/chatbot/createChatbot/request.schema';
@@ -9,8 +9,11 @@ import { PlanAccountService } from '@core/services/planAccount.service';
 @injectable()
 export class ChatbotCreatorUseCase {
   constructor(
+    @inject(ChatbotService)
     private readonly chatbotService: ChatbotService,
+    @inject(AccountService)
     private readonly accountService: AccountService,
+    @inject(PlanAccountService)
     private readonly planAccountService: PlanAccountService
   ) {}
 

@@ -1,10 +1,13 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { SectorService } from '@core/services/sector.service';
 import { ListUserSectorsResponse } from '@core/schema/user/listUserSectors/response.schema';
 
 @injectable()
 export class UserSectorsListerUseCase {
-  constructor(private readonly sectorService: SectorService) {}
+  constructor(
+    @inject(SectorService)
+    private readonly sectorService: SectorService
+  ) {}
 
   async execute(accountId: string): Promise<ListUserSectorsResponse> {
     const sectors = await this.sectorService.listAllSectors(accountId);

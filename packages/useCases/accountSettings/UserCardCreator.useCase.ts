@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { PaymentService } from '@core/services/payment.service';
 import { UserCardsListerRepository } from '@core/repositories/plan/UserCardsLister.repository';
@@ -8,7 +8,9 @@ import { CreateUserCardResponse } from '@core/schema/accountSettings/createUserC
 @injectable()
 export class UserCardCreatorUseCase {
   constructor(
+    @inject(PaymentService)
     private readonly paymentService: PaymentService,
+    @inject(UserCardsListerRepository)
     private readonly userCardsListerRepository: UserCardsListerRepository
   ) {}
 

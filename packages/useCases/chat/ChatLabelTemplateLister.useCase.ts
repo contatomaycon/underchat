@@ -1,10 +1,13 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { ChatContactService } from '@core/services/chatContact.service';
 import { ListChatLabelTemplatesResponse } from '@core/schema/chat/listLabelTemplates/response.schema';
 
 @injectable()
 export class ChatLabelTemplateListerUseCase {
-  constructor(private readonly chatContactService: ChatContactService) {}
+  constructor(
+    @inject(ChatContactService)
+    private readonly chatContactService: ChatContactService
+  ) {}
 
   async execute(accountId: string): Promise<ListChatLabelTemplatesResponse[]> {
     return this.chatContactService.listChatLabelTemplates(accountId);

@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { AiAgentService } from '@core/services/aiAgent.service';
 import { ListAiAgentPromptRequest } from '@core/schema/aiAgent/listAiAgentPrompt/request.schema';
@@ -6,7 +6,10 @@ import { ListAiAgentPromptResponse } from '@core/schema/aiAgent/listAiAgentPromp
 
 @injectable()
 export class AiAgentPromptListerUseCase {
-  constructor(private readonly aiAgentService: AiAgentService) {}
+  constructor(
+    @inject(AiAgentService)
+    private readonly aiAgentService: AiAgentService
+  ) {}
 
   async execute(
     t: TFunction<'translation', undefined>,

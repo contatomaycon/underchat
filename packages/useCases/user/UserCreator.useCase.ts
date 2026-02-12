@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { AccountService } from '@core/services/account.service';
 import { CreateUserRequest } from '@core/schema/user/createUser/request.schema';
@@ -11,10 +11,15 @@ import { PlanAccountService } from '@core/services/planAccount.service';
 @injectable()
 export class UserCreatorUseCase {
   constructor(
+    @inject(UserService)
     private readonly userService: UserService,
+    @inject(AccountService)
     private readonly accountService: AccountService,
+    @inject(CountryService)
     private readonly countryService: CountryService,
+    @inject(StorageService)
     private readonly storageService: StorageService,
+    @inject(PlanAccountService)
     private readonly planAccountService: PlanAccountService
   ) {}
 

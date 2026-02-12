@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { AccountTestService } from '@core/services/accountTest.service';
 import { UserMasterViewerRepository } from '@core/repositories/user/UserMasterViewer.repository';
 import { UserService } from '@core/services/user.service';
@@ -7,8 +7,11 @@ import { TFunction } from 'i18next';
 @injectable()
 export class TestPlanAlreadyUsedCheckerUseCase {
   constructor(
+    @inject(AccountTestService)
     private readonly accountTestService: AccountTestService,
+    @inject(UserMasterViewerRepository)
     private readonly userMasterViewerRepository: UserMasterViewerRepository,
+    @inject(UserService)
     private readonly userService: UserService
   ) {}
 

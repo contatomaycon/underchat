@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { UpdateChatContactRequest } from '@core/schema/chat/updateContact/request.schema';
 import { UpdateContactRequest } from '@core/schema/contact/editContact/request.schema';
@@ -8,7 +8,10 @@ import { extractArrayFieldValue } from '@core/common/functions/extractArrayField
 
 @injectable()
 export class ChatContactUpdaterUseCase {
-  constructor(private readonly contactUpdaterUseCase: ContactUpdaterUseCase) {}
+  constructor(
+    @inject(ContactUpdaterUseCase)
+    private readonly contactUpdaterUseCase: ContactUpdaterUseCase
+  ) {}
 
   async execute(
     t: TFunction<'translation', undefined>,

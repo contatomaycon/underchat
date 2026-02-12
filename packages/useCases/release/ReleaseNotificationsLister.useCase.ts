@@ -1,10 +1,13 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { ReleaseService } from '@core/services/release.service';
 import { ListReleaseNotificationsResponse } from '@core/schema/release/listReleaseNotifications/response.schema';
 
 @injectable()
 export class ReleaseNotificationsListerUseCase {
-  constructor(private readonly releaseService: ReleaseService) {}
+  constructor(
+    @inject(ReleaseService)
+    private readonly releaseService: ReleaseService
+  ) {}
 
   async execute(
     accountId: string,

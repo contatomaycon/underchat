@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { setPaginationData } from '@core/common/functions/createPaginationData';
 import { VoiceIaService } from '@core/services/voiceIa.service';
 import { ListVoiceIaFinalResponse } from '@core/schema/voiceIa/listVoiceIa/response.schema';
@@ -6,7 +6,10 @@ import { ListVoiceIaRequest } from '@core/schema/voiceIa/listVoiceIa/request.sch
 
 @injectable()
 export class VoiceIaListerUseCase {
-  constructor(private readonly voiceIaService: VoiceIaService) {}
+  constructor(
+    @inject(VoiceIaService)
+    private readonly voiceIaService: VoiceIaService
+  ) {}
 
   async execute(
     query: ListVoiceIaRequest,

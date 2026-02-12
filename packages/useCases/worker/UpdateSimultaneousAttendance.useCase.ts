@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { WorkerConfigService } from '@core/services/workerConfig.service';
 import { WorkerService } from '@core/services/worker.service';
@@ -7,7 +7,9 @@ import { UpdateSimultaneousAttendanceRequest } from '@core/schema/worker/updateS
 @injectable()
 export class UpdateSimultaneousAttendanceUseCase {
   constructor(
+    @inject(WorkerConfigService)
     private readonly workerConfigService: WorkerConfigService,
+    @inject(WorkerService)
     private readonly workerService: WorkerService
   ) {}
 

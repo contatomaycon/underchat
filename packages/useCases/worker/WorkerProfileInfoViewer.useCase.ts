@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { WorkerProfileInfoService } from '@core/services/workerProfileInfo.service';
 import { WorkerService } from '@core/services/worker.service';
@@ -7,7 +7,9 @@ import { ViewProfileInfoResponse } from '@core/schema/worker/viewProfileInfo/res
 @injectable()
 export class WorkerProfileInfoViewerUseCase {
   constructor(
+    @inject(WorkerProfileInfoService)
     private readonly workerProfileInfoService: WorkerProfileInfoService,
+    @inject(WorkerService)
     private readonly workerService: WorkerService
   ) {}
 

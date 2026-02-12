@@ -20,11 +20,17 @@ import { AuthRepository } from '@core/repositories/auth/Auth.repository';
 @injectable()
 export class AuthForgotPasswordResetPasswordUseCase {
   constructor(
+    @inject(UserService)
     private readonly userService: UserService,
+    @inject(AuthRepository)
     private readonly authRepository: AuthRepository,
+    @inject(PermissionService)
     private readonly permissionService: PermissionService,
+    @inject(AccountService)
     private readonly accountService: AccountService,
+    @inject(PresenceService)
     private readonly presenceService: PresenceService,
+    @inject(CentrifugoService)
     private readonly centrifugoService: CentrifugoService,
     @inject('Redis') private readonly redis: Redis
   ) {}

@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { setPaginationData } from '@core/common/functions/createPaginationData';
 import { ListRoleRequest } from '@core/schema/role/listRole/request.schema';
@@ -7,7 +7,10 @@ import { RoleService } from '@core/services/role.service';
 
 @injectable()
 export class RoleListerUseCase {
-  constructor(private readonly roleService: RoleService) {}
+  constructor(
+    @inject(RoleService)
+    private readonly roleService: RoleService
+  ) {}
 
   async execute(
     t: TFunction<'translation', undefined>,

@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { setPaginationData } from '@core/common/functions/createPaginationData';
@@ -12,6 +12,7 @@ import { INotificationMessage } from '@core/common/interfaces/INotificationMessa
 @injectable()
 export class ListSentNotificationsUseCase {
   constructor(
+    @inject(ElasticDatabaseService)
     private readonly elasticDatabaseService: ElasticDatabaseService
   ) {}
 

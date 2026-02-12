@@ -1,10 +1,13 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { ChatbotService } from '@core/services/chatbot.service';
 
 @injectable()
 export class ChatbotDeleterUseCase {
-  constructor(private readonly chatbotService: ChatbotService) {}
+  constructor(
+    @inject(ChatbotService)
+    private readonly chatbotService: ChatbotService
+  ) {}
 
   async execute(
     t: TFunction<'translation', undefined>,

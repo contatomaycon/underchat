@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { WorkerService } from '@core/services/worker.service';
 import { WorkerConnectionLogsQuery } from '@core/schema/worker/workerConnectionLogs/request.schema';
@@ -10,7 +10,9 @@ import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 @injectable()
 export class WorkerConnectionLogsUseCase {
   constructor(
+    @inject(ElasticDatabaseService)
     private readonly elasticDatabaseService: ElasticDatabaseService,
+    @inject(WorkerService)
     private readonly workerService: WorkerService
   ) {}
 

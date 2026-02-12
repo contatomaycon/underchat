@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { ContactService } from '@core/services/contact.service';
 import { PhoneValidationService } from '@core/services/phoneValidation.service';
@@ -7,7 +7,9 @@ import { extractPhoneAndDdi } from '@core/common/functions/extractPhoneAndDdi';
 @injectable()
 export class ContactValidatorUseCase {
   constructor(
+    @inject(ContactService)
     private readonly contactService: ContactService,
+    @inject(PhoneValidationService)
     private readonly phoneValidationService: PhoneValidationService
   ) {}
 

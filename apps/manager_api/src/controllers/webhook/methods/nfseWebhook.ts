@@ -3,7 +3,7 @@ import { sendResponse } from '@core/common/functions/sendResponse';
 import { handleControllerError } from '@core/common/functions/handleControllerError';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
-import { NfseWebhookUseCase } from '@core/useCases/Webhook/NfseWebhook.useCase';
+import { NfseWebhookUseCase } from '@core/useCases/webhook/NfseWebhook.useCase';
 import { AsaasNfseWebhookRequest } from '@core/schema/nfse/Webhook/request.schema';
 import { asaasEnvironment } from '@core/config/environments';
 

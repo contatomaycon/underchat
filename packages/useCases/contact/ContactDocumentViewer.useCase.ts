@@ -1,11 +1,14 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { ContactService } from '@core/services/contact.service';
 import { ViewContactDocumentResponse } from '@core/schema/contact/viewContactDocument/response.schema';
 
 @injectable()
 export class ContactDocumentViewerUseCase {
-  constructor(private readonly contactService: ContactService) {}
+  constructor(
+    @inject(ContactService)
+    private readonly contactService: ContactService
+  ) {}
 
   async execute(
     t: TFunction<'translation', undefined>,

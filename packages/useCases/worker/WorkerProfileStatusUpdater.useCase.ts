@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { WorkerProfileStatusService } from '@core/services/workerProfileStatus.service';
 import { WorkerService } from '@core/services/worker.service';
@@ -8,8 +8,11 @@ import { UpdateProfileStatusRequest } from '@core/schema/worker/updateProfileSta
 @injectable()
 export class WorkerProfileStatusUpdaterUseCase {
   constructor(
+    @inject(WorkerProfileStatusService)
     private readonly workerProfileStatusService: WorkerProfileStatusService,
+    @inject(WorkerService)
     private readonly workerService: WorkerService,
+    @inject(WorkerProfileStatusViewerRepository)
     private readonly workerProfileStatusViewerRepository: WorkerProfileStatusViewerRepository
   ) {}
 

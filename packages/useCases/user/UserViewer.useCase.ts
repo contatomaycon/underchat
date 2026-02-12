@@ -1,11 +1,14 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { UserService } from '@core/services/user.service';
 import { ViewUserResponse } from '@core/schema/user/viewUser/response.schema';
 
 @injectable()
 export class UserViewerUseCase {
-  constructor(private readonly userService: UserService) {}
+  constructor(
+    @inject(UserService)
+    private readonly userService: UserService
+  ) {}
 
   private async validateUserExistsInAccount(
     t: TFunction<'translation', undefined>,

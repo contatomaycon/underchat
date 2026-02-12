@@ -1,10 +1,13 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { SectorService } from '@core/services/sector.service';
 import { ListAiAgentHumanTransferSectorUsersResponse } from '@core/schema/aiAgent/listAiAgentHumanTransferSectorUsers/response.schema';
 
 @injectable()
 export class AiAgentHumanTransferSectorUsersListerUseCase {
-  constructor(private readonly sectorService: SectorService) {}
+  constructor(
+    @inject(SectorService)
+    private readonly sectorService: SectorService
+  ) {}
 
   async execute(
     accountId: string,

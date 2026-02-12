@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { WorkerService } from '@core/services/worker.service';
 import { AccountService } from '@core/services/account.service';
@@ -17,10 +17,15 @@ import { WorkerGrpcClientService } from '@core/services/workerGrpcClient.service
 @injectable()
 export class ChannelRecreatorUseCase {
   constructor(
+    @inject(WorkerService)
     private readonly workerService: WorkerService,
+    @inject(AccountService)
     private readonly accountService: AccountService,
+    @inject(ConfigService)
     private readonly configService: ConfigService,
+    @inject(CentrifugoService)
     private readonly centrifugoService: CentrifugoService,
+    @inject(WorkerGrpcClientService)
     private readonly workerGrpcClientService: WorkerGrpcClientService
   ) {}
 

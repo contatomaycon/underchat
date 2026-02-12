@@ -1,10 +1,13 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { PlanService } from '@core/services/plan.service';
 import { ListPlanWithItemsResponse } from '@core/schema/plan/listPlanWithItems/response.schema';
 
 @injectable()
 export class PlanWithItemsListerUseCase {
-  constructor(private readonly planService: PlanService) {}
+  constructor(
+    @inject(PlanService)
+    private readonly planService: PlanService
+  ) {}
 
   async execute(
     accountId: string | null

@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { AiAgentService } from '@core/services/aiAgent.service';
 import { OpenAIAssistantService } from '@core/services/openaiAssistant.service';
@@ -9,9 +9,13 @@ import { EAiAgentType } from '@core/common/enums/EAiAgentType';
 @injectable()
 export class AiAgentPromptDeleterUseCase {
   constructor(
+    @inject(AiAgentService)
     private readonly aiAgentService: AiAgentService,
+    @inject(OpenAIAssistantService)
     private readonly openAIAssistantService: OpenAIAssistantService,
+    @inject(StorageService)
     private readonly storageService: StorageService,
+    @inject(EmbeddingService)
     private readonly embeddingService: EmbeddingService
   ) {}
 

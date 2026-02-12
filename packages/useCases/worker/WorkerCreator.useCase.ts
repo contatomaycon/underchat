@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { WorkerService } from '@core/services/worker.service';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
@@ -17,10 +17,15 @@ import { WorkerGrpcClientService } from '@core/services/workerGrpcClient.service
 @injectable()
 export class WorkerCreatorUseCase {
   constructor(
+    @inject(WorkerService)
     private readonly workerService: WorkerService,
+    @inject(AccountService)
     private readonly accountService: AccountService,
+    @inject(CentrifugoService)
     private readonly centrifugoService: CentrifugoService,
+    @inject(PlanAccountService)
     private readonly planAccountService: PlanAccountService,
+    @inject(WorkerGrpcClientService)
     private readonly workerGrpcClientService: WorkerGrpcClientService
   ) {}
 

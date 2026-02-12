@@ -1,10 +1,11 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { ContactValidatorUseCase } from '@core/useCases/contact/ContactValidator.useCase';
 
 @injectable()
 export class ChatContactValidatorUseCase {
   constructor(
+    @inject(ContactValidatorUseCase)
     private readonly contactValidatorUseCase: ContactValidatorUseCase
   ) {}
 

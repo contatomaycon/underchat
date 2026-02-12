@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { WorkerService } from '@core/services/worker.service';
 import { ListWorkerRequest } from '@core/schema/worker/listWorker/request.schema';
 import { ListWorkerFinalResponse } from '@core/schema/worker/listWorker/response.schema';
@@ -6,7 +6,10 @@ import { setPaginationData } from '@core/common/functions/createPaginationData';
 
 @injectable()
 export class WorkerListerUseCase {
-  constructor(private readonly workerService: WorkerService) {}
+  constructor(
+    @inject(WorkerService)
+    private readonly workerService: WorkerService
+  ) {}
 
   async execute(
     accountId: string,

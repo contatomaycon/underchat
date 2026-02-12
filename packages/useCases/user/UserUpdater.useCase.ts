@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { UpdateUserRequest } from '@core/schema/user/editUser/request.schema';
 import { UserService } from '@core/services/user.service';
@@ -23,13 +23,21 @@ import { chatAccountCentrifugo } from '@core/common/functions/centrifugoQueue';
 @injectable()
 export class UserUpdaterUseCase {
   constructor(
+    @inject(EncryptService)
     private readonly encryptService: EncryptService,
+    @inject(PasswordEncryptorService)
     private readonly passwordEncryptorService: PasswordEncryptorService,
+    @inject(UserService)
     private readonly userService: UserService,
-    private readonly CountryService: CountryService,
+    @inject(CountryService)
+    private readonly countryService: CountryService,
+    @inject(AccountService)
     private readonly accountService: AccountService,
+    @inject(StorageService)
     private readonly storageService: StorageService,
+    @inject(PermissionService)
     private readonly permissionService: PermissionService,
+    @inject(CentrifugoService)
     private readonly centrifugoService: CentrifugoService
   ) {}
 
@@ -197,7 +205,7 @@ export class UserUpdaterUseCase {
     }
 
     const countryExists =
-      await this.CountryService.existsCountryById(countryIdValue);
+      await this.countryService.existsCountryById(countryIdValue);
 
     if (!countryExists) {
       throw new Error(t('country_not_found'));

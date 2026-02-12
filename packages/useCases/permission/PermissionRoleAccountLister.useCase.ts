@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { PermissionService } from '@core/services/permission.service';
 import { AccountService } from '@core/services/account.service';
@@ -7,7 +7,9 @@ import { IRoleAccount } from '@core/common/interfaces/IRoleAccount';
 @injectable()
 export class PermissionRoleAccountListerUseCase {
   constructor(
+    @inject(PermissionService)
     private readonly permissionService: PermissionService,
+    @inject(AccountService)
     private readonly accountService: AccountService
   ) {}
 

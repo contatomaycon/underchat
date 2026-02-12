@@ -1,10 +1,13 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { WorkerConfigService } from '@core/services/workerConfig.service';
 import { ViewChatbotConfigResponse } from '@core/schema/chatbot/viewChatbotConfig/response.schema';
 
 @injectable()
 export class ViewChatbotConfigUseCase {
-  constructor(private readonly workerConfigService: WorkerConfigService) {}
+  constructor(
+    @inject(WorkerConfigService)
+    private readonly workerConfigService: WorkerConfigService
+  ) {}
 
   async execute(accountId: string): Promise<ViewChatbotConfigResponse> {
     const response =

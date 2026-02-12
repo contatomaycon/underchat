@@ -1,10 +1,11 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { ReportConversationHistoryPdfViewerRepository } from '@core/repositories/reportConversationHistory/ReportConversationHistoryPdfViewer.repository';
 import { ViewReportConversationHistoryPdfResponse } from '@core/schema/reportConversationHistory/viewReportConversationHistoryPdf/response.schema';
 
 @injectable()
 export class ReportConversationHistoryPdfViewerUseCase {
   constructor(
+    @inject(ReportConversationHistoryPdfViewerRepository)
     private readonly pdfViewerRepository: ReportConversationHistoryPdfViewerRepository
   ) {}
 

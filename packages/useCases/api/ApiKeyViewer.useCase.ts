@@ -1,11 +1,14 @@
 import { ApiService } from '@core/services/api.service';
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { IApiKeyGroupHierarchy } from '@core/common/interfaces/IApiKeyGroupHierarchy';
 import { IApiKeyMiddleware } from '@core/common/interfaces/IApiKeyMiddleware';
 
 @injectable()
 export class ApiKeyViewerUseCase {
-  constructor(private readonly apiService: ApiService) {}
+  constructor(
+    @inject(ApiService)
+    private readonly apiService: ApiService
+  ) {}
 
   async execute(input: IApiKeyMiddleware): Promise<IApiKeyGroupHierarchy[]> {
     return this.apiService.findApiByKeyApi(

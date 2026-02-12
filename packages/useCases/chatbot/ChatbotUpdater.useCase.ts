@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { ChatbotService } from '@core/services/chatbot.service';
 import { UpdateChatbotRequest } from '@core/schema/chatbot/updateChatbot/request.schema';
@@ -6,7 +6,10 @@ import { UpdateChatbotResponse } from '@core/schema/chatbot/updateChatbot/respon
 
 @injectable()
 export class ChatbotUpdaterUseCase {
-  constructor(private readonly chatbotService: ChatbotService) {}
+  constructor(
+    @inject(ChatbotService)
+    private readonly chatbotService: ChatbotService
+  ) {}
 
   async validate(
     t: TFunction<'translation', undefined>,

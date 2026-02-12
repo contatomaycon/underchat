@@ -1,11 +1,14 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { ChatContactService } from '@core/services/chatContact.service';
 import { ViewChatContactByPhoneResponse } from '@core/schema/chat/viewContactByPhone/response.schema';
 
 @injectable()
 export class ChatContactByPhoneViewerUseCase {
-  constructor(private readonly chatContactService: ChatContactService) {}
+  constructor(
+    @inject(ChatContactService)
+    private readonly chatContactService: ChatContactService
+  ) {}
 
   async execute(
     t: TFunction<'translation', undefined>,

@@ -1,10 +1,13 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { ChatContactService } from '@core/services/chatContact.service';
 import { ViewChatContactsBatchResponse } from '@core/schema/chat/viewContactsBatch/response.schema';
 
 @injectable()
 export class ChatContactsBatchViewerUseCase {
-  constructor(private readonly chatContactService: ChatContactService) {}
+  constructor(
+    @inject(ChatContactService)
+    private readonly chatContactService: ChatContactService
+  ) {}
 
   async execute(
     contactIds: string[],

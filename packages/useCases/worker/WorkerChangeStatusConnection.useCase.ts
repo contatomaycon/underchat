@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { WorkerService } from '@core/services/worker.service';
 import { StatusConnectionWorkerRequest } from '@core/schema/worker/statusConnection/request.schema';
@@ -16,8 +16,11 @@ import { WorkerGrpcClientService } from '@core/services/workerGrpcClient.service
 @injectable()
 export class WorkerChangeStatusConnectionUseCase {
   constructor(
+    @inject(WorkerService)
     private readonly workerService: WorkerService,
+    @inject(CentrifugoService)
     private readonly centrifugoService: CentrifugoService,
+    @inject(WorkerGrpcClientService)
     private readonly workerGrpcClientService: WorkerGrpcClientService
   ) {}
 

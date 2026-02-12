@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { AuthRegisterVerifyCodeRequest } from '@core/schema/register/verifyCode/request.schema';
 import { TwoFactorService } from '@core/services/twoFactor.service';
@@ -7,7 +7,10 @@ import { generalEnvironment } from '@core/config/environments';
 
 @injectable()
 export class AuthRegisterVerifyCodeUseCase {
-  constructor(private readonly twoFactorService: TwoFactorService) {}
+  constructor(
+    @inject(TwoFactorService)
+    private readonly twoFactorService: TwoFactorService
+  ) {}
 
   async execute(
     t: TFunction<'translation', undefined>,

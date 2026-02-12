@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { AccountService } from '@core/services/account.service';
 import { CreateSectorRequest } from '@core/schema/sector/createSector/request.schema';
@@ -8,7 +8,9 @@ import { SectorService } from '@core/services/sector.service';
 @injectable()
 export class SectorCreatorUseCase {
   constructor(
+    @inject(SectorService)
     private readonly sectorService: SectorService,
+    @inject(AccountService)
     private readonly accountService: AccountService
   ) {}
 

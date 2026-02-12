@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { setPaginationData } from '@core/common/functions/createPaginationData';
 import { AiAgentService } from '@core/services/aiAgent.service';
@@ -7,7 +7,10 @@ import { ListAiAgentRequest } from '@core/schema/aiAgent/listAiAgent/request.sch
 
 @injectable()
 export class AiAgentListerUseCase {
-  constructor(private readonly aiAgentService: AiAgentService) {}
+  constructor(
+    @inject(AiAgentService)
+    private readonly aiAgentService: AiAgentService
+  ) {}
 
   async execute(
     t: TFunction<'translation', undefined>,

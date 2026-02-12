@@ -1,11 +1,14 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { PlanService } from '@core/services/plan.service';
 import { ListPlanItemResponse } from '@core/schema/plan/listPlanItems/response.schema';
 
 @injectable()
 export class PlanItemsListerUseCase {
-  constructor(private readonly planService: PlanService) {}
+  constructor(
+    @inject(PlanService)
+    private readonly planService: PlanService
+  ) {}
 
   async execute(
     t: TFunction<'translation', undefined>,

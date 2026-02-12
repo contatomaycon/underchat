@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { AccountService } from '@core/services/account.service';
 import {
@@ -57,9 +57,13 @@ export class ChatbotFlowSaverUseCase {
   ];
 
   constructor(
+    @inject(ChatbotService)
     private readonly chatbotService: ChatbotService,
+    @inject(AccountService)
     private readonly accountService: AccountService,
+    @inject(StorageService)
     private readonly storageService: StorageService,
+    @inject(ConverterService)
     private readonly converterService: ConverterService
   ) {}
 

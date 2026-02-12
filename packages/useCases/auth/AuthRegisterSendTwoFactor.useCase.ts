@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { AuthRegisterSendTwoFactorRequest } from '@core/schema/register/sendTwoFactor/request.schema';
 import { AccountTestService } from '@core/services/accountTest.service';
@@ -9,9 +9,13 @@ import { EncryptService } from '@core/services/encrypt.service';
 @injectable()
 export class AuthRegisterSendTwoFactorUseCase {
   constructor(
+    @inject(AccountTestService)
     private readonly accountTestService: AccountTestService,
+    @inject(UserService)
     private readonly userService: UserService,
+    @inject(NotificationMessageService)
     private readonly notificationMessageService: NotificationMessageService,
+    @inject(EncryptService)
     private readonly encryptService: EncryptService
   ) {}
 

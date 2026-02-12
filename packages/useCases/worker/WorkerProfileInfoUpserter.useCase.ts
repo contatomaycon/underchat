@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { WorkerProfileInfoService } from '@core/services/workerProfileInfo.service';
 import { WorkerService } from '@core/services/worker.service';
@@ -14,9 +14,13 @@ export class WorkerProfileInfoUpserterUseCase {
   MAX_FILE_SIZE_BYTES = 16 * 1024 * 1024;
 
   constructor(
+    @inject(WorkerProfileInfoService)
     private readonly workerProfileInfoService: WorkerProfileInfoService,
+    @inject(WorkerService)
     private readonly workerService: WorkerService,
+    @inject(StreamProducerService)
     private readonly streamProducerService: StreamProducerService,
+    @inject(KafkaBaileysQueueService)
     private readonly kafkaBaileysQueueService: KafkaBaileysQueueService
   ) {}
 

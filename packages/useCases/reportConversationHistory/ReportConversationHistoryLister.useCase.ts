@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { ListReportConversationHistoryRequest } from '@core/schema/reportConversationHistory/listReportConversationHistory/request.schema';
@@ -19,7 +19,9 @@ type ProtocolWithType = {
 @injectable()
 export class ReportConversationHistoryListerUseCase {
   constructor(
+    @inject(ElasticDatabaseService)
     private readonly elasticDatabaseService: ElasticDatabaseService,
+    @inject(ReportConversationHistoryPdfViewerRepository)
     private readonly pdfViewerRepository: ReportConversationHistoryPdfViewerRepository
   ) {}
 

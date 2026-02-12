@@ -1,11 +1,14 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { UpdateAccountRequest } from '@core/schema/account/editAccount/request.schema';
 import { AccountService } from '@core/services/account.service';
 
 @injectable()
 export class AccountUpdaterUseCase {
-  constructor(private readonly accountService: AccountService) {}
+  constructor(
+    @inject(AccountService)
+    private readonly accountService: AccountService
+  ) {}
 
   async execute(
     t: TFunction<'translation', undefined>,

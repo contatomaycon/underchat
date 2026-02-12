@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { UserService } from '@core/services/user.service';
 import { EncryptService } from '@core/services/encrypt.service';
@@ -13,8 +13,11 @@ import { ETypeSanetize } from '@core/common/enums/ETypeSanetize';
 @injectable()
 export class AccountSettingsAdditionalInfoUpdaterUseCase {
   constructor(
+    @inject(UserService)
     private readonly userService: UserService,
+    @inject(EncryptService)
     private readonly encryptService: EncryptService,
+    @inject(PasswordEncryptorService)
     private readonly passwordEncryptorService: PasswordEncryptorService
   ) {}
 

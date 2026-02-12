@@ -27,12 +27,19 @@ import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 @injectable()
 export class TransferChatUseCase {
   constructor(
+    @inject(ChatService)
     private readonly chatService: ChatService,
+    @inject(UserService)
     private readonly userService: UserService,
+    @inject(SectorService)
     private readonly sectorService: SectorService,
+    @inject(ChatMessageService)
     private readonly chatMessageService: ChatMessageService,
+    @inject(CentrifugoService)
     private readonly centrifugoService: CentrifugoService,
+    @inject(WorkerService)
     private readonly workerService: WorkerService,
+    @inject(ChatUserViewerRepository)
     private readonly chatUserViewerRepository: ChatUserViewerRepository,
     @inject('Redis') private readonly redis: Redis
   ) {}

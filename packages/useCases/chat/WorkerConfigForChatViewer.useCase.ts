@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { ChatService } from '@core/services/chat.service';
 import { WorkerService } from '@core/services/worker.service';
@@ -7,7 +7,9 @@ import { ViewWorkerConfigForChatResponse } from '@core/schema/chat/viewWorkerCon
 @injectable()
 export class WorkerConfigForChatViewerUseCase {
   constructor(
+    @inject(ChatService)
     private readonly chatService: ChatService,
+    @inject(WorkerService)
     private readonly workerService: WorkerService
   ) {}
 

@@ -1,11 +1,14 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { AccountService } from '@core/services/account.service';
 import { ViewAccountInfoResponse } from '@core/schema/account/viewAccountInfo/response.schema';
 
 @injectable()
 export class AccountInfoViewerUseCase {
-  constructor(private readonly accountService: AccountService) {}
+  constructor(
+    @inject(AccountService)
+    private readonly accountService: AccountService
+  ) {}
 
   async execute(
     t: TFunction<'translation', undefined>,

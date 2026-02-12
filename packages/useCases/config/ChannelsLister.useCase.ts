@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { ConfigService } from '@core/services/config.service';
 import { ListChannelsRequest } from '@core/schema/config/listChannels/request.schema';
 import { ListChannelsFinalResponse } from '@core/schema/config/listChannels/response.schema';
@@ -6,7 +6,10 @@ import { setPaginationData } from '@core/common/functions/createPaginationData';
 
 @injectable()
 export class ChannelsListerUseCase {
-  constructor(private readonly configService: ConfigService) {}
+  constructor(
+    @inject(ConfigService)
+    private readonly configService: ConfigService
+  ) {}
 
   async execute(
     query: ListChannelsRequest

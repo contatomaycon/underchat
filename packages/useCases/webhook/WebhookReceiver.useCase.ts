@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { ITokenKeyData } from '@core/common/interfaces/ITokenKeyData';
 import { ReceiveWebhookRequest } from '@core/schema/webhook/receiveWebhook/request.schema';
@@ -8,7 +8,9 @@ import { IntegrationService } from '@core/services/integration.service';
 @injectable()
 export class WebhookReceiverUseCase {
   constructor(
+    @inject(ApiKeyViewerRepository)
     private readonly apiKeyViewerRepository: ApiKeyViewerRepository,
+    @inject(IntegrationService)
     private readonly integrationService: IntegrationService
   ) {}
 

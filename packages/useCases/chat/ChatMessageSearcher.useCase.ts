@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import {
@@ -23,7 +23,9 @@ import { hasRequiredPermission } from '@core/common/functions/hasRequiredPermiss
 @injectable()
 export class ChatMessageSearcherUseCase {
   constructor(
+    @inject(ElasticDatabaseService)
     private readonly elasticDatabaseService: ElasticDatabaseService,
+    @inject(ChatService)
     private readonly chatService: ChatService
   ) {}
 

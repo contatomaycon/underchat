@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { UserService } from '@core/services/user.service';
 import { ChangePasswordResponse } from '@core/schema/accountSettings/changePassword/response.schema';
@@ -7,7 +7,10 @@ import { validatePassword } from '@core/common/utils/passwordValidator';
 
 @injectable()
 export class AccountSettingsPasswordChangerUseCase {
-  constructor(private readonly userService: UserService) {}
+  constructor(
+    @inject(UserService)
+    private readonly userService: UserService
+  ) {}
 
   async execute(
     t: TFunction<'translation', undefined>,

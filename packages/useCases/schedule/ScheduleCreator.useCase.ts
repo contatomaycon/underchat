@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { AccountService } from '@core/services/account.service';
 import { CreateScheduleRequest } from '@core/schema/schedule/createSchedule/request.schema';
@@ -48,10 +48,15 @@ export class ScheduleCreatorUseCase {
   ];
 
   constructor(
+    @inject(ScheduleService)
     private readonly scheduleService: ScheduleService,
+    @inject(AccountService)
     private readonly accountService: AccountService,
+    @inject(WorkerService)
     private readonly workerService: WorkerService,
+    @inject(StorageService)
     private readonly storageService: StorageService,
+    @inject(ConverterService)
     private readonly converterService: ConverterService
   ) {}
 

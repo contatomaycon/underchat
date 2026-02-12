@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { AiAgentService } from '@core/services/aiAgent.service';
 import { EmbeddingService } from '@core/services/embedding.service';
@@ -6,7 +6,9 @@ import { EmbeddingService } from '@core/services/embedding.service';
 @injectable()
 export class AiAgentDeleterUseCase {
   constructor(
+    @inject(AiAgentService)
     private readonly aiAgentService: AiAgentService,
+    @inject(EmbeddingService)
     private readonly embeddingService: EmbeddingService
   ) {}
 

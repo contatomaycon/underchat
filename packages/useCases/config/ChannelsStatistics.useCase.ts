@@ -1,10 +1,13 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { ConfigService } from '@core/services/config.service';
 import { ChannelsStatisticsResponse } from '@core/schema/config/channelsStatistics/response.schema';
 
 @injectable()
 export class ChannelsStatisticsUseCase {
-  constructor(private readonly configService: ConfigService) {}
+  constructor(
+    @inject(ConfigService)
+    private readonly configService: ConfigService
+  ) {}
 
   async execute(): Promise<ChannelsStatisticsResponse> {
     const statistics = await this.configService.getChannelsStatistics();

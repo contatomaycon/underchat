@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { WorkerProfileStatusService } from '@core/services/workerProfileStatus.service';
 import { WorkerService } from '@core/services/worker.service';
@@ -13,7 +13,9 @@ export class WorkerProfileStatusUploaderUseCase {
   MAX_FILE_SIZE_BYTES = 16 * 1024 * 1024;
 
   constructor(
+    @inject(WorkerProfileStatusService)
     private readonly workerProfileStatusService: WorkerProfileStatusService,
+    @inject(WorkerService)
     private readonly workerService: WorkerService
   ) {}
 
