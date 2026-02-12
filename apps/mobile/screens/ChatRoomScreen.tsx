@@ -58,6 +58,7 @@ import {
   addChatSocketListener,
   consumePendingChatUpdates,
   consumePendingMessages,
+  type SocketTypingPayload,
   type SocketChatPayload,
   type SocketMessagePayload,
 } from '../socket/chatSocket';
@@ -138,6 +139,7 @@ const VIDEO_FULLSCREEN_DISABLED = { enable: false } as const;
 const VIDEO_FULLSCREEN_ENABLED = { enable: true } as const;
 const CHAT_MESSAGES_PER_PAGE = 10;
 const LOAD_OLDER_SCROLL_THRESHOLD = 180;
+const TYPING_TIMEOUT_MS = 5000;
 type DownloadKind = 'image' | 'video' | 'document';
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -723,6 +725,61 @@ function resolveUserId(value: unknown): string | null {
   if (!value || typeof value !== 'object') return null;
   const record = value as { id?: unknown; user_id?: unknown };
   return readIdentifier(record.id) ?? readIdentifier(record.user_id);
+}
+
+function checkTypingJidMatches(
+  eventJid: string,
+  messages: ListMessageResult[]
+): boolean {
+  const normalizedEventJid = eventJid.trim();
+  if (!normalizedEventJid) return false;
+
+  for (const message of messages) {
+    const messageJid = message.message_key?.remote_jid;
+    const messageJidAlt = message.message_key?.remote_jid_alt;
+    if (
+      messageJid === normalizedEventJid ||
+      messageJidAlt === normalizedEventJid
+    ) {
+      return true;
+    }
+  }
+
+  const normalizedAltEventJid = normalizedEventJid.replace(
+    '@lid',
+    '@s.whatsapp.net'
+  );
+
+  for (const message of messages) {
+    const messageJid = message.message_key?.remote_jid;
+    const messageJidAlt = message.message_key?.remote_jid_alt;
+    if (
+      messageJid === normalizedAltEventJid ||
+      messageJidAlt === normalizedAltEventJid
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function resolveTypingDisplayName(chatInfo: ListChatsResult): string {
+  const contactName = chatInfo.contact?.name?.trim();
+  if (contactName) return contactName;
+
+  const chatName = chatInfo.name?.trim();
+  if (chatName) return chatName;
+
+  const phone =
+    chatInfo.contact?.phone?.trim() || chatInfo.phone?.trim() || '';
+  const ddi = chatInfo.contact?.phone_ddi?.trim() || '';
+
+  if (ddi && phone) {
+    return `+${ddi} ${phone}`;
+  }
+
+  return phone || pt.contact;
 }
 
 function resolveStoredUserName(user: unknown): string | null {
@@ -2732,9 +2789,12 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     previousOffset: number;
     previousContentHeight: number;
   } | null>(null);
+  const messagesRef = useRef<ListMessageResult[]>([]);
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [chatInfo, setChatInfo] = useState(chat);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [currentUserName, setCurrentUserName] = useState<string | null>(null);
+  const [isTyping, setIsTyping] = useState(false);
   const [highlightedMessageId, setHighlightedMessageId] = useState<
     string | null
   >(null);
@@ -2756,6 +2816,15 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const resolvingContactCards = useRef<Set<string>>(new Set());
   const resolvedContactLookupDone = useRef<Set<string>>(new Set());
   const [downloadingViewerMedia, setDownloadingViewerMedia] = useState(false);
+  const typingLabel = useMemo(() => {
+    return `${resolveTypingDisplayName(chatInfo)} ${pt.is_typing}`;
+  }, [
+    chatInfo.contact?.name,
+    chatInfo.name,
+    chatInfo.contact?.phone_ddi,
+    chatInfo.contact?.phone,
+    chatInfo.phone,
+  ]);
   const audioCtrl = useChatAudio();
   const viewerVideoPlayer = useVideoPlayer(
     viewer.kind === 'video' && viewer.src ? { uri: viewer.src } : null,
@@ -2799,6 +2868,43 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       setCurrentUserName(userName);
     });
   }, []);
+
+  const clearTypingTimeout = useCallback(() => {
+    if (!typingTimeoutRef.current) return;
+    clearTimeout(typingTimeoutRef.current);
+    typingTimeoutRef.current = null;
+  }, []);
+
+  const setTypingIndicator = useCallback(
+    (typing: boolean) => {
+      clearTypingTimeout();
+      if (!typing) {
+        setIsTyping(false);
+        return;
+      }
+
+      setIsTyping(true);
+      typingTimeoutRef.current = setTimeout(() => {
+        setIsTyping(false);
+        typingTimeoutRef.current = null;
+      }, TYPING_TIMEOUT_MS);
+    },
+    [clearTypingTimeout]
+  );
+
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
+  useEffect(() => {
+    setTypingIndicator(false);
+  }, [chatInfo.chat_id, setTypingIndicator]);
+
+  useEffect(() => {
+    return () => {
+      clearTypingTimeout();
+    };
+  }, [clearTypingTimeout]);
 
   useEffect(() => {
     if (viewer.visible && viewer.kind === 'video') {
@@ -3211,11 +3317,35 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const handleSocketMessage = useCallback(
     (payload: SocketMessagePayload) => {
       if (payload.chat_id !== chatInfo.chat_id) return;
+      setTypingIndicator(false);
       const normalized = normalizeSocketMessageToListMessage(payload);
       if (!normalized) return;
       setMessages((prev) => mergeMessageLists(prev, normalized));
     },
-    [chatInfo.chat_id]
+    [chatInfo.chat_id, setTypingIndicator]
+  );
+
+  const handleSocketTyping = useCallback(
+    (payload: SocketTypingPayload) => {
+      const activeChatId = chatInfo.chat_id;
+      if (!activeChatId) return;
+
+      const payloadChatId = readNonEmptyString(payload.chat_id);
+      if (payloadChatId && payloadChatId !== activeChatId) {
+        return;
+      }
+
+      if (!payloadChatId) {
+        const eventJid = readNonEmptyString(payload.jid);
+        if (!eventJid) return;
+        if (!checkTypingJidMatches(eventJid, messagesRef.current)) {
+          return;
+        }
+      }
+
+      setTypingIndicator(payload.is_typing === true);
+    },
+    [chatInfo.chat_id, setTypingIndicator]
   );
 
   const handleSocketChatUpdate = useCallback(
@@ -3309,16 +3439,25 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       }
 
       const offMessage = addChatSocketListener('message', handleSocketMessage);
+      const offTyping = addChatSocketListener('typing', handleSocketTyping);
       const offChatUpdate = addChatSocketListener(
         'chatUpdate',
         handleSocketChatUpdate
       );
 
       return () => {
+        setTypingIndicator(false);
         offMessage();
+        offTyping();
         offChatUpdate();
       };
-    }, [chatInfo.chat_id, handleSocketMessage, handleSocketChatUpdate])
+    }, [
+      chatInfo.chat_id,
+      handleSocketMessage,
+      handleSocketTyping,
+      handleSocketChatUpdate,
+      setTypingIndicator,
+    ])
   );
 
   const isQueueOrUraStatus =
@@ -3443,7 +3582,15 @@ export function ChatRoomScreen({ route, navigation }: Props) {
           ) : null}
         </>
       )}
-      <View style={styles.inputRow}>
+      {isTyping ? (
+        <View style={styles.typingIndicatorWrap}>
+          <Ionicons name="create-outline" size={18} color={colors.primary} />
+          <Text style={styles.typingIndicatorText} numberOfLines={1}>
+            {typingLabel}
+          </Text>
+        </View>
+      ) : null}
+      <View style={[styles.inputRow, isTyping && styles.inputRowWithTyping]}>
         <TextInput
           style={styles.input}
           placeholder={pt.type_message}
@@ -4559,6 +4706,24 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 8,
   },
+  typingIndicatorWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 2,
+    backgroundColor: colors.surface,
+    borderTopWidth: 1,
+    borderTopColor: colors.grey200,
+  },
+  typingIndicatorText: {
+    flex: 1,
+    color: colors.primary,
+    fontSize: 12,
+    fontStyle: 'italic',
+    fontWeight: '400',
+  },
   inputRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
@@ -4568,6 +4733,10 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: colors.grey200,
     gap: 8,
+  },
+  inputRowWithTyping: {
+    borderTopWidth: 0,
+    paddingTop: 6,
   },
   input: {
     flex: 1,

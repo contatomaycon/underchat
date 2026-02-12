@@ -29,6 +29,7 @@ export const pt = {
   private: 'Privado',
   send: 'Enviar',
   type_message: 'Digite uma mensagem',
+  is_typing: 'está digitando...',
   chat_list_error: 'Erro ao carregar conversas.',
   messages_error: 'Erro ao carregar mensagens.',
   send_error: 'Erro ao enviar mensagem.',
