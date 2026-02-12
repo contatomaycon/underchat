@@ -24,14 +24,14 @@ RUN apt-get update && \
 RUN corepack enable && \
     corepack prepare pnpm@10.14.0 --activate && \
     npm add -g turbo
- 
+
 FROM turbo AS pruned
 
 WORKDIR /app
 
 COPY . .
 
-RUN turbo prune schedule --docker
+RUN turbo prune schedule_api --docker
 
 FROM turbo AS deps
 
@@ -58,7 +58,7 @@ COPY --from=deps /app/node_modules/ .
 COPY --from=pruned /app/out/full/ .
 COPY packages ./packages
 
-RUN pnpm build:schedule
+RUN pnpm build:schedule_api
 RUN mkdir -p /build_locales
 COPY packages/plugins/i18next/locales /build_locales
 
@@ -66,10 +66,10 @@ FROM node:24.12.0-bookworm-slim
 
 WORKDIR /app
 
-COPY --from=builder /app/apps/schedule/dist ./
+COPY --from=builder /app/apps/schedule_api/dist ./
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package*.json ./
-COPY --from=builder /app/apps/schedule/package*.json ./apps/schedule
+COPY --from=builder /app/apps/schedule_api/package*.json ./apps/schedule_api
 COPY --from=builder /build_locales ./packages/plugins/i18next/locales
 COPY --from=builder /app/packages/proto ./packages/proto
 
@@ -83,6 +83,6 @@ RUN apt-get update && \
 
 EXPOSE 3006
 
-WORKDIR /app/apps/schedule
+WORKDIR /app/apps/schedule_api
 
 CMD ["node", "src/index.js"]
