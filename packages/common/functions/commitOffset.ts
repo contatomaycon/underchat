@@ -1,4 +1,4 @@
-import { KafkaConsumer } from 'node-rdkafka';
+import type { KafkaConsumer } from 'node-rdkafka';
 
 export function commitOffset(
   consumer: KafkaConsumer,

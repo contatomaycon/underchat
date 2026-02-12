@@ -1,6 +1,6 @@
 import { singleton, inject } from 'tsyringe';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
-import { KafkaConsumer } from 'node-rdkafka';
+import type { KafkaConsumer } from 'node-rdkafka';
 import { KafkaClient } from '@core/plugins/kafkaStreams';
 import { startHeartbeat } from '@core/common/functions/startHeartbeat';
 import { createConsumer } from '@core/common/functions/createConsumer';

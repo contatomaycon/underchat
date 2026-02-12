@@ -1,5 +1,6 @@
 import { injectable } from 'tsyringe';
-import path from 'path';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { loadSync } from '@grpc/proto-loader';
 import {
   loadPackageDefinition,
@@ -14,6 +15,8 @@ import {
 } from '@core/common/functions/workerCommandProtoMapper';
 import { IWorkerPayloadProto } from '@core/common/interfaces/IWorkerPayloadProto';
 import { StatusConnectionWorkerRequest } from '@core/schema/worker/statusConnection/request.schema';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const protoPath = path.join(__dirname, '..', 'proto', 'worker_command.proto');
 const packageDefinition = loadSync(protoPath, {

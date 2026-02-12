@@ -1,5 +1,5 @@
 import { singleton, inject } from 'tsyringe';
-import { KafkaConsumer } from 'node-rdkafka';
+import type { KafkaConsumer } from 'node-rdkafka';
 import { KafkaClient } from '@core/plugins/kafkaStreams';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { AsaasNfseWebhookRequest } from '@core/schema/nfse/Webhook/request.schema';

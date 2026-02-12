@@ -31,7 +31,7 @@ import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 import { BaileysIncomingMessageService } from './incoming.service';
 import { getPhoneNumber } from '@core/common/functions/getPhoneNumber';
 import { buildWppConnectionDocumentId } from '@core/common/functions/buildWppConnectionDocumentId';
-import { triggerConnectionEstablished } from '../index';
+import { triggerConnectionEstablished } from '../callbacks';
 
 const FOLDER = `/app/data/storage/${baileysEnvironment.baileysWorkerId}`;
 const CHANNEL = workerCentrifugoQueue(baileysEnvironment.baileysAccountId);

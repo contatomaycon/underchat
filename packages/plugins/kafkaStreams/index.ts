@@ -3,12 +3,13 @@ import fp from 'fastify-plugin';
 import { ERouteModule } from '@core/common/enums/ERouteModule';
 import { container } from 'tsyringe';
 import { kafkaEnvironment } from '@core/config/environments';
-import {
+import type {
   KafkaConsumer,
   Producer,
   ConsumerGlobalConfig,
   ConsumerTopicConfig,
 } from 'node-rdkafka';
+import { rdkafka } from '@core/common/vendors/nodeRdkafka';
 
 export interface KafkaClient {
   createConsumer: (groupId: string) => KafkaConsumer;
@@ -126,7 +127,7 @@ class KafkaStreamsClient implements KafkaClient {
       'auto.offset.reset': 'earliest',
     };
 
-    return new KafkaConsumer(consumerConfig, opicConf);
+    return new rdkafka.KafkaConsumer(consumerConfig, opicConf);
   }
 
   private getProducerConfig(): Record<string, string | number | boolean> {
@@ -173,7 +174,7 @@ class KafkaStreamsClient implements KafkaClient {
 
   createProducer(): Producer {
     const config = this.getProducerConfig();
-    return new Producer(config, {});
+    return new rdkafka.Producer(config, {});
   }
 }
 

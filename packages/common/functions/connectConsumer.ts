@@ -1,4 +1,4 @@
-import { KafkaConsumer, LibrdKafkaError } from 'node-rdkafka';
+import type { KafkaConsumer, LibrdKafkaError } from 'node-rdkafka';
 import { getErrorMessage } from './toError';
 import { logger } from '@core/plugins/telemetry/logger';
 import { captureException } from '@core/plugins/telemetry/sentry';

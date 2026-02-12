@@ -7,23 +7,14 @@ import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnect
 import { IBaileysConnection } from '@core/common/interfaces/IBaileysConnection';
 import { BaileysPhoneValidationService } from './methods/phoneValidation.service';
 import { IPhoneValidationResult } from '@core/common/interfaces/IPhoneValidationResult';
+import { triggerQrCodeReset } from './callbacks';
 
-let qrCodeResetCallback: (() => void) | undefined;
-let connectionEstablishedCallback: (() => void) | undefined;
-
-export function setQrCodeResetCallback(callback: () => void): void {
-  qrCodeResetCallback = callback;
-}
-
-export function setConnectionEstablishedCallback(callback: () => void): void {
-  connectionEstablishedCallback = callback;
-}
-
-export function triggerConnectionEstablished(): void {
-  if (connectionEstablishedCallback) {
-    connectionEstablishedCallback();
-  }
-}
+export {
+  setQrCodeResetCallback,
+  setConnectionEstablishedCallback,
+  triggerQrCodeReset,
+  triggerConnectionEstablished,
+} from './callbacks';
 
 @singleton()
 export class BaileysService {
@@ -65,9 +56,7 @@ export class BaileysService {
   }
 
   resetQrCodeCounter(): void {
-    if (qrCodeResetCallback) {
-      qrCodeResetCallback();
-    }
+    triggerQrCodeReset();
   }
 
   clearUserRequestedDisconnect(): void {

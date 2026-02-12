@@ -1,6 +1,7 @@
 import { FastifyInstance, FastifyPluginAsync } from 'fastify';
 import fp from 'fastify-plugin';
-import path from 'path';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { loadSync } from '@grpc/proto-loader';
 import {
   loadPackageDefinition,
@@ -20,6 +21,8 @@ import {
 import { IWorkerPayloadProto } from '@core/common/interfaces/IWorkerPayloadProto';
 import { IChangeConnectionStatusRequestProto } from '@core/common/interfaces/IChangeConnectionStatusRequestProto';
 import { INotifyWorkerStatusRequestProto } from '@core/common/interfaces/INotifyWorkerStatusRequestProto';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const protoPath = path.join(
   __dirname,

@@ -5,7 +5,13 @@ import eslintPluginPrettierRecommended from 'eslint-plugin-prettier/recommended'
 
 export default [
   {
-    ignores: ['**/node_modules/**', '**/dist/**', '*.min.js', '**/coverage/**'],
+    ignores: [
+      '**/node_modules/**',
+      '**/dist/**',
+      '**/out/**',
+      '*.min.js',
+      '**/coverage/**',
+    ],
   },
   {
     files: ['**/*.ts', '**/*.tsx'],

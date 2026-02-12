@@ -1,5 +1,5 @@
 import { injectable, inject } from 'tsyringe';
-import { Producer, LibrdKafkaError } from 'node-rdkafka';
+import type { Producer, LibrdKafkaError } from 'node-rdkafka';
 import { KafkaClient } from '@core/plugins/kafkaStreams';
 import { toError, getErrorMessage } from '@core/common/functions/toError';
 import { ulid } from 'ulid';

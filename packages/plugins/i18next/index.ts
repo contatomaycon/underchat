@@ -3,9 +3,12 @@ import fp from 'fastify-plugin';
 import i18next from 'i18next';
 import Backend from 'i18next-fs-backend';
 import { plugin, LanguageDetector } from 'i18next-http-middleware';
-import path = require('path');
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { getLanguageFromHeader } from '@core/common/functions/getLanguageFromHeader';
 import { createLanguageData } from '@core/common/functions/createLanguageData';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 async function i18nextPlugin(fastify: FastifyInstance) {
   const localesPath = path.join(
@@ -20,6 +23,7 @@ async function i18nextPlugin(fastify: FastifyInstance) {
     .use(LanguageDetector)
     .init({
       fallbackLng: 'pt',
+      showSupportNotice: false,
       backend: {
         loadPath: localesPath,
       },

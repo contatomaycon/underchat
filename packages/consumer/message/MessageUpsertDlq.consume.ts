@@ -1,5 +1,5 @@
 import { singleton, inject, container } from 'tsyringe';
-import { KafkaConsumer, type LibrdKafkaError } from 'node-rdkafka';
+import type { KafkaConsumer, LibrdKafkaError } from 'node-rdkafka';
 import { KafkaClient } from '@core/plugins/kafkaStreams';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { IUpsertMessage } from '@core/common/interfaces/IUpsertMessage';

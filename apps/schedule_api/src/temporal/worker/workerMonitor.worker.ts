@@ -1,8 +1,11 @@
-import path from 'path';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { FastifyInstance } from 'fastify';
 import { Worker } from '@temporalio/worker';
 import { container } from 'tsyringe';
 import { WorkerMonitorActivity } from '@core/temporal/activities/workerMonitor.activities';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export const workerMonitorWorker = async (fastify: FastifyInstance) => {
   const activity = container.resolve(WorkerMonitorActivity);

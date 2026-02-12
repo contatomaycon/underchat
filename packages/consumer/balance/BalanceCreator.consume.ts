@@ -9,7 +9,7 @@ import { isDistroVersionAllowed } from '@core/common/functions/isDistroVersionAl
 import { IDistroInfo } from '@core/common/interfaces/IDistroInfo';
 import { FastifyInstance } from 'fastify';
 import { IViewServerWebById } from '@core/common/interfaces/IViewServerWebById';
-import { KafkaConsumer } from 'node-rdkafka';
+import type { KafkaConsumer } from 'node-rdkafka';
 import { KafkaClient } from '@core/plugins/kafkaStreams';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { delay } from '@core/common/functions/delay';

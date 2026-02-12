@@ -2,7 +2,6 @@ import dns from 'node:dns';
 dns.setDefaultResultOrder('ipv4first');
 
 import 'reflect-metadata';
-import 'module-alias/register';
 import fastify from 'fastify';
 import { ERouteModule } from '@core/common/enums/ERouteModule';
 import { v7 } from 'uuid';

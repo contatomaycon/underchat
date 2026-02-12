@@ -1,4 +1,3 @@
-import 'module-alias/register';
 import '@core/plugins/telemetry/instrument';
 import 'reflect-metadata';
 import * as Sentry from '@sentry/node';

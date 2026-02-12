@@ -13,6 +13,9 @@ import { TypeBoxTypeProvider } from '@fastify/type-provider-typebox';
 import { getPackageVersion } from '@core/common/functions/getPackageVersion';
 import { EDocumentation } from '@core/common/enums/EDocumentation';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const swaggerPlugin = async (fastify: FastifyInstance) => {
   const patchPackage = path.join(__dirname, '../../../package.json');

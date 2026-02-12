@@ -1,8 +1,11 @@
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { getPackageNodeVersion } from './getPackageNodeVersion';
 import { generalEnvironment } from '@core/config/environments';
 import { readEnvFile } from './readEnvFile';
 import { IViewServerWebById } from '../interfaces/IViewServerWebById';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export async function installUbuntu2504(
   webView: IViewServerWebById

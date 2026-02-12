@@ -1,6 +1,7 @@
 import { FastifyInstance, FastifyPluginAsync } from 'fastify';
 import fp from 'fastify-plugin';
-import path from 'path';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { loadSync } from '@grpc/proto-loader';
 import {
   loadPackageDefinition,
@@ -16,6 +17,8 @@ import { WorkerConnectionStatusConsume } from '@core/consumer/worker/WorkerConne
 import { StatusConnectionWorkerRequest } from '@core/schema/worker/statusConnection/request.schema';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { EBaileysConnectionType } from '@core/common/enums/EBaileysConnectionType';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const protoPath = path.join(
   __dirname,

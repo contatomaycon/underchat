@@ -1,5 +1,6 @@
 import { injectable } from 'tsyringe';
-import path from 'path';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { loadSync } from '@grpc/proto-loader';
 import {
   loadPackageDefinition,
@@ -8,6 +9,8 @@ import {
 } from '@grpc/grpc-js';
 import { StatusConnectionWorkerRequest } from '@core/schema/worker/statusConnection/request.schema';
 import { balanceEnvironment } from '@core/config/environments';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const protoPath = path.join(
   __dirname,

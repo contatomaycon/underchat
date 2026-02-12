@@ -181,10 +181,7 @@ export class BaileysHelpersService {
     const total = base + punctPause + newlinePause + emojiPause + jitter;
 
     const minMs = 500;
-    const maxMs = 10000;
-    const clamped = Math.max(minMs, Math.min(total, maxMs));
-
-    return Math.round(clamped);
+    return Math.round(Math.max(minMs, total));
   }
 
   getOwnJid(): string {

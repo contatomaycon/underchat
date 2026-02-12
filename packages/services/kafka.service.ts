@@ -1,8 +1,9 @@
 import { injectable, inject } from 'tsyringe';
-import { AdminClient, LibrdKafkaError } from 'node-rdkafka';
+import type { AdminClient, LibrdKafkaError } from 'node-rdkafka';
 import { KafkaClient } from '@core/plugins/kafkaStreams';
 import { kafkaEnvironment } from '@core/config/environments';
 import { toError, getErrorMessage } from '@core/common/functions/toError';
+import { rdkafka } from '@core/common/vendors/nodeRdkafka';
 
 @injectable()
 export class KafkaService {
@@ -33,7 +34,7 @@ export class KafkaService {
       config['enable.ssl.certificate.verification'] = false;
     }
 
-    this.admin = AdminClient.create(config);
+    this.admin = rdkafka.AdminClient.create(config);
   }
 
   private async createSingleTopic(

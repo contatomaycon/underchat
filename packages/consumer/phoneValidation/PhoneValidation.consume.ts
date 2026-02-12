@@ -1,5 +1,5 @@
 import { singleton, inject } from 'tsyringe';
-import { KafkaConsumer } from 'node-rdkafka';
+import type { KafkaConsumer } from 'node-rdkafka';
 import { KafkaClient } from '@core/plugins/kafkaStreams';
 import { createConsumer } from '@core/common/functions/createConsumer';
 import { connectConsumer } from '@core/common/functions/connectConsumer';

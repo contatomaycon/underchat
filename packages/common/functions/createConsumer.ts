@@ -1,4 +1,4 @@
-import { KafkaConsumer } from 'node-rdkafka';
+import type { KafkaConsumer } from 'node-rdkafka';
 import { KafkaClient } from '@core/plugins/kafkaStreams';
 
 export function createConsumer(

@@ -1,5 +1,5 @@
 import { singleton, inject } from 'tsyringe';
-import { KafkaConsumer } from 'node-rdkafka';
+import type { KafkaConsumer } from 'node-rdkafka';
 import { KafkaClient } from '@core/plugins/kafkaStreams';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.service';
@@ -222,7 +222,8 @@ export class ScheduleMessageConsume {
               is_validated: true,
             };
 
-            const topic = this.kafkaServiceQueueService.contactValidationUpdate();
+            const topic =
+              this.kafkaServiceQueueService.contactValidationUpdate();
             await this.streamProducerService.send(topic, contactUpdate);
             isValid = true;
             break;
@@ -484,7 +485,10 @@ export class ScheduleMessageConsume {
     scheduleId: string,
     contactId: string,
     messageId: string,
-    status: EScheduleStatus.sent | EScheduleStatus.failed | EScheduleStatus.ignored
+    status:
+      | EScheduleStatus.sent
+      | EScheduleStatus.failed
+      | EScheduleStatus.ignored
   ): Promise<void> {
     const statusUpdate: IScheduleStatusUpdate = {
       schedule_id: scheduleId,

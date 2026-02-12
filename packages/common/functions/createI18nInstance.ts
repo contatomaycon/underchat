@@ -1,6 +1,9 @@
 import i18next, { TFunction } from 'i18next';
 import Backend from 'i18next-fs-backend';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export async function createI18nInstance(
   language: string
@@ -15,6 +18,7 @@ export async function createI18nInstance(
   await instance.use(Backend).init({
     lng: language,
     fallbackLng: 'pt',
+    showSupportNotice: false,
     backend: {
       loadPath: localesPath,
     },

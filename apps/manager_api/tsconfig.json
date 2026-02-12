@@ -1,9 +1,9 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "nodenext",
+    "module": "esnext",
     "lib": ["ES2022"],
-    "moduleResolution": "nodenext",
+    "moduleResolution": "bundler",
     "declaration": true,
     "outDir": "./dist",
     "strict": true,

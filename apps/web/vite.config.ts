@@ -15,6 +15,8 @@ import vuetify from 'vite-plugin-vuetify';
 import svgLoader from 'vite-svg-loader';
 import path from 'node:path';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
 export default defineConfig(() => {
   return {
     server: {

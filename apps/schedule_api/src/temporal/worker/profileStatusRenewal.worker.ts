@@ -1,8 +1,11 @@
-import path from 'path';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { FastifyInstance } from 'fastify';
 import { Worker } from '@temporalio/worker';
 import { container } from 'tsyringe';
 import { ProfileStatusRenewalActivity } from '@core/temporal/activities/profileStatusRenewal.activities';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export const profileStatusRenewalWorker = async (fastify: FastifyInstance) => {
   const activity = container.resolve(ProfileStatusRenewalActivity);

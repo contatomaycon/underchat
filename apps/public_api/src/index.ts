@@ -1,5 +1,4 @@
 import 'reflect-metadata';
-import 'module-alias/register';
 import fastify from 'fastify';
 import dbConnector from '@core/config/database';
 import authenticateKeyApi from '@core/middlewares/keyapi.middleware';
