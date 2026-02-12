@@ -132,6 +132,16 @@ export interface MessageContentAudio {
   waveform?: string | null;
 }
 
+export interface MessageContentLinkPreview {
+  'canonical-url'?: string | null;
+  'matched-text'?: string | null;
+  title?: string | null;
+  description?: string | null;
+  jpegThumbnail?: string | null;
+  highQualityThumbnail?: string | null;
+  originalThumbnailUrl?: string | null;
+}
+
 export interface MessageContentDocument {
   url?: string | null;
   name?: string | null;
@@ -203,15 +213,47 @@ export interface MessageContentTemplate {
 }
 
 export interface MessageContextInfo {
+  mentioned_jid?: string[] | null;
+  group_mentions?: string[] | null;
+  status_attributions?: string[] | null;
+  conversion_source?: string | null;
+  conversion_delay_seconds?: number | null;
+  entry_point_conversion_source?: string | null;
+  entry_point_conversion_app?: string | null;
+  entry_point_conversion_delay_seconds?: number | null;
+  trust_banner_action?: number | null;
+  ctwa_signals?: string | null;
   is_forwarded?: boolean | null;
   forwarding_score?: number | string | null;
-  external_ad_reply?: unknown;
+  external_ad_reply?: MessageContextExternalAdReply | null;
+}
+
+export interface MessageContextExternalAdReply {
+  title?: string | null;
+  media_type?: number | string | null;
+  thumbnail_url?: string | null;
+  source_type?: string | null;
+  source_id?: string | null;
+  source_url?: string | null;
+  contains_auto_reply?: boolean | null;
+  render_larger_thumbnail?: boolean | null;
+  show_ad_attribution?: boolean | null;
+  ctwa_clid?: string | null;
+  click_to_whatsapp_call?: boolean | null;
+  ad_context_preview_dismissed?: boolean | null;
+  source_app?: string | null;
+  automated_greeting_message_shown?: boolean | null;
+  greeting_message_body?: string | null;
+  disable_nudge?: boolean | null;
+  original_image_url?: string | null;
+  wtwa_ad_format?: boolean | null;
 }
 
 export interface MessageContent {
   type: string;
   message?: string | null;
   message_quoted_id?: string | null;
+  link_preview?: MessageContentLinkPreview | null;
   quoted?: MessageQuoted | null;
   image?: MessageContentImage | null;
   video?: MessageContentVideo | null;

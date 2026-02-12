@@ -1,4 +1,11 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  useRef,
+  type ReactElement,
+} from 'react';
 import {
   View,
   Text,
@@ -24,8 +31,11 @@ import {
   type MessageContent,
   type MessageContentContact,
   type MessageContentDocument,
+  type MessageContentLinkPreview,
+  type MessageContextExternalAdReply,
   type MessageQuoted,
   type MessageReaction,
+  type MessageTemplateButton,
   type MessageContentVideo,
   ETypeUserChat,
 } from '../types/chat';
@@ -249,6 +259,63 @@ function getExtensionFromUrl(url: string): string | null {
 function resolveMediaUri(url: string | null | undefined): string | null {
   if (!url) return null;
   return resolveImageUri(url) ?? url;
+}
+
+function resolvePreviewThumbnail(value: string | null | undefined): string | null {
+  const normalized = readNonEmptyString(value);
+  if (!normalized) return null;
+
+  if (
+    normalized.startsWith('http://') ||
+    normalized.startsWith('https://') ||
+    normalized.startsWith('data:')
+  ) {
+    return resolveMediaUri(normalized) ?? normalized;
+  }
+
+  return `data:image/jpeg;base64,${normalized}`;
+}
+
+function resolvePreviewImage(
+  preview: MessageContentLinkPreview | null | undefined
+): string | null {
+  if (!preview) return null;
+
+  return (
+    resolvePreviewThumbnail(preview.originalThumbnailUrl) ??
+    resolvePreviewThumbnail(preview.highQualityThumbnail) ??
+    resolvePreviewThumbnail(preview.jpegThumbnail)
+  );
+}
+
+function resolvePreviewUrl(
+  preview: MessageContentLinkPreview | null | undefined
+): string | null {
+  const matched = readNonEmptyString(preview?.['matched-text']);
+  const canonical = readNonEmptyString(preview?.['canonical-url']);
+  return matched ?? canonical;
+}
+
+function resolveDomainFromUrl(value: string | null | undefined): string {
+  const normalized = readNonEmptyString(value);
+  if (!normalized) return '';
+
+  try {
+    const url = new URL(normalized);
+    return url.hostname.replace(/^www\./i, '');
+  } catch {
+    return normalized;
+  }
+}
+
+function resolveExternalSourceAppName(
+  sourceApp: string | null | undefined
+): string {
+  const normalized = readNonEmptyString(sourceApp);
+  if (!normalized) return '';
+  if (normalized.toLowerCase() === 'instagram') return 'Instagram';
+  if (normalized.toLowerCase() === 'facebook') return 'Facebook';
+  return normalized;
 }
 
 type ContactCardDisplayData = {
@@ -1496,6 +1563,152 @@ function LocationMessagePreview({
   );
 }
 
+function LinkPreviewMessage({
+  preview,
+  fromMe,
+}: {
+  preview: MessageContentLinkPreview;
+  fromMe: boolean;
+}) {
+  const previewUrl = resolvePreviewUrl(preview);
+  const previewImage = resolvePreviewImage(preview);
+  const title = readNonEmptyString(preview.title);
+  const description = readNonEmptyString(preview.description);
+  const domain = resolveDomainFromUrl(
+    preview['canonical-url'] ?? preview['matched-text'] ?? previewUrl
+  );
+
+  if (!title && !description && !previewImage && !previewUrl) {
+    return null;
+  }
+
+  const handleOpenLink = async () => {
+    if (!previewUrl) return;
+    try {
+      await Linking.openURL(previewUrl);
+    } catch {
+      //
+    }
+  };
+
+  return (
+    <Pressable
+      style={[
+        styles.linkPreviewCard,
+        fromMe ? styles.linkPreviewCardRight : styles.linkPreviewCardLeft,
+      ]}
+      onPress={() => {
+        void handleOpenLink();
+      }}
+      disabled={!previewUrl}
+    >
+      <View style={styles.linkPreviewMain}>
+        {previewImage ? (
+          <Image
+            source={{ uri: previewImage }}
+            style={styles.linkPreviewThumb}
+            resizeMode="cover"
+          />
+        ) : null}
+        <View style={styles.linkPreviewText}>
+          {domain ? (
+            <Text style={styles.linkPreviewDomain} numberOfLines={1}>
+              {domain}
+            </Text>
+          ) : null}
+          {title ? (
+            <Text style={styles.linkPreviewTitle} numberOfLines={2}>
+              {title}
+            </Text>
+          ) : null}
+          {description ? (
+            <Text style={styles.linkPreviewDescription} numberOfLines={2}>
+              {description}
+            </Text>
+          ) : null}
+        </View>
+      </View>
+      {previewUrl ? (
+        <Text style={styles.linkPreviewUrl} numberOfLines={1}>
+          {previewUrl}
+        </Text>
+      ) : null}
+    </Pressable>
+  );
+}
+
+function ExternalAdReplyMessage({
+  adReply,
+  fromMe,
+}: {
+  adReply: MessageContextExternalAdReply;
+  fromMe: boolean;
+}) {
+  const thumbnailUri = resolveMediaUri(adReply.thumbnail_url);
+  const sourceApp = resolveExternalSourceAppName(adReply.source_app);
+  const title = readNonEmptyString(adReply.title);
+  const greetingMessage = readNonEmptyString(adReply.greeting_message_body);
+  const sourceUrl = readNonEmptyString(adReply.source_url);
+
+  if (!thumbnailUri && !sourceApp && !title && !greetingMessage && !sourceUrl) {
+    return null;
+  }
+
+  const handleOpenSourceUrl = async () => {
+    if (!sourceUrl) return;
+    try {
+      await Linking.openURL(sourceUrl);
+    } catch {
+      //
+    }
+  };
+
+  return (
+    <Pressable
+      style={[
+        styles.externalAdCard,
+        fromMe ? styles.externalAdCardRight : styles.externalAdCardLeft,
+      ]}
+      onPress={() => {
+        void handleOpenSourceUrl();
+      }}
+      disabled={!sourceUrl}
+    >
+      <View style={styles.externalAdMain}>
+        {thumbnailUri ? (
+          <Image
+            source={{ uri: thumbnailUri }}
+            style={styles.externalAdThumb}
+            resizeMode="cover"
+          />
+        ) : null}
+        <View style={styles.externalAdInfo}>
+          {sourceApp ? (
+            <Text style={styles.externalAdSource} numberOfLines={1}>
+              {sourceApp}
+            </Text>
+          ) : null}
+          {title ? (
+            <Text style={styles.externalAdTitle} numberOfLines={2}>
+              {title}
+            </Text>
+          ) : null}
+          {greetingMessage ? (
+            <Text style={styles.externalAdDescription} numberOfLines={2}>
+              {greetingMessage}
+            </Text>
+          ) : null}
+        </View>
+      </View>
+      {sourceUrl ? (
+        <Text style={styles.externalAdUrl} numberOfLines={1}>
+          {sourceUrl}
+        </Text>
+      ) : null}
+    </Pressable>
+  );
+}
+
 function QuotedReplyPreview({
   msg,
   fromMe,
@@ -1669,6 +1882,8 @@ function BubbleContent({
   audioCtrl,
   onOpenImage,
   onOpenVideo,
+  onTemplateButtonPress,
+  disableTemplateButtons,
 }: {
   msg: ListMessageResult;
   fromMe: boolean;
@@ -1678,13 +1893,50 @@ function BubbleContent({
   audioCtrl: AudioCtrl | null;
   onOpenImage: (msg: ListMessageResult) => void;
   onOpenVideo: (msg: ListMessageResult) => void;
+  onTemplateButtonPress?: (
+    button: MessageTemplateButton,
+    message: ListMessageResult
+  ) => void;
+  disableTemplateButtons?: boolean;
 }) {
   const type = content.type;
   const textColor = fromMe ? styles.bubbleTextRight : styles.bubbleTextLeft;
-  const isViewOnce = msg.message_key?.is_view_once === true;
+  const isViewOnce =
+    msg.message_key?.is_view_once === true || type === EMessageType.view_once;
+  const linkPreview = content.link_preview;
+  const externalAdReply = content.context_info?.external_ad_reply;
+  const hasLinkPreview = Boolean(
+    linkPreview &&
+      (readNonEmptyString(linkPreview.title) ||
+        readNonEmptyString(linkPreview.description) ||
+        resolvePreviewImage(linkPreview) ||
+        resolvePreviewUrl(linkPreview))
+  );
+  const hasExternalAdReply = Boolean(
+    externalAdReply &&
+      (readNonEmptyString(externalAdReply.title) ||
+        readNonEmptyString(externalAdReply.greeting_message_body) ||
+        readNonEmptyString(externalAdReply.source_url) ||
+        readNonEmptyString(externalAdReply.source_app) ||
+        resolveMediaUri(externalAdReply.thumbnail_url))
+  );
+  const renderWithContextCards = (child: ReactElement | null) => {
+    if (!hasLinkPreview && !hasExternalAdReply) return child;
+    return (
+      <View style={styles.contentStack}>
+        {hasLinkPreview && linkPreview ? (
+          <LinkPreviewMessage preview={linkPreview} fromMe={fromMe} />
+        ) : null}
+        {hasExternalAdReply && externalAdReply ? (
+          <ExternalAdReplyMessage adReply={externalAdReply} fromMe={fromMe} />
+        ) : null}
+        {child}
+      </View>
+    );
+  };
 
   if (isViewOnce) {
-    return (
+    return renderWithContextCards(
       <View style={styles.viewOnceWrap}>
         <Ionicons name="eye-off-outline" size={20} color={colors.grey600} />
         <Text style={styles.viewOnceText}>{pt.view_once_message}</Text>
@@ -1696,7 +1948,7 @@ function BubbleContent({
     const cap = content.image.caption;
     const imageUri = resolveMediaUri(content.image.url);
     if (!imageUri) return null;
-    return (
+    return renderWithContextCards(
       <View style={[styles.mediaBubble, styles.mediaBubbleImage]}>
         <Pressable onPress={() => onOpenImage(msg)}>
           <Image
@@ -1726,7 +1978,7 @@ function BubbleContent({
         resolveVideoMeta(content.video)
       : resolveVideoMeta(content.video);
 
-    return (
+    return renderWithContextCards(
       <View style={styles.mediaBubble}>
         <VideoMessagePreview
           sourceUri={videoUri}
@@ -1745,7 +1997,7 @@ function BubbleContent({
   if (type === EMessageType.sticker && content.sticker?.url) {
     const stickerUri = resolveMediaUri(content.sticker.url);
     if (!stickerUri) return null;
-    return (
+    return renderWithContextCards(
       <Pressable onPress={() => onOpenImage(msg)}>
         <Image
           source={{ uri: stickerUri }}
@@ -1765,7 +2017,7 @@ function BubbleContent({
     const longitude = Number(content.location.longitude);
     if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
 
-    return (
+    return renderWithContextCards(
       <LocationMessagePreview
         latitude={latitude}
         longitude={longitude}
@@ -1783,7 +2035,7 @@ function BubbleContent({
     if (!audioCtrl) {
       const durStr =
         fallbackDuration > 0 ? formatAudioTime(fallbackDuration) : pt.audio;
-      return (
+      return renderWithContextCards(
         <View style={styles.audioWrap}>
           <Text style={[styles.audioDuration, textColor]}>{durStr}</Text>
           {cap ? (
@@ -1809,7 +2061,7 @@ function BubbleContent({
     const waveformWidth = audioCtrl.getWaveformWidth(messageId);
     const waveformToRender = fitWaveformToWidth(waveform, waveformWidth);
 
-    return (
+    return renderWithContextCards(
       <View style={styles.audioBubble}>
         <View
           style={[
@@ -1932,7 +2184,7 @@ function BubbleContent({
     const name = doc.name?.trim() || pt.document;
     const meta = [ext, sizeStr].filter(Boolean).join(' • ');
     const cap = content.message;
-    return (
+    return renderWithContextCards(
       <View>
         <View style={[styles.documentCard, fromMe && styles.documentCardRight]}>
           <Pressable
@@ -1996,7 +2248,7 @@ function BubbleContent({
     const contactDisplay =
       resolvedContactDisplay ??
       resolveContactCardDisplayData(content.contact, chatInfo);
-    return (
+    return renderWithContextCards(
       <View style={[styles.contactWrap, fromMe && styles.contactWrapRight]}>
         <View
           style={[
@@ -2034,7 +2286,7 @@ function BubbleContent({
     const name = first?.name ?? pt.contact;
     const extra =
       list.length > 1 ? ` e ${list.length - 1} ${pt.contacts_other}` : '';
-    return (
+    return renderWithContextCards(
       <View style={styles.contactWrap}>
         <Ionicons name="people" size={32} color={colors.primary} />
         <Text style={[styles.contactName, textColor]}>
@@ -2050,7 +2302,7 @@ function BubbleContent({
     (content.message || content.pin || content.ephemeral)
   ) {
     const text = getLatestMessageText(msg);
-    return (
+    return renderWithContextCards(
       <View style={styles.systemWrap}>
         {content.ephemeral ? (
           <Ionicons name="time" size={18} color={colors.grey600} />
@@ -2062,15 +2314,60 @@ function BubbleContent({
 
   if (content.template && type === EMessageType.text) {
     const t = content.template;
-    const title = t.hydratedTitleText;
-    const body = t.hydratedContentText;
-    return (
+    const title = readNonEmptyString(t.hydratedTitleText);
+    const body = readNonEmptyString(t.hydratedContentText);
+    const templateButtons = (t.hydratedButtons ?? []).filter(
+      (button) => !!readNonEmptyString(button?.displayText)
+    );
+
+    return renderWithContextCards(
       <View style={styles.templateWrap}>
         {title ? (
           <Text style={[styles.templateTitle, textColor]}>{title}</Text>
         ) : null}
         {body ? (
-          <Text style={[styles.bubbleText, textColor]}>{body}</Text>
+          <Text style={[styles.templateContent, textColor]}>{body}</Text>
+        ) : null}
+        {templateButtons.length > 0 ? (
+          <View style={styles.templateButtons}>
+            {templateButtons.map((button, index) => {
+              const displayText =
+                readNonEmptyString(button.displayText) ?? button.displayText;
+              const disabled =
+                disableTemplateButtons || !onTemplateButtonPress;
+
+              return (
+                <Pressable
+                  key={`template-btn-${msg.message_id}-${button.id || index}`}
+                  style={[
+                    styles.templateButton,
+                    fromMe && styles.templateButtonRight,
+                    disabled && styles.templateButtonDisabled,
+                  ]}
+                  onPress={() => {
+                    if (disabled) return;
+                    onTemplateButtonPress?.(button, msg);
+                  }}
+                  disabled={disabled}
+                >
+                  <Ionicons
+                    name="arrow-undo-outline"
+                    size={16}
+                    color={fromMe ? colors.primary : '#25D366'}
+                  />
+                  <Text
+                    style={[
+                      styles.templateButtonText,
+                      fromMe && styles.templateButtonTextRight,
+                    ]}
+                    numberOfLines={2}
+                  >
+                    {displayText}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
         ) : null}
       </View>
     );
@@ -2087,14 +2384,14 @@ function BubbleContent({
     type !== EMessageType.contacts &&
     type !== EMessageType.system
   ) {
-    return (
+    return renderWithContextCards(
       <Text style={[styles.bubbleText, textColor]} selectable>
         {text}
       </Text>
     );
   }
 
-  return null;
+  return renderWithContextCards(null);
 }
 
 function MessageBubble({
@@ -2108,6 +2405,8 @@ function MessageBubble({
   audioCtrl,
   onOpenImage,
   onOpenVideo,
+  onTemplateButtonPress,
+  disableTemplateButtons,
 }: {
   msg: ListMessageResult;
   fromMe: boolean;
@@ -2119,6 +2418,11 @@ function MessageBubble({
   audioCtrl: AudioCtrl | null;
   onOpenImage: (msg: ListMessageResult) => void;
   onOpenVideo: (msg: ListMessageResult) => void;
+  onTemplateButtonPress?: (
+    button: MessageTemplateButton,
+    message: ListMessageResult
+  ) => void;
+  disableTemplateButtons?: boolean;
 }) {
   const content = msg.content;
   const timeStr = formatMessageTime(msg.date);
@@ -2149,7 +2453,9 @@ function MessageBubble({
     !content?.video?.url &&
     !content?.sticker?.url &&
     !content?.location &&
-    !content?.template;
+    !content?.template &&
+    !content?.link_preview &&
+    !content?.context_info?.external_ad_reply;
   const hasContent =
     content &&
     (content.type === EMessageType.system ||
@@ -2157,6 +2463,8 @@ function MessageBubble({
       content.image?.url ||
       content.video?.url ||
       content.sticker?.url ||
+      content.link_preview ||
+      content.context_info?.external_ad_reply ||
       (content.location?.latitude != null &&
         content.location?.longitude != null) ||
       content.audio?.url ||
@@ -2299,6 +2607,8 @@ function MessageBubble({
           audioCtrl={audioCtrl}
           onOpenImage={onOpenImage}
           onOpenVideo={onOpenVideo}
+          onTemplateButtonPress={onTemplateButtonPress}
+          disableTemplateButtons={disableTemplateButtons}
         />
         <View
           style={[
@@ -2765,17 +3075,53 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     }, [chatInfo.chat_id, handleSocketMessage, handleSocketChatUpdate])
   );
 
+  const isQueueOrUraStatus =
+    chatInfo.status === 'queue' ||
+    chatInfo.status === 'ura' ||
+    chatInfo.status === 'ura_output' ||
+    chatInfo.status === 'ura_schedule' ||
+    chatInfo.status === 'ura_webhook';
+
+  const sendTextPayload = useCallback(
+    async (rawText: string) => {
+      const text = rawText.trim();
+      if (!text || sending) return false;
+
+      setSending(true);
+      try {
+        const newMsg = await createMessage(
+          chatInfo.chat_id,
+          EMessageType.text,
+          text
+        );
+        if (newMsg) {
+          setMessages((prev) => mergeMessageLists(prev, newMsg));
+          return true;
+        }
+      } finally {
+        setSending(false);
+      }
+      return false;
+    },
+    [chatInfo.chat_id, sending]
+  );
+
+  const handleTemplateButtonPress = useCallback(
+    (button: MessageTemplateButton, _message: ListMessageResult) => {
+      if (isQueueOrUraStatus) return;
+      const buttonText = readNonEmptyString(button.displayText);
+      if (!buttonText) return;
+      void sendTextPayload(buttonText);
+    },
+    [isQueueOrUraStatus, sendTextPayload]
+  );
+
   const handleSend = async () => {
     const text = input.trim();
     if (!text || sending) return;
 
-    setSending(true);
     setInput('');
-    const newMsg = await createMessage(chatInfo.chat_id, 'text', text);
-    setSending(false);
-    if (newMsg) {
-      setMessages((prev) => [...prev, newMsg]);
-    }
+    await sendTextPayload(text);
   };
 
   return (
@@ -2825,6 +3171,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                 audioCtrl={audioCtrl}
                 onOpenImage={openImageViewer}
                 onOpenVideo={openVideoViewer}
+                onTemplateButtonPress={handleTemplateButtonPress}
+                disableTemplateButtons={isQueueOrUraStatus || sending}
               />
             );
           }}
@@ -3292,6 +3640,10 @@ const styles = StyleSheet.create({
     color: colors.grey600,
     fontStyle: 'italic',
   },
+  contentStack: {
+    gap: 8,
+    width: '100%',
+  },
   mediaBubble: {
     maxWidth: 232,
     overflow: 'hidden',
@@ -3443,6 +3795,104 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.grey700,
     marginTop: 3,
+  },
+  linkPreviewCard: {
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(47, 43, 61, 0.12)',
+    padding: 10,
+    gap: 8,
+  },
+  linkPreviewCardLeft: {
+    backgroundColor: 'rgba(47, 43, 61, 0.04)',
+  },
+  linkPreviewCardRight: {
+    backgroundColor: 'rgba(255, 255, 255, 0.36)',
+  },
+  linkPreviewMain: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  linkPreviewThumb: {
+    width: 48,
+    height: 48,
+    borderRadius: 6,
+    backgroundColor: 'rgba(47, 43, 61, 0.08)',
+    flexShrink: 0,
+  },
+  linkPreviewText: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+  },
+  linkPreviewDomain: {
+    fontSize: 11,
+    color: 'rgba(47, 43, 61, 0.72)',
+  },
+  linkPreviewTitle: {
+    fontSize: 13,
+    lineHeight: 17,
+    fontWeight: '600',
+    color: colors.onSurface,
+  },
+  linkPreviewDescription: {
+    fontSize: 12,
+    lineHeight: 16,
+    color: 'rgba(47, 43, 61, 0.74)',
+  },
+  linkPreviewUrl: {
+    fontSize: 12,
+    color: colors.primary,
+  },
+  externalAdCard: {
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(47, 43, 61, 0.12)',
+    padding: 10,
+    gap: 8,
+  },
+  externalAdCardLeft: {
+    backgroundColor: 'rgba(47, 43, 61, 0.04)',
+  },
+  externalAdCardRight: {
+    backgroundColor: 'rgba(255, 255, 255, 0.36)',
+  },
+  externalAdMain: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  externalAdThumb: {
+    width: 60,
+    height: 60,
+    borderRadius: 6,
+    backgroundColor: 'rgba(47, 43, 61, 0.08)',
+    flexShrink: 0,
+  },
+  externalAdInfo: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+  },
+  externalAdSource: {
+    fontSize: 11,
+    color: 'rgba(47, 43, 61, 0.72)',
+  },
+  externalAdTitle: {
+    fontSize: 13,
+    lineHeight: 17,
+    fontWeight: '600',
+    color: colors.onSurface,
+  },
+  externalAdDescription: {
+    fontSize: 12,
+    lineHeight: 16,
+    color: 'rgba(47, 43, 61, 0.74)',
+  },
+  externalAdUrl: {
+    fontSize: 12,
+    color: colors.primary,
   },
   audioWrap: {
     flexDirection: 'row',
@@ -3721,6 +4171,41 @@ const styles = StyleSheet.create({
   templateTitle: {
     fontSize: 15,
     fontWeight: '600',
+  },
+  templateContent: {
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  templateButtons: {
+    marginTop: 2,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(47, 43, 61, 0.14)',
+    gap: 6,
+  },
+  templateButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    backgroundColor: 'rgba(37, 211, 102, 0.1)',
+  },
+  templateButtonRight: {
+    backgroundColor: 'rgba(40, 101, 183, 0.12)',
+  },
+  templateButtonDisabled: {
+    opacity: 0.45,
+  },
+  templateButtonText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#25D366',
+    fontWeight: '500',
+  },
+  templateButtonTextRight: {
+    color: colors.primary,
   },
   viewerOverlay: {
     flex: 1,
